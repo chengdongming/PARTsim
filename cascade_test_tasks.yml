@@ -1,0 +1,75 @@
+# =============================================
+# CASCADE调度逻辑验证任务集 - suspend(0)版本
+# =============================================
+# 使用混合指令序列: fixed(50) + suspend(0)
+# 每50ms执行一次，然后立即挂起触发重新调度，不占用时间
+# =============================================
+
+taskset:
+  # task_0: 最高优先级 - 周期500ms
+  - name: task_0
+    iat: 500
+    runtime: 250  # 5 × 50ms
+    deadline: 500
+    params: "period=500,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(50, bzip2)
+      - suspend(0)
+      - fixed(50, bzip2)
+      - suspend(0)
+      - fixed(50, bzip2)
+      - suspend(0)
+      - fixed(50, bzip2)
+      - suspend(0)
+      - fixed(50, bzip2)
+      - suspend(0)
+
+  # task_1: 次高优先级 - 周期600ms
+  - name: task_1
+    iat: 600
+    runtime: 250  # 5 × 50ms
+    deadline: 600
+    params: "period=600,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(50, bzip2)
+      - suspend(0)
+      - fixed(50, bzip2)
+      - suspend(0)
+      - fixed(50, bzip2)
+      - suspend(0)
+      - fixed(50, bzip2)
+      - suspend(0)
+      - fixed(50, bzip2)
+      - suspend(0)
+
+  # task_2: 低优先级 - 周期1000ms
+  - name: task_2
+    iat: 1000
+    runtime: 200  # 4 × 50ms
+    deadline: 1000
+    params: "period=1000,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(50, bzip2)
+      - suspend(0)
+      - fixed(50, bzip2)
+      - suspend(0)
+      - fixed(50, bzip2)
+      - suspend(0)
+      - fixed(50, bzip2)
+      - suspend(0)
+
+  # task_3: 最低优先级 - 周期1200ms
+  - name: task_3
+    iat: 1200
+    runtime: 200  # 4 × 50ms
+    deadline: 1200
+    params: "period=1200,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(50, bzip2)
+      - suspend(0)
+      - fixed(50, bzip2)
+      - suspend(0)
+      - fixed(50, bzip2)
+      - suspend(0)
+      - fixed(50, bzip2)
+      - suspend(0)

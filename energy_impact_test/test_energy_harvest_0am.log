@@ -1,0 +1,1044 @@
+
+════════════════════════════════════════════════════════════
+  读取系统配置
+════════════════════════════════════════════════════════════
+ℹ 从配置文件读取到调度器类型: gpfp_cascade
+ℹ 未配置时间偏移，使用0（从年初开始）
+
+════════════════════════════════════════════════════════════
+  配置摘要
+════════════════════════════════════════════════════════════
+  系统配置文件: energy_impact_test/config_energy_harvest_0am.yml
+  任务集文件: energy_impact_test/tasks_test1.yml
+  仿真持续时间: 2000 ms
+  时间偏移将从配置文件读取
+  调度器类型: gpfp_cascade (从配置文件读取)
+  输出跟踪文件: energy_impact_test/trace_energy_harvest_0am.json
+
+ℹ 清理旧的最终跟踪文件: energy_impact_test/trace_energy_harvest_0am.json
+
+════════════════════════════════════════════════════════════
+  设置环境变量
+════════════════════════════════════════════════════════════
+环境变量已设置:
+  START_TIME_OFFSET=0
+  SCHEDULER_TYPE=gpfp_cascade
+  ENERGY_CONFIG_FILE=energy_impact_test/config_energy_harvest_0am.yml
+  TASKSET_CONFIG_PATH=energy_impact_test/tasks_test1.yml
+  RTSIM_NUM_CORES=3 (从YAML配置读取)
+
+
+════════════════════════════════════════════════════════════
+  运行仿真
+════════════════════════════════════════════════════════════
+执行命令: ./build/rtsim/rtsim "energy_impact_test/config_energy_harvest_0am.yml" "energy_impact_test/tasks_test1.yml" "2000" -t "energy_impact_test/trace_energy_harvest_0am_raw.json"
+
+[32m2026-01-14 11:06:01.120 [INFO0000] [scheduler00000000000] 🚀 GPFP_CASCADE Scheduler: 带参数初始化 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:369)
+[0m[32m2026-01-14 11:06:01.120 [INFO0000] [scheduler00000000000] ConfigManager: 从环境变量设置核心数: 3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:43)
+[0m[32m2026-01-14 11:06:01.120 [INFO0000] [scheduler00000000000]   设置环境变量 ENERGY_CONFIG_FILE=energy_impact_test/config_energy_harvest_0am.yml (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:383)
+[0m[32m2026-01-14 11:06:01.120 [INFO0000] [scheduler00000000000]   使用配置文件中的开始时间: 0 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:427)
+[0m[32m2026-01-14 11:06:01.120 [INFO0000] [scheduler00000000000] 功率模型初始化 - 从ConfigManager获取参数 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2471)
+[0m[32m2026-01-14 11:06:01.120 [INFO0000] [scheduler00000000000]   基础功耗: 0.500000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2472)
+[0m[32m2026-01-14 11:06:01.120 [INFO0000] [scheduler00000000000]   bzip2 功率系数: 1.200000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2475)
+[0m[32m2026-01-14 11:06:01.120 [INFO0000] [scheduler00000000000]   control 功率系数: 0.100000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2475)
+[0m[32m2026-01-14 11:06:01.120 [INFO0000] [scheduler00000000000]   decrypt 功率系数: 1.500000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2475)
+[0m[32m2026-01-14 11:06:01.120 [INFO0000] [scheduler00000000000]   encrypt 功率系数: 1.500000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2475)
+[0m[32m2026-01-14 11:06:01.120 [INFO0000] [scheduler00000000000]   hash 功率系数: 0.800000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2475)
+[0m[32m2026-01-14 11:06:01.120 [INFO0000] [scheduler00000000000]   当前频率: 1400.000000 MHz (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2478)
+2026-01-14 11:06:01.190 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: energy_impact_test/config_energy_harvest_0am.yml
+2026-01-14 11:06:01.197 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: energy_impact_test/config_energy_harvest_0am.yml
+2026-01-14 11:06:01.197 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.05
+2026-01-14 11:06:01.197 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.05
+2026-01-14 11:06:01.197 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=0 计算 start_offset_minutes=267840
+2026-01-14 11:06:01.197 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267840, simulation_start_time=16070400000ms
+2026-01-14 11:06:01.197 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-14 11:06:01.197 [INFO    ] [energy_manager      ] EnergyConfig loaded from energy_impact_test/config_energy_harvest_0am.yml
+2026-01-14 11:06:01.197 [INFO    ] [energy_manager      ]   Initial energy: 0.05 J
+2026-01-14 11:06:01.198 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-14 11:06:01.198 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-14 11:06:01.198 [INFO    ] [energy_manager      ]   Debug mode: True
+2026-01-14 11:06:01.198 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-01-14 11:06:01.198 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-01-14 11:06:01.198 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-14 11:06:01.198 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-01-14 11:06:01.198 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-01-14 11:06:01.198 [INFO    ] [energy_manager      ]     时间偏移: 267840 分钟
+2026-01-14 11:06:01.198 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-14 11:06:01.198 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-14 11:06:01.198 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-14 11:06:01.198 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-14 11:06:01.198 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-14 11:06:01.198 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-14 11:06:01.198 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-14 11:06:01.199 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-14 11:06:01.199 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-14 11:06:01.199 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-14 11:06:01.199 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+[SolarDataLoader] 已加载 532800 分钟数据
+[SolarDataLoader] 时间偏移: 267840 分钟
+[SolarDataLoader] 数据范围: 0.0 - 970.0 W/m²
+[SolarDataLoader] 平均值: 138.6 W/m²
+[SolarDataLoader] 标准差: 233.9 W/m²
+2026-01-14 11:06:02.553 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-01-14 11:06:02.553 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-14 11:06:02.554 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-01-14 11:06:02.554 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 267840 分钟
+2026-01-14 11:06:02.554 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.05
+2026-01-14 11:06:02.554 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.05
+2026-01-14 11:06:02.554 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-14 11:06:02.554 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/1000.0 J
+2026-01-14 11:06:02.554 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16070400000ms
+2026-01-14 11:06:02.554 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 00:00:00
+2026-01-14 11:06:02.554 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+[0m[32m2026-01-14 11:06:02.554 [INFO0000] [scheduler00000000000] EnergyBridge: 调用Python配置回调更新ConfigManager，配置文件: energy_impact_test/config_energy_harvest_0am.yml (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:403)
+[0m[32m2026-01-14 11:06:02.554 [INFO0000] [scheduler00000000000] 调用Python配置回调，配置文件: energy_impact_test/config_energy_harvest_0am.yml (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:33)
+[Python] 能量管理器加载成功
+[Python] C++传递的配置文件: 'energy_impact_test/config_energy_harvest_0am.yml'
+2026-01-14 11:06:02.554 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.05J
+[0m[32m2026-01-14 11:06:02.554 [INFO0000] [scheduler00000000000] 解析Python配置... (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:91)
+[0m[32m2026-01-14 11:06:02.554 [INFO0000] [scheduler00000000000]   num_cores: 3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:151)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   base_frequency: 8100.000000 MHz (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:157)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   unit_time: 50 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:161)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   expected_task_count: 12 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:166)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   initial_energy: 0.050000 J (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:171)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   max_energy: 1000.000000 J (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:175)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   base_harvest_rate: 0.000020 J/ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:180)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   start_time_offset: 16070400000 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:187)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   enable_energy_recovery: true (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:196)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   base_power: 0.500000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:200)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   bzip2 coefficient: 1.200000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:225)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   hash coefficient: 0.800000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:225)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   encrypt coefficient: 1.500000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:225)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   decrypt coefficient: 1.500000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:225)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   control coefficient: 0.100000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:225)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   1000 MHz ratio: 0.700000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:240)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   1100 MHz ratio: 0.750000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:240)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   1200 MHz ratio: 0.800000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:240)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   1300 MHz ratio: 0.850000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:240)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   1400 MHz ratio: 0.900000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:240)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   1500 MHz ratio: 0.950000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:240)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   1600 MHz ratio: 1.000000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:240)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   1700 MHz ratio: 1.050000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:240)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   1800 MHz ratio: 1.100000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:240)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   1900 MHz ratio: 1.150000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:240)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   2000 MHz ratio: 1.200000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:240)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   2100 MHz ratio: 1.250000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:240)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000] Python配置已加载到C++ ConfigManager (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:249)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000] 
+配置汇总: (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:252)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   初始能量: 0.050000 J (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:253)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   最大能量: 1000.000000 J (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:254)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   基础功耗: 0.500000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:255)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   单位时间: 50 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:256)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   核心数: 3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:257)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000] 
+=== 系统配置信息 === (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:184)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000] 配置加载状态: 未加载 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:185)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000] 任务加载状态: 未加载 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:186)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000] 
+CPU配置: (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:188)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   核心数: 3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:189)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   调度器类型: gpfp_asap (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:190)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   基础频率: 8100.000000 MHz (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:191)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000]   单位时间: 50 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:192)
+[0m[32m2026-01-14 11:06:02.555 [INFO0000] [scheduler00000000000] 
+能量配置: (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:194)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]   初始能量: 0.050000 J (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:195)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]   最大能量: 1000.000000 J (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:196)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]   基础收集率: 0.000020 J/ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:197)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]   开始时间偏移: 16070400000 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:198)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]   能量恢复: 启用 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:199)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000] 
+功率模型配置: (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:201)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]   基础功率: 0.500000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:202)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]   工作负载功率系数: (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:203)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]     bzip2: 1.200000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:205)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]     control: 0.100000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:205)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]     decrypt: 1.500000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:205)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]     encrypt: 1.500000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:205)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]     hash: 0.800000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:205)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000] 
+频率功率比: (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:208)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]     1000 MHz: 0.700000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:210)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]     1100 MHz: 0.750000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:210)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]     1200 MHz: 0.800000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:210)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]     1300 MHz: 0.850000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:210)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]     1400 MHz: 0.900000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:210)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]     1500 MHz: 0.950000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:210)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]     1600 MHz: 1.000000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:210)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]     1700 MHz: 1.050000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:210)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]     1800 MHz: 1.100000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:210)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]     1900 MHz: 1.150000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:210)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]     2000 MHz: 1.200000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:210)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]     2100 MHz: 1.250000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:210)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000] 
+任务配置: (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:213)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]   任务数量: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:214)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000] ======================== (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:229)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000] EnergyBridge: ConfigManager已从Python配置更新 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:406)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000] EnergyBridge 初始化成功 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:436)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]   从ConfigManager更新配置: (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:444)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]     时间偏移: 16070400000 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:445)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]     频率: 8100.000000 MHz (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:446)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]     单位时间: 50 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:447)
+[Python] 配置解析完成: 12 个参数
+2026-01-14 11:06:02.556 [INFO    ] [energy_manager      ] EnergyHarvester: Start time offset set to 16070400000 ms (00:00:00)
+2026-01-14 11:06:02.556 [INFO    ] [energy_manager      ] EnergyManager: 仿真开始时间设置为: 00:00 (偏移: 16070400000ms)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]   时间偏移已设置到EnergyBridge: 16070400000 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:451)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000] 从配置文件加载任务: energy_impact_test/tasks_test1.yml (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3061)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000] GPFP_CASCADE Scheduler: CASCADE模式初始化完成 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:503)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]   核心数: 3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:504)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]   单位时间: 50 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:505)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000]   开始时间偏移: 16070400000 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:506)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000] === 能量计算验证 === (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2889)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000] getWorkloadPower: 输入工作负载类型: 'control' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2483)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000] getWorkloadPower: 工作负载是control，假设是bzip2工作负载，返回1.2 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2487)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000] 工作负载: control 基础功率: 0.500000W 工作负载功率: 1.200000W 频率比: 1.250000 总功率: 2.000000W 单位时间能量: 0.100000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2902)
+[0m[32m2026-01-14 11:06:02.556 [INFO0000] [scheduler00000000000] getWorkloadPower: 输入工作负载类型: 'encrypt' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2483)
+[0m[32m2026-01-14 11:06:02.557 [INFO0000] [scheduler00000000000] getWorkloadPower: 找到工作负载功率系数: encrypt = 1.500000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2494)
+[0m[32m2026-01-14 11:06:02.557 [INFO0000] [scheduler00000000000] 工作负载: encrypt 基础功率: 0.500000W 工作负载功率: 1.500000W 频率比: 1.250000 总功率: 2.375000W 单位时间能量: 0.118750J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2902)
+[0m[32m2026-01-14 11:06:02.557 [INFO0000] [scheduler00000000000] getWorkloadPower: 输入工作负载类型: 'decrypt' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2483)
+[0m[32m2026-01-14 11:06:02.557 [INFO0000] [scheduler00000000000] getWorkloadPower: 找到工作负载功率系数: decrypt = 1.500000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2494)
+[0m[32m2026-01-14 11:06:02.557 [INFO0000] [scheduler00000000000] 工作负载: decrypt 基础功率: 0.500000W 工作负载功率: 1.500000W 频率比: 1.250000 总功率: 2.375000W 单位时间能量: 0.118750J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2902)
+[0m[32m2026-01-14 11:06:02.557 [INFO0000] [scheduler00000000000] getWorkloadPower: 输入工作负载类型: 'hash' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2483)
+[0m[32m2026-01-14 11:06:02.557 [INFO0000] [scheduler00000000000] getWorkloadPower: 找到工作负载功率系数: hash = 0.800000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2494)
+[0m[32m2026-01-14 11:06:02.557 [INFO0000] [scheduler00000000000] 工作负载: hash 基础功率: 0.500000W 工作负载功率: 0.800000W 频率比: 1.250000 总功率: 1.500000W 单位时间能量: 0.075000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2902)
+[0m[32m2026-01-14 11:06:02.557 [INFO0000] [scheduler00000000000] getWorkloadPower: 输入工作负载类型: 'bzip2' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2483)
+[0m[32m2026-01-14 11:06:02.557 [INFO0000] [scheduler00000000000] getWorkloadPower: 找到工作负载功率系数: bzip2 = 1.200000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2494)
+[0m[32m2026-01-14 11:06:02.557 [INFO0000] [scheduler00000000000] 工作负载: bzip2 基础功率: 0.500000W 工作负载功率: 1.200000W 频率比: 1.250000 总功率: 2.000000W 单位时间能量: 0.100000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2902)
+[0m[32m2026-01-14 11:06:02.557 [INFO0000] [scheduler00000000000] 能量计算验证完成 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2910)
+[0m[32m2026-01-14 11:06:02.557 [INFO0000] [scheduler00000000000] === 配置验证 === (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2914)
+[0m[32m2026-01-14 11:06:02.557 [INFO0000] [scheduler00000000000] 配置验证完成 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2931)
+[0m[32m2026-01-14 11:06:02.557 [INFO0000] [scheduler00000000000] 安排0ms的立即激活事件... (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:515)
+[0m[32m2026-01-14 11:06:02.557 [INFO0000] [scheduler00000000000] 初始化任务激活系统... (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3025)
+[0m[32m2026-01-14 11:06:02.557 [INFO0000] [scheduler00000000000] 强制立即激活所有任务... (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3036)
+[0m[32m2026-01-14 11:06:02.557 [INFO0000] [scheduler00000000000] 所有任务已激活 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3049)
+[0mwl: bzip2
+Task::insertCode. instr created: MetaSim::Entity9
+Task task_0: instruction list
+0) ExecInstr(50, bzip2)
+Task::insertCode. instr created: MetaSim::Entity10
+Task task_0: instruction list
+0) ExecInstr(50, bzip2)
+1) Instr::toString()
+wl: bzip2
+Task::insertCode. instr created: MetaSim::Entity11
+Task task_0: instruction list
+0) ExecInstr(50, bzip2)
+1) Instr::toString()
+2) ExecInstr(50, bzip2)
+Task::insertCode. instr created: MetaSim::Entity12
+Task task_0: instruction list
+0) ExecInstr(50, bzip2)
+1) Instr::toString()
+2) ExecInstr(50, bzip2)
+3) Instr::toString()
+wl: bzip2
+Task::insertCode. instr created: MetaSim::Entity13
+Task task_0: instruction list
+0) ExecInstr(50, bzip2)
+1) Instr::toString()
+2) ExecInstr(50, bzip2)
+3) Instr::toString()
+4) ExecInstr(50, bzip2)
+Task::insertCode. instr created: MetaSim::Entity14
+Task task_0: instruction list
+0) ExecInstr(50, bzip2)
+1) Instr::toString()
+2) ExecInstr(50, bzip2)
+3) Instr::toString()
+4) ExecInstr(50, bzip2)
+5) Instr::toString()
+wl: bzip2
+Task::insertCode. instr created: MetaSim::Entity15
+Task task_0: instruction list
+0) ExecInstr(50, bzip2)
+1) Instr::toString()
+2) ExecInstr(50, bzip2)
+3) Instr::toString()
+4) ExecInstr(50, bzip2)
+5) Instr::toString()
+6) ExecInstr(50, bzip2)
+Task::insertCode. instr created: MetaSim::Entity16
+Task task_0: instruction list
+0) ExecInstr(50, bzip2)
+1) Instr::toString()
+2) ExecInstr(50, bzip2)
+3) Instr::toString()
+4) ExecInstr(50, bzip2)
+5) Instr::toString()
+6) ExecInstr(50, bzip2)
+7) Instr::toString()
+wl: bzip2
+Task::insertCode. instr created: MetaSim::Entity17
+Task task_0: instruction list
+0) ExecInstr(50, bzip2)
+1) Instr::toString()
+2) ExecInstr(50, bzip2)
+3) Instr::toString()
+4) ExecInstr(50, bzip2)
+5) Instr::toString()
+6) ExecInstr(50, bzip2)
+7) Instr::toString()
+8) ExecInstr(50, bzip2)
+Task::insertCode. instr created: MetaSim::Entity18
+Task task_0: instruction list
+0) ExecInstr(50, bzip2)
+1) Instr::toString()
+2) ExecInstr(50, bzip2)
+3) Instr::toString()
+4) ExecInstr(50, bzip2)
+5) Instr::toString()
+6) ExecInstr(50, bzip2)
+7) Instr::toString()
+8) ExecInstr(50, bzip2)
+9) Instr::toString()
+wl: bzip2
+Task::insertCode. instr created: MetaSim::Entity20
+Task task_1: instruction list
+0) ExecInstr(50, bzip2)
+Task::insertCode. instr created: MetaSim::Entity21
+Task task_1: instruction list
+0) ExecInstr(50, bzip2)
+1) Instr::toString()
+wl: bzip2
+Task::insertCode. instr created: MetaSim::Entity22
+Task task_1: instruction list
+0) ExecInstr(50, bzip2)
+1) Instr::toString()
+2) ExecInstr(50, bzip2)
+Task::insertCode. instr created: MetaSim::Entity23
+Task task_1: instruction list
+0) ExecInstr(50, bzip2)
+1) Instr::toString()
+2) ExecInstr(50, bzip2)
+3) Instr::toString()
+wl: bzip2
+Task::insertCode. instr created: MetaSim::Entity24
+Task task_1: instruction list
+0) ExecInstr(50, bzip2)
+1) Instr::toString()
+2) ExecInstr(50, bzip2)
+3) Instr::toString()
+4) ExecInstr(50, bzip2)
+Task::insertCode. instr created: MetaSim::Entity25
+Task task_1: instruction list
+0) ExecInstr(50, bzip2)
+1) Instr::toString()
+2) ExecInstr(50, bzip2)
+3) Instr::toString()
+4) ExecInstr(50, bzip2)
+5) Instr::toString()
+wl: bzip2
+Task::insertCode. instr created: MetaSim::Entity27
+Task task_2: instruction list
+0) ExecInstr(50, bzip2)
+Task::insertCode. instr created: MetaSim::Entity28
+Task task_2: instruction list
+0) ExecInstr(50, bzip2)
+1) Instr::toString()
+wl: bzip2
+Task::insertCode. instr created: MetaSim::Entity29
+Task task_2: instruction list
+0) ExecInstr(50, bzip2)
+1) Instr::toString()
+2) ExecInstr(50, bzip2)
+Task::insertCode. instr created: MetaSim::Entity30
+Task task_2: instruction list
+0) ExecInstr(50, bzip2)
+1) Instr::toString()
+2) ExecInstr(50, bzip2)
+3) Instr::toString()
+wl: bzip2
+Task::insertCode. instr created: MetaSim::Entity31
+Task task_2: instruction list
+0) ExecInstr(50, bzip2)
+1) Instr::toString()
+2) ExecInstr(50, bzip2)
+3) Instr::toString()
+4) ExecInstr(50, bzip2)
+Task::insertCode. instr created: MetaSim::Entity32
+Task task_2: instruction list
+0) ExecInstr(50, bzip2)
+1) Instr::toString()
+2) ExecInstr(50, bzip2)
+3) Instr::toString()
+4) ExecInstr(50, bzip2)
+5) Instr::toString()
+wl: bzip2
+Task::insertCode. instr created: MetaSim::Entity33
+Task task_2: instruction list
+0) ExecInstr(50, bzip2)
+1) Instr::toString()
+2) ExecInstr(50, bzip2)
+3) Instr::toString()
+4) ExecInstr(50, bzip2)
+5) Instr::toString()
+6) ExecInstr(50, bzip2)
+Task::insertCode. instr created: MetaSim::Entity34
+Task task_2: instruction list
+0) ExecInstr(50, bzip2)
+1) Instr::toString()
+2) ExecInstr(50, bzip2)
+3) Instr::toString()
+4) ExecInstr(50, bzip2)
+5) Instr::toString()
+6) ExecInstr(50, bzip2)
+7) Instr::toString()
+wl: idle
+Task::insertCode. instr created: MetaSim::Entity36
+Task task_3: instruction list
+0) ExecInstr(50, idle)
+Task::insertCode. instr created: MetaSim::Entity37
+Task task_3: instruction list
+0) ExecInstr(50, idle)
+1) Instr::toString()
+wl: idle
+Task::insertCode. instr created: MetaSim::Entity38
+Task task_3: instruction list
+0) ExecInstr(50, idle)
+1) Instr::toString()
+2) ExecInstr(50, idle)
+Task::insertCode. instr created: MetaSim::Entity39
+Task task_3: instruction list
+0) ExecInstr(50, idle)
+1) Instr::toString()
+2) ExecInstr(50, idle)
+3) Instr::toString()
+wl: idle
+Task::insertCode. instr created: MetaSim::Entity40
+Task task_3: instruction list
+0) ExecInstr(50, idle)
+1) Instr::toString()
+2) ExecInstr(50, idle)
+3) Instr::toString()
+4) ExecInstr(50, idle)
+Task::insertCode. instr created: MetaSim::Entity41
+Task task_3: instruction list
+0) ExecInstr(50, idle)
+1) Instr::toString()
+2) ExecInstr(50, idle)
+3) Instr::toString()
+4) ExecInstr(50, idle)
+5) Instr::toString()
+wl: bzip2
+Task::insertCode. instr created: MetaSim::Entity43
+Task task_4: instruction list
+0) ExecInstr(50, bzip2)
+Task::insertCode. instr created: MetaSim::Entity44
+Task task_4: instruction list
+0) ExecInstr(50, bzip2)
+1) Instr::toString()
+wl: bzip2
+Task::insertCode. instr created: MetaSim::Entity45
+Task task_4: instruction list
+0) ExecInstr(50, bzip2)
+1) Instr::toString()
+2) ExecInstr(50, bzip2)
+Task::insertCode. instr created: MetaSim::Entity46
+Task task_4: instruction list
+0) ExecInstr(50, bzip2)
+1) Instr::toString()
+2) ExecInstr(50, bzip2)
+3) Instr::toString()
+wl: bzip2
+Task::insertCode. instr created: MetaSim::Entity47
+Task task_4: instruction list
+0) ExecInstr(50, bzip2)
+1) Instr::toString()
+2) ExecInstr(50, bzip2)
+3) Instr::toString()
+4) ExecInstr(50, bzip2)
+Task::insertCode. instr created: MetaSim::Entity48
+Task task_4: instruction list
+0) ExecInstr(50, bzip2)
+1) Instr::toString()
+2) ExecInstr(50, bzip2)
+3) Instr::toString()
+4) ExecInstr(50, bzip2)
+5) Instr::toString()
+wl: bzip2
+Task::insertCode. instr created: MetaSim::Entity49
+Task task_4: instruction list
+0) ExecInstr(50, bzip2)
+1) Instr::toString()
+2) ExecInstr(50, bzip2)
+3) Instr::toString()
+4) ExecInstr(50, bzip2)
+5) Instr::toString()
+6) ExecInstr(50, bzip2)
+Task::insertCode. instr created: MetaSim::Entity50
+Task task_4: instruction list
+0) ExecInstr(50, bzip2)
+1) Instr::toString()
+2) ExecInstr(50, bzip2)
+3) Instr::toString()
+4) ExecInstr(50, bzip2)
+5) Instr::toString()
+6) ExecInstr(50, bzip2)
+7) Instr::toString()
+[32m2026-01-14 11:06:02.557 [INFO0000] [scheduler00000000000] =============================================== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:917)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 添加任务: PeriodicTask task_0 DL = T 500 WCET(abs) 250 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:918)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 传入的params参数: '"period=500,arrival_offset=0,workload=bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:919)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 从params提取周期: 500ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:935)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] getTaskParamsFromConfig: 原始工作负载: 'control' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3094)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] getTaskParamsFromConfig: 最终工作负载: 'control' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3123)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 从配置获取WCET: 100ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:960)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 从任务名称提取WCET: 250ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:985)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 解析params字符串: '"period=500,arrival_offset=0,workload=bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:994)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 找到workload=在位置: 29 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:997)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 未找到逗号，使用字符串末尾: 44 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1001)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 提取的工作负载字符串: 'bzip2"' 长度: 6 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1006)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 原始工作负载字符串: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1011)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 字符串长度: 6 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1012)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 字符[0]: 'b' (ASCII: 98) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1014)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 字符[1]: 'z' (ASCII: 122) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1014)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 字符[2]: 'i' (ASCII: 105) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1014)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 字符[3]: 'p' (ASCII: 112) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1014)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 字符[4]: '2' (ASCII: 50) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1014)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 字符[5]: '"' (ASCII: 34) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1014)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 去除空白后: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1050)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 从params提取工作负载: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1053)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 最终工作负载处理 - 原始值: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1076)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 最终工作负载处理 - 长度: 6 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1077)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 去除空白后: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1111)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 最终确定的工作负载类型: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1115)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 存储工作负载到_task_workloads: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1148)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 工作负载存储验证: (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1151)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000]   存储的值: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1152)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000]   存储长度: 6 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1153)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000]   第一个字符: 'b' (ASCII: 98) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1155)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000]   最后一个字符: '"' (ASCII: 34) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1157)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 从params提取到达偏移: 0ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1172)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] getTaskParamsFromConfig: 原始工作负载: 'control' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3094)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] getTaskParamsFromConfig: 最终工作负载: 'control' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3123)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 任务参数: (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1204)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000]   周期: 500 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1205)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000]   RM优先级: -500 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1206)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000]   WCET: 250 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1207)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000]   工作负载: bzip2" (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1208)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000]   到达偏移: 0 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1209)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] ===============================================
+ (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1210)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 任务已添加到scheduler，等待到达事件激活 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1216)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] =============================================== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:917)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 添加任务: PeriodicTask task_1 DL = T 600 WCET(abs) 150 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:918)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 传入的params参数: '"period=600,arrival_offset=0,workload=bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:919)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 从params提取周期: 600ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:935)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] getTaskParamsFromConfig: 原始工作负载: 'control' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3094)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] getTaskParamsFromConfig: 最终工作负载: 'control' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3123)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 从配置获取WCET: 100ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:960)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 从任务名称提取WCET: 150ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:985)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 解析params字符串: '"period=600,arrival_offset=0,workload=bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:994)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 找到workload=在位置: 29 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:997)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 未找到逗号，使用字符串末尾: 44 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1001)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 提取的工作负载字符串: 'bzip2"' 长度: 6 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1006)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 原始工作负载字符串: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1011)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 字符串长度: 6 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1012)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 字符[0]: 'b' (ASCII: 98) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1014)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 字符[1]: 'z' (ASCII: 122) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1014)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 字符[2]: 'i' (ASCII: 105) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1014)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 字符[3]: 'p' (ASCII: 112) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1014)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 字符[4]: '2' (ASCII: 50) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1014)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 字符[5]: '"' (ASCII: 34) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1014)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 去除空白后: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1050)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 从params提取工作负载: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1053)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 最终工作负载处理 - 原始值: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1076)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 最终工作负载处理 - 长度: 6 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1077)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 去除空白后: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1111)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 最终确定的工作负载类型: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1115)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 存储工作负载到_task_workloads: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1148)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 工作负载存储验证: (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1151)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000]   存储的值: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1152)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000]   存储长度: 6 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1153)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000]   第一个字符: 'b' (ASCII: 98) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1155)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000]   最后一个字符: '"' (ASCII: 34) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1157)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 从params提取到达偏移: 0ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1172)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] getTaskParamsFromConfig: 原始工作负载: 'control' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3094)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] getTaskParamsFromConfig: 最终工作负载: 'control' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3123)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 任务参数: (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1204)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000]   周期: 600 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1205)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000]   RM优先级: -600 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1206)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000]   WCET: 150 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1207)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000]   工作负载: bzip2" (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1208)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000]   到达偏移: 0 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1209)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] ===============================================
+ (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1210)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 任务已添加到scheduler，等待到达事件激活 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1216)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] =============================================== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:917)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 添加任务: PeriodicTask task_2 DL = T 800 WCET(abs) 200 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:918)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 传入的params参数: '"period=800,arrival_offset=0,workload=bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:919)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 从params提取周期: 800ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:935)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] getTaskParamsFromConfig: 原始工作负载: 'control' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3094)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] getTaskParamsFromConfig: 最终工作负载: 'control' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3123)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 从配置获取WCET: 100ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:960)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 从任务名称提取WCET: 200ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:985)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 解析params字符串: '"period=800,arrival_offset=0,workload=bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:994)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 找到workload=在位置: 29 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:997)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 未找到逗号，使用字符串末尾: 44 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1001)
+[0m[32m2026-01-14 11:06:02.558 [INFO0000] [scheduler00000000000] 提取的工作负载字符串: 'bzip2"' 长度: 6 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1006)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 原始工作负载字符串: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1011)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 字符串长度: 6 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1012)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 字符[0]: 'b' (ASCII: 98) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1014)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 字符[1]: 'z' (ASCII: 122) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1014)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 字符[2]: 'i' (ASCII: 105) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1014)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 字符[3]: 'p' (ASCII: 112) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1014)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 字符[4]: '2' (ASCII: 50) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1014)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 字符[5]: '"' (ASCII: 34) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1014)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 去除空白后: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1050)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 从params提取工作负载: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1053)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 最终工作负载处理 - 原始值: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1076)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 最终工作负载处理 - 长度: 6 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1077)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 去除空白后: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1111)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 最终确定的工作负载类型: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1115)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 存储工作负载到_task_workloads: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1148)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 工作负载存储验证: (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1151)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000]   存储的值: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1152)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000]   存储长度: 6 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1153)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000]   第一个字符: 'b' (ASCII: 98) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1155)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000]   最后一个字符: '"' (ASCII: 34) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1157)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 从params提取到达偏移: 0ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1172)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] getTaskParamsFromConfig: 原始工作负载: 'control' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3094)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] getTaskParamsFromConfig: 最终工作负载: 'control' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3123)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 任务参数: (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1204)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000]   周期: 800 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1205)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000]   RM优先级: -800 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1206)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000]   WCET: 200 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1207)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000]   工作负载: bzip2" (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1208)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000]   到达偏移: 0 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1209)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] ===============================================
+ (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1210)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 任务已添加到scheduler，等待到达事件激活 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1216)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] =============================================== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:917)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 添加任务: PeriodicTask task_3 DL = T 1000 WCET(abs) 150 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:918)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 传入的params参数: '"period=1000,arrival_offset=0,workload=idle"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:919)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 从params提取周期: 1000ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:935)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] getTaskParamsFromConfig: 原始工作负载: 'control' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3094)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] getTaskParamsFromConfig: 最终工作负载: 'control' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3123)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 从配置获取WCET: 100ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:960)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] Trying to extract period from task_name: PeriodicTask task_3 DL = T 1000 WCET(abs) 150 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:967)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] Extracted period from task name: 1000ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:974)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 从任务名称提取WCET: 150ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:985)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 解析params字符串: '"period=1000,arrival_offset=0,workload=idle"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:994)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 找到workload=在位置: 30 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:997)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 未找到逗号，使用字符串末尾: 44 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1001)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 提取的工作负载字符串: 'idle"' 长度: 5 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1006)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 原始工作负载字符串: 'idle"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1011)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 字符串长度: 5 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1012)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 字符[0]: 'i' (ASCII: 105) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1014)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 字符[1]: 'd' (ASCII: 100) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1014)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 字符[2]: 'l' (ASCII: 108) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1014)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 字符[3]: 'e' (ASCII: 101) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1014)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 字符[4]: '"' (ASCII: 34) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1014)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 去除空白后: 'idle"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1050)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 从params提取工作负载: 'idle"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1053)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 最终工作负载处理 - 原始值: 'idle"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1076)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 最终工作负载处理 - 长度: 5 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1077)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 去除空白后: 'idle"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1111)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 最终确定的工作负载类型: 'idle"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1115)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 存储工作负载到_task_workloads: 'idle"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1148)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 工作负载存储验证: (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1151)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000]   存储的值: 'idle"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1152)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000]   存储长度: 5 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1153)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000]   第一个字符: 'i' (ASCII: 105) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1155)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000]   最后一个字符: '"' (ASCII: 34) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1157)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 从params提取到达偏移: 0ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1172)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] getTaskParamsFromConfig: 原始工作负载: 'control' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3094)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] getTaskParamsFromConfig: 最终工作负载: 'control' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3123)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 任务参数: (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1204)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000]   周期: 1000 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1205)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000]   RM优先级: -1000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1206)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000]   WCET: 150 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1207)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000]   工作负载: idle" (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1208)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000]   到达偏移: 0 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1209)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] ===============================================
+ (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1210)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 任务已添加到scheduler，等待到达事件激活 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1216)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] =============================================== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:917)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 添加任务: PeriodicTask task_4 DL = T 1200 WCET(abs) 200 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:918)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 传入的params参数: '"period=1200,arrival_offset=0,workload=bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:919)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 从params提取周期: 1200ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:935)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] getTaskParamsFromConfig: 原始工作负载: 'control' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3094)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] getTaskParamsFromConfig: 最终工作负载: 'control' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3123)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 从配置获取WCET: 100ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:960)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 从任务名称提取WCET: 200ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:985)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 解析params字符串: '"period=1200,arrival_offset=0,workload=bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:994)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 找到workload=在位置: 30 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:997)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 未找到逗号，使用字符串末尾: 45 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1001)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 提取的工作负载字符串: 'bzip2"' 长度: 6 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1006)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 原始工作负载字符串: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1011)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 字符串长度: 6 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1012)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 字符[0]: 'b' (ASCII: 98) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1014)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 字符[1]: 'z' (ASCII: 122) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1014)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 字符[2]: 'i' (ASCII: 105) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1014)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 字符[3]: 'p' (ASCII: 112) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1014)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 字符[4]: '2' (ASCII: 50) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1014)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 字符[5]: '"' (ASCII: 34) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1014)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 去除空白后: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1050)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 从params提取工作负载: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1053)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 最终工作负载处理 - 原始值: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1076)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 最终工作负载处理 - 长度: 6 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1077)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 去除空白后: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1111)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 最终确定的工作负载类型: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1115)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 存储工作负载到_task_workloads: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1148)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 工作负载存储验证: (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1151)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000]   存储的值: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1152)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000]   存储长度: 6 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1153)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000]   第一个字符: 'b' (ASCII: 98) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1155)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000]   最后一个字符: '"' (ASCII: 34) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1157)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 从params提取到达偏移: 0ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1172)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] getTaskParamsFromConfig: 原始工作负载: 'control' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3094)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] getTaskParamsFromConfig: 最终工作负载: 'control' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3123)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 任务参数: (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1204)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000]   周期: 1200 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1205)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000]   RM优先级: -1200 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1206)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000]   WCET: 200 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1207)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000]   工作负载: bzip2" (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1208)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000]   到达偏移: 0 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1209)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] ===============================================
+ (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1210)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 任务已添加到scheduler，等待到达事件激活 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1216)
+[0mOne single run
+
+ Run #0
+[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] CASCADE Scheduler::newRun() - 开始 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2106)
+[0m[DEBUG] Scheduler::newRun() - 清空队列，队列大小: 0 当前时间: 0ms
+[DEBUG] Scheduler::newRun() - 完成，队列大小: 0
+[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] CASCADE Scheduler::newRun() - 完成 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2141)
+[0m[DEBUG] Task::onArrival() - 开始: task_0 当前时间: 0ms isActive: 0
+[DEBUG] Task::onArrival() - 任务未激活: task_0
+[DEBUG] Task::handleArrival() - 开始: task_0 到达时间: 0ms
+[DEBUG] Task::handleArrival() - 设置截止时间: task_0 到达时间: 0ms 相对截止时间: 500ms 绝对截止时间: 500ms
+[DEBUG] Task::handleArrival() - 安排截止时间事件: task_0 截止时间: 500ms 当前时间: 0ms
+[DEBUG] Task::handleArrival() - 完成: task_0
+[DEBUG] MRTKernel::onArrival() - 开始: task_0 当前时间: 0ms
+[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] getWorkloadPower: 输入工作负载类型: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2483)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] getWorkloadPower: 检测到bzip2工作负载，使用功率系数: 1.2 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2500)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 🔋 单位时间能量计算: bzip2" 基础功率=0.500000W 工作负载功率=1.200000W 频率比=1.250000 总功率=2.000000W 单位时间=50ms 单位能量=0.100000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1750)
+[0m[33m2026-01-14 11:06:02.559 [WARNING0] [scheduler00000000000] ⚠️ 决策: 能量不足，跳过任务: PeriodicTask task_0 DL = T 500 WCET 需要1时间片: 0.100000J 当前: 0.050000J （不是deadline miss，等待能量恢复） (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2062)
+[0m[DEBUG] Scheduler::getTaskN(0) - 队列大小: 0 当前时间: 0ms
+[DEBUG] Scheduler::getTaskN(0) - 返回nullptr (队列太小)
+[DEBUG] MRTKernel::onArrival() - 完成: task_0
+[DEBUG] Task::onArrival() - 开始: task_1 当前时间: 0ms isActive: 0
+[DEBUG] Task::onArrival() - 任务未激活: task_1
+[DEBUG] Task::handleArrival() - 开始: task_1 到达时间: 0ms
+[DEBUG] Task::handleArrival() - 设置截止时间: task_1 到达时间: 0ms 相对截止时间: 600ms 绝对截止时间: 600ms
+[DEBUG] Task::handleArrival() - 安排截止时间事件: task_1 截止时间: 600ms 当前时间: 0ms
+[DEBUG] Task::handleArrival() - 完成: task_1
+[DEBUG] MRTKernel::onArrival() - 开始: task_1 当前时间: 0ms
+[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] getWorkloadPower: 输入工作负载类型: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2483)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] getWorkloadPower: 检测到bzip2工作负载，使用功率系数: 1.2 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2500)
+[0m[32m2026-01-14 11:06:02.559 [INFO0000] [scheduler00000000000] 🔋 单位时间能量计算: bzip2" 基础功率=0.500000W 工作负载功率=1.200000W 频率比=1.250000 总功率=2.000000W 单位时间=50ms 单位能量=0.100000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1750)
+[0m[33m2026-01-14 11:06:02.559 [WARNING0] [scheduler00000000000] ⚠️ 决策: 能量不足，跳过任务: PeriodicTask task_1 DL = T 600 WCET 需要1时间片: 0.100000J 当前: 0.050000J （不是deadline miss，等待能量恢复） (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2062)
+[0m[DEBUG] Scheduler::getTaskN(0) - 队列大小: 0 当前时间: 0ms
+[DEBUG] Scheduler::getTaskN(0) - 返回nullptr (队列太小)
+[DEBUG] MRTKernel::onArrival() - 完成: task_1
+[DEBUG] Task::onArrival() - 开始: task_2 当前时间: 0ms isActive: 0
+[DEBUG] Task::onArrival() - 任务未激活: task_2
+[DEBUG] Task::handleArrival() - 开始: task_2 到达时间: 0ms
+[DEBUG] Task::handleArrival() - 设置截止时间: task_2 到达时间: 0ms 相对截止时间: 800ms 绝对截止时间: 800ms
+[DEBUG] Task::handleArrival() - 安排截止时间事件: task_2 截止时间: 800ms 当前时间: 0ms
+[DEBUG] Task::handleArrival() - 完成: task_2
+[DEBUG] MRTKernel::onArrival() - 开始: task_2 当前时间: 0ms
+[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] getWorkloadPower: 输入工作负载类型: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2483)
+[0m[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] getWorkloadPower: 检测到bzip2工作负载，使用功率系数: 1.2 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2500)
+[0m[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] 🔋 单位时间能量计算: bzip2" 基础功率=0.500000W 工作负载功率=1.200000W 频率比=1.250000 总功率=2.000000W 单位时间=50ms 单位能量=0.100000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1750)
+[0m[33m2026-01-14 11:06:02.560 [WARNING0] [scheduler00000000000] ⚠️ 决策: 能量不足，跳过任务: PeriodicTask task_2 DL = T 800 WCET 需要1时间片: 0.100000J 当前: 0.050000J （不是deadline miss，等待能量恢复） (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2062)
+[0m[DEBUG] Scheduler::getTaskN(0) - 队列大小: 0 当前时间: 0ms
+[DEBUG] Scheduler::getTaskN(0) - 返回nullptr (队列太小)
+[DEBUG] MRTKernel::onArrival() - 完成: task_2
+[DEBUG] Task::onArrival() - 开始: task_3 当前时间: 0ms isActive: 0
+[DEBUG] Task::onArrival() - 任务未激活: task_3
+[DEBUG] Task::handleArrival() - 开始: task_3 到达时间: 0ms
+[DEBUG] Task::handleArrival() - 设置截止时间: task_3 到达时间: 0ms 相对截止时间: 1000ms 绝对截止时间: 1000ms
+[DEBUG] Task::handleArrival() - 安排截止时间事件: task_3 截止时间: 1000ms 当前时间: 0ms
+[DEBUG] Task::handleArrival() - 完成: task_3
+[DEBUG] MRTKernel::onArrival() - 开始: task_3 当前时间: 0ms
+[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] getWorkloadPower: 输入工作负载类型: 'idle"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2483)
+[0m[33m2026-01-14 11:06:02.560 [WARNING0] [scheduler00000000000] getWorkloadPower: 未知工作负载类型: idle"，使用默认功率 0.1 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2505)
+[0m[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] 🔋 单位时间能量计算: idle" 基础功率=0.500000W 工作负载功率=0.100000W 频率比=1.250000 总功率=0.625000W 单位时间=50ms 单位能量=0.031250J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1750)
+[0m[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] 🔍 检查队列大小: 0 / 5 (min=5, active=0) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2013)
+[0m[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] ✅ 决���: 调度任务（能量足够1时间片）: PeriodicTask task_3 DL = T 1000 WCET 需要1时间片: 0.031250J 当前: 0.050000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2036)
+[0m[DEBUG] Scheduler::insert() - 开始: task_3 当前时间: 0ms
+[DEBUG] Scheduler::insert() - 找到模型: task_3
+[DEBUG] Scheduler::insert() - 任务已添加到队列: task_3 队列大小: 1 优先级: -1000
+[DEBUG] 队列前4个任务: task_3(prio=-1000) 
+[DEBUG] Scheduler::getTaskN(0) - 队列大小: 1 当前时间: 0ms
+[DEBUG] Scheduler::getTaskN(0) - 返回任务: task_3
+[DEBUG] Scheduler::getTaskN(1) - 队列大小: 1 当前时间: 0ms
+[DEBUG] Scheduler::getTaskN(1) - 返回nullptr (队列太小)
+[DEBUG] MRTKernel::onArrival() - 完成: task_3
+[DEBUG] Task::onArrival() - 开始: task_4 当前时间: 0ms isActive: 0
+[DEBUG] Task::onArrival() - 任务未激活: task_4
+[DEBUG] Task::handleArrival() - 开始: task_4 到达时间: 0ms
+[DEBUG] Task::handleArrival() - 设置截止时间: task_4 到达时间: 0ms 相对截止时间: 1200ms 绝对截止时间: 1200ms
+[DEBUG] Task::handleArrival() - 安排截止时间事件: task_4 截止时间: 1200ms 当前时间: 0ms
+[DEBUG] Task::handleArrival() - 完成: task_4
+[DEBUG] MRTKernel::onArrival() - 开始: task_4 当前时间: 0ms
+[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] getWorkloadPower: 输入工作负载类型: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2483)
+[0m[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] getWorkloadPower: 检测到bzip2工作负载，使用功率系数: 1.2 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2500)
+[0m[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] 🔋 单位时间能量计算: bzip2" 基础功率=0.500000W 工作负载功率=1.200000W 频率比=1.250000 总功率=2.000000W 单位时间=50ms 单位能量=0.100000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1750)
+[0m[33m2026-01-14 11:06:02.560 [WARNING0] [scheduler00000000000] ⚠️ 决策: 能量不足，跳过任务: PeriodicTask task_4 DL = T 1200 WCET 需要1时间片: 0.100000J 当前: 0.050000J （不是deadline miss，等待能量恢复） (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2062)
+[0m[DEBUG] Scheduler::getTaskN(0) - 队列大小: 1 当前时间: 0ms
+[DEBUG] Scheduler::getTaskN(0) - 返回任务: task_3
+[DEBUG] Scheduler::getTaskN(1) - 队列大小: 1 当前时间: 0ms
+[DEBUG] Scheduler::getTaskN(1) - 返回nullptr (队列太小)
+[DEBUG] MRTKernel::onArrival() - 完成: task_4
+[DEBUG] Scheduler::getTaskN(0) - 队列大小: 1 当前时间: 0ms
+[DEBUG] Scheduler::getTaskN(0) - 返回任务: task_3
+[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] getWorkloadPower: 输入工作负载类型: 'idle"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2483)
+[0m[33m2026-01-14 11:06:02.560 [WARNING0] [scheduler00000000000] getWorkloadPower: 未知工作负载类型: idle"，使用默认功率 0.1 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2505)
+[0m[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] 🔋 单位时间能量计算: idle" 基础功率=0.500000W 工作负载功率=0.100000W 频率比=1.250000 总功率=0.625000W 单位时间=50ms 单位能量=0.031250J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1750)
+[0m[DEBUG] onBeginDispatchMulti - 能量预检查: task_3 需要: 0.0312500000J 当前: 0.0500000000J
+[DEBUG] onBeginDispatchMulti - 设置事件: task=task_3 CPU=energy_aware_cpus-0 freq 8100 post_time=0
+MRTKernel::printstate(), time 0 energy_aware_cpus-0 : task_3   energy_aware_cpus-2 :   0   energy_aware_cpus-1 :   0   
+[DEBUG] MRTKernel::onEndDispatchMulti() - 任务状态: task_3 状态: 1
+[DEBUG] _sched类型: N5RTSim20GPFPCASCADESchedulerE
+[DEBUG] cascade_sched指针: 0x5dcffc84aed0
+[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] getWorkloadPower: 输入工作负载类型: 'idle"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2483)
+[0m[33m2026-01-14 11:06:02.560 [WARNING0] [scheduler00000000000] getWorkloadPower: 未知工作负载类型: idle"，使用默认功率 0.1 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2505)
+[0m[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] 🔋 单位时间能量计算: idle" 基础功率=0.500000W 工作负载功率=0.100000W 频率比=1.250000 总功率=0.625000W 单位时间=50ms 单位能量=0.031250J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1750)
+[0m[DEBUG] MRTKernel::onEndDispatchMulti() - 能量预检查: task_3 需要: 0.0312500000J 当前: 0.0500000000J
+[DEBUG] MRTKernel::onEndDispatchMulti() - 能量充足，允许调度: task_3
+[DEBUG] Task::schedule() - 触发调度事件: task_3 状态: 1 当前时间: 0ms
+[DEBUG] Task::schedule() - 调用schedEvt.process()
+[DEBUG] Task::schedule() - schedEvt.process()调用完成
+[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] 🔔 notify() 被调用: PeriodicTask task_3 DL = T 1000 WCET (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2228)
+2026-01-14 11:06:02.560 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=00:00，起始时间=16070400000ms
+[0m[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] getWorkloadPower: 输入工作负载类型: 'idle"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2483)
+[0m[33m2026-01-14 11:06:02.560 [WARNING0] [scheduler00000000000] getWorkloadPower: 未知工作负载类型: idle"，使用默认功率 0.1 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2505)
+[0m[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] 🔋 单位时间能量计算: idle" 基础功率=0.500000W 工作负载功率=0.100000W 频率比=1.250000 总功率=0.625000W 单位时间=50ms 单位能量=0.031250J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1750)
+[0m[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] consumeEnergy检查: 需要 0.031250J, 当前能量: 0.050000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1782)
+2026-01-14 11:06:02.560 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=0ms, energy=0.019J, level=CRITICAL, consumed=0.031J, harvested=0.000J
+[0m[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] 能量消耗成功: PeriodicTask task_3 DL = T 1000 WCET_timeslice 消耗 0.031250J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1804)
+[0m[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] ✅ 消耗1时间片能量: PeriodicTask task_3 DL = T 1000 WCET 消耗: 0.031250J 剩余: 0.018750J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2262)
+[0m[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] ⏰ 设置时间片定时器: PeriodicTask task_3 DL = T 1000 WCET 将在 50ms 后中断 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2292)
+[0m[DEBUG] CASCADESlicingEvent::doit() 被触发 @ 50ms
+[DEBUG] CASCADESlicingEvent::doit() 调用onUnitTimeElapsed
+[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] ⏰ 单位时间到期: PeriodicTask task_3 DL = T 1000 WCET @ 50ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1233)
+[0m[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] 📊 更新任务剩余时间: PeriodicTask task_3 DL = T 1000 WCET 从 150ms → 100ms (扣除50ms) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1243)
+[0m[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] 🔋 onUnitTimeElapsed: 调用能量收集，时间=50ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1257)
+[0m[DEBUG] Scheduler::extract() - 开始: task_3 当前时间: 50ms 队列大小: 1
+[DEBUG] Scheduler::extract() - 完成: task_3 队列大小: 0
+[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] 🔔 onTaskEnd() 被调用: PeriodicTask task_3 DL = T 1000 WCET 剩余时间: 100ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3318)
+[0m[DEBUG] SuspendInstr::onEnd() called, count=1 task=task_3 time=50ms
+[DEBUG] Task::onInstrEnd() - suspend ended for task_3 at time 50ms, calling kernel->onArrival()
+[DEBUG] MRTKernel::onArrival() - 开始: task_3 当前时间: 50ms
+[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] getWorkloadPower: 输入工作负载类型: 'idle"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2483)
+[0m[33m2026-01-14 11:06:02.560 [WARNING0] [scheduler00000000000] getWorkloadPower: 未知工作负载类型: idle"，使用默认功率 0.1 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2505)
+[0m[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] 🔋 单位时间能量计算: idle" 基础功率=0.500000W 工作负载功率=0.100000W 频率比=1.250000 总功率=0.625000W 单位时间=50ms 单位能量=0.031250J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1750)
+[0m[33m2026-01-14 11:06:02.560 [WARNING0] [scheduler00000000000] ⚠️ 决策: 能量不足，跳过任务: PeriodicTask task_3 DL = T 1000 WCET 需要1时间片: 0.031250J 当前: 0.018800J （不是deadline miss，等待能量恢复） (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2062)
+[0m[DEBUG] Scheduler::getTaskN(0) - 队列大小: 0 当前时间: 50ms
+[DEBUG] Scheduler::getTaskN(0) - 返回nullptr (队列太小)
+[DEBUG] MRTKernel::onArrival() - 完成: task_3
+[DEBUG] Scheduler::getTaskN(0) - 队列大小: 0 当前时间: 50ms
+[DEBUG] Scheduler::getTaskN(0) - 返回nullptr (队列太小)
+[DEBUG] onBeginDispatchMulti - 设置事件: task=(nil) CPU=energy_aware_cpus-0 freq 8100 post_time=50
+MRTKernel::printstate(), time 50 energy_aware_cpus-0 :   0   energy_aware_cpus-2 :   0   energy_aware_cpus-1 :   0   
+[DEBUG] Task::onArrival() - 开始: task_0 当前时间: 500ms isActive: 1
+[DEBUG] Task::onArrival() - Buffered模式: task_0
+[DEBUG] Task::onArrival() - Buffered模式调用内核onArrival: task_0
+[DEBUG] MRTKernel::onArrival() - 开始: task_0 当前时间: 500ms
+[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] getWorkloadPower: 输入工作负载类型: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2483)
+[0m[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] getWorkloadPower: 检测到bzip2工作负载，使用功率系数: 1.2 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2500)
+[0m[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] 🔋 单位时间能量计算: bzip2" 基础功率=0.500000W 工作负载功率=1.200000W 频率比=1.250000 总功率=2.000000W 单位时间=50ms 单位能量=0.100000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1750)
+[0m[33m2026-01-14 11:06:02.560 [WARNING0] [scheduler00000000000] 确认真实deadline miss: PeriodicTask task_0 DL = T 500 WCET 截止=500ms 当前=500ms 超时=0ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3210)
+[0m[33m2026-01-14 11:06:02.560 [WARNING0] [scheduler00000000000] ❌ 决策: 真实deadline miss（截止时间已过）: PeriodicTask task_0 DL = T 500 WCET (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1988)
+[0m[DEBUG] Scheduler::getTaskN(0) - 队列大小: 0 当前时间: 500ms
+[DEBUG] Scheduler::getTaskN(0) - 返回nullptr (队列太小)
+[DEBUG] MRTKernel::onArrival() - 完成: task_0
+[DEBUG] Task::onArrival() - 开始: task_1 当前时间: 600ms isActive: 1
+[DEBUG] Task::onArrival() - Buffered模式: task_1
+[DEBUG] Task::onArrival() - Buffered模式调用内核onArrival: task_1
+[DEBUG] MRTKernel::onArrival() - 开始: task_1 当前时间: 600ms
+[32m2026-01-14 11:06:02.560 [INFO0000] [scheduler00000000000] getWorkloadPower: 输入工作负载类型: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2483)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] getWorkloadPower: 检测到bzip2工作负载，使用功率系数: 1.2 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2500)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] 🔋 单位时间能量计算: bzip2" 基础功率=0.500000W 工作负载功率=1.200000W 频率比=1.250000 总功率=2.000000W 单位时间=50ms 单位能量=0.100000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1750)
+[0m[33m2026-01-14 11:06:02.561 [WARNING0] [scheduler00000000000] 确认真实deadline miss: PeriodicTask task_1 DL = T 600 WCET 截止=600ms 当前=600ms 超时=0ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3210)
+[0m[33m2026-01-14 11:06:02.561 [WARNING0] [scheduler00000000000] ❌ 决策: 真实deadline miss（截止时间已过）: PeriodicTask task_1 DL = T 600 WCET (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1988)
+[0m[DEBUG] Scheduler::getTaskN(0) - 队列大小: 0 当前时间: 600ms
+[DEBUG] Scheduler::getTaskN(0) - 返回nullptr (队列太小)
+[DEBUG] MRTKernel::onArrival() - 完成: task_1
+[DEBUG] Task::onArrival() - 开始: task_2 当前时间: 800ms isActive: 1
+[DEBUG] Task::onArrival() - Buffered模式: task_2
+[DEBUG] Task::onArrival() - Buffered模式调用内核onArrival: task_2
+[DEBUG] MRTKernel::onArrival() - 开始: task_2 当前时间: 800ms
+[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] getWorkloadPower: 输入工作负载类型: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2483)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] getWorkloadPower: 检测到bzip2工作负载，使用功率系数: 1.2 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2500)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] 🔋 单位时间能量计算: bzip2" 基础功率=0.500000W 工作负载功率=1.200000W 频率比=1.250000 总功率=2.000000W 单位时间=50ms 单位能量=0.100000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1750)
+[0m[33m2026-01-14 11:06:02.561 [WARNING0] [scheduler00000000000] 确认真实deadline miss: PeriodicTask task_2 DL = T 800 WCET 截止=800ms 当前=800ms 超时=0ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3210)
+[0m[33m2026-01-14 11:06:02.561 [WARNING0] [scheduler00000000000] ❌ 决策: 真实deadline miss（截止时间已过）: PeriodicTask task_2 DL = T 800 WCET (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1988)
+[0m[DEBUG] Scheduler::getTaskN(0) - 队列大小: 0 当前时间: 800ms
+[DEBUG] Scheduler::getTaskN(0) - 返回nullptr (队列太小)
+[DEBUG] MRTKernel::onArrival() - 完成: task_2
+[DEBUG] Task::onArrival() - 开始: task_3 当前时间: 1000ms isActive: 1
+[DEBUG] Task::onArrival() - Buffered模式: task_3
+[DEBUG] Task::onArrival() - Buffered模式调用内核onArrival: task_3
+[DEBUG] MRTKernel::onArrival() - 开始: task_3 当前时间: 1000ms
+[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] getWorkloadPower: 输入工作负载类型: 'idle"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2483)
+[0m[33m2026-01-14 11:06:02.561 [WARNING0] [scheduler00000000000] getWorkloadPower: 未知工作负载类型: idle"，使用默认功率 0.1 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2505)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] 🔋 单位时间能量计算: idle" 基础功率=0.500000W 工作负载功率=0.100000W 频率比=1.250000 总功率=0.625000W 单位时间=50ms 单位能量=0.031250J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1750)
+[0m[33m2026-01-14 11:06:02.561 [WARNING0] [scheduler00000000000] 确认真实deadline miss: PeriodicTask task_3 DL = T 1000 WCET 截止=1000ms 当前=1000ms 超时=0ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3210)
+[0m[33m2026-01-14 11:06:02.561 [WARNING0] [scheduler00000000000] ❌ 决策: 真实deadline miss（截止时间已过）: PeriodicTask task_3 DL = T 1000 WCET (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1988)
+[0m[DEBUG] Scheduler::getTaskN(0) - 队列大小: 0 当前时间: 1000ms
+[DEBUG] Scheduler::getTaskN(0) - 返回nullptr (队列太小)
+[DEBUG] MRTKernel::onArrival() - 完成: task_3
+[DEBUG] Task::onArrival() - 开始: task_0 当前时间: 1000ms isActive: 1
+[DEBUG] Task::onArrival() - Buffered模式: task_0
+[DEBUG] Task::onArrival() - Buffered模式调用内核onArrival: task_0
+[DEBUG] MRTKernel::onArrival() - 开始: task_0 当前时间: 1000ms
+[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] getWorkloadPower: 输入工作负载类型: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2483)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] getWorkloadPower: 检测到bzip2工作负载，使用功率系数: 1.2 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2500)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] 🔋 单位时间能量计算: bzip2" 基础功率=0.500000W 工作负载功率=1.200000W 频率比=1.250000 总功率=2.000000W 单位时间=50ms 单位能量=0.100000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1750)
+[0m[33m2026-01-14 11:06:02.561 [WARNING0] [scheduler00000000000] 确认真实deadline miss: PeriodicTask task_0 DL = T 500 WCET 截止=500ms 当前=1000ms 超时=500ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3210)
+[0m[33m2026-01-14 11:06:02.561 [WARNING0] [scheduler00000000000] ❌ 决策: 真实deadline miss（截止时间已过）: PeriodicTask task_0 DL = T 500 WCET (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1988)
+[0m[DEBUG] Scheduler::getTaskN(0) - 队列大小: 0 当前时间: 1000ms
+[DEBUG] Scheduler::getTaskN(0) - 返回nullptr (队列太小)
+[DEBUG] MRTKernel::onArrival() - 完成: task_0
+[DEBUG] Task::onArrival() - 开始: task_4 当前时间: 1200ms isActive: 1
+[DEBUG] Task::onArrival() - Buffered模式: task_4
+[DEBUG] Task::onArrival() - Buffered模式调用内核onArrival: task_4
+[DEBUG] MRTKernel::onArrival() - 开始: task_4 当前时间: 1200ms
+[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] getWorkloadPower: 输入工作负载类型: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2483)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] getWorkloadPower: 检测到bzip2工作负载，使用功率系数: 1.2 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2500)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] 🔋 单位时间能量计算: bzip2" 基础功率=0.500000W 工作负载功率=1.200000W 频率比=1.250000 总功率=2.000000W 单位时间=50ms 单位能量=0.100000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1750)
+[0m[33m2026-01-14 11:06:02.561 [WARNING0] [scheduler00000000000] 确认真实deadline miss: PeriodicTask task_4 DL = T 1200 WCET 截止=1200ms 当前=1200ms 超时=0ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3210)
+[0m[33m2026-01-14 11:06:02.561 [WARNING0] [scheduler00000000000] ❌ 决策: 真实deadline miss（截止时间已过）: PeriodicTask task_4 DL = T 1200 WCET (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1988)
+[0m[DEBUG] Scheduler::getTaskN(0) - 队列大小: 0 当前时间: 1200ms
+[DEBUG] Scheduler::getTaskN(0) - 返回nullptr (队列太小)
+[DEBUG] MRTKernel::onArrival() - 完成: task_4
+[DEBUG] Task::onArrival() - 开始: task_1 当前时间: 1200ms isActive: 1
+[DEBUG] Task::onArrival() - Buffered模式: task_1
+[DEBUG] Task::onArrival() - Buffered模式调用内核onArrival: task_1
+[DEBUG] MRTKernel::onArrival() - 开始: task_1 当前时间: 1200ms
+[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] getWorkloadPower: 输入工作负载类型: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2483)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] getWorkloadPower: 检测到bzip2工作负载，使用功率系数: 1.2 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2500)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] 🔋 单位时间能量计算: bzip2" 基础功率=0.500000W 工作负载功率=1.200000W 频率比=1.250000 总功率=2.000000W 单位时间=50ms 单位能量=0.100000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1750)
+[0m[33m2026-01-14 11:06:02.561 [WARNING0] [scheduler00000000000] 确认真实deadline miss: PeriodicTask task_1 DL = T 600 WCET 截止=600ms 当前=1200ms 超时=600ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3210)
+[0m[33m2026-01-14 11:06:02.561 [WARNING0] [scheduler00000000000] ❌ 决策: 真实deadline miss（截止时间已过）: PeriodicTask task_1 DL = T 600 WCET (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1988)
+[0m[DEBUG] Scheduler::getTaskN(0) - 队列大小: 0 当前时间: 1200ms
+[DEBUG] Scheduler::getTaskN(0) - 返回nullptr (队列太小)
+[DEBUG] MRTKernel::onArrival() - 完成: task_1
+[DEBUG] Task::onArrival() - 开始: task_0 当前时间: 1500ms isActive: 1
+[DEBUG] Task::onArrival() - Buffered模式: task_0
+[DEBUG] Task::onArrival() - Buffered模式调用内核onArrival: task_0
+[DEBUG] MRTKernel::onArrival() - 开始: task_0 当前时间: 1500ms
+[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] getWorkloadPower: 输入工作负载类型: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2483)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] getWorkloadPower: 检测到bzip2工作负载，使用功率系数: 1.2 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2500)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] 🔋 单位时间能量计算: bzip2" 基础功率=0.500000W 工作负载功率=1.200000W 频率比=1.250000 总功率=2.000000W 单位时间=50ms 单位能量=0.100000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1750)
+[0m[33m2026-01-14 11:06:02.561 [WARNING0] [scheduler00000000000] 确认真实deadline miss: PeriodicTask task_0 DL = T 500 WCET 截止=500ms 当前=1500ms 超时=1000ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3210)
+[0m[33m2026-01-14 11:06:02.561 [WARNING0] [scheduler00000000000] ❌ 决策: 真实deadline miss（截止时间已过）: PeriodicTask task_0 DL = T 500 WCET (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1988)
+[0m[DEBUG] Scheduler::getTaskN(0) - 队列大小: 0 当前时间: 1500ms
+[DEBUG] Scheduler::getTaskN(0) - 返回nullptr (队列太小)
+[DEBUG] MRTKernel::onArrival() - 完成: task_0
+[DEBUG] Task::onArrival() - 开始: task_2 当前时间: 1600ms isActive: 1
+[DEBUG] Task::onArrival() - Buffered模式: task_2
+[DEBUG] Task::onArrival() - Buffered模式调用内核onArrival: task_2
+[DEBUG] MRTKernel::onArrival() - 开始: task_2 当前时间: 1600ms
+[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] getWorkloadPower: 输入工作负载类型: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2483)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] getWorkloadPower: 检测到bzip2工作负载，使用功率系数: 1.2 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2500)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] 🔋 单位时间能量计算: bzip2" 基础功率=0.500000W 工作负载功率=1.200000W 频率比=1.250000 总功率=2.000000W 单位时间=50ms 单位能量=0.100000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1750)
+[0m[33m2026-01-14 11:06:02.561 [WARNING0] [scheduler00000000000] 确认真实deadline miss: PeriodicTask task_2 DL = T 800 WCET 截止=800ms 当前=1600ms 超时=800ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3210)
+[0m[33m2026-01-14 11:06:02.561 [WARNING0] [scheduler00000000000] ❌ 决策: 真实deadline miss（截止时间已过）: PeriodicTask task_2 DL = T 800 WCET (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1988)
+[0m[DEBUG] Scheduler::getTaskN(0) - 队列大小: 0 当前时间: 1600ms
+[DEBUG] Scheduler::getTaskN(0) - 返回nullptr (队列太小)
+[DEBUG] MRTKernel::onArrival() - 完成: task_2
+[DEBUG] Task::onArrival() - 开始: task_1 当前时间: 1800ms isActive: 1
+[DEBUG] Task::onArrival() - Buffered模式: task_1
+[DEBUG] Task::onArrival() - Buffered模式调用内核onArrival: task_1
+[DEBUG] MRTKernel::onArrival() - 开始: task_1 当前时间: 1800ms
+[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] getWorkloadPower: 输入工作负载类型: 'bzip2"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2483)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] getWorkloadPower: 检测到bzip2工作负载，使用功率系数: 1.2 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2500)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] 🔋 单位时间能量计算: bzip2" 基础功率=0.500000W 工作负载功率=1.200000W 频率比=1.250000 总功率=2.000000W 单位时间=50ms 单位能量=0.100000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1750)
+[0m[33m2026-01-14 11:06:02.561 [WARNING0] [scheduler00000000000] 确认真实deadline miss: PeriodicTask task_1 DL = T 600 WCET 截止=600ms 当前=1800ms 超时=1200ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3210)
+[0m[33m2026-01-14 11:06:02.561 [WARNING0] [scheduler00000000000] ❌ 决策: 真实deadline miss（截止时间已过）: PeriodicTask task_1 DL = T 600 WCET (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1988)
+[0m[DEBUG] Scheduler::getTaskN(0) - 队列大小: 0 当前时间: 1800ms
+[DEBUG] Scheduler::getTaskN(0) - 返回nullptr (队列太小)
+[DEBUG] MRTKernel::onArrival() - 完成: task_1
+[DEBUG] Task::onArrival() - 开始: task_3 当前时间: 2000ms isActive: 1
+[DEBUG] Task::onArrival() - Buffered模式: task_3
+[DEBUG] Task::onArrival() - Buffered模式调用内核onArrival: task_3
+[DEBUG] MRTKernel::onArrival() - 开始: task_3 当前时间: 2000ms
+[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] getWorkloadPower: 输入工作负载类型: 'idle"' (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2483)
+[0m[33m2026-01-14 11:06:02.561 [WARNING0] [scheduler00000000000] getWorkloadPower: 未知工作负载类型: idle"，使用默认功率 0.1 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2505)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] 🔋 单位时间能量计算: idle" 基础功率=0.500000W 工作负载功率=0.100000W 频率比=1.250000 总功率=0.625000W 单位时间=50ms 单位能量=0.031250J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1750)
+[0m[33m2026-01-14 11:06:02.561 [WARNING0] [scheduler00000000000] 确认真实deadline miss: PeriodicTask task_3 DL = T 1000 WCET 截止=1000ms 当前=2000ms 超时=1000ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:3210)
+[0m[33m2026-01-14 11:06:02.561 [WARNING0] [scheduler00000000000] ❌ 决策: 真实deadline miss（截止时间已过）: PeriodicTask task_3 DL = T 1000 WCET (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1988)
+[0m[DEBUG] Scheduler::getTaskN(0) - 队列大小: 0 当前时间: 2000ms
+[DEBUG] Scheduler::getTaskN(0) - 返回nullptr (队列太小)
+[DEBUG] MRTKernel::onArrival() - 完成: task_3
+[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] CASCADE Scheduler::endRun() - 开始 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2149)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] 仿真结束时间: 2000ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2162)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] 仿真结束能量收集: 0.001950J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2167)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] 
+=== CASCADE调度器统计 === (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2935)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] 总调度次数: 1 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2936)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] 总任务完成数: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2937)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] 总能量跳过次数: 5 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2938)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] 总恢复等待次数: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2939)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] 总收集能量: 0.002000 J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2942)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] CASCADE算法能耗: 0.031250 J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2943)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] ======================================= (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2944)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] 
+=== CASCADE算法统计 === (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1832)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] CASCADE调度任务数: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1833)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] CASCADE跳过任务数: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1835)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] CASCADE完整通过次数: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1837)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] CASCADE部分通过次数: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1839)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] CASCADE总能耗: 0.031250 J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1841)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] ======================================= (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1843)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] CASCADE Scheduler::endRun() - 完成 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2177)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] GPFP_CASCADE Scheduler: Destroyed (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1874)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] 
+=== CASCADE调度器统计 === (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2935)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] 总调度次数: 1 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2936)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] 总任务完成数: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2937)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] 总能量跳过次数: 5 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2938)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] 总恢复等待次数: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2939)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] 总收集能量: 0.002000 J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2942)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] CASCADE算法能耗: 0.031250 J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2943)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] ======================================= (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:2944)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] 
+=== CASCADE算法统计 === (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1832)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] CASCADE调度任务数: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1833)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] CASCADE跳过任务数: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1835)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] CASCADE完整通过次数: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1837)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] CASCADE部分通过次数: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1839)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] CASCADE总能耗: 0.031250 J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1841)
+[0m[32m2026-01-14 11:06:02.561 [INFO0000] [scheduler00000000000] ======================================= (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_cascade_scheduler.cpp:1843)
+[0m✓ 仿真完成
+✓ 生成原始跟踪文件: energy_impact_test/trace_energy_harvest_0am_raw.json (2KB)
+
+════════════════════════════════════════════════════════════
+  处理跟踪文件
+════════════════════════════════════════════════════════════
+ℹ 使用简单处理器处理跟踪文件
+处理跟踪文件: energy_impact_test/trace_energy_harvest_0am_raw.json
+时间偏移: 0 ms
+检测到标准JSON格式，事件数: 27
+成功解析 27 个事件
+处理完成: 写入 27 个事件到 energy_impact_test/trace_energy_harvest_0am.json
+时间范围: 0 - 1800 ms (1.8 秒)
+✓ 跟踪文件处理成功
+✓ 生成最终跟踪文件: energy_impact_test/trace_energy_harvest_0am.json (3KB)
+ℹ 跟踪文件包含 27 个事件
+ℹ 已自动删除原始跟踪文件: energy_impact_test/trace_energy_harvest_0am_raw.json
+
+════════════════════════════════════════════════════════════
+  仿真结果
+════════════════════════════════════════════════════════════
+════════════════════════════════════════════════════════════════
+                    🎉 仿真成功完成!                         
+════════════════════════════════════════════════════════════════
+
+配置摘要:
+  系统配置: config_energy_harvest_0am.yml
+  任务集: tasks_test1.yml
+  仿真时间: 2000 ms
+  开始时间: 
+  调度器: gpfp_cascade
+
+输出文件: energy_impact_test/trace_energy_harvest_0am.json
+文件大小: 4.0K
+
+════════════════════════════════════════════════════════════════

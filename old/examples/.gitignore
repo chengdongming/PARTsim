@@ -1,0 +1,10 @@
+# Rule that excludes automatically any file WITHOUT an extension
+# All three lines strictly necessary:
+# - exclude all files
+# - re-include directories
+# - re-include all files with at least one . in them (.files and files.with.extensions)
+# - re-exclude files with .o extension (or any other extension following that one)
+*
+!*/
+!*.*
+*.o

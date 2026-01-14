@@ -1,0 +1,23 @@
+cpu_islands:
+  - name: single-island
+    numcpus: 1
+    kernel:
+      scheduler: fifo
+      task_placement: partitioned # TODO: errore nella generazione di CPU per MRTKernel?
+    volts:
+      [ 5 ]
+    freqs:
+      [ 1000 ]
+    base_freq: 1000
+    power_model: no_scaling
+    speed_model: no_scaling
+power_models:
+  - name: no_scaling
+    type: balsini_pannocchi
+    params:
+      - workload: idle
+        power_params: [0, 0, 0, 0]
+        speed_params: [1, 0, 0, 0]
+      - workload: bzip2
+        power_params: [1, 0, 0, 0]
+        speed_params: [1, 0, 0, 0]

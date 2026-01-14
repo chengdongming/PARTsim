@@ -1,0 +1,25 @@
+{
+    "Copyright Notice": {
+        "prefix": "copyright",
+        "description": "Insert Copyright information",
+        "body": [
+            "// Copyright 2022 Gabriele Ara",
+            "// Licensed by GNU GENERAL PUBLIC LICENSE v3.0",
+            "",
+            "$0",
+        ],
+    },
+    "Header guard": {
+        "prefix": "header",
+        "description": "Create the header guard for an include file",
+        "body": [
+            "// #pragma once",
+            "#ifndef $1",
+            "#define $1",
+            "",
+            "$0",
+            "",
+            "#endif // $1",
+        ],
+    }
+}

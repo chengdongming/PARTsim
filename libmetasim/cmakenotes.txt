@@ -1,0 +1,22 @@
+
+# # Actually to export the "include" directory we need to copy manually files
+# install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+# install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/librdtsc DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+# # This exports a CMake file that allows the project to be imported
+# # into other CMake projects from the install directory.
+# # The directory in which the file will be installed is a per-project
+# # directory in this case, otherwise use common cmake directory
+# install(EXPORT librdtsc-config DESTINATION share/rdtsc/cmake)
+
+# # This makes the project importable from the build directory
+# export(TARGETS rdtsc FILE librdtsc-config.cmake)
+
+# # Any CMake project that needs to use FORB library can simply import all
+# # its settings by using the following command within CMakeLists.txt:
+# #
+# #   find_package(librdtsc)
+
+# # Export.
+# export (TARGETS ${PROJECT_NAME} FILE "./metasimConfig.cmake")
+# export (PACKAGE ${PROJECT_NAME})

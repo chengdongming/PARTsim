@@ -1,0 +1,8 @@
+#!/bin/bash
+
+if [ "$1" = "h" ] ;then
+	echo "Example: ./db energyMRTKernel.cpp 51"
+else 
+	# this worked: gdbgui ./example --gdb-args=" -ex 'break energyMRTKernel.cpp:117' "
+	gdbgui --gdb-args=" -ex 'break "$1":"$2"' -ex 'r' ./test "
+fi

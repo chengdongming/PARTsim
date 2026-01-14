@@ -1,0 +1,34 @@
+cpu_islands:
+  - name: little
+    numcpus: 4
+    kernel:
+      # name:
+      scheduler: edf
+      task_placement: partitioned
+    volts:
+      [0.92, 0.919643, 0.919357, 0.918924, 0.95625, 0.9925, 1.02993, 1.0475, 1.08445, 1.12125, 1.15779, 1.2075, 1.25625]
+    freqs:
+      [200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200, 1300, 1400]
+    base_freq: 1400
+    power_model: little
+    speed_model: little
+  - name: big
+    numcpus: 4
+    kernel:
+      # name:
+      scheduler: edf
+      task_placement: partitioned
+    volts:
+      [0.916319, 0.915475, 0.915102, 0.91498, 0.91502, 0.90375, 0.916562, 0.942543, 0.96877, 0.994941, 1.02094, 1.04648, 1.05995, 1.08583, 1.12384, 1.16325, 1.20235, 1.2538, 1.33287]
+    freqs:
+      [200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900, 2000]
+    base_freq: 1500
+    power_model: big
+    speed_model: big
+power_models:
+  - name: little
+    type: table_based
+    filename: ../models/tb/odroid-xu3-maximum-fixed_regression.csv
+  - name: big
+    type: table_based
+    filename: ../models/tb/odroid-xu3-maximum-fixed_regression.csv

@@ -1,0 +1,35 @@
+energyMRTKernel.cpp:54:        AbsRTTask* t = _queues->getRunningTask(c);
+energyMRTKernel.cpp:59:        vector<AbsRTTask*> t = _queues->getReadyTasks(c);
+energyMRTKernel.cpp:64:        CPU_BL* c = dynamic_cast<CPU_BL*>(_queues->isInAnyQueue(t));
+energyMRTKernel.cpp:65:        if (_queues->getRunningTask(c) == t)
+energyMRTKernel.cpp:72:        return _queues->isInAnyQueue(t) != NULL;
+energyMRTKernel.cpp:76:      return !_queues->isEmpty(p);
+energyMRTKernel.cpp:107:        double u_active = _queues->getUtilization_active(c);
+energyMRTKernel.cpp:146:            double u_active_c1 = _queues->getUtilization_active(c1);
+energyMRTKernel.cpp:197:        std::cout << _queues->toString();
+energyMRTKernel.cpp:207:          AbsRTTask *t = _queues->getRunningTask(c);
+energyMRTKernel.cpp:243:          res = dynamic_cast<RRScheduler*>(_queues->getScheduler(p))->isRoundExpired(t);
+energyMRTKernel.cpp:257:        AbsRTTask *dt   = _queues->getRunningTask(p);
+energyMRTKernel.cpp:288:        _queues->onBeginDispatchMultiFinished(p, st, overhead);
+energyMRTKernel.cpp:305:        _queues->onEndDispatchMultiFinished(cpu,t);
+energyMRTKernel.cpp:311:        unsigned int opp = _queues->getOPP(cpu);
+energyMRTKernel.cpp:349:        _queues->onEnd(t, p);
+energyMRTKernel.cpp:358:            _queues->schedule(p);
+energyMRTKernel.cpp:390:                        _queues->onMigrationFinished(tt, c, endingCPU);
+energyMRTKernel.cpp:411:                _queues->onMigrationFinished(tt, c, endingCPU); // todo add migration overhead
+energyMRTKernel.cpp:421:        _queues->onRound(finishingTask, getProcessor(finishingTask));
+energyMRTKernel.cpp:428:        double u_act = _queues->getUtilization_active(c);
+energyMRTKernel.cpp:521:        _queues->insertTask(t, pp, opp);
+energyMRTKernel.cpp:538:              AbsRTTask *t = _queues->getFirst(c);
+energyMRTKernel.cpp:614:            std::cout << _queues->toString() << std::endl;
+energyMRTKernel.cpp:621:            _queues->schedule(c);
+energyMRTKernel.hpp:533:          _queues->onExecutingReleasing(t, cpu, cbs);
+energyMRTKernel.hpp:556:          _queues->onReleasingIdle(cbs);
+energyMRTKernel.hpp:582:            _queues->newRun();
+energyMRTKernel.hpp:587:            _queues->endRun();
+multi_cores_scheds.cpp:61:        _queues[c]->addTask(t, params);
+multi_cores_scheds.cpp:63:          dynamic_cast<RRScheduler*>(_queues[c])->notify(t);
+multi_cores_scheds.cpp:68:            _queues[c]->insert(t);
+multi_cores_scheds.cpp:84:        _queues[c]->extract(t);
+multi_cores_scheds.cpp:90:        return _queues[c]->getFirst();
+multi_cores_scheds.cpp:129:        while( _queues[c]->getTaskN(i) != NULL )

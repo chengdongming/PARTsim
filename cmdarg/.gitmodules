@@ -1,0 +1,3 @@
+[submodule "cmakeopts"]
+	path = cmakeopts
+	url = https://github.com/gabrieleara/cmakeopts.git

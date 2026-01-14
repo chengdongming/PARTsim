@@ -1,0 +1,6 @@
+*.txt
+!CMakeLists.txt
+Makefile
+energyMRTKernel_example
+cmake_install.cmake
+

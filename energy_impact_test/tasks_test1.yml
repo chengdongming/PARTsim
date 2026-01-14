@@ -1,0 +1,91 @@
+# =============================================
+# 测试1任务集 - 不同初始能量测试 (50ms时间片)
+# =============================================
+# 目标：验证不同初始能量对调度的影响
+# unit_time: 50ms
+# 5个任务，3核心
+# =============================================
+
+taskset:
+  # 高优先级任务 (bzip2)
+  # 周期500ms，WCET 250ms = 5×50ms
+  - name: task_0
+    iat: 500
+    runtime: 250
+    deadline: 500
+    params: "period=500,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(50, bzip2)
+      - suspend(0)
+      - fixed(50, bzip2)
+      - suspend(0)
+      - fixed(50, bzip2)
+      - suspend(0)
+      - fixed(50, bzip2)
+      - suspend(0)
+      - fixed(50, bzip2)
+      - suspend(0)
+
+  # 中高优先级任务 (bzip2)
+  # 周期600ms，WCET 150ms = 3×50ms
+  - name: task_1
+    iat: 600
+    runtime: 150
+    deadline: 600
+    params: "period=600,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(50, bzip2)
+      - suspend(0)
+      - fixed(50, bzip2)
+      - suspend(0)
+      - fixed(50, bzip2)
+      - suspend(0)
+
+  # 中优先级任务 (bzip2)
+  # 周期800ms，WCET 200ms = 4×50ms
+  - name: task_2
+    iat: 800
+    runtime: 200
+    deadline: 800
+    params: "period=800,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(50, bzip2)
+      - suspend(0)
+      - fixed(50, bzip2)
+      - suspend(0)
+      - fixed(50, bzip2)
+      - suspend(0)
+      - fixed(50, bzip2)
+      - suspend(0)
+
+  # 中低优先级任务 (idle)
+  # 周期1000ms，WCET 150ms = 3×50ms
+  - name: task_3
+    iat: 1000
+    runtime: 150
+    deadline: 1000
+    params: "period=1000,arrival_offset=0,workload=idle"
+    code:
+      - fixed(50, idle)
+      - suspend(0)
+      - fixed(50, idle)
+      - suspend(0)
+      - fixed(50, idle)
+      - suspend(0)
+
+  # 低优先级任务 (bzip2)
+  # 周期1200ms，WCET 200ms = 4×50ms
+  - name: task_4
+    iat: 1200
+    runtime: 200
+    deadline: 1200
+    params: "period=1200,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(50, bzip2)
+      - suspend(0)
+      - fixed(50, bzip2)
+      - suspend(0)
+      - fixed(50, bzip2)
+      - suspend(0)
+      - fixed(50, bzip2)
+      - suspend(0)

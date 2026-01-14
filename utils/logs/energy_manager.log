@@ -1,0 +1,5 @@
+2025-12-30 16:48:34.663 [INFO    ] [energy_manager      ] 能量管理器初始化完成
+2025-12-30 16:48:34.665 [WARNING ] [energy_manager      ] 能量水平较低：50J
+2025-12-30 16:48:34.666 [ERROR   ] [energy_manager      ] 能量收集失败
+2025-12-30 16:48:34.668 [INFO    ] [energy_manager      ] 处理了10个任务，消耗25.50J能量
+2025-12-30 16:55:43.131 [WARNING ] [energy_manager      ] 能量管理器集成测试 - 修复验证

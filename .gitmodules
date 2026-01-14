@@ -1,0 +1,6 @@
+[submodule "rtsim/cmdarg"]
+	path = rtsim/cmdarg
+	url = https://github.com/gabrieleara/cmdarg.git
+[submodule "cmakeopts"]
+	path = cmakeopts
+	url = https://github.com/gabrieleara/cmakeopts.git

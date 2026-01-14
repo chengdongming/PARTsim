@@ -1,0 +1,21 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/libmetasim/include/**",
+                "${workspaceFolder}/librtsim/include/**",
+                "${workspaceFolder}/rtsim/cmdarg/include/public/**",
+                "${workspaceFolder}/build/_deps/googletest-src/googletest/include/**",
+                "${workspaceFolder}/build/_deps/googletest-src/googlemock/include/**",
+                "${workspaceFolder}/librtsim/include/rtsim/scheduler"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/clang",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "linux-clang-x64"
+        }
+    ],
+    "version": 4
+}

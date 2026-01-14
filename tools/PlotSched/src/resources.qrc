@@ -1,0 +1,8 @@
+<RCC>
+    <qresource prefix="/icons">
+        <file>assets/cpu64x.png</file>
+        <file>assets/gannt64x.png</file>
+        <file>assets/icon64x.png</file>
+        <file>assets/tau64x.png</file>
+    </qresource>
+</RCC>

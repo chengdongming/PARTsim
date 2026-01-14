@@ -1,0 +1,134 @@
+## FIXME: file is outdated already!!!
+
+# Task specification attributes:
+#
+# - name: the name of the task;
+#
+# - iat: inter arrival time (a.k.a. period);
+#
+# - rdl: relative deadline;
+#
+# - ph: initial phasing for task inter arrival;
+#
+# - qs: queue size (default: 100);
+#
+# - code: contains the list of instructions to run for each task. It must be a
+#   list (even if there is only one instruction) and each instruction may or may
+#   not be terminated by a semicolon.
+#
+# Following is the set of accepted instructions:
+#
+# - fixed(n, workload_type): takes an integer number and a string; generates an
+#   instruction with fixed computation time of the given workload type;
+#
+# - delay(var): takes a random variable and generates a ExecInstr instruction
+#   with variable execution time, according to the specified random variable;
+#   FIXME: unsupported for now.
+#
+# - wait(r) or lock(r): takes a string r containing the name of a resource and
+#   produces a WaitInstr on that resource;
+#
+# - signal(r) or unlock(r): takes a string r containing the name of a resource
+#   and produces a SignalInstr on that resource;
+#
+# - activate(t): takes a string containing the name of a task and generates an
+#   ActivateInstr on that task.
+
+taskset:
+  # First task to run in a dag, locks all tasks with dependencies
+  #
+  # To specify a precedence constraint use c_task_i_j, where i is the index of
+  # the task that must run before task j. This is just a convention, but it
+  # helps when reviewing a dag.
+
+  # NOTE: maybe the dag_begin and dag_end are not strictly necessary
+
+  # NOTE: technically I don't need to lock all resources at each iteration, I
+  # just need to lock them all ONCE (which would require special code to support
+  # in rtsim main)
+
+  - name: dag_begin
+    # In a DAG, all tasks share the same inter-arrival time (=period)
+    iat: 1000
+    deadline: 1000
+    # NOTE: runtime>=1 is a requirement for dag_begin/dag_end
+    cbs_runtime: 1
+    cbs_period: 1000
+    # and all tasks (except the dag_begin) must have the same relative deadline.
+    #
+    # Must run before all tasks in the dag (including those without precedence
+    # constraints), so deadline = 1 (with 0 it will generate a miss!)
+    rdl: 1
+    startcpu: 0
+    code:
+      # Must lock on DAG to ensure that dag_end ran in previous iteration
+      - lock(DAG)
+      # Must release all tasks with no precedence constraints
+      - unlock(c_task_X_0)
+
+  - name: task_0
+    iat: 1000
+    deadline: 1000
+    cbs_runtime: 250
+    cbs_period: 1000
+    startcpu: 0
+    code:
+      # Each task locks on one or more precedence contraints (at least they lock
+      # against dag_begin)
+      - lock(c_task_X_0)
+      - fixed(200,bzip2)
+      # And unlocks one or more tasks (at least they should unlock the dag_end
+      # if they do not have any other successor)
+      - unlock(c_task_0_1)
+      - unlock(c_task_0_2)
+
+  - name: task_2
+    iat: 1000
+    deadline: 1000
+    cbs_runtime: 250
+    cbs_period: 1000
+    startcpu: 0
+    code:
+      - lock(c_task_0_2)
+      - fixed(200,bzip2)
+      - unlock(c_task_2_X)
+
+  - name: task_1
+    startcpu: 0
+    iat: 1000
+    deadline: 1000
+    cbs_runtime: 550
+    cbs_period: 1000
+    code:
+      - lock(c_task_0_1)
+      - fixed(500,bzip2)
+      - unlock(c_task_1_X)
+
+  # Last task to run in a dag, unlocks all tasks with precedence constraints
+  - name: dag_end
+    iat: 1000
+    deadline: 1000
+    cbs_runtime: 1
+    cbs_period: 1000
+    startcpu: 0
+    code:
+      # Must lock on all tasks with no successors
+      - lock(c_task_1_X)
+      - lock(c_task_2_X)
+      # Must unlock the dag_begin
+      - unlock(DAG)
+
+# Following is the list of resources and their supposed initial state
+resources:
+  - name: DAG
+    initial_state: unlocked
+  - name: c_task_X_0
+    initial_state: locked
+  - name: c_task_0_1
+    initial_state: locked
+  - name: c_task_0_2
+    initial_state: locked
+  - name: c_task_1_X
+    initial_state: locked
+  - name: c_task_2_X
+    initial_state: locked
