@@ -50,16 +50,22 @@ namespace RTSim {
         if (!_task)
             return;
 
+        // ⭐ V28.12关键修复：无论能量是否足够，都记录任务激活时间
+        // 这样周期性任务的deadline计算可以基于正确的arrival_time
+        // 问题是：当初始能量为0时，任务第1次到达被拒绝，Task::arrival未更新
+        //         后续周期到达时，如果arrival_time不更新，deadline计算会错误
+        MetaSim::Tick activation_tick = MetaSim::Tick(
+                           static_cast<MetaSim::Tick::impl_t>(_planned_time_ms));
+        _scheduler->_task_start_times[_task] = activation_tick;
+
         // 重要修复：在激活之前检查能量
         // 如果能量不足，不激活任务，避免记录错误的调度事件
         double current_energy = _scheduler->getCurrentEnergy();
         double unit_energy = _scheduler->getUnitTimeEnergy(_task);
-        
+
         if (current_energy >= unit_energy) {
             // 能量足够，激活任务
-            _scheduler->activateTaskAtExactTime(
-                _task, MetaSim::Tick(
-                           static_cast<MetaSim::Tick::impl_t>(_planned_time_ms)));
+            _scheduler->activateTaskAtExactTime(_task, activation_tick);
 
             // 如果是周期性任务，安排下一次激活
             if (_is_periodic && _period > 0) {
@@ -86,11 +92,11 @@ namespace RTSim {
             }
         } else {
             // 能量不足，不激活任务
-            SCHEDULER_LOG_INFO("🔋 能量不足，跳过任务激活: " + _task_name + 
+            SCHEDULER_LOG_INFO("🔋 能量不足，跳过任务激活: " + _task_name +
                       " @ " + std::to_string(_planned_time_ms) + "ms" +
                       " 需要: " + std::to_string(unit_energy) + "J" +
                       " 当前: " + std::to_string(current_energy) + "J");
-            
+
             // 重要：如果是周期性任务，仍然安排下一次激活
             // 这样当能量恢复时，任务可以被激活
             if (_is_periodic && _period > 0) {
@@ -1975,6 +1981,21 @@ bool GPFPCASCADEScheduler::consumeEnergy(double energy_joules,
 
         std::string task_name = getTaskShortName(task);
 
+        // ⭐ V28.12修复：记录任务到达时间（用于deadline计算）
+        // 当初始能量为0时，任务第1次到达被拒绝，Task::arrival未更新
+        // 后续周期到达时，如果arrival_time不更新，deadline计算会错误
+        // 在insert()中记录每次任务到达的时间，确保deadline计算准确
+        MetaSim::Tick current_time = SIMUL.getTime();
+        auto existing_it = _task_start_times.find(task);
+
+        // 只有当这是新到达的任务实例时才更新
+        // 判断方法：当前时间 > 已记录的时间（说明是新周期）
+        if (existing_it == _task_start_times.end() || current_time > existing_it->second) {
+            _task_start_times[task] = current_time;
+            SCHEDULER_LOG_WARNING("📍 V28.12记录任务到达时间: " + task_name +
+                             " time=" + std::to_string(static_cast<int64_t>(current_time)) + "ms");
+        }
+
         // === CASCADE核心逻辑：只检查1个时间片的能量 ===
         // 允许任务进入队列，在执行过程中每个时间片检查能量
         double current_energy = getCurrentEnergy();
@@ -2960,7 +2981,9 @@ AbsRTTask *GPFPCASCADEScheduler::getFirst() {
         // 添加到活跃集合
         _active_tasks.insert(task);
 
-        // 记录任务开始时间
+        // ⭐ V28.12修复：记录任务激活时间（用于deadline计算）
+        // 当初始能量为0时，任务第1次到达被拒绝，Task::arrival未更新
+        // 后续周期到达时，使用_task_start_times中记录的激活时间作为arrival基准
         _task_start_times[task] = activation_time;
 
         // 初始化任务剩余时间
@@ -3220,11 +3243,31 @@ AbsRTTask *GPFPCASCADEScheduler::getFirst() {
         Task *rttask = dynamic_cast<Task*>(task);
         if (!rttask) return 0;
 
-        // 获取相对截止时间并加上到达时间
+        // 获取相对截止时间
         Tick relative_deadline = rttask->getDeadline();
-        Tick arrival_time = rttask->getArrival();
 
-        return arrival_time + relative_deadline;
+        // ⭐ V28.12修复：优先使用_task_start_times作为arrival_time
+        // 当初始能量为0时，任务第1次到达被拒绝，Task::arrival未更新
+        // 后续周期到达时，使用_task_start_times中记录的激活时间作为arrival基准
+        Tick arrival_time;
+        auto start_it = _task_start_times.find(task);
+        if (start_it != _task_start_times.end() && start_it->second > 0) {
+            // 使用调度器记录的激活时间
+            arrival_time = start_it->second;
+        } else {
+            // 回退到Task对象的arrival时间
+            arrival_time = rttask->getArrival();
+        }
+
+        Tick absolute_deadline = arrival_time + relative_deadline;
+
+        SCHEDULER_LOG_WARNING("🔍 V28.12计算deadline: " + getTaskShortName(task) +
+                         " arrival=" + std::to_string(static_cast<int64_t>(arrival_time)) +
+                         " relative=" + std::to_string(static_cast<int64_t>(relative_deadline)) +
+                         " absolute=" + std::to_string(static_cast<int64_t>(absolute_deadline)) +
+                         " (使用_task_start_times=" + (start_it != _task_start_times.end() ? "是" : "否") + ")");
+
+        return absolute_deadline;
     }
 
     // =====================================================
