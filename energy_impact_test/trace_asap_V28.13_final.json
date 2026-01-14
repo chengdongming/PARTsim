@@ -43,6 +43,18 @@
       "arrival_time": "0"
     },
     {
+      "time": "500",
+      "event_type": "scheduled",
+      "task_name": "task_1",
+      "arrival_time": "0"
+    },
+    {
+      "time": "500",
+      "event_type": "scheduled",
+      "task_name": "task_2",
+      "arrival_time": "0"
+    },
+    {
       "time": "550",
       "event_type": "descheduled",
       "task_name": "task_0",
@@ -50,14 +62,50 @@
     },
     {
       "time": "550",
+      "event_type": "descheduled",
+      "task_name": "task_1",
+      "arrival_time": "0"
+    },
+    {
+      "time": "550",
+      "event_type": "descheduled",
+      "task_name": "task_2",
+      "arrival_time": "0"
+    },
+    {
+      "time": "550",
       "event_type": "scheduled",
       "task_name": "task_0",
+      "arrival_time": "0"
+    },
+    {
+      "time": "550",
+      "event_type": "scheduled",
+      "task_name": "task_1",
+      "arrival_time": "0"
+    },
+    {
+      "time": "550",
+      "event_type": "scheduled",
+      "task_name": "task_2",
       "arrival_time": "0"
     },
     {
       "time": "600",
       "event_type": "descheduled",
       "task_name": "task_0",
+      "arrival_time": "0"
+    },
+    {
+      "time": "600",
+      "event_type": "descheduled",
+      "task_name": "task_1",
+      "arrival_time": "0"
+    },
+    {
+      "time": "600",
+      "event_type": "descheduled",
+      "task_name": "task_2",
       "arrival_time": "0"
     },
     {
@@ -85,6 +133,12 @@
       "arrival_time": "0"
     },
     {
+      "time": "600",
+      "event_type": "scheduled",
+      "task_name": "task_2",
+      "arrival_time": "0"
+    },
+    {
       "time": "650",
       "event_type": "descheduled",
       "task_name": "task_0",
@@ -98,6 +152,12 @@
     },
     {
       "time": "650",
+      "event_type": "descheduled",
+      "task_name": "task_2",
+      "arrival_time": "0"
+    },
+    {
+      "time": "650",
       "event_type": "scheduled",
       "task_name": "task_0",
       "arrival_time": "0"
@@ -106,6 +166,12 @@
       "time": "650",
       "event_type": "scheduled",
       "task_name": "task_1",
+      "arrival_time": "0"
+    },
+    {
+      "time": "650",
+      "event_type": "scheduled",
+      "task_name": "task_2",
       "arrival_time": "0"
     },
     {
@@ -122,6 +188,18 @@
     },
     {
       "time": "700",
+      "event_type": "descheduled",
+      "task_name": "task_2",
+      "arrival_time": "0"
+    },
+    {
+      "time": "700",
+      "event_type": "end_instance",
+      "task_name": "task_2",
+      "arrival_time": "0"
+    },
+    {
+      "time": "700",
       "event_type": "scheduled",
       "task_name": "task_0",
       "arrival_time": "0"
@@ -130,6 +208,12 @@
       "time": "700",
       "event_type": "scheduled",
       "task_name": "task_1",
+      "arrival_time": "0"
+    },
+    {
+      "time": "700",
+      "event_type": "scheduled",
+      "task_name": "task_3",
       "arrival_time": "0"
     },
     {
@@ -142,6 +226,12 @@
       "time": "750",
       "event_type": "descheduled",
       "task_name": "task_1",
+      "arrival_time": "0"
+    },
+    {
+      "time": "750",
+      "event_type": "descheduled",
+      "task_name": "task_3",
       "arrival_time": "0"
     },
     {
@@ -152,6 +242,12 @@
     },
     {
       "time": "750",
+      "event_type": "end_instance",
+      "task_name": "task_1",
+      "arrival_time": "0"
+    },
+    {
+      "time": "750",
       "event_type": "scheduled",
       "task_name": "task_0",
       "arrival_time": "500"
@@ -160,6 +256,12 @@
       "time": "750",
       "event_type": "scheduled",
       "task_name": "task_1",
+      "arrival_time": "600"
+    },
+    {
+      "time": "750",
+      "event_type": "scheduled",
+      "task_name": "task_3",
       "arrival_time": "0"
     },
     {
@@ -172,6 +274,12 @@
       "time": "800",
       "event_type": "descheduled",
       "task_name": "task_1",
+      "arrival_time": "600"
+    },
+    {
+      "time": "800",
+      "event_type": "descheduled",
+      "task_name": "task_3",
       "arrival_time": "0"
     },
     {
@@ -184,6 +292,12 @@
       "time": "800",
       "event_type": "scheduled",
       "task_name": "task_1",
+      "arrival_time": "600"
+    },
+    {
+      "time": "800",
+      "event_type": "scheduled",
+      "task_name": "task_3",
       "arrival_time": "0"
     },
     {
@@ -196,12 +310,12 @@
       "time": "850",
       "event_type": "descheduled",
       "task_name": "task_1",
-      "arrival_time": "0"
+      "arrival_time": "600"
     },
     {
       "time": "850",
-      "event_type": "end_instance",
-      "task_name": "task_1",
+      "event_type": "descheduled",
+      "task_name": "task_3",
       "arrival_time": "0"
     },
     {
@@ -217,6 +331,12 @@
       "arrival_time": "600"
     },
     {
+      "time": "850",
+      "event_type": "scheduled",
+      "task_name": "task_3",
+      "arrival_time": "0"
+    },
+    {
       "time": "900",
       "event_type": "descheduled",
       "task_name": "task_0",
@@ -227,6 +347,18 @@
       "event_type": "descheduled",
       "task_name": "task_1",
       "arrival_time": "600"
+    },
+    {
+      "time": "900",
+      "event_type": "descheduled",
+      "task_name": "task_3",
+      "arrival_time": "0"
+    },
+    {
+      "time": "900",
+      "event_type": "end_instance",
+      "task_name": "task_3",
+      "arrival_time": "0"
     },
     {
       "time": "900",
@@ -280,13 +412,7 @@
       "time": "1000",
       "event_type": "arrival",
       "task_name": "task_2",
-      "arrival_time": "0"
-    },
-    {
-      "time": "1000",
-      "event_type": "dline_miss",
-      "task_name": "task_2",
-      "arrival_time": "0"
+      "arrival_time": "1000"
     },
     {
       "time": "1000",
@@ -302,6 +428,12 @@
     },
     {
       "time": "1000",
+      "event_type": "end_instance",
+      "task_name": "task_1",
+      "arrival_time": "600"
+    },
+    {
+      "time": "1000",
       "event_type": "scheduled",
       "task_name": "task_0",
       "arrival_time": "1000"
@@ -309,14 +441,8 @@
     {
       "time": "1000",
       "event_type": "scheduled",
-      "task_name": "task_1",
-      "arrival_time": "600"
-    },
-    {
-      "time": "1000",
-      "event_type": "scheduled",
       "task_name": "task_2",
-      "arrival_time": "0"
+      "arrival_time": "1000"
     },
     {
       "time": "1050",
@@ -327,14 +453,8 @@
     {
       "time": "1050",
       "event_type": "descheduled",
-      "task_name": "task_1",
-      "arrival_time": "600"
-    },
-    {
-      "time": "1050",
-      "event_type": "descheduled",
       "task_name": "task_2",
-      "arrival_time": "0"
+      "arrival_time": "1000"
     },
     {
       "time": "1050",
@@ -345,14 +465,8 @@
     {
       "time": "1050",
       "event_type": "scheduled",
-      "task_name": "task_1",
-      "arrival_time": "600"
-    },
-    {
-      "time": "1050",
-      "event_type": "scheduled",
       "task_name": "task_2",
-      "arrival_time": "0"
+      "arrival_time": "1000"
     },
     {
       "time": "1100",
@@ -363,20 +477,8 @@
     {
       "time": "1100",
       "event_type": "descheduled",
-      "task_name": "task_1",
-      "arrival_time": "600"
-    },
-    {
-      "time": "1100",
-      "event_type": "descheduled",
       "task_name": "task_2",
-      "arrival_time": "0"
-    },
-    {
-      "time": "1100",
-      "event_type": "end_instance",
-      "task_name": "task_1",
-      "arrival_time": "600"
+      "arrival_time": "1000"
     },
     {
       "time": "1100",
@@ -388,7 +490,7 @@
       "time": "1100",
       "event_type": "scheduled",
       "task_name": "task_2",
-      "arrival_time": "0"
+      "arrival_time": "1000"
     },
     {
       "time": "1150",
@@ -400,7 +502,7 @@
       "time": "1150",
       "event_type": "descheduled",
       "task_name": "task_2",
-      "arrival_time": "0"
+      "arrival_time": "1000"
     },
     {
       "time": "1150",
@@ -412,7 +514,7 @@
       "time": "1150",
       "event_type": "scheduled",
       "task_name": "task_2",
-      "arrival_time": "0"
+      "arrival_time": "1000"
     },
     {
       "time": "1200",
@@ -424,19 +526,13 @@
       "time": "1200",
       "event_type": "descheduled",
       "task_name": "task_2",
-      "arrival_time": "0"
+      "arrival_time": "1000"
     },
     {
       "time": "1200",
       "event_type": "arrival",
       "task_name": "task_3",
-      "arrival_time": "0"
-    },
-    {
-      "time": "1200",
-      "event_type": "dline_miss",
-      "task_name": "task_3",
-      "arrival_time": "0"
+      "arrival_time": "1200"
     },
     {
       "time": "1200",
@@ -448,7 +544,7 @@
       "time": "1200",
       "event_type": "end_instance",
       "task_name": "task_2",
-      "arrival_time": "0"
+      "arrival_time": "1000"
     },
     {
       "time": "1200",
@@ -465,8 +561,8 @@
     {
       "time": "1200",
       "event_type": "scheduled",
-      "task_name": "task_2",
-      "arrival_time": "1000"
+      "task_name": "task_3",
+      "arrival_time": "1200"
     },
     {
       "time": "1250",
@@ -483,8 +579,8 @@
     {
       "time": "1250",
       "event_type": "descheduled",
-      "task_name": "task_2",
-      "arrival_time": "1000"
+      "task_name": "task_3",
+      "arrival_time": "1200"
     },
     {
       "time": "1250",
@@ -501,14 +597,8 @@
     {
       "time": "1250",
       "event_type": "scheduled",
-      "task_name": "task_2",
-      "arrival_time": "1000"
-    },
-    {
-      "time": "1250",
-      "event_type": "scheduled",
       "task_name": "task_3",
-      "arrival_time": "0"
+      "arrival_time": "1200"
     },
     {
       "time": "1300",
@@ -519,14 +609,8 @@
     {
       "time": "1300",
       "event_type": "descheduled",
-      "task_name": "task_2",
-      "arrival_time": "1000"
-    },
-    {
-      "time": "1300",
-      "event_type": "descheduled",
       "task_name": "task_3",
-      "arrival_time": "0"
+      "arrival_time": "1200"
     },
     {
       "time": "1300",
@@ -537,14 +621,8 @@
     {
       "time": "1300",
       "event_type": "scheduled",
-      "task_name": "task_2",
-      "arrival_time": "1000"
-    },
-    {
-      "time": "1300",
-      "event_type": "scheduled",
       "task_name": "task_3",
-      "arrival_time": "0"
+      "arrival_time": "1200"
     },
     {
       "time": "1350",
@@ -555,14 +633,8 @@
     {
       "time": "1350",
       "event_type": "descheduled",
-      "task_name": "task_2",
-      "arrival_time": "1000"
-    },
-    {
-      "time": "1350",
-      "event_type": "descheduled",
       "task_name": "task_3",
-      "arrival_time": "0"
+      "arrival_time": "1200"
     },
     {
       "time": "1350",
@@ -573,14 +645,8 @@
     {
       "time": "1350",
       "event_type": "scheduled",
-      "task_name": "task_2",
-      "arrival_time": "1000"
-    },
-    {
-      "time": "1350",
-      "event_type": "scheduled",
       "task_name": "task_3",
-      "arrival_time": "0"
+      "arrival_time": "1200"
     },
     {
       "time": "1400",
@@ -591,20 +657,14 @@
     {
       "time": "1400",
       "event_type": "descheduled",
-      "task_name": "task_2",
-      "arrival_time": "1000"
-    },
-    {
-      "time": "1400",
-      "event_type": "descheduled",
       "task_name": "task_3",
-      "arrival_time": "0"
+      "arrival_time": "1200"
     },
     {
       "time": "1400",
       "event_type": "end_instance",
-      "task_name": "task_2",
-      "arrival_time": "1000"
+      "task_name": "task_3",
+      "arrival_time": "1200"
     },
     {
       "time": "1400",
@@ -613,45 +673,15 @@
       "arrival_time": "1200"
     },
     {
-      "time": "1400",
-      "event_type": "scheduled",
-      "task_name": "task_3",
-      "arrival_time": "0"
-    },
-    {
       "time": "1450",
       "event_type": "descheduled",
-      "task_name": "task_1",
-      "arrival_time": "1200"
-    },
-    {
-      "time": "1450",
-      "event_type": "descheduled",
-      "task_name": "task_3",
-      "arrival_time": "0"
-    },
-    {
-      "time": "1450",
-      "event_type": "end_instance",
       "task_name": "task_1",
       "arrival_time": "1200"
     },
     {
       "time": "1450",
       "event_type": "end_instance",
-      "task_name": "task_3",
-      "arrival_time": "0"
-    },
-    {
-      "time": "1450",
-      "event_type": "scheduled",
-      "task_name": "task_3",
-      "arrival_time": "1200"
-    },
-    {
-      "time": "1500",
-      "event_type": "descheduled",
-      "task_name": "task_3",
+      "task_name": "task_1",
       "arrival_time": "1200"
     },
     {
@@ -667,12 +697,6 @@
       "arrival_time": "1500"
     },
     {
-      "time": "1500",
-      "event_type": "scheduled",
-      "task_name": "task_3",
-      "arrival_time": "1200"
-    },
-    {
       "time": "1550",
       "event_type": "descheduled",
       "task_name": "task_0",
@@ -680,21 +704,9 @@
     },
     {
       "time": "1550",
-      "event_type": "descheduled",
-      "task_name": "task_3",
-      "arrival_time": "1200"
-    },
-    {
-      "time": "1550",
       "event_type": "scheduled",
       "task_name": "task_0",
       "arrival_time": "1500"
-    },
-    {
-      "time": "1550",
-      "event_type": "scheduled",
-      "task_name": "task_3",
-      "arrival_time": "1200"
     },
     {
       "time": "1600",
@@ -704,39 +716,15 @@
     },
     {
       "time": "1600",
-      "event_type": "descheduled",
-      "task_name": "task_3",
-      "arrival_time": "1200"
-    },
-    {
-      "time": "1600",
       "event_type": "scheduled",
       "task_name": "task_0",
       "arrival_time": "1500"
-    },
-    {
-      "time": "1600",
-      "event_type": "scheduled",
-      "task_name": "task_3",
-      "arrival_time": "1200"
     },
     {
       "time": "1650",
       "event_type": "descheduled",
       "task_name": "task_0",
       "arrival_time": "1500"
-    },
-    {
-      "time": "1650",
-      "event_type": "descheduled",
-      "task_name": "task_3",
-      "arrival_time": "1200"
-    },
-    {
-      "time": "1650",
-      "event_type": "end_instance",
-      "task_name": "task_3",
-      "arrival_time": "1200"
     },
     {
       "time": "1650",
@@ -819,10 +807,10 @@
   ],
   "metadata": {
     "start_time_offset": 0,
-    "total_events": 136,
-    "scheduler_type": "gpfp_cascade",
+    "total_events": 134,
+    "scheduler_type": "gpfp_asap",
     "processing_method": "simple_processor",
-    "processing_timestamp": "2026-01-14T23:19:07.617733",
+    "processing_timestamp": "2026-01-15T00:06:17.049493",
     "statistics": {
       "min_time": 0,
       "max_time": 1950,

@@ -63,6 +63,33 @@ namespace RTSim {
     };
 
     // =====================================================
+    // V28.13: 周期性等待队列检查事件
+    // =====================================================
+    class ASAPWaitingQueueCheckEvent : public MetaSim::Event {
+    private:
+        GPFPASAPScheduler *_scheduler;
+
+    public:
+        ASAPWaitingQueueCheckEvent(GPFPASAPScheduler *scheduler);
+        void doit() override;
+
+        // 设置周期性检查
+        void scheduleNextCheck(int delay_ms);
+    };
+
+    // =====================================================
+    // V28.14: 能量恢复事件
+    // =====================================================
+    class ASAPEnergyRecoveryEvent : public MetaSim::Event {
+    private:
+        GPFPASAPScheduler *_scheduler;
+
+    public:
+        ASAPEnergyRecoveryEvent(GPFPASAPScheduler *scheduler);
+        void doit() override;
+    };
+
+    // =====================================================
     // GPFPASAPTaskModel 类声明
     // =====================================================
     class GPFPASAPTaskModel : public TaskModel {
@@ -184,6 +211,7 @@ namespace RTSim {
 
         // ========== 能量预留管理 ==========
         std::map<AbsRTTask *, double> _reserved_energy;
+        double _dispatch_reserved_energy;  // ⭐ V28.13：dispatch阶段的总预留能量
 
         // ========== 时间片能量管理 ==========
         // 记录每个任务预付的能量（notify时预付1个时间片）
@@ -388,6 +416,7 @@ namespace RTSim {
         // 配置接口
         void setStartTimeOffset(MetaSim::Tick offset);
         void setKernel(MRTKernel *kernel);
+        MRTKernel* getKernel();  // ⭐ V28.14修复：在cpp中实现，需要dynamic_cast
         std::string getEnergyStatus() const;
 
         // 辅助方法
@@ -452,6 +481,10 @@ namespace RTSim {
         // 友元类声明
         friend class ASAPTaskActivationSimEvent;
         friend class ASAPSlicingEvent;
+        friend class ASAPWaitingQueueCheckEvent;
+
+        // ========== V28.13: 周期性等待队列检查 ==========
+        void triggerWaitingQueueCheck();
     };
 
 } // namespace RTSim

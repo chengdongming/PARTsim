@@ -161,12 +161,22 @@ namespace RTSim {
 
         // 🔒 V28.10修复：在任务到达时先收集能量
         // 这样即使初始能量为0，任务到达后也能先收集太阳能，然后再调度
+        // ⭐ V28.12扩展：为CASCADE和ASAP调度器都启用能量收集
+        MetaSim::Tick current_time = SIMUL.getTime();
+
         GPFPCASCADEScheduler *cascade_sched = dynamic_cast<GPFPCASCADEScheduler*>(_sched);
+        GPFPASAPScheduler *asap_sched = dynamic_cast<GPFPASAPScheduler*>(_sched);
+
         if (cascade_sched) {
-            MetaSim::Tick current_time = SIMUL.getTime();
             double harvested = cascade_sched->updateEnergyContinuously(static_cast<TimeMs>(current_time));
             if (harvested > 0.001) {
-                std::cout << "[DEBUG] onArrival()收集能量: " << harvested << "J @ "
+                std::cout << "[DEBUG] onArrival()收集能量(CASCADE): " << harvested << "J @ "
+                          << current_time << "ms" << std::endl;
+            }
+        } else if (asap_sched) {
+            double harvested = asap_sched->updateEnergyContinuously(static_cast<TimeMs>(current_time));
+            if (harvested > 0.001) {
+                std::cout << "[DEBUG] onArrival()收集能量(ASAP): " << harvested << "J @ "
                           << current_time << "ms" << std::endl;
             }
         }
@@ -297,11 +307,16 @@ namespace RTSim {
                 // NON-SENSE: this is putting all new tasks on WHAT CPU ?!?
 
                 // NOTE: this loop takes a long while to complete
-                for (;;) {
+                // ⭐ V28.13修复：允许只调度部分任务，不填满所有CPU
+                // 如果找不到可以驱逐的任务，就停止调度
+                for (int max_attempts = 100; max_attempts > 0; --max_attempts) {
                     AbsRTTask *t = _sched->getTaskN(i++);
                     if (t == nullptr) {
-                        throw RTKernelExc(
-                            "Can't find enough tasks to deschedule!");
+                        // 没有更多任务可以驱逐，停止调度
+                        DBGPRINT("No more tasks to deschedule, stopping dispatch");
+                        std::cout << "[DEBUG] MRTKernel::dispatch() - 没有更多任务可驱逐，停止调度 (num_newtasks=" << num_newtasks << ")" << std::endl;
+                        num_newtasks = 0;  // 清零，退出外层循环
+                        break;
                     }
 
                     // NOTE: does not check for running tasks, only dispatched

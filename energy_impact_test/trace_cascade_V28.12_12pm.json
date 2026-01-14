@@ -822,7 +822,7 @@
     "total_events": 136,
     "scheduler_type": "gpfp_cascade",
     "processing_method": "simple_processor",
-    "processing_timestamp": "2026-01-14T23:19:07.617733",
+    "processing_timestamp": "2026-01-14T23:19:24.321080",
     "statistics": {
       "min_time": 0,
       "max_time": 1950,

@@ -123,6 +123,83 @@ namespace RTSim {
     }
 
     // =====================================================
+    // ASAPWaitingQueueCheckEvent 实现
+    // =====================================================
+
+    ASAPWaitingQueueCheckEvent::ASAPWaitingQueueCheckEvent(GPFPASAPScheduler *scheduler)
+        : MetaSim::Event("ASAPWaitingQueueCheckEvent", MetaSim::Event::_DEFAULT_PRIORITY - 5),
+          _scheduler(scheduler) {
+        // 优先级高于默认事件，确保及时处理
+    }
+
+    void ASAPWaitingQueueCheckEvent::doit() {
+        if (!_scheduler) {
+            return;
+        }
+
+        MetaSim::Tick current_time = SIMUL.getTime();
+        int64_t current_ms = static_cast<int64_t>(current_time);
+
+        SCHEDULER_LOG_INFO("⏰ [V28.13] 周期性等待队列检查 @ " + std::to_string(current_ms) + "ms");
+
+        // 调用调度器的等待队列检查逻辑
+        _scheduler->triggerWaitingQueueCheck();
+    }
+
+    void ASAPWaitingQueueCheckEvent::scheduleNextCheck(int delay_ms) {
+        // 在delay_ms后再次触发检查
+        MetaSim::Tick current_time = SIMUL.getTime();
+        MetaSim::Tick next_time = current_time + delay_ms;
+
+        SCHEDULER_LOG_DEBUG("⏰ [V28.13] 安排下一次等待队列检查 @ " +
+                          std::to_string(static_cast<int64_t>(next_time)) + "ms" +
+                          " (延迟 " + std::to_string(delay_ms) + "ms)");
+
+        post(next_time);  // 直接调用post()，事件已经通过构造函数关联了调度器
+    }
+
+    // =====================================================
+    // ASAPEnergyRecoveryEvent 实现
+    // =====================================================
+
+    ASAPEnergyRecoveryEvent::ASAPEnergyRecoveryEvent(GPFPASAPScheduler *scheduler)
+        : MetaSim::Event("ASAPEnergyRecoveryEvent", MetaSim::Event::_DEFAULT_PRIORITY - 4),
+          _scheduler(scheduler) {
+        // 优先级高于默认事件，确保及时处理
+    }
+
+    void ASAPEnergyRecoveryEvent::doit() {
+        if (!_scheduler) {
+            return;
+        }
+
+        MetaSim::Tick current_time = SIMUL.getTime();
+        int64_t current_ms = static_cast<int64_t>(current_time);
+
+        SCHEDULER_LOG_INFO("🔋 [V28.14] 能量恢复事件触发 @ " + std::to_string(current_ms) + "ms");
+
+        // 1. 先收集能量
+        double harvested = _scheduler->updateEnergyContinuously(static_cast<TimeMs>(current_time));
+        if (harvested > 0.001) {
+            SCHEDULER_LOG_INFO("⚡ [V28.14] 收集到能量: " + std::to_string(harvested) + "J");
+        }
+
+        // 2. 获取当前能量
+        double current_energy = _scheduler->getCurrentEnergy();
+        SCHEDULER_LOG_INFO("💰 [V28.14] 当前能量: " + std::to_string(current_energy) + "J");
+
+        // 3. 触发kernel dispatch，开始新的调度轮次
+        MRTKernel *kernel = _scheduler->getKernel();
+        std::cout << "[DEBUG] [V28.14] getKernel()返回: " << reinterpret_cast<uintptr_t>(kernel) << std::endl;
+        if (kernel) {
+            SCHEDULER_LOG_INFO("🚀 [V28.14] 触发新的dispatch轮次");
+            kernel->dispatch();
+        } else {
+            SCHEDULER_LOG_WARNING("⚠️ [V28.14] 无法获取kernel指针");
+        }
+    }
+
+    // =====================================================
     // GPFPASAPTaskModel 实现
     // =====================================================
 
@@ -183,7 +260,8 @@ namespace RTSim {
         _batch_insert_count(0),
         _expected_batch_size(0),
         _batch_insert_in_progress(false),
-        _kernel(nullptr) {
+        _kernel(nullptr),
+        _dispatch_reserved_energy(0.0) {
         SCHEDULER_LOG_INFO("🚀 GPFP_ASAP Scheduler: 初始化开始");
 
         // 1. 从ConfigManager获取配置文件名
@@ -1848,6 +1926,31 @@ bool GPFPASAPScheduler::consumeEnergy(double energy_joules,
         double harvested =
             EnergyBridge::getInstance().updateEnergyContinuously(current_time);
         _stats.total_energy_harvested += harvested;
+
+        // ⭐ V28.12关键修复：能量收集后，检查并恢复等待队列中的高优先级任务
+        // 原因：如果高优先级任务因能量不足在等待队列中，能量收集后应该优先调度它们
+
+        // ⭐ V28.13改进：即使没有收集到能量，如果等待队列不为空，也要尝试恢复
+        // 原因：t=0ms时收集能量为0（时间差为0），但仍然需要尝试恢复任务
+        if (!_waiting_queue.empty()) {
+            double current_energy = EnergyBridge::getInstance().getCurrentEnergy();
+
+            if (harvested > 0.001) {
+                SCHEDULER_LOG_INFO("🔄 能量收集后检查等待队列: 收集=" + std::to_string(harvested) + "J" +
+                                 " 当前能量=" + std::to_string(current_energy) + "J" +
+                                 " 等待队列大小=" + std::to_string(_waiting_queue.size()));
+            } else {
+                // 即使没有收集到能量，也要检查是否可以恢复（用于初始状态）
+                SCHEDULER_LOG_INFO("🔄 [V28.13] 检查等待队列（无新能量）: 当前能量=" + std::to_string(current_energy) + "J" +
+                                 " 等待队列大小=" + std::to_string(_waiting_queue.size()));
+            }
+
+            int restored = requeueWaitingTasks(current_energy, nullptr);
+            if (restored > 0) {
+                SCHEDULER_LOG_WARNING("✅ [V28.13] 恢复了" + std::to_string(restored) + "个任务到就绪队列");
+            }
+        }
+
         return harvested;
     }
 
@@ -2013,12 +2116,27 @@ bool GPFPASAPScheduler::consumeEnergy(double energy_joules,
         MetaSim::Tick current_time = SIMUL.getTime();
         auto existing_it = _task_start_times.find(task);
 
-        // 只有当这是新到达的任务实例时才更新
-        // 判断方法：当前时间 > 已记录的时间（说明是新周期）
-        if (existing_it == _task_start_times.end() || current_time > existing_it->second) {
+        // ⭐ V28.13修复：只在周期性到达时更新_task_start_times
+        // 判断方法：检查当前时间是否是任务周期的整数倍
+        bool is_periodic_arrival = false;
+        auto model_it = _task_models.find(task);
+        if (model_it != _task_models.end()) {
+            GPFPASAPTaskModel *model = dynamic_cast<GPFPASAPTaskModel*>(model_it->second);
+            if (model) {
+                int period = model->getPeriod();
+                // 如果当前时间是周期的整数倍，认为是周期性到达
+                if (period > 0 && static_cast<int64_t>(current_time) % period == 0) {
+                    is_periodic_arrival = true;
+                }
+            }
+        }
+
+        // 只有在没有记录或者是周期性到达时才更新
+        if (existing_it == _task_start_times.end() || is_periodic_arrival) {
             _task_start_times[task] = current_time;
-            SCHEDULER_LOG_WARNING("📍 V28.12记录任务到达时间(ASAP): " + task_name +
-                             " time=" + std::to_string(static_cast<int64_t>(current_time)) + "ms");
+            SCHEDULER_LOG_WARNING("📍 V28.13记录任务到达时间(ASAP): " + task_name +
+                             " time=" + std::to_string(static_cast<int64_t>(current_time)) + "ms" +
+                             " (periodic=" + (is_periodic_arrival ? "true" : "false") + ")");
         }
 
         // === ASAP核心逻辑：只检查1个时间片的能量 ===
@@ -2101,6 +2219,33 @@ bool GPFPASAPScheduler::consumeEnergy(double energy_joules,
                         _waiting_queue.push_back(task);
                         _stats.total_skipped_energy++;
                     }
+
+                    // ⭐ V28.13关键修复：任务因能量不足放入等待队列后，立即触发能量收集和恢复
+                    // 原因：如果所有任务都在t=0ms因能量不足进入等待队列，应该立即开始收集能量
+                    //      收集到足够高优先级任务的能量后，立���恢复调度
+                    SCHEDULER_LOG_WARNING("🔋 [V28.13] 任务加入等待队列，立即触发能量收集和恢复: " + task_name);
+
+                    // 连续收集能量直到可以调度最高优先级任务
+                    MetaSim::Tick current_time = SIMUL.getTime();
+                    const int MAX_COLLECTION_ITERATIONS = 100;  // 防止无限循环
+                    int iteration = 0;
+
+                    while (!_waiting_queue.empty() && iteration < MAX_COLLECTION_ITERATIONS) {
+                        iteration++;
+
+                        // 收集能量
+                        double harvested = updateEnergyContinuously(static_cast<TimeMs>(current_time));
+
+                        // 尝试恢复等待队列中的任务
+                        double current_energy = EnergyBridge::getInstance().getCurrentEnergy();
+                        int restored_count = requeueWaitingTasks(current_energy, nullptr);
+
+                        if (restored_count > 0) {
+                            SCHEDULER_LOG_WARNING("✅ [V28.13] 能量收集后恢复" + std::to_string(restored_count) + "个任务到就绪队列");
+                            break;  // 成功恢复任务，退出循环
+                        }
+                    }
+
                     return;
                 }
 
@@ -2147,6 +2292,26 @@ bool GPFPASAPScheduler::consumeEnergy(double energy_joules,
                         _waiting_queue.push_back(task);
                         _stats.total_skipped_energy++;
                     }
+
+                    // ⭐ V28.13关键修复：任务因能量不足放入等待队列后，立即触发能量收集和恢复
+                    SCHEDULER_LOG_WARNING("🔋 [V28.13] 任务加入等待队列，立即触发能量收集和恢复: " + task_name);
+
+                    MetaSim::Tick current_time = SIMUL.getTime();
+                    const int MAX_COLLECTION_ITERATIONS = 100;
+                    int iteration = 0;
+
+                    while (!_waiting_queue.empty() && iteration < MAX_COLLECTION_ITERATIONS) {
+                        iteration++;
+                        double harvested = updateEnergyContinuously(static_cast<TimeMs>(current_time));
+                        double current_energy = EnergyBridge::getInstance().getCurrentEnergy();
+                        int restored_count = requeueWaitingTasks(current_energy, nullptr);
+
+                        if (restored_count > 0) {
+                            SCHEDULER_LOG_WARNING("✅ [V28.13] 能量收集后恢复" + std::to_string(restored_count) + "个任务到就绪队列");
+                            break;
+                        }
+                    }
+
                     return;
                 }
             }
@@ -2267,8 +2432,17 @@ bool GPFPASAPScheduler::consumeEnergy(double energy_joules,
             MetaSim::Tick current_time = SIMUL.getTime();
             SCHEDULER_LOG_INFO("⏳ ASAP: 触发能量恢复等待");
 
-            // 注意：不立即恢复等待队列，等待能量收集后再恢复
-            // 这将在下次能量收集或单位时间边界时处理
+            // ⭐ V28.13关键修复：任务因能量不足放入等待队列后，启动周期性检查定时器
+            // 原因：如果所有任务都在t=0ms因能量不足进入等待队列，需要定期检查能量收集和恢复
+            SCHEDULER_LOG_WARNING("🔋 [V28.13] 任务加入等待队列（能量不足路径），启动周期性检查: " + task_name);
+
+            // 启动周期性等待队列检查
+            ASAPWaitingQueueCheckEvent *check_event = new ASAPWaitingQueueCheckEvent(this);
+            check_event->post(SIMUL.getTime() + 1);  // 1ms后开始检查
+            SCHEDULER_LOG_INFO("⏰ [V28.13] 已安排1ms后开始周期性等待队列检查");
+
+            // 注意：不立即恢复等待队列，等待定时器触发检查
+            // 这将允许时间推进，能量收集
         }
     }
 
@@ -2627,11 +2801,103 @@ AbsRTTask *GPFPASAPScheduler::getFirst() {
         double energy_critical_threshold = 0.2;  // 能量紧张阈值：低于20%
         bool is_energy_critical = (energy_ratio < energy_critical_threshold);
 
-        // 🔍 调试输出：确认getTaskN被调用
-        std::cout << "[DEBUG] GPFPASAPScheduler::getTaskN(" << n << ") - 任务: " << getTaskShortName(task)
-                  << " 能量: " << current_energy << "J 比例: " << (energy_ratio * 100) << "% 紧张: " << (is_energy_critical ? "是" : "否") << std::endl;
+        // ⭐ V28.13修复：ASAP算法核心逻辑 - 使用预留能量实现多核级联调度
+        // 核心思想：dispatch阶段，每次getTaskN()调用时预留能量
+        // 第1个CPU调度task_0后，预留能量增加，第2个CPU调用getTaskN(1)时会看到剩余能量减少
+        double unit_energy = getUnitTimeEnergy(task);
+        std::string task_name = getTaskShortName(task);
 
-        // 如果能量紧张，检查任务的优先级和工作负载类型
+        // ⭐ V28.13关键：每次getTaskN(0)被调用时，认为是新的dispatch轮次开始，清零预留
+        if (n == 0) {
+            _dispatch_reserved_energy = 0.0;
+        }
+
+        // ⭐ V28.15关键修复：检查任务是否已经在运行
+        // 如果任务已经在运行，不需要预留能量（能量已经在调度时消耗了）
+        bool is_already_running = isTaskRunning(task);
+
+        // 计算可用能量 = 当前能量 - 已预留能量
+        double available_energy = current_energy - _dispatch_reserved_energy;
+
+        // ⭐ V28.15修复：如果任务已经在运行，不需要检查能量（已经在运行的任务会继续执行）
+        if (is_already_running) {
+            SCHEDULER_LOG_INFO("♻️ [V28.15] 任务已在运行: " + task_name +
+                             " 跳过能量预留检查");
+            // 不预留能量，直接返回任务
+            return task;
+        }
+
+        if (available_energy < unit_energy - 1e-6) {  // 能量不足
+            SCHEDULER_LOG_WARNING("⚡ [V28.13] ASAP能量不足，停止调度: " + task_name +
+                             " 需要=" + std::to_string(unit_energy) + "J" +
+                             " 可用=" + std::to_string(available_energy) + "J" +
+                             " (当前=" + std::to_string(current_energy) + "J" +
+                             " 已预留=" + std::to_string(_dispatch_reserved_energy) + "J)" +
+                             " (n=" + std::to_string(n) + ")");
+
+            // ⭐ V28.14修复：设置能量恢复定时器
+            // 计算需要收集的能量
+            double energy_needed = unit_energy - available_energy;
+
+            // 获取当前收集率（J/ms）
+            MetaSim::Tick current_time = SIMUL.getTime();
+            int64_t sim_time_ms = static_cast<int64_t>(current_time);
+
+            // ⭐ V28.14关键修复：getHarvestingRate()需要仿真时间（相对时间），不是绝对时间
+            // EnergyBridge内部会加上_start_time_offset转换为绝对时间
+            // 如果传入adjusted_time，会导致双重偏移！
+            SCHEDULER_LOG_INFO("🔍 [V28.14] getHarvestingRate调用: 仿真时间=" +
+                             std::to_string(sim_time_ms) + "ms");
+
+            double harvest_rate = EnergyBridge::getInstance().getHarvestingRate(sim_time_ms);
+
+            SCHEDULER_LOG_INFO("🔍 [V28.14] getHarvestingRate返回: " +
+                             std::to_string(harvest_rate) + " J/ms" +
+                             " (" + std::to_string(harvest_rate * 1000) + " J/s)");
+
+            // 如果收集率为0或负数，使用最小值避免除零
+            if (harvest_rate <= 1e-9) {
+                harvest_rate = 0.0001;  // 0.0001 J/ms = 0.1 J/s
+                SCHEDULER_LOG_WARNING("⚠️ [V28.14] 收集率接近0，使用最小值0.0001 J/ms");
+            }
+
+            // 计算等待时间（ms）
+            double wait_time_ms = energy_needed / harvest_rate;
+
+            // 设置最小等待时间（避免过于频繁）
+            if (wait_time_ms < 1.0) {
+                wait_time_ms = 1.0;
+            }
+
+            MetaSim::Tick wait_ticks = static_cast<MetaSim::Tick>(wait_time_ms);
+            MetaSim::Tick trigger_time = SIMUL.getTime() + wait_ticks;
+
+            std::string log_msg = "⏰ [V28.14] 设置能量恢复定时器: 需要能量=" +
+                               std::to_string(energy_needed) + "J" +
+                               " 收集率=" + std::to_string(harvest_rate * 1000) + " J/s" +
+                               " 等待时间=" + std::to_string(wait_time_ms) + "ms" +
+                               " 触发时间=" + std::to_string(static_cast<int64_t>(trigger_time)) + "ms";
+            SCHEDULER_LOG_INFO(log_msg);
+
+            // 创建并发布能量恢复事件
+            ASAPEnergyRecoveryEvent *recovery_event = new ASAPEnergyRecoveryEvent(this);
+            recovery_event->post(trigger_time);
+
+            return nullptr;  // ⭐ 立即停止，后续低优先级任务不调度
+        }
+
+        // 预留能量
+        _dispatch_reserved_energy += unit_energy;
+        SCHEDULER_LOG_INFO("🔒 [V28.13] 预留能量: " + task_name +
+                         " 预留=" + std::to_string(unit_energy) + "J" +
+                         " 总预留=" + std::to_string(_dispatch_reserved_energy) + "J" +
+                         " 剩余可用=" + std::to_string(available_energy - unit_energy) + "J");
+
+        // 🔍 调试输出：确认getTaskN被调用
+        std::cout << "[DEBUG] GPFPASAPScheduler::getTaskN(" << n << ") - 任务: " << task_name
+                  << " 能量: " << current_energy << "J 足够: 是" << std::endl;
+
+        // 保留原有的能量紧张检查（作为额外保护）
         if (is_energy_critical) {
             std::string task_name = getTaskShortName(task);
             auto workload_it = _task_workloads.find(task);
@@ -3549,7 +3815,14 @@ AbsRTTask *GPFPASAPScheduler::getFirst() {
 
     void GPFPASAPScheduler::setKernel(MRTKernel *kernel) {
         _kernel = kernel;
-        SCHEDULER_LOG_INFO("✅ 已设置Kernel指针");
+        // ⭐ V28.13关键修复：同时调用基类的setKernel()，设置基类的_kernel
+        Scheduler::setKernel(kernel);
+        std::cout << "[SET_KERNEL] ✅ [V28.13] 已设置Kernel指针: " << reinterpret_cast<uintptr_t>(kernel) << std::endl;
+    }
+
+    MRTKernel* GPFPASAPScheduler::getKernel() {
+        // ⭐ V28.14修复：从基类的_kernel dynamic_cast到MRTKernel*
+        return dynamic_cast<MRTKernel*>(Scheduler::_kernel);
     }
 
     void GPFPASAPScheduler::onTaskEnd(AbsRTTask *task) {
@@ -3628,6 +3901,71 @@ AbsRTTask *GPFPASAPScheduler::getFirst() {
             SCHEDULER_LOG_INFO("✅ 当前已在单位时间边界，立即dispatch: " +
                      std::to_string(static_cast<int64_t>(current_time)) + "ms");
             kernel->dispatch();
+        }
+    }
+
+    // =====================================================
+    // V28.13: 周期性等待队列检查
+    // =====================================================
+
+    void GPFPASAPScheduler::triggerWaitingQueueCheck() {
+        if (_waiting_queue.empty()) {
+            SCHEDULER_LOG_DEBUG("🔄 [V28.13] 等待队列为空，无需检查");
+            return;
+        }
+
+        MetaSim::Tick current_time = SIMUL.getTime();
+        int64_t current_ms = static_cast<int64_t>(current_time);
+
+        SCHEDULER_LOG_INFO("🔄 [V28.13] 触发等待队列检查: 时间=" + std::to_string(current_ms) + "ms" +
+                         " 等待队列大小=" + std::to_string(_waiting_queue.size()));
+
+        // 1. 能量收集
+        double harvested = updateEnergyContinuously(static_cast<TimeMs>(current_time));
+        if (harvested > 0.001) {
+            SCHEDULER_LOG_INFO("🔋 [V28.13] 本次检查收集能量: " + std::to_string(harvested) + "J");
+        }
+
+        // 2. 尝试恢复等待队列
+        // updateEnergyContinuously()内部会调用requeueWaitingTasks()
+        // 检查等待队列是否已清空
+        double current_energy = EnergyBridge::getInstance().getCurrentEnergy();
+
+        if (_waiting_queue.empty()) {
+            SCHEDULER_LOG_INFO("✅ [V28.13] 等待队列已清空，任务已恢复到就绪队列");
+
+            // ⭐ V28.13修复：kernel已支持部分调度，现在可以触发dispatch
+            // 检查就绪队列是否有任务且能量是否足够
+            size_t ready_queue_size = _queue.size();
+            double min_energy_needed = 0.1;  // 至少需要一个时间片的能量（0.1J）
+
+            if (ready_queue_size > 0 && current_energy >= min_energy_needed) {
+                MRTKernel *kernel = dynamic_cast<MRTKernel *>(Scheduler::_kernel);
+                if (kernel) {
+                    SCHEDULER_LOG_INFO("🚀 [V28.13] 触发kernel dispatch (就绪队列=" +
+                                     std::to_string(ready_queue_size) + " 能量=" +
+                                     std::to_string(current_energy) + "J)");
+                    kernel->dispatch();
+                } else {
+                    SCHEDULER_LOG_WARNING("⚠️ [V28.13] 基类_kernel为null或dynamic_cast失败");
+                }
+            } else {
+                SCHEDULER_LOG_INFO("⏳ [V28.13] 不触发dispatch (就绪队列=" +
+                                 std::to_string(ready_queue_size) + " 能量=" +
+                                 std::to_string(current_energy) + "J 需要>" +
+                                 std::to_string(min_energy_needed) + "J)");
+            }
+        } else {
+            SCHEDULER_LOG_INFO("⏳ [V28.13] 等待队列仍有任务（能量仍不足），等待下次检查");
+
+            // 如果能量仍不足，安排下一次检查��1ms后）
+            if (current_energy < 1.0) {  // 能量小于1J时继续检查
+                ASAPWaitingQueueCheckEvent *check_event = new ASAPWaitingQueueCheckEvent(this);
+                check_event->post(SIMUL.getTime() + 1);  // 1ms后再次检查
+                SCHEDULER_LOG_INFO("⏰ [V28.13] 安排1ms后再次检查等待队列");
+            } else {
+                SCHEDULER_LOG_WARNING("⚠️ [V28.13] 能量充足但仍无法恢复任务，可能存在其他问题");
+            }
         }
     }
 
