@@ -1772,6 +1772,37 @@ bool GPFPASAPScheduler::isTaskReady(AbsRTTask *task) const {
         return EnergyBridge::getInstance().getCurrentEnergy();
     }
 
+    double GPFPASAPScheduler::getInitialEnergy() const {
+        return EnergyBridge::getInstance().getInitialEnergy();
+    }
+
+    MetaSim::Tick GPFPASAPScheduler::getTaskPriority(AbsRTTask *task) const {
+        // 实现获取任务优先级的方法
+        // 使用RM(Rate Monotonic)调���：周期越短，优先级越高
+        if (!task) {
+            return std::numeric_limits<MetaSim::Tick>::max();
+        }
+
+        // 尝试转换为PeriodicTask获取周期
+        PeriodicTask *ptask = dynamic_cast<PeriodicTask *>(task);
+        if (ptask) {
+            // RM调度：优先级 = 周期（越小优先级越高）
+            return ptask->getPeriod();
+        }
+
+        // 默认返回一个较大的值（低优先级）
+        return std::numeric_limits<MetaSim::Tick>::max();
+    }
+
+    const std::vector<AbsRTTask *> &GPFPASAPScheduler::getReadyQueue() const {
+        // 返回等待队列（作为就绪队列的替代）
+        return _waiting_queue;
+    }
+
+    const std::map<AbsRTTask *, std::string> &GPFPASAPScheduler::getTaskWorkloads() const {
+        return _task_workloads;
+    }
+
 bool GPFPASAPScheduler::consumeEnergy(double energy_joules,
                                          const std::string &task_name) {
     // 🔒 V28.8修复：使用互斥锁保护能量操作，避免并发竞态条件
@@ -2015,12 +2046,48 @@ bool GPFPASAPScheduler::consumeEnergy(double energy_joules,
                      " 预估批次能耗: " + std::to_string(estimated_batch_energy) + "J" +
                      " (队列任务数: " + std::to_string(queue_size) + ")");
 
-            // 如果预估能耗超过当前能量,需要更严格的优先级检查
-            if (estimated_batch_energy > current_energy + 1e-6) {
+            // 🔑 V28.9新增：能量紧张阈值检查
+            // 如果当前能量非常低(低于初始能量的某个比例),应该只允许最高优先级任务调度
+            // 获取初始能量(假设初始能量为0.35J,或者从配置文件读取)
+            double initial_energy = EnergyBridge::getInstance().getInitialEnergy();
+            double energy_ratio = (initial_energy > 1e-9) ? (current_energy / initial_energy) : 1.0;
+            double energy_critical_threshold = 0.2;  // 🔑 能量紧张阈值：低于20%认为是能量紧张
+
+            bool is_energy_critical = (energy_ratio < energy_critical_threshold);
+
+            SCHEDULER_LOG_WARNING("⚡ ASAP能量状态: 当前=" + std::to_string(current_energy) + "J" +
+                     " 初始=" + std::to_string(initial_energy) + "J" +
+                     " 比例=" + std::to_string(energy_ratio * 100) + "%" +
+                     " 紧张=" + (is_energy_critical ? "是" : "否"));
+
+            // 如果预估能耗超过当前能量,或者能量处于紧张状态,需要更严格的优先级检查
+            if (estimated_batch_energy > current_energy + 1e-6 || is_energy_critical) {
                 // 能量紧张,只允许高优先级任务进入队列
                 SCHEDULER_LOG_WARNING("⚠️ ASAP: 能量紧张! 预估能耗(" +
                          std::to_string(estimated_batch_energy) + "J) > 当前能量(" +
-                         std::to_string(current_energy) + "J)");
+                         std::to_string(current_energy) + "J)" +
+                         (is_energy_critical ? " [能量比例<20%]" : ""));
+
+                // 🔑 V28.9新增：检查任务工作负载类型
+                // 在能量紧张时，只允许高优先级且高能耗的任务(如bzip2)调度
+                // 阻止低优先级或低能耗任务(如idle)
+                auto workload_it = _task_workloads.find(task);
+                std::string workload = (workload_it != _task_workloads.end())
+                                          ? workload_it->second
+                                          : "control";
+                bool is_idle_task = (workload.find("idle") != std::string::npos);
+
+                if (is_energy_critical && is_idle_task) {
+                    // 能量紧张时，阻止idle任务调度
+                    SCHEDULER_LOG_WARNING("❌ ASAP: 能量紧张时阻止idle任务调度: " + task_name +
+                             " 工作负载: " + workload +
+                             " 能量比例: " + std::to_string(energy_ratio * 100) + "%");
+                    if (std::find(_waiting_queue.begin(), _waiting_queue.end(), task) == _waiting_queue.end()) {
+                        _waiting_queue.push_back(task);
+                        _stats.total_skipped_energy++;
+                    }
+                    return;
+                }
 
                 // 检查当前任务是否比队列中已有的任务优先级更高
                 bool should_insert = true;  // 🔑 默认允许插入
@@ -2042,9 +2109,9 @@ bool GPFPASAPScheduler::consumeEnergy(double energy_joules,
                                  " (prio=" + std::to_string(current_prio) + ") vs " +
                                  getTaskShortName(queued_task) + " (prio=" + std::to_string(queued_prio) + ")");
 
-                        // 🔑 V28.9修复：如果当前任务优先级低于队列任务(数值更大),则不允许插入
+                        // 🔑 V28.9最终修复：如果队列任务优先级高于当前任务(数值更大,因为是负数),则不允许插入
                         // 能量紧张时，只允许最高优先级任务调度
-                        if (current_prio > queued_prio) {
+                        if (queued_prio > current_prio) {
                             // 队列中有更高优先级的任务,当前任务不应该插入
                             SCHEDULER_LOG_WARNING("❌ ASAP: 能量紧张且队列有更高/相同优先级任务: " + task_name +
                                      " (当前优先级: " + std::to_string(current_prio) +
@@ -2512,7 +2579,7 @@ AbsRTTask *GPFPASAPScheduler::getFirst() {
     // =====================================================
     AbsRTTask *GPFPASAPScheduler::getTaskN(unsigned int n) {
         // ⭐ V28.6修复：在getTaskN()中也添加单位时间边界检查
-        // 原因：MRTKernel::dispatch()使用getTaskN()而不是getFirst()
+        // ���因：MRTKernel::dispatch()使用getTaskN()而不是getFirst()
         //      如果只在getFirst()中检查边界，多核调度会完全绕过这个检查
 
         MetaSim::Tick current_time = SIMUL.getTime();
@@ -2532,6 +2599,63 @@ AbsRTTask *GPFPASAPScheduler::getFirst() {
         // 如果没有任务，直接返回nullptr
         if (!task) {
             return nullptr;
+        }
+
+        // ⭐ V28.10新增：在dispatch阶段进行能量紧张检查
+        // 原因：task_3在t=0ms被插入队列时能量充足，但在t=50ms调度时能量不足
+        //      需要在调度执行阶段也检查能量和优先级
+
+        // ⭐ 修复：从EnergyBridge获取当前能量，而不是使用_local_energy
+        double current_energy = _use_local_energy ? _local_energy : EnergyBridge::getInstance().getCurrentEnergy();
+        double initial_energy = EnergyBridge::getInstance().getInitialEnergy();
+        double energy_ratio = (initial_energy > 1e-9) ? (current_energy / initial_energy) : 1.0;
+        double energy_critical_threshold = 0.2;  // 能量紧张阈值：低于20%
+        bool is_energy_critical = (energy_ratio < energy_critical_threshold);
+
+        // 🔍 调试输出：确认getTaskN被调用
+        std::cout << "[DEBUG] GPFPASAPScheduler::getTaskN(" << n << ") - 任务: " << getTaskShortName(task)
+                  << " 能量: " << current_energy << "J 比例: " << (energy_ratio * 100) << "% 紧张: " << (is_energy_critical ? "是" : "否") << std::endl;
+
+        // 如果能量紧张，检查任务的优先级和工作负载类型
+        if (is_energy_critical) {
+            std::string task_name = getTaskShortName(task);
+            auto workload_it = _task_workloads.find(task);
+            std::string workload = (workload_it != _task_workloads.end())
+                                      ? workload_it->second
+                                      : "control";
+            bool is_idle_task = (workload.find("idle") != std::string::npos);
+
+            // 获取任务优先级（RM调度：周期越小优先级越高）
+            MetaSim::Tick current_prio = getTaskPriority(task);
+
+            // 获取当前队列中的最高优先级（RM调度：周期越小=优先级越高）
+            MetaSim::Tick highest_prio = std::numeric_limits<MetaSim::Tick>::max();
+            for (auto &t : _waiting_queue) {
+                MetaSim::Tick prio = getTaskPriority(t);
+                if (prio < highest_prio) {  // ⭐ 周期越小优先级越高
+                    highest_prio = prio;
+                }
+            }
+
+            // ⭐ 关键修复：能量紧张时，只允许最高优先级任务调度
+            // 如果当前任务不是最高优先级，返回nullptr阻止调度
+            // RM调度：周期���小优先级越高，所以current_prio > highest_prio表示低优先级
+            if (current_prio > highest_prio) {
+                SCHEDULER_LOG_WARNING("⚡ [dispatch] 能量紧张，阻止低优先级任务调度: " + task_name +
+                         " 工作负载: " + workload +
+                         " 优先级(周期): " + std::to_string(static_cast<int64_t>(current_prio)) +
+                         " 最高优先级(最小周期): " + std::to_string(static_cast<int64_t>(highest_prio)) +
+                         " 能量比例: " + std::to_string(energy_ratio * 100) + "%");
+                return nullptr;
+            }
+
+            // ⭐ 阻止idle任务在能量紧张时调度
+            if (is_idle_task) {
+                SCHEDULER_LOG_WARNING("⚡ [dispatch] 能量紧张，阻止idle任务调度: " + task_name +
+                         " 工作负载: " + workload +
+                         " 能量比例: " + std::to_string(energy_ratio * 100) + "%");
+                return nullptr;
+            }
         }
 
         SCHEDULER_LOG_DEBUG("getTaskN(" + std::to_string(n) + ") 返回: " + getTaskShortName(task));

@@ -31,6 +31,7 @@
 
         // 能量查询
         double getCurrentEnergy();
+        double getInitialEnergy();
         double getHarvestingRate(int64_t current_time_ms);
         std::string getEnergyStatus();
         std::string getDetailedEnergyStatus();

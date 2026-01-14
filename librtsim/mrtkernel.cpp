@@ -20,6 +20,7 @@
 #include <rtsim/mrtkernel.hpp>
 #include <rtsim/scheduler/scheduler.hpp>
 #include <rtsim/scheduler/gpfp_cascade_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_asap_scheduler.hpp>
 
 namespace RTSim {
     // =========================================================================
@@ -410,14 +411,61 @@ namespace RTSim {
             }
 
             // 🔒 V28.9修复：在schedule()之前预检查能量，避免记录虚假的scheduled事件
+            // ⭐ V28.10修复：扩展到GPFPASAPScheduler
             GPFPCASCADEScheduler *cascade_sched = dynamic_cast<GPFPCASCADEScheduler*>(_sched);
+            GPFPASAPScheduler *asap_sched = dynamic_cast<GPFPASAPScheduler*>(_sched);
             std::cout << "[DEBUG] _sched类型: " << typeid(*_sched).name() << std::endl;
-            std::cout << "[DEBUG] cascade_sched指针: " << cascade_sched << std::endl;
+            std::cout << "[DEBUG] cascade_sched指针: " << cascade_sched << " asap_sched指针: " << asap_sched << std::endl;
+
+            double unit_energy = 0.0;
+            double current_energy = 0.0;
+            bool check_energy = false;
 
             if (cascade_sched && task) {
-                double unit_energy = cascade_sched->getUnitTimeEnergy(st);
-                double current_energy = cascade_sched->getCurrentEnergy();
+                unit_energy = cascade_sched->getUnitTimeEnergy(st);
+                current_energy = cascade_sched->getCurrentEnergy();
+                check_energy = true;
+            } else if (asap_sched && task) {
+                unit_energy = asap_sched->getUnitTimeEnergy(st);
+                current_energy = asap_sched->getCurrentEnergy();
+                check_energy = true;
 
+                // ⭐ V28.10新增：ASAP调度器在能量紧张时的idle任务检查
+                double initial_energy = asap_sched->getInitialEnergy();
+                double energy_ratio = (initial_energy > 1e-9) ? (current_energy / initial_energy) : 1.0;
+                double energy_critical_threshold = 0.2;  // 能量紧张阈值：低于20%
+                bool is_energy_critical = (energy_ratio < energy_critical_threshold);
+
+                if (is_energy_critical) {
+                    std::cout << "[DEBUG] ASAP能量紧张检查: " << task->getName()
+                              << " 能量比例: " << (energy_ratio * 100) << "%" << std::endl;
+
+                    // 获取工作负载类型
+                    auto workload_it = asap_sched->getTaskWorkloads().find(st);
+                    std::string workload = (workload_it != asap_sched->getTaskWorkloads().end())
+                                              ? workload_it->second
+                                              : "control";
+                    bool is_idle_task = (workload.find("idle") != std::string::npos);
+
+                    std::cout << "[DEBUG] ASAP工作负载检查: " << task->getName()
+                              << " 工作负载: " << workload
+                              << " 是否idle: " << (is_idle_task ? "是" : "否") << std::endl;
+
+                    // ⭐ 阻止idle任务在能量紧张时调度
+                    if (is_idle_task) {
+                        std::cout << "[DEBUG] ASAP能量紧张，阻止idle任务调度: " << task->getName()
+                                  << " 工作负载: " << workload
+                                  << " 能量比例: " << (energy_ratio * 100) << "%" << std::endl;
+                        DBGPRINT("Energy critical, blocking idle task: ", taskname(st));
+                        _sched->extract(st);
+                        _m_currExe[p] = nullptr;
+                        _isContextSwitching[p] = false;
+                        return;
+                    }
+                }
+            }
+
+            if (check_energy) {
                 std::cout << "[DEBUG] MRTKernel::onEndDispatchMulti() - 能量预检查: " << task->getName()
                           << " 需要: " << std::fixed << std::setprecision(10) << unit_energy << "J"
                           << " 当前: " << std::fixed << std::setprecision(10) << current_energy << "J" << std::endl;
@@ -438,7 +486,7 @@ namespace RTSim {
                     std::cout << "[DEBUG] MRTKernel::onEndDispatchMulti() - 能量充足，允许调度: " << task->getName() << std::endl;
                 }
             } else {
-                std::cout << "[DEBUG] cascade_sched为nullptr或task为nullptr，跳过能量预检查" << std::endl;
+                std::cout << "[DEBUG] cascade_sched和asap_sched都为nullptr或task为nullptr，跳过能量预检查" << std::endl;
             }
 
             // 重要修复：检查任务是否真的应该被调度

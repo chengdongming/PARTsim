@@ -414,8 +414,8 @@ namespace RTSim {
         void validateEnergyParameters();
 
         // 重写基类方法
-        AbsRTTask *getFirst();
-        AbsRTTask *getTaskN(unsigned int n);
+        AbsRTTask *getFirst() override;
+        AbsRTTask *getTaskN(unsigned int n) override;
 
         // 重写extract方法 - 在任务从队列移除后检查等待队列
         void extract(AbsRTTask *task);
@@ -429,6 +429,11 @@ namespace RTSim {
 
         // 新增：检查任务是否真的被调度了
         bool isTaskReallyScheduled(AbsRTTask *task) const;
+
+        // ⭐ V28.10新增：用于MRTKernel能量紧张检查的getter方法
+        double getInitialEnergy() const;
+        const std::vector<AbsRTTask *> &getReadyQueue() const;
+        const std::map<AbsRTTask *, std::string> &getTaskWorkloads() const;
 
         // ========== 单位时间边界调度（V28.3） ==========
         // 计算下一个单位时间边界

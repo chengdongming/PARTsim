@@ -529,10 +529,15 @@ class EnergyHarvester:
                     logger.debug(f"  绝对时间: {absolute_time_ms}ms")
                     logger.debug(f"  时间: {hour:02d}:{minute:02d}:{second:02d}")
                     logger.debug(f"  倍数: {multiplier:.2f}, 季节: {season}")
-            
-            # 确保最小收集率
-            total_rate = max(total_rate, 0.000001)
-            
+
+            # ⭐ V28.11修复：只有在使用模拟数据时才确保最小收集率
+            # 当使用真实NASA太阳能数据时，辐照度就是0（如午夜），收集率应该也是0
+            # 强制设置最小收集率会导致理论值与实际值不匹配
+            if self.solar_loader is None:
+                # 只在不使用真实数据时应用最小收集率
+                total_rate = max(total_rate, 0.000001)
+            # 使用真实NASA数据时，保持total_rate不变（可能为0）
+
             # 缓存结果
             if len(self._harvest_rate_cache) >= self._cache_max_size:
                 keys_to_remove = list(self._harvest_rate_cache.keys())[:self._cache_max_size//2]

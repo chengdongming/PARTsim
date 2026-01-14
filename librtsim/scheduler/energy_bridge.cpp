@@ -1300,6 +1300,17 @@ namespace RTSim {
 
         return energy;
     }
+
+    double EnergyBridge::getInitialEnergy() {
+        if (!_initialized) {
+            SCHEDULER_LOG_ERROR("EnergyBridge: Not initialized");
+            return 0.0;
+        }
+
+        // 从ConfigManager获取初始能量
+        return ConfigManager::getInstance().getInitialEnergy();
+    }
+
     int64_t
         EnergyBridge::convertToAbsoluteTime(int64_t simulation_time_ms) const {
         return simulation_time_ms + _start_time_offset;
