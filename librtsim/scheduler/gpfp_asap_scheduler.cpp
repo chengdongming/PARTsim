@@ -2888,10 +2888,11 @@ AbsRTTask *GPFPASAPScheduler::getFirst() {
 
         // 预留能量
         _dispatch_reserved_energy += unit_energy;
-        SCHEDULER_LOG_INFO("🔒 [V28.13] 预留能量: " + task_name +
+        SCHEDULER_LOG_INFO("🔒 [V28.15] 预留能量: " + task_name +
                          " 预留=" + std::to_string(unit_energy) + "J" +
                          " 总预留=" + std::to_string(_dispatch_reserved_energy) + "J" +
-                         " 剩余可用=" + std::to_string(available_energy - unit_energy) + "J");
+                         " 预留前可用=" + std::to_string(available_energy) + "J" +
+                         " 预留后剩余=" + std::to_string(available_energy - unit_energy) + "J");
 
         // 🔍 调试输出：确认getTaskN被调用
         std::cout << "[DEBUG] GPFPASAPScheduler::getTaskN(" << n << ") - 任务: " << task_name
