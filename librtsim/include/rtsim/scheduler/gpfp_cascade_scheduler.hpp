@@ -423,6 +423,9 @@ namespace RTSim {
         // 统一的能量计算接口
         double getTaskEnergyConsumption(AbsRTTask *task) const;
 
+        // ⭐ V28.14新增：CASCADE级联调度
+        int cascadeScheduleFromWaitingQueue(double current_energy);
+
         // 新增验证函数
         void validateEnergyParameters();
 

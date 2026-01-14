@@ -158,14 +158,15 @@ namespace RTSim {
         SCHEDULER_LOG_INFO("💰 [V28.14] 当前能量: " +
                  std::to_string(current_energy) + "J");
 
-        // 3. ⭐ V28.14关键修复：通过getKernel()获取kernel指针并触发dispatch
-        MRTKernel *kernel = _scheduler->getKernel();
-        std::cout << "[DEBUG] [V28.14] CASCADE getKernel()返回: " << reinterpret_cast<uintptr_t>(kernel) << std::endl;
-        if (kernel) {
-            SCHEDULER_LOG_INFO("🚀 [V28.14] 触发kernel dispatch以调度等待队列中的任务");
-            kernel->dispatch();
+        // 3. ⭐ V28.14关键修复：实现CASCADE级联调度逻辑
+        // 不是简单调用kernel->dispatch()，而是从等待队列按优先级级联检查
+        int scheduled_count = _scheduler->cascadeScheduleFromWaitingQueue(current_energy);
+
+        if (scheduled_count > 0) {
+            SCHEDULER_LOG_INFO("🚀 [V28.14] CASCADE级联调度: 成功调度 " +
+                     std::to_string(scheduled_count) + " 个任务");
         } else {
-            SCHEDULER_LOG_WARNING("⚠️ [V28.14] 无法获取kernel指针");
+            SCHEDULER_LOG_WARNING("⚠️ [V28.14] CASCADE级联调度: 没有任务被调度");
         }
     }
 
@@ -2130,51 +2131,59 @@ bool GPFPCASCADEScheduler::consumeEnergy(double energy_joules,
                      " 当前: " + std::to_string(current_energy) + "J" +
                      " （不是deadline miss，等待能量恢复）");
 
-            // ⭐ 关键修复：调用Scheduler::insert()，让任务进入基类就绪队列
-            // 这样能量恢复后，kernel->dispatch()可以获取到这个任务
-            Scheduler::insert(task);
+            // ⭐ V28.14关键修复：与ASAP保持一致，能量不足时不调用Scheduler::insert()
+            // 只加入等待队列，这样任务不在基类就绪队列中
+            // Scheduler::insert(task);  // ❌ 注释掉这行
 
-            // 同时也加入CASCADE的等待队列，用于统计和管理
+            // 加入CASCADE的等待队列
             if (std::find(_waiting_queue.begin(), _waiting_queue.end(), task) == _waiting_queue.end()) {
                 _waiting_queue.push_back(task);
                 _stats.total_skipped_energy++;
                 SCHEDULER_LOG_INFO("📋 [V28.14] 任务已加入CASCADE等待队列: " + task_name +
                          " 等待队列大小: " + std::to_string(_waiting_queue.size()));
-            }
 
-            // ⭐ V28.14关键修复：添加主动能量恢复机制
-            // 当初始能量为0时，系统需要等待能量收集后再调度任务
-            if (_enable_energy_recovery) {
-                // 计算需要的能量
-                double energy_needed = unit_energy - current_energy;
+                // ⭐ V28.14关键修复：只对最高优先级的等待任务设置能量恢复定时器
+                // 找到等待队列中最高优先级的任务（周期最小的）
+                if (_enable_energy_recovery) {
+                    AbsRTTask *highest_prio_task = nullptr;
+                    int min_period = INT_MAX;
 
-                // 获取收集率（使用仿真时间，不是绝对时间）
-                MetaSim::Tick current_time = SIMUL.getTime();
-                int64_t sim_time_ms = static_cast<int64_t>(current_time);
-                double harvest_rate = EnergyBridge::getInstance().getHarvestingRate(sim_time_ms);
+                    for (AbsRTTask *t : _waiting_queue) {
+                        auto it = _task_periods.find(t);
+                        if (it != _task_periods.end() && it->second < min_period) {
+                            min_period = it->second;
+                            highest_prio_task = t;
+                        }
+                    }
 
-                // 计算等待时间
-                if (harvest_rate > 0) {
-                    double wait_time_ms = energy_needed / harvest_rate;
+                    // 只有当当前任务是最高优先级时，才设置恢复定时器
+                    if (highest_prio_task == task) {
+                        double energy_needed = getUnitTimeEnergy(task) - current_energy;
 
-                    // ⭐ V28.14关键修复：向上取整，确保收集足够的能量
-                    // 例如：wait_time_ms=1.026ms → 向上取整=2ms
-                    MetaSim::Tick wait_ticks = static_cast<MetaSim::Tick>(std::ceil(wait_time_ms));
-                    MetaSim::Tick trigger_time = current_time + wait_ticks;
+                        MetaSim::Tick current_time = SIMUL.getTime();
+                        int64_t sim_time_ms = static_cast<int64_t>(current_time);
+                        double harvest_rate = EnergyBridge::getInstance().getHarvestingRate(sim_time_ms);
 
-                    SCHEDULER_LOG_INFO(std::string("⏰ [V28.14] 设置CASCADE能量恢复定时器: ") +
-                        "需要能量=" + std::to_string(energy_needed) + "J " +
-                        "收集率=" + std::to_string(harvest_rate * 1000) + " J/s " +
-                        "等待时间=" + std::to_string(wait_time_ms) + "ms " +
-                        "向上取整=" + std::to_string(static_cast<int64_t>(wait_ticks)) + "ms " +
-                        "触发时间=" + std::to_string(static_cast<int64_t>(trigger_time)) + "ms");
+                        if (harvest_rate > 0 && energy_needed > 0) {
+                            double wait_time_ms = energy_needed / harvest_rate;
+                            MetaSim::Tick wait_ticks = static_cast<MetaSim::Tick>(std::ceil(wait_time_ms));
+                            MetaSim::Tick trigger_time = current_time + wait_ticks;
 
-                    // 设置能量恢复定时器
-                    CASCADEEnergyRecoveryEvent *recovery_event =
-                        new CASCADEEnergyRecoveryEvent(this);
-                    recovery_event->post(trigger_time);
-                } else {
-                    SCHEDULER_LOG_WARNING("⚠️ [V28.14] 收集率为0，无法设置能量恢复定时器");
+                            SCHEDULER_LOG_INFO(std::string("⏰ [V28.14] 设置CASCADE能量恢复定时器（最高优先级）: ") +
+                                "任务=" + task_name +
+                                " 需要能量=" + std::to_string(energy_needed) + "J " +
+                                "收集率=" + std::to_string(harvest_rate * 1000) + " J/s " +
+                                "等待时间=" + std::to_string(wait_time_ms) + "ms " +
+                                "向上取整=" + std::to_string(static_cast<int64_t>(wait_ticks)) + "ms " +
+                                "触发时间=" + std::to_string(static_cast<int64_t>(trigger_time)) + "ms");
+
+                            CASCADEEnergyRecoveryEvent *recovery_event =
+                                new CASCADEEnergyRecoveryEvent(this);
+                            recovery_event->post(trigger_time);
+                        }
+                    } else {
+                        SCHEDULER_LOG_INFO("⏸️ [V28.14] 跳过能量恢复定时器设置，当前任务不是最高优先级: " + task_name);
+                    }
                 }
             }
         }
@@ -3412,6 +3421,249 @@ AbsRTTask *GPFPCASCADEScheduler::getFirst() {
         return dynamic_cast<MRTKernel*>(Scheduler::_kernel);
     }
 
+    // =====================================================
+    // CASCADE级联调度（V28.14新增）
+    // =====================================================
+
+    int GPFPCASCADEScheduler::cascadeScheduleFromWaitingQueue(double current_energy) {
+        // ⭐ CASCADE核心逻辑：
+        // 1. 从等待队列按RM优先级排序
+        // 2. 从最高优先级开始检查
+        // 3. 找到能量足够的任务就调度它
+        // 4. 调度后从最高优先级重新开始（级联）
+        // 5. 重复直到所有任务都无法调度
+        // 6. 返回调度的任务数量
+
+        if (_waiting_queue.empty()) {
+            SCHEDULER_LOG_DEBUG("📋 [CASCADE] 等待队列为空，无需级联调度");
+            return 0;
+        }
+
+        // ⭐ V28.15关键修复：计算空闲 CPU 数量
+        // 只调度不超过空闲 CPU 数量的任务，避免任务驱逐
+        int running_count = _running_tasks.size();
+        int idle_cores = _num_cores - running_count;
+        int max_schedule = idle_cores;  // 最多调度的任务数
+
+        if (max_schedule <= 0) {
+            // 所有 CPU 都满了，不能调度新任务
+            SCHEDULER_LOG_INFO("📋 [CASCADE] 所有CPU满载，无法调度新任务");
+            return 0;
+        }
+
+        int scheduled_count = 0;
+        int cascade_round = 0;
+        const int MAX_CASCADE_ROUNDS = 100;  // 防止无限循环
+
+        SCHEDULER_LOG_INFO("🔄 [CASCADE] 开始级联调度，等待队列大小: " +
+                 std::to_string(_waiting_queue.size()) +
+                 " 当前能量: " + std::to_string(current_energy) + "J" +
+                 " 空闲CPU: " + std::to_string(idle_cores) +
+                 " 最多调度: " + std::to_string(max_schedule) + " 个任务");
+
+        // 按RM优先级排序等待队列（周期小的优先级高）
+        std::vector<AbsRTTask *> sorted_waiting = _waiting_queue;
+        std::sort(sorted_waiting.begin(), sorted_waiting.end(),
+            [this](AbsRTTask *a, AbsRTTask *b) {
+                auto period_a_it = _task_periods.find(a);
+                auto period_b_it = _task_periods.find(b);
+                if (period_a_it != _task_periods.end() && period_b_it != _task_periods.end()) {
+                    return period_a_it->second < period_b_it->second;  // 周期小的优先级高
+                }
+                return false;
+            });
+
+        // CASCADE级联循环
+        while (cascade_round < MAX_CASCADE_ROUNDS) {
+            cascade_round++;
+            bool task_scheduled_this_round = false;
+
+            SCHEDULER_LOG_INFO("🔄 [CASCADE] 第" + std::to_string(cascade_round) +
+                     "轮级联检查，当前能量: " + std::to_string(current_energy) + "J");
+
+            // 从最高优先级开始检查
+            for (AbsRTTask *task : sorted_waiting) {
+                std::string task_name = getTaskShortName(task);
+
+                // 检查任务是否已就绪（已通过Scheduler::insert加入基类队列）
+                // 如果已就绪，跳过
+                bool already_ready = false;
+                for (auto it = _queue.begin(); it != _queue.end(); ++it) {
+                    if ((*it)->getTask() == task) {
+                        already_ready = true;
+                        break;
+                    }
+                }
+
+                if (already_ready) {
+                    SCHEDULER_LOG_DEBUG("⏸️ [CASCADE] 任务已就绪，跳过: " + task_name);
+                    continue;
+                }
+
+                // 检查任务是否已完成
+                if (isTaskCompleted(task)) {
+                    SCHEDULER_LOG_DEBUG("❌ [CASCADE] 任务已完成，跳过: " + task_name);
+                    continue;
+                }
+
+                // 计算需要的能量
+                double unit_energy = getUnitTimeEnergy(task);
+
+                if (current_energy >= unit_energy - 1e-6) {
+                    // ⭐ V28.15关键修复：检查是否达到最大调度数量
+                    if (scheduled_count >= max_schedule) {
+                        SCHEDULER_LOG_INFO("⚠️ [CASCADE] 已达到最大调度数量（" +
+                                 std::to_string(max_schedule) + "），停止级联调度");
+                        break;
+                    }
+
+                    // 能量足够，调度这个任务
+                    SCHEDULER_LOG_INFO("✅ [CASCADE] 级联调度: " + task_name +
+                             " 需要能量: " + std::to_string(unit_energy) + "J" +
+                             " 当前能量: " + std::to_string(current_energy) + "J" +
+                             " 已调度: " + std::to_string(scheduled_count) +
+                             "/" + std::to_string(max_schedule));
+
+                    // 调用基类的insert()，将任务加入就绪队列
+                    Scheduler::insert(task);
+
+                    // 从等待队列中移除
+                    _waiting_queue.erase(
+                        std::remove(_waiting_queue.begin(), _waiting_queue.end(), task),
+                        _waiting_queue.end());
+
+                    // ⭐ V28.14关键修复：不在这里消耗能量！
+                    // 能量应该在任务真正执行时才消耗（在onBeginDispatchMulti中）
+                    // 这里只更新current_energy变量用于级联检查
+                    current_energy = current_energy - unit_energy;
+
+                    scheduled_count++;
+                    task_scheduled_this_round = true;
+
+                    // ⭐ 关键：调度一个任务后，立即从最高优先级重新开始
+                    SCHEDULER_LOG_INFO("🔄 [CASCADE] 任务已调度，从最高优先级重新开始级联检查");
+                    break;
+                } else {
+                    SCHEDULER_LOG_DEBUG("⚠️ [CASCADE] 能量不足，跳过: " + task_name +
+                             " 需要: " + std::to_string(unit_energy) + "J" +
+                             " 当前: " + std::to_string(current_energy) + "J");
+                }
+            }
+
+            // 如果这一轮没有调度任何任务，说明所有任务都无法调度
+            if (!task_scheduled_this_round) {
+                SCHEDULER_LOG_INFO("⏹️ [CASCADE] 所有任务都无法调度，结束级联检查");
+                break;
+            }
+        }
+
+        if (cascade_round >= MAX_CASCADE_ROUNDS) {
+            SCHEDULER_LOG_WARNING("⚠️ [CASCADE] 达到最大级联轮次限制");
+        }
+
+        SCHEDULER_LOG_INFO("📊 [CASCADE] 级联调度完成: 调度了 " +
+                 std::to_string(scheduled_count) + " 个任务" +
+                 " 剩余能量: " + std::to_string(current_energy) + "J" +
+                 " 等待队列大小: " + std::to_string(_waiting_queue.size()));
+
+        // ⭐ V28.15关键修复：智能调用dispatch()
+        // 逻辑：
+        // 1. 如果是第一次调度（没有任务在运行），必须调用 dispatch() 启动系统
+        // 2. 如果有新任务被调度，且有空闲 CPU，调用 dispatch() 调度新任务
+        // 3. 如果所有 CPU 都满了，不调用 dispatch()，让任务在就绪队列等待
+        if (scheduled_count > 0) {
+            MRTKernel *kernel = getKernel();
+            if (!kernel) {
+                SCHEDULER_LOG_WARNING("⚠️ [CASCADE] 无法获取kernel指针");
+                return scheduled_count;
+            }
+
+            bool has_running_tasks = !_running_tasks.empty();
+
+            if (!has_running_tasks) {
+                // 第一次调度，必须调用 dispatch() 启动系统
+                SCHEDULER_LOG_INFO("🚀 [CASCADE] 首次调度，触发kernel dispatch（启动系统）");
+                kernel->dispatch();
+            } else {
+                // 检查是否有空闲 CPU
+                int running_count = _running_tasks.size();
+                int idle_cores = _num_cores - running_count;
+
+                if (idle_cores > 0) {
+                    // 有空闲 CPU，调用 dispatch() 调度新任务
+                    SCHEDULER_LOG_INFO("🚀 [CASCADE] 有 " + std::to_string(idle_cores) + " 个空闲CPU，触发kernel dispatch");
+                    kernel->dispatch();
+                } else {
+                    // 所有 CPU 都满了，不调用 dispatch()，让任务在就绪队列等待
+                    SCHEDULER_LOG_INFO("📝 [CASCADE] 所有CPU满载，任务在就绪队列等待（避免驱逐）");
+                }
+            }
+        }
+
+        // ⭐ V28.15修复：如果等待队列不为空，设置下一次能量恢复
+        // CASCADE会持续恢复能量，尝试调度等待队列中最高优先级的任务
+        // 流程：
+        // 1. 如果等待队列为空，结束
+        // 2. 如果等待队列不为空，找到最高优先级任务（周期最小）
+        // 3. 计算需要多少能量才能调度该任务
+        // 4. 设置能量恢复定时器
+        // 5. 定时器触发后，再次调用cascadeScheduleFromWaitingQueue()
+        if (!_waiting_queue.empty()) {
+            // 找到等待队列中最高优先级的任务（周期最小）
+            AbsRTTask *highest_prio_task = nullptr;
+            int min_period = INT_MAX;
+
+            for (AbsRTTask *t : _waiting_queue) {
+                auto it = _task_periods.find(t);
+                if (it != _task_periods.end() && it->second < min_period) {
+                    min_period = it->second;
+                    highest_prio_task = t;
+                }
+            }
+
+            if (highest_prio_task) {
+                double unit_energy = getUnitTimeEnergy(highest_prio_task);
+                double energy_needed = unit_energy - current_energy;
+
+                if (energy_needed > 1e-6) {
+                    MetaSim::Tick current_time = SIMUL.getTime();
+                    int64_t sim_time_ms = static_cast<int64_t>(current_time);
+                    double harvest_rate = EnergyBridge::getInstance().getHarvestingRate(sim_time_ms);
+
+                    if (harvest_rate > 0) {
+                        double wait_time_ms = energy_needed / harvest_rate;
+                        MetaSim::Tick wait_ticks = static_cast<MetaSim::Tick>(std::ceil(wait_time_ms));
+                        MetaSim::Tick trigger_time = current_time + wait_ticks;
+
+                        std::string task_name = getTaskShortName(highest_prio_task);
+                        SCHEDULER_LOG_INFO(std::string("⏰ [CASCADE] 设置下一次能量恢复: ") +
+                            "任务=" + task_name +
+                            " 需要能量=" + std::to_string(unit_energy) + "J " +
+                            "当前能量=" + std::to_string(current_energy) + "J " +
+                            "缺少能量=" + std::to_string(energy_needed) + "J " +
+                            "收集率=" + std::to_string(harvest_rate * 1000) + " J/s " +
+                            "等待时间=" + std::to_string(wait_time_ms) + "ms " +
+                            "向上取整=" + std::to_string(static_cast<int64_t>(wait_ticks)) + "ms " +
+                            "触发时间=" + std::to_string(static_cast<int64_t>(trigger_time)) + "ms");
+
+                        CASCADEEnergyRecoveryEvent *recovery_event =
+                            new CASCADEEnergyRecoveryEvent(this);
+                        recovery_event->post(trigger_time);
+                    } else {
+                        SCHEDULER_LOG_WARNING("⚠️ [CASCADE] 太阳能收集率为0，无法设置能量恢复定时器");
+                    }
+                } else {
+                    // 能量足够，但为什么没有调度？
+                    // 可能是因为所有CPU都满了
+                    SCHEDULER_LOG_INFO("📋 [CASCADE] 能量足够但未调度（可能CPU满载）: " +
+                             getTaskShortName(highest_prio_task));
+                }
+            }
+        }
+
+        return scheduled_count;
+    }
+
     void GPFPCASCADEScheduler::onTaskEnd(AbsRTTask *task) {
         // ⭐ 通用接口：任务结束时检查等待队列
         // 这个方法可以从kernel的onEnd()或suspend()调用
@@ -3442,8 +3694,24 @@ AbsRTTask *GPFPCASCADEScheduler::getFirst() {
                 }
                 // 不在这里恢复等待队列或触发dispatch
             } else {
-                // 任务只��suspend，还没有真正结束
-                SCHEDULER_LOG_DEBUG("⏸️ 任务suspend，还有剩余时间，跳过等待队列检查: " + task_name);
+                // 任务只是suspend（时间片未完成）
+                SCHEDULER_LOG_DEBUG("⏸️ 任务suspend，还有剩余时间: " + task_name);
+
+                // ⭐ V28.15关键修复：时间片结束时检查等待队列
+                // 当任务完成一个时间片（suspend）时，应该检查等待队列是否有任务可以调度
+                if (!_waiting_queue.empty()) {
+                    SCHEDULER_LOG_INFO("📋 [CASCADE] 时间片结束，检查等待队列: " +
+                             std::to_string(_waiting_queue.size()) + " 个任务等待");
+
+                    // 调用级联调度，检查等待队列
+                    double current_energy = getCurrentEnergy();
+                    int scheduled_count = cascadeScheduleFromWaitingQueue(current_energy);
+
+                    if (scheduled_count > 0) {
+                        SCHEDULER_LOG_INFO("🚀 [CASCADE] 从等待队列调度了 " +
+                                 std::to_string(scheduled_count) + " 个任务");
+                    }
+                }
             }
         } else {
             SCHEDULER_LOG_WARNING("⚠️ onTaskEnd: 任务剩余时间未初始化: " + task_name);
