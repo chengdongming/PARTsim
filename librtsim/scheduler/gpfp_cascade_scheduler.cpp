@@ -129,6 +129,47 @@ namespace RTSim {
     }
 
     // =====================================================
+    // CASCADEEnergyRecoveryEvent 实现（V28.14新增）
+    // =====================================================
+
+    CASCADEEnergyRecoveryEvent::CASCADEEnergyRecoveryEvent(GPFPCASCADEScheduler *scheduler)
+        : MetaSim::Event("CASCADEEnergyRecoveryEvent"),
+          _scheduler(scheduler) {}
+
+    void CASCADEEnergyRecoveryEvent::doit() {
+        if (!_scheduler) {
+            SCHEDULER_LOG_ERROR("⚠️ [V28.14] CASCADE能量恢复事件: _scheduler为空");
+            return;
+        }
+
+        MetaSim::Tick current_time = SIMUL.getTime();
+        int64_t current_ms = static_cast<int64_t>(current_time);
+
+        SCHEDULER_LOG_INFO("🔋 [V28.14] CASCADE能量恢复事件触发 @ " +
+                 std::to_string(current_ms) + "ms");
+
+        // 1. 收集能量（从上次事件到现在的所有能量）
+        double harvested = _scheduler->updateEnergyContinuously(current_time);
+        SCHEDULER_LOG_INFO("💰 [V28.14] 本次恢复收集能量: " +
+                 std::to_string(harvested) + "J");
+
+        // 2. 获取当前能量
+        double current_energy = _scheduler->getCurrentEnergy();
+        SCHEDULER_LOG_INFO("💰 [V28.14] 当前能量: " +
+                 std::to_string(current_energy) + "J");
+
+        // 3. ⭐ V28.14关键修复：通过getKernel()获取kernel指针并触发dispatch
+        MRTKernel *kernel = _scheduler->getKernel();
+        std::cout << "[DEBUG] [V28.14] CASCADE getKernel()返回: " << reinterpret_cast<uintptr_t>(kernel) << std::endl;
+        if (kernel) {
+            SCHEDULER_LOG_INFO("🚀 [V28.14] 触发kernel dispatch以调度等待队列中的任务");
+            kernel->dispatch();
+        } else {
+            SCHEDULER_LOG_WARNING("⚠️ [V28.14] 无法获取kernel指针");
+        }
+    }
+
+    // =====================================================
     // GPFPCASCADETaskModel 实现
     // =====================================================
 
@@ -1543,9 +1584,12 @@ namespace RTSim {
 
         // 获取收集率
         double harvest_rate = 0.0;
-        TimeMs adjusted_time = getAdjustedTime(current_time);
+        // ⭐ V28.14关键修复：getHarvestingRate()需要仿真时间（相对时间），不是绝对时间
+        // EnergyBridge内部会加上_start_time_offset转换为绝对时间
+        // 如果传入adjusted_time，会导致双重偏移！
+        int64_t sim_time_ms = static_cast<int64_t>(current_time);
         harvest_rate = EnergyBridge::getInstance().getHarvestingRate(
-            adjusted_time);
+            sim_time_ms);
 
         // 修复：如果收集率为0，使用一个非常小的值，但记录警告
         if (harvest_rate <= 0) {
@@ -1597,7 +1641,7 @@ namespace RTSim {
         // 调用EnergyBridge的waitForEnergyRecovery
         bool recovery_set = EnergyBridge::getInstance().waitForEnergyRecovery(
             _recovery_required_energy,
-            static_cast<int64_t>(adjusted_time),
+            static_cast<int64_t>(sim_time_ms),  // ⭐ V28.14修复：使用sim_time_ms
             actual_wait_time_ms);
 
         if (recovery_set) {
@@ -2079,43 +2123,60 @@ bool GPFPCASCADEScheduler::consumeEnergy(double energy_joules,
 
         } else {
             // 连1个时间片的能量都没有
-            // 不触发deadline miss（因为还没到截止时间），只记录为能量不足
-            SCHEDULER_LOG_WARNING("⚠️ 决策: 能量不足，跳过任务: " + task_name +
+            // ⭐ V28.14关键修复：与ASAP保持一致，能量不足时也调用Scheduler::insert()
+            // 这样任务会进入基类就绪队列，能量恢复后可以被调度
+            SCHEDULER_LOG_WARNING("⚠️ 决策: 能量不足，但仍加入就绪队列: " + task_name +
                      " 需要1时间片: " + std::to_string(unit_energy) + "J" +
                      " 当前: " + std::to_string(current_energy) + "J" +
                      " （不是deadline miss，等待能量恢复）");
 
-            // 只记录统计，不触发deadline miss事件
-            _stats.total_skipped_energy++;
+            // ⭐ 关键修复：调用Scheduler::insert()，让任务进入基类就绪队列
+            // 这样能量恢复后，kernel->dispatch()可以获取到这个任务
+            Scheduler::insert(task);
 
-            // ⭐ 关键修复：当高优先级任务能量不足时，检查等待队列中的低优先级任务
-            // 这是CASCADE优先级反转的核心逻辑！
-            if (!_waiting_queue.empty()) {
-                SCHEDULER_LOG_INFO("🔍 高优先级任务能量不足，检查等待队列（大小: " +
-                         std::to_string(_waiting_queue.size()) + "）");
-
-                double energy_before = getCurrentEnergy();
-                bool task_restored = requeueWaitingTasks(current_energy, nullptr);
-                double energy_after = getCurrentEnergy();
-
-                if (task_restored) {
-                    SCHEDULER_LOG_INFO("✅ 从等待队列恢复了任务！能量变化: " +
-                             std::to_string(energy_before) + "J → " +
-                             std::to_string(energy_after) + "J");
-
-                    // 如果恢复了任务，触发dispatch
-                    MRTKernel *kernel = dynamic_cast<MRTKernel *>(task->getKernel());
-                    if (kernel != nullptr) {
-                        SCHEDULER_LOG_INFO("🚀 触发dispatch以调度恢复的任务");
-                        kernel->dispatch();
-                    }
-                } else {
-                    SCHEDULER_LOG_INFO("❌ 等待队列中没有可以调度的任务");
-                }
+            // 同时也加入CASCADE的等待队列，用于统计和管理
+            if (std::find(_waiting_queue.begin(), _waiting_queue.end(), task) == _waiting_queue.end()) {
+                _waiting_queue.push_back(task);
+                _stats.total_skipped_energy++;
+                SCHEDULER_LOG_INFO("📋 [V28.14] 任务已加入CASCADE等待队列: " + task_name +
+                         " 等待队列大小: " + std::to_string(_waiting_queue.size()));
             }
 
-            // 不将任务加入就绪队列
-            // 当能量恢复或下次周期到达时会重新尝试
+            // ⭐ V28.14关键修复：添加主动能量恢复机制
+            // 当初始能量为0时，系统需要等待能量收集后再调度任务
+            if (_enable_energy_recovery) {
+                // 计算需要的能量
+                double energy_needed = unit_energy - current_energy;
+
+                // 获取收集率（使用仿真时间，不是绝对时间）
+                MetaSim::Tick current_time = SIMUL.getTime();
+                int64_t sim_time_ms = static_cast<int64_t>(current_time);
+                double harvest_rate = EnergyBridge::getInstance().getHarvestingRate(sim_time_ms);
+
+                // 计算等待时间
+                if (harvest_rate > 0) {
+                    double wait_time_ms = energy_needed / harvest_rate;
+
+                    // ⭐ V28.14关键修复：向上取整，确保收集足够的能量
+                    // 例如：wait_time_ms=1.026ms → 向上取整=2ms
+                    MetaSim::Tick wait_ticks = static_cast<MetaSim::Tick>(std::ceil(wait_time_ms));
+                    MetaSim::Tick trigger_time = current_time + wait_ticks;
+
+                    SCHEDULER_LOG_INFO(std::string("⏰ [V28.14] 设置CASCADE能量恢复定时器: ") +
+                        "需要能量=" + std::to_string(energy_needed) + "J " +
+                        "收集率=" + std::to_string(harvest_rate * 1000) + " J/s " +
+                        "等待时间=" + std::to_string(wait_time_ms) + "ms " +
+                        "向上取整=" + std::to_string(static_cast<int64_t>(wait_ticks)) + "ms " +
+                        "触发时间=" + std::to_string(static_cast<int64_t>(trigger_time)) + "ms");
+
+                    // 设置能量恢复定时器
+                    CASCADEEnergyRecoveryEvent *recovery_event =
+                        new CASCADEEnergyRecoveryEvent(this);
+                    recovery_event->post(trigger_time);
+                } else {
+                    SCHEDULER_LOG_WARNING("⚠️ [V28.14] 收集率为0，无法设置能量恢复定时器");
+                }
+            }
         }
     }
 
@@ -3341,7 +3402,14 @@ AbsRTTask *GPFPCASCADEScheduler::getFirst() {
 
     void GPFPCASCADEScheduler::setKernel(MRTKernel *kernel) {
         _kernel = kernel;
-        SCHEDULER_LOG_INFO("✅ 已设置Kernel指针");
+        // ⭐ V28.14关键修复：同时调用基类的setKernel()，设置基类的_kernel
+        Scheduler::setKernel(kernel);
+        SCHEDULER_LOG_INFO("✅ [V28.14] 已设置Kernel指针: " + std::to_string(reinterpret_cast<uintptr_t>(kernel)));
+    }
+
+    MRTKernel* GPFPCASCADEScheduler::getKernel() {
+        // ⭐ V28.14修复：从基类的_kernel dynamic_cast到MRTKernel*
+        return dynamic_cast<MRTKernel*>(Scheduler::_kernel);
     }
 
     void GPFPCASCADEScheduler::onTaskEnd(AbsRTTask *task) {

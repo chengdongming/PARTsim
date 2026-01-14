@@ -5139,3 +5139,1157 @@ IsADirectoryError: [Errno 21] Is a directory: '.'
 2026-01-15 03:10:19.976 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1850ms, energy=307.603J, level=HIGH, consumed=5.300J, harvested=312.903J
 2026-01-15 03:10:19.976 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1900ms, energy=315.960J, level=HIGH, consumed=5.400J, harvested=321.360J
 2026-01-15 03:10:19.977 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1950ms, energy=324.317J, level=HIGH, consumed=5.500J, harvested=329.817J
+2026-01-15 03:26:46.947 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: energy_impact_test/config_cascade_V28.14_0am.yml
+2026-01-15 03:26:46.955 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: energy_impact_test/config_cascade_V28.14_0am.yml
+2026-01-15 03:26:46.955 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0
+2026-01-15 03:26:46.955 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0
+2026-01-15 03:26:46.955 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=0 计算 start_offset_minutes=267840
+2026-01-15 03:26:46.955 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267840, simulation_start_time=16070400000ms
+2026-01-15 03:26:46.955 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-15 03:26:46.955 [INFO    ] [energy_manager      ] EnergyConfig loaded from energy_impact_test/config_cascade_V28.14_0am.yml
+2026-01-15 03:26:46.955 [INFO    ] [energy_manager      ]   Initial energy: 0.0 J
+2026-01-15 03:26:46.956 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-15 03:26:46.956 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-15 03:26:46.956 [INFO    ] [energy_manager      ]   Debug mode: True
+2026-01-15 03:26:46.956 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-01-15 03:26:46.956 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-01-15 03:26:46.956 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-15 03:26:46.956 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-01-15 03:26:46.956 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-01-15 03:26:46.956 [INFO    ] [energy_manager      ]     时间偏移: 267840 分钟
+2026-01-15 03:26:46.956 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-15 03:26:46.956 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-15 03:26:46.956 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-15 03:26:46.956 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-15 03:26:46.956 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-15 03:26:46.956 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-15 03:26:46.956 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-15 03:26:46.956 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-15 03:26:46.956 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-15 03:26:46.956 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-15 03:26:46.956 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-15 03:26:48.464 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-01-15 03:26:48.464 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-15 03:26:48.464 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-01-15 03:26:48.464 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 267840 分钟
+2026-01-15 03:26:48.464 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0
+2026-01-15 03:26:48.464 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0
+2026-01-15 03:26:48.464 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-15 03:26:48.464 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-15 03:26:48.464 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16070400000ms
+2026-01-15 03:26:48.465 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 00:00:00
+2026-01-15 03:26:48.465 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-15 03:26:48.465 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=energy_impact_test/config_cascade_V28.14_0am.yml, current_config_file=energy_impact_test/config_cascade_V28.14_0am.yml
+2026-01-15 03:26:48.465 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: energy_impact_test/config_cascade_V28.14_0am.yml
+2026-01-15 03:26:48.465 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.0J
+2026-01-15 03:26:48.466 [INFO    ] [energy_manager      ] EnergyHarvester: Start time offset set to 16070400000 ms (00:00:00)
+2026-01-15 03:26:48.466 [INFO    ] [energy_manager      ] EnergyManager: 仿真开始时间设置为: 00:00 (偏移: 16070400000ms)
+2026-01-15 03:26:48.470 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=00:00，起始时间=16070400000ms
+2026-01-15 03:26:53.046 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 03:26:53.053 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 03:26:53.053 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0
+2026-01-15 03:26:53.053 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0
+2026-01-15 03:26:53.054 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=28800000 计算 start_offset_minutes=268320
+2026-01-15 03:26:53.054 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268320, simulation_start_time=16099200000ms
+2026-01-15 03:26:53.054 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-15 03:26:53.054 [INFO    ] [energy_manager      ] EnergyConfig loaded from energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 03:26:53.054 [INFO    ] [energy_manager      ]   Initial energy: 0.0 J
+2026-01-15 03:26:53.054 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-15 03:26:53.054 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-15 03:26:53.054 [INFO    ] [energy_manager      ]   Debug mode: True
+2026-01-15 03:26:53.054 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-01-15 03:26:53.055 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-01-15 03:26:53.055 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-15 03:26:53.055 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-01-15 03:26:53.055 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-01-15 03:26:53.055 [INFO    ] [energy_manager      ]     时间偏移: 268320 分钟
+2026-01-15 03:26:53.055 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-15 03:26:53.055 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-15 03:26:53.055 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-15 03:26:53.055 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-15 03:26:53.055 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-15 03:26:53.055 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-15 03:26:53.055 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-15 03:26:53.055 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-15 03:26:53.055 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-15 03:26:53.055 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-15 03:26:53.055 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-15 03:26:54.464 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-01-15 03:26:54.464 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-15 03:26:54.465 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-01-15 03:26:54.465 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268320 分钟
+2026-01-15 03:26:54.465 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0
+2026-01-15 03:26:54.465 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0
+2026-01-15 03:26:54.465 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-15 03:26:54.465 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-15 03:26:54.465 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16099200000ms
+2026-01-15 03:26:54.465 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-01-15 03:26:54.465 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-15 03:26:54.465 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=energy_impact_test/config_cascade_V28.14_8am.yml, current_config_file=energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 03:26:54.465 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 03:26:54.465 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.0J
+2026-01-15 03:26:54.466 [INFO    ] [energy_manager      ] EnergyHarvester: Start time offset set to 16099200000 ms (08:00:00)
+2026-01-15 03:26:54.466 [INFO    ] [energy_manager      ] EnergyManager: 仿真开始时间设置为: 08:00 (偏移: 16099200000ms)
+2026-01-15 03:26:54.469 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=08:00，起始时间=16099200000ms
+2026-01-15 03:26:54.470 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=500ms, energy=48.605J, level=CRITICAL, consumed=0.100J, harvested=48.705J
+2026-01-15 03:26:54.470 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=550ms, energy=53.376J, level=LOW, consumed=0.200J, harvested=53.576J
+2026-01-15 03:26:54.471 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=600ms, energy=58.146J, level=LOW, consumed=0.300J, harvested=58.446J
+2026-01-15 03:26:54.471 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=600ms, energy=58.046J, level=LOW, consumed=0.400J, harvested=58.446J
+2026-01-15 03:26:54.472 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=650ms, energy=62.817J, level=LOW, consumed=0.500J, harvested=63.317J
+2026-01-15 03:26:54.472 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=650ms, energy=62.717J, level=LOW, consumed=0.600J, harvested=63.317J
+2026-01-15 03:26:54.473 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=700ms, energy=67.487J, level=LOW, consumed=0.700J, harvested=68.187J
+2026-01-15 03:26:54.473 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=700ms, energy=67.387J, level=LOW, consumed=0.800J, harvested=68.187J
+2026-01-15 03:26:54.474 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=750ms, energy=72.158J, level=LOW, consumed=0.900J, harvested=73.058J
+2026-01-15 03:26:54.474 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=750ms, energy=72.058J, level=LOW, consumed=1.000J, harvested=73.058J
+2026-01-15 03:26:54.475 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=800ms, energy=76.828J, level=LOW, consumed=1.100J, harvested=77.928J
+2026-01-15 03:26:54.475 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=800ms, energy=76.728J, level=LOW, consumed=1.200J, harvested=77.928J
+2026-01-15 03:26:54.475 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=850ms, energy=81.499J, level=LOW, consumed=1.300J, harvested=82.799J
+2026-01-15 03:26:54.476 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=850ms, energy=81.399J, level=LOW, consumed=1.400J, harvested=82.799J
+2026-01-15 03:26:54.476 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=900ms, energy=86.170J, level=LOW, consumed=1.500J, harvested=87.670J
+2026-01-15 03:26:54.476 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=900ms, energy=86.070J, level=LOW, consumed=1.600J, harvested=87.670J
+2026-01-15 03:26:54.477 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=950ms, energy=90.840J, level=LOW, consumed=1.700J, harvested=92.540J
+2026-01-15 03:26:54.477 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=950ms, energy=90.740J, level=LOW, consumed=1.800J, harvested=92.540J
+2026-01-15 03:26:54.478 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1000ms, energy=95.511J, level=LOW, consumed=1.900J, harvested=97.411J
+2026-01-15 03:26:54.478 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1000ms, energy=95.411J, level=LOW, consumed=2.000J, harvested=97.411J
+2026-01-15 03:26:54.479 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1000ms, energy=95.311J, level=LOW, consumed=2.100J, harvested=97.411J
+2026-01-15 03:26:54.479 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1050ms, energy=100.081J, level=NORMAL, consumed=2.200J, harvested=102.281J
+2026-01-15 03:26:54.480 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1050ms, energy=99.981J, level=LOW, consumed=2.300J, harvested=102.281J
+2026-01-15 03:26:54.480 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1050ms, energy=99.881J, level=LOW, consumed=2.400J, harvested=102.281J
+2026-01-15 03:26:54.480 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1100ms, energy=104.652J, level=NORMAL, consumed=2.500J, harvested=107.152J
+2026-01-15 03:26:54.481 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1100ms, energy=104.552J, level=NORMAL, consumed=2.600J, harvested=107.152J
+2026-01-15 03:26:54.481 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1150ms, energy=109.322J, level=NORMAL, consumed=2.700J, harvested=112.022J
+2026-01-15 03:26:54.482 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1150ms, energy=109.222J, level=NORMAL, consumed=2.800J, harvested=112.022J
+2026-01-15 03:26:54.482 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1200ms, energy=113.993J, level=NORMAL, consumed=2.900J, harvested=116.893J
+2026-01-15 03:26:54.483 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1200ms, energy=113.893J, level=NORMAL, consumed=3.000J, harvested=116.893J
+2026-01-15 03:26:54.483 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1200ms, energy=113.793J, level=NORMAL, consumed=3.100J, harvested=116.893J
+2026-01-15 03:26:54.484 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1250ms, energy=118.563J, level=NORMAL, consumed=3.200J, harvested=121.763J
+2026-01-15 03:26:54.484 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1250ms, energy=118.463J, level=NORMAL, consumed=3.300J, harvested=121.763J
+2026-01-15 03:26:54.484 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1250ms, energy=118.363J, level=NORMAL, consumed=3.400J, harvested=121.763J
+2026-01-15 03:26:54.485 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1300ms, energy=123.134J, level=NORMAL, consumed=3.500J, harvested=126.634J
+2026-01-15 03:26:54.485 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1300ms, energy=123.034J, level=NORMAL, consumed=3.600J, harvested=126.634J
+2026-01-15 03:26:54.486 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1300ms, energy=122.934J, level=NORMAL, consumed=3.700J, harvested=126.634J
+2026-01-15 03:26:54.486 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1350ms, energy=127.704J, level=NORMAL, consumed=3.800J, harvested=131.504J
+2026-01-15 03:26:54.487 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1350ms, energy=127.604J, level=NORMAL, consumed=3.900J, harvested=131.504J
+2026-01-15 03:26:54.487 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1350ms, energy=127.504J, level=NORMAL, consumed=4.000J, harvested=131.504J
+2026-01-15 03:26:54.488 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1400ms, energy=132.275J, level=NORMAL, consumed=4.100J, harvested=136.375J
+2026-01-15 03:26:54.488 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1400ms, energy=132.175J, level=NORMAL, consumed=4.200J, harvested=136.375J
+2026-01-15 03:26:54.488 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1450ms, energy=136.945J, level=NORMAL, consumed=4.300J, harvested=141.245J
+2026-01-15 03:26:54.489 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1500ms, energy=141.716J, level=NORMAL, consumed=4.400J, harvested=146.116J
+2026-01-15 03:26:54.489 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1500ms, energy=141.616J, level=NORMAL, consumed=4.500J, harvested=146.116J
+2026-01-15 03:26:54.490 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1550ms, energy=146.386J, level=NORMAL, consumed=4.600J, harvested=150.986J
+2026-01-15 03:26:54.490 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1550ms, energy=146.286J, level=NORMAL, consumed=4.700J, harvested=150.986J
+2026-01-15 03:26:54.491 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1600ms, energy=151.057J, level=NORMAL, consumed=4.800J, harvested=155.857J
+2026-01-15 03:26:54.491 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1600ms, energy=150.957J, level=NORMAL, consumed=4.900J, harvested=155.857J
+2026-01-15 03:26:54.491 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1650ms, energy=155.727J, level=NORMAL, consumed=5.000J, harvested=160.727J
+2026-01-15 03:26:54.492 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1700ms, energy=160.498J, level=NORMAL, consumed=5.100J, harvested=165.598J
+2026-01-15 03:26:54.492 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1800ms, energy=170.139J, level=NORMAL, consumed=5.200J, harvested=175.339J
+2026-01-15 03:26:54.493 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1850ms, energy=174.910J, level=NORMAL, consumed=5.300J, harvested=180.210J
+2026-01-15 03:26:54.493 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1900ms, energy=179.680J, level=NORMAL, consumed=5.400J, harvested=185.080J
+2026-01-15 03:26:54.494 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1950ms, energy=184.451J, level=NORMAL, consumed=5.500J, harvested=189.951J
+2026-01-15 03:27:00.343 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: energy_impact_test/config_cascade_V28.14_12pm.yml
+2026-01-15 03:27:00.352 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: energy_impact_test/config_cascade_V28.14_12pm.yml
+2026-01-15 03:27:00.352 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0
+2026-01-15 03:27:00.352 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0
+2026-01-15 03:27:00.352 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-01-15 03:27:00.352 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-01-15 03:27:00.352 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-15 03:27:00.352 [INFO    ] [energy_manager      ] EnergyConfig loaded from energy_impact_test/config_cascade_V28.14_12pm.yml
+2026-01-15 03:27:00.352 [INFO    ] [energy_manager      ]   Initial energy: 0.0 J
+2026-01-15 03:27:00.352 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-15 03:27:00.352 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-15 03:27:00.352 [INFO    ] [energy_manager      ]   Debug mode: True
+2026-01-15 03:27:00.352 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-01-15 03:27:00.352 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-01-15 03:27:00.353 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-15 03:27:00.353 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-01-15 03:27:00.353 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-01-15 03:27:00.353 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-01-15 03:27:00.353 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-15 03:27:00.353 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-15 03:27:00.353 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-15 03:27:00.353 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-15 03:27:00.353 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-15 03:27:00.353 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-15 03:27:00.353 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-15 03:27:00.353 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-15 03:27:00.353 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-15 03:27:00.353 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-15 03:27:00.353 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-15 03:27:01.808 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-01-15 03:27:01.808 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-15 03:27:01.808 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-01-15 03:27:01.808 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-01-15 03:27:01.808 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0
+2026-01-15 03:27:01.808 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0
+2026-01-15 03:27:01.808 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-15 03:27:01.808 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-15 03:27:01.808 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-01-15 03:27:01.808 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-01-15 03:27:01.809 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-15 03:27:01.809 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=energy_impact_test/config_cascade_V28.14_12pm.yml, current_config_file=energy_impact_test/config_cascade_V28.14_12pm.yml
+2026-01-15 03:27:01.809 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: energy_impact_test/config_cascade_V28.14_12pm.yml
+2026-01-15 03:27:01.809 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.0J
+2026-01-15 03:27:01.810 [INFO    ] [energy_manager      ] EnergyHarvester: Start time offset set to 16113600000 ms (12:00:00)
+2026-01-15 03:27:01.810 [INFO    ] [energy_manager      ] EnergyManager: 仿真开始时间设置为: 12:00 (偏移: 16113600000ms)
+2026-01-15 03:27:01.812 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=12:00，起始时间=16113600000ms
+2026-01-15 03:27:01.813 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=500ms, energy=84.469J, level=LOW, consumed=0.100J, harvested=84.569J
+2026-01-15 03:27:01.814 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=550ms, energy=92.825J, level=LOW, consumed=0.200J, harvested=93.025J
+2026-01-15 03:27:01.814 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=600ms, energy=101.182J, level=NORMAL, consumed=0.300J, harvested=101.482J
+2026-01-15 03:27:01.815 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=600ms, energy=101.082J, level=NORMAL, consumed=0.400J, harvested=101.482J
+2026-01-15 03:27:01.815 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=650ms, energy=109.439J, level=NORMAL, consumed=0.500J, harvested=109.939J
+2026-01-15 03:27:01.816 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=650ms, energy=109.339J, level=NORMAL, consumed=0.600J, harvested=109.939J
+2026-01-15 03:27:01.816 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=700ms, energy=117.696J, level=NORMAL, consumed=0.700J, harvested=118.396J
+2026-01-15 03:27:01.816 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=700ms, energy=117.596J, level=NORMAL, consumed=0.800J, harvested=118.396J
+2026-01-15 03:27:01.817 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=750ms, energy=125.953J, level=NORMAL, consumed=0.900J, harvested=126.853J
+2026-01-15 03:27:01.817 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=750ms, energy=125.853J, level=NORMAL, consumed=1.000J, harvested=126.853J
+2026-01-15 03:27:01.818 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=800ms, energy=134.210J, level=NORMAL, consumed=1.100J, harvested=135.310J
+2026-01-15 03:27:01.818 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=800ms, energy=134.110J, level=NORMAL, consumed=1.200J, harvested=135.310J
+2026-01-15 03:27:01.819 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=850ms, energy=142.466J, level=NORMAL, consumed=1.300J, harvested=143.766J
+2026-01-15 03:27:01.819 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=850ms, energy=142.366J, level=NORMAL, consumed=1.400J, harvested=143.766J
+2026-01-15 03:27:01.819 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=900ms, energy=150.723J, level=NORMAL, consumed=1.500J, harvested=152.223J
+2026-01-15 03:27:01.820 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=900ms, energy=150.623J, level=NORMAL, consumed=1.600J, harvested=152.223J
+2026-01-15 03:27:01.820 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=950ms, energy=158.980J, level=NORMAL, consumed=1.700J, harvested=160.680J
+2026-01-15 03:27:01.820 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=950ms, energy=158.880J, level=NORMAL, consumed=1.800J, harvested=160.680J
+2026-01-15 03:27:01.821 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1000ms, energy=167.237J, level=NORMAL, consumed=1.900J, harvested=169.137J
+2026-01-15 03:27:01.822 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1000ms, energy=167.137J, level=NORMAL, consumed=2.000J, harvested=169.137J
+2026-01-15 03:27:01.822 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1000ms, energy=167.037J, level=NORMAL, consumed=2.100J, harvested=169.137J
+2026-01-15 03:27:01.823 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1050ms, energy=175.394J, level=NORMAL, consumed=2.200J, harvested=177.594J
+2026-01-15 03:27:01.823 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1050ms, energy=175.294J, level=NORMAL, consumed=2.300J, harvested=177.594J
+2026-01-15 03:27:01.823 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1050ms, energy=175.194J, level=NORMAL, consumed=2.400J, harvested=177.594J
+2026-01-15 03:27:01.824 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1100ms, energy=183.551J, level=NORMAL, consumed=2.500J, harvested=186.051J
+2026-01-15 03:27:01.824 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1100ms, energy=183.451J, level=NORMAL, consumed=2.600J, harvested=186.051J
+2026-01-15 03:27:01.824 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1150ms, energy=191.808J, level=NORMAL, consumed=2.700J, harvested=194.508J
+2026-01-15 03:27:01.825 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1150ms, energy=191.708J, level=NORMAL, consumed=2.800J, harvested=194.508J
+2026-01-15 03:27:01.826 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1200ms, energy=200.064J, level=HIGH, consumed=2.900J, harvested=202.964J
+2026-01-15 03:27:01.826 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1200ms, energy=199.964J, level=NORMAL, consumed=3.000J, harvested=202.964J
+2026-01-15 03:27:01.826 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1200ms, energy=199.864J, level=NORMAL, consumed=3.100J, harvested=202.964J
+2026-01-15 03:27:01.827 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1250ms, energy=208.221J, level=HIGH, consumed=3.200J, harvested=211.421J
+2026-01-15 03:27:01.827 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1250ms, energy=208.121J, level=HIGH, consumed=3.300J, harvested=211.421J
+2026-01-15 03:27:01.827 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1250ms, energy=208.021J, level=HIGH, consumed=3.400J, harvested=211.421J
+2026-01-15 03:27:01.828 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1300ms, energy=216.378J, level=HIGH, consumed=3.500J, harvested=219.878J
+2026-01-15 03:27:01.828 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1300ms, energy=216.278J, level=HIGH, consumed=3.600J, harvested=219.878J
+2026-01-15 03:27:01.828 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1300ms, energy=216.178J, level=HIGH, consumed=3.700J, harvested=219.878J
+2026-01-15 03:27:01.829 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1350ms, energy=224.535J, level=HIGH, consumed=3.800J, harvested=228.335J
+2026-01-15 03:27:01.829 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1350ms, energy=224.435J, level=HIGH, consumed=3.900J, harvested=228.335J
+2026-01-15 03:27:01.830 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1350ms, energy=224.335J, level=HIGH, consumed=4.000J, harvested=228.335J
+2026-01-15 03:27:01.830 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1400ms, energy=232.692J, level=HIGH, consumed=4.100J, harvested=236.792J
+2026-01-15 03:27:01.830 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1400ms, energy=232.592J, level=HIGH, consumed=4.200J, harvested=236.792J
+2026-01-15 03:27:01.831 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1450ms, energy=240.949J, level=HIGH, consumed=4.300J, harvested=245.249J
+2026-01-15 03:27:01.832 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1500ms, energy=249.306J, level=HIGH, consumed=4.400J, harvested=253.706J
+2026-01-15 03:27:01.832 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1500ms, energy=249.206J, level=HIGH, consumed=4.500J, harvested=253.706J
+2026-01-15 03:27:01.833 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1550ms, energy=257.562J, level=HIGH, consumed=4.600J, harvested=262.162J
+2026-01-15 03:27:01.833 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1550ms, energy=257.462J, level=HIGH, consumed=4.700J, harvested=262.162J
+2026-01-15 03:27:01.834 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1600ms, energy=265.819J, level=HIGH, consumed=4.800J, harvested=270.619J
+2026-01-15 03:27:01.834 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1600ms, energy=265.719J, level=HIGH, consumed=4.900J, harvested=270.619J
+2026-01-15 03:27:01.834 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1650ms, energy=274.076J, level=HIGH, consumed=5.000J, harvested=279.076J
+2026-01-15 03:27:01.835 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1700ms, energy=282.433J, level=HIGH, consumed=5.100J, harvested=287.533J
+2026-01-15 03:27:01.835 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1800ms, energy=299.247J, level=HIGH, consumed=5.200J, harvested=304.447J
+2026-01-15 03:27:01.836 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1850ms, energy=307.603J, level=HIGH, consumed=5.300J, harvested=312.903J
+2026-01-15 03:27:01.836 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1900ms, energy=315.960J, level=HIGH, consumed=5.400J, harvested=321.360J
+2026-01-15 03:27:01.836 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1950ms, energy=324.317J, level=HIGH, consumed=5.500J, harvested=329.817J
+2026-01-15 03:32:32.774 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 03:32:32.782 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 03:32:32.782 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0
+2026-01-15 03:32:32.783 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0
+2026-01-15 03:32:32.783 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=28800000 计算 start_offset_minutes=268320
+2026-01-15 03:32:32.783 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268320, simulation_start_time=16099200000ms
+2026-01-15 03:32:32.783 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-15 03:32:32.783 [INFO    ] [energy_manager      ] EnergyConfig loaded from energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 03:32:32.783 [INFO    ] [energy_manager      ]   Initial energy: 0.0 J
+2026-01-15 03:32:32.783 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-15 03:32:32.783 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-15 03:32:32.783 [INFO    ] [energy_manager      ]   Debug mode: True
+2026-01-15 03:32:32.783 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-01-15 03:32:32.783 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-01-15 03:32:32.783 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-15 03:32:32.783 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-01-15 03:32:32.783 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-01-15 03:32:32.783 [INFO    ] [energy_manager      ]     时间偏移: 268320 分钟
+2026-01-15 03:32:32.783 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-15 03:32:32.783 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-15 03:32:32.783 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-15 03:32:32.784 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-15 03:32:32.784 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-15 03:32:32.784 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-15 03:32:32.784 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-15 03:32:32.784 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-15 03:32:32.784 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-15 03:32:32.784 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-15 03:32:32.784 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-15 03:32:34.161 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-01-15 03:32:34.161 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-15 03:32:34.161 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-01-15 03:32:34.161 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268320 分钟
+2026-01-15 03:32:34.162 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0
+2026-01-15 03:32:34.162 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0
+2026-01-15 03:32:34.162 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-15 03:32:34.162 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-15 03:32:34.162 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16099200000ms
+2026-01-15 03:32:34.162 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-01-15 03:32:34.162 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-15 03:32:34.162 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=energy_impact_test/config_cascade_V28.14_8am.yml, current_config_file=energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 03:32:34.162 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 03:32:34.162 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.0J
+2026-01-15 03:32:34.163 [INFO    ] [energy_manager      ] EnergyHarvester: Start time offset set to 16099200000 ms (08:00:00)
+2026-01-15 03:32:34.163 [INFO    ] [energy_manager      ] EnergyManager: 仿真开始时间设置为: 08:00 (偏移: 16099200000ms)
+2026-01-15 03:32:34.166 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=08:00，起始时间=16099200000ms
+2026-01-15 03:32:34.168 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=500ms, energy=48.605J, level=CRITICAL, consumed=0.100J, harvested=48.705J
+2026-01-15 03:32:34.169 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=550ms, energy=53.376J, level=LOW, consumed=0.200J, harvested=53.576J
+2026-01-15 03:32:34.170 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=600ms, energy=58.146J, level=LOW, consumed=0.300J, harvested=58.446J
+2026-01-15 03:32:34.170 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=600ms, energy=58.046J, level=LOW, consumed=0.400J, harvested=58.446J
+2026-01-15 03:32:34.171 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=650ms, energy=62.817J, level=LOW, consumed=0.500J, harvested=63.317J
+2026-01-15 03:32:34.171 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=650ms, energy=62.717J, level=LOW, consumed=0.600J, harvested=63.317J
+2026-01-15 03:32:34.171 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=700ms, energy=67.487J, level=LOW, consumed=0.700J, harvested=68.187J
+2026-01-15 03:32:34.172 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=700ms, energy=67.387J, level=LOW, consumed=0.800J, harvested=68.187J
+2026-01-15 03:32:34.172 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=750ms, energy=72.158J, level=LOW, consumed=0.900J, harvested=73.058J
+2026-01-15 03:32:34.173 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=750ms, energy=72.058J, level=LOW, consumed=1.000J, harvested=73.058J
+2026-01-15 03:32:34.173 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=800ms, energy=76.828J, level=LOW, consumed=1.100J, harvested=77.928J
+2026-01-15 03:32:34.173 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=800ms, energy=76.728J, level=LOW, consumed=1.200J, harvested=77.928J
+2026-01-15 03:32:34.174 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=850ms, energy=81.499J, level=LOW, consumed=1.300J, harvested=82.799J
+2026-01-15 03:32:34.174 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=850ms, energy=81.399J, level=LOW, consumed=1.400J, harvested=82.799J
+2026-01-15 03:32:34.175 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=900ms, energy=86.170J, level=LOW, consumed=1.500J, harvested=87.670J
+2026-01-15 03:32:34.175 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=900ms, energy=86.070J, level=LOW, consumed=1.600J, harvested=87.670J
+2026-01-15 03:32:34.176 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=950ms, energy=90.840J, level=LOW, consumed=1.700J, harvested=92.540J
+2026-01-15 03:32:34.176 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=950ms, energy=90.740J, level=LOW, consumed=1.800J, harvested=92.540J
+2026-01-15 03:32:34.177 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1000ms, energy=95.511J, level=LOW, consumed=1.900J, harvested=97.411J
+2026-01-15 03:32:34.177 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1000ms, energy=95.411J, level=LOW, consumed=2.000J, harvested=97.411J
+2026-01-15 03:32:34.177 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1000ms, energy=95.311J, level=LOW, consumed=2.100J, harvested=97.411J
+2026-01-15 03:32:34.178 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1050ms, energy=100.081J, level=NORMAL, consumed=2.200J, harvested=102.281J
+2026-01-15 03:32:34.178 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1050ms, energy=99.981J, level=LOW, consumed=2.300J, harvested=102.281J
+2026-01-15 03:32:34.178 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1050ms, energy=99.881J, level=LOW, consumed=2.400J, harvested=102.281J
+2026-01-15 03:32:34.179 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1100ms, energy=104.652J, level=NORMAL, consumed=2.500J, harvested=107.152J
+2026-01-15 03:32:34.179 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1100ms, energy=104.552J, level=NORMAL, consumed=2.600J, harvested=107.152J
+2026-01-15 03:32:34.180 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1150ms, energy=109.322J, level=NORMAL, consumed=2.700J, harvested=112.022J
+2026-01-15 03:32:34.180 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1150ms, energy=109.222J, level=NORMAL, consumed=2.800J, harvested=112.022J
+2026-01-15 03:32:34.181 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1200ms, energy=113.993J, level=NORMAL, consumed=2.900J, harvested=116.893J
+2026-01-15 03:32:34.181 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1200ms, energy=113.893J, level=NORMAL, consumed=3.000J, harvested=116.893J
+2026-01-15 03:32:34.181 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1200ms, energy=113.793J, level=NORMAL, consumed=3.100J, harvested=116.893J
+2026-01-15 03:32:34.182 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1250ms, energy=118.563J, level=NORMAL, consumed=3.200J, harvested=121.763J
+2026-01-15 03:32:34.182 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1250ms, energy=118.463J, level=NORMAL, consumed=3.300J, harvested=121.763J
+2026-01-15 03:32:34.182 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1250ms, energy=118.363J, level=NORMAL, consumed=3.400J, harvested=121.763J
+2026-01-15 03:32:34.183 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1300ms, energy=123.134J, level=NORMAL, consumed=3.500J, harvested=126.634J
+2026-01-15 03:32:34.184 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1300ms, energy=123.034J, level=NORMAL, consumed=3.600J, harvested=126.634J
+2026-01-15 03:32:34.184 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1300ms, energy=122.934J, level=NORMAL, consumed=3.700J, harvested=126.634J
+2026-01-15 03:32:34.185 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1350ms, energy=127.704J, level=NORMAL, consumed=3.800J, harvested=131.504J
+2026-01-15 03:32:34.185 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1350ms, energy=127.604J, level=NORMAL, consumed=3.900J, harvested=131.504J
+2026-01-15 03:32:34.185 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1350ms, energy=127.504J, level=NORMAL, consumed=4.000J, harvested=131.504J
+2026-01-15 03:32:34.186 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1400ms, energy=132.275J, level=NORMAL, consumed=4.100J, harvested=136.375J
+2026-01-15 03:32:34.186 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1400ms, energy=132.175J, level=NORMAL, consumed=4.200J, harvested=136.375J
+2026-01-15 03:32:34.187 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1450ms, energy=136.945J, level=NORMAL, consumed=4.300J, harvested=141.245J
+2026-01-15 03:32:34.187 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1500ms, energy=141.716J, level=NORMAL, consumed=4.400J, harvested=146.116J
+2026-01-15 03:32:34.187 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1500ms, energy=141.616J, level=NORMAL, consumed=4.500J, harvested=146.116J
+2026-01-15 03:32:34.188 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1550ms, energy=146.386J, level=NORMAL, consumed=4.600J, harvested=150.986J
+2026-01-15 03:32:34.188 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1550ms, energy=146.286J, level=NORMAL, consumed=4.700J, harvested=150.986J
+2026-01-15 03:32:34.189 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1600ms, energy=151.057J, level=NORMAL, consumed=4.800J, harvested=155.857J
+2026-01-15 03:32:34.189 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1600ms, energy=150.957J, level=NORMAL, consumed=4.900J, harvested=155.857J
+2026-01-15 03:32:34.190 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1650ms, energy=155.727J, level=NORMAL, consumed=5.000J, harvested=160.727J
+2026-01-15 03:32:34.190 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1700ms, energy=160.498J, level=NORMAL, consumed=5.100J, harvested=165.598J
+2026-01-15 03:32:34.191 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1800ms, energy=170.139J, level=NORMAL, consumed=5.200J, harvested=175.339J
+2026-01-15 03:32:34.191 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1850ms, energy=174.910J, level=NORMAL, consumed=5.300J, harvested=180.210J
+2026-01-15 03:32:34.191 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1900ms, energy=179.680J, level=NORMAL, consumed=5.400J, harvested=185.080J
+2026-01-15 03:32:34.192 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1950ms, energy=184.451J, level=NORMAL, consumed=5.500J, harvested=189.951J
+2026-01-15 03:35:02.417 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: energy_impact_test/config_cascade_V28.14_0am.yml
+2026-01-15 03:35:02.424 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: energy_impact_test/config_cascade_V28.14_0am.yml
+2026-01-15 03:35:02.424 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0
+2026-01-15 03:35:02.424 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0
+2026-01-15 03:35:02.424 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=0 计算 start_offset_minutes=267840
+2026-01-15 03:35:02.424 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267840, simulation_start_time=16070400000ms
+2026-01-15 03:35:02.424 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-15 03:35:02.424 [INFO    ] [energy_manager      ] EnergyConfig loaded from energy_impact_test/config_cascade_V28.14_0am.yml
+2026-01-15 03:35:02.424 [INFO    ] [energy_manager      ]   Initial energy: 0.0 J
+2026-01-15 03:35:02.424 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-15 03:35:02.424 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-15 03:35:02.424 [INFO    ] [energy_manager      ]   Debug mode: True
+2026-01-15 03:35:02.424 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-01-15 03:35:02.424 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-01-15 03:35:02.424 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-15 03:35:02.424 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-01-15 03:35:02.424 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-01-15 03:35:02.425 [INFO    ] [energy_manager      ]     时间偏移: 267840 分钟
+2026-01-15 03:35:02.425 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-15 03:35:02.425 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-15 03:35:02.425 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-15 03:35:02.425 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-15 03:35:02.425 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-15 03:35:02.425 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-15 03:35:02.425 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-15 03:35:02.425 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-15 03:35:02.425 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-15 03:35:02.425 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-15 03:35:02.425 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-15 03:35:03.865 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-01-15 03:35:03.865 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-15 03:35:03.865 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-01-15 03:35:03.865 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 267840 分钟
+2026-01-15 03:35:03.865 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0
+2026-01-15 03:35:03.865 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0
+2026-01-15 03:35:03.865 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-15 03:35:03.865 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-15 03:35:03.865 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16070400000ms
+2026-01-15 03:35:03.865 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 00:00:00
+2026-01-15 03:35:03.865 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-15 03:35:03.865 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=energy_impact_test/config_cascade_V28.14_0am.yml, current_config_file=energy_impact_test/config_cascade_V28.14_0am.yml
+2026-01-15 03:35:03.865 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: energy_impact_test/config_cascade_V28.14_0am.yml
+2026-01-15 03:35:03.866 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.0J
+2026-01-15 03:35:03.866 [INFO    ] [energy_manager      ] EnergyHarvester: Start time offset set to 16070400000 ms (00:00:00)
+2026-01-15 03:35:03.866 [INFO    ] [energy_manager      ] EnergyManager: 仿真开始时间设置为: 00:00 (偏移: 16070400000ms)
+2026-01-15 03:35:03.869 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=00:00，起始时间=16070400000ms
+2026-01-15 03:35:11.126 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 03:35:11.134 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 03:35:11.134 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0
+2026-01-15 03:35:11.134 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0
+2026-01-15 03:35:11.135 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=28800000 计算 start_offset_minutes=268320
+2026-01-15 03:35:11.135 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268320, simulation_start_time=16099200000ms
+2026-01-15 03:35:11.135 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-15 03:35:11.135 [INFO    ] [energy_manager      ] EnergyConfig loaded from energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 03:35:11.135 [INFO    ] [energy_manager      ]   Initial energy: 0.0 J
+2026-01-15 03:35:11.135 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-15 03:35:11.135 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-15 03:35:11.135 [INFO    ] [energy_manager      ]   Debug mode: True
+2026-01-15 03:35:11.135 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-01-15 03:35:11.135 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-01-15 03:35:11.135 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-15 03:35:11.135 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-01-15 03:35:11.135 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-01-15 03:35:11.135 [INFO    ] [energy_manager      ]     时间偏移: 268320 分钟
+2026-01-15 03:35:11.135 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-15 03:35:11.135 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-15 03:35:11.135 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-15 03:35:11.135 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-15 03:35:11.135 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-15 03:35:11.135 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-15 03:35:11.135 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-15 03:35:11.135 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-15 03:35:11.135 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-15 03:35:11.135 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-15 03:35:11.135 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-15 03:35:12.558 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-01-15 03:35:12.558 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-15 03:35:12.558 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-01-15 03:35:12.558 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268320 分钟
+2026-01-15 03:35:12.558 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0
+2026-01-15 03:35:12.558 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0
+2026-01-15 03:35:12.558 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-15 03:35:12.559 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-15 03:35:12.559 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16099200000ms
+2026-01-15 03:35:12.559 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-01-15 03:35:12.559 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-15 03:35:12.559 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=energy_impact_test/config_cascade_V28.14_8am.yml, current_config_file=energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 03:35:12.559 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 03:35:12.559 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.0J
+2026-01-15 03:35:12.560 [INFO    ] [energy_manager      ] EnergyHarvester: Start time offset set to 16099200000 ms (08:00:00)
+2026-01-15 03:35:12.560 [INFO    ] [energy_manager      ] EnergyManager: 仿真开始时间设置为: 08:00 (偏移: 16099200000ms)
+2026-01-15 03:35:12.562 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=08:00，起始时间=16099200000ms
+2026-01-15 03:35:12.565 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=500ms, energy=48.605J, level=CRITICAL, consumed=0.100J, harvested=48.705J
+2026-01-15 03:35:12.566 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=550ms, energy=53.376J, level=LOW, consumed=0.200J, harvested=53.576J
+2026-01-15 03:35:12.566 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=600ms, energy=58.146J, level=LOW, consumed=0.300J, harvested=58.446J
+2026-01-15 03:35:12.566 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=600ms, energy=58.046J, level=LOW, consumed=0.400J, harvested=58.446J
+2026-01-15 03:35:12.567 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=650ms, energy=62.817J, level=LOW, consumed=0.500J, harvested=63.317J
+2026-01-15 03:35:12.567 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=650ms, energy=62.717J, level=LOW, consumed=0.600J, harvested=63.317J
+2026-01-15 03:35:12.568 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=700ms, energy=67.487J, level=LOW, consumed=0.700J, harvested=68.187J
+2026-01-15 03:35:12.568 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=700ms, energy=67.387J, level=LOW, consumed=0.800J, harvested=68.187J
+2026-01-15 03:35:12.569 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=750ms, energy=72.158J, level=LOW, consumed=0.900J, harvested=73.058J
+2026-01-15 03:35:12.569 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=750ms, energy=72.058J, level=LOW, consumed=1.000J, harvested=73.058J
+2026-01-15 03:35:12.570 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=800ms, energy=76.828J, level=LOW, consumed=1.100J, harvested=77.928J
+2026-01-15 03:35:12.570 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=800ms, energy=76.728J, level=LOW, consumed=1.200J, harvested=77.928J
+2026-01-15 03:35:12.570 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=850ms, energy=81.499J, level=LOW, consumed=1.300J, harvested=82.799J
+2026-01-15 03:35:12.571 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=850ms, energy=81.399J, level=LOW, consumed=1.400J, harvested=82.799J
+2026-01-15 03:35:12.571 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=900ms, energy=86.170J, level=LOW, consumed=1.500J, harvested=87.670J
+2026-01-15 03:35:12.572 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=900ms, energy=86.070J, level=LOW, consumed=1.600J, harvested=87.670J
+2026-01-15 03:35:12.572 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=950ms, energy=90.840J, level=LOW, consumed=1.700J, harvested=92.540J
+2026-01-15 03:35:12.572 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=950ms, energy=90.740J, level=LOW, consumed=1.800J, harvested=92.540J
+2026-01-15 03:35:12.573 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1000ms, energy=95.511J, level=LOW, consumed=1.900J, harvested=97.411J
+2026-01-15 03:35:12.573 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1000ms, energy=95.411J, level=LOW, consumed=2.000J, harvested=97.411J
+2026-01-15 03:35:12.574 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1000ms, energy=95.311J, level=LOW, consumed=2.100J, harvested=97.411J
+2026-01-15 03:35:12.574 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1050ms, energy=100.081J, level=NORMAL, consumed=2.200J, harvested=102.281J
+2026-01-15 03:35:12.575 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1050ms, energy=99.981J, level=LOW, consumed=2.300J, harvested=102.281J
+2026-01-15 03:35:12.575 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1050ms, energy=99.881J, level=LOW, consumed=2.400J, harvested=102.281J
+2026-01-15 03:35:12.576 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1100ms, energy=104.652J, level=NORMAL, consumed=2.500J, harvested=107.152J
+2026-01-15 03:35:12.576 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1100ms, energy=104.552J, level=NORMAL, consumed=2.600J, harvested=107.152J
+2026-01-15 03:35:12.576 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1150ms, energy=109.322J, level=NORMAL, consumed=2.700J, harvested=112.022J
+2026-01-15 03:35:12.577 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1150ms, energy=109.222J, level=NORMAL, consumed=2.800J, harvested=112.022J
+2026-01-15 03:35:12.577 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1200ms, energy=113.993J, level=NORMAL, consumed=2.900J, harvested=116.893J
+2026-01-15 03:35:12.578 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1200ms, energy=113.893J, level=NORMAL, consumed=3.000J, harvested=116.893J
+2026-01-15 03:35:12.578 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1200ms, energy=113.793J, level=NORMAL, consumed=3.100J, harvested=116.893J
+2026-01-15 03:35:12.579 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1250ms, energy=118.563J, level=NORMAL, consumed=3.200J, harvested=121.763J
+2026-01-15 03:35:12.579 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1250ms, energy=118.463J, level=NORMAL, consumed=3.300J, harvested=121.763J
+2026-01-15 03:35:12.579 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1250ms, energy=118.363J, level=NORMAL, consumed=3.400J, harvested=121.763J
+2026-01-15 03:35:12.580 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1300ms, energy=123.134J, level=NORMAL, consumed=3.500J, harvested=126.634J
+2026-01-15 03:35:12.580 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1300ms, energy=123.034J, level=NORMAL, consumed=3.600J, harvested=126.634J
+2026-01-15 03:35:12.580 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1300ms, energy=122.934J, level=NORMAL, consumed=3.700J, harvested=126.634J
+2026-01-15 03:35:12.581 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1350ms, energy=127.704J, level=NORMAL, consumed=3.800J, harvested=131.504J
+2026-01-15 03:35:12.581 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1350ms, energy=127.604J, level=NORMAL, consumed=3.900J, harvested=131.504J
+2026-01-15 03:35:12.582 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1350ms, energy=127.504J, level=NORMAL, consumed=4.000J, harvested=131.504J
+2026-01-15 03:35:12.582 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1400ms, energy=132.275J, level=NORMAL, consumed=4.100J, harvested=136.375J
+2026-01-15 03:35:12.583 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1400ms, energy=132.175J, level=NORMAL, consumed=4.200J, harvested=136.375J
+2026-01-15 03:35:12.583 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1450ms, energy=136.945J, level=NORMAL, consumed=4.300J, harvested=141.245J
+2026-01-15 03:35:12.584 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1500ms, energy=141.716J, level=NORMAL, consumed=4.400J, harvested=146.116J
+2026-01-15 03:35:12.584 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1500ms, energy=141.616J, level=NORMAL, consumed=4.500J, harvested=146.116J
+2026-01-15 03:35:12.585 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1550ms, energy=146.386J, level=NORMAL, consumed=4.600J, harvested=150.986J
+2026-01-15 03:35:12.585 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1550ms, energy=146.286J, level=NORMAL, consumed=4.700J, harvested=150.986J
+2026-01-15 03:35:12.585 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1600ms, energy=151.057J, level=NORMAL, consumed=4.800J, harvested=155.857J
+2026-01-15 03:35:12.586 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1600ms, energy=150.957J, level=NORMAL, consumed=4.900J, harvested=155.857J
+2026-01-15 03:35:12.586 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1650ms, energy=155.727J, level=NORMAL, consumed=5.000J, harvested=160.727J
+2026-01-15 03:35:12.587 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1700ms, energy=160.498J, level=NORMAL, consumed=5.100J, harvested=165.598J
+2026-01-15 03:35:12.587 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1800ms, energy=170.139J, level=NORMAL, consumed=5.200J, harvested=175.339J
+2026-01-15 03:35:12.587 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1850ms, energy=174.910J, level=NORMAL, consumed=5.300J, harvested=180.210J
+2026-01-15 03:35:12.588 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1900ms, energy=179.680J, level=NORMAL, consumed=5.400J, harvested=185.080J
+2026-01-15 03:35:12.588 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1950ms, energy=184.451J, level=NORMAL, consumed=5.500J, harvested=189.951J
+2026-01-15 03:35:18.997 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: energy_impact_test/config_cascade_V28.14_12pm.yml
+2026-01-15 03:35:19.004 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: energy_impact_test/config_cascade_V28.14_12pm.yml
+2026-01-15 03:35:19.004 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0
+2026-01-15 03:35:19.004 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0
+2026-01-15 03:35:19.004 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-01-15 03:35:19.004 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-01-15 03:35:19.004 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-15 03:35:19.005 [INFO    ] [energy_manager      ] EnergyConfig loaded from energy_impact_test/config_cascade_V28.14_12pm.yml
+2026-01-15 03:35:19.005 [INFO    ] [energy_manager      ]   Initial energy: 0.0 J
+2026-01-15 03:35:19.005 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-15 03:35:19.005 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-15 03:35:19.005 [INFO    ] [energy_manager      ]   Debug mode: True
+2026-01-15 03:35:19.005 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-01-15 03:35:19.005 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-01-15 03:35:19.005 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-15 03:35:19.005 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-01-15 03:35:19.005 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-01-15 03:35:19.005 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-01-15 03:35:19.005 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-15 03:35:19.005 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-15 03:35:19.005 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-15 03:35:19.005 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-15 03:35:19.005 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-15 03:35:19.005 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-15 03:35:19.005 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-15 03:35:19.005 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-15 03:35:19.005 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-15 03:35:19.005 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-15 03:35:19.005 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-15 03:35:20.396 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-01-15 03:35:20.396 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-15 03:35:20.396 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-01-15 03:35:20.396 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-01-15 03:35:20.396 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0
+2026-01-15 03:35:20.396 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0
+2026-01-15 03:35:20.397 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-15 03:35:20.397 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-15 03:35:20.397 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-01-15 03:35:20.397 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-01-15 03:35:20.397 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-15 03:35:20.397 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=energy_impact_test/config_cascade_V28.14_12pm.yml, current_config_file=energy_impact_test/config_cascade_V28.14_12pm.yml
+2026-01-15 03:35:20.397 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: energy_impact_test/config_cascade_V28.14_12pm.yml
+2026-01-15 03:35:20.397 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.0J
+2026-01-15 03:35:20.398 [INFO    ] [energy_manager      ] EnergyHarvester: Start time offset set to 16113600000 ms (12:00:00)
+2026-01-15 03:35:20.398 [INFO    ] [energy_manager      ] EnergyManager: 仿真开始时间设置为: 12:00 (偏移: 16113600000ms)
+2026-01-15 03:35:20.401 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=12:00，起始时间=16113600000ms
+2026-01-15 03:35:20.403 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=500ms, energy=84.469J, level=LOW, consumed=0.100J, harvested=84.569J
+2026-01-15 03:35:20.404 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=550ms, energy=92.825J, level=LOW, consumed=0.200J, harvested=93.025J
+2026-01-15 03:35:20.404 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=600ms, energy=101.182J, level=NORMAL, consumed=0.300J, harvested=101.482J
+2026-01-15 03:35:20.405 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=600ms, energy=101.082J, level=NORMAL, consumed=0.400J, harvested=101.482J
+2026-01-15 03:35:20.405 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=650ms, energy=109.439J, level=NORMAL, consumed=0.500J, harvested=109.939J
+2026-01-15 03:35:20.406 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=650ms, energy=109.339J, level=NORMAL, consumed=0.600J, harvested=109.939J
+2026-01-15 03:35:20.406 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=700ms, energy=117.696J, level=NORMAL, consumed=0.700J, harvested=118.396J
+2026-01-15 03:35:20.406 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=700ms, energy=117.596J, level=NORMAL, consumed=0.800J, harvested=118.396J
+2026-01-15 03:35:20.407 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=750ms, energy=125.953J, level=NORMAL, consumed=0.900J, harvested=126.853J
+2026-01-15 03:35:20.407 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=750ms, energy=125.853J, level=NORMAL, consumed=1.000J, harvested=126.853J
+2026-01-15 03:35:20.408 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=800ms, energy=134.210J, level=NORMAL, consumed=1.100J, harvested=135.310J
+2026-01-15 03:35:20.408 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=800ms, energy=134.110J, level=NORMAL, consumed=1.200J, harvested=135.310J
+2026-01-15 03:35:20.409 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=850ms, energy=142.466J, level=NORMAL, consumed=1.300J, harvested=143.766J
+2026-01-15 03:35:20.409 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=850ms, energy=142.366J, level=NORMAL, consumed=1.400J, harvested=143.766J
+2026-01-15 03:35:20.410 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=900ms, energy=150.723J, level=NORMAL, consumed=1.500J, harvested=152.223J
+2026-01-15 03:35:20.410 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=900ms, energy=150.623J, level=NORMAL, consumed=1.600J, harvested=152.223J
+2026-01-15 03:35:20.412 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=950ms, energy=158.980J, level=NORMAL, consumed=1.700J, harvested=160.680J
+2026-01-15 03:35:20.412 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=950ms, energy=158.880J, level=NORMAL, consumed=1.800J, harvested=160.680J
+2026-01-15 03:35:20.413 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1000ms, energy=167.237J, level=NORMAL, consumed=1.900J, harvested=169.137J
+2026-01-15 03:35:20.413 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1000ms, energy=167.137J, level=NORMAL, consumed=2.000J, harvested=169.137J
+2026-01-15 03:35:20.413 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1000ms, energy=167.037J, level=NORMAL, consumed=2.100J, harvested=169.137J
+2026-01-15 03:35:20.414 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1050ms, energy=175.394J, level=NORMAL, consumed=2.200J, harvested=177.594J
+2026-01-15 03:35:20.415 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1050ms, energy=175.294J, level=NORMAL, consumed=2.300J, harvested=177.594J
+2026-01-15 03:35:20.415 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1050ms, energy=175.194J, level=NORMAL, consumed=2.400J, harvested=177.594J
+2026-01-15 03:35:20.415 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1100ms, energy=183.551J, level=NORMAL, consumed=2.500J, harvested=186.051J
+2026-01-15 03:35:20.416 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1100ms, energy=183.451J, level=NORMAL, consumed=2.600J, harvested=186.051J
+2026-01-15 03:35:20.416 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1150ms, energy=191.808J, level=NORMAL, consumed=2.700J, harvested=194.508J
+2026-01-15 03:35:20.417 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1150ms, energy=191.708J, level=NORMAL, consumed=2.800J, harvested=194.508J
+2026-01-15 03:35:20.418 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1200ms, energy=200.064J, level=HIGH, consumed=2.900J, harvested=202.964J
+2026-01-15 03:35:20.418 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1200ms, energy=199.964J, level=NORMAL, consumed=3.000J, harvested=202.964J
+2026-01-15 03:35:20.418 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1200ms, energy=199.864J, level=NORMAL, consumed=3.100J, harvested=202.964J
+2026-01-15 03:35:20.419 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1250ms, energy=208.221J, level=HIGH, consumed=3.200J, harvested=211.421J
+2026-01-15 03:35:20.419 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1250ms, energy=208.121J, level=HIGH, consumed=3.300J, harvested=211.421J
+2026-01-15 03:35:20.419 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1250ms, energy=208.021J, level=HIGH, consumed=3.400J, harvested=211.421J
+2026-01-15 03:35:20.420 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1300ms, energy=216.378J, level=HIGH, consumed=3.500J, harvested=219.878J
+2026-01-15 03:35:20.420 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1300ms, energy=216.278J, level=HIGH, consumed=3.600J, harvested=219.878J
+2026-01-15 03:35:20.421 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1300ms, energy=216.178J, level=HIGH, consumed=3.700J, harvested=219.878J
+2026-01-15 03:35:20.421 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1350ms, energy=224.535J, level=HIGH, consumed=3.800J, harvested=228.335J
+2026-01-15 03:35:20.422 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1350ms, energy=224.435J, level=HIGH, consumed=3.900J, harvested=228.335J
+2026-01-15 03:35:20.422 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1350ms, energy=224.335J, level=HIGH, consumed=4.000J, harvested=228.335J
+2026-01-15 03:35:20.423 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1400ms, energy=232.692J, level=HIGH, consumed=4.100J, harvested=236.792J
+2026-01-15 03:35:20.423 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1400ms, energy=232.592J, level=HIGH, consumed=4.200J, harvested=236.792J
+2026-01-15 03:35:20.423 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1450ms, energy=240.949J, level=HIGH, consumed=4.300J, harvested=245.249J
+2026-01-15 03:35:20.424 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1500ms, energy=249.306J, level=HIGH, consumed=4.400J, harvested=253.706J
+2026-01-15 03:35:20.424 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1500ms, energy=249.206J, level=HIGH, consumed=4.500J, harvested=253.706J
+2026-01-15 03:35:20.425 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1550ms, energy=257.562J, level=HIGH, consumed=4.600J, harvested=262.162J
+2026-01-15 03:35:20.425 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1550ms, energy=257.462J, level=HIGH, consumed=4.700J, harvested=262.162J
+2026-01-15 03:35:20.426 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1600ms, energy=265.819J, level=HIGH, consumed=4.800J, harvested=270.619J
+2026-01-15 03:35:20.426 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1600ms, energy=265.719J, level=HIGH, consumed=4.900J, harvested=270.619J
+2026-01-15 03:35:20.427 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1650ms, energy=274.076J, level=HIGH, consumed=5.000J, harvested=279.076J
+2026-01-15 03:35:20.427 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1700ms, energy=282.433J, level=HIGH, consumed=5.100J, harvested=287.533J
+2026-01-15 03:35:20.428 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1800ms, energy=299.247J, level=HIGH, consumed=5.200J, harvested=304.447J
+2026-01-15 03:35:20.428 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1850ms, energy=307.603J, level=HIGH, consumed=5.300J, harvested=312.903J
+2026-01-15 03:35:20.429 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1900ms, energy=315.960J, level=HIGH, consumed=5.400J, harvested=321.360J
+2026-01-15 03:35:20.429 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1950ms, energy=324.317J, level=HIGH, consumed=5.500J, harvested=329.817J
+2026-01-15 03:55:12.396 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 03:55:12.404 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 03:55:12.404 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0
+2026-01-15 03:55:12.404 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0
+2026-01-15 03:55:12.404 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=28800000 计算 start_offset_minutes=268320
+2026-01-15 03:55:12.404 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268320, simulation_start_time=16099200000ms
+2026-01-15 03:55:12.404 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-15 03:55:12.404 [INFO    ] [energy_manager      ] EnergyConfig loaded from energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 03:55:12.404 [INFO    ] [energy_manager      ]   Initial energy: 0.0 J
+2026-01-15 03:55:12.405 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-15 03:55:12.405 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-15 03:55:12.405 [INFO    ] [energy_manager      ]   Debug mode: True
+2026-01-15 03:55:12.405 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-01-15 03:55:12.405 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-01-15 03:55:12.405 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-15 03:55:12.405 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-01-15 03:55:12.405 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-01-15 03:55:12.405 [INFO    ] [energy_manager      ]     时间偏移: 268320 分钟
+2026-01-15 03:55:12.405 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-15 03:55:12.405 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-15 03:55:12.405 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-15 03:55:12.405 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-15 03:55:12.405 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-15 03:55:12.405 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-15 03:55:12.405 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-15 03:55:12.405 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-15 03:55:12.405 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-15 03:55:12.405 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-15 03:55:12.405 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-15 03:55:13.921 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-01-15 03:55:13.921 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-15 03:55:13.921 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-01-15 03:55:13.921 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268320 分钟
+2026-01-15 03:55:13.921 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0
+2026-01-15 03:55:13.921 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0
+2026-01-15 03:55:13.921 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-15 03:55:13.921 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-15 03:55:13.922 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16099200000ms
+2026-01-15 03:55:13.922 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-01-15 03:55:13.922 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-15 03:55:13.922 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=energy_impact_test/config_cascade_V28.14_8am.yml, current_config_file=energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 03:55:13.922 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 03:55:13.922 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.0J
+2026-01-15 03:55:13.923 [INFO    ] [energy_manager      ] EnergyHarvester: Start time offset set to 16099200000 ms (08:00:00)
+2026-01-15 03:55:13.923 [INFO    ] [energy_manager      ] EnergyManager: 仿真开始时间设置为: 08:00 (偏移: 16099200000ms)
+2026-01-15 03:55:13.927 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=08:00，起始时间=16099200000ms
+2026-01-15 03:55:13.929 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=500ms, energy=48.605J, level=CRITICAL, consumed=0.100J, harvested=48.705J
+2026-01-15 03:55:13.929 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=500ms, energy=48.505J, level=CRITICAL, consumed=0.200J, harvested=48.705J
+2026-01-15 03:55:13.930 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=550ms, energy=53.276J, level=LOW, consumed=0.300J, harvested=53.576J
+2026-01-15 03:55:13.930 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=550ms, energy=53.176J, level=LOW, consumed=0.400J, harvested=53.576J
+2026-01-15 03:55:13.931 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=600ms, energy=57.946J, level=LOW, consumed=0.500J, harvested=58.446J
+2026-01-15 03:55:13.931 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=600ms, energy=57.846J, level=LOW, consumed=0.600J, harvested=58.446J
+2026-01-15 03:55:13.931 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=600ms, energy=57.746J, level=LOW, consumed=0.700J, harvested=58.446J
+2026-01-15 03:55:13.932 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=650ms, energy=62.517J, level=LOW, consumed=0.800J, harvested=63.317J
+2026-01-15 03:55:13.932 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=650ms, energy=62.417J, level=LOW, consumed=0.900J, harvested=63.317J
+2026-01-15 03:55:13.933 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=650ms, energy=62.317J, level=LOW, consumed=1.000J, harvested=63.317J
+2026-01-15 03:55:13.934 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=700ms, energy=67.087J, level=LOW, consumed=1.100J, harvested=68.187J
+2026-01-15 03:55:13.934 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=700ms, energy=66.987J, level=LOW, consumed=1.200J, harvested=68.187J
+2026-01-15 03:55:13.935 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=750ms, energy=71.758J, level=LOW, consumed=1.300J, harvested=73.058J
+2026-01-15 03:55:13.935 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=750ms, energy=71.658J, level=LOW, consumed=1.400J, harvested=73.058J
+2026-01-15 03:55:13.936 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=800ms, energy=76.428J, level=LOW, consumed=1.500J, harvested=77.928J
+2026-01-15 03:55:13.936 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=800ms, energy=76.328J, level=LOW, consumed=1.600J, harvested=77.928J
+2026-01-15 03:55:13.937 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=850ms, energy=81.099J, level=LOW, consumed=1.700J, harvested=82.799J
+2026-01-15 03:55:13.937 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=850ms, energy=80.999J, level=LOW, consumed=1.800J, harvested=82.799J
+2026-01-15 03:55:13.937 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=900ms, energy=85.770J, level=LOW, consumed=1.900J, harvested=87.670J
+2026-01-15 03:55:13.938 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=900ms, energy=85.670J, level=LOW, consumed=2.000J, harvested=87.670J
+2026-01-15 03:55:13.938 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=950ms, energy=90.440J, level=LOW, consumed=2.100J, harvested=92.540J
+2026-01-15 03:55:13.939 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=950ms, energy=90.340J, level=LOW, consumed=2.200J, harvested=92.540J
+2026-01-15 03:55:13.939 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1000ms, energy=95.111J, level=LOW, consumed=2.300J, harvested=97.411J
+2026-01-15 03:55:13.940 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1000ms, energy=95.011J, level=LOW, consumed=2.400J, harvested=97.411J
+2026-01-15 03:55:13.940 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1000ms, energy=94.911J, level=LOW, consumed=2.500J, harvested=97.411J
+2026-01-15 03:55:13.941 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1050ms, energy=99.681J, level=LOW, consumed=2.600J, harvested=102.281J
+2026-01-15 03:55:13.941 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1050ms, energy=99.581J, level=LOW, consumed=2.700J, harvested=102.281J
+2026-01-15 03:55:13.942 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1050ms, energy=99.481J, level=LOW, consumed=2.800J, harvested=102.281J
+2026-01-15 03:55:13.942 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1100ms, energy=104.252J, level=NORMAL, consumed=2.900J, harvested=107.152J
+2026-01-15 03:55:13.943 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1100ms, energy=104.152J, level=NORMAL, consumed=3.000J, harvested=107.152J
+2026-01-15 03:55:13.943 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1150ms, energy=108.922J, level=NORMAL, consumed=3.100J, harvested=112.022J
+2026-01-15 03:55:13.944 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1150ms, energy=108.822J, level=NORMAL, consumed=3.200J, harvested=112.022J
+2026-01-15 03:55:13.945 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1200ms, energy=113.593J, level=NORMAL, consumed=3.300J, harvested=116.893J
+2026-01-15 03:55:13.945 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1200ms, energy=113.493J, level=NORMAL, consumed=3.400J, harvested=116.893J
+2026-01-15 03:55:13.945 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1200ms, energy=113.393J, level=NORMAL, consumed=3.500J, harvested=116.893J
+2026-01-15 03:55:13.946 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1250ms, energy=118.163J, level=NORMAL, consumed=3.600J, harvested=121.763J
+2026-01-15 03:55:13.946 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1250ms, energy=118.063J, level=NORMAL, consumed=3.700J, harvested=121.763J
+2026-01-15 03:55:13.946 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1250ms, energy=117.963J, level=NORMAL, consumed=3.800J, harvested=121.763J
+2026-01-15 03:55:13.947 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1300ms, energy=122.734J, level=NORMAL, consumed=3.900J, harvested=126.634J
+2026-01-15 03:55:13.948 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1300ms, energy=122.634J, level=NORMAL, consumed=4.000J, harvested=126.634J
+2026-01-15 03:55:13.948 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1300ms, energy=122.534J, level=NORMAL, consumed=4.100J, harvested=126.634J
+2026-01-15 03:55:13.949 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1350ms, energy=127.304J, level=NORMAL, consumed=4.200J, harvested=131.504J
+2026-01-15 03:55:13.949 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1350ms, energy=127.204J, level=NORMAL, consumed=4.300J, harvested=131.504J
+2026-01-15 03:55:13.949 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1350ms, energy=127.104J, level=NORMAL, consumed=4.400J, harvested=131.504J
+2026-01-15 03:55:13.950 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1400ms, energy=131.875J, level=NORMAL, consumed=4.500J, harvested=136.375J
+2026-01-15 03:55:13.950 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1400ms, energy=131.775J, level=NORMAL, consumed=4.600J, harvested=136.375J
+2026-01-15 03:55:13.951 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1500ms, energy=141.416J, level=NORMAL, consumed=4.700J, harvested=146.116J
+2026-01-15 03:55:13.951 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1550ms, energy=146.186J, level=NORMAL, consumed=4.800J, harvested=150.986J
+2026-01-15 03:55:13.952 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1600ms, energy=150.957J, level=NORMAL, consumed=4.900J, harvested=155.857J
+2026-01-15 03:55:13.952 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1650ms, energy=155.727J, level=NORMAL, consumed=5.000J, harvested=160.727J
+2026-01-15 03:55:13.953 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1700ms, energy=160.498J, level=NORMAL, consumed=5.100J, harvested=165.598J
+2026-01-15 03:55:13.953 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1800ms, energy=170.139J, level=NORMAL, consumed=5.200J, harvested=175.339J
+2026-01-15 03:55:13.954 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1850ms, energy=174.910J, level=NORMAL, consumed=5.300J, harvested=180.210J
+2026-01-15 03:55:13.954 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1900ms, energy=179.680J, level=NORMAL, consumed=5.400J, harvested=185.080J
+2026-01-15 03:55:13.955 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1950ms, energy=184.451J, level=NORMAL, consumed=5.500J, harvested=189.951J
+2026-01-15 03:56:50.111 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 03:56:50.118 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 03:56:50.118 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0
+2026-01-15 03:56:50.118 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0
+2026-01-15 03:56:50.118 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=28800000 计算 start_offset_minutes=268320
+2026-01-15 03:56:50.118 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268320, simulation_start_time=16099200000ms
+2026-01-15 03:56:50.118 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-15 03:56:50.118 [INFO    ] [energy_manager      ] EnergyConfig loaded from energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 03:56:50.118 [INFO    ] [energy_manager      ]   Initial energy: 0.0 J
+2026-01-15 03:56:50.118 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-15 03:56:50.118 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-15 03:56:50.118 [INFO    ] [energy_manager      ]   Debug mode: True
+2026-01-15 03:56:50.118 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-01-15 03:56:50.118 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-01-15 03:56:50.118 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-15 03:56:50.118 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-01-15 03:56:50.118 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-01-15 03:56:50.118 [INFO    ] [energy_manager      ]     时间偏移: 268320 分钟
+2026-01-15 03:56:50.118 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-15 03:56:50.118 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-15 03:56:50.119 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-15 03:56:50.119 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-15 03:56:50.119 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-15 03:56:50.119 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-15 03:56:50.119 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-15 03:56:50.119 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-15 03:56:50.119 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-15 03:56:50.119 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-15 03:56:50.119 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-15 03:56:51.689 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-01-15 03:56:51.689 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-15 03:56:51.689 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-01-15 03:56:51.689 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268320 分钟
+2026-01-15 03:56:51.689 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0
+2026-01-15 03:56:51.689 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0
+2026-01-15 03:56:51.689 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-15 03:56:51.689 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-15 03:56:51.689 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16099200000ms
+2026-01-15 03:56:51.689 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-01-15 03:56:51.689 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-15 03:56:51.690 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=energy_impact_test/config_cascade_V28.14_8am.yml, current_config_file=energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 03:56:51.690 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 03:56:51.690 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.0J
+2026-01-15 03:56:51.691 [INFO    ] [energy_manager      ] EnergyHarvester: Start time offset set to 16099200000 ms (08:00:00)
+2026-01-15 03:56:51.691 [INFO    ] [energy_manager      ] EnergyManager: 仿真开始时间设置为: 08:00 (偏移: 16099200000ms)
+2026-01-15 03:56:51.694 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=08:00，起始时间=16099200000ms
+2026-01-15 03:56:51.695 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=500ms, energy=48.605J, level=CRITICAL, consumed=0.100J, harvested=48.705J
+2026-01-15 03:56:51.696 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=500ms, energy=48.505J, level=CRITICAL, consumed=0.200J, harvested=48.705J
+2026-01-15 03:56:51.697 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=550ms, energy=53.276J, level=LOW, consumed=0.300J, harvested=53.576J
+2026-01-15 03:56:51.697 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=550ms, energy=53.176J, level=LOW, consumed=0.400J, harvested=53.576J
+2026-01-15 03:56:51.698 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=600ms, energy=57.946J, level=LOW, consumed=0.500J, harvested=58.446J
+2026-01-15 03:56:51.698 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=600ms, energy=57.846J, level=LOW, consumed=0.600J, harvested=58.446J
+2026-01-15 03:56:51.698 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=600ms, energy=57.746J, level=LOW, consumed=0.700J, harvested=58.446J
+2026-01-15 03:56:51.699 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=650ms, energy=62.517J, level=LOW, consumed=0.800J, harvested=63.317J
+2026-01-15 03:56:51.699 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=650ms, energy=62.417J, level=LOW, consumed=0.900J, harvested=63.317J
+2026-01-15 03:56:51.699 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=650ms, energy=62.317J, level=LOW, consumed=1.000J, harvested=63.317J
+2026-01-15 03:56:51.700 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=700ms, energy=67.087J, level=LOW, consumed=1.100J, harvested=68.187J
+2026-01-15 03:56:51.700 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=700ms, energy=66.987J, level=LOW, consumed=1.200J, harvested=68.187J
+2026-01-15 03:56:51.701 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=750ms, energy=71.758J, level=LOW, consumed=1.300J, harvested=73.058J
+2026-01-15 03:56:51.701 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=750ms, energy=71.658J, level=LOW, consumed=1.400J, harvested=73.058J
+2026-01-15 03:56:51.702 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=800ms, energy=76.428J, level=LOW, consumed=1.500J, harvested=77.928J
+2026-01-15 03:56:51.702 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=800ms, energy=76.328J, level=LOW, consumed=1.600J, harvested=77.928J
+2026-01-15 03:56:51.703 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=850ms, energy=81.099J, level=LOW, consumed=1.700J, harvested=82.799J
+2026-01-15 03:56:51.703 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=850ms, energy=80.999J, level=LOW, consumed=1.800J, harvested=82.799J
+2026-01-15 03:56:51.704 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=900ms, energy=85.770J, level=LOW, consumed=1.900J, harvested=87.670J
+2026-01-15 03:56:51.704 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=900ms, energy=85.670J, level=LOW, consumed=2.000J, harvested=87.670J
+2026-01-15 03:56:51.704 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=950ms, energy=90.440J, level=LOW, consumed=2.100J, harvested=92.540J
+2026-01-15 03:56:51.705 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=950ms, energy=90.340J, level=LOW, consumed=2.200J, harvested=92.540J
+2026-01-15 03:56:51.706 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1000ms, energy=95.111J, level=LOW, consumed=2.300J, harvested=97.411J
+2026-01-15 03:56:51.706 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1000ms, energy=95.011J, level=LOW, consumed=2.400J, harvested=97.411J
+2026-01-15 03:56:51.706 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1000ms, energy=94.911J, level=LOW, consumed=2.500J, harvested=97.411J
+2026-01-15 03:56:51.707 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1050ms, energy=99.681J, level=LOW, consumed=2.600J, harvested=102.281J
+2026-01-15 03:56:51.707 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1050ms, energy=99.581J, level=LOW, consumed=2.700J, harvested=102.281J
+2026-01-15 03:56:51.707 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1050ms, energy=99.481J, level=LOW, consumed=2.800J, harvested=102.281J
+2026-01-15 03:56:51.708 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1100ms, energy=104.252J, level=NORMAL, consumed=2.900J, harvested=107.152J
+2026-01-15 03:56:51.708 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1100ms, energy=104.152J, level=NORMAL, consumed=3.000J, harvested=107.152J
+2026-01-15 03:56:51.709 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1150ms, energy=108.922J, level=NORMAL, consumed=3.100J, harvested=112.022J
+2026-01-15 03:56:51.709 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1150ms, energy=108.822J, level=NORMAL, consumed=3.200J, harvested=112.022J
+2026-01-15 03:56:51.710 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1200ms, energy=113.593J, level=NORMAL, consumed=3.300J, harvested=116.893J
+2026-01-15 03:56:51.710 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1200ms, energy=113.493J, level=NORMAL, consumed=3.400J, harvested=116.893J
+2026-01-15 03:56:51.710 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1200ms, energy=113.393J, level=NORMAL, consumed=3.500J, harvested=116.893J
+2026-01-15 03:56:51.711 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1250ms, energy=118.163J, level=NORMAL, consumed=3.600J, harvested=121.763J
+2026-01-15 03:56:51.711 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1250ms, energy=118.063J, level=NORMAL, consumed=3.700J, harvested=121.763J
+2026-01-15 03:56:51.711 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1250ms, energy=117.963J, level=NORMAL, consumed=3.800J, harvested=121.763J
+2026-01-15 03:56:51.712 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1300ms, energy=122.734J, level=NORMAL, consumed=3.900J, harvested=126.634J
+2026-01-15 03:56:51.713 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1300ms, energy=122.634J, level=NORMAL, consumed=4.000J, harvested=126.634J
+2026-01-15 03:56:51.713 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1300ms, energy=122.534J, level=NORMAL, consumed=4.100J, harvested=126.634J
+2026-01-15 03:56:51.714 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1350ms, energy=127.304J, level=NORMAL, consumed=4.200J, harvested=131.504J
+2026-01-15 03:56:51.714 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1350ms, energy=127.204J, level=NORMAL, consumed=4.300J, harvested=131.504J
+2026-01-15 03:56:51.714 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1350ms, energy=127.104J, level=NORMAL, consumed=4.400J, harvested=131.504J
+2026-01-15 03:56:51.715 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1400ms, energy=131.875J, level=NORMAL, consumed=4.500J, harvested=136.375J
+2026-01-15 03:56:51.715 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1400ms, energy=131.775J, level=NORMAL, consumed=4.600J, harvested=136.375J
+2026-01-15 03:56:51.716 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1500ms, energy=141.416J, level=NORMAL, consumed=4.700J, harvested=146.116J
+2026-01-15 03:56:51.716 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1550ms, energy=146.186J, level=NORMAL, consumed=4.800J, harvested=150.986J
+2026-01-15 03:56:51.716 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1600ms, energy=150.957J, level=NORMAL, consumed=4.900J, harvested=155.857J
+2026-01-15 03:56:51.717 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1650ms, energy=155.727J, level=NORMAL, consumed=5.000J, harvested=160.727J
+2026-01-15 03:56:51.718 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1700ms, energy=160.498J, level=NORMAL, consumed=5.100J, harvested=165.598J
+2026-01-15 03:56:51.718 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1800ms, energy=170.139J, level=NORMAL, consumed=5.200J, harvested=175.339J
+2026-01-15 03:56:51.719 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1850ms, energy=174.910J, level=NORMAL, consumed=5.300J, harvested=180.210J
+2026-01-15 03:56:51.719 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1900ms, energy=179.680J, level=NORMAL, consumed=5.400J, harvested=185.080J
+2026-01-15 03:56:51.720 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1950ms, energy=184.451J, level=NORMAL, consumed=5.500J, harvested=189.951J
+2026-01-15 04:03:04.878 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 04:03:04.886 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 04:03:04.886 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0
+2026-01-15 04:03:04.886 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0
+2026-01-15 04:03:04.886 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=28800000 计算 start_offset_minutes=268320
+2026-01-15 04:03:04.886 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268320, simulation_start_time=16099200000ms
+2026-01-15 04:03:04.886 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-15 04:03:04.886 [INFO    ] [energy_manager      ] EnergyConfig loaded from energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 04:03:04.886 [INFO    ] [energy_manager      ]   Initial energy: 0.0 J
+2026-01-15 04:03:04.886 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-15 04:03:04.886 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-15 04:03:04.886 [INFO    ] [energy_manager      ]   Debug mode: True
+2026-01-15 04:03:04.886 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-01-15 04:03:04.886 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-01-15 04:03:04.886 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-15 04:03:04.886 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-01-15 04:03:04.886 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-01-15 04:03:04.886 [INFO    ] [energy_manager      ]     时间偏移: 268320 分钟
+2026-01-15 04:03:04.886 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-15 04:03:04.886 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-15 04:03:04.886 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-15 04:03:04.886 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-15 04:03:04.886 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-15 04:03:04.886 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-15 04:03:04.887 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-15 04:03:04.887 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-15 04:03:04.887 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-15 04:03:04.887 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-15 04:03:04.887 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-15 04:03:06.324 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-01-15 04:03:06.324 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-15 04:03:06.324 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-01-15 04:03:06.324 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268320 分钟
+2026-01-15 04:03:06.324 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0
+2026-01-15 04:03:06.324 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0
+2026-01-15 04:03:06.324 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-15 04:03:06.324 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-15 04:03:06.324 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16099200000ms
+2026-01-15 04:03:06.324 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-01-15 04:03:06.324 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-15 04:03:06.325 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=energy_impact_test/config_cascade_V28.14_8am.yml, current_config_file=energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 04:03:06.325 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 04:03:06.325 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.0J
+2026-01-15 04:03:06.325 [INFO    ] [energy_manager      ] EnergyHarvester: Start time offset set to 16099200000 ms (08:00:00)
+2026-01-15 04:03:06.326 [INFO    ] [energy_manager      ] EnergyManager: 仿真开始时间设置为: 08:00 (偏移: 16099200000ms)
+2026-01-15 04:03:06.328 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=08:00，起始时间=16099200000ms
+2026-01-15 04:03:06.330 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=500ms, energy=48.605J, level=CRITICAL, consumed=0.100J, harvested=48.705J
+2026-01-15 04:03:06.330 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=500ms, energy=48.505J, level=CRITICAL, consumed=0.200J, harvested=48.705J
+2026-01-15 04:03:06.331 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=550ms, energy=53.276J, level=LOW, consumed=0.300J, harvested=53.576J
+2026-01-15 04:03:06.331 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=550ms, energy=53.176J, level=LOW, consumed=0.400J, harvested=53.576J
+2026-01-15 04:03:06.332 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=600ms, energy=57.946J, level=LOW, consumed=0.500J, harvested=58.446J
+2026-01-15 04:03:06.332 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=600ms, energy=57.846J, level=LOW, consumed=0.600J, harvested=58.446J
+2026-01-15 04:03:06.332 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=600ms, energy=57.746J, level=LOW, consumed=0.700J, harvested=58.446J
+2026-01-15 04:03:06.333 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=650ms, energy=62.517J, level=LOW, consumed=0.800J, harvested=63.317J
+2026-01-15 04:03:06.333 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=650ms, energy=62.417J, level=LOW, consumed=0.900J, harvested=63.317J
+2026-01-15 04:03:06.334 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=650ms, energy=62.317J, level=LOW, consumed=1.000J, harvested=63.317J
+2026-01-15 04:03:06.334 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=700ms, energy=67.087J, level=LOW, consumed=1.100J, harvested=68.187J
+2026-01-15 04:03:06.335 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=700ms, energy=66.987J, level=LOW, consumed=1.200J, harvested=68.187J
+2026-01-15 04:03:06.335 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=750ms, energy=71.758J, level=LOW, consumed=1.300J, harvested=73.058J
+2026-01-15 04:03:06.336 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=750ms, energy=71.658J, level=LOW, consumed=1.400J, harvested=73.058J
+2026-01-15 04:03:06.336 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=800ms, energy=76.428J, level=LOW, consumed=1.500J, harvested=77.928J
+2026-01-15 04:03:06.336 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=800ms, energy=76.328J, level=LOW, consumed=1.600J, harvested=77.928J
+2026-01-15 04:03:06.337 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=850ms, energy=81.099J, level=LOW, consumed=1.700J, harvested=82.799J
+2026-01-15 04:03:06.337 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=850ms, energy=80.999J, level=LOW, consumed=1.800J, harvested=82.799J
+2026-01-15 04:03:06.338 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=900ms, energy=85.770J, level=LOW, consumed=1.900J, harvested=87.670J
+2026-01-15 04:03:06.338 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=900ms, energy=85.670J, level=LOW, consumed=2.000J, harvested=87.670J
+2026-01-15 04:03:06.339 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=950ms, energy=90.440J, level=LOW, consumed=2.100J, harvested=92.540J
+2026-01-15 04:03:06.339 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=950ms, energy=90.340J, level=LOW, consumed=2.200J, harvested=92.540J
+2026-01-15 04:03:06.340 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1000ms, energy=95.111J, level=LOW, consumed=2.300J, harvested=97.411J
+2026-01-15 04:03:06.340 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1000ms, energy=95.011J, level=LOW, consumed=2.400J, harvested=97.411J
+2026-01-15 04:03:06.341 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1000ms, energy=94.911J, level=LOW, consumed=2.500J, harvested=97.411J
+2026-01-15 04:03:06.342 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1050ms, energy=99.681J, level=LOW, consumed=2.600J, harvested=102.281J
+2026-01-15 04:03:06.342 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1050ms, energy=99.581J, level=LOW, consumed=2.700J, harvested=102.281J
+2026-01-15 04:03:06.342 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1050ms, energy=99.481J, level=LOW, consumed=2.800J, harvested=102.281J
+2026-01-15 04:03:06.343 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1100ms, energy=104.252J, level=NORMAL, consumed=2.900J, harvested=107.152J
+2026-01-15 04:03:06.343 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1100ms, energy=104.152J, level=NORMAL, consumed=3.000J, harvested=107.152J
+2026-01-15 04:03:06.343 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1150ms, energy=108.922J, level=NORMAL, consumed=3.100J, harvested=112.022J
+2026-01-15 04:03:06.344 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1150ms, energy=108.822J, level=NORMAL, consumed=3.200J, harvested=112.022J
+2026-01-15 04:03:06.345 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1200ms, energy=113.593J, level=NORMAL, consumed=3.300J, harvested=116.893J
+2026-01-15 04:03:06.345 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1200ms, energy=113.493J, level=NORMAL, consumed=3.400J, harvested=116.893J
+2026-01-15 04:03:06.345 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1200ms, energy=113.393J, level=NORMAL, consumed=3.500J, harvested=116.893J
+2026-01-15 04:03:06.346 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1250ms, energy=118.163J, level=NORMAL, consumed=3.600J, harvested=121.763J
+2026-01-15 04:03:06.346 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1250ms, energy=118.063J, level=NORMAL, consumed=3.700J, harvested=121.763J
+2026-01-15 04:03:06.346 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1250ms, energy=117.963J, level=NORMAL, consumed=3.800J, harvested=121.763J
+2026-01-15 04:03:06.347 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1300ms, energy=122.734J, level=NORMAL, consumed=3.900J, harvested=126.634J
+2026-01-15 04:03:06.347 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1300ms, energy=122.634J, level=NORMAL, consumed=4.000J, harvested=126.634J
+2026-01-15 04:03:06.348 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1300ms, energy=122.534J, level=NORMAL, consumed=4.100J, harvested=126.634J
+2026-01-15 04:03:06.348 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1350ms, energy=127.304J, level=NORMAL, consumed=4.200J, harvested=131.504J
+2026-01-15 04:03:06.349 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1350ms, energy=127.204J, level=NORMAL, consumed=4.300J, harvested=131.504J
+2026-01-15 04:03:06.349 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1350ms, energy=127.104J, level=NORMAL, consumed=4.400J, harvested=131.504J
+2026-01-15 04:03:06.350 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1400ms, energy=131.875J, level=NORMAL, consumed=4.500J, harvested=136.375J
+2026-01-15 04:03:06.350 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1400ms, energy=131.775J, level=NORMAL, consumed=4.600J, harvested=136.375J
+2026-01-15 04:03:06.350 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1500ms, energy=141.416J, level=NORMAL, consumed=4.700J, harvested=146.116J
+2026-01-15 04:03:06.351 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1550ms, energy=146.186J, level=NORMAL, consumed=4.800J, harvested=150.986J
+2026-01-15 04:03:06.351 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1600ms, energy=150.957J, level=NORMAL, consumed=4.900J, harvested=155.857J
+2026-01-15 04:03:06.352 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1650ms, energy=155.727J, level=NORMAL, consumed=5.000J, harvested=160.727J
+2026-01-15 04:03:06.352 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1700ms, energy=160.498J, level=NORMAL, consumed=5.100J, harvested=165.598J
+2026-01-15 04:03:06.352 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1800ms, energy=170.139J, level=NORMAL, consumed=5.200J, harvested=175.339J
+2026-01-15 04:03:06.353 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1850ms, energy=174.910J, level=NORMAL, consumed=5.300J, harvested=180.210J
+2026-01-15 04:03:06.353 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1900ms, energy=179.680J, level=NORMAL, consumed=5.400J, harvested=185.080J
+2026-01-15 04:03:06.354 [INFO    ] [energy_manager      ] [ENERGY_UPDATE] time=1950ms, energy=184.451J, level=NORMAL, consumed=5.500J, harvested=189.951J
+2026-01-15 04:11:06.241 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: .
+2026-01-15 04:11:06.242 [ERROR   ] [energy_manager      ] Error loading energy config: [Errno 21] Is a directory: '.'
+2026-01-15 04:11:06.244 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 167, in load_from_file
+    with open(config_file, 'r') as f:
+IsADirectoryError: [Errno 21] Is a directory: '.'
+
+2026-01-15 04:11:06.244 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-01-15 04:11:06.244 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-01-15 04:11:06.244 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-15 04:11:06.244 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-01-15 04:11:06.244 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-15 04:11:06.244 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-15 04:11:06.244 [INFO    ] [energy_manager      ] 确保配置文件加载: .
+2026-01-15 04:11:06.244 [ERROR   ] [energy_manager      ] Error loading energy config: [Errno 21] Is a directory: '.'
+2026-01-15 04:11:06.244 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 167, in load_from_file
+    with open(config_file, 'r') as f:
+IsADirectoryError: [Errno 21] Is a directory: '.'
+
+2026-01-15 04:11:06.244 [WARNING ] [energy_manager      ] 确保配置文件加载失败: .
+2026-01-15 04:11:06.245 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=., current_config_file=.
+2026-01-15 04:11:06.245 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: .
+2026-01-15 04:11:06.245 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=1400.0MHz, 初始能量=200.0J
+2026-01-15 04:11:06.246 [INFO    ] [energy_manager      ] EnergyHarvester: Start time offset set to 0 ms (00:00:00)
+2026-01-15 04:11:06.246 [INFO    ] [energy_manager      ] EnergyManager: 仿真开始时间设置为: 00:00 (偏移: 0ms)
+2026-01-15 04:11:06.249 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=00:00，起始时间=0ms
+2026-01-15 04:11:06.249 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=00:00，起始时间=0ms
+2026-01-15 04:11:06.249 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=00:00，起始时间=0ms
+2026-01-15 04:11:06.250 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=00:00，起始时间=0ms
+2026-01-15 04:11:06.250 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=00:00，起始时间=0ms
+2026-01-15 04:11:06.250 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=00:00，起始时间=0ms
+2026-01-15 04:11:06.250 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=00:00，起始时间=0ms
+2026-01-15 04:11:06.251 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=00:00，起始时间=0ms
+2026-01-15 04:11:06.251 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=00:00，起始时间=50ms
+2026-01-15 04:14:19.805 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: .
+2026-01-15 04:14:19.806 [ERROR   ] [energy_manager      ] Error loading energy config: [Errno 21] Is a directory: '.'
+2026-01-15 04:14:19.807 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 167, in load_from_file
+    with open(config_file, 'r') as f:
+IsADirectoryError: [Errno 21] Is a directory: '.'
+
+2026-01-15 04:14:19.807 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-01-15 04:14:19.807 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-01-15 04:14:19.807 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-15 04:14:19.807 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-01-15 04:14:19.807 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-15 04:14:19.807 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-15 04:14:19.807 [INFO    ] [energy_manager      ] 确保配置文件加载: .
+2026-01-15 04:14:19.807 [ERROR   ] [energy_manager      ] Error loading energy config: [Errno 21] Is a directory: '.'
+2026-01-15 04:14:19.808 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 167, in load_from_file
+    with open(config_file, 'r') as f:
+IsADirectoryError: [Errno 21] Is a directory: '.'
+
+2026-01-15 04:14:19.808 [WARNING ] [energy_manager      ] 确保配置文件加载失败: .
+2026-01-15 04:14:19.808 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=., current_config_file=.
+2026-01-15 04:14:19.808 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: .
+2026-01-15 04:14:19.808 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=1400.0MHz, 初始能量=200.0J
+2026-01-15 04:14:19.809 [INFO    ] [energy_manager      ] EnergyHarvester: Start time offset set to 0 ms (00:00:00)
+2026-01-15 04:14:19.809 [INFO    ] [energy_manager      ] EnergyManager: 仿真开始时间设置为: 00:00 (偏移: 0ms)
+2026-01-15 04:14:19.813 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=00:00，起始时间=0ms
+2026-01-15 04:14:19.813 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=00:00，起始时间=0ms
+2026-01-15 04:14:19.814 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=00:00，起始时间=0ms
+2026-01-15 04:14:19.814 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=00:00，起始时间=0ms
+2026-01-15 04:14:19.814 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=00:00，起始时间=0ms
+2026-01-15 04:14:19.814 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=00:00，起始时间=0ms
+2026-01-15 04:14:19.815 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=00:00，起始时间=0ms
+2026-01-15 04:14:19.815 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=00:00，起始时间=0ms
+2026-01-15 04:14:19.815 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=00:00，起始时间=50ms
+2026-01-15 04:16:54.708 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 04:16:54.716 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 04:16:54.716 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0
+2026-01-15 04:16:54.716 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0
+2026-01-15 04:16:54.717 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=28800000 计算 start_offset_minutes=268320
+2026-01-15 04:16:54.717 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268320, simulation_start_time=16099200000ms
+2026-01-15 04:16:54.717 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-15 04:16:54.717 [INFO    ] [energy_manager      ] EnergyConfig loaded from energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 04:16:54.717 [INFO    ] [energy_manager      ]   Initial energy: 0.0 J
+2026-01-15 04:16:54.717 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-15 04:16:54.717 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-15 04:16:54.717 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-15 04:16:54.717 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-01-15 04:16:54.717 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-01-15 04:16:54.717 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-15 04:16:54.717 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-01-15 04:16:54.717 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-01-15 04:16:54.717 [INFO    ] [energy_manager      ]     时间偏移: 268320 分钟
+2026-01-15 04:16:54.717 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-15 04:16:54.717 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-15 04:16:54.717 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-15 04:16:54.718 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-15 04:16:54.718 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-15 04:16:54.718 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-15 04:16:54.718 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-15 04:16:54.718 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-15 04:16:54.718 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-15 04:16:54.718 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-15 04:16:54.718 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-15 04:16:56.341 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-01-15 04:16:56.341 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-15 04:16:56.341 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-01-15 04:16:56.341 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268320 分钟
+2026-01-15 04:16:56.341 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0
+2026-01-15 04:16:56.341 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0
+2026-01-15 04:16:56.341 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-15 04:16:56.341 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-15 04:16:56.341 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16099200000ms
+2026-01-15 04:16:56.341 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-01-15 04:16:56.341 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-15 04:16:56.342 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=energy_impact_test/config_cascade_V28.14_8am.yml, current_config_file=energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 04:16:56.342 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 04:16:56.342 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.0J
+2026-01-15 04:16:56.343 [INFO    ] [energy_manager      ] EnergyHarvester: Start time offset set to 16099200000 ms (08:00:00)
+2026-01-15 04:16:56.343 [INFO    ] [energy_manager      ] EnergyManager: 仿真开始时间设置为: 08:00 (偏移: 16099200000ms)
+2026-01-15 04:16:56.346 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=08:00，起始时间=16099200000ms
+2026-01-15 04:17:40.015 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: energy_impact_test/config_cascade_V28.14_0am.yml
+2026-01-15 04:17:40.022 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: energy_impact_test/config_cascade_V28.14_0am.yml
+2026-01-15 04:17:40.022 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0
+2026-01-15 04:17:40.022 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0
+2026-01-15 04:17:40.022 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=0 计算 start_offset_minutes=267840
+2026-01-15 04:17:40.022 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267840, simulation_start_time=16070400000ms
+2026-01-15 04:17:40.022 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-15 04:17:40.023 [INFO    ] [energy_manager      ] EnergyConfig loaded from energy_impact_test/config_cascade_V28.14_0am.yml
+2026-01-15 04:17:40.023 [INFO    ] [energy_manager      ]   Initial energy: 0.0 J
+2026-01-15 04:17:40.023 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-15 04:17:40.023 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-15 04:17:40.023 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-15 04:17:40.023 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-01-15 04:17:40.023 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-01-15 04:17:40.023 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-15 04:17:40.023 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-01-15 04:17:40.023 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-01-15 04:17:40.023 [INFO    ] [energy_manager      ]     时间偏移: 267840 分钟
+2026-01-15 04:17:40.023 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-15 04:17:40.023 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-15 04:17:40.023 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-15 04:17:40.023 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-15 04:17:40.023 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-15 04:17:40.023 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-15 04:17:40.023 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-15 04:17:40.023 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-15 04:17:40.024 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-15 04:17:40.024 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-15 04:17:40.024 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-15 04:17:41.500 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-01-15 04:17:41.501 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-15 04:17:41.501 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-01-15 04:17:41.501 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 267840 分钟
+2026-01-15 04:17:41.501 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0
+2026-01-15 04:17:41.501 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0
+2026-01-15 04:17:41.501 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-15 04:17:41.501 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-15 04:17:41.501 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16070400000ms
+2026-01-15 04:17:41.501 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 00:00:00
+2026-01-15 04:17:41.501 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-15 04:17:41.502 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=energy_impact_test/config_cascade_V28.14_0am.yml, current_config_file=energy_impact_test/config_cascade_V28.14_0am.yml
+2026-01-15 04:17:41.502 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: energy_impact_test/config_cascade_V28.14_0am.yml
+2026-01-15 04:17:41.502 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.0J
+2026-01-15 04:17:41.502 [INFO    ] [energy_manager      ] EnergyHarvester: Start time offset set to 16070400000 ms (00:00:00)
+2026-01-15 04:17:41.502 [INFO    ] [energy_manager      ] EnergyManager: 仿真开始时间设置为: 00:00 (偏移: 16070400000ms)
+2026-01-15 04:17:41.505 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=00:00，起始时间=16070400000ms
+2026-01-15 04:18:02.538 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 04:18:02.545 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 04:18:02.545 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0
+2026-01-15 04:18:02.545 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0
+2026-01-15 04:18:02.545 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=28800000 计算 start_offset_minutes=268320
+2026-01-15 04:18:02.545 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268320, simulation_start_time=16099200000ms
+2026-01-15 04:18:02.545 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-15 04:18:02.545 [INFO    ] [energy_manager      ] EnergyConfig loaded from energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 04:18:02.545 [INFO    ] [energy_manager      ]   Initial energy: 0.0 J
+2026-01-15 04:18:02.545 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-15 04:18:02.545 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-15 04:18:02.545 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-15 04:18:02.545 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-01-15 04:18:02.545 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-01-15 04:18:02.545 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-15 04:18:02.546 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-01-15 04:18:02.546 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-01-15 04:18:02.546 [INFO    ] [energy_manager      ]     时间偏移: 268320 分钟
+2026-01-15 04:18:02.546 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-15 04:18:02.546 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-15 04:18:02.546 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-15 04:18:02.546 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-15 04:18:02.546 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-15 04:18:02.546 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-15 04:18:02.546 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-15 04:18:02.546 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-15 04:18:02.546 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-15 04:18:02.546 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-15 04:18:02.546 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-15 04:18:04.036 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-01-15 04:18:04.036 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-15 04:18:04.036 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-01-15 04:18:04.036 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268320 分钟
+2026-01-15 04:18:04.036 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0
+2026-01-15 04:18:04.036 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0
+2026-01-15 04:18:04.036 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-15 04:18:04.036 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-15 04:18:04.036 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16099200000ms
+2026-01-15 04:18:04.036 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-01-15 04:18:04.036 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-15 04:18:04.036 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=energy_impact_test/config_cascade_V28.14_8am.yml, current_config_file=energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 04:18:04.036 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: energy_impact_test/config_cascade_V28.14_8am.yml
+2026-01-15 04:18:04.037 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.0J
+2026-01-15 04:18:04.037 [INFO    ] [energy_manager      ] EnergyHarvester: Start time offset set to 16099200000 ms (08:00:00)
+2026-01-15 04:18:04.037 [INFO    ] [energy_manager      ] EnergyManager: 仿真开始时间设置为: 08:00 (偏移: 16099200000ms)
+2026-01-15 04:18:04.040 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=08:00，起始时间=16099200000ms
+2026-01-15 04:18:07.977 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: energy_impact_test/config_cascade_V28.14_12pm.yml
+2026-01-15 04:18:07.986 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: energy_impact_test/config_cascade_V28.14_12pm.yml
+2026-01-15 04:18:07.986 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0
+2026-01-15 04:18:07.986 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0
+2026-01-15 04:18:07.986 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-01-15 04:18:07.986 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-01-15 04:18:07.986 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-15 04:18:07.986 [INFO    ] [energy_manager      ] EnergyConfig loaded from energy_impact_test/config_cascade_V28.14_12pm.yml
+2026-01-15 04:18:07.986 [INFO    ] [energy_manager      ]   Initial energy: 0.0 J
+2026-01-15 04:18:07.986 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-15 04:18:07.986 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-15 04:18:07.986 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-15 04:18:07.986 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-01-15 04:18:07.986 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-01-15 04:18:07.986 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-15 04:18:07.986 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-01-15 04:18:07.986 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-01-15 04:18:07.987 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-01-15 04:18:07.987 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-15 04:18:07.987 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-15 04:18:07.987 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-15 04:18:07.987 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-15 04:18:07.987 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-15 04:18:07.987 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-15 04:18:07.987 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-15 04:18:07.987 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-15 04:18:07.987 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-15 04:18:07.987 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-15 04:18:07.987 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-15 04:18:09.534 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-01-15 04:18:09.535 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-15 04:18:09.535 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-01-15 04:18:09.535 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-01-15 04:18:09.535 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0
+2026-01-15 04:18:09.535 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0
+2026-01-15 04:18:09.535 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-15 04:18:09.535 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-15 04:18:09.535 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-01-15 04:18:09.535 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-01-15 04:18:09.535 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-15 04:18:09.535 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=energy_impact_test/config_cascade_V28.14_12pm.yml, current_config_file=energy_impact_test/config_cascade_V28.14_12pm.yml
+2026-01-15 04:18:09.535 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: energy_impact_test/config_cascade_V28.14_12pm.yml
+2026-01-15 04:18:09.535 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.0J
+2026-01-15 04:18:09.536 [INFO    ] [energy_manager      ] EnergyHarvester: Start time offset set to 16113600000 ms (12:00:00)
+2026-01-15 04:18:09.536 [INFO    ] [energy_manager      ] EnergyManager: 仿真开始时间设置为: 12:00 (偏移: 16113600000ms)
+2026-01-15 04:18:09.539 [INFO    ] [energy_manager      ] 能量收集器初始化: 绝对时间=12:00，起始时间=16113600000ms

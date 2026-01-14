@@ -63,6 +63,18 @@ namespace RTSim {
     };
 
     // =====================================================
+    // CASCADE能量恢复事件（V28.14新增）
+    // =====================================================
+    class CASCADEEnergyRecoveryEvent : public MetaSim::Event {
+    private:
+        GPFPCASCADEScheduler *_scheduler;
+
+    public:
+        CASCADEEnergyRecoveryEvent(GPFPCASCADEScheduler *scheduler);
+        void doit() override;
+    };
+
+    // =====================================================
     // GPFPCASCADETaskModel 类声明
     // =====================================================
     class GPFPCASCADETaskModel : public TaskModel {
@@ -388,6 +400,7 @@ namespace RTSim {
         // 配置接口
         void setStartTimeOffset(MetaSim::Tick offset);
         void setKernel(MRTKernel *kernel);
+        MRTKernel* getKernel();
         std::string getEnergyStatus() const;
 
         // 辅助方法
@@ -447,6 +460,7 @@ namespace RTSim {
         // 友元类声明
         friend class CASCADETaskActivationSimEvent;
         friend class CASCADESlicingEvent;
+        friend class CASCADEEnergyRecoveryEvent;
     };
 
 } // namespace RTSim

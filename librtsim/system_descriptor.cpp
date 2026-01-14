@@ -5,6 +5,7 @@
 
 #include <rtsim/consts.hpp>
 #include <rtsim/system_descriptor.hpp>
+#include <rtsim/scheduler/config_manager.hpp>
 
 namespace RTSim {
     // Generic converter from string to any type (that supports std::streams)
@@ -98,6 +99,9 @@ namespace RTSim {
     }
 
     SystemDescriptor::SystemDescriptor(std::string fname) {
+        // ⭐ V28.14关键修复：加载配置到ConfigManager，这样Python能量管理器可以读取
+        ConfigManager::getInstance().loadSystemConfig(fname);
+
         yaml::Object_ptr descriptor_obj = yaml::parse(fname);
 
         // Get the absolute path for the supplied filename and its absolute
