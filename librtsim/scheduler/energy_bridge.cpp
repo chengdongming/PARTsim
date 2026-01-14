@@ -322,6 +322,9 @@ namespace RTSim {
     bool EnergyBridge::initialize(const std::string &python_script_path) {
         std::lock_guard<std::mutex> lock(_python_mutex);
 
+        // 🔑 保存配置文件路径
+        _config_file = python_script_path;
+
         if (_initialized) {
             if (_energy_debug) {
                 SCHEDULER_LOG_DEBUG("EnergyBridge: Already initialized");
@@ -357,14 +360,14 @@ namespace RTSim {
             ConfigManager::setConfigCallback(pythonConfigCallback);
 
             // 导入energy_manager模块并创建实例
-            const char *python_code =
+            // 🔑 修复：使用传入的配置文件路径，而不是从环境变量读取
+            std::string python_code =
                 "import sys\n"
                 "sys.path.append('.')\n"
                 "sys.path.append('./simconf/systems')\n"
                 "import energy_manager\n"
-                "import os\n"
-                "config_file = os.getenv('ENERGY_CONFIG_FILE', "
-                "'gpfp_system.yml')\n"
+                "config_file = '" + python_script_path + "'\n"
+                "print(f'[Python] 使用配置文件: {config_file}')\n"
                 "manager = energy_manager.get_energy_manager(config_file)\n"
                 "print('[Python] 能量管理器加载成功')\n"
                 "manager\n";
@@ -374,7 +377,7 @@ namespace RTSim {
             PyObject *locals = PyDict_New();
 
             PyObject *result =
-                PyRun_String(python_code, Py_file_input, globals, locals);
+                PyRun_String(python_code.c_str(), Py_file_input, globals, locals);
             if (!result) {
                 PyErr_Print();
                 SCHEDULER_LOG_ERROR("EnergyBridge: 执行Python代码失败");
@@ -396,10 +399,8 @@ namespace RTSim {
             Py_DECREF(locals);
 
             // === 修复：显式调用Python配置回调以更新ConfigManager ===
-            const char *config_file = std::getenv("ENERGY_CONFIG_FILE");
-            if (!config_file) {
-                config_file = "gpfp_system.yml";
-            }
+            // 🔑 修复：使用传入的配置文件路径，而不是从环境变量读取
+            const char *config_file = python_script_path.c_str();
             SCHEDULER_LOG_INFO("EnergyBridge: 调用Python配置回调更新ConfigManager，配置文件: " + std::string(config_file));
             bool config_loaded = pythonConfigCallback(config_file, ConfigManager::getInstance());
             if (config_loaded) {
@@ -699,14 +700,14 @@ namespace RTSim {
             }
 
             // 重新导入模块
-            const char *python_code =
+            // 🔑 修复：使用保存的配置文件路径
+            std::string python_code =
                 "import sys\n"
                 "sys.path.append('.')\n"
                 "sys.path.append('./simconf/systems')\n"
                 "import energy_manager\n"
-                "import os\n"
-                "config_file = os.getenv('ENERGY_CONFIG_FILE', "
-                "'gpfp_system.yml')\n"
+                "config_file = '" + _config_file + "'\n"
+                "print(f'[Python] 重新初始化使用配置文件: {config_file}')\n"
                 "manager = energy_manager.get_energy_manager(config_file)\n"
                 "print('[Python] 重新初始化能量管理器成功')\n"
                 "manager\n";
@@ -716,7 +717,7 @@ namespace RTSim {
             PyObject *locals = PyDict_New();
 
             PyObject *result =
-                PyRun_String(python_code, Py_file_input, globals, locals);
+                PyRun_String(python_code.c_str(), Py_file_input, globals, locals);
             if (!result) {
                 PyErr_Print();
                 SCHEDULER_LOG_ERROR("EnergyBridge: 重新初始化Python代码执行失败");

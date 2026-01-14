@@ -2023,14 +2023,10 @@ bool GPFPASAPScheduler::consumeEnergy(double energy_joules,
                          std::to_string(current_energy) + "J)");
 
                 // 检查当前任务是否比队列中已有的任务优先级更高
-                bool should_insert = true;  // 🔑 默认允许插入
+                bool should_insert = false;
                 int current_prio = getPriority(task);
 
-                SCHEDULER_LOG_WARNING("🔍 [DEBUG] ASAP: 优先级检查开始: " + task_name +
-                         " 当前优先级: " + std::to_string(current_prio) +
-                         " 队列大小: " + std::to_string(queue_size));
-
-                // 检查就绪队列中是否有低优先级任务
+                // 检查就绪队列��是否有低优先级任务
                 // 优先级数值越小表示优先级越高(例如-500 > -1200)
                 // 只有当当前任务优先级高于队列中所有任务时,才允许插入
                 for (size_t i = 0; i < queue_size; ++i) {
@@ -2038,24 +2034,20 @@ bool GPFPASAPScheduler::consumeEnergy(double energy_joules,
                     if (queued_task) {
                         int queued_prio = getPriority(queued_task);
 
-                        SCHEDULER_LOG_WARNING("🔍 [DEBUG] ASAP: 比较优先级: " + task_name +
-                                 " (prio=" + std::to_string(current_prio) + ") vs " +
-                                 getTaskShortName(queued_task) + " (prio=" + std::to_string(queued_prio) + ")");
-
-                        // 🔑 V28.9修复：如果当前任务优先级低于队列任务(数值更大),则不允许插入
-                        // 能量紧张时，只允许最高优先级任务调度
-                        if (current_prio > queued_prio) {
+                        // 如果队列中有任务优先级比当前任务高(数值更小),则不允许插入
+                        if (queued_prio < current_prio) {
                             // 队列中有更高优先级的任务,当前任务不应该插入
-                            SCHEDULER_LOG_WARNING("❌ ASAP: 能量紧张且队列有更高/相同优先级任务: " + task_name +
+                            SCHEDULER_LOG_WARNING("❌ ASAP: 能量紧张且队列有更高优先级任务: " + task_name +
                                      " (当前优先级: " + std::to_string(current_prio) +
                                      ", 队列任务优先级: " + std::to_string(queued_prio) + ")");
                             should_insert = false;
                             break;
+                        } else {
+                            // 当前任务优先级高于或等于队列中的任务,允许插入
+                            should_insert = true;
                         }
                     }
                 }
-
-                SCHEDULER_LOG_WARNING("🔍 [DEBUG] ASAP: 优先级检查结果: should_insert=" + std::to_string(should_insert));
 
                 if (!should_insert) {
                     // 当前任务优先级不够高,加入等待队列

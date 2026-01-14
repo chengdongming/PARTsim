@@ -1865,11 +1865,14 @@ def get_energy_manager(config_file: str = None, verbose: bool = True) -> EnergyM
             try:
                 # 检查是否需要重新加载配置
                 current_config_file = getattr(_global_energy_manager.config, 'config_file', None)
+                logger.info(f"[get_energy_manager] config_file={config_file}, current_config_file={current_config_file}")
                 if current_config_file != config_file:
-                    logger.info(f"重新加载配置文件: {config_file}")
+                    logger.info(f"重新加载配置文件: {current_config_file} -> {config_file}")
                     success = _global_energy_manager.load_system_config(config_file)
                     if not success:
                         logger.warning(f"重新加载配置文件失败: {config_file}")
+                else:
+                    logger.info(f"配置文件相同，无需重新加载: {config_file}")
             except Exception as e:
                 logger.error(f"重新加载配置文件异常: {e}")
         
