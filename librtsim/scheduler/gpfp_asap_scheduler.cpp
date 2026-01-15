@@ -3910,16 +3910,20 @@ AbsRTTask *GPFPASAPScheduler::getFirst() {
     // =====================================================
 
     void GPFPASAPScheduler::triggerWaitingQueueCheck() {
-        if (_waiting_queue.empty()) {
-            SCHEDULER_LOG_DEBUG("🔄 [V28.13] 等待队列为空，无需检查");
-            return;
-        }
+        // ⭐ V28.15关键修复：移除等待队列为空时的提前返回
+        // 原因：即使等待队列为空，如果就绪队列有任务但能量不足，仍需要继续收集能量
+        //      不应该直接返回，而应该继续执行能量收集和检查逻辑
+        // if (_waiting_queue.empty()) {
+        //     SCHEDULER_LOG_DEBUG("🔄 [V28.13] 等待队列为空，无需检查");
+        //     return;
+        // }
 
         MetaSim::Tick current_time = SIMUL.getTime();
         int64_t current_ms = static_cast<int64_t>(current_time);
 
         SCHEDULER_LOG_INFO("🔄 [V28.13] 触发等待队列检查: 时间=" + std::to_string(current_ms) + "ms" +
-                         " 等待队列大小=" + std::to_string(_waiting_queue.size()));
+                         " 等待队列大小=" + std::to_string(_waiting_queue.size()) +
+                         " 就绪队列大小=" + std::to_string(_queue.size()));
 
         // 1. 能量收集
         double harvested = updateEnergyContinuously(static_cast<TimeMs>(current_time));
@@ -3955,6 +3959,18 @@ AbsRTTask *GPFPASAPScheduler::getFirst() {
                                  std::to_string(ready_queue_size) + " 能量=" +
                                  std::to_string(current_energy) + "J 需要>" +
                                  std::to_string(min_energy_needed) + "J)");
+
+                // ⭐ V28.15关键修复：即使等待队列已清空，但如果就绪队列有任务且能量不足，
+                // 也要继续周期性检查，等待能量积累到足够调度
+                // 原因：如果任务从等待队列恢复到就绪队列，但能量仍不足以调度，
+                //      需要继续收集能量直到可以调度，而不是直接跳到下一个任务到达时间
+                if (ready_queue_size > 0 && current_energy < min_energy_needed) {
+                    if (current_energy < 1.0) {  // 能量小于1J时继续检查
+                        ASAPWaitingQueueCheckEvent *check_event = new ASAPWaitingQueueCheckEvent(this);
+                        check_event->post(SIMUL.getTime() + 1);  // 1ms后再次检查
+                        SCHEDULER_LOG_INFO("⏰ [V28.15] 等待队列已清空但能量不足，安排1ms后再次检查");
+                    }
+                }
             }
         } else {
             SCHEDULER_LOG_INFO("⏳ [V28.13] 等待队列仍有任务（能量仍不足），等待下次检查");

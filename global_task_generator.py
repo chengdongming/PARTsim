@@ -226,9 +226,9 @@ class EnergyAwareTaskGenerator:
         self.power_coefficients = self._load_power_coefficients()
         self.base_power = self._load_base_power()
         self.frequency_power_ratios = self._load_frequency_ratios()
-        
-        # 基础频率（默认为1400MHz）
-        self.base_frequency = 1400.0
+
+        # ⭐ 修复：基础频率默认为 8100 MHz（与配置文件一致）
+        self.base_frequency = 8100.0
         
         # 调试模式
         self._debug = False
@@ -312,30 +312,31 @@ class EnergyAwareTaskGenerator:
     def _load_frequency_ratios(self) -> Dict[int, float]:
         """从配置加载频率功率比"""
         if not self.energy_config:
-            # 默认值
+            # ⭐ 修复：使用 MHz 单位，匹配配置文件中的频率范围（7000-10500 MHz）
+            # 以 8100 MHz 为基准频率（比率=1.0）
             return {
-                1000: 0.7, 1100: 0.75, 1200: 0.8, 1300: 0.85,
-                1400: 0.9, 1500: 0.95, 1600: 1.0, 1700: 1.05,
-                1800: 1.1, 1900: 1.15, 2000: 1.2, 2100: 1.25
+                7000: 0.90, 7500: 0.95, 8000: 0.98, 8100: 1.00,
+                8200: 1.02, 8300: 1.04, 8400: 1.06, 8500: 1.08,
+                9000: 1.15, 9500: 1.22, 10000: 1.30, 10500: 1.38
             }
-        
+
         consumption_model = self.energy_config.get('consumption_model', {})
         freq_scaling = consumption_model.get('frequency_scaling', {})
-        
+
         if freq_scaling:
             ratios = {}
             for freq_str, ratio in freq_scaling.items():
                 ratios[int(freq_str)] = float(ratio)
             return ratios
-        
-        # 默认值
+
+        # ⭐ 修复：使用 MHz 单位
         return {
-            1000: 0.7, 1100: 0.75, 1200: 0.8, 1300: 0.85,
-            1400: 0.9, 1500: 0.95, 1600: 1.0, 1700: 1.05,
-            1800: 1.1, 1900: 1.15, 2000: 1.2, 2100: 1.25
+            7000: 0.90, 7500: 0.95, 8000: 0.98, 8100: 1.00,
+            8200: 1.02, 8300: 1.04, 8400: 1.06, 8500: 1.08,
+            9000: 1.15, 9500: 1.22, 10000: 1.30, 10500: 1.38
         }
     
-    def get_frequency_ratio(self, frequency_mhz: float = 1400.0) -> float:
+    def get_frequency_ratio(self, frequency_mhz: float = 8100.0) -> float:
         """获取频率功率比例系数"""
         if not self.frequency_power_ratios:
             return 1.0
@@ -345,9 +346,9 @@ class EnergyAwareTaskGenerator:
                           key=lambda f: abs(f - frequency_mhz))
         return self.frequency_power_ratios.get(closest_freq, 1.0)
     
-    def calculate_energy(self, execution_time_ms: float, 
-                        workload_type: str, 
-                        frequency_mhz: float = 1400.0) -> float:
+    def calculate_energy(self, execution_time_ms: float,
+                        workload_type: str,
+                        frequency_mhz: float = 8100.0) -> float:
         """
         计算能量消耗（焦耳）- 使用系统配置参数
         
