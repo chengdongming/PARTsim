@@ -99,7 +99,8 @@ namespace RTSim {
             config.setExpectedTaskCount(12);
             config.setInitialEnergy(200.0); // 默认200J
             config.setMaxEnergy(600.0);
-            config.setBaseHarvestRate(0.00002);
+            // ⭐ 修复：不再硬编码base_harvest_rate，让Python配置文件的值生效
+            // config.setBaseHarvestRate(0.00002);  // 删除硬编码
             config.setStartTimeOffset(0);
             config.setEnableEnergyRecovery(true);
             config.setBasePower(0.5);
@@ -657,7 +658,7 @@ namespace RTSim {
         if (method_name == "get_current_energy_value") {
             return 3.0; // 返回初始能量3J
         } else if (method_name == "get_harvesting_rate_wrapper") {
-            return 0.0001; // 基础收集率
+            return 0.054; // 基础收集率：54W (0.054 J/ms)
         } else if (method_name == "update_energy_continuously_wrapper") {
             return 0.0; // 不收集能量
         } else if (method_name == "calculate_task_energy_cpp") {
@@ -1078,9 +1079,9 @@ namespace RTSim {
             "        self.last_update_time = 0\n"
             "        self.total_consumed = 0.0\n"
             "        self.total_harvested = 0.0\n"
-            "        self.base_harvest_rate = 0.00002  # 0.02 J/s\n"
+            "        self.base_harvest_rate = 0.054  # 54W (300W/m² × 1m² × 0.18 = 54W = 0.054 J/ms)\n"
             "        self.asap_recovery_target = None\n"
-            "        print('[SimpleFallback] 初始化完成，能量: 200J')\n"
+            "        print('[SimpleFallback] 初始化完成，能量: 200J, 基础收集率: 0.054 J/ms')\n"
             "    \n"
             "    def load_system_config(self, config_file):\n"
             "        print(f'[SimpleFallback] 加载配置: {config_file}')\n"

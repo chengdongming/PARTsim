@@ -3679,16 +3679,16 @@ AbsRTTask *GPFPASAPScheduler::getFirst() {
     double GPFPASAPScheduler::predictEnergyHarvest(MetaSim::Tick time_window_ms) {
         if (time_window_ms <= 0) return 0.0;
 
-        // 简化版本：使用基础收集率
-        // TODO: 未来可以集成NASA太阳能数据进行更精确的预测
-        double base_rate = 0.00002;  // J/ms (基础收集率)
+        // ⭐ 修复：使用EnergyBridge获取实时收集率，而不是硬编码
+        // 获取当前时间对应的收集率（单位：J/ms）
+        double base_rate = EnergyBridge::getInstance().getHarvestingRate(SIMUL.getTime());
         double predicted = base_rate * static_cast<double>(time_window_ms);
 
         // 应用保守系数（80%）
         predicted *= 0.8;
 
         SCHEDULER_LOG_INFO("能量预测: 时间窗口=" + std::to_string(static_cast<int64_t>(time_window_ms)) + "ms" +
-                         " 预测收集=" + std::to_string(predicted) + "J");
+                         " 预测收集=" + std::to_string(predicted) + "J (based on real solar data via EnergyBridge)");
 
         return std::max(0.0, predicted);
     }

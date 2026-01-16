@@ -42,6 +42,7 @@ set(LIBRARY_SOURCE_FILES
     scheduler/scheduler.cpp
     scheduler/regsched.cpp
     scheduler/gpfp_asap_scheduler.cpp
+    scheduler/gpfp_epp_scheduler.cpp
     scheduler/gpfp_cascade_scheduler.cpp
     scheduler/gpfp_batch_scheduler.cpp
     scheduler/energy_bridge.cpp

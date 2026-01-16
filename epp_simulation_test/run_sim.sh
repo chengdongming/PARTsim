@@ -19,8 +19,8 @@ else
 fi
 
 # 默认配置
-DEFAULT_SYSTEM="./simconf/systems/gpfp_system.yml"
-DEFAULT_TASKSET="custom_energy_tasks.yml"
+DEFAULT_SYSTEM="./simconf/systems/epp_test_config.yml"
+DEFAULT_TASKSET="epp_test_tasks.yml"
 DEFAULT_DURATION=60000
 DEFAULT_TRACE="trace.json"
 
@@ -179,7 +179,7 @@ show_usage() {
     echo "  -h, --help           显示此帮助信息"
     echo ""
     echo -e "${CYAN}示例:${NC}"
-    echo "  $0 -s gpfp_system.yml -t tasks.yml --scheduler gpfp_asap -d 60000"
+    echo "  $0 -s epp_test_config.yml -t tasks.yml --scheduler gpfp_asap -d 60000"
     echo ""
     echo -e "${CYAN}注意:${NC}"
     echo "  * 调度器类型默认从系统配置文件(cpu_islands.kernel.scheduler)读取"

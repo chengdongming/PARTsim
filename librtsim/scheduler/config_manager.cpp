@@ -31,7 +31,7 @@ namespace RTSim {
         _unit_time(50),
         _initial_energy(0.3),  // 默认初始能量 0.3J
         _max_energy(600.0),
-        _base_harvest_rate(0.00002),
+        _base_harvest_rate(0.054),  // 默认基础收集率：54W (300W/m² × 1m² × 0.18 = 54W)
         _start_time_offset(0),
         _enable_energy_recovery(true),
         _base_power(0.5) {

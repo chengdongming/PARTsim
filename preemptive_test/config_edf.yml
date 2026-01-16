@@ -1,0 +1,59 @@
+# EDF抢占式调度配置
+simulation:
+  duration: 500  # 仿真时长500ms
+
+scheduler:
+  type: "EDFScheduler"
+  name: "EDF"
+
+kernel:
+  type: "MRTKernel"
+  name: "kernel_edf"
+  cpus:
+    - name: "CPU0"
+      frequency: 8100  # MHz
+      base_speed: 1.0
+
+tasks:
+  - name: "task_high"
+    type: "PeriodicTask"
+    period: 50         # 短周期 = 高优先级
+    deadline: 50       # deadline = period
+    phase: 0
+    instructions:
+      - type: "fixed"
+        duration: 10    # 执行时间10ms
+        workload: "bzip2"
+
+  - name: "task_mid"
+    type: "PeriodicTask"
+    period: 100        # 中周期
+    deadline: 100
+    phase: 0
+    instructions:
+      - type: "fixed"
+        duration: 20    # 执行时间20ms
+        workload: "crc32"
+
+  - name: "task_low"
+    type: "PeriodicTask"
+    period: 200        # 长周期 = 低优先级
+    deadline: 200
+    phase: 0
+    instructions:
+      - type: "fixed"
+        duration: 30    # 执行时间30ms
+        workload: "basicmath"
+
+# 能量配置（用于工作负载功率计算）
+energy:
+  enabled: false  # 抢占式测试不关注能量
+  solar_data: "data/solar_irradiance.csv"
+  initial_energy: 1000.0  # J (足够大，不限制调度)
+
+# 追踪配置
+trace:
+  output_file: "trace_edf.json"
+  log_schedules: true
+  log_preemptions: true
+  log_deadline_misses: true
