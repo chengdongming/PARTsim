@@ -964,12 +964,16 @@ namespace RTSim {
         // 计算需要多少时间才能收集到足够的能量
         // 时间(s) = 能量(J) / (功率(W) × 面积(m²) × 效率)
 
-        // 假设平均辐照度为 500 W/m²
-        double avg_irradiance = 500.0;
-        double power_output = avg_irradiance * _pv_area_m2 * _pv_efficiency; // W
+        // ⭐ 使用当前时刻的实际太阳能辐照度
+        Tick current_time = SIMUL.getTime();
+        int64_t current_ms = static_cast<int64_t>(current_time);
+        double current_irradiance = getSolarIrradiance(current_ms);
+
+        double power_output = current_irradiance * _pv_area_m2 * _pv_efficiency; // W
 
         if (power_output <= 0) {
-            // 无法收集能量
+            // 当前无太阳能，无法收集能量
+            SCHEDULER_LOG_WARNING("⚠️ [EPP] 当前无太阳能，使用最大恢复等待时间");
             return _max_recovery_wait_time_ms;
         }
 
@@ -977,7 +981,15 @@ namespace RTSim {
         Tick time_ms = static_cast<Tick>(time_seconds * 1000);
 
         // 限制最大等待时间
-        return std::min(time_ms, static_cast<Tick>(_max_recovery_wait_time_ms));
+        Tick recovery_time = std::min(time_ms, static_cast<Tick>(_max_recovery_wait_time_ms));
+
+        SCHEDULER_LOG_INFO(std::string("⏰ [EPP] 计算能量恢复时间: ") +
+                          "缺口=" + std::to_string(energy_needed) + "J" +
+                          " 辐照度=" + std::to_string(current_irradiance) + "W/m²" +
+                          " 功率=" + std::to_string(power_output) + "W" +
+                          " 恢复时间=" + std::to_string(static_cast<int64_t>(recovery_time)) + "ms");
+
+        return recovery_time;
     }
 
     // =====================================================
@@ -1212,6 +1224,11 @@ namespace RTSim {
 
         // 初始化能量
         _current_energy = _initial_energy;
+
+        // ⭐ 关键修复：重置最后收集时间为0
+        // 这样第一次调用collectSolarEnergy(current_time)时，elapsed = current_time - 0 = current_time
+        // 可以从仿真开始时刻(0ms)到当前时刻收集太阳能
+        _last_collection_time = 0;
 
         // 清空所有队列
         _ready_queue.clear();
