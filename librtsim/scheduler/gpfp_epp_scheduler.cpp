@@ -47,10 +47,14 @@ namespace RTSim {
         SCHEDULER_LOG_INFO(std::string("⏰ [EPP] ===== 能量恢复事件触发 @ ") +
                           std::to_string(current_ms) + "ms =====");
 
-        // 1. ���集能量
+        // 1. ⭐ 收集能量并累加到_current_energy
         double harvested = _scheduler->collectSolarEnergy(current_time);
         if (harvested > 0.001) {
-            SCHEDULER_LOG_INFO(std::string("☀️ [EPP] 收集能量: ") + std::to_string(harvested) + "J");
+            // ⭐ 直接累加到调度器的_current_energy
+            _scheduler->_current_energy += harvested;
+            _scheduler->_stats.total_energy_harvested += harvested;
+            SCHEDULER_LOG_INFO(std::string("☀️ [EPP] 收集能量: ") + std::to_string(harvested) + "J" +
+                              " 总能量: " + std::to_string(_scheduler->_current_energy) + "J");
         }
 
         // 2. 检查等待队列
@@ -448,14 +452,30 @@ namespace RTSim {
             return nullptr;
         }
 
-        // 5. ⭐ 新增：扣减能量（预扣减策略）
+        // 5. ⭐ 扣减能量（预扣减策略）
         double energy_needed = calculateEnergyForTask(first_task);
         std::string task_name = getTaskName(first_task);
 
         if (!consumeEnergy(energy_needed, task_name)) {
-            // 扣减失败（理论上不会发生，因为前面已经检查过）
-            SCHEDULER_LOG_ERROR(std::string("❌ [EPP] getFirst: consumeEnergy失败，不应该发生") +
-                                " 任务=" + task_name);
+            // ⭐ 关键修复：扣减失败时，启动能量恢复并返回nullptr
+            // 这种情况发生在：前瞻性判断通过（有预测收集），但实际能量不足
+            SCHEDULER_LOG_WARNING(std::string("⚠️ [EPP] getFirst: 前瞻性判断通过但实际能量不足") +
+                                 " 任务=" + task_name +
+                                 " 需要=" + std::to_string(energy_needed) + "J" +
+                                 " 当前=" + std::to_string(_current_energy) + "J");
+
+            // 启动能量恢复
+            if (_enable_energy_recovery && !_recovery_event->isInQueue()) {
+                double energy_deficit = energy_needed - _current_energy;
+                Tick recovery_time = calculateEnergyRecoveryTime(energy_deficit);
+
+                SCHEDULER_LOG_INFO(std::string("⏰ [EPP] 启动能量恢复: ") +
+                                  "缺口: " + std::to_string(energy_deficit) + "J" +
+                                  " 预计恢复: " + std::to_string(static_cast<int64_t>(recovery_time)) + "ms");
+
+                scheduleEnergyRecoveryEvent(recovery_time);
+            }
+
             return nullptr;
         }
 
@@ -532,7 +552,24 @@ namespace RTSim {
 
                 // ⭐ 首次调度，扣减能量
                 if (!consumeEnergy(energy_needed, task_name)) {
-                    SCHEDULER_LOG_ERROR(std::string("❌ [EPP] getTaskN: consumeEnergy失败"));
+                    // ⭐ 关键修复：扣减失败时，启动能量恢复并返回nullptr
+                    SCHEDULER_LOG_WARNING(std::string("⚠️ [EPP] getTaskN: 前瞻性判断通过但实际能量不足") +
+                                         " 任务=" + task_name +
+                                         " 需要=" + std::to_string(energy_needed) + "J" +
+                                         " 当前=" + std::to_string(_current_energy) + "J");
+
+                    // 启动能量恢复
+                    if (_enable_energy_recovery && !_recovery_event->isInQueue()) {
+                        double energy_deficit = energy_needed - _current_energy;
+                        Tick recovery_time = calculateEnergyRecoveryTime(energy_deficit);
+
+                        SCHEDULER_LOG_INFO(std::string("⏰ [EPP] 启动能量恢复: ") +
+                                          "缺口: " + std::to_string(energy_deficit) + "J" +
+                                          " 预计恢复: " + std::to_string(static_cast<int64_t>(recovery_time)) + "ms");
+
+                        scheduleEnergyRecoveryEvent(recovery_time);
+                    }
+
                     return nullptr;
                 }
 
@@ -816,27 +853,23 @@ namespace RTSim {
             return false;
         }
 
-        // ⭐ 关键修复：只收集一次初始太阳能（在第一次调度决策时）
-        if (!_initial_energy_collected) {
-            SCHEDULER_LOG_INFO(std::string("🕐 [EPP] canScheduleWithEnergy首次调用: current_time=") +
-                              std::to_string(static_cast<int64_t>(current_time)) + "ms");
-            double harvested = collectSolarEnergy(current_time);
-            SCHEDULER_LOG_INFO(std::string("🔋 [EPP] collectSolarEnergy返回: ") + std::to_string(harvested) + "J");
-            if (harvested > 0.0001) {
-                _current_energy += harvested;
-                _stats.total_energy_harvested += harvested;
+        // ⭐ 最优方案：在能量判断前，先实际收集一次太阳能
+        // 这样可以确保初始能量为0时，能够利用从仿真开始到当前时刻收集的太阳能
+        double harvested = collectSolarEnergy(current_time);
+        if (harvested > 0.0001) {
+            _current_energy += harvested;
+            _stats.total_energy_harvested += harvested;
 
-                SCHEDULER_LOG_INFO(std::string("☀️ [EPP] 初始能量收集: ") +
-                                  std::to_string(harvested) + "J" +
-                                  " 当前能量: " + std::to_string(_current_energy) + "J");
-            }
-            _initial_energy_collected = true;
+            SCHEDULER_LOG_INFO(std::string("☀️ [EPP] 能量判断前收集太阳能: ") +
+                              std::to_string(harvested) + "J" +
+                              " 当前能量: " + std::to_string(_current_energy) + "J");
         }
 
-        // ⭐ 新逻辑：前瞻性能量判断
-        // 判断条件：能量_当前 + 能量_收集 >= 能量_消耗
+        // ⭐ EPP前瞻性能量判断逻辑
+        // 判断条件：能量_当前 + 能量_收集(预测) >= 能量_消耗
+        // 注意：predicted_collection是预测值，不实际修改_current_energy
 
-        // 1. 能量_当前
+        // 1. 能量_当前（实际已收集的能量）
         double energy_current = _current_energy;
 
         // 2. 能量_消耗（完整WCET）
@@ -849,7 +882,7 @@ namespace RTSim {
         }
         Tick wcet = model->getWCET();
 
-        // 4. 能量_收集（任务执行期间）
+        // 4. 能量_收集（任务执行期间预测）
         double energy_collection = predictEnergyCollection(current_time, wcet);
 
         // 5. ⭐ 核心判断
@@ -1232,13 +1265,11 @@ namespace RTSim {
         // 初始化能量
         _current_energy = _initial_energy;
 
-        // ⭐ 关键修复：重置最后收集时间为0
-        // 这样第一次调用collectSolarEnergy(current_time)时，elapsed = current_time - 0 = current_time
-        // 可以从仿真开始时刻(0ms)到当前时刻收集太阳能
-        _last_collection_time = 0;
-
-        // ⭐ 重置初始能量收集标志
-        _initial_energy_collected = false;
+        // ⭐ 关键修复：将_last_collection_time设置为仿真开始时间
+        // 这样在第一次能量判断时（时间已经推进），elapsed = current_time - SIMUL.getTime()
+        // 如果任务在time=0到达，第一次判断可能在time=0.几ms，此时elapsed≈0.几ms，能收集到少量能量
+        // 但更好的是：让系统在任务到达后等待一段时间，能量自然积累
+        _last_collection_time = SIMUL.getTime();
 
         // 清空所有队列
         _ready_queue.clear();
