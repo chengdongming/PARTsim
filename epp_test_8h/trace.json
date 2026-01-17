@@ -1,0 +1,194 @@
+{
+  "events": [
+    {
+      "time": 28800000,
+      "event_type": "arrival",
+      "task_name": "task_high",
+      "arrival_time": 28800000,
+      "original_time": "0",
+      "original_arrival_time": "0"
+    },
+    {
+      "time": 28800000,
+      "event_type": "arrival",
+      "task_name": "task_mid",
+      "arrival_time": 28800000,
+      "original_time": "0",
+      "original_arrival_time": "0"
+    },
+    {
+      "time": 28800000,
+      "event_type": "arrival",
+      "task_name": "task_low",
+      "arrival_time": 28800000,
+      "original_time": "0",
+      "original_arrival_time": "0"
+    },
+    {
+      "time": 28800006,
+      "event_type": "scheduled",
+      "task_name": "task_high",
+      "arrival_time": 28800000,
+      "original_time": "6",
+      "original_arrival_time": "0"
+    },
+    {
+      "time": 28800014,
+      "event_type": "scheduled",
+      "task_name": "task_mid",
+      "arrival_time": 28800000,
+      "original_time": "14",
+      "original_arrival_time": "0"
+    },
+    {
+      "time": 28800156,
+      "event_type": "end_instance",
+      "task_name": "task_high",
+      "arrival_time": 28800000,
+      "original_time": "156",
+      "original_arrival_time": "0"
+    },
+    {
+      "time": 28800156,
+      "event_type": "scheduled",
+      "task_name": "task_low",
+      "arrival_time": 28800000,
+      "original_time": "156",
+      "original_arrival_time": "0"
+    },
+    {
+      "time": 28800264,
+      "event_type": "end_instance",
+      "task_name": "task_mid",
+      "arrival_time": 28800000,
+      "original_time": "264",
+      "original_arrival_time": "0"
+    },
+    {
+      "time": 28800300,
+      "event_type": "arrival",
+      "task_name": "task_high",
+      "arrival_time": 28800300,
+      "original_time": "300",
+      "original_arrival_time": "300"
+    },
+    {
+      "time": 28800300,
+      "event_type": "scheduled",
+      "task_name": "task_high",
+      "arrival_time": 28800300,
+      "original_time": "300",
+      "original_arrival_time": "300"
+    },
+    {
+      "time": 28800356,
+      "event_type": "end_instance",
+      "task_name": "task_low",
+      "arrival_time": 28800000,
+      "original_time": "356",
+      "original_arrival_time": "0"
+    },
+    {
+      "time": 28800450,
+      "event_type": "end_instance",
+      "task_name": "task_high",
+      "arrival_time": 28800300,
+      "original_time": "450",
+      "original_arrival_time": "300"
+    },
+    {
+      "time": 28800500,
+      "event_type": "arrival",
+      "task_name": "task_mid",
+      "arrival_time": 28800500,
+      "original_time": "500",
+      "original_arrival_time": "500"
+    },
+    {
+      "time": 28800500,
+      "event_type": "scheduled",
+      "task_name": "task_mid",
+      "arrival_time": 28800500,
+      "original_time": "500",
+      "original_arrival_time": "500"
+    },
+    {
+      "time": 28800600,
+      "event_type": "arrival",
+      "task_name": "task_high",
+      "arrival_time": 28800600,
+      "original_time": "600",
+      "original_arrival_time": "600"
+    },
+    {
+      "time": 28800600,
+      "event_type": "scheduled",
+      "task_name": "task_high",
+      "arrival_time": 28800600,
+      "original_time": "600",
+      "original_arrival_time": "600"
+    },
+    {
+      "time": 28800750,
+      "event_type": "end_instance",
+      "task_name": "task_mid",
+      "arrival_time": 28800500,
+      "original_time": "750",
+      "original_arrival_time": "500"
+    },
+    {
+      "time": 28800750,
+      "event_type": "end_instance",
+      "task_name": "task_high",
+      "arrival_time": 28800600,
+      "original_time": "750",
+      "original_arrival_time": "600"
+    },
+    {
+      "time": 28800800,
+      "event_type": "arrival",
+      "task_name": "task_low",
+      "arrival_time": 28800800,
+      "original_time": "800",
+      "original_arrival_time": "800"
+    },
+    {
+      "time": 28800800,
+      "event_type": "scheduled",
+      "task_name": "task_low",
+      "arrival_time": 28800800,
+      "original_time": "800",
+      "original_arrival_time": "800"
+    },
+    {
+      "time": 28800900,
+      "event_type": "arrival",
+      "task_name": "task_high",
+      "arrival_time": 28800900,
+      "original_time": "900",
+      "original_arrival_time": "900"
+    },
+    {
+      "time": 28800900,
+      "event_type": "scheduled",
+      "task_name": "task_high",
+      "arrival_time": 28800900,
+      "original_time": "900",
+      "original_arrival_time": "900"
+    }
+  ],
+  "metadata": {
+    "start_time_offset": 28800000,
+    "total_events": 22,
+    "scheduler_type": "gpfp_epp",
+    "processing_method": "simple_processor",
+    "processing_timestamp": "2026-01-18T01:37:11.242334",
+    "statistics": {
+      "min_time": 28800000,
+      "max_time": 28800900,
+      "duration_ms": 900,
+      "duration_s": 0.9
+    },
+    "description": "处理完成的跟踪文件，应用时间偏移 28800000 ms"
+  }
+}

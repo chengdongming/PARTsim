@@ -194,6 +194,7 @@ class TraceParser:
         # 事件类型统计
         event_stats = defaultdict(int)
 
+        # 直接使用原始时间值，不进行偏移
         for event in self.events:
             event_type = event['event_type']
             task_name = event.get('task_name', 'unknown')
@@ -202,8 +203,8 @@ class TraceParser:
             # 记录任务
             self.tasks.add(task_name)
 
-            # 记录时间范围
-            self.time_range = (min(self.time_range[0], time),
+            # 记录时间范围（使用原始时间）
+            self.time_range = (min(self.time_range[0], time) if self.time_range != (0, 0) else time,
                              max(self.time_range[1], time))
 
             # 统计事件类型
@@ -227,8 +228,13 @@ class TraceParser:
                     del active_tasks[task_name]
 
             elif event_type == 'end_instance':
-                # 任务实例结束
+                # 任务实例结束（也作为descheduled处理）
                 self.task_completions[task_name].append(time)
+                # 如果任务还在活跃，记录完成时间作为区间结束
+                if task_name in active_tasks:
+                    start_time = active_tasks[task_name]
+                    self.schedule_intervals[task_name].append((start_time, time))
+                    del active_tasks[task_name]
 
         # 处理可能未关闭的任务（以防追踪文件不完整）
         for task_name, start_time in active_tasks.items():
@@ -321,22 +327,14 @@ class TraceVisualizer:
                 total_execution[task_name] += duration
 
                 # 绘制任务块
-                ax.barh(pos, duration, left=start, height=0.65,
+                ax.barh(pos, duration, left=start, height=0.8,
                        color=color, edgecolor='black', linewidth=1.0, alpha=0.85)
 
                 # 添加任务标签（如果区间足够长）
                 if duration >= (self.time_range[1] - self.time_range[0]) * 0.02:
                     mid_time = (start + end) / 2
                     ax.text(mid_time, pos, task_name, ha='center', va='center',
-                           fontsize=8, fontweight='bold', color='white')
-
-        # 标记任务到达时间
-        for task_name, arrivals in self.task_arrivals.items():
-            pos = task_positions[task_name]
-            for arrival_time in arrivals:
-                ax.axvline(x=arrival_time, color='green', linestyle=':',
-                          linewidth=1.5, alpha=0.4, ymin=(pos+0.3)/len(self.tasks),
-                          ymax=(pos+0.7)/len(self.tasks))
+                           fontsize=6, fontweight='bold', color='white')
 
         # 设置坐标轴
         ax.set_yticks(range(len(self.tasks)))
@@ -344,10 +342,18 @@ class TraceVisualizer:
         ax.set_xlabel('时间', fontsize=12, fontweight='bold', fontproperties=self._get_font_prop())
         ax.set_ylabel('任务', fontsize=12, fontweight='bold', fontproperties=self._get_font_prop())
 
+        # 设置Y轴范围
+        ax.set_ylim(-0.5, len(self.tasks) - 0.5)
+
         # 设置X轴范围（留一些边距）
         time_span = self.time_range[1] - self.time_range[0]
         ax.set_xlim(self.time_range[0] - time_span * 0.01,
                    self.time_range[1] + time_span * 0.01)
+
+        # 使用科学计数法显示X轴刻度（每个点独立显示）
+        from matplotlib.ticker import FormatStrFormatter
+        # 自定义科学计数法格式，显示2位小数
+        ax.xaxis.set_major_formatter(FormatStrFormatter('%.2e'))
 
         # 添加网格
         if not self.config.get('no_grid', False):

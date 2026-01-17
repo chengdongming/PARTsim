@@ -1,0 +1,28 @@
+# EPP手动测试任务集 - 3个周期性任务
+taskset:
+  # task_high: 最高优先级，周期300ms
+  - name: task_high
+    iat: 300
+    runtime: 150
+    deadline: 300
+    params: "period=300,wcet=150,workload=idle"
+    code:
+      - fixed(150, idle)
+
+  # task_mid: 中优先级，周期500ms
+  - name: task_mid
+    iat: 500
+    runtime: 250
+    deadline: 500
+    params: "period=500,wcet=250,workload=idle"
+    code:
+      - fixed(250, idle)
+
+  # task_low: 低优先级，周期800ms
+  - name: task_low
+    iat: 800
+    runtime: 200
+    deadline: 800
+    params: "period=800,wcet=200,workload=idle"
+    code:
+      - fixed(200, idle)
