@@ -255,6 +255,8 @@ namespace RTSim {
         int _max_recovery_wait_time_ms;            // 最大恢复等待时间
         EPPEnergyRecoveryEvent *_recovery_event;   // 能量恢复事件
         ConfigManager *_config_manager;            // 配置管理器
+        bool _enable_periodic_collection;          // 是否启用周期性能量收集
+        Tick _periodic_collection_interval;        // 周期性收集间隔（默认100ms）
 
         // ========== ⭐ EPP能量记账系统（方案3） ==========
         struct TaskEnergyAccount {
@@ -419,6 +421,12 @@ namespace RTSim {
         MetaSim::Tick calculateEnergyRecoveryTime(double energy_needed);
         void scheduleEnergyRecoveryEvent(MetaSim::Tick delay);
         void cancelEnergyRecoveryEvent();
+        void startPeriodicCollection();              // 启动周期性能量收集
+        void onPeriodicCollection();                 // 周期性收集回调
+
+        // Getter方法
+        bool isPeriodicCollectionEnabled() const { return _enable_periodic_collection; }
+        Tick getPeriodicCollectionInterval() const { return _periodic_collection_interval; }
         void addToReadyQueue(AbsRTTask *task);
         void addToWaitingQueue(AbsRTTask *task);
         void removeFromReadyQueue(AbsRTTask *task);

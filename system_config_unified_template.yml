@@ -55,6 +55,13 @@ energy_management:
   # 调度器单位时间
   unit_time: 50                        # 单位时间 (ms)
 
+  # ⭐ 周期性能量收集配置（EPP调度器专用）
+  periodic_collection_interval_ms: 100  # 周期性能量收集间隔 (ms)
+                                         # - 1: 每个Tick收集（最高精度，性能开销大）
+                                         # - 10: 高精度收集（推荐用于短时测试）
+                                         # - 100: 标准精度收集（默认，平衡性能和精度）
+                                         # - 1000: 低精度收集（长时间仿真）
+
   # 能量恢复配置
   enable_energy_recovery: true
   max_recovery_wait_time_ms: 10000

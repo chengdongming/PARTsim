@@ -193,8 +193,12 @@ namespace RTSim {
                     } else if (PyLong_Check(value)) {
                         enabled = (PyLong_AsLong(value) != 0);
                     }
-                    config.setEnableEnergyRecovery(enabled);
+                    config.setEnergyRecoveryEnabled(enabled);
                     SCHEDULER_LOG_INFO("  enable_energy_recovery: " + std::string(enabled ? "true" : "false"));
+                } else if (key_name == "periodic_collection_interval" && PyLong_Check(value)) {
+                    int interval = PyLong_AsLong(value);
+                    config.setPeriodicCollectionInterval(interval);
+                    SCHEDULER_LOG_INFO("  periodic_collection_interval: " + std::to_string(interval) + " ms");
                 } else if (key_name == "base_power" && PyFloat_Check(value)) {
                     double base_power = PyFloat_AsDouble(value);
                     config.setBasePower(base_power);

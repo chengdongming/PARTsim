@@ -1,0 +1,22 @@
+tasks:
+  - name: task_periodic
+    type: PeriodicTask
+    period: 500
+    deadline: 500
+    wcet: 150
+    priority: 1
+    
+    instructions:
+      - type: trace
+        file: "test_epp_trace.txt"
+        
+  - name: task_background
+    type: PeriodicTask
+    period: 1000
+    deadline: 1000
+    wcet: 100
+    priority: 2
+    
+    instructions:
+      - type: trace
+        file: "test_epp_trace.txt"

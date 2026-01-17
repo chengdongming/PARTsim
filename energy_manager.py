@@ -274,6 +274,9 @@ class EnergyConfig:
             self.enable_energy_recovery = bool(energy_config.get('enable_energy_recovery', self.enable_energy_recovery))
             self.max_recovery_wait_time_ms = int(energy_config.get('max_recovery_wait_time_ms', self.max_recovery_wait_time_ms))
 
+            # ⭐ 新增：周期性能量收集间隔
+            self.periodic_collection_interval = int(energy_config.get('periodic_collection_interval_ms', 100))
+
             # === 关键修复：加载能量收集源配置 ===
             harvesting_sources = energy_config.get('harvesting_sources', {})
             if harvesting_sources:
@@ -992,6 +995,7 @@ class EnergyManager:
                 "base_harvest_rate": float(self.config.base_harvest_rate_per_ms),
                 "start_time_offset": int(self.simulation_start_time),
                 "enable_energy_recovery": bool(self.config.enable_energy_recovery),
+                "periodic_collection_interval": int(self.config.periodic_collection_interval),  # ⭐ 新增
                 "base_power": float(self.config.base_power),
                 "power_coefficients": dict(self.config.power_coefficients),
                 "frequency_power_ratios": dict(self.config.frequency_power_ratios)

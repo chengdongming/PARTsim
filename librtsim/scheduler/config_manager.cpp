@@ -34,6 +34,7 @@ namespace RTSim {
         _base_harvest_rate(0.054),  // 默认基础收集率：54W (300W/m² × 1m² × 0.18 = 54W)
         _start_time_offset(0),
         _enable_energy_recovery(true),
+        _periodic_collection_interval(100),  // ⭐ 默认100ms周期性能量收集
         _base_power(0.5) {
         // === 修复：从环境变量读取核心数（如果设置了的话） ===
         const char *env_cores = std::getenv("RTSIM_NUM_CORES");

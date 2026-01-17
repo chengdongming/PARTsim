@@ -7,6 +7,7 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include <cstdint>
 
 namespace RTSim {
 
@@ -33,6 +34,7 @@ namespace RTSim {
         double _base_harvest_rate;
         int64_t _start_time_offset;  // ⭐ 修复：改为int64_t支持大时间偏移
         bool _enable_energy_recovery;
+        int64_t _periodic_collection_interval;  // ⭐ 新增：周期性能量收集间隔
 
         // 功率模型配置
         double _base_power;
@@ -111,6 +113,15 @@ namespace RTSim {
         }
         bool isEnergyRecoveryEnabled() const {
             return _enable_energy_recovery;
+        }
+        int64_t getPeriodicCollectionInterval() const {
+            return _periodic_collection_interval;
+        }
+        void setPeriodicCollectionInterval(int64_t interval) {
+            _periodic_collection_interval = interval;
+        }
+        void setEnergyRecoveryEnabled(bool enabled) {
+            _enable_energy_recovery = enabled;
         }
 
         // 新增获取方法

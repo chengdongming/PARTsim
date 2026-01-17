@@ -1,0 +1,59 @@
+2026-01-17 18:40:20.324 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: None
+2026-01-17 18:40:20.324 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-01-17 18:40:20.324 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-01-17 18:40:20.324 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-17 18:40:20.324 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-01-17 18:40:20.324 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-17 18:40:20.324 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-17 18:40:20.324 [INFO    ] [energy_manager      ] EnergyHarvester: Start time offset set to 43200000 ms (12:00:00)
+2026-01-17 18:40:20.324 [INFO    ] [energy_manager      ] EnergyManager: 仿真开始时间设置为: 12:00 (偏移: 43200000ms)
+2026-01-17 18:45:41.310 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: None
+2026-01-17 18:45:41.311 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-01-17 18:45:41.311 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-01-17 18:45:41.311 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-17 18:45:41.311 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-01-17 18:45:41.311 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-17 18:45:41.311 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-17 18:45:41.311 [INFO    ] [energy_manager      ] EnergyHarvester: Start time offset set to 43200000 ms (12:00:00)
+2026-01-17 18:45:41.311 [INFO    ] [energy_manager      ] EnergyManager: 仿真开始时间设置为: 12:00 (偏移: 43200000ms)
+2026-01-17 18:48:16.431 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: None
+2026-01-17 18:48:16.431 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-01-17 18:48:16.432 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-01-17 18:48:16.432 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-17 18:48:16.432 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-01-17 18:48:16.432 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-17 18:48:16.432 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-17 18:48:16.432 [INFO    ] [energy_manager      ] EnergyHarvester: Start time offset set to 43200000 ms (12:00:00)
+2026-01-17 18:48:16.432 [INFO    ] [energy_manager      ] EnergyManager: 仿真开始时间设置为: 12:00 (偏移: 43200000ms)
+2026-01-17 19:04:55.546 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: {'cpu_islands': [{'name': 'test_cpu', 'numcpus': 2, 'kernel': {'scheduler': 'gpfp_epp', 'task_placement': 'global'}, 'volts': [0.92, 1.0, 1.14], 'freqs': [7000, 8100, 10500], 'base_freq': 8100}], 'energy_management': {'initial_energy': 100.0, 'max_energy': 1000.0}}
+2026-01-17 19:04:55.547 [ERROR   ] [energy_manager      ] Error loading energy config: stat: path should be string, bytes, os.PathLike or integer, not dict
+2026-01-17 19:04:55.549 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/epp_2core_test/../energy_manager.py", line 174, in load_from_file
+    if not os.path.exists(config_file):
+  File "/usr/lib/python3.8/genericpath.py", line 19, in exists
+    os.stat(path)
+TypeError: stat: path should be string, bytes, os.PathLike or integer, not dict
+
+2026-01-17 19:04:55.549 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-01-17 19:04:55.549 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-01-17 19:04:55.549 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-17 19:04:55.549 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-01-17 19:04:55.549 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-17 19:07:27.090 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: None
+2026-01-17 19:07:27.090 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-01-17 19:07:27.090 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-01-17 19:07:27.090 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-17 19:07:27.091 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-01-17 19:07:27.091 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-17 19:07:27.091 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-17 19:07:27.091 [INFO    ] [energy_manager      ] EnergyHarvester: Start time offset set to 43200000 ms (12:00:00)
+2026-01-17 19:07:27.091 [INFO    ] [energy_manager      ] EnergyManager: 仿真开始时间设置为: 12:00 (偏移: 43200000ms)
+2026-01-17 19:09:11.395 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: None
+2026-01-17 19:09:11.396 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-01-17 19:09:11.396 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-01-17 19:09:11.396 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-17 19:09:11.396 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-01-17 19:09:11.396 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-17 19:09:11.396 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-17 19:09:11.396 [INFO    ] [energy_manager      ] EnergyHarvester: Start time offset set to 43200000 ms (12:00:00)
+2026-01-17 19:09:11.397 [INFO    ] [energy_manager      ] EnergyManager: 仿真开始时间设置为: 12:00 (偏移: 43200000ms)
