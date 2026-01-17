@@ -814,6 +814,18 @@ namespace RTSim {
             return false;
         }
 
+        // ⭐ 关键修复：在能量判断前先收集能量
+        // 这样可以确保初始能量为0时，能够利用太阳能进行调度
+        double harvested = collectSolarEnergy(current_time);
+        if (harvested > 0.0001) {
+            _current_energy += harvested;
+            _stats.total_energy_harvested += harvested;
+
+            SCHEDULER_LOG_INFO(std::string("☀️ [EPP] 能量判断前收集太阳能: ") +
+                              std::to_string(harvested) + "J" +
+                              " 当前能量: " + std::to_string(_current_energy) + "J");
+        }
+
         // ⭐ 新逻辑：前瞻性能量判断
         // 判断条件：能量_当前 + 能量_收集 >= 能量_消耗
 
