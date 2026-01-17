@@ -125,10 +125,19 @@ namespace RTSim {
     }
 
     MRTKernel::ITCPU MRTKernel::getNextFreeProc(ITCPU begin, ITCPU end) {
+        std::cout << "[DEBUG] getNextFreeProc() - 开始查找空闲CPU" << std::endl;
         for (auto it = begin; it != end; ++it) {
-            if (it->second == nullptr && !isDispatched(it->first))
+            bool curr_exe_null = (it->second == nullptr);
+            bool is_disp = isDispatched(it->first);
+            std::cout << "[DEBUG] getNextFreeProc() - CPU: " << it->first->toString()
+                      << " _m_currExe=null:" << curr_exe_null
+                      << " isDispatched:" << is_disp << std::endl;
+            if (curr_exe_null && !is_disp) {
+                std::cout << "[DEBUG] getNextFreeProc() - 找到空闲CPU: " << it->first->toString() << std::endl;
                 return it;
+            }
         }
+        std::cout << "[DEBUG] getNextFreeProc() - 未找到空闲CPU" << std::endl;
         return end;
     }
 
@@ -263,6 +272,7 @@ namespace RTSim {
     void MRTKernel::dispatch() {
         DBGENTER(_KERNEL_DBG_LEV);
 
+        std::cout << "[DEBUG] MRTKernel::dispatch() - CALLED!" << std::endl;
         size_t ncpu = _m_currExe.size();
 
         // Tells us how many of the first ncpu tasks in the ready queue are not
@@ -271,13 +281,24 @@ namespace RTSim {
 
         // Check whether the first ncpu tasks in the ready queue are already
         // dispatched or not.
+        std::cout << "[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=" << ncpu << std::endl;
         for (size_t i = 0; i < ncpu; ++i) {
             AbsRTTask *t = _sched->getTaskN(i);
-            if (t == nullptr)
+            if (t == nullptr) {
+                std::cout << "[DEBUG]   getTaskN(" << i << ") = nullptr" << std::endl;
                 break;
-            else if (getProcessor(t) == nullptr && _m_dispatched[t] == nullptr)
+            }
+            CPU *proc = getProcessor(t);
+            CPU *disp = _m_dispatched[t];
+            bool is_new = (proc == nullptr && disp == nullptr);
+            std::cout << "[DEBUG]   getTaskN(" << i << ")=" << taskname(t)
+                      << " getProcessor=" << (proc ? proc->toString() : "nullptr")
+                      << " _m_dispatched=" << (disp ? disp->toString() : "nullptr")
+                      << " is_new=" << is_new << std::endl;
+            if (is_new)
                 ++num_newtasks;
         }
+        std::cout << "[DEBUG] MRTKernel::dispatch() - num_newtasks=" << num_newtasks << std::endl;
 
         // Technically, in the old impl i can be less than ncpu, but if we break
         // before reaching ncpu for sure there are NO tasks to evict and i will
@@ -287,9 +308,12 @@ namespace RTSim {
         DBGPRINT(_sched->toString());
         DBGPRINT("New tasks: ", num_newtasks);
         print();
+        std::cout << "[DEBUG] MRTKernel::dispatch() - num_newtasks=" << num_newtasks << std::endl;
 
-        if (num_newtasks < 1)
+        if (num_newtasks < 1) {
+            std::cout << "[DEBUG] MRTKernel::dispatch() - num_newtasks < 1，返回" << std::endl;
             return;
+        }
 
         for (auto f = getNextFreeProc(_m_currExe.begin(), _m_currExe.end());
              num_newtasks > 0; f = getNextFreeProc(f, _m_currExe.end())) {

@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <metasim/factory.hpp>
@@ -145,6 +146,89 @@ namespace RTSim {
             SCHEDULER_LOG_INFO("✅ [EPP] EnergyBridge 初始化成功");
             _last_collection_time = SIMUL.getTime();
 
+            // ⭐ 读取start_time_offset（用于计算实际时间）
+            _start_time_offset = configMgr.getStartTimeOffset();
+            SCHEDULER_LOG_INFO(std::string("⏰ [EPP] 开始时间偏移: ") + std::to_string(static_cast<int64_t>(_start_time_offset)) + "ms");
+
+            // ⭐ 读取太阳能配置（从配置文件直接读取）
+            try {
+                // 检查配置文件是否存在
+                std::ifstream yaml_file(config_file);
+                if (yaml_file.good()) {
+                    // 简单的YAML解析：查找关键字段
+                    std::string line;
+                    bool in_energy_section = false;
+
+                    while (std::getline(yaml_file, line)) {
+                        // 保存原始行（用于判断缩进）
+                        std::string original_line = line;
+
+                        // 去除前后空格
+                        line.erase(0, line.find_first_not_of(" \t"));
+                        line.erase(line.find_last_not_of(" \t") + 1);
+
+                        // 跳过空行和注释行
+                        if (line.empty() || line[0] == '#') {
+                            continue;
+                        }
+
+                        // 检查是否进入energy_management部分
+                        if (line.find("energy_management:") != std::string::npos) {
+                            in_energy_section = true;
+                            continue;
+                        }
+
+                        // 检查是否离开energy_management部分（遇到同级或更高级的配置项）
+                        if (in_energy_section && !line.empty() && line[0] != '-' && line[0] != '#') {
+                            // 计算缩进级别
+                            size_t leading_spaces = original_line.find_first_not_of(" \t");
+                            // energy_management通常是0个空格缩进（顶级）
+                            // 如果遇到0个空格缩进且包含冒号，说明是同级section
+                            if (leading_spaces == 0 && line.find(':') != std::string::npos &&
+                                line.find("energy_management:") == std::string::npos) {
+                                break;
+                            }
+                        }
+
+                        // 解析配置项
+                        if (in_energy_section) {
+                            if (line.find("use_real_solar_data:") != std::string::npos) {
+                                std::string value = line.substr(line.find(":") + 1);
+                                value.erase(0, value.find_first_not_of(" \t"));
+                                _use_real_solar_data = (value == "true");
+                            }
+                            else if (line.find("solar_data_file:") != std::string::npos) {
+                                std::string value = line.substr(line.find(":") + 1);
+                                // 去除引号
+                                value.erase(0, value.find_first_not_of(" \t\""));
+                                value.erase(value.find_last_not_of(" \t\"") + 1);
+                                _solar_data_file = value;
+                            }
+                            else if (line.find("pv_efficiency:") != std::string::npos) {
+                                std::string value = line.substr(line.find(":") + 1);
+                                value.erase(0, value.find_first_not_of(" \t"));
+                                _pv_efficiency = std::stod(value);
+                            }
+                            else if (line.find("pv_area_m2:") != std::string::npos) {
+                                std::string value = line.substr(line.find(":") + 1);
+                                value.erase(0, value.find_first_not_of(" \t"));
+                                _pv_area_m2 = std::stod(value);
+                            }
+                        }
+                    }
+
+                    SCHEDULER_LOG_INFO(std::string("☀️ [EPP] 太阳能配置: ") +
+                                      "use_real=" + (_use_real_solar_data ? "true" : "false") +
+                                      " file=" + _solar_data_file +
+                                      " eff=" + std::to_string(_pv_efficiency) +
+                                      " area=" + std::to_string(_pv_area_m2) + "m²");
+                } else {
+                    SCHEDULER_LOG_WARNING("⚠️ [EPP] 无法打开配置文件，使用默认太阳能配置");
+                }
+            } catch (const std::exception &e) {
+                SCHEDULER_LOG_WARNING(std::string("⚠️ [EPP] 解析太阳能配置失败: ") + e.what());
+            }
+
             // 读取初始能量
             double bridge_energy = EnergyBridge::getInstance().getCurrentEnergy();
             if (bridge_energy > 0) {
@@ -156,6 +240,7 @@ namespace RTSim {
             SCHEDULER_LOG_WARNING("⚠️ [EPP] EnergyBridge 初始化失败，使用ConfigManager获取能量");
 
             // ⭐ Fallback: 从ConfigManager获取初始能量
+            _start_time_offset = configMgr.getStartTimeOffset();
             double config_energy = configMgr.getInitialEnergy();
             if (config_energy > 0) {
                 _initial_energy = config_energy;
@@ -742,20 +827,69 @@ namespace RTSim {
     }
 
     double EPPScheduler::getSolarIrradiance(int64_t time_ms) {
-        // 简化实现：从ConfigManager获取
-        // 实际应该读取太阳能数据文件
+        // ⭐ 使用_start_time_offset计算实际时间
+        // time_ms是仿真时间（从0开始），需要加上_start_time_offset（实际一天中的时间）
 
-        // 这里使用一个简单的白天/晚上模型
-        // 假设测试在上午8点（28800000ms）
-        int64_t hour_of_day = (time_ms % 86400000) / 3600000;
+        if (!_use_real_solar_data) {
+            // 如果不使用真实数据，使用简化模型
+            int64_t actual_time_ms = time_ms + static_cast<int64_t>(_start_time_offset);
+            int64_t hour_of_day = (actual_time_ms % 86400000) / 3600000;
 
-        if (hour_of_day >= 6 && hour_of_day <= 18) {
-            // 白天：假设 500 W/m²
-            return 500.0;
-        } else {
-            // 晚上：0 W/m²
+            if (hour_of_day >= 6 && hour_of_day <= 18) {
+                // 白天：假设 500 W/m²
+                return 500.0;
+            } else {
+                // 晚上：0 W/m²
+                return 0.0;
+            }
+        }
+
+        // ⭐ 使用真实NASA太阳能数据
+        // 数据文件格式：每行一个辐照度值（W/m²）
+        // 第1行：标题 "irradiance_W_per_m2"
+        // 第2行开始：数据（每分钟一个值）
+        // 总共532800行 = 365天 × 1440分钟/天
+        //
+        // 计算索引：
+        // actual_time_ms % 86400000 -> 当天的毫秒数
+        // / 60000 -> 当天的分钟数 (0-1439)
+        // + 2 -> +2跳过标题行，得到实际行号
+
+        int64_t actual_time_ms = time_ms + static_cast<int64_t>(_start_time_offset);
+        int64_t minute_of_day = (actual_time_ms % 86400000) / 60000;  // 0-1439
+
+        // 计算文件中的行号（跳过标题行）
+        int line_number = minute_of_day + 2;  // +2因为第1行是标题
+
+        // 读取文件
+        std::ifstream file(_solar_data_file);
+        if (!file.is_open()) {
+            SCHEDULER_LOG_WARNING(std::string("⚠️ [EPP] 无法打开太阳能数据文件: ") + _solar_data_file);
             return 0.0;
         }
+
+        // 跳到指定行
+        std::string line;
+        int current_line = 1;
+        while (current_line < line_number && std::getline(file, line)) {
+            current_line++;
+        }
+
+        // 读取目标行
+        if (std::getline(file, line)) {
+            try {
+                double irradiance = std::stod(line);
+                return irradiance;
+            } catch (const std::exception &e) {
+                SCHEDULER_LOG_WARNING(std::string("⚠️ [EPP] 解析辐照度失败: ") + e.what() +
+                                     " (line: " + line + ")");
+                return 0.0;
+            }
+        }
+
+        SCHEDULER_LOG_WARNING(std::string("⚠️ [EPP] 读取太阳能数据失败: line_number=") +
+                             std::to_string(line_number));
+        return 0.0;
     }
 
     Tick EPPScheduler::calculateEnergyRecoveryTime(double energy_needed) {
@@ -1067,6 +1201,39 @@ namespace RTSim {
         }
 
         SCHEDULER_LOG_INFO(std::string("✅ [EPP] 任务结束: ") + getTaskName(task));
+
+        // ⭐ 方案1：在任务结束时收集太阳能
+        // 收集从上次收集到现在的能量
+        MetaSim::Tick current_time = SIMUL.getTime();
+        int64_t current_ms = static_cast<int64_t>(current_time);
+
+        // 计算时间差
+        Tick elapsed = current_time - _last_collection_time;
+
+        // 第一次调用时，_last_collection_time=0，所以elapsed=current_time
+        // 之后每次任务结束时都会收集
+        if (elapsed > 0) {
+            // 获取当前辐照度
+            double irradiance = getSolarIrradiance(current_ms);
+
+            // 计算收集能量
+            double elapsed_seconds = static_cast<double>(elapsed) * 0.001;
+            double energy = irradiance * _pv_area_m2 * _pv_efficiency * elapsed_seconds;
+
+            if (energy > 0.0001) {
+                _current_energy += energy;
+                _stats.total_energy_harvested += energy;
+
+                SCHEDULER_LOG_INFO(std::string("☀️ [EPP] 任务结束时收集太阳能: ") +
+                                  std::to_string(energy) + "J" +
+                                  " (elapsed=" + std::to_string(static_cast<int64_t>(elapsed)) + "ms)" +
+                                  " (辐照度=" + std::to_string(irradiance) + " W/m²)" +
+                                  " (总收集: " + std::to_string(_stats.total_energy_harvested) + "J)");
+            }
+        }
+
+        // 更新最后收集时间
+        _last_collection_time = current_time;
 
         // ⭐ 能量结算:退还未使用的能量
         settleEnergyAccount(task);
