@@ -169,6 +169,7 @@ namespace RTSim {
         MetaSim::Tick _recovery_start_time;
         MetaSim::Tick _recovery_end_time;
         bool _enable_trace_recording;
+        bool _initial_energy_collected;  // ⭐ 标记是否已收集初始太阳能
 
         // ========== 任务管理 ==========
         std::map<AbsRTTask *, EPPTaskModel *> _task_models;

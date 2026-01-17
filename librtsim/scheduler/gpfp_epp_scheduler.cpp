@@ -144,7 +144,9 @@ namespace RTSim {
         bool bridge_initialized = EnergyBridge::getInstance().initialize(config_file);
         if (bridge_initialized) {
             SCHEDULER_LOG_INFO("✅ [EPP] EnergyBridge 初始化成功");
-            _last_collection_time = SIMUL.getTime();
+
+            // ⭐ 不在这里设置_last_collection_time，保持为0
+            // 这样newRun()之后，第一次调用collectSolarEnergy时能从仿真开始收集能量
 
             // ⭐ 读取start_time_offset（用于计算实际时间）
             _start_time_offset = configMgr.getStartTimeOffset();
@@ -814,16 +816,21 @@ namespace RTSim {
             return false;
         }
 
-        // ⭐ 关键修复：在能量判断前先收集能量
-        // 这样可以确保初始能量为0时，能够利用太阳能进行调度
-        double harvested = collectSolarEnergy(current_time);
-        if (harvested > 0.0001) {
-            _current_energy += harvested;
-            _stats.total_energy_harvested += harvested;
+        // ⭐ 关键修复：只收集一次初始太阳能（在第一次调度决策时）
+        if (!_initial_energy_collected) {
+            SCHEDULER_LOG_INFO(std::string("🕐 [EPP] canScheduleWithEnergy首次调用: current_time=") +
+                              std::to_string(static_cast<int64_t>(current_time)) + "ms");
+            double harvested = collectSolarEnergy(current_time);
+            SCHEDULER_LOG_INFO(std::string("🔋 [EPP] collectSolarEnergy返回: ") + std::to_string(harvested) + "J");
+            if (harvested > 0.0001) {
+                _current_energy += harvested;
+                _stats.total_energy_harvested += harvested;
 
-            SCHEDULER_LOG_INFO(std::string("☀️ [EPP] 能量判断前收集太阳能: ") +
-                              std::to_string(harvested) + "J" +
-                              " 当前能量: " + std::to_string(_current_energy) + "J");
+                SCHEDULER_LOG_INFO(std::string("☀️ [EPP] 初始能量收集: ") +
+                                  std::to_string(harvested) + "J" +
+                                  " 当前能量: " + std::to_string(_current_energy) + "J");
+            }
+            _initial_energy_collected = true;
         }
 
         // ⭐ 新逻辑：前瞻性能量判断
@@ -1229,6 +1236,9 @@ namespace RTSim {
         // 这样第一次调用collectSolarEnergy(current_time)时，elapsed = current_time - 0 = current_time
         // 可以从仿真开始时刻(0ms)到当前时刻收集太阳能
         _last_collection_time = 0;
+
+        // ⭐ 重置初始能量收集标志
+        _initial_energy_collected = false;
 
         // 清空所有队列
         _ready_queue.clear();
