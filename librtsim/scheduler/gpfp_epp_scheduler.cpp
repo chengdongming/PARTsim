@@ -1150,10 +1150,14 @@ namespace RTSim {
         double old_energy = _current_energy;
         _current_energy -= energy_joules;
 
+        // ⭐ 累加能量消耗统计
+        _stats.total_energy_consumed += energy_joules;
+
         SCHEDULER_LOG_INFO(std::string("⚡ [EPP] consumeEnergy: ") +
                           "任务=" + task_name +
                           " 扣减=" + std::to_string(energy_joules) + "J" +
-                          " " + std::to_string(old_energy) + "J → " + std::to_string(_current_energy) + "J");
+                          " " + std::to_string(old_energy) + "J → " + std::to_string(_current_energy) + "J" +
+                          " 累计消耗=" + std::to_string(_stats.total_energy_consumed) + "J");
 
         return true;
     }
