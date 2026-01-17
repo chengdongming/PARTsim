@@ -92,7 +92,23 @@ TaskSet read_taskset(const std::string &tset_file) {
             str_cbs_runtime.length() ? Tick(std::stol(str_cbs_runtime)) : Tick(0);
         auto cbs_period = str_cbs_period.length() ? Tick(std::stol(str_cbs_period)) : iat;
         auto cbs_deadline = str_cbs_deadline.length() ? Tick(std::stol(str_cbs_deadline)) : cbs_period;
+
+        // ⭐ 关键修复：从params字符串中解析arrival_offset作为phase
+        // params格式: "period=500,wcet=250,arrival_offset=100,workload=bzip2"
         auto ph = str_ph.length() ? Tick(std::stol(str_ph)) : Tick(0);
+
+        // 如果params中包含arrival_offset，则覆盖ph值
+        if (!str_params.empty()) {
+            size_t offset_pos = str_params.find("arrival_offset=");
+            if (offset_pos != std::string::npos) {
+                size_t comma_pos = str_params.find(",", offset_pos);
+                std::string offset_str = str_params.substr(offset_pos + 15,
+                    comma_pos != std::string::npos ? comma_pos - offset_pos - 15 : std::string::npos);
+                ph = Tick(std::stol(offset_str));
+                std::cout << "⭐ [Main] 从params解析arrival_offset: " << ph << " ms" << std::endl;
+            }
+        }
+
         auto qs = str_qs.length() ? std::stol(str_qs) : 100L;
 
         auto task_ptr = std::make_shared<RTSim::PeriodicTask>(iat, deadline, ph,

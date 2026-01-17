@@ -74,6 +74,16 @@ namespace RTSim {
         void doit() override;
     };
 
+    // ⭐ 周期性能量收集事件
+    class EPPPeriodicEnergyCollectionEvent : public MetaSim::Event {
+    private:
+        EPPScheduler *_scheduler;
+
+    public:
+        EPPPeriodicEnergyCollectionEvent(EPPScheduler *scheduler);
+        void doit() override;
+    };
+
     // =====================================================
     // EPPTaskModel 类声明
     // =====================================================
@@ -90,8 +100,9 @@ namespace RTSim {
 
     public:
         EPPTaskModel(AbsRTTask *t, int period, int wcet,
-                             const std::string &workload_type,
-                             double energy_coefficient = 1.0);
+                     const std::string &workload_type,
+                     double energy_coefficient = 1.0,
+                     MetaSim::Tick arrival_offset = 0);
         virtual ~EPPTaskModel();
 
         MetaSim::Tick getPriority() const override;
@@ -255,6 +266,7 @@ namespace RTSim {
         bool _use_real_solar_data;                 // 是否使用真实NASA太阳能数据
         int _max_recovery_wait_time_ms;            // 最大恢复等待时间
         EPPEnergyRecoveryEvent *_recovery_event;   // 能量恢复事件
+        EPPPeriodicEnergyCollectionEvent *_periodic_collection_event;  // ⭐ 周期性能量收集事件
         ConfigManager *_config_manager;            // 配置管理器
         bool _enable_periodic_collection;          // 是否启用周期性能量收集
         Tick _periodic_collection_interval;        // 周期性收集间隔（默认100ms）
@@ -551,6 +563,7 @@ namespace RTSim {
         // 友元类声明
         friend class EPPTaskActivationSimEvent;
         friend class EPPEnergyRecoveryEvent;
+        friend class EPPPeriodicEnergyCollectionEvent;  // ⭐ 周期性能量收集
         // EPP不需要分片事件：使用Tick级抢占
         friend class EPPWaitingQueueCheckEvent;
 

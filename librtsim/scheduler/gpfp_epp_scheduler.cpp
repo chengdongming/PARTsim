@@ -36,6 +36,39 @@ namespace RTSim {
         // 优先级高于默认事件，确保及时处理
     }
 
+    // =====================================================
+    // EPPPeriodicEnergyCollectionEvent 实现
+    // =====================================================
+
+    EPPPeriodicEnergyCollectionEvent::EPPPeriodicEnergyCollectionEvent(EPPScheduler *scheduler)
+        : MetaSim::Event("EPPPeriodicEnergyCollectionEvent", MetaSim::Event::_DEFAULT_PRIORITY - 5),
+          _scheduler(scheduler) {
+    }
+
+    void EPPPeriodicEnergyCollectionEvent::doit() {
+        if (!_scheduler) {
+            return;
+        }
+
+        MetaSim::Tick current_time = SIMUL.getTime();
+        int64_t current_ms = static_cast<int64_t>(current_time);
+
+        // 收集太阳能（后台持续收集）
+        double harvested = _scheduler->collectSolarEnergy(current_time);
+        if (harvested > 0.0001) {
+            _scheduler->_current_energy += harvested;
+            _scheduler->_stats.total_energy_harvested += harvested;
+
+            SCHEDULER_LOG_DEBUG(std::string("⚡ [EPP] 周期性收集 @ ") +
+                               std::to_string(current_ms) + "ms: " +
+                               std::to_string(harvested) + "J");
+        }
+
+        // 重新调度下一次收集
+        Tick interval = _scheduler->getPeriodicCollectionInterval();
+        post(SIMUL.getTime() + interval);
+    }
+
     void EPPEnergyRecoveryEvent::doit() {
         if (!_scheduler) {
             return;
@@ -82,14 +115,19 @@ namespace RTSim {
 
     EPPTaskModel::EPPTaskModel(AbsRTTask *t, int period, int wcet,
                                const std::string &workload_type,
-                               double energy_coefficient)
+                               double energy_coefficient,
+                               MetaSim::Tick arrival_offset)
         : TaskModel(t),
           _period(period),
           _wcet(wcet),
           _workload_type(workload_type),
           _energy_coefficient(energy_coefficient),
-          _rm_priority(period) {
+          _rm_priority(period),
+          _arrival_offset(arrival_offset),
+          _next_release(arrival_offset) {
         // RM优先级：周期越短，优先级越高（数值越小）
+        // arrival_offset: 任务首次到达的偏移量
+        // _next_release: 下次释放时间（初始化为arrival_offset）
     }
 
     EPPTaskModel::~EPPTaskModel() {}
@@ -118,6 +156,7 @@ namespace RTSim {
           _initial_energy(0.0),
           _max_energy(1000.0),
           _recovery_event(nullptr),
+          _periodic_collection_event(nullptr),  // ⭐ 初始化为nullptr
           _config_manager(nullptr),
           _last_collection_time(0),
           _pv_efficiency(0.18),
@@ -133,6 +172,10 @@ namespace RTSim {
         // 1. 从ConfigManager获取配置
         ConfigManager &configMgr = ConfigManager::getInstance();
         std::string config_file = configMgr.getConfigFilePath();
+
+        // ⭐ 从ConfigManager读取max_energy
+        _max_energy = configMgr.getMaxEnergy();
+        SCHEDULER_LOG_INFO(std::string("⚡ [EPP] 最大能量: ") + std::to_string(_max_energy) + "J");
 
         if (config_file.empty()) {
             const char *config_file_env = std::getenv("ENERGY_CONFIG_FILE");
@@ -155,6 +198,10 @@ namespace RTSim {
             // ⭐ 读取start_time_offset（用于计算实际时间）
             _start_time_offset = configMgr.getStartTimeOffset();
             SCHEDULER_LOG_INFO(std::string("⏰ [EPP] 开始时间偏移: ") + std::to_string(static_cast<int64_t>(_start_time_offset)) + "ms");
+
+            // ⭐ 从ConfigManager获取periodic_collection_interval
+            _periodic_collection_interval = Tick::impl_t(configMgr.getPeriodicCollectionInterval());
+            SCHEDULER_LOG_INFO(std::string("⚡ [EPP] 周期性收集间隔: ") + std::to_string(static_cast<int64_t>(_periodic_collection_interval)) + "ms");
 
             // ⭐ 读取太阳能配置（从配置文件直接读取）
             try {
@@ -260,6 +307,9 @@ namespace RTSim {
         // 4. 创建能量恢复事件
         _recovery_event = new EPPEnergyRecoveryEvent(this);
 
+        // 5. ⭐ 创建周期性能量收集事件
+        _periodic_collection_event = new EPPPeriodicEnergyCollectionEvent(this);
+
         SCHEDULER_LOG_INFO("✅ [EPP] EPP Scheduler 初始化完成");
     }
 
@@ -325,9 +375,10 @@ namespace RTSim {
         SCHEDULER_LOG_DEBUG(std::string("   参数: ") + params);
 
         // 解析参数
-        // 格式: "period=100,wcet=20,workload=bzip2"
+        // 格式: "period=100,wcet=20,arrival_offset=50,workload=bzip2"
         int period = 100;
         int wcet = 20;
+        MetaSim::Tick arrival_offset = 0;  // ⭐ 默认值为0
         std::string workload = "bzip2";
         double energy_coeff = 1.0;
 
@@ -348,6 +399,16 @@ namespace RTSim {
             wcet = std::stoi(wcet_str);
         }
 
+        // ⭐ 解析arrival_offset
+        size_t offset_pos = params.find("arrival_offset=");
+        if (offset_pos != std::string::npos) {
+            size_t comma_pos = params.find(",", offset_pos);
+            std::string offset_str = params.substr(offset_pos + 15,
+                comma_pos != std::string::npos ? comma_pos - offset_pos - 15 : std::string::npos);
+            arrival_offset = MetaSim::Tick(static_cast<MetaSim::Tick::impl_t>(std::stoll(offset_str)));
+            SCHEDULER_LOG_INFO(std::string("⭐ [EPP] 任务到达偏移: ") + std::to_string(static_cast<int64_t>(arrival_offset)) + "ms");
+        }
+
         size_t workload_pos = params.find("workload=");
         if (workload_pos != std::string::npos) {
             size_t comma_pos = params.find(",", workload_pos);
@@ -356,7 +417,7 @@ namespace RTSim {
         }
 
         // 创建任务模型
-        EPPTaskModel *model = new EPPTaskModel(task, period, wcet, workload, energy_coeff);
+        EPPTaskModel *model = new EPPTaskModel(task, period, wcet, workload, energy_coeff, arrival_offset);
         enqueueModel(model);  // ⭐ 关键：将模型添加到基类
         _task_models[task] = model;
 
@@ -797,7 +858,11 @@ namespace RTSim {
         // 简化计算：功率 × 时间
         // 实际应该从功率模型获取
         std::string workload = model->getWorkloadType();
-        double power = calculatePowerForWorkload(workload, 8100.0); // 8.1 GHz
+
+        // ⭐ 从ConfigManager获取base_freq（而不是硬编码8.1 GHz）
+        ConfigManager &configMgr = ConfigManager::getInstance();
+        double base_frequency = configMgr.getBaseFrequency();  // MHz
+        double power = calculatePowerForWorkload(workload, base_frequency);
 
         // 能量 = 功率(W) × 时间(s)
         // 1 Tick = 1 ms = 0.001 s
@@ -811,18 +876,27 @@ namespace RTSim {
     }
 
     double EPPScheduler::calculatePowerForWorkload(const std::string &workload, double frequency) {
-        // 简化功率模型（实际应该从配置文件读取）
-        if (workload == "idle") {
-            return 0.1; // 100 mW
-        } else if (workload == "bzip2") {
-            return 2.0; // 2 W
-        } else if (workload == "hash") {
-            return 1.8; // 1.8 W
-        } else if (workload == "control") {
-            return 0.5; // 500 mW
-        }
+        // ⭐ 从ConfigManager获取功率系数（统一配置）
+        ConfigManager &configMgr = ConfigManager::getInstance();
+        double power_coeff = configMgr.getPowerCoefficient(workload);
 
-        return 1.0; // 默认 1 W
+        // ⭐ 获取频率功率比
+        int frequency_mhz = static_cast<int>(frequency);
+        double freq_ratio = configMgr.getFrequencyPowerRatio(frequency_mhz);
+
+        // 基础功率 × 系数 × 频率比
+        double base_power = configMgr.getBasePower();
+        double power = base_power * power_coeff * freq_ratio;
+
+        SCHEDULER_LOG_DEBUG(std::string("⚡ [EPP] 功率计算: ") +
+                           "workload=" + workload +
+                           " coeff=" + std::to_string(power_coeff) +
+                           " freq=" + std::to_string(frequency_mhz) + "MHz" +
+                           " freq_ratio=" + std::to_string(freq_ratio) +
+                           " base_power=" + std::to_string(base_power) +
+                           " → " + std::to_string(power) + "W");
+
+        return power;
     }
 
     // =====================================================
@@ -1271,11 +1345,28 @@ namespace RTSim {
         _stats.total_skipped_energy = 0;
         _stats.total_deadline_misses = 0;
 
+        // ⭐ 启动周期性能量收集事件（后台持续收集）
+        if (_periodic_collection_event && !_periodic_collection_event->isInQueue()) {
+            Tick interval = getPeriodicCollectionInterval();
+            _periodic_collection_event->post(SIMUL.getTime() + interval);
+        }
+
         SCHEDULER_LOG_INFO(std::string("💰 [EPP] 初始能量: ") + std::to_string(_current_energy) + "J");
     }
 
     void EPPScheduler::endRun() {
         SCHEDULER_LOG_INFO("🏁 [EPP] endRun - 仿真结束");
+
+        // ⭐ 仿真结束前，收集从最后一次收集到现在的所有太阳能
+        Tick current_time = SIMUL.getTime();
+        double harvested = collectSolarEnergy(current_time);
+        if (harvested > 0.0001) {
+            _current_energy += harvested;
+            _stats.total_energy_harvested += harvested;
+            SCHEDULER_LOG_INFO(std::string("☀️ [EPP] 仿真结束前收集太阳能: ") +
+                              std::to_string(harvested) + "J" +
+                              " 总能量: " + std::to_string(_current_energy) + "J");
+        }
 
         // 打印统计信息
         SCHEDULER_LOG_INFO("📊 [EPP] ===== EPP调度统计 =====");
