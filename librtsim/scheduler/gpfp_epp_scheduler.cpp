@@ -470,10 +470,6 @@ namespace RTSim {
     // =====================================================
 
     AbsRTTask *EPPScheduler::getTaskN(unsigned int n) {
-        // ⭐ 级联调度关键：每次调用getTaskN()时检查能量
-        // MRTKernel会连续调用getTaskN(0), getTaskN(1), getTaskN(2)...
-        // 使用新逻辑：前瞻性能量判断
-
         SCHEDULER_LOG_DEBUG(std::string("🔍 [EPP] getTaskN(") + std::to_string(n) + ") 被调用" +
                            " 当前能量: " + std::to_string(_current_energy) + "J");
 
@@ -483,78 +479,74 @@ namespace RTSim {
             return nullptr;
         }
 
-        // 2. 检查索引是否越界
-        if (n >= _ready_queue.size()) {
-            SCHEDULER_LOG_DEBUG("📭 [EPP] getTaskN: 索引超出队列大小");
-            return nullptr;
-        }
+        // 2. ⭐ 遍历就绪队列，跳过正在执行的任务
+        unsigned int ready_index = 0;
+        for (size_t i = 0; i < _ready_queue.size(); ++i) {
+            AbsRTTask *task = _ready_queue[i];
 
-        // 3. 获取第n个任务
-        AbsRTTask *task = _ready_queue[n];
-
-        if (!task) {
-            SCHEDULER_LOG_DEBUG("📭 [EPP] getTaskN: 第" + std::to_string(n) + "个任务为空");
-            return nullptr;
-        }
-
-        // 4. ⭐ 使用新的前瞻性能量判断
-        Tick current_time = SIMUL.getTime();
-        bool can_schedule = canScheduleWithEnergy(task, current_time);
-
-        if (!can_schedule) {
-            SCHEDULER_LOG_INFO(std::string("❌ [EPP] getTaskN: 前瞻性判断能量不足，停止级联调度") +
-                              " 第" + std::to_string(n) + "个任务: " + getTaskName(task) +
-                              " ⭐ 级联调度在此停止");
-
-            // ⭐ 能量不足时，立即停止级联调度
-            // 后续的低优先级任务不会被调度
-
-            // 5. 启动能量恢复
-            if (_enable_energy_recovery && !_recovery_event->isInQueue()) {
-                double energy_needed = calculateEnergyForTask(task);
-                double energy_deficit = energy_needed - _current_energy;
-                Tick recovery_time = calculateEnergyRecoveryTime(energy_deficit);
-
-                SCHEDULER_LOG_INFO(std::string("⏰ [EPP] 启动能量恢复: ") +
-                                  "缺口: " + std::to_string(energy_deficit) + "J" +
-                                  " 预计恢复: " + std::to_string(static_cast<int64_t>(recovery_time)) + "ms");
-
-                scheduleEnergyRecoveryEvent(recovery_time);
+            if (!task) {
+                continue;
             }
 
-            return nullptr;  // ⭐ 停止级联调度
+            // 检查任务是否已经在_running_tasks中（正在执行）
+            bool is_running = false;
+            for (const auto &pair : _running_tasks) {
+                if (pair.second == task) {
+                    is_running = true;
+                    break;
+                }
+            }
+
+            if (is_running) {
+                SCHEDULER_LOG_DEBUG(std::string("⏭️ [EPP] getTaskN: 跳过正在执行的任务 #") +
+                                  std::to_string(i) + ": " + getTaskName(task));
+                continue;
+            }
+
+            // 这是第ready_index个未dispatch的任务
+            if (ready_index == n) {
+                // 找到第n个未dispatch的任务，进行能量检查
+
+                // ⭐ 使用前瞻性能量判断
+                Tick current_time = SIMUL.getTime();
+                bool can_schedule = canScheduleWithEnergy(task, current_time);
+
+                if (!can_schedule) {
+                    SCHEDULER_LOG_INFO(std::string("❌ [EPP] getTaskN: 能量不足") +
+                                      " 任务: " + getTaskName(task));
+                    return nullptr;
+                }
+
+                // ⭐ 检查是否已经预付过能量
+                double energy_needed = calculateEnergyForTask(task);
+                std::string task_name = getTaskName(task);
+
+                auto prepaid_it = _task_prepaid_energy.find(task);
+                if (prepaid_it != _task_prepaid_energy.end() && prepaid_it->second > 0) {
+                    SCHEDULER_LOG_DEBUG(std::string("⚠️ [EPP] getTaskN: 任务 ") + task_name +
+                                      " 已预付能量");
+                    return task;
+                }
+
+                // ⭐ 首次调度，扣减能量
+                if (!consumeEnergy(energy_needed, task_name)) {
+                    SCHEDULER_LOG_ERROR(std::string("❌ [EPP] getTaskN: consumeEnergy失败"));
+                    return nullptr;
+                }
+
+                _task_prepaid_energy[task] = energy_needed;
+
+                SCHEDULER_LOG_INFO(std::string("✅ [EPP] getTaskN: 返回任务 #") +
+                                  std::to_string(n) + ": " + task_name);
+                return task;
+            }
+
+            ready_index++;
         }
 
-        // 6. ⭐ 检查是否已经预付过能量（防止重复扣减）
-        double energy_needed = calculateEnergyForTask(task);
-        std::string task_name = getTaskName(task);
-
-        auto prepaid_it = _task_prepaid_energy.find(task);
-        if (prepaid_it != _task_prepaid_energy.end() && prepaid_it->second > 0) {
-            // 已经预付过能量，直接返回任务，不再扣减
-            SCHEDULER_LOG_DEBUG(std::string("⚠️ [EPP] getTaskN: 任务 ") + task_name +
-                              " 已预付能量，跳过重复扣减");
-            return task;
-        }
-
-        // 7. ⭐ 首次调度此任务，扣减能量（预扣减策略）
-        if (!consumeEnergy(energy_needed, task_name)) {
-            // 扣减失败（理论上不会发生，因为前面已经检查过）
-            SCHEDULER_LOG_ERROR(std::string("❌ [EPP] getTaskN: consumeEnergy失败") +
-                                " 任务=" + task_name);
-            return nullptr;
-        }
-
-        // 8. ⭐ 标记任务已预付能量
-        _task_prepaid_energy[task] = energy_needed;
-
-        // 9. ✅ 能量已扣减，返回任务（继续级联调度）
-        SCHEDULER_LOG_INFO(std::string("✅ [EPP] getTaskN: 能量已扣减，返回任务 #") +
-                          std::to_string(n) + ": " + task_name +
-                          " 当前能量: " + std::to_string(_current_energy) + "J" +
-                          " ⭐ 级联调度继续");
-
-        return task;
+        // 没有找到第n个未dispatch的任务
+        SCHEDULER_LOG_DEBUG("📭 [EPP] getTaskN: 未找到第" + std::to_string(n) + "个未dispatch的任务");
+        return nullptr;
     }
 
     // =====================================================
@@ -604,7 +596,8 @@ namespace RTSim {
             return;
         }
 
-        SCHEDULER_LOG_DEBUG(std::string("➕ [EPP] insert: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("➕ [EPP] insert: ") + getTaskName(task) +
+                          " _ready_queue.size()=" + std::to_string(_ready_queue.size()));
 
         // ⭐ 关键修复：调用基类insert以维护_queue
         Scheduler::insert(task);
@@ -618,13 +611,17 @@ namespace RTSim {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("➖ [EPP] extract: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("➖ [EPP] extract: ") + getTaskName(task) +
+                          " _ready_queue.size()=" + std::to_string(_ready_queue.size()));
 
         // ⭐ 关键修复：调用基类extract以维护_queue
         Scheduler::extract(task);
 
         // 从EPP的就绪队列中移除任务
         removeFromReadyQueue(task);
+
+        SCHEDULER_LOG_INFO(std::string("✅ [EPP] extract完成: ") + getTaskName(task) +
+                          " _ready_queue.size()=" + std::to_string(_ready_queue.size()));
 
         // 从等待队列中移除（如果存在）
         removeFromWaitingQueue(task);
@@ -681,7 +678,11 @@ namespace RTSim {
         auto it = std::find(_ready_queue.begin(), _ready_queue.end(), task);
         if (it != _ready_queue.end()) {
             _ready_queue.erase(it);
-            SCHEDULER_LOG_DEBUG(std::string("➖ [EPP] 任务从就绪队列移除: ") + getTaskName(task));
+            SCHEDULER_LOG_INFO(std::string("➖ [EPP] removeFromReadyQueue: ") + getTaskName(task) +
+                             " 剩余size=" + std::to_string(_ready_queue.size()));
+        } else {
+            SCHEDULER_LOG_WARNING(std::string("⚠️ [EPP] removeFromReadyQueue: 任务不在队列中 ") +
+                                 getTaskName(task));
         }
     }
 
@@ -1277,6 +1278,10 @@ namespace RTSim {
 
         // ⭐ 能量结算:退还未使用的能量
         settleEnergyAccount(task);
+
+        // ⭐ 关键修复：从EPP的_ready_queue中移除任务
+        // 因为基类的extract()不是虚函数，不会调用EPP::extract()
+        removeFromReadyQueue(task);
 
         // 从运行任务映射中移除
         for (auto &pair : _running_tasks) {

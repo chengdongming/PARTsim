@@ -514,7 +514,8 @@ namespace RTSim {
         AbsRTTask *getFirst() override;
         AbsRTTask *getTaskN(unsigned int n) override;
 
-        // 重写extract方法 - 在任务从队列移除后检查等待队列
+        // 注意：extract不是虚函数，无法override
+        // 改为在onTaskEnd()中手动清理_ready_queue
         void extract(AbsRTTask *task);
 
         // 重写insert方法 - 在能量不足时不将任务添加到就绪队列
