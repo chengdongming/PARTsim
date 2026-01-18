@@ -1,5 +1,5 @@
 # =============================================
-# CBPP测试 - 0点系统配置
+# CBPP测试 - 17点系统配置
 # =============================================
 
 cpu_islands:
@@ -21,7 +21,7 @@ energy_management:
   initial_energy: 0.0                 # ⭐ 初始能量：0J
   max_energy: 1000.0
   day_of_year: 187
-  time_of_day_ms: 0             # ⭐ 0点
+  time_of_day_ms: 61200000             # ⭐ 17点
   use_real_solar_data: true
   solar_data_file: "data/processed/shenyang_solar_minute.csv"
   pv_efficiency: 0.18
@@ -53,7 +53,7 @@ power_models:
 
 trace:
   enabled: true
-  trace_file: "trace_cbpp_0h.json"
+  trace_file: "trace_cbpp_17h.json"
   trace_energy: true
   trace_scheduling: true
   trace_preemptions: true

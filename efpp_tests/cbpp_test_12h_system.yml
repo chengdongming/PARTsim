@@ -21,7 +21,7 @@ energy_management:
   initial_energy: 0.0                 # ⭐ 初始能量：0J
   max_energy: 1000.0
   day_of_year: 187
-  time_of_day_ms: 43200000             # ⭐ 12点（太阳能充足）
+  time_of_day_ms: 43200000             # ⭐ 12点
   use_real_solar_data: true
   solar_data_file: "data/processed/shenyang_solar_minute.csv"
   pv_efficiency: 0.18

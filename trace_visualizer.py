@@ -327,7 +327,7 @@ class TraceVisualizer:
                 total_execution[task_name] += duration
 
                 # 绘制任务块
-                ax.barh(pos, duration, left=start, height=0.8,
+                ax.barh(pos, duration, left=start, height=0.25,
                        color=color, edgecolor='black', linewidth=1.0, alpha=0.85)
 
                 # 添加任务标签（如果区间足够长）

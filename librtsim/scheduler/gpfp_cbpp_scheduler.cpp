@@ -628,14 +628,18 @@ namespace RTSim {
                                      " 需要: " + std::to_string(total_energy) + "J" +
                                      " 当前: " + std::to_string(_current_energy) + "J");
 
-                // 2.4.1 计算总能耗缺口，设置能量恢复事件
+                // 2.4.1 ⭐ 修复：正确计算能量恢复阈值（总能耗缺口）
+                // 由于canScheduleBatchWithEnergy已经使用了前瞻性预测
+                // 能量缺口 = 总能耗 - 当前能量（不考虑预测收集，因为需要达到实际阈值）
                 if (_enable_energy_recovery && !_recovery_event->isInQueue()) {
+                    // ⭐ 设置能量恢复阈值为总能耗（确保有足够能量支持整个批量）
                     double energy_deficit = total_energy - _current_energy;
                     Tick recovery_time = calculateEnergyRecoveryTime(energy_deficit);
 
-                    SCHEDULER_LOG_INFO(std::string("⏰ [CBPP] 启动批量能量恢复: ") +
-                                      "缺口: " + std::to_string(energy_deficit) + "J" +
-                                      " 预计恢复: " + std::to_string(static_cast<int64_t>(recovery_time)) + "ms");
+                    SCHEDULER_LOG_INFO(std::string("⏰ [CBPP] 启动批量能量恢复") +
+                                      " 能量缺口=" + std::to_string(energy_deficit) + "J" +
+                                      " 恢复阈值=" + std::to_string(total_energy) + "J" +
+                                      " 预计恢复时间=" + std::to_string(static_cast<int64_t>(recovery_time)) + "ms");
 
                     scheduleEnergyRecoveryEvent(recovery_time);
                 }
@@ -683,7 +687,15 @@ namespace RTSim {
             return task;
         }
 
-        // 4. 批量外或索引越界
+        // 4. ⭐ 批量清空机制：当请求索引n >= batch_size时，说明批量已全部dispatch
+        if (_current_batch.is_scheduled && n >= _current_batch.batch_tasks.size()) {
+            SCHEDULER_LOG_INFO(std::string("🧹 [CBPP] 批量已全部dispatch，清空批量信息") +
+                              " batch_size=" + std::to_string(_current_batch.batch_size) +
+                              " n=" + std::to_string(n));
+            clearBatchSchedule();
+        }
+
+        // 5. 批量外或索引越界
         SCHEDULER_LOG_DEBUG("📭 [CBPP] getTaskN: 批量外或索引越界");
         return nullptr;
     }
@@ -711,7 +723,7 @@ namespace RTSim {
         if (!isInReadyQueue(task) && !isInWaitingQueue(task)) {
             addToReadyQueue(task);
 
-            // ⭐ Tick级抢占检查
+            // ⭐ CBPP批量抢占检查
             checkAndPreempt();
         }
     }
@@ -1218,35 +1230,76 @@ namespace RTSim {
     // =====================================================
 
     void CBPPScheduler::checkAndPreemptOnAllCPUs() {
-        // 检查所有CPU上是否有需要被抢占的任务
-        for (auto &map_pair : _running_tasks) {
-            CPU *cpu = map_pair.first;
-            AbsRTTask *running_task = map_pair.second;
+        // ⭐ CBPP批量抢占检查
+        // 1. 检查是否有正在执行的批量
+        if (!_current_batch.is_scheduled || _current_batch.batch_tasks.empty()) {
+            // 没有批量，使用单任务抢占检查
+            for (auto &map_pair : _running_tasks) {
+                CPU *cpu = map_pair.first;
+                AbsRTTask *running_task = map_pair.second;
 
-            if (!running_task) {
-                continue;
+                if (!running_task) {
+                    continue;
+                }
+
+                // 获取就绪队列最高优先级任务
+                AbsRTTask *highest = getHighestPriorityTaskFromReadyQueue();
+                if (!highest) {
+                    continue;
+                }
+
+                // 检查是否需要抢占
+                if (shouldPreempt(cpu, highest)) {
+                    SCHEDULER_LOG_INFO(std::string("🔄 [CBPP] 单任务抢占检查: ") +
+                                      " 高优先级任务=" + getTaskName(highest));
+                    // TODO: 实际的单任务抢占逻辑
+                }
             }
+            return;
+        }
 
-            // 获取就绪队列最高优先级任务
-            AbsRTTask *highest = getHighestPriorityTaskFromReadyQueue();
-            if (!highest) {
-                continue;
+        // 2. ⭐ 批量抢占逻辑
+        // 获取就绪队列最高优先级的新任务
+        AbsRTTask *new_task = getHighestPriorityTaskFromReadyQueue();
+        if (!new_task) {
+            return;
+        }
+
+        // 检查新任务是否需要抢占批量中的任务
+        CBPPTaskModel *new_model = getTaskModel(new_task);
+        if (!new_model) {
+            return;
+        }
+
+        Tick new_priority = new_model->getRMPriority();
+        AbsRTTask *lowest_batch_task = nullptr;
+        Tick lowest_batch_priority = new_priority;  // 用于比较
+
+        // 找到批量中优先级最低的任务
+        for (AbsRTTask *batch_task : _current_batch.batch_tasks) {
+            if (!batch_task) continue;
+            CBPPTaskModel *batch_model = getTaskModel(batch_task);
+            if (!batch_model) continue;
+
+            if (batch_model->getRMPriority() > lowest_batch_priority) {
+                lowest_batch_priority = batch_model->getRMPriority();
+                lowest_batch_task = batch_task;
             }
+        }
 
-            // 检查是否需要抢占
-            if (shouldPreempt(cpu, highest)) {
-                SCHEDULER_LOG_INFO(std::string("🔄 [CBPP] 抢占CPU: ") +
-                                  " 高优先级任务=" + getTaskName(highest));
+        // 如果新任务优先级高于批量中某个任务，考虑批量重组
+        if (lowest_batch_task) {
+            SCHEDULER_LOG_INFO(std::string("🔄 [CBPP] 检测到批量抢占机会") +
+                              " 新任务=" + getTaskName(new_task) +
+                              " 优先级=" + std::to_string(static_cast<int64_t>(new_priority)) +
+                              " 最低批量任务=" + getTaskName(lowest_batch_task) +
+                              " 优先级=" + std::to_string(static_cast<int64_t>(lowest_batch_priority)));
 
-                // TODO: 实际的抢占逻辑
-                // 挂起当前任务
-                // running_task->deschedule();
-
-                // 添加到就绪队列
-                // addToReadyQueue(running_task);
-
-                // 调度新任务
-                // dispatchTask(highest, cpu);
+            // ⭐ 批量重组：能量是否足够支持新批量
+            if (checkAndPerformBatchReorganization(new_task, lowest_batch_task)) {
+                SCHEDULER_LOG_INFO("✅ [CBPP] 批量重组成功");
+            } else {
+                SCHEDULER_LOG_DEBUG("⏸️ [CBPP] 批量重组条件不满足，保持当前批量");
             }
         }
     }
@@ -1272,6 +1325,90 @@ namespace RTSim {
 
         // 新任务优先级更高（RM优先级数值越小越高）
         return new_model->getRMPriority() < running_model->getRMPriority();
+    }
+
+    // =====================================================
+    // ⭐ CBPP批量重组方法
+    // =====================================================
+
+    bool CBPPScheduler::checkAndPerformBatchReorganization(AbsRTTask *new_task,
+                                                            AbsRTTask *task_to_replace) {
+        if (!new_task || !task_to_replace) {
+            return false;
+        }
+
+        SCHEDULER_LOG_INFO(std::string("🔄 [CBPP] 批量重组检查") +
+                          " 新任务=" + getTaskName(new_task) +
+                          " 替换任务=" + getTaskName(task_to_replace));
+
+        // 1. 计算被抢占任务的能量回退
+        double refund_energy = 0.0;
+        auto prepaid_it = _task_prepaid_energy.find(task_to_replace);
+        if (prepaid_it != _task_prepaid_energy.end()) {
+            refund_energy = prepaid_it->second;
+            SCHEDULER_LOG_INFO(std::string("💰 [CBPP] 被抢占任务能量回退: ") +
+                              std::to_string(refund_energy) + "J");
+        }
+
+        // 2. 构建新的批量（用新任务替换被抢占任务）
+        std::vector<AbsRTTask *> new_batch;
+        for (AbsRTTask *task : _current_batch.batch_tasks) {
+            if (task == task_to_replace) {
+                new_batch.push_back(new_task);
+            } else {
+                new_batch.push_back(task);
+            }
+        }
+
+        // 3. 计算新批量的能量需求
+        double new_batch_energy = calculateBatchTotalEnergy(new_batch);
+
+        // 4. ⭐ 检查能量是否足够：当前能量 + 回退能量 >= 新批量能量
+        double available_energy = _current_energy + refund_energy;
+        bool energy_sufficient = (available_energy >= new_batch_energy);
+
+        SCHEDULER_LOG_INFO(std::string("⚖️ [CBPP] 批量重组能量判断") +
+                          " 当前=" + std::to_string(_current_energy) + "J " +
+                          "回退=" + std::to_string(refund_energy) + "J " +
+                          "可用=" + std::to_string(available_energy) + "J " +
+                          "新批量需要=" + std::to_string(new_batch_energy) + "J " +
+                          "结果=" + (energy_sufficient ? "✅足够" : "❌不足"));
+
+        if (!energy_sufficient) {
+            return false;
+        }
+
+        // 5. ⭐ 执行批量重组
+        // 5.1 清空旧的批量信息
+        clearBatchSchedule();
+
+        // 5.2 重新预扣新批量能量（当前能量 - 旧批量能量 + 新批量能量）
+        // 更简单的做法：使用回退能量 + 当前能量来预扣
+        double energy_to_consume = new_batch_energy - refund_energy;
+        if (energy_to_consume > 0 && !consumeEnergy(energy_to_consume, "cbpp_reorganization")) {
+            SCHEDULER_LOG_WARNING("❌ [CBPP] 批量重组能量预扣失败");
+            return false;
+        }
+
+        // 5.3 更新批量信息
+        _current_batch.batch_tasks = new_batch;
+        _current_batch.total_energy_needed = new_batch_energy;
+        _current_batch.batch_size = new_batch.size();
+        _current_batch.batch_decision_time = SIMUL.getTime();
+        _current_batch.is_scheduled = true;
+
+        // 5.4 更新预付能量映射
+        _task_prepaid_energy.erase(task_to_replace);
+        _task_prepaid_energy[new_task] = calculateEnergyForTask(new_task);
+
+        // 5.5 将被抢占任务从就绪队列移除（避免重复调度）
+        removeFromReadyQueue(new_task);
+
+        SCHEDULER_LOG_INFO(std::string("✅ [CBPP] 批量重组成功") +
+                          " K=" + std::to_string(new_batch.size()) +
+                          " 总能量=" + std::to_string(new_batch_energy) + "J");
+
+        return true;
     }
 
     // =====================================================
@@ -1405,6 +1542,20 @@ namespace RTSim {
         // 如果任务在time=0到达，第一次判断可能在time=0.几ms，此时elapsed≈0.几ms，能收集到少量能量
         // 但更好的是：让系统在任务到达后等待一段时间，能量自然积累
         _last_collection_time = SIMUL.getTime();
+
+        // ⭐ 新增：如果使用真实太阳能数据，在仿真开始时立即收集一次能量
+        // 这样可以确保T=0时有初始能量用于批量调度
+        if (_use_real_solar_data) {
+            Tick current_time = SIMUL.getTime();
+            double initial_harvest = collectSolarEnergy(current_time);
+            if (initial_harvest > 0.0001) {
+                _current_energy += initial_harvest;
+                _stats.total_energy_harvested += initial_harvest;
+                SCHEDULER_LOG_INFO(std::string("☀️ [CBPP] 仿真开始时收集初始能量: ") +
+                                  std::to_string(initial_harvest) + "J" +
+                                  " 总能量: " + std::to_string(_current_energy) + "J");
+            }
+        }
 
         // 清空所有队列
         _ready_queue.clear();
@@ -1674,17 +1825,47 @@ namespace RTSim {
 
     bool CBPPScheduler::canScheduleBatchWithEnergy(const std::vector<AbsRTTask *> &batch,
                                                     MetaSim::Tick current_time) {
-        // 计算批量总能耗
+        // ⭐ 关键修复：在能量判断前，先实际收集一次太阳能
+        // 这样可以确保在T=0时也能收集从仿真开始到当前时刻的能量
+        double harvested = collectSolarEnergy(current_time);
+        if (harvested > 0.0001) {
+            _current_energy += harvested;
+            _stats.total_energy_harvested += harvested;
+
+            SCHEDULER_LOG_INFO(std::string("☀️ [CBPP] 能量判断前收集太阳能: ") +
+                              std::to_string(harvested) + "J" +
+                              " 当前能量: " + std::to_string(_current_energy) + "J");
+        }
+
+        // 1. 计算批量总能耗
         double total_energy_needed = calculateBatchTotalEnergy(batch);
 
-        // ⭐ 修复：只使用当前能量判断，不依赖预测能量
-        // CBPP是硬能量约束调度器，应该只使用当前能量进行判断
-        bool can_schedule = (_current_energy >= total_energy_needed);
+        // 2. ⭐ CBPP前瞻性能量判断：当前能量 + 预测收集能量 >= 总能耗
+        // 由于K个任务是并行执行的，批量执行时间 = max(WCET_i)
+        Tick max_wcet = 0;
+        for (AbsRTTask *task : batch) {
+            if (!task) continue;
+            CBPPTaskModel *model = getTaskModel(task);
+            if (model && model->getWCET() > max_wcet) {
+                max_wcet = model->getWCET();
+            }
+        }
 
-        SCHEDULER_LOG_INFO(std::string("⚖️ [CBPP] 批量能量判断(当前能量): ") +
+        // 3. 预测K个任务执行期间（max_wcet）能收集的总能量
+        double predicted_collection = predictEnergyCollection(current_time, max_wcet);
+
+        // 4. ⭐ 核心判断：当前能量 + 预测收集 - 总能耗 >= 0
+        double energy_after_batch = _current_energy + predicted_collection - total_energy_needed;
+        bool can_schedule = (energy_after_batch >= 0.0);
+
+        SCHEDULER_LOG_INFO(std::string("⚖️ [CBPP] 批量前瞻性能量判断: ") +
+                          "K=" + std::to_string(batch.size()) +
+                          " max_wcet=" + std::to_string(static_cast<int64_t>(max_wcet)) + "ms " +
                           "当前=" + std::to_string(_current_energy) + "J " +
+                          "预测收集=" + std::to_string(predicted_collection) + "J " +
                           "总能耗=" + std::to_string(total_energy_needed) + "J " +
-                          "结果=" + (can_schedule ? "✅充足" : "❌不足"));
+                          "结余=" + std::to_string(energy_after_batch) + "J " +
+                          "结果=" + (can_schedule ? "✅可调度" : "❌不可调度"));
 
         return can_schedule;
     }
@@ -1693,7 +1874,37 @@ namespace RTSim {
         // 计算批量总能量
         double total_energy = calculateBatchTotalEnergy(batch);
 
-        // ⭐ 一次性预扣批量总能量
+        // ⭐ 修复：CBPP算法允许使用前瞻性预测的能量进行预扣
+        // 如果canScheduleBatchWithEnergy()通过了（当前能量 + 预测收集 >= 总能耗），
+        // 我们就信任这个预测，允许预扣（即使当前能量暂时不足）
+        //
+        // 注意：这违反了传统的硬能量约束，但符合CBPP的前瞻性能量感知设计
+        // 预测的能量将在任务执行期间通过太阳能收集实际获得
+
+        // 检查当前能量是否足够（硬约束）
+        const double EPSILON = 1e-9;
+        if (_current_energy < total_energy - EPSILON) {
+            // ⭐ CBPP特殊处理：允许能量不足时的预扣（基于前瞻性预测）
+            // 前提是：canScheduleBatchWithEnergy()已经判断过，预测能量足够
+
+            SCHEDULER_LOG_WARNING(std::string("⚠️ [CBPP] 批量预扣使用前瞻性信用") +
+                                 " 需要=" + std::to_string(total_energy) + "J" +
+                                 " 当前=" + std::to_string(_current_energy) + "J" +
+                                 " 信用=" + std::to_string(total_energy - _current_energy) + "J");
+
+            // 直接扣减能量（允许为负）
+            _current_energy -= total_energy;
+            _stats.total_energy_consumed += total_energy;
+
+            SCHEDULER_LOG_INFO(std::string("⚡ [CBPP] 批量能量预扣成功（使用信用）: ") +
+                              "任务=cbpp_batch " +
+                              "扣减=" + std::to_string(total_energy) + "J " +
+                              "剩余能量=" + std::to_string(_current_energy) + "J");
+
+            return true;
+        }
+
+        // 正常情况：当前能量足够
         if (!consumeEnergy(total_energy, "cbpp_batch")) {
             SCHEDULER_LOG_WARNING("❌ [CBPP] 批量能量预扣失败");
             return false;

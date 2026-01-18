@@ -536,17 +536,13 @@ namespace RTSim {
                 continue;
             }
 
-            // ⭐ 找到能量足够的任务，扣减能量
+            // ⭐ V2: 找到前瞻性通过的任务，扣减能量（允许透支）
             double energy_needed = calculateEnergyForTask(task);
 
-            if (!consumeEnergy(energy_needed, task_name)) {
-                // ⭐ 前瞻性通过但实际能量不足，跳过继续检查
-                SCHEDULER_LOG_WARNING(std::string("⚠️ [EFPP] getFirst: 前瞻性通过但实际能量不足，跳过: ") +
-                                     task_name);
-                continue;
-            }
+            // ⭐ 直接扣减能量（consumeEnergy现在始终返回true）
+            consumeEnergy(energy_needed, task_name);
 
-            // ✅ 成功：找到第一个能量足够的任务并已扣减能量
+            // ✅ 成功：找到第一个前瞻性通过的任务
             SCHEDULER_LOG_INFO(std::string("✅ [EFPP] getFirst: 返回任务: ") +
                               task_name +
                               " 当前能量: " + std::to_string(_current_energy) + "J");
@@ -637,18 +633,13 @@ namespace RTSim {
                     continue;
                 }
 
-                // ⭐ 扣减能量
+                // ⭐ 扣减能量（只依赖前瞻性判断，允许透支）
                 double energy_needed = calculateEnergyForTask(task);
                 std::string task_name = getTaskName(task);
 
-                if (!consumeEnergy(energy_needed, task_name)) {
-                    // ⭐ EFPP弹性：扣减失败，跳过这个任务，继续检查下一个
-                    SCHEDULER_LOG_WARNING(std::string("⚠️ [EFPP] getTaskN: 前瞻性通过但实际能量不足，跳过: ") +
-                                         " 任务=" + task_name +
-                                         " 需要=" + std::to_string(energy_needed) + "J" +
-                                         " 当前=" + std::to_string(_current_energy) + "J");
-                    continue;  // ⭐ 跳过，继续循环
-                }
+                // ⭐ V2: 移除第二阶段实际能量检查，只依赖前瞻性判断
+                // consumeEnergy始终返回true，允许能量透支
+                consumeEnergy(energy_needed, task_name);
 
                 _task_prepaid_energy[task] = energy_needed;
 
@@ -1326,30 +1317,31 @@ namespace RTSim {
     // =====================================================
 
     bool EFPFPScheduler::consumeEnergy(double energy_joules, const std::string &task_name) {
-        // ⭐ 检查能量是否足够
-        const double EPSILON = 1e-9;
-        if (_current_energy < energy_joules - EPSILON) {
-            SCHEDULER_LOG_WARNING(std::string("❌ [EFPP] consumeEnergy: 能量不足") +
-                                 " 需要=" + std::to_string(energy_joules) + "J" +
-                                 " 当前=" + std::to_string(_current_energy) + "J" +
-                                 " 任务=" + task_name);
-            return false;
-        }
+        // ⭐ V2: 修改为只依赖前瞻性能量判断，允许能量透支
+        // 移除实际能量检查，只要前瞻性判断通过就允许调度
 
-        // ⭐ 扣减能量
+        // ⭐ 扣减能量（允许能量为负数）
         double old_energy = _current_energy;
         _current_energy -= energy_joules;
 
         // ⭐ 累加能量消耗统计
         _stats.total_energy_consumed += energy_joules;
 
-        SCHEDULER_LOG_INFO(std::string("⚡ [EFPP] consumeEnergy: ") +
-                          "任务=" + task_name +
-                          " 扣减=" + std::to_string(energy_joules) + "J" +
-                          " " + std::to_string(old_energy) + "J → " + std::to_string(_current_energy) + "J" +
-                          " 累计消耗=" + std::to_string(_stats.total_energy_consumed) + "J");
+        // ⭐ 如果能量透支，记录警告但不阻止调度
+        if (_current_energy < 0) {
+            SCHEDULER_LOG_WARNING(std::string("⚡ [EFPP] consumeEnergy: 能量透支（前瞻性已通过）") +
+                                     " 任务=" + task_name +
+                                     " 扣减=" + std::to_string(energy_joules) + "J" +
+                                     " " + std::to_string(old_energy) + "J → " + std::to_string(_current_energy) + "J" +
+                                     " 透支=" + std::to_string(-_current_energy) + "J");
+        } else {
+            SCHEDULER_LOG_INFO(std::string("⚡ [EFPP] consumeEnergy: ") +
+                              "任务=" + task_name +
+                              " 扣减=" + std::to_string(energy_joules) + "J" +
+                              " " + std::to_string(old_energy) + "J → " + std::to_string(_current_energy) + "J");
+        }
 
-        return true;
+        return true;  // ⭐ 始终返回true，允许调度
     }
 
     void EFPFPScheduler::setPVConfig(double efficiency, double area, const std::string &solar_file) {

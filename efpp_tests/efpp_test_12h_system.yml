@@ -1,12 +1,12 @@
 # =============================================
-# CBPP测试 - 0点系统配置
+# EFPP测试 - 12点系统配置
 # =============================================
 
 cpu_islands:
-  - name: energy_aware_cpus
+  - name: energy_empowered_cpus
     numcpus: 3                         # 3核CPU
     kernel:
-      scheduler: gpfp_cbpp             # CBPP调度器
+      scheduler: gpfp_efpp             # ⭐ EFPP调度器
       task_placement: global
       scheduler_params:
         - "strict_priority=true"
@@ -21,7 +21,7 @@ energy_management:
   initial_energy: 0.0                 # ⭐ 初始能量：0J
   max_energy: 1000.0
   day_of_year: 187
-  time_of_day_ms: 0             # ⭐ 0点
+  time_of_day_ms: 43200000             # ⭐ 12点（太阳能充足）
   use_real_solar_data: true
   solar_data_file: "data/processed/shenyang_solar_minute.csv"
   pv_efficiency: 0.18
@@ -53,7 +53,7 @@ power_models:
 
 trace:
   enabled: true
-  trace_file: "trace_cbpp_0h.json"
+  trace_file: "trace_efpp_12h.json"
   trace_energy: true
   trace_scheduling: true
   trace_preemptions: true

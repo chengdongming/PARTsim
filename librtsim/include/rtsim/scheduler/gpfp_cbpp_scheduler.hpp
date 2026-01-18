@@ -476,6 +476,7 @@ namespace RTSim {
         void checkAndPreempt();
         void checkAndPreemptOnAllCPUs();
         bool shouldPreempt(CPU *cpu, AbsRTTask *new_task);
+        bool checkAndPerformBatchReorganization(AbsRTTask *new_task, AbsRTTask *task_to_replace);
         AbsRTTask *getRunningTaskOnCPU(CPU *cpu);
         void setPVConfig(double efficiency, double area, const std::string &solar_file);
         double getSolarIrradiance(int64_t time_ms);

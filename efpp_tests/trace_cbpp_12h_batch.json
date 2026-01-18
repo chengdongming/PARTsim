@@ -25,107 +25,83 @@
       "original_arrival_time": "0"
     },
     {
-      "time": 43200400,
-      "event_type": "arrival",
-      "task_name": "task_high",
-      "arrival_time": 43200000,
-      "original_time": "400",
-      "original_arrival_time": "0"
-    },
-    {
-      "time": 43200400,
-      "event_type": "dline_miss",
-      "task_name": "task_high",
-      "arrival_time": 43200000,
-      "original_time": "400",
-      "original_arrival_time": "0"
-    },
-    {
-      "time": 43200400,
+      "time": 43200000,
       "event_type": "scheduled",
       "task_name": "task_high",
       "arrival_time": 43200000,
-      "original_time": "400",
+      "original_time": "0",
       "original_arrival_time": "0"
     },
     {
-      "time": 43200400,
+      "time": 43200000,
       "event_type": "scheduled",
       "task_name": "task_mid",
       "arrival_time": 43200000,
-      "original_time": "400",
+      "original_time": "0",
       "original_arrival_time": "0"
     },
     {
-      "time": 43200550,
-      "event_type": "end_instance",
-      "task_name": "task_mid",
-      "arrival_time": 43200000,
-      "original_time": "550",
-      "original_arrival_time": "0"
-    },
-    {
-      "time": 43200550,
+      "time": 43200000,
       "event_type": "scheduled",
       "task_name": "task_low",
       "arrival_time": 43200000,
-      "original_time": "550",
+      "original_time": "0",
       "original_arrival_time": "0"
+    },
+    {
+      "time": 43200100,
+      "event_type": "end_instance",
+      "task_name": "task_low",
+      "arrival_time": 43200000,
+      "original_time": "100",
+      "original_arrival_time": "0"
+    },
+    {
+      "time": 43200150,
+      "event_type": "end_instance",
+      "task_name": "task_mid",
+      "arrival_time": 43200000,
+      "original_time": "150",
+      "original_arrival_time": "0"
+    },
+    {
+      "time": 43200200,
+      "event_type": "end_instance",
+      "task_name": "task_high",
+      "arrival_time": 43200000,
+      "original_time": "200",
+      "original_arrival_time": "0"
+    },
+    {
+      "time": 43200400,
+      "event_type": "arrival",
+      "task_name": "task_high",
+      "arrival_time": 43200400,
+      "original_time": "400",
+      "original_arrival_time": "400"
+    },
+    {
+      "time": 43200400,
+      "event_type": "scheduled",
+      "task_name": "task_high",
+      "arrival_time": 43200400,
+      "original_time": "400",
+      "original_arrival_time": "400"
     },
     {
       "time": 43200600,
       "event_type": "end_instance",
-      "task_name": "task_high",
-      "arrival_time": 43200000,
-      "original_time": "600",
-      "original_arrival_time": "0"
-    },
-    {
-      "time": 43200600,
-      "event_type": "arrival",
-      "task_name": "task_mid",
-      "arrival_time": 43200600,
-      "original_time": "600",
-      "original_arrival_time": "600"
-    },
-    {
-      "time": 43200600,
-      "event_type": "scheduled",
       "task_name": "task_high",
       "arrival_time": 43200400,
       "original_time": "600",
       "original_arrival_time": "400"
     },
     {
-      "time": 43200650,
-      "event_type": "end_instance",
-      "task_name": "task_low",
-      "arrival_time": 43200000,
-      "original_time": "650",
-      "original_arrival_time": "0"
-    },
-    {
-      "time": 43200650,
-      "event_type": "scheduled",
+      "time": 43200600,
+      "event_type": "arrival",
       "task_name": "task_mid",
       "arrival_time": 43200600,
-      "original_time": "650",
-      "original_arrival_time": "600"
-    },
-    {
-      "time": 43200800,
-      "event_type": "end_instance",
-      "task_name": "task_high",
-      "arrival_time": 43200400,
-      "original_time": "800",
-      "original_arrival_time": "400"
-    },
-    {
-      "time": 43200800,
-      "event_type": "end_instance",
-      "task_name": "task_mid",
-      "arrival_time": 43200600,
-      "original_time": "800",
+      "original_time": "600",
       "original_arrival_time": "600"
     },
     {
@@ -145,36 +121,20 @@
       "original_arrival_time": "800"
     },
     {
-      "time": 43200800,
-      "event_type": "scheduled",
-      "task_name": "task_high",
-      "arrival_time": 43200800,
-      "original_time": "800",
-      "original_arrival_time": "800"
-    },
-    {
-      "time": 43201000,
-      "event_type": "end_instance",
-      "task_name": "task_high",
-      "arrival_time": 43200800,
-      "original_time": "1000",
-      "original_arrival_time": "800"
-    },
-    {
       "time": 43201200,
       "event_type": "arrival",
       "task_name": "task_mid",
-      "arrival_time": 43201200,
+      "arrival_time": 43200600,
       "original_time": "1200",
-      "original_arrival_time": "1200"
+      "original_arrival_time": "600"
     },
     {
       "time": 43201200,
       "event_type": "arrival",
       "task_name": "task_high",
-      "arrival_time": 43201200,
+      "arrival_time": 43200800,
       "original_time": "1200",
-      "original_arrival_time": "1200"
+      "original_arrival_time": "800"
     },
     {
       "time": 43201600,
@@ -188,25 +148,33 @@
       "time": 43201600,
       "event_type": "arrival",
       "task_name": "task_high",
-      "arrival_time": 43201200,
+      "arrival_time": 43200800,
       "original_time": "1600",
-      "original_arrival_time": "1200"
+      "original_arrival_time": "800"
     },
     {
       "time": 43201800,
       "event_type": "arrival",
       "task_name": "task_mid",
-      "arrival_time": 43201200,
+      "arrival_time": 43200600,
       "original_time": "1800",
-      "original_arrival_time": "1200"
+      "original_arrival_time": "600"
+    },
+    {
+      "time": 43201800,
+      "event_type": "dline_miss",
+      "task_name": "task_mid",
+      "arrival_time": 43200600,
+      "original_time": "1800",
+      "original_arrival_time": "600"
     }
   ],
   "metadata": {
     "start_time_offset": 43200000,
-    "total_events": 25,
+    "total_events": 21,
     "scheduler_type": "gpfp_cbpp",
     "processing_method": "simple_processor",
-    "processing_timestamp": "2026-01-19T02:00:32.850226",
+    "processing_timestamp": "2026-01-19T02:08:28.834351",
     "statistics": {
       "min_time": 43200000,
       "max_time": 43201800,
