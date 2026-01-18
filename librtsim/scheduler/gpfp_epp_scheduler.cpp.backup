@@ -1,4 +1,4 @@
-// gpfp_efpp_scheduler.cpp - EPP (Energy-aware Preemptive Priority) Scheduler Implementation
+// gpfp_epp_scheduler.cpp - EPP (Energy-aware Preemptive Priority) Scheduler Implementation
 // 算法设计文档：EPP_SCHEDULER_DESIGN.md
 
 #include <algorithm>
@@ -8,7 +8,7 @@
 #include <memory>
 #include <metasim/factory.hpp>
 #include <metasim/simul.hpp>
-#include <rtsim/scheduler/gpfp_efpp_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_epp_scheduler.hpp>
 #include <rtsim/task.hpp>
 #include <rtsim/rttask.hpp>
 #include <rtsim/exeinstr.hpp>
@@ -27,25 +27,25 @@ namespace RTSim {
     using TimeMs = int64_t;
 
     // =====================================================
-    // EFPPEnergyRecoveryEvent 实现
+    // EPPEnergyRecoveryEvent 实现
     // =====================================================
 
-    EFPPEnergyRecoveryEvent::EFPPEnergyRecoveryEvent(EFPFPScheduler *scheduler)
-        : MetaSim::Event("EFPPEnergyRecoveryEvent", MetaSim::Event::_DEFAULT_PRIORITY - 4),
+    EPPEnergyRecoveryEvent::EPPEnergyRecoveryEvent(EPPScheduler *scheduler)
+        : MetaSim::Event("EPPEnergyRecoveryEvent", MetaSim::Event::_DEFAULT_PRIORITY - 4),
           _scheduler(scheduler) {
         // 优先级高于默认事件，确保及时处理
     }
 
     // =====================================================
-    // EFPPPeriodicEnergyCollectionEvent 实现
+    // EPPPeriodicEnergyCollectionEvent 实现
     // =====================================================
 
-    EFPPPeriodicEnergyCollectionEvent::EFPPPeriodicEnergyCollectionEvent(EFPFPScheduler *scheduler)
-        : MetaSim::Event("EFPPPeriodicEnergyCollectionEvent", MetaSim::Event::_DEFAULT_PRIORITY - 5),
+    EPPPeriodicEnergyCollectionEvent::EPPPeriodicEnergyCollectionEvent(EPPScheduler *scheduler)
+        : MetaSim::Event("EPPPeriodicEnergyCollectionEvent", MetaSim::Event::_DEFAULT_PRIORITY - 5),
           _scheduler(scheduler) {
     }
 
-    void EFPPPeriodicEnergyCollectionEvent::doit() {
+    void EPPPeriodicEnergyCollectionEvent::doit() {
         if (!_scheduler) {
             return;
         }
@@ -59,7 +59,7 @@ namespace RTSim {
             _scheduler->_current_energy += harvested;
             _scheduler->_stats.total_energy_harvested += harvested;
 
-            SCHEDULER_LOG_DEBUG(std::string("⚡ [EFPP] 周期性收集 @ ") +
+            SCHEDULER_LOG_DEBUG(std::string("⚡ [EPP] 周期性收集 @ ") +
                                std::to_string(current_ms) + "ms: " +
                                std::to_string(harvested) + "J");
         }
@@ -69,7 +69,7 @@ namespace RTSim {
         post(SIMUL.getTime() + interval);
     }
 
-    void EFPPEnergyRecoveryEvent::doit() {
+    void EPPEnergyRecoveryEvent::doit() {
         if (!_scheduler) {
             return;
         }
@@ -77,7 +77,7 @@ namespace RTSim {
         MetaSim::Tick current_time = SIMUL.getTime();
         int64_t current_ms = static_cast<int64_t>(current_time);
 
-        SCHEDULER_LOG_INFO(std::string("⏰ [EFPP] ===== 能量恢复事件触发 @ ") +
+        SCHEDULER_LOG_INFO(std::string("⏰ [EPP] ===== 能量恢复事件触发 @ ") +
                           std::to_string(current_ms) + "ms =====");
 
         // 1. ⭐ 收集能量并累加到_current_energy
@@ -86,7 +86,7 @@ namespace RTSim {
             // ⭐ 直接累加到调度器的_current_energy
             _scheduler->_current_energy += harvested;
             _scheduler->_stats.total_energy_harvested += harvested;
-            SCHEDULER_LOG_INFO(std::string("☀️ [EFPP] 收集能量: ") + std::to_string(harvested) + "J" +
+            SCHEDULER_LOG_INFO(std::string("☀️ [EPP] 收集能量: ") + std::to_string(harvested) + "J" +
                               " 总能量: " + std::to_string(_scheduler->_current_energy) + "J");
         }
 
@@ -95,25 +95,25 @@ namespace RTSim {
 
         // 3. ⭐ 触发MRTKernel的dispatch()
         // 这样可以重新调度任务并生成scheduled事件
-        SCHEDULER_LOG_INFO("🔄 [EFPP] 能量恢复，触发MRTKernel dispatch");
+        SCHEDULER_LOG_INFO("🔄 [EPP] 能量恢复，触发MRTKernel dispatch");
 
         // 获取kernel并触发dispatch
         MRTKernel *kernel = _scheduler->getKernel();
         if (kernel) {
             kernel->dispatch();
-            SCHEDULER_LOG_INFO("✅ [EFPP] MRTKernel dispatch已触发");
+            SCHEDULER_LOG_INFO("✅ [EPP] MRTKernel dispatch已触发");
         } else {
-            SCHEDULER_LOG_WARNING("⚠️ [EFPP] 无法获取kernel指针");
+            SCHEDULER_LOG_WARNING("⚠️ [EPP] 无法获取kernel指针");
         }
 
-        SCHEDULER_LOG_INFO("🏁 [EFPP] ===== 能量恢复事件结束 =====");
+        SCHEDULER_LOG_INFO("🏁 [EPP] ===== 能量恢复事件结束 =====");
     }
 
     // =====================================================
-    // EFPPTaskModel 实现
+    // EPPTaskModel 实现
     // =====================================================
 
-    EFPPTaskModel::EFPPTaskModel(AbsRTTask *t, int period, int wcet,
+    EPPTaskModel::EPPTaskModel(AbsRTTask *t, int period, int wcet,
                                const std::string &workload_type,
                                double energy_coefficient,
                                MetaSim::Tick arrival_offset)
@@ -130,27 +130,27 @@ namespace RTSim {
         // _next_release: 下次释放时间（初始化为arrival_offset）
     }
 
-    EFPPTaskModel::~EFPPTaskModel() {}
+    EPPTaskModel::~EPPTaskModel() {}
 
-    MetaSim::Tick EFPPTaskModel::getPriority() const {
+    MetaSim::Tick EPPTaskModel::getPriority() const {
         return _rm_priority;
     }
 
-    void EFPPTaskModel::changePriority(MetaSim::Tick p) {
+    void EPPTaskModel::changePriority(MetaSim::Tick p) {
         _rm_priority = p;
     }
 
-    void EFPPTaskModel::setPeriod(int period) {
+    void EPPTaskModel::setPeriod(int period) {
         _period = period;
         // ⭐ RM优先级：周期越短，优先级越高（数值越小）
         _rm_priority = period;
     }
 
     // =====================================================
-    // EFPFPScheduler 实现
+    // EPPScheduler 实现
     // =====================================================
 
-    EFPFPScheduler::EFPFPScheduler()
+    EPPScheduler::EPPScheduler()
         : Scheduler(),
           _current_energy(0.0),
           _initial_energy(0.0),
@@ -167,7 +167,7 @@ namespace RTSim {
           _max_recovery_wait_time_ms(10000),
           _kernel(nullptr) {
 
-        SCHEDULER_LOG_INFO("🚀 [EFPP] EPP Scheduler 初始化");
+        SCHEDULER_LOG_INFO("🚀 [EPP] EPP Scheduler 初始化");
 
         // 1. 从ConfigManager获取配置
         ConfigManager &configMgr = ConfigManager::getInstance();
@@ -175,14 +175,14 @@ namespace RTSim {
 
         // ⭐ 从ConfigManager读取max_energy
         _max_energy = configMgr.getMaxEnergy();
-        SCHEDULER_LOG_INFO(std::string("⚡ [EFPP] 最大能量: ") + std::to_string(_max_energy) + "J");
+        SCHEDULER_LOG_INFO(std::string("⚡ [EPP] 最大能量: ") + std::to_string(_max_energy) + "J");
 
         if (config_file.empty()) {
             const char *config_file_env = std::getenv("ENERGY_CONFIG_FILE");
             config_file = config_file_env ? config_file_env : "gpfp_system.yml";
         }
 
-        SCHEDULER_LOG_INFO(std::string("📁 [EFPP] 配置文件: ") + config_file);
+        SCHEDULER_LOG_INFO(std::string("📁 [EPP] 配置文件: ") + config_file);
 
         // 2. 设置环境变量
         setenv("ENERGY_CONFIG_FILE", config_file.c_str(), 1);
@@ -190,18 +190,18 @@ namespace RTSim {
         // 3. 初始化EnergyBridge
         bool bridge_initialized = EnergyBridge::getInstance().initialize(config_file);
         if (bridge_initialized) {
-            SCHEDULER_LOG_INFO("✅ [EFPP] EnergyBridge 初始化成功");
+            SCHEDULER_LOG_INFO("✅ [EPP] EnergyBridge 初始化成功");
 
             // ⭐ 不在这里设置_last_collection_time，保持为0
             // 这样newRun()之后，第一次调用collectSolarEnergy时能从仿真开始收集能量
 
             // ⭐ 读取start_time_offset（用于计算实际时间）
             _start_time_offset = configMgr.getStartTimeOffset();
-            SCHEDULER_LOG_INFO(std::string("⏰ [EFPP] 开始时间偏移: ") + std::to_string(static_cast<int64_t>(_start_time_offset)) + "ms");
+            SCHEDULER_LOG_INFO(std::string("⏰ [EPP] 开始时间偏移: ") + std::to_string(static_cast<int64_t>(_start_time_offset)) + "ms");
 
             // ⭐ 从ConfigManager获取periodic_collection_interval
             _periodic_collection_interval = Tick::impl_t(configMgr.getPeriodicCollectionInterval());
-            SCHEDULER_LOG_INFO(std::string("⚡ [EFPP] 周期性收集间隔: ") + std::to_string(static_cast<int64_t>(_periodic_collection_interval)) + "ms");
+            SCHEDULER_LOG_INFO(std::string("⚡ [EPP] 周期性收集间隔: ") + std::to_string(static_cast<int64_t>(_periodic_collection_interval)) + "ms");
 
             // ⭐ 读取太阳能配置（从配置文件直接读取）
             try {
@@ -259,7 +259,7 @@ namespace RTSim {
 
                                 _use_real_solar_data = (value == "true");
 
-                                SCHEDULER_LOG_DEBUG(std::string("🔧 [EFPP] 解析 use_real_solar_data: ") +
+                                SCHEDULER_LOG_DEBUG(std::string("🔧 [EPP] 解析 use_real_solar_data: ") +
                                                       value + " -> " +
                                                       (_use_real_solar_data ? "true" : "false"));
                             }
@@ -306,16 +306,16 @@ namespace RTSim {
                         }
                     }
 
-                    SCHEDULER_LOG_INFO(std::string("☀️ [EFPP] 太阳能配置: ") +
+                    SCHEDULER_LOG_INFO(std::string("☀️ [EPP] 太阳能配置: ") +
                                       "use_real=" + (_use_real_solar_data ? "true" : "false") +
                                       " file=" + _solar_data_file +
                                       " eff=" + std::to_string(_pv_efficiency) +
                                       " area=" + std::to_string(_pv_area_m2) + "m²");
                 } else {
-                    SCHEDULER_LOG_WARNING("⚠️ [EFPP] 无法打开配置文件，使用默认太阳能配置");
+                    SCHEDULER_LOG_WARNING("⚠️ [EPP] 无法打开配置文件，使用默认太阳能配置");
                 }
             } catch (const std::exception &e) {
-                SCHEDULER_LOG_WARNING(std::string("⚠️ [EFPP] 解析太阳能配置失败: ") + e.what());
+                SCHEDULER_LOG_WARNING(std::string("⚠️ [EPP] 解析太阳能配置失败: ") + e.what());
             }
 
             // 读取初始能量
@@ -323,10 +323,10 @@ namespace RTSim {
             if (bridge_energy > 0) {
                 _initial_energy = bridge_energy;
                 _current_energy = _initial_energy;
-                SCHEDULER_LOG_INFO(std::string("💰 [EFPP] 初始能量: ") + std::to_string(_initial_energy) + "J");
+                SCHEDULER_LOG_INFO(std::string("💰 [EPP] 初始能量: ") + std::to_string(_initial_energy) + "J");
             }
         } else {
-            SCHEDULER_LOG_WARNING("⚠️ [EFPP] EnergyBridge 初始化失败，使用ConfigManager获取能量");
+            SCHEDULER_LOG_WARNING("⚠️ [EPP] EnergyBridge 初始化失败，使用ConfigManager获取能量");
 
             // ⭐ Fallback: 从ConfigManager获取初始能量
             _start_time_offset = configMgr.getStartTimeOffset();
@@ -334,34 +334,34 @@ namespace RTSim {
             if (config_energy > 0) {
                 _initial_energy = config_energy;
                 _current_energy = _initial_energy;
-                SCHEDULER_LOG_INFO(std::string("💰 [EFPP] 从ConfigManager获取初始能量: ") + std::to_string(_initial_energy) + "J");
+                SCHEDULER_LOG_INFO(std::string("💰 [EPP] 从ConfigManager获取初始能量: ") + std::to_string(_initial_energy) + "J");
             } else {
-                SCHEDULER_LOG_ERROR("❌ [EFPP] 无法获取初始能量，调度器将无法工作！");
+                SCHEDULER_LOG_ERROR("❌ [EPP] 无法获取初始能量，调度器将无法工作！");
             }
         }
 
         // 4. 创建能量恢复事件
-        _recovery_event = new EFPPEnergyRecoveryEvent(this);
+        _recovery_event = new EPPEnergyRecoveryEvent(this);
 
         // 5. ⭐ 创建周期性能量收集事件
-        _periodic_collection_event = new EFPPPeriodicEnergyCollectionEvent(this);
+        _periodic_collection_event = new EPPPeriodicEnergyCollectionEvent(this);
 
-        SCHEDULER_LOG_INFO("✅ [EFPP] EPP Scheduler 初始化完成");
+        SCHEDULER_LOG_INFO("✅ [EPP] EPP Scheduler 初始化完成");
     }
 
-    EFPFPScheduler::EFPFPScheduler(const std::vector<std::string> &params)
-        : EFPFPScheduler() {
+    EPPScheduler::EPPScheduler(const std::vector<std::string> &params)
+        : EPPScheduler() {
         // 委托给默认构造函数
         // 参数可以在后续处理
         // 注意：基类Entity的_name是私有的，无法直接设置
     }
 
-    std::unique_ptr<EFPFPScheduler>
-        EFPFPScheduler::createInstance(const std::vector<std::string> &params) {
-        return std::make_unique<EFPFPScheduler>(params);
+    std::unique_ptr<EPPScheduler>
+        EPPScheduler::createInstance(const std::vector<std::string> &params) {
+        return std::make_unique<EPPScheduler>(params);
     }
 
-    EFPFPScheduler::~EFPFPScheduler() {
+    EPPScheduler::~EPPScheduler() {
         if (_recovery_event) {
             delete _recovery_event;
             _recovery_event = nullptr;
@@ -378,18 +378,18 @@ namespace RTSim {
     // 核心调度函数 - EPP算法的核心
     // =====================================================
 
-    void EFPFPScheduler::schedule() {
+    void EPPScheduler::schedule() {
         // ⭐ 禁用自定义schedule()方法
         // EPP完全依赖MRTKernel::dispatch() -> getTaskN()流程
         // 这样可以确保scheduled事件被正确记录
 
-        SCHEDULER_LOG_WARNING("⚠️ [EFPP] schedule()方法已禁用，EPP依赖MRTKernel的dispatch()");
+        SCHEDULER_LOG_WARNING("⚠️ [EPP] schedule()方法已禁用，EPP依赖MRTKernel的dispatch()");
 
         // 只收集能量和恢复等待队列，不进行调度（让MRTKernel处理）
         MetaSim::Tick current_time = SIMUL.getTime();
         double harvested = collectSolarEnergy(current_time);
         if (harvested > 0.001) {
-            SCHEDULER_LOG_INFO(std::string("☀️ [EFPP] 收集能量: ") + std::to_string(harvested) + "J");
+            SCHEDULER_LOG_INFO(std::string("☀️ [EPP] 收集能量: ") + std::to_string(harvested) + "J");
             _current_energy += harvested;
         }
 
@@ -401,13 +401,13 @@ namespace RTSim {
     // 添加任务
     // =====================================================
 
-    void EFPFPScheduler::addTask(AbsRTTask *task, const std::string &params) {
+    void EPPScheduler::addTask(AbsRTTask *task, const std::string &params) {
         if (!task) {
-            SCHEDULER_LOG_WARNING("⚠️ [EFPP] addTask: 任务为空");
+            SCHEDULER_LOG_WARNING("⚠️ [EPP] addTask: 任务为空");
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("📥 [EFPP] 添加任务: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("📥 [EPP] 添加任务: ") + getTaskName(task));
         SCHEDULER_LOG_DEBUG(std::string("   参数: ") + params);
 
         // 解析参数
@@ -442,7 +442,7 @@ namespace RTSim {
             std::string offset_str = params.substr(offset_pos + 15,
                 comma_pos != std::string::npos ? comma_pos - offset_pos - 15 : std::string::npos);
             arrival_offset = MetaSim::Tick(static_cast<MetaSim::Tick::impl_t>(std::stoll(offset_str)));
-            SCHEDULER_LOG_INFO(std::string("⭐ [EFPP] 任务到达偏移: ") + std::to_string(static_cast<int64_t>(arrival_offset)) + "ms");
+            SCHEDULER_LOG_INFO(std::string("⭐ [EPP] 任务到达偏移: ") + std::to_string(static_cast<int64_t>(arrival_offset)) + "ms");
         }
 
         size_t workload_pos = params.find("workload=");
@@ -453,14 +453,14 @@ namespace RTSim {
         }
 
         // 创建任务模型
-        EFPPTaskModel *model = new EFPPTaskModel(task, period, wcet, workload, energy_coeff, arrival_offset);
+        EPPTaskModel *model = new EPPTaskModel(task, period, wcet, workload, energy_coeff, arrival_offset);
         enqueueModel(model);  // ⭐ 关键：将模型添加到基类
         _task_models[task] = model;
 
         // 添加到就绪队列
         addToReadyQueue(task);
 
-        SCHEDULER_LOG_INFO(std::string("✅ [EFPP] 任务已添加: 周期=") + std::to_string(period) +
+        SCHEDULER_LOG_INFO(std::string("✅ [EPP] 任务已添加: 周期=") + std::to_string(period) +
                           " WCET=" + std::to_string(wcet) +
                           " 工作负载=" + workload);
     }
@@ -469,12 +469,12 @@ namespace RTSim {
     // 移除任务
     // =====================================================
 
-    void EFPFPScheduler::removeTask(AbsRTTask *task) {
+    void EPPScheduler::removeTask(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("📤 [EFPP] 移除任务: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("📤 [EPP] 移除任务: ") + getTaskName(task));
 
         // 从队列移除
         removeFromReadyQueue(task);
@@ -494,102 +494,112 @@ namespace RTSim {
             _task_models.erase(it);
         }
 
-        SCHEDULER_LOG_INFO(std::string("✅ [EFPP] 任务已移除: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("✅ [EPP] 任务已移除: ") + getTaskName(task));
     }
 
     // =====================================================
     // getFirst - 获取第一个要调度的任务（实现能量约束）
     // =====================================================
 
-    AbsRTTask *EFPFPScheduler::getFirst() {
-        // ⭐ EFPP弹性策略：遍历所有任务，找到第一个能量足够的任务
-        // 而不是只检查最高优先级任务
+    AbsRTTask *EPPScheduler::getFirst() {
+        // ⭐ 关键：实现前瞻性能量硬约束
+        // 使用新逻辑：能量_当前 + 能量_收集 >= 能量_消耗
 
-        SCHEDULER_LOG_DEBUG(std::string("🔍 [EFPP] getFirst() 被调用") +
+        SCHEDULER_LOG_DEBUG(std::string("🔍 [EPP] getFirst() 被调用") +
                            " 当前能量: " + std::to_string(_current_energy) + "J");
 
         // 1. 检查就绪队列
         if (_ready_queue.empty()) {
-            SCHEDULER_LOG_DEBUG("📭 [EFPP] getFirst: 就绪队列为空");
+            SCHEDULER_LOG_DEBUG("📭 [EPP] getFirst: 就绪队列为空");
             return nullptr;
         }
 
-        Tick current_time = SIMUL.getTime();
+        // 2. 获取最高优先级任务
+        AbsRTTask *first_task = _ready_queue.front();
 
-        // 2. ⭐ EFPP弹性：遍历就绪队列（按RM优先级已排序），找到第一个能量足够的任务
-        for (size_t i = 0; i < _ready_queue.size(); ++i) {
-            AbsRTTask *task = _ready_queue[i];
-
-            if (!task) {
-                continue;
-            }
-
-            std::string task_name = getTaskName(task);
-
-            // ⭐ 前瞻性能量判断
-            bool can_schedule = canScheduleWithEnergy(task, current_time);
-
-            if (!can_schedule) {
-                // ⭐ EFPP弹性：能量不足，跳过这个任务，继续检查下一个
-                SCHEDULER_LOG_INFO(std::string("⏸️ [EFPP] getFirst: 任务能量不足，跳过: ") +
-                                  task_name);
-                continue;
-            }
-
-            // ⭐ 找到能量足够的任务，扣减能量
-            double energy_needed = calculateEnergyForTask(task);
-
-            if (!consumeEnergy(energy_needed, task_name)) {
-                // ⭐ 前瞻性通过但实际能量不足，跳过继续检查
-                SCHEDULER_LOG_WARNING(std::string("⚠️ [EFPP] getFirst: 前瞻性通过但实际能量不足，跳过: ") +
-                                     task_name);
-                continue;
-            }
-
-            // ✅ 成功：找到第一个能量足够的任务并已扣减能量
-            SCHEDULER_LOG_INFO(std::string("✅ [EFPP] getFirst: 返回任务: ") +
-                              task_name +
-                              " 当前能量: " + std::to_string(_current_energy) + "J");
-            return task;
+        if (!first_task) {
+            SCHEDULER_LOG_DEBUG("📭 [EPP] getFirst: 队列首任务为空");
+            return nullptr;
         }
 
-        // 3. ⭐ 所有任务能量都不足，启动能量恢复
-        SCHEDULER_LOG_INFO("❌ [EFPP] getFirst: 所有任务能量不足，启动能量恢复");
+        // 3. ⭐ 使用新的前瞻性能量判断
+        Tick current_time = SIMUL.getTime();
+        bool can_schedule = canScheduleWithEnergy(first_task, current_time);
 
-        // 计算最高优先级任务的能量缺口（用于恢复时间）
-        if (!_ready_queue.empty()) {
-            AbsRTTask *highest_task = _ready_queue.front();
-            double energy_needed = calculateEnergyForTask(highest_task);
-            double energy_deficit = energy_needed - _current_energy;
+        if (!can_schedule) {
+            SCHEDULER_LOG_INFO(std::string("❌ [EPP] getFirst: 前瞻性判断能量不足，停止调度") +
+                              " 任务: " + getTaskName(first_task));
 
+            // ⭐ 能量不足时，不返回任何任务，阻止调度
+            // 任务保留在就绪队列中，等待能量恢复
+
+            // 4. 启动能量恢复
             if (_enable_energy_recovery && !_recovery_event->isInQueue()) {
+                double energy_needed = calculateEnergyForTask(first_task);
+                double energy_deficit = energy_needed - _current_energy;
                 Tick recovery_time = calculateEnergyRecoveryTime(energy_deficit);
-                SCHEDULER_LOG_INFO(std::string("⏰ [EFPP] 启动能量恢复: ") +
+
+                SCHEDULER_LOG_INFO(std::string("⏰ [EPP] 启动能量恢复: ") +
                                   "缺口: " + std::to_string(energy_deficit) + "J" +
                                   " 预计恢复: " + std::to_string(static_cast<int64_t>(recovery_time)) + "ms");
+
                 scheduleEnergyRecoveryEvent(recovery_time);
             }
+
+            return nullptr;
         }
 
-        return nullptr;
+        // 5. ⭐ 扣减能量（预扣减策略）
+        double energy_needed = calculateEnergyForTask(first_task);
+        std::string task_name = getTaskName(first_task);
+
+        if (!consumeEnergy(energy_needed, task_name)) {
+            // ⭐ 关键修复：扣减失败时，启动能量恢复并返回nullptr
+            // 这种情况发生在：前瞻性判断通过（有预测收集），但实际能量不足
+            SCHEDULER_LOG_WARNING(std::string("⚠️ [EPP] getFirst: 前瞻性判断通过但实际能量不足") +
+                                 " 任务=" + task_name +
+                                 " 需要=" + std::to_string(energy_needed) + "J" +
+                                 " 当前=" + std::to_string(_current_energy) + "J");
+
+            // 启动能量恢复
+            if (_enable_energy_recovery && !_recovery_event->isInQueue()) {
+                double energy_deficit = energy_needed - _current_energy;
+                Tick recovery_time = calculateEnergyRecoveryTime(energy_deficit);
+
+                SCHEDULER_LOG_INFO(std::string("⏰ [EPP] 启动能量恢复: ") +
+                                  "缺口: " + std::to_string(energy_deficit) + "J" +
+                                  " 预计恢复: " + std::to_string(static_cast<int64_t>(recovery_time)) + "ms");
+
+                scheduleEnergyRecoveryEvent(recovery_time);
+            }
+
+            return nullptr;
+        }
+
+        // 6. ✅ 能量已扣减，返回任务
+        SCHEDULER_LOG_INFO(std::string("✅ [EPP] getFirst: 能量已扣减，返回任务: ") +
+                          task_name +
+                          " 当前能量: " + std::to_string(_current_energy) + "J");
+
+        return first_task;
     }
 
     // =====================================================
     // getTaskN - 获取第n个要调度的任务（实现级联调度）
     // =====================================================
 
-    AbsRTTask *EFPFPScheduler::getTaskN(unsigned int n) {
-        SCHEDULER_LOG_DEBUG(std::string("🔍 [EFPP] getTaskN(") + std::to_string(n) + ") 被调用" +
+    AbsRTTask *EPPScheduler::getTaskN(unsigned int n) {
+        SCHEDULER_LOG_DEBUG(std::string("🔍 [EPP] getTaskN(") + std::to_string(n) + ") 被调用" +
                            " 当前能量: " + std::to_string(_current_energy) + "J");
 
         // 1. 检查就绪队列
         if (_ready_queue.empty()) {
-            SCHEDULER_LOG_DEBUG("📭 [EFPP] getTaskN: 就绪队列为空");
+            SCHEDULER_LOG_DEBUG("📭 [EPP] getTaskN: 就绪队列为空");
             return nullptr;
         }
 
-        // 2. ⭐ EFPP真正的弹性策略：遍历未dispatch的任务，找到第n个能量足够的任务
-        unsigned int dispatched_count = 0;  // 已dispatch的任务数
+        // 2. ⭐ 遍历就绪队列，跳过正在执行的任务
+        unsigned int ready_index = 0;
         for (size_t i = 0; i < _ready_queue.size(); ++i) {
             AbsRTTask *task = _ready_queue[i];
 
@@ -607,19 +617,19 @@ namespace RTSim {
             }
 
             if (is_running) {
-                SCHEDULER_LOG_DEBUG(std::string("⏭️ [EFPP] getTaskN: 跳过正在执行的任务 #") +
+                SCHEDULER_LOG_DEBUG(std::string("⏭️ [EPP] getTaskN: 跳过正在执行的任务 #") +
                                   std::to_string(i) + ": " + getTaskName(task));
                 continue;
             }
 
-            // 这是第dispatched_count个未dispatch的任务
-            if (dispatched_count == n) {
+            // 这是第ready_index个未dispatch的任务
+            if (ready_index == n) {
                 // 找到第n个未dispatch的任务，进行能量检查
 
                 // ⭐ 关键修复：先检查是否已经预付过能量
                 auto prepaid_it = _task_prepaid_energy.find(task);
                 if (prepaid_it != _task_prepaid_energy.end() && prepaid_it->second > 0) {
-                    SCHEDULER_LOG_DEBUG(std::string("⚠️ [EFPP] getTaskN: 任务 ") + getTaskName(task) +
+                    SCHEDULER_LOG_DEBUG(std::string("⚠️ [EPP] getTaskN: 任务 ") + getTaskName(task) +
                                       " 已预付能量，直接返回");
                     return task;
                 }
@@ -629,55 +639,49 @@ namespace RTSim {
                 bool can_schedule = canScheduleWithEnergy(task, current_time);
 
                 if (!can_schedule) {
-                    // ⭐ EFPP关键：能量不足时，跳过这个任务，继续循环检查下一个
-                    SCHEDULER_LOG_INFO(std::string("⏸️ [EFPP] 任务能量不足，跳过: ") +
-                                      getTaskName(task) + " (索引" + std::to_string(n) + ")");
-                    // 不返回，继续循环检查下一个任务
-                    // 但ready_index不增加，所以下一个任务会变成第n个
-                    continue;
+                    SCHEDULER_LOG_INFO(std::string("❌ [EPP] getTaskN: 能量不足") +
+                                      " 任务: " + getTaskName(task));
+                    return nullptr;
                 }
 
-                // ⭐ 扣减能量
+                // ⭐ 首次调度，扣减能量
                 double energy_needed = calculateEnergyForTask(task);
                 std::string task_name = getTaskName(task);
 
                 if (!consumeEnergy(energy_needed, task_name)) {
-                    // ⭐ EFPP弹性：扣减失败，跳过这个任务，继续检查下一个
-                    SCHEDULER_LOG_WARNING(std::string("⚠️ [EFPP] getTaskN: 前瞻性通过但实际能量不足，跳过: ") +
+                    // ⭐ 关键修复：扣减失败时，启动能量恢复并返回nullptr
+                    SCHEDULER_LOG_WARNING(std::string("⚠️ [EPP] getTaskN: 前瞻性判断通过但实际能量不足") +
                                          " 任务=" + task_name +
                                          " 需要=" + std::to_string(energy_needed) + "J" +
                                          " 当前=" + std::to_string(_current_energy) + "J");
-                    continue;  // ⭐ 跳过，继续循环
+
+                    // 启动能量恢复
+                    if (_enable_energy_recovery && !_recovery_event->isInQueue()) {
+                        double energy_deficit = energy_needed - _current_energy;
+                        Tick recovery_time = calculateEnergyRecoveryTime(energy_deficit);
+
+                        SCHEDULER_LOG_INFO(std::string("⏰ [EPP] 启动能量恢复: ") +
+                                          "缺口: " + std::to_string(energy_deficit) + "J" +
+                                          " 预计恢复: " + std::to_string(static_cast<int64_t>(recovery_time)) + "ms");
+
+                        scheduleEnergyRecoveryEvent(recovery_time);
+                    }
+
+                    return nullptr;
                 }
 
                 _task_prepaid_energy[task] = energy_needed;
 
-                SCHEDULER_LOG_INFO(std::string("✅ [EFPP] getTaskN: 返回任务 #") +
+                SCHEDULER_LOG_INFO(std::string("✅ [EPP] getTaskN: 返回任务 #") +
                                   std::to_string(n) + ": " + task_name);
                 return task;
             }
 
-            dispatched_count++;
+            ready_index++;
         }
 
         // 没有找到第n个未dispatch的任务
-        SCHEDULER_LOG_INFO("❌ [EFPP] getTaskN: 所有任务能量不足，启动能量恢复");
-
-        // 计算最高优先级任务的能量缺口（用于恢复时间）
-        if (!_ready_queue.empty()) {
-            AbsRTTask *highest_task = _ready_queue.front();
-            double energy_needed = calculateEnergyForTask(highest_task);
-            double energy_deficit = energy_needed - _current_energy;
-
-            if (_enable_energy_recovery && !_recovery_event->isInQueue()) {
-                Tick recovery_time = calculateEnergyRecoveryTime(energy_deficit);
-                SCHEDULER_LOG_INFO(std::string("⏰ [EFPP] 启动能量恢复: ") +
-                                  "缺口: " + std::to_string(energy_deficit) + "J" +
-                                  " 预计恢复: " + std::to_string(static_cast<int64_t>(recovery_time)) + "ms");
-                scheduleEnergyRecoveryEvent(recovery_time);
-            }
-        }
-
+        SCHEDULER_LOG_DEBUG("📭 [EPP] getTaskN: 未找到第" + std::to_string(n) + "个未dispatch的任务");
         return nullptr;
     }
 
@@ -685,17 +689,17 @@ namespace RTSim {
     // 任务到达事件处理
     // =====================================================
 
-    void EFPFPScheduler::onTaskArrival(AbsRTTask *task) {
+    void EPPScheduler::onTaskArrival(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("📍 [EFPP] 任务到达: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("📍 [EPP] 任务到达: ") + getTaskName(task));
 
         // ⭐ 清除该任务的预付能量标记（允许新实例重新扣减能量）
         auto prepaid_it = _task_prepaid_energy.find(task);
         if (prepaid_it != _task_prepaid_energy.end()) {
-            SCHEDULER_LOG_DEBUG(std::string("🧹 [EFPP] 清除任务预付能量标记: ") + getTaskName(task) +
+            SCHEDULER_LOG_DEBUG(std::string("🧹 [EPP] 清除任务预付能量标记: ") + getTaskName(task) +
                               " 之前预付: " + std::to_string(prepaid_it->second) + "J");
             _task_prepaid_energy.erase(prepaid_it);
         }
@@ -713,8 +717,8 @@ namespace RTSim {
     // Tick级抢占检查
     // =====================================================
 
-    void EFPFPScheduler::checkAndPreempt() {
-        SCHEDULER_LOG_DEBUG("🔔 [EFPP] Tick级抢占检查");
+    void EPPScheduler::checkAndPreempt() {
+        SCHEDULER_LOG_DEBUG("🔔 [EPP] Tick级抢占检查");
 
         checkAndPreemptOnAllCPUs();
     }
@@ -723,12 +727,12 @@ namespace RTSim {
     // 队列管理方法
     // =====================================================
 
-    void EFPFPScheduler::insert(AbsRTTask *task) {
+    void EPPScheduler::insert(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("➕ [EFPP] insert: ") + getTaskName(task) +
+        SCHEDULER_LOG_INFO(std::string("➕ [EPP] insert: ") + getTaskName(task) +
                           " _ready_queue.size()=" + std::to_string(_ready_queue.size()));
 
         // ⭐ 关键修复：调用基类insert以维护_queue
@@ -738,12 +742,12 @@ namespace RTSim {
         addToReadyQueue(task);
     }
 
-    void EFPFPScheduler::extract(AbsRTTask *task) {
+    void EPPScheduler::extract(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("➖ [EFPP] extract: ") + getTaskName(task) +
+        SCHEDULER_LOG_INFO(std::string("➖ [EPP] extract: ") + getTaskName(task) +
                           " _ready_queue.size()=" + std::to_string(_ready_queue.size()));
 
         // ⭐ 关键修复：调用基类extract以维护_queue
@@ -752,14 +756,14 @@ namespace RTSim {
         // 从EPP的就绪队列中移除任务
         removeFromReadyQueue(task);
 
-        SCHEDULER_LOG_INFO(std::string("✅ [EFPP] extract完成: ") + getTaskName(task) +
+        SCHEDULER_LOG_INFO(std::string("✅ [EPP] extract完成: ") + getTaskName(task) +
                           " _ready_queue.size()=" + std::to_string(_ready_queue.size()));
 
         // 从等待队列中移除（如果存在）
         removeFromWaitingQueue(task);
     }
 
-    void EFPFPScheduler::addToReadyQueue(AbsRTTask *task) {
+    void EPPScheduler::addToReadyQueue(AbsRTTask *task) {
         if (!task) {
             return;
         }
@@ -768,9 +772,9 @@ namespace RTSim {
         removeFromWaitingQueue(task);
 
         // 按RM优先级插入（周期短的优先）
-        EFPPTaskModel *model = getTaskModel(task);
+        EPPTaskModel *model = getTaskModel(task);
         if (!model) {
-            SCHEDULER_LOG_WARNING("⚠️ [EFPP] addToReadyQueue: 任务模型不存在");
+            SCHEDULER_LOG_WARNING("⚠️ [EPP] addToReadyQueue: 任务模型不存在");
             _ready_queue.push_back(task);
             return;
         }
@@ -780,7 +784,7 @@ namespace RTSim {
         // 找到插入位置（保持优先级排序）
         auto it = _ready_queue.begin();
         while (it != _ready_queue.end()) {
-            EFPPTaskModel *other_model = getTaskModel(*it);
+            EPPTaskModel *other_model = getTaskModel(*it);
             if (other_model && other_model->getRMPriority() > priority) {
                 break;
             }
@@ -789,11 +793,11 @@ namespace RTSim {
 
         _ready_queue.insert(it, task);
 
-        SCHEDULER_LOG_DEBUG(std::string("➕ [EFPP] 任务加入就绪队列: ") + getTaskName(task) +
+        SCHEDULER_LOG_DEBUG(std::string("➕ [EPP] 任务加入就绪队列: ") + getTaskName(task) +
                            " 优先级=" + std::to_string(static_cast<int64_t>(priority)));
     }
 
-    void EFPFPScheduler::addToWaitingQueue(AbsRTTask *task) {
+    void EPPScheduler::addToWaitingQueue(AbsRTTask *task) {
         if (!task) {
             return;
         }
@@ -803,50 +807,50 @@ namespace RTSim {
 
         _waiting_queue.push_back(task);
 
-        SCHEDULER_LOG_DEBUG(std::string("⏸️ [EFPP] 任务加入等待队列: ") + getTaskName(task));
+        SCHEDULER_LOG_DEBUG(std::string("⏸️ [EPP] 任务加入等待队列: ") + getTaskName(task));
     }
 
-    void EFPFPScheduler::removeFromReadyQueue(AbsRTTask *task) {
+    void EPPScheduler::removeFromReadyQueue(AbsRTTask *task) {
         auto it = std::find(_ready_queue.begin(), _ready_queue.end(), task);
         if (it != _ready_queue.end()) {
             _ready_queue.erase(it);
-            SCHEDULER_LOG_INFO(std::string("➖ [EFPP] removeFromReadyQueue: ") + getTaskName(task) +
+            SCHEDULER_LOG_INFO(std::string("➖ [EPP] removeFromReadyQueue: ") + getTaskName(task) +
                              " 剩余size=" + std::to_string(_ready_queue.size()));
         } else {
-            SCHEDULER_LOG_WARNING(std::string("⚠️ [EFPP] removeFromReadyQueue: 任务不在队列中 ") +
+            SCHEDULER_LOG_WARNING(std::string("⚠️ [EPP] removeFromReadyQueue: 任务不在队列中 ") +
                                  getTaskName(task));
         }
     }
 
-    void EFPFPScheduler::removeFromWaitingQueue(AbsRTTask *task) {
+    void EPPScheduler::removeFromWaitingQueue(AbsRTTask *task) {
         auto it = std::find(_waiting_queue.begin(), _waiting_queue.end(), task);
         if (it != _waiting_queue.end()) {
             _waiting_queue.erase(it);
-            SCHEDULER_LOG_DEBUG(std::string("➖ [EFPP] 任务从等待队列移除: ") + getTaskName(task));
+            SCHEDULER_LOG_DEBUG(std::string("➖ [EPP] 任务从等待队列移除: ") + getTaskName(task));
         }
     }
 
-    AbsRTTask *EFPFPScheduler::getHighestPriorityTaskFromReadyQueue() {
+    AbsRTTask *EPPScheduler::getHighestPriorityTaskFromReadyQueue() {
         if (_ready_queue.empty()) {
             return nullptr;
         }
         return _ready_queue.front();
     }
 
-    bool EFPFPScheduler::isInReadyQueue(AbsRTTask *task) const {
+    bool EPPScheduler::isInReadyQueue(AbsRTTask *task) const {
         return std::find(_ready_queue.begin(), _ready_queue.end(), task) != _ready_queue.end();
     }
 
-    bool EFPFPScheduler::isInWaitingQueue(AbsRTTask *task) const {
+    bool EPPScheduler::isInWaitingQueue(AbsRTTask *task) const {
         return std::find(_waiting_queue.begin(), _waiting_queue.end(), task) != _waiting_queue.end();
     }
 
-    void EFPFPScheduler::restoreWaitingQueueToReadyQueue() {
+    void EPPScheduler::restoreWaitingQueueToReadyQueue() {
         if (_waiting_queue.empty()) {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("🔄 [EFPP] 恢复等待队列到就绪队列: ") +
+        SCHEDULER_LOG_INFO(std::string("🔄 [EPP] 恢复等待队列到就绪队列: ") +
                           std::to_string(_waiting_queue.size()) + "个任务");
 
         // 将所有等待任务移回就绪队列
@@ -861,14 +865,14 @@ namespace RTSim {
     // 能量计算方法
     // =====================================================
 
-    double EFPFPScheduler::calculateEnergyForTask(AbsRTTask *task) {
+    double EPPScheduler::calculateEnergyForTask(AbsRTTask *task) {
         if (!task) {
             return 0.0;
         }
 
-        EFPPTaskModel *model = getTaskModel(task);
+        EPPTaskModel *model = getTaskModel(task);
         if (!model) {
-            SCHEDULER_LOG_WARNING("⚠️ [EFPP] calculateEnergyForTask: 任务模型不存在");
+            SCHEDULER_LOG_WARNING("⚠️ [EPP] calculateEnergyForTask: 任务模型不存在");
             return 0.0;
         }
 
@@ -877,12 +881,12 @@ namespace RTSim {
         return calculateEnergyForWCET(task, wcet);
     }
 
-    double EFPFPScheduler::calculateEnergyForWCET(AbsRTTask *task, Tick wcet) {
+    double EPPScheduler::calculateEnergyForWCET(AbsRTTask *task, Tick wcet) {
         if (!task || wcet <= 0) {
             return 0.0;
         }
 
-        EFPPTaskModel *model = getTaskModel(task);
+        EPPTaskModel *model = getTaskModel(task);
         if (!model) {
             return 0.0;
         }
@@ -907,7 +911,7 @@ namespace RTSim {
         return energy;
     }
 
-    double EFPFPScheduler::calculatePowerForWorkload(const std::string &workload, double frequency) {
+    double EPPScheduler::calculatePowerForWorkload(const std::string &workload, double frequency) {
         // ⭐ 从ConfigManager获取功率系数（统一配置）
         ConfigManager &configMgr = ConfigManager::getInstance();
         double power_coeff = configMgr.getPowerCoefficient(workload);
@@ -920,7 +924,7 @@ namespace RTSim {
         double base_power = configMgr.getBasePower();
         double power = base_power * power_coeff * freq_ratio;
 
-        SCHEDULER_LOG_DEBUG(std::string("⚡ [EFPP] 功率计算: ") +
+        SCHEDULER_LOG_DEBUG(std::string("⚡ [EPP] 功率计算: ") +
                            "workload=" + workload +
                            " coeff=" + std::to_string(power_coeff) +
                            " freq=" + std::to_string(frequency_mhz) + "MHz" +
@@ -935,7 +939,7 @@ namespace RTSim {
     // ⭐ 前瞻性能量判断（新逻辑）
     // =====================================================
 
-    double EFPFPScheduler::predictEnergyCollection(Tick current_time, Tick duration) {
+    double EPPScheduler::predictEnergyCollection(Tick current_time, Tick duration) {
         // ⭐ 预测：在duration时间内能收集多少太阳能
         // 使用当前时刻的辐照度（简化假设：辐照度不变）
         // 更精确的做法：积分计算（考虑辐照度变化）
@@ -946,7 +950,7 @@ namespace RTSim {
         double duration_seconds = static_cast<double>(duration) * 0.001;
         double energy = irradiance * _pv_area_m2 * _pv_efficiency * duration_seconds;
 
-        SCHEDULER_LOG_DEBUG(std::string("🔮 [EFPP] 预测能量收集: ") +
+        SCHEDULER_LOG_DEBUG(std::string("🔮 [EPP] 预测能量收集: ") +
                            "时长=" + std::to_string(static_cast<int64_t>(duration)) + "ms" +
                            " 辐照度=" + std::to_string(irradiance) + "W/m²" +
                            " 预计收集=" + std::to_string(energy) + "J");
@@ -954,7 +958,7 @@ namespace RTSim {
         return energy;
     }
 
-    bool EFPFPScheduler::canScheduleWithEnergy(AbsRTTask *task, Tick current_time) {
+    bool EPPScheduler::canScheduleWithEnergy(AbsRTTask *task, Tick current_time) {
         if (!task) {
             return false;
         }
@@ -966,7 +970,7 @@ namespace RTSim {
             _current_energy += harvested;
             _stats.total_energy_harvested += harvested;
 
-            SCHEDULER_LOG_INFO(std::string("☀️ [EFPP] 能量判断前收集太阳能: ") +
+            SCHEDULER_LOG_INFO(std::string("☀️ [EPP] 能量判断前收集太阳能: ") +
                               std::to_string(harvested) + "J" +
                               " 当前能量: " + std::to_string(_current_energy) + "J");
         }
@@ -982,7 +986,7 @@ namespace RTSim {
         double energy_consumption = calculateEnergyForTask(task);
 
         // 3. 获取任务WCET
-        EFPPTaskModel *model = getTaskModel(task);
+        EPPTaskModel *model = getTaskModel(task);
         if (!model) {
             return false;
         }
@@ -995,7 +999,7 @@ namespace RTSim {
         double energy_after_task = energy_current + energy_collection - energy_consumption;
         bool can_schedule = energy_after_task >= 0.0;
 
-        SCHEDULER_LOG_INFO(std::string("🔮 [EFPP] 前瞻性能量判断: ") + getTaskName(task) +
+        SCHEDULER_LOG_INFO(std::string("🔮 [EPP] 前瞻性能量判断: ") + getTaskName(task) +
                           " 当前=" + std::to_string(energy_current) + "J" +
                           " 收集(预测)=" + std::to_string(energy_collection) + "J" +
                           " 消耗=" + std::to_string(energy_consumption) + "J" +
@@ -1009,7 +1013,7 @@ namespace RTSim {
     // 能量收集方法
     // =====================================================
 
-    double EFPFPScheduler::collectSolarEnergy(Tick current_time) {
+    double EPPScheduler::collectSolarEnergy(Tick current_time) {
         if (!_use_real_solar_data) {
             return 0.0;
         }
@@ -1036,7 +1040,7 @@ namespace RTSim {
         return energy;
     }
 
-    double EFPFPScheduler::getSolarIrradiance(int64_t time_ms) {
+    double EPPScheduler::getSolarIrradiance(int64_t time_ms) {
         // ⭐ 使用_start_time_offset计算实际时间
         // time_ms是仿真时间（从0开始），需要加上_start_time_offset（实际一天中的时间）
 
@@ -1074,7 +1078,7 @@ namespace RTSim {
         // 读取文件
         std::ifstream file(_solar_data_file);
         if (!file.is_open()) {
-            SCHEDULER_LOG_WARNING(std::string("⚠️ [EFPP] 无法打开太阳能数据文件: ") + _solar_data_file);
+            SCHEDULER_LOG_WARNING(std::string("⚠️ [EPP] 无法打开太阳能数据文件: ") + _solar_data_file);
             return 0.0;
         }
 
@@ -1091,25 +1095,25 @@ namespace RTSim {
                 double irradiance = std::stod(line);
                 return irradiance;
             } catch (const std::exception &e) {
-                SCHEDULER_LOG_WARNING(std::string("⚠️ [EFPP] 解析辐照度失败: ") + e.what() +
+                SCHEDULER_LOG_WARNING(std::string("⚠️ [EPP] 解析辐照度失败: ") + e.what() +
                                      " (line: " + line + ")");
                 return 0.0;
             }
         }
 
-        SCHEDULER_LOG_WARNING(std::string("⚠️ [EFPP] 读取太阳能数据失败: line_number=") +
+        SCHEDULER_LOG_WARNING(std::string("⚠️ [EPP] 读取太阳能数据失败: line_number=") +
                              std::to_string(line_number));
         return 0.0;
     }
 
-    Tick EFPFPScheduler::calculateEnergyRecoveryTime(double energy_needed) {
+    Tick EPPScheduler::calculateEnergyRecoveryTime(double energy_needed) {
         if (energy_needed <= 0) {
             return 0;
         }
 
         Tick recovery_time = 0;
 
-        // ⭐ 修复：根据当前太阳能功率计算恢复时间（从EPP移植）
+        // ⭐ 修复：根据当前太阳能功率计算恢复时间
         if (_use_real_solar_data) {
             // 获取当前辐照度
             Tick current_time = SIMUL.getTime();
@@ -1127,7 +1131,7 @@ namespace RTSim {
                 double recovery_time_seconds = energy_needed / current_power;
                 recovery_time = static_cast<Tick>(recovery_time_seconds * 1000.0);
 
-                SCHEDULER_LOG_INFO(std::string("⏰ [EFPP] 计算能量恢复时间: ") +
+                SCHEDULER_LOG_INFO(std::string("⏰ [EPP] 计算能量恢复时间: ") +
                                   "缺口=" + std::to_string(energy_needed) + "J" +
                                   " 当前辐照度=" + std::to_string(irradiance) + " W/m²" +
                                   " 当前功率=" + std::to_string(current_power) + " W" +
@@ -1136,7 +1140,7 @@ namespace RTSim {
             } else {
                 // 无太阳能，使用周期性收集间隔
                 recovery_time = _periodic_collection_interval;
-                SCHEDULER_LOG_INFO(std::string("⏰ [EFPP] 计算能量恢复时间: ") +
+                SCHEDULER_LOG_INFO(std::string("⏰ [EPP] 计算能量恢复时间: ") +
                                   "缺口=" + std::to_string(energy_needed) + "J" +
                                   " 无太阳能(辐照度=0)" +
                                   " 将使用周期性收集=" + std::to_string(static_cast<int64_t>(recovery_time)) + "ms");
@@ -1144,7 +1148,7 @@ namespace RTSim {
         } else {
             // 不使用真实太阳能数据，使用周期性收集间隔
             recovery_time = _periodic_collection_interval;
-            SCHEDULER_LOG_INFO(std::string("⏰ [EFPP] 计算能量恢复时间: ") +
+            SCHEDULER_LOG_INFO(std::string("⏰ [EPP] 计算能量恢复时间: ") +
                               "缺口=" + std::to_string(energy_needed) + "J" +
                               " 未使用真实太阳能数据" +
                               " 将使用周期性收集=" + std::to_string(static_cast<int64_t>(recovery_time)) + "ms");
@@ -1162,7 +1166,7 @@ namespace RTSim {
     // 能量恢复管理
     // =====================================================
 
-    void EFPFPScheduler::scheduleEnergyRecoveryEvent(Tick delay) {
+    void EPPScheduler::scheduleEnergyRecoveryEvent(Tick delay) {
         if (!_recovery_event) {
             return;
         }
@@ -1171,13 +1175,13 @@ namespace RTSim {
             delay = 1; // 至少1 Tick
         }
 
-        SCHEDULER_LOG_DEBUG(std::string("⏰ [EFPP] 调度能量恢复事件: 延迟=") +
+        SCHEDULER_LOG_DEBUG(std::string("⏰ [EPP] 调度能量恢复事件: 延迟=") +
                            std::to_string(static_cast<int64_t>(delay)) + "ms");
 
         _recovery_event->post(SIMUL.getTime() + delay);
     }
 
-    void EFPFPScheduler::cancelEnergyRecoveryEvent() {
+    void EPPScheduler::cancelEnergyRecoveryEvent() {
         if (_recovery_event) {
             _recovery_event->drop();
         }
@@ -1187,7 +1191,7 @@ namespace RTSim {
     // 任务管理方法
     // =====================================================
 
-    EFPPTaskModel *EFPFPScheduler::getTaskModel(AbsRTTask *task) {
+    EPPTaskModel *EPPScheduler::getTaskModel(AbsRTTask *task) {
         auto it = _task_models.find(task);
         if (it != _task_models.end()) {
             return it->second;
@@ -1195,7 +1199,7 @@ namespace RTSim {
         return nullptr;
     }
 
-    std::string EFPFPScheduler::getTaskName(AbsRTTask *task) {
+    std::string EPPScheduler::getTaskName(AbsRTTask *task) {
         if (!task) {
             return "nullptr";
         }
@@ -1208,7 +1212,7 @@ namespace RTSim {
     // 抢占检查方法
     // =====================================================
 
-    void EFPFPScheduler::checkAndPreemptOnAllCPUs() {
+    void EPPScheduler::checkAndPreemptOnAllCPUs() {
         // 检查所有CPU上是否有需要被抢占的任务
         for (auto &map_pair : _running_tasks) {
             CPU *cpu = map_pair.first;
@@ -1226,7 +1230,7 @@ namespace RTSim {
 
             // 检查是否需要抢占
             if (shouldPreempt(cpu, highest)) {
-                SCHEDULER_LOG_INFO(std::string("🔄 [EFPP] 抢占CPU: ") +
+                SCHEDULER_LOG_INFO(std::string("🔄 [EPP] 抢占CPU: ") +
                                   " 高优先级任务=" + getTaskName(highest));
 
                 // TODO: 实际的抢占逻辑
@@ -1242,7 +1246,7 @@ namespace RTSim {
         }
     }
 
-    bool EFPFPScheduler::shouldPreempt(CPU *cpu, AbsRTTask *new_task) {
+    bool EPPScheduler::shouldPreempt(CPU *cpu, AbsRTTask *new_task) {
         if (!cpu || !new_task) {
             return false;
         }
@@ -1254,8 +1258,8 @@ namespace RTSim {
         }
 
         // 比较优先级
-        EFPPTaskModel *running_model = getTaskModel(running_task);
-        EFPPTaskModel *new_model = getTaskModel(new_task);
+        EPPTaskModel *running_model = getTaskModel(running_task);
+        EPPTaskModel *new_model = getTaskModel(new_task);
 
         if (!running_model || !new_model) {
             return false;
@@ -1269,7 +1273,7 @@ namespace RTSim {
     // 调度辅助方法
     // =====================================================
 
-    int EFPFPScheduler::getFreeCPUCount() {
+    int EPPScheduler::getFreeCPUCount() {
         int count = 0;
         for (auto &pair : _running_tasks) {
             if (pair.second == nullptr) {
@@ -1279,7 +1283,7 @@ namespace RTSim {
         return count;
     }
 
-    CPU *EFPFPScheduler::getFreeCPU() {
+    CPU *EPPScheduler::getFreeCPU() {
         for (auto &pair : _running_tasks) {
             if (pair.second == nullptr) {
                 return pair.first;
@@ -1288,13 +1292,13 @@ namespace RTSim {
         return nullptr;
     }
 
-    void EFPFPScheduler::dispatchTask(AbsRTTask *task, CPU *cpu) {
+    void EPPScheduler::dispatchTask(AbsRTTask *task, CPU *cpu) {
         if (!task || !cpu) {
-            SCHEDULER_LOG_WARNING("⚠️ [EFPP] dispatchTask: 任务或CPU为空");
+            SCHEDULER_LOG_WARNING("⚠️ [EPP] dispatchTask: 任务或CPU为空");
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("📤 [EFPP] 调度任务: ") + getTaskName(task) +
+        SCHEDULER_LOG_INFO(std::string("📤 [EPP] 调度任务: ") + getTaskName(task) +
                           " 到CPU");
 
         // 从就绪队列移除
@@ -1308,7 +1312,7 @@ namespace RTSim {
         // task->schedule();
     }
 
-    AbsRTTask *EFPFPScheduler::getRunningTaskOnCPU(CPU *cpu) {
+    AbsRTTask *EPPScheduler::getRunningTaskOnCPU(CPU *cpu) {
         if (!cpu) {
             return nullptr;
         }
@@ -1325,11 +1329,11 @@ namespace RTSim {
     // consumeEnergy - 能量扣减
     // =====================================================
 
-    bool EFPFPScheduler::consumeEnergy(double energy_joules, const std::string &task_name) {
+    bool EPPScheduler::consumeEnergy(double energy_joules, const std::string &task_name) {
         // ⭐ 检查能量是否足够
         const double EPSILON = 1e-9;
         if (_current_energy < energy_joules - EPSILON) {
-            SCHEDULER_LOG_WARNING(std::string("❌ [EFPP] consumeEnergy: 能量不足") +
+            SCHEDULER_LOG_WARNING(std::string("❌ [EPP] consumeEnergy: 能量不足") +
                                  " 需要=" + std::to_string(energy_joules) + "J" +
                                  " 当前=" + std::to_string(_current_energy) + "J" +
                                  " 任务=" + task_name);
@@ -1343,7 +1347,7 @@ namespace RTSim {
         // ⭐ 累加能量消耗统计
         _stats.total_energy_consumed += energy_joules;
 
-        SCHEDULER_LOG_INFO(std::string("⚡ [EFPP] consumeEnergy: ") +
+        SCHEDULER_LOG_INFO(std::string("⚡ [EPP] consumeEnergy: ") +
                           "任务=" + task_name +
                           " 扣减=" + std::to_string(energy_joules) + "J" +
                           " " + std::to_string(old_energy) + "J → " + std::to_string(_current_energy) + "J" +
@@ -1352,12 +1356,12 @@ namespace RTSim {
         return true;
     }
 
-    void EFPFPScheduler::setPVConfig(double efficiency, double area, const std::string &solar_file) {
+    void EPPScheduler::setPVConfig(double efficiency, double area, const std::string &solar_file) {
         _pv_efficiency = efficiency;
         _pv_area_m2 = area;
         _solar_data_file = solar_file;
 
-        SCHEDULER_LOG_INFO(std::string("⚙️ [EFPP] 太阳能配置更新: ") +
+        SCHEDULER_LOG_INFO(std::string("⚙️ [EPP] 太阳能配置更新: ") +
                           "效率=" + std::to_string(efficiency) +
                           " 面积=" + std::to_string(area) + "m²" +
                           " 数据文件=" + solar_file);
@@ -1367,12 +1371,12 @@ namespace RTSim {
     // 缺失的Scheduler接口方法实现
     // =====================================================
 
-    void EFPFPScheduler::notify(AbsRTTask *task) {
+    void EPPScheduler::notify(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
-        SCHEDULER_LOG_DEBUG(std::string("📢 [EFPP] notify被调用: ") + getTaskName(task));
+        SCHEDULER_LOG_DEBUG(std::string("📢 [EPP] notify被调用: ") + getTaskName(task));
 
         // ⭐ EPP算法: 不在这里扣减能量,能量已在getTaskN()/getFirst()中预扣减
         // 这里只做记账操作
@@ -1385,8 +1389,8 @@ namespace RTSim {
         }
     }
 
-    void EFPFPScheduler::newRun() {
-        SCHEDULER_LOG_INFO("🏁 [EFPP] newRun - 仿真开始");
+    void EPPScheduler::newRun() {
+        SCHEDULER_LOG_INFO("🏁 [EPP] newRun - 仿真开始");
 
         // 初始化能量
         _current_energy = _initial_energy;
@@ -1417,11 +1421,11 @@ namespace RTSim {
             _periodic_collection_event->post(SIMUL.getTime() + interval);
         }
 
-        SCHEDULER_LOG_INFO(std::string("💰 [EFPP] 初始能量: ") + std::to_string(_current_energy) + "J");
+        SCHEDULER_LOG_INFO(std::string("💰 [EPP] 初始能量: ") + std::to_string(_current_energy) + "J");
     }
 
-    void EFPFPScheduler::endRun() {
-        SCHEDULER_LOG_INFO("🏁 [EFPP] endRun - 仿真结束");
+    void EPPScheduler::endRun() {
+        SCHEDULER_LOG_INFO("🏁 [EPP] endRun - 仿真结束");
 
         // ⭐ 仿真结束前，收集从最后一次收集到现在的所有太阳能
         Tick current_time = SIMUL.getTime();
@@ -1429,13 +1433,13 @@ namespace RTSim {
         if (harvested > 0.0001) {
             _current_energy += harvested;
             _stats.total_energy_harvested += harvested;
-            SCHEDULER_LOG_INFO(std::string("☀️ [EFPP] 仿真结束前收集太阳能: ") +
+            SCHEDULER_LOG_INFO(std::string("☀️ [EPP] 仿真结束前收集太阳能: ") +
                               std::to_string(harvested) + "J" +
                               " 总能量: " + std::to_string(_current_energy) + "J");
         }
 
         // 打印统计信息
-        SCHEDULER_LOG_INFO("📊 [EFPP] ===== EPP调度统计 =====");
+        SCHEDULER_LOG_INFO("📊 [EPP] ===== EPP调度统计 =====");
         SCHEDULER_LOG_INFO(std::string("  总调度次数: ") + std::to_string(_stats.total_scheduled));
         SCHEDULER_LOG_INFO(std::string("  任务完成数: ") + std::to_string(_stats.total_task_completions));
         SCHEDULER_LOG_INFO(std::string("  能量不足跳过: ") + std::to_string(_stats.total_skipped_energy));
@@ -1446,19 +1450,19 @@ namespace RTSim {
         SCHEDULER_LOG_INFO("=================================");
     }
 
-    bool EFPFPScheduler::isAdmissible(CPU *c, std::vector<AbsRTTask *> tasks,
+    bool EPPScheduler::isAdmissible(CPU *c, std::vector<AbsRTTask *> tasks,
                                     AbsRTTask *t) {
         // ⭐ EPP算法的可调度性检查
         // 简化实现:总是返回true,实际应进行更严格的检查
         return true;
     }
 
-    void EFPFPScheduler::onTaskEnd(AbsRTTask *task) {
+    void EPPScheduler::onTaskEnd(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("✅ [EFPP] 任务结束: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("✅ [EPP] 任务结束: ") + getTaskName(task));
 
         // ⭐ 方案1：在任务结束时收集太阳能
         // 收集从上次收集到现在的能量
@@ -1482,7 +1486,7 @@ namespace RTSim {
                 _current_energy += energy;
                 _stats.total_energy_harvested += energy;
 
-                SCHEDULER_LOG_INFO(std::string("☀️ [EFPP] 任务结束时收集太阳能: ") +
+                SCHEDULER_LOG_INFO(std::string("☀️ [EPP] 任务结束时收集太阳能: ") +
                                   std::to_string(energy) + "J" +
                                   " (elapsed=" + std::to_string(static_cast<int64_t>(elapsed)) + "ms)" +
                                   " (辐照度=" + std::to_string(irradiance) + " W/m²)" +
@@ -1511,21 +1515,21 @@ namespace RTSim {
         // 更新统计
         _stats.total_task_completions++;
 
-        SCHEDULER_LOG_INFO(std::string("📊 [EFPP] 当前能量: ") + std::to_string(_current_energy) + "J");
+        SCHEDULER_LOG_INFO(std::string("📊 [EPP] 当前能量: ") + std::to_string(_current_energy) + "J");
     }
 
     // =====================================================
     // ⭐ EPP能量结算实现
     // =====================================================
 
-    void EFPFPScheduler::settleEnergyAccount(AbsRTTask *task) {
+    void EPPScheduler::settleEnergyAccount(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
         auto it = _energy_accounts.find(task);
         if (it == _energy_accounts.end()) {
-            SCHEDULER_LOG_WARNING("⚠️ [EFPP] settleEnergyAccount: 任务没有能量账户");
+            SCHEDULER_LOG_WARNING("⚠️ [EPP] settleEnergyAccount: 任务没有能量账户");
             return;
         }
 
@@ -1541,7 +1545,7 @@ namespace RTSim {
             // 退还未使用的能量
             _current_energy += refund;
 
-            SCHEDULER_LOG_INFO(std::string("💰 [EFPP] 能量结算: ") +
+            SCHEDULER_LOG_INFO(std::string("💰 [EPP] 能量结算: ") +
                               "任务=" + getTaskName(task) +
                               " 预扣=" + std::to_string(account.prepaid) + "J" +
                               " 实际=" + std::to_string(actual_consumed) + "J" +
@@ -1557,7 +1561,7 @@ namespace RTSim {
     // getKernel/setKernel 实现
     // =====================================================
 
-    MRTKernel *EFPFPScheduler::getKernel() {
+    MRTKernel *EPPScheduler::getKernel() {
         // 如果还没有设置kernel，尝试从活跃任务中获取
         if (!_kernel && !_ready_queue.empty()) {
             AbsRTTask *task = _ready_queue.front();
@@ -1568,7 +1572,7 @@ namespace RTSim {
         return _kernel;
     }
 
-    void EFPFPScheduler::setKernel(MRTKernel *kernel) {
+    void EPPScheduler::setKernel(MRTKernel *kernel) {
         _kernel = kernel;
     }
 

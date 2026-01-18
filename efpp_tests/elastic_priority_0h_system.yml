@@ -1,0 +1,83 @@
+# =============================================
+# EFPP弹性优先级测试 - 系统配置（0点）
+# =============================================
+# 目的：展示EFPP的弹性调度特性
+#       - 低优先级任务先调度（能量充足）
+#       - 高优先级任务后调度（能量不足，等待恢复）
+# =============================================
+
+cpu_islands:
+  - name: energy_aware_cpus
+    numcpus: 3                         # 3核CPU
+
+    kernel:
+      scheduler: gpfp_efpp             # ⭐ EFPP调度器
+      task_placement: global
+
+      scheduler_params:
+        - "strict_priority=true"       # 使用RM优先级
+        - "enable_energy_recovery=true" # 启用能量恢复
+
+    volts: [0.92, 0.94, 0.96, 0.98, 1.00, 1.02, 1.04, 1.06, 1.08, 1.10, 1.12, 1.14]
+    freqs: [7000, 7500, 8000, 8100, 8200, 8300, 8400, 8500, 9000, 9500, 10000, 10500]
+    base_freq: 8100                    # 基准频率 8.1 GHz
+    power_model: energy_aware_model
+    speed_model: energy_aware_model
+
+energy_management:
+  # ⭐ 关键参数：初始能量
+  # 设置为 0.05J，使得：
+  # - task_high (WCET=200ms, 能量需求~0.10J) ❌ 能量不足
+  # - task_mid (WCET=150ms, 能量需求~0.075J) ❌ 能量不足
+  # - task_low (WCET=50ms, 能量需求~0.025J) ✅ 能量充足
+  initial_energy: 0.05                 # ⭐ 初始能量：0.05J
+  max_energy: 1000.0
+
+  # ⭐ 时间配置：0点，无太阳能
+  day_of_year: 187
+  time_of_day_ms: 0                    # 00:00:00（午夜0点）
+
+  use_real_solar_data: true
+  solar_data_file: "data/processed/shenyang_solar_minute.csv"
+  pv_efficiency: 0.18                  # 光伏效率 18%
+  pv_area_m2: 1.0                      # 光伏面积 1m²
+
+  unit_time: 1                         # Tick级调度：1ms
+  enable_energy_recovery: true
+  max_recovery_wait_time_ms: 10000
+
+power_models:
+  - name: energy_aware_model
+    type: balsini_pannocchi
+
+    params:
+      # idle工作负载
+      - workload: idle
+        power_params: [0.00134845, 1.76307e-5, 124.535, 1.00399e-10]
+        speed_params: [1, 0, 0, 0]
+        energy_coefficient: 0.1
+
+      # bzip2工作负载 - 主要计算密集型任务
+      - workload: bzip2
+        power_params: [0.00775587, 33.376, 1.54585, 9.53439e-10]
+        speed_params: [0.0256054, 2.9809e+6, 0.602631, 8.13712e+9]
+        energy_coefficient: 1.2
+
+      # hash工作负载
+      - workload: hash
+        power_params: [0.00624673, 176.315, 1.72836, 1.77362e-10]
+        speed_params: [0.00645628, 3.37134e+6, 7.83177, 93459]
+        energy_coefficient: 0.8
+
+      # control工作负载
+      - workload: control
+        power_params: [0.001, 1.0, 1.0, 1.0e-10]
+        speed_params: [1, 0, 0, 0]
+        energy_coefficient: 0.1
+
+trace:
+  enabled: true
+  trace_file: "trace_elastic_priority_0h.json"
+  trace_energy: true
+  trace_scheduling: true
+  trace_preemptions: true
