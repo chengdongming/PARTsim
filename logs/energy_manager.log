@@ -2974,3 +2974,46 @@
 2026-01-18 20:32:09.460 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
 2026-01-18 20:32:09.460 [INFO    ] [energy_manager      ] EnergyHarvester: Start time offset set to 43200000 ms (12:00:00)
 2026-01-18 20:32:09.460 [INFO    ] [energy_manager      ] EnergyManager: 仿真开始时间设置为: 12:00 (偏移: 43200000ms)
+2026-01-18 20:39:53.792 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: epp_comprehensive_test/test_system.yml
+2026-01-18 20:39:53.802 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: epp_comprehensive_test/test_system.yml
+2026-01-18 20:39:53.802 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0
+2026-01-18 20:39:53.802 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0
+2026-01-18 20:39:53.802 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-01-18 20:39:53.802 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-01-18 20:39:53.803 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-18 20:39:53.803 [INFO    ] [energy_manager      ] EnergyConfig loaded from epp_comprehensive_test/test_system.yml
+2026-01-18 20:39:53.803 [INFO    ] [energy_manager      ]   Initial energy: 0.0 J
+2026-01-18 20:39:53.803 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-18 20:39:53.803 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-18 20:39:53.803 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-18 20:39:53.803 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-01-18 20:39:53.803 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-01-18 20:39:53.803 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-18 20:39:53.803 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-01-18 20:39:53.803 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-01-18 20:39:53.803 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-01-18 20:39:53.803 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-18 20:39:53.803 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-18 20:39:53.803 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-18 20:39:53.803 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-18 20:39:53.803 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-18 20:39:53.803 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-18 20:39:53.804 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-18 20:39:53.804 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-18 20:39:53.804 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-18 20:39:53.804 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-18 20:39:53.804 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-18 20:39:55.673 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-01-18 20:39:55.674 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-18 20:39:55.674 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-01-18 20:39:55.674 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-01-18 20:39:55.674 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0
+2026-01-18 20:39:55.674 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0
+2026-01-18 20:39:55.674 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-18 20:39:55.674 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-18 20:39:55.674 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-01-18 20:39:55.674 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-01-18 20:39:55.674 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-18 20:39:55.675 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=epp_comprehensive_test/test_system.yml, current_config_file=epp_comprehensive_test/test_system.yml
+2026-01-18 20:39:55.675 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: epp_comprehensive_test/test_system.yml
+2026-01-18 20:39:55.675 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=1, 基础频率=8100.0MHz, 初始能量=0.0J

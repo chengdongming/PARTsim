@@ -1,0 +1,34 @@
+# =============================================
+# EPP 抢占性测试任务集
+# =============================================
+# 测试目标：验证Tick级抢占功能
+# 场景：3个相同RM优先级任务（周期相同），先到达的任务应该被抢占
+# =============================================
+
+taskset:
+  # 任务1: 周期500ms，WCET 300ms，中等工作负载
+  - name: task_1
+    iat: 500
+    runtime: 300
+    deadline: 500
+    params: "period=500,wcet=300,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(300, bzip2)
+
+  # 任务2: 周期500ms，WCET 200ms，轻工作负载（优先级相同但先到达）
+  - name: task_2
+    iat: 500
+    runtime: 200
+    deadline: 500
+    params: "period=500,wcet=200,arrival_offset=0,workload=hash"
+    code:
+      - fixed(200, hash)
+
+  # 任务3: 周期500ms，WCET 150ms，最轻工作负载（优先级相同）
+  - name: task_3
+    iat: 500
+    runtime: 150
+    deadline: 500
+    params: "period=500,wcet=150,arrival_offset=0,workload=idle"
+    code:
+      - fixed(150, idle)
