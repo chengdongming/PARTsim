@@ -1,0 +1,64 @@
+# =============================================
+# CBPP协同批量调度测试 - 任务集
+# =============================================
+# 目的：验证CBPP的"全有或全无"批量调度特性
+# =============================================
+
+taskset:
+  # task_high: 最高优先级（周期最短）
+  # 优先级: 400
+  # WCET: 200ms
+  # 能量需求: 200ms × ~40W × 1.2 ≈ 0.10J
+  - name: task_high
+    iat: 400              # 任务到达间隔：400ms
+    runtime: 200          # WCET: 200ms
+    deadline: 400         # 绝对截止时间：400ms
+    params: "period=400,wcet=200,workload=bzip2,energy_coefficient=1.2"
+    code:
+      - fixed(200, bzip2)
+
+  # task_mid: 中优先级
+  # 优先级: 600
+  # WCET: 150ms
+  # 能量需求: 150ms × ~40W × 1.2 ≈ 0.075J
+  - name: task_mid
+    iat: 600
+    runtime: 150          # WCET: 150ms
+    deadline: 600
+    params: "period=600,wcet=150,workload=bzip2"
+    code:
+      - fixed(150, bzip2)
+
+  # task_low: 低优先级（周期最长）
+  # 优先级: 800
+  # WCET: 100ms
+  # 能量需求: 100ms × ~40W × 1.2 ≈ 0.05J
+  - name: task_low
+    iat: 800
+    runtime: 100          # WCET: 100ms
+    deadline: 800
+    params: "period=800,wcet=100,workload=bzip2"
+    code:
+      - fixed(100, bzip2)
+
+# =============================================
+# CBPP调度策略分析：
+# =============================================
+#
+# 3核系统 (numcpus: 3)
+#
+# CBPP批量决策：
+#   K = min(空闲核心数, 未dispatch的就绪任务数)
+#
+# T=0ms时的批量决策：
+#   空闲核心数 = 3
+#   未dispatch任务数 = 3 (task_high, task_mid, task_low)
+#   K = min(3, 3) = 3
+#
+#   批量总能耗 = 0.10 + 0.075 + 0.05 = 0.225J
+#
+# 能量恢复时间计算：
+#   - 0点: 无太阳能，使用周期性收集间隔100ms
+#   - 12点: 辐照度434.5W/m², 功率78.21W
+#           恢复时间 = 0.225J / 78.21W × 1000 = 2.88ms ≈ 3ms
+#
