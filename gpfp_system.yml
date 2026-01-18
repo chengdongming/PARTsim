@@ -20,7 +20,7 @@ cpu_islands:
     # 调度器配置
     # =============================================
     kernel:
-      scheduler: gpfp_asap               # 调度算法：gpfp_asap | gpfp_cascade | gpfp_batch
+      scheduler: gpfp_efpp               # 调度算法：gpfp_asap | gpfp_cascade | gpfp_batch
       task_placement: global             # 任务放置策略
       
       # 调度器参数

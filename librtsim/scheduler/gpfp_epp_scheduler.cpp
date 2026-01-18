@@ -590,6 +590,14 @@ namespace RTSim {
             if (ready_index == n) {
                 // 找到第n个未dispatch的任务，进行能量检查
 
+                // ⭐ 关键修复：先检查是否已经预付过能量
+                auto prepaid_it = _task_prepaid_energy.find(task);
+                if (prepaid_it != _task_prepaid_energy.end() && prepaid_it->second > 0) {
+                    SCHEDULER_LOG_DEBUG(std::string("⚠️ [EPP] getTaskN: 任务 ") + getTaskName(task) +
+                                      " 已预付能量，直接返回");
+                    return task;
+                }
+
                 // ⭐ 使用前瞻性能量判断
                 Tick current_time = SIMUL.getTime();
                 bool can_schedule = canScheduleWithEnergy(task, current_time);
@@ -600,18 +608,10 @@ namespace RTSim {
                     return nullptr;
                 }
 
-                // ⭐ 检查是否已经预付过能量
+                // ⭐ 首次调度，扣减能量
                 double energy_needed = calculateEnergyForTask(task);
                 std::string task_name = getTaskName(task);
 
-                auto prepaid_it = _task_prepaid_energy.find(task);
-                if (prepaid_it != _task_prepaid_energy.end() && prepaid_it->second > 0) {
-                    SCHEDULER_LOG_DEBUG(std::string("⚠️ [EPP] getTaskN: 任务 ") + task_name +
-                                      " 已预付能量");
-                    return task;
-                }
-
-                // ⭐ 首次调度，扣减能量
                 if (!consumeEnergy(energy_needed, task_name)) {
                     // ⭐ 关键修复：扣减失败时，启动能量恢复并返回nullptr
                     SCHEDULER_LOG_WARNING(std::string("⚠️ [EPP] getTaskN: 前瞻性判断通过但实际能量不足") +

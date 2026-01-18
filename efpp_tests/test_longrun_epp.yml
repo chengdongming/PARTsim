@@ -1,0 +1,50 @@
+simulation:
+  duration_ms: 10000  # 长时间运行：10秒
+
+cpu:
+  cores: ["cpu0", "cpu1"]
+  base_freq: 8100
+
+trace:
+  output: efpp_tests/trace_longrun_epp.json
+
+scheduler:
+  type: gpfp_epp
+
+power_management:
+  type: energy_aware
+  volt: [0.92, 0.94, 0.96, 0.98, 1.00, 1.02, 1.04, 1.06, 1.08, 1.10, 1.12, 1.14]
+  freqs: [7000, 7500, 8000, 8100, 8200, 8300, 8400, 8500, 9000, 9500, 10000, 10500]
+  base_freq: 8100
+  power_model: energy_aware_model
+  speed_model: energy_aware_model
+
+energy_management:
+  initial_energy: 5.0                 # 初始能量：5J（中等能量）
+  max_energy: 1000.0
+  day_of_year: 187
+  time_of_day_ms: 43200000            # 12:00:00（正午，最强光照）
+  use_real_solar_data: true
+  solar_data_file: "data/processed/shenyang_solar_minute.csv"
+  pv_efficiency: 0.18
+  pv_area_m2: 1.0
+  unit_time: 1
+
+taskset:
+  - name: task_periodic_1
+    iat: 400
+    runtime: 100
+    deadline: 400
+    params: "period=400,wcet=100,workload=bzip2,energy_coefficient=2.0"
+
+  - name: task_periodic_2
+    iat: 600
+    runtime: 100
+    deadline: 600
+    params: "period=600,wcet=100,workload=bzip2"
+
+  - name: task_periodic_3
+    iat: 800
+    runtime: 25
+    deadline: 800
+    params: "period=800,wcet=25,workload=bzip2"

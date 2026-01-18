@@ -1,0 +1,74 @@
+# =============================================
+# EPP调度器测试任务集 - 抢占式版本
+# =============================================
+# 特点：
+# 1. 不需要 suspend(0) - EPP是真正的抢占式调度器
+# 2. 使用 fixed() 指令直接执行WCET时间
+# 3. 高优先级任务可以在任意时刻抢占低优先级任务
+# 4. 能量约束：能量不足时任务进入等待队列
+# =============================================
+
+taskset:
+  # task_high: 最高优先级 - 周期500ms (周期越短优先级越高)
+  - name: task_high
+    iat: 500              # 任务到达间隔：500ms
+    runtime: 250          # WCET: 250ms (固定执行时间)
+    deadline: 500         # 绝对截止时间：500ms
+    params: "period=500,wcet=250,workload=bzip2"
+    code:
+      - fixed(250, bzip2)  # ⭐ 直接执行250ms，不需要suspend
+
+  # task_mid: 中优先级 - 周期1000ms
+  - name: task_mid
+    iat: 1000
+    runtime: 400          # WCET: 400ms
+    deadline: 1000
+    params: "period=1000,wcet=400,workload=bzip2"
+    code:
+      - fixed(400, bzip2)  # ⭐ 可能被task_high抢占
+
+  # task_low: 低优先级 - 周期2000ms
+  - name: task_low
+    iat: 2000
+    runtime: 600          # WCET: 600ms
+    deadline: 2000
+    params: "period=2000,wcet=600,workload=bzip2"
+    code:
+      - fixed(600, bzip2)  # ⭐ 可能被task_high和task_mid抢占
+
+  # task_background: 最低优先级 - 周期3000ms
+  - name: task_background
+    iat: 3000
+    runtime: 800          # WCET: 800ms
+    deadline: 3000
+    params: "period=3000,wcet=800,workload=hash"
+    code:
+      - fixed(800, hash)   # ⭐ 背景任务，可能被所有高优先级任务抢占
+
+# =============================================
+# 抢占场景示例：
+# =============================================
+#
+# 场景1：任务到达抢占
+# t=0ms:    task_low 开始执行600ms
+# t=200ms:  task_mid 到达 → ⭐ 立即抢占 task_low
+# t=250ms:  task_high 到达 → ⭐ 再次抢占 task_mid
+# t=500ms:  task_high 完成 → task_mid 恢复执行
+# t=700ms:  task_mid 完成 → task_low 恢复执行剩余时间
+#
+# 场景2：能量约束
+# t=0ms:    能量=1.0J → 调度 task_high (需要0.5J)
+# t=250ms:  能量=0.5J → 继续调度
+# t=500ms:  能量=0.0J → task_high 完成，能量不足
+#           task_mid 进入等待队列 ⏸️
+#           启动能量恢复事件 ⏰
+# t=500+n ms: 能量恢复到0.8J → task_mid 从等待队列恢复到就绪队列
+#
+# 场景3：级联调度
+# t=0ms:    能量=3.0J
+#           → 调度 task_high (-0.5J) → 剩余2.5J
+#           → ✅ 级联：继续调度 task_mid (-0.8J) → 剩余1.7J
+#           → ✅ 级联：继续调度 task_low (-1.2J) → 剩余0.5J
+#           → ❌ 能量不足，停止级联
+#
+# =============================================

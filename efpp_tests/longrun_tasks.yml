@@ -1,0 +1,31 @@
+# 长时间运行测试任务集 - 10秒仿真
+taskset:
+  # 高优先级任务 (bzip2)
+  # 周期400ms，WCET 100ms
+  - name: task_periodic_1
+    iat: 400
+    runtime: 100
+    deadline: 400
+    params: "period=400,wcet=100,workload=bzip2,energy_coefficient=2.0"
+    code:
+      - fixed(100, bzip2)
+
+  # 中优先级任务 (bzip2)
+  # 周期600ms，WCET 100ms
+  - name: task_periodic_2
+    iat: 600
+    runtime: 100
+    deadline: 600
+    params: "period=600,wcet=100,workload=bzip2"
+    code:
+      - fixed(100, bzip2)
+
+  # 低优先级任务 (bzip2)
+  # 周期800ms，WCET 25ms
+  - name: task_periodic_3
+    iat: 800
+    runtime: 25
+    deadline: 800
+    params: "period=800,wcet=25,workload=bzip2"
+    code:
+      - fixed(25, bzip2)

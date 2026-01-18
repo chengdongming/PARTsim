@@ -21,6 +21,9 @@
 #include <rtsim/scheduler/scheduler.hpp>
 #include <rtsim/scheduler/gpfp_cascade_scheduler.hpp>
 #include <rtsim/scheduler/gpfp_asap_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_epp_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_efpp_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_cbpp_scheduler.hpp>
 
 namespace RTSim {
     // =========================================================================
@@ -265,6 +268,7 @@ namespace RTSim {
             }
         } else {
             // Perform the dispatch now (see onBeginDispatchMulti)
+            std::cout << "[DEBUG] dispatch(CPU) - posting BeginDispatchMultiEvt for CPU " << p->toString() << std::endl;
             _beginEvt[p]->post(SIMUL.getTime());
         }
     }
@@ -375,11 +379,14 @@ namespace RTSim {
 
         // select the first non dispatched task in the queue
         int i = 0;
-        while ((st = _sched->getTaskN(i)) != nullptr)
+        std::cout << "[DEBUG] onBeginDispatchMulti - 开始调用getTaskN查找任务" << std::endl;
+        while ((st = _sched->getTaskN(i)) != nullptr) {
+            std::cout << "[DEBUG] onBeginDispatchMulti - getTaskN(" << i << ") = " << taskname(st) << " _m_dispatched=" << _m_dispatched[st] << std::endl;
             if (_m_dispatched[st] == nullptr)
                 break;
             else
                 i++;
+        }
 
         if (st == nullptr) {
             DBGPRINT("Nothing to schedule, finishing");
@@ -451,10 +458,16 @@ namespace RTSim {
 
             // 🔒 V28.9修复：在schedule()之前预检查能量，避免记录虚假的scheduled事件
             // ⭐ V28.10修复：扩展到GPFPASAPScheduler
+            // ⭐ V28.11修复：EPP/EFPP/CBPP调度器已在getTaskN中预扣能量，kernel不再重复检查
             GPFPCASCADEScheduler *cascade_sched = dynamic_cast<GPFPCASCADEScheduler*>(_sched);
             GPFPASAPScheduler *asap_sched = dynamic_cast<GPFPASAPScheduler*>(_sched);
+            EPPScheduler *epp_sched = dynamic_cast<EPPScheduler*>(_sched);
+            EFPFPScheduler *efpp_sched = dynamic_cast<EFPFPScheduler*>(_sched);
+            CBPPScheduler *cbpp_sched = dynamic_cast<CBPPScheduler*>(_sched);
             std::cout << "[DEBUG] _sched类型: " << typeid(*_sched).name() << std::endl;
-            std::cout << "[DEBUG] cascade_sched指针: " << cascade_sched << " asap_sched指针: " << asap_sched << std::endl;
+            std::cout << "[DEBUG] cascade_sched指针: " << cascade_sched << " asap_sched指针: " << asap_sched
+                      << " epp_sched指针: " << epp_sched << " efpp_sched指针: " << efpp_sched
+                      << " cbpp_sched指针: " << cbpp_sched << std::endl;
 
             double unit_energy = 0.0;
             double current_energy = 0.0;
@@ -524,6 +537,10 @@ namespace RTSim {
                 } else {
                     std::cout << "[DEBUG] MRTKernel::onEndDispatchMulti() - 能量充足，允许调度: " << task->getName() << std::endl;
                 }
+            } else if ((epp_sched || efpp_sched || cbpp_sched) && task) {
+                // ⭐ V28.11修复：EPP/EFPP/CBPP调度器已在getTaskN中预扣能量，跳过kernel的重复检查
+                std::cout << "[DEBUG] EPP/EFPP/CBPP调度器检测到，跳过kernel能量检查（已在调度器中预扣）: " << task->getName() << std::endl;
+                // 不设置check_energy，直接继续到schedule()
             } else {
                 std::cout << "[DEBUG] cascade_sched和asap_sched都为nullptr或task为nullptr，跳过能量预检查" << std::endl;
             }
@@ -531,13 +548,21 @@ namespace RTSim {
             // 重要修复：检查任务是否真的应该被调度
             // 如果任务不在就绪或执行状态，不调用schedule()，避免记录错误的调度事件
             // 这样可以解决能量不足时仍然记录调度事件的问题
+            if (task) {
+                std::cout << "[DEBUG] 任务状态检查: " << task->getName()
+                          << " 状态: " << task->getState()
+                          << " (TSK_READY=" << TSK_READY << " TSK_EXEC=" << TSK_EXEC << ")" << std::endl;
+            }
+
             if (task && (task->getState() == TSK_READY || task->getState() == TSK_EXEC)) {
                 // 任务在就绪或执行状态，可以调度
+                std::cout << "[DEBUG] 调用schedule(): " << task->getName() << std::endl;
                 st->schedule();
                 DBGPRINT("Task scheduled: ", taskname(st));
             } else {
                 // 任务不在就绪或执行状态，可能能量不足
                 // 不调用schedule()，避免记录错误的调度事件
+                std::cout << "[DEBUG] 跳过schedule()，任务状态不对: " << (task ? task->getName() : "nullptr") << std::endl;
                 DBGPRINT("Task not in READY or EXEC state, skipping schedule(): ", taskname(st));
                 // 将_m_currExe[p]设置为null，避免后续问题
                 _m_currExe[p] = nullptr;

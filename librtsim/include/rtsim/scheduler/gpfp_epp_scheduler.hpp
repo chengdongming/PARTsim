@@ -576,7 +576,7 @@ namespace RTSim {
 // 工厂注册
 namespace RTSim {
     static registerInFactory<RTSim::Scheduler, RTSim::EPPScheduler>
-        registerGPFPASAP("gpfp_epp");
+        registerEPPScheduler("gpfp_epp");
 }
 
 #endif // GPFP_EPP_SCHEDULER_HPP

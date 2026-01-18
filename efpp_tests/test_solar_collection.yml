@@ -1,0 +1,72 @@
+# =============================================
+# 太阳能收集测试配置
+# =============================================
+# 目的：测试0点vs12点的能量收集差异
+# =============================================
+
+cpu_islands:
+  - name: energy_aware_cpus
+    numcpus: 2
+
+    kernel:
+      scheduler: gpfp_efpp
+      task_placement: global
+
+      scheduler_params:
+        - "strict_priority=true"
+        - "enable_energy_recovery=true"
+
+    volts: [0.92, 0.94, 0.96, 0.98, 1.00, 1.02, 1.04, 1.06, 1.08, 1.10, 1.12, 1.14]
+    freqs: [7000, 7500, 8000, 8100, 8200, 8300, 8400, 8500, 9000, 9500, 10000, 10500]
+    base_freq: 8100
+    power_model: energy_aware_model
+    speed_model: energy_aware_model
+
+energy_management:
+  initial_energy: 0.0                 # ⭐ 从0开始，完全依赖太阳能收集
+  max_energy: 1000.0
+
+  # ⭐ 时间配置：中午12点（最大太阳能）
+  day_of_year: 187
+  time_of_day_ms: 43200000            # 12:00:00
+
+  use_real_solar_data: true
+  solar_data_file: "data/processed/shenyang_solar_minute.csv"
+  pv_efficiency: 0.18
+  pv_area_m2: 1.0
+
+  unit_time: 1
+  enable_energy_recovery: true
+  max_recovery_wait_time_ms: 10000
+
+power_models:
+  - name: energy_aware_model
+    type: balsini_pannocchi
+
+    params:
+      - workload: idle
+        power_params: [0.00134845, 1.76307e-5, 124.535, 1.00399e-10]
+        speed_params: [1, 0, 0, 0]
+        energy_coefficient: 0.1
+
+      - workload: bzip2
+        power_params: [0.00775587, 33.376, 1.54585, 9.53439e-10]
+        speed_params: [0.0256054, 2.9809e+6, 0.602631, 8.13712e+9]
+        energy_coefficient: 1.2
+
+      - workload: hash
+        power_params: [0.00624673, 176.315, 1.72836, 1.77362e-10]
+        speed_params: [0.00645628, 3.37134e+6, 7.83177, 93459]
+        energy_coefficient: 0.8
+
+      - workload: control
+        power_params: [0.001, 1.0, 1.0, 1.0e-10]
+        speed_params: [1, 0, 0, 0]
+        energy_coefficient: 0.1
+
+trace:
+  enabled: true
+  trace_file: "trace_solar_collection.json"
+  trace_energy: true
+  trace_scheduling: true
+  trace_preemptions: true
