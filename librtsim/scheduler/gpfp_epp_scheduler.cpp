@@ -247,11 +247,31 @@ namespace RTSim {
                         if (in_energy_section) {
                             if (line.find("use_real_solar_data:") != std::string::npos) {
                                 std::string value = line.substr(line.find(":") + 1);
+
+                                // ⭐ 修复：移除行内注释（以#开头）
+                                size_t comment_pos = value.find('#');
+                                if (comment_pos != std::string::npos) {
+                                    value = value.substr(0, comment_pos);
+                                }
+
                                 value.erase(0, value.find_first_not_of(" \t"));
+                                value.erase(value.find_last_not_of(" \t") + 1);
+
                                 _use_real_solar_data = (value == "true");
+
+                                SCHEDULER_LOG_DEBUG(std::string("🔧 [EPP] 解析 use_real_solar_data: ") +
+                                                      value + " -> " +
+                                                      (_use_real_solar_data ? "true" : "false"));
                             }
                             else if (line.find("solar_data_file:") != std::string::npos) {
                                 std::string value = line.substr(line.find(":") + 1);
+
+                                // ⭐ 修复：移除行内注释
+                                size_t comment_pos = value.find('#');
+                                if (comment_pos != std::string::npos) {
+                                    value = value.substr(0, comment_pos);
+                                }
+
                                 // 去除引号
                                 value.erase(0, value.find_first_not_of(" \t\""));
                                 value.erase(value.find_last_not_of(" \t\"") + 1);
@@ -259,12 +279,28 @@ namespace RTSim {
                             }
                             else if (line.find("pv_efficiency:") != std::string::npos) {
                                 std::string value = line.substr(line.find(":") + 1);
+
+                                // ⭐ 修复：移除行内注释
+                                size_t comment_pos = value.find('#');
+                                if (comment_pos != std::string::npos) {
+                                    value = value.substr(0, comment_pos);
+                                }
+
                                 value.erase(0, value.find_first_not_of(" \t"));
+                                value.erase(value.find_last_not_of(" \t") + 1);
                                 _pv_efficiency = std::stod(value);
                             }
                             else if (line.find("pv_area_m2:") != std::string::npos) {
                                 std::string value = line.substr(line.find(":") + 1);
+
+                                // ⭐ 修复：移除行内注释
+                                size_t comment_pos = value.find('#');
+                                if (comment_pos != std::string::npos) {
+                                    value = value.substr(0, comment_pos);
+                                }
+
                                 value.erase(0, value.find_first_not_of(" \t"));
+                                value.erase(value.find_last_not_of(" \t") + 1);
                                 _pv_area_m2 = std::stod(value);
                             }
                         }
@@ -1075,19 +1111,53 @@ namespace RTSim {
             return 0;
         }
 
-        // ⭐ 关键修复：使用周期性收集间隔作为恢复时间
-        // 这样可以频繁检查能量是否足够，而不是一次性等待很长时间
-        Tick recovery_time = _periodic_collection_interval;
+        Tick recovery_time = 0;
 
-        // 如果配置的间隔太小（比如0或1），至少使用1ms
+        // ⭐ 修复：根据当前太阳能功率计算恢复时间
+        if (_use_real_solar_data) {
+            // 获取当前辐照度
+            Tick current_time = SIMUL.getTime();
+            int64_t current_ms = static_cast<int64_t>(current_time);
+            double irradiance = getSolarIrradiance(current_ms);
+
+            // 计算当前功率 (W)
+            // 功率 = 辐照度(W/m²) × 面积(m²) × 效率
+            double current_power = irradiance * _pv_area_m2 * _pv_efficiency;
+
+            if (current_power > 0.001) {
+                // 计算恢复时间 (ms)
+                // 时间(s) = 能量(J) / 功率(W)
+                // 时间(ms) = 时间(s) × 1000
+                double recovery_time_seconds = energy_needed / current_power;
+                recovery_time = static_cast<Tick>(recovery_time_seconds * 1000.0);
+
+                SCHEDULER_LOG_INFO(std::string("⏰ [EPP] 计算能量恢复时间: ") +
+                                  "缺口=" + std::to_string(energy_needed) + "J" +
+                                  " 当前辐照度=" + std::to_string(irradiance) + " W/m²" +
+                                  " 当前功率=" + std::to_string(current_power) + " W" +
+                                  " 预计恢复=" + std::to_string(static_cast<int64_t>(recovery_time)) + "ms" +
+                                  " (基于实际太阳能功率)");
+            } else {
+                // 无太阳能，使用周期性收集间隔
+                recovery_time = _periodic_collection_interval;
+                SCHEDULER_LOG_INFO(std::string("⏰ [EPP] 计算能量恢复时间: ") +
+                                  "缺口=" + std::to_string(energy_needed) + "J" +
+                                  " 无太阳能(辐照度=0)" +
+                                  " 将使用周期性收集=" + std::to_string(static_cast<int64_t>(recovery_time)) + "ms");
+            }
+        } else {
+            // 不使用真实太阳能数据，使用周期性收集间隔
+            recovery_time = _periodic_collection_interval;
+            SCHEDULER_LOG_INFO(std::string("⏰ [EPP] 计算能量恢复时间: ") +
+                              "缺口=" + std::to_string(energy_needed) + "J" +
+                              " 未使用真实太阳能数据" +
+                              " 将使用周期性收集=" + std::to_string(static_cast<int64_t>(recovery_time)) + "ms");
+        }
+
+        // 最小恢复时间：1ms
         if (recovery_time < 1) {
             recovery_time = 1;
         }
-
-        SCHEDULER_LOG_INFO(std::string("⏰ [EPP] 计算能量恢复时间: ") +
-                          "缺口=" + std::to_string(energy_needed) + "J" +
-                          " 收集间隔=" + std::to_string(static_cast<int64_t>(recovery_time)) + "ms" +
-                          " (将使用周期性收集)");
 
         return recovery_time;
     }

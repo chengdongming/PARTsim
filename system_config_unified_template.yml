@@ -35,11 +35,41 @@ energy_management:
 
   # 调度器单位时间
   unit_time: 50                        # 单位时间 (ms)
-  periodic_collection_interval_ms: 1 
+  periodic_collection_interval_ms: 1
 
   # 能量恢复配置
   enable_energy_recovery: true
   max_recovery_wait_time_ms: 10000
+
+  # === ⭐ 调度器能量消耗模型配置 ===
+  # 用于ConfigManager的调度器级能量计算
+  scheduler_energy_model:
+    base_power: 0.5                    # 基础功耗 (W)
+
+    # 工作负载功率系数（相对于基础功率的倍数）
+    workload_coefficients:
+      bzip2: 1.2                       # 压缩任务: 0.5 × 1.2 = 0.6W
+      hash: 0.8                        # 哈希任务: 0.5 × 0.8 = 0.4W
+      encrypt: 1.5                     # 加密任务: 0.5 × 1.5 = 0.75W
+      decrypt: 1.5                     # 解密任务: 0.5 × 1.5 = 0.75W
+      control: 0.1                     # 控制任务: 0.5 × 0.1 = 0.05W
+      idle: 0.1                        # 空闲: 0.5 × 0.1 = 0.05W
+
+    # 频率-功率比例系数（相对于基础频率8100MHz的功率比例）
+    # 实际功率 = base_power × workload_coeff × frequency_ratio
+    frequency_power_ratios:
+      7000: 0.85                       # 7000MHz: 功率为基础值的85%
+      7500: 0.88                       # 7500MHz
+      8000: 0.92                       # 8000MHz
+      8100: 0.93                       # 8100MHz (基准频率)
+      8200: 0.94                       # 8200MHz
+      8300: 0.95                       # 8300MHz
+      8400: 0.96                       # 8400MHz
+      8500: 0.97                       # 8500MHz
+      9000: 1.0                        # 9000MHz
+      9500: 1.05                       # 9500MHz
+      10000: 1.1                       # 10000MHz
+      10500: 1.15                      # 10500MHz
 
 # =============================================
 # 功率模型配置

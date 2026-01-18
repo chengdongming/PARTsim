@@ -27,7 +27,7 @@ namespace RTSim {
         _tasks_loaded(false),
         _num_cores(4),
         _scheduler_type("gpfp_asap"),
-        _base_frequency(1400.0),
+        _base_frequency(8100.0),  // ⭐ 修复：从1400.0改为8100.0，匹配YAML配置
         _unit_time(50),
         _initial_energy(0.3),  // 默认初始能量 0.3J
         _max_energy(600.0),
@@ -47,18 +47,21 @@ namespace RTSim {
             }
         }
 
-        // 设置默认功率系数
+        // ⭐ 修复：设置默认功率系数（与system_config_unified_template.yml一致）
         _power_coefficients = {{"bzip2", 1.2},
                                {"hash", 0.8},
                                {"encrypt", 1.5},
                                {"decrypt", 1.5},
-                               {"control", 0.1}};
+                               {"control", 0.1},
+                               {"idle", 0.1}};
 
-        // 设置默认频率功率比
-        _frequency_power_ratios = {{1000, 0.7},  {1100, 0.75}, {1200, 0.8},
-                                   {1300, 0.85}, {1400, 0.9},  {1500, 0.95},
-                                   {1600, 1.0},  {1700, 1.05}, {1800, 1.1},
-                                   {1900, 1.15}, {2000, 1.2},  {2100, 1.25}};
+        // ⭐ 修复：设置默认频率功率比（匹配YAML的7000-10500 MHz范围）
+        _frequency_power_ratios = {
+            {7000, 0.85},  {7500, 0.88}, {8000, 0.92},
+            {8100, 0.93},  {8200, 0.94}, {8300, 0.95},
+            {8400, 0.96},  {8500, 0.97}, {9000, 1.0},
+            {9500, 1.05},  {10000, 1.1}, {10500, 1.15}
+        };
     }
 
     // =====================================================
@@ -98,8 +101,127 @@ namespace RTSim {
                 return result;
             }
 
+            // ⭐ 新增：尝试解析YAML文件中的scheduler_energy_model配置
+            try {
+                std::ifstream yaml_file(config_file);
+                if (yaml_file.is_open()) {
+                    std::string line;
+                    bool in_scheduler_energy_model = false;
+                    bool in_workload_coeffs = false;
+                    bool in_freq_ratios = false;
+
+                    while (std::getline(yaml_file, line)) {
+                        // 去除首尾空白
+                        size_t start = line.find_first_not_of(" \t");
+                        if (start == std::string::npos) continue;
+                        line = line.substr(start);
+
+                        // 跳过注释和空行
+                        if (line.empty() || line[0] == '#') continue;
+
+                        // 检测scheduler_energy_model部分
+                        if (line.find("scheduler_energy_model:") != std::string::npos) {
+                            in_scheduler_energy_model = true;
+                            SCHEDULER_LOG_INFO("ConfigManager: 找到scheduler_energy_model配置");
+                            continue;
+                        }
+
+                        if (in_scheduler_energy_model) {
+                            // 检测base_power
+                            if (line.find("base_power:") != std::string::npos) {
+                                size_t colon_pos = line.find(':');
+                                std::string value = line.substr(colon_pos + 1);
+                                // 去除注释
+                                size_t comment_pos = value.find('#');
+                                if (comment_pos != std::string::npos) {
+                                    value = value.substr(0, comment_pos);
+                                }
+                                // 去除空白
+                                value.erase(0, value.find_first_not_of(" \t"));
+                                value.erase(value.find_last_not_of(" \t\r\n") + 1);
+                                _base_power = std::stod(value);
+                                SCHEDULER_LOG_INFO("ConfigManager: base_power = " + std::to_string(_base_power));
+                                continue;
+                            }
+
+                            // 检测workload_coefficients
+                            if (line.find("workload_coefficients:") != std::string::npos) {
+                                in_workload_coeffs = true;
+                                in_freq_ratios = false;
+                                continue;
+                            }
+
+                            if (line.find("frequency_power_ratios:") != std::string::npos) {
+                                in_freq_ratios = true;
+                                in_workload_coeffs = false;
+                                continue;
+                            }
+
+                            // 解析工作负载系数
+                            if (in_workload_coeffs && line.find(':') != std::string::npos) {
+                                size_t colon_pos = line.find(':');
+                                std::string key = line.substr(0, colon_pos);
+                                std::string value = line.substr(colon_pos + 1);
+
+                                // 清理key
+                                key.erase(0, key.find_first_not_of(" \t"));
+                                key.erase(key.find_last_not_of(" \t\r\n:") + 1);
+
+                                // 清理value（去除注释）
+                                size_t comment_pos = value.find('#');
+                                if (comment_pos != std::string::npos) {
+                                    value = value.substr(0, comment_pos);
+                                }
+                                value.erase(0, value.find_first_not_of(" \t"));
+                                value.erase(value.find_last_not_of(" \t\r\n") + 1);
+
+                                _power_coefficients[key] = std::stod(value);
+                                SCHEDULER_LOG_DEBUG("ConfigManager: " + key + " = " + value);
+                                continue;
+                            }
+
+                            // 解析频率功率比
+                            if (in_freq_ratios && line.find(':') != std::string::npos) {
+                                size_t colon_pos = line.find(':');
+                                std::string key = line.substr(0, colon_pos);
+                                std::string value = line.substr(colon_pos + 1);
+
+                                // 清理key（频率）
+                                key.erase(0, key.find_first_not_of(" \t"));
+                                key.erase(key.find_last_not_of(" \t\r\n:") + 1);
+                                int freq = std::stoi(key);
+
+                                // 清理value（功率比）
+                                size_t comment_pos = value.find('#');
+                                if (comment_pos != std::string::npos) {
+                                    value = value.substr(0, comment_pos);
+                                }
+                                value.erase(0, value.find_first_not_of(" \t"));
+                                value.erase(value.find_last_not_of(" \t\r\n") + 1);
+                                double ratio = std::stod(value);
+
+                                _frequency_power_ratios[freq] = ratio;
+                                SCHEDULER_LOG_DEBUG("ConfigManager: " + key + "MHz = " + value);
+                                continue;
+                            }
+
+                            // 检测缩进减少，退出scheduler_energy_model
+                            if (line[0] != ' ' && line[0] != '\t' && line.find(':') != std::string::npos) {
+                                in_scheduler_energy_model = false;
+                                in_workload_coeffs = false;
+                                in_freq_ratios = false;
+                            }
+                        }
+                    }
+                    yaml_file.close();
+                    SCHEDULER_LOG_INFO("ConfigManager: YAML解析完成");
+                }
+            } catch (const std::exception &e) {
+                SCHEDULER_LOG_WARNING("ConfigManager: YAML解析失败，使用默认值: " + std::string(e.what()));
+            }
+
             // 否则使用默认配置
-            SCHEDULER_LOG_WARNING("没有配置回调，使用默认配置");
+            SCHEDULER_LOG_INFO("ConfigManager: 配置加载完成");
             _config_loaded = true;
             printConfig();
             return true;
@@ -158,7 +280,7 @@ namespace RTSim {
 
     double ConfigManager::getFrequencyPowerRatio(int frequency) const {
         // 找到最接近的频率
-        int closest_freq = 1400;
+        int closest_freq = 8100;  // ⭐ 修复：从1400改为8100，匹配新的频率范围
         double min_diff = 10000.0;
 
         for (const auto &pair : _frequency_power_ratios) {

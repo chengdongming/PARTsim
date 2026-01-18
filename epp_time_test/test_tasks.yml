@@ -1,0 +1,27 @@
+# =============================================
+# EPP 时间测试任务集
+# =============================================
+taskset:
+  - name: task_high
+    iat: 500
+    runtime: 200
+    deadline: 500
+    params: "period=500,wcet=200,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(200, bzip2)
+
+  - name: task_mid
+    iat: 1000
+    runtime: 300
+    deadline: 1000
+    params: "period=1000,wcet=300,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(300, bzip2)
+
+  - name: task_low
+    iat: 1500
+    runtime: 400
+    deadline: 1500
+    params: "period=1500,wcet=400,arrival_offset=0,workload=hash"
+    code:
+      - fixed(400, hash)
