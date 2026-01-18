@@ -396,21 +396,31 @@ namespace RTSim {
 
         if (st) {
             // 🔒 V28.9修复：只预检查能量，不预消耗
-            // 预消耗会导致_local_energy和EnergyBridge不同步
+            // 预消耗会导致_local_energy和_EnergyBridge不同步
             GPFPCASCADEScheduler *cascade_sched = dynamic_cast<GPFPCASCADEScheduler*>(_sched);
+            EFPFPScheduler *efpp_sched = dynamic_cast<EFPFPScheduler*>(_sched);
+            CBPPScheduler *cbpp_sched = dynamic_cast<CBPPScheduler*>(_sched);
             Task *task = dynamic_cast<Task*>(st);
 
-            if (cascade_sched && task) {
+            // ⭐ 支持CBPP调度器：使用其批量调度机制
+            if (cbpp_sched && task) {
+                // CBPP的批量调度逻辑在getTaskN()中实现
+                // 已经进行了能量预扣减和批量决策
+                std::cout << "[DEBUG] onBeginDispatchMulti - 使用CBPP调度器: " << task->getName() << std::endl;
+
+                // 不需要额外能量检查，CBPP已经在getTaskN()中完成了能量判断
+            } else if (cascade_sched && task) {
+                // CASCADE的能量预检查
                 double unit_energy = cascade_sched->getUnitTimeEnergy(st);
                 double current_energy = cascade_sched->getCurrentEnergy();
 
-                std::cout << "[DEBUG] onBeginDispatchMulti - 能量预检查: " << task->getName()
+                std::cout << "[DEBUG] onBeginDispatchMulti - CASCADE能量预检查: " << task->getName()
                           << " 需要: " << std::fixed << std::setprecision(10) << unit_energy << "J"
                           << " 当前: " << current_energy << "J" << std::endl;
 
                 if (current_energy < unit_energy - 1e-6) {
                     // 能量不足，不调度这个任务
-                    std::cout << "[DEBUG] onBeginDispatchMulti - 能量不足，跳过: " << task->getName() << std::endl;
+                    std::cout << "[DEBUG] onBeginDispatchMulti - CASCADE能量不足，跳过: " << task->getName() << std::endl;
                     DBGPRINT("Energy insufficient in onBeginDispatchMulti, skipping: ", taskname(st));
                     // 从队列中移除
                     _sched->extract(st);
@@ -419,6 +429,8 @@ namespace RTSim {
                 }
                 // 能量足够，继续dispatch流程
             }
+            // EPP/EFPP等其他调度器直接调度，不在这里检查能量
+            // 因为它们的能量判断已经在getTaskN()中完成
 
             _m_dispatched[st] = p;
         }

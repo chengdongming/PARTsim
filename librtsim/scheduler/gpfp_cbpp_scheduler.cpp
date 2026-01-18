@@ -1677,25 +1677,12 @@ namespace RTSim {
         // 计算批量总能耗
         double total_energy_needed = calculateBatchTotalEnergy(batch);
 
-        // 预测K个任务执行期间的总收集能量
-        Tick max_wcet = 0;
-        for (AbsRTTask *task : batch) {
-            if (task) {
-                CBPPTaskModel *model = getTaskModel(task);
-                if (model && model->getWCET() > max_wcet) {
-                    max_wcet = model->getWCET();
-                }
-            }
-        }
+        // ⭐ 修复：只使用当前能量判断，不依赖预测能量
+        // CBPP是硬能量约束调度器，应该只使用当前能量进行判断
+        bool can_schedule = (_current_energy >= total_energy_needed);
 
-        double predicted_harvest = predictEnergyHarvest(max_wcet);
-
-        // ⭐ 集体能量判断：当前能量 + 预测收集 - 总能耗 >= 0
-        bool can_schedule = (_current_energy + predicted_harvest - total_energy_needed >= 0);
-
-        SCHEDULER_LOG_INFO(std::string("⚖️ [CBPP] 批量能量判断: ") +
+        SCHEDULER_LOG_INFO(std::string("⚖️ [CBPP] 批量能量判断(当前能量): ") +
                           "当前=" + std::to_string(_current_energy) + "J " +
-                          "预测=" + std::to_string(predicted_harvest) + "J " +
                           "总能耗=" + std::to_string(total_energy_needed) + "J " +
                           "结果=" + (can_schedule ? "✅充足" : "❌不足"));
 
