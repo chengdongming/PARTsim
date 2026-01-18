@@ -1586,7 +1586,6 @@ namespace RTSim {
     // =====================================================
 
     int CBPPScheduler::calculateBatchSize() {
-        int free_cores = getFreeCPUCount();
         int ready_tasks = 0;
 
         // 计算未dispatch的就绪任务数
@@ -1609,9 +1608,22 @@ namespace RTSim {
         }
 
         // K = min(空闲核心, 未dispatch任务数)
+        // ⭐ 修复：直接从ConfigManager获取CPU核心数
+        ConfigManager &configMgr = ConfigManager::getInstance();
+        int total_cores = configMgr.getNumCores();
+        int running_cores = 0;
+        for (const auto &pair : _running_tasks) {
+            if (pair.second != nullptr) {
+                running_cores++;
+            }
+        }
+        int free_cores = total_cores - running_cores;
+
+        // K = min(空闲核心, 未dispatch任务数)
         int K = std::min(free_cores, ready_tasks);
-        SCHEDULER_LOG_DEBUG(std::string("📊 [CBPP] calculateBatchSize: free_cores=") +
-                          std::to_string(free_cores) + " ready_tasks=" +
+        SCHEDULER_LOG_DEBUG(std::string("📊 [CBPP] calculateBatchSize: total_cores=") +
+                          std::to_string(total_cores) + " running=" + std::to_string(running_cores) +
+                          " free=" + std::to_string(free_cores) + " ready_tasks=" +
                           std::to_string(ready_tasks) + " K=" + std::to_string(K));
 
         return K;
