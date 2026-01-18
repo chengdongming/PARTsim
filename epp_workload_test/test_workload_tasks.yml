@@ -1,0 +1,31 @@
+# =============================================
+# EPP 工作负载执行时间分析测试
+# =============================================
+# 测试目标：分析不同工作负载的实际执行时间和能量消耗
+# =============================================
+
+taskset:
+  # 测试1: 相同WCET(150ms)，不同工作负载
+  - name: task_bzip2
+    iat: 10000
+    runtime: 150
+    deadline: 10000
+    params: "period=10000,wcet=150,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(150, bzip2)
+
+  - name: task_hash
+    iat: 10000
+    runtime: 150
+    deadline: 10000
+    params: "period=10000,wcet=150,arrival_offset=0,workload=hash"
+    code:
+      - fixed(150, hash)
+
+  - name: task_idle
+    iat: 10000
+    runtime: 150
+    deadline: 10000
+    params: "period=10000,wcet=150,arrival_offset=0,workload=idle"
+    code:
+      - fixed(150, idle)

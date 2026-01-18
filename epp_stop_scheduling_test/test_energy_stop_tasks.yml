@@ -1,0 +1,43 @@
+# =============================================
+# EPP 能量不足停���调度测试
+# =============================================
+# 测试目标：验证"能量不足时只调度最高优先级任务，其他任务不管"
+#
+# 场景设计：
+# - 0点（无太阳能）
+# - 单核CPU
+# - 初始能量: 0.12J（只够调度task_high，��够调度多个任务）
+# - 任务到达顺序：同时到达（arrival_offset=0）
+#
+# 预期结果：
+# - task_high被调度（能量充足）
+# - task_mid和task_low被跳过（能量不足+优先级低）
+# =============================================
+
+taskset:
+  # 任务1: 高优先级，高能耗（周期500ms）
+  - name: task_high
+    iat: 500
+    runtime: 200
+    deadline: 500
+    params: "period=500,wcet=200,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(200, bzip2)
+
+  # 任务2: 中等优先级，中等能耗（周期1000ms）
+  - name: task_mid
+    iat: 1000
+    runtime: 200
+    deadline: 1000
+    params: "period=1000,wcet=200,arrival_offset=0,workload=hash"
+    code:
+      - fixed(200, hash)
+
+  # 任务3: 低优先级，低能耗（周期1500ms）
+  - name: task_low
+    iat: 1500
+    runtime: 100
+    deadline: 1500
+    params: "period=1500,wcet=100,arrival_offset=0,workload=idle"
+    code:
+      - fixed(100, idle)
