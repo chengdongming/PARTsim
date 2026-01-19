@@ -22,6 +22,7 @@ matplotlib.use('Agg')  # 使用非交互式后端，避免显示问题
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import json
+import yaml
 import sys
 import argparse
 import os
@@ -125,6 +126,9 @@ def parse_arguments():
 
     parser.add_argument('--no-grid', action='store_true',
                        help='不显示网格线')
+
+    parser.add_argument('--taskset', type=str, default=None,
+                       help='任务集配置文件 (YAML格式) - 用于显示到达和截止时��标记')
 
     return parser.parse_args()
 
@@ -269,6 +273,70 @@ class TraceParser:
         return self.time_range
 
 # ===============================
+# 任务集配置解析器
+# ===============================
+
+class TaskSetParser:
+    """任务集配置解析器：解析YAML格式的任务集配置"""
+
+    def __init__(self, taskset_file: str):
+        """
+        初始化解析器
+
+        参数：
+            taskset_file: 任务集配置文件路径（YAML格式）
+        """
+        self.taskset_file = taskset_file
+        self.task_configs = {}  # {task_name: {'period': int, 'deadline': int, 'arrival_offset': int}}
+
+        self._parse_taskset()
+
+    def _parse_taskset(self):
+        """解析任务集配置文件"""
+        try:
+            with open(self.taskset_file, 'r', encoding='utf-8') as f:
+                data = yaml.safe_load(f)
+                tasks = data.get('taskset', [])
+
+                for task in tasks:
+                    name = task['name']
+                    # 从params中提取参数，格式如 "period=50,wcet=20,arrival_offset=0"
+                    params_str = task.get('params', '')
+                    params = {}
+
+                    for param in params_str.split(','):
+                        if '=' in param:
+                            key, value = param.strip().split('=')
+                            try:
+                                params[key] = int(value)
+                            except ValueError:
+                                # 保持字符串值（如 workload=bzip2）
+                                params[key] = value
+
+                    self.task_configs[name] = {
+                        'period': params.get('period', task.get('iat', 0)),
+                        'deadline': task.get('deadline', params.get('period', 0)),
+                        'arrival_offset': params.get('arrival_offset', 0)
+                    }
+
+            print(f"✓ 解析任务集配置完成：{len(self.task_configs)} 个任务")
+            for task_name, config in self.task_configs.items():
+                print(f"  {task_name}: 周期={config['period']}, deadline={config['deadline']}, 到达偏移={config['arrival_offset']}")
+
+        except FileNotFoundError:
+            print(f"警告：找不到任务集配置文件 {self.taskset_file}")
+        except Exception as e:
+            print(f"警告：解析任务集配置失败 - {e}")
+
+    def get_task_config(self, task_name: str) -> Dict[str, int]:
+        """获取指定任务的配置"""
+        return self.task_configs.get(task_name, {})
+
+    def get_all_configs(self) -> Dict[str, Dict[str, int]]:
+        """获取所有任务配置"""
+        return self.task_configs
+
+# ===============================
 # 第四部分：可视化绘图器
 # ===============================
 
@@ -287,16 +355,18 @@ class TraceVisualizer:
             cls._font_prop = fm.FontProperties(fname=font_path)
         return cls._font_prop
 
-    def __init__(self, parser: TraceParser, config: Dict[str, Any]):
+    def __init__(self, parser: TraceParser, config: Dict[str, Any], taskset_parser: TaskSetParser = None):
         """
         初始化可视化器
 
         参数：
             parser: 已解析的追踪文件解析器
             config: 配置字典
+            taskset_parser: 任务集配置解析器（可选）
         """
         self.parser = parser
         self.config = config
+        self.taskset_parser = taskset_parser
         self.tasks = parser.get_tasks()
         self.schedule_intervals = parser.get_schedule_intervals()
         self.task_arrivals = parser.get_task_arrivals()
@@ -315,6 +385,9 @@ class TraceVisualizer:
         # 任务位置映射
         task_positions = {task: i for i, task in enumerate(self.tasks)}
 
+        # 时间偏移量（将起始时间归零）
+        time_offset = self.time_range[0]
+
         # 绘制每个任务的执行区间
         total_execution = defaultdict(int)
 
@@ -326,13 +399,16 @@ class TraceVisualizer:
                 duration = end - start
                 total_execution[task_name] += duration
 
+                # 使用偏移后的时间
+                adjusted_start = start - time_offset
+
                 # 绘制任务块
-                ax.barh(pos, duration, left=start, height=0.25,
+                ax.barh(pos, duration, left=adjusted_start, height=0.25,
                        color=color, edgecolor='black', linewidth=1.0, alpha=0.85)
 
                 # 添加任务标签（如果区间足够长）
                 if duration >= (self.time_range[1] - self.time_range[0]) * 0.02:
-                    mid_time = (start + end) / 2
+                    mid_time = adjusted_start + duration / 2
                     ax.text(mid_time, pos, task_name, ha='center', va='center',
                            fontsize=6, fontweight='bold', color='white')
 
@@ -342,18 +418,56 @@ class TraceVisualizer:
         ax.set_xlabel('时间', fontsize=12, fontweight='bold', fontproperties=self._get_font_prop())
         ax.set_ylabel('任务', fontsize=12, fontweight='bold', fontproperties=self._get_font_prop())
 
-        # 设置Y轴范围
-        ax.set_ylim(-0.5, len(self.tasks) - 0.5)
+        # 设置Y轴范围（留出空间给箭头）
+        ax.set_ylim(-0.5, len(self.tasks) + 0.1)
 
-        # 设置X轴范围（留一些边距）
+        # 计算时间跨度
         time_span = self.time_range[1] - self.time_range[0]
-        ax.set_xlim(self.time_range[0] - time_span * 0.01,
-                   self.time_range[1] + time_span * 0.01)
 
-        # 使用科学计数法显示X轴刻度（每个点独立显示）
-        from matplotlib.ticker import FormatStrFormatter
-        # 自定义科学计数法格式，显示2位小数
-        ax.xaxis.set_major_formatter(FormatStrFormatter('%.2e'))
+        # 绘制到达时间和截止时间标记（如果有任务集配置）
+        if self.taskset_parser:
+            for task_name in self.tasks:
+                pos = task_positions[task_name]
+                task_config = self.taskset_parser.get_task_config(task_name)
+
+                if not task_config:
+                    continue
+
+                period = task_config['period']
+                deadline = task_config['deadline']
+                arrival_offset = task_config['arrival_offset']
+
+                # 获取该任务的到达时间列表
+                arrivals = self.task_arrivals.get(task_name, [])
+
+                # 为每个到达时间绘制向上箭头（到达）和向下箭头（截止）
+                for arrival_time in arrivals:
+                    adjusted_arrival = arrival_time - time_offset
+
+                    # 绘制到达时间标记（向上箭头，绿色）+ 垂直线
+                    # 垂直线从任��条底边延伸到上箭头（向上突出）
+                    ax.plot([adjusted_arrival, adjusted_arrival], [pos - 0.125, pos + 0.3],
+                           color='green', linestyle='-', linewidth=1.5, alpha=0.7)
+                    ax.plot(adjusted_arrival, pos + 0.3, marker='^', markersize=8,
+                           color='green', markeredgecolor='darkgreen', markeredgewidth=1,
+                           label='到达' if task_name == self.tasks[0] else '')
+
+                    # 计算截止时间
+                    deadline_time = arrival_time + deadline
+                    adjusted_deadline = deadline_time - time_offset
+
+                    # 只绘制在时间范围内的截止时间标记
+                    if adjusted_deadline <= time_span * 1.01:
+                        # 绘制截止时间标记（向下箭头，红色）+ 垂直线
+                        # 垂直线从任务条底边延伸到下箭头（向下突出）
+                        ax.plot([adjusted_deadline, adjusted_deadline], [pos - 0.125, pos - 0.3],
+                               color='red', linestyle='-', linewidth=1.5, alpha=0.7)
+                        ax.plot(adjusted_deadline, pos - 0.3, marker='v', markersize=8,
+                               color='red', markeredgecolor='darkred', markeredgewidth=1,
+                               label='截止' if task_name == self.tasks[0] else '')
+
+        # 设置X轴范围（从0开始，留一些边距）
+        ax.set_xlim(-time_span * 0.01, time_span * 1.01)
 
         # 添加网格
         if not self.config.get('no_grid', False):
@@ -474,8 +588,13 @@ def main():
     # 1. 解析追踪文件
     parser = TraceParser(args.trace_file, verbose=config['verbose'])
 
-    # 2. 创建可视化器
-    visualizer = TraceVisualizer(parser, config)
+    # 2. 解析任务集配置（如果提供）
+    taskset_parser = None
+    if args.taskset:
+        taskset_parser = TaskSetParser(args.taskset)
+
+    # 3. 创建可视化器
+    visualizer = TraceVisualizer(parser, config, taskset_parser)
 
     # 3. 打印统计信息
     visualizer.print_statistics()
