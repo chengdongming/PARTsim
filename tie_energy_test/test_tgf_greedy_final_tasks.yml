@@ -1,0 +1,27 @@
+taskset:
+  # Task1: 最高优先级，高能耗 - 需要0.025J才能完成WCET
+  - name: task1_high_cost
+    iat: 200
+    runtime: 50
+    deadline: 200
+    params: "period=200,wcet=50,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(50, bzip2)
+
+  # Task2: 次优先级，高能耗 - 需要0.025J才能完成WCET
+  - name: task2_high_cost
+    iat: 200
+    runtime: 50
+    deadline: 200
+    params: "period=200,wcet=50,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(50, bzip2)
+
+  # Task3: 低优先级，低能耗 - 只需要0.0025J完成WCET - 可调度！
+  - name: task3_low_cost
+    iat: 300
+    runtime: 5
+    deadline: 300
+    params: "period=300,wcet=5,arrival_offset=0,workload=control"
+    code:
+      - fixed(5, control)

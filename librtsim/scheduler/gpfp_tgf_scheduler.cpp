@@ -523,6 +523,10 @@ namespace RTSim {
             size_t comma_pos = params.find(",", workload_pos);
             workload = params.substr(workload_pos + 9,
                 comma_pos != std::string::npos ? comma_pos - workload_pos - 9 : std::string::npos);
+            // 移除可能的尾部引号
+            if (!workload.empty() && workload.back() == '"') {
+                workload.pop_back();
+            }
         }
 
         // 创建任务模型
@@ -670,6 +674,12 @@ namespace RTSim {
 
         Scheduler::insert(task);
         addToReadyQueue(task);
+
+        // ⭐ 修复0时刻调度延迟：如果是第一个任务且在0时刻，立即触发调度
+        if (_ready_queue.size() == 1 && SIMUL.getTime() == Tick(0)) {
+            SCHEDULER_LOG_INFO("⚡ [TGF] 第一个任务在0ms到达，立即触发调度");
+            performTickScheduling();
+        }
     }
 
     void TGFScheduler::extract(AbsRTTask *task) {
@@ -1090,6 +1100,14 @@ namespace RTSim {
         _stats.total_task_completions++;
 
         SCHEDULER_LOG_INFO(std::string("📊 [TGF] 当前能量: ") + std::to_string(_current_energy) + "J");
+
+        // ⭐ 关键修复：任务结束时触发立即调度
+        // 检查是否有空闲CPU和等待的任务
+        if (!_ready_queue.empty() && _kernel) {
+            SCHEDULER_LOG_INFO("🔄 [TGF] 任务结束，触发立即调度");
+            _kernel->dispatch();
+        }
+
     }
 
     bool TGFScheduler::isAdmissible(CPU *c, std::vector<AbsRTTask *> tasks,

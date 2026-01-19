@@ -25,7 +25,7 @@ taskset:
     iat: 1000
     runtime: 400
     deadline: 1000
-    params: "period=1000,wcet=400,arrival_offset=0,workload=bzip2"
+    params: "period=1000,wcet=400,arrival_offset=100,workload=bzip2"
     code:
       - fixed(400, bzip2)
 
@@ -37,7 +37,7 @@ taskset:
     iat: 2000
     runtime: 600
     deadline: 2000
-    params: "period=2000,wcet=600,arrival_offset=0,workload=hash"
+    params: "period=2000,wcet=600,arrival_offset=200,workload=hash"
     code:
       - fixed(600, hash)
 
@@ -49,6 +49,6 @@ taskset:
     iat: 3000
     runtime: 800
     deadline: 3000
-    params: "period=3000,wcet=800,arrival_offset=0,workload=idle"
+    params: "period=3000,wcet=800,arrival_offset=300,workload=idle"
     code:
       - fixed(800, idle)

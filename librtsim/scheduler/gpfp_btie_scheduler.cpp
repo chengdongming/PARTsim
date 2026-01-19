@@ -278,18 +278,20 @@ namespace RTSim {
     // =====================================================
 
     int BTIEScheduler::calculateBatchSize() {
-        // k = min(空闲CPU数, 就绪队列任务数)
-        int free_cpus = getFreeCPUCount();
+        // k = min(CPU核心总数, 就绪队列任务数)
+        ConfigManager &configMgr = ConfigManager::getInstance();
+        int total_cpus = configMgr.getNumCores();
         int ready_tasks = static_cast<int>(_ready_queue.size());
-        int batch_size = std::min(free_cpus, ready_tasks);
+        int batch_size = std::min(total_cpus, ready_tasks);
 
         SCHEDULER_LOG_DEBUG(std::string("📊 [BTIE] calculateBatchSize: ") +
-                           "空��CPU=" + std::to_string(free_cpus) +
+                           "CPU核心数=" + std::to_string(total_cpus) +
                            " 就绪任务=" + std::to_string(ready_tasks) +
                            " 批量k=" + std::to_string(batch_size));
 
         return batch_size;
     }
+
 
     void BTIEScheduler::executeBatchScheduling(const std::vector<AbsRTTask *> &tasks, double total_energy) {
         // 一次性扣减全部k个任务的能耗
@@ -353,8 +355,11 @@ namespace RTSim {
         int batch_size = calculateBatchSize();
         _current_batch_size = batch_size;
 
+        SCHEDULER_LOG_INFO(std::string("📊 [BTIE] 批量大小k=") + std::to_string(batch_size) +
+                          " 就绪队列大小=" + std::to_string(_ready_queue.size()));
+
         if (batch_size <= 0 || _ready_queue.empty()) {
-            SCHEDULER_LOG_DEBUG("📭 [BTIE] 无任务可调度");
+            SCHEDULER_LOG_INFO("📭 [BTIE] 无任务可调度");
             _batch_scheduled_this_tick = false;
             _current_batch_tasks.clear();
             checkAndPreempt();
@@ -434,19 +439,20 @@ namespace RTSim {
     // =====================================================
 
     AbsRTTask *BTIEScheduler::getTaskN(unsigned int n) {
-        SCHEDULER_LOG_DEBUG(std::string("🔍 [BTIE] getTaskN(") + std::to_string(n) + ") 被调用" +
-                           " 批量大小=" + std::to_string(_current_batch_size) +
-                           " 是否已调度=" + (_batch_scheduled_this_tick ? "true" : "false"));
+        SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] getTaskN(") + std::to_string(n) + ") 被调用" +
+                           " 就绪队列大小=" + std::to_string(_ready_queue.size()) +
+                           " 是否已批量调度=" + (_batch_scheduled_this_tick ? "true" : "false"));
 
-        // BTIE：返回本tick批量中的第n个任务
-        if (_batch_scheduled_this_tick && n < _current_batch_tasks.size()) {
-            AbsRTTask *task = _current_batch_tasks[n];
-            SCHEDULER_LOG_INFO(std::string("✅ [BTIE] getTaskN: 返回批量任务 #") +
+        // ⭐ 关键修复：每次dispatch都从就绪队列动态选择任务
+        // 而不是使用固定的批量，避免任务饥饿
+        if (_batch_scheduled_this_tick && n < static_cast<unsigned int>(_ready_queue.size())) {
+            AbsRTTask *task = _ready_queue[n];
+            SCHEDULER_LOG_INFO(std::string("✅ [BTIE] getTaskN: 返回就绪队列任务 #") +
                               std::to_string(n) + ": " + getTaskName(task));
             return task;
         }
 
-        SCHEDULER_LOG_DEBUG("📭 [BTIE] getTaskN: 无可调度任务");
+        SCHEDULER_LOG_INFO("📭 [BTIE] getTaskN: 无可调度任务，返回nullptr");
         return nullptr;
     }
 
@@ -514,6 +520,10 @@ namespace RTSim {
             size_t comma_pos = params.find(",", workload_pos);
             workload = params.substr(workload_pos + 9,
                 comma_pos != std::string::npos ? comma_pos - workload_pos - 9 : std::string::npos);
+            // 移除可能的尾部引号
+            if (!workload.empty() && workload.back() == '"') {
+                workload.pop_back();
+            }
         }
 
         // 创建任务模型
@@ -661,6 +671,12 @@ namespace RTSim {
 
         Scheduler::insert(task);
         addToReadyQueue(task);
+
+        // ⭐ 修复0时刻调度延迟：如果是第一个任务且在0时刻，立即触发批量调度
+        if (_ready_queue.size() == 1 && SIMUL.getTime() == Tick(0)) {
+            SCHEDULER_LOG_INFO("⚡ [BTIE] 第一个任务在0ms到达，立即触发批量调度");
+            performTickScheduling();
+        }
     }
 
     void BTIEScheduler::extract(AbsRTTask *task) {
@@ -1088,6 +1104,13 @@ namespace RTSim {
         _stats.total_task_completions++;
 
         SCHEDULER_LOG_INFO(std::string("📊 [BTIE] 当前能量: ") + std::to_string(_current_energy) + "J");
+
+        // ⭐ 关键修复：任务结束时触发立即调度
+        // 检查是否有空闲CPU和等待的任务
+        if (!_ready_queue.empty() && _kernel) {
+            SCHEDULER_LOG_INFO("🔄 [BTIE] 任务结束，触发立即调度");
+            _kernel->dispatch();
+        }
     }
 
     bool BTIEScheduler::isAdmissible(CPU *c, std::vector<AbsRTTask *> tasks,

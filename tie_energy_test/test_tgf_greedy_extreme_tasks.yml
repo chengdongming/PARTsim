@@ -1,0 +1,45 @@
+taskset:
+  # Task1: 最高优先级，超高能耗 (0.025J)
+  - name: task1_very_high_cost
+    iat: 200
+    runtime: 50
+    deadline: 200
+    params: "period=200,wcet=50,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(50, bzip2)
+
+  # Task2: 次高优先级，超高能耗 (0.025J)
+  - name: task2_very_high_cost
+    iat: 200
+    runtime: 50
+    deadline: 200
+    params: "period=200,wcet=50,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(50, bzip2)
+
+  # Task3: 中优先级，低能耗 (0.0025J) - 可调度！
+  - name: task3_medium_priority
+    iat: 300
+    runtime: 5
+    deadline: 300
+    params: "period=300,wcet=5,arrival_offset=0,workload=hash"
+    code:
+      - fixed(5, hash)
+
+  # Task4: 低优先级，极低能耗 (0.0025J) - 可调度！
+  - name: task4_low_priority
+    iat: 400
+    runtime: 5
+    deadline: 400
+    params: "period=400,wcet=5,arrival_offset=0,workload=control"
+    code:
+      - fixed(5, control)
+
+  # Task5: 最低优先级，超低能耗 (0.001J) - 可调度！
+  - name: task5_very_low_priority
+    iat: 400
+    runtime: 2
+    deadline: 400
+    params: "period=400,wcet=2,arrival_offset=0,workload=control"
+    code:
+      - fixed(2, control)
