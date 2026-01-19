@@ -1,0 +1,65 @@
+# =============================================
+# 测试任务集 - 2核心5任务，不同到达时间
+# =============================================
+# 设计目的：对比TIE/TGF/BTIE在能量约束下的调度行为
+# - 2个CPU核心
+# - 5个任务，分批到达（0ms, 10ms, 20ms, 30ms, 40ms）
+# - 初始能量0J
+# - 模拟时长100ms
+# =============================================
+
+taskset:
+  # ===========================================
+  # 任务1: t=0ms到达，周期50ms，WCET 20ms
+  # ===========================================
+  - name: task_early_1
+    iat: 50
+    runtime: 20
+    deadline: 50
+    params: "period=50,wcet=20,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(20, bzip2)
+
+  # ===========================================
+  # 任务2: t=10ms到达，周期60ms，WCET 15ms
+  # ===========================================
+  - name: task_early_2
+    iat: 60
+    runtime: 15
+    deadline: 60
+    params: "period=60,wcet=15,arrival_offset=10,workload=bzip2"
+    code:
+      - fixed(15, bzip2)
+
+  # ===========================================
+  # 任务3: t=20ms到达，周期70ms，WCET 18ms
+  # ===========================================
+  - name: task_mid_1
+    iat: 70
+    runtime: 18
+    deadline: 70
+    params: "period=70,wcet=18,arrival_offset=20,workload=bzip2"
+    code:
+      - fixed(18, bzip2)
+
+  # ===========================================
+  # 任务4: t=30ms到达，周期80ms，WCET 12ms
+  # ===========================================
+  - name: task_mid_2
+    iat: 80
+    runtime: 12
+    deadline: 80
+    params: "period=80,wcet=12,arrival_offset=30,workload=bzip2"
+    code:
+      - fixed(12, bzip2)
+
+  # ===========================================
+  # 任务5: t=40ms到达，周期90ms，WCET 25ms
+  # ===========================================
+  - name: task_late_1
+    iat: 90
+    runtime: 25
+    deadline: 90
+    params: "period=90,wcet=25,arrival_offset=40,workload=bzip2"
+    code:
+      - fixed(25, bzip2)

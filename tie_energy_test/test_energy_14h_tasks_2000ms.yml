@@ -1,8 +1,0 @@
-taskset:
-  - name: idle_task
-    iat: 100000
-    runtime: 1
-    deadline: 100000
-    params: "period=100000,wcet=1,arrival_offset=0,workload=idle"
-    code:
-      - fixed(1, idle)

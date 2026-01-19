@@ -294,25 +294,13 @@ namespace RTSim {
 
 
     void BTIEScheduler::executeBatchScheduling(const std::vector<AbsRTTask *> &tasks, double total_energy) {
-        // 一次性扣减全部k个任务的能耗
-        double old_energy = _current_energy;
-        _current_energy -= total_energy;
-        _stats.total_energy_consumed += total_energy;
-
-        // 为每个任务累计能耗
-        for (AbsRTTask *task : tasks) {
-            auto it = _energy_accounts.find(task);
-            if (it != _energy_accounts.end()) {
-                double unit_energy = calculateUnitEnergyForTask(task);
-                it->second.total_consumed += unit_energy;
-            }
-        }
-
-        SCHEDULER_LOG_DEBUG(std::string("⚡ [BTIE] 批量扣减: ") +
+        // ⭐ 修复：批量调度不再扣减能量
+        // 能量应该在任务被调度时（notify方法）扣减，而不是在批量调度决策时扣减
+        // 这里只记录批量调度的任务列表
+        SCHEDULER_LOG_DEBUG(std::string("📋 [BTIE] 批量调度决策: ") +
                            "任务数=" + std::to_string(tasks.size()) +
-                           " 总计=" + std::to_string(total_energy) + "J" +
-                           " " + std::to_string(old_energy) + "J → " +
-                           std::to_string(_current_energy) + "J");
+                           " 总能量=" + std::to_string(total_energy) + "J" +
+                           " （能量将在notify时扣减）");
     }
 
     // =====================================================
@@ -372,8 +360,8 @@ namespace RTSim {
         for (int i = 0; i < batch_size && i < static_cast<int>(_ready_queue.size()); ++i) {
             AbsRTTask *task = _ready_queue[i];
             if (task) {
-                double unit_energy = calculateUnitEnergyForTask(task);
-                total_batch_energy += unit_energy;
+                double total_energy = calculateTotalEnergyForTask(task);  // ⭐ 修复：使用任务总能耗
+                total_batch_energy += total_energy;
                 batch_tasks.push_back(task);
             }
         }
@@ -465,10 +453,36 @@ namespace RTSim {
             return;
         }
 
-        // BTIE：能量已在批量调度时一次性扣减，这里不再扣减
+        // ⭐ 修复：在任务被调度时扣减每ms能耗
+        // 计算每ms能耗
+        double unit_energy = calculateUnitEnergyForTask(task);
+
+        // 检查能量是否充足
+        const double EPSILON = 1e-9;
+        if (_current_energy < unit_energy - EPSILON) {
+            SCHEDULER_LOG_WARNING(std::string("⚠️ [BTIE] notify: 能量不足") +
+                                 " 任务=" + getTaskName(task) +
+                                 " 需要=" + std::to_string(unit_energy) + "J" +
+                                 " 当前=" + std::to_string(_current_energy) + "J");
+            return;
+        }
+
+        // 扣减1ms能耗
+        double old_energy = _current_energy;
+        _current_energy -= unit_energy;
+        _stats.total_energy_consumed += unit_energy;
+
+        // 累计到任务能量账户
+        auto it = _energy_accounts.find(task);
+        if (it != _energy_accounts.end()) {
+            it->second.total_consumed += unit_energy;
+        }
+
         SCHEDULER_LOG_DEBUG(std::string("⚡ [BTIE] notify: ") +
                            "任务=" + getTaskName(task) +
-                           " （能量已在批量时扣减，此处跳过）");
+                           " 扣减=" + std::to_string(unit_energy) + "J" +
+                           " " + std::to_string(old_energy) + "J → " +
+                           std::to_string(_current_energy) + "J");
     }
 
     // =====================================================

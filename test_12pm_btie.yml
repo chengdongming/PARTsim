@@ -1,50 +1,51 @@
-# =============================================
-# TIE调度器能量测试 - 12点（中午）
-# =============================================
-# 测试目标：初始能量为0，在强太阳能情况下的调度行为
-# =============================================
-
+# CPU集群配置 - 2核心测试，12点时刻
 cpu_islands:
   - name: energy_aware_cpus
-    numcpus: 3  # 修改为3核心
+    numcpus: 2                           # 2个CPU核心
 
     kernel:
-      scheduler: gpfp_tie                # 使用TIE调度器
+      scheduler: gpfp_btie                # 默认调度器，会被命令行参数覆盖
       task_placement: global
 
+    # 电压频率配置
     volts: [0.92, 0.94, 0.96, 0.98, 1.00, 1.02, 1.04, 1.06, 1.08, 1.10, 1.12, 1.14]
     freqs: [7000, 7500, 8000, 8100, 8200, 8300, 8400, 8500, 9000, 9500, 10000, 10500]
     base_freq: 8100
+
+    # 功率和速度模型
     power_model: energy_aware_model
     speed_model: energy_aware_model
 
 # =============================================
-# 能量管理配置
+# 能量管理配置 - 12点时刻，初始能量为0
 # =============================================
 energy_management:
-  initial_energy: 0.05                  # ⭐ 初始能量为50mJ
-  max_energy: 1000.0
+  # 基本能量参数
+  initial_energy: 0.0                   # 初始能量为0 J
+  max_energy: 1000.0                    # 最大能量容量 (J)
 
-  # ⭐ 12点时间配置（中午太阳能最强）
   day_of_year: 187
-  time_of_day_ms: 43200000             # 12点 = 12×3600×1000 = 43,200,000ms
+  time_of_day_ms: 43200000              # ⭐ 12点时刻 (12 * 3600 * 1000 = 43200000ms)
 
-  # 太阳能配置
-  use_real_solar_data: true
+  # === NASA真实太阳能数据配置 ===
+  use_real_solar_data: true             # 启用NASA真实太阳能数据
   solar_data_file: "data/processed/shenyang_solar_minute.csv"
-  pv_efficiency: 0.18
-  pv_area_m2: 1.0
+  pv_efficiency: 0.18                   # 光伏转换效率 (18%)
+  pv_area_m2: 1.0                       # 光伏板面积 (平方米)
 
-  unit_time: 1                         # TIE使用1ms单位时间
+  # 调度器单位时间
+  unit_time: 50
   periodic_collection_interval_ms: 1
 
+  # 能量恢复配置
   enable_energy_recovery: true
   max_recovery_wait_time_ms: 10000
 
-  # 调度器能量消耗模型
+  # === 调度器能量消耗模型配置 ===
   scheduler_energy_model:
-    base_power: 0.5
+    base_power: 0.5                    # 基础功耗 (W)
 
+    # 工作负载功率系数
     workload_coefficients:
       bzip2: 1.2
       hash: 0.8
@@ -53,6 +54,7 @@ energy_management:
       control: 0.1
       idle: 0.1
 
+    # 频率-功率比例系数
     frequency_power_ratios:
       7000: 0.85
       7500: 0.88
@@ -67,37 +69,45 @@ energy_management:
       10000: 1.1
       10500: 1.15
 
+# =============================================
 # 功率模型配置
+# =============================================
 power_models:
   - name: energy_aware_model
     type: balsini_pannocchi
 
     params:
+      # 空闲工作负载
       - workload: idle
         power_params: [0.00134845, 1.76307e-5, 124.535, 1.00399e-10]
         speed_params: [1, 0, 0, 0]
         energy_coefficient: 0.1
 
+      # 压缩工作负载
       - workload: bzip2
         power_params: [0.00775587, 33.376, 1.54585, 9.53439e-10]
         speed_params: [0.0256054, 2.9809e+6, 0.602631, 8.13712e+9]
         energy_coefficient: 1.2
 
+      # 哈希工作负载
       - workload: hash
         power_params: [0.00624673, 176.315, 1.72836, 1.77362e-10]
         speed_params: [0.00645628, 3.37134e+6, 7.83177, 93459]
         energy_coefficient: 0.8
 
+      # 加密工作负载
       - workload: encrypt
         power_params: [0.00676544, 26.2243, 5.6071, 5.34216e-10]
         speed_params: [6.11496e-78, 3.32246e+6, 6.5652, 115759]
         energy_coefficient: 1.5
 
+      # 解密工作负载
       - workload: decrypt
         power_params: [0.00629664, 87.1519, 2.93286, 2.80871e-10]
         speed_params: [5.0154e-68, 3.31791e+6, 7.154, 112163]
         energy_coefficient: 1.5
 
+      # 控制工作负载
       - workload: control
         power_params: [0.001, 1.0, 1.0, 1.0e-10]
         speed_params: [1, 0, 0, 0]
