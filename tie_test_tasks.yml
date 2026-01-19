@@ -1,0 +1,54 @@
+# =============================================
+# TIE调度器测试 - 任务集配置
+# =============================================
+# 包含4个不同优先级的周期性任务
+# =============================================
+
+taskset:
+  # ===========================================
+  # 任务1: 高优先级 (周期最短)
+  # 周期500ms, WCET 250ms, 能耗约0.125J
+  # ===========================================
+  - name: task_high
+    iat: 500                    # 任务到达间隔 / 周期 (ms)
+    runtime: 250                # WCET: 最坏执行时间 (ms)
+    deadline: 500               # 绝对截止时间 (ms)
+    params: "period=500,wcet=250,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(250, bzip2)       # 固定执行250ms，bzip2工作负载
+
+  # ===========================================
+  # 任务2: 中优先级
+  # 周期1000ms, WCET 400ms, 能耗约0.2J
+  # ===========================================
+  - name: task_mid
+    iat: 1000
+    runtime: 400
+    deadline: 1000
+    params: "period=1000,wcet=400,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(400, bzip2)
+
+  # ===========================================
+  # 任务3: 低优先级
+  # 周期2000ms, WCET 600ms, 能耗约0.3J
+  # ===========================================
+  - name: task_low
+    iat: 2000
+    runtime: 600
+    deadline: 2000
+    params: "period=2000,wcet=600,arrival_offset=0,workload=hash"
+    code:
+      - fixed(600, hash)
+
+  # ===========================================
+  # 任务4: 后台任务 (最低优先级)
+  # 周期3000ms, WCET 800ms, 能耗约0.4J
+  # ===========================================
+  - name: task_background
+    iat: 3000
+    runtime: 800
+    deadline: 3000
+    params: "period=3000,wcet=800,arrival_offset=0,workload=idle"
+    code:
+      - fixed(800, idle)

@@ -1,0 +1,54 @@
+{
+  "events": [
+    {
+      "time": "0",
+      "event_type": "arrival",
+      "task_name": "task_high",
+      "arrival_time": "0"
+    },
+    {
+      "time": "0",
+      "event_type": "arrival",
+      "task_name": "task_mid",
+      "arrival_time": "0"
+    },
+    {
+      "time": "0",
+      "event_type": "arrival",
+      "task_name": "task_low",
+      "arrival_time": "0"
+    },
+    {
+      "time": "0",
+      "event_type": "arrival",
+      "task_name": "task_background",
+      "arrival_time": "0"
+    },
+    {
+      "time": "500",
+      "event_type": "arrival",
+      "task_name": "task_high",
+      "arrival_time": "0"
+    },
+    {
+      "time": "500",
+      "event_type": "dline_miss",
+      "task_name": "task_high",
+      "arrival_time": "0"
+    }
+  ],
+  "metadata": {
+    "start_time_offset": 0,
+    "total_events": 6,
+    "scheduler_type": "gpfp_tie",
+    "processing_method": "simple_processor",
+    "processing_timestamp": "2026-01-19T08:24:22.898619",
+    "statistics": {
+      "min_time": 0,
+      "max_time": 500,
+      "duration_ms": 500,
+      "duration_s": 0.5
+    },
+    "description": "处理完成的跟踪文件，应用时间偏移 0 ms"
+  }
+}
