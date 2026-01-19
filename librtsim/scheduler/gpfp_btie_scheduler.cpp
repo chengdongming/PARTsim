@@ -1,8 +1,8 @@
-// gpfp_tie_scheduler.cpp - TIE (Tick-based Instant Energy-aware) Scheduler Implementation
+// gpfp_btie_scheduler.cpp - BTIE (Batch Tick-based Instant Energy-aware) Scheduler Implementation
 // 算法特点：
-// 1. 基于当前实际能量进行即时判断（无前瞻性预测）
-// 2. 每ms逐次扣减能耗
-// 3. 级联调度：能量不足立即停止
+// 1. 基于当前实际能量进行批量调度判断（无前瞻性预测）
+// 2. 批量扣减能耗（一次性扣减k个任务的1ms能耗）
+// 3. "全有或全无"批量调度：能量不足则不调度任何任务
 // 4. Tick级抢占
 // 5. Tick末尾收集能量
 
@@ -13,7 +13,7 @@
 #include <memory>
 #include <metasim/factory.hpp>
 #include <metasim/simul.hpp>
-#include <rtsim/scheduler/gpfp_tie_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_btie_scheduler.hpp>
 #include <rtsim/task.hpp>
 #include <rtsim/rttask.hpp>
 #include <rtsim/exeinstr.hpp>
@@ -29,16 +29,16 @@ namespace RTSim {
     using namespace MetaSim;
 
     // =====================================================
-    // TIETickEvent 实现
+    // BTIETickEvent 实现
     // =====================================================
 
-    TIETickEvent::TIETickEvent(TIEScheduler *scheduler)
-        : MetaSim::Event("TIETickEvent", MetaSim::Event::_DEFAULT_PRIORITY - 10),
+    BTIETickEvent::BTIETickEvent(BTIEScheduler *scheduler)
+        : MetaSim::Event("BTIETickEvent", MetaSim::Event::_DEFAULT_PRIORITY - 10),
           _scheduler(scheduler) {
         // 高优先级事件，确保tick调度及时执行
     }
 
-    void TIETickEvent::doit() {
+    void BTIETickEvent::doit() {
         if (!_scheduler) {
             return;
         }
@@ -46,7 +46,7 @@ namespace RTSim {
         Tick current_time = SIMUL.getTime();
         int64_t current_ms = static_cast<int64_t>(current_time);
 
-        SCHEDULER_LOG_INFO(std::string("⏱️ [TIE] ===== Tick事件触发 @ ") +
+        SCHEDULER_LOG_INFO(std::string("⏱️ [BTIE] ===== Tick事件触发 @ ") +
                            std::to_string(current_ms) + "ms =====");
 
         // 执行tick调度
@@ -57,10 +57,10 @@ namespace RTSim {
     }
 
     // =====================================================
-    // TIETaskModel 实现
+    // BTIETaskModel 实现
     // =====================================================
 
-    TIETaskModel::TIETaskModel(AbsRTTask *t, int period, int wcet,
+    BTIETaskModel::BTIETaskModel(AbsRTTask *t, int period, int wcet,
                                const std::string &workload_type,
                                double energy_coefficient,
                                MetaSim::Tick arrival_offset)
@@ -77,26 +77,26 @@ namespace RTSim {
         // 能量计算稍后在调度器初始化时完成
     }
 
-    TIETaskModel::~TIETaskModel() {}
+    BTIETaskModel::~BTIETaskModel() {}
 
-    Tick TIETaskModel::getPriority() const {
+    Tick BTIETaskModel::getPriority() const {
         return _rm_priority;
     }
 
-    void TIETaskModel::changePriority(Tick p) {
+    void BTIETaskModel::changePriority(Tick p) {
         _rm_priority = p;
     }
 
-    void TIETaskModel::setPeriod(int period) {
+    void BTIETaskModel::setPeriod(int period) {
         _period = period;
         _rm_priority = period;  // RM优先级等于周期
     }
 
     // =====================================================
-    // TIEScheduler 实现
+    // BTIEScheduler 实现
     // =====================================================
 
-    TIEScheduler::TIEScheduler()
+    BTIEScheduler::BTIEScheduler()
         : Scheduler(),
           _current_energy(0.0),
           _initial_energy(0.0),
@@ -109,32 +109,34 @@ namespace RTSim {
           _use_real_solar_data(false),
           _start_time_offset(0),
           _tick_event(nullptr),
-          _kernel(nullptr) {
+          _kernel(nullptr),
+          _batch_scheduled_this_tick(false),
+          _current_batch_size(0) {
 
-        SCHEDULER_LOG_INFO("🚀 [TIE] TIE Scheduler 初始化");
+        SCHEDULER_LOG_INFO("🚀 [BTIE] TIE Scheduler 初始化");
 
         // 从ConfigManager获取配置
         ConfigManager &configMgr = ConfigManager::getInstance();
         std::string config_file = configMgr.getConfigFilePath();
 
         _max_energy = configMgr.getMaxEnergy();
-        SCHEDULER_LOG_INFO(std::string("⚡ [TIE] 最大能量: ") + std::to_string(_max_energy) + "J");
+        SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] 最大能量: ") + std::to_string(_max_energy) + "J");
 
         if (config_file.empty()) {
             const char *config_file_env = std::getenv("ENERGY_CONFIG_FILE");
             config_file = config_file_env ? config_file_env : "gpfp_system.yml";
         }
 
-        SCHEDULER_LOG_INFO(std::string("📁 [TIE] 配置文件: ") + config_file);
+        SCHEDULER_LOG_INFO(std::string("📁 [BTIE] 配置文件: ") + config_file);
         setenv("ENERGY_CONFIG_FILE", config_file.c_str(), 1);
 
         // 初始化EnergyBridge
         bool bridge_initialized = EnergyBridge::getInstance().initialize(config_file);
         if (bridge_initialized) {
-            SCHEDULER_LOG_INFO("✅ [TIE] EnergyBridge 初始化成功");
+            SCHEDULER_LOG_INFO("✅ [BTIE] EnergyBridge 初始化成功");
 
             _start_time_offset = configMgr.getStartTimeOffset();
-            SCHEDULER_LOG_INFO(std::string("⏰ [TIE] 开始时间偏移: ") +
+            SCHEDULER_LOG_INFO(std::string("⏰ [BTIE] 开始时间偏移: ") +
                               std::to_string(static_cast<int64_t>(_start_time_offset)) + "ms");
 
             // 读取太阳能配置
@@ -210,14 +212,14 @@ namespace RTSim {
                         }
                     }
 
-                    SCHEDULER_LOG_INFO(std::string("☀️ [TIE] 太阳能配置: ") +
+                    SCHEDULER_LOG_INFO(std::string("☀️ [BTIE] 太阳能配置: ") +
                                       "use_real=" + (_use_real_solar_data ? "true" : "false") +
                                       " file=" + _solar_data_file +
                                       " eff=" + std::to_string(_pv_efficiency) +
                                       " area=" + std::to_string(_pv_area_m2) + "m²");
                 }
             } catch (const std::exception &e) {
-                SCHEDULER_LOG_WARNING(std::string("⚠️ [TIE] 解析太阳能配置失败: ") + e.what());
+                SCHEDULER_LOG_WARNING(std::string("⚠️ [BTIE] 解析太阳能配置失败: ") + e.what());
             }
 
             // 读取初始能量
@@ -225,40 +227,40 @@ namespace RTSim {
             if (bridge_energy > 0) {
                 _initial_energy = bridge_energy;
                 _current_energy = _initial_energy;
-                SCHEDULER_LOG_INFO(std::string("💰 [TIE] 初始能量: ") + std::to_string(_initial_energy) + "J");
+                SCHEDULER_LOG_INFO(std::string("💰 [BTIE] 初始能量: ") + std::to_string(_initial_energy) + "J");
             }
         } else {
-            SCHEDULER_LOG_WARNING("⚠️ [TIE] EnergyBridge 初始化失败，使用ConfigManager获取能量");
+            SCHEDULER_LOG_WARNING("⚠️ [BTIE] EnergyBridge 初始化失败，使用ConfigManager获取能量");
 
             _start_time_offset = configMgr.getStartTimeOffset();
             double config_energy = configMgr.getInitialEnergy();
             if (config_energy > 0) {
                 _initial_energy = config_energy;
                 _current_energy = _initial_energy;
-                SCHEDULER_LOG_INFO(std::string("💰 [TIE] 从ConfigManager获取初始能量: ") +
+                SCHEDULER_LOG_INFO(std::string("💰 [BTIE] 从ConfigManager获取初始能量: ") +
                                   std::to_string(_initial_energy) + "J");
             } else {
-                SCHEDULER_LOG_ERROR("❌ [TIE] 无法获取初始能量，调度器将无法工作！");
+                SCHEDULER_LOG_ERROR("❌ [BTIE] 无法获取初始能量，调度器将无法工作！");
             }
         }
 
         // 创建Tick事件
-        _tick_event = new TIETickEvent(this);
+        _tick_event = new BTIETickEvent(this);
 
-        SCHEDULER_LOG_INFO("✅ [TIE] TIE Scheduler 初始化完成");
+        SCHEDULER_LOG_INFO("✅ [BTIE] TIE Scheduler 初始化完成");
     }
 
-    TIEScheduler::TIEScheduler(const std::vector<std::string> &params)
-        : TIEScheduler() {
+    BTIEScheduler::BTIEScheduler(const std::vector<std::string> &params)
+        : BTIEScheduler() {
         // 委托给默认构造函数
     }
 
-    std::unique_ptr<TIEScheduler>
-        TIEScheduler::createInstance(const std::vector<std::string> &params) {
-        return std::make_unique<TIEScheduler>(params);
+    std::unique_ptr<BTIEScheduler>
+        BTIEScheduler::createInstance(const std::vector<std::string> &params) {
+        return std::make_unique<BTIEScheduler>(params);
     }
 
-    TIEScheduler::~TIEScheduler() {
+    BTIEScheduler::~BTIEScheduler() {
         if (_tick_event) {
             delete _tick_event;
             _tick_event = nullptr;
@@ -272,21 +274,59 @@ namespace RTSim {
     }
 
     // =====================================================
-    // 核心调度逻辑 - TIE算法的核心
+    // BTIE批量调度辅助方法
     // =====================================================
 
-    void TIEScheduler::performTickScheduling() {
-        SCHEDULER_LOG_DEBUG(std::string("🔄 [TIE] performTickScheduling @ ") +
+    int BTIEScheduler::calculateBatchSize() {
+        // k = min(空闲CPU数, 就绪队列任务数)
+        int free_cpus = getFreeCPUCount();
+        int ready_tasks = static_cast<int>(_ready_queue.size());
+        int batch_size = std::min(free_cpus, ready_tasks);
+
+        SCHEDULER_LOG_DEBUG(std::string("📊 [BTIE] calculateBatchSize: ") +
+                           "空��CPU=" + std::to_string(free_cpus) +
+                           " 就绪任务=" + std::to_string(ready_tasks) +
+                           " 批量k=" + std::to_string(batch_size));
+
+        return batch_size;
+    }
+
+    void BTIEScheduler::executeBatchScheduling(const std::vector<AbsRTTask *> &tasks, double total_energy) {
+        // 一次性扣减全部k个任务的能耗
+        double old_energy = _current_energy;
+        _current_energy -= total_energy;
+        _stats.total_energy_consumed += total_energy;
+
+        // 为每个任务累计能耗
+        for (AbsRTTask *task : tasks) {
+            auto it = _energy_accounts.find(task);
+            if (it != _energy_accounts.end()) {
+                double unit_energy = calculateUnitEnergyForTask(task);
+                it->second.total_consumed += unit_energy;
+            }
+        }
+
+        SCHEDULER_LOG_DEBUG(std::string("⚡ [BTIE] 批量扣减: ") +
+                           "任务数=" + std::to_string(tasks.size()) +
+                           " 总计=" + std::to_string(total_energy) + "J" +
+                           " " + std::to_string(old_energy) + "J → " +
+                           std::to_string(_current_energy) + "J");
+    }
+
+    // =====================================================
+    // 核心调度逻辑 - BTIE批量调度算法
+    // =====================================================
+
+    void BTIEScheduler::performTickScheduling() {
+        SCHEDULER_LOG_DEBUG(std::string("🔄 [BTIE] performTickScheduling @ ") +
                            std::to_string(static_cast<int64_t>(SIMUL.getTime())) + "ms" +
                            " 能量=" + std::to_string(_current_energy) + "J");
 
         _stats.total_tick_count++;
 
-            // ⭐ 核心：先收集能量，再调度
-        // 1. 收集太阳能（从上次tick到现在）
+        // ⭐ BTIE核心：在tick边界（即上一tick结束、本tick开始）收集能量
+        // 收集太阳能（从上次tick到现在）
         Tick current_time = SIMUL.getTime();
-
-        // 计算从上次tick到现在的时间
         Tick elapsed = current_time - _last_tick_time;
 
         if (elapsed > 0) {
@@ -294,7 +334,7 @@ namespace RTSim {
             if (harvested > 0.000001) {
                 _current_energy += harvested;
                 _stats.total_energy_harvested += harvested;
-                SCHEDULER_LOG_INFO(std::string("☀️ [TIE] Tick边界收集能量: ") +
+                SCHEDULER_LOG_INFO(std::string("☀️ [BTIE] Tick边界收集能量: ") +
                                    std::to_string(harvested) + "J" +
                                    " 当前能量: " + std::to_string(_current_energy) + "J" +
                                    " 经过时间: " + std::to_string(static_cast<int64_t>(elapsed)) + "ms");
@@ -308,178 +348,134 @@ namespace RTSim {
             _current_energy = _max_energy;
         }
 
-        // 2. Tick边界：检查抢占（高优先级任务到达时）
+        // ⭐ BTIE批量调度决策：使用当前能量（已包含收集的能量）
+        // 计算批量大小k
+        int batch_size = calculateBatchSize();
+        _current_batch_size = batch_size;
+
+        if (batch_size <= 0 || _ready_queue.empty()) {
+            SCHEDULER_LOG_DEBUG("📭 [BTIE] 无任务可调度");
+            _batch_scheduled_this_tick = false;
+            _current_batch_tasks.clear();
+            checkAndPreempt();
+            return;
+        }
+
+        // 计算前k个任务的总能耗
+        double total_batch_energy = 0.0;
+        std::vector<AbsRTTask *> batch_tasks;
+        for (int i = 0; i < batch_size && i < static_cast<int>(_ready_queue.size()); ++i) {
+            AbsRTTask *task = _ready_queue[i];
+            if (task) {
+                double unit_energy = calculateUnitEnergyForTask(task);
+                total_batch_energy += unit_energy;
+                batch_tasks.push_back(task);
+            }
+        }
+
+        SCHEDULER_LOG_DEBUG(std::string("🔢 [BTIE] 批量决策: k=") + std::to_string(batch_size) +
+                           " 总能耗=" + std::to_string(total_batch_energy) + "J" +
+                           " 当前能量=" + std::to_string(_current_energy) + "J");
+
+        // ⭐ BTIE核心：一次性判断能量是否充足
+        if (_current_energy >= total_batch_energy) {
+            // 能量充足：一次性扣减全部k个任务的能耗
+            executeBatchScheduling(batch_tasks, total_batch_energy);
+            _batch_scheduled_this_tick = true;
+            _current_batch_tasks = batch_tasks;
+            _stats.total_batch_schedules++;
+            SCHEDULER_LOG_INFO(std::string("✅ [BTIE] 批量调度成功: k=") + std::to_string(batch_size) +
+                              " 扣减=" + std::to_string(total_batch_energy) + "J" +
+                              " 剩余=" + std::to_string(_current_energy) + "J");
+        } else {
+            // 能量不足：不调度任何任务
+            _batch_scheduled_this_tick = false;
+            _current_batch_tasks.clear();
+            _stats.total_batch_skipped++;
+            SCHEDULER_LOG_INFO(std::string("❌ [BTIE] 能量不足，跳过批量调度") +
+                              " 需要=" + std::to_string(total_batch_energy) + "J" +
+                              " 当前=" + std::to_string(_current_energy) + "J");
+        }
+
+        // Tick边界：检查抢占（高优先级任务到达时）
         checkAndPreempt();
 
-        // 3. 如果有kernel，触发dispatch进行调度
+        // 如果有kernel，触发dispatch进行调度
         if (!_kernel) {
-            SCHEDULER_LOG_DEBUG("⚠️ [TIE] performTickScheduling: _kernel为nullptr，尝试获取");
+            SCHEDULER_LOG_DEBUG("⚠️ [BTIE] performTickScheduling: _kernel为nullptr，尝试获取");
             _kernel = getKernel();
         }
 
         if (_kernel) {
-            SCHEDULER_LOG_DEBUG("🔔 [TIE] performTickScheduling: 触发dispatch");
+            SCHEDULER_LOG_DEBUG("🔔 [BTIE] performTickScheduling: 触发dispatch");
             _kernel->dispatch();
         } else {
-            SCHEDULER_LOG_DEBUG("⚠️ [TIE] performTickScheduling: _kernel仍为nullptr，跳过dispatch");
+            SCHEDULER_LOG_DEBUG("⚠️ [BTIE] performTickScheduling: _kernel仍为nullptr，跳过dispatch");
         }
     }
 
-    void TIEScheduler::schedule() {
-        // TIE依赖MRTKernel::dispatch() -> getTaskN()流程
-        SCHEDULER_LOG_DEBUG("🔔 [TIE] schedule() 被调用");
+    void BTIEScheduler::schedule() {
+        // BTIE依赖MRTKernel::dispatch() -> getTaskN()流程
+        SCHEDULER_LOG_DEBUG("🔔 [BTIE] schedule() 被调用");
     }
 
     // =====================================================
-    // getFirst - 获取第一个要调度的任务
+    // getFirst - BTIE废弃，返回nullptr
     // =====================================================
 
-    AbsRTTask *TIEScheduler::getFirst() {
-        SCHEDULER_LOG_DEBUG(std::string("🔍 [TIE] getFirst() 被调用") +
-                           " 当前能量: " + std::to_string(_current_energy) + "J");
-
-        // ⭐ 核心：不在这里收集能量，能量收集在tick边界完成
-
-        if (_ready_queue.empty()) {
-            SCHEDULER_LOG_DEBUG("📭 [TIE] getFirst: 就绪队列为空");
-            return nullptr;
-        }
-
-        AbsRTTask *first_task = _ready_queue.front();
-        if (!first_task) {
-            SCHEDULER_LOG_DEBUG("📭 [TIE] getFirst: 队列首任务为空");
-            return nullptr;
-        }
-
-        // ⭐ 核心：即时能量判断（当前能量 >= 1ms能耗）
-        double unit_energy = calculateUnitEnergyForTask(first_task);
-
-        if (_current_energy < unit_energy) {
-            SCHEDULER_LOG_INFO(std::string("❌ [TIE] getFirst: 能量不足") +
-                              " 任务: " + getTaskName(first_task) +
-                              " 需要: " + std::to_string(unit_energy) + "J" +
-                              " 当前: " + std::to_string(_current_energy) + "J");
-            return nullptr;
-        }
-
-        // 返回任务（能量在notify时扣减）
-        return first_task;
-    }
-
-    // =====================================================
-    // getTaskN - 获取第n个要调度的任务（级联调度）
-    // =====================================================
-
-    AbsRTTask *TIEScheduler::getTaskN(unsigned int n) {
-        SCHEDULER_LOG_DEBUG(std::string("🔍 [TIE] getTaskN(") + std::to_string(n) + ") 被调用" +
-                           " 当前能量: " + std::to_string(_current_energy) + "J");
-
-        if (_ready_queue.empty()) {
-            SCHEDULER_LOG_DEBUG("📭 [TIE] getTaskN: 就绪队列为空");
-            return nullptr;
-        }
-
-        // ⭐ 级联调度：遍历就绪队列，跳过正在执行的任务
-        unsigned int ready_index = 0;
-        for (size_t i = 0; i < _ready_queue.size(); ++i) {
-            AbsRTTask *task = _ready_queue[i];
-
-            if (!task) {
-                continue;
-            }
-
-            // 检查任务是否已经在运行
-            bool is_running = false;
-            for (const auto &pair : _running_tasks) {
-                if (pair.second == task) {
-                    is_running = true;
-                    break;
-                }
-            }
-
-            if (is_running) {
-                SCHEDULER_LOG_DEBUG(std::string("⏭️ [TIE] getTaskN: 跳过正在执行的任务 #") +
-                                  std::to_string(i) + ": " + getTaskName(task));
-                continue;
-            }
-
-            // 这是第ready_index个未dispatch的任务
-            if (ready_index == n) {
-                // ⭐ 核心：即时能量判断（当前能量 >= 1ms能耗）
-                double unit_energy = calculateUnitEnergyForTask(task);
-
-                if (_current_energy < unit_energy) {
-                    SCHEDULER_LOG_INFO(std::string("❌ [TIE] getTaskN: 能量不足，停止级联调度") +
-                                      " 任务: " + getTaskName(task) +
-                                      " 需要: " + std::to_string(unit_energy) + "J" +
-                                      " 当前: " + std::to_string(_current_energy) + "J");
-                    // ⭐ 级联调度停止条件：遇到能量不足立即停止
-                    return nullptr;
-                }
-
-                SCHEDULER_LOG_INFO(std::string("✅ [TIE] getTaskN: 返回任务 #") +
-                                  std::to_string(n) + ": " + getTaskName(task));
-                return task;
-            }
-
-            ready_index++;
-        }
-
-        SCHEDULER_LOG_DEBUG("📭 [TIE] getTaskN: 未找到第" + std::to_string(n) + "个未dispatch的任务");
+    AbsRTTask *BTIEScheduler::getFirst() {
+        SCHEDULER_LOG_DEBUG(std::string("🔍 [BTIE] getFirst() 被调用（BTIE已废弃）"));
+        // BTIE使用批量调度，不使用getFirst
         return nullptr;
     }
 
     // =====================================================
-    // notify - 每ms逐次扣减能耗（TIE核心逻辑）
+    // getTaskN - 返回批量中的第n个任务
     // =====================================================
 
-    void TIEScheduler::notify(AbsRTTask *task) {
+    AbsRTTask *BTIEScheduler::getTaskN(unsigned int n) {
+        SCHEDULER_LOG_DEBUG(std::string("🔍 [BTIE] getTaskN(") + std::to_string(n) + ") 被调用" +
+                           " 批量大小=" + std::to_string(_current_batch_size) +
+                           " 是否已调度=" + (_batch_scheduled_this_tick ? "true" : "false"));
+
+        // BTIE：返回本tick批量中的第n个任务
+        if (_batch_scheduled_this_tick && n < _current_batch_tasks.size()) {
+            AbsRTTask *task = _current_batch_tasks[n];
+            SCHEDULER_LOG_INFO(std::string("✅ [BTIE] getTaskN: 返回批量任务 #") +
+                              std::to_string(n) + ": " + getTaskName(task));
+            return task;
+        }
+
+        SCHEDULER_LOG_DEBUG("📭 [BTIE] getTaskN: 无可调度任务");
+        return nullptr;
+    }
+
+    // =====================================================
+    // notify - BTIE不再扣减能量（已在批量时扣减）
+    // =====================================================
+
+    void BTIEScheduler::notify(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
-        // ⭐ 核心：每ms逐次扣减能耗
-        double unit_energy = calculateUnitEnergyForTask(task);
-
-        // 检查能量是否足够
-        const double EPSILON = 1e-9;
-        if (_current_energy < unit_energy - EPSILON) {
-            SCHEDULER_LOG_WARNING(std::string("⚠️ [TIE] notify: 能量不足") +
-                                 " 任务=" + getTaskName(task) +
-                                 " 需要=" + std::to_string(unit_energy) + "J" +
-                                 " 当前=" + std::to_string(_current_energy) + "J");
-            return;
-        }
-
-        // 扣减1ms能耗
-        double old_energy = _current_energy;
-        _current_energy -= unit_energy;
-        _stats.total_energy_consumed += unit_energy;
-
-        // 累计到任务能量账户
-        auto it = _energy_accounts.find(task);
-        if (it != _energy_accounts.end()) {
-            it->second.total_consumed += unit_energy;
-        }
-
-        SCHEDULER_LOG_DEBUG(std::string("⚡ [TIE] notify: ") +
+        // BTIE：能量已在批量调度时一次性扣减，这里不再扣减
+        SCHEDULER_LOG_DEBUG(std::string("⚡ [BTIE] notify: ") +
                            "任务=" + getTaskName(task) +
-                           " 扣减=" + std::to_string(unit_energy) + "J" +
-                           " " + std::to_string(old_energy) + "J → " +
-                           std::to_string(_current_energy) + "J");
+                           " （能量已在批量时扣减，此处跳过）");
     }
 
     // =====================================================
     // 添加任务
     // =====================================================
 
-    void TIEScheduler::addTask(AbsRTTask *task, const std::string &params) {
+    void BTIEScheduler::addTask(AbsRTTask *task, const std::string &params) {
         if (!task) {
-            SCHEDULER_LOG_WARNING("⚠️ [TIE] addTask: 任务为空");
+            SCHEDULER_LOG_WARNING("⚠️ [BTIE] addTask: 任务为空");
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("📥 [TIE] 添加任务: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("📥 [BTIE] 添加任务: ") + getTaskName(task));
         SCHEDULER_LOG_DEBUG(std::string("   参数: ") + params);
 
         // 解析参数
@@ -521,7 +517,7 @@ namespace RTSim {
         }
 
         // 创建任务模型
-        TIETaskModel *model = new TIETaskModel(task, period, wcet, workload, energy_coeff, arrival_offset);
+        BTIETaskModel *model = new BTIETaskModel(task, period, wcet, workload, energy_coeff, arrival_offset);
 
         // ⭐ 关键修复：先将模型添加到映射，再计算能量
         enqueueModel(model);
@@ -534,7 +530,7 @@ namespace RTSim {
         model->_total_energy = total_energy;
         model->_unit_energy = unit_energy;
 
-        SCHEDULER_LOG_INFO(std::string("⚡ [TIE] 任务能耗计算: ") +
+        SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] 任务能耗计算: ") +
                           "总能耗=" + std::to_string(total_energy) + "J" +
                           " 每ms能耗=" + std::to_string(unit_energy) + "J" +
                           " WCET=" + std::to_string(wcet) + "ms");
@@ -542,7 +538,7 @@ namespace RTSim {
         // 添加到就绪队列
         addToReadyQueue(task);
 
-        SCHEDULER_LOG_INFO(std::string("✅ [TIE] 任务已添加: 周期=") + std::to_string(period) +
+        SCHEDULER_LOG_INFO(std::string("✅ [BTIE] 任务已添加: 周期=") + std::to_string(period) +
                           " WCET=" + std::to_string(wcet) +
                           " 工作负载=" + workload);
     }
@@ -551,12 +547,12 @@ namespace RTSim {
     // 移除任务
     // =====================================================
 
-    void TIEScheduler::removeTask(AbsRTTask *task) {
+    void BTIEScheduler::removeTask(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("📤 [TIE] 移除任务: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("📤 [BTIE] 移除任务: ") + getTaskName(task));
 
         removeFromReadyQueue(task);
         removeFromWaitingQueue(task);
@@ -573,19 +569,19 @@ namespace RTSim {
             _task_models.erase(it);
         }
 
-        SCHEDULER_LOG_INFO(std::string("✅ [TIE] 任务已移除: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("✅ [BTIE] 任务已移除: ") + getTaskName(task));
     }
 
     // =====================================================
     // 任务到达事件处理
     // =====================================================
 
-    void TIEScheduler::onTaskArrival(AbsRTTask *task) {
+    void BTIEScheduler::onTaskArrival(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("📍 [TIE] 任务到达: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("📍 [BTIE] 任务到达: ") + getTaskName(task));
 
         if (!isInReadyQueue(task) && !isInWaitingQueue(task)) {
             addToReadyQueue(task);
@@ -597,12 +593,12 @@ namespace RTSim {
     // Tick级抢占检查
     // =====================================================
 
-    void TIEScheduler::checkAndPreempt() {
-        SCHEDULER_LOG_DEBUG("🔔 [TIE] Tick级抢占检查");
+    void BTIEScheduler::checkAndPreempt() {
+        SCHEDULER_LOG_DEBUG("🔔 [BTIE] Tick级抢占检查");
         checkAndPreemptOnAllCPUs();
     }
 
-    void TIEScheduler::checkAndPreemptOnAllCPUs() {
+    void BTIEScheduler::checkAndPreemptOnAllCPUs() {
         for (auto &map_pair : _running_tasks) {
             CPU *cpu = map_pair.first;
             AbsRTTask *running_task = map_pair.second;
@@ -617,14 +613,14 @@ namespace RTSim {
             }
 
             if (shouldPreempt(cpu, highest)) {
-                SCHEDULER_LOG_INFO(std::string("🔄 [TIE] 抢占CPU: ") +
+                SCHEDULER_LOG_INFO(std::string("🔄 [BTIE] 抢占CPU: ") +
                                   " 高优先级任务=" + getTaskName(highest));
                 // TODO: 实际抢占逻辑
             }
         }
     }
 
-    bool TIEScheduler::shouldPreempt(CPU *cpu, AbsRTTask *new_task) {
+    bool BTIEScheduler::shouldPreempt(CPU *cpu, AbsRTTask *new_task) {
         if (!cpu || !new_task) {
             return false;
         }
@@ -634,8 +630,8 @@ namespace RTSim {
             return false;
         }
 
-        TIETaskModel *running_model = getTaskModel(running_task);
-        TIETaskModel *new_model = getTaskModel(new_task);
+        BTIETaskModel *running_model = getTaskModel(running_task);
+        BTIETaskModel *new_model = getTaskModel(new_task);
 
         if (!running_model || !new_model) {
             return false;
@@ -655,24 +651,24 @@ namespace RTSim {
     // 队列管理方法
     // =====================================================
 
-    void TIEScheduler::insert(AbsRTTask *task) {
+    void BTIEScheduler::insert(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("➕ [TIE] insert: ") + getTaskName(task) +
+        SCHEDULER_LOG_INFO(std::string("➕ [BTIE] insert: ") + getTaskName(task) +
                           " _ready_queue.size()=" + std::to_string(_ready_queue.size()));
 
         Scheduler::insert(task);
         addToReadyQueue(task);
     }
 
-    void TIEScheduler::extract(AbsRTTask *task) {
+    void BTIEScheduler::extract(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("➖ [TIE] extract: ") + getTaskName(task) +
+        SCHEDULER_LOG_INFO(std::string("➖ [BTIE] extract: ") + getTaskName(task) +
                           " _ready_queue.size()=" + std::to_string(_ready_queue.size()));
 
         Scheduler::extract(task);
@@ -680,16 +676,16 @@ namespace RTSim {
         removeFromWaitingQueue(task);
     }
 
-    void TIEScheduler::addToReadyQueue(AbsRTTask *task) {
+    void BTIEScheduler::addToReadyQueue(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
         removeFromWaitingQueue(task);
 
-        TIETaskModel *model = getTaskModel(task);
+        BTIETaskModel *model = getTaskModel(task);
         if (!model) {
-            SCHEDULER_LOG_WARNING("⚠️ [TIE] addToReadyQueue: 任务模型不存在");
+            SCHEDULER_LOG_WARNING("⚠️ [BTIE] addToReadyQueue: 任务模型不存在");
             _ready_queue.push_back(task);
             return;
         }
@@ -699,7 +695,7 @@ namespace RTSim {
         // 按RM优先级插入（周期短的优先）
         auto it = _ready_queue.begin();
         while (it != _ready_queue.end()) {
-            TIETaskModel *other_model = getTaskModel(*it);
+            BTIETaskModel *other_model = getTaskModel(*it);
             if (other_model && other_model->getRMPriority() > priority) {
                 break;
             }
@@ -708,44 +704,44 @@ namespace RTSim {
 
         _ready_queue.insert(it, task);
 
-        SCHEDULER_LOG_DEBUG(std::string("➕ [TIE] 任务加入就绪队列: ") + getTaskName(task) +
+        SCHEDULER_LOG_DEBUG(std::string("➕ [BTIE] 任务加入就绪队列: ") + getTaskName(task) +
                            " 优先级=" + std::to_string(static_cast<int64_t>(priority)));
     }
 
-    void TIEScheduler::removeFromReadyQueue(AbsRTTask *task) {
+    void BTIEScheduler::removeFromReadyQueue(AbsRTTask *task) {
         auto it = std::find(_ready_queue.begin(), _ready_queue.end(), task);
         if (it != _ready_queue.end()) {
             _ready_queue.erase(it);
-            SCHEDULER_LOG_DEBUG(std::string("➖ [TIE] removeFromReadyQueue: ") + getTaskName(task) +
+            SCHEDULER_LOG_DEBUG(std::string("➖ [BTIE] removeFromReadyQueue: ") + getTaskName(task) +
                                " 剩余size=" + std::to_string(_ready_queue.size()));
         }
     }
 
-    void TIEScheduler::addToWaitingQueue(AbsRTTask *task) {
+    void BTIEScheduler::addToWaitingQueue(AbsRTTask *task) {
         if (!task) {
             return;
         }
         removeFromReadyQueue(task);
         _waiting_queue.push_back(task);
-        SCHEDULER_LOG_DEBUG(std::string("⏸️ [TIE] 任务加入等待队列: ") + getTaskName(task));
+        SCHEDULER_LOG_DEBUG(std::string("⏸️ [BTIE] 任务加入等待队列: ") + getTaskName(task));
     }
 
-    void TIEScheduler::removeFromWaitingQueue(AbsRTTask *task) {
+    void BTIEScheduler::removeFromWaitingQueue(AbsRTTask *task) {
         auto it = std::find(_waiting_queue.begin(), _waiting_queue.end(), task);
         if (it != _waiting_queue.end()) {
             _waiting_queue.erase(it);
         }
     }
 
-    bool TIEScheduler::isInReadyQueue(AbsRTTask *task) const {
+    bool BTIEScheduler::isInReadyQueue(AbsRTTask *task) const {
         return std::find(_ready_queue.begin(), _ready_queue.end(), task) != _ready_queue.end();
     }
 
-    bool TIEScheduler::isInWaitingQueue(AbsRTTask *task) const {
+    bool BTIEScheduler::isInWaitingQueue(AbsRTTask *task) const {
         return std::find(_waiting_queue.begin(), _waiting_queue.end(), task) != _waiting_queue.end();
     }
 
-    AbsRTTask *TIEScheduler::getHighestPriorityTaskFromReadyQueue() {
+    AbsRTTask *BTIEScheduler::getHighestPriorityTaskFromReadyQueue() {
         if (_ready_queue.empty()) {
             return nullptr;
         }
@@ -756,10 +752,10 @@ namespace RTSim {
     // 能量计算方法
     // =====================================================
 
-    double TIEScheduler::calculateUnitEnergyForTask(AbsRTTask *task) {
-        TIETaskModel *model = getTaskModel(task);
+    double BTIEScheduler::calculateUnitEnergyForTask(AbsRTTask *task) {
+        BTIETaskModel *model = getTaskModel(task);
         if (!model) {
-            SCHEDULER_LOG_WARNING("⚠️ [TIE] calculateUnitEnergyForTask: 任务模型不存在");
+            SCHEDULER_LOG_WARNING("⚠️ [BTIE] calculateUnitEnergyForTask: 任务模型不存在");
             return 0.0;
         }
 
@@ -767,14 +763,14 @@ namespace RTSim {
         return model->getUnitEnergy();
     }
 
-    double TIEScheduler::calculateTotalEnergyForTask(AbsRTTask *task) {
+    double BTIEScheduler::calculateTotalEnergyForTask(AbsRTTask *task) {
         if (!task) {
             return 0.0;
         }
 
-        TIETaskModel *model = getTaskModel(task);
+        BTIETaskModel *model = getTaskModel(task);
         if (!model) {
-            SCHEDULER_LOG_WARNING("⚠️ [TIE] calculateTotalEnergyForTask: 任务模型不存在");
+            SCHEDULER_LOG_WARNING("⚠️ [BTIE] calculateTotalEnergyForTask: 任务模型不存在");
             return 0.0;
         }
 
@@ -797,7 +793,7 @@ namespace RTSim {
         return energy;
     }
 
-    double TIEScheduler::calculatePowerForWorkload(const std::string &workload, double frequency) {
+    double BTIEScheduler::calculatePowerForWorkload(const std::string &workload, double frequency) {
         ConfigManager &configMgr = ConfigManager::getInstance();
         double power_coeff = configMgr.getPowerCoefficient(workload);
 
@@ -807,7 +803,7 @@ namespace RTSim {
         double base_power = configMgr.getBasePower();
         double power = base_power * power_coeff * freq_ratio;
 
-        SCHEDULER_LOG_DEBUG(std::string("⚡ [TIE] 功率计算: ") +
+        SCHEDULER_LOG_DEBUG(std::string("⚡ [BTIE] 功率计算: ") +
                            "workload=" + workload +
                            " coeff=" + std::to_string(power_coeff) +
                            " freq=" + std::to_string(frequency_mhz) + "MHz" +
@@ -822,7 +818,7 @@ namespace RTSim {
     // 能量收集方法
     // =====================================================
 
-    double TIEScheduler::collectSolarEnergy(Tick current_time) {
+    double BTIEScheduler::collectSolarEnergy(Tick current_time) {
         if (!_use_real_solar_data) {
             return 0.0;
         }
@@ -849,7 +845,7 @@ namespace RTSim {
         return energy;
     }
 
-    double TIEScheduler::getSolarIrradiance(int64_t time_ms) {
+    double BTIEScheduler::getSolarIrradiance(int64_t time_ms) {
         if (!_use_real_solar_data) {
             // 简化模型
             int64_t actual_time_ms = time_ms + static_cast<int64_t>(_start_time_offset);
@@ -870,7 +866,7 @@ namespace RTSim {
 
         std::ifstream file(_solar_data_file);
         if (!file.is_open()) {
-            SCHEDULER_LOG_WARNING(std::string("⚠️ [TIE] 无法打开太阳能数据文件: ") + _solar_data_file);
+            SCHEDULER_LOG_WARNING(std::string("⚠️ [BTIE] 无法打开太阳能数据文件: ") + _solar_data_file);
             return 0.0;
         }
 
@@ -885,7 +881,7 @@ namespace RTSim {
                 double irradiance = std::stod(line);
                 return irradiance;
             } catch (const std::exception &e) {
-                SCHEDULER_LOG_WARNING(std::string("⚠️ [TIE] 解析辐照度失败: ") + e.what());
+                SCHEDULER_LOG_WARNING(std::string("⚠️ [BTIE] 解析辐照度失败: ") + e.what());
                 return 0.0;
             }
         }
@@ -897,7 +893,7 @@ namespace RTSim {
     // Tick事件调度
     // =====================================================
 
-    void TIEScheduler::scheduleNextTick() {
+    void BTIEScheduler::scheduleNextTick() {
         if (!_tick_event) {
             return;
         }
@@ -910,7 +906,7 @@ namespace RTSim {
     // 任务管理方法
     // =====================================================
 
-    TIETaskModel *TIEScheduler::getTaskModel(AbsRTTask *task) {
+    BTIETaskModel *BTIEScheduler::getTaskModel(AbsRTTask *task) {
         auto it = _task_models.find(task);
         if (it != _task_models.end()) {
             return it->second;
@@ -918,14 +914,14 @@ namespace RTSim {
         return nullptr;
     }
 
-    std::string TIEScheduler::getTaskName(AbsRTTask *task) {
+    std::string BTIEScheduler::getTaskName(AbsRTTask *task) {
         if (!task) {
             return "nullptr";
         }
         return task->toString();
     }
 
-    AbsRTTask *TIEScheduler::getRunningTaskOnCPU(CPU *cpu) {
+    AbsRTTask *BTIEScheduler::getRunningTaskOnCPU(CPU *cpu) {
         if (!cpu) {
             return nullptr;
         }
@@ -938,7 +934,7 @@ namespace RTSim {
         return nullptr;
     }
 
-    int TIEScheduler::getFreeCPUCount() {
+    int BTIEScheduler::getFreeCPUCount() {
         int count = 0;
         for (auto &pair : _running_tasks) {
             if (pair.second == nullptr) {
@@ -948,7 +944,7 @@ namespace RTSim {
         return count;
     }
 
-    CPU *TIEScheduler::getFreeCPU() {
+    CPU *BTIEScheduler::getFreeCPU() {
         for (auto &pair : _running_tasks) {
             if (pair.second == nullptr) {
                 return pair.first;
@@ -957,13 +953,13 @@ namespace RTSim {
         return nullptr;
     }
 
-    void TIEScheduler::dispatchTask(AbsRTTask *task, CPU *cpu) {
+    void BTIEScheduler::dispatchTask(AbsRTTask *task, CPU *cpu) {
         if (!task || !cpu) {
-            SCHEDULER_LOG_WARNING("⚠️ [TIE] dispatchTask: 任务或CPU为空");
+            SCHEDULER_LOG_WARNING("⚠️ [BTIE] dispatchTask: 任务或CPU为空");
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("📤 [TIE] 调度任务: ") + getTaskName(task) + " 到CPU");
+        SCHEDULER_LOG_INFO(std::string("📤 [BTIE] 调度任务: ") + getTaskName(task) + " 到CPU");
 
         removeFromReadyQueue(task);
         _running_tasks[cpu] = task;
@@ -973,26 +969,26 @@ namespace RTSim {
     // 配置方法
     // =====================================================
 
-    void TIEScheduler::setPVConfig(double efficiency, double area, const std::string &solar_file) {
+    void BTIEScheduler::setPVConfig(double efficiency, double area, const std::string &solar_file) {
         _pv_efficiency = efficiency;
         _pv_area_m2 = area;
         _solar_data_file = solar_file;
 
-        SCHEDULER_LOG_INFO(std::string("⚙️ [TIE] 太阳能配置更新: ") +
+        SCHEDULER_LOG_INFO(std::string("⚙️ [BTIE] 太阳能配置更新: ") +
                           "效率=" + std::to_string(efficiency) +
                           " 面积=" + std::to_string(area) + "m²" +
                           " 数据文件=" + solar_file);
     }
 
-    void TIEScheduler::setStartTimeOffset(Tick offset) {
+    void BTIEScheduler::setStartTimeOffset(Tick offset) {
         _start_time_offset = offset;
     }
 
-    void TIEScheduler::setKernel(MRTKernel *kernel) {
+    void BTIEScheduler::setKernel(MRTKernel *kernel) {
         _kernel = kernel;
     }
 
-    MRTKernel *TIEScheduler::getKernel() {
+    MRTKernel *BTIEScheduler::getKernel() {
         if (!_kernel && !_ready_queue.empty()) {
             AbsRTTask *task = _ready_queue.front();
             if (task) {
@@ -1006,8 +1002,8 @@ namespace RTSim {
     // 生命周期方法
     // =====================================================
 
-    void TIEScheduler::newRun() {
-        SCHEDULER_LOG_INFO("🏁 [TIE] newRun - 仿真开始");
+    void BTIEScheduler::newRun() {
+        SCHEDULER_LOG_INFO("🏁 [BTIE] newRun - 仿真开始");
 
         _current_energy = _initial_energy;
         _last_tick_time = SIMUL.getTime();
@@ -1025,15 +1021,22 @@ namespace RTSim {
         _stats.total_energy_consumed = 0.0;
         _stats.total_energy_harvested = 0.0;
         _stats.total_tick_count = 0;
+        _stats.total_batch_schedules = 0;
+        _stats.total_batch_skipped = 0;
+
+        // BTIE批量调度状态初始化
+        _batch_scheduled_this_tick = false;
+        _current_batch_size = 0;
+        _current_batch_tasks.clear();
 
         // 启动第一个tick事件
         scheduleNextTick();
 
-        SCHEDULER_LOG_INFO(std::string("💰 [TIE] 初始能量: ") + std::to_string(_current_energy) + "J");
+        SCHEDULER_LOG_INFO(std::string("💰 [BTIE] 初始能量: ") + std::to_string(_current_energy) + "J");
     }
 
-    void TIEScheduler::endRun() {
-        SCHEDULER_LOG_INFO("🏁 [TIE] endRun - 仿真结束");
+    void BTIEScheduler::endRun() {
+        SCHEDULER_LOG_INFO("🏁 [BTIE] endRun - 仿真结束");
 
         // 仿真结束前，收集最后一次能量
         Tick current_time = SIMUL.getTime();
@@ -1044,23 +1047,23 @@ namespace RTSim {
         }
 
         // 打印统计信息
-        SCHEDULER_LOG_INFO("📊 [TIE] ===== TIE调度统计 =====");
+        SCHEDULER_LOG_INFO("📊 [BTIE] ===== BTIE批量调度统计 =====");
         SCHEDULER_LOG_INFO(std::string("  Tick总次数: ") + std::to_string(_stats.total_tick_count));
         SCHEDULER_LOG_INFO(std::string("  任务完成数: ") + std::to_string(_stats.total_task_completions));
-        SCHEDULER_LOG_INFO(std::string("  能量不足跳过: ") + std::to_string(_stats.total_skipped_energy));
-        SCHEDULER_LOG_INFO(std::string("  Deadline Miss: ") + std::to_string(_stats.total_deadline_misses));
+        SCHEDULER_LOG_INFO(std::string("  批量调度成功: ") + std::to_string(_stats.total_batch_schedules));
+        SCHEDULER_LOG_INFO(std::string("  批量调度跳过: ") + std::to_string(_stats.total_batch_skipped));
         SCHEDULER_LOG_INFO(std::string("  总消耗能量: ") + std::to_string(_stats.total_energy_consumed) + "J");
         SCHEDULER_LOG_INFO(std::string("  总收集能量: ") + std::to_string(_stats.total_energy_harvested) + "J");
         SCHEDULER_LOG_INFO(std::string("  剩余能量: ") + std::to_string(_current_energy) + "J");
         SCHEDULER_LOG_INFO("=================================");
     }
 
-    void TIEScheduler::onTaskEnd(AbsRTTask *task) {
+    void BTIEScheduler::onTaskEnd(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("✅ [TIE] 任务结束: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("✅ [BTIE] 任务结束: ") + getTaskName(task));
 
         // 从就绪队列移除
         removeFromReadyQueue(task);
@@ -1076,7 +1079,7 @@ namespace RTSim {
         // 打印能量消耗统计
         auto it = _energy_accounts.find(task);
         if (it != _energy_accounts.end()) {
-            SCHEDULER_LOG_INFO(std::string("📊 [TIE] 任务能量消耗: ") +
+            SCHEDULER_LOG_INFO(std::string("📊 [BTIE] 任务能量消耗: ") +
                               getTaskName(task) +
                               " 累计消耗=" + std::to_string(it->second.total_consumed) + "J");
             _energy_accounts.erase(it);
@@ -1084,10 +1087,10 @@ namespace RTSim {
 
         _stats.total_task_completions++;
 
-        SCHEDULER_LOG_INFO(std::string("📊 [TIE] 当前能量: ") + std::to_string(_current_energy) + "J");
+        SCHEDULER_LOG_INFO(std::string("📊 [BTIE] 当前能量: ") + std::to_string(_current_energy) + "J");
     }
 
-    bool TIEScheduler::isAdmissible(CPU *c, std::vector<AbsRTTask *> tasks,
+    bool BTIEScheduler::isAdmissible(CPU *c, std::vector<AbsRTTask *> tasks,
                                     AbsRTTask *t) {
         return true;
     }
@@ -1096,21 +1099,23 @@ namespace RTSim {
     // 统计和调试
     // =====================================================
 
-    void TIEScheduler::printStats() const {
-        SCHEDULER_LOG_INFO("📊 [TIE] ===== TIE调度统计 =====");
+    void BTIEScheduler::printStats() const {
+        SCHEDULER_LOG_INFO("📊 [BTIE] ===== BTIE批量调度统计 =====");
         SCHEDULER_LOG_INFO(std::string("  Tick总次数: ") + std::to_string(_stats.total_tick_count));
         SCHEDULER_LOG_INFO(std::string("  任务完成数: ") + std::to_string(_stats.total_task_completions));
+        SCHEDULER_LOG_INFO(std::string("  批量调度成功: ") + std::to_string(_stats.total_batch_schedules));
+        SCHEDULER_LOG_INFO(std::string("  批量调度跳过: ") + std::to_string(_stats.total_batch_skipped));
         SCHEDULER_LOG_INFO(std::string("  总消耗能量: ") + std::to_string(_stats.total_energy_consumed) + "J");
         SCHEDULER_LOG_INFO(std::string("  总收集能量: ") + std::to_string(_stats.total_energy_harvested) + "J");
         SCHEDULER_LOG_INFO(std::string("  剩余能量: ") + std::to_string(_current_energy) + "J");
         SCHEDULER_LOG_INFO("=================================");
     }
 
-    std::string TIEScheduler::getEnergyStatus() const {
+    std::string BTIEScheduler::getEnergyStatus() const {
         return "当前能量: " + std::to_string(_current_energy) + "J";
     }
 
-    const std::map<AbsRTTask *, std::string> TIEScheduler::getTaskWorkloads() const {
+    const std::map<AbsRTTask *, std::string> BTIEScheduler::getTaskWorkloads() const {
         std::map<AbsRTTask *, std::string> workloads;
         for (const auto &pair : _task_models) {
             workloads[pair.first] = pair.second->getWorkloadType();

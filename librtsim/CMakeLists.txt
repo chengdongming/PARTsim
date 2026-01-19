@@ -46,6 +46,8 @@ set(LIBRARY_SOURCE_FILES
     scheduler/gpfp_efpp_scheduler.cpp
     scheduler/gpfp_cbpp_scheduler.cpp
     scheduler/gpfp_tie_scheduler.cpp
+    scheduler/gpfp_btie_scheduler.cpp
+    scheduler/gpfp_tgf_scheduler.cpp
     scheduler/gpfp_cascade_scheduler.cpp
     scheduler/gpfp_batch_scheduler.cpp
     scheduler/energy_bridge.cpp

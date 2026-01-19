@@ -1,0 +1,81 @@
+{
+  "test_config": {
+    "pv_efficiency": 0.18,
+    "pv_area_m2": 1.0,
+    "test_duration_ms": 2000,
+    "data_source": "shenyang_solar_minute.csv (day 1)"
+  },
+  "results": [
+    {
+      "hour": 0,
+      "irradiance": 0.0,
+      "energy_per_ms": 0.0,
+      "theoretical_2000ms": 0.0,
+      "measured_2000ms": 0.0,
+      "error": 0.0,
+      "status": "\u2705"
+    },
+    {
+      "hour": 8,
+      "irradiance": 164.15,
+      "energy_per_ms": 0.029547,
+      "theoretical_2000ms": 59.094,
+      "measured_2000ms": 59.0935,
+      "error": 0.0008461095881178924,
+      "status": "\u2705"
+    },
+    {
+      "hour": 10,
+      "irradiance": 406.6,
+      "energy_per_ms": 0.073188,
+      "theoretical_2000ms": 146.376,
+      "measured_2000ms": 146.3755,
+      "error": 0.0003415860523696496,
+      "status": "\u2705"
+    },
+    {
+      "hour": 12,
+      "irradiance": 434.5,
+      "energy_per_ms": 0.07821,
+      "theoretical_2000ms": 156.42000000000002,
+      "measured_2000ms": 156.4195,
+      "error": 0.0003196522183970069,
+      "status": "\u2705"
+    },
+    {
+      "hour": 14,
+      "irradiance": 249.05,
+      "energy_per_ms": 0.044829,
+      "theoretical_2000ms": 89.658,
+      "measured_2000ms": 89.6575,
+      "error": 0.0005576747194922789,
+      "status": "\u2705"
+    },
+    {
+      "hour": 15,
+      "irradiance": 104.07,
+      "energy_per_ms": 0.018733,
+      "theoretical_2000ms": 37.466,
+      "measured_2000ms": 37.4647,
+      "error": 0.003469812630119369,
+      "status": "\u2705"
+    },
+    {
+      "hour": 17,
+      "irradiance": 0.0,
+      "energy_per_ms": 0.0,
+      "theoretical_2000ms": 0.0,
+      "measured_2000ms": 0.0,
+      "error": 0.0,
+      "status": "\u2705"
+    }
+  ],
+  "statistics": {
+    "avg_error_percent": 0.0011069670416992395,
+    "max_error_percent": 0.003469812630119369,
+    "min_error_percent": 0.0003196522183970069,
+    "max_energy_2000ms": 156.4195,
+    "min_energy_nonzero": 37.4647,
+    "avg_energy": 97.80214000000001
+  }
+}
