@@ -1287,7 +1287,8 @@ namespace RTSim {
                                std::to_string(running_tasks.size()) + " 个任务)");
         }
 
-        // 1. 检查所有运行中的任务
+        // ⭐ V29完整修复：先扣除上一ms执行消耗的能量，再检查是否足够继续
+        // 这样确保能量扣除和检查的时序完全正确
         for (auto &map_pair : running_tasks) {
             AbsRTTask *task = map_pair.second;
             if (!task) {

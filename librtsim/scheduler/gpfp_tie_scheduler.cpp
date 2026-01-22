@@ -791,6 +791,33 @@ namespace RTSim {
         SCHEDULER_LOG_INFO(std::string("🔍 [TIE] getCurrentExecutingTasks() 返回 ") +
                            std::to_string(running_tasks.size()) + " 个运行中任务");
 
+        // ⭐ V29完整修复：先扣除上一ms执行消耗的能量，再检查是否足够继续
+        // 这样确保能量扣除和检查的时序完全正确
+        double total_energy_to_deduct = 0.0;
+        for (auto &map_pair : running_tasks) {
+            AbsRTTask *task = map_pair.second;
+            if (!task) {
+                continue;
+            }
+
+            // 计算该任务执行1ms所需的能量
+            double unit_energy = calculateUnitEnergyForTask(task);
+            total_energy_to_deduct += unit_energy;
+        }
+
+        // 扣除所有运行中任务上一ms的能量
+        if (total_energy_to_deduct > 0 && _current_energy >= total_energy_to_deduct - EPSILON) {
+            double old_energy = _current_energy;
+            _current_energy -= total_energy_to_deduct;
+            _stats.total_energy_consumed += total_energy_to_deduct;
+
+            SCHEDULER_LOG_INFO(std::string("⚡ [TIE] Tick事件: 扣除运行中任务能量 ") +
+                               std::to_string(total_energy_to_deduct * 1000) + " mJ，" +
+                               std::to_string(old_energy * 1000) + " mJ → " +
+                               std::to_string(_current_energy * 1000) + " mJ (" +
+                               std::to_string(running_tasks.size()) + " 个任务)");
+        }
+
         // 1. 检查所有运行中的任务
         for (auto &map_pair : running_tasks) {
             AbsRTTask *task = map_pair.second;
