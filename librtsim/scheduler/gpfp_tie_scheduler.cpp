@@ -33,7 +33,7 @@ namespace RTSim {
     // =====================================================
 
     TIETickEvent::TIETickEvent(TIEScheduler *scheduler)
-        : MetaSim::Event("TIETickEvent", MetaSim::Event::_DEFAULT_PRIORITY - 5),
+        : MetaSim::Event("TIETickEvent", MetaSim::Event::_DEFAULT_PRIORITY - 10),
           _scheduler(scheduler) {
         // ⭐ V29修复：更高优先级，确保tick先于能量检查事件执行
     }
@@ -61,7 +61,7 @@ namespace RTSim {
     // =====================================================
 
     TIEEnergyCheckEvent::TIEEnergyCheckEvent(TIEScheduler *scheduler, AbsRTTask *task, CPU *cpu)
-        : MetaSim::Event("TIEEnergyCheckEvent", MetaSim::Event::_DEFAULT_PRIORITY - 10),
+        : MetaSim::Event("TIEEnergyCheckEvent", MetaSim::Event::_DEFAULT_PRIORITY - 5),
           _scheduler(scheduler),
           _task(task),
           _cpu(cpu),
