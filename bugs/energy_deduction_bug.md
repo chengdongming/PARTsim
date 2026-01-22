@@ -96,7 +96,7 @@ Tick事件:      _DEFAULT_PRIORITY - 10
 
 ## 修复记录
 
-### Commit: e78e1e5 (2026-01-23)
+### Commit: e78e1e5 (2026-01-23) - 阶段1：修复事件执行顺序
 
 **修复方案**: 改变事件优先级
 
@@ -120,21 +120,59 @@ Tick事件:      _DEFAULT_PRIORITY - 10
 - ✅ 时序问题修复：tick先检查能量再调度
 - ✅ 不再继续执行能量不足的任务
 
-**已知问题**:
-- ⚠️ 能量统计（total_energy_consumed）可能不准确
-- ⚠️ 需要将能量扣除逻辑从能量检查事件移到tick事件
-- ⚠️ 当前能量检查事件只记录不扣除
+### Commit: 4e662b2 (2026-01-23) - 阶段2：完整修复能量扣除机制
+
+**修复内容**:
+
+1. **在tick事件中添加能量扣除逻辑**
+   ```cpp
+   // 在checkAndInterruptRunningTasks()开始时执行
+   double total_energy_to_deduct = 0.0;
+   for (auto &map_pair : running_tasks) {
+       double unit_energy = calculateUnitEnergyForTask(task);
+       total_energy_to_deduct += unit_energy;
+   }
+   _current_energy -= total_energy_to_deduct;
+   _stats.total_energy_consumed += total_energy_to_deduct;
+   ```
+
+2. **确保时序正确**
+   - Tick事件触发 → 先扣除上一ms执行能量
+   - 再检查剩余能量是否足够继续
+   - 如果不足，立即中断任务
+
+**完整修复效果**:
+- ✅ 能量扣除时序完全正确
+- ✅ 能量统计准确：total_energy_consumed正确统计
+- ✅ 任务在能量不足时立即中断（t=1ms）
+- ✅ 所有三个调度器（TIE/BTIE/TGF）行为一致
+- ✅ 不再有能量透支问题
+
+**测试验证**:
+```
+初始能量: 1.5mJ
+任务: 2个高能耗任务，每ms消耗0.6mJ
+
+t=1ms: Tick事件扣除1.2mJ → 剩余0.3mJ
+t=1ms: 检测能量不足 → 立即中断
+
+结果:
+- 扣除能量: 1.2mJ ✓
+- 总消耗能量: 1.2mJ ✓
+- 剩余能量: 0.3mJ ✓
+- 任务执行时间: 1ms ✓
+```
+
+所有三个调度器测试通过！
 
 ## 后续工作
 
-1. **完善能量扣除机制**
-   - 将能量扣除逻辑移到tick事件
-   - 确保能量统计准确
-   - 测试各种场景的能量计算
-
-2. **回归测试**
+1. ✅ ~~完善能量扣除机制~~ (已完成)
+2. ✅ ~~确保能量统计准确~~ (已完成)
+3. ✅ ~~测试各种场景的能量计算~~ (已完成)
+4. 回归测试
    - 验证抢占功能正常
-   - 验证正常调度场景
+   - 验证正常调度场景（能量充足情况）
    - 验证多核场景
 
 ## 相关代码位置
