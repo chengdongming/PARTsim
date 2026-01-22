@@ -39,6 +39,23 @@ namespace RTSim {
     };
 
     // =====================================================
+    // TGF运行时能量检查事件（每1ms检查运行中任务的能量）
+    // =====================================================
+    class TGFEnergyCheckEvent : public MetaSim::Event {
+    private:
+        TGFScheduler *_scheduler;
+        AbsRTTask *_task;
+        CPU *_cpu;
+        int _ms_executed;  // 已执行的ms数
+
+    public:
+        TGFEnergyCheckEvent(TGFScheduler *scheduler, AbsRTTask *task, CPU *cpu);
+        void doit() override;
+        int getMsExecuted() const { return _ms_executed; }
+        void setMsExecuted(int ms) { _ms_executed = ms; }
+    };
+
+    // =====================================================
     // TGFTaskModel 类声明
     // =====================================================
     class TGFTaskModel : public TaskModel {
@@ -88,6 +105,7 @@ namespace RTSim {
         double _current_energy;              // 当前可用能量
         double _initial_energy;              // 初始能量
         double _max_energy;                  // 最大能量容量
+        double _dispatching_tasks_total_energy; // 本次dispatch中已调度任务的总能耗
         MetaSim::Tick _last_tick_time;       // 上次tick时间
         MetaSim::Tick _last_collection_time; // 上次能量收集时间
 
@@ -107,6 +125,9 @@ namespace RTSim {
         std::vector<AbsRTTask *> _waiting_queue;
         std::map<CPU *, AbsRTTask *> _running_tasks;
         MRTKernel *_kernel;
+
+        // ========== 运行时能量检查事件（每任务一个） ==========
+        std::map<AbsRTTask *, TGFEnergyCheckEvent *> _energy_check_events;
 
         // ========== 能量记账（每ms累计） ==========
         struct TaskEnergyAccount {
@@ -135,8 +156,10 @@ namespace RTSim {
         void performTickScheduling();
         void collectEnergyAtTickBoundary();
 
+        // ⭐ 运行时能量检查和任务中断（V28.15新增）
+        void checkAndInterruptRunningTasks();  // 检查所有运行中的任务，能量不足时中断
+
         // 能量计算
-        double calculateUnitEnergyForTask(AbsRTTask *task);  // 计算每ms能耗
         double calculateTotalEnergyForTask(AbsRTTask *task); // 计算任务总能耗
         double calculatePowerForWorkload(const std::string &workload, double frequency);
         double collectSolarEnergy(MetaSim::Tick current_time);
@@ -203,6 +226,11 @@ namespace RTSim {
         double getCurrentEnergy() const { return _current_energy; }
         double getInitialEnergy() const { return _initial_energy; }
         double getMaxEnergy() const { return _max_energy; }
+        double calculateUnitEnergyForTask(AbsRTTask *task);  // MRTKernel需要调用
+
+        // ⭐ 运行时能量检查接口（V28.15新增）
+        void startEnergyCheckForTask(AbsRTTask *task, CPU *cpu);  // 开始对任务的能量监控
+        void stopEnergyCheckForTask(AbsRTTask *task);  // 停止对任务的能量��控
 
         // 队列访问接口
         const std::deque<AbsRTTask *> &getReadyQueue() const { return _ready_queue; }
@@ -222,6 +250,7 @@ namespace RTSim {
 
         // 友元类声明
         friend class TGFTickEvent;
+        friend class TGFEnergyCheckEvent;
     };
 
 } // namespace RTSim

@@ -24,6 +24,9 @@
 #include <rtsim/scheduler/gpfp_epp_scheduler.hpp>
 #include <rtsim/scheduler/gpfp_efpp_scheduler.hpp>
 #include <rtsim/scheduler/gpfp_cbpp_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_tie_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_btie_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_tgf_scheduler.hpp>
 
 namespace RTSim {
     // =========================================================================
@@ -571,6 +574,19 @@ namespace RTSim {
                 std::cout << "[DEBUG] 调用schedule(): " << task->getName() << std::endl;
                 st->schedule();
                 DBGPRINT("Task scheduled: ", taskname(st));
+
+                // ⭐ V28.15新增：为TIE/BTIE/TGF调度器启动运行时能量检查
+                TIEScheduler *tie_sched = dynamic_cast<TIEScheduler*>(_sched);
+                BTIEScheduler *btie_sched = dynamic_cast<BTIEScheduler*>(_sched);
+                TGFScheduler *tgf_sched = dynamic_cast<TGFScheduler*>(_sched);
+
+                if (tie_sched) {
+                    tie_sched->startEnergyCheckForTask(st, p);
+                } else if (btie_sched) {
+                    btie_sched->startEnergyCheckForTask(st, p);
+                } else if (tgf_sched) {
+                    tgf_sched->startEnergyCheckForTask(st, p);
+                }
             } else {
                 // 任务不在就绪或执行状态，可能能量不足
                 // 不调用schedule()，避免记录错误的调度事件

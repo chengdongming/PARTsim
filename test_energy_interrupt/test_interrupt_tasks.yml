@@ -1,0 +1,42 @@
+# =============================================
+# 测试能量中断的任务集
+# 设计目的：触发运行时能量检查和任务中断
+# - 2个CPU核心
+# - 3个任务，同时到达
+# - 初始能量0J
+# - 夜间场景（太阳能收集为0）
+# =============================================
+
+taskset:
+  # ===========================================
+  # 任务1: 高能耗任务
+  # ===========================================
+  - name: task_high_energy
+    iat: 100
+    runtime: 25
+    deadline: 100
+    params: "period=100,wcet=25,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(25, bzip2)
+
+  # ===========================================
+  # 任务2: 高能耗任务
+  # ===========================================
+  - name: task_high_energy_2
+    iat: 100
+    runtime: 25
+    deadline: 100
+    params: "period=100,wcet=25,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(25, bzip2)
+
+  # ===========================================
+  # 任务3: 高能耗任务
+  # ===========================================
+  - name: task_high_energy_3
+    iat: 100
+    runtime: 25
+    deadline: 100
+    params: "period=100,wcet=25,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(25, bzip2)

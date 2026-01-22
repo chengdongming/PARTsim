@@ -57,6 +57,86 @@ namespace RTSim {
     }
 
     // =====================================================
+    // TGFEnergyCheckEvent 实现 - 运行时能量检查
+    // =====================================================
+
+    TGFEnergyCheckEvent::TGFEnergyCheckEvent(TGFScheduler *scheduler, AbsRTTask *task, CPU *cpu)
+        : MetaSim::Event("TGFEnergyCheckEvent", MetaSim::Event::_DEFAULT_PRIORITY - 5),
+          _scheduler(scheduler),
+          _task(task),
+          _cpu(cpu),
+          _ms_executed(0) {
+        // 更高优先级，确保能量检查及时执行
+    }
+
+    void TGFEnergyCheckEvent::doit() {
+        if (!_scheduler || !_task) {
+            return;
+        }
+
+        // ⭐ 安全检查：验证任务是否还有效（是否还在task_models中）
+        if (_scheduler->_task_models.find(_task) == _scheduler->_task_models.end()) {
+            // 任务已被删除，停止这个能量检查事件
+            SCHEDULER_LOG_DEBUG(std::string("⚠️ [TGF] 能量检查：任务已删除，停止检查"));
+            return;
+        }
+
+        // ⭐ 安全检查：验证这个事件是否仍在活跃列表中
+        auto it = _scheduler->_energy_check_events.find(_task);
+        if (it == _scheduler->_energy_check_events.end() || it->second != this) {
+            // 事件已被替换或删除，停止处理
+            SCHEDULER_LOG_DEBUG(std::string("⚠️ [TGF] 能量检查：事件已失效，停止检查"));
+            return;
+        }
+
+        // 计算任务每1ms的能耗
+        double unit_energy = _scheduler->calculateUnitEnergyForTask(_task);
+        double current_energy = _scheduler->getCurrentEnergy();
+        const double EPSILON = 1e-9;
+
+        _ms_executed++;
+
+        if (current_energy < unit_energy - EPSILON) {
+            // ⭐ 能量不足，中断任务！
+            std::string task_name = _scheduler->getTaskName(_task);  // 先获取名称
+            SCHEDULER_LOG_WARNING(std::string("⚡ [TGF] 运行时能量不足，中断任务: ") +
+                                 task_name +
+                                 " 已执行=" + std::to_string(_ms_executed) + "ms" +
+                                 " 需要1ms=" + std::to_string(unit_energy) + "J" +
+                                 " 当前能量=" + std::to_string(current_energy) + "J");
+
+            // 从事件列表中移除
+            _scheduler->stopEnergyCheckForTask(_task);
+
+            // 中断任务
+            if (_scheduler->_kernel) {
+                _scheduler->_kernel->suspend(_task);
+                SCHEDULER_LOG_INFO(std::string("⏸️ [TGF] 任务已中断，等待能量恢复: ") +
+                                   task_name);
+            }
+
+            // 更新统计
+            _scheduler->_stats.total_skipped_energy++;
+            return;
+        }
+
+        // ⭐ 能量充足，扣除1ms能耗并继续
+        double old_energy = _scheduler->_current_energy;
+        _scheduler->_current_energy -= unit_energy;
+        _scheduler->_stats.total_energy_consumed += unit_energy;
+
+        SCHEDULER_LOG_DEBUG(std::string("⚡ [TGF] 运行时能量扣除: ") +
+                           "任务=" + _scheduler->getTaskName(_task) +
+                           " 已执行=" + std::to_string(_ms_executed) + "ms" +
+                           " 扣除=" + std::to_string(unit_energy) + "J" +
+                           " " + std::to_string(old_energy) + "J → " +
+                           std::to_string(_scheduler->_current_energy) + "J");
+
+        // 重新调度下一次能量检查（1ms后）
+        post(SIMUL.getTime() + 1);
+    }
+
+    // =====================================================
     // TGFTaskModel 实现
     // =====================================================
 
@@ -578,7 +658,7 @@ namespace RTSim {
 
         auto it = _task_models.find(task);
         if (it != _task_models.end()) {
-            delete it->second;
+            
             _task_models.erase(it);
         }
 
@@ -831,6 +911,48 @@ namespace RTSim {
                            " → " + std::to_string(power) + "W");
 
         return power;
+    }
+
+    // =====================================================
+    // 运行时能量检查方法（V28.15新增）
+    // =====================================================
+
+    void TGFScheduler::startEnergyCheckForTask(AbsRTTask *task, CPU *cpu) {
+        if (!task || !cpu) {
+            return;
+        }
+
+        // 检查是否已经有能量检查事件
+        if (_energy_check_events.find(task) != _energy_check_events.end()) {
+            SCHEDULER_LOG_DEBUG(std::string("⚡ [TGF] 任务已有能量检查事件: ") + getTaskName(task));
+            return;
+        }
+
+        // 创建并启动能量检查事件
+        TGFEnergyCheckEvent *evt = new TGFEnergyCheckEvent(this, task, cpu);
+        _energy_check_events[task] = evt;
+
+        // 1ms后触发第一次检查
+        evt->post(SIMUL.getTime() + 1);
+
+        SCHEDULER_LOG_INFO(std::string("⚡ [TGF] 启动运行时能量检查: ") +
+                           getTaskName(task) + " 在CPU " + cpu->toString());
+    }
+
+    void TGFScheduler::stopEnergyCheckForTask(AbsRTTask *task) {
+        if (!task) {
+            return;
+        }
+
+        auto it = _energy_check_events.find(task);
+        if (it != _energy_check_events.end()) {
+            // 删除事件对象
+            
+            _energy_check_events.erase(it);
+
+            SCHEDULER_LOG_INFO(std::string("⚡ [TGF] 停止运行时能量检查: ") +
+                               getTaskName(task));
+        }
     }
 
     // =====================================================
@@ -1141,4 +1263,68 @@ namespace RTSim {
         return workloads;
     }
 
+    void TGFScheduler::checkAndInterruptRunningTasks() {
+        SCHEDULER_LOG_INFO("🔍 [TGF] 检查运行中任务的能量状态");
+
+        if (!_kernel) {
+            _kernel = getKernel();
+            if (!_kernel) {
+                SCHEDULER_LOG_WARNING("⚠️ [TGF] checkAndInterruptRunningTasks: _kernel为nullptr，无法中断任务");
+                return;
+            }
+        }
+
+        const double EPSILON = 1e-9;
+        std::vector<AbsRTTask *> tasks_to_interrupt;
+
+        // ⭐ V28.15修复：使用kernel的getCurrentExecutingTasks()获取实际运行中的任务
+        const auto& running_tasks = _kernel->getCurrentExecutingTasks();
+
+        // 1. 检查所有运行中的任务
+        for (auto &map_pair : running_tasks) {
+            AbsRTTask *task = map_pair.second;
+            if (!task) {
+                continue;
+            }
+
+            // 计算该任务执行1ms所需的能量
+            double unit_energy = calculateUnitEnergyForTask(task);
+
+            // ⭐ 检查：当前能量是否足够该任务继续执行1ms
+            if (_current_energy < unit_energy - EPSILON) {
+                SCHEDULER_LOG_WARNING(std::string("⚡ [TGF] 任务能量不足，将中断: ") +
+                                     getTaskName(task) +
+                                     " 需要1ms=" + std::to_string(unit_energy) + "J" +
+                                     " 当前能量=" + std::to_string(_current_energy) + "J");
+
+                tasks_to_interrupt.push_back(task);
+                _stats.total_skipped_energy++;
+            } else {
+                SCHEDULER_LOG_DEBUG(std::string("✅ [TGF] 任务能量充足: ") +
+                                   getTaskName(task) +
+                                   " 需要1ms=" + std::to_string(unit_energy) + "J" +
+                                   " 当前能量=" + std::to_string(_current_energy) + "J");
+            }
+        }
+
+        // 2. 中断能量不足的任务
+        for (AbsRTTask *task : tasks_to_interrupt) {
+            if (!task) {
+                continue;
+            }
+
+            SCHEDULER_LOG_INFO(std::string("🛑 [TGF] 中断任务（能量不足）: ") + getTaskName(task));
+
+            // 调用kernel的suspend方法中断任务
+            // suspend会自动调用deschedule()并将任务重新放回调度队列
+            _kernel->suspend(task);
+
+            SCHEDULER_LOG_INFO(std::string("⏸️ [TGF] 任务已中断，等待能量恢复: ") + getTaskName(task));
+        }
+
+        if (!tasks_to_interrupt.empty()) {
+            SCHEDULER_LOG_INFO(std::string("📊 [TGF] 本次tick中断了 ") +
+                               std::to_string(tasks_to_interrupt.size()) + " 个任务（能量不足）");
+        }
+    }
 } // namespace RTSim

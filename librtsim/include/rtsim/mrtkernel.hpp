@@ -517,6 +517,12 @@ namespace RTSim {
         /// std::vector<std::string>. Each element of the vector corresponds to
         /// the name of a different running task (at most one per CPU).
         std::vector<std::string> getRunningTasks() override;
+
+        /// ⭐ V28.15新增：获取当前正在执行的任务指针映射
+        /// @return CPU到任务指针的映射
+        const std::map<CPU *, AbsRTTask *>& getCurrentExecutingTasks() const {
+            return _m_currExe;
+        }
     };
 } // namespace RTSim
 
