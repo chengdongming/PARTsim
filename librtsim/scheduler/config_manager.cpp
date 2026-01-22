@@ -101,7 +101,7 @@ namespace RTSim {
                 return result;
             }
 
-            // ⭐ 新增：尝试解析YAML文件中的scheduler_energy_model配置
+            // ⭐ 新增：尝试解析YAML文件中的配置，包括energy_management和调度器类型
             try {
                 std::ifstream yaml_file(config_file);
                 if (yaml_file.is_open()) {
@@ -109,6 +109,9 @@ namespace RTSim {
                     bool in_scheduler_energy_model = false;
                     bool in_workload_coeffs = false;
                     bool in_freq_ratios = false;
+                    bool in_energy_management = false;
+                    bool in_cpu_islands = false;
+                    bool in_kernel = false;
 
                     while (std::getline(yaml_file, line)) {
                         // 去除首尾空白
@@ -119,9 +122,123 @@ namespace RTSim {
                         // 跳过注释和空行
                         if (line.empty() || line[0] == '#') continue;
 
+                        // 检测energy_management部分
+                        if (line.find("energy_management:") != std::string::npos) {
+                            in_energy_management = true;
+                            in_scheduler_energy_model = false;
+                            in_workload_coeffs = false;
+                            in_freq_ratios = false;
+                            in_cpu_islands = false;
+                            in_kernel = false;
+                            SCHEDULER_LOG_INFO("ConfigManager: 找到energy_management配置");
+                            continue;
+                        }
+
+                        // 检测cpu_islands部分
+                        if (line.find("cpu_islands:") != std::string::npos) {
+                            in_cpu_islands = true;
+                            in_energy_management = false;
+                            in_scheduler_energy_model = false;
+                            in_workload_coeffs = false;
+                            in_freq_ratios = false;
+                            in_kernel = false;
+                            SCHEDULER_LOG_INFO("ConfigManager: 找到cpu_islands配置");
+                            continue;
+                        }
+
+                        // 检测kernel部分（用于获取调度器类型）
+                        if (in_cpu_islands && line.find("kernel:") != std::string::npos) {
+                            in_kernel = true;
+                            SCHEDULER_LOG_INFO("ConfigManager: 找到kernel配置");
+                            continue;
+                        }
+
+                        // 解析调度器类型
+                        if (in_kernel && line.find("scheduler:") != std::string::npos) {
+                            size_t colon_pos = line.find(':');
+                            std::string value = line.substr(colon_pos + 1);
+                            size_t comment_pos = value.find('#');
+                            if (comment_pos != std::string::npos) {
+                                value = value.substr(0, comment_pos);
+                            }
+                            value.erase(0, value.find_first_not_of(" \t"));
+                            value.erase(value.find_last_not_of(" \t\r\n") + 1);
+                            _scheduler_type = value;
+                            SCHEDULER_LOG_INFO("ConfigManager: 调度器类型 = " + _scheduler_type);
+                            continue;
+                        }
+
+                        // 解析energy_management部分的参数
+                        if (in_energy_management) {
+                            // 解析initial_energy
+                            if (line.find("initial_energy:") != std::string::npos) {
+                                size_t colon_pos = line.find(':');
+                                std::string value = line.substr(colon_pos + 1);
+                                size_t comment_pos = value.find('#');
+                                if (comment_pos != std::string::npos) {
+                                    value = value.substr(0, comment_pos);
+                                }
+                                value.erase(0, value.find_first_not_of(" \t"));
+                                value.erase(value.find_last_not_of(" \t\r\n") + 1);
+                                _initial_energy = std::stod(value);
+                                SCHEDULER_LOG_INFO("ConfigManager: initial_energy = " + std::to_string(_initial_energy) + " J");
+                                continue;
+                            }
+
+                            // 解析max_energy
+                            if (line.find("max_energy:") != std::string::npos) {
+                                size_t colon_pos = line.find(':');
+                                std::string value = line.substr(colon_pos + 1);
+                                size_t comment_pos = value.find('#');
+                                if (comment_pos != std::string::npos) {
+                                    value = value.substr(0, comment_pos);
+                                }
+                                value.erase(0, value.find_first_not_of(" \t"));
+                                value.erase(value.find_last_not_of(" \t\r\n") + 1);
+                                _max_energy = std::stod(value);
+                                SCHEDULER_LOG_INFO("ConfigManager: max_energy = " + std::to_string(_max_energy) + " J");
+                                continue;
+                            }
+
+                            // 解析enable_energy_recovery
+                            if (line.find("enable_energy_recovery:") != std::string::npos) {
+                                size_t colon_pos = line.find(':');
+                                std::string value = line.substr(colon_pos + 1);
+                                size_t comment_pos = value.find('#');
+                                if (comment_pos != std::string::npos) {
+                                    value = value.substr(0, comment_pos);
+                                }
+                                value.erase(0, value.find_first_not_of(" \t"));
+                                value.erase(value.find_last_not_of(" \t\r\n") + 1);
+                                _enable_energy_recovery = (value == "true" || value == "1" || value == "yes");
+                                SCHEDULER_LOG_INFO("ConfigManager: enable_energy_recovery = " + std::string(_enable_energy_recovery ? "启用" : "禁用"));
+                                continue;
+                            }
+
+                            // 解析periodic_collection_interval_ms
+                            if (line.find("periodic_collection_interval_ms:") != std::string::npos) {
+                                size_t colon_pos = line.find(':');
+                                std::string value = line.substr(colon_pos + 1);
+                                size_t comment_pos = value.find('#');
+                                if (comment_pos != std::string::npos) {
+                                    value = value.substr(0, comment_pos);
+                                }
+                                value.erase(0, value.find_first_not_of(" \t"));
+                                value.erase(value.find_last_not_of(" \t\r\n") + 1);
+                                _periodic_collection_interval = std::stoi(value);
+                                SCHEDULER_LOG_INFO("ConfigManager: periodic_collection_interval = " + std::to_string(_periodic_collection_interval) + " ms");
+                                continue;
+                            }
+                        }
+
                         // 检测scheduler_energy_model部分
                         if (line.find("scheduler_energy_model:") != std::string::npos) {
                             in_scheduler_energy_model = true;
+                            in_energy_management = false;
+                            in_workload_coeffs = false;
+                            in_freq_ratios = false;
+                            in_cpu_islands = false;
+                            in_kernel = false;
                             SCHEDULER_LOG_INFO("ConfigManager: 找到scheduler_energy_model配置");
                             continue;
                         }

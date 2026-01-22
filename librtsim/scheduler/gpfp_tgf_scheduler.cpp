@@ -96,44 +96,26 @@ namespace RTSim {
 
         _ms_executed++;
 
-        if (current_energy < unit_energy - EPSILON) {
-            // ⭐ 能量不足，中断任务！
-            std::string task_name = _scheduler->getTaskName(_task);  // 先获取名称
-            SCHEDULER_LOG_WARNING(std::string("⚡ [TGF] 运行时能量不足，中断任务: ") +
-                                 task_name +
-                                 " 已执行=" + std::to_string(_ms_executed) + "ms" +
-                                 " 需要1ms=" + std::to_string(unit_energy) + "J" +
-                                 " 当前能量=" + std::to_string(current_energy) + "J");
-
-            // 从事件列表中移除
-            _scheduler->stopEnergyCheckForTask(_task);
-
-            // 中断任务
-            if (_scheduler->_kernel) {
-                _scheduler->_kernel->suspend(_task);
-                SCHEDULER_LOG_INFO(std::string("⏸️ [TGF] 任务已中断，等待能量恢复: ") +
-                                   task_name);
-            }
-
-            // 更新统计
-            _scheduler->_stats.total_skipped_energy++;
+        // ⭐ 检查任务是否仍在执行状态
+        // 如果任务已被中断（suspend），则不应再扣除能量
+        if (!_task->isExecuting()) {
+            SCHEDULER_LOG_DEBUG(std::string("⚠️ [TGF] 能量检查：任务已停止执行，不再扣除能量: ") +
+                               _scheduler->getTaskName(_task) + " 时间=" + std::to_string(static_cast<long>(SIMUL.getTime())) + "ms");
+            // 不重新调度事件
             return;
         }
 
-        // ⭐ 能量充足，扣除1ms能耗并继续
-        double old_energy = _scheduler->_current_energy;
+        // ⭐ 能量检查事件只负责扣除能量，不负责中断
+        // 中断由tick事件统一处理，避免重复中断
         _scheduler->_current_energy -= unit_energy;
-        _scheduler->_stats.total_energy_consumed += unit_energy;
 
-        SCHEDULER_LOG_DEBUG(std::string("⚡ [TGF] 运行时能量扣除: ") +
-                           "任务=" + _scheduler->getTaskName(_task) +
-                           " 已执行=" + std::to_string(_ms_executed) + "ms" +
-                           " 扣除=" + std::to_string(unit_energy) + "J" +
-                           " " + std::to_string(old_energy) + "J → " +
-                           std::to_string(_scheduler->_current_energy) + "J");
+        SCHEDULER_LOG_INFO(std::string("⚡ [TGF] 能量检查事件：扣除 ") +
+                           std::to_string(unit_energy * 1000) + " mJ，剩余 " +
+                           std::to_string(_scheduler->getCurrentEnergy() * 1000) + " mJ");
 
-        // 重新调度下一次能量检查（1ms后）
+        // 重新调度下一次能量检查
         post(SIMUL.getTime() + 1);
+        return;
     }
 
     // =====================================================
@@ -388,6 +370,9 @@ namespace RTSim {
             _current_energy = _max_energy;
         }
 
+        // ⭐ 运行时能量检查：中断能量不足的任务
+        checkAndInterruptRunningTasks();
+
         // 2. Tick边界：检查抢占（高优先级任务到达时）
         checkAndPreempt();
 
@@ -523,7 +508,8 @@ namespace RTSim {
             return;
         }
 
-        // ⭐ 核心：每ms逐次扣减能耗
+        // ⭐ 修复：任务到达时只检查能量，不扣减能耗
+        // 能耗在任务调度时通过getTaskN()方法扣减
         double unit_energy = calculateUnitEnergyForTask(task);
 
         // 检查能量是否足够
@@ -536,22 +522,9 @@ namespace RTSim {
             return;
         }
 
-        // 扣减1ms能耗
-        double old_energy = _current_energy;
-        _current_energy -= unit_energy;
-        _stats.total_energy_consumed += unit_energy;
-
-        // 累计到任务能量账户
-        auto it = _energy_accounts.find(task);
-        if (it != _energy_accounts.end()) {
-            it->second.total_consumed += unit_energy;
-        }
-
-        SCHEDULER_LOG_DEBUG(std::string("⚡ [TGF] notify: ") +
-                           "任务=" + getTaskName(task) +
-                           " 扣减=" + std::to_string(unit_energy) + "J" +
-                           " " + std::to_string(old_energy) + "J → " +
-                           std::to_string(_current_energy) + "J");
+        // 任务到达，添加到就绪队列
+        SCHEDULER_LOG_INFO(std::string("📥 [TGF] 任务到达并添加到就绪队列: ") + getTaskName(task));
+        addToReadyQueue(task);
     }
 
     // =====================================================
@@ -1324,9 +1297,17 @@ namespace RTSim {
 
             SCHEDULER_LOG_INFO(std::string("🛑 [TGF] 中断任务（能量不足）: ") + getTaskName(task));
 
-            // 调用kernel的suspend方法中断任务
+            // 调用kernel的suspend方法��断任务
             // suspend会自动调用deschedule()并将任务重新放回调度队列
             _kernel->suspend(task);
+
+            // ⭐ 取消该任务的能量检查事件，防止继续扣除能量
+            auto it = _energy_check_events.find(task);
+            if (it != _energy_check_events.end()) {
+                // 从map中移除，但不删除事件对象（它会自然结束）
+                _energy_check_events.erase(it);
+                SCHEDULER_LOG_DEBUG(std::string("⚠️ [TGF] 已取消任务的能量检查事件: ") + getTaskName(task));
+            }
 
             SCHEDULER_LOG_INFO(std::string("⏸️ [TGF] 任务已中断，等待能量恢复: ") + getTaskName(task));
         }
