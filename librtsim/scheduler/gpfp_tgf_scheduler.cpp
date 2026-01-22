@@ -707,8 +707,17 @@ namespace RTSim {
 
             if (shouldPreempt(cpu, highest)) {
                 SCHEDULER_LOG_INFO(std::string("🔄 [TGF] 抢占CPU: ") +
-                                  " 高优先级任务=" + getTaskName(highest));
-                // TODO: 实际抢占逻辑
+                                  " 挂起低优先级任务=" + getTaskName(running_task) +
+                                  " 调度高优先级任务=" + getTaskName(highest));
+
+                // ⭐ 实际抢占逻辑：挂起当前运行的任务
+                // suspend会自动调用deschedule()并将任务重新放回调度队列
+                if (_kernel) {
+                    _kernel->suspend(running_task);
+                    SCHEDULER_LOG_DEBUG(std::string("⏸️ [TGF] 已挂起任务: ") + getTaskName(running_task));
+                } else {
+                    SCHEDULER_LOG_WARNING("⚠️ [TGF] 抢占失败：_kernel为nullptr");
+                }
             }
         }
     }

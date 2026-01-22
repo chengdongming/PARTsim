@@ -1,0 +1,40 @@
+# =============================================
+# 抢占测试任务集
+# =============================================
+# 测试场景：
+# - 低优先级任务（周期10ms）在t=0到达并开始执行
+# - 高优先级任务（周期5ms）在t=1到达
+# - 预期：高优先级任务抢占低优先级任务
+# =============================================
+
+taskset:
+  # ===========================================
+  # 任务1: 低优先级任务（周期10ms）
+  # ===========================================
+  - name: task_low_priority
+    iat: 10                      # 到达间隔10ms
+    runtime: 5                   # 运行时间5ms
+    deadline: 10                 # 截止时间10ms
+    params: "period=10,wcet=5,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(5, bzip2)
+
+  # ===========================================
+  # 任务2: 高优先级任务（周期5ms）
+  # ===========================================
+  - name: task_high_priority
+    iat: 5                       # 到达间隔5ms（更短=更高优先级）
+    runtime: 2                   # 运行时间2ms
+    deadline: 5                  # 截止时间5ms
+    params: "period=5,wcet=2,arrival_offset=1,workload=bzip2"
+    code:
+      - fixed(2, bzip2)
+
+# 预期行为：
+# t=0: task_low_priority 到���并开始执行
+# t=1: task_high_priority 到达（高优先级）
+# t=1: 抢占发生！task_low_priority 被挂起，task_high_priority 开始执行
+# t=3: task_high_priority 完成
+# t=3: task_low_priority 恢复执行
+# t=5: task_low_priority 完成（已执行2ms，还需3ms）
+# t=5: task_high_priority 再次到达
