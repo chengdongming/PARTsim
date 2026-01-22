@@ -33,9 +33,9 @@ namespace RTSim {
     // =====================================================
 
     TIETickEvent::TIETickEvent(TIEScheduler *scheduler)
-        : MetaSim::Event("TIETickEvent", MetaSim::Event::_DEFAULT_PRIORITY - 10),
+        : MetaSim::Event("TIETickEvent", MetaSim::Event::_DEFAULT_PRIORITY - 5),
           _scheduler(scheduler) {
-        // 高优先级事件，确保tick调度及时执行
+        // ⭐ V29修复：更高优先级，确保tick先于能量检查事件执行
     }
 
     void TIETickEvent::doit() {
@@ -61,12 +61,12 @@ namespace RTSim {
     // =====================================================
 
     TIEEnergyCheckEvent::TIEEnergyCheckEvent(TIEScheduler *scheduler, AbsRTTask *task, CPU *cpu)
-        : MetaSim::Event("TIEEnergyCheckEvent", MetaSim::Event::_DEFAULT_PRIORITY - 5),
+        : MetaSim::Event("TIEEnergyCheckEvent", MetaSim::Event::_DEFAULT_PRIORITY - 10),
           _scheduler(scheduler),
           _task(task),
           _cpu(cpu),
           _ms_executed(0) {
-        // 更高优先级，确保能量检查及时执行
+        // ⭐ V29修复：较低优先级，确保tick先执行
     }
 
     void TIEEnergyCheckEvent::doit() {
@@ -113,13 +113,11 @@ namespace RTSim {
             return;
         }
 
-        // ⭐ 能量检查事件只负责扣除能量，不负责中断
-        // 中断由tick事件统一处理，避免重复中断
-        _scheduler->_current_energy -= unit_energy;
-
-        SCHEDULER_LOG_INFO(std::string("⚡ [TIE] 能量检查事件：扣除 ") +
-                           std::to_string(unit_energy * 1000) + " mJ，剩余 " +
-                           std::to_string(_scheduler->getCurrentEnergy() * 1000) + " mJ");
+        // ⭐ V29修复：能量检查事件不再扣除能量
+        // 能量扣除已移到tick事件中，避免重复扣除和时序问题
+        SCHEDULER_LOG_DEBUG(std::string("⚡ [TIE] 能量检查事件（仅记录，不扣除）: ") +
+                           "任务=" + _scheduler->getTaskName(_task) + " 需要=" + std::to_string(unit_energy * 1000) + " mJ" +
+                           " 当前=" + std::to_string(_scheduler->getCurrentEnergy() * 1000) + " mJ");
 
         // 重新调度下一次能量检查（1ms后）
         post(SIMUL.getTime() + 1);

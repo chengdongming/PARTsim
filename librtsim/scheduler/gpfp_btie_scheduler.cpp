@@ -61,7 +61,7 @@ namespace RTSim {
     // =====================================================
 
     BTIEEnergyCheckEvent::BTIEEnergyCheckEvent(BTIEScheduler *scheduler, AbsRTTask *task, CPU *cpu)
-        : MetaSim::Event("BTIEEnergyCheckEvent", MetaSim::Event::_DEFAULT_PRIORITY - 5),
+        : MetaSim::Event("BTIEEnergyCheckEvent", MetaSim::Event::_DEFAULT_PRIORITY - 10),
           _scheduler(scheduler),
           _task(task),
           _cpu(cpu),
@@ -1281,6 +1281,33 @@ namespace RTSim {
 
         // ⭐ V28.15修复：使用kernel的getCurrentExecutingTasks()获取实际运行中的任务
         const auto& running_tasks = _kernel->getCurrentExecutingTasks();
+
+        // ⭐ 关键修复：先扣除上一ms执行消耗的能量，再检查是否足够继续
+        // 这样可以确保能量扣除和能量检查的时序正确
+        double total_energy_to_deduct = 0.0;
+        for (auto &map_pair : running_tasks) {
+            AbsRTTask *task = map_pair.second;
+            if (!task) {
+                continue;
+            }
+
+            // 计算该任务执行1ms所需的能量
+            double unit_energy = calculateUnitEnergyForTask(task);
+            total_energy_to_deduct += unit_energy;
+        }
+
+        // 扣除所有运行中任务上一ms的能量
+        if (total_energy_to_deduct > 0 && _current_energy >= total_energy_to_deduct - 1e-9) {
+            double old_energy = _current_energy;
+            _current_energy -= total_energy_to_deduct;
+            _stats.total_energy_consumed += total_energy_to_deduct;
+
+            SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] Tick事件: 扣除运行中任务能量 ") +
+                               std::to_string(total_energy_to_deduct * 1000) + " mJ，" +
+                               std::to_string(old_energy * 1000) + " mJ → " +
+                               std::to_string(_current_energy * 1000) + " mJ (" +
+                               std::to_string(running_tasks.size()) + " 个任务)");
+        }
 
         // 1. 检查所有运行中的任务
         for (auto &map_pair : running_tasks) {

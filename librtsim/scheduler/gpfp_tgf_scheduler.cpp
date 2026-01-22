@@ -61,7 +61,7 @@ namespace RTSim {
     // =====================================================
 
     TGFEnergyCheckEvent::TGFEnergyCheckEvent(TGFScheduler *scheduler, AbsRTTask *task, CPU *cpu)
-        : MetaSim::Event("TGFEnergyCheckEvent", MetaSim::Event::_DEFAULT_PRIORITY - 5),
+        : MetaSim::Event("TGFEnergyCheckEvent", MetaSim::Event::_DEFAULT_PRIORITY - 10),
           _scheduler(scheduler),
           _task(task),
           _cpu(cpu),
@@ -105,13 +105,11 @@ namespace RTSim {
             return;
         }
 
-        // ⭐ 能量检查事件只负责扣除能量，不负责中断
-        // 中断由tick事件统一处理，避免重复中断
-        _scheduler->_current_energy -= unit_energy;
-
-        SCHEDULER_LOG_INFO(std::string("⚡ [TGF] 能量检查事件：扣除 ") +
-                           std::to_string(unit_energy * 1000) + " mJ，剩余 " +
-                           std::to_string(_scheduler->getCurrentEnergy() * 1000) + " mJ");
+        // ⭐ V29修复：能量检查事件不再扣除能量
+        // 能量扣除已移到tick事件中，避免重复扣除和时序问题
+        SCHEDULER_LOG_DEBUG(std::string("⚡ [TGF] 能量检查事件（仅记录，不扣除）: ") +
+                           _scheduler->getTaskName(_task) + " 需要=" + std::to_string(unit_energy * 1000) + " mJ" +
+                           " 当前=" + std::to_string(_scheduler->getCurrentEnergy() * 1000) + " mJ");
 
         // 重新调度下一次能量检查
         post(SIMUL.getTime() + 1);
@@ -1261,6 +1259,33 @@ namespace RTSim {
 
         // ⭐ V28.15修复：使用kernel的getCurrentExecutingTasks()获取实际运行中的任务
         const auto& running_tasks = _kernel->getCurrentExecutingTasks();
+
+        // ⭐ 关键修复：先扣除上一ms执行消耗的能量，再检查是否足够继续
+        // 这样可以确保能量扣除和能量检查的��序正确
+        double total_energy_to_deduct = 0.0;
+        for (auto &map_pair : running_tasks) {
+            AbsRTTask *task = map_pair.second;
+            if (!task) {
+                continue;
+            }
+
+            // 计算该任务执行1ms所需的能量
+            double unit_energy = calculateUnitEnergyForTask(task);
+            total_energy_to_deduct += unit_energy;
+        }
+
+        // 扣除所有运行中任务上一ms的能量
+        if (total_energy_to_deduct > 0 && _current_energy >= total_energy_to_deduct - 1e-9) {
+            double old_energy = _current_energy;
+            _current_energy -= total_energy_to_deduct;
+            _stats.total_energy_consumed += total_energy_to_deduct;
+
+            SCHEDULER_LOG_INFO(std::string("⚡ [TGF] Tick事件: 扣除运行中任务能量 ") +
+                               std::to_string(total_energy_to_deduct * 1000) + " mJ，" +
+                               std::to_string(old_energy * 1000) + " mJ → " +
+                               std::to_string(_current_energy * 1000) + " mJ (" +
+                               std::to_string(running_tasks.size()) + " 个任务)");
+        }
 
         // 1. 检查所有运行中的任务
         for (auto &map_pair : running_tasks) {
