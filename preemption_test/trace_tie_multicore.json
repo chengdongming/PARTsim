@@ -1,0 +1,234 @@
+{
+  "events": [
+    {
+      "time": 7200000,
+      "event_type": "arrival",
+      "task_name": "task_low_priority",
+      "arrival_time": 7200000,
+      "original_time": "0",
+      "original_arrival_time": "0"
+    },
+    {
+      "time": 7200000,
+      "event_type": "scheduled",
+      "task_name": "task_low_priority",
+      "arrival_time": 7200000,
+      "original_time": "0",
+      "original_arrival_time": "0"
+    },
+    {
+      "time": 7200001,
+      "event_type": "arrival",
+      "task_name": "task_high_priority",
+      "arrival_time": 7200001,
+      "original_time": "1",
+      "original_arrival_time": "1"
+    },
+    {
+      "time": 7200001,
+      "event_type": "scheduled",
+      "task_name": "task_high_priority",
+      "arrival_time": 7200001,
+      "original_time": "1",
+      "original_arrival_time": "1"
+    },
+    {
+      "time": 7200003,
+      "event_type": "end_instance",
+      "task_name": "task_high_priority",
+      "arrival_time": 7200001,
+      "original_time": "3",
+      "original_arrival_time": "1"
+    },
+    {
+      "time": 7200005,
+      "event_type": "end_instance",
+      "task_name": "task_low_priority",
+      "arrival_time": 7200000,
+      "original_time": "5",
+      "original_arrival_time": "0"
+    },
+    {
+      "time": 7200006,
+      "event_type": "arrival",
+      "task_name": "task_high_priority",
+      "arrival_time": 7200006,
+      "original_time": "6",
+      "original_arrival_time": "6"
+    },
+    {
+      "time": 7200006,
+      "event_type": "scheduled",
+      "task_name": "task_high_priority",
+      "arrival_time": 7200006,
+      "original_time": "6",
+      "original_arrival_time": "6"
+    },
+    {
+      "time": 7200008,
+      "event_type": "end_instance",
+      "task_name": "task_high_priority",
+      "arrival_time": 7200006,
+      "original_time": "8",
+      "original_arrival_time": "6"
+    },
+    {
+      "time": 7200010,
+      "event_type": "arrival",
+      "task_name": "task_low_priority",
+      "arrival_time": 7200010,
+      "original_time": "10",
+      "original_arrival_time": "10"
+    },
+    {
+      "time": 7200010,
+      "event_type": "scheduled",
+      "task_name": "task_low_priority",
+      "arrival_time": 7200010,
+      "original_time": "10",
+      "original_arrival_time": "10"
+    },
+    {
+      "time": 7200011,
+      "event_type": "arrival",
+      "task_name": "task_high_priority",
+      "arrival_time": 7200011,
+      "original_time": "11",
+      "original_arrival_time": "11"
+    },
+    {
+      "time": 7200011,
+      "event_type": "scheduled",
+      "task_name": "task_high_priority",
+      "arrival_time": 7200011,
+      "original_time": "11",
+      "original_arrival_time": "11"
+    },
+    {
+      "time": 7200013,
+      "event_type": "end_instance",
+      "task_name": "task_high_priority",
+      "arrival_time": 7200011,
+      "original_time": "13",
+      "original_arrival_time": "11"
+    },
+    {
+      "time": 7200015,
+      "event_type": "end_instance",
+      "task_name": "task_low_priority",
+      "arrival_time": 7200010,
+      "original_time": "15",
+      "original_arrival_time": "10"
+    },
+    {
+      "time": 7200016,
+      "event_type": "arrival",
+      "task_name": "task_high_priority",
+      "arrival_time": 7200016,
+      "original_time": "16",
+      "original_arrival_time": "16"
+    },
+    {
+      "time": 7200016,
+      "event_type": "scheduled",
+      "task_name": "task_high_priority",
+      "arrival_time": 7200016,
+      "original_time": "16",
+      "original_arrival_time": "16"
+    },
+    {
+      "time": 7200018,
+      "event_type": "end_instance",
+      "task_name": "task_high_priority",
+      "arrival_time": 7200016,
+      "original_time": "18",
+      "original_arrival_time": "16"
+    },
+    {
+      "time": 7200020,
+      "event_type": "arrival",
+      "task_name": "task_low_priority",
+      "arrival_time": 7200020,
+      "original_time": "20",
+      "original_arrival_time": "20"
+    },
+    {
+      "time": 7200020,
+      "event_type": "scheduled",
+      "task_name": "task_low_priority",
+      "arrival_time": 7200020,
+      "original_time": "20",
+      "original_arrival_time": "20"
+    },
+    {
+      "time": 7200021,
+      "event_type": "arrival",
+      "task_name": "task_high_priority",
+      "arrival_time": 7200021,
+      "original_time": "21",
+      "original_arrival_time": "21"
+    },
+    {
+      "time": 7200021,
+      "event_type": "scheduled",
+      "task_name": "task_high_priority",
+      "arrival_time": 7200021,
+      "original_time": "21",
+      "original_arrival_time": "21"
+    },
+    {
+      "time": 7200023,
+      "event_type": "end_instance",
+      "task_name": "task_high_priority",
+      "arrival_time": 7200021,
+      "original_time": "23",
+      "original_arrival_time": "21"
+    },
+    {
+      "time": 7200025,
+      "event_type": "end_instance",
+      "task_name": "task_low_priority",
+      "arrival_time": 7200020,
+      "original_time": "25",
+      "original_arrival_time": "20"
+    },
+    {
+      "time": 7200026,
+      "event_type": "arrival",
+      "task_name": "task_high_priority",
+      "arrival_time": 7200026,
+      "original_time": "26",
+      "original_arrival_time": "26"
+    },
+    {
+      "time": 7200026,
+      "event_type": "scheduled",
+      "task_name": "task_high_priority",
+      "arrival_time": 7200026,
+      "original_time": "26",
+      "original_arrival_time": "26"
+    },
+    {
+      "time": 7200028,
+      "event_type": "end_instance",
+      "task_name": "task_high_priority",
+      "arrival_time": 7200026,
+      "original_time": "28",
+      "original_arrival_time": "26"
+    }
+  ],
+  "metadata": {
+    "start_time_offset": 7200000,
+    "total_events": 27,
+    "scheduler_type": "gpfp_tie",
+    "processing_method": "simple_processor",
+    "processing_timestamp": "2026-01-22T23:45:30.033529",
+    "statistics": {
+      "min_time": 7200000,
+      "max_time": 7200028,
+      "duration_ms": 28,
+      "duration_s": 0.028
+    },
+    "description": "处理完成的跟踪文件，应用时间偏移 7200000 ms"
+  }
+}

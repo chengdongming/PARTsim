@@ -1,0 +1,113 @@
+# CPU集群配置 - BTIE调度器多核抢占测试
+cpu_islands:
+  - name: energy_aware_cpus
+    numcpus: 4                           # **修改为4个CPU核心**
+
+    kernel:
+      scheduler: gpfp_btie                # TIE调度器
+      task_placement: global
+
+    # 电压频率配置
+    volts: [0.92, 0.94, 0.96, 0.98, 1.00, 1.02, 1.04, 1.06, 1.08, 1.10, 1.12, 1.14]
+    freqs: [7000, 7500, 8000, 8100, 8200, 8300, 8400, 8500, 9000, 9500, 10000, 10500]
+    base_freq: 8100
+
+    # 功率和速度模型
+    power_model: energy_aware_model
+    speed_model: energy_aware_model
+
+# =============================================
+# 能量管理配置 - 足够能量（避免能量中断）
+# =============================================
+energy_management:
+  # 基本能量参数 - 足够五个任务完成（4个核心 × 5个任务）
+  initial_energy: 0.100                  # **增加到0.1J（100mJ）** - 足够多个任务运行
+  max_energy: 1000.0                     # 最大能量容量 (J)
+
+  day_of_year: 187
+  time_of_day_ms: 7200000               # 凌晨2点 - 无太阳能
+
+  # === 禁用太阳能数据 ===
+  use_real_solar_data: false            # 禁用太阳能，模拟夜间
+  pv_efficiency: 0.0                    # 光伏效率设为0
+  pv_area_m2: 0.0                       # 光伏板面积设为0
+
+  # 调度器单位时间
+  unit_time: 50
+  periodic_collection_interval_ms: 1
+
+  # 能量恢复配置
+  enable_energy_recovery: false         # 禁用能量恢复
+  max_recovery_wait_time_ms: 10000
+
+  # === 调度器能量消耗模型配置 ===
+  scheduler_energy_model:
+    base_power: 0.5                    # 基础功耗 (W)
+
+    # 工作负载功率系数
+    workload_coefficients:
+      bzip2: 1.2
+      hash: 0.8
+      encrypt: 1.5
+      decrypt: 1.5
+      control: 0.1
+      idle: 0.1
+
+    # 频率-功率比例系数
+    frequency_power_ratios:
+      7000: 0.85
+      7500: 0.88
+      8000: 0.92
+      8100: 0.93
+      8200: 0.94
+      8300: 0.95
+      8400: 0.96
+      8500: 0.97
+      9000: 1.0
+      9500: 1.05
+      10000: 1.1
+      10500: 1.15
+
+# =============================================
+# 功率模型配置
+# =============================================
+power_models:
+  - name: energy_aware_model
+    type: balsini_pannocchi
+
+    params:
+      # 空闲工作负载
+      - workload: idle
+        power_params: [0.00134845, 1.76307e-5, 124.535, 1.00399e-10]
+        speed_params: [1, 0, 0, 0]
+        energy_coefficient: 0.1
+
+      # 压缩工作负载
+      - workload: bzip2
+        power_params: [0.00775587, 33.376, 1.54585, 9.53439e-10]
+        speed_params: [0.0256054, 2.9809e+6, 0.602631, 8.13712e+9]
+        energy_coefficient: 1.2
+
+      # 哈希工作负载
+      - workload: hash
+        power_params: [0.00624673, 176.315, 1.72836, 1.77362e-10]
+        speed_params: [0.00645628, 3.37134e+6, 7.83177, 93459]
+        energy_coefficient: 0.8
+
+      # 加密工作负载
+      - workload: encrypt
+        power_params: [0.00676544, 26.2243, 5.6071, 5.34216e-10]
+        speed_params: [6.11496e-78, 3.32246e+6, 6.5652, 115759]
+        energy_coefficient: 1.5
+
+      # 解密工作负载
+      - workload: decrypt
+        power_params: [0.00629664, 87.1519, 2.93286, 2.80871e-10]
+        speed_params: [5.0154e-68, 3.31791e+6, 7.154, 112163]
+        energy_coefficient: 1.5
+
+      # 控制工作负载
+      - workload: control
+        power_params: [0.001, 1.0, 1.0, 1.0e-10]
+        speed_params: [1, 0, 0, 0]
+        energy_coefficient: 0.1
