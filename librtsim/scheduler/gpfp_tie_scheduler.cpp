@@ -235,6 +235,15 @@ namespace RTSim {
                         }
 
                         if (in_energy_section) {
+                            // DEBUG: 显示所有energy section的行（注释行除外）
+                            if (line.find("use_real_solar_data:") == std::string::npos &&
+                                line.find("solar_data_file:") == std::string::npos &&
+                                line.find("pv_efficiency:") == std::string::npos &&
+                                line.find("pv_area_m2:") == std::string::npos &&
+                                !line.empty()) {
+                                SCHEDULER_LOG_DEBUG(std::string("📄 [TIE] YAML行: '") + line + "'");
+                            }
+
                             if (line.find("use_real_solar_data:") != std::string::npos) {
                                 std::string value = line.substr(line.find(":") + 1);
                                 size_t comment_pos = value.find('#');
@@ -254,6 +263,7 @@ namespace RTSim {
                                 value.erase(0, value.find_first_not_of(" \t\""));
                                 value.erase(value.find_last_not_of(" \t\"") + 1);
                                 _solar_data_file = value;
+                                SCHEDULER_LOG_INFO(std::string("📖 [TIE] 解析到solar_data_file: '") + value + "'");
                             }
                             else if (line.find("pv_efficiency:") != std::string::npos) {
                                 std::string value = line.substr(line.find(":") + 1);
@@ -290,7 +300,7 @@ namespace RTSim {
 
             // 读取初始能量
             double bridge_energy = EnergyBridge::getInstance().getCurrentEnergy();
-            if (bridge_energy > 0) {
+            if (bridge_energy >= 0) {  // ⭐ 修复：允许initial_energy=0的情况
                 _initial_energy = bridge_energy;
                 _current_energy = _initial_energy;
                 SCHEDULER_LOG_INFO(std::string("💰 [TIE] 初始能量: ") + std::to_string(_initial_energy) + "J");
@@ -300,7 +310,7 @@ namespace RTSim {
 
             _start_time_offset = configMgr.getStartTimeOffset();
             double config_energy = configMgr.getInitialEnergy();
-            if (config_energy > 0) {
+            if (config_energy >= 0) {  // ⭐ 修复：允许initial_energy=0的情况
                 _initial_energy = config_energy;
                 _current_energy = _initial_energy;
                 SCHEDULER_LOG_INFO(std::string("💰 [TIE] 从ConfigManager获取初始能量: ") +
@@ -447,21 +457,74 @@ namespace RTSim {
     // =====================================================
 
     AbsRTTask *TIEScheduler::getTaskN(unsigned int n) {
-        SCHEDULER_LOG_DEBUG(std::string("🔍 [TIE] getTaskN(") + std::to_string(n) + ")" +
-                           " 已调度能耗=" + std::to_string(_dispatching_tasks_total_energy) + "J" +
-                           " 当前能量=" + std::to_string(_current_energy) + "J");
+        SCHEDULER_LOG_DEBUG(std::string("🔍 [TIE] getTaskN(") + std::to_string(n) + ") " +
+                           "已调度能耗=" + std::to_string(_dispatching_tasks_total_energy) + "J " +
+                           "当前能量=" + std::to_string(_current_energy) + "J " +
+                           "队���大小=" + std::to_string(_ready_queue.size()));
 
-        // ⭐ 关键修复：当n==0时，表示新的调度周期开始，重置累计能耗和已计数任务集合
+        // ⭐ ��键修复：当n==0时，表示新的调度周期开始，重置累计能耗和已计数任务集合
         if (n == 0) {
             _dispatching_tasks_total_energy = 0.0;
             _counted_tasks_in_dispatch.clear();
-            SCHEDULER_LOG_DEBUG(std::string("🔄 [TIE] 新调度周期开始，重置累计能耗和已计数任务集合"));
+
+            // ⭐ DEBUG: 显示队列中所有任务的到达时间
+            if (_ready_queue.size() > 2) {
+                SCHEDULER_LOG_INFO(std::string("📋 [TIE] 队列中的任务(size=") +
+                                  std::to_string(_ready_queue.size()) + "):");
+                for (size_t i = 0; i < _ready_queue.size() && i < 10; ++i) {
+                    AbsRTTask *task = _ready_queue[i];
+                    if (task) {
+                        SCHEDULER_LOG_INFO(std::string("  [") + std::to_string(i) + "] " +
+                                         getTaskName(task) +
+                                         " 到达=" + std::to_string(static_cast<int64_t>(task->getArrival())) +
+                                         " active=" + (task->isActive() ? "true" : "false"));
+                    }
+                }
+            }
+
+            SCHEDULER_LOG_INFO(std::string("🔄 [TIE] 新调度周期开始，重置累计能耗和已计数任务集合"));
         }
 
         if (_ready_queue.empty()) {
-            SCHEDULER_LOG_DEBUG("📭 [TIE] getTaskN: 就绪队列为空");
+            SCHEDULER_LOG_INFO("📭 [TIE] getTaskN: 就绪队列为空");
             return nullptr;
         }
+
+        // ⭐ 暂时注释掉清理逻辑，先观察队列实际状态
+        /*
+        // ⭐ 关键修复：清理_ready_queue中过期的周期性任务实例
+        // 对于周期性任务，使用到达时间来判断实例是否过期
+        Tick current_time = SIMUL.getTime();
+        _ready_queue.erase(
+            std::remove_if(_ready_queue.begin(), _ready_queue.end(),
+                [this, current_time](AbsRTTask *task) {
+                    if (!task) return true;
+                    // 移除不活动的任务
+                    if (!task->isActive()) {
+                        SCHEDULER_LOG_DEBUG(std::string("🧹 [TIE] 清理不活动任务: ") + getTaskName(task));
+                        return true;
+                    }
+                    // ⭐ 移除过期的周期性任务实例：到达时间+截止时间 < 当前时间
+                    Tick arrival = task->getArrival();
+                    Tick deadline = arrival + Tick(20);  // 周期性任务的截止时间是到达时间+周期
+                    if (deadline < current_time) {
+                        SCHEDULER_LOG_DEBUG(std::string("🧹 [TIE] 清理过期任务实例: ") +
+                                       getTaskName(task) +
+                                       " 到达=" + std::to_string(static_cast<int64_t>(arrival)) +
+                                       " 截止=" + std::to_string(static_cast<int64_t>(deadline)) +
+                                       " 当前=" + std::to_string(static_cast<int64_t>(current_time)));
+                        return true;
+                    }
+                    return false;
+                }),
+            _ready_queue.end()
+        );
+
+        if (_ready_queue.empty()) {
+            SCHEDULER_LOG_DEBUG("📭 [TIE] getTaskN: 清理后队列为空");
+            return nullptr;
+        }
+        */
 
         // ⭐ 级联调度：遍历就绪队列，运行中任务也要检查能量
         unsigned int ready_index = 0;
@@ -941,6 +1004,12 @@ namespace RTSim {
 
     void TIEScheduler::addToReadyQueue(AbsRTTask *task) {
         if (!task) {
+            return;
+        }
+
+        // ⭐ 修复重复实例bug：检查任务是���已在就绪队列中
+        if (std::find(_ready_queue.begin(), _ready_queue.end(), task) != _ready_queue.end()) {
+            SCHEDULER_LOG_DEBUG(std::string("⚠️ [TIE] 任务已在就绪队列，跳过添加: ") + getTaskName(task));
             return;
         }
 

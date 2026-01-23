@@ -754,9 +754,11 @@ namespace RTSim {
         Scheduler::insert(task);
         addToReadyQueue(task);
 
-        // ⭐ 修复0时刻调度延迟：如果是第一个任务且在0时刻，立即触发批量调度
-        if (_ready_queue.size() == 1 && SIMUL.getTime() == Tick(0)) {
-            SCHEDULER_LOG_INFO("⚡ [BTIE] 第一个任务在0ms到达，立即触发批量调度");
+        // ⭐ BTIE改进：任务到达时也触发批量调度（保持批量调度特性）
+        // 这样可以在tick边界和任务到达时都进行调度，消除1ms延迟
+        if (_ready_queue.size() >= 1) {
+            SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] 任务到达，立即触发批量调度 (就绪队列大小=") +
+                             std::to_string(_ready_queue.size()) + ")");
             performTickScheduling();
         }
     }
@@ -776,6 +778,12 @@ namespace RTSim {
 
     void BTIEScheduler::addToReadyQueue(AbsRTTask *task) {
         if (!task) {
+            return;
+        }
+
+        // ⭐ 修复重复实例bug：检查任务是否已在就绪队列中
+        if (std::find(_ready_queue.begin(), _ready_queue.end(), task) != _ready_queue.end()) {
+            SCHEDULER_LOG_DEBUG(std::string("⚠️ [BTIE] 任务已在就绪队列，跳过添加: ") + getTaskName(task));
             return;
         }
 

@@ -419,8 +419,15 @@ class EnergyHarvester:
                     # 动态导入，避免循环依赖
                     from solar_data_loader import SolarDataLoader
 
+                    # 智能路径处理：自动检测运行目录
+                    import os
+                    solar_file = config.solar_data_file
+                    # 如果文件不存在且在build目录，尝试添加父目录前缀
+                    if not os.path.exists(solar_file) and 'build' in os.getcwd().split(os.sep):
+                        solar_file = os.path.join('..', solar_file)
+
                     self.solar_loader = SolarDataLoader(
-                        config.solar_data_file,
+                        solar_file,
                         start_offset_minutes=config.start_offset_minutes
                     )
                     logger.info(f"[EnergyHarvester] 成功初始化真实太阳能数据模型")
@@ -826,8 +833,14 @@ class EnergyManager:
                         try:
                             from solar_data_loader import SolarDataLoader
 
+                            # 智能路径处理：自动检测运行目录
+                            import os
+                            solar_file = self.config.solar_data_file
+                            if not os.path.exists(solar_file) and 'build' in os.getcwd().split(os.sep):
+                                solar_file = os.path.join('..', solar_file)
+
                             self.harvester.solar_loader = SolarDataLoader(
-                                self.config.solar_data_file,
+                                solar_file,
                                 start_offset_minutes=self.config.start_offset_minutes
                             )
                             logger.info(f"[EnergyManager] 重新初始化真实太阳能数据模型")
@@ -987,6 +1000,12 @@ class EnergyManager:
                             except (ValueError, IndexError):
                                 pass
 
+            # 智能路径处理：为C++提供太阳能数据文件路径
+            import os
+            solar_file = self.config.solar_data_file
+            if not os.path.exists(solar_file) and 'rtsim' in os.getcwd().split(os.sep):
+                solar_file = os.path.join('..', solar_file)
+
             config_dict = {
                 "num_cores": num_cores,
                 "base_frequency": base_frequency,
@@ -1000,7 +1019,12 @@ class EnergyManager:
                 "periodic_collection_interval": int(self.config.periodic_collection_interval),
                 "base_power": float(self.config.base_power),
                 "power_coefficients": dict(self.config.power_coefficients),
-                "frequency_power_ratios": dict(self.config.frequency_power_ratios)
+                "frequency_power_ratios": dict(self.config.frequency_power_ratios),
+                # 太阳能相关配置 - C++需要
+                "solar_data_file": solar_file,
+                "use_real_solar_data": bool(self.config.use_real_solar_data),
+                "pv_efficiency": float(self.config.pv_efficiency),
+                "pv_area_m2": float(self.config.pv_area_m2)
             }
             
             logger.info(f"[Python] 返回C++配置: 核心数={config_dict['num_cores']}, "

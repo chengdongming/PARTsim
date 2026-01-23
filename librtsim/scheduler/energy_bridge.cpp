@@ -351,9 +351,12 @@ namespace RTSim {
                     return false;
                 }
 
-                // 添加Python路径
+                // 添加Python路径 - 智能检测运行目录
                 PyRun_SimpleString("import sys");
+                PyRun_SimpleString("import os");
                 PyRun_SimpleString("sys.path.append('.')");
+                // 如果在build目录，添加父目录以访问energy_manager
+                PyRun_SimpleString("if 'build' in os.getcwd().split(os.sep): sys.path.append('..')");
                 PyRun_SimpleString("sys.path.append('./simconf/systems')");
 
                 if (_energy_debug) {
@@ -365,10 +368,15 @@ namespace RTSim {
             ConfigManager::setConfigCallback(pythonConfigCallback);
 
             // 导入energy_manager模块并创建实例
-            // 🔑 修复：使用传入的配置文件路径，而不是从环境变量读取
+            // 智能路径处理：自动检测运行目录
             std::string python_code =
                 "import sys\n"
+                "import os\n"
                 "sys.path.append('.')\n"
+                // 如果在rtsim目录，添加父目录以访问energy_manager
+                "cwd_parts = os.getcwd().split(os.sep)\n"
+                "if len(cwd_parts) > 0 and cwd_parts[-1] == 'rtsim':\n"
+                "    sys.path.append('..')\n"
                 "sys.path.append('./simconf/systems')\n"
                 "import energy_manager\n"
                 "config_file = '" + python_script_path + "'\n"

@@ -588,12 +588,17 @@ namespace RTSim {
                     tgf_sched->startEnergyCheckForTask(st, p);
                 }
             } else {
-                // 任务不在就绪或执行状态，可能能量不足
+                // 任务不在就绪或执行状态，可能能量不足或已完成
                 // 不调用schedule()，避免记录错误的调度事件
                 std::cout << "[DEBUG] 跳过schedule()，任务状态不对: " << (task ? task->getName() : "nullptr") << std::endl;
                 DBGPRINT("Task not in READY or EXEC state, skipping schedule(): ", taskname(st));
                 // 将_m_currExe[p]设置为null，避免后续问题
                 _m_currExe[p] = nullptr;
+                // ⭐ 修复：清理_m_dispatched，避免后续周期调度失败
+                if (st) {
+                    _m_dispatched[st] = nullptr;
+                    std::cout << "[DEBUG] 清理_m_dispatched: " << taskname(st) << std::endl;
+                }
             }
         }
 

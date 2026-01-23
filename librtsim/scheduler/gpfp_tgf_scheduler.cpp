@@ -760,6 +760,12 @@ namespace RTSim {
             return;
         }
 
+        // ⭐ 修复重复实例bug：检查任务是否已在就绪队列中
+        if (std::find(_ready_queue.begin(), _ready_queue.end(), task) != _ready_queue.end()) {
+            SCHEDULER_LOG_DEBUG(std::string("⚠️ [TGF] 任务已在就绪队列，跳过添加: ") + getTaskName(task));
+            return;
+        }
+
         removeFromWaitingQueue(task);
 
         TGFTaskModel *model = getTaskModel(task);
