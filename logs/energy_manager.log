@@ -1747,3 +1747,1389 @@
 2026-01-23 03:05:18.572 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=energy_interrupt_test/system_tgf.yml, current_config_file=energy_interrupt_test/system_tgf.yml
 2026-01-23 03:05:18.572 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: energy_interrupt_test/system_tgf.yml
 2026-01-23 03:05:18.572 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0015J
+2026-01-23 03:06:07.842 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: preemption_test/system_tie.yml
+2026-01-23 03:06:07.854 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: preemption_test/system_tie.yml
+2026-01-23 03:06:07.855 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.01
+2026-01-23 03:06:07.855 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.01
+2026-01-23 03:06:07.855 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 03:06:07.855 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 03:06:07.855 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 03:06:07.855 [INFO    ] [energy_manager      ] EnergyConfig loaded from preemption_test/system_tie.yml
+2026-01-23 03:06:07.855 [INFO    ] [energy_manager      ]   Initial energy: 0.01 J
+2026-01-23 03:06:07.855 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 03:06:07.855 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 03:06:07.855 [INFO    ] [energy_manager      ]   Debug mode: True
+2026-01-23 03:06:07.855 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 03:06:07.856 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 03:06:07.856 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 03:06:07.856 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 03:06:07.856 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 03:06:07.856 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 03:06:07.856 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 03:06:07.856 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 03:06:07.856 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 03:06:07.856 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 03:06:07.856 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 03:06:07.856 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.01
+2026-01-23 03:06:07.856 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.01
+2026-01-23 03:06:07.856 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 03:06:07.857 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 03:06:07.857 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 03:06:07.857 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 03:06:07.857 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 03:06:07.857 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=preemption_test/system_tie.yml, current_config_file=preemption_test/system_tie.yml
+2026-01-23 03:06:07.857 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: preemption_test/system_tie.yml
+2026-01-23 03:06:07.857 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=1, 基础频率=8100.0MHz, 初始能量=0.01J
+2026-01-23 03:07:31.469 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: energy_interrupt_test/system_tie.yml
+2026-01-23 03:07:31.479 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: energy_interrupt_test/system_tie.yml
+2026-01-23 03:07:31.479 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0015
+2026-01-23 03:07:31.479 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0015
+2026-01-23 03:07:31.479 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 03:07:31.479 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 03:07:31.479 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 03:07:31.479 [INFO    ] [energy_manager      ] EnergyConfig loaded from energy_interrupt_test/system_tie.yml
+2026-01-23 03:07:31.479 [INFO    ] [energy_manager      ]   Initial energy: 0.0015 J
+2026-01-23 03:07:31.479 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 03:07:31.479 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 03:07:31.480 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 03:07:31.480 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 03:07:31.480 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 03:07:31.480 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 03:07:31.480 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 03:07:31.480 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 03:07:31.480 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 03:07:31.480 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 03:07:31.480 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 03:07:31.480 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 03:07:31.480 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 03:07:31.480 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 03:07:31.480 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0015
+2026-01-23 03:07:31.480 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0015
+2026-01-23 03:07:31.481 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 03:07:31.481 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 03:07:31.481 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 03:07:31.481 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 03:07:31.481 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 03:07:31.481 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=energy_interrupt_test/system_tie.yml, current_config_file=energy_interrupt_test/system_tie.yml
+2026-01-23 03:07:31.481 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: energy_interrupt_test/system_tie.yml
+2026-01-23 03:07:31.481 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0015J
+2026-01-23 03:07:48.221 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: energy_interrupt_test/system_tie.yml
+2026-01-23 03:07:48.231 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: energy_interrupt_test/system_tie.yml
+2026-01-23 03:07:48.232 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0015
+2026-01-23 03:07:48.232 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0015
+2026-01-23 03:07:48.232 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 03:07:48.232 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 03:07:48.232 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 03:07:48.232 [INFO    ] [energy_manager      ] EnergyConfig loaded from energy_interrupt_test/system_tie.yml
+2026-01-23 03:07:48.232 [INFO    ] [energy_manager      ]   Initial energy: 0.0015 J
+2026-01-23 03:07:48.232 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 03:07:48.232 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 03:07:48.232 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 03:07:48.232 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 03:07:48.233 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 03:07:48.233 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 03:07:48.233 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 03:07:48.233 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 03:07:48.233 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 03:07:48.233 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 03:07:48.233 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 03:07:48.233 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 03:07:48.233 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 03:07:48.233 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 03:07:48.233 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0015
+2026-01-23 03:07:48.233 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0015
+2026-01-23 03:07:48.233 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 03:07:48.234 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 03:07:48.234 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 03:07:48.234 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 03:07:48.234 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 03:07:48.234 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=energy_interrupt_test/system_tie.yml, current_config_file=energy_interrupt_test/system_tie.yml
+2026-01-23 03:07:48.234 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: energy_interrupt_test/system_tie.yml
+2026-01-23 03:07:48.234 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0015J
+2026-01-23 03:07:50.738 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: energy_interrupt_test/system_tie.yml
+2026-01-23 03:07:50.748 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: energy_interrupt_test/system_tie.yml
+2026-01-23 03:07:50.748 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0015
+2026-01-23 03:07:50.748 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0015
+2026-01-23 03:07:50.748 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 03:07:50.748 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 03:07:50.748 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 03:07:50.748 [INFO    ] [energy_manager      ] EnergyConfig loaded from energy_interrupt_test/system_tie.yml
+2026-01-23 03:07:50.748 [INFO    ] [energy_manager      ]   Initial energy: 0.0015 J
+2026-01-23 03:07:50.748 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 03:07:50.748 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 03:07:50.749 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 03:07:50.749 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 03:07:50.749 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 03:07:50.749 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 03:07:50.749 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 03:07:50.749 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 03:07:50.749 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 03:07:50.749 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 03:07:50.749 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 03:07:50.749 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 03:07:50.749 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 03:07:50.749 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 03:07:50.749 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0015
+2026-01-23 03:07:50.749 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0015
+2026-01-23 03:07:50.750 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 03:07:50.750 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 03:07:50.750 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 03:07:50.750 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 03:07:50.750 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 03:07:50.750 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=energy_interrupt_test/system_tie.yml, current_config_file=energy_interrupt_test/system_tie.yml
+2026-01-23 03:07:50.750 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: energy_interrupt_test/system_tie.yml
+2026-01-23 03:07:50.750 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0015J
+2026-01-23 03:07:54.254 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: energy_interrupt_test/system_tie.yml
+2026-01-23 03:07:54.265 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: energy_interrupt_test/system_tie.yml
+2026-01-23 03:07:54.265 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0015
+2026-01-23 03:07:54.265 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0015
+2026-01-23 03:07:54.265 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 03:07:54.265 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 03:07:54.265 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 03:07:54.265 [INFO    ] [energy_manager      ] EnergyConfig loaded from energy_interrupt_test/system_tie.yml
+2026-01-23 03:07:54.265 [INFO    ] [energy_manager      ]   Initial energy: 0.0015 J
+2026-01-23 03:07:54.265 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 03:07:54.265 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 03:07:54.265 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 03:07:54.266 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 03:07:54.266 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 03:07:54.266 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 03:07:54.266 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 03:07:54.266 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 03:07:54.266 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 03:07:54.266 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 03:07:54.266 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 03:07:54.266 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 03:07:54.266 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 03:07:54.266 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 03:07:54.266 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0015
+2026-01-23 03:07:54.266 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0015
+2026-01-23 03:07:54.266 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 03:07:54.267 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 03:07:54.267 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 03:07:54.267 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 03:07:54.267 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 03:07:54.267 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=energy_interrupt_test/system_tie.yml, current_config_file=energy_interrupt_test/system_tie.yml
+2026-01-23 03:07:54.267 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: energy_interrupt_test/system_tie.yml
+2026-01-23 03:07:54.267 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0015J
+2026-01-23 03:12:13.935 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:13.945 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:13.945 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0015
+2026-01-23 03:12:13.945 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0015
+2026-01-23 03:12:13.945 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 03:12:13.945 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 03:12:13.945 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 03:12:13.945 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:13.945 [INFO    ] [energy_manager      ]   Initial energy: 0.0015 J
+2026-01-23 03:12:13.945 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 03:12:13.945 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 03:12:13.945 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 03:12:13.946 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 03:12:13.946 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 03:12:13.946 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 03:12:13.946 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 03:12:13.946 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 03:12:13.946 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 03:12:13.946 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 03:12:13.946 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 03:12:13.946 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 03:12:13.946 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 03:12:13.946 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 03:12:13.946 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0015
+2026-01-23 03:12:13.946 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0015
+2026-01-23 03:12:13.947 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 03:12:13.947 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 03:12:13.947 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 03:12:13.947 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 03:12:13.947 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 03:12:13.947 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml, current_config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:13.947 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:13.947 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0015J
+2026-01-23 03:12:21.565 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:21.575 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:21.575 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0015
+2026-01-23 03:12:21.575 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0015
+2026-01-23 03:12:21.575 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 03:12:21.575 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 03:12:21.575 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 03:12:21.575 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:21.575 [INFO    ] [energy_manager      ]   Initial energy: 0.0015 J
+2026-01-23 03:12:21.575 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 03:12:21.575 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 03:12:21.576 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 03:12:21.576 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 03:12:21.576 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 03:12:21.576 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 03:12:21.576 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 03:12:21.576 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 03:12:21.576 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 03:12:21.576 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 03:12:21.576 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 03:12:21.576 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 03:12:21.576 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 03:12:21.576 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 03:12:21.576 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0015
+2026-01-23 03:12:21.576 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0015
+2026-01-23 03:12:21.577 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 03:12:21.577 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 03:12:21.577 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 03:12:21.577 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 03:12:21.577 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 03:12:21.577 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml, current_config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:21.577 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:21.577 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0015J
+2026-01-23 03:12:24.927 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:24.937 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:24.937 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0015
+2026-01-23 03:12:24.937 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0015
+2026-01-23 03:12:24.937 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 03:12:24.937 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 03:12:24.937 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 03:12:24.937 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:24.937 [INFO    ] [energy_manager      ]   Initial energy: 0.0015 J
+2026-01-23 03:12:24.937 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 03:12:24.937 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 03:12:24.938 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 03:12:24.938 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 03:12:24.938 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 03:12:24.938 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 03:12:24.938 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 03:12:24.938 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 03:12:24.938 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 03:12:24.938 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 03:12:24.938 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 03:12:24.938 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 03:12:24.938 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 03:12:24.938 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 03:12:24.938 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0015
+2026-01-23 03:12:24.939 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0015
+2026-01-23 03:12:24.939 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 03:12:24.939 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 03:12:24.939 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 03:12:24.939 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 03:12:24.939 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 03:12:24.939 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml, current_config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:24.939 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:24.939 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0015J
+2026-01-23 03:12:28.555 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:28.566 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:28.566 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0015
+2026-01-23 03:12:28.566 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0015
+2026-01-23 03:12:28.566 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 03:12:28.566 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 03:12:28.566 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 03:12:28.566 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:28.566 [INFO    ] [energy_manager      ]   Initial energy: 0.0015 J
+2026-01-23 03:12:28.567 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 03:12:28.567 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 03:12:28.567 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 03:12:28.567 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 03:12:28.567 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 03:12:28.567 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 03:12:28.567 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 03:12:28.567 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 03:12:28.567 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 03:12:28.567 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 03:12:28.567 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 03:12:28.567 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 03:12:28.567 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 03:12:28.567 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 03:12:28.568 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0015
+2026-01-23 03:12:28.568 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0015
+2026-01-23 03:12:28.568 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 03:12:28.568 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 03:12:28.568 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 03:12:28.568 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 03:12:28.568 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 03:12:28.568 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml, current_config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:28.568 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:28.568 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0015J
+2026-01-23 03:12:37.267 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:37.277 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:37.277 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0015
+2026-01-23 03:12:37.277 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0015
+2026-01-23 03:12:37.278 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 03:12:37.278 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 03:12:37.278 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 03:12:37.278 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:37.278 [INFO    ] [energy_manager      ]   Initial energy: 0.0015 J
+2026-01-23 03:12:37.278 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 03:12:37.278 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 03:12:37.278 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 03:12:37.278 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 03:12:37.278 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 03:12:37.278 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 03:12:37.279 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 03:12:37.279 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 03:12:37.279 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 03:12:37.279 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 03:12:37.279 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 03:12:37.279 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 03:12:37.279 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 03:12:37.279 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 03:12:37.279 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0015
+2026-01-23 03:12:37.279 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0015
+2026-01-23 03:12:37.279 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 03:12:37.279 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 03:12:37.279 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 03:12:37.280 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 03:12:37.280 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 03:12:37.280 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml, current_config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:37.280 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:37.280 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0015J
+2026-01-23 03:12:42.233 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:42.243 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:42.243 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0015
+2026-01-23 03:12:42.243 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0015
+2026-01-23 03:12:42.243 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 03:12:42.243 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 03:12:42.243 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 03:12:42.243 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:42.243 [INFO    ] [energy_manager      ]   Initial energy: 0.0015 J
+2026-01-23 03:12:42.243 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 03:12:42.243 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 03:12:42.244 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 03:12:42.244 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 03:12:42.244 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 03:12:42.244 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 03:12:42.244 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 03:12:42.244 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 03:12:42.244 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 03:12:42.244 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 03:12:42.244 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 03:12:42.244 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 03:12:42.244 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 03:12:42.244 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 03:12:42.245 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0015
+2026-01-23 03:12:42.245 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0015
+2026-01-23 03:12:42.245 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 03:12:42.245 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 03:12:42.245 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 03:12:42.245 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 03:12:42.245 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 03:12:42.245 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml, current_config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:42.245 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:42.245 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0015J
+2026-01-23 03:12:53.375 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:53.385 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:53.385 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0015
+2026-01-23 03:12:53.385 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0015
+2026-01-23 03:12:53.385 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 03:12:53.385 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 03:12:53.385 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 03:12:53.385 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:53.386 [INFO    ] [energy_manager      ]   Initial energy: 0.0015 J
+2026-01-23 03:12:53.386 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 03:12:53.386 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 03:12:53.386 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 03:12:53.386 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 03:12:53.386 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 03:12:53.386 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 03:12:53.386 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 03:12:53.386 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 03:12:53.386 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 03:12:53.386 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 03:12:53.386 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 03:12:53.387 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 03:12:53.387 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 03:12:53.387 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 03:12:53.387 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0015
+2026-01-23 03:12:53.387 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0015
+2026-01-23 03:12:53.387 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 03:12:53.387 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 03:12:53.387 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 03:12:53.387 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 03:12:53.387 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 03:12:53.388 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml, current_config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:53.388 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:12:53.388 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0015J
+2026-01-23 03:13:08.569 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:13:08.579 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:13:08.579 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0015
+2026-01-23 03:13:08.579 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0015
+2026-01-23 03:13:08.579 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 03:13:08.580 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 03:13:08.580 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 03:13:08.580 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:13:08.580 [INFO    ] [energy_manager      ]   Initial energy: 0.0015 J
+2026-01-23 03:13:08.580 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 03:13:08.580 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 03:13:08.580 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 03:13:08.580 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 03:13:08.580 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 03:13:08.580 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 03:13:08.580 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 03:13:08.580 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 03:13:08.580 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 03:13:08.580 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 03:13:08.581 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 03:13:08.581 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 03:13:08.581 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 03:13:08.581 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 03:13:08.581 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0015
+2026-01-23 03:13:08.581 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0015
+2026-01-23 03:13:08.581 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 03:13:08.581 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 03:13:08.581 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 03:13:08.581 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 03:13:08.581 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 03:13:08.582 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml, current_config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:13:08.582 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:13:08.582 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0015J
+2026-01-23 03:13:12.685 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:13:12.696 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:13:12.696 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0015
+2026-01-23 03:13:12.696 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0015
+2026-01-23 03:13:12.697 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 03:13:12.697 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 03:13:12.697 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 03:13:12.697 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:13:12.697 [INFO    ] [energy_manager      ]   Initial energy: 0.0015 J
+2026-01-23 03:13:12.697 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 03:13:12.697 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 03:13:12.697 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 03:13:12.697 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 03:13:12.697 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 03:13:12.697 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 03:13:12.697 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 03:13:12.698 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 03:13:12.698 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 03:13:12.698 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 03:13:12.698 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 03:13:12.698 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 03:13:12.698 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 03:13:12.698 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 03:13:12.698 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0015
+2026-01-23 03:13:12.698 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0015
+2026-01-23 03:13:12.698 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 03:13:12.698 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 03:13:12.698 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 03:13:12.698 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 03:13:12.699 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 03:13:12.699 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml, current_config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:13:12.699 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:13:12.699 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0015J
+2026-01-23 03:13:16.129 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:13:16.139 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:13:16.139 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0015
+2026-01-23 03:13:16.139 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0015
+2026-01-23 03:13:16.139 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 03:13:16.139 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 03:13:16.140 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 03:13:16.140 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:13:16.140 [INFO    ] [energy_manager      ]   Initial energy: 0.0015 J
+2026-01-23 03:13:16.140 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 03:13:16.140 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 03:13:16.140 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 03:13:16.140 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 03:13:16.140 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 03:13:16.140 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 03:13:16.141 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 03:13:16.141 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 03:13:16.141 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 03:13:16.141 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 03:13:16.141 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 03:13:16.141 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 03:13:16.141 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 03:13:16.141 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 03:13:16.141 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0015
+2026-01-23 03:13:16.141 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0015
+2026-01-23 03:13:16.141 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 03:13:16.141 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 03:13:16.142 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 03:13:16.142 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 03:13:16.142 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 03:13:16.142 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml, current_config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:13:16.142 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 03:13:16.142 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0015J
+2026-01-23 03:14:12.251 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/preemption_test/system_tie.yml
+2026-01-23 03:14:12.261 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/preemption_test/system_tie.yml
+2026-01-23 03:14:12.261 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.01
+2026-01-23 03:14:12.261 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.01
+2026-01-23 03:14:12.261 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 03:14:12.261 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 03:14:12.261 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 03:14:12.262 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/preemption_test/system_tie.yml
+2026-01-23 03:14:12.262 [INFO    ] [energy_manager      ]   Initial energy: 0.01 J
+2026-01-23 03:14:12.262 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 03:14:12.262 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 03:14:12.262 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 03:14:12.262 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 03:14:12.262 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 03:14:12.262 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 03:14:12.262 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 03:14:12.262 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 03:14:12.262 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 03:14:12.262 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 03:14:12.262 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 03:14:12.263 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 03:14:12.263 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 03:14:12.263 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 03:14:12.263 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.01
+2026-01-23 03:14:12.263 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.01
+2026-01-23 03:14:12.263 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 03:14:12.263 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 03:14:12.263 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 03:14:12.263 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 03:14:12.263 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 03:14:12.264 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/preemption_test/system_tie.yml, current_config_file=/home/devcontainers/PARTSim-project/preemption_test/system_tie.yml
+2026-01-23 03:14:12.264 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/preemption_test/system_tie.yml
+2026-01-23 03:14:12.264 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=1, 基础频率=8100.0MHz, 初始能量=0.01J
+2026-01-23 03:18:06.308 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:06.319 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:06.319 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0035
+2026-01-23 03:18:06.319 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0035
+2026-01-23 03:18:06.319 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 03:18:06.319 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 03:18:06.319 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 03:18:06.319 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:06.319 [INFO    ] [energy_manager      ]   Initial energy: 0.0035 J
+2026-01-23 03:18:06.319 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 03:18:06.319 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 03:18:06.319 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 03:18:06.319 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 03:18:06.320 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 03:18:06.320 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 03:18:06.320 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 03:18:06.320 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 03:18:06.320 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 03:18:06.320 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 03:18:06.320 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 03:18:06.320 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 03:18:06.320 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 03:18:06.320 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 03:18:06.320 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0035
+2026-01-23 03:18:06.320 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0035
+2026-01-23 03:18:06.320 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 03:18:06.320 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 03:18:06.321 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 03:18:06.321 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 03:18:06.321 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 03:18:06.321 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml, current_config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:06.321 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:06.321 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0035J
+2026-01-23 03:18:11.084 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:11.094 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:11.094 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0035
+2026-01-23 03:18:11.094 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0035
+2026-01-23 03:18:11.094 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 03:18:11.095 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 03:18:11.095 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 03:18:11.095 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:11.095 [INFO    ] [energy_manager      ]   Initial energy: 0.0035 J
+2026-01-23 03:18:11.095 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 03:18:11.095 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 03:18:11.095 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 03:18:11.095 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 03:18:11.095 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 03:18:11.095 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 03:18:11.095 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 03:18:11.095 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 03:18:11.096 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 03:18:11.096 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 03:18:11.096 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 03:18:11.096 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 03:18:11.096 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 03:18:11.096 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 03:18:11.096 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0035
+2026-01-23 03:18:11.096 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0035
+2026-01-23 03:18:11.096 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 03:18:11.096 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 03:18:11.096 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 03:18:11.096 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 03:18:11.096 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 03:18:11.097 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml, current_config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:11.097 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:11.097 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0035J
+2026-01-23 03:18:14.949 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:14.959 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:14.959 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0035
+2026-01-23 03:18:14.959 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0035
+2026-01-23 03:18:14.959 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 03:18:14.959 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 03:18:14.959 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 03:18:14.959 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:14.960 [INFO    ] [energy_manager      ]   Initial energy: 0.0035 J
+2026-01-23 03:18:14.960 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 03:18:14.960 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 03:18:14.960 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 03:18:14.960 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 03:18:14.960 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 03:18:14.960 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 03:18:14.960 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 03:18:14.960 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 03:18:14.960 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 03:18:14.960 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 03:18:14.960 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 03:18:14.960 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 03:18:14.960 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 03:18:14.961 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 03:18:14.961 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0035
+2026-01-23 03:18:14.961 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0035
+2026-01-23 03:18:14.961 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 03:18:14.961 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 03:18:14.961 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 03:18:14.961 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 03:18:14.961 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 03:18:14.961 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml, current_config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:14.961 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:14.962 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0035J
+2026-01-23 03:18:34.697 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:34.706 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:34.707 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0035
+2026-01-23 03:18:34.707 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0035
+2026-01-23 03:18:34.707 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 03:18:34.707 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 03:18:34.707 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 03:18:34.707 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:34.707 [INFO    ] [energy_manager      ]   Initial energy: 0.0035 J
+2026-01-23 03:18:34.707 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 03:18:34.707 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 03:18:34.707 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 03:18:34.707 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 03:18:34.708 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 03:18:34.708 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 03:18:34.708 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 03:18:34.708 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 03:18:34.708 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 03:18:34.708 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 03:18:34.708 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 03:18:34.708 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 03:18:34.708 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 03:18:34.708 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 03:18:34.708 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0035
+2026-01-23 03:18:34.708 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0035
+2026-01-23 03:18:34.708 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 03:18:34.708 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 03:18:34.709 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 03:18:34.709 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 03:18:34.709 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 03:18:34.709 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml, current_config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:34.709 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:34.709 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0035J
+2026-01-23 03:18:38.895 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:38.904 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:38.905 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0035
+2026-01-23 03:18:38.905 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0035
+2026-01-23 03:18:38.905 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 03:18:38.905 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 03:18:38.905 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 03:18:38.905 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:38.905 [INFO    ] [energy_manager      ]   Initial energy: 0.0035 J
+2026-01-23 03:18:38.905 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 03:18:38.905 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 03:18:38.905 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 03:18:38.905 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 03:18:38.905 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 03:18:38.906 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 03:18:38.906 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 03:18:38.906 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 03:18:38.906 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 03:18:38.906 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 03:18:38.906 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 03:18:38.906 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 03:18:38.906 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 03:18:38.906 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 03:18:38.906 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0035
+2026-01-23 03:18:38.906 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0035
+2026-01-23 03:18:38.907 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 03:18:38.907 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 03:18:38.907 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 03:18:38.907 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 03:18:38.907 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 03:18:38.907 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml, current_config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:38.907 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:38.907 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0035J
+2026-01-23 03:18:43.381 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:43.391 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:43.391 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0035
+2026-01-23 03:18:43.391 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0035
+2026-01-23 03:18:43.391 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 03:18:43.391 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 03:18:43.391 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 03:18:43.392 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:43.392 [INFO    ] [energy_manager      ]   Initial energy: 0.0035 J
+2026-01-23 03:18:43.392 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 03:18:43.392 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 03:18:43.392 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 03:18:43.392 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 03:18:43.392 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 03:18:43.392 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 03:18:43.392 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 03:18:43.392 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 03:18:43.392 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 03:18:43.392 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 03:18:43.392 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 03:18:43.392 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 03:18:43.393 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 03:18:43.393 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 03:18:43.393 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0035
+2026-01-23 03:18:43.393 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0035
+2026-01-23 03:18:43.393 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 03:18:43.393 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 03:18:43.393 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 03:18:43.393 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 03:18:43.393 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 03:18:43.393 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml, current_config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:43.394 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:43.394 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0035J
+2026-01-23 03:18:46.700 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:46.710 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:46.710 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0035
+2026-01-23 03:18:46.710 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0035
+2026-01-23 03:18:46.710 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 03:18:46.710 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 03:18:46.710 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 03:18:46.710 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:46.710 [INFO    ] [energy_manager      ]   Initial energy: 0.0035 J
+2026-01-23 03:18:46.710 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 03:18:46.710 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 03:18:46.710 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 03:18:46.711 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 03:18:46.711 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 03:18:46.711 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 03:18:46.711 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 03:18:46.711 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 03:18:46.711 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 03:18:46.711 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 03:18:46.711 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 03:18:46.711 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 03:18:46.711 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 03:18:46.711 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 03:18:46.711 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0035
+2026-01-23 03:18:46.711 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0035
+2026-01-23 03:18:46.711 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 03:18:46.712 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 03:18:46.712 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 03:18:46.712 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 03:18:46.712 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 03:18:46.712 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml, current_config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:46.712 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:18:46.712 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0035J
+2026-01-23 03:19:38.077 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:19:38.087 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:19:38.087 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0035
+2026-01-23 03:19:38.087 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0035
+2026-01-23 03:19:38.087 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 03:19:38.088 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 03:19:38.088 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 03:19:38.088 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:19:38.088 [INFO    ] [energy_manager      ]   Initial energy: 0.0035 J
+2026-01-23 03:19:38.088 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 03:19:38.088 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 03:19:38.088 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 03:19:38.088 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 03:19:38.088 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 03:19:38.088 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 03:19:38.088 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 03:19:38.088 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 03:19:38.088 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 03:19:38.089 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 03:19:38.089 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 03:19:38.089 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 03:19:38.089 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 03:19:38.089 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 03:19:38.089 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0035
+2026-01-23 03:19:38.089 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0035
+2026-01-23 03:19:38.089 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 03:19:38.089 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 03:19:38.089 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 03:19:38.089 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 03:19:38.089 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 03:19:38.090 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml, current_config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:19:38.090 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:19:38.090 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0035J
+2026-01-23 03:20:34.278 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:20:34.288 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:20:34.288 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0035
+2026-01-23 03:20:34.288 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0035
+2026-01-23 03:20:34.288 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 03:20:34.288 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 03:20:34.288 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 03:20:34.289 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:20:34.289 [INFO    ] [energy_manager      ]   Initial energy: 0.0035 J
+2026-01-23 03:20:34.289 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 03:20:34.289 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 03:20:34.289 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 03:20:34.289 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 03:20:34.289 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 03:20:34.289 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 03:20:34.289 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 03:20:34.289 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 03:20:34.289 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 03:20:34.289 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 03:20:34.289 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 03:20:34.290 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 03:20:34.290 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 03:20:34.290 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 03:20:34.290 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0035
+2026-01-23 03:20:34.290 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0035
+2026-01-23 03:20:34.290 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 03:20:34.290 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 03:20:34.290 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 03:20:34.290 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 03:20:34.290 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 03:20:34.291 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml, current_config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:20:34.291 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:20:34.291 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0035J
+2026-01-23 03:20:40.975 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:20:40.985 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:20:40.985 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0035
+2026-01-23 03:20:40.985 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0035
+2026-01-23 03:20:40.985 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 03:20:40.986 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 03:20:40.986 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 03:20:40.986 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:20:40.986 [INFO    ] [energy_manager      ]   Initial energy: 0.0035 J
+2026-01-23 03:20:40.986 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 03:20:40.986 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 03:20:40.986 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 03:20:40.986 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 03:20:40.986 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 03:20:40.986 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 03:20:40.986 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 03:20:40.986 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 03:20:40.986 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 03:20:40.986 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 03:20:40.986 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 03:20:40.986 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 03:20:40.986 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 03:20:40.986 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 03:20:40.986 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0035
+2026-01-23 03:20:40.986 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0035
+2026-01-23 03:20:40.986 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 03:20:40.986 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 03:20:40.986 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 03:20:40.986 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 03:20:40.986 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 03:20:40.987 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml, current_config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:20:40.987 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 03:20:40.987 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0035J
+2026-01-23 09:49:42.356 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 09:49:42.366 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 09:49:42.366 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0035
+2026-01-23 09:49:42.366 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0035
+2026-01-23 09:49:42.366 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 09:49:42.366 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 09:49:42.367 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 09:49:42.367 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 09:49:42.367 [INFO    ] [energy_manager      ]   Initial energy: 0.0035 J
+2026-01-23 09:49:42.367 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 09:49:42.367 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 09:49:42.367 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 09:49:42.367 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 09:49:42.367 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 09:49:42.367 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 09:49:42.367 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 09:49:42.367 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 09:49:42.367 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 09:49:42.368 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 09:49:42.368 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 09:49:42.368 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 09:49:42.368 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 09:49:42.368 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 09:49:42.368 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0035
+2026-01-23 09:49:42.368 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0035
+2026-01-23 09:49:42.368 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 09:49:42.368 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 09:49:42.368 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 09:49:42.368 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 09:49:42.368 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 09:49:42.369 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml, current_config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 09:49:42.369 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 09:49:42.369 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0035J
+2026-01-23 09:50:15.322 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 09:50:15.332 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 09:50:15.332 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0035
+2026-01-23 09:50:15.332 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0035
+2026-01-23 09:50:15.332 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 09:50:15.332 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 09:50:15.332 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 09:50:15.333 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 09:50:15.333 [INFO    ] [energy_manager      ]   Initial energy: 0.0035 J
+2026-01-23 09:50:15.333 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 09:50:15.333 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 09:50:15.333 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 09:50:15.333 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 09:50:15.333 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 09:50:15.333 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 09:50:15.333 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 09:50:15.333 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 09:50:15.333 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 09:50:15.333 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 09:50:15.333 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 09:50:15.333 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 09:50:15.334 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 09:50:15.334 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 09:50:15.334 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0035
+2026-01-23 09:50:15.334 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0035
+2026-01-23 09:50:15.334 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 09:50:15.334 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 09:50:15.334 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 09:50:15.334 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 09:50:15.334 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 09:50:15.334 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml, current_config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 09:50:15.335 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 09:50:15.335 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0035J
+2026-01-23 09:50:29.686 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 09:50:29.696 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 09:50:29.696 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0035
+2026-01-23 09:50:29.696 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0035
+2026-01-23 09:50:29.696 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 09:50:29.697 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 09:50:29.697 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 09:50:29.697 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 09:50:29.697 [INFO    ] [energy_manager      ]   Initial energy: 0.0035 J
+2026-01-23 09:50:29.697 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 09:50:29.697 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 09:50:29.697 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 09:50:29.697 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 09:50:29.697 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 09:50:29.697 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 09:50:29.697 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 09:50:29.697 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 09:50:29.697 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 09:50:29.697 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 09:50:29.698 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 09:50:29.698 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 09:50:29.698 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 09:50:29.698 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 09:50:29.698 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0035
+2026-01-23 09:50:29.698 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0035
+2026-01-23 09:50:29.698 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 09:50:29.698 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 09:50:29.698 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 09:50:29.698 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 09:50:29.698 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 09:50:29.699 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml, current_config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 09:50:29.699 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 09:50:29.699 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0035J
+2026-01-23 09:51:00.796 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 09:51:00.806 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 09:51:00.806 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0035
+2026-01-23 09:51:00.806 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0035
+2026-01-23 09:51:00.806 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 09:51:00.806 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 09:51:00.806 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 09:51:00.806 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 09:51:00.806 [INFO    ] [energy_manager      ]   Initial energy: 0.0035 J
+2026-01-23 09:51:00.806 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 09:51:00.806 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 09:51:00.806 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 09:51:00.806 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 09:51:00.806 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 09:51:00.806 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 09:51:00.806 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 09:51:00.806 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 09:51:00.806 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 09:51:00.806 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 09:51:00.806 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 09:51:00.806 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 09:51:00.807 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 09:51:00.807 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 09:51:00.807 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0035
+2026-01-23 09:51:00.807 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0035
+2026-01-23 09:51:00.807 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 09:51:00.807 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 09:51:00.807 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 09:51:00.807 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 09:51:00.807 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 09:51:00.808 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml, current_config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 09:51:00.808 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 09:51:00.808 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0035J
+2026-01-23 09:51:06.634 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 09:51:06.644 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 09:51:06.644 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0035
+2026-01-23 09:51:06.644 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0035
+2026-01-23 09:51:06.645 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 09:51:06.645 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 09:51:06.645 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 09:51:06.645 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 09:51:06.645 [INFO    ] [energy_manager      ]   Initial energy: 0.0035 J
+2026-01-23 09:51:06.645 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 09:51:06.645 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 09:51:06.645 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 09:51:06.645 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 09:51:06.645 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 09:51:06.645 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 09:51:06.645 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 09:51:06.645 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 09:51:06.646 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 09:51:06.646 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 09:51:06.646 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 09:51:06.646 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 09:51:06.646 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 09:51:06.646 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 09:51:06.646 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0035
+2026-01-23 09:51:06.646 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0035
+2026-01-23 09:51:06.646 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 09:51:06.646 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 09:51:06.646 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 09:51:06.646 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 09:51:06.646 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 09:51:06.647 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml, current_config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 09:51:06.647 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_tie.yml
+2026-01-23 09:51:06.647 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0035J
+2026-01-23 09:54:36.127 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 09:54:36.137 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 09:54:36.137 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0035
+2026-01-23 09:54:36.137 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0035
+2026-01-23 09:54:36.137 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 09:54:36.137 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 09:54:36.137 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 09:54:36.137 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 09:54:36.137 [INFO    ] [energy_manager      ]   Initial energy: 0.0035 J
+2026-01-23 09:54:36.137 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 09:54:36.138 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 09:54:36.138 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 09:54:36.138 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 09:54:36.138 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 09:54:36.138 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 09:54:36.138 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 09:54:36.138 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 09:54:36.138 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 09:54:36.138 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 09:54:36.138 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 09:54:36.138 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 09:54:36.138 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 09:54:36.138 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 09:54:36.139 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0035
+2026-01-23 09:54:36.139 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0035
+2026-01-23 09:54:36.139 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 09:54:36.139 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 09:54:36.139 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 09:54:36.139 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 09:54:36.139 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 09:54:36.139 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml, current_config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 09:54:36.139 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 09:54:36.140 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0035J
+2026-01-23 09:54:45.166 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 09:54:45.176 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 09:54:45.176 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0035
+2026-01-23 09:54:45.176 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0035
+2026-01-23 09:54:45.176 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 09:54:45.176 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 09:54:45.176 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 09:54:45.177 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 09:54:45.177 [INFO    ] [energy_manager      ]   Initial energy: 0.0035 J
+2026-01-23 09:54:45.177 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 09:54:45.177 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 09:54:45.177 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 09:54:45.177 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 09:54:45.177 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 09:54:45.177 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 09:54:45.177 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 09:54:45.177 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 09:54:45.177 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 09:54:45.177 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 09:54:45.177 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 09:54:45.177 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 09:54:45.178 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 09:54:45.178 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 09:54:45.178 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0035
+2026-01-23 09:54:45.178 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0035
+2026-01-23 09:54:45.178 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 09:54:45.178 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 09:54:45.178 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 09:54:45.178 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 09:54:45.178 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 09:54:45.178 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml, current_config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 09:54:45.179 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 09:54:45.179 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0035J
+2026-01-23 09:54:59.749 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 09:54:59.759 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 09:54:59.759 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0035
+2026-01-23 09:54:59.759 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0035
+2026-01-23 09:54:59.759 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 09:54:59.759 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 09:54:59.759 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 09:54:59.759 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 09:54:59.760 [INFO    ] [energy_manager      ]   Initial energy: 0.0035 J
+2026-01-23 09:54:59.760 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 09:54:59.760 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 09:54:59.760 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-23 09:54:59.760 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 09:54:59.760 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 09:54:59.760 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 09:54:59.760 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 09:54:59.760 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 09:54:59.760 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 09:54:59.760 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 09:54:59.760 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 09:54:59.760 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 09:54:59.761 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 09:54:59.761 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 09:54:59.761 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0035
+2026-01-23 09:54:59.761 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0035
+2026-01-23 09:54:59.761 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 09:54:59.761 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 09:54:59.761 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 09:54:59.761 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 09:54:59.761 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 09:54:59.761 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml, current_config_file=/home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 09:54:59.762 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/energy_interrupt_test/system_btie.yml
+2026-01-23 09:54:59.762 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0035J
+2026-01-23 10:07:13.205 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: energy_interrupt_test/system_btie.yml
+2026-01-23 10:07:13.216 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: energy_interrupt_test/system_btie.yml
+2026-01-23 10:07:13.217 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0035
+2026-01-23 10:07:13.217 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0035
+2026-01-23 10:07:13.217 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 10:07:13.217 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 10:07:13.217 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 10:07:13.217 [INFO    ] [energy_manager      ] EnergyConfig loaded from energy_interrupt_test/system_btie.yml
+2026-01-23 10:07:13.217 [INFO    ] [energy_manager      ]   Initial energy: 0.0035 J
+2026-01-23 10:07:13.217 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 10:07:13.217 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 10:07:13.217 [INFO    ] [energy_manager      ]   Debug mode: True
+2026-01-23 10:07:13.217 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 10:07:13.218 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 10:07:13.218 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 10:07:13.218 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 10:07:13.218 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 10:07:13.218 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 10:07:13.218 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 10:07:13.218 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 10:07:13.218 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 10:07:13.218 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 10:07:13.218 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 10:07:13.218 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0035
+2026-01-23 10:07:13.219 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0035
+2026-01-23 10:07:13.219 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 10:07:13.219 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 10:07:13.219 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 10:07:13.219 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 10:07:13.219 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 10:07:13.219 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=energy_interrupt_test/system_btie.yml, current_config_file=energy_interrupt_test/system_btie.yml
+2026-01-23 10:07:13.220 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: energy_interrupt_test/system_btie.yml
+2026-01-23 10:07:13.220 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0035J
+2026-01-23 10:09:13.775 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: energy_interrupt_test/system_btie.yml
+2026-01-23 10:09:13.787 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: energy_interrupt_test/system_btie.yml
+2026-01-23 10:09:13.787 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0035
+2026-01-23 10:09:13.787 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0035
+2026-01-23 10:09:13.787 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 10:09:13.787 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 10:09:13.787 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 10:09:13.787 [INFO    ] [energy_manager      ] EnergyConfig loaded from energy_interrupt_test/system_btie.yml
+2026-01-23 10:09:13.787 [INFO    ] [energy_manager      ]   Initial energy: 0.0035 J
+2026-01-23 10:09:13.788 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 10:09:13.788 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 10:09:13.788 [INFO    ] [energy_manager      ]   Debug mode: True
+2026-01-23 10:09:13.788 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 10:09:13.788 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 10:09:13.788 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 10:09:13.788 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 10:09:13.788 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 10:09:13.788 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 10:09:13.788 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 10:09:13.788 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 10:09:13.788 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 10:09:13.789 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 10:09:13.789 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 10:09:13.789 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0035
+2026-01-23 10:09:13.789 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0035
+2026-01-23 10:09:13.789 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 10:09:13.789 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 10:09:13.789 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 10:09:13.789 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 10:09:13.789 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 10:09:13.790 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=energy_interrupt_test/system_btie.yml, current_config_file=energy_interrupt_test/system_btie.yml
+2026-01-23 10:09:13.790 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: energy_interrupt_test/system_btie.yml
+2026-01-23 10:09:13.790 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0035J
+2026-01-23 10:16:07.354 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: energy_interrupt_test/system_tie.yml
+2026-01-23 10:16:07.366 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: energy_interrupt_test/system_tie.yml
+2026-01-23 10:16:07.366 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0035
+2026-01-23 10:16:07.366 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0035
+2026-01-23 10:16:07.366 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 10:16:07.366 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 10:16:07.366 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 10:16:07.366 [INFO    ] [energy_manager      ] EnergyConfig loaded from energy_interrupt_test/system_tie.yml
+2026-01-23 10:16:07.367 [INFO    ] [energy_manager      ]   Initial energy: 0.0035 J
+2026-01-23 10:16:07.367 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 10:16:07.367 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 10:16:07.367 [INFO    ] [energy_manager      ]   Debug mode: True
+2026-01-23 10:16:07.367 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 10:16:07.367 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 10:16:07.367 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 10:16:07.367 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 10:16:07.367 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 10:16:07.367 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 10:16:07.367 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 10:16:07.367 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 10:16:07.368 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 10:16:07.368 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 10:16:07.368 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 10:16:07.368 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0035
+2026-01-23 10:16:07.368 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0035
+2026-01-23 10:16:07.368 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 10:16:07.368 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 10:16:07.368 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 10:16:07.368 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 10:16:07.368 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 10:16:07.369 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=energy_interrupt_test/system_tie.yml, current_config_file=energy_interrupt_test/system_tie.yml
+2026-01-23 10:16:07.369 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: energy_interrupt_test/system_tie.yml
+2026-01-23 10:16:07.369 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0035J
+2026-01-23 10:16:07.822 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: energy_interrupt_test/system_btie.yml
+2026-01-23 10:16:07.834 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: energy_interrupt_test/system_btie.yml
+2026-01-23 10:16:07.834 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0035
+2026-01-23 10:16:07.834 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0035
+2026-01-23 10:16:07.834 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 10:16:07.834 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 10:16:07.834 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 10:16:07.834 [INFO    ] [energy_manager      ] EnergyConfig loaded from energy_interrupt_test/system_btie.yml
+2026-01-23 10:16:07.835 [INFO    ] [energy_manager      ]   Initial energy: 0.0035 J
+2026-01-23 10:16:07.835 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 10:16:07.835 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 10:16:07.835 [INFO    ] [energy_manager      ]   Debug mode: True
+2026-01-23 10:16:07.835 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 10:16:07.835 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 10:16:07.835 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 10:16:07.835 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 10:16:07.835 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 10:16:07.835 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 10:16:07.835 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 10:16:07.836 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 10:16:07.836 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 10:16:07.836 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 10:16:07.836 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 10:16:07.836 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0035
+2026-01-23 10:16:07.836 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0035
+2026-01-23 10:16:07.836 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 10:16:07.836 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 10:16:07.836 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 10:16:07.836 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 10:16:07.836 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 10:16:07.837 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=energy_interrupt_test/system_btie.yml, current_config_file=energy_interrupt_test/system_btie.yml
+2026-01-23 10:16:07.837 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: energy_interrupt_test/system_btie.yml
+2026-01-23 10:16:07.837 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0035J
+2026-01-23 10:16:08.303 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: energy_interrupt_test/system_tgf.yml
+2026-01-23 10:16:08.314 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: energy_interrupt_test/system_tgf.yml
+2026-01-23 10:16:08.314 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0035
+2026-01-23 10:16:08.314 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0035
+2026-01-23 10:16:08.314 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 10:16:08.314 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 10:16:08.315 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 10:16:08.315 [INFO    ] [energy_manager      ] EnergyConfig loaded from energy_interrupt_test/system_tgf.yml
+2026-01-23 10:16:08.315 [INFO    ] [energy_manager      ]   Initial energy: 0.0035 J
+2026-01-23 10:16:08.315 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 10:16:08.315 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 10:16:08.315 [INFO    ] [energy_manager      ]   Debug mode: True
+2026-01-23 10:16:08.315 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 10:16:08.315 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 10:16:08.315 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 10:16:08.315 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 10:16:08.315 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 10:16:08.316 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 10:16:08.316 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 10:16:08.316 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 10:16:08.316 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 10:16:08.316 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 10:16:08.316 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 10:16:08.316 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0035
+2026-01-23 10:16:08.316 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0035
+2026-01-23 10:16:08.316 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 10:16:08.316 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 10:16:08.316 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 10:16:08.316 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 10:16:08.317 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 10:16:08.317 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=energy_interrupt_test/system_tgf.yml, current_config_file=energy_interrupt_test/system_tgf.yml
+2026-01-23 10:16:08.317 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: energy_interrupt_test/system_tgf.yml
+2026-01-23 10:16:08.317 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0035J
+2026-01-23 10:20:17.213 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: energy_interrupt_test/system_tie.yml
+2026-01-23 10:20:17.225 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: energy_interrupt_test/system_tie.yml
+2026-01-23 10:20:17.225 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0035
+2026-01-23 10:20:17.225 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0035
+2026-01-23 10:20:17.225 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 10:20:17.225 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 10:20:17.225 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 10:20:17.225 [INFO    ] [energy_manager      ] EnergyConfig loaded from energy_interrupt_test/system_tie.yml
+2026-01-23 10:20:17.226 [INFO    ] [energy_manager      ]   Initial energy: 0.0035 J
+2026-01-23 10:20:17.226 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 10:20:17.226 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 10:20:17.226 [INFO    ] [energy_manager      ]   Debug mode: True
+2026-01-23 10:20:17.226 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 10:20:17.226 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 10:20:17.226 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 10:20:17.226 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 10:20:17.226 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 10:20:17.226 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 10:20:17.226 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 10:20:17.226 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 10:20:17.226 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 10:20:17.226 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 10:20:17.226 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 10:20:17.226 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0035
+2026-01-23 10:20:17.227 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0035
+2026-01-23 10:20:17.227 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 10:20:17.227 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 10:20:17.227 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 10:20:17.227 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 10:20:17.227 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 10:20:17.227 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=energy_interrupt_test/system_tie.yml, current_config_file=energy_interrupt_test/system_tie.yml
+2026-01-23 10:20:17.227 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: energy_interrupt_test/system_tie.yml
+2026-01-23 10:20:17.227 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0035J
+2026-01-23 10:20:17.770 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: energy_interrupt_test/system_btie.yml
+2026-01-23 10:20:17.782 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: energy_interrupt_test/system_btie.yml
+2026-01-23 10:20:17.782 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0035
+2026-01-23 10:20:17.782 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0035
+2026-01-23 10:20:17.782 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 10:20:17.782 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 10:20:17.782 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 10:20:17.782 [INFO    ] [energy_manager      ] EnergyConfig loaded from energy_interrupt_test/system_btie.yml
+2026-01-23 10:20:17.782 [INFO    ] [energy_manager      ]   Initial energy: 0.0035 J
+2026-01-23 10:20:17.782 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 10:20:17.782 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 10:20:17.782 [INFO    ] [energy_manager      ]   Debug mode: True
+2026-01-23 10:20:17.782 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 10:20:17.782 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 10:20:17.782 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 10:20:17.782 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 10:20:17.782 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 10:20:17.782 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 10:20:17.782 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 10:20:17.782 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 10:20:17.783 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 10:20:17.783 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 10:20:17.783 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 10:20:17.783 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0035
+2026-01-23 10:20:17.783 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0035
+2026-01-23 10:20:17.783 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 10:20:17.783 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 10:20:17.783 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 10:20:17.783 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 10:20:17.783 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 10:20:17.783 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=energy_interrupt_test/system_btie.yml, current_config_file=energy_interrupt_test/system_btie.yml
+2026-01-23 10:20:17.784 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: energy_interrupt_test/system_btie.yml
+2026-01-23 10:20:17.784 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0035J
+2026-01-23 10:20:18.222 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: energy_interrupt_test/system_tgf.yml
+2026-01-23 10:20:18.236 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: energy_interrupt_test/system_tgf.yml
+2026-01-23 10:20:18.236 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.0035
+2026-01-23 10:20:18.237 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.0035
+2026-01-23 10:20:18.237 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=7200000 计算 start_offset_minutes=267960
+2026-01-23 10:20:18.237 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=267960, simulation_start_time=16077600000ms
+2026-01-23 10:20:18.237 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-23 10:20:18.237 [INFO    ] [energy_manager      ] EnergyConfig loaded from energy_interrupt_test/system_tgf.yml
+2026-01-23 10:20:18.237 [INFO    ] [energy_manager      ]   Initial energy: 0.0035 J
+2026-01-23 10:20:18.237 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-23 10:20:18.237 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-23 10:20:18.237 [INFO    ] [energy_manager      ]   Debug mode: True
+2026-01-23 10:20:18.237 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-23 10:20:18.237 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-23 10:20:18.237 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-23 10:20:18.237 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-23 10:20:18.237 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-23 10:20:18.237 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-23 10:20:18.237 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-23 10:20:18.237 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-23 10:20:18.237 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-23 10:20:18.238 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-23 10:20:18.238 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-23 10:20:18.238 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.0035
+2026-01-23 10:20:18.238 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.0035
+2026-01-23 10:20:18.238 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-23 10:20:18.238 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-23 10:20:18.238 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16077600000ms
+2026-01-23 10:20:18.238 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 02:00:00
+2026-01-23 10:20:18.238 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-23 10:20:18.239 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=energy_interrupt_test/system_tgf.yml, current_config_file=energy_interrupt_test/system_tgf.yml
+2026-01-23 10:20:18.239 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: energy_interrupt_test/system_tgf.yml
+2026-01-23 10:20:18.239 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.0035J

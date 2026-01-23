@@ -418,6 +418,7 @@ class EnergyHarvester:
                 try:
                     # 动态导入，避免循环依赖
                     from solar_data_loader import SolarDataLoader
+
                     self.solar_loader = SolarDataLoader(
                         config.solar_data_file,
                         start_offset_minutes=config.start_offset_minutes
@@ -824,6 +825,7 @@ class EnergyManager:
                     if new_use_real_solar_data and (not old_use_real_solar_data or self.harvester.solar_loader is None):
                         try:
                             from solar_data_loader import SolarDataLoader
+
                             self.harvester.solar_loader = SolarDataLoader(
                                 self.config.solar_data_file,
                                 start_offset_minutes=self.config.start_offset_minutes
@@ -984,7 +986,7 @@ class EnergyManager:
                                 base_frequency = float(param.split('=')[1])
                             except (ValueError, IndexError):
                                 pass
-            
+
             config_dict = {
                 "num_cores": num_cores,
                 "base_frequency": base_frequency,
@@ -995,7 +997,7 @@ class EnergyManager:
                 "base_harvest_rate": float(self.config.base_harvest_rate_per_ms),
                 "start_time_offset": int(self.simulation_start_time),
                 "enable_energy_recovery": bool(self.config.enable_energy_recovery),
-                "periodic_collection_interval": int(self.config.periodic_collection_interval),  # ⭐ 新增
+                "periodic_collection_interval": int(self.config.periodic_collection_interval),
                 "base_power": float(self.config.base_power),
                 "power_coefficients": dict(self.config.power_coefficients),
                 "frequency_power_ratios": dict(self.config.frequency_power_ratios)

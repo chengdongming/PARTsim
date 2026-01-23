@@ -709,6 +709,7 @@ namespace RTSim {
             std::string python_code =
                 "import sys\n"
                 "sys.path.append('.')\n"
+                "sys.path.append('..')\n"  // 修复：添加父目录以访问energy_manager.py
                 "sys.path.append('./simconf/systems')\n"
                 "import energy_manager\n"
                 "config_file = '" + _config_file + "'\n"
