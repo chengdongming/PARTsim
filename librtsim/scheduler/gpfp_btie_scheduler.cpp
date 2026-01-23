@@ -108,11 +108,11 @@ namespace RTSim {
 
         // ⭐ 能量检查事件只负责扣除能量，不负责中断
         // 中断由tick事件���一处理，避免重复中断
-        _scheduler->_current_energy -= unit_energy;
-
-        SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] 能量检查事件：扣除 ") +
-                           std::to_string(unit_energy * 1000) + " mJ，剩余 " +
-                           std::to_string(_scheduler->getCurrentEnergy() * 1000) + " mJ");
+        // ⭐ V29修复：能量检查事件不再扣除能量
+        // 能量扣除已移到tick事件中，避免重复扣除和时序问题
+        SCHEDULER_LOG_DEBUG(std::string("⚡ [BTIE] 能量检查事件（仅记录，不扣除）: ") +
+                           "任务=" + _scheduler->getTaskName(_task) + " 需要=" + std::to_string(unit_energy * 1000) + " mJ" +
+                           " 当前=" + std::to_string(_scheduler->getCurrentEnergy() * 1000) + " mJ");
 
         // 重新调度下一次能量检查
         post(SIMUL.getTime() + 1);
@@ -430,10 +430,15 @@ namespace RTSim {
                 double unit_energy = calculateUnitEnergyForTask(task);
                 total_batch_energy += unit_energy;
                 batch_tasks.push_back(task);
+
+                SCHEDULER_LOG_INFO(std::string("🔢 [BTIE] 批量能量计算: ") +
+                                   "任务[" + std::to_string(i) + "] " +
+                                   "unit_energy=" + std::to_string(unit_energy * 1000) + " mJ" +
+                                   "累计=" + std::to_string(total_batch_energy * 1000) + " mJ");
             }
         }
 
-        SCHEDULER_LOG_DEBUG(std::string("🔢 [BTIE] 批量决策: k=") + std::to_string(batch_size) +
+        SCHEDULER_LOG_INFO(std::string("🔢 [BTIE] 批量决策: k=") + std::to_string(batch_size) +
                            " 总能耗=" + std::to_string(total_batch_energy) + "J" +
                            " 当前能量=" + std::to_string(_current_energy) + "J");
 
