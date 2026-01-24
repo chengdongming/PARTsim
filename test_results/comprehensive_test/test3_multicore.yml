@@ -1,0 +1,86 @@
+# 测试3：多核调度验证
+# 目标：验证多核情况下任务不会被重复调度到多个CPU
+cpu_islands:
+  - name: energy_aware_cpus
+    numcpus: 4              # 4核
+    kernel:
+      scheduler: gpfp_tgf
+      task_placement: global
+    volts: [1.00]
+    freqs: [8100]
+    base_freq: 8100
+    power_model: energy_aware_model
+    speed_model: energy_aware_model
+
+energy_management:
+  initial_energy: 0.01         # 10mJ，充足能量
+  max_energy: 1000.0
+  day_of_year: 182
+  time_of_day_ms: 0
+  use_real_solar_data: false
+  scheduler_energy_model:
+    base_power: 0.5
+    workload_coefficients:
+      control: 0.1
+    frequency_power_ratios:
+      8100: 0.93
+
+power_models:
+  - name: energy_aware_model
+    type: balsini_pannocchi
+    params:
+      - workload: control
+        power_params: [0.00775587, 33.376, 1.54585, 9.53439e-10]
+        speed_params: [0.0256054, 2.9809e+6, 0.602631, 8.13712e+9]
+        energy_coefficient: 0.1
+
+taskset:
+  # 6个任务，4个CPU
+  # 验证：同一时刻一个任务不会在多个CPU上运行
+  - name: task_1
+    iat: 100
+    runtime: 3
+    deadline: 100
+    params: "period=100,wcet=3,arrival_offset=0,workload=control"
+    code:
+      - fixed(3, control)
+
+  - name: task_2
+    iat: 100
+    runtime: 3
+    deadline: 100
+    params: "period=100,wcet=3,arrival_offset=0,workload=control"
+    code:
+      - fixed(3, control)
+
+  - name: task_3
+    iat: 100
+    runtime: 3
+    deadline: 100
+    params: "period=100,wcet=3,arrival_offset=0,workload=control"
+    code:
+      - fixed(3, control)
+
+  - name: task_4
+    iat: 100
+    runtime: 3
+    deadline: 100
+    params: "period=100,wcet=3,arrival_offset=0,workload=control"
+    code:
+      - fixed(3, control)
+
+  - name: task_5
+    iat: 100
+    runtime: 3
+    deadline: 100
+    params: "period=100,wcet=3,arrival_offset=0,workload=control"
+    code:
+      - fixed(3, control)
+
+  - name: task_6
+    iat: 100
+    runtime: 3
+    deadline: 100
+    params: "period=100,wcet=3,arrival_offset=0,workload=control"
+    code:
+      - fixed(3, control)

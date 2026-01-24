@@ -214,10 +214,18 @@ namespace RTSim {
             _m_oldExe[task] = p;
             _m_dispatched[task] = nullptr;
 
-            // ⭐ 通用扩展：调用scheduler的onTaskEnd()虚函数
-            // 这样支持带等待队列的调度器（如CASCADE）在任务suspend时也检查等待队列
-            // 注意：suspend不是真正的任务结束，但对于CASCADE来说，每次suspend都是一次重新调度的机会
-            _sched->onTaskEnd(task);
+            // ⭐ BUG修复（2026-01-24）：suspend不应该调用onTaskEnd()
+            // onTaskEnd()会永久移除任务、清理能量账户、增加完成计数
+            // 对于能量不足的中断，任务应该保留剩余执行时间，等待能量恢复后继续执行
+            // 正确做法：将任务重新插入到就绪队列，而不是终止它
+            // _sched->onTaskEnd(task);  // ❌ 错误：这会终止任务实例
+
+            // ✅ 修复：将任务重新插入到就绪队列
+            // 这样任务会保留剩余执行时间，等待能量恢复后继续执行
+            _sched->insert(task);
+
+            std::cout << "[DEBUG] MRTKernel::suspend() - 任务已重新插入队列: "
+                      << taskname(task) << " (剩余执行时间保留)" << std::endl;
 
             dispatch(p);
         }

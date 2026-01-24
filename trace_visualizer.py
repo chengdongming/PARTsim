@@ -323,15 +323,25 @@ class TaskSetParser:
                                 # 保持字符串值（如 workload=bzip2）
                                 params[key] = value
 
+                    # 按照要求提取参数：
+                    # T (Period): 优先取 params['period']，其次取顶层 iat。必填。
+                    T = params.get('period', task.get('iat'))
+
+                    # D (Relative Deadline): 优先取 deadline，如果未定义则默认 D = T
+                    D = task.get('deadline', T)
+
+                    # O (Offset): 优先取 params['arrival_offset']，如果未定义则默认 O = 0
+                    O = params.get('arrival_offset', 0)
+
                     self.task_configs[name] = {
-                        'period': params.get('period', task.get('iat', 0)),
-                        'deadline': task.get('deadline', params.get('period', 0)),
-                        'arrival_offset': params.get('arrival_offset', 0)
+                        'T': T,  # Period
+                        'D': D,  # Relative Deadline
+                        'O': O   # Offset
                     }
 
             print(f"✓ 解析任务集配置完成：{len(self.task_configs)} 个任务")
             for task_name, config in self.task_configs.items():
-                print(f"  {task_name}: 周期={config['period']}, deadline={config['deadline']}, 到达偏移={config['arrival_offset']}")
+                print(f"  {task_name}: T={config['T']}, D={config['D']}, O={config['O']}")
 
         except FileNotFoundError:
             print(f"警告：找不到任务集配置文件 {self.taskset_file}")
@@ -457,12 +467,12 @@ class TraceVisualizer:
                         break
 
                 if relevant_arrival is not None and self.taskset_parser:
-                    # 从任务配置获取period作为deadline
+                    # 从任务配置获取参数
                     task_config = self.taskset_parser.get_task_config(task_name)
                     if task_config:
-                        period = task_config['deadline']
-                        # 计算deadline = arrival_time + period
-                        deadline_time = relevant_arrival + period
+                        D = task_config['D']
+                        # 计算deadline = arrival_time + D
+                        deadline_time = relevant_arrival + D
                         adjusted_deadline = deadline_time - time_offset
 
                         # 检查：是否有deadline_miss事件与该arrival_time匹配
@@ -506,38 +516,47 @@ class TraceVisualizer:
                 if not task_config:
                     continue
 
-                period = task_config['period']
-                deadline = task_config['deadline']
-                arrival_offset = task_config['arrival_offset']
+                T = task_config['T']  # Period
+                D = task_config['D']  # Relative Deadline
+                O = task_config['O']  # Offset
 
-                # 获取该任务的到达时间列表
-                arrivals = self.task_arrivals.get(task_name, [])
+                # 理论时间轴计算循环
+                k = 0
+                while True:
+                    # 1. 计算理论到达时间 (Offset + k * Period)
+                    abs_release = O + (k * T)
 
-                # 为每个到达时间绘制向上箭头（到达）和向下箭头（截止）
-                for arrival_time in arrivals:
-                    adjusted_arrival = arrival_time - time_offset
+                    # 停止条件：到达时间超过了Trace的总时长
+                    if abs_release > self.time_range[1]:
+                        break
 
-                    # 绘制到达时间标记（向上箭头，绿色）+ 垂直线
-                    # 垂直线从任��条底边延伸到上箭头（向上突出）
-                    ax.plot([adjusted_arrival, adjusted_arrival], [pos - 0.125, pos + 0.3],
-                           color='green', linestyle='-', linewidth=1.5, alpha=0.7)
-                    ax.plot(adjusted_arrival, pos + 0.3, marker='^', markersize=8,
-                           color='green', markeredgecolor='darkgreen', markeredgewidth=1,
-                           label='到达' if task_name == self.tasks[0] else '')
+                    # 2. 计算理论截止时间 (Release + Relative Deadline)
+                    # 严禁使用 release + period，必须使用 release + D
+                    abs_deadline = abs_release + D
 
-                    # 计算截止时间
-                    deadline_time = arrival_time + deadline
-                    adjusted_deadline = deadline_time - time_offset
+                    # 3. 转换为图表坐标（减去偏移）
+                    adjusted_release = abs_release - time_offset
+                    adjusted_deadline = abs_deadline - time_offset
 
-                    # 只绘制在时间范围内的截止时间标记
-                    if adjusted_deadline <= time_span * 1.01:
-                        # 绘制截止时间标记（向下箭头，红色）+ 垂直线
-                        # 箭头位置与到达箭头对齐（都在任务条上方）
-                        ax.plot([adjusted_deadline, adjusted_deadline], [pos - 0.125, pos + 0.3],
+                    # 只绘制在时间范围内的标记
+                    if adjusted_deadline <= time_span * 1.02:
+                        # 绘制到达时间标记（向上箭头，绿色）+ 垂直线
+                        # 从任务条上边缘向上延伸
+                        ax.plot([adjusted_release, adjusted_release], [pos - 0.125, pos + 0.3],
+                               color='green', linestyle='-', linewidth=1.5, alpha=0.7)
+                        ax.plot(adjusted_release, pos + 0.3, marker='^', markersize=8,
+                               color='green', markeredgecolor='darkgreen', markeredgewidth=1,
+                               label='到达' if task_name == self.tasks[0] and k == 0 else '')
+
+                        # 绘制截止时间��记（向下箭头，红色）+ 垂直线
+                        # 从任务条上边缘向下延伸
+                        ax.plot([adjusted_deadline, adjusted_deadline], [pos + 0.3, pos - 0.125],
                                color='red', linestyle='-', linewidth=1.5, alpha=0.7)
-                        ax.plot(adjusted_deadline, pos + 0.3, marker='v', markersize=8,
+                        ax.plot(adjusted_deadline, pos - 0.125, marker='v', markersize=8,
                                color='red', markeredgecolor='darkred', markeredgewidth=1,
-                               label='截止' if task_name == self.tasks[0] else '')
+                               label='截止' if task_name == self.tasks[0] and k == 0 else '')
+
+                    k += 1
 
         # 设置X轴范围（从0开始，留一些右边距）
         ax.set_xlim(0, time_span * 1.02)
