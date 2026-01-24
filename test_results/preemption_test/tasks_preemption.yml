@@ -1,0 +1,51 @@
+# =============================================
+# 抢占测试任务配置
+# =============================================
+# 场景：3核心，4个任务，高优先级任务稍后到达触发抢占
+# =============================================
+
+taskset:
+  # ===========================================
+  # 任务1: 周期20ms，WCET 5ms，到达偏移10ms
+  # 优先级最高（周期最短），会抢占其他任务
+  # ===========================================
+  - name: task_1
+    iat: 20
+    runtime: 5
+    deadline: 20
+    params: "period=20,wcet=5,arrival_offset=10,workload=bzip2"
+    code:
+      - fixed(5, bzip2)
+
+  # ===========================================
+  # 任务2: 周期30ms，WCET 20ms，到达偏移0ms
+  # ===========================================
+  - name: task_2
+    iat: 30
+    runtime: 20
+    deadline: 30
+    params: "period=30,wcet=20,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(20, bzip2)
+
+  # ===========================================
+  # 任务3: 周期40ms，WCET 20ms，到达偏移0ms
+  # ===========================================
+  - name: task_3
+    iat: 40
+    runtime: 20
+    deadline: 40
+    params: "period=40,wcet=20,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(20, bzip2)
+
+  # ===========================================
+  # 任务4: 周期50ms，WCET 20ms，到达偏移0ms
+  # ===========================================
+  - name: task_4
+    iat: 50
+    runtime: 20
+    deadline: 50
+    params: "period=50,wcet=20,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(20, bzip2)

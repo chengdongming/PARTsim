@@ -1,0 +1,54 @@
+# =============================================
+# TIE vs TGF 差异测试：能量临界场景
+# =============================================
+# 目标：测试两个算法在能量不足时的不同决策
+# =============================================
+
+taskset:
+  # ===========================================
+  # 任务1: 高优先级，大能耗
+  # 周期20ms（最短=最高优先级），WCET 15ms（高能耗）
+  # ===========================================
+  - name: task_1
+    iat: 20
+    runtime: 15
+    deadline: 20
+    params: "period=20,wcet=15,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(15, bzip2)
+
+  # ===========================================
+  # 任务2: 中优先级，小能耗
+  # 周期30ms，WCET 3ms（低能耗）
+  # ===========================================
+  - name: task_2
+    iat: 30
+    runtime: 3
+    deadline: 30
+    params: "period=30,wcet=3,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(3, bzip2)
+
+  # ===========================================
+  # 任务3: 低优先级，小能耗
+  # 周期40ms，WCET 3ms（低能耗）
+  # ===========================================
+  - name: task_3
+    iat: 40
+    runtime: 3
+    deadline: 40
+    params: "period=40,wcet=3,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(3, bzip2)
+
+  # ===========================================
+  # 任务4: 低优先级，小能耗
+  # 周期50ms，WCET 3ms（低能耗）
+  # ===========================================
+  - name: task_4
+    iat: 50
+    runtime: 3
+    deadline: 50
+    params: "period=50,wcet=3,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(3, bzip2)

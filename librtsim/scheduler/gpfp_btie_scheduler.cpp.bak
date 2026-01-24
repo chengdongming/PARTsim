@@ -505,24 +505,10 @@ namespace RTSim {
 
         // ⭐ 关键修复：每次dispatch都从就绪队列动态选择任务
         // 而不是使用固定的批量，避免任务饥饿
-        // ⭐ 修复31ms延迟bug：移除_batch_scheduled_this_tick检查，允许任务到达时立即调度
-        SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] getTaskN: n=") + std::to_string(n) + " ready_queue.size()=" + std::to_string(_ready_queue.size()) + " 检查条件");
-        if (n < static_cast<unsigned int>(_ready_queue.size())) {
+        if (_batch_scheduled_this_tick && n < static_cast<unsigned int>(_ready_queue.size())) {
             AbsRTTask *task = _ready_queue[n];
-            // ⭐ 检查当前任务的1ms能量是否充足
-            double unit_energy = calculateUnitEnergyForTask(task);
-            const double EPSILON = 1e-9;
-            if (_current_energy < unit_energy - EPSILON) {
-                SCHEDULER_LOG_WARNING(std::string("⚠️ [BTIE] getTaskN: 能量不足，停止调度") +
-                                     " 任务=" + getTaskName(task) +
-                                     " 需要1ms=" + std::to_string(unit_energy * 1000) + " mJ" +
-                                     " 当前=" + std::to_string(_current_energy * 1000) + " mJ");
-                return nullptr;  // ⭐ 能量不足，不调度
-            }
-
             SCHEDULER_LOG_INFO(std::string("✅ [BTIE] getTaskN: 返回就绪队列任务 #") +
-                              std::to_string(n) + ": " + getTaskName(task) +
-                              " (批量调度状态=" + (_batch_scheduled_this_tick ? "true" : "false") + ")");
+                              std::to_string(n) + ": " + getTaskName(task));
             return task;
         }
 
@@ -556,6 +542,13 @@ namespace RTSim {
         // 任务到达，添加到就绪队列
         SCHEDULER_LOG_INFO(std::string("📥 [BTIE] 任务到达并添加到就绪队列: ") + getTaskName(task));
         addToReadyQueue(task);
+
+        // ⭐ BTIE改进：周期性任务���达时也触发批量调度（消除1ms延迟）
+        if (_ready_queue.size() >= 1) {
+            SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] notify: 任务到达，立即触发批量调度 (就绪队列大小=") +
+                             std::to_string(_ready_queue.size()) + ")");
+            performTickScheduling();
+        }
     }
 
     // =====================================================
