@@ -153,7 +153,8 @@ class TraceParser:
         self.schedule_intervals = {}  # {task_name: [(start, end), ...]}
         self.task_arrivals = {}  # {task_name: [arrival_times]}
         self.task_completions = {}  # {task_name: [completion_times]}
-        self.time_range = (0, 0)
+        self.deadline_misses = defaultdict(dict)  # {task_name: {arrival_time: miss_time}}
+        self.time_range = (float('inf'), 0)  # 初始化为无穷大和0，以便正确计算最小值
         self.verbose = verbose
 
         self._parse_trace()
@@ -208,8 +209,7 @@ class TraceParser:
             self.tasks.add(task_name)
 
             # 记录时间范围（使用原始时间）
-            self.time_range = (min(self.time_range[0], time) if self.time_range != (0, 0) else time,
-                             max(self.time_range[1], time))
+            self.time_range = (min(self.time_range[0], time), max(self.time_range[1], time))
 
             # 统计事件类型
             event_stats[event_type] += 1
@@ -240,6 +240,11 @@ class TraceParser:
                     self.schedule_intervals[task_name].append((start_time, time))
                     del active_tasks[task_name]
 
+            elif event_type == 'dline_miss':
+                # 记录deadline miss事件（同时记录arrival_time）
+                arrival_time = int(event.get('arrival_time', time))
+                self.deadline_misses[task_name][arrival_time] = time
+
         # 处理可能未关闭的任务（以防追踪文件不完整）
         for task_name, start_time in active_tasks.items():
             self.schedule_intervals[task_name].append((start_time, self.time_range[1]))
@@ -254,7 +259,8 @@ class TraceParser:
             for task in sorted(self.tasks):
                 intervals = len(self.schedule_intervals.get(task, []))
                 total_time = sum(end - start for start, end in self.schedule_intervals.get(task, []))
-                print(f"  {task}: {intervals} 个执行区间, 总执行时间 {total_time}")
+                misses = len(self.deadline_misses.get(task, []))
+                print(f"  {task}: {intervals} 个执行区间, 总执行时间 {total_time}, Deadline Miss: {misses}")
 
     def get_schedule_intervals(self) -> Dict[str, List[Tuple[int, int]]]:
         """获取所有任务的调度间隔"""
@@ -271,6 +277,10 @@ class TraceParser:
     def get_time_range(self) -> Tuple[int, int]:
         """获取时间范围"""
         return self.time_range
+
+    def get_deadline_misses(self) -> Dict[str, List[int]]:
+        """获取所有任务的deadline miss时间"""
+        return dict(self.deadline_misses)
 
 # ===============================
 # 任务集配置解析器
@@ -371,6 +381,7 @@ class TraceVisualizer:
         self.schedule_intervals = parser.get_schedule_intervals()
         self.task_arrivals = parser.get_task_arrivals()
         self.time_range = parser.get_time_range()
+        self.deadline_misses = parser.get_deadline_misses()
 
     def plot_gantt_chart(self, output_file: str = None):
         """
@@ -388,6 +399,9 @@ class TraceVisualizer:
         # 时间偏移量（将起始时间归零）
         time_offset = self.time_range[0]
 
+        # 计算时间跨度
+        time_span = self.time_range[1] - self.time_range[0]
+
         # 绘制每个任务的执行区间
         total_execution = defaultdict(int)
 
@@ -395,16 +409,78 @@ class TraceVisualizer:
             pos = task_positions[task_name]
             color = get_color_for_task(task_name)
 
+            # 绘制该任务的时间轴（在任务条下方）
+            time_axis_y = pos - 0.125  # 任务条下边界（任务条高度0.25，中心在pos）
+            ax.plot([0, time_span * 1.02], [time_axis_y, time_axis_y],
+                   color='gray', linestyle='-', linewidth=0.8, alpha=0.5)
+
+            # 添加时间刻度
+            # 根据时间跨度决定刻度间隔
+            if time_span <= 20:
+                tick_interval = 2
+            elif time_span <= 50:
+                tick_interval = 5
+            elif time_span <= 100:
+                tick_interval = 10
+            else:
+                tick_interval = 20
+
+            for tick in range(0, int(time_span * 1.02) + 1, tick_interval):
+                # 绘制刻度线
+                ax.plot([tick, tick], [time_axis_y, time_axis_y - 0.05],
+                       color='gray', linestyle='-', linewidth=0.5, alpha=0.5)
+                # 绘制刻度值
+                ax.text(tick, time_axis_y - 0.08, str(tick),
+                       ha='center', va='top', fontsize=5, color='gray',
+                       fontproperties=self._get_font_prop())
+
             for start, end in intervals:
                 duration = end - start
                 total_execution[task_name] += duration
 
                 # 使用偏移后的时间
                 adjusted_start = start - time_offset
+                adjusted_end = end - time_offset
 
-                # 绘制任务块
+                # 获取该任务的arrival_time（用于计算deadline）
+                # 找到最接近start时间的arrival
+                has_miss = False
+                deadline_time = None
+
+                arrivals = self.task_arrivals.get(task_name, [])
+                # 找到不晚于start时间的最近arrival
+                relevant_arrival = None
+                for arr_time in sorted(arrivals):
+                    if arr_time <= start:
+                        relevant_arrival = arr_time
+                    else:
+                        break
+
+                if relevant_arrival is not None and self.taskset_parser:
+                    # 从任务配置获取period作为deadline
+                    task_config = self.taskset_parser.get_task_config(task_name)
+                    if task_config:
+                        period = task_config['deadline']
+                        # 计算deadline = arrival_time + period
+                        deadline_time = relevant_arrival + period
+                        adjusted_deadline = deadline_time - time_offset
+
+                        # 检查：是否有deadline_miss事件与该arrival_time匹配
+                        # 这会检查该任务实例是否有deadline_miss记录
+                        task_misses = self.deadline_misses.get(task_name, {})
+                        if relevant_arrival in task_misses:
+                            has_miss = True
+
+                # 绘制任务条
                 ax.barh(pos, duration, left=adjusted_start, height=0.25,
                        color=color, edgecolor='black', linewidth=1.0, alpha=0.85)
+
+                # 如果有deadline miss，在任务条右侧末尾添加红色箭头标记
+                if has_miss:
+                    # 在任务条右侧末尾添加红色三角形标记
+                    arrow_x = adjusted_end
+                    ax.plot(arrow_x, pos, marker='>', markersize=8, color='red',
+                           markeredgecolor='darkred', markeredgewidth=0.5)
 
                 # 添加任务标签（如果区间足够长）
                 if duration >= (self.time_range[1] - self.time_range[0]) * 0.02:
@@ -418,11 +494,8 @@ class TraceVisualizer:
         ax.set_xlabel('时间', fontsize=12, fontweight='bold', fontproperties=self._get_font_prop())
         ax.set_ylabel('任务', fontsize=12, fontweight='bold', fontproperties=self._get_font_prop())
 
-        # 设置Y轴范围（留出空间给箭头）
-        ax.set_ylim(-0.5, len(self.tasks) + 0.1)
-
-        # 计算时间跨度
-        time_span = self.time_range[1] - self.time_range[0]
+        # 设置Y轴范围（留出空间给箭头和时间轴）
+        ax.set_ylim(-0.7, len(self.tasks) + 0.1)
 
         # 绘制到达时间和截止时间标记（如果有任务集配置）
         if self.taskset_parser:
@@ -459,15 +532,18 @@ class TraceVisualizer:
                     # 只绘制在时间范围内的截止时间标记
                     if adjusted_deadline <= time_span * 1.01:
                         # 绘制截止时间标记（向下箭头，红色）+ 垂直线
-                        # 垂直线从任务条底边延伸到下箭头（向下突出）
-                        ax.plot([adjusted_deadline, adjusted_deadline], [pos - 0.125, pos - 0.3],
+                        # 箭头位置与到达箭头对齐（都在任务条上方）
+                        ax.plot([adjusted_deadline, adjusted_deadline], [pos - 0.125, pos + 0.3],
                                color='red', linestyle='-', linewidth=1.5, alpha=0.7)
-                        ax.plot(adjusted_deadline, pos - 0.3, marker='v', markersize=8,
+                        ax.plot(adjusted_deadline, pos + 0.3, marker='v', markersize=8,
                                color='red', markeredgecolor='darkred', markeredgewidth=1,
                                label='截止' if task_name == self.tasks[0] else '')
 
-        # 设置X轴范围（从0开始，留一些边距）
-        ax.set_xlim(-time_span * 0.01, time_span * 1.01)
+        # 设置X轴范围（从0开始，留一些右边距）
+        ax.set_xlim(0, time_span * 1.02)
+
+        # 隐藏底部X轴刻度和标签（因为每个任务都有独立的时间轴）
+        ax.tick_params(axis='x', bottom=False, labelbottom=False)
 
         # 添加网格
         if not self.config.get('no_grid', False):

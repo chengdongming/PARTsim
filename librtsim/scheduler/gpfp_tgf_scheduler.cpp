@@ -342,7 +342,11 @@ namespace RTSim {
 
         _stats.total_tick_count++;
 
-            // ⭐ 核心：先收集能量，再调度
+        // ⭐ 关键：每次tick开始时重置累计能耗和已计数任务集合（与TIE保持一致）
+        _dispatching_tasks_total_energy = 0.0;
+        _counted_tasks_in_dispatch.clear();
+
+        // ⭐ 核心：先收集能量，再调度
         // 1. 收集太阳能（从上次tick到现在）
         Tick current_time = SIMUL.getTime();
 
@@ -435,16 +439,26 @@ namespace RTSim {
 
     AbsRTTask *TGFScheduler::getTaskN(unsigned int n) {
         SCHEDULER_LOG_DEBUG(std::string("🔍 [TGF] getTaskN(") + std::to_string(n) + ") 被调用" +
-                           " 当前能量: " + std::to_string(_current_energy) + "J");
+                           " 当前能量: " + std::to_string(_current_energy) + "J" +
+                           " 已调度能耗=" + std::to_string(_dispatching_tasks_total_energy) + "J");
 
         if (_ready_queue.empty()) {
             SCHEDULER_LOG_DEBUG("📭 [TGF] getTaskN: 就绪队列为空");
             return nullptr;
         }
 
-        // ⭐ TGF贪婪策略：分两阶段筛选
-        // 第一阶段：从就绪队列中筛选出"未运行且能量充足"的任务
-        std::vector<AbsRTTask *> eligible_tasks;
+        // ⭐ 关键：当n==0时，表示新的调度周期开始，重置累计能耗和已计数任务集合
+        if (n == 0) {
+            _dispatching_tasks_total_energy = 0.0;
+            _counted_tasks_in_dispatch.clear();
+            SCHEDULER_LOG_DEBUG(std::string("🔄 [TGF] 新调度周期开始，重置累计能耗和已计数任务集合"));
+        }
+
+        // ⭐ 级联调度：遍历就绪队列，运行中任务也要检查能量
+        unsigned int ready_index = 0;
+        unsigned int original_target_n = n;  // 记住最初请求的n值
+        const double EPSILON = 1e-9;
+        bool skipped_energy_insufficient = false;  // 是否跳过了能量不足的任务
 
         for (size_t i = 0; i < _ready_queue.size(); ++i) {
             AbsRTTask *task = _ready_queue[i];
@@ -462,38 +476,134 @@ namespace RTSim {
                 }
             }
 
+            // ⭐ 关键修复：正在运行的任务也要检查能量！
             if (is_running) {
-                SCHEDULER_LOG_DEBUG(std::string("⏭️ [TGF] getTaskN: 跳过正在执行的任务 #") +
-                                  std::to_string(i) + ": " + getTaskName(task));
+                double unit_energy = calculateUnitEnergyForTask(task);
+                double available_energy = _current_energy - _dispatching_tasks_total_energy;
+
+                if (available_energy < unit_energy - EPSILON) {
+                    // ⭐ 运行中的任务能量不足，停止续期！
+                    SCHEDULER_LOG_WARNING(std::string("⚡ [TGF] 运行中任务能量不足，停止续期: ") +
+                                         getTaskName(task) +
+                                         " 需要1ms=" + std::to_string(unit_energy) + "J" +
+                                         " 剩余能量=" + std::to_string(available_energy) + "J");
+
+                    // 从运行任务列表中移除，标记为已中断
+                    for (auto &pair : _running_tasks) {
+                        if (pair.second == task) {
+                            pair.second = nullptr;
+                            break;
+                        }
+                    }
+
+                    _stats.total_skipped_energy++;
+                    return nullptr;  // 不再续期，让kernel停止这个任务
+                }
+
+                // 能量足够，继续运行
+                SCHEDULER_LOG_DEBUG(std::string("♻️ [TGF] 运行中任务续期: ") + getTaskName(task));
+
+                // ⭐ 累加到已调度能耗（只在第一次计数）
+                if (_counted_tasks_in_dispatch.find(task) == _counted_tasks_in_dispatch.end()) {
+                    _dispatching_tasks_total_energy += unit_energy;
+                    _counted_tasks_in_dispatch.insert(task);
+                    SCHEDULER_LOG_DEBUG(std::string("  [TGF] 计数运行中任务能耗: ") +
+                                       getTaskName(task) + " 累计=" +
+                                       std::to_string(_dispatching_tasks_total_energy) + "J");
+                }
+
+                // 第n个任务如果是在运行中的，也返回它（续期）
+                if (ready_index == n) {
+                    return task;
+                }
+
+                ready_index++;
                 continue;
             }
 
-            // ⭐ 核心：即时能量判断（当前能量 >= 1ms能耗）
-            double unit_energy = calculateUnitEnergyForTask(task);
+            // 这是第ready_index个未dispatch的任务
+            if (ready_index == n) {
+                // ⭐ 计算任务的1ms能耗
+                double unit_energy = calculateUnitEnergyForTask(task);
+                double available_energy = _current_energy - _dispatching_tasks_total_energy;
 
-            if (_current_energy < unit_energy) {
-                SCHEDULER_LOG_DEBUG(std::string("⚠️ [TGF] getTaskN: 能量不足，跳过任务") +
-                                   " 任务: " + getTaskName(task) +
-                                   " 需要: " + std::to_string(unit_energy) + "J" +
-                                   " 当前: " + std::to_string(_current_energy) + "J");
-                // ⭐ TGF贪婪策略：能量不足跳过当前任务，继续检查次优先级任务
-                continue;
+                // ⭐ 贪心策略：如果能量不足，跳过这个任务，继续查找后面的任务
+                if (available_energy < unit_energy - EPSILON) {
+                    SCHEDULER_LOG_INFO(std::string("⚠️ [TGF] 任务能量不足，跳过（贪心策略）") +
+                                      " 任务=" + getTaskName(task) +
+                                      " 需要1ms=" + std::to_string(unit_energy) + "J" +
+                                      " 已调度能耗=" + std::to_string(_dispatching_tasks_total_energy) + "J" +
+                                      " 剩余=" + std::to_string(available_energy) + "J");
+
+                    // 跳过这个任务，继续查找下一个
+                    ready_index++;
+                    skipped_energy_insufficient = true;
+
+                    // ⭐ 贪心策略：继续查找队列中是否有能量足够的后续任务
+                    for (size_t j = i + 1; j < _ready_queue.size(); ++j) {
+                        AbsRTTask *next_task = _ready_queue[j];
+                        if (!next_task) {
+                            continue;
+                        }
+
+                        // ⭐ 关键修复：检查任务是否已被调度（在counted_tasks中）
+                        if (_counted_tasks_in_dispatch.find(next_task) != _counted_tasks_in_dispatch.end()) {
+                            // 任务已被调度（可能还没开始运行），跳过
+                            SCHEDULER_LOG_DEBUG(std::string("  [TGF] 贪心搜索：跳过已调度任务: ") + getTaskName(next_task));
+                            continue;
+                        }
+
+                        // 检查下一个任务是否已经在运行
+                        bool next_is_running = false;
+                        for (const auto &pair : _running_tasks) {
+                            if (pair.second == next_task) {
+                                next_is_running = true;
+                                break;
+                            }
+                        }
+
+                        if (next_is_running) {
+                            // 运行中的任务已在上面处理过，跳过
+                            continue;
+                        }
+
+                        double next_unit_energy = calculateUnitEnergyForTask(next_task);
+                        double next_available = _current_energy - _dispatching_tasks_total_energy;
+
+                        if (next_available >= next_unit_energy - EPSILON) {
+                            // ⭐ 找到能量足够的后续任务，调度它！
+                            _dispatching_tasks_total_energy += next_unit_energy;
+                            _counted_tasks_in_dispatch.insert(next_task);
+
+                            SCHEDULER_LOG_INFO(std::string("✅ [TGF] 贪心策略：调度后续任务") +
+                                              " 替换=" + getTaskName(task) +
+                                              " → " + getTaskName(next_task) +
+                                              " 能量=" + std::to_string(next_unit_energy) + "J" +
+                                              " 累计=" + std::to_string(_dispatching_tasks_total_energy) + "J");
+
+                            return next_task;
+                        }
+                    }
+
+                    // 没有找到能量足够的任务
+                    SCHEDULER_LOG_INFO(std::string("⚠️ [TGF] 贪心策略：未找到能量足够的任务"));
+                    return nullptr;
+                }
+
+                // ⭐ 能量足够，正常调度
+                _dispatching_tasks_total_energy += unit_energy;
+                _counted_tasks_in_dispatch.insert(task);
+
+                SCHEDULER_LOG_INFO(std::string("✅ [TGF] 调度任务: ") + getTaskName(task) +
+                                  " 1ms能耗=" + std::to_string(unit_energy) + "J" +
+                                  " 累计已调度=" + std::to_string(_dispatching_tasks_total_energy) + "J");
+
+                return task;
             }
 
-            // 能量充足，加入候选任务列表
-            eligible_tasks.push_back(task);
+            ready_index++;
         }
 
-        // 第二阶段：从候选任务中返回第n个
-        if (n < eligible_tasks.size()) {
-            AbsRTTask *selected_task = eligible_tasks[n];
-            SCHEDULER_LOG_INFO(std::string("✅ [TGF] getTaskN: 返回任务 #") +
-                              std::to_string(n) + ": " + getTaskName(selected_task));
-            return selected_task;
-        }
-
-        SCHEDULER_LOG_DEBUG("📭 [TGF] getTaskN: 未找到第" + std::to_string(n) +
-                           "个可调度任务（候选任务数: " + std::to_string(eligible_tasks.size()) + ")");
         return nullptr;
     }
 

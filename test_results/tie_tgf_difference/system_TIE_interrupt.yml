@@ -1,11 +1,9 @@
-# =============================================
-# BTIE抢占测试系统配置
-# =============================================
+# TIE测试系统配置（任务执行后中断场景）
 cpu_islands:
   - name: energy_aware_cpus
-    numcpus: 3
+    numcpus: 2
     kernel:
-      scheduler: gpfp_btie
+      scheduler: gpfp_tie
       task_placement: global
     volts: [0.92, 0.94, 0.96, 0.98, 1.00, 1.02, 1.04, 1.06, 1.08, 1.10, 1.12, 1.14]
     freqs: [7000, 7500, 8000, 8100, 8200, 8300, 8400, 8500, 9000, 9500, 10000, 10500]
@@ -14,15 +12,13 @@ cpu_islands:
     speed_model: energy_aware_model
 
 energy_management:
-  initial_energy: 100.0       # 充足能量
+  initial_energy: 0.0016         # ⭐ 初始能量1.6mJ（够高能耗任务执行1ms）
   max_energy: 1000.0
   day_of_year: 182
-  time_of_day_ms: 43200000    # 12:00 (中午，太阳能充足)
-  use_real_solar_data: true
-  solar_data_file: /home/devcontainers/PARTSim-project/data/processed/shenyang_solar_minute.csv
+  time_of_day_ms: 0
+  use_real_solar_data: false    # 禁用太阳能收集
   pv_efficiency: 0.22
   pv_area_m2: 1.0
-  unit_time: 50
   periodic_collection_interval_ms: 1
   enable_energy_recovery: true
   max_recovery_wait_time_ms: 10000
@@ -31,9 +27,9 @@ energy_management:
     workload_coefficients:
       bzip2: 1.2
       hash: 0.8
-      encrypt: 1.5
+      encrypt: 1.5              # 超高能耗
       decrypt: 1.5
-      control: 0.1
+      control: 0.1              # 最低能耗
       idle: 0.1
     frequency_power_ratios:
       7000: 0.85
@@ -61,3 +57,15 @@ power_models:
         power_params: [0.00775587, 33.376, 1.54585, 9.53439e-10]
         speed_params: [0.0256054, 2.9809e+6, 0.602631, 8.13712e+9]
         energy_coefficient: 1.2
+      - workload: hash
+        power_params: [0.00775587, 33.376, 1.54585, 9.53439e-10]
+        speed_params: [0.0256054, 2.9809e+6, 0.602631, 8.13712e+9]
+        energy_coefficient: 0.8
+      - workload: encrypt
+        power_params: [0.00775587, 33.376, 1.54585, 9.53439e-10]
+        speed_params: [0.0256054, 2.9809e+6, 0.602631, 8.13712e+9]
+        energy_coefficient: 1.5
+      - workload: control
+        power_params: [0.00775587, 33.376, 1.54585, 9.53439e-10]
+        speed_params: [0.0256054, 2.9809e+6, 0.602631, 8.13712e+9]
+        energy_coefficient: 0.1

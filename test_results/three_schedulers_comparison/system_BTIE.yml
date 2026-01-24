@@ -1,11 +1,11 @@
 # =============================================
-# TGF调度算法测试：12点100J能量
+# BTIE调度算法测试：0点有限能量
 # =============================================
 cpu_islands:
   - name: energy_aware_cpus
     numcpus: 3
     kernel:
-      scheduler: gpfp_tgf
+      scheduler: gpfp_btie
       task_placement: global
     volts: [0.92, 0.94, 0.96, 0.98, 1.00, 1.02, 1.04, 1.06, 1.08, 1.10, 1.12, 1.14]
     freqs: [7000, 7500, 8000, 8100, 8200, 8300, 8400, 8500, 9000, 9500, 10000, 10500]
@@ -14,10 +14,10 @@ cpu_islands:
     speed_model: energy_aware_model
 
 energy_management:
-  initial_energy: 100.0       # 初始能量100J
+  initial_energy: 0.05         # 初始能量50mJ
   max_energy: 1000.0
   day_of_year: 182
-  time_of_day_ms: 43200000    # 12:00 (中午，太阳能充足)
+  time_of_day_ms: 0           # 0:00 (午夜，无太阳能)
   use_real_solar_data: true
   solar_data_file: /home/devcontainers/PARTSim-project/data/processed/shenyang_solar_minute.csv
   pv_efficiency: 0.22

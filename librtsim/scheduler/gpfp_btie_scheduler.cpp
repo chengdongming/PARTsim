@@ -357,13 +357,17 @@ namespace RTSim {
 
 
     void BTIEScheduler::executeBatchScheduling(const std::vector<AbsRTTask *> &tasks, double total_energy) {
-        // ⭐ 修复：批量调度不再扣减能量
-        // 能量应该在任务被调度时（notify方法）扣减，而不是在批量调度决策时扣减
-        // 这里只记录批量调度的任务列表
-        SCHEDULER_LOG_DEBUG(std::string("📋 [BTIE] 批量调度决策: ") +
+        // ⭐ BTIE核心：批量调度时一次性扣减k个任务的1ms能耗
+        // 当前时刻能量 = 上一时刻结余 + 本次充电能量 - 已消耗能量 - 本次批量调度能耗
+        double old_energy = _current_energy;
+        _current_energy -= total_energy;
+        _stats.total_energy_consumed += total_energy;
+
+        SCHEDULER_LOG_INFO(std::string("📋 [BTIE] 批量调度: ") +
                            "任务数=" + std::to_string(tasks.size()) +
-                           " 总能量=" + std::to_string(total_energy) + "J" +
-                           " （能量将在notify时扣减）");
+                           " 总能耗=" + std::to_string(total_energy * 1000) + " mJ" +
+                           " 能量=" + std::to_string(old_energy * 1000) + " mJ → " +
+                           std::to_string(_current_energy * 1000) + " mJ");
     }
 
     // =====================================================
@@ -450,8 +454,8 @@ namespace RTSim {
             _current_batch_tasks = batch_tasks;
             _stats.total_batch_schedules++;
             SCHEDULER_LOG_INFO(std::string("✅ [BTIE] 批量调度成功: k=") + std::to_string(batch_size) +
-                              " 扣减=" + std::to_string(total_batch_energy) + "J" +
-                              " 剩余=" + std::to_string(_current_energy) + "J");
+                              " 总能耗=" + std::to_string(total_batch_energy * 1000) + " mJ" +
+                              " 剩余能量=" + std::to_string(_current_energy * 1000) + " mJ");
         } else {
             // 能量不足：不调度任何任务
             _batch_scheduled_this_tick = false;
@@ -499,34 +503,26 @@ namespace RTSim {
     // =====================================================
 
     AbsRTTask *BTIEScheduler::getTaskN(unsigned int n) {
-        SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] getTaskN(") + std::to_string(n) + ") 被调用" +
-                           " 就绪队列大小=" + std::to_string(_ready_queue.size()) +
-                           " 是否已批量调度=" + (_batch_scheduled_this_tick ? "true" : "false"));
+        SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] getTaskN(") + std::to_string(n) + ") " +
+                           "批量大小=" + std::to_string(_current_batch_size) +
+                           " 批量状态=" + (_batch_scheduled_this_tick ? "已调度" : "未调度"));
 
-        // ⭐ 关键修复：每次dispatch都从就绪队列动态选择任务
-        // 而不是使用固定的批量，避免任务饥饿
-        // ⭐ 修复31ms延迟bug：移除_batch_scheduled_this_tick检查，允许任务到达时立即调度
-        SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] getTaskN: n=") + std::to_string(n) + " ready_queue.size()=" + std::to_string(_ready_queue.size()) + " 检查条件");
-        if (n < static_cast<unsigned int>(_ready_queue.size())) {
-            AbsRTTask *task = _ready_queue[n];
-            // ⭐ 检查当前任务的1ms能量是否充足
-            double unit_energy = calculateUnitEnergyForTask(task);
-            const double EPSILON = 1e-9;
-            if (_current_energy < unit_energy - EPSILON) {
-                SCHEDULER_LOG_WARNING(std::string("⚠️ [BTIE] getTaskN: 能量不足，停止调度") +
-                                     " 任务=" + getTaskName(task) +
-                                     " 需要1ms=" + std::to_string(unit_energy * 1000) + " mJ" +
-                                     " 当前=" + std::to_string(_current_energy * 1000) + " mJ");
-                return nullptr;  // ⭐ 能量不足，不调度
-            }
+        // ⭐ BTIE核心：使用批量调度决策的结果
+        // 如果批量调度成功，返回批量中的任务；否则返回nullptr
+        if (!_batch_scheduled_this_tick || _current_batch_tasks.empty()) {
+            SCHEDULER_LOG_INFO("📭 [BTIE] 批量调度失败或为空，返回nullptr");
+            return nullptr;
+        }
 
-            SCHEDULER_LOG_INFO(std::string("✅ [BTIE] getTaskN: 返回就绪队列任务 #") +
-                              std::to_string(n) + ": " + getTaskName(task) +
-                              " (批量调度状态=" + (_batch_scheduled_this_tick ? "true" : "false") + ")");
+        // 返回批量中的第n个任务
+        if (n < static_cast<unsigned int>(_current_batch_tasks.size())) {
+            AbsRTTask *task = _current_batch_tasks[n];
+            SCHEDULER_LOG_INFO(std::string("✅ [BTIE] 返回批量任务 #") +
+                              std::to_string(n) + ": " + getTaskName(task));
             return task;
         }
 
-        SCHEDULER_LOG_INFO("📭 [BTIE] getTaskN: 无可调度任务，返回nullptr");
+        SCHEDULER_LOG_INFO("📭 [BTIE] n超出批量大小，返回nullptr");
         return nullptr;
     }
 
