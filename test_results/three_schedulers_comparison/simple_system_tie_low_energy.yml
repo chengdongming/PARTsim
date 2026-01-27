@@ -1,0 +1,63 @@
+# TIE调度算法测试：2核3任务，能量受限
+cpu_islands:
+  - name: energy_aware_cpus
+    numcpus: 2  # 2个核心
+    kernel:
+      scheduler: gpfp_tie
+      task_placement: global
+    volts: [0.92, 0.94, 0.96, 0.98, 1.00, 1.02, 1.04, 1.06, 1.08, 1.10, 1.12, 1.14]
+    freqs: [7000, 7500, 8000, 8100, 8200, 8300, 8400, 8500, 9000, 9500, 10000, 10500]
+    base_freq: 8100
+    power_model: energy_aware_model
+    speed_model: energy_aware_model
+
+energy_management:
+  initial_energy: 0.003  # 初始能量3.0mJ（受限）
+  max_energy: 1000.0
+  day_of_year: 182
+  time_of_day_ms: 0
+  use_real_solar_data: false
+  unit_time: 50
+  periodic_collection_interval_ms: 1
+  enable_energy_recovery: false  # 关闭能量收集，只使用初始能量
+  scheduler_energy_model:
+    base_power: 0.5
+    workload_coefficients:
+      bzip2: 1.2
+      hash: 0.8
+      control: 0.1
+      idle: 0.1
+    frequency_power_ratios:
+      7000: 0.85
+      7500: 0.88
+      8000: 0.92
+      8100: 0.93
+      8200: 0.94
+      8300: 0.95
+      8400: 0.96
+      8500: 0.97
+      9000: 1.0
+      9500: 1.05
+      10000: 1.1
+      10500: 1.15
+
+power_models:
+  - name: energy_aware_model
+    type: balsini_pannocchi
+    params:
+      - workload: idle
+        power_params: [0.00134845, 1.76307e-5, 124.535, 1.00399e-10]
+        speed_params: [1, 0, 0, 0]
+        energy_coefficient: 0.1
+      - workload: bzip2
+        power_params: [0.00775587, 33.376, 1.54585, 9.53439e-10]
+        speed_params: [0.0256054, 2.9809e+6, 0.602631, 8.13712e+9]
+        energy_coefficient: 1.2
+      - workload: hash
+        power_params: [0.00775587, 33.376, 1.54585, 9.53439e-10]
+        speed_params: [0.0316054, 2.9809e+6, 0.602631, 8.13712e+9]
+        energy_coefficient: 0.8
+      - workload: control
+        power_params: [0.002, 10.0, 1.0, 1.0e-10]
+        speed_params: [0.01, 1.0e+6, 0.5, 5.0e+9]
+        energy_coefficient: 0.1
