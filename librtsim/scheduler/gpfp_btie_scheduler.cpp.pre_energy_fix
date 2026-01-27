@@ -414,111 +414,100 @@ namespace RTSim {
             }
         }
 
-        // ⭐ BTIE关键修复：采用正确的能量扣除逻辑（后扣方式）
-        
-        // 1. 只扣除运行中任务的能量（它们已经执行了1ms）
+        // 收集所有需要执行的任务
+        std::vector<AbsRTTask *> all_tasks;
+
+        // 1. 添加运行中的任务
         const auto& running_tasks = _kernel->getCurrentExecutingTasks();
-        std::vector<AbsRTTask *> running_task_list;
-        double energy_to_deduct = 0.0;
-        
         for (const auto& map_pair : running_tasks) {
             AbsRTTask* task = map_pair.second;
             if (task) {
-                running_task_list.push_back(task);
-                double unit_energy = calculateUnitEnergyForTask(task);
-                energy_to_deduct += unit_energy;
+                all_tasks.push_back(task);
             }
         }
-        
-        // 扣除运行中任务的能量
-        if (energy_to_deduct > 0) {
-            const double EPSILON = 1e-9;
-            if (_current_energy >= energy_to_deduct - EPSILON) {
-                double old_energy = _current_energy;
-                _current_energy -= energy_to_deduct;
-                _stats.total_energy_consumed += energy_to_deduct;
-                
-                SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] Tick: 扣除运行中任务能量: ") +
-                                   "任务数=" + std::to_string(running_task_list.size()) +
-                                   " 能耗=" + std::to_string(energy_to_deduct * 1000) + " mJ " +
-                                   std::to_string(old_energy * 1000) + " mJ → " +
-                                   std::to_string(_current_energy * 1000) + " mJ");
-            } else {
-                SCHEDULER_LOG_WARNING(std::string("⚠️ [BTIE] 能量不足无法扣除运行任务能耗: ") +
-                                        "需要=" + std::to_string(energy_to_deduct * 1000) + " mJ " +
-                                        "当前=" + std::to_string(_current_energy * 1000) + " mJ");
+
+        // 2. 添加就绪队列中的任务
+        for (auto* task : _ready_queue) {
+            if (task && std::find(all_tasks.begin(), all_tasks.end(), task) == all_tasks.end()) {
+                all_tasks.push_back(task);
             }
         }
-        
-        // 2. ⭐ 选择K个新任务（不扣除它们的能量）
-        size_t running_count = running_task_list.size();
-        size_t total_cpus = running_tasks.size();
-        size_t free_cpus = total_cpus - running_count;
-        size_t K = std::min(free_cpus, _ready_queue.size());
-        
-        std::vector<AbsRTTask *> new_tasks_to_schedule;
-        if (K > 0) {
-            std::vector<AbsRTTask *> sorted_ready(_ready_queue.begin(), _ready_queue.end());
-            std::sort(sorted_ready.begin(), sorted_ready.end(),
-                [](AbsRTTask* a, AbsRTTask* b) { return a->getDeadline() < b->getDeadline(); });
-            
-            for (size_t j = 0; j < K && j < sorted_ready.size(); ++j) {
-                new_tasks_to_schedule.push_back(sorted_ready[j]);
-            }
+
+        SCHEDULER_LOG_INFO(std::string("📊 [BTIE] 真正的批量调度: ") +
+                          "运行中任务=" + std::to_string(running_tasks.size()) +
+                          " 就绪任务=" + std::to_string(_ready_queue.size()) +
+                          " 总任务数=" + std::to_string(all_tasks.size()));
+
+        if (all_tasks.empty()) {
+            SCHEDULER_LOG_INFO("📭 [BTIE] 无任务可调度");
+            _batch_scheduled_this_tick = false;
+            _current_batch_tasks.clear();
+            checkAndPreempt();
+            return;
         }
-        
-        // 3. ⭐ 只检查新任务的能量（不扣除）
-        double new_tasks_energy = 0.0;
-        for (auto* task : new_tasks_to_schedule) {
-            new_tasks_energy += calculateUnitEnergyForTask(task);
+
+        // 计算所有任务的总能耗
+        double total_energy = 0.0;
+        for (auto* task : all_tasks) {
+            double unit_energy = calculateUnitEnergyForTask(task);
+            total_energy += unit_energy;
         }
-        
-        SCHEDULER_LOG_INFO(std::string("📊 [BTIE] 批量调度决策: ") +
-                          "总CPU=" + std::to_string(total_cpus) +
-                          " 运行中=" + std::to_string(running_count) +
-                          " 空闲=" + std::to_string(free_cpus) +
-                          " 就绪队列=" + std::to_string(_ready_queue.size()) +
-                          " 选择K=" + std::to_string(K) +
-                          " 新任务能耗=" + std::to_string(new_tasks_energy * 1000) + " mJ");
-        
-        // 4. ⭐ BTIE核心：批量能量判断（"全有或全无"）
-        // 注意：这里只检查新任务的能量，不扣除
+
+        SCHEDULER_LOG_INFO(std::string("🔢 [BTIE] 批量能量计算: ") +
+                          "总任务数=" + std::to_string(all_tasks.size()) +
+                          " 总能耗=" + std::to_string(total_energy * 1000) + " mJ" +
+                          " 当前能量=" + std::to_string(_current_energy * 1000) + " mJ");
+
+        // ⭐ BTIE核心：一次性判断能量是否充足（真正的批量调度）
         const double EPSILON = 1e-9;
-        if (_current_energy >= new_tasks_energy - EPSILON) {
-            // 能量充足：调度新任务
+        if (_current_energy >= total_energy - EPSILON) {
+            // 能量充足：一次性扣减所有任务的能耗
+            double old_energy = _current_energy;
+            _current_energy -= total_energy;
+            _stats.total_energy_consumed += total_energy;
+
+            // 将所有任务标记为批量调度
             _batch_scheduled_this_tick = true;
-            
-            // _current_batch_tasks包含：运行中任务 + 新任务
-            std::vector<AbsRTTask *> all_tasks_to_dispatch;
-            for (auto* task : running_task_list) {
-                all_tasks_to_dispatch.push_back(task);
-            }
-            for (auto* task : new_tasks_to_schedule) {
-                all_tasks_to_dispatch.push_back(task);
-            }
-            
-            _current_batch_tasks = all_tasks_to_dispatch;
-            _current_batch_size = all_tasks_to_dispatch.size();
+            _current_batch_tasks = all_tasks;
+            _current_batch_size = all_tasks.size();
             _stats.total_batch_schedules++;
-            
+
             SCHEDULER_LOG_INFO(std::string("✅ [BTIE] 批量调度成功: ") +
-                              "运行中=" + std::to_string(running_count) +
-                              " 新任务=" + std::to_string(new_tasks_to_schedule.size()) +
-                              " 总任务=" + std::to_string(all_tasks_to_dispatch.size()) +
-                              " 新任务能耗=" + std::to_string(new_tasks_energy * 1000) + " mJ");
+                              "总任务数=" + std::to_string(all_tasks.size()) +
+                              " 总能耗=" + std::to_string(total_energy * 1000) + " mJ" +
+                              " 能量=" + std::to_string(old_energy * 1000) + " mJ → " +
+                              std::to_string(_current_energy * 1000) + " mJ");
         } else {
-            // 能量不足：不调度新任务，运行中任务继续
+            // 能量不足：不调度任何任务，并中断所有运行中的任务
             _batch_scheduled_this_tick = false;
             _current_batch_tasks.clear();
             _current_batch_size = 0;
             _stats.total_batch_skipped++;
-            
-            SCHEDULER_LOG_INFO(std::string("❌ [BTIE] 能量不足，不调度新任务: ") +
-                              "需要=" + std::to_string(new_tasks_energy * 1000) + " mJ" +
-                              " 当前=" + std::to_string(_current_energy * 1000) + " mJ" +
-                              " 运行中=" + std::to_string(running_count));
+
+            // ⭐ 关键修复：中断所有运行中的任务（包括正在执行的）
+            std::vector<AbsRTTask *> tasks_to_interrupt;
+            for (const auto& map_pair : running_tasks) {
+                AbsRTTask* task = map_pair.second;
+                if (task) {
+                    tasks_to_interrupt.push_back(task);
+                }
+            }
+
+            for (AbsRTTask* task : tasks_to_interrupt) {
+                if (task && _kernel) {
+                    SCHEDULER_LOG_INFO(std::string("🛑 [BTIE] 批量失败：中断运行中任务 ") + getTaskName(task));
+                    _kernel->suspend(task);
+                    _stats.total_skipped_energy++;
+                }
+            }
+
+            SCHEDULER_LOG_INFO(std::string("❌ [BTIE] 能量不足，停止所有任务: ") +
+                              "需要=" + std::to_string(total_energy) + "J" +
+                              " 当前=" + std::to_string(_current_energy) + "J" +
+                              " 中断任务数=" + std::to_string(tasks_to_interrupt.size()));
         }
 
+        // Tick边界：检查抢占（高优先级任务到达时）
         checkAndPreempt();
 
         // 如果有kernel，触发dispatch进行调度
