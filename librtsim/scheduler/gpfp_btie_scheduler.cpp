@@ -833,11 +833,11 @@ namespace RTSim {
         Scheduler::insert(task);
         addToReadyQueue(task);
 
-        // ⭐ BTIE改进：任务到达时也触发批量调度（保持批量调度特性）
-        // 这样可以在tick边界和任务到达时都进行调度，消除1ms延迟
-        if (_ready_queue.size() >= 1) {
-            SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] 任务到达，立即触发批量调度 (就绪队列大小=") +
-                             std::to_string(_ready_queue.size()) + ")");
+        // ⭐ 修复：只在0时刻第一个任务到达时触发调度
+        // 消除不必要的重复调度，保持与TIE/TGF的一致性
+        // 批量调度逻辑在performTickScheduling()中保持不变（每ms批量判断）
+        if (_ready_queue.size() == 1 && SIMUL.getTime() == Tick(0)) {
+            SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] 第一个任务在0ms到达，立即触发调度"));
             performTickScheduling();
         }
     }
