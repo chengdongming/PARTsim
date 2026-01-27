@@ -556,63 +556,52 @@ namespace RTSim {
 
     AbsRTTask *BTIEScheduler::getTaskN(unsigned int n) {
         SCHEDULER_LOG_DEBUG(std::string("🔍 [BTIE] getTaskN(") + std::to_string(n) + ") " +
-                           "当前能量: " + std::to_string(_current_energy) + "J");
+                           "当前能量: " + std::to_string(_current_energy) + "J" +
+                           " 批量任务数=" + std::to_string(_current_batch_tasks.size()));
 
-        // ⭐ BTIE修复：像TIE/TGF一样，遍历_ready_queue，支持运行中任务续期
-        if (_ready_queue.empty()) {
-            SCHEDULER_LOG_DEBUG("📭 [BTIE] getTaskN: 就绪队列为空");
+        // ⭐ 关键：当n==0时，表示新的调度周期开始
+        if (n == 0) {
+            // 注意：能量已在performTickScheduling中批量扣除，这里不重复扣除
+            SCHEDULER_LOG_DEBUG(std::string("🔄 [BTIE] 新调度��期开始"));
+        }
+
+        // ⭐ 关键修复：使用_current_batch_tasks而不是_ready_queue
+        // _current_batch_tasks在performTickScheduling()中设置，已经考虑了能量检查
+        if (_current_batch_tasks.empty()) {
+            SCHEDULER_LOG_DEBUG("📭 [BTIE] getTaskN: 批量任务队列为空（能量不足）");
             return nullptr;
         }
 
-        // ⭐ 关键：当n==0时，表示新的调度周期开始，重置累计能耗
-        if (n == 0) {
-            // 注意：能量已在performTickScheduling中批量扣除，这里不重复扣除
-            SCHEDULER_LOG_DEBUG(std::string("🔄 [BTIE] 新调度周期开始"));
+        // 检查���引是否有效
+        if (n >= _current_batch_tasks.size()) {
+            SCHEDULER_LOG_DEBUG(std::string("📭 [BTIE] getTaskN: 索引超出范围") +
+                               " n=" + std::to_string(n) +
+                               " size=" + std::to_string(_current_batch_tasks.size()));
+            return nullptr;
         }
 
-        // ⭐ 级联调度：遍历就绪队列，运行中任务也要检查
-        unsigned int ready_index = 0;
-        for (size_t i = 0; i < _ready_queue.size(); ++i) {
-            AbsRTTask *task = _ready_queue[i];
-
-            if (!task) {
-                continue;
-            }
-
-            // 检查任务是否已经在运行
-            bool is_running = false;
-            for (const auto &pair : _running_tasks) {
-                if (pair.second == task) {
-                    is_running = true;
-                    break;
-                }
-            }
-
-            // ⭐ 关键：正在运行的任务也要检查能量！
-            if (is_running) {
-                // 运行中任务续期
-                SCHEDULER_LOG_DEBUG(std::string("♻️ [BTIE] 运行中任务续期: ") + getTaskName(task));
-
-                // 第n个任务如果是在运行中的，也返回它（续期）
-                if (ready_index == n) {
-                    return task;
-                }
-
-                ready_index++;
-                continue;
-            }
-
-            // 这是第ready_index个未dispatch的任务
-            if (ready_index == n) {
-                // 返回新任务
-                SCHEDULER_LOG_DEBUG(std::string("✅ [BTIE] 调度新任务: ") + getTaskName(task));
-                return task;
-            }
-
-            ready_index++;
+        // ⭐ 直接从批量任务队列中获取第n个任务
+        AbsRTTask *task = _current_batch_tasks[n];
+        if (!task) {
+            return nullptr;
         }
 
-        return nullptr;
+        // 检查任务是否在运行
+        bool is_running = false;
+        for (const auto &pair : _running_tasks) {
+            if (pair.second == task) {
+                is_running = true;
+                break;
+            }
+        }
+
+        if (is_running) {
+            SCHEDULER_LOG_DEBUG(std::string("♻️ [BTIE] 运行中任务续期: ") + getTaskName(task));
+        } else {
+            SCHEDULER_LOG_DEBUG(std::string("✅ [BTIE] 调度新任务: ") + getTaskName(task));
+        }
+
+        return task;
     }
 
     // =====================================================
