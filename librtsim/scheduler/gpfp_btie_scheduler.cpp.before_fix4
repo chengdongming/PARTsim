@@ -426,23 +426,10 @@ namespace RTSim {
             }
         }
 
-        // 2. ⭐ BTIE关键修复：只选择K个新任务（K = min(free_cpus, _ready_queue.size())）
-        size_t running_count = all_tasks.size();
-        size_t total_cpus = running_tasks.size();
-        size_t free_cpus = total_cpus - running_count;
-        size_t K = std::min(free_cpus, _ready_queue.size());
-        
-        if (K > 0) {
-            std::vector<AbsRTTask *> sorted_ready(_ready_queue.begin(), _ready_queue.end());
-            std::sort(sorted_ready.begin(), sorted_ready.end(),
-                [](AbsRTTask* a, AbsRTTask* b) { return a->getDeadline() < b->getDeadline(); });
-            
-            size_t select_count = std::min(K, sorted_ready.size());
-            for (size_t j = 0; j < select_count; ++j) {
-                AbsRTTask* task = sorted_ready[j];
-                if (task && std::find(all_tasks.begin(), all_tasks.end(), task) == all_tasks.end()) {
-                    all_tasks.push_back(task);
-                }
+        // 2. 添加就绪队列中的任务
+        for (auto* task : _ready_queue) {
+            if (task && std::find(all_tasks.begin(), all_tasks.end(), task) == all_tasks.end()) {
+                all_tasks.push_back(task);
             }
         }
 
@@ -557,7 +544,7 @@ namespace RTSim {
     // =====================================================
 
     AbsRTTask *BTIEScheduler::getTaskN(unsigned int n) {
-        SCHEDULER_LOG_DEBUG(std::string("🔍 [BTIE] getTaskN(") + std::to_string(n) + ") " +
+        SCHEDULER_LOG_DEBUG(std::string("🔍 [BTIE] getTaskN(") + std::to_string(n) + ") ") +
                            "当前能量: " + std::to_string(_current_energy) + "J");
 
         // ⭐ BTIE修复：像TIE/TGF一样，遍历_ready_queue，支持运行中任务续期
@@ -855,8 +842,13 @@ namespace RTSim {
         Scheduler::insert(task);
         addToReadyQueue(task);
 
-        // ⭐ BTIE修复：不在insert()中触发批量调度
-        // 让所有任务先到达，然后在tick事件中统一批量调度
+        // ⭐ BTIE改进：任务到达时也触发批量调度（保持批量调度特性）
+        // 这样可以在tick边界和任务到达时都进行调度，消除1ms延迟
+        if (_ready_queue.size() >= 1) {
+            SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] 任务到达，立即触发批量调度 (就绪队列大小=") +
+                             std::to_string(_ready_queue.size()) + ")");
+            performTickScheduling();
+        }
     }
 
     void BTIEScheduler::extract(AbsRTTask *task) {
