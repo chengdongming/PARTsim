@@ -478,20 +478,33 @@ namespace RTSim {
                               " 能量=" + std::to_string(old_energy * 1000) + " mJ → " +
                               std::to_string(_current_energy * 1000) + " mJ");
         } else {
-            // 能量不足：不调度任何新任务，让当前运行的任务自然结束
+            // 能量不足：不调度任何任务，并中断所有运行中的任务
             _batch_scheduled_this_tick = false;
             _current_batch_tasks.clear();
             _current_batch_size = 0;
             _stats.total_batch_skipped++;
 
-            // ⭐ BTIE核心：不suspend运行中任务，而是让它们在本ms结束后自然停止
-            // getTaskN()会因为_batch_scheduled_this_tick=false而不返回任何新任务
-            // 当前运行的任务会在本tick结束时自动结束（不续期）
+            // ⭐ 关键修复：中断所有运行中的任务（包括正在执行的）
+            std::vector<AbsRTTask *> tasks_to_interrupt;
+            for (const auto& map_pair : running_tasks) {
+                AbsRTTask* task = map_pair.second;
+                if (task) {
+                    tasks_to_interrupt.push_back(task);
+                }
+            }
 
-            SCHEDULER_LOG_INFO(std::string("❌ [BTIE] 能量不足，本tick不调度任务: ") +
-                              "需要=" + std::to_string(total_energy * 1000) + " mJ" +
-                              " 当前=" + std::to_string(_current_energy * 1000) + " mJ" +
-                              " 运行中=" + std::to_string(running_tasks.size()));
+            for (AbsRTTask* task : tasks_to_interrupt) {
+                if (task && _kernel) {
+                    SCHEDULER_LOG_INFO(std::string("🛑 [BTIE] 批量失败：中断运行中任务 ") + getTaskName(task));
+                    _kernel->suspend(task);
+                    _stats.total_skipped_energy++;
+                }
+            }
+
+            SCHEDULER_LOG_INFO(std::string("❌ [BTIE] 能量不足，停止所有任务: ") +
+                              "需要=" + std::to_string(total_energy) + "J" +
+                              " 当前=" + std::to_string(_current_energy) + "J" +
+                              " 中断任务数=" + std::to_string(tasks_to_interrupt.size()));
         }
 
         // Tick边界：检查抢占（高优先级任务到达时）
@@ -531,12 +544,8 @@ namespace RTSim {
     // =====================================================
 
     AbsRTTask *BTIEScheduler::getTaskN(unsigned int n) {
-        // ⭐ BTIE核心：检查本tick是否批量调度成功
-        // 如果能量不足导致批量调度失败，不返回任何任务（包括运行中任务）
-        if (!_batch_scheduled_this_tick) {
-            SCHEDULER_LOG_DEBUG(std::string("🚫 [BTIE] getTaskN(") + std::to_string(n) + "): 批量调度失败，不调度任务");
-            return nullptr;
-        }
+        SCHEDULER_LOG_DEBUG(std::string("🔍 [BTIE] getTaskN(") + std::to_string(n) + ") ") +
+                           "当前能量: " + std::to_string(_current_energy) + "J");
 
         // ⭐ BTIE修复：像TIE/TGF一样，遍历_ready_queue，支持运行中任务续期
         if (_ready_queue.empty()) {
@@ -1358,11 +1367,103 @@ namespace RTSim {
     }
 
     void BTIEScheduler::checkAndInterruptRunningTasks() {
-        // ⭐ BTIE修复：能量扣除已移至performTickScheduling的批量决策中
-        // 此函数现在留空，所有能量管理在批量调度时统一完成
-        SCHEDULER_LOG_DEBUG("🔍 [BTIE] checkAndInterruptRunningTasks: 能量检查已移至批量决策");
-        
-        // 此函数保留以保持接口兼容，但不再执行能量管理操作
-    }
+        SCHEDULER_LOG_INFO("🔍 [BTIE] 检查运行中任务的能量状态");
 
-}
+        if (!_kernel) {
+            _kernel = getKernel();
+            if (!_kernel) {
+                SCHEDULER_LOG_WARNING("⚠️ [BTIE] checkAndInterruptRunningTasks: _kernel为nullptr，无法中断任务");
+                return;
+            }
+        }
+
+        const double EPSILON = 1e-9;
+        std::vector<AbsRTTask *> tasks_to_interrupt;
+
+        // ⭐ V28.15修复：使用kernel的getCurrentExecutingTasks()获取实际运行中的任务
+        const auto& running_tasks = _kernel->getCurrentExecutingTasks();
+
+        // ⭐ 关键修复：先扣除上一ms执行消耗的能量，再检查是否足够继续
+        // 这样可以确保能量扣除和能量检查的时序正确
+        double total_energy_to_deduct = 0.0;
+        for (auto &map_pair : running_tasks) {
+            AbsRTTask *task = map_pair.second;
+            if (!task) {
+                continue;
+            }
+
+            // 计算该任务执行1ms所需的能量
+            double unit_energy = calculateUnitEnergyForTask(task);
+            total_energy_to_deduct += unit_energy;
+        }
+
+        // 扣除所有运行中任务上一ms的能量
+        if (total_energy_to_deduct > 0 && _current_energy >= total_energy_to_deduct - 1e-9) {
+            double old_energy = _current_energy;
+            _current_energy -= total_energy_to_deduct;
+            _stats.total_energy_consumed += total_energy_to_deduct;
+
+            SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] Tick事件: 扣除运行中任务能量 ") +
+                               std::to_string(total_energy_to_deduct * 1000) + " mJ，" +
+                               std::to_string(old_energy * 1000) + " mJ → " +
+                               std::to_string(_current_energy * 1000) + " mJ (" +
+                               std::to_string(running_tasks.size()) + " 个任务)");
+        }
+
+
+        // 1. 检查所有运行中的任务
+        for (auto &map_pair : running_tasks) {
+            AbsRTTask *task = map_pair.second;
+            if (!task) {
+                continue;
+            }
+
+            // 计算该任务执行1ms所需的能量
+            double unit_energy = calculateUnitEnergyForTask(task);
+
+            // ⭐ 检查：当前能量是否足够该任务继续执行1ms
+            if (_current_energy < unit_energy - EPSILON) {
+                SCHEDULER_LOG_WARNING(std::string("⚡ [BTIE] 任务能量不足，将中断: ") +
+                                     getTaskName(task) +
+                                     " 需要1ms=" + std::to_string(unit_energy) + "J" +
+                                     " 当前能量=" + std::to_string(_current_energy) + "J");
+
+                tasks_to_interrupt.push_back(task);
+                _stats.total_skipped_energy++;
+            } else {
+                SCHEDULER_LOG_DEBUG(std::string("✅ [BTIE] 任务能量充足: ") +
+                                   getTaskName(task) +
+                                   " 需要1ms=" + std::to_string(unit_energy) + "J" +
+                                   " 当前能量=" + std::to_string(_current_energy) + "J");
+            }
+        }
+
+        // 2. 中断能量不足的任务
+        for (AbsRTTask *task : tasks_to_interrupt) {
+            if (!task) {
+                continue;
+            }
+
+            SCHEDULER_LOG_INFO(std::string("🛑 [BTIE] 中断任务（能量不足）: ") + getTaskName(task));
+
+            // 调用kernel的suspend方法中断任务
+            // suspend会自动调用deschedule()并将任务重新放回调度队列
+            _kernel->suspend(task);
+
+            // ⭐ 取消该任务的能量检查事件，防止继续扣除能量
+            auto it = _energy_check_events.find(task);
+            if (it != _energy_check_events.end()) {
+                // 从map中移除，但不删除事件对象（它会自然结束）
+                _energy_check_events.erase(it);
+                SCHEDULER_LOG_DEBUG(std::string("⚠️ [BTIE] 已取消任务的能量检查事件: ") + getTaskName(task));
+            }
+
+            SCHEDULER_LOG_INFO(std::string("⏸️ [BTIE] 任务已中断，等待能量恢复: ") + getTaskName(task));
+        }
+
+        if (!tasks_to_interrupt.empty()) {
+            SCHEDULER_LOG_INFO(std::string("📊 [BTIE] 本次tick中断了 ") +
+                               std::to_string(tasks_to_interrupt.size()) + " 个任务（能量不足）");
+        }
+    }
+} // namespace RTSim
