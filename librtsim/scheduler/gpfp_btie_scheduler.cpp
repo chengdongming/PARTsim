@@ -74,6 +74,13 @@ namespace RTSim {
             return;
         }
 
+        // 🔍 调试：记录能量检���事件触发时间
+        Tick actual_trigger_time = SIMUL.getTime();
+        SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] 能量检查事件触发: ") +
+                           _scheduler->getTaskName(_task) +
+                           " 触发时间=" + std::to_string(static_cast<int64_t>(actual_trigger_time)) + "ms" +
+                           " _ms_executed=" + std::to_string(_ms_executed));
+
         // ⭐ 安全检查：验证任务是否还有效（是否还在task_models中）
         if (_scheduler->_task_models.find(_task) == _scheduler->_task_models.end()) {
             // 任务已被删除，停止这个能量检查事件
@@ -108,13 +115,30 @@ namespace RTSim {
         // ⭐ 关键修复：检查任务是否已经达到WCET
         // 如果已经达到WCET，任务应该完成，不应该再续期
         BTIETaskModel *task_model = _scheduler->getTaskModel(_task);
-        if (task_model && _ms_executed >= task_model->getWCET()) {
-            SCHEDULER_LOG_INFO(std::string("✅ [BTIE] 任务已达到WCET，完成执行: ") +
-                               _scheduler->getTaskName(_task) + " 已执行=" + std::to_string(_ms_executed) +
-                               "ms WCET=" + std::to_string(task_model->getWCET()) + "ms");
-            // 任务已完成，不再检查能量预扣，也不重新调度事件
-            // 任务会由正常的调度流程完成
-            return;
+
+        // 🔍 调试日志：检查WCET
+        std::string task_name = _scheduler->getTaskName(_task);
+        SCHEDULER_LOG_DEBUG(std::string("🔍 [BTIE] WCET���查: ") +
+                           task_name + " 已执行=" + std::to_string(_ms_executed) +
+                           "ms task_model=" + (task_model ? "有效" : "NULL"));
+
+        if (task_model) {
+            int wcet = task_model->getWCET();
+            SCHEDULER_LOG_DEBUG(std::string("🔍 [BTIE] WCET值: ") +
+                               std::to_string(wcet) + "ms 判断: " +
+                               std::to_string(_ms_executed) + " >= " + std::to_string(wcet) +
+                               " = " + (_ms_executed >= wcet ? "TRUE" : "FALSE"));
+
+            if (_ms_executed >= wcet) {
+                SCHEDULER_LOG_INFO(std::string("✅ [BTIE] 任务已达到WCET，完成执行: ") +
+                                   task_name + " 已执行=" + std::to_string(_ms_executed) +
+                                   "ms WCET=" + std::to_string(wcet) + "ms");
+                // 任务已完成，不再检查能量预扣，也不重新调度事件
+                // 任务会由正常的调度流程完成
+                return;
+            }
+        } else {
+            SCHEDULER_LOG_WARNING(std::string("⚠️ [BTIE] WCET检查失败：找不到TaskModel ") + task_name);
         }
 
         // ⭐ V29.1修复：恢复运行中任务的续期能量扣除
@@ -125,23 +149,31 @@ namespace RTSim {
         // ⭐ BTIE关键修复：批量调度已预扣能量，这里只检查不扣除！
         // 检查批量调度是否已预扣了足够的能量
         if (current_energy < unit_energy - EPSILON) {
-            // ❌ 预扣能量不足，说明批量调度没有预扣成功，中断任务
-            SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] 预扣能量不足，中断任务: ") +
-                               _scheduler->getTaskName(_task) + " 需要=" + std::to_string(unit_energy * 1000) + " mJ" +
-                               " 剩余=" + std::to_string(current_energy * 1000) + " mJ" +
-                               " 已执行=" + std::to_string(_ms_executed) + "ms");
+            // ⭐ 重要修复：BTIE批量调度已预扣能量，能量检查时剩余为0是正常的
+            // 只有在能量耗尽且批量调度没有预扣时才中断任务
+            if (!_scheduler->_batch_scheduled_this_tick) {
+                SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] 预扣能量不足，中断任务: ") +
+                                   _scheduler->getTaskName(_task) + " 需要=" + std::to_string(unit_energy * 1000) + " mJ" +
+                                   " 剩余=" + std::to_string(current_energy * 1000) + " mJ" +
+                                   " 已执行=" + std::to_string(_ms_executed) + "ms");
 
-            // 标记能量耗尽
-            _scheduler->_energy_depleted = true;
+                // 标记能量耗尽
+                _scheduler->_energy_depleted = true;
 
-            // 中断当前任务
-            if (_cpu) {
-                _scheduler->_kernel->suspend(_task);
-                SCHEDULER_LOG_INFO(std::string("⚠️ [BTIE] 任务因能量不足被挂起: ") + _scheduler->getTaskName(_task));
+                // 中断当前任务
+                if (_cpu) {
+                    _scheduler->_kernel->suspend(_task);
+                    SCHEDULER_LOG_INFO(std::string("⚠️ [BTIE] 任务因能量不足被挂起: ") + _scheduler->getTaskName(_task));
+                }
+
+                // 不重新调度事件
+                return;
+            } else {
+                // 批量调度已预扣能量，能量检查不中断任务
+                SCHEDULER_LOG_DEBUG(std::string("⚡ [BTIE] 批量预扣模式：剩余能量=0，等待下个tick预扣") +
+                                   " 任务=" + _scheduler->getTaskName(_task) +
+                                   " 已执行=" + std::to_string(_ms_executed) + "ms");
             }
-
-            // 不重新调度事件
-            return;
         }
 
         // ✅ 预扣能量充足，不做任何事（能量已在批量调度时扣除）
@@ -151,6 +183,8 @@ namespace RTSim {
                            " 已执行=" + std::to_string(_ms_executed) + "ms");
 
         // 重新调度下一次能量检查（1ms后）
+        post(SIMUL.getTime() + 1);
+        return;
     }
 
     // =====================================================
@@ -1245,10 +1279,14 @@ namespace RTSim {
         _energy_check_events[task] = evt;
 
         // 1ms后触发第一次检查
-        evt->post(SIMUL.getTime() + 1);
+        Tick current_time = SIMUL.getTime();
+        Tick scheduled_time = current_time + 1;
+        evt->post(scheduled_time);
 
         SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] 启动运行时能量检查: ") +
-                           getTaskName(task) + " 在CPU " + cpu->toString());
+                           getTaskName(task) + " 在CPU " + cpu->toString() +
+                           " 当前时间=" + std::to_string(static_cast<int64_t>(current_time)) + "ms" +
+                           " 调度时间=" + std::to_string(static_cast<int64_t>(scheduled_time)) + "ms");
     }
 
     void BTIEScheduler::stopEnergyCheckForTask(AbsRTTask *task) {

@@ -116,13 +116,29 @@ namespace RTSim {
         // ⭐ 关键修复：检查任务是否已经达到WCET
         // 如果已经达到WCET，任务应该完成，不应该再续期
         TIETaskModel *task_model = _scheduler->getTaskModel(_task);
-        if (task_model && _ms_executed >= task_model->getWCET()) {
-            SCHEDULER_LOG_INFO(std::string("✅ [TIE] 任务已达到WCET，完成执行: ") +
-                               task_name + " 已执行=" + std::to_string(_ms_executed) +
-                               "ms WCET=" + std::to_string(task_model->getWCET()) + "ms");
-            // 任务已完成，不续期能量，也不重新调度事件
-            // 任务会由正常的调度流程完成
-            return;
+
+        // 🔍 调试日志：检查WCET
+        SCHEDULER_LOG_DEBUG(std::string("🔍 [TIE] WCET检查: ") +
+                           task_name + " 已执行=" + std::to_string(_ms_executed) +
+                           "ms task_model=" + (task_model ? "有效" : "NULL"));
+
+        if (task_model) {
+            int wcet = task_model->getWCET();
+            SCHEDULER_LOG_DEBUG(std::string("🔍 [TIE] WCET值: ") +
+                               std::to_string(wcet) + "ms 判断: " +
+                               std::to_string(_ms_executed) + " >= " + std::to_string(wcet) +
+                               " = " + (_ms_executed >= wcet ? "TRUE" : "FALSE"));
+
+            if (_ms_executed >= wcet) {
+                SCHEDULER_LOG_INFO(std::string("✅ [TIE] 任务已达到WCET，完成执行: ") +
+                                   task_name + " 已执行=" + std::to_string(_ms_executed) +
+                                   "ms WCET=" + std::to_string(wcet) + "ms");
+                // 任务已完成，不续期能量，也不重新调度事件
+                // 任务会由正常的调度流程完成
+                return;
+            }
+        } else {
+            SCHEDULER_LOG_WARNING(std::string("⚠️ [TIE] WCET检查失败：找不到TaskModel ") + task_name);
         }
 
         // ⭐ V29.1修复：恢复运行中任务的续期能量扣除
