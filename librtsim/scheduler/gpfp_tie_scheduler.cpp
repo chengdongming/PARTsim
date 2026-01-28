@@ -434,19 +434,11 @@ namespace RTSim {
             _current_energy = _max_energy;
         }
 
-        // ⭐ 2. 运行时能量检查：中断能量不足的任务（V28.15新增）
-        checkAndInterruptRunningTasks();
+        // ⭐ 关键修复：移除tick检查！能量管理完全由TIEEnergyCheckEvent负责
+        // tick只做抢占检查，避免时序冲突导致能量白扣
+        //（旧代码：checkAndInterruptRunningTasks(); // ❌ 这会导致3ms时刻提前中断任务）
 
-        // ⭐ 关键修复：在中断运行任务后，检查能量是否耗尽
-        // 如果能量已耗尽（_energy_depleted标志），则跳过本次tick的调度
-        if (_energy_depleted) {
-            SCHEDULER_LOG_INFO(std::string("💀 [TIE] 能量已耗尽，跳过本次tick调度") +
-                               " 剩余能量=" + std::to_string(_current_energy * 1000) + " mJ");
-            _stats.total_skipped_energy++;
-            return;  // 跳过dispatch，不再调度新任务
-        }
-
-        // 3. Tick边界：检查抢占（高优先级任务到达时）
+        // 2. Tick边界：检查抢占（高优先级任务到达时）
         checkAndPreempt();
 
         // 4. 如果有kernel，循环触发dispatch直到填满所有CPU
