@@ -372,11 +372,20 @@ namespace RTSim {
                            std::to_string(static_cast<int64_t>(SIMUL.getTime())) + "ms" +
                            " 能量=" + std::to_string(_current_energy) + "J");
 
+        // ⭐ Bug修复3：能量耗尽时跳过调度
+        if (_energy_depleted && _current_energy < 0.000001) {
+            SCHEDULER_LOG_INFO(std::string("💀 [TGF] 能量已耗尽，跳过Tick调度"));
+            return;  // 不进行任何调度，包括中断检查
+        }
+
         _stats.total_tick_count++;
 
-        // ⭐ 关键：每次tick开始时重置累计能耗和已计数任务集合（与TIE保持一致）
-        _dispatching_tasks_total_energy = 0.0;
-        _counted_tasks_in_dispatch.clear();
+        // ⭐ V30修复：不要在每个tick开始时清空_counted_tasks_in_dispatch
+        // 这样可以避免在同一tick的多次dispatch()调用中重复扣除能量
+        // ⭐ 但需要在能量耗尽时清空（下面有检查）
+        // _dispatching_tasks_total_energy = 0.0;
+        // _counted_tasks_in_dispatch.clear();
+        SCHEDULER_LOG_DEBUG(std::string("🧹 [TGF] Tick开始: _counted_tasks_in_dispatch.size()=") + std::to_string(_counted_tasks_in_dispatch.size()));
 
         // ⭐ 核心：先收集能量，再调度
         // 1. 收集太阳能（从上次tick到现在）
@@ -554,6 +563,7 @@ namespace RTSim {
         const double EPSILON = 1e-9;
         bool skipped_energy_insufficient = false;  // 是否跳过了能量不足的任务
 
+        std::cout << "[DEBUG] TGF::getTaskN(" << n << ") - ready_queue.size()=" << _ready_queue.size() << std::endl;
         for (size_t i = 0; i < _ready_queue.size(); ++i) {
             AbsRTTask *task = _ready_queue[i];
 
@@ -561,21 +571,22 @@ namespace RTSim {
                 continue;
             }
 
-            // ⭐ 关键修复：只跳过已调度但未运行的任务（避免重复调度）
-            // 运行中任务需要续期并扣除能量，不能跳过
-            // ⭐ Bug修复：通过内核检查任务是否在运行
+            // ⭐ 关键修复：不再跳过已调度的任务（与TIE保持一致）
+            // _counted_tasks_in_dispatch只是用于跟踪本次tick中已扣除能量的任务
+            // 避免重复扣除能量
+            // 重复调度的问题由内核的_m_dispatched检查来处理
             bool is_running_check = false;
             if (_kernel) {
                 CPU *proc = _kernel->getProcessor(task);
                 is_running_check = (proc != nullptr);
             }
-            
-            // 如果已调度但未运行，跳过
-            if (_counted_tasks_in_dispatch.find(task) != _counted_tasks_in_dispatch.end() && !is_running_check) {
-                SCHEDULER_LOG_DEBUG(std::string("⏭️ [TGF] 跳过已调度但未运行的任务: ") + getTaskName(task));
-                ready_index++;  // ⭐ V32修复：跳过任务时也要增加索引
-                continue;
-            }
+
+            // 检查是否已在本tick中扣除过能量
+            bool already_counted = _counted_tasks_in_dispatch.find(task) != _counted_tasks_in_dispatch.end();
+
+            std::cout << "[DEBUG] TGF::getTaskN(" << n << ") - i=" << i << " task=" << getTaskName(task)
+                      << " ready_index=" << ready_index << " is_running=" << is_running_check
+                      << " already_counted=" << already_counted << std::endl;
 
             // ⭐ V29.1修复：运行中任务的续期由TGFEnergyCheckEvent处理
             // getTaskN()只负责新任务，运行中任务直接返回
@@ -589,21 +600,24 @@ namespace RTSim {
 
             // 这是第ready_index个未dispatch的任务
             if (ready_index == n) {
+                // ⭐ 关键修复：如果任务已经调度过（能量已扣除），直接返回
+                // 让kernel的_m_dispatched检查处理重复调度
+                if (already_counted) {
+                    std::cout << "[DEBUG] TGF::getTaskN(" << n << ") - 返回已调度任务: " << getTaskName(task) << std::endl;
+                    return task;
+                }
+
                 // ⭐ 计算任务的1ms能耗
                 double unit_energy = calculateUnitEnergyForTask(task);
                 double available_energy = _current_energy - _dispatching_tasks_total_energy;
 
-                // ⭐ 贪心策略：如果能量不足，跳过这个任务，继续查找后面的任务
+                // ⭐ 贪心策略：如果能量不足，跳过这个任务���继续查找后面的任务
                 if (available_energy < unit_energy - EPSILON) {
                     SCHEDULER_LOG_INFO(std::string("⚠️ [TGF] 任务能量不足，跳过（贪心策略）") +
                                       " 任务=" + getTaskName(task) +
                                       " 需要1ms=" + std::to_string(unit_energy) + "J" +
                                       " 已调度能耗=" + std::to_string(_dispatching_tasks_total_energy) + "J" +
                                       " 剩余=" + std::to_string(available_energy) + "J");
-
-                    // 跳过这个任务，继续查找下一个
-                    ready_index++;
-                    skipped_energy_insufficient = true;
 
                     // ⭐ 贪心策略：继续查找队列中是否有能量足够的后续任务
                     for (size_t j = i + 1; j < _ready_queue.size(); ++j) {
@@ -621,11 +635,9 @@ namespace RTSim {
 
                         // 检查下一个任务是否已经在运行
                         bool next_is_running = false;
-                        for (const auto &pair : _running_tasks) {
-                            if (pair.second == next_task) {
-                                next_is_running = true;
-                                break;
-                            }
+                        if (_kernel) {
+                            CPU *proc = _kernel->getProcessor(next_task);
+                            next_is_running = (proc != nullptr);
                         }
 
                         if (next_is_running) {
@@ -670,9 +682,10 @@ namespace RTSim {
                                   std::to_string(_current_energy * 1000) + " mJ");
 
                 return task;
+            } else {
+                // ⭐ V32关键修复：不是我们要找的第n个任务，继续寻找
+                ready_index++;
             }
-
-            ready_index++;
         }
 
         return nullptr;

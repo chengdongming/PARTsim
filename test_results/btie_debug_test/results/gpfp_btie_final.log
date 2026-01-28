@@ -1,0 +1,597 @@
+[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000] ConfigManager: 保存配置文件路径: test_results/solar_6mj_test/system_3core_gpfp_btie_6mj_solar.yml (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:95)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000] ConfigManager: 找到cpu_islands配置 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:145)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000] ConfigManager: 找到kernel配置 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:152)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000] ConfigManager: 调度器类型 = gpfp_btie (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:167)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000] ConfigManager: 找到energy_management配置 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:133)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000] ConfigManager: initial_energy = 0.006000 J (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:184)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000] ConfigManager: max_energy = 1000.000000 J (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:199)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000] ConfigManager: periodic_collection_interval = 1 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:229)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000] ConfigManager: enable_energy_recovery = 启用 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:214)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000] ConfigManager: 找到scheduler_energy_model配置 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:242)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000] ConfigManager: base_power = 0.500000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:260)
+[0m[33m2026-01-29 05:51:43.547 [WARNING0] [scheduler00000000000] ConfigManager: YAML解析失败，使用默认值: stoi (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:337)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000] ConfigManager: 配置加载完成 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:341)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000] 
+=== 系统配置信息 === (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:424)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000] 配置加载状态: 已加载 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:425)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000] 任务加载状态: 未加载 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:426)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000] 
+CPU配置: (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:428)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000]   核心数: 4 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:429)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000]   调度器类型: gpfp_btie (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:430)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000]   基础频率: 8100.000000 MHz (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:431)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000]   单位时间: 50 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:432)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000] 
+能量配置: (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:434)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000]   初始能量: 0.006000 J (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:435)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000]   最大能量: 1000.000000 J (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:436)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000]   基础收集率: 0.054000 J/ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:437)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000]   开始时间偏移: 0 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:438)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000]   能量恢复: 启用 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:439)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000] 
+功率模型配置: (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:441)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000]   基础功率: 0.500000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:442)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000]   工作负载功率系数: (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:443)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000]     bzip2: 1.200000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:445)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000]     control: 0.100000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:445)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000]     decrypt: 1.500000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:445)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000]     encrypt: 1.500000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:445)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000]     hash: 0.800000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:445)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000]     idle: 0.100000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:445)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000] 
+频率功率比: (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:448)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000]     7000 MHz: 0.850000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000]     7500 MHz: 0.880000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000]     8000 MHz: 0.920000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000]     8100 MHz: 0.930000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:43.547 [INFO0000] [scheduler00000000000]     8200 MHz: 0.940000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:43.548 [INFO0000] [scheduler00000000000]     8300 MHz: 0.950000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:43.548 [INFO0000] [scheduler00000000000]     8400 MHz: 0.960000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:43.548 [INFO0000] [scheduler00000000000]     8500 MHz: 0.970000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:43.548 [INFO0000] [scheduler00000000000]     9000 MHz: 1.000000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:43.548 [INFO0000] [scheduler00000000000]     9500 MHz: 1.050000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:43.548 [INFO0000] [scheduler00000000000]     10000 MHz: 1.100000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:43.548 [INFO0000] [scheduler00000000000]     10500 MHz: 1.150000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:43.548 [INFO0000] [scheduler00000000000] 
+任务配置: (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:453)
+[0m[32m2026-01-29 05:51:43.548 [INFO0000] [scheduler00000000000]   任务数量: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:454)
+[0m[32m2026-01-29 05:51:43.548 [INFO0000] [scheduler00000000000] ======================== (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:469)
+[0m[32m2026-01-29 05:51:43.548 [INFO0000] [scheduler00000000000] 🚀 [BTIE] TIE Scheduler 初始化 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:207)
+[0m[32m2026-01-29 05:51:43.548 [INFO0000] [scheduler00000000000] ⚡ [BTIE] 最大能量: 1000.000000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:214)
+[0m[32m2026-01-29 05:51:43.548 [INFO0000] [scheduler00000000000] 📁 [BTIE] 配置文件: test_results/solar_6mj_test/system_3core_gpfp_btie_6mj_solar.yml (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:221)
+[Python] 使用配置文件: test_results/solar_6mj_test/system_3core_gpfp_btie_6mj_solar.yml
+2026-01-29 05:51:43.597 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/solar_6mj_test/system_3core_gpfp_btie_6mj_solar.yml
+2026-01-29 05:51:43.607 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/solar_6mj_test/system_3core_gpfp_btie_6mj_solar.yml
+2026-01-29 05:51:43.608 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 05:51:43.608 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 05:51:43.608 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=182, time_of_day_ms=0 计算 start_offset_minutes=260640
+2026-01-29 05:51:43.608 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=260640, simulation_start_time=15638400000ms
+2026-01-29 05:51:43.608 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 05:51:43.608 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/solar_6mj_test/system_3core_gpfp_btie_6mj_solar.yml
+2026-01-29 05:51:43.608 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 05:51:43.608 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 05:51:43.608 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 05:51:43.608 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 05:51:43.608 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-01-29 05:51:43.608 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-01-29 05:51:43.608 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-29 05:51:43.608 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-01-29 05:51:43.608 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-01-29 05:51:43.608 [INFO    ] [energy_manager      ]     时间偏移: 260640 分钟
+2026-01-29 05:51:43.608 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 05:51:43.608 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 05:51:43.608 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 05:51:43.608 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 05:51:43.608 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 05:51:43.608 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 05:51:43.608 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 05:51:43.609 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 05:51:43.609 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 05:51:43.609 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 05:51:43.609 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+[SolarDataLoader] 已加载 532800 分钟数据
+[SolarDataLoader] 时间偏移: 260640 分钟
+[SolarDataLoader] 数据范围: 0.0 - 970.0 W/m²
+[SolarDataLoader] 平均值: 138.6 W/m²
+[SolarDataLoader] 标准差: 233.9 W/m²
+2026-01-29 05:51:44.887 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-01-29 05:51:44.887 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-29 05:51:44.887 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-01-29 05:51:44.887 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 260640 分钟
+2026-01-29 05:51:44.887 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 05:51:44.887 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 05:51:44.887 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 05:51:44.888 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 05:51:44.888 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 15638400000ms
+2026-01-29 05:51:44.888 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 00:00:00
+2026-01-29 05:51:44.888 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+[0m[32m2026-01-29 05:51:44.888 [INFO0000] [scheduler00000000000] EnergyBridge: 调用Python配置回调更新ConfigManager，配置文件: test_results/solar_6mj_test/system_3core_gpfp_btie_6mj_solar.yml (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:417)
+[0m[32m2026-01-29 05:51:44.888 [INFO0000] [scheduler00000000000] 调用Python配置回调，配置文件: test_results/solar_6mj_test/system_3core_gpfp_btie_6mj_solar.yml (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:33)
+[Python] 能量管理器加载成功
+[Python] C++传递的配置文件: 'test_results/solar_6mj_test/system_3core_gpfp_btie_6mj_solar.yml'
+2026-01-29 05:51:44.888 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/solar_6mj_test/system_3core_gpfp_btie_6mj_solar.yml, current_config_file=test_results/solar_6mj_test/system_3core_gpfp_btie_6mj_solar.yml
+2026-01-29 05:51:44.888 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/solar_6mj_test/system_3core_gpfp_btie_6mj_solar.yml
+2026-01-29 05:51:44.888 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+[0m[32m2026-01-29 05:51:44.888 [INFO0000] [scheduler00000000000] 解析Python配置... (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:91)
+[0m[32m2026-01-29 05:51:44.888 [INFO0000] [scheduler00000000000]   num_cores: 3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:152)
+[0m[32m2026-01-29 05:51:44.888 [INFO0000] [scheduler00000000000]   base_frequency: 8100.000000 MHz (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:158)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   unit_time: 50 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:162)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   expected_task_count: 12 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:167)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   initial_energy: 0.006000 J (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:172)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   max_energy: 1000.000000 J (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:176)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   base_harvest_rate: 0.000020 J/ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:181)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   start_time_offset: 15638400000 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:188)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   enable_energy_recovery: true (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:197)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   periodic_collection_interval: 1 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:201)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   base_power: 0.500000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:205)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   bzip2 coefficient: 1.200000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:230)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   hash coefficient: 0.800000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:230)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   encrypt coefficient: 1.500000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:230)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   decrypt coefficient: 1.500000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:230)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   control coefficient: 0.100000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:230)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   7000 MHz ratio: 0.900000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:245)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   7500 MHz ratio: 0.950000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:245)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   8000 MHz ratio: 0.980000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:245)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   8100 MHz ratio: 1.000000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:245)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   8200 MHz ratio: 1.020000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:245)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   8300 MHz ratio: 1.040000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:245)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   8400 MHz ratio: 1.060000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:245)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   8500 MHz ratio: 1.080000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:245)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   9000 MHz ratio: 1.150000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:245)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   9500 MHz ratio: 1.220000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:245)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   10000 MHz ratio: 1.300000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:245)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   10500 MHz ratio: 1.380000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:245)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000] Python配置已加载到C++ ConfigManager (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:254)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000] 
+配置汇总: (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:257)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   初始能量: 0.006000 J (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:258)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   最大能量: 1000.000000 J (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:259)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   基础功耗: 0.500000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:260)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   单位时间: 50 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:261)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   核心数: 3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:262)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000] 
+=== 系统配置信息 === (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:424)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000] 配置加载状态: 已加载 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:425)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000] 任务加载状态: 未加载 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:426)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000] 
+CPU配置: (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:428)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   核心数: 3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:429)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   调度器类型: gpfp_btie (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:430)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   基础频率: 8100.000000 MHz (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:431)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   单位时间: 50 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:432)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000] 
+能量配置: (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:434)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   初始能量: 0.006000 J (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:435)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   最大能量: 1000.000000 J (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:436)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   基础收集率: 0.000020 J/ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:437)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   开始时间偏移: 15638400000 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:438)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   能量恢复: 启用 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:439)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000] 
+功率模型配置: (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:441)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   基础功率: 0.500000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:442)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   工作负载功率系数: (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:443)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]     bzip2: 1.200000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:445)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]     control: 0.100000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:445)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]     decrypt: 1.500000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:445)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]     encrypt: 1.500000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:445)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]     hash: 0.800000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:445)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]     idle: 0.100000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:445)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000] 
+频率功率比: (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:448)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]     1000 MHz: 0.700000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]     1100 MHz: 0.750000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]     1200 MHz: 0.800000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]     1300 MHz: 0.850000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]     1400 MHz: 0.900000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]     1500 MHz: 0.950000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]     1600 MHz: 1.000000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]     1700 MHz: 1.050000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]     1800 MHz: 1.100000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]     1900 MHz: 1.150000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]     2000 MHz: 1.200000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]     2100 MHz: 1.250000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]     7000 MHz: 0.900000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]     7500 MHz: 0.950000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]     8000 MHz: 0.980000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]     8100 MHz: 1.000000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]     8200 MHz: 1.020000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]     8300 MHz: 1.040000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]     8400 MHz: 1.060000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]     8500 MHz: 1.080000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]     9000 MHz: 1.150000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]     9500 MHz: 1.220000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]     10000 MHz: 1.300000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]     10500 MHz: 1.380000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000] 
+任务配置: (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:453)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000]   任务数量: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:454)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000] ======================== (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:469)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000] EnergyBridge: ConfigManager已从Python配置更新 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:420)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000] ✅ [BTIE] EnergyBridge 初始化成功 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:227)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000] ⏰ [BTIE] 开始时间偏移: 15638400000ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:230)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000] ☀️ [BTIE] 太阳能配置: use_real=true file=data/processed/shenyang_solar_minute.csv eff=0.180000 area=1.000000m² (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:306)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000] 💰 [BTIE] 初始能量: 0.006000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:321)
+[0m[32m2026-01-29 05:51:44.889 [INFO0000] [scheduler00000000000] ✅ [BTIE] TIE Scheduler 初始化完成 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:341)
+[0m⭐ [Main] 从params解析arrival_offset: 0 ms
+wl: bzip2
+Task::insertCode. instr created: MetaSim::Entity9
+Task task_1: instruction list
+0) ExecInstr(5, bzip2)
+⭐ [Main] 从params解析arrival_offset: 0 ms
+wl: bzip2
+Task::insertCode. instr created: MetaSim::Entity11
+Task task_2: instruction list
+0) ExecInstr(8, bzip2)
+⭐ [Main] 从params解析arrival_offset: 0 ms
+wl: bzip2
+Task::insertCode. instr created: MetaSim::Entity13
+Task task_3: instruction list
+0) ExecInstr(10, bzip2)
+⭐ [Main] 从params解析arrival_offset: 0 ms
+wl: bzip2
+Task::insertCode. instr created: MetaSim::Entity15
+Task task_4: instruction list
+0) ExecInstr(12, bzip2)
+[32m2026-01-29 05:51:44.890 [INFO0000] [scheduler00000000000] 📥 [BTIE] 添加任务: PeriodicTask task_1 DL = T 20 WCET(abs) 5 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:832)
+[0m[32m2026-01-29 05:51:44.890 [INFO0000] [scheduler00000000000] ⚡ [BTIE] 任务能耗计算: 总能耗=0.003000J 每ms能耗=0.000600J WCET=5ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:891)
+[0m[32m2026-01-29 05:51:44.890 [INFO0000] [scheduler00000000000] ✅ [BTIE] 任务已添加: 周期=20 WCET=5 工作负载=bzip2 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:899)
+[0m[32m2026-01-29 05:51:44.890 [INFO0000] [scheduler00000000000] 📥 [BTIE] 添加任务: PeriodicTask task_2 DL = T 30 WCET(abs) 8 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:832)
+[0m[32m2026-01-29 05:51:44.890 [INFO0000] [scheduler00000000000] ⚡ [BTIE] 任务能耗计算: 总能耗=0.004800J 每ms能耗=0.000600J WCET=8ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:891)
+[0m[32m2026-01-29 05:51:44.890 [INFO0000] [scheduler00000000000] ✅ [BTIE] 任务已添加: 周期=30 WCET=8 工作负载=bzip2 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:899)
+[0m[32m2026-01-29 05:51:44.890 [INFO0000] [scheduler00000000000] 📥 [BTIE] 添加任务: PeriodicTask task_3 DL = T 40 WCET(abs) 10 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:832)
+[0m[32m2026-01-29 05:51:44.890 [INFO0000] [scheduler00000000000] ⚡ [BTIE] 任务能耗计算: 总能耗=0.006000J 每ms能耗=0.000600J WCET=10ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:891)
+[0m[32m2026-01-29 05:51:44.890 [INFO0000] [scheduler00000000000] ✅ [BTIE] 任务已添加: 周期=40 WCET=10 工作负载=bzip2 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:899)
+[0m[32m2026-01-29 05:51:44.890 [INFO0000] [scheduler00000000000] 📥 [BTIE] 添加任务: PeriodicTask task_4 DL = T 50 WCET(abs) 12 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:832)
+[0m[32m2026-01-29 05:51:44.890 [INFO0000] [scheduler00000000000] ⚡ [BTIE] 任务能耗计算: 总能耗=0.007200J 每ms能耗=0.000600J WCET=12ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:891)
+[0m[32m2026-01-29 05:51:44.890 [INFO0000] [scheduler00000000000] ✅ [BTIE] 任务已添加: 周期=50 WCET=12 工作负载=bzip2 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:899)
+[0mOne single run
+
+ Run #0
+[32m2026-01-29 05:51:44.890 [INFO0000] [scheduler00000000000] 🏁 [BTIE] newRun - 仿真开始 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1431)
+[0m[32m2026-01-29 05:51:44.890 [INFO0000] [scheduler00000000000] 💰 [BTIE] 初始能量: 0.006000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1460)
+[0m[DEBUG] Task::onArrival() - 开始: task_1 当前时间: 0ms isActive: 0
+[DEBUG] Task::onArrival() - 任务未激活: task_1
+[DEBUG] Task::handleArrival() - 开始: task_1 到达时间: 0ms
+[DEBUG] Task::handleArrival() - 设置截止时间: task_1 到达时间: 0ms 相对截止时间: 20ms 绝对截止时间: 20ms
+[DEBUG] Task::handleArrival() - 安排截止时间事件: task_1 截止时间: 20ms 当前时间: 0ms
+[DEBUG] Task::handleArrival() - 完成: task_1
+[DEBUG] MRTKernel::onArrival() - 开始: task_1 当前时间: 0ms
+[32m2026-01-29 05:51:44.890 [INFO0000] [scheduler00000000000] ➕ [BTIE] insert: PeriodicTask task_1 DL = T 20 WCET(abs) 5 _ready_queue.size()=0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1026)
+[0m[DEBUG] Scheduler::insert() - 开始: task_1 当前时间: 0ms
+[DEBUG] Scheduler::insert() - 找到模型: task_1
+[DEBUG] Scheduler::insert() - 任务已添加到队列: task_1 队列大小: 1 优先级: 20
+[DEBUG] 队列前4个任务: task_1(prio=20) 
+[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=0
+[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=3
+[32m2026-01-29 05:51:44.890 [INFO0000] [scheduler00000000000] 🔍 [BTIE] getTaskN(0) 当前能量: 0.006000J 批量任务数=0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:740)
+[0m[32m2026-01-29 05:51:44.890 [INFO0000] [scheduler00000000000] 📭 [BTIE] getTaskN: 批量任务队列为空（能量不足） (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:753)
+[0m[DEBUG]   getTaskN(0) = nullptr, 退出循环
+[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks < 1，返回
+[DEBUG] MRTKernel::onArrival() - 完成: task_1
+[DEBUG] Task::onArrival() - 开始: task_2 当前时间: 0ms isActive: 0
+[DEBUG] Task::onArrival() - 任务未激活: task_2
+[DEBUG] Task::handleArrival() - 开始: task_2 到达时间: 0ms
+[DEBUG] Task::handleArrival() - 设置截止时间: task_2 到达时间: 0ms 相对截止时间: 30ms 绝对截止时间: 30ms
+[DEBUG] Task::handleArrival() - 安排截止时间事件: task_2 截止时间: 30ms 当前时间: 0ms
+[DEBUG] Task::handleArrival() - 完成: task_2
+[DEBUG] MRTKernel::onArrival() - 开始: task_2 当前时间: 0ms
+[32m2026-01-29 05:51:44.890 [INFO0000] [scheduler00000000000] ➕ [BTIE] insert: PeriodicTask task_2 DL = T 30 WCET(abs) 8 _ready_queue.size()=1 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1026)
+[0m[DEBUG] Scheduler::insert() - 开始: task_2 当前时间: 0ms
+[DEBUG] Scheduler::insert() - 找到模型: task_2
+[DEBUG] Scheduler::insert() - 任务已添加到队列: task_2 队列大小: 2 优先级: 30
+[DEBUG] 队列前4个任务: task_2(prio=30) task_1(prio=20) 
+[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=0
+[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=3
+[32m2026-01-29 05:51:44.890 [INFO0000] [scheduler00000000000] 🔍 [BTIE] getTaskN(0) 当前能量: 0.006000J 批量任务数=0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:740)
+[0m[32m2026-01-29 05:51:44.890 [INFO0000] [scheduler00000000000] 📭 [BTIE] getTaskN: 批量任务队列为空（能量不足） (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:753)
+[0m[DEBUG]   getTaskN(0) = nullptr, 退出循环
+[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks < 1，返回
+[DEBUG] MRTKernel::onArrival() - 完成: task_2
+[DEBUG] Task::onArrival() - 开始: task_3 当前时间: 0ms isActive: 0
+[DEBUG] Task::onArrival() - 任务未激活: task_3
+[DEBUG] Task::handleArrival() - 开始: task_3 到达时间: 0ms
+[DEBUG] Task::handleArrival() - 设置截止时间: task_3 到达时间: 0ms 相对截止时间: 40ms 绝对截止时间: 40ms
+[DEBUG] Task::handleArrival() - 安排截止时间事件: task_3 截止时间: 40ms 当前时间: 0ms
+[DEBUG] Task::handleArrival() - 完成: task_3
+[DEBUG] MRTKernel::onArrival() - 开始: task_3 当前时间: 0ms
+[32m2026-01-29 05:51:44.890 [INFO0000] [scheduler00000000000] ➕ [BTIE] insert: PeriodicTask task_3 DL = T 40 WCET(abs) 10 _ready_queue.size()=2 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1026)
+[0m[DEBUG] Scheduler::insert() - 开始: task_3 当前时间: 0ms
+[DEBUG] Scheduler::insert() - 找到模型: task_3
+[DEBUG] Scheduler::insert() - 任务已添加到队列: task_3 队列大小: 3 优先级: 40
+[DEBUG] 队列前4个任务: task_3(prio=40) task_2(prio=30) task_1(prio=20) 
+[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=0
+[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=3
+[32m2026-01-29 05:51:44.890 [INFO0000] [scheduler00000000000] 🔍 [BTIE] getTaskN(0) 当前能量: 0.006000J 批量任务数=0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:740)
+[0m[32m2026-01-29 05:51:44.890 [INFO0000] [scheduler00000000000] 📭 [BTIE] getTaskN: 批量任务队列为空（能量不足） (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:753)
+[0m[DEBUG]   getTaskN(0) = nullptr, 退出循环
+[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks < 1，返回
+[DEBUG] MRTKernel::onArrival() - 完成: task_3
+[DEBUG] Task::onArrival() - 开始: task_4 当前时间: 0ms isActive: 0
+[DEBUG] Task::onArrival() - 任务未激活: task_4
+[DEBUG] Task::handleArrival() - 开始: task_4 到达时间: 0ms
+[DEBUG] Task::handleArrival() - 设置截止时间: task_4 到达时间: 0ms 相对截止时间: 50ms 绝对截止时间: 50ms
+[DEBUG] Task::handleArrival() - 安排截止时间事件: task_4 截止时间: 50ms 当前时间: 0ms
+[DEBUG] Task::handleArrival() - 完成: task_4
+[DEBUG] MRTKernel::onArrival() - 开始: task_4 当前时间: 0ms
+[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] ➕ [BTIE] insert: PeriodicTask task_4 DL = T 50 WCET(abs) 12 _ready_queue.size()=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1026)
+[0m[DEBUG] Scheduler::insert() - 开始: task_4 当前时间: 0ms
+[DEBUG] Scheduler::insert() - 找到模型: task_4
+[DEBUG] Scheduler::insert() - 任务已添加到队列: task_4 队列大小: 4 优先级: 50
+[DEBUG] 队列前4个任务: task_4(prio=50) task_3(prio=40) task_2(prio=30) task_1(prio=20) 
+[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=0
+[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=3
+[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 🔍 [BTIE] getTaskN(0) 当前能量: 0.006000J 批量任务数=0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:740)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 📭 [BTIE] getTaskN: 批量任务队列为空（能量不足） (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:753)
+[0m[DEBUG]   getTaskN(0) = nullptr, 退出循环
+[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks < 1，返回
+[DEBUG] MRTKernel::onArrival() - 完成: task_4
+[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] ⏱️ [BTIE] ===== Tick事件触发 @ 0ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:49)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 🔍 [BTIE] 检查运行中任务的能量状态 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1565)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 📊 [BTIE] 批量调度决策: 总CPU=3 运行中=0 空闲=3 就绪队列=4 选择K=4 实际可调度=3 ⭐ 运行任务能量已扣除=0个任务 新任务能耗=1.800000 mJ 总能量需求=1.800000 mJ 当前能量=6.000000 mJ (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:590)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] ⚡ [BTIE] 预扣新任务能量: 任务数=3 能耗=1.800000 mJ 6.000000 mJ → 4.200000 mJ (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:623)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] ✅ [BTIE] 批量调度成功: 运行中=0 新任务=3 总任务=3 总能耗=1.800000 mJ ⭐ (运行任务能量已扣除，只调度新任务) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:633)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 🔔 [BTIE] performTickScheduling: 开始循环调度填满所有CPU (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:662)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 🔍 [BTIE] dispatch循环 #0 _running_tasks.size()=0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:669)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 🚀 [BTIE] 调用 _kernel->dispatch() (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:694)
+[0m[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=0
+[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=3
+[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 🔍 [BTIE] getTaskN(0) 当前能量: 0.004200J 批量任务数=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:740)
+[0m[DEBUG]   getTaskN(0)=task_1 getProcessor=nullptr _m_dispatched=nullptr is_new=1
+[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 🔍 [BTIE] getTaskN(1) 当前能量: 0.004200J 批量任务数=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:740)
+[0m[DEBUG]   getTaskN(1)=task_2 getProcessor=nullptr _m_dispatched=nullptr is_new=1
+[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 🔍 [BTIE] getTaskN(2) 当前能量: 0.004200J 批量任务数=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:740)
+[0m[DEBUG]   getTaskN(2)=task_3 getProcessor=nullptr _m_dispatched=nullptr is_new=1
+[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=3
+[DEBUG] MRTKernel::dispatch() - num_newtasks=3
+[DEBUG] getNextFreeProc() - 开始查找空闲CPU
+[DEBUG] getNextFreeProc() - CPU: energy_aware_cpus-2 freq 8100 _m_currExe=null:1 isDispatched:0
+[DEBUG] getNextFreeProc() - 找到空闲CPU: energy_aware_cpus-2 freq 8100
+[DEBUG] dispatch(CPU) - posting BeginDispatchMultiEvt for CPU energy_aware_cpus-2 freq 8100
+[DEBUG] getNextFreeProc() - 开始查找空闲CPU
+[DEBUG] getNextFreeProc() - CPU: energy_aware_cpus-0 freq 8100 _m_currExe=null:1 isDispatched:0
+[DEBUG] getNextFreeProc() - 找到空闲CPU: energy_aware_cpus-0 freq 8100
+[DEBUG] dispatch(CPU) - posting BeginDispatchMultiEvt for CPU energy_aware_cpus-0 freq 8100
+[DEBUG] getNextFreeProc() - 开始查找空闲CPU
+[DEBUG] getNextFreeProc() - CPU: energy_aware_cpus-1 freq 8100 _m_currExe=null:1 isDispatched:0
+[DEBUG] getNextFreeProc() - 找到空闲CPU: energy_aware_cpus-1 freq 8100
+[DEBUG] dispatch(CPU) - posting BeginDispatchMultiEvt for CPU energy_aware_cpus-1 freq 8100
+[DEBUG] getNextFreeProc() - 开始查找空闲CPU
+[DEBUG] getNextFreeProc() - 未找到空闲CPU
+[DEBUG] onBeginDispatchMulti - 开始调用getTaskN查找任务
+[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 🔍 [BTIE] getTaskN(0) 当前能量: 0.004200J 批量任务数=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:740)
+[0m[DEBUG] onBeginDispatchMulti - getTaskN(0) = task_1 _m_dispatched=0
+[DEBUG] onBeginDispatchMulti - 设置事件: task=task_1 CPU=energy_aware_cpus-2 freq 8100 post_time=0 (_dispatch_start_time=0)
+[DEBUG] onBeginDispatchMulti - 开始调用getTaskN查找任务
+[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 🔍 [BTIE] getTaskN(0) 当前能量: 0.004200J 批量任务数=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:740)
+[0m[DEBUG] onBeginDispatchMulti - getTaskN(0) = task_1 _m_dispatched=0x55e83854ba80
+[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 🔍 [BTIE] getTaskN(1) 当前能量: 0.004200J 批量任务数=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:740)
+[0m[DEBUG] onBeginDispatchMulti - getTaskN(1) = task_2 _m_dispatched=0
+[DEBUG] onBeginDispatchMulti - 设置事件: task=task_2 CPU=energy_aware_cpus-0 freq 8100 post_time=0 (_dispatch_start_time=0)
+[DEBUG] onBeginDispatchMulti - 开始调用getTaskN查找任务
+[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 🔍 [BTIE] getTaskN(0) 当前能量: 0.004200J 批量任务数=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:740)
+[0m[DEBUG] onBeginDispatchMulti - getTaskN(0) = task_1 _m_dispatched=0x55e83854ba80
+[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 🔍 [BTIE] getTaskN(1) 当前能量: 0.004200J 批量任务数=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:740)
+[0m[DEBUG] onBeginDispatchMulti - getTaskN(1) = task_2 _m_dispatched=0x55e83859fdf0
+[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 🔍 [BTIE] getTaskN(2) 当前能量: 0.004200J 批量任务数=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:740)
+[0m[DEBUG] onBeginDispatchMulti - getTaskN(2) = task_3 _m_dispatched=0
+[DEBUG] onBeginDispatchMulti - 设置事件: task=task_3 CPU=energy_aware_cpus-1 freq 8100 post_time=0 (_dispatch_start_time=0)
+MRTKernel::printstate(), time 0 energy_aware_cpus-2 : task_1   energy_aware_cpus-0 :   0   energy_aware_cpus-1 :   0   
+[DEBUG] MRTKernel::onEndDispatchMulti() - 任务状态: task_1 状态: 1
+[DEBUG] _sched类型: N5RTSim13BTIESchedulerE
+[DEBUG] cascade_sched指针: 0 asap_sched指针: 0 epp_sched指针: 0 efpp_sched指针: 0 cbpp_sched指针: 0
+[DEBUG] cascade_sched和asap_sched都为nullptr或task为nullptr，跳过能量预检查
+[DEBUG] 任务状态检查: task_1 状态: 1 (TSK_READY=1 TSK_EXEC=2)
+[DEBUG] 调用schedule(): task_1
+[DEBUG] Task::schedule() - 触发调度事件: task_1 状态: 1 当前时间: 0ms
+[DEBUG] Task::schedule() - 调用schedEvt.process()
+[DEBUG] Task::schedule() - schedEvt.process()调用完成
+[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] ⚡ [BTIE] 启动运行时能量检查: PeriodicTask task_1 DL = T 20 WCET(abs) 5 在CPU energy_aware_cpus-2 freq 8100 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1215)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 📥 [BTIE] 任务到达并添加到就绪队列: PeriodicTask task_1 DL = T 20 WCET(abs) 5 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:811)
+[0mMRTKernel::printstate(), time 0 energy_aware_cpus-2 : task_1   energy_aware_cpus-0 : task_2   energy_aware_cpus-1 :   0   
+[DEBUG] MRTKernel::onEndDispatchMulti() - 任务状态: task_2 状态: 1
+[DEBUG] _sched类型: N5RTSim13BTIESchedulerE
+[DEBUG] cascade_sched指针: 0 asap_sched指针: 0 epp_sched指针: 0 efpp_sched指针: 0 cbpp_sched指针: 0
+[DEBUG] cascade_sched和asap_sched都为nullptr或task为nullptr，跳过能量预检查
+[DEBUG] 任务状态检查: task_2 状态: 1 (TSK_READY=1 TSK_EXEC=2)
+[DEBUG] 调用schedule(): task_2
+[DEBUG] Task::schedule() - 触发调度事件: task_2 状态: 1 当前时间: 0ms
+[DEBUG] Task::schedule() - 调用schedEvt.process()
+[DEBUG] Task::schedule() - schedEvt.process()调用完成
+[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] ⚡ [BTIE] 启动运行时能量检查: PeriodicTask task_2 DL = T 30 WCET(abs) 8 在CPU energy_aware_cpus-0 freq 8100 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1215)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 📥 [BTIE] 任务到达并添加到就绪队列: PeriodicTask task_2 DL = T 30 WCET(abs) 8 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:811)
+[0mMRTKernel::printstate(), time 0 energy_aware_cpus-2 : task_1   energy_aware_cpus-0 : task_2   energy_aware_cpus-1 : task_3   
+[DEBUG] MRTKernel::onEndDispatchMulti() - 任务状态: task_3 状态: 1
+[DEBUG] _sched类型: N5RTSim13BTIESchedulerE
+[DEBUG] cascade_sched指针: 0 asap_sched指针: 0 epp_sched指针: 0 efpp_sched指针: 0 cbpp_sched指针: 0
+[DEBUG] cascade_sched和asap_sched都为nullptr或task为nullptr，跳过能量预检查
+[DEBUG] 任务状态检查: task_3 状态: 1 (TSK_READY=1 TSK_EXEC=2)
+[DEBUG] 调用schedule(): task_3
+[DEBUG] Task::schedule() - 触发调度事件: task_3 状态: 1 当前时间: 0ms
+[DEBUG] Task::schedule() - 调用schedEvt.process()
+[DEBUG] Task::schedule() - schedEvt.process()调用完成
+[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] ⚡ [BTIE] 启动运行时能量检查: PeriodicTask task_3 DL = T 40 WCET(abs) 10 在CPU energy_aware_cpus-1 freq 8100 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1215)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 📥 [BTIE] 任务到达并添加到就绪队列: PeriodicTask task_3 DL = T 40 WCET(abs) 10 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:811)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] ⚡ [BTIE] 运行中任务续期: PeriodicTask task_1 DL = T 20 WCET(abs) 5 1ms能耗=0.600000 mJ 4.200000 mJ → 3.600000 mJ 已执行=1ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:139)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] ⚡ [BTIE] 运行中任务续期: PeriodicTask task_2 DL = T 30 WCET(abs) 8 1ms能耗=0.600000 mJ 3.600000 mJ → 3.000000 mJ 已执行=1ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:139)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] ⚡ [BTIE] 运行中任务续期: PeriodicTask task_3 DL = T 40 WCET(abs) 10 1ms能耗=0.600000 mJ 3.000000 mJ → 2.400000 mJ 已执行=1ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:139)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] ⏱️ [BTIE] ===== Tick事件触发 @ 1ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:49)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 🔍 [BTIE] 检查运行中任务的能量状态 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1565)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] ⚡ [BTIE] Tick事件: 扣除运行中任务能量 1.800000 mJ，2.400000 mJ → 0.600000 mJ (3 个任务) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1604)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 📊 [BTIE] 批量调度决策: 总CPU=3 运行中=3 空闲=0 就绪队列=4 选择K=4 实际可调度=0 ⭐ 运行任务能量已扣除=3个任务 新任务能耗=0.000000 mJ 总能量需求=0.000000 mJ 当前能量=0.600000 mJ (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:590)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] ⚡ [BTIE] 预扣新任务能量: 任务数=0 能耗=0.000000 mJ 0.600000 mJ → 0.600000 mJ (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:623)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] ✅ [BTIE] 批量调度成功: 运行中=3 新任务=0 总任务=3 总能耗=0.000000 mJ ⭐ (运行任务能量已扣除，只调度新任务) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:633)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 🔔 [BTIE] performTickScheduling: 开始循环调度填满所有CPU (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:662)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 🔍 [BTIE] dispatch循环 #0 _running_tasks.size()=0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:669)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 🚀 [BTIE] 调用 _kernel->dispatch() (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:694)
+[0m[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=1
+[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=3
+[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 🔍 [BTIE] getTaskN(0) 当前能量: 0.000600J 批量任务数=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:740)
+[0m[DEBUG]   getTaskN(0)=task_1 getProcessor=energy_aware_cpus-2 freq 8100 _m_dispatched=energy_aware_cpus-2 freq 8100 is_new=0
+[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 🔍 [BTIE] getTaskN(1) 当前能量: 0.000600J 批量任务数=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:740)
+[0m[DEBUG]   getTaskN(1)=task_2 getProcessor=energy_aware_cpus-0 freq 8100 _m_dispatched=energy_aware_cpus-0 freq 8100 is_new=0
+[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 🔍 [BTIE] getTaskN(2) 当前能量: 0.000600J 批量任务数=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:740)
+[0m[DEBUG]   getTaskN(2)=task_3 getProcessor=energy_aware_cpus-1 freq 8100 _m_dispatched=energy_aware_cpus-1 freq 8100 is_new=0
+[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks < 1，返回
+[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] ⏱️ [BTIE] ===== Tick事件触发 @ 2ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:49)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 🔍 [BTIE] 检查运行中任务的能量状态 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1565)
+[0m[33m2026-01-29 05:51:44.891 [WARNING0] [scheduler00000000000] ⚠️ [BTIE] 能量不足，无法扣除能量: 需要=1.800000 mJ 当前=0.600000 mJ (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1611)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 🛑 [BTIE] 中断任务（能量不足）: PeriodicTask task_1 DL = T 20 WCET(abs) 5 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1661)
+[0m[DEBUG] Scheduler::extract() - 开始: task_1 当前时间: 2ms 队列大小: 4
+[DEBUG] Scheduler::extract() - 完成: task_1 队列大小: 3
+[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] ➕ [BTIE] insert: PeriodicTask task_1 DL = T 20 WCET(abs) 5 _ready_queue.size()=4 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1026)
+[0m[DEBUG] Scheduler::insert() - 开始: task_1 当前时间: 2ms
+[DEBUG] Scheduler::insert() - 找到模型: task_1
+[DEBUG] Scheduler::insert() - 任务已添加到队列: task_1 队列大小: 4 优先级: 20
+[DEBUG] 队列前4个任务: task_4(prio=50) task_3(prio=40) task_2(prio=30) task_1(prio=20) 
+[DEBUG] MRTKernel::suspend() - 任务已重新插入队列: task_1 (剩余执行时间保留)
+[DEBUG] dispatch(CPU) - posting BeginDispatchMultiEvt for CPU energy_aware_cpus-2 freq 8100
+[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] ⏸️ [BTIE] 任务已中断，等待能量恢复: PeriodicTask task_1 DL = T 20 WCET(abs) 5 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1675)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 🛑 [BTIE] 中断任务（能量不足）: PeriodicTask task_2 DL = T 30 WCET(abs) 8 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1661)
+[0m[DEBUG] Scheduler::extract() - 开始: task_2 当前时间: 2ms 队列大小: 4
+[DEBUG] Scheduler::extract() - 完成: task_2 队列大小: 3
+[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] ➕ [BTIE] insert: PeriodicTask task_2 DL = T 30 WCET(abs) 8 _ready_queue.size()=4 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1026)
+[0m[DEBUG] Scheduler::insert() - 开始: task_2 当前时间: 2ms
+[DEBUG] Scheduler::insert() - 找到模型: task_2
+[DEBUG] Scheduler::insert() - 任务已添加到队列: task_2 队列大小: 4 优先级: 30
+[DEBUG] 队列前4个任务: task_4(prio=50) task_3(prio=40) task_2(prio=30) task_1(prio=20) 
+[DEBUG] MRTKernel::suspend() - 任务已重新插入队列: task_2 (剩余执行时间保留)
+[DEBUG] dispatch(CPU) - posting BeginDispatchMultiEvt for CPU energy_aware_cpus-0 freq 8100
+[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] ⏸️ [BTIE] 任务已中断，等待能量恢复: PeriodicTask task_2 DL = T 30 WCET(abs) 8 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1675)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 🛑 [BTIE] 中断任务（能量不足）: PeriodicTask task_3 DL = T 40 WCET(abs) 10 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1661)
+[0m[DEBUG] Scheduler::extract() - 开始: task_3 当前时间: 2ms 队列大小: 4
+[DEBUG] Scheduler::extract() - 完成: task_3 队列大小: 3
+[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] ➕ [BTIE] insert: PeriodicTask task_3 DL = T 40 WCET(abs) 10 _ready_queue.size()=4 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1026)
+[0m[DEBUG] Scheduler::insert() - 开始: task_3 当前时间: 2ms
+[DEBUG] Scheduler::insert() - 找到模型: task_3
+[DEBUG] Scheduler::insert() - 任务已添加到队列: task_3 队列大小: 4 优先级: 40
+[DEBUG] 队列前4个任务: task_4(prio=50) task_3(prio=40) task_2(prio=30) task_1(prio=20) 
+[DEBUG] MRTKernel::suspend() - 任务已重新插入队列: task_3 (剩余执行时间保留)
+[DEBUG] dispatch(CPU) - posting BeginDispatchMultiEvt for CPU energy_aware_cpus-1 freq 8100
+[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] ⏸️ [BTIE] 任务已中断，等待能量恢复: PeriodicTask task_3 DL = T 40 WCET(abs) 10 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1675)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 📊 [BTIE] 本次tick中断了 3 个任务（能量不足） (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1679)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] 📊 [BTIE] 批量调度决策: 总CPU=3 运行中=3 空闲=0 就绪队列=4 选择K=4 实际可调度=0 ⭐ 运行任务能量已扣除=3个任务 新任务能耗=0.000000 mJ 总能量需求=0.000000 mJ 当前能量=0.600000 mJ (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:590)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] ⚡ [BTIE] 预扣新任务能量: 任务数=0 能耗=0.000000 mJ 0.600000 mJ → 0.600000 mJ (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:623)
+[0m[32m2026-01-29 05:51:44.891 [INFO0000] [scheduler00000000000] ✅ [BTIE] 批量调度成功: 运行中=3 新任务=0 总任务=3 总能耗=0.000000 mJ ⭐ (运行任务能量已扣除，只调度新任务) (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:633)
+[0m[32m2026-01-29 05:51:44.892 [INFO0000] [scheduler00000000000] 🔔 [BTIE] performTickScheduling: 开始循环调度填满所有CPU (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:662)
+[0m[32m2026-01-29 05:51:44.892 [INFO0000] [scheduler00000000000] 🔍 [BTIE] dispatch循环 #0 _running_tasks.size()=0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:669)
+[0m[32m2026-01-29 05:51:44.892 [INFO0000] [scheduler00000000000] 🚀 [BTIE] 调用 _kernel->dispatch() (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:694)
+[0m[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=2
+[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=3
+[32m2026-01-29 05:51:44.892 [INFO0000] [scheduler00000000000] 🔍 [BTIE] getTaskN(0) 当前能量: 0.000600J 批量任务数=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:740)
+[0m[DEBUG]   getTaskN(0)=task_1 getProcessor=nullptr _m_dispatched=nullptr is_new=1
+[32m2026-01-29 05:51:44.892 [INFO0000] [scheduler00000000000] 🔍 [BTIE] getTaskN(1) 当前能量: 0.000600J 批量任务数=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:740)
+[0m[DEBUG]   getTaskN(1)=task_2 getProcessor=nullptr _m_dispatched=nullptr is_new=1
+[32m2026-01-29 05:51:44.892 [INFO0000] [scheduler00000000000] 🔍 [BTIE] getTaskN(2) 当前能量: 0.000600J 批量任务数=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:740)
+[0m[DEBUG]   getTaskN(2)=task_3 getProcessor=nullptr _m_dispatched=nullptr is_new=1
+[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=3
+[DEBUG] MRTKernel::dispatch() - num_newtasks=3
+[DEBUG] getNextFreeProc() - 开始查找空闲CPU
+[DEBUG] getNextFreeProc() - CPU: energy_aware_cpus-2 freq 8100 _m_currExe=null:1 isDispatched:0
+[DEBUG] getNextFreeProc() - 找到空闲CPU: energy_aware_cpus-2 freq 8100
+[DEBUG] dispatch(CPU) - posting BeginDispatchMultiEvt for CPU energy_aware_cpus-2 freq 8100
+[DEBUG] getNextFreeProc() - 开始查找空闲CPU
+[DEBUG] getNextFreeProc() - CPU: energy_aware_cpus-0 freq 8100 _m_currExe=null:1 isDispatched:0
+[DEBUG] getNextFreeProc() - 找到空闲CPU: energy_aware_cpus-0 freq 8100
+[DEBUG] dispatch(CPU) - posting BeginDispatchMultiEvt for CPU energy_aware_cpus-0 freq 8100
+[DEBUG] getNextFreeProc() - 开始查找空闲CPU
+[DEBUG] getNextFreeProc() - CPU: energy_aware_cpus-1 freq 8100 _m_currExe=null:1 isDispatched:0
+[DEBUG] getNextFreeProc() - 找到空闲CPU: energy_aware_cpus-1 freq 8100
+[DEBUG] dispatch(CPU) - posting BeginDispatchMultiEvt for CPU energy_aware_cpus-1 freq 8100
+[DEBUG] getNextFreeProc() - 开始查找空闲CPU
+[DEBUG] getNextFreeProc() - 未找到空闲CPU
+[DEBUG] onBeginDispatchMulti - 开始调用getTaskN查找任务
+[32m2026-01-29 05:51:44.892 [INFO0000] [scheduler00000000000] 🔍 [BTIE] getTaskN(0) 当前能量: 0.000600J 批量任务数=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:740)
+[0m[DEBUG] onBeginDispatchMulti - getTaskN(0) = task_1 _m_dispatched=0
+[DEBUG] onBeginDispatchMulti - 设置事件: task=task_1 CPU=energy_aware_cpus-2 freq 8100 post_time=2 (_dispatch_start_time=2)
+[DEBUG] onBeginDispatchMulti - 开始调用getTaskN查找任务
+[32m2026-01-29 05:51:44.892 [INFO0000] [scheduler00000000000] 🔍 [BTIE] getTaskN(0) 当前能量: 0.000600J 批量任务数=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:740)
+[0m[DEBUG] onBeginDispatchMulti - getTaskN(0) = task_1 _m_dispatched=0x55e83854ba80
+[32m2026-01-29 05:51:44.892 [INFO0000] [scheduler00000000000] 🔍 [BTIE] getTaskN(1) 当前能量: 0.000600J 批量任务数=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:740)
+[0m[DEBUG] onBeginDispatchMulti - getTaskN(1) = task_2 _m_dispatched=0
+[DEBUG] onBeginDispatchMulti - 设置事件: task=task_2 CPU=energy_aware_cpus-0 freq 8100 post_time=2 (_dispatch_start_time=2)
+[DEBUG] onBeginDispatchMulti - 开始调用getTaskN查找任务
+[32m2026-01-29 05:51:44.892 [INFO0000] [scheduler00000000000] 🔍 [BTIE] getTaskN(0) 当前能量: 0.000600J 批量任务数=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:740)
+[0m[DEBUG] onBeginDispatchMulti - getTaskN(0) = task_1 _m_dispatched=0x55e83854ba80
+[32m2026-01-29 05:51:44.892 [INFO0000] [scheduler00000000000] 🔍 [BTIE] getTaskN(1) 当前能量: 0.000600J 批量任务数=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:740)
+[0m[DEBUG] onBeginDispatchMulti - getTaskN(1) = task_2 _m_dispatched=0x55e83859fdf0
+[32m2026-01-29 05:51:44.892 [INFO0000] [scheduler00000000000] 🔍 [BTIE] getTaskN(2) 当前能量: 0.000600J 批量任务数=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:740)
+[0m[DEBUG] onBeginDispatchMulti - getTaskN(2) = task_3 _m_dispatched=0
+[DEBUG] onBeginDispatchMulti - 设置事件: task=task_3 CPU=energy_aware_cpus-1 freq 8100 post_time=2 (_dispatch_start_time=2)
+MRTKernel::printstate(), time 2 energy_aware_cpus-2 : task_1   energy_aware_cpus-0 :   0   energy_aware_cpus-1 :   0   
+[DEBUG] MRTKernel::onEndDispatchMulti() - 任务状态: task_1 状态: 1
+[DEBUG] _sched类型: N5RTSim13BTIESchedulerE
+[DEBUG] cascade_sched指针: 0 asap_sched指针: 0 epp_sched指针: 0 efpp_sched指针: 0 cbpp_sched指针: 0
+[DEBUG] cascade_sched和asap_sched都为nullptr或task为nullptr，跳过能量预检查
+[DEBUG] 任务状态检查: task_1 状态: 1 (TSK_READY=1 TSK_EXEC=2)
+[DEBUG] 调用schedule(): task_1
+[DEBUG] Task::schedule() - 触发调度事件: task_1 状态: 1 当前时间: 2ms
+[DEBUG] Task::schedule() - 调用schedEvt.process()
+[DEBUG] Task::schedule() - schedEvt.process()调用完成
+[32m2026-01-29 05:51:44.892 [INFO0000] [scheduler00000000000] ⚡ [BTIE] 启动运行时能量检查: PeriodicTask task_1 DL = T 20 WCET(abs) 5 在CPU energy_aware_cpus-2 freq 8100 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1215)
+[0m[32m2026-01-29 05:51:44.892 [INFO0000] [scheduler00000000000] 📥 [BTIE] 任务到达并添加到就绪队列: PeriodicTask task_1 DL = T 20 WCET(abs) 5 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:811)
+[0mMRTKernel::printstate(), time 2 energy_aware_cpus-2 : task_1   energy_aware_cpus-0 : task_2   energy_aware_cpus-1 :   0   
+[DEBUG] MRTKernel::onEndDispatchMulti() - 任务状态: task_2 状态: 1
+[DEBUG] _sched类型: N5RTSim13BTIESchedulerE
+[DEBUG] cascade_sched指针: 0 asap_sched指针: 0 epp_sched指针: 0 efpp_sched指针: 0 cbpp_sched指针: 0
+[DEBUG] cascade_sched和asap_sched都为nullptr或task为nullptr，跳过能量预检查
+[DEBUG] 任务状态检查: task_2 状态: 1 (TSK_READY=1 TSK_EXEC=2)
+[DEBUG] 调用schedule(): task_2
+[DEBUG] Task::schedule() - 触发调度事件: task_2 状态: 1 当前时间: 2ms
+[DEBUG] Task::schedule() - 调用schedEvt.process()
+[DEBUG] Task::schedule() - schedEvt.process()调用完成
+[32m2026-01-29 05:51:44.892 [INFO0000] [scheduler00000000000] ⚡ [BTIE] 启动运行时能量检查: PeriodicTask task_2 DL = T 30 WCET(abs) 8 在CPU energy_aware_cpus-0 freq 8100 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1215)
+[0m[32m2026-01-29 05:51:44.892 [INFO0000] [scheduler00000000000] 📥 [BTIE] 任务到达并添加到就绪队列: PeriodicTask task_2 DL = T 30 WCET(abs) 8 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:811)
+[0mMRTKernel::printstate(), time 2 energy_aware_cpus-2 : task_1   energy_aware_cpus-0 : task_2   energy_aware_cpus-1 : task_3   
+[DEBUG] MRTKernel::onEndDispatchMulti() - 任务状态: task_3 状态: 1
+[DEBUG] _sched类型: N5RTSim13BTIESchedulerE
+[DEBUG] cascade_sched指针: 0 asap_sched指针: 0 epp_sched指针: 0 efpp_sched指针: 0 cbpp_sched指针: 0
+[DEBUG] cascade_sched和asap_sched都为nullptr或task为nullptr，跳过能量预检查
+[DEBUG] 任务状态检查: task_3 状态: 1 (TSK_READY=1 TSK_EXEC=2)
+[DEBUG] 调用schedule(): task_3
+[DEBUG] Task::schedule() - 触发调度事件: task_3 状态: 1 当前时间: 2ms
+[DEBUG] Task::schedule() - 调用schedEvt.process()
+[DEBUG] Task::schedule() - schedEvt.process()调用完成
+[32m2026-01-29 05:51:44.892 [INFO0000] [scheduler00000000000] ⚡ [BTIE] 启动运行时能量检查: PeriodicTask task_3 DL = T 40 WCET(abs) 10 在CPU energy_aware_cpus-1 freq 8100 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1215)
+[0m[32m2026-01-29 05:51:44.892 [INFO0000] [scheduler00000000000] 📥 [BTIE] 任务到达并添加到就绪队列: PeriodicTask task_3 DL = T 40 WCET(abs) 10 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:811)
+[0m[32m2026-01-29 05:51:44.892 [INFO0000] [scheduler00000000000] ⚡ [BTIE] 运行中任务续期: PeriodicTask task_1 DL = T 20 WCET(abs) 5 1ms能耗=0.600000 mJ 0.600000 mJ → 0.000000 mJ 已执行=1ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:139)
+[0m[32m2026-01-29 05:51:44.892 [INFO0000] [scheduler00000000000] ⚡ [BTIE] 续期能量不足，中断任务: PeriodicTask task_2 DL = T 30 WCET(abs) 8 需要=0.600000 mJ 剩余=0.000000 mJ 已执行=1ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:116)
+[0m[DEBUG] Scheduler::extract() - 开始: task_2 当前时间: 3ms 队列大小: 4
+[DEBUG] Scheduler::extract() - 完成: task_2 队列大小: 3
+[32m2026-01-29 05:51:44.892 [INFO0000] [scheduler00000000000] ➕ [BTIE] insert: PeriodicTask task_2 DL = T 30 WCET(abs) 8 _ready_queue.size()=4 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1026)
+[0m[DEBUG] Scheduler::insert() - 开始: task_2 当前时间: 3ms
+[DEBUG] Scheduler::insert() - 找到模型: task_2
+[DEBUG] Scheduler::insert() - 任务已添加到队列: task_2 队列大小: 4 优先级: 30
+[DEBUG] 队列前4个任务: task_4(prio=50) task_3(prio=40) task_2(prio=30) task_1(prio=20) 
+[DEBUG] MRTKernel::suspend() - 任务已重新插入队列: task_2 (剩余执行时间保留)
+[DEBUG] dispatch(CPU) - posting BeginDispatchMultiEvt for CPU energy_aware_cpus-0 freq 8100
+[32m2026-01-29 05:51:44.892 [INFO0000] [scheduler00000000000] ⚠️ [BTIE] 任务因能量不足被挂起: PeriodicTask task_2 DL = T 30 WCET(abs) 8 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:127)
+[0m[32m2026-01-29 05:51:44.892 [INFO0000] [scheduler00000000000] ⚡ [BTIE] 续期能量不足，中断任务: PeriodicTask task_3 DL = T 40 WCET(abs) 10 需要=0.600000 mJ 剩余=0.000000 mJ 已执行=1ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:116)
+[0m[DEBUG] Scheduler::extract() - 开始: task_3 当前时间: 3ms 队列大小: 4
+[DEBUG] Scheduler::extract() - 完成: task_3 队列大小: 3
+[32m2026-01-29 05:51:44.892 [INFO0000] [scheduler00000000000] ➕ [BTIE] insert: PeriodicTask task_3 DL = T 40 WCET(abs) 10 _ready_queue.size()=4 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1026)
+[0m[DEBUG] Scheduler::insert() - 开始: task_3 当前时间: 3ms
+[DEBUG] Scheduler::insert() - 找到模型: task_3
+[DEBUG] Scheduler::insert() - 任务已添加到队列: task_3 队列大小: 4 优先级: 40
+[DEBUG] 队列前4个任务: task_4(prio=50) task_3(prio=40) task_2(prio=30) task_1(prio=20) 
+[DEBUG] MRTKernel::suspend() - 任务已重新插入队列: task_3 (剩余执行时间保留)
+[DEBUG] dispatch(CPU) - posting BeginDispatchMultiEvt for CPU energy_aware_cpus-1 freq 8100
+[32m2026-01-29 05:51:44.892 [INFO0000] [scheduler00000000000] ⚠️ [BTIE] 任务因能量不足被挂起: PeriodicTask task_3 DL = T 40 WCET(abs) 10 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:127)
+[0m[32m2026-01-29 05:51:44.892 [INFO0000] [scheduler00000000000] ⏱️ [BTIE] ===== Tick事件触发 @ 3ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:49)
+[0m[32m2026-01-29 05:51:44.892 [INFO0000] [scheduler00000000000] 💀 [BTIE] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:412)
+[0m[DEBUG] onBeginDispatchMulti - 开始调用getTaskN查找任务
+[32m2026-01-29 05:51:44.892 [INFO0000] [scheduler00000000000] 🔍 [BTIE] getTaskN(0) 当前能量: 0.000000J 批量任务数=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:740)
+[0m[DEBUG] onBeginDispatchMulti - getTaskN(0) = task_1 _m_dispatched=0x55e83854ba80
+[32m2026-01-29 05:51:44.892 [INFO0000] [scheduler00000000000] 🔍 [BTIE] getTaskN(1) 当前能量: 0.000000J 批量任务数=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:740)
+[0m[DEBUG] onBeginDispatchMulti - getTaskN(1) = task_2 _m_dispatched=0
+EXCEPTION: Class=Event Module=event.cpp Message:Time: 3 -- Posting eventEndDMEvt task_2 energy_aware_cpus-0 at 2 in the past at time: 2
+TERMINATING!
