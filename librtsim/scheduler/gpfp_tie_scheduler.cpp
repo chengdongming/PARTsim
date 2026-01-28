@@ -113,6 +113,18 @@ namespace RTSim {
             return;
         }
 
+        // ⭐ 关键修复：检查任务是否已经达到WCET
+        // 如果已经达到WCET，任务应该完成，不应该再续期
+        TIETaskModel *task_model = _scheduler->getTaskModel(_task);
+        if (task_model && _ms_executed >= task_model->getWCET()) {
+            SCHEDULER_LOG_INFO(std::string("✅ [TIE] 任务已达到WCET，完成执行: ") +
+                               task_name + " 已执行=" + std::to_string(_ms_executed) +
+                               "ms WCET=" + std::to_string(task_model->getWCET()) + "ms");
+            // 任务已完成，不续期能量，也不重新调度事件
+            // 任务会由正常的调度流程完成
+            return;
+        }
+
         // ⭐ V29.1修复：恢复运行中任务的续期能量扣除
         // 设计原则：
         // - getTaskN(): 负责新任务的首次能量扣除
