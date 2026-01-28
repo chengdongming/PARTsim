@@ -1,0 +1,11 @@
+[
+  {"event_type": "batch_scheduled", "scheduler": "BTIE"},
+  {"event_type": "batch_scheduled", "scheduler": "BTIE"},
+  {"event_type": "batch_scheduled", "scheduler": "BTIE"},
+  {"event_type": "end_instance", "task_name": "task_1", "scheduler": "BTIE"},
+  {"event_type": "end_instance", "task_name": "unknown", "scheduler": "BTIE"},
+  {"event_type": "end_instance", "task_name": "task_2", "scheduler": "BTIE"},
+  {"event_type": "end_instance", "task_name": "unknown", "scheduler": "BTIE"},
+  {"event_type": "end_instance", "task_name": "task_3", "scheduler": "BTIE"},
+  {"event_type": "end_instance", "task_name": "unknown", "scheduler": "BTIE"}
+]

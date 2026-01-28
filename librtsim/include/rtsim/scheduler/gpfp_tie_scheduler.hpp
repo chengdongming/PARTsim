@@ -119,6 +119,7 @@ namespace RTSim {
 
         // ========== Tick事件 ==========
         TIETickEvent *_tick_event;
+        bool _first_tick_scheduled;  // 标记第一个tick是否已调度
 
         // ========== 任务管理 ==========
         std::map<AbsRTTask *, TIETaskModel *> _task_models;
@@ -231,6 +232,7 @@ namespace RTSim {
         double getInitialEnergy() const { return _initial_energy; }
         double getMaxEnergy() const { return _max_energy; }
         double calculateUnitEnergyForTask(AbsRTTask *task);  // MRTKernel需要调用
+        double calculateMinTaskEnergyInReadyQueue();  // ⭐ 计算就绪队列中最小任务能耗（修复循环问题）
 
         // ⭐ 运行时能量检查接口（V28.15新增）
         void startEnergyCheckForTask(AbsRTTask *task, CPU *cpu);  // 开始对任务的能量监控

@@ -119,6 +119,7 @@ namespace RTSim {
 
         // ========== Tick事件 ==========
         TGFTickEvent *_tick_event;
+        bool _first_tick_scheduled;  // 标记第一个tick是否已调度
 
         // ========== 任务管理 ==========
         std::map<AbsRTTask *, TGFTaskModel *> _task_models;
@@ -129,6 +130,9 @@ namespace RTSim {
 
         // ========== 运行时能量检查事件（每任务一个） ==========
         std::map<AbsRTTask *, TGFEnergyCheckEvent *> _energy_check_events;
+
+        // ========== 能量耗尽管理 ==========
+        bool _energy_depleted;  // ⭐ 能量是否已耗尽（Bug修复）
 
         // ========== 能量记账（每ms累计） ==========
         struct TaskEnergyAccount {
@@ -228,6 +232,7 @@ namespace RTSim {
         double getInitialEnergy() const { return _initial_energy; }
         double getMaxEnergy() const { return _max_energy; }
         double calculateUnitEnergyForTask(AbsRTTask *task);  // MRTKernel需要调用
+        double calculateMinTaskEnergyInReadyQueue();  // ⭐ 计算就绪队列中最小任务能耗（修复循环问题）
 
         // ⭐ 运行时能量检查接口（V28.15新增）
         void startEnergyCheckForTask(AbsRTTask *task, CPU *cpu);  // 开始对任务的能量监控

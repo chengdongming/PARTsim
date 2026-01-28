@@ -1,0 +1,6 @@
+[
+  {"event_type": "end_instance", "task_name": "task_1", "scheduler": "TGF"},
+  {"event_type": "end_instance", "task_name": "unknown", "scheduler": "TGF"},
+  {"event_type": "end_instance", "task_name": "task_2", "scheduler": "TGF"},
+  {"event_type": "end_instance", "task_name": "unknown", "scheduler": "TGF"}
+]

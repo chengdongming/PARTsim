@@ -105,18 +105,44 @@ namespace RTSim {
             return;
         }
 
+        // ⭐ V29.1修复：恢复运行中任务的续期能量扣除
+        // 设计原则：
+        // - getTaskN(): 负责新任务的首次能量扣除
+        // - BTIEEnergyCheckEvent: 负责运行中任务的���期能量扣除
+        
+        // 检查是否有足够能量续期1ms
+        if (current_energy < unit_energy - EPSILON) {
+            // 能量不足，停止续期并中断任务
+            SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] 续期能量不足，中断任务: ") +
+                               _scheduler->getTaskName(_task) + " 需要=" + std::to_string(unit_energy * 1000) + " mJ" +
+                               " 剩余=" + std::to_string(current_energy * 1000) + " mJ" +
+                               " 已执行=" + std::to_string(_ms_executed) + "ms");
 
-        // ⭐ 能量检查事件只负责扣除能量，不负责中断
-        // 中断由tick事件���一处理，避免重复中断
-        // ⭐ V29修复：能量检查事件不再扣除能量
-        // 能量扣除已移到tick事件中，避免重复扣除和时序问题
-        SCHEDULER_LOG_DEBUG(std::string("⚡ [BTIE] 能量检查事件（仅记录，不扣除）: ") +
-                           "任务=" + _scheduler->getTaskName(_task) + " 需要=" + std::to_string(unit_energy * 1000) + " mJ" +
-                           " 当前=" + std::to_string(_scheduler->getCurrentEnergy() * 1000) + " mJ");
+            // 标记能量耗尽
+            _scheduler->_energy_depleted = true;
 
-        // 重新调度下一次能量检查
-        post(SIMUL.getTime() + 1);
-        return;
+            // 中断当前任务
+            if (_cpu) {
+                _scheduler->_kernel->suspend(_task);
+                SCHEDULER_LOG_INFO(std::string("⚠️ [BTIE] 任务因能量不足被挂起: ") + _scheduler->getTaskName(_task));
+            }
+
+            // 不重新调度事件
+            return;
+        }
+
+        // 能量充足，扣除续期能量
+        double old_energy = current_energy;
+        _scheduler->_current_energy -= unit_energy;
+        _scheduler->_stats.total_energy_consumed += unit_energy;
+
+        SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] 运行中任务续期: ") +
+                           _scheduler->getTaskName(_task) + " 1ms能耗=" + std::to_string(unit_energy * 1000) + " mJ" +
+                           " " + std::to_string(old_energy * 1000) + " mJ → " +
+                           std::to_string(_scheduler->_current_energy * 1000) + " mJ" +
+                           " 已执行=" + std::to_string(_ms_executed) + "ms");
+
+        // 重新调度下一次能量检查（1ms后）
     }
 
     // =====================================================
@@ -172,6 +198,7 @@ namespace RTSim {
           _use_real_solar_data(false),
           _start_time_offset(0),
           _tick_event(nullptr),
+          _first_tick_scheduled(false),
           _kernel(nullptr),
           _batch_scheduled_this_tick(false),
           _energy_depleted(false),
@@ -438,20 +465,11 @@ namespace RTSim {
             }
         }
 
-        // 扣除运行中任务的能量
-        if (energy_to_deduct > 0) {
+        // ⭐ 预扣模式：能量将在批量调度时统一扣除，这里不再扣除运行任务的能量
+        // (运行任务的能量已在上一次批量调度时预扣，新任务的能量将在本次批量调度时预扣)
+        if (false) {  // Disabled in pre-deduction mode
             const double EPSILON = 1e-9;
             if (_current_energy >= energy_to_deduct - EPSILON) {
-                double old_energy = _current_energy;
-                _current_energy -= energy_to_deduct;
-                _stats.total_energy_consumed += energy_to_deduct;
-
-                SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] Tick: 扣除运行中任务能量: ") +
-                                   "任务数=" + std::to_string(running_task_list.size()) +
-                                   " 能耗=" + std::to_string(energy_to_deduct * 1000) + " mJ " +
-                                   std::to_string(old_energy * 1000) + " mJ → " +
-                                   std::to_string(_current_energy * 1000) + " mJ");
-            } else {
                 // ⭐ Bug #5修复：能量不足时，强制结束所有运行中任务
                 SCHEDULER_LOG_WARNING(std::string("⚠️ [BTIE] 能量不足，强制结束所有运行中任务: ") +
                                         "需要=" + std::to_string(energy_to_deduct * 1000) + " mJ " +
@@ -489,7 +507,17 @@ namespace RTSim {
 
                 SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] 能量耗尽: ") +
                                    std::to_string(old_energy * 1000) + " mJ → 0.000000 mJ");
+
+                // ⭐ 关键修复：能量耗尽后，直接返回，不继续调度新任务
+                return;
             }
+        }
+
+        // ⭐ 关键修复：如果能量已耗尽，不调度新任务
+        if (_energy_depleted) {
+            SCHEDULER_LOG_INFO(std::string("💀 [BTIE] 能量已耗尽，跳过批量调度") +
+                               " 剩余能量=" + std::to_string(_current_energy * 1000) + " mJ");
+            return;
         }
 
         // 2. ⭐ 选择K个新任务（不扣除它们的能量）
@@ -526,13 +554,10 @@ namespace RTSim {
             // 保存所有就绪任务用于日志
             all_ready_tasks.assign(sorted_ready.begin(), sorted_ready.end());
         }
-        
-        // 3. ⭐ Bug #3修复：检查总能量需求（运行中续期 + 新任务）
-        // 计算运行中任务在下一个tick的续期能量
-        double running_tasks_renewal_energy = 0.0;
-        for (auto* task : running_task_list) {
-            running_tasks_renewal_energy += calculateUnitEnergyForTask(task);
-        }
+
+        // 3. ⭐ Bug #3修复：检查总能量需求（只计算新任务）
+        // ⭐ 关键修复：运行任务的能量已经在第446行扣除，这里不应该再计算
+        // 只需要检查是否有足够能量调度新任务
 
         // ⭐ Bug #4修复：只计算实际能调度任务的能量
         // 之前：基于所有准备的任务（K个）计算能量
@@ -542,8 +567,10 @@ namespace RTSim {
             new_tasks_energy += calculateUnitEnergyForTask(task);
         }
 
-        // 总能量需求 = 运行中任务续期 + 实际能调度的新任务
-        double total_energy_needed = running_tasks_renewal_energy + new_tasks_energy;
+        // ⭐ 关键修复：运行任务能量已扣除，total_energy只包含新任务能量
+        // 旧：double total_energy_needed = running_tasks_renewal_energy + new_tasks_energy;
+        // 新：double total_energy_needed = new_tasks_energy;
+        double total_energy_needed = new_tasks_energy;
 
         SCHEDULER_LOG_INFO(std::string("📊 [BTIE] 批量调度决策: ") +
                           "总CPU=" + std::to_string(total_cpus) +
@@ -552,7 +579,7 @@ namespace RTSim {
                           " 就绪队列=" + std::to_string(_ready_queue.size()) +
                           " 选择K=" + std::to_string(K) +
                           " 实际可调度=" + std::to_string(new_tasks_to_schedule.size()) +
-                          " 运行中续期能=" + std::to_string(running_tasks_renewal_energy * 1000) + " mJ" +
+                          " ⭐ 运行任务能量已扣除=" + std::to_string(running_count) + "个任务" +
                           " 新任务能耗=" + std::to_string(new_tasks_energy * 1000) + " mJ" +
                           " 总能量需求=" + std::to_string(total_energy_needed * 1000) + " mJ" +
                           " 当前能量=" + std::to_string(_current_energy * 1000) + " mJ");
@@ -573,6 +600,17 @@ namespace RTSim {
                 all_tasks_to_dispatch.push_back(task);
             }
             
+            // ⭐ 预扣模式：立即扣除新任务的能量（而不是等到下个tick）
+            double old_energy = _current_energy;
+            _current_energy -= total_energy_needed;
+            _stats.total_energy_consumed += total_energy_needed;
+
+            SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] 预扣新任务能量: ") +
+                              "任务数=" + std::to_string(new_tasks_to_schedule.size()) +
+                              " 能耗=" + std::to_string(total_energy_needed * 1000) + " mJ " +
+                              std::to_string(old_energy * 1000) + " mJ → " +
+                              std::to_string(_current_energy * 1000) + " mJ");
+
             _current_batch_tasks = all_tasks_to_dispatch;
             _current_batch_size = all_tasks_to_dispatch.size();
             _stats.total_batch_schedules++;
@@ -582,19 +620,17 @@ namespace RTSim {
                               " 新任务=" + std::to_string(new_tasks_to_schedule.size()) +
                               " 总任务=" + std::to_string(all_tasks_to_dispatch.size()) +
                               " 总能耗=" + std::to_string(total_energy_needed * 1000) + " mJ" +
-                              " (续期=" + std::to_string(running_tasks_renewal_energy * 1000) + " mJ" +
-                              " 新任务=" + std::to_string(new_tasks_energy * 1000) + " mJ)");
+                              " ⭐ (运行任务能量已扣除，只调度新任务)");
         } else {
             // 能量不足：不调度新任务，运行中任务继续
             _batch_scheduled_this_tick = false;
             _current_batch_tasks.clear();
             _current_batch_size = 0;
             _stats.total_batch_skipped++;
-            
+
             SCHEDULER_LOG_INFO(std::string("❌ [BTIE] 能量不足，不调度新任务: ") +
                               "总需要=" + std::to_string(total_energy_needed * 1000) + " mJ" +
-                              " (续期=" + std::to_string(running_tasks_renewal_energy * 1000) + " mJ" +
-                              " 新任务=" + std::to_string(new_tasks_energy * 1000) + " mJ)" +
+                              " (新任务能耗=" + std::to_string(new_tasks_energy * 1000) + " mJ)" +
                               " 当前=" + std::to_string(_current_energy * 1000) + " mJ" +
                               " 运行中=" + std::to_string(running_count));
         }
@@ -666,13 +702,11 @@ namespace RTSim {
             return nullptr;
         }
 
-        // 检查任务是否在运行
+        // ⭐ Bug修复：通过内核检查任务是否在运行
         bool is_running = false;
-        for (const auto &pair : _running_tasks) {
-            if (pair.second == task) {
-                is_running = true;
-                break;
-            }
+        if (_kernel) {
+            CPU *proc = _kernel->getProcessor(task);
+            is_running = (proc != nullptr);
         }
 
         if (is_running) {
@@ -720,6 +754,13 @@ namespace RTSim {
         if (!task) {
             SCHEDULER_LOG_WARNING("⚠️ [BTIE] addTask: 任务为空");
             return;
+        }
+
+        // ⭐ Bug修复：能量耗尽时拒绝新任务
+        if (_energy_depleted && _current_energy < 0.000001) {
+            SCHEDULER_LOG_WARNING(std::string("💀 [BTIE] 能量已耗尽，拒绝添加新任务: ") +
+                                         getTaskName(task));
+            return;  // 拒绝任务
         }
 
         SCHEDULER_LOG_INFO(std::string("📥 [BTIE] 添加任务: ") + getTaskName(task));
@@ -1209,8 +1250,15 @@ namespace RTSim {
             return;
         }
 
-        // 每1ms触发一次tick
-        _tick_event->post(SIMUL.getTime() + Tick(1));
+        Tick current_time = SIMUL.getTime();
+
+        // ⭐ 修复：第一个tick在当前时间触发（0ms），后续tick每1ms触发一次
+        if (!_first_tick_scheduled) {
+            _tick_event->post(current_time);  // 第一个tick立即触发
+            _first_tick_scheduled = true;
+        } else {
+            _tick_event->post(current_time + Tick(1));  // 后续tick每1ms触发一次
+        }
     }
 
     // =====================================================
@@ -1403,6 +1451,12 @@ namespace RTSim {
         // ⭐ 关键修复：任务结束时触发立即调度
         // 检查是否有空闲CPU和等待的任务
         if (!_ready_queue.empty() && _kernel) {
+            // ⭐ Bug修复：能量耗尽时不触发立即调度
+            if (_energy_depleted) {
+                SCHEDULER_LOG_INFO(std::string("💀 [BTIE] 能量已耗尽，跳过任务结束后的立即调度") +
+                                   " 剩余能量=" + std::to_string(_current_energy * 1000) + " mJ");
+                return;
+            }
             SCHEDULER_LOG_INFO("🔄 [BTIE] 任务结束，触发立即调度");
             _kernel->dispatch();
         }
@@ -1472,19 +1526,38 @@ namespace RTSim {
             total_energy_to_deduct += unit_energy;
         }
 
+        // ⭐ Bug修复：能量扣除逻辑 - 不允许负数
         // 扣除所有运行中任务上一ms的能量
-        if (total_energy_to_deduct > 0 && _current_energy >= total_energy_to_deduct - 1e-9) {
-            double old_energy = _current_energy;
-            _current_energy -= total_energy_to_deduct;
-            _stats.total_energy_consumed += total_energy_to_deduct;
+        if (total_energy_to_deduct > 0) {
+            if (_current_energy >= total_energy_to_deduct) {
+                // ✅ 能量充足，正常扣除
+                double old_energy = _current_energy;
+                _current_energy -= total_energy_to_deduct;
+                _stats.total_energy_consumed += total_energy_to_deduct;
 
-            SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] Tick事件: 扣除运行中任务能量 ") +
-                               std::to_string(total_energy_to_deduct * 1000) + " mJ，" +
-                               std::to_string(old_energy * 1000) + " mJ → " +
-                               std::to_string(_current_energy * 1000) + " mJ (" +
-                               std::to_string(running_tasks.size()) + " 个任务)");
+                SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] Tick事件: 扣除运行中任务能量 ") +
+                                   std::to_string(total_energy_to_deduct * 1000) + " mJ，" +
+                                   std::to_string(old_energy * 1000) + " mJ → " +
+                                   std::to_string(_current_energy * 1000) + " mJ (" +
+                                   std::to_string(running_tasks.size()) + " 个任务)");
+            } else {
+                // ❌ 能量不足，不扣除能量，中断所有任务
+                SCHEDULER_LOG_WARNING(std::string("⚠️ [BTIE] 能量不足，无法扣除能量: ") +
+                                        "需要=" + std::to_string(total_energy_to_deduct * 1000) + " mJ " +
+                                        "当前=" + std::to_string(_current_energy * 1000) + " mJ");
+
+                // 设置能量耗尽标志
+                _energy_depleted = true;
+
+                // 添加所有运行中任务到中断列表
+                for (auto &map_pair : running_tasks) {
+                    AbsRTTask* task = map_pair.second;
+                    if (task && std::find(tasks_to_interrupt.begin(), tasks_to_interrupt.end(), task) == tasks_to_interrupt.end()) {
+                        tasks_to_interrupt.push_back(task);
+                    }
+                }
+            }
         }
-
 
         // 1. 检查所有运行中的任务
         for (auto &map_pair : running_tasks) {

@@ -118,6 +118,7 @@ namespace RTSim {
 
         // ========== Tick事件 ==========
         BTIETickEvent *_tick_event;
+        bool _first_tick_scheduled;  // 标记第一个tick是否已调度
 
         // ========== 任务管理 ==========
         std::map<AbsRTTask *, BTIETaskModel *> _task_models;

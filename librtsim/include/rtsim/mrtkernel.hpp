@@ -234,6 +234,9 @@ namespace RTSim {
         /// Each CPU has its own EndDispatchMultiEvt
         std::map<CPU *, EndDispatchMultiEvt *> _endEvt;
 
+        /// ⭐ V30修复：跟踪dispatch()调用开始时间，确保同一tick的所有任务记录相同的时间
+        Tick _dispatch_start_time;
+
         /// Indicates the amount of delay due to migration of a task.
         ///
         /// @todo will become a RandomVar eventually.

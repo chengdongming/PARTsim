@@ -113,11 +113,42 @@ namespace RTSim {
             return;
         }
 
-        // ⭐ V29修复：能量检查事件不再扣除能量
-        // 能量扣除已移到tick事件中，避免重复扣除和时序问题
-        SCHEDULER_LOG_DEBUG(std::string("⚡ [TIE] 能量检查事件（仅记录，不扣除）: ") +
-                           "任务=" + _scheduler->getTaskName(_task) + " 需要=" + std::to_string(unit_energy * 1000) + " mJ" +
-                           " 当前=" + std::to_string(_scheduler->getCurrentEnergy() * 1000) + " mJ");
+        // ⭐ V29.1修复：恢复运行中任务的续期能量扣除
+        // 设计原则：
+        // - getTaskN(): 负责新任务的首次能量扣除
+        // - TIEEnergyCheckEvent: 负责运行中任务的续期能量扣除
+        //
+        // 检查是否有足够能量续期1ms
+        if (current_energy < unit_energy - EPSILON) {
+            // 能量不足，停止续期并中断任务
+            SCHEDULER_LOG_INFO(std::string("⚡ [TIE] 续期能量不足，中断任务: ") +
+                               task_name + " 需要=" + std::to_string(unit_energy * 1000) + " mJ" +
+                               " 剩余=" + std::to_string(current_energy * 1000) + " mJ" +
+                               " 已执行=" + std::to_string(_ms_executed) + "ms");
+
+            // 标记能量耗尽
+            _scheduler->_energy_depleted = true;
+
+            // 中断当前任务（调用kernel的suspend机制）
+            if (_cpu) {
+                _scheduler->_kernel->suspend(_task);
+                SCHEDULER_LOG_INFO(std::string("⚠️ [TIE] 任务因能量不足被挂起: ") + task_name);
+            }
+
+            // 不重新调度事件
+            return;
+        }
+
+        // 能量充足，扣除续期能量
+        double old_energy = current_energy;
+        _scheduler->_current_energy -= unit_energy;
+        _scheduler->_stats.total_energy_consumed += unit_energy;
+
+        SCHEDULER_LOG_INFO(std::string("⚡ [TIE] 运行中任务续期: ") +
+                           task_name + " 1ms能耗=" + std::to_string(unit_energy * 1000) + " mJ" +
+                           " " + std::to_string(old_energy * 1000) + " mJ → " +
+                           std::to_string(_scheduler->_current_energy * 1000) + " mJ" +
+                           " 已执行=" + std::to_string(_ms_executed) + "ms");
 
         // 重新调度下一次能量检查（1ms后）
         post(SIMUL.getTime() + 1);
@@ -177,6 +208,7 @@ namespace RTSim {
           _use_real_solar_data(false),
           _start_time_offset(0),
           _tick_event(nullptr),
+          _first_tick_scheduled(false),
           _kernel(nullptr),
           _energy_depleted(false) {  // ⭐ 初始化能量耗尽标志
 
@@ -367,9 +399,11 @@ namespace RTSim {
 
         _stats.total_tick_count++;
 
-        // ⭐ 关键：每次tick开始时重置累计能耗和已计数任务集合
+
+        // ⭐ 关键修复：在每个tick开始时清空调度计数
         _dispatching_tasks_total_energy = 0.0;
         _counted_tasks_in_dispatch.clear();
+        SCHEDULER_LOG_DEBUG(std::string("🧹 [TIE] Tick开始: 清空调度计数"));
 
         // ⭐ 核心：先收集能量，再调度
         // 1. 收集太阳能（从上次tick到现在）
@@ -399,6 +433,15 @@ namespace RTSim {
 
         // ⭐ 2. 运行时能量检查：中断能量不足的任务（V28.15新增）
         checkAndInterruptRunningTasks();
+
+        // ⭐ 关键修复：在中断运行任务后，检查能量是否耗尽
+        // 如果能量已耗尽（_energy_depleted标志），则跳过本次tick的调度
+        if (_energy_depleted) {
+            SCHEDULER_LOG_INFO(std::string("💀 [TIE] 能量已耗尽，跳过本次tick调度") +
+                               " 剩余能量=" + std::to_string(_current_energy * 1000) + " mJ");
+            _stats.total_skipped_energy++;
+            return;  // 跳过dispatch，不再调度新任务
+        }
 
         // 3. Tick边界：检查抢占（高优先级任务到达时）
         checkAndPreempt();
@@ -464,33 +507,12 @@ namespace RTSim {
     // =====================================================
 
     AbsRTTask *TIEScheduler::getTaskN(unsigned int n) {
+
         SCHEDULER_LOG_DEBUG(std::string("🔍 [TIE] getTaskN(") + std::to_string(n) + ") " +
                            "已调度能耗=" + std::to_string(_dispatching_tasks_total_energy) + "J " +
                            "当前能量=" + std::to_string(_current_energy) + "J " +
                            "队���大小=" + std::to_string(_ready_queue.size()));
 
-        // ⭐ ��键修复：当n==0时，表示新的调度周期开始，重置累计能耗和已计数任务集合
-        if (n == 0) {
-            _dispatching_tasks_total_energy = 0.0;
-            _counted_tasks_in_dispatch.clear();
-
-            // ⭐ DEBUG: 显示队列中所有任务的到达时间
-            if (_ready_queue.size() > 2) {
-                SCHEDULER_LOG_INFO(std::string("📋 [TIE] 队列中的任务(size=") +
-                                  std::to_string(_ready_queue.size()) + "):");
-                for (size_t i = 0; i < _ready_queue.size() && i < 10; ++i) {
-                    AbsRTTask *task = _ready_queue[i];
-                    if (task) {
-                        SCHEDULER_LOG_INFO(std::string("  [") + std::to_string(i) + "] " +
-                                         getTaskName(task) +
-                                         " 到达=" + std::to_string(static_cast<int64_t>(task->getArrival())) +
-                                         " active=" + (task->isActive() ? "true" : "false"));
-                    }
-                }
-            }
-
-            SCHEDULER_LOG_INFO(std::string("🔄 [TIE] 新调度周期开始，重置累计能耗和已计数任务集合"));
-        }
 
         if (_ready_queue.empty()) {
             SCHEDULER_LOG_INFO("📭 [TIE] getTaskN: 就绪队列为空");
@@ -542,56 +564,29 @@ namespace RTSim {
                 continue;
             }
 
-            // 检查任务是否已经在运行
+            // ⭐ 关键修复：不再跳过已调度的任务
+            // _counted_tasks_in_dispatch只是用于跟踪本次tick中已扣除能量的任务
+            // 避免重复扣除能量
+            // 重复调度的问题由内核的_m_dispatched检查来处理
             bool is_running = false;
-            for (const auto &pair : _running_tasks) {
-                if (pair.second == task) {
-                    is_running = true;
-                    break;
-                }
+            if (_kernel) {
+                CPU *proc = _kernel->getProcessor(task);
+                is_running = (proc != nullptr);
             }
 
-            // ⭐ 关键修复：正在运行的任务也要检查能量！
-            // 如果能量不足，就不再续期（返回nullptr让kernel停止续期）
+            // 检查是否已在本tick中扣除过能量
+            bool already_counted = _counted_tasks_in_dispatch.find(task) != _counted_tasks_in_dispatch.end();
+
+
+            // ⭐ V29.1修复：运行中任务的续期由TIEEnergyCheckEvent处理，getTaskN()不再扣除续期能量
+            // 设计原则：
+            // - getTaskN(): 只负责新任务的首次调度和能量扣除
+            // - TIEEnergyCheckEvent: 负责运行中任务的续期能量扣除（每1ms触发一次）
             if (is_running) {
-                double unit_energy = calculateUnitEnergyForTask(task);
-                double available_energy = _current_energy - _dispatching_tasks_total_energy;
-                const double EPSILON = 1e-9;
+                // 运行中任务：直接返回让kernel继续调度
+                // 不检查能量（由TIEEnergyCheckEvent检查）
+                // 不扣除能量（由TIEEnergyCheckEvent扣除）
 
-                if (available_energy < unit_energy - EPSILON) {
-                    // ⭐ 运行中的任务能量不足，停止续期！
-                    SCHEDULER_LOG_WARNING(std::string("⚡ [TIE] 运行中任务能量不足，停止续期: ") +
-                                         getTaskName(task) +
-                                         " 需要1ms=" + std::to_string(unit_energy) + "J" +
-                                         " 剩余能量=" + std::to_string(available_energy) + "J");
-
-                    // 从运行任务列表中移除，标记为已中断
-                    for (auto &pair : _running_tasks) {
-                        if (pair.second == task) {
-                            pair.second = nullptr;
-                            break;
-                        }
-                    }
-
-                    _stats.total_skipped_energy++;
-                    return nullptr;  // 不再续期，让kernel停止这个任务
-                }
-
-                // 能量足够，继续运行
-                SCHEDULER_LOG_DEBUG(std::string("♻️ [TIE] 运行中任务续期: ") + getTaskName(task));
-
-                // ⭐ 避免重复计数：只对尚未计数的任务��加能量
-                if (_counted_tasks_in_dispatch.find(task) == _counted_tasks_in_dispatch.end()) {
-                    _dispatching_tasks_total_energy += unit_energy;
-                    _counted_tasks_in_dispatch.insert(task);
-                    SCHEDULER_LOG_DEBUG(std::string("  [TIE] 计数运行中任务能耗: ") +
-                                       getTaskName(task) + " 累计=" +
-                                       std::to_string(_dispatching_tasks_total_energy) + "J");
-                } else {
-                    SCHEDULER_LOG_DEBUG(std::string("  [TIE] 任务已计数，跳过: ") + getTaskName(task));
-                }
-
-                // 第n个任务如果是在运行中的，也返回它（续期）
                 if (ready_index == n) {
                     return task;
                 }
@@ -600,43 +595,43 @@ namespace RTSim {
                 continue;
             }
 
+
             // 这是第ready_index个未dispatch的任务
             if (ready_index == n) {
                 // ⭐ 计算任务的1ms能耗
                 double unit_energy = calculateUnitEnergyForTask(task);
 
                 const double EPSILON = 1e-9;
-                // ⭐ 检查：剩余能量是否足够当前任务的1ms能耗
-                double available_energy = _current_energy - _dispatching_tasks_total_energy;
-
-                if (available_energy < unit_energy - EPSILON) {
+                // ⭐ 预扣模式：检查当前能量是否足够当前任务的1ms能耗
+                if (_current_energy < unit_energy - EPSILON) {
                     SCHEDULER_LOG_INFO(std::string("⚠️ [TIE] 能量不足，停止级联") +
                                       " 任务=" + getTaskName(task) +
                                       " 需要1ms=" + std::to_string(unit_energy) + "J" +
-                                      " 已调度能耗=" + std::to_string(_dispatching_tasks_total_energy) + "J" +
-                                      " 剩余=" + std::to_string(available_energy) + "J");
+                                      " 当前能量=" + std::to_string(_current_energy) + "J");
                     return nullptr;  // ⭐ 立即停止级联
                 }
 
-                // ⭐ 避免重复计数：检查任务是否已经计数
-                if (_counted_tasks_in_dispatch.find(task) != _counted_tasks_in_dispatch.end()) {
-                    SCHEDULER_LOG_WARNING(std::string("⚠️ [TIE] 任务已计数，跳过: ") + getTaskName(task));
-                    // 虽然已经计数，但仍然返回任务（让kernel继续调度）
-                    return task;
+                // ⭐ 预扣模式：调度时立即扣除能量��而不是记账）
+                // 检查是否已经扣除过能量
+                if (_counted_tasks_in_dispatch.find(task) == _counted_tasks_in_dispatch.end()) {
+                    // 尚未扣除，立即扣除
+                    double old_energy = _current_energy;
+                    _current_energy -= unit_energy;
+                    _stats.total_energy_consumed += unit_energy;
+                    _dispatching_tasks_total_energy += unit_energy;  // 保持统计一致性
+                    _counted_tasks_in_dispatch.insert(task);
+
+                    SCHEDULER_LOG_INFO(std::string("✅ [TIE] 预扣能量并调度任务: ") + getTaskName(task) +
+                                      " 1ms能耗=" + std::to_string(unit_energy) + "J" +
+                                      " " + std::to_string(old_energy * 1000) + " mJ → " +
+                                      std::to_string(_current_energy * 1000) + " mJ");
+                } else {
+                    SCHEDULER_LOG_DEBUG(std::string("♻️ [TIE] 任务已扣除能量，直接返回: ") + getTaskName(task));
                 }
 
-                // ⭐ 能量足够，累加到已调度能耗
-                _dispatching_tasks_total_energy += unit_energy;
-                _counted_tasks_in_dispatch.insert(task);  // 标记为已计数
-
-                SCHEDULER_LOG_INFO(std::string("✅ [TIE] 调度任务: ") + getTaskName(task) +
-                                  " 1ms能耗=" + std::to_string(unit_energy) + "J" +
-                                  " 累计已调度=" + std::to_string(_dispatching_tasks_total_energy) + "J");
-
                 return task;
-            }
+                }
 
-            ready_index++;
         }
 
         return nullptr;
@@ -773,11 +768,12 @@ namespace RTSim {
         removeFromReadyQueue(task);
         removeFromWaitingQueue(task);
 
-        for (auto &map_pair : _running_tasks) {
-            if (map_pair.second == task) {
-                _running_tasks[map_pair.first] = nullptr;
-            }
-        }
+        // ⭐ Bug修复：不再使用_running_tasks，内核管理任务状态
+        // for (auto &map_pair : _running_tasks) {
+        //     if (map_pair.second == task) {
+        //         _running_tasks[map_pair.first] = nullptr;
+        //     }
+        // }
 
         auto it = _task_models.find(task);
         if (it != _task_models.end()) {
@@ -868,58 +864,8 @@ namespace RTSim {
         SCHEDULER_LOG_INFO(std::string("🔍 [TIE] getCurrentExecutingTasks() 返回 ") +
                            std::to_string(running_tasks.size()) + " 个运行中任务");
 
-        // ⭐ V29完整修复：先扣除上一ms执行消耗的能量，再检查是否足够继续
-        // 这样确保能量扣除和检查的时序完全正确
-        double total_energy_to_deduct = 0.0;
-        for (auto &map_pair : running_tasks) {
-            AbsRTTask *task = map_pair.second;
-            if (!task) {
-                continue;
-            }
-
-            // 计算该任务执行1ms所需的能量
-            double unit_energy = calculateUnitEnergyForTask(task);
-            total_energy_to_deduct += unit_energy;
-        }
-
-        // ⭐ Bug修复1：能量扣除不允许变成负数
-        // 扣除所有运行中任务上一ms的能量
-        if (total_energy_to_deduct > 0) {
-            if (_current_energy >= total_energy_to_deduct) {
-                // ✅ 能量充足，正常扣除
-                double old_energy = _current_energy;
-                _current_energy -= total_energy_to_deduct;
-                _stats.total_energy_consumed += total_energy_to_deduct;
-
-                SCHEDULER_LOG_INFO(std::string("⚡ [TIE] Tick事件: 扣除运行中任务能量 ") +
-                                   std::to_string(total_energy_to_deduct * 1000) + " mJ，" +
-                                   std::to_string(old_energy * 1000) + " mJ → " +
-                                   std::to_string(_current_energy * 1000) + " mJ (" +
-                                   std::to_string(running_tasks.size()) + " 个任务)");
-            } else {
-                // ❌ 能量不足！不扣除能量，立即中断所有任务
-                SCHEDULER_LOG_WARNING(std::string("⚠️ [TIE] 能量不足，无法扣除能量: ") +
-                                         "需要=" + std::to_string(total_energy_to_deduct * 1000) + " mJ " +
-                                         "当前=" + std::to_string(_current_energy * 1000) + " mJ " +
-                                         "运行中任务数=" + std::to_string(running_tasks.size()));
-
-                // ⭐ Bug修复2：设置能量耗尽标志
-                _energy_depleted = true;
-
-                // 将所有运行中任务加入中断列表
-                for (auto &map_pair : running_tasks) {
-                    AbsRTTask* task = map_pair.second;
-                    if (task && std::find(tasks_to_interrupt.begin(), tasks_to_interrupt.end(), task) == tasks_to_interrupt.end()) {
-                        tasks_to_interrupt.push_back(task);
-                    }
-                }
-
-                SCHEDULER_LOG_WARNING(std::string("💀 [TIE] 能量已耗尽，将中断所有运行中任务: ") +
-                                         "任务数=" + std::to_string(tasks_to_interrupt.size()));
-
-                // 跳过能量扣除（保持_current_energy不变）
-            }
-        }
+        // ⭐ 预扣模式：能量已在调度时通过getTaskN()扣除，这里不再重复扣除
+        // (旧代码：扣除上一ms执行消耗的能量 - 已废弃)
 
         // 1. 检查所有运行中的任务
         for (auto &map_pair : running_tasks) {
@@ -1022,11 +968,6 @@ namespace RTSim {
         Scheduler::insert(task);
         addToReadyQueue(task);
 
-        // ⭐ 修复0时刻调度延迟：如果是第一个任务且在0时刻，立即触发调度
-        if (_ready_queue.size() == 1 && SIMUL.getTime() == Tick(0)) {
-            SCHEDULER_LOG_INFO("⚡ [TIE] 第一个任务在0ms到达，立即触发调度");
-            performTickScheduling();
-        }
     }
 
     void TIEScheduler::extract(AbsRTTask *task) {
@@ -1312,8 +1253,15 @@ namespace RTSim {
             return;
         }
 
-        // 每1ms触发一次tick
-        _tick_event->post(SIMUL.getTime() + Tick(1));
+        Tick current_time = SIMUL.getTime();
+
+        // ⭐ 修复：第一个tick在当前时间触发（0ms），后续tick每1ms触发一次
+        if (!_first_tick_scheduled) {
+            _tick_event->post(current_time);  // 第一个tick立即触发
+            _first_tick_scheduled = true;
+        } else {
+            _tick_event->post(current_time + Tick(1));  // 后续tick每1ms触发一次
+        }
     }
 
     // =====================================================
@@ -1499,6 +1447,12 @@ namespace RTSim {
         // ⭐ 关键修复：任务结束时触发立即调度
         // 检查是否有空闲CPU和等待的任务
         if (!_ready_queue.empty() && _kernel) {
+            // ⭐ Bug修复：能量耗尽时不触发立即调度
+            if (_energy_depleted) {
+                SCHEDULER_LOG_INFO(std::string("💀 [TIE] 能量已耗尽，跳过任务结束后的立即调度") +
+                                   " 剩余能量=" + std::to_string(_current_energy * 1000) + " mJ");
+                return;
+            }
             SCHEDULER_LOG_INFO("🔄 [TIE] 任务结束，触发立即调度");
             _kernel->dispatch();
         }

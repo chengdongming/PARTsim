@@ -1,0 +1,22 @@
+cpu_islands:
+  - name: energy_aware_cpus
+    numcpus: 3
+    kernel:
+      scheduler: gpfp_btie
+      task_placement: global
+    volts: [0.92, 0.94, 0.96, 0.98, 1.00, 1.02, 1.04, 1.06, 1.08, 1.10, 1.12, 1.14]
+    freqs: [7000, 7500, 8000, 8100, 8200, 8300, 8400, 8500, 9000, 9500, 10000, 10500]
+    base_freq: 8100
+    power_model: energy_aware_model
+    speed_model: energy_aware_model
+
+energy_management:
+  initial_energy: 0.006  # 6mJ
+  max_energy: 1000.0
+  day_of_year: 1
+  time_of_day_ms: 0
+  use_real_solar_data: true
+  unit_time: 50
+  periodic_collection_interval_ms: 1
+  enable_energy_recovery: false
+  solar_file: ""
