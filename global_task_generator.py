@@ -417,8 +417,9 @@ class EnergyAwareTaskGenerator:
             if implicit_deadline:
                 deadline = period
             else:
-                deadline_factor = random.uniform(0.6, 0.9)
-                deadline = max(execution_time + 100, int(period * deadline_factor))
+                # 约束截止时间：execution_time <= deadline < period
+                # 在 [execution_time, period-1] 范围内随机生成
+                deadline = random.randint(execution_time, period - 1)
             
             # 生成到达时间偏移
             arrival_offset_value = 0
@@ -431,8 +432,13 @@ class EnergyAwareTaskGenerator:
                 if max_arrival_offset_value > 0:
                     arrival_offset_value = random.randint(0, max_arrival_offset_value)
             
-            # 选择工作负载类型
-            workload = random.choice(self.workload_types)
+            # 选择工作负载类型 - 大部分是bzip2（70%概率）
+            if random.random() < 0.7:
+                workload = "bzip2"
+            else:
+                # 从其他类型中随机选择
+                other_workloads = [w for w in self.workload_types if w != "bzip2"]
+                workload = random.choice(other_workloads) if other_workloads else "bzip2"
             
             # 计算能耗 - 使用系统配置参数
             energy = self.calculate_energy(execution_time, workload, self.base_frequency)
@@ -478,17 +484,17 @@ class EnergyAwareTaskGenerator:
                 for succ in sorted(dag[i]):
                     code.append(f"unlock(res_{i}_{succ})")
             
-            # 构建params字符串
-            params_parts = [f"period={period}"]
-            if arrival_offset_value > 0:
-                params_parts.append(f"arrival_offset={arrival_offset_value}")
-            
-            # 添加workload参数，供仿真器使用
-            params_parts.append(f"workload={workload}")
+            # 构建params字符串 - 完整格式：period=X,wcet=Y,arrival_offset=Z,workload=W
+            params_parts = [
+                f"period={period}",
+                f"wcet={execution_time}",
+                f"arrival_offset={arrival_offset_value}",
+                f"workload={workload}"
+            ]
             params_str = ",".join(params_parts)
             
             task = {
-                'name': f'task_{i}',
+                'name': f'task_{i}',  # 任务名：task_0, task_1, task_2...
                 'iat': period,
                 'runtime': execution_time,  # 关键：runtime作为仿真中的执行时间
                 'deadline': deadline,
@@ -698,8 +704,8 @@ def create_yaml_content(tasks: List[Dict], resources: List[Dict] = None,
     # 添加任务集
     lines.append("taskset:")
     for task in tasks:
-        # 为每个任务添加详细注释
-        if task['name'].startswith('task_'):
+        # 为每个任务添加详细注释（简短任务名：t0, t1, t2...）
+        if task['name'][0] == 't' and task['name'][1:].isdigit():
             period = task['iat']
             deadline = task['deadline']
             runtime = task.get('runtime', 0)
@@ -762,13 +768,13 @@ def main():
                        help="任务数量")
     parser.add_argument("-u", "--utilization", type=float, default=2.0,
                        help="总利用率")
-    parser.add_argument("--min-period", type=int, default=1000,
+    parser.add_argument("-p", "--min-period", type=int, default=1000,
                        help="最小周期(ms)")
-    parser.add_argument("--max-period", type=int, default=5000,
+    parser.add_argument("-P", "--max-period", type=int, default=5000,
                        help="最大周期(ms)")
-    parser.add_argument("--cpus", type=int, default=4,
+    parser.add_argument("-c", "--cpus", type=int, default=4,
                        help="CPU数量")
-    parser.add_argument("--constrained-deadlines", action="store_true",
+    parser.add_argument("-cd", "--constrained-deadlines", action="store_true",
                        help="使用约束截止时间")
     parser.add_argument("--dag", action="store_true", default=False,
                        help="启用前驱约束")

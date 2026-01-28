@@ -4,7 +4,7 @@ cpu_islands:
     numcpus: 2                           # CPU核心数量
 
     kernel:
-      scheduler: gpfp_cascade            # 调度算法: gpfp_epp | gpfp_efpp | gpfp_cbpp
+      scheduler: gpfp_tie            # 调度算法: gpfp_tie | gpfp_tgf | gpfp_btie
       task_placement: global
 
     # 电压频率配置
