@@ -33,9 +33,9 @@ namespace RTSim {
     // =====================================================
 
     TIETickEvent::TIETickEvent(TIEScheduler *scheduler)
-        : MetaSim::Event("TIETickEvent", MetaSim::Event::_DEFAULT_PRIORITY - 10),
+        : MetaSim::Event("TIETickEvent", MetaSim::Event::_DEFAULT_PRIORITY + 10),
           _scheduler(scheduler) {
-        // ⭐ V29修复：更高优先级，确保tick先于能量检查事件执行
+        // ⭐ V30修复：较低优先级，确保任务到达事件先于tick执行，这样所有任务都在ready queue中
     }
 
     void TIETickEvent::doit() {
@@ -387,7 +387,8 @@ namespace RTSim {
     // =====================================================
 
     void TIEScheduler::performTickScheduling() {
-        SCHEDULER_LOG_DEBUG(std::string("🔄 [TIE] performTickScheduling @ ") +
+        std::cout << "[TEST] performTickScheduling called at time " << SIMUL.getTime() << std::endl;
+        SCHEDULER_LOG_INFO(std::string("🔄 [TIE] performTickScheduling @ ") +
                            std::to_string(static_cast<int64_t>(SIMUL.getTime())) + "ms" +
                            " 能量=" + std::to_string(_current_energy) + "J");
 
@@ -400,10 +401,12 @@ namespace RTSim {
         _stats.total_tick_count++;
 
 
-        // ⭐ 关键修复：在每个tick开始时清空调度计数
-        _dispatching_tasks_total_energy = 0.0;
-        _counted_tasks_in_dispatch.clear();
-        SCHEDULER_LOG_DEBUG(std::string("🧹 [TIE] Tick开始: 清空调度计数"));
+        // ⭐ V30修复：不要在每个tick开始时清空_counted_tasks_in_dispatch
+        // 这样可以避免在同一tick的多次dispatch()调用中重复扣除能量
+        // ⭐ 但需要在能量耗尽时清空（下面有检查）
+        // _dispatching_tasks_total_energy = 0.0;
+        // _counted_tasks_in_dispatch.clear();
+        SCHEDULER_LOG_DEBUG(std::string("🧹 [TIE] Tick开始: _counted_tasks_in_dispatch.size()=") + std::to_string(_counted_tasks_in_dispatch.size()));
 
         // ⭐ 核心：先收集能量，再调度
         // 1. 收集太阳能（从上次tick到现在）
@@ -446,15 +449,28 @@ namespace RTSim {
         // 3. Tick边界：检查抢占（高优先级任务到达时）
         checkAndPreempt();
 
-        // 4. 如果有kernel，触发dispatch进行调度
+        // 4. 如果有kernel，循环触发dispatch直到填满所有CPU
         if (!_kernel) {
             SCHEDULER_LOG_DEBUG("⚠️ [TIE] performTickScheduling: _kernel为nullptr，尝试获取");
             _kernel = getKernel();
         }
 
         if (_kernel) {
-            SCHEDULER_LOG_DEBUG("🔔 [TIE] performTickScheduling: 触发dispatch");
+            const auto& running_tasks = _kernel->getCurrentExecutingTasks();
+            size_t num_running = 0;
+            for (const auto& pair : running_tasks) {
+                if (pair.second) num_running++;
+            }
+
+            SCHEDULER_LOG_INFO(std::string("🔔 [TIE] performTickScheduling @ ") +
+                               std::to_string(static_cast<int64_t>(SIMUL.getTime())) + "ms: " +
+                               "触发dispatch, _ready_queue.size()=" + std::to_string(_ready_queue.size()) +
+                               " num_running=" + std::to_string(num_running) +
+                               " num_cpus=" + std::to_string(running_tasks.size()));
+
             _kernel->dispatch();
+
+            SCHEDULER_LOG_INFO("✅ [TIE] dispatch完成");
         } else {
             SCHEDULER_LOG_DEBUG("⚠️ [TIE] performTickScheduling: _kernel仍为nullptr，跳过dispatch");
         }
@@ -555,8 +571,15 @@ namespace RTSim {
         }
         */
 
+        // ⭐ V30调试：输出ready queue信息
+        std::cout << "[DEBUG] TIE::getTaskN(" << n << ") - ready_queue.size()=" << _ready_queue.size() << std::endl;
+        for (size_t i = 0; i < _ready_queue.size(); ++i) {
+            std::cout << "[DEBUG]   ready_queue[" << i << "]=" << getTaskName(_ready_queue[i]) << std::endl;
+        }
+
         // ⭐ 级联调度：遍历就绪队列，运行中任务也要检查能量
         unsigned int ready_index = 0;
+        std::cout << "[DEBUG] TIE::getTaskN(" << n << ") - 开始遍历ready_queue, 查找第" << n << "个未调度任务" << std::endl;
         for (size_t i = 0; i < _ready_queue.size(); ++i) {
             AbsRTTask *task = _ready_queue[i];
 
@@ -577,6 +600,9 @@ namespace RTSim {
             // 检查是否已在本tick中扣除过能量
             bool already_counted = _counted_tasks_in_dispatch.find(task) != _counted_tasks_in_dispatch.end();
 
+            std::cout << "[DEBUG] TIE::getTaskN(" << n << ") - i=" << i << " task=" << getTaskName(task)
+                      << " ready_index=" << ready_index << " is_running=" << is_running
+                      << " already_counted=" << already_counted << std::endl;
 
             // ⭐ V29.1修复：运行中任务的续期由TIEEnergyCheckEvent处理，getTaskN()不再扣除续期能量
             // 设计原则：
@@ -601,6 +627,11 @@ namespace RTSim {
                 // ⭐ 计算任务的1ms能耗
                 double unit_energy = calculateUnitEnergyForTask(task);
 
+                // ⭐ V30调试：输出能量检查信息
+                std::cout << "[DEBUG] TIE::getTaskN(" << n << ") - 准备调度第" << ready_index << "个任务: " << getTaskName(task)
+                          << " 需要1ms=" << unit_energy * 1000 << " mJ"
+                          << " 当前能量=" << _current_energy * 1000 << " mJ" << std::endl;
+
                 const double EPSILON = 1e-9;
                 // ⭐ 预扣模式：检查当前能量是否足够当前任务的1ms能耗
                 if (_current_energy < unit_energy - EPSILON) {
@@ -608,6 +639,7 @@ namespace RTSim {
                                       " 任务=" + getTaskName(task) +
                                       " 需要1ms=" + std::to_string(unit_energy) + "J" +
                                       " 当前能量=" + std::to_string(_current_energy) + "J");
+                    std::cout << "[DEBUG] TIE::getTaskN(" << n << ") - 能量不足，返回nullptr" << std::endl;
                     return nullptr;  // ⭐ 立即停止级联
                 }
 
@@ -630,10 +662,14 @@ namespace RTSim {
                 }
 
                 return task;
-                }
+            } else {
+                // ⭐ V32关键修复：不是我们要找的第n个任务，继续寻找
+                ready_index++;
+            }
 
         }
 
+        std::cout << "[DEBUG] TIE::getTaskN(" << n << ") - 循环结束，未找到第" << n << "个任务，返回nullptr (ready_index=" << ready_index << ")" << std::endl;
         return nullptr;
     }
 
@@ -967,7 +1003,6 @@ namespace RTSim {
 
         Scheduler::insert(task);
         addToReadyQueue(task);
-
     }
 
     void TIEScheduler::extract(AbsRTTask *task) {

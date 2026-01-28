@@ -33,9 +33,9 @@ namespace RTSim {
     // =====================================================
 
     BTIETickEvent::BTIETickEvent(BTIEScheduler *scheduler)
-        : MetaSim::Event("BTIETickEvent", MetaSim::Event::_DEFAULT_PRIORITY - 10),
+        : MetaSim::Event("BTIETickEvent", MetaSim::Event::_DEFAULT_PRIORITY + 10),
           _scheduler(scheduler) {
-        // 高优先级事件，确保tick调度及时执行
+        // ⭐ V30修复：较低优先级，确保任务到达事件先于tick执行
     }
 
     void BTIETickEvent::doit() {
@@ -637,15 +637,58 @@ namespace RTSim {
 
         checkAndPreempt();
 
-        // 如果有kernel，触发dispatch进行调度
+        // 如果有kernel，循环触发dispatch直到填满所有CPU
         if (!_kernel) {
-            SCHEDULER_LOG_DEBUG("⚠️ [BTIE] performTickScheduling: _kernel为nullptr，尝试获取");
+            SCHEDULER_LOG_DEBUG("⚠��� [BTIE] performTickScheduling: _kernel为nullptr，尝试获取");
             _kernel = getKernel();
         }
 
         if (_kernel) {
-            SCHEDULER_LOG_DEBUG("🔔 [BTIE] performTickScheduling: 触发dispatch");
-            _kernel->dispatch();
+            SCHEDULER_LOG_DEBUG("🔔 [BTIE] performTickScheduling: 开始循环调度填满所有CPU");
+            // ⭐ V31关键修复：循环调用dispatch()直到所有CPU被填满或无法调度更多任务
+            // 这是多核调度器的正确行为：在一个tick内尽可能多地调度任务
+            int dispatch_attempts = 0;
+            const int MAX_DISPATCH_ITERATIONS = 100;  // 防止无限循环
+
+            while (dispatch_attempts < MAX_DISPATCH_ITERATIONS) {
+                // 检查是否所有CPU都已填满
+                bool all_cpus_full = true;
+                for (auto &map_pair : _running_tasks) {
+                    if (map_pair.second == nullptr) {
+                        all_cpus_full = false;
+                        break;
+                    }
+                }
+
+                if (all_cpus_full) {
+                    SCHEDULER_LOG_DEBUG("✅ [BTIE] 所有CPU已填满，停止调度");
+                    break;
+                }
+
+                // 记录调度前的任务数
+                size_t tasks_before = _ready_queue.size() + _running_tasks.size();
+
+                // 调用dispatch尝试调度更多任务
+                _kernel->dispatch();
+                dispatch_attempts++;
+
+                // 记录调度后的任务数
+                size_t tasks_after = _ready_queue.size() + _running_tasks.size();
+
+                // 如果没有任务被调度（状态没变化），停止调度
+                if (tasks_before == tasks_after) {
+                    SCHEDULER_LOG_DEBUG("⏹️ [BTIE] 无更多任务可调度，停止dispatch循环");
+                    break;
+                }
+
+                SCHEDULER_LOG_DEBUG(std::string("🔄 [BTIE] dispatch循环 #") + std::to_string(dispatch_attempts) +
+                                   " _ready_queue.size()=" + std::to_string(_ready_queue.size()) +
+                                   " _running_tasks.size()=" + std::to_string(_running_tasks.size()));
+            }
+
+            if (dispatch_attempts >= MAX_DISPATCH_ITERATIONS) {
+                SCHEDULER_LOG_WARNING("⚠️ [BTIE] dispatch循环达到最大迭代次数，可能存在bug");
+            }
         } else {
             SCHEDULER_LOG_DEBUG("⚠️ [BTIE] performTickScheduling: _kernel仍为nullptr，跳过dispatch");
         }

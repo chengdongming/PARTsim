@@ -1,10 +1,10 @@
 # CPU集群配置
 cpu_islands:
   - name: energy_aware_cpus
-    numcpus: 2                           # CPU核心数量
+    numcpus: 3                           # CPU核心数量
 
     kernel:
-      scheduler: gpfp_tie            # 调度算法: gpfp_tie | gpfp_tgf | gpfp_btie
+      scheduler: gpfp_tie               # 调度算法: gpfp_tie
       task_placement: global
 
     # 电压频率配置
@@ -21,19 +21,21 @@ cpu_islands:
 # =============================================
 energy_management:
   # 基本能量参数
-  initial_energy: 100.0                # 初始能量 (J) - 根据测试需求调整
+  initial_energy: 0.006                  # 初始能量 6mJ
   max_energy: 1000.0                   # 最大能量容量 (J)
 
-  day_of_year: 187
-  time_of_day_ms: 0
+  # ⭐ 时间设置：0点（无太阳能）
+  day_of_year: 182                      # 第182天（夏至，太阳辐射强）
+  time_of_day_ms: 0                      # 0点（午夜）
 
   # === NASA真实太阳能数据配置 ===
   use_real_solar_data: true            # 启用NASA真实太阳能数据
   solar_data_file: "data/processed/shenyang_solar_minute.csv"  # NASA数据文件路径
-  pv_efficiency: 0.18                  # 光伏转换效率 (18%)
+  pv_efficiency: 0.18                  # 光���转换效率 (18%)
   pv_area_m2: 1.0                      # 光伏板面积 (平方米)
 
   # 调度器单位时间
+  unit_time: 50                        # 单位时间 (ms)
   periodic_collection_interval_ms: 1
 
   # 能量恢复配置
@@ -84,7 +86,7 @@ power_models:
         speed_params: [1, 0, 0, 0]
         energy_coefficient: 0.1
 
-      # 压缩工作负载
+      # 压缩工作负载 (bzip2)
       - workload: bzip2
         power_params: [0.00775587, 33.376, 1.54585, 9.53439e-10]
         speed_params: [0.0256054, 2.9809e+6, 0.602631, 8.13712e+9]

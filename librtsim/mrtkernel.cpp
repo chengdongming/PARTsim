@@ -287,7 +287,10 @@ namespace RTSim {
     void MRTKernel::dispatch() {
         DBGENTER(_KERNEL_DBG_LEV);
 
-        std::cout << "[DEBUG] MRTKernel::dispatch() - CALLED!" << std::endl;
+        // ⭐ V30修复：记录dispatch()调用开始时间，确保同一tick的所有任务记录相同的时间
+        _dispatch_start_time = SIMUL.getTime();
+
+        std::cout << "[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=" << _dispatch_start_time << std::endl;
         size_t ncpu = _m_currExe.size();
 
         // Tells us how many of the first ncpu tasks in the ready queue are not
@@ -300,7 +303,7 @@ namespace RTSim {
         for (size_t i = 0; i < ncpu; ++i) {
             AbsRTTask *t = _sched->getTaskN(i);
             if (t == nullptr) {
-                std::cout << "[DEBUG]   getTaskN(" << i << ") = nullptr" << std::endl;
+                std::cout << "[DEBUG]   getTaskN(" << i << ") = nullptr, 退出循环" << std::endl;
                 break;
             }
             CPU *proc = getProcessor(t);
@@ -313,7 +316,7 @@ namespace RTSim {
             if (is_new)
                 ++num_newtasks;
         }
-        std::cout << "[DEBUG] MRTKernel::dispatch() - num_newtasks=" << num_newtasks << std::endl;
+        std::cout << "[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=" << num_newtasks << std::endl;
 
         // Technically, in the old impl i can be less than ncpu, but if we break
         // before reaching ncpu for sure there are NO tasks to evict and i will
@@ -401,6 +404,9 @@ namespace RTSim {
 
         if (st == nullptr) {
             DBGPRINT("Nothing to schedule, finishing");
+            // ⭐ V30修复：没有任务可调度时，不设置事件，直接返回
+            std::cout << "[DEBUG] onBeginDispatchMulti - st is nullptr, returning early at time " << SIMUL.getTime() << std::endl;
+            return;
         }
 
         DBGPRINT("Scheduling task ", taskname(st), " on cpu ", p->toString());
@@ -447,14 +453,18 @@ namespace RTSim {
         }
         _endEvt[p]->setTask(st);
         _isContextSwitching[p] = true;
+
+        // ⭐ V30关键修复：使用_dispatch_start_time作为调度时间，确保同一tick的所有任务使用相同时间
+        // _dispatch_start_time在dispatch()开始时设置，在整个tick期间保持不变
         Tick overhead(_contextSwitchDelay);
         if (st != nullptr && _m_oldExe[st] != p && _m_oldExe[st] != nullptr)
             overhead += _migrationDelay;
-        Tick post_time = SIMUL.getTime() + overhead;
+
+        Tick post_time = _dispatch_start_time + overhead;
         _endEvt[p]->post(post_time);
         std::cout << "[DEBUG] onBeginDispatchMulti - 设置事件: task=" << taskname(st)
                   << " CPU=" << p->toString()
-                  << " post_time=" << post_time << std::endl;
+                  << " post_time=" << post_time << " (_dispatch_start_time=" << _dispatch_start_time << ")" << std::endl;
     }
 
     void MRTKernel::onEndDispatchMulti(EndDispatchMultiEvt *e) {

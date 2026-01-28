@@ -2682,3 +2682,1692 @@
 2026-01-29 02:07:05.518 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/three_schedulers_6mj_comparison/system_3core_tgf.yml, current_config_file=test_results/three_schedulers_6mj_comparison/system_3core_tgf.yml
 2026-01-29 02:07:05.518 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/three_schedulers_6mj_comparison/system_3core_tgf.yml
 2026-01-29 02:07:05.518 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 02:12:09.547 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:12:09.555 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:12:09.556 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 02:12:09.556 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 02:12:09.556 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=0 计算 start_offset_minutes=0
+2026-01-29 02:12:09.556 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=0, simulation_start_time=0ms
+2026-01-29 02:12:09.556 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 02:12:09.556 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:12:09.557 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 02:12:09.557 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 02:12:09.557 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 02:12:09.557 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 02:12:09.557 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 02:12:09.557 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 02:12:09.557 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 02:12:09.557 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 02:12:09.557 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 02:12:09.557 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 02:12:09.558 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 02:12:09.558 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 02:12:09.558 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 02:12:09.558 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 02:12:09.558 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 02:12:09.558 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 02:12:09.558 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 02:12:09.558 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 02:12:09.559 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 02:12:09.559 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-29 02:12:09.559 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 02:12:09.559 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml, current_config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:12:09.559 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:12:09.559 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 02:12:13.777 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:12:13.785 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:12:13.785 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 02:12:13.785 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 02:12:13.785 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=0 计算 start_offset_minutes=0
+2026-01-29 02:12:13.785 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=0, simulation_start_time=0ms
+2026-01-29 02:12:13.785 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 02:12:13.785 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:12:13.786 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 02:12:13.786 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 02:12:13.786 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 02:12:13.786 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 02:12:13.786 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 02:12:13.786 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 02:12:13.786 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 02:12:13.786 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 02:12:13.787 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 02:12:13.787 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 02:12:13.787 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 02:12:13.787 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 02:12:13.787 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 02:12:13.787 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 02:12:13.787 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 02:12:13.787 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 02:12:13.787 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 02:12:13.788 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 02:12:13.788 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 02:12:13.788 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-29 02:12:13.788 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 02:12:13.788 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml, current_config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:12:13.788 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:12:13.788 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 02:12:44.480 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:12:44.489 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:12:44.489 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 02:12:44.489 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 02:12:44.489 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=0 计算 start_offset_minutes=0
+2026-01-29 02:12:44.489 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=0, simulation_start_time=0ms
+2026-01-29 02:12:44.489 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 02:12:44.489 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:12:44.489 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 02:12:44.490 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 02:12:44.490 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 02:12:44.490 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 02:12:44.490 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 02:12:44.490 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 02:12:44.490 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 02:12:44.490 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 02:12:44.491 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 02:12:44.491 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 02:12:44.491 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 02:12:44.491 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 02:12:44.491 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 02:12:44.491 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 02:12:44.491 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 02:12:44.491 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 02:12:44.492 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 02:12:44.492 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 02:12:44.492 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 02:12:44.492 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-29 02:12:44.492 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 02:12:44.493 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml, current_config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:12:44.493 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:12:44.493 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 02:14:10.338 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:14:10.345 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:14:10.345 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 02:14:10.345 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 02:14:10.345 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=0 计算 start_offset_minutes=0
+2026-01-29 02:14:10.345 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=0, simulation_start_time=0ms
+2026-01-29 02:14:10.345 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 02:14:10.345 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:14:10.345 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 02:14:10.345 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 02:14:10.346 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 02:14:10.346 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 02:14:10.346 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 02:14:10.346 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 02:14:10.346 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 02:14:10.346 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 02:14:10.346 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 02:14:10.346 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 02:14:10.346 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 02:14:10.346 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 02:14:10.347 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 02:14:10.347 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 02:14:10.347 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 02:14:10.347 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 02:14:10.347 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 02:14:10.347 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 02:14:10.347 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 02:14:10.347 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-29 02:14:10.347 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 02:14:10.348 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml, current_config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:14:10.348 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:14:10.348 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 02:14:17.352 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:14:17.359 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:14:17.359 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 02:14:17.359 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 02:14:17.359 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=0 计算 start_offset_minutes=0
+2026-01-29 02:14:17.359 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=0, simulation_start_time=0ms
+2026-01-29 02:14:17.359 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 02:14:17.359 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:14:17.360 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 02:14:17.360 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 02:14:17.360 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 02:14:17.360 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 02:14:17.360 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 02:14:17.360 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 02:14:17.360 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 02:14:17.360 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 02:14:17.360 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 02:14:17.360 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 02:14:17.360 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 02:14:17.360 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 02:14:17.361 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 02:14:17.361 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 02:14:17.361 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 02:14:17.361 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 02:14:17.361 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 02:14:17.361 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 02:14:17.361 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 02:14:17.361 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-29 02:14:17.361 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 02:14:17.362 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml, current_config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:14:17.362 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:14:17.362 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 02:15:07.402 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:15:07.408 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:15:07.409 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 02:15:07.409 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 02:15:07.409 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=0 计算 start_offset_minutes=0
+2026-01-29 02:15:07.409 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=0, simulation_start_time=0ms
+2026-01-29 02:15:07.409 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 02:15:07.409 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:15:07.409 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 02:15:07.409 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 02:15:07.409 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 02:15:07.409 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 02:15:07.409 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 02:15:07.410 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 02:15:07.410 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 02:15:07.410 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 02:15:07.410 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 02:15:07.410 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 02:15:07.410 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 02:15:07.410 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 02:15:07.410 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 02:15:07.410 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 02:15:07.410 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 02:15:07.411 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 02:15:07.411 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 02:15:07.411 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 02:15:07.411 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 02:15:07.411 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-29 02:15:07.411 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 02:15:07.412 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml, current_config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:15:07.412 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:15:07.412 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 02:16:33.908 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:16:33.915 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:16:33.915 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 02:16:33.915 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 02:16:33.915 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=0 计算 start_offset_minutes=0
+2026-01-29 02:16:33.915 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=0, simulation_start_time=0ms
+2026-01-29 02:16:33.915 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 02:16:33.916 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:16:33.916 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 02:16:33.916 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 02:16:33.916 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 02:16:33.916 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 02:16:33.916 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 02:16:33.916 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 02:16:33.916 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 02:16:33.916 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 02:16:33.916 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 02:16:33.917 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 02:16:33.917 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 02:16:33.917 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 02:16:33.917 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 02:16:33.917 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 02:16:33.917 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 02:16:33.917 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 02:16:33.917 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 02:16:33.917 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 02:16:33.917 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 02:16:33.917 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-29 02:16:33.917 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 02:16:33.918 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml, current_config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:16:33.918 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:16:33.918 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 02:17:46.457 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:17:46.465 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:17:46.465 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 02:17:46.465 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 02:17:46.465 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=0 计算 start_offset_minutes=0
+2026-01-29 02:17:46.466 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=0, simulation_start_time=0ms
+2026-01-29 02:17:46.466 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 02:17:46.466 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:17:46.466 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 02:17:46.466 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 02:17:46.466 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 02:17:46.466 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 02:17:46.466 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 02:17:46.467 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 02:17:46.467 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 02:17:46.467 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 02:17:46.467 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 02:17:46.467 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 02:17:46.467 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 02:17:46.467 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 02:17:46.467 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 02:17:46.467 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 02:17:46.467 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 02:17:46.468 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 02:17:46.468 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 02:17:46.468 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 02:17:46.468 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 02:17:46.468 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-29 02:17:46.468 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 02:17:46.468 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml, current_config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:17:46.469 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:17:46.469 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 02:22:37.765 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:22:37.774 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:22:37.774 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 02:22:37.775 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 02:22:37.775 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=0 计算 start_offset_minutes=0
+2026-01-29 02:22:37.775 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=0, simulation_start_time=0ms
+2026-01-29 02:22:37.775 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 02:22:37.775 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:22:37.775 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 02:22:37.775 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 02:22:37.775 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 02:22:37.775 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 02:22:37.776 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 02:22:37.776 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 02:22:37.776 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 02:22:37.776 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 02:22:37.776 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 02:22:37.776 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 02:22:37.776 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 02:22:37.776 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 02:22:37.776 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 02:22:37.777 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 02:22:37.777 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 02:22:37.777 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 02:22:37.777 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 02:22:37.777 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 02:22:37.777 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 02:22:37.777 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-29 02:22:37.777 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 02:22:37.778 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml, current_config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:22:37.778 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:22:37.778 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 02:22:56.225 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:22:56.234 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:22:56.234 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 02:22:56.234 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 02:22:56.234 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=0 计算 start_offset_minutes=0
+2026-01-29 02:22:56.234 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=0, simulation_start_time=0ms
+2026-01-29 02:22:56.234 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 02:22:56.235 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:22:56.235 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 02:22:56.235 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 02:22:56.235 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 02:22:56.235 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 02:22:56.235 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 02:22:56.235 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 02:22:56.235 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 02:22:56.236 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 02:22:56.236 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 02:22:56.236 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 02:22:56.236 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 02:22:56.236 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 02:22:56.236 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 02:22:56.236 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 02:22:56.236 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 02:22:56.237 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 02:22:56.237 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 02:22:56.237 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 02:22:56.237 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 02:22:56.237 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-29 02:22:56.237 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 02:22:56.238 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml, current_config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:22:56.238 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:22:56.238 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 02:27:15.994 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:27:16.001 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:27:16.001 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 02:27:16.001 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 02:27:16.002 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=0 计算 start_offset_minutes=0
+2026-01-29 02:27:16.002 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=0, simulation_start_time=0ms
+2026-01-29 02:27:16.002 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 02:27:16.002 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:27:16.002 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 02:27:16.002 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 02:27:16.002 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 02:27:16.002 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 02:27:16.002 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 02:27:16.003 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 02:27:16.003 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 02:27:16.003 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 02:27:16.003 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 02:27:16.003 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 02:27:16.003 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 02:27:16.003 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 02:27:16.003 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 02:27:16.003 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 02:27:16.003 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 02:27:16.004 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 02:27:16.004 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 02:27:16.004 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 02:27:16.004 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 02:27:16.004 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-29 02:27:16.004 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 02:27:16.004 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml, current_config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:27:16.005 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:27:16.005 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 02:29:09.579 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:29:09.587 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:29:09.587 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 02:29:09.588 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 02:29:09.588 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=0 计算 start_offset_minutes=0
+2026-01-29 02:29:09.588 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=0, simulation_start_time=0ms
+2026-01-29 02:29:09.588 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 02:29:09.588 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:29:09.588 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 02:29:09.588 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 02:29:09.588 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 02:29:09.589 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 02:29:09.589 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 02:29:09.589 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 02:29:09.589 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 02:29:09.589 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 02:29:09.589 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 02:29:09.589 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 02:29:09.589 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 02:29:09.589 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 02:29:09.589 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 02:29:09.590 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 02:29:09.590 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 02:29:09.590 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 02:29:09.590 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 02:29:09.590 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 02:29:09.590 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 02:29:09.590 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-29 02:29:09.590 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 02:29:09.591 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml, current_config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:29:09.591 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:29:09.591 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 02:29:55.514 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:29:55.521 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:29:55.522 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 02:29:55.522 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 02:29:55.522 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=0 计算 start_offset_minutes=0
+2026-01-29 02:29:55.522 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=0, simulation_start_time=0ms
+2026-01-29 02:29:55.522 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 02:29:55.522 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:29:55.522 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 02:29:55.522 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 02:29:55.522 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 02:29:55.522 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 02:29:55.523 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 02:29:55.523 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 02:29:55.523 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 02:29:55.523 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 02:29:55.523 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 02:29:55.523 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 02:29:55.523 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 02:29:55.523 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 02:29:55.523 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 02:29:55.524 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 02:29:55.524 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 02:29:55.524 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 02:29:55.524 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 02:29:55.524 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 02:29:55.524 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 02:29:55.524 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-29 02:29:55.525 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 02:29:55.525 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml, current_config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:29:55.525 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:29:55.525 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 02:32:05.304 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:32:05.311 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:32:05.311 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 02:32:05.312 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 02:32:05.312 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=0 计算 start_offset_minutes=0
+2026-01-29 02:32:05.312 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=0, simulation_start_time=0ms
+2026-01-29 02:32:05.312 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 02:32:05.312 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:32:05.312 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 02:32:05.312 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 02:32:05.312 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 02:32:05.312 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 02:32:05.312 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 02:32:05.312 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 02:32:05.312 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 02:32:05.313 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 02:32:05.313 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 02:32:05.313 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 02:32:05.313 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 02:32:05.313 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 02:32:05.313 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 02:32:05.313 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 02:32:05.313 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 02:32:05.313 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 02:32:05.313 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 02:32:05.313 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 02:32:05.313 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 02:32:05.314 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-29 02:32:05.314 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 02:32:05.314 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml, current_config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:32:05.314 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:32:05.314 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 02:33:49.500 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:33:49.508 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:33:49.508 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 02:33:49.508 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 02:33:49.508 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=0 计算 start_offset_minutes=0
+2026-01-29 02:33:49.508 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=0, simulation_start_time=0ms
+2026-01-29 02:33:49.509 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 02:33:49.509 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:33:49.509 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 02:33:49.509 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 02:33:49.509 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 02:33:49.509 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 02:33:49.509 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 02:33:49.509 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 02:33:49.509 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 02:33:49.509 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 02:33:49.510 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 02:33:49.510 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 02:33:49.510 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 02:33:49.510 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 02:33:49.510 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 02:33:49.510 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 02:33:49.510 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 02:33:49.510 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 02:33:49.510 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 02:33:49.511 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 02:33:49.511 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 02:33:49.511 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-29 02:33:49.511 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 02:33:49.511 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml, current_config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:33:49.511 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:33:49.512 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 02:34:25.756 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:34:25.765 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:34:25.765 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 02:34:25.765 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 02:34:25.765 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=0 计算 start_offset_minutes=0
+2026-01-29 02:34:25.765 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=0, simulation_start_time=0ms
+2026-01-29 02:34:25.765 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 02:34:25.765 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:34:25.766 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 02:34:25.766 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 02:34:25.766 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 02:34:25.766 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 02:34:25.766 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 02:34:25.766 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 02:34:25.766 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 02:34:25.766 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 02:34:25.766 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 02:34:25.766 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 02:34:25.767 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 02:34:25.767 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 02:34:25.767 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 02:34:25.767 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 02:34:25.767 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 02:34:25.767 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 02:34:25.767 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 02:34:25.767 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 02:34:25.767 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 02:34:25.767 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-29 02:34:25.767 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 02:34:25.768 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml, current_config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:34:25.768 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:34:25.768 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 02:35:01.050 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:35:01.059 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:35:01.059 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 02:35:01.059 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 02:35:01.059 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=0 计算 start_offset_minutes=0
+2026-01-29 02:35:01.059 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=0, simulation_start_time=0ms
+2026-01-29 02:35:01.059 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 02:35:01.059 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:35:01.059 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 02:35:01.059 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 02:35:01.060 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 02:35:01.060 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 02:35:01.060 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 02:35:01.060 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 02:35:01.060 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 02:35:01.060 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 02:35:01.060 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 02:35:01.060 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 02:35:01.060 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 02:35:01.060 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 02:35:01.060 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 02:35:01.061 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 02:35:01.061 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 02:35:01.061 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 02:35:01.061 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 02:35:01.061 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 02:35:01.061 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 02:35:01.061 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-29 02:35:01.061 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 02:35:01.062 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml, current_config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:35:01.062 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:35:01.062 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 02:35:42.686 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:35:42.694 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:35:42.694 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 02:35:42.694 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 02:35:42.694 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=0 计算 start_offset_minutes=0
+2026-01-29 02:35:42.694 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=0, simulation_start_time=0ms
+2026-01-29 02:35:42.694 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 02:35:42.694 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:35:42.695 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 02:35:42.695 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 02:35:42.695 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 02:35:42.695 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 02:35:42.695 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 02:35:42.695 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 02:35:42.695 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 02:35:42.695 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 02:35:42.695 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 02:35:42.695 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 02:35:42.695 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 02:35:42.695 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 02:35:42.696 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 02:35:42.696 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 02:35:42.696 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 02:35:42.696 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 02:35:42.696 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 02:35:42.696 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 02:35:42.696 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 02:35:42.696 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-29 02:35:42.696 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 02:35:42.697 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml, current_config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:35:42.697 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:35:42.697 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 02:41:58.882 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:41:58.890 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:41:58.890 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 02:41:58.890 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 02:41:58.890 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=0 计算 start_offset_minutes=0
+2026-01-29 02:41:58.890 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=0, simulation_start_time=0ms
+2026-01-29 02:41:58.890 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 02:41:58.891 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:41:58.891 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 02:41:58.891 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 02:41:58.891 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 02:41:58.891 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 02:41:58.891 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 02:41:58.891 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 02:41:58.891 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 02:41:58.891 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 02:41:58.891 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 02:41:58.892 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 02:41:58.892 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 02:41:58.892 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 02:41:58.892 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 02:41:58.892 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 02:41:58.892 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 02:41:58.892 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 02:41:58.892 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 02:41:58.892 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 02:41:58.892 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 02:41:58.893 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-29 02:41:58.893 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 02:41:58.893 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml, current_config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:41:58.893 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:41:58.893 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 02:42:46.306 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:42:46.315 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:42:46.315 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 02:42:46.315 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 02:42:46.315 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=0 计算 start_offset_minutes=0
+2026-01-29 02:42:46.315 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=0, simulation_start_time=0ms
+2026-01-29 02:42:46.315 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 02:42:46.315 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:42:46.315 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 02:42:46.316 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 02:42:46.316 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 02:42:46.316 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 02:42:46.316 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 02:42:46.316 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 02:42:46.316 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 02:42:46.316 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 02:42:46.316 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 02:42:46.316 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 02:42:46.317 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 02:42:46.317 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 02:42:46.317 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 02:42:46.317 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 02:42:46.317 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 02:42:46.317 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 02:42:46.317 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 02:42:46.317 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 02:42:46.317 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 02:42:46.317 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-29 02:42:46.318 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 02:42:46.318 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml, current_config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:42:46.318 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:42:46.318 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 02:43:52.080 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:43:52.089 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:43:52.089 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 02:43:52.089 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 02:43:52.089 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=0 计算 start_offset_minutes=0
+2026-01-29 02:43:52.089 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=0, simulation_start_time=0ms
+2026-01-29 02:43:52.089 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 02:43:52.090 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:43:52.090 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 02:43:52.090 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 02:43:52.090 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 02:43:52.090 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 02:43:52.090 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 02:43:52.090 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 02:43:52.090 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 02:43:52.090 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 02:43:52.090 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 02:43:52.090 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 02:43:52.091 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 02:43:52.091 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 02:43:52.091 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 02:43:52.091 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 02:43:52.091 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 02:43:52.091 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 02:43:52.091 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 02:43:52.091 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 02:43:52.091 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 02:43:52.091 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-29 02:43:52.091 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 02:43:52.092 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml, current_config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:43:52.092 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:43:52.092 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 02:44:01.759 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:44:01.768 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:44:01.768 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 02:44:01.768 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 02:44:01.769 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=0 计算 start_offset_minutes=0
+2026-01-29 02:44:01.769 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=0, simulation_start_time=0ms
+2026-01-29 02:44:01.769 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 02:44:01.769 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:44:01.769 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 02:44:01.769 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 02:44:01.769 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 02:44:01.769 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 02:44:01.769 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 02:44:01.769 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 02:44:01.769 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 02:44:01.770 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 02:44:01.770 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 02:44:01.770 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 02:44:01.770 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 02:44:01.770 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 02:44:01.770 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 02:44:01.770 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 02:44:01.770 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 02:44:01.770 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 02:44:01.770 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 02:44:01.771 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 02:44:01.771 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 02:44:01.771 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-29 02:44:01.771 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 02:44:01.771 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml, current_config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:44:01.771 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:44:01.771 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 02:44:13.001 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:44:13.009 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:44:13.009 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 02:44:13.009 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 02:44:13.009 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=0 计算 start_offset_minutes=0
+2026-01-29 02:44:13.009 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=0, simulation_start_time=0ms
+2026-01-29 02:44:13.009 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 02:44:13.009 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:44:13.009 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 02:44:13.009 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 02:44:13.009 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 02:44:13.010 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 02:44:13.010 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 02:44:13.010 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 02:44:13.010 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 02:44:13.010 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 02:44:13.010 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 02:44:13.010 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 02:44:13.010 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 02:44:13.010 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 02:44:13.010 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 02:44:13.011 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 02:44:13.011 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 02:44:13.011 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 02:44:13.011 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 02:44:13.011 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 02:44:13.011 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 02:44:13.011 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-29 02:44:13.011 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 02:44:13.012 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml, current_config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:44:13.012 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:44:13.012 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 02:46:12.842 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:46:12.850 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:46:12.851 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 02:46:12.851 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 02:46:12.851 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=0 计算 start_offset_minutes=0
+2026-01-29 02:46:12.851 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=0, simulation_start_time=0ms
+2026-01-29 02:46:12.851 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 02:46:12.851 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:46:12.852 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 02:46:12.852 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 02:46:12.852 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 02:46:12.852 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 02:46:12.852 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 02:46:12.852 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 02:46:12.852 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 02:46:12.853 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 02:46:12.853 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 02:46:12.853 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 02:46:12.853 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 02:46:12.853 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 02:46:12.853 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 02:46:12.853 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 02:46:12.854 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 02:46:12.854 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 02:46:12.854 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 02:46:12.854 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 02:46:12.854 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 02:46:12.854 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-29 02:46:12.855 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 02:46:12.855 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml, current_config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:46:12.855 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:46:12.856 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 02:46:23.807 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:46:23.815 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:46:23.815 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 02:46:23.816 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 02:46:23.816 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=0 计算 start_offset_minutes=0
+2026-01-29 02:46:23.816 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=0, simulation_start_time=0ms
+2026-01-29 02:46:23.816 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 02:46:23.816 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:46:23.816 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 02:46:23.817 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 02:46:23.817 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 02:46:23.817 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 02:46:23.817 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 02:46:23.817 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 02:46:23.817 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 02:46:23.818 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 02:46:23.818 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 02:46:23.818 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 02:46:23.818 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 02:46:23.818 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 02:46:23.818 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 02:46:23.818 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 02:46:23.818 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 02:46:23.818 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 02:46:23.819 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 02:46:23.819 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 02:46:23.819 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 02:46:23.819 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-29 02:46:23.819 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 02:46:23.820 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml, current_config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:46:23.820 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:46:23.820 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 02:47:31.289 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:47:31.299 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:47:31.299 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 02:47:31.299 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 02:47:31.299 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=0 计算 start_offset_minutes=0
+2026-01-29 02:47:31.300 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=0, simulation_start_time=0ms
+2026-01-29 02:47:31.300 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 02:47:31.300 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:47:31.300 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 02:47:31.300 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 02:47:31.300 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 02:47:31.301 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 02:47:31.301 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 02:47:31.301 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 02:47:31.301 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 02:47:31.301 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 02:47:31.301 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 02:47:31.301 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 02:47:31.302 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 02:47:31.302 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 02:47:31.302 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 02:47:31.302 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 02:47:31.302 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 02:47:31.302 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 02:47:31.302 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 02:47:31.302 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 02:47:31.303 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 02:47:31.303 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-29 02:47:31.303 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 02:47:31.303 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml, current_config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:47:31.303 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:47:31.304 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 02:47:40.767 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:47:40.777 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:47:40.777 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 02:47:40.777 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 02:47:40.777 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=0 计算 start_offset_minutes=0
+2026-01-29 02:47:40.778 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=0, simulation_start_time=0ms
+2026-01-29 02:47:40.778 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 02:47:40.778 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:47:40.778 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 02:47:40.778 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 02:47:40.778 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 02:47:40.779 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 02:47:40.779 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 02:47:40.779 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 02:47:40.779 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 02:47:40.779 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 02:47:40.779 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 02:47:40.779 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 02:47:40.779 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 02:47:40.779 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 02:47:40.780 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 02:47:40.780 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 02:47:40.780 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 02:47:40.780 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 02:47:40.780 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 02:47:40.780 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 02:47:40.780 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 02:47:40.780 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-29 02:47:40.781 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 02:47:40.781 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml, current_config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:47:40.781 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:47:40.781 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 02:47:53.982 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:47:53.992 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:47:53.992 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 02:47:53.992 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 02:47:53.992 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=0 计算 start_offset_minutes=0
+2026-01-29 02:47:53.992 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=0, simulation_start_time=0ms
+2026-01-29 02:47:53.992 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 02:47:53.992 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:47:53.993 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 02:47:53.993 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 02:47:53.993 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 02:47:53.993 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 02:47:53.993 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 02:47:53.993 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 02:47:53.994 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 02:47:53.994 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 02:47:53.994 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 02:47:53.994 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 02:47:53.994 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 02:47:53.994 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 02:47:53.994 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 02:47:53.994 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 02:47:53.995 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 02:47:53.995 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 02:47:53.995 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 02:47:53.995 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 02:47:53.995 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 02:47:53.995 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-01-29 02:47:53.995 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 02:47:53.996 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml, current_config_file=test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:47:53.996 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/three_schedulers_6mj_comparison/system_3core_tie.yml
+2026-01-29 02:47:53.996 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 03:02:07.195 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/test_tie_quick.yml
+2026-01-29 03:02:07.204 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/test_tie_quick.yml
+2026-01-29 03:02:07.204 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.01
+2026-01-29 03:02:07.204 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.01
+2026-01-29 03:02:07.204 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=182, time_of_day_ms=0 计算 start_offset_minutes=260640
+2026-01-29 03:02:07.204 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=260640, simulation_start_time=15638400000ms
+2026-01-29 03:02:07.204 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 03:02:07.204 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/test_tie_quick.yml
+2026-01-29 03:02:07.204 [INFO    ] [energy_manager      ]   Initial energy: 0.01 J
+2026-01-29 03:02:07.204 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 03:02:07.205 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 03:02:07.205 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 03:02:07.205 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 03:02:07.205 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 03:02:07.205 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 03:02:07.205 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 03:02:07.205 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 03:02:07.205 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 03:02:07.205 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 03:02:07.205 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 03:02:07.205 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 03:02:07.206 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 03:02:07.206 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 03:02:07.206 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.01
+2026-01-29 03:02:07.206 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.01
+2026-01-29 03:02:07.206 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 03:02:07.206 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 03:02:07.206 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 15638400000ms
+2026-01-29 03:02:07.206 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 00:00:00
+2026-01-29 03:02:07.206 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 03:02:07.207 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/test_tie_quick.yml, current_config_file=/tmp/test_tie_quick.yml
+2026-01-29 03:02:07.207 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/test_tie_quick.yml
+2026-01-29 03:02:07.207 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.01J
+2026-01-29 03:02:25.493 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/test_tie_quick.yml
+2026-01-29 03:02:25.502 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/test_tie_quick.yml
+2026-01-29 03:02:25.502 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.01
+2026-01-29 03:02:25.502 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.01
+2026-01-29 03:02:25.502 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=182, time_of_day_ms=0 计算 start_offset_minutes=260640
+2026-01-29 03:02:25.502 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=260640, simulation_start_time=15638400000ms
+2026-01-29 03:02:25.502 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 03:02:25.503 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/test_tie_quick.yml
+2026-01-29 03:02:25.503 [INFO    ] [energy_manager      ]   Initial energy: 0.01 J
+2026-01-29 03:02:25.503 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 03:02:25.503 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 03:02:25.503 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 03:02:25.503 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 03:02:25.503 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 03:02:25.503 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 03:02:25.503 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 03:02:25.504 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 03:02:25.504 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 03:02:25.504 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 03:02:25.504 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 03:02:25.504 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 03:02:25.504 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 03:02:25.504 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 03:02:25.504 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.01
+2026-01-29 03:02:25.504 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.01
+2026-01-29 03:02:25.504 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 03:02:25.505 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 03:02:25.505 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 15638400000ms
+2026-01-29 03:02:25.505 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 00:00:00
+2026-01-29 03:02:25.505 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 03:02:25.505 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/test_tie_quick.yml, current_config_file=/tmp/test_tie_quick.yml
+2026-01-29 03:02:25.505 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/test_tie_quick.yml
+2026-01-29 03:02:25.505 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.01J
+2026-01-29 03:02:43.357 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/test_tie_quick.yml
+2026-01-29 03:02:43.365 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/test_tie_quick.yml
+2026-01-29 03:02:43.365 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.01
+2026-01-29 03:02:43.365 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.01
+2026-01-29 03:02:43.365 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=182, time_of_day_ms=0 计算 start_offset_minutes=260640
+2026-01-29 03:02:43.366 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=260640, simulation_start_time=15638400000ms
+2026-01-29 03:02:43.366 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 03:02:43.366 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/test_tie_quick.yml
+2026-01-29 03:02:43.366 [INFO    ] [energy_manager      ]   Initial energy: 0.01 J
+2026-01-29 03:02:43.366 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 03:02:43.366 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 03:02:43.366 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 03:02:43.366 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 03:02:43.367 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 03:02:43.367 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 03:02:43.367 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 03:02:43.367 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 03:02:43.367 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 03:02:43.367 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 03:02:43.367 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 03:02:43.367 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 03:02:43.367 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 03:02:43.368 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 03:02:43.368 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.01
+2026-01-29 03:02:43.368 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.01
+2026-01-29 03:02:43.368 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 03:02:43.368 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 03:02:43.368 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 15638400000ms
+2026-01-29 03:02:43.368 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 00:00:00
+2026-01-29 03:02:43.368 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 03:02:43.369 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/test_tie_quick.yml, current_config_file=/tmp/test_tie_quick.yml
+2026-01-29 03:02:43.369 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/test_tie_quick.yml
+2026-01-29 03:02:43.369 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.01J
+2026-01-29 03:02:47.835 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/test_tie_quick.yml
+2026-01-29 03:02:47.844 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/test_tie_quick.yml
+2026-01-29 03:02:47.845 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.01
+2026-01-29 03:02:47.845 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.01
+2026-01-29 03:02:47.845 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=182, time_of_day_ms=0 计算 start_offset_minutes=260640
+2026-01-29 03:02:47.845 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=260640, simulation_start_time=15638400000ms
+2026-01-29 03:02:47.845 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 03:02:47.845 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/test_tie_quick.yml
+2026-01-29 03:02:47.845 [INFO    ] [energy_manager      ]   Initial energy: 0.01 J
+2026-01-29 03:02:47.845 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 03:02:47.846 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 03:02:47.846 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 03:02:47.846 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 03:02:47.846 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 03:02:47.846 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 03:02:47.846 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 03:02:47.846 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 03:02:47.846 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 03:02:47.847 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 03:02:47.847 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 03:02:47.847 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 03:02:47.847 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 03:02:47.847 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 03:02:47.847 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.01
+2026-01-29 03:02:47.847 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.01
+2026-01-29 03:02:47.848 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 03:02:47.848 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 03:02:47.848 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 15638400000ms
+2026-01-29 03:02:47.848 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 00:00:00
+2026-01-29 03:02:47.848 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 03:02:47.849 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/test_tie_quick.yml, current_config_file=/tmp/test_tie_quick.yml
+2026-01-29 03:02:47.849 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/test_tie_quick.yml
+2026-01-29 03:02:47.849 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.01J
+2026-01-29 03:02:58.355 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/test_tie_quick.yml
+2026-01-29 03:02:58.363 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/test_tie_quick.yml
+2026-01-29 03:02:58.363 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.01
+2026-01-29 03:02:58.363 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.01
+2026-01-29 03:02:58.363 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=182, time_of_day_ms=0 计算 start_offset_minutes=260640
+2026-01-29 03:02:58.364 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=260640, simulation_start_time=15638400000ms
+2026-01-29 03:02:58.364 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 03:02:58.364 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/test_tie_quick.yml
+2026-01-29 03:02:58.364 [INFO    ] [energy_manager      ]   Initial energy: 0.01 J
+2026-01-29 03:02:58.364 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 03:02:58.364 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 03:02:58.364 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 03:02:58.364 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 03:02:58.364 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 03:02:58.365 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 03:02:58.365 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 03:02:58.365 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 03:02:58.365 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 03:02:58.365 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 03:02:58.365 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 03:02:58.365 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 03:02:58.365 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 03:02:58.365 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 03:02:58.366 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.01
+2026-01-29 03:02:58.366 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.01
+2026-01-29 03:02:58.366 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 03:02:58.366 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 03:02:58.366 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 15638400000ms
+2026-01-29 03:02:58.366 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 00:00:00
+2026-01-29 03:02:58.366 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 03:02:58.367 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/test_tie_quick.yml, current_config_file=/tmp/test_tie_quick.yml
+2026-01-29 03:02:58.367 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/test_tie_quick.yml
+2026-01-29 03:02:58.367 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.01J
+2026-01-29 03:03:07.982 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/test_tie_quick.yml
+2026-01-29 03:03:07.989 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/test_tie_quick.yml
+2026-01-29 03:03:07.989 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.01
+2026-01-29 03:03:07.989 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.01
+2026-01-29 03:03:07.989 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=182, time_of_day_ms=0 计算 start_offset_minutes=260640
+2026-01-29 03:03:07.989 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=260640, simulation_start_time=15638400000ms
+2026-01-29 03:03:07.989 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 03:03:07.990 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/test_tie_quick.yml
+2026-01-29 03:03:07.990 [INFO    ] [energy_manager      ]   Initial energy: 0.01 J
+2026-01-29 03:03:07.990 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 03:03:07.990 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 03:03:07.990 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 03:03:07.990 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 03:03:07.990 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 03:03:07.990 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 03:03:07.990 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 03:03:07.990 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 03:03:07.990 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 03:03:07.991 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 03:03:07.991 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 03:03:07.991 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 03:03:07.991 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 03:03:07.991 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 03:03:07.991 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.01
+2026-01-29 03:03:07.991 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.01
+2026-01-29 03:03:07.991 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 03:03:07.992 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 03:03:07.992 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 15638400000ms
+2026-01-29 03:03:07.992 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 00:00:00
+2026-01-29 03:03:07.992 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 03:03:07.992 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/test_tie_quick.yml, current_config_file=/tmp/test_tie_quick.yml
+2026-01-29 03:03:07.992 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/test_tie_quick.yml
+2026-01-29 03:03:07.992 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.01J
+2026-01-29 03:40:16.503 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/test_tie.yml
+2026-01-29 03:40:16.519 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/test_tie.yml
+2026-01-29 03:40:16.519 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.01
+2026-01-29 03:40:16.519 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.01
+2026-01-29 03:40:16.519 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=182, time_of_day_ms=0 计算 start_offset_minutes=260640
+2026-01-29 03:40:16.519 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=260640, simulation_start_time=15638400000ms
+2026-01-29 03:40:16.519 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 03:40:16.519 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/test_tie.yml
+2026-01-29 03:40:16.519 [INFO    ] [energy_manager      ]   Initial energy: 0.01 J
+2026-01-29 03:40:16.519 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 03:40:16.519 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 03:40:16.519 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 03:40:16.519 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 03:40:16.519 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 03:40:16.520 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 03:40:16.520 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 03:40:16.520 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 03:40:16.520 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 03:40:16.520 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 03:40:16.520 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 03:40:16.520 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 03:40:16.520 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 03:40:16.520 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 03:40:16.520 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.01
+2026-01-29 03:40:16.520 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.01
+2026-01-29 03:40:16.520 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 03:40:16.520 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 03:40:16.520 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 15638400000ms
+2026-01-29 03:40:16.520 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 00:00:00
+2026-01-29 03:40:16.520 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 03:40:16.520 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/test_tie.yml, current_config_file=/tmp/test_tie.yml
+2026-01-29 03:40:16.521 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/test_tie.yml
+2026-01-29 03:40:16.521 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.01J
+2026-01-29 03:40:29.949 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/test_tgf.yml
+2026-01-29 03:40:29.956 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/test_tgf.yml
+2026-01-29 03:40:29.956 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.01
+2026-01-29 03:40:29.956 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.01
+2026-01-29 03:40:29.956 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=182, time_of_day_ms=0 计算 start_offset_minutes=260640
+2026-01-29 03:40:29.957 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=260640, simulation_start_time=15638400000ms
+2026-01-29 03:40:29.957 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 03:40:29.957 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/test_tgf.yml
+2026-01-29 03:40:29.957 [INFO    ] [energy_manager      ]   Initial energy: 0.01 J
+2026-01-29 03:40:29.957 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 03:40:29.957 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 03:40:29.957 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 03:40:29.957 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 03:40:29.957 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 03:40:29.957 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 03:40:29.957 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 03:40:29.957 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 03:40:29.957 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 03:40:29.957 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 03:40:29.957 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 03:40:29.957 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 03:40:29.957 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 03:40:29.958 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 03:40:29.958 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.01
+2026-01-29 03:40:29.958 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.01
+2026-01-29 03:40:29.958 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 03:40:29.958 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 03:40:29.958 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 15638400000ms
+2026-01-29 03:40:29.958 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 00:00:00
+2026-01-29 03:40:29.958 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 03:40:29.958 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/test_tgf.yml, current_config_file=/tmp/test_tgf.yml
+2026-01-29 03:40:29.958 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/test_tgf.yml
+2026-01-29 03:40:29.959 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.01J
+2026-01-29 03:40:41.612 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/test_tgf.yml
+2026-01-29 03:40:41.619 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/test_tgf.yml
+2026-01-29 03:40:41.619 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.01
+2026-01-29 03:40:41.619 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.01
+2026-01-29 03:40:41.619 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=182, time_of_day_ms=0 计算 start_offset_minutes=260640
+2026-01-29 03:40:41.619 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=260640, simulation_start_time=15638400000ms
+2026-01-29 03:40:41.619 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 03:40:41.619 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/test_tgf.yml
+2026-01-29 03:40:41.620 [INFO    ] [energy_manager      ]   Initial energy: 0.01 J
+2026-01-29 03:40:41.620 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 03:40:41.620 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 03:40:41.620 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 03:40:41.620 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 03:40:41.620 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 03:40:41.620 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 03:40:41.620 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 03:40:41.621 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 03:40:41.621 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 03:40:41.621 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 03:40:41.621 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 03:40:41.621 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 03:40:41.621 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 03:40:41.621 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 03:40:41.621 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.01
+2026-01-29 03:40:41.622 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.01
+2026-01-29 03:40:41.622 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 03:40:41.622 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 03:40:41.622 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 15638400000ms
+2026-01-29 03:40:41.622 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 00:00:00
+2026-01-29 03:40:41.622 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 03:40:41.623 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/test_tgf.yml, current_config_file=/tmp/test_tgf.yml
+2026-01-29 03:40:41.623 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/test_tgf.yml
+2026-01-29 03:40:41.623 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.01J
+2026-01-29 03:43:43.075 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/test_tie.yml
+2026-01-29 03:43:43.081 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/test_tie.yml
+2026-01-29 03:43:43.081 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.01
+2026-01-29 03:43:43.081 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.01
+2026-01-29 03:43:43.081 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=182, time_of_day_ms=0 计算 start_offset_minutes=260640
+2026-01-29 03:43:43.081 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=260640, simulation_start_time=15638400000ms
+2026-01-29 03:43:43.082 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 03:43:43.082 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/test_tie.yml
+2026-01-29 03:43:43.082 [INFO    ] [energy_manager      ]   Initial energy: 0.01 J
+2026-01-29 03:43:43.082 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 03:43:43.082 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 03:43:43.082 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 03:43:43.082 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 03:43:43.082 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 03:43:43.082 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 03:43:43.082 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 03:43:43.083 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 03:43:43.083 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 03:43:43.083 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 03:43:43.083 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 03:43:43.083 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 03:43:43.083 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 03:43:43.083 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 03:43:43.083 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.01
+2026-01-29 03:43:43.084 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.01
+2026-01-29 03:43:43.084 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 03:43:43.084 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 03:43:43.084 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 15638400000ms
+2026-01-29 03:43:43.084 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 00:00:00
+2026-01-29 03:43:43.084 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 03:43:43.084 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/test_tie.yml, current_config_file=/tmp/test_tie.yml
+2026-01-29 03:43:43.085 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/test_tie.yml
+2026-01-29 03:43:43.085 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.01J
+2026-01-29 03:47:28.465 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/test_tie.yml
+2026-01-29 03:47:28.473 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/test_tie.yml
+2026-01-29 03:47:28.473 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.01
+2026-01-29 03:47:28.473 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.01
+2026-01-29 03:47:28.473 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=182, time_of_day_ms=0 计算 start_offset_minutes=260640
+2026-01-29 03:47:28.474 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=260640, simulation_start_time=15638400000ms
+2026-01-29 03:47:28.474 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 03:47:28.474 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/test_tie.yml
+2026-01-29 03:47:28.474 [INFO    ] [energy_manager      ]   Initial energy: 0.01 J
+2026-01-29 03:47:28.474 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 03:47:28.474 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 03:47:28.474 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 03:47:28.474 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 03:47:28.474 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 03:47:28.474 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 03:47:28.475 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 03:47:28.475 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 03:47:28.475 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 03:47:28.475 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 03:47:28.475 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 03:47:28.475 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 03:47:28.475 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 03:47:28.475 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 03:47:28.475 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.01
+2026-01-29 03:47:28.476 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.01
+2026-01-29 03:47:28.476 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 03:47:28.476 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 03:47:28.476 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 15638400000ms
+2026-01-29 03:47:28.476 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 00:00:00
+2026-01-29 03:47:28.476 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 03:47:28.477 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/test_tie.yml, current_config_file=/tmp/test_tie.yml
+2026-01-29 03:47:28.477 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/test_tie.yml
+2026-01-29 03:47:28.477 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.01J
+2026-01-29 03:57:38.355 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:57:38.368 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:57:38.368 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 03:57:38.368 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 03:57:38.369 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=182, time_of_day_ms=0 计算 start_offset_minutes=260640
+2026-01-29 03:57:38.369 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=260640, simulation_start_time=15638400000ms
+2026-01-29 03:57:38.369 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 03:57:38.369 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:57:38.369 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 03:57:38.369 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 03:57:38.369 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 03:57:38.369 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 03:57:38.369 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-01-29 03:57:38.370 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-01-29 03:57:38.370 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-29 03:57:38.370 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-01-29 03:57:38.370 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-01-29 03:57:38.370 [INFO    ] [energy_manager      ]     时间偏移: 260640 分钟
+2026-01-29 03:57:38.370 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 03:57:38.370 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 03:57:38.370 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 03:57:38.370 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 03:57:38.370 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 03:57:38.370 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 03:57:38.371 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 03:57:38.371 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 03:57:38.371 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 03:57:38.371 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 03:57:38.371 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 03:57:39.966 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-01-29 03:57:39.966 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-29 03:57:39.966 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-01-29 03:57:39.966 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 260640 分钟
+2026-01-29 03:57:39.966 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 03:57:39.967 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 03:57:39.967 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 03:57:39.967 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 03:57:39.967 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 15638400000ms
+2026-01-29 03:57:39.967 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 00:00:00
+2026-01-29 03:57:39.967 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 03:57:39.968 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml, current_config_file=/home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:57:39.968 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:57:39.968 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 03:57:47.515 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:57:47.527 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:57:47.528 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 03:57:47.528 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 03:57:47.528 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=182, time_of_day_ms=0 计算 start_offset_minutes=260640
+2026-01-29 03:57:47.528 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=260640, simulation_start_time=15638400000ms
+2026-01-29 03:57:47.528 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 03:57:47.528 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:57:47.528 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 03:57:47.528 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 03:57:47.528 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 03:57:47.528 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 03:57:47.528 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-01-29 03:57:47.528 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-01-29 03:57:47.528 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-29 03:57:47.529 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-01-29 03:57:47.529 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-01-29 03:57:47.529 [INFO    ] [energy_manager      ]     时间偏移: 260640 分钟
+2026-01-29 03:57:47.529 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 03:57:47.529 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 03:57:47.529 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 03:57:47.529 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 03:57:47.529 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 03:57:47.530 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 03:57:47.530 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 03:57:47.530 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 03:57:47.530 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 03:57:47.530 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 03:57:47.530 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 03:57:48.901 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-01-29 03:57:48.901 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-29 03:57:48.901 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-01-29 03:57:48.901 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 260640 分钟
+2026-01-29 03:57:48.901 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 03:57:48.901 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 03:57:48.901 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 03:57:48.902 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 03:57:48.902 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 15638400000ms
+2026-01-29 03:57:48.902 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 00:00:00
+2026-01-29 03:57:48.902 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 03:57:48.902 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml, current_config_file=/home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:57:48.902 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:57:48.902 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 03:58:00.268 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:58:00.281 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:58:00.281 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 03:58:00.281 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 03:58:00.281 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=182, time_of_day_ms=0 计算 start_offset_minutes=260640
+2026-01-29 03:58:00.281 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=260640, simulation_start_time=15638400000ms
+2026-01-29 03:58:00.281 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 03:58:00.282 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:58:00.282 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 03:58:00.282 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 03:58:00.282 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 03:58:00.282 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 03:58:00.282 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-01-29 03:58:00.282 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-01-29 03:58:00.282 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-29 03:58:00.282 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-01-29 03:58:00.283 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-01-29 03:58:00.283 [INFO    ] [energy_manager      ]     时间偏移: 260640 分钟
+2026-01-29 03:58:00.283 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 03:58:00.283 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 03:58:00.283 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 03:58:00.283 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 03:58:00.283 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 03:58:00.283 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 03:58:00.283 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 03:58:00.283 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 03:58:00.284 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 03:58:00.284 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 03:58:00.284 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 03:58:01.663 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-01-29 03:58:01.663 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-29 03:58:01.663 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-01-29 03:58:01.663 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 260640 分钟
+2026-01-29 03:58:01.663 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 03:58:01.663 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 03:58:01.663 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 03:58:01.663 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 03:58:01.663 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 15638400000ms
+2026-01-29 03:58:01.663 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 00:00:00
+2026-01-29 03:58:01.663 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 03:58:01.664 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml, current_config_file=/home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:58:01.664 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:58:01.664 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 03:58:16.252 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:58:16.265 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:58:16.265 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 03:58:16.265 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 03:58:16.265 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=182, time_of_day_ms=0 计算 start_offset_minutes=260640
+2026-01-29 03:58:16.265 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=260640, simulation_start_time=15638400000ms
+2026-01-29 03:58:16.265 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 03:58:16.265 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:58:16.265 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 03:58:16.265 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 03:58:16.266 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 03:58:16.266 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 03:58:16.266 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-01-29 03:58:16.266 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-01-29 03:58:16.266 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-29 03:58:16.266 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-01-29 03:58:16.266 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-01-29 03:58:16.266 [INFO    ] [energy_manager      ]     时间偏移: 260640 分钟
+2026-01-29 03:58:16.266 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 03:58:16.266 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 03:58:16.267 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 03:58:16.267 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 03:58:16.267 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 03:58:16.267 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 03:58:16.267 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 03:58:16.267 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 03:58:16.267 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 03:58:16.267 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 03:58:16.267 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 03:58:17.654 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-01-29 03:58:17.654 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-29 03:58:17.654 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-01-29 03:58:17.654 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 260640 分钟
+2026-01-29 03:58:17.654 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 03:58:17.655 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 03:58:17.655 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 03:58:17.655 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 03:58:17.655 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 15638400000ms
+2026-01-29 03:58:17.655 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 00:00:00
+2026-01-29 03:58:17.655 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 03:58:17.656 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml, current_config_file=/home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:58:17.656 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:58:17.656 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 03:59:15.840 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:59:15.852 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:59:15.853 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 03:59:15.853 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 03:59:15.853 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=182, time_of_day_ms=43200000 计算 start_offset_minutes=261360
+2026-01-29 03:59:15.853 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=261360, simulation_start_time=15681600000ms
+2026-01-29 03:59:15.853 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 03:59:15.853 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:59:15.853 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 03:59:15.853 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 03:59:15.853 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 03:59:15.853 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 03:59:15.853 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-01-29 03:59:15.854 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-01-29 03:59:15.854 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-29 03:59:15.854 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-01-29 03:59:15.854 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-01-29 03:59:15.854 [INFO    ] [energy_manager      ]     时间偏移: 261360 分钟
+2026-01-29 03:59:15.854 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 03:59:15.854 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 03:59:15.854 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 03:59:15.854 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 03:59:15.854 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 03:59:15.854 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 03:59:15.855 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 03:59:15.855 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 03:59:15.855 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 03:59:15.855 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 03:59:15.855 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 03:59:17.223 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-01-29 03:59:17.223 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-29 03:59:17.223 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-01-29 03:59:17.223 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 261360 分钟
+2026-01-29 03:59:17.223 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 03:59:17.224 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 03:59:17.224 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 03:59:17.224 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 03:59:17.224 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 15681600000ms
+2026-01-29 03:59:17.224 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-01-29 03:59:17.224 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 03:59:17.224 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml, current_config_file=/home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:59:17.225 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:59:17.225 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 03:59:45.711 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:59:45.724 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:59:45.724 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 03:59:45.725 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 03:59:45.725 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=182, time_of_day_ms=43200000 计算 start_offset_minutes=261360
+2026-01-29 03:59:45.725 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=261360, simulation_start_time=15681600000ms
+2026-01-29 03:59:45.725 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 03:59:45.725 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:59:45.725 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 03:59:45.725 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 03:59:45.725 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 03:59:45.725 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 03:59:45.725 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-01-29 03:59:45.725 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-01-29 03:59:45.726 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-29 03:59:45.726 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-01-29 03:59:45.726 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-01-29 03:59:45.726 [INFO    ] [energy_manager      ]     时间偏移: 261360 分钟
+2026-01-29 03:59:45.726 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 03:59:45.726 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 03:59:45.726 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 03:59:45.726 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 03:59:45.726 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 03:59:45.727 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 03:59:45.727 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 03:59:45.727 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 03:59:45.727 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 03:59:45.727 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 03:59:45.727 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 03:59:47.104 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-01-29 03:59:47.104 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-29 03:59:47.107 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-01-29 03:59:47.108 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 261360 分钟
+2026-01-29 03:59:47.108 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 03:59:47.108 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 03:59:47.108 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 03:59:47.108 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 03:59:47.108 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 15681600000ms
+2026-01-29 03:59:47.108 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-01-29 03:59:47.109 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 03:59:47.109 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml, current_config_file=/home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:59:47.109 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:59:47.109 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 03:59:54.287 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:59:54.300 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:59:54.300 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 03:59:54.300 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 03:59:54.301 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=182, time_of_day_ms=43200000 计算 start_offset_minutes=261360
+2026-01-29 03:59:54.301 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=261360, simulation_start_time=15681600000ms
+2026-01-29 03:59:54.301 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 03:59:54.301 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:59:54.301 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 03:59:54.301 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 03:59:54.301 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 03:59:54.301 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 03:59:54.301 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-01-29 03:59:54.301 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-01-29 03:59:54.302 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-29 03:59:54.302 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-01-29 03:59:54.302 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-01-29 03:59:54.302 [INFO    ] [energy_manager      ]     时间偏移: 261360 分钟
+2026-01-29 03:59:54.302 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 03:59:54.302 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 03:59:54.302 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 03:59:54.302 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 03:59:54.302 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 03:59:54.302 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 03:59:54.303 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 03:59:54.303 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 03:59:54.303 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 03:59:54.303 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 03:59:54.303 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 03:59:55.690 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-01-29 03:59:55.690 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-29 03:59:55.690 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-01-29 03:59:55.690 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 261360 分钟
+2026-01-29 03:59:55.691 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 03:59:55.691 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 03:59:55.691 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 03:59:55.691 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 03:59:55.691 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 15681600000ms
+2026-01-29 03:59:55.691 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-01-29 03:59:55.691 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 03:59:55.692 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml, current_config_file=/home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:59:55.692 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 03:59:55.692 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 04:01:16.647 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 04:01:16.659 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 04:01:16.659 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 04:01:16.660 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 04:01:16.660 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=182, time_of_day_ms=0 计算 start_offset_minutes=260640
+2026-01-29 04:01:16.660 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=260640, simulation_start_time=15638400000ms
+2026-01-29 04:01:16.660 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 04:01:16.660 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 04:01:16.660 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 04:01:16.660 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 04:01:16.660 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 04:01:16.660 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 04:01:16.660 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-01-29 04:01:16.661 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-01-29 04:01:16.661 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-29 04:01:16.661 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-01-29 04:01:16.661 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-01-29 04:01:16.661 [INFO    ] [energy_manager      ]     时间偏移: 260640 分钟
+2026-01-29 04:01:16.661 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 04:01:16.661 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 04:01:16.661 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 04:01:16.661 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 04:01:16.661 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 04:01:16.662 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 04:01:16.662 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 04:01:16.662 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 04:01:16.662 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 04:01:16.662 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 04:01:16.662 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 04:01:18.058 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-01-29 04:01:18.059 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-29 04:01:18.059 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-01-29 04:01:18.059 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 260640 分钟
+2026-01-29 04:01:18.059 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 04:01:18.059 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 04:01:18.059 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 04:01:18.059 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 04:01:18.059 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 15638400000ms
+2026-01-29 04:01:18.060 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 00:00:00
+2026-01-29 04:01:18.060 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 04:01:18.060 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml, current_config_file=/home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 04:01:18.060 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tie_6mj_solar.yml
+2026-01-29 04:01:18.060 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 04:01:23.688 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tgf_6mj_solar.yml
+2026-01-29 04:01:23.706 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tgf_6mj_solar.yml
+2026-01-29 04:01:23.706 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 04:01:23.706 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 04:01:23.706 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=182, time_of_day_ms=0 计算 start_offset_minutes=260640
+2026-01-29 04:01:23.706 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=260640, simulation_start_time=15638400000ms
+2026-01-29 04:01:23.707 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 04:01:23.707 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tgf_6mj_solar.yml
+2026-01-29 04:01:23.707 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 04:01:23.707 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 04:01:23.707 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 04:01:23.707 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 04:01:23.707 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-01-29 04:01:23.707 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-01-29 04:01:23.707 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-29 04:01:23.707 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-01-29 04:01:23.707 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-01-29 04:01:23.708 [INFO    ] [energy_manager      ]     时间偏移: 260640 分钟
+2026-01-29 04:01:23.708 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 04:01:23.708 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 04:01:23.708 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 04:01:23.708 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 04:01:23.708 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 04:01:23.708 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 04:01:23.708 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 04:01:23.708 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 04:01:23.709 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 04:01:23.709 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 04:01:23.709 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 04:01:25.677 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-01-29 04:01:25.678 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-29 04:01:25.678 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-01-29 04:01:25.678 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 260640 分钟
+2026-01-29 04:01:25.678 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 04:01:25.678 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 04:01:25.678 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 04:01:25.679 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 04:01:25.679 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 15638400000ms
+2026-01-29 04:01:25.679 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 00:00:00
+2026-01-29 04:01:25.679 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 04:01:25.680 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tgf_6mj_solar.yml, current_config_file=/home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tgf_6mj_solar.yml
+2026-01-29 04:01:25.680 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_tgf_6mj_solar.yml
+2026-01-29 04:01:25.680 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
+2026-01-29 04:01:36.345 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_btie_6mj_solar.yml
+2026-01-29 04:01:36.357 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_btie_6mj_solar.yml
+2026-01-29 04:01:36.357 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.006
+2026-01-29 04:01:36.357 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.006
+2026-01-29 04:01:36.357 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=182, time_of_day_ms=0 计算 start_offset_minutes=260640
+2026-01-29 04:01:36.357 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=260640, simulation_start_time=15638400000ms
+2026-01-29 04:01:36.357 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-01-29 04:01:36.357 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_btie_6mj_solar.yml
+2026-01-29 04:01:36.357 [INFO    ] [energy_manager      ]   Initial energy: 0.006 J
+2026-01-29 04:01:36.357 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-01-29 04:01:36.357 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-01-29 04:01:36.357 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-01-29 04:01:36.357 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-01-29 04:01:36.357 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-01-29 04:01:36.357 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-29 04:01:36.358 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-01-29 04:01:36.358 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-01-29 04:01:36.358 [INFO    ] [energy_manager      ]     时间偏移: 260640 分钟
+2026-01-29 04:01:36.358 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-01-29 04:01:36.358 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-01-29 04:01:36.358 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-01-29 04:01:36.358 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-01-29 04:01:36.358 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-01-29 04:01:36.358 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-01-29 04:01:36.358 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-01-29 04:01:36.359 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-01-29 04:01:36.359 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-01-29 04:01:36.359 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-01-29 04:01:36.359 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-01-29 04:01:37.732 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-01-29 04:01:37.733 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-01-29 04:01:37.733 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-01-29 04:01:37.733 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 260640 分钟
+2026-01-29 04:01:37.733 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.006
+2026-01-29 04:01:37.733 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.006
+2026-01-29 04:01:37.733 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-01-29 04:01:37.734 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-01-29 04:01:37.734 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 15638400000ms
+2026-01-29 04:01:37.734 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 00:00:00
+2026-01-29 04:01:37.734 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-01-29 04:01:37.734 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_btie_6mj_solar.yml, current_config_file=/home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_btie_6mj_solar.yml
+2026-01-29 04:01:37.734 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_results/solar_6mj_test/system_3core_gpfp_btie_6mj_solar.yml
+2026-01-29 04:01:37.734 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.006J
