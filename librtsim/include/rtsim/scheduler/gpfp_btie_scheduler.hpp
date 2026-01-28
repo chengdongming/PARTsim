@@ -132,6 +132,7 @@ namespace RTSim {
         // ========== BTIE批量调度状态 ==========
         std::vector<AbsRTTask *> _current_batch_tasks;  // 当前批量任务
         bool _batch_scheduled_this_tick;                // 本tick是否已批量调度
+        bool _energy_depleted;                          // 能量是否已耗尽（Bug #5修复）
         int _current_batch_size;                        // 当前批量大小
 
         // ========== 能量记账（每ms累计） ==========
