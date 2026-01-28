@@ -151,6 +151,9 @@ namespace RTSim {
             int total_tick_count = 0;
         } _stats;
 
+        // ========== 能量耗尽管理 ==========
+        bool _energy_depleted;  // ⭐ 能量是否已耗尽（Bug修复）
+
         // ========== 私有方法 ==========
 
         // 核心调度逻辑

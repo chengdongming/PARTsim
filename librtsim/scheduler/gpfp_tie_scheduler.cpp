@@ -177,7 +177,8 @@ namespace RTSim {
           _use_real_solar_data(false),
           _start_time_offset(0),
           _tick_event(nullptr),
-          _kernel(nullptr) {
+          _kernel(nullptr),
+          _energy_depleted(false) {  // ⭐ 初始化能量耗尽标志
 
         SCHEDULER_LOG_INFO("🚀 [TIE] TIE Scheduler 初始化");
 
@@ -357,6 +358,12 @@ namespace RTSim {
         SCHEDULER_LOG_DEBUG(std::string("🔄 [TIE] performTickScheduling @ ") +
                            std::to_string(static_cast<int64_t>(SIMUL.getTime())) + "ms" +
                            " 能量=" + std::to_string(_current_energy) + "J");
+
+        // ⭐ Bug修复3：能量耗尽时跳过调度
+        if (_energy_depleted && _current_energy < 0.000001) {
+            SCHEDULER_LOG_INFO(std::string("💀 [TIE] 能量已耗尽，跳过Tick调度"));
+            return;  // 不进行任何调度，包括中断检查
+        }
 
         _stats.total_tick_count++;
 
@@ -673,6 +680,13 @@ namespace RTSim {
             return;
         }
 
+        // ⭐ Bug修复4：能量耗尽时拒绝新任务
+        if (_energy_depleted && _current_energy < 0.000001) {
+            SCHEDULER_LOG_WARNING(std::string("💀 [TIE] 能量已耗尽，拒绝添加新任务: ") +
+                                     getTaskName(task));
+            return;  // 拒绝添加
+        }
+
         SCHEDULER_LOG_INFO(std::string("📥 [TIE] 添加任务: ") + getTaskName(task));
         SCHEDULER_LOG_DEBUG(std::string("   参数: ") + params);
 
@@ -868,17 +882,43 @@ namespace RTSim {
             total_energy_to_deduct += unit_energy;
         }
 
+        // ⭐ Bug修复1：能量扣除不允许变成负数
         // 扣除所有运行中任务上一ms的能量
-        if (total_energy_to_deduct > 0 && _current_energy >= total_energy_to_deduct - EPSILON) {
-            double old_energy = _current_energy;
-            _current_energy -= total_energy_to_deduct;
-            _stats.total_energy_consumed += total_energy_to_deduct;
+        if (total_energy_to_deduct > 0) {
+            if (_current_energy >= total_energy_to_deduct) {
+                // ✅ 能量充足，正常扣除
+                double old_energy = _current_energy;
+                _current_energy -= total_energy_to_deduct;
+                _stats.total_energy_consumed += total_energy_to_deduct;
 
-            SCHEDULER_LOG_INFO(std::string("⚡ [TIE] Tick事件: 扣除运行中任务能量 ") +
-                               std::to_string(total_energy_to_deduct * 1000) + " mJ，" +
-                               std::to_string(old_energy * 1000) + " mJ → " +
-                               std::to_string(_current_energy * 1000) + " mJ (" +
-                               std::to_string(running_tasks.size()) + " 个任务)");
+                SCHEDULER_LOG_INFO(std::string("⚡ [TIE] Tick事件: 扣除运行中任务能量 ") +
+                                   std::to_string(total_energy_to_deduct * 1000) + " mJ，" +
+                                   std::to_string(old_energy * 1000) + " mJ → " +
+                                   std::to_string(_current_energy * 1000) + " mJ (" +
+                                   std::to_string(running_tasks.size()) + " 个任务)");
+            } else {
+                // ❌ 能量不足！不扣除能量，立即中断所有任务
+                SCHEDULER_LOG_WARNING(std::string("⚠️ [TIE] 能量不足，无法扣除能量: ") +
+                                         "需要=" + std::to_string(total_energy_to_deduct * 1000) + " mJ " +
+                                         "当前=" + std::to_string(_current_energy * 1000) + " mJ " +
+                                         "运行中任务数=" + std::to_string(running_tasks.size()));
+
+                // ⭐ Bug修复2：设置能量耗尽标志
+                _energy_depleted = true;
+
+                // 将所有运行中任务加入中断列表
+                for (auto &map_pair : running_tasks) {
+                    AbsRTTask* task = map_pair.second;
+                    if (task && std::find(tasks_to_interrupt.begin(), tasks_to_interrupt.end(), task) == tasks_to_interrupt.end()) {
+                        tasks_to_interrupt.push_back(task);
+                    }
+                }
+
+                SCHEDULER_LOG_WARNING(std::string("💀 [TIE] 能量已耗尽，将中断所有运行中任务: ") +
+                                         "任务数=" + std::to_string(tasks_to_interrupt.size()));
+
+                // 跳过能量扣除（保持_current_energy不变）
+            }
         }
 
         // 1. 检查所有运行中的任务
