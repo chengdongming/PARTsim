@@ -40,12 +40,28 @@ namespace RTSim {
         fd << "\"time\" : \"" << SIMUL.getTime() << "\", ";
         fd << "\"event_type\" : \"" << evt_name << "\", ";
         fd << "\"task_name\" : \"" << tt.getName() << "\",";
-        fd << "\"arrival_time\" : \"" << tt.getArrival() << "\"}";
+        // ⭐ 修复：使用getLastArrival()获取当前实例的到达时间，而不是第一次实例的到达时间
+        fd << "\"arrival_time\" : \"" << tt.getLastArrival() << "\"}";
     }
 
     void JSONTrace::probe(ArrEvt &e) {
         Task &tt = *(e.getTask());
-        writeTaskEvent(tt, "arrival");
+
+        // ⭐ 修复：arrival事件应该使用当前时间作为arrival_time
+        // 因为在ArrEvt触发时，task->getLastArrival()还没有更新
+        if (max_time >= 0 && SIMUL.getTime() >= max_time) {
+            return;
+        }
+
+        if (!first_event)
+            fd << "," << std::endl;
+        else
+            first_event = false;
+        fd << "{ ";
+        fd << "\"time\" : \"" << SIMUL.getTime() << "\", ";
+        fd << "\"event_type\" : \"arrival\", ";
+        fd << "\"task_name\" : \"" << tt.getName() << "\",";
+        fd << "\"arrival_time\" : \"" << SIMUL.getTime() << "\"}";  // 使用当前时间
     }
 
     void JSONTrace::probe(EndEvt &e) {
@@ -71,12 +87,27 @@ namespace RTSim {
         // 但这并不一定意味着真的有deadline miss
         MetaSim::Tick current_time = SIMUL.getTime();
         MetaSim::Tick arrival_time = tt.getArrival();
-        MetaSim::Tick relative_deadline = tt.getDeadline();
+        // ⭐ 修复：使用getRelDline()获取相对截止时间，而不是getDeadline()（返回绝对截止时间）
+        MetaSim::Tick relative_deadline = tt.getRelDline();
         MetaSim::Tick absolute_deadline = arrival_time + relative_deadline;
 
         // 只有当前时间真的超过截止时间时才记录
         if (current_time >= absolute_deadline) {
-            writeTaskEvent(tt, "dline_miss");
+            // ⭐ 修复：使用当前时间作为arrival_time
+            // 因为对于周期性任务，getLastArrival()可能返回第一次实例的到达时间
+            if (max_time >= 0 && SIMUL.getTime() >= max_time) {
+                return;
+            }
+
+            if (!first_event)
+                fd << "," << std::endl;
+            else
+                first_event = false;
+            fd << "{ ";
+            fd << "\"time\" : \"" << SIMUL.getTime() << "\", ";
+            fd << "\"event_type\" : \"dline_miss\", ";
+            fd << "\"task_name\" : \"" << tt.getName() << "\",";
+            fd << "\"arrival_time\" : \"" << current_time - relative_deadline << "\"}";  // 反推到达时间
         }
         // 否则忽略这个假阳性事件
     }
