@@ -1,0 +1,17 @@
+./build/rtsim/rtsim: missing required options: TASKSET DURATION
+usage: ./build/rtsim/rtsim [-h] [-t TRACE] [-d] [-D DEBUG-OUT] SYSTEM TASKSET
+                           DURATION
+
+Required positional arguments:
+     SYSTEM                     The YAML file description for the system
+     TASKSET                    The file containing the taskset description
+     DURATION                   The duration of the simulation in time units
+
+Optional arguments:
+    -h, --help                  Show this help message and exit
+    -t TRACE, --trace TRACE     The file name where to store a trace (either txt
+                                or json) (default: '')
+    -d, --debug                 Enables debug prints throughout the simulation
+    -D DEBUG-OUT,
+    --debug-out DEBUG-OUT       The file name where to store debug prints
+                                (default: 'debug.txt')

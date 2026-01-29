@@ -1,0 +1,187 @@
+================================================================================
+              追踪文件问题分析报告
+================================================================================
+
+测试日期: 2026-01-29
+测试场景: 12mJ初始能量，3个周期性任务，120ms仿真
+
+================================================================================
+                            发现的问题
+================================================================================
+
+问题1: ❌ BTIE仿真崩溃（最严重）
+----------------------------------------
+位置: test_results/energy_2core_3task_test/results_new/btie_12mj_solar.log
+时间: 14ms
+错误信息: EXCEPTION: Class=Task::onInstrEnd() Module=InstrExc Message:No CPU!
+
+问题描述:
+  - BTIE在12ms时能量耗尽，task_3被终止
+  - task_3调用kernel->onEnd()终止
+  - 但tick事件继续调度（13ms, 14ms...）
+  - 在14ms时，某个任务试图在已经没有CPU分配的情况下继续执行
+  - 导致仿真崩溃
+
+影响:
+  ✗ BTIE追踪文件只记录到8ms，缺失所有后续事件
+  ✗ 仿真没有运行到120ms，在14ms就异常终止
+  ✗ 无法获得完整的调度统计信息
+
+根本原因:
+  - 能量耗尽后，tick事件没有正确停止
+  - 被终止的任务仍在尝试执行指令
+  - onEnd()调用没有正确清理任务状态
+
+修复建议:
+  1. 能量耗尽时，应该立即停止所有tick事件调度
+  2. onEnd()调用后，应该立即取消所有与该任务相关的事件
+  3. 在performTickScheduling()开始时检查_energy_depleted，如果为true则不调度
+
+================================================================================
+
+问题2: ⚠️ TIE和TGF追踪文件中arrival_time字段错误
+----------------------------------------
+位置: tie_12mj_trace.json, tgf_12mj_trace.json
+
+问题描述:
+  周期性任务的第二次、第三次到达时，arrival_time字段没有更新。
+
+示例（第14行）:
+  { "time" : "40", "event_type" : "arrival", "task_name" : "task_3","arrival_time" : "0"}
+  
+  正确应该是:
+  { "time" : "40", "event_type" : "arrival", "task_name" : "task_3","arrival_time" : "40"}
+
+错误列表:
+  第14行: 40ms arrival, task_3, arrival_time=0  ❌ (应该是40)
+  第16行: 40ms arrival, task_1, arrival_time=20 ❌ (应该是40)
+  第17行: 60ms arrival, task_2, arrival_time=30 ❌ (应该是60)
+  第18行: 60ms arrival, task_1, arrival_time=20 ❌ (应该是60)
+  第20行: 80ms arrival, task_3, arrival_time=0  ❌ (应该是80)
+  第22行: 80ms arrival, task_1, arrival_time=20 ❌ (应该是80)
+  第24行: 90ms arrival, task_2, arrival_time=30 ❌ (应该是90)
+  第26行: 100ms arrival, task_1, arrival_time=20 ❌ (应该是100)
+
+影响:
+  ⚠️ 追踪文件的数据不准确
+  ⚠️ 无法通过arrival_time区分任务的不同实例
+  ⚠️ Deadline miss事件的arrival_time也受影响
+
+根本原因:
+  - 追踪系统在记录arrival事件时，使用了task->getArrival()
+  - getArrival()返回的是任务的初始到达时间（第一次实例）
+  - 周期性任务的后续实例应该使用实际的到达时间
+
+修复建议:
+  1. 在追踪系统中，使用当前仿真时间而不是task->getArrival()
+  2. 或者为周期性任务的每个实例创建唯一的arrival_time
+  3. 添加instance_id字段来区分同一任务的不同实例
+
+================================================================================
+
+问题3: ⚠️ task_3的第二次到达事件重复
+----------------------------------------
+位置: tie_12mj_trace.json, tgf_12mj_trace.json
+
+问题描述:
+  在追踪文件中，task_3在40ms有两次arrival事件记录：
+  
+  第14行: { "time" : "40", "event_type" : "arrival", "task_name" : "task_3","arrival_time" : "0"}
+  第15行: { "time" : "40", "event_type" : "dline_miss", "task_name" : "task_3","arrival_time" : "0"}
+  第16行: { "time" : "40", "event_type" : "arrival", "task_name" : "task_1","arrival_time" : "20"}
+  
+  等等，第14行和第16行之间的第15行是dline_miss，这是正确的。
+  但为什么task_3在40ms到达，然后在同一时间又有一个task_1到达？
+
+原因分析:
+  - task_3在0ms到达，deadline是40ms
+  - task_3在12ms时被descheduled（能量耗尽）
+  - task_3应该在40ms触发deadline miss事件 ✓
+  - task_1的第二次实例应该在40ms到达（周期20ms）✓
+  
+  所以第14-16行是：
+  14: task_3第二次实例到达（40ms）- 但arrival_time错误记录为0
+  15: task_3第一次实例的deadline miss（0ms到达，40ms deadline）✓
+  16: task_1第三次实例到达（40ms）- 但arrival_time错误记录为20
+  
+  实际上task_1应该是：
+  - 第一次: 0ms到达
+  - 第二次: 20ms到达
+  - 第三次: 40ms到达
+
+  但追踪文件显示：
+  - 第12行: 20ms, task_1, arrival_time=20 ✓
+  - 第16行: 40ms, task_1, arrival_time=20 ❌ (应该是40)
+  - 第18行: 60ms, task_1, arrival_time=20 ❌ (应该是60)
+
+  这表明task_1的所有后续实例的arrival_time都被错误地记录为20ms。
+
+================================================================================
+
+问题4: ❌ BTIE追踪文件严重不完整
+----------------------------------------
+位置: btie_12mj_trace.json
+
+缺失内容:
+  ✗ 12ms时的descheduled事件
+  ✗ 20ms及后续所有周期性任务的arrival事件
+  ✗ 40ms的deadline miss事件
+  ✗ 所有后续的deadline miss事件
+
+完整追踪应该有的事件（对比TIE）:
+  12ms: descheduled, task_3, arrival_time=0
+  20ms: arrival, task_1, arrival_time=20
+  30ms: arrival, task_2, arrival_time=30
+  40ms: arrival, task_3, arrival_time=40
+  40ms: dline_miss, task_3, arrival_time=0
+  40ms: arrival, task_1, arrival_time=40
+  60ms: arrival, task_2, arrival_time=60
+  60ms: arrival, task_1, arrival_time=60
+  60ms: dline_miss, task_1, arrival_time=20
+  ... (更多事件)
+
+原因:
+  - 仿真在14ms崩溃
+  - 后续所有事件都没有被记录
+
+================================================================================
+
+                          修复优先级
+================================================================================
+
+P0 (紧急修复):
+  1. BTIE: 修复能量耗尽后的仿真崩溃问题
+     - 在performTickScheduling()开始时检查_energy_depleted
+     - 确保onEnd()调用后任务不会继续执行
+     
+P1 (高优先级):
+  2. TIE/TGF/BTIE: 修复追踪文件中arrival_time字段错误
+     - 使用实际到达时间而不是task->getArrival()
+     - 添加instance_id字段
+     
+P2 (中优先级):
+  3. BTIE: 确保追踪记录在仿真崩溃前完整保存
+     - 实时写入追踪文件，而不是结束时写入
+     - 或者在崩溃时保存部分追踪
+
+================================================================================
+
+                          测试验证建议
+================================================================================
+
+1. 修复后重新运行12mJ测试，验证：
+   - BTIE不会崩溃
+   - 追踪文件完整记录120ms内的所有事件
+   - arrival_time字段正确
+   
+2. 对比三种算法的追踪文件：
+   - 事件数量是否一致
+   - arrival_time是否递增
+   - deadline miss是否正确记录
+   
+3. 检查边界情况：
+   - 0J初始能量
+   - 100J初始能量
+   - 不同周期任务组合
+
+================================================================================

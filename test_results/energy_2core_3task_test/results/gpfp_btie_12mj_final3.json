@@ -1,0 +1,11 @@
+{
+    "events" : [
+{ "time" : "0", "event_type" : "arrival", "task_name" : "task_1","arrival_time" : "0"},
+{ "time" : "0", "event_type" : "arrival", "task_name" : "task_2","arrival_time" : "0"},
+{ "time" : "0", "event_type" : "arrival", "task_name" : "task_3","arrival_time" : "0"},
+{ "time" : "0", "event_type" : "scheduled", "task_name" : "task_1","arrival_time" : "0"},
+{ "time" : "0", "event_type" : "scheduled", "task_name" : "task_2","arrival_time" : "0"},
+{ "time" : "5", "event_type" : "end_instance", "task_name" : "task_1","arrival_time" : "0"},
+{ "time" : "5", "event_type" : "scheduled", "task_name" : "task_3","arrival_time" : "0"},
+{ "time" : "8", "event_type" : "end_instance", "task_name" : "task_2","arrival_time" : "0"},
+{ "time" : "10", "event_type" : "descheduled", "task_name" : "task_3","arrival_time" : "0"}] }
