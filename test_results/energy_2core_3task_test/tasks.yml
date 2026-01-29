@@ -1,0 +1,24 @@
+taskset:
+  - name: task_1
+    iat: 20  # 20ms周期
+    runtime: 5  # 5ms WCET
+    deadline: 20
+    params: "period=20,wcet=5,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(5, bzip2)
+
+  - name: task_2
+    iat: 30  # 30ms周期
+    runtime: 8  # 8ms WCET
+    deadline: 30
+    params: "period=30,wcet=8,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(8, bzip2)
+
+  - name: task_3
+    iat: 40  # 40ms周期
+    runtime: 10  # 10ms WCET
+    deadline: 40
+    params: "period=40,wcet=10,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(10, bzip2)

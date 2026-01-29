@@ -627,11 +627,45 @@ namespace RTSim {
             std::sort(sorted_ready.begin(), sorted_ready.end(),
                 [](AbsRTTask* a, AbsRTTask* b) { return a->getDeadline() < b->getDeadline(); });
 
-            // ⭐ Bug #4修复：只选择实际能调度的任务
-            // 之前：选择K个任务（可能超过CPU限制）
-            // 修复后：选择actual_new_tasks_can_schedule个任务
-            for (int j = 0; j < actual_new_tasks_can_schedule && j < static_cast<int>(sorted_ready.size()); ++j) {
-                new_tasks_to_schedule.push_back(sorted_ready[j]);
+            // 🔍 调试：输出就绪队列内容
+            SCHEDULER_LOG_INFO(std::string("📋 [BTIE] 就绪队列内容 (共") +
+                               std::to_string(sorted_ready.size()) + "个任务):");
+            for (size_t i = 0; i < sorted_ready.size() && i < 5; ++i) {
+                SCHEDULER_LOG_INFO(std::string("  [") + std::to_string(i) + "] " +
+                                   getTaskName(sorted_ready[i]) +
+                                   " deadline=" + std::to_string(static_cast<int>(sorted_ready[i]->getDeadline())));
+            }
+
+            // 🔍 调试：输出运行中任务列表
+            SCHEDULER_LOG_INFO(std::string("🏃 [BTIE] 运行中任务列表 (共") +
+                               std::to_string(running_task_list.size()) + "个任务):");
+            for (size_t i = 0; i < running_task_list.size(); ++i) {
+                SCHEDULER_LOG_INFO(std::string("  [") + std::to_string(i) + "] " +
+                                   getTaskName(running_task_list[i]));
+            }
+
+            // ⭐ 关键修复：排除已经在运行中的任务，避免重复调度
+            std::vector<AbsRTTask *> filtered_ready;
+            for (auto* task : sorted_ready) {
+                bool is_running = false;
+                for (auto* running_task : running_task_list) {
+                    if (task == running_task) {
+                        is_running = true;
+                        SCHEDULER_LOG_DEBUG(std::string("⚠️ [BTIE] 跳过已在运行中的任务: ") +
+                                           getTaskName(task));
+                        break;
+                    }
+                }
+                if (!is_running) {
+                    filtered_ready.push_back(task);
+                }
+            }
+
+            // ⭐ Bug #4修复：只选择实际能调度的任务（从过滤后的队列）
+            for (int j = 0; j < actual_new_tasks_can_schedule && j < static_cast<int>(filtered_ready.size()); ++j) {
+                new_tasks_to_schedule.push_back(filtered_ready[j]);
+                SCHEDULER_LOG_INFO(std::string("✅ [BTIE] 选择新任务: ") +
+                                   getTaskName(filtered_ready[j]));
             }
 
             // 保存所有就绪任务用于日志
@@ -686,12 +720,15 @@ namespace RTSim {
             
             // ⭐ 预扣模式：立即扣除新任务的能量（而不是等到下个tick）
             double old_energy = _current_energy;
-            _current_energy -= total_energy_needed;
-            _stats.total_energy_consumed += total_energy_needed;
+            // ⭐ Bug #5修复：只扣除新任务的能量（运行任务能量已在上一tick预扣）
+            _current_energy -= new_tasks_energy;
+            _stats.total_energy_consumed += new_tasks_energy;
 
-            SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] 预扣新任务能量: ") +
-                              "任务数=" + std::to_string(new_tasks_to_schedule.size()) +
-                              " 能耗=" + std::to_string(total_energy_needed * 1000) + " mJ " +
+            SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] 预扣新任务能量（Bug #5修复）: ") +
+                              "新任务数=" + std::to_string(new_tasks_to_schedule.size()) +
+                              " 运行任务数=" + std::to_string(running_count) +
+                              " 扣除能耗=" + std::to_string(new_tasks_energy * 1000) + " mJ " +
+                              "(运行任务=" + std::to_string(running_tasks_renewal_energy * 1000) + " mJ已在上一tick预扣) " +
                               std::to_string(old_energy * 1000) + " mJ → " +
                               std::to_string(_current_energy * 1000) + " mJ");
 

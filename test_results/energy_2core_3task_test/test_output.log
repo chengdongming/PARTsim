@@ -1,0 +1,234 @@
+========================================
+  2核心3任务 - 初始能量对比测试
+========================================
+
+测试配置:
+  - CPU数量: 2核
+  - 任务数: 3个bzip2任务
+  - 初始能量: 0J, 100J, 12mJ
+  - 太阳能: 启用 (NASA数据, 夏至0点)
+  - 时间范围: 0-1000ms
+
+==========================================
+测试调度器: gpfp_tie | 初始能量: 0j
+==========================================
+系统文件: /home/devcontainers/PARTSim-project/test_results/energy_2core_3task_test/system_2core_gpfp_tie_0j_solar.yml
+输出文件: /home/devcontainers/PARTSim-project/test_results/energy_2core_3task_test/results/gpfp_tie_0j_solar.log
+追踪文件: /home/devcontainers/PARTSim-project/test_results/energy_2core_3task_test/results/gpfp_tie_0j_solar_trace.json
+
+运行测试...
+========== 测试结果摘要 ==========
+任务完成数:
+[0m[32m2026-01-29 06:48:31.756 [INFO0000] [scheduler00000000000]   任务完成数: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tie_scheduler.cpp:1434)
+
+能量消耗:
+[0m[32m2026-01-29 06:48:31.756 [INFO0000] [scheduler00000000000]   剩余能量: 0.000000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tie_scheduler.cpp:1439)
+
+Deadline Miss:
+[0m[32m2026-01-29 06:48:31.756 [INFO0000] [scheduler00000000000]   Deadline Miss: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tie_scheduler.cpp:1436)
+
+能量收集:
+[0m[32m2026-01-29 06:48:31.756 [INFO0000] [scheduler00000000000]   总收集能量: 0.000000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tie_scheduler.cpp:1438)
+
+⚠️ 发现错误！
+[31m2026-01-29 06:48:31.664 [ERROR000] [scheduler00000000000] EnergyBridge: 执行Python代码失败 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:396)
+
+==========================================
+测试调度器: gpfp_tie | 初始能量: 100j
+==========================================
+系统文件: /home/devcontainers/PARTSim-project/test_results/energy_2core_3task_test/system_2core_gpfp_tie_100j_solar.yml
+输出文件: /home/devcontainers/PARTSim-project/test_results/energy_2core_3task_test/results/gpfp_tie_100j_solar.log
+追踪文件: /home/devcontainers/PARTSim-project/test_results/energy_2core_3task_test/results/gpfp_tie_100j_solar_trace.json
+
+运行测试...
+========== 测试结果摘要 ==========
+任务完成数:
+[0m[32m2026-01-29 06:48:32.044 [INFO0000] [scheduler00000000000]   任务完成数: 109 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tie_scheduler.cpp:1434)
+
+能量消耗:
+[0m[32m2026-01-29 06:48:32.044 [INFO0000] [scheduler00000000000]   剩余能量: 99.985492J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tie_scheduler.cpp:1439)
+
+Deadline Miss:
+[0m[32m2026-01-29 06:48:32.044 [INFO0000] [scheduler00000000000]   Deadline Miss: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tie_scheduler.cpp:1436)
+
+能量收集:
+[0m[32m2026-01-29 06:48:32.044 [INFO0000] [scheduler00000000000]   总收集能量: 0.000000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tie_scheduler.cpp:1438)
+
+⚠️ 发现错误！
+[31m2026-01-29 06:48:31.929 [ERROR000] [scheduler00000000000] EnergyBridge: 执行Python代码失败 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:396)
+
+==========================================
+测试调度器: gpfp_tie | 初始能量: 12mj
+==========================================
+系统文件: /home/devcontainers/PARTSim-project/test_results/energy_2core_3task_test/system_2core_gpfp_tie_12mj_solar.yml
+输出文件: /home/devcontainers/PARTSim-project/test_results/energy_2core_3task_test/results/gpfp_tie_12mj_solar.log
+追踪文件: /home/devcontainers/PARTSim-project/test_results/energy_2core_3task_test/results/gpfp_tie_12mj_solar_trace.json
+
+运行测试...
+========== 测试结果摘要 ==========
+任务完成数:
+[0m[32m2026-01-29 06:48:32.308 [INFO0000] [scheduler00000000000]   任务完成数: 2 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tie_scheduler.cpp:1434)
+
+能量消耗:
+[0m[32m2026-01-29 06:48:32.308 [INFO0000] [scheduler00000000000]   剩余能量: 0.000282J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tie_scheduler.cpp:1439)
+
+Deadline Miss:
+[0m[32m2026-01-29 06:48:32.308 [INFO0000] [scheduler00000000000]   Deadline Miss: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tie_scheduler.cpp:1436)
+
+能量收集:
+[0m[32m2026-01-29 06:48:32.308 [INFO0000] [scheduler00000000000]   总收集能量: 0.000000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tie_scheduler.cpp:1438)
+
+⚠️ 发现错误！
+[31m2026-01-29 06:48:32.213 [ERROR000] [scheduler00000000000] EnergyBridge: 执行Python代码失败 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:396)
+
+==========================================
+测试调度器: gpfp_tgf | 初始能量: 0j
+==========================================
+系统文件: /home/devcontainers/PARTSim-project/test_results/energy_2core_3task_test/system_2core_gpfp_tgf_0j_solar.yml
+输出文件: /home/devcontainers/PARTSim-project/test_results/energy_2core_3task_test/results/gpfp_tgf_0j_solar.log
+追踪文件: /home/devcontainers/PARTSim-project/test_results/energy_2core_3task_test/results/gpfp_tgf_0j_solar_trace.json
+
+运行测试...
+========== 测试结果摘要 ==========
+任务完成数:
+[0m[32m2026-01-29 06:48:32.489 [INFO0000] [scheduler00000000000]   任务完成数: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1360)
+
+能量消耗:
+[0m[32m2026-01-29 06:48:32.489 [INFO0000] [scheduler00000000000]   剩余能量: 0.000000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1365)
+
+Deadline Miss:
+[0m[32m2026-01-29 06:48:32.489 [INFO0000] [scheduler00000000000]   Deadline Miss: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1362)
+
+能量收集:
+[0m[32m2026-01-29 06:48:32.489 [INFO0000] [scheduler00000000000]   总收集能量: 0.000000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1364)
+
+⚠️ 发现错误！
+[31m2026-01-29 06:48:32.472 [ERROR000] [scheduler00000000000] EnergyBridge: 执行Python代码失败 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:396)
+[0m[31m2026-01-29 06:48:32.472 [ERROR000] [scheduler00000000000] ❌ [TGF] 无法获取初始能量，调度器将无法工作！ (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:333)
+
+==========================================
+测试调度器: gpfp_tgf | 初始能量: 100j
+==========================================
+系统文件: /home/devcontainers/PARTSim-project/test_results/energy_2core_3task_test/system_2core_gpfp_tgf_100j_solar.yml
+输出文件: /home/devcontainers/PARTSim-project/test_results/energy_2core_3task_test/results/gpfp_tgf_100j_solar.log
+追踪文件: /home/devcontainers/PARTSim-project/test_results/energy_2core_3task_test/results/gpfp_tgf_100j_solar_trace.json
+
+运行测试...
+========== 测试结果摘要 ==========
+任务完成数:
+[0m[32m2026-01-29 06:48:32.688 [INFO0000] [scheduler00000000000]   任务完成数: 109 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1360)
+
+能量消耗:
+[0m[32m2026-01-29 06:48:32.688 [INFO0000] [scheduler00000000000]   剩余能量: 99.985492J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1365)
+
+Deadline Miss:
+[0m[32m2026-01-29 06:48:32.688 [INFO0000] [scheduler00000000000]   Deadline Miss: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1362)
+
+能量收集:
+[0m[32m2026-01-29 06:48:32.688 [INFO0000] [scheduler00000000000]   总收集能量: 0.000000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1364)
+
+⚠️ 发现错误！
+[31m2026-01-29 06:48:32.653 [ERROR000] [scheduler00000000000] EnergyBridge: 执行Python代码失败 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:396)
+
+==========================================
+测试调度器: gpfp_tgf | 初始能量: 12mj
+==========================================
+系统文件: /home/devcontainers/PARTSim-project/test_results/energy_2core_3task_test/system_2core_gpfp_tgf_12mj_solar.yml
+输出文件: /home/devcontainers/PARTSim-project/test_results/energy_2core_3task_test/results/gpfp_tgf_12mj_solar.log
+追踪文件: /home/devcontainers/PARTSim-project/test_results/energy_2core_3task_test/results/gpfp_tgf_12mj_solar_trace.json
+
+运行测试...
+========== 测试结果摘要 ==========
+任务完成数:
+[0m[32m2026-01-29 06:48:32.861 [INFO0000] [scheduler00000000000]   任务完成数: 2 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1360)
+
+能量消耗:
+[0m[32m2026-01-29 06:48:32.861 [INFO0000] [scheduler00000000000]   剩余能量: 0.000282J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1365)
+
+Deadline Miss:
+[0m[32m2026-01-29 06:48:32.861 [INFO0000] [scheduler00000000000]   Deadline Miss: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1362)
+
+能量收集:
+[0m[32m2026-01-29 06:48:32.861 [INFO0000] [scheduler00000000000]   总收集能量: 0.000000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1364)
+
+⚠️ 发现错误！
+[31m2026-01-29 06:48:32.846 [ERROR000] [scheduler00000000000] EnergyBridge: 执行Python代码失败 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:396)
+
+==========================================
+测试调度器: gpfp_btie | 初始能量: 0j
+==========================================
+系统文件: /home/devcontainers/PARTSim-project/test_results/energy_2core_3task_test/system_2core_gpfp_btie_0j_solar.yml
+输出文件: /home/devcontainers/PARTSim-project/test_results/energy_2core_3task_test/results/gpfp_btie_0j_solar.log
+追踪文件: /home/devcontainers/PARTSim-project/test_results/energy_2core_3task_test/results/gpfp_btie_0j_solar_trace.json
+
+运行测试...
+========== 测试结果摘要 ==========
+任务完成数:
+[0m[32m2026-01-29 06:48:33.116 [INFO0000] [scheduler00000000000]   任务完成数: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1500)
+
+能量消耗:
+[0m[32m2026-01-29 06:48:33.116 [INFO0000] [scheduler00000000000]   剩余能量: 0.000000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1505)
+
+Deadline Miss:
+
+能量收集:
+[0m[32m2026-01-29 06:48:33.116 [INFO0000] [scheduler00000000000]   总收集能量: 0.000000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1504)
+
+⚠️ 发现错误！
+[31m2026-01-29 06:48:33.018 [ERROR000] [scheduler00000000000] EnergyBridge: 执行Python代码失败 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:396)
+[0m[31m2026-01-29 06:48:33.018 [ERROR000] [scheduler00000000000] ❌ [BTIE] 无法获取初始能量，调度器将无法工作！ (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:330)
+
+==========================================
+测试调度器: gpfp_btie | 初始能量: 100j
+==========================================
+系统文件: /home/devcontainers/PARTSim-project/test_results/energy_2core_3task_test/system_2core_gpfp_btie_100j_solar.yml
+输出文件: /home/devcontainers/PARTSim-project/test_results/energy_2core_3task_test/results/gpfp_btie_100j_solar.log
+追踪文件: /home/devcontainers/PARTSim-project/test_results/energy_2core_3task_test/results/gpfp_btie_100j_solar_trace.json
+
+运行测试...
+========== 测试结果摘要 ==========
+任务完成数:
+[0m[32m2026-01-29 06:48:33.475 [INFO0000] [scheduler00000000000]   任务完成数: 108 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1500)
+
+能量消耗:
+[0m[32m2026-01-29 06:48:33.475 [INFO0000] [scheduler00000000000]   剩余能量: 98.842150J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1505)
+
+Deadline Miss:
+
+能量收集:
+[0m[32m2026-01-29 06:48:33.475 [INFO0000] [scheduler00000000000]   总收集能量: 0.000000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1504)
+
+⚠️ 发现错误！
+[31m2026-01-29 06:48:33.278 [ERROR000] [scheduler00000000000] EnergyBridge: 执行Python代码失败 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:396)
+
+==========================================
+测试调度器: gpfp_btie | 初始能量: 12mj
+==========================================
+系统文件: /home/devcontainers/PARTSim-project/test_results/energy_2core_3task_test/system_2core_gpfp_btie_12mj_solar.yml
+输出文件: /home/devcontainers/PARTSim-project/test_results/energy_2core_3task_test/results/gpfp_btie_12mj_solar.log
+追踪文件: /home/devcontainers/PARTSim-project/test_results/energy_2core_3task_test/results/gpfp_btie_12mj_solar_trace.json
+
+运行测试...
+========== 测试结果摘要 ==========
+任务完成数:
+[0m[32m2026-01-29 06:48:33.736 [INFO0000] [scheduler00000000000]   任务完成数: 2 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1500)
+
+能量消耗:
+[0m[32m2026-01-29 06:48:33.736 [INFO0000] [scheduler00000000000]   剩余能量: 0.000282J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1505)
+
+Deadline Miss:
+
+能量收集:
+[0m[32m2026-01-29 06:48:33.736 [INFO0000] [scheduler00000000000]   总收集能量: 0.000000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1504)
+
+⚠️ 发现错误！
+[31m2026-01-29 06:48:33.640 [ERROR000] [scheduler00000000000] EnergyBridge: 执行Python代码失败 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:396)
+
+========================================
+  测试完成
+========================================
+
+结果文件:
+  日志: /home/devcontainers/PARTSim-project/test_results/energy_2core_3task_test/results/
+  追踪: /home/devcontainers/PARTSim-project/test_results/energy_2core_3task_test/results/*_solar_trace.json
+
