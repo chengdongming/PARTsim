@@ -137,8 +137,13 @@ namespace RTSim {
                 _scheduler->_tasks_completed_wcet.insert(_task);
                 SCHEDULER_LOG_INFO(std::string("🏁 [BTIE] 标记任务已完成WCET: ") +
                                    task_name);
+
+                // ⭐ 关键修复：不直接调用onEnd()，而是让任务自然结束
+                // 终止能量检查事件，让内核在下一个tick时检测到任务完成并调用onEnd()
+                // 避免在能量检查事件中调用onEnd()导致的"No CPU"崩溃
+                SCHEDULER_LOG_INFO(std::string("🛑 [BTIE] 任务达到WCET，终止能量检查事件: ") + task_name);
+
                 // 任务已完成，不再检查能量预扣，也不重新调度事件
-                // 任务会由正常的调度流程完成
                 return;
             }
         } else {
@@ -523,6 +528,21 @@ namespace RTSim {
         double energy_to_deduct = 0.0;
 
         const auto& running_tasks = _kernel->getCurrentExecutingTasks();
+
+        // 🔍 调试：输出_m_currExe的内容
+        SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] _m_currExe内容 (") +
+                           std::to_string(running_tasks.size()) + "个任务) @ " +
+                           std::to_string(static_cast<int64_t>(SIMUL.getTime())) + "ms:");
+        for (const auto& map_pair : running_tasks) {
+            if (map_pair.second) {
+                bool is_executing = map_pair.second->isExecuting();
+                SCHEDULER_LOG_INFO(std::string("  [CPU ") +
+                                   std::to_string(reinterpret_cast<uintptr_t>(map_pair.first) % 1000) +
+                                   "] → " + getTaskName(map_pair.second) +
+                                   " isExecuting=" + (is_executing ? "TRUE" : "FALSE"));
+            }
+        }
+
         for (const auto& map_pair : running_tasks) {
             AbsRTTask* task = map_pair.second;
             if (task) {
@@ -637,6 +657,32 @@ namespace RTSim {
         std::vector<AbsRTTask *> new_tasks_to_schedule;
         std::vector<AbsRTTask *> all_ready_tasks;
         if (K > 0) {
+            // ⭐ 关键修复：清理_ready_queue中过期的周期性任务实例（同步TIE修复）
+            // 周期性任务的旧实例在完成后会留在队列中，需要定期清理
+            Tick current_time = SIMUL.getTime();
+            _ready_queue.erase(
+                std::remove_if(_ready_queue.begin(), _ready_queue.end(),
+                    [this, current_time](AbsRTTask *task) {
+                        if (!task) return true;
+                        // 移除不活动的任务
+                        if (!task->isActive()) {
+                            SCHEDULER_LOG_DEBUG(std::string("🧹 [BTIE] 清理不活动任务: ") + getTaskName(task));
+                            return true;
+                        }
+                        // ⭐ 移除过期的周期性任务实例：使用getDeadline()获取绝对截止时间
+                        Tick deadline = task->getDeadline();
+                        if (deadline < current_time) {
+                            SCHEDULER_LOG_DEBUG(std::string("🧹 [BTIE] 清理过期任务实例: ") +
+                                           getTaskName(task) +
+                                           " 截止=" + std::to_string(static_cast<int64_t>(deadline)) +
+                                           " 当前=" + std::to_string(static_cast<int64_t>(current_time)));
+                            return true;
+                        }
+                        return false;
+                    }),
+                _ready_queue.end()
+            );
+
             std::vector<AbsRTTask *> sorted_ready(_ready_queue.begin(), _ready_queue.end());
             std::sort(sorted_ready.begin(), sorted_ready.end(),
                 [](AbsRTTask* a, AbsRTTask* b) { return a->getDeadline() < b->getDeadline(); });
