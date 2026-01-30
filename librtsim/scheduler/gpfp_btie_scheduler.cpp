@@ -188,6 +188,11 @@ namespace RTSim {
                                      " 剩余=" + std::to_string(_scheduler->_current_energy * 1000) + " mJ");
 
                 _scheduler->_energy_depleted = true;
+
+                // ⭐ V37关键修复：将剩余��量强制设为0
+                // 确保performTickScheduling的能量检查正确工作
+                _scheduler->_current_energy = 0.0;
+
                 if (_scheduler->_kernel && _task->isExecuting()) {
                     _scheduler->_kernel->suspend(_task);
                 }
