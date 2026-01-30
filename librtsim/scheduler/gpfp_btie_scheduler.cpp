@@ -781,7 +781,9 @@ namespace RTSim {
         // 4. ⭐ BTIE核心：批量能量判断（"全有或全无"���
         // Bug #3修复：检查总能量需求（运行中续期+新任务），确保有足夠能量才调度
         const double EPSILON = 1e-9;
-        if (_current_energy >= total_energy_needed - EPSILON) {
+        // ⭐ V38修复：使用与TIE/TGF相同的能量检查条件
+        // 当能量 <= 总能量需求时，立即中断任务（不扣除能量），避免超额透支
+        if (_current_energy > total_energy_needed + EPSILON) {
             // 能量充足：调度新任务
             _batch_scheduled_this_tick = true;
             
@@ -841,6 +843,10 @@ namespace RTSim {
 
             // ⭐ BTIE关键：能量不足时，标记能量已耗尽
             _energy_depleted = true;
+
+            // ⭐ V38关键修复：将剩余能量强制设为0（与TIE/TGF保持一致）
+            // 确保performTickScheduling的能量检查正确工作
+            _current_energy = 0.0;
 
             // ⭐ 关键修复：立即suspend所有运行中任务（BTIE"全无"原则）
             // 不仅仅是取消能量检查事件，还要强制中断运行中的任务
