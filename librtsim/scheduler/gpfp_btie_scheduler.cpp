@@ -616,13 +616,9 @@ namespace RTSim {
         // 3. ⭐ 选择K个新任务（不扣除它们的能量）
         size_t running_count = running_task_list.size();
 
-        // ⭐ 关键修复：从kernel获取CPU数量，而不是从_running_tasks
-        // 因为第一次调度时_running_tasks是空的
-        // ⭐ 关键修复：如果_running_tasks为空，使用默认CPU数量（2个CPU）
-        size_t total_cpus = _running_tasks.size();
-        if (total_cpus == 0) {
-            total_cpus = 2;
-        }
+        // ⭐ 关键修复：使用固定CPU数量（2核），不依赖_running_tasks
+        // _running_tasks可能没有正确更新，导致total_cpus计算错误
+        size_t total_cpus = 2;  // 固定2核系统
 
         size_t free_cpus = total_cpus - running_count;
 

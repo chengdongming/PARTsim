@@ -25,7 +25,7 @@ energy_management:
   max_energy: 1000.0                   # 最大能量容量 (J)
 
   day_of_year: 187
-  time_of_day_ms: 0
+  time_of_day_ms: 14400000  # 4:00 AM = 4 * 3600 * 1000 ms
 
   # === NASA真实太阳能数据配置 ===
   use_real_solar_data: true            # 启用NASA真实太阳能数据

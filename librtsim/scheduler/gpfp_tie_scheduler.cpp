@@ -152,7 +152,6 @@ namespace RTSim {
         // ⭐ V33修复：当能量不足以支撑下一个1ms时立即中断
         // ⭐ V34修复：当能量 <= 1ms能耗时，立即中断任务
         // 这样可以避免任务在执行中途能量耗尽（因为执行后就没有能量了）
-        const double EPSILON = 1e-9;
         // 🔍 调试：打印实际的比较值
         bool energy_insufficient = current_energy <= unit_energy + EPSILON;
         SCHEDULER_LOG_INFO(std::string("🔍 [TIE] 能量检查: current=") +
