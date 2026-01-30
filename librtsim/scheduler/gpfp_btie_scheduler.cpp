@@ -545,7 +545,10 @@ namespace RTSim {
 
         for (const auto& map_pair : running_tasks) {
             AbsRTTask* task = map_pair.second;
-            if (task) {
+            // ⭐ 关键修复：只统计真正在执行的任务，过滤已达到WCET的任务
+            // _m_currExe可能包含已完成的任务（isExecuting=TRUE，但已达到WCET）
+            // 使用_tasks_completed_wcet集合来判断任务是否真正完成
+            if (task && task->isExecuting() && _tasks_completed_wcet.find(task) == _tasks_completed_wcet.end()) {
                 running_task_list.push_back(task);
                 double unit_energy = calculateUnitEnergyForTask(task);
                 energy_to_deduct += unit_energy;
@@ -555,7 +558,8 @@ namespace RTSim {
         // 如果kernel中还没有运行任务（第一次调度），检查_current_batch_tasks
         if (running_task_list.empty() && !_current_batch_tasks.empty()) {
             for (AbsRTTask* task : _current_batch_tasks) {
-                if (task) {
+                // ⭐ 关键修复：过滤已达到WCET的任务
+                if (task && task->isExecuting() && _tasks_completed_wcet.find(task) == _tasks_completed_wcet.end()) {
                     running_task_list.push_back(task);
                     double unit_energy = calculateUnitEnergyForTask(task);
                     energy_to_deduct += unit_energy;
