@@ -133,6 +133,10 @@ namespace RTSim {
                 SCHEDULER_LOG_INFO(std::string("✅ [BTIE] 任务已达到WCET，完成执行: ") +
                                    task_name + " 已执行=" + std::to_string(_ms_executed) +
                                    "ms WCET=" + std::to_string(wcet) + "ms");
+                // ⭐ 关键修复：标记任务已达到WCET，防止批量调度重复扣除能量
+                _scheduler->_tasks_completed_wcet.insert(_task);
+                SCHEDULER_LOG_INFO(std::string("🏁 [BTIE] 标记任务已完成WCET: ") +
+                                   task_name);
                 // 任务已完成，不再检查能量预扣，也不重新调度事件
                 // 任务会由正常的调度流程完成
                 return;
@@ -689,9 +693,16 @@ namespace RTSim {
         // 3. ⭐ BTIE关键：每个tick都预扣运行任务续期+新任务的能量
         // 这样可以在能量耗尽时及时中断任务
 
-        // 计算运行中任务的续期能量（每个tick都要续期）
+        // 计算运行中任务的续期能���（每个tick都要续期）
         double running_tasks_renewal_energy = 0.0;
         for (auto* task : running_task_list) {
+            // ⭐ 关键修复：跳过已达到WCET的任务，避免重复扣除能量
+            // 因为能量检查事件在任务达到WCET时会标记完成，但kernel可能还没处理end_instance
+            if (_tasks_completed_wcet.find(task) != _tasks_completed_wcet.end()) {
+                SCHEDULER_LOG_INFO(std::string("⚠️ [BTIE] 批量调度：跳过已完成WCET的任务: ") +
+                                   getTaskName(task) + " (能量检查事件已标记完成)");
+                continue;
+            }
             running_tasks_renewal_energy += calculateUnitEnergyForTask(task);
         }
 
@@ -726,6 +737,10 @@ namespace RTSim {
             // _current_batch_tasks包含：运行中任务 + 新任务
             std::vector<AbsRTTask *> all_tasks_to_dispatch;
             for (auto* task : running_task_list) {
+                // ⭐ 关键修复：跳过已达到WCET的任务
+                if (_tasks_completed_wcet.find(task) != _tasks_completed_wcet.end()) {
+                    continue;
+                }
                 all_tasks_to_dispatch.push_back(task);
             }
             for (auto* task : new_tasks_to_schedule) {
@@ -968,6 +983,17 @@ namespace RTSim {
             return;
         }
 
+        // ⭐ 关键修复：清除任务的WCET完成标志（新实例到达）
+        // 周期性任务复用同一个AbsRTTask对象，但每个实例都是独立的
+        SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] notify: 检查WCET完成标志: ") +
+                           getTaskName(task) + " 集合大小=" + std::to_string(_tasks_completed_wcet.size()));
+        auto it = _tasks_completed_wcet.find(task);
+        if (it != _tasks_completed_wcet.end()) {
+            _tasks_completed_wcet.erase(it);
+            SCHEDULER_LOG_INFO(std::string("🔄 [BTIE] notify: 清除任务的WCET完成标志: ") +
+                               getTaskName(task) + " (新实例到达)");
+        }
+
         // ⭐ 修复：任务到达时只检查能量，不扣减能耗
         // 能耗在任务调度时通过getTaskN()方法扣减
         double unit_energy = calculateUnitEnergyForTask(task);
@@ -1115,6 +1141,15 @@ namespace RTSim {
         }
 
         SCHEDULER_LOG_INFO(std::string("📍 [BTIE] 任务到达: ") + getTaskName(task));
+
+        // ⭐ 关键修复：清除任务的WCET完成标志（新实例重新开始）
+        // 周期性任务��复用同一个AbsRTTask对象，但每个实例都是独立的
+        auto it = _tasks_completed_wcet.find(task);
+        if (it != _tasks_completed_wcet.end()) {
+            _tasks_completed_wcet.erase(it);
+            SCHEDULER_LOG_INFO(std::string("🔄 [BTIE] 清除任务的WCET完成标志: ") +
+                               getTaskName(task) + " (新实例到达)");
+        }
 
         if (!isInReadyQueue(task) && !isInWaitingQueue(task)) {
             addToReadyQueue(task);

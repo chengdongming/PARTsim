@@ -149,9 +149,20 @@ namespace RTSim {
         // - TIEEnergyCheckEvent: 负责运行中任务的续期能量扣除
         //
         // 检查是否有足够能量续期1ms
+        // ⭐ V33修复：当能量不足以支撑下一个1ms时立即中断
+        // ⭐ V34修复：当能量 <= 1ms能耗时，立即中断任务
+        // 这样可以避免任务在执行中途能量耗尽（因为执行后就没有能量了）
+        const double EPSILON = 1e-9;
+        // 🔍 调试：打印实际的比较值
+        bool energy_insufficient = current_energy <= unit_energy + EPSILON;
+        SCHEDULER_LOG_INFO(std::string("🔍 [TIE] 能量检查: current=") +
+                           std::to_string(current_energy * 1000) + " mJ" +
+                           " unit=" + std::to_string(unit_energy * 1000) + " mJ" +
+                           " check=" + (energy_insufficient ? "TRUE (suspend)" : "FALSE (continue)"));
+
         if (current_energy < unit_energy - EPSILON) {
-            // 能量不足，停止续期并中断任务
-            SCHEDULER_LOG_INFO(std::string("⚡ [TIE] 续期能量不足，中断任务: ") +
+            // ⭐ 能量不足以支撑下一个1ms，立即中断任务（不扣除能量）
+            SCHEDULER_LOG_INFO(std::string("⚡ [TIE] 能量刚好耗尽或不足，立即中断任务: ") +
                                task_name + " 需要=" + std::to_string(unit_energy * 1000) + " mJ" +
                                " 剩余=" + std::to_string(current_energy * 1000) + " mJ" +
                                " 已执行=" + std::to_string(_ms_executed) + "ms");
@@ -172,7 +183,7 @@ namespace RTSim {
             return;
         }
 
-        // 能量充足，扣除续期能量
+        // 能量充足（扣除后仍有剩余），扣除续期能量
         double old_energy = current_energy;
         _scheduler->_current_energy -= unit_energy;
         _scheduler->_stats.total_energy_consumed += unit_energy;

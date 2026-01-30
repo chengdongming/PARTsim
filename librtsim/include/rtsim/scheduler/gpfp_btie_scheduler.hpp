@@ -130,6 +130,9 @@ namespace RTSim {
         // ========== 运行时能量检查事件（每任务一个） ==========
         std::map<AbsRTTask *, BTIEEnergyCheckEvent *> _energy_check_events;
 
+        // ========== WCET完成追踪（用于批量调度判断任务是否已完成） ==========
+        std::set<AbsRTTask *> _tasks_completed_wcet;  // 已达到WCET的任务集合
+
         // ========== BTIE批量调度状态 ==========
         std::vector<AbsRTTask *> _current_batch_tasks;  // 当前批量任务
         bool _batch_scheduled_this_tick;                // 本tick是否已批量调度
