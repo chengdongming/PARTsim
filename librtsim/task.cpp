@@ -189,6 +189,7 @@ namespace RTSim {
         }
 
         arrival = arr;
+        lastArrival = arr;  // ⭐ 关键修复：同时更新lastArrival，确保getLastArrival()返回当前实例的到达时间
         execdTime = 0;
         actInstr = instrQueue.begin();
 

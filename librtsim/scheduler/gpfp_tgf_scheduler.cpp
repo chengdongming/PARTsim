@@ -101,6 +101,10 @@ namespace RTSim {
         if (!_task->isExecuting()) {
             SCHEDULER_LOG_DEBUG(std::string("⚠️ [TGF] 能量检查：任务已停止执行，不再扣除能量: ") +
                                _scheduler->getTaskName(_task) + " 时间=" + std::to_string(static_cast<long>(SIMUL.getTime())) + "ms");
+            // ⭐ 关键修复：清理能量检查事件映射，允许后续实例启动新的检查
+            _scheduler->_energy_check_events.erase(_task);
+            // ⭐ 关键修复：清理能量检查事件映射
+            _scheduler->_energy_check_events.erase(_task);
             // 不重新调度事件
             return;
         }
@@ -112,6 +116,10 @@ namespace RTSim {
             SCHEDULER_LOG_INFO(std::string("✅ [TGF] 任务已达到WCET，完成执行: ") +
                                _scheduler->getTaskName(_task) + " 已执行=" + std::to_string(_ms_executed) +
                                "ms WCET=" + std::to_string(task_model->getWCET()) + "ms");
+                // ⭐ 关键修复：从_energy_check_events中移除，允许后续实例启动新的能量检查
+                _scheduler->_energy_check_events.erase(_task);
+            // ⭐ 关键修复：清理能量检查事件映射，允许后续实例启动新的检查
+            _scheduler->_energy_check_events.erase(_task);
             // 任务已完成，不续期能量，也不重新调度事件
             // 任务会由正常的调度流程完成
             return;
@@ -139,6 +147,10 @@ namespace RTSim {
                 SCHEDULER_LOG_INFO(std::string("⚠️ [TGF] 任务因能量不足被挂起: ") + _scheduler->getTaskName(_task));
             }
 
+            // ⭐ 关键修复：清理能量检查事件映射，允许后续实例启动新的检查
+            _scheduler->_energy_check_events.erase(_task);
+            // ⭐ 关键修复：清理能量检查事件映射
+            _scheduler->_energy_check_events.erase(_task);
             // 不重新调度事件
             return;
         }
