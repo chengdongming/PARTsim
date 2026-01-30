@@ -151,6 +151,14 @@ namespace RTSim {
 
             // ⭐ 关键修复：清理能量检查事件映射，允许后续实例启动新的检查
             _scheduler->_energy_check_events.erase(_task);
+
+            // ⭐ V36 Bug修复：从_counted_tasks_in_dispatch中移除任务
+            // 避免任务被重新调度时"免费"运行（不扣除能量）
+            // 当任务因能量不足被挂起时，内核会将其重新插入就绪队列
+            // 如果不移除_counted_tasks_in_dispatch中的记录，getTaskN()会认为能量已扣除，
+            // 直接返回任务而不重新扣除能量，导致任务免费运行
+            _scheduler->_counted_tasks_in_dispatch.erase(_task);
+
             // 不重新调度事件
             return;
         }
