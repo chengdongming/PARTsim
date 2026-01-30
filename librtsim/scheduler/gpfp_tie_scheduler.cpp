@@ -171,6 +171,13 @@ namespace RTSim {
             // 标记能量耗尽
             _scheduler->_energy_depleted = true;
 
+            // ⭐ V37关键修复：将剩余能量强制设为0
+            // 当current_energy == unit_energy时（如0.6 mJ == 0.6 mJ），
+            // 条件current_energy <= unit_energy为TRUE，任务被挂起但不扣除能量
+            // 这导致剩余了unit_energy的能量，performTickScheduling的检查current_energy < 0.000001失败
+            // 解决方案：���制将能量设为0，确保能量耗尽检查正确工作
+            _scheduler->_current_energy = 0.0;
+
             // 中断当前任务（调用kernel的suspend机制）
             if (_cpu) {
                 _scheduler->_kernel->suspend(_task);
