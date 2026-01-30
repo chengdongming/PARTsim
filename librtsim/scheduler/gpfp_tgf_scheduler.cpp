@@ -131,9 +131,9 @@ namespace RTSim {
         // - TGFEnergyCheckEvent: 负责运行中任务的续期能量扣除
         
         // 检查是否有足够能量续期1ms
-        // ⭐ V33修复：当能量不足以支撑下一个1ms时立即中断
-        // ⭐ V34修复：当能量 < 1ms能耗时，立即中断任务（不在当前1ms内执行）
-        if (current_energy < unit_energy - EPSILON) {
+        // ⭐ V35修复：当能量 <= 1ms能耗时，立即中断任务
+        // 避免在能量恰好等于单位能耗时继续执行，导致下个Tick能量为负
+        if (current_energy <= unit_energy + EPSILON) {
             // ⭐ 能量不足以支撑下一个1ms，立即中断任务（不扣除能量）
             SCHEDULER_LOG_INFO(std::string("⚡ [TGF] 能量刚好耗尽或不足，立即中断任务: ") +
                                _scheduler->getTaskName(_task) + " 需要=" + std::to_string(unit_energy * 1000) + " mJ" +

@@ -641,8 +641,8 @@ namespace RTSim {
         size_t running_count = running_task_list.size();
 
         // ⭐ 修复硬编码：从kernel获取CPU数量
-        auto cpus = _kernel->getProcessors();
-        size_t total_cpus = cpus.size();
+        // getCurrentExecutingTasks()返回_m_currExe的引用，其大小即为CPU总数
+        size_t total_cpus = _kernel->getCurrentExecutingTasks().size();
 
         size_t free_cpus = total_cpus - running_count;
 

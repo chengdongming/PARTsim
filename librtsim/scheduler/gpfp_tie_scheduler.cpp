@@ -159,7 +159,9 @@ namespace RTSim {
                            " unit=" + std::to_string(unit_energy * 1000) + " mJ" +
                            " check=" + (energy_insufficient ? "TRUE (suspend)" : "FALSE (continue)"));
 
-        if (current_energy < unit_energy - EPSILON) {
+        // ⭐ 修复能量检查条件：当能量 <= 单位能耗时立即中断
+        // 避免在能量恰好等于单位能耗时继续执行，导致下个Tick能量为负
+        if (current_energy <= unit_energy + EPSILON) {
             // ⭐ 能量不足以支撑下一个1ms，立即中断任务（不扣除能量）
             SCHEDULER_LOG_INFO(std::string("⚡ [TIE] 能量刚好耗尽或不足，立即中断任务: ") +
                                task_name + " 需要=" + std::to_string(unit_energy * 1000) + " mJ" +
