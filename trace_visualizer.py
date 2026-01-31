@@ -485,12 +485,7 @@ class TraceVisualizer:
                 ax.barh(pos, duration, left=adjusted_start, height=0.25,
                        color=color, edgecolor='black', linewidth=1.0, alpha=0.85)
 
-                # 如果有deadline miss，在任务条右侧末尾添加红色箭头标记
-                if has_miss:
-                    # 在任务条右侧末尾添加红色三角形标记
-                    arrow_x = adjusted_end
-                    ax.plot(arrow_x, pos, marker='>', markersize=8, color='red',
-                           markeredgecolor='darkred', markeredgewidth=0.5)
+                # ⭐ 修复：deadline miss标记稍后统一添加，避免遗漏
 
                 # 添加任务标签（如果区间足够长）
                 if duration >= (self.time_range[1] - self.time_range[0]) * 0.02:
@@ -504,8 +499,45 @@ class TraceVisualizer:
         ax.set_xlabel('时间', fontsize=12, fontweight='bold', fontproperties=self._get_font_prop())
         ax.set_ylabel('任务', fontsize=12, fontweight='bold', fontproperties=self._get_font_prop())
 
+
         # 设置Y轴范围（留出空间给箭头和时间轴）
         ax.set_ylim(-0.7, len(self.tasks) + 0.1)
+        
+        # ⭐ 绘制所有deadline miss标记（改进版）
+        for task_name in self.tasks:
+            pos = task_positions[task_name]
+            task_misses = self.deadline_misses.get(task_name, {})
+            task_intervals = self.schedule_intervals.get(task_name, [])
+            
+            for arrival_time, miss_time in task_misses.items():
+                # 转换为图表坐标
+                adjusted_miss_time = miss_time - time_offset
+                
+                # 只绘制在时间范围内的标记
+                if adjusted_miss_time <= time_span * 1.02:
+                    # 检查该任务实例是否有执行区间
+                    has_execution = False
+                    interval_end_time = None
+                    
+                    for start, end in task_intervals:
+                        # 找到该arrival对应的执行区间
+                        # 如果arrival_time <= start < end，认为是该实例的执行
+                        if start >= arrival_time and end > arrival_time:
+                            has_execution = True
+                            interval_end_time = end - time_offset
+                            break
+                    
+                    if has_execution and interval_end_time is not None:
+                        # 情况1: 有任务条 - 在任务条右侧末尾添加红色X
+                        ax.plot(interval_end_time, pos, marker='x', markersize=10,
+                               color='red', markeredgewidth=2, label='_nolegend_', zorder=10)
+                    else:
+                        # 情况2: 无任务条 - 在到达时间位置右侧添加红色X
+                        adjusted_arrival = arrival_time - time_offset
+                        # ⭐ 改进：与有任务条的位置一致，都在时间轴右侧位置
+                        ax.plot(adjusted_arrival + 0.5, pos, marker='x', markersize=10,
+                               color='red', markeredgewidth=2, label='_nolegend_', zorder=10)
+
 
         # 绘制到达时间和截止时间标记（如果有任务集配置）
         if self.taskset_parser:
@@ -538,8 +570,9 @@ class TraceVisualizer:
                     adjusted_release = abs_release - time_offset
                     adjusted_deadline = abs_deadline - time_offset
 
-                    # 只绘制在时间范围内的标记
-                    if adjusted_deadline <= time_span * 1.02:
+                    # ⭐ 修复：只绘制到达时间在范围内的标记（而不是deadline）
+                    # 这样可以确保最后一个到达事件的箭头也能显示
+                    if adjusted_release <= time_span * 1.02:
                         # 绘制到达时间标记（向上箭头，绿色）+ 垂直线
                         # 从任务条上边缘向上延伸
                         ax.plot([adjusted_release, adjusted_release], [pos - 0.125, pos + 0.3],
@@ -547,14 +580,15 @@ class TraceVisualizer:
                         ax.plot(adjusted_release, pos + 0.3, marker='^', markersize=8,
                                color='green', markeredgecolor='darkgreen', markeredgewidth=1,
                                label='到达' if task_name == self.tasks[0] and k == 0 else '')
-
-                        # 绘制截止时间��记（向下箭头，红色）+ 垂直线
+                        # 绘制截止时间标记（向下箭头，红色）+ 垂直线
                         # 从任务条上边缘向下延伸
-                        ax.plot([adjusted_deadline, adjusted_deadline], [pos + 0.3, pos - 0.125],
-                               color='red', linestyle='-', linewidth=1.5, alpha=0.7)
-                        ax.plot(adjusted_deadline, pos - 0.125, marker='v', markersize=8,
-                               color='red', markeredgecolor='darkred', markeredgewidth=1,
-                               label='截止' if task_name == self.tasks[0] and k == 0 else '')
+                        # ⭐ 只有当deadline也在合理范围内时才绘制
+                        if adjusted_deadline <= time_span * 1.02:
+                            ax.plot([adjusted_deadline, adjusted_deadline], [pos + 0.3, pos - 0.125],
+                                   color='red', linestyle='-', linewidth=1.5, alpha=0.7)
+                            ax.plot(adjusted_deadline, pos - 0.125, marker='v', markersize=8,
+                                   color='red', markeredgecolor='darkred', markeredgewidth=1,
+                                   label='截止' if task_name == self.tasks[0] and k == 0 else '')
 
                     k += 1
 
@@ -580,6 +614,15 @@ class TraceVisualizer:
 
         # 创建图例
         legend_elements = []
+        
+        # ⭐ 添加Deadline Miss图例项（如果存在miss事件）
+        has_any_miss = any(len(misses) > 0 for misses in self.deadline_misses.values())
+        if has_any_miss:
+            from matplotlib.lines import Line2D
+            legend_elements.append(
+                Line2D([0], [0], marker='x', markersize=10, linestyle='None',
+                       color='red', markeredgewidth=2, label='Deadline Miss')
+            )
         for task in self.tasks:
             color = get_color_for_task(task)
             intervals = len(self.schedule_intervals.get(task, []))

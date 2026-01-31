@@ -1,0 +1,697 @@
+========================================
+  三种算法能量对比测试 (V39)
+========================================
+测试配置:
+  - 调度器: TIE, TGF, BTIE
+  - 初始能量: 0J, 12mJ, 15mJ, 100J
+  - 太阳能: 启用 (0点，无充电)
+  - 仿真时长: 100ms
+
+生成配置文件...
+  创建: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/configs/system_2core_gpfp_tie_0j_v39.yml
+  创建: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/configs/system_2core_gpfp_tgf_0j_v39.yml
+  创建: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/configs/system_2core_gpfp_btie_0j_v39.yml
+  创建: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/configs/system_2core_gpfp_tie_12mj_v39.yml
+  创建: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/configs/system_2core_gpfp_tgf_12mj_v39.yml
+  创建: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/configs/system_2core_gpfp_btie_12mj_v39.yml
+  创建: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/configs/system_2core_gpfp_tie_15mj_v39.yml
+  创建: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/configs/system_2core_gpfp_tgf_15mj_v39.yml
+  创建: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/configs/system_2core_gpfp_btie_15mj_v39.yml
+  创建: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/configs/system_2core_gpfp_tie_100j_v39.yml
+  创建: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/configs/system_2core_gpfp_tgf_100j_v39.yml
+  创建: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/configs/system_2core_gpfp_btie_100j_v39.yml
+
+========================================
+  开始运行测试
+========================================
+
+==========================================
+[1/12] 测试: gpfp_tie | 初始能量: 0j
+==========================================
+运行测试...
+✅ 测试完成
+---------- 测试结果摘要 ----------
+[0m[32m2026-01-31 13:00:59.519 [INFO0000] [scheduler00000000000]   任务完成数: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tie_scheduler.cpp:1499)
+[0m[32m2026-01-31 13:00:59.519 [INFO0000] [scheduler00000000000]   剩余能量: 0.000000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tie_scheduler.cpp:1504)
+[0m[32m2026-01-31 13:00:59.519 [INFO0000] [scheduler00000000000]   Deadline Miss: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tie_scheduler.cpp:1501)
+生成可视化...
+✓ 使用中文字体: WenQuanYi Micro Hei
+
+======================================================================
+实时调度追踪文件可视化工具
+Real-Time Scheduling Trace File Visualizer
+======================================================================
+
+正在解析追踪文件: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/traces/gpfp_tie_0j_v39.json
+
+事件类型统计:
+  arrival: 12
+  dline_miss: 9
+
+任务列表:
+  task_1: 0 个执行区间, 总执行时间 0, Deadline Miss: 4
+  task_2: 0 个执行区间, 总执行时间 0, Deadline Miss: 3
+  task_3: 0 个执行区间, 总执行时间 0, Deadline Miss: 2
+✓ 解析完成：21 个事件, 3 个任务
+✓ 时间范围: 0 - 90
+
+======================================================================
+调度统计信息 / Scheduling Statistics
+======================================================================
+
+【全局信息】
+时间范围: 0 - 90 (总时长: 90)
+任务数量: 3
+总事件数: 21
+
+【任务详细统计】
+任务              执行次数       总执行时间        CPU占用率       首次到达      
+----------------------------------------------------------------------
+task_1          0          0            0.00        % 0         
+task_2          0          0            0.00        % 0         
+task_3          0          0            0.00        % 0         
+----------------------------------------------------------------------
+总计                         0            0.00        %           
+======================================================================
+
+
+正在生成甘特图...
+
+✓ 图表已保存至: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/traces/gpfp_tie_0j_v39.png
+  图表大小: 25.0x8.0 英寸, DPI: 150
+
+✓ 可视化完成！
+✅ 可视化完成: gpfp_tie_0j_v39.png
+
+==========================================
+[2/12] 测试: gpfp_tie | 初始能量: 12mj
+==========================================
+运行测试...
+✅ 测试完成
+---------- 测试结果摘要 ----------
+[0m[32m2026-01-31 13:01:00.614 [INFO0000] [scheduler00000000000]   任务完成数: 2 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tie_scheduler.cpp:1499)
+[0m[32m2026-01-31 13:01:00.614 [INFO0000] [scheduler00000000000]   剩余能量: 0.000000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tie_scheduler.cpp:1504)
+[0m[32m2026-01-31 13:01:00.614 [INFO0000] [scheduler00000000000]   Deadline Miss: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tie_scheduler.cpp:1501)
+生成可视化...
+✓ 使用中文字体: WenQuanYi Micro Hei
+
+======================================================================
+实时调度追踪文件可视化工具
+Real-Time Scheduling Trace File Visualizer
+======================================================================
+
+正在解析追踪文件: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/traces/gpfp_tie_12mj_v39.json
+
+事件类型统计:
+  arrival: 12
+  descheduled: 1
+  dline_miss: 7
+  end_instance: 2
+  scheduled: 3
+
+任务列表:
+  task_1: 1 个执行区间, 总执行时间 5, Deadline Miss: 3
+  task_2: 1 个执行区间, 总执行时间 8, Deadline Miss: 2
+  task_3: 1 个执行区间, 总执行时间 8, Deadline Miss: 2
+✓ 解析完成：25 个事件, 3 个任务
+✓ 时间范围: 0 - 90
+
+======================================================================
+调度统计信息 / Scheduling Statistics
+======================================================================
+
+【全局信息】
+时间范围: 0 - 90 (总时长: 90)
+任务数量: 3
+总事件数: 25
+
+【任务详细统计】
+任务              执行次数       总执行时间        CPU占用率       首次到达      
+----------------------------------------------------------------------
+task_1          1          5            5.56        % 0         
+task_2          1          8            8.89        % 0         
+task_3          1          8            8.89        % 0         
+----------------------------------------------------------------------
+总计                         21           23.33       %           
+======================================================================
+
+
+正在生成甘特图...
+
+✓ 图表已保存至: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/traces/gpfp_tie_12mj_v39.png
+  图表大小: 25.0x8.0 英寸, DPI: 150
+
+✓ 可视化完成！
+✅ 可视化完成: gpfp_tie_12mj_v39.png
+
+==========================================
+[3/12] 测试: gpfp_tie | 初始能量: 15mj
+==========================================
+运行测试...
+✅ 测试完成
+---------- 测试结果摘要 ----------
+[0m[32m2026-01-31 13:01:01.811 [INFO0000] [scheduler00000000000]   任务完成数: 3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tie_scheduler.cpp:1499)
+[0m[32m2026-01-31 13:01:01.811 [INFO0000] [scheduler00000000000]   剩余能量: 0.000000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tie_scheduler.cpp:1504)
+[0m[32m2026-01-31 13:01:01.811 [INFO0000] [scheduler00000000000]   Deadline Miss: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tie_scheduler.cpp:1501)
+生成可视化...
+✓ 使用中文字体: WenQuanYi Micro Hei
+
+======================================================================
+实时调度追踪文件可视化工具
+Real-Time Scheduling Trace File Visualizer
+======================================================================
+
+正在解析追踪文件: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/traces/gpfp_tie_15mj_v39.json
+
+事件类型统计:
+  arrival: 12
+  descheduled: 1
+  dline_miss: 6
+  end_instance: 3
+  scheduled: 4
+
+任务列表:
+  task_1: 2 个执行区间, 总执行时间 9, Deadline Miss: 3
+  task_2: 1 个执行区间, 总执行时间 8, Deadline Miss: 2
+  task_3: 1 个执行区间, 总执行时间 10, Deadline Miss: 1
+✓ 解析完成：26 个事件, 3 个任务
+✓ 时间范围: 0 - 90
+
+======================================================================
+调度统计信息 / Scheduling Statistics
+======================================================================
+
+【全局信息】
+时间范围: 0 - 90 (总时长: 90)
+任务数量: 3
+总事件数: 26
+
+【任务详细统计】
+任务              执行次数       总执行时间        CPU占用率       首次到达      
+----------------------------------------------------------------------
+task_1          2          9            10.00       % 0         
+task_2          1          8            8.89        % 0         
+task_3          1          10           11.11       % 0         
+----------------------------------------------------------------------
+总计                         27           30.00       %           
+======================================================================
+
+
+正在生成甘特图...
+
+✓ 图表已保存至: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/traces/gpfp_tie_15mj_v39.png
+  图表大小: 25.0x8.0 英寸, DPI: 150
+
+✓ 可视化完成！
+✅ 可视化完成: gpfp_tie_15mj_v39.png
+
+==========================================
+[4/12] 测试: gpfp_tie | 初始能量: 100j
+==========================================
+运行测试...
+✅ 测试完成
+---------- 测试结果摘要 ----------
+[0m[32m2026-01-31 13:01:03.039 [INFO0000] [scheduler00000000000]   任务完成数: 12 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tie_scheduler.cpp:1499)
+[0m[32m2026-01-31 13:01:03.040 [INFO0000] [scheduler00000000000]   剩余能量: 99.956476J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tie_scheduler.cpp:1504)
+[0m[32m2026-01-31 13:01:03.039 [INFO0000] [scheduler00000000000]   Deadline Miss: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tie_scheduler.cpp:1501)
+生成可视化...
+✓ 使用中文字体: WenQuanYi Micro Hei
+
+======================================================================
+实时调度追踪文件可视化工具
+Real-Time Scheduling Trace File Visualizer
+======================================================================
+
+正在解析追踪文件: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/traces/gpfp_tie_100j_v39.json
+
+事件类型统计:
+  arrival: 12
+  end_instance: 12
+  scheduled: 12
+
+任务列表:
+  task_1: 5 个执行区间, 总执行时间 25, Deadline Miss: 0
+  task_2: 4 个执行区间, 总执行时间 32, Deadline Miss: 0
+  task_3: 3 个执行区间, 总执行时间 30, Deadline Miss: 0
+✓ 解析完成：36 个事件, 3 个任务
+✓ 时间范围: 0 - 98
+
+======================================================================
+调度统计信息 / Scheduling Statistics
+======================================================================
+
+【全局信息】
+时间范围: 0 - 98 (总时长: 98)
+任务数量: 3
+总事件数: 36
+
+【任务详细统计】
+任务              执行次数       总执行时间        CPU占用率       首次到达      
+----------------------------------------------------------------------
+task_1          5          25           25.51       % 0         
+task_2          4          32           32.65       % 0         
+task_3          3          30           30.61       % 0         
+----------------------------------------------------------------------
+总计                         87           88.78       %           
+======================================================================
+
+
+正在生成甘特图...
+
+✓ 图表已保存至: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/traces/gpfp_tie_100j_v39.png
+  图表大小: 25.0x8.0 英寸, DPI: 150
+
+✓ 可视化完成！
+✅ 可视化完成: gpfp_tie_100j_v39.png
+
+==========================================
+[5/12] 测试: gpfp_tgf | 初始能量: 0j
+==========================================
+运行测试...
+✅ 测试完成
+---------- 测试结果摘要 ----------
+[0m[32m2026-01-31 13:01:04.297 [INFO0000] [scheduler00000000000]   任务完成数: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1399)
+[0m[32m2026-01-31 13:01:04.297 [INFO0000] [scheduler00000000000]   剩余能量: 0.000000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1404)
+[0m[32m2026-01-31 13:01:04.297 [INFO0000] [scheduler00000000000]   Deadline Miss: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1401)
+生成可视化...
+✓ 使用中文字体: WenQuanYi Micro Hei
+
+======================================================================
+实时调度追踪文件可视化工具
+Real-Time Scheduling Trace File Visualizer
+======================================================================
+
+正在解析追踪文件: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/traces/gpfp_tgf_0j_v39.json
+
+事件类型统计:
+  arrival: 12
+  dline_miss: 9
+
+任务列表:
+  task_1: 0 个执行区间, 总执行时间 0, Deadline Miss: 4
+  task_2: 0 个执行区间, 总执行时间 0, Deadline Miss: 3
+  task_3: 0 个执行区间, 总执行时间 0, Deadline Miss: 2
+✓ 解析完成：21 个事件, 3 个任务
+✓ 时间范围: 0 - 90
+
+======================================================================
+调度统计信息 / Scheduling Statistics
+======================================================================
+
+【全局信息】
+时间范围: 0 - 90 (总时长: 90)
+任务数量: 3
+总事件数: 21
+
+【任务详细统计】
+任务              执行次数       总执行时间        CPU占用率       首次到达      
+----------------------------------------------------------------------
+task_1          0          0            0.00        % 0         
+task_2          0          0            0.00        % 0         
+task_3          0          0            0.00        % 0         
+----------------------------------------------------------------------
+总计                         0            0.00        %           
+======================================================================
+
+
+正在生成甘特图...
+
+✓ 图表已保存至: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/traces/gpfp_tgf_0j_v39.png
+  图表大小: 25.0x8.0 英寸, DPI: 150
+
+✓ 可视化完成！
+✅ 可视化完成: gpfp_tgf_0j_v39.png
+
+==========================================
+[6/12] 测试: gpfp_tgf | 初始能量: 12mj
+==========================================
+运行测试...
+✅ 测试完成
+---------- 测试结果摘要 ----------
+[0m[32m2026-01-31 13:01:05.442 [INFO0000] [scheduler00000000000]   任务完成数: 2 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1399)
+[0m[32m2026-01-31 13:01:05.442 [INFO0000] [scheduler00000000000]   剩余能量: 0.000000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1404)
+[0m[32m2026-01-31 13:01:05.442 [INFO0000] [scheduler00000000000]   Deadline Miss: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1401)
+生成可视化...
+✓ 使用中文字体: WenQuanYi Micro Hei
+
+======================================================================
+实时调度追踪文件可视化工具
+Real-Time Scheduling Trace File Visualizer
+======================================================================
+
+正在解析追踪文件: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/traces/gpfp_tgf_12mj_v39.json
+
+事件类型统计:
+  arrival: 12
+  descheduled: 1
+  dline_miss: 7
+  end_instance: 2
+  scheduled: 3
+
+任务列表:
+  task_1: 1 个执行区间, 总执行时间 5, Deadline Miss: 3
+  task_2: 1 个执行区间, 总执行时间 8, Deadline Miss: 2
+  task_3: 1 个执行区间, 总执行时间 8, Deadline Miss: 2
+✓ 解析完成：25 个事件, 3 个任务
+✓ 时间范围: 0 - 90
+
+======================================================================
+调度统计信息 / Scheduling Statistics
+======================================================================
+
+【全局信息】
+时间范围: 0 - 90 (总时长: 90)
+任务数量: 3
+总事件数: 25
+
+【任务详细统计】
+任务              执行次数       总执行时间        CPU占用率       首次到达      
+----------------------------------------------------------------------
+task_1          1          5            5.56        % 0         
+task_2          1          8            8.89        % 0         
+task_3          1          8            8.89        % 0         
+----------------------------------------------------------------------
+总计                         21           23.33       %           
+======================================================================
+
+
+正在生成甘特图...
+
+✓ 图表已保存至: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/traces/gpfp_tgf_12mj_v39.png
+  图表大小: 25.0x8.0 英寸, DPI: 150
+
+✓ 可视化完成！
+✅ 可视化完成: gpfp_tgf_12mj_v39.png
+
+==========================================
+[7/12] 测试: gpfp_tgf | 初始能量: 15mj
+==========================================
+运行测试...
+✅ 测试完成
+---------- 测试结果摘要 ----------
+[0m[32m2026-01-31 13:01:06.626 [INFO0000] [scheduler00000000000]   任务完成数: 3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1399)
+[0m[32m2026-01-31 13:01:06.626 [INFO0000] [scheduler00000000000]   剩余能量: 0.000000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1404)
+[0m[32m2026-01-31 13:01:06.626 [INFO0000] [scheduler00000000000]   Deadline Miss: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1401)
+生成可视化...
+✓ 使用中文字体: WenQuanYi Micro Hei
+
+======================================================================
+实时调度追踪文件可视化工具
+Real-Time Scheduling Trace File Visualizer
+======================================================================
+
+正在解析追踪文件: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/traces/gpfp_tgf_15mj_v39.json
+
+事件类型统计:
+  arrival: 12
+  descheduled: 1
+  dline_miss: 6
+  end_instance: 3
+  scheduled: 4
+
+任务列表:
+  task_1: 2 个执行区间, 总执行时间 9, Deadline Miss: 3
+  task_2: 1 个执行区间, 总执行时间 8, Deadline Miss: 2
+  task_3: 1 个执行区间, 总执行时间 10, Deadline Miss: 1
+✓ 解析完成：26 个事件, 3 个任务
+✓ 时间范围: 0 - 90
+
+======================================================================
+调度统计信息 / Scheduling Statistics
+======================================================================
+
+【全局信息】
+时间范围: 0 - 90 (总时长: 90)
+任务数量: 3
+总事件数: 26
+
+【任务详细统计】
+任务              执行次数       总执行时间        CPU占用率       首次到达      
+----------------------------------------------------------------------
+task_1          2          9            10.00       % 0         
+task_2          1          8            8.89        % 0         
+task_3          1          10           11.11       % 0         
+----------------------------------------------------------------------
+总计                         27           30.00       %           
+======================================================================
+
+
+正在生成甘特图...
+
+✓ 图表已保存至: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/traces/gpfp_tgf_15mj_v39.png
+  图表大小: 25.0x8.0 英寸, DPI: 150
+
+✓ 可视化完成！
+✅ 可视化完成: gpfp_tgf_15mj_v39.png
+
+==========================================
+[8/12] 测试: gpfp_tgf | 初始能量: 100j
+==========================================
+运行测试...
+✅ 测试完成
+---------- 测试结果摘要 ----------
+[0m[32m2026-01-31 13:01:07.705 [INFO0000] [scheduler00000000000]   任务完成数: 12 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1399)
+[0m[32m2026-01-31 13:01:07.705 [INFO0000] [scheduler00000000000]   剩余能量: 99.956476J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1404)
+[0m[32m2026-01-31 13:01:07.705 [INFO0000] [scheduler00000000000]   Deadline Miss: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1401)
+生成可视化...
+✓ 使用中文字体: WenQuanYi Micro Hei
+
+======================================================================
+实时调度追踪文件可视化工具
+Real-Time Scheduling Trace File Visualizer
+======================================================================
+
+正在解析追踪文件: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/traces/gpfp_tgf_100j_v39.json
+
+事件类型统计:
+  arrival: 12
+  end_instance: 12
+  scheduled: 12
+
+任务列表:
+  task_1: 5 个执行区间, 总执行时间 25, Deadline Miss: 0
+  task_2: 4 个执行区间, 总执行时间 32, Deadline Miss: 0
+  task_3: 3 个执行区间, 总执行时间 30, Deadline Miss: 0
+✓ 解析完成：36 个事件, 3 个任务
+✓ 时间范围: 0 - 98
+
+======================================================================
+调度统计信息 / Scheduling Statistics
+======================================================================
+
+【全局信息】
+时间范围: 0 - 98 (总时长: 98)
+任务数量: 3
+总事件数: 36
+
+【任务详细统计】
+任务              执行次数       总执行时间        CPU占用率       首次到达      
+----------------------------------------------------------------------
+task_1          5          25           25.51       % 0         
+task_2          4          32           32.65       % 0         
+task_3          3          30           30.61       % 0         
+----------------------------------------------------------------------
+总计                         87           88.78       %           
+======================================================================
+
+
+正在生成甘特图...
+
+✓ 图表已保存至: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/traces/gpfp_tgf_100j_v39.png
+  图表大小: 25.0x8.0 英寸, DPI: 150
+
+✓ 可视化完成！
+✅ 可视化完成: gpfp_tgf_100j_v39.png
+
+==========================================
+[9/12] 测试: gpfp_btie | 初始能量: 0j
+==========================================
+运行测试...
+✅ 测试完成
+---------- 测试结果摘要 ----------
+[0m[32m2026-01-31 13:01:08.818 [INFO0000] [scheduler00000000000]   任务完成数: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1748)
+[0m[32m2026-01-31 13:01:08.818 [INFO0000] [scheduler00000000000]   剩余能量: 0.000000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1753)
+生成可视化...
+✓ 使用中文字体: WenQuanYi Micro Hei
+
+======================================================================
+实时调度追踪文件可视化工具
+Real-Time Scheduling Trace File Visualizer
+======================================================================
+
+正在解析追踪文件: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/traces/gpfp_btie_0j_v39.json
+
+事件类型统计:
+  arrival: 12
+  dline_miss: 9
+
+任务列表:
+  task_1: 0 个执行区间, 总执行时间 0, Deadline Miss: 4
+  task_2: 0 个执行区间, 总执行时间 0, Deadline Miss: 3
+  task_3: 0 个执行区间, 总执行时间 0, Deadline Miss: 2
+✓ 解析完成：21 个事件, 3 个任务
+✓ 时间范围: 0 - 90
+
+======================================================================
+调度统计信息 / Scheduling Statistics
+======================================================================
+
+【全局信息】
+时间范围: 0 - 90 (总时长: 90)
+任务数量: 3
+总事件数: 21
+
+【任务详细统计】
+任务              执行次数       总执行时间        CPU占用率       首次到达      
+----------------------------------------------------------------------
+task_1          0          0            0.00        % 0         
+task_2          0          0            0.00        % 0         
+task_3          0          0            0.00        % 0         
+----------------------------------------------------------------------
+总计                         0            0.00        %           
+======================================================================
+
+
+正在生成甘特图...
+
+✓ 图表已保存至: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/traces/gpfp_btie_0j_v39.png
+  图表大小: 25.0x8.0 英寸, DPI: 150
+
+✓ 可视化完成！
+✅ 可视化完成: gpfp_btie_0j_v39.png
+
+==========================================
+[10/12] 测试: gpfp_btie | 初始能量: 12mj
+==========================================
+运行测试...
+❌ 测试失败！
+[31m2026-01-31 13:01:09.798 [ERROR000] [scheduler00000000000] EnergyBridge: 执行Python代码失败 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:396)
+
+==========================================
+[11/12] 测试: gpfp_btie | 初始能量: 15mj
+==========================================
+运行测试...
+✅ 测试完成
+---------- 测试结果摘要 ----------
+[0m[32m2026-01-31 13:01:09.968 [INFO0000] [scheduler00000000000]   任务完成数: 3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1748)
+[0m[32m2026-01-31 13:01:09.968 [INFO0000] [scheduler00000000000]   剩余能量: 0.000000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1753)
+生成可视化...
+✓ 使用中文字体: WenQuanYi Micro Hei
+
+======================================================================
+实时调度追踪文件可视化工具
+Real-Time Scheduling Trace File Visualizer
+======================================================================
+
+正在解析追踪文件: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/traces/gpfp_btie_15mj_v39.json
+
+事件类型统计:
+  arrival: 12
+  descheduled: 1
+  dline_miss: 6
+  end_instance: 3
+  scheduled: 4
+
+任务列表:
+  task_1: 2 个执行区间, 总执行时间 8, Deadline Miss: 3
+  task_2: 1 个执行区间, 总执行时间 8, Deadline Miss: 2
+  task_3: 1 个执行区间, 总执行时间 10, Deadline Miss: 1
+✓ 解析完成：26 个事件, 3 个任务
+✓ 时间范围: 0 - 90
+
+======================================================================
+调度统计信息 / Scheduling Statistics
+======================================================================
+
+【全局信息】
+时间范围: 0 - 90 (总时长: 90)
+任务数量: 3
+总事件数: 26
+
+【任务详细统计】
+任务              执行次数       总执行时间        CPU占用率       首次到达      
+----------------------------------------------------------------------
+task_1          2          8            8.89        % 0         
+task_2          1          8            8.89        % 0         
+task_3          1          10           11.11       % 0         
+----------------------------------------------------------------------
+总计                         26           28.89       %           
+======================================================================
+
+
+正在生成甘特图...
+
+✓ 图表已保存至: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/traces/gpfp_btie_15mj_v39.png
+  图表大小: 25.0x8.0 英寸, DPI: 150
+
+✓ 可视化完成！
+✅ 可视化完成: gpfp_btie_15mj_v39.png
+
+==========================================
+[12/12] 测试: gpfp_btie | 初始能量: 100j
+==========================================
+运行测试...
+✅ 测试完成
+---------- 测试结果摘要 ----------
+[0m[32m2026-01-31 13:01:11.053 [INFO0000] [scheduler00000000000]   任务完成数: 12 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1748)
+[0m[32m2026-01-31 13:01:11.053 [INFO0000] [scheduler00000000000]   剩余能量: 99.951454J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_btie_scheduler.cpp:1753)
+生成可视化...
+✓ 使用中文字体: WenQuanYi Micro Hei
+
+======================================================================
+实时调度追踪文件可视化工具
+Real-Time Scheduling Trace File Visualizer
+======================================================================
+
+正在解析追踪文件: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/traces/gpfp_btie_100j_v39.json
+
+事件类型统计:
+  arrival: 12
+  end_instance: 12
+  scheduled: 12
+
+任务列表:
+  task_1: 5 个执行区间, 总执行时间 25, Deadline Miss: 0
+  task_2: 4 个执行区间, 总执行时间 32, Deadline Miss: 0
+  task_3: 3 个执行区间, 总执行时间 30, Deadline Miss: 0
+✓ 解析完成：36 个事件, 3 个任务
+✓ 时间范围: 0 - 98
+
+======================================================================
+调度统计信息 / Scheduling Statistics
+======================================================================
+
+【全局信息】
+时间范围: 0 - 98 (总时长: 98)
+任务数量: 3
+总事件数: 36
+
+【任务详细统计】
+任务              执行次数       总执行时间        CPU占用率       首次到达      
+----------------------------------------------------------------------
+task_1          5          25           25.51       % 0         
+task_2          4          32           32.65       % 0         
+task_3          3          30           30.61       % 0         
+----------------------------------------------------------------------
+总计                         87           88.78       %           
+======================================================================
+
+
+正在生成甘特图...
+
+✓ 图表已保存至: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/traces/gpfp_btie_100j_v39.png
+  图表大小: 25.0x8.0 英寸, DPI: 150
+
+✓ 可视化完成！
+✅ 可视化完成: gpfp_btie_100j_v39.png
+
+========================================
+  所有测试完成
+========================================
+
+结果文件:
+  追踪文件: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/traces/
+  日志文件: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/logs/
+  配置文件: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/configs/
+  可视化图表: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/traces/*.png
+

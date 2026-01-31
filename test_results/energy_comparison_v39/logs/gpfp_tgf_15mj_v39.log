@@ -1,0 +1,798 @@
+[32m2026-01-31 13:06:47.746 [INFO0000] [scheduler00000000000] ConfigManager: 保存配置文件路径: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/configs/system_2core_gpfp_tgf_15mj_v39.yml (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:95)
+[0m[32m2026-01-31 13:06:47.746 [INFO0000] [scheduler00000000000] ConfigManager: 找到cpu_islands配置 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:145)
+[0m[32m2026-01-31 13:06:47.746 [INFO0000] [scheduler00000000000] ConfigManager: 找到kernel配置 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:152)
+[0m[32m2026-01-31 13:06:47.746 [INFO0000] [scheduler00000000000] ConfigManager: 调度器类型 = gpfp_tgf (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:167)
+[0m[32m2026-01-31 13:06:47.746 [INFO0000] [scheduler00000000000] ConfigManager: 找到energy_management配置 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:133)
+[0m[32m2026-01-31 13:06:47.746 [INFO0000] [scheduler00000000000] ConfigManager: initial_energy = 0.015000 J (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:184)
+[0m[32m2026-01-31 13:06:47.746 [INFO0000] [scheduler00000000000] ConfigManager: max_energy = 1000.000000 J (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:199)
+[0m[32m2026-01-31 13:06:47.746 [INFO0000] [scheduler00000000000] ConfigManager: 找到scheduler_energy_model配置 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:242)
+[0m[32m2026-01-31 13:06:47.746 [INFO0000] [scheduler00000000000] ConfigManager: base_power = 0.500000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:260)
+[0m[33m2026-01-31 13:06:47.746 [WARNING0] [scheduler00000000000] ConfigManager: YAML解析失败，使用默认值: stoi (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:337)
+[0m[32m2026-01-31 13:06:47.746 [INFO0000] [scheduler00000000000] ConfigManager: 配置加载完成 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:341)
+[0m[32m2026-01-31 13:06:47.746 [INFO0000] [scheduler00000000000] 
+=== 系统配置信息 === (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:424)
+[0m[32m2026-01-31 13:06:47.746 [INFO0000] [scheduler00000000000] 配置加载状态: 已加载 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:425)
+[0m[32m2026-01-31 13:06:47.746 [INFO0000] [scheduler00000000000] 任务加载状态: 未加载 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:426)
+[0m[32m2026-01-31 13:06:47.746 [INFO0000] [scheduler00000000000] 
+CPU配置: (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:428)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000]   核心数: 4 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:429)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000]   调度器类型: gpfp_tgf (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:430)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000]   基础频率: 8100.000000 MHz (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:431)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000]   单位时间: 50 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:432)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000] 
+能量配置: (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:434)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000]   初始能量: 0.015000 J (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:435)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000]   最大能量: 1000.000000 J (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:436)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000]   基础收集率: 0.054000 J/ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:437)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000]   开始时间偏移: 0 ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:438)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000]   能量恢复: 启用 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:439)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000] 
+功率模型配置: (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:441)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000]   基础功率: 0.500000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:442)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000]   工作负载功率系数: (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:443)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000]     bzip2: 1.200000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:445)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000]     control: 0.100000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:445)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000]     decrypt: 1.500000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:445)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000]     encrypt: 1.500000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:445)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000]     hash: 0.800000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:445)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000]     idle: 0.100000 W (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:445)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000] 
+频率功率比: (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:448)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000]     7000 MHz: 0.850000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000]     7500 MHz: 0.880000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000]     8000 MHz: 0.920000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000]     8100 MHz: 0.930000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000]     8200 MHz: 0.940000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000]     8300 MHz: 0.950000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000]     8400 MHz: 0.960000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000]     8500 MHz: 0.970000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000]     9000 MHz: 1.000000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000]     9500 MHz: 1.050000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000]     10000 MHz: 1.100000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000]     10500 MHz: 1.150000 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:450)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000] 
+任务配置: (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:453)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000]   任务数量: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:454)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000] ======================== (/home/devcontainers/PARTSim-project/librtsim/scheduler/config_manager.cpp:469)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000] 🚀 [TGF] TGF Scheduler 初始化 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:245)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000] ⚡ [TGF] 最大能量: 1000.000000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:252)
+[0m[32m2026-01-31 13:06:47.747 [INFO0000] [scheduler00000000000] 📁 [TGF] 配置文件: /home/devcontainers/PARTSim-project/test_results/energy_comparison_v39/configs/system_2core_gpfp_tgf_15mj_v39.yml (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:259)
+[0mTraceback (most recent call last):
+  File "<string>", line 8, in <module>
+ModuleNotFoundError: No module named 'energy_manager'
+[31m2026-01-31 13:06:47.906 [ERROR000] [scheduler00000000000] EnergyBridge: 执行Python代码失败 (/home/devcontainers/PARTSim-project/librtsim/scheduler/energy_bridge.cpp:396)
+[0m[33m2026-01-31 13:06:47.906 [WARNING0] [scheduler00000000000] ⚠️ [TGF] EnergyBridge 初始化失败，使用ConfigManager获取能量 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:362)
+[0m[32m2026-01-31 13:06:47.906 [INFO0000] [scheduler00000000000] 💰 [TGF] 从ConfigManager获取初始能量: 0.015000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:369)
+[0m[32m2026-01-31 13:06:47.906 [INFO0000] [scheduler00000000000] ✅ [TGF] TGF Scheduler 初始化完成 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:379)
+[0m⭐ [Main] 从params解析arrival_offset: 0 ms
+wl: bzip2
+Task::insertCode. instr created: MetaSim::Entity8
+Task task_1: instruction list
+0) ExecInstr(5, bzip2)
+⭐ [Main] 从params解析arrival_offset: 0 ms
+wl: bzip2
+Task::insertCode. instr created: MetaSim::Entity10
+Task task_2: instruction list
+0) ExecInstr(8, bzip2)
+⭐ [Main] 从params解析arrival_offset: 0 ms
+wl: bzip2
+Task::insertCode. instr created: MetaSim::Entity12
+Task task_3: instruction list
+0) ExecInstr(10, bzip2)
+[32m2026-01-31 13:06:47.907 [INFO0000] [scheduler00000000000] 📥 [TGF] 添加任务: PeriodicTask task_1 DL = T 20 WCET(abs) 5 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:763)
+[0m[32m2026-01-31 13:06:47.907 [INFO0000] [scheduler00000000000] ⚡ [TGF] 任务能耗计算: 总能耗=0.002790J 每ms能耗=0.000558J WCET=5ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:822)
+[0m[32m2026-01-31 13:06:47.907 [INFO0000] [scheduler00000000000] ✅ [TGF] 任务已添加: 周期=20 WCET=5 工作负载=bzip2 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:830)
+[0m[32m2026-01-31 13:06:47.907 [INFO0000] [scheduler00000000000] 📥 [TGF] 添加任务: PeriodicTask task_2 DL = T 30 WCET(abs) 8 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:763)
+[0m[32m2026-01-31 13:06:47.907 [INFO0000] [scheduler00000000000] ⚡ [TGF] 任务能耗计算: 总能耗=0.004464J 每ms能耗=0.000558J WCET=8ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:822)
+[0m[32m2026-01-31 13:06:47.907 [INFO0000] [scheduler00000000000] ✅ [TGF] 任务已添加: 周期=30 WCET=8 工作负载=bzip2 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:830)
+[0m[32m2026-01-31 13:06:47.907 [INFO0000] [scheduler00000000000] 📥 [TGF] 添加任务: PeriodicTask task_3 DL = T 40 WCET(abs) 10 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:763)
+[0m[32m2026-01-31 13:06:47.907 [INFO0000] [scheduler00000000000] ⚡ [TGF] 任务能耗计算: 总能耗=0.005580J 每ms能耗=0.000558J WCET=10ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:822)
+[0m[32m2026-01-31 13:06:47.907 [INFO0000] [scheduler00000000000] ✅ [TGF] 任务已添加: 周期=40 WCET=10 工作负载=bzip2 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:830)
+[0mOne single run
+
+ Run #0
+[32m2026-01-31 13:06:47.907 [INFO0000] [scheduler00000000000] 🏁 [TGF] newRun - 仿真开始 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1359)
+[0m[32m2026-01-31 13:06:47.907 [INFO0000] [scheduler00000000000] 💰 [TGF] 初始能量: 0.015000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1382)
+[0m[DEBUG] Task::onArrival() - 开始: task_1 当前时间: 0ms isActive: 0
+[DEBUG] Task::onArrival() - 任务未激活: task_1
+[DEBUG] Task::handleArrival() - 开始: task_1 到达时间: 0ms
+[DEBUG] Task::handleArrival() - 设置截止时间: task_1 到达时间: 0ms 相对截止时间: 20ms 绝对截止时间: 20ms
+[DEBUG] Task::handleArrival() - 安排截止时间事件: task_1 截止时间: 20ms 当前时间: 0ms
+[DEBUG] Task::handleArrival() - 完成: task_1
+[DEBUG] MRTKernel::onArrival() - 开始: task_1 当前时间: 0ms
+[32m2026-01-31 13:06:47.907 [INFO0000] [scheduler00000000000] ➕ [TGF] insert: PeriodicTask task_1 DL = T 20 WCET(abs) 5 _ready_queue.size()=0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:957)
+[0m[DEBUG] Scheduler::insert() - 开始: task_1 当前时间: 0ms
+[DEBUG] Scheduler::insert() - 找到模型: task_1
+[DEBUG] Scheduler::insert() - 任务已添加到队列: task_1 队列大小: 1 优先级: 20
+[DEBUG] 队列前4个任务: task_1(prio=20) 
+[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=0
+[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=2
+[DEBUG] TGF::getTaskN(0) - ready_queue.size()=1
+[DEBUG] TGF::getTaskN(0) - i=0 task=PeriodicTask task_1 DL = T 20 WCET(abs) 5 ready_index=0 is_running=0 already_counted=0
+[32m2026-01-31 13:06:47.907 [INFO0000] [scheduler00000000000] ✅ [TGF] 预扣能量并调度任务: PeriodicTask task_1 DL = T 20 WCET(abs) 5 1ms能耗=0.000558J 15.000000 mJ → 14.442000 mJ (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:710)
+[0m[DEBUG]   getTaskN(0)=task_1 getProcessor=nullptr _m_dispatched=nullptr is_new=1
+[DEBUG] TGF::getTaskN(1) - ready_queue.size()=1
+[DEBUG] TGF::getTaskN(1) - i=0 task=PeriodicTask task_1 DL = T 20 WCET(abs) 5 ready_index=0 is_running=0 already_counted=1
+[DEBUG]   getTaskN(1) = nullptr, 退出循环
+[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=1
+[DEBUG] MRTKernel::dispatch() - num_newtasks=1
+[DEBUG] getNextFreeProc() - 开始查找空闲CPU
+[DEBUG] getNextFreeProc() - CPU: energy_aware_cpus-1 freq 8100 _m_currExe=null:1 isDispatched:0
+[DEBUG] getNextFreeProc() - 找到空闲CPU: energy_aware_cpus-1 freq 8100
+[DEBUG] dispatch(CPU) - posting BeginDispatchMultiEvt for CPU energy_aware_cpus-1 freq 8100
+[DEBUG] getNextFreeProc() - 开始查找空闲CPU
+[DEBUG] getNextFreeProc() - CPU: energy_aware_cpus-0 freq 8100 _m_currExe=null:1 isDispatched:0
+[DEBUG] getNextFreeProc() - 找到空闲CPU: energy_aware_cpus-0 freq 8100
+[DEBUG] MRTKernel::onArrival() - 完成: task_1
+[DEBUG] Task::onArrival() - 开始: task_2 当前时间: 0ms isActive: 0
+[DEBUG] Task::onArrival() - 任务未激活: task_2
+[DEBUG] Task::handleArrival() - 开始: task_2 到达时间: 0ms
+[DEBUG] Task::handleArrival() - 设置截止时间: task_2 到达时间: 0ms 相对截止时间: 30ms 绝对截止时间: 30ms
+[DEBUG] Task::handleArrival() - 安排截止时间事件: task_2 截止时间: 30ms 当前时间: 0ms
+[DEBUG] Task::handleArrival() - 完成: task_2
+[DEBUG] MRTKernel::onArrival() - 开始: task_2 当前时间: 0ms
+[32m2026-01-31 13:06:47.907 [INFO0000] [scheduler00000000000] ➕ [TGF] insert: PeriodicTask task_2 DL = T 30 WCET(abs) 8 _ready_queue.size()=1 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:957)
+[0m[DEBUG] Scheduler::insert() - 开始: task_2 当前时间: 0ms
+[DEBUG] Scheduler::insert() - 找到模型: task_2
+[DEBUG] Scheduler::insert() - 任务已添加到队列: task_2 队列大小: 2 优先级: 30
+[DEBUG] 队列前4个任务: task_2(prio=30) task_1(prio=20) 
+[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=0
+[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=2
+[DEBUG] TGF::getTaskN(0) - ready_queue.size()=2
+[DEBUG] TGF::getTaskN(0) - i=0 task=PeriodicTask task_1 DL = T 20 WCET(abs) 5 ready_index=0 is_running=0 already_counted=1
+[DEBUG] TGF::getTaskN(0) - 返回已调度任务: PeriodicTask task_1 DL = T 20 WCET(abs) 5
+[DEBUG]   getTaskN(0)=task_1 getProcessor=nullptr _m_dispatched=nullptr is_new=1
+[DEBUG] TGF::getTaskN(1) - ready_queue.size()=2
+[DEBUG] TGF::getTaskN(1) - i=0 task=PeriodicTask task_1 DL = T 20 WCET(abs) 5 ready_index=0 is_running=0 already_counted=1
+[DEBUG] TGF::getTaskN(1) - i=1 task=PeriodicTask task_2 DL = T 30 WCET(abs) 8 ready_index=1 is_running=0 already_counted=0
+[32m2026-01-31 13:06:47.907 [INFO0000] [scheduler00000000000] ✅ [TGF] 预扣能量并调度任务: PeriodicTask task_2 DL = T 30 WCET(abs) 8 1ms能耗=0.000558J 14.442000 mJ → 13.884000 mJ (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:710)
+[0m[DEBUG]   getTaskN(1)=task_2 getProcessor=nullptr _m_dispatched=nullptr is_new=1
+[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=2
+[DEBUG] MRTKernel::dispatch() - num_newtasks=2
+[DEBUG] getNextFreeProc() - 开始查找空闲CPU
+[DEBUG] getNextFreeProc() - CPU: energy_aware_cpus-1 freq 8100 _m_currExe=null:1 isDispatched:0
+[DEBUG] getNextFreeProc() - 找到空闲CPU: energy_aware_cpus-1 freq 8100
+[DEBUG] dispatch(CPU) - posting BeginDispatchMultiEvt for CPU energy_aware_cpus-1 freq 8100
+[DEBUG] getNextFreeProc() - 开始查找空闲CPU
+[DEBUG] getNextFreeProc() - CPU: energy_aware_cpus-0 freq 8100 _m_currExe=null:1 isDispatched:0
+[DEBUG] getNextFreeProc() - 找到空闲CPU: energy_aware_cpus-0 freq 8100
+[DEBUG] dispatch(CPU) - posting BeginDispatchMultiEvt for CPU energy_aware_cpus-0 freq 8100
+[DEBUG] getNextFreeProc() - 开始查找空闲CPU
+[DEBUG] getNextFreeProc() - 未找到空闲CPU
+[DEBUG] MRTKernel::onArrival() - 完成: task_2
+[DEBUG] Task::onArrival() - 开始: task_3 当前时间: 0ms isActive: 0
+[DEBUG] Task::onArrival() - 任务未激活: task_3
+[DEBUG] Task::handleArrival() - 开始: task_3 到达时间: 0ms
+[DEBUG] Task::handleArrival() - 设置截止时间: task_3 到达时间: 0ms 相对截止时间: 40ms 绝对截止时间: 40ms
+[DEBUG] Task::handleArrival() - 安排截止时间事件: task_3 截止时间: 40ms 当前时间: 0ms
+[DEBUG] Task::handleArrival() - 完成: task_3
+[DEBUG] MRTKernel::onArrival() - 开始: task_3 当前时间: 0ms
+[32m2026-01-31 13:06:47.907 [INFO0000] [scheduler00000000000] ➕ [TGF] insert: PeriodicTask task_3 DL = T 40 WCET(abs) 10 _ready_queue.size()=2 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:957)
+[0m[DEBUG] Scheduler::insert() - 开始: task_3 当前时间: 0ms
+[DEBUG] Scheduler::insert() - 找到模型: task_3
+[DEBUG] Scheduler::insert() - 任务已添加到队列: task_3 队列大小: 3 优先级: 40
+[DEBUG] 队列前4个任务: task_3(prio=40) task_2(prio=30) task_1(prio=20) 
+[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=0
+[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=2
+[DEBUG] TGF::getTaskN(0) - ready_queue.size()=3
+[DEBUG] TGF::getTaskN(0) - i=0 task=PeriodicTask task_1 DL = T 20 WCET(abs) 5 ready_index=0 is_running=0 already_counted=1
+[DEBUG] TGF::getTaskN(0) - 返回已调度任务: PeriodicTask task_1 DL = T 20 WCET(abs) 5
+[DEBUG]   getTaskN(0)=task_1 getProcessor=nullptr _m_dispatched=nullptr is_new=1
+[DEBUG] TGF::getTaskN(1) - ready_queue.size()=3
+[DEBUG] TGF::getTaskN(1) - i=0 task=PeriodicTask task_1 DL = T 20 WCET(abs) 5 ready_index=0 is_running=0 already_counted=1
+[DEBUG] TGF::getTaskN(1) - i=1 task=PeriodicTask task_2 DL = T 30 WCET(abs) 8 ready_index=1 is_running=0 already_counted=1
+[DEBUG] TGF::getTaskN(1) - 返回已调度任务: PeriodicTask task_2 DL = T 30 WCET(abs) 8
+[DEBUG]   getTaskN(1)=task_2 getProcessor=nullptr _m_dispatched=nullptr is_new=1
+[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=2
+[DEBUG] MRTKernel::dispatch() - num_newtasks=2
+[DEBUG] getNextFreeProc() - 开始查找空闲CPU
+[DEBUG] getNextFreeProc() - CPU: energy_aware_cpus-1 freq 8100 _m_currExe=null:1 isDispatched:0
+[DEBUG] getNextFreeProc() - 找到空闲CPU: energy_aware_cpus-1 freq 8100
+[DEBUG] dispatch(CPU) - posting BeginDispatchMultiEvt for CPU energy_aware_cpus-1 freq 8100
+[DEBUG] getNextFreeProc() - 开始查找空闲CPU
+[DEBUG] getNextFreeProc() - CPU: energy_aware_cpus-0 freq 8100 _m_currExe=null:1 isDispatched:0
+[DEBUG] getNextFreeProc() - 找到空闲CPU: energy_aware_cpus-0 freq 8100
+[DEBUG] dispatch(CPU) - posting BeginDispatchMultiEvt for CPU energy_aware_cpus-0 freq 8100
+[DEBUG] getNextFreeProc() - 开始查找空闲CPU
+[DEBUG] getNextFreeProc() - 未找到空闲CPU
+[DEBUG] MRTKernel::onArrival() - 完成: task_3
+[32m2026-01-31 13:06:47.907 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 0ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[DEBUG] onBeginDispatchMulti - 开始调用getTaskN查找任务
+[DEBUG] TGF::getTaskN(0) - ready_queue.size()=3
+[DEBUG] TGF::getTaskN(0) - i=0 task=PeriodicTask task_1 DL = T 20 WCET(abs) 5 ready_index=0 is_running=0 already_counted=1
+[DEBUG] TGF::getTaskN(0) - 返回已调度任务: PeriodicTask task_1 DL = T 20 WCET(abs) 5
+[DEBUG] onBeginDispatchMulti - getTaskN(0) = task_1 _m_dispatched=0
+[DEBUG] onBeginDispatchMulti - 设置事件: task=task_1 CPU=energy_aware_cpus-1 freq 8100 post_time=0 (_dispatch_start_time=0)
+[DEBUG] onBeginDispatchMulti - 开始调用getTaskN查找任务
+[DEBUG] TGF::getTaskN(0) - ready_queue.size()=3
+[DEBUG] TGF::getTaskN(0) - i=0 task=PeriodicTask task_1 DL = T 20 WCET(abs) 5 ready_index=0 is_running=0 already_counted=1
+[DEBUG] TGF::getTaskN(0) - 返回已调度任务: PeriodicTask task_1 DL = T 20 WCET(abs) 5
+[DEBUG] onBeginDispatchMulti - getTaskN(0) = task_1 _m_dispatched=0x62c7c805b910
+[DEBUG] TGF::getTaskN(1) - ready_queue.size()=3
+[DEBUG] TGF::getTaskN(1) - i=0 task=PeriodicTask task_1 DL = T 20 WCET(abs) 5 ready_index=0 is_running=0 already_counted=1
+[DEBUG] TGF::getTaskN(1) - i=1 task=PeriodicTask task_2 DL = T 30 WCET(abs) 8 ready_index=1 is_running=0 already_counted=1
+[DEBUG] TGF::getTaskN(1) - 返回已调度任务: PeriodicTask task_2 DL = T 30 WCET(abs) 8
+[DEBUG] onBeginDispatchMulti - getTaskN(1) = task_2 _m_dispatched=0
+[DEBUG] onBeginDispatchMulti - 设置事件: task=task_2 CPU=energy_aware_cpus-0 freq 8100 post_time=0 (_dispatch_start_time=0)
+MRTKernel::printstate(), time 0 energy_aware_cpus-1 : task_1   energy_aware_cpus-0 :   0   
+[DEBUG] MRTKernel::onEndDispatchMulti() - 任务状态: task_1 状态: 1
+[DEBUG] _sched类型: N5RTSim12TGFSchedulerE
+[DEBUG] cascade_sched指针: 0 asap_sched指针: 0 epp_sched指针: 0 efpp_sched指针: 0 cbpp_sched指针: 0
+[DEBUG] cascade_sched和asap_sched都为nullptr或task为nullptr，跳过能量预检查
+[DEBUG] 任务状态检查: task_1 状态: 1 (TSK_READY=1 TSK_EXEC=2)
+[DEBUG] 调用schedule(): task_1
+[DEBUG] Task::schedule() - 触发调度事件: task_1 状态: 1 当前时间: 0ms
+[DEBUG] Task::schedule() - 调用schedEvt.process()
+[DEBUG] Task::schedule() - schedEvt.process()调用完成
+[32m2026-01-31 13:06:47.907 [INFO0000] [scheduler00000000000] ⚡ [TGF] 启动运行时能量检查: PeriodicTask task_1 DL = T 20 WCET(abs) 5 在CPU energy_aware_cpus-1 freq 8100 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1143)
+[0m[32m2026-01-31 13:06:47.907 [INFO0000] [scheduler00000000000] 📥 [TGF] 任务到达并添加到就绪队列: PeriodicTask task_1 DL = T 20 WCET(abs) 5 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:749)
+[0mMRTKernel::printstate(), time 0 energy_aware_cpus-1 : task_1   energy_aware_cpus-0 : task_2   
+[DEBUG] MRTKernel::onEndDispatchMulti() - 任务状态: task_2 状态: 1
+[DEBUG] _sched类型: N5RTSim12TGFSchedulerE
+[DEBUG] cascade_sched指针: 0 asap_sched指针: 0 epp_sched指针: 0 efpp_sched指针: 0 cbpp_sched指针: 0
+[DEBUG] cascade_sched和asap_sched都为nullptr或task为nullptr，跳过能量预检查
+[DEBUG] 任务状态检查: task_2 状态: 1 (TSK_READY=1 TSK_EXEC=2)
+[DEBUG] 调用schedule(): task_2
+[DEBUG] Task::schedule() - 触发调度事件: task_2 状态: 1 当前时间: 0ms
+[DEBUG] Task::schedule() - 调用schedEvt.process()
+[DEBUG] Task::schedule() - schedEvt.process()调用完成
+[32m2026-01-31 13:06:47.907 [INFO0000] [scheduler00000000000] ⚡ [TGF] 启动运行时能量检查: PeriodicTask task_2 DL = T 30 WCET(abs) 8 在CPU energy_aware_cpus-0 freq 8100 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1143)
+[0m[32m2026-01-31 13:06:47.907 [INFO0000] [scheduler00000000000] 📥 [TGF] 任务到达并添加到就绪队列: PeriodicTask task_2 DL = T 30 WCET(abs) 8 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:749)
+[0m[32m2026-01-31 13:06:47.907 [INFO0000] [scheduler00000000000] ⚡ [TGF] 运行中任务续期: PeriodicTask task_1 DL = T 20 WCET(abs) 5 1ms能耗=0.558000 mJ 13.884000 mJ → 13.326000 mJ 已执行=1ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:178)
+[0m[32m2026-01-31 13:06:47.907 [INFO0000] [scheduler00000000000] ⚡ [TGF] 运行中任务续期: PeriodicTask task_2 DL = T 30 WCET(abs) 8 1ms能耗=0.558000 mJ 13.326000 mJ → 12.768000 mJ 已执行=1ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:178)
+[0m[32m2026-01-31 13:06:47.907 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 1ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⚡ [TGF] 运行中任务续期: PeriodicTask task_1 DL = T 20 WCET(abs) 5 1ms能耗=0.558000 mJ 12.768000 mJ → 12.210000 mJ 已执行=2ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:178)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⚡ [TGF] 运行中任务续期: PeriodicTask task_2 DL = T 30 WCET(abs) 8 1ms能耗=0.558000 mJ 12.210000 mJ → 11.652000 mJ 已执行=2ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:178)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 2ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⚡ [TGF] 运行中任务续期: PeriodicTask task_1 DL = T 20 WCET(abs) 5 1ms能耗=0.558000 mJ 11.652000 mJ → 11.094000 mJ 已执行=3ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:178)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⚡ [TGF] 运行中任务续期: PeriodicTask task_2 DL = T 30 WCET(abs) 8 1ms能耗=0.558000 mJ 11.094000 mJ → 10.536000 mJ 已执行=3ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:178)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 3ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⚡ [TGF] 运行中任务续期: PeriodicTask task_1 DL = T 20 WCET(abs) 5 1ms能耗=0.558000 mJ 10.536000 mJ → 9.978000 mJ 已执行=4ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:178)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⚡ [TGF] 运行中任务续期: PeriodicTask task_2 DL = T 30 WCET(abs) 8 1ms能耗=0.558000 mJ 9.978000 mJ → 9.420000 mJ 已执行=4ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:178)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 4ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ✅ [TGF] 任务已达到WCET，完成执行: PeriodicTask task_1 DL = T 20 WCET(abs) 5 已执行=5ms WCET=5ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:116)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⚡ [TGF] 运行中任务续期: PeriodicTask task_2 DL = T 30 WCET(abs) 8 1ms能耗=0.558000 mJ 9.420000 mJ → 8.862000 mJ 已执行=5ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:178)
+[0m[DEBUG] Scheduler::extract() - 开始: task_1 当前时间: 5ms 队列大小: 3
+[DEBUG] Scheduler::extract() - 完成: task_1 队列大小: 2
+[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ✅ [TGF] 任务结束: PeriodicTask task_1 DL = T 20 WCET(abs) 5 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1413)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] 📊 [TGF] 当前能量: 0.008862J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1437)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] 🔄 [TGF] 任务结束，触发立即调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1448)
+[0m[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=5
+[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=2
+[DEBUG] TGF::getTaskN(0) - ready_queue.size()=2
+[DEBUG] TGF::getTaskN(0) - i=0 task=PeriodicTask task_2 DL = T 30 WCET(abs) 8 ready_index=0 is_running=1 already_counted=1
+[DEBUG]   getTaskN(0)=task_2 getProcessor=energy_aware_cpus-0 freq 8100 _m_dispatched=energy_aware_cpus-0 freq 8100 is_new=0
+[DEBUG] TGF::getTaskN(1) - ready_queue.size()=2
+[DEBUG] TGF::getTaskN(1) - i=0 task=PeriodicTask task_2 DL = T 30 WCET(abs) 8 ready_index=0 is_running=1 already_counted=1
+[DEBUG] TGF::getTaskN(1) - i=1 task=PeriodicTask task_3 DL = T 40 WCET(abs) 10 ready_index=1 is_running=0 already_counted=0
+[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ✅ [TGF] 预扣能量并调度任务: PeriodicTask task_3 DL = T 40 WCET(abs) 10 1ms能耗=0.000558J 8.862000 mJ → 8.304000 mJ (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:710)
+[0m[DEBUG]   getTaskN(1)=task_3 getProcessor=nullptr _m_dispatched=nullptr is_new=1
+[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=1
+[DEBUG] MRTKernel::dispatch() - num_newtasks=1
+[DEBUG] getNextFreeProc() - 开始查找空闲CPU
+[DEBUG] getNextFreeProc() - CPU: energy_aware_cpus-1 freq 8100 _m_currExe=null:1 isDispatched:0
+[DEBUG] getNextFreeProc() - 找到空闲CPU: energy_aware_cpus-1 freq 8100
+[DEBUG] dispatch(CPU) - posting BeginDispatchMultiEvt for CPU energy_aware_cpus-1 freq 8100
+[DEBUG] getNextFreeProc() - 开始查找空闲CPU
+[DEBUG] getNextFreeProc() - CPU: energy_aware_cpus-0 freq 8100 _m_currExe=null:0 isDispatched:1
+[DEBUG] getNextFreeProc() - 未找到空闲CPU
+[DEBUG] dispatch(CPU) - posting BeginDispatchMultiEvt for CPU energy_aware_cpus-1 freq 8100
+[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 5ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[DEBUG] onBeginDispatchMulti - 开始调用getTaskN查找任务
+[DEBUG] TGF::getTaskN(0) - ready_queue.size()=2
+[DEBUG] TGF::getTaskN(0) - i=0 task=PeriodicTask task_2 DL = T 30 WCET(abs) 8 ready_index=0 is_running=1 already_counted=1
+[DEBUG] onBeginDispatchMulti - getTaskN(0) = task_2 _m_dispatched=0x62c7c8085a60
+[DEBUG] TGF::getTaskN(1) - ready_queue.size()=2
+[DEBUG] TGF::getTaskN(1) - i=0 task=PeriodicTask task_2 DL = T 30 WCET(abs) 8 ready_index=0 is_running=1 already_counted=1
+[DEBUG] TGF::getTaskN(1) - i=1 task=PeriodicTask task_3 DL = T 40 WCET(abs) 10 ready_index=1 is_running=0 already_counted=1
+[DEBUG] TGF::getTaskN(1) - 返回已调度任务: PeriodicTask task_3 DL = T 40 WCET(abs) 10
+[DEBUG] onBeginDispatchMulti - getTaskN(1) = task_3 _m_dispatched=0
+[DEBUG] onBeginDispatchMulti - 设置事件: task=task_3 CPU=energy_aware_cpus-1 freq 8100 post_time=5 (_dispatch_start_time=5)
+MRTKernel::printstate(), time 5 energy_aware_cpus-1 : task_3   energy_aware_cpus-0 : task_2   
+[DEBUG] MRTKernel::onEndDispatchMulti() - 任务状态: task_3 状态: 1
+[DEBUG] _sched类型: N5RTSim12TGFSchedulerE
+[DEBUG] cascade_sched指针: 0 asap_sched指针: 0 epp_sched指针: 0 efpp_sched指针: 0 cbpp_sched指针: 0
+[DEBUG] cascade_sched和asap_sched都为nullptr或task为nullptr，跳过能量预检查
+[DEBUG] 任务状态检查: task_3 状态: 1 (TSK_READY=1 TSK_EXEC=2)
+[DEBUG] 调用schedule(): task_3
+[DEBUG] Task::schedule() - 触发调度事件: task_3 状态: 1 当前时间: 5ms
+[DEBUG] Task::schedule() - 调用schedEvt.process()
+[DEBUG] Task::schedule() - schedEvt.process()调用完成
+[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⚡ [TGF] 启动运行时能量检查: PeriodicTask task_3 DL = T 40 WCET(abs) 10 在CPU energy_aware_cpus-1 freq 8100 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1143)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] 📥 [TGF] 任务到达并添加到就绪队列: PeriodicTask task_3 DL = T 40 WCET(abs) 10 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:749)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⚡ [TGF] 运行中任务续期: PeriodicTask task_2 DL = T 30 WCET(abs) 8 1ms能耗=0.558000 mJ 8.304000 mJ → 7.746000 mJ 已执行=6ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:178)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⚡ [TGF] 运行中任务续期: PeriodicTask task_3 DL = T 40 WCET(abs) 10 1ms能耗=0.558000 mJ 7.746000 mJ → 7.188000 mJ 已执行=1ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:178)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 6ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⚡ [TGF] 运行中任务续期: PeriodicTask task_2 DL = T 30 WCET(abs) 8 1ms能耗=0.558000 mJ 7.188000 mJ → 6.630000 mJ 已执行=7ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:178)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⚡ [TGF] 运行中任务续期: PeriodicTask task_3 DL = T 40 WCET(abs) 10 1ms能耗=0.558000 mJ 6.630000 mJ → 6.072000 mJ 已执行=2ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:178)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 7ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ✅ [TGF] 任务已达到WCET，完成执行: PeriodicTask task_2 DL = T 30 WCET(abs) 8 已执行=8ms WCET=8ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:116)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⚡ [TGF] 运行中任务续期: PeriodicTask task_3 DL = T 40 WCET(abs) 10 1ms能耗=0.558000 mJ 6.072000 mJ → 5.514000 mJ 已执行=3ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:178)
+[0m[DEBUG] Scheduler::extract() - 开始: task_2 当前时间: 8ms 队列大小: 2
+[DEBUG] Scheduler::extract() - 完成: task_2 队列大小: 1
+[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ✅ [TGF] 任务结束: PeriodicTask task_2 DL = T 30 WCET(abs) 8 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1413)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] 📊 [TGF] 当前能量: 0.005514J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1437)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] 🔄 [TGF] 任务结束，触发立即调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1448)
+[0m[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=8
+[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=2
+[DEBUG] TGF::getTaskN(0) - ready_queue.size()=1
+[DEBUG] TGF::getTaskN(0) - i=0 task=PeriodicTask task_3 DL = T 40 WCET(abs) 10 ready_index=0 is_running=1 already_counted=1
+[DEBUG]   getTaskN(0)=task_3 getProcessor=energy_aware_cpus-1 freq 8100 _m_dispatched=energy_aware_cpus-1 freq 8100 is_new=0
+[DEBUG] TGF::getTaskN(1) - ready_queue.size()=1
+[DEBUG] TGF::getTaskN(1) - i=0 task=PeriodicTask task_3 DL = T 40 WCET(abs) 10 ready_index=0 is_running=1 already_counted=1
+[DEBUG]   getTaskN(1) = nullptr, 退出循环
+[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks < 1，返回
+[DEBUG] dispatch(CPU) - posting BeginDispatchMultiEvt for CPU energy_aware_cpus-0 freq 8100
+[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 8ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[DEBUG] onBeginDispatchMulti - 开始调用getTaskN查找任务
+[DEBUG] TGF::getTaskN(0) - ready_queue.size()=1
+[DEBUG] TGF::getTaskN(0) - i=0 task=PeriodicTask task_3 DL = T 40 WCET(abs) 10 ready_index=0 is_running=1 already_counted=1
+[DEBUG] onBeginDispatchMulti - getTaskN(0) = task_3 _m_dispatched=0x62c7c805b910
+[DEBUG] TGF::getTaskN(1) - ready_queue.size()=1
+[DEBUG] TGF::getTaskN(1) - i=0 task=PeriodicTask task_3 DL = T 40 WCET(abs) 10 ready_index=0 is_running=1 already_counted=1
+[DEBUG] onBeginDispatchMulti - st is nullptr, returning early at time 8
+[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⚡ [TGF] 运行中任务续期: PeriodicTask task_3 DL = T 40 WCET(abs) 10 1ms能耗=0.558000 mJ 5.514000 mJ → 4.956000 mJ 已执行=4ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:178)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 9ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⚡ [TGF] 运行中任务续期: PeriodicTask task_3 DL = T 40 WCET(abs) 10 1ms能耗=0.558000 mJ 4.956000 mJ → 4.398000 mJ 已执行=5ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:178)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 10ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⚡ [TGF] 运行中任务续期: PeriodicTask task_3 DL = T 40 WCET(abs) 10 1ms能耗=0.558000 mJ 4.398000 mJ → 3.840000 mJ 已执行=6ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:178)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 11ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⚡ [TGF] 运行中任务续期: PeriodicTask task_3 DL = T 40 WCET(abs) 10 1ms能耗=0.558000 mJ 3.840000 mJ → 3.282000 mJ 已执行=7ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:178)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 12ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⚡ [TGF] 运行中任务续期: PeriodicTask task_3 DL = T 40 WCET(abs) 10 1ms能耗=0.558000 mJ 3.282000 mJ → 2.724000 mJ 已执行=8ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:178)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 13ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⚡ [TGF] 运行中任务续期: PeriodicTask task_3 DL = T 40 WCET(abs) 10 1ms能耗=0.558000 mJ 2.724000 mJ → 2.166000 mJ 已执行=9ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:178)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 14ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ✅ [TGF] 任务已达到WCET，完成执行: PeriodicTask task_3 DL = T 40 WCET(abs) 10 已执行=10ms WCET=10ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:116)
+[0m[DEBUG] Scheduler::extract() - 开始: task_3 当前时间: 15ms 队列大小: 1
+[DEBUG] Scheduler::extract() - 完成: task_3 队列大小: 0
+[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ✅ [TGF] 任务结束: PeriodicTask task_3 DL = T 40 WCET(abs) 10 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1413)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] 📊 [TGF] 当前能量: 0.002166J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1437)
+[0m[DEBUG] dispatch(CPU) - posting BeginDispatchMultiEvt for CPU energy_aware_cpus-1 freq 8100
+[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 15ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[DEBUG] onBeginDispatchMulti - 开始调用getTaskN查找任务
+[DEBUG] onBeginDispatchMulti - st is nullptr, returning early at time 15
+[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 16ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 17ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 18ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 19ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[DEBUG] Task::onArrival() - 开始: task_1 当前时间: 20ms isActive: 0
+[DEBUG] Task::onArrival() - 任务未激活: task_1
+[DEBUG] Task::handleArrival() - 开始: task_1 到达时间: 20ms
+[DEBUG] Task::handleArrival() - 设置截止时间: task_1 到达时间: 20ms 相对截止时间: 20ms 绝对截止时间: 40ms
+[DEBUG] Task::handleArrival() - 安排截止时间事件: task_1 截止时间: 40ms 当前时间: 20ms
+[DEBUG] Task::handleArrival() - 完成: task_1
+[DEBUG] MRTKernel::onArrival() - 开始: task_1 当前时间: 20ms
+[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ➕ [TGF] insert: PeriodicTask task_1 DL = T 20 WCET(abs) 5 _ready_queue.size()=0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:957)
+[0m[DEBUG] Scheduler::insert() - 开始: task_1 当前时间: 20ms
+[DEBUG] Scheduler::insert() - 找到模型: task_1
+[DEBUG] Scheduler::insert() - 任务已添加到队列: task_1 队列大小: 1 优先级: 20
+[DEBUG] 队列前4个任务: task_1(prio=20) 
+[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=20
+[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=2
+[DEBUG] TGF::getTaskN(0) - ready_queue.size()=1
+[DEBUG] TGF::getTaskN(0) - i=0 task=PeriodicTask task_1 DL = T 20 WCET(abs) 5 ready_index=0 is_running=0 already_counted=1
+[DEBUG] TGF::getTaskN(0) - 返回已调度任务: PeriodicTask task_1 DL = T 20 WCET(abs) 5
+[DEBUG]   getTaskN(0)=task_1 getProcessor=nullptr _m_dispatched=nullptr is_new=1
+[DEBUG] TGF::getTaskN(1) - ready_queue.size()=1
+[DEBUG] TGF::getTaskN(1) - i=0 task=PeriodicTask task_1 DL = T 20 WCET(abs) 5 ready_index=0 is_running=0 already_counted=1
+[DEBUG]   getTaskN(1) = nullptr, 退出循环
+[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=1
+[DEBUG] MRTKernel::dispatch() - num_newtasks=1
+[DEBUG] getNextFreeProc() - 开始查找空闲CPU
+[DEBUG] getNextFreeProc() - CPU: energy_aware_cpus-1 freq 8100 _m_currExe=null:1 isDispatched:0
+[DEBUG] getNextFreeProc() - 找到空闲CPU: energy_aware_cpus-1 freq 8100
+[DEBUG] dispatch(CPU) - posting BeginDispatchMultiEvt for CPU energy_aware_cpus-1 freq 8100
+[DEBUG] getNextFreeProc() - 开始查找空闲CPU
+[DEBUG] getNextFreeProc() - CPU: energy_aware_cpus-0 freq 8100 _m_currExe=null:1 isDispatched:0
+[DEBUG] getNextFreeProc() - 找到空闲CPU: energy_aware_cpus-0 freq 8100
+[DEBUG] MRTKernel::onArrival() - 完成: task_1
+[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 20ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[DEBUG] onBeginDispatchMulti - 开始调用getTaskN查找任务
+[DEBUG] TGF::getTaskN(0) - ready_queue.size()=1
+[DEBUG] TGF::getTaskN(0) - i=0 task=PeriodicTask task_1 DL = T 20 WCET(abs) 5 ready_index=0 is_running=0 already_counted=1
+[DEBUG] TGF::getTaskN(0) - 返回已调度任务: PeriodicTask task_1 DL = T 20 WCET(abs) 5
+[DEBUG] onBeginDispatchMulti - getTaskN(0) = task_1 _m_dispatched=0
+[DEBUG] onBeginDispatchMulti - 设置事件: task=task_1 CPU=energy_aware_cpus-1 freq 8100 post_time=20 (_dispatch_start_time=20)
+MRTKernel::printstate(), time 20 energy_aware_cpus-1 : task_1   energy_aware_cpus-0 :   0   
+[DEBUG] MRTKernel::onEndDispatchMulti() - 任务状态: task_1 状态: 1
+[DEBUG] _sched类型: N5RTSim12TGFSchedulerE
+[DEBUG] cascade_sched指针: 0 asap_sched指针: 0 epp_sched指针: 0 efpp_sched指针: 0 cbpp_sched指针: 0
+[DEBUG] cascade_sched和asap_sched都为nullptr或task为nullptr，跳过能量预检查
+[DEBUG] 任务状态检查: task_1 状态: 1 (TSK_READY=1 TSK_EXEC=2)
+[DEBUG] 调用schedule(): task_1
+[DEBUG] Task::schedule() - 触发调度事件: task_1 状态: 1 当前时间: 20ms
+[DEBUG] Task::schedule() - 调用schedEvt.process()
+[DEBUG] Task::schedule() - schedEvt.process()调用完成
+[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⚡ [TGF] 启动运行时能量检查: PeriodicTask task_1 DL = T 20 WCET(abs) 5 在CPU energy_aware_cpus-1 freq 8100 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1143)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] 📥 [TGF] 任务到达并添加到就绪队列: PeriodicTask task_1 DL = T 20 WCET(abs) 5 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:749)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⚡ [TGF] 运行中任务续期: PeriodicTask task_1 DL = T 20 WCET(abs) 5 1ms能耗=0.558000 mJ 2.166000 mJ → 1.608000 mJ 已执行=1ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:178)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 21ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⚡ [TGF] 运行中任务续期: PeriodicTask task_1 DL = T 20 WCET(abs) 5 1ms能耗=0.558000 mJ 1.608000 mJ → 1.050000 mJ 已执行=2ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:178)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 22ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⚡ [TGF] 运行中任务续期: PeriodicTask task_1 DL = T 20 WCET(abs) 5 1ms能耗=0.558000 mJ 1.050000 mJ → 0.492000 mJ 已执行=3ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:178)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 23ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⚡ [TGF] 能量刚好耗尽或不足，立即中断任务: PeriodicTask task_1 DL = T 20 WCET(abs) 5 需要=0.558000 mJ 剩余=0.492000 mJ 已执行=4ms (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:138)
+[0m[DEBUG] Scheduler::extract() - 开始: task_1 当前时间: 24ms 队列大小: 1
+[DEBUG] Scheduler::extract() - 完成: task_1 队列大小: 0
+[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ➕ [TGF] insert: PeriodicTask task_1 DL = T 20 WCET(abs) 5 _ready_queue.size()=1 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:957)
+[0m[DEBUG] Scheduler::insert() - 开始: task_1 当前时间: 24ms
+[DEBUG] Scheduler::insert() - 找到模型: task_1
+[DEBUG] Scheduler::insert() - 任务已添加到队列: task_1 队列大小: 1 优先级: 20
+[DEBUG] 队列前4个任务: task_1(prio=20) 
+[DEBUG] MRTKernel::suspend() - 任务已重新插入队列: task_1 (剩余执行时间保留)
+[DEBUG] dispatch(CPU) - posting BeginDispatchMultiEvt for CPU energy_aware_cpus-1 freq 8100
+[32m2026-01-31 13:06:47.908 [INFO0000] [scheduler00000000000] ⚠️ [TGF] 任务因能量不足被挂起: PeriodicTask task_1 DL = T 20 WCET(abs) 5 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:156)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 24ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[DEBUG] onBeginDispatchMulti - 开始调用getTaskN查找任务
+[DEBUG] onBeginDispatchMulti - st is nullptr, returning early at time 24
+[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 25ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 26ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 27ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 28ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 29ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[DEBUG] Task::onArrival() - 开始: task_2 当前时间: 30ms isActive: 0
+[DEBUG] Task::onArrival() - 任务未激活: task_2
+[DEBUG] Task::handleArrival() - 开始: task_2 到达时间: 30ms
+[DEBUG] Task::handleArrival() - 设置截止时间: task_2 到达时间: 30ms 相对截止时间: 30ms 绝对截止时间: 60ms
+[DEBUG] Task::handleArrival() - 安排截止时间事件: task_2 截止时间: 60ms 当前时间: 30ms
+[DEBUG] Task::handleArrival() - 完成: task_2
+[DEBUG] MRTKernel::onArrival() - 开始: task_2 当前时间: 30ms
+[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ➕ [TGF] insert: PeriodicTask task_2 DL = T 30 WCET(abs) 8 _ready_queue.size()=1 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:957)
+[0m[DEBUG] Scheduler::insert() - 开始: task_2 当前时间: 30ms
+[DEBUG] Scheduler::insert() - 找到模型: task_2
+[DEBUG] Scheduler::insert() - 任务已添加到队列: task_2 队列大小: 2 优先级: 30
+[DEBUG] 队列前4个任务: task_2(prio=30) task_1(prio=20) 
+[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=30
+[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=2
+[DEBUG]   getTaskN(0) = nullptr, 退出循环
+[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks < 1，返回
+[DEBUG] MRTKernel::onArrival() - 完成: task_2
+[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 30ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 31ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 32ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 33ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 34ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 35ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 36ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 37ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 38ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 39ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[DEBUG] Task::onArrival() - 开始: task_3 当前时间: 40ms isActive: 0
+[DEBUG] Task::onArrival() - 任务未激活: task_3
+[DEBUG] Task::handleArrival() - 开始: task_3 到达时间: 40ms
+[DEBUG] Task::handleArrival() - 设置截止时间: task_3 到达时间: 40ms 相对截止时间: 40ms 绝对截止时间: 80ms
+[DEBUG] Task::handleArrival() - 安排截止时间事件: task_3 截止时间: 80ms 当前时间: 40ms
+[DEBUG] Task::handleArrival() - 完成: task_3
+[DEBUG] MRTKernel::onArrival() - 开始: task_3 当前时间: 40ms
+[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ➕ [TGF] insert: PeriodicTask task_3 DL = T 40 WCET(abs) 10 _ready_queue.size()=2 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:957)
+[0m[DEBUG] Scheduler::insert() - 开始: task_3 当前时间: 40ms
+[DEBUG] Scheduler::insert() - 找到模型: task_3
+[DEBUG] Scheduler::insert() - 任务已添加到队列: task_3 队列大小: 3 优先级: 40
+[DEBUG] 队列前4个任务: task_3(prio=40) task_2(prio=30) task_1(prio=20) 
+[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=40
+[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=2
+[DEBUG]   getTaskN(0) = nullptr, 退出循环
+[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks < 1，返回
+[DEBUG] MRTKernel::onArrival() - 完成: task_3
+[DEBUG] Task::onArrival() - 开始: task_1 当前时间: 40ms isActive: 1
+[DEBUG] Task::onArrival() - Buffered模式: task_1
+[DEBUG] Task::onArrival() - Buffered模式调用内核onArrival: task_1
+[DEBUG] MRTKernel::onArrival() - 开始: task_1 当前时间: 40ms
+[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ➕ [TGF] insert: PeriodicTask task_1 DL = T 20 WCET(abs) 5 _ready_queue.size()=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:957)
+[0m[DEBUG] Scheduler::insert() - 开始: task_1 当前时间: 40ms
+[DEBUG] Scheduler::insert() - 找到模型: task_1
+[DEBUG] Scheduler::insert() - 任务已添加到队列: task_1 队列大小: 3 优先级: 20
+[DEBUG] 队列前4个任务: task_3(prio=40) task_2(prio=30) task_1(prio=20) 
+[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=40
+[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=2
+[DEBUG]   getTaskN(0) = nullptr, 退出循环
+[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks < 1，返回
+[DEBUG] MRTKernel::onArrival() - 完成: task_1
+[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 40ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 41ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 42ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 43ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 44ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 45ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 46ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 47ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 48ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 49ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 50ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 51ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 52ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 53ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 54ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 55ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 56ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 57ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 58ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 59ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[DEBUG] Task::onArrival() - 开始: task_2 当前时间: 60ms isActive: 1
+[DEBUG] Task::onArrival() - Buffered模式: task_2
+[DEBUG] Task::onArrival() - Buffered模式调用内核onArrival: task_2
+[DEBUG] MRTKernel::onArrival() - 开始: task_2 当前时间: 60ms
+[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ➕ [TGF] insert: PeriodicTask task_2 DL = T 30 WCET(abs) 8 _ready_queue.size()=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:957)
+[0m[DEBUG] Scheduler::insert() - 开始: task_2 当前时间: 60ms
+[DEBUG] Scheduler::insert() - 找到模型: task_2
+[DEBUG] Scheduler::insert() - 任务已添加到队列: task_2 队列大小: 3 优先级: 30
+[DEBUG] 队列前4个任务: task_3(prio=40) task_2(prio=30) task_1(prio=20) 
+[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=60
+[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=2
+[DEBUG]   getTaskN(0) = nullptr, 退出循环
+[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks < 1，返回
+[DEBUG] MRTKernel::onArrival() - 完成: task_2
+[DEBUG] Task::onArrival() - 开始: task_1 当前时间: 60ms isActive: 1
+[DEBUG] Task::onArrival() - Buffered模式: task_1
+[DEBUG] Task::onArrival() - Buffered模式调用内核onArrival: task_1
+[DEBUG] MRTKernel::onArrival() - 开始: task_1 当前时间: 60ms
+[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ➕ [TGF] insert: PeriodicTask task_1 DL = T 20 WCET(abs) 5 _ready_queue.size()=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:957)
+[0m[DEBUG] Scheduler::insert() - 开始: task_1 当前时间: 60ms
+[DEBUG] Scheduler::insert() - 找到模型: task_1
+[DEBUG] Scheduler::insert() - 任务已添加到队列: task_1 队列大小: 3 优先级: 20
+[DEBUG] 队列前4个任务: task_3(prio=40) task_2(prio=30) task_1(prio=20) 
+[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=60
+[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=2
+[DEBUG]   getTaskN(0) = nullptr, 退出循环
+[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks < 1，返回
+[DEBUG] MRTKernel::onArrival() - 完成: task_1
+[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 60ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 61ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.909 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 62ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 63ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 64ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 65ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 66ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 67ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 68ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 69ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 70ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 71ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 72ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 73ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 74ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 75ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 76ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 77ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 78ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 79ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[DEBUG] Task::onArrival() - 开始: task_3 当前时间: 80ms isActive: 1
+[DEBUG] Task::onArrival() - Buffered模式: task_3
+[DEBUG] Task::onArrival() - Buffered模式调用内核onArrival: task_3
+[DEBUG] MRTKernel::onArrival() - 开始: task_3 当前时间: 80ms
+[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ➕ [TGF] insert: PeriodicTask task_3 DL = T 40 WCET(abs) 10 _ready_queue.size()=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:957)
+[0m[DEBUG] Scheduler::insert() - 开始: task_3 当前时间: 80ms
+[DEBUG] Scheduler::insert() - 找到模型: task_3
+[DEBUG] Scheduler::insert() - 任务已添加到队列: task_3 队列大小: 3 优先级: 40
+[DEBUG] 队列前4个任务: task_3(prio=40) task_2(prio=30) task_1(prio=20) 
+[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=80
+[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=2
+[DEBUG]   getTaskN(0) = nullptr, 退出循环
+[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks < 1，返回
+[DEBUG] MRTKernel::onArrival() - 完成: task_3
+[DEBUG] Task::onArrival() - 开始: task_1 当前时间: 80ms isActive: 1
+[DEBUG] Task::onArrival() - Buffered模式: task_1
+[DEBUG] Task::onArrival() - Buffered模式调用内核onArrival: task_1
+[DEBUG] MRTKernel::onArrival() - 开始: task_1 当前时间: 80ms
+[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ➕ [TGF] insert: PeriodicTask task_1 DL = T 20 WCET(abs) 5 _ready_queue.size()=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:957)
+[0m[DEBUG] Scheduler::insert() - 开始: task_1 当前时间: 80ms
+[DEBUG] Scheduler::insert() - 找到模型: task_1
+[DEBUG] Scheduler::insert() - 任务已添加到队列: task_1 队列大小: 3 优先级: 20
+[DEBUG] 队列前4个任务: task_3(prio=40) task_2(prio=30) task_1(prio=20) 
+[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=80
+[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=2
+[DEBUG]   getTaskN(0) = nullptr, 退出循环
+[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks < 1，返回
+[DEBUG] MRTKernel::onArrival() - 完成: task_1
+[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 80ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 81ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 82ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 83ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 84ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 85ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 86ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 87ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 88ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 89ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[DEBUG] Task::onArrival() - 开始: task_2 当前时间: 90ms isActive: 1
+[DEBUG] Task::onArrival() - Buffered模式: task_2
+[DEBUG] Task::onArrival() - Buffered模式调用内核onArrival: task_2
+[DEBUG] MRTKernel::onArrival() - 开始: task_2 当前时间: 90ms
+[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ➕ [TGF] insert: PeriodicTask task_2 DL = T 30 WCET(abs) 8 _ready_queue.size()=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:957)
+[0m[DEBUG] Scheduler::insert() - 开始: task_2 当前时间: 90ms
+[DEBUG] Scheduler::insert() - 找到模型: task_2
+[DEBUG] Scheduler::insert() - 任务已添加到队列: task_2 队列大小: 3 优先级: 30
+[DEBUG] 队列前4个任务: task_3(prio=40) task_2(prio=30) task_1(prio=20) 
+[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=90
+[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=2
+[DEBUG]   getTaskN(0) = nullptr, 退出循环
+[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks < 1，返回
+[DEBUG] MRTKernel::onArrival() - 完成: task_2
+[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 90ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 91ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 92ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 93ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 94ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 95ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 96ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 97ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 98ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 99ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[DEBUG] Task::onArrival() - 开始: task_1 当前时间: 100ms isActive: 1
+[DEBUG] Task::onArrival() - Buffered模式: task_1
+[DEBUG] Task::onArrival() - Buffered模式调用内核onArrival: task_1
+[DEBUG] MRTKernel::onArrival() - 开始: task_1 当前时间: 100ms
+[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ➕ [TGF] insert: PeriodicTask task_1 DL = T 20 WCET(abs) 5 _ready_queue.size()=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:957)
+[0m[DEBUG] Scheduler::insert() - 开始: task_1 当前时间: 100ms
+[DEBUG] Scheduler::insert() - 找到模型: task_1
+[DEBUG] Scheduler::insert() - 任务已添加到队列: task_1 队列大小: 3 优先级: 20
+[DEBUG] 队列前4个任务: task_3(prio=40) task_2(prio=30) task_1(prio=20) 
+[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=100
+[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=2
+[DEBUG]   getTaskN(0) = nullptr, 退出循环
+[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks < 1，返回
+[DEBUG] MRTKernel::onArrival() - 完成: task_1
+[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 100ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 101ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 102ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 103ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 104ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.910 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 105ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 106ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 107ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 108ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 109ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 110ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 111ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 112ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 113ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 114ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 115ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 116ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 117ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 118ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] ⏱️ [TGF] ===== Tick事件触发 @ 119ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:49)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] 💀 [TGF] 能量已耗尽，跳过Tick调度 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:416)
+[0m[DEBUG] Task::onArrival() - 开始: task_3 当前时间: 120ms isActive: 1
+[DEBUG] Task::onArrival() - Buffered模式: task_3
+[DEBUG] Task::onArrival() - Buffered模式调用内核onArrival: task_3
+[DEBUG] MRTKernel::onArrival() - 开始: task_3 当前时间: 120ms
+[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] ➕ [TGF] insert: PeriodicTask task_3 DL = T 40 WCET(abs) 10 _ready_queue.size()=3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:957)
+[0m[DEBUG] Scheduler::insert() - 开始: task_3 当前时间: 120ms
+[DEBUG] Scheduler::insert() - 找到模型: task_3
+[DEBUG] Scheduler::insert() - 任务已添加到队列: task_3 队列大小: 3 优先级: 40
+[DEBUG] 队列前4个任务: task_3(prio=40) task_2(prio=30) task_1(prio=20) 
+[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=120
+[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=2
+[DEBUG]   getTaskN(0) = nullptr, 退出循环
+[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks=0
+[DEBUG] MRTKernel::dispatch() - num_newtasks < 1，返回
+[DEBUG] MRTKernel::onArrival() - 完成: task_3
+[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] 🏁 [TGF] endRun - 仿真结束 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1386)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] 📊 [TGF] ===== TGF调度统计 ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1397)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000]   Tick总次数: 24 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1398)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000]   任务完成数: 3 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1399)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000]   能量不足跳过: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1400)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000]   Deadline Miss: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1401)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000]   总消耗能量: 0.014508J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1402)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000]   总收集能量: 0.000000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1403)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000]   剩余能量: 0.000000J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1404)
+[0m[32m2026-01-31 13:06:47.911 [INFO0000] [scheduler00000000000] ================================= (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_tgf_scheduler.cpp:1405)
+[0m
