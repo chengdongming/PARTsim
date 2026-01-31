@@ -1,0 +1,30 @@
+# =============================================
+# 3周期任务测试配置
+# =============================================
+taskset:
+  # 任务1: 周期20ms，WCET 5ms
+  - name: task_1
+    iat: 20
+    runtime: 5
+    deadline: 20
+    params: "period=20,wcet=5,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(5, bzip2)
+
+  # 任务2: 周期30ms，WCET 10ms
+  - name: task_2
+    iat: 30
+    runtime: 10
+    deadline: 30
+    params: "period=30,wcet=10,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(10, bzip2)
+
+  # 任务3: 周期40ms，WCET 15ms
+  - name: task_3
+    iat: 40
+    runtime: 15
+    deadline: 40
+    params: "period=40,wcet=15,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(15, bzip2)

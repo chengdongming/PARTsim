@@ -594,16 +594,19 @@ namespace RTSim {
                 DBGPRINT("Task scheduled: ", taskname(st));
 
                 // ⭐ V28.15新增：为TIE/BTIE/TGF调度器启动运行时能量检查
+                // ⭐ V40重构：TIE/TGF已移除能量检查事件，能量在performTickScheduling中处理
                 TIEScheduler *tie_sched = dynamic_cast<TIEScheduler*>(_sched);
                 BTIEScheduler *btie_sched = dynamic_cast<BTIEScheduler*>(_sched);
                 TGFScheduler *tgf_sched = dynamic_cast<TGFScheduler*>(_sched);
 
                 if (tie_sched) {
-                    tie_sched->startEnergyCheckForTask(st, p);
+                    // ❌ V40重构：TIE能量检查事件已移除，能量由performTickScheduling处理
+                    // tie_sched->startEnergyCheckForTask(st, p);
                 } else if (btie_sched) {
                     btie_sched->startEnergyCheckForTask(st, p);
                 } else if (tgf_sched) {
-                    tgf_sched->startEnergyCheckForTask(st, p);
+                    // ❌ V40重构：TGF能量检查事件已移除，能量由performTickScheduling处理
+                    // tgf_sched->startEnergyCheckForTask(st, p);
                 }
             } else {
                 // 任务不在就绪或执行状态，可能能量不足或已完成

@@ -40,7 +40,9 @@ namespace RTSim {
 
     // =====================================================
     // TIE运行时能量检查事件（每1ms检查运行中任务的能量）
+    // ⭐ V40重构：能量检查事件已删除，能量由performTickScheduling处理
     // =====================================================
+    /*
     class TIEEnergyCheckEvent : public MetaSim::Event {
     private:
         TIEScheduler *_scheduler;
@@ -54,6 +56,7 @@ namespace RTSim {
         int getMsExecuted() const { return _ms_executed; }
         void setMsExecuted(int ms) { _ms_executed = ms; }
     };
+    */
 
     // =====================================================
     // TIETaskModel 类声明
@@ -129,7 +132,8 @@ namespace RTSim {
         MRTKernel *_kernel;
 
         // ========== 运行时能量检查事件（每任务一个） ==========
-        std::map<AbsRTTask *, TIEEnergyCheckEvent *> _energy_check_events;
+        // ⭐ V40重构：能量检查事件已删除，能量由performTickScheduling处理
+        // std::map<AbsRTTask *, TIEEnergyCheckEvent *> _energy_check_events;
 
         // ========== 能量记账（每ms累计） ==========
         struct TaskEnergyAccount {
@@ -235,8 +239,9 @@ namespace RTSim {
         double calculateMinTaskEnergyInReadyQueue();  // ⭐ 计算就绪队列中最小任务能耗（修复循环问题）
 
         // ⭐ 运行时能量检查接口（V28.15新增）
-        void startEnergyCheckForTask(AbsRTTask *task, CPU *cpu);  // 开始对任务的能量监控
-        void stopEnergyCheckForTask(AbsRTTask *task);  // 停止对任务的能量监控
+        // ⭐ V40重构：能量检查事件已删除，能量由performTickScheduling处理
+        // void startEnergyCheckForTask(AbsRTTask *task, CPU *cpu);  // 开始对任务的能量监控
+        // void stopEnergyCheckForTask(AbsRTTask *task);  // 停止对任务的能量监控
 
         // 队列访问接口
         const std::deque<AbsRTTask *> &getReadyQueue() const { return _ready_queue; }
@@ -256,7 +261,8 @@ namespace RTSim {
 
         // 友元类声明
         friend class TIETickEvent;
-        friend class TIEEnergyCheckEvent;
+        // ⭐ V40重构：能量检查事件已删除
+        // friend class TIEEnergyCheckEvent;
     };
 
 } // namespace RTSim
