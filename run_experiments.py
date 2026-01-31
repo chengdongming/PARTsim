@@ -54,10 +54,10 @@ ALGORITHMS = ['gpfp_tie', 'gpfp_tgf', 'gpfp_btie']
 
 # 电池容量范围 (Joules)
 # 针对 4核 x 0.6mJ/ms = 2.4W 功耗，10秒需24J。
-# 1J-10J 是极度缺电到中度缺电区间，最能体现算法差异。
-BATTERY_CAPACITIES = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+# 覆盖从极度缺电(1J)到完全不缺电(60J)的完整范围
+BATTERY_CAPACITIES = [1.0, 3.0, 5.0, 10.0, 15.0, 25.0, 40.0, 60.0]
 
-NUM_TASKSETS = 50
+NUM_TASKSETS = 30
 SIMULATION_TIME = 10000 
 
 # 路径配置
@@ -262,13 +262,19 @@ class ExperimentRunner:
                     #     count += 1
                     #     continue
 
+                    # 设置环境变量，让仿真器能找到共享库
+                    env = os.environ.copy()
+                    # 添加库路径: build 目录下的 librtsim
+                    lib_path = os.path.abspath('./build/librtsim')
+                    env['LD_LIBRARY_PATH'] = lib_path + ':' + env.get('LD_LIBRARY_PATH', '')
+
                     cmd = [
-                        SIMULATOR, config_file, task_file, 
+                        SIMULATOR, config_file, task_file,
                         str(SIMULATION_TIME), '-t', str(trace_file)
                     ]
                     
                     try:
-                        subprocess.run(cmd, check=True, capture_output=True)
+                        subprocess.run(cmd, check=True, capture_output=True, env=env)
                         parser = TraceParser(str(trace_file), SYSTEM_CORES)
                         self.results[algorithm][battery].append(parser.parse())
                     except subprocess.CalledProcessError:

@@ -783,7 +783,11 @@ namespace RTSim {
         const double EPSILON = 1e-9;
         // ⭐ V38修复：使用与TIE/TGF相同的能量检查条件
         // 当能量 <= 总能量需求时，立即中断任务（不扣除能量），避免超额透支
-        if (_current_energy > total_energy_needed + EPSILON) {
+        // ⭐ V39修复：使用与TIE/TGF完全相同的能量检查条件
+        // TIE: current_energy <= unit_energy + EPSILON → 挂起
+        // BTIE: current_energy <= total_energy_needed + EPSILON → 挂起
+        // 这样当能量 == 需求时，允许继续执行（与TIE一致）
+        if (_current_energy > total_energy_needed - EPSILON) {
             // 能量充足：调度新任务
             _batch_scheduled_this_tick = true;
             
