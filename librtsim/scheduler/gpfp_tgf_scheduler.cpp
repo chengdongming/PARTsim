@@ -422,6 +422,10 @@ namespace RTSim {
 
         _stats.total_tick_count++;
 
+        // ⭐ V42修复：清空当前tick新调度任务标记
+        // 这样只有本次tick中新调度的任务才会被跳过续期扣除
+        _newly_dispatched_this_tick.clear();
+
         Tick current_time = SIMUL.getTime();
 
         // ========== 第1步：收集太阳能 ==========
@@ -458,7 +462,14 @@ namespace RTSim {
                                std::to_string(running_tasks_map.size()) + " 个");
 
             for (const auto& [cpu, task] : running_tasks_map) {
-                if (!task || !task->isExecuting()) continue;
+                if (!task || !task->isActive()) continue;
+
+                // ⭐ V42修复：跳过当前tick中新调度的任务（能量已在getTaskN中扣除）
+                // 使用_newly_dispatched_this_tick而不是_counted_tasks_in_dispatch
+                if (_newly_dispatched_this_tick.find(task) != _newly_dispatched_this_tick.end()) {
+                    SCHEDULER_LOG_DEBUG(std::string("⏭️ [TGF] 跳过新任务的续期扣除: ") + getTaskName(task));
+                    continue;
+                }
 
                 double unit_energy = calculateUnitEnergyForTask(task);
 
@@ -502,10 +513,9 @@ namespace RTSim {
             // 记录调度前的能量
             double energy_before_scheduling = _current_energy;
 
-            // ⭐ 关键：清空本次tick的调度记录
-            // getTaskN会填充这个集合，但不扣除能量
-            _counted_tasks_in_dispatch.clear();
-            _dispatching_tasks_total_energy = 0.0;
+            // ⭐ V42修复：不在dispatch开始时清空标记
+            // 标记应该在dispatch后自然累积，只在tick边界事件之间保持
+            // 这样可以防止已调度任务在下一个tick被重新扣除
 
             // ⭐ TGF关键修复：循环调用dispatch()直到所有CPU被填满或无法调度更多任务
             int dispatch_attempts = 0;
@@ -551,24 +561,9 @@ namespace RTSim {
                 SCHEDULER_LOG_WARNING("⚠️ [TGF] dispatch循环达到最大迭代次数，可能存在bug");
             }
 
-            // ⭐ 关键：在dispatch后，统一扣除所有已标记任务的能量
-            for (AbsRTTask *task : _counted_tasks_in_dispatch) {
-                double unit_energy = calculateUnitEnergyForTask(task);
-                _current_energy -= unit_energy;
-                _stats.total_energy_consumed += unit_energy;
-                _dispatching_tasks_total_energy += unit_energy;
-
-                SCHEDULER_LOG_INFO("✅ 新任务扣除初始能量: " +
-                                   getTaskName(task) +
-                                   " -" + std::to_string(unit_energy * 1000) + " mJ → " +
-                                   std::to_string(_current_energy * 1000) + " mJ");
-            }
-
-            SCHEDULER_LOG_INFO("📊 调度完成: 新任务=" +
-                               std::to_string(_counted_tasks_in_dispatch.size()) +
-                               " 扣除能量=" + std::to_string(_dispatching_tasks_total_energy * 1000) + " mJ " +
-                               std::to_string(energy_before_scheduling * 1000) + " → " +
-                               std::to_string(_current_energy * 1000) + " mJ");
+            // ⭐ V41重构：能量扣除已在getTaskN()中立即完成，此处不需要额外扣除
+            // ⭐ V42修复：不再在此处清空标记，否则会导致中途dispatch的任务被重复扣除
+            // 标记会自然累积，只有在任务真正结束或被抢占时才应该移除
         }
 
         SCHEDULER_LOG_INFO("✅ Tick " +
@@ -674,12 +669,6 @@ namespace RTSim {
             }
 
             // 检查是否已在本tick中扣除过能量
-            bool already_counted = _counted_tasks_in_dispatch.find(task) != _counted_tasks_in_dispatch.end();
-
-            std::cout << "[DEBUG] TGF::getTaskN(" << n << ") - i=" << i << " task=" << getTaskName(task)
-                      << " ready_index=" << ready_index << " is_running=" << is_running_check
-                      << " already_counted=" << already_counted << std::endl;
-
             // ⭐ V29.1修复：运行中任务的续期由TGFEnergyCheckEvent处理
             // getTaskN()只负责新任务，运行中任务直接返回
             if (is_running_check) {
@@ -692,13 +681,6 @@ namespace RTSim {
 
             // 这是第ready_index个未dispatch的任务
             if (ready_index == n) {
-                // ⭐ 关键修复：如果任务已经调度过（能量已扣除），直接返回
-                // 让kernel的_m_dispatched检查处理重复调度
-                if (already_counted) {
-                    std::cout << "[DEBUG] TGF::getTaskN(" << n << ") - 返回已调度任务: " << getTaskName(task) << std::endl;
-                    return task;
-                }
-
                 // ⭐ 计算任务的1ms能耗
                 double unit_energy = calculateUnitEnergyForTask(task);
                 double available_energy = _current_energy - _dispatching_tasks_total_energy;
@@ -742,13 +724,19 @@ namespace RTSim {
 
                         if (next_available >= next_unit_energy - EPSILON) {
                             // ⭐ 找到能量足够的后续任务，调度它！
-                            // ⭐ 重构：只标记任务，不扣除能量
-                            _counted_tasks_in_dispatch.insert(next_task);
+                            // ⭐ V41修复：立即扣除初始能量（仅一次）
+                            if (_counted_tasks_in_dispatch.find(next_task) == _counted_tasks_in_dispatch.end()) {
+                                _current_energy -= next_unit_energy;
+                                _stats.total_energy_consumed += next_unit_energy;
+                                _counted_tasks_in_dispatch.insert(next_task);
+                                _newly_dispatched_this_tick.insert(next_task);  // ⭐ V42：标记为当前tick新调度
 
-                            SCHEDULER_LOG_INFO(std::string("✅ [TGF] 贪心策略：调度后续任务") +
-                                              " 替换=" + getTaskName(task) +
-                                              " → " + getTaskName(next_task) +
-                                              " 能量=" + std::to_string(next_unit_energy * 1000) + " mJ");
+                                SCHEDULER_LOG_INFO(std::string("✅ [TGF] 贪心策略：调度后续任务并扣除能量") +
+                                                  " 替换=" + getTaskName(task) +
+                                                  " → " + getTaskName(next_task) +
+                                                  " -" + std::to_string(next_unit_energy * 1000) + " mJ → " +
+                                                  std::to_string(_current_energy * 1000) + " mJ");
+                            }
 
                             return next_task;
                         }
@@ -760,12 +748,28 @@ namespace RTSim {
                 }
 
                 // ⭐ 能量足够，正常调度
-                // ⭐ 重构：只标记任务，不扣除能量
-                _counted_tasks_in_dispatch.insert(task);
+                // ⭐ V41修复���对于新任务（非运行中），立即扣除初始能量
+                // 这解决了tick边界处理时序问题（任务在tick结束时被调度，但能量在下一tick才扣除）
+                if (!is_running_check) {
+                    // 新任务：检查是否已扣除过初始能量
+                    if (_counted_tasks_in_dispatch.find(task) == _counted_tasks_in_dispatch.end()) {
+                        // 首次调度此任务，扣除初始能量
+                        _current_energy -= unit_energy;
+                        _stats.total_energy_consumed += unit_energy;
+                        _counted_tasks_in_dispatch.insert(task);  // 标记已扣除
+                        _newly_dispatched_this_tick.insert(task);  // ⭐ V42：标记为当前tick新调度
 
-                SCHEDULER_LOG_INFO(std::string("✅ [TGF] 决定调度任务（已标记，暂不扣能量）: ") + getTaskName(task) +
-                                  " 1ms能耗=" + std::to_string(unit_energy * 1000) + " mJ");
-
+                        SCHEDULER_LOG_INFO(std::string("✅ [TGF] 新任务立即扣除初始能量: ") + getTaskName(task) +
+                                          " -" + std::to_string(unit_energy * 1000) + " mJ → " +
+                                          std::to_string(_current_energy * 1000) + " mJ");
+                    }
+                    // 否则已扣除过，直接返回任务
+                } else {
+                    // 运行中任务：标记用于tick边界续期扣除
+                    if (_counted_tasks_in_dispatch.find(task) == _counted_tasks_in_dispatch.end()) {
+                        _counted_tasks_in_dispatch.insert(task);
+                    }
+                }
                 return task;
             } else {
                 // ⭐ V32关键修复：不是我们要找的第n个任务，继续寻找

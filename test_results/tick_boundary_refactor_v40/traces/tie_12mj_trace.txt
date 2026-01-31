@@ -1,0 +1,29 @@
+[Time:0]	task1 arrived at 0
+[Time:0]	task1 scheduled on CPU energy_aware_cpus-1 workload bzip2 speed 1.00437 freq 8100 abs WCET 20 its arrival was 0
+[Time:10]	task2 arrived at 10
+[Time:10]	task2 scheduled on CPU energy_aware_cpus-0 workload bzip2 speed 1.00437 freq 8100 abs WCET 20 its arrival was 10
+[Time:20]	ExecInstr(20, bzip2) ended for Task task1
+[Time:20]	task1 ended, its arrival was 0, its period was 50, RespTime/Period is 0.4
+[Time:20]	task3 arrived at 20
+[Time:20]	task3 scheduled on CPU energy_aware_cpus-1 workload bzip2 speed 1.00437 freq 8100 abs WCET 20 its arrival was 20
+[Time:30]	ExecInstr(20, bzip2) ended for Task task2
+[Time:30]	task2 ended, its arrival was 10, its period was 50, RespTime/Period is 0.4
+[Time:40]	ExecInstr(20, bzip2) ended for Task task3
+[Time:40]	task3 ended, its arrival was 20, its period was 50, RespTime/Period is 0.4
+[Time:50]	task1 arrived at 50
+[Time:50]	task1 scheduled on CPU energy_aware_cpus-1 workload bzip2 speed 1.00437 freq 8100 abs WCET 20 its arrival was 50
+[Time:60]	task2 arrived at 60
+[Time:60]	task2 scheduled on CPU energy_aware_cpus-0 workload bzip2 speed 1.00437 freq 8100 abs WCET 20 its arrival was 60
+[Time:70]	ExecInstr(20, bzip2) ended for Task task1
+[Time:70]	task1 ended, its arrival was 50, its period was 50, RespTime/Period is 0.4
+[Time:70]	task3 arrived at 70
+[Time:70]	task3 scheduled on CPU energy_aware_cpus-1 workload bzip2 speed 1.00437 freq 8100 abs WCET 20 its arrival was 70
+[Time:80]	ExecInstr(20, bzip2) ended for Task task2
+[Time:80]	task2 ended, its arrival was 60, its period was 50, RespTime/Period is 0.4
+[Time:90]	ExecInstr(20, bzip2) ended for Task task3
+[Time:90]	task3 ended, its arrival was 70, its period was 50, RespTime/Period is 0.4
+[Time:100]	task1 arrived at 100
+[Time:100]	task1 scheduled on CPU energy_aware_cpus-1 workload bzip2 speed 1.00437 freq 8100 abs WCET 20 its arrival was 100
+[Time:110]	task2 arrived at 110
+[Time:110]	task2 scheduled on CPU energy_aware_cpus-0 workload bzip2 speed 1.00437 freq 8100 abs WCET 20 its arrival was 110
+[Time:120]	ExecInstr(20, bzip2) ended for Task task1

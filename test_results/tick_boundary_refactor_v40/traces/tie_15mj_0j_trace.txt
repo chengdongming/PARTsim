@@ -1,0 +1,62 @@
+[Time:0]	task1 arrived at 0
+[Time:0]	task1 scheduled on CPU energy_aware_cpus-1 workload bzip2 speed 1.00437 freq 8100 abs WCET 20 its arrival was 0
+[Time:10]	task2 arrived at 10
+[Time:10]	task2 scheduled on CPU energy_aware_cpus-0 workload bzip2 speed 1.00437 freq 8100 abs WCET 20 its arrival was 10
+[Time:17]	task2 descheduled its arrival was 10
+[Time:18]	task1 descheduled its arrival was 0
+[Time:20]	task3 arrived at 20
+[Time:50]	task1 arrived at 0
+[Time:50]	task1 missed its arrival was 0
+[Time:60]	task2 arrived at 10
+[Time:60]	task2 missed its arrival was 10
+[Time:70]	task3 arrived at 20
+[Time:70]	task3 missed its arrival was 20
+[Time:100]	task1 arrived at 0
+[Time:100]	task1 missed its arrival was 0
+[Time:110]	task2 arrived at 10
+[Time:110]	task2 missed its arrival was 10
+[Time:120]	task3 arrived at 20
+[Time:120]	task3 missed its arrival was 20
+[Time:150]	task1 arrived at 0
+[Time:150]	task1 missed its arrival was 0
+[Time:160]	task2 arrived at 10
+[Time:160]	task2 missed its arrival was 10
+[Time:170]	task3 arrived at 20
+[Time:170]	task3 missed its arrival was 20
+[Time:200]	task1 arrived at 0
+[Time:200]	task1 missed its arrival was 0
+[Time:210]	task2 arrived at 10
+[Time:210]	task2 missed its arrival was 10
+[Time:220]	task3 arrived at 20
+[Time:220]	task3 missed its arrival was 20
+[Time:250]	task1 arrived at 0
+[Time:250]	task1 missed its arrival was 0
+[Time:260]	task2 arrived at 10
+[Time:260]	task2 missed its arrival was 10
+[Time:270]	task3 arrived at 20
+[Time:270]	task3 missed its arrival was 20
+[Time:300]	task1 arrived at 0
+[Time:300]	task1 missed its arrival was 0
+[Time:310]	task2 arrived at 10
+[Time:310]	task2 missed its arrival was 10
+[Time:320]	task3 arrived at 20
+[Time:320]	task3 missed its arrival was 20
+[Time:350]	task1 arrived at 0
+[Time:350]	task1 missed its arrival was 0
+[Time:360]	task2 arrived at 10
+[Time:360]	task2 missed its arrival was 10
+[Time:370]	task3 arrived at 20
+[Time:370]	task3 missed its arrival was 20
+[Time:400]	task1 arrived at 0
+[Time:400]	task1 missed its arrival was 0
+[Time:410]	task2 arrived at 10
+[Time:410]	task2 missed its arrival was 10
+[Time:420]	task3 arrived at 20
+[Time:420]	task3 missed its arrival was 20
+[Time:450]	task1 arrived at 0
+[Time:450]	task1 missed its arrival was 0
+[Time:460]	task2 arrived at 10
+[Time:460]	task2 missed its arrival was 10
+[Time:470]	task3 arrived at 20
+[Time:470]	task3 missed its arrival was 20
+[Time:500]	task1 arrived at 0
