@@ -483,6 +483,10 @@ namespace RTSim {
             return;  // 不进行任何调度，包括中断检查
         }
 
+        // ⭐ Micro-Batch Preemption：不清除抢占批量，让它在dispatch完成后自然过期
+        // 抢占批量中的任务执行完成后，新tick的批量调度会重新计算
+        // 这样可以确保mid-tick抢占的任务有机会被调度到CPU上
+
         _stats.total_tick_count++;
 
         // ⭐ BTIE核心：在tick边界（即上一tick结束、本tick开始）收集能量
@@ -534,8 +538,8 @@ namespace RTSim {
 
         const auto& running_tasks = _kernel->getCurrentExecutingTasks();
 
-        // 🔍 调试：输出_m_currExe的内容
-        SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] _m_currExe内容 (") +
+        // 🔍 调试：输出_currExe的内容
+        SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] _currExe内容 (") +
                            std::to_string(running_tasks.size()) + "个任务) @ " +
                            std::to_string(static_cast<int64_t>(SIMUL.getTime())) + "ms:");
         for (const auto& map_pair : running_tasks) {
@@ -551,7 +555,7 @@ namespace RTSim {
         for (const auto& map_pair : running_tasks) {
             AbsRTTask* task = map_pair.second;
             // ⭐ 关键修复：只统计真正在执行的任务，过滤已达到WCET的任务
-            // _m_currExe可能包含已完成的任务（isExecuting=TRUE，但已达到WCET）
+            // _currExe可能包含已完成的任务（isExecuting=TRUE，但已达到WCET）
             // 使用_tasks_completed_wcet集合来判断任务是否真正完成
             if (task && task->isExecuting() && _tasks_completed_wcet.find(task) == _tasks_completed_wcet.end()) {
                 running_task_list.push_back(task);
@@ -646,7 +650,7 @@ namespace RTSim {
         size_t running_count = running_task_list.size();
 
         // ⭐ 修复硬编码：从kernel获取CPU数量
-        // getCurrentExecutingTasks()返回_m_currExe的引用，其大小即为CPU总数
+        // getCurrentExecutingTasks()返回_currExe的引用，其大小即为CPU总数
         size_t total_cpus = _kernel->getCurrentExecutingTasks().size();
 
         size_t free_cpus = total_cpus - running_count;
@@ -835,6 +839,7 @@ namespace RTSim {
             // ❌ 能量不足：BTIE原则 - "全无"
             _batch_scheduled_this_tick = false;
             _current_batch_tasks.clear();
+            _preempt_batch_tasks.clear();
             _current_batch_size = 0;
             _stats.total_batch_skipped++;
 
@@ -886,7 +891,9 @@ namespace RTSim {
             }
         }
 
-        checkAndPreempt();
+            // 原因：批量调度会重新计算任务列表，此检查是冗余的
+            // ⭐ 注意：批量调度前的checkAndPreempt()调用已删除
+
 
         // 如果有kernel，循环触发dispatch直到填满所有CPU
         if (!_kernel) {
@@ -929,6 +936,16 @@ namespace RTSim {
                 // 调用dispatch尝试调度更多任务
                 SCHEDULER_LOG_INFO(std::string("🚀 [BTIE] 调用 _kernel->dispatch()"));
                 _kernel->dispatch();
+
+                // ⭐ Micro-Batch Preemption：dispatch后清除抢占批量
+                // 抢占批量用于mid-tick立即调度，dispatch调用后即被"消费"
+                // 无论任务是否成功调度，都清除抢占批量，避免阻塞后续调度
+                if (!_preempt_batch_tasks.empty()) {
+                    SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] dispatch后清除抢占批量") +
+                                       " size=" + std::to_string(_preempt_batch_tasks.size()));
+                    _preempt_batch_tasks.clear();
+                }
+
                 dispatch_attempts++;
 
                 // 记录调度后的任务数
@@ -948,6 +965,9 @@ namespace RTSim {
             if (dispatch_attempts >= MAX_DISPATCH_ITERATIONS) {
                 SCHEDULER_LOG_WARNING("⚠️ [BTIE] dispatch循环达到最大迭代次数，可能存在bug");
             }
+
+            // ⭐ 注意：批量调度后的抢占检查已删除
+            // 原因：mid-tick抢占已在insert()中通过Micro-Batch抢占处理
         } else {
             SCHEDULER_LOG_INFO("⚠️ [BTIE] performTickScheduling: _kernel仍为nullptr，跳过dispatch");
         }
@@ -975,8 +995,8 @@ namespace RTSim {
     AbsRTTask *BTIEScheduler::getTaskN(unsigned int n) {
         SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] getTaskN(") + std::to_string(n) + ") " +
                            "当前能量: " + std::to_string(_current_energy) + "J" +
-                           " 批量任务数=" + std::to_string(_current_batch_tasks.size()));
-
+                           " 批量任务数=" + std::to_string(_current_batch_tasks.size()) +
+                           " 抢占批量数=" + std::to_string(_preempt_batch_tasks.size()));
         // ⭐ 关键：当n==0时，表示新的调度周期开始
 
         // ⭐ 关键Bug修复：检查能量是否已耗尽
@@ -989,6 +1009,7 @@ namespace RTSim {
                                " 剩余能量=" + std::to_string(_current_energy * 1000) + " mJ");
             // 清空批量任务队列，防止后续getTaskN()调用返回过期任务
             _current_batch_tasks.clear();
+            _preempt_batch_tasks.clear();
             _current_batch_size = 0;
             return nullptr;
         }
@@ -997,6 +1018,33 @@ namespace RTSim {
             // 注意：能量已在performTickScheduling中批量扣除，这里不重复扣除
             SCHEDULER_LOG_DEBUG(std::string("🔄 [BTIE] 新调度��期开始"));
         }
+
+        // ⭐ ⭐ ⭐ Micro-Batch Preemption：优先返回抢占批量任务（最高优先级）
+        if (!_preempt_batch_tasks.empty()) {
+            SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] getTaskN: 从抢占批量返回任务") +
+                               " 抢占批量size=" + std::to_string(_preempt_batch_tasks.size()));
+
+            // 检查索引是否有效
+            if (n >= _preempt_batch_tasks.size()) {
+                SCHEDULER_LOG_DEBUG(std::string("📭 [BTIE] getTaskN: 索引超出抢占批量范围") +
+                                   " n=" + std::to_string(n) +
+                                   " size=" + std::to_string(_preempt_batch_tasks.size()));
+                return nullptr;
+            }
+
+            // ⭐ 直接从抢占批量任务队列中获取第n个任务
+            AbsRTTask *task = _preempt_batch_tasks[n];
+            if (!task) {
+                return nullptr;
+            }
+
+            SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] getTaskN(") + std::to_string(n) + ") 返回抢占任务: " +
+                              getTaskName(task) + " [抢占批量[" + std::to_string(n) + "]/" +
+                              std::to_string(_preempt_batch_tasks.size()) + "]");
+
+            return task;
+        }
+
 
         // ⭐ 关键修复：使用_current_batch_tasks而不是_ready_queue
         // _current_batch_tasks在performTickScheduling()中设置，已经考虑了能量检查
@@ -1018,6 +1066,10 @@ namespace RTSim {
         if (!task) {
             return nullptr;
         }
+
+        SCHEDULER_LOG_INFO(std::string("📤 [BTIE] getTaskN(") + std::to_string(n) + ") 返回: " +
+                          getTaskName(task) + " (批量任务[" + std::to_string(n) + "]/" +
+                          std::to_string(_current_batch_tasks.size()) + ")");
 
         // ⭐ Bug修复：通过内核检查任务是否在运行
         bool is_running = false;
@@ -1204,7 +1256,7 @@ namespace RTSim {
         SCHEDULER_LOG_INFO(std::string("📍 [BTIE] 任务到达: ") + getTaskName(task));
 
         // ⭐ 关键修复：清除任务的WCET完成标志（新实例重新开始）
-        // 周期性任务��复用同一个AbsRTTask对象，但每个实例都是独立的
+        // 周期性任务复用同一个AbsRTTask对象，但每个实例都是独立的
         auto it = _tasks_completed_wcet.find(task);
         if (it != _tasks_completed_wcet.end()) {
             _tasks_completed_wcet.erase(it);
@@ -1214,7 +1266,8 @@ namespace RTSim {
 
         if (!isInReadyQueue(task) && !isInWaitingQueue(task)) {
             addToReadyQueue(task);
-            checkAndPreempt();
+
+            // ⭐ 注意：mid-tick抢占已在insert()中通过Micro-Batch机制实现
         }
     }
 
@@ -1228,43 +1281,102 @@ namespace RTSim {
     }
 
     void BTIEScheduler::checkAndPreemptOnAllCPUs() {
-        for (auto &map_pair : _running_tasks) {
-            CPU *cpu = map_pair.first;
-            AbsRTTask *running_task = map_pair.second;
+        // ⭐ 优化：如果有抢占批量任务，说明mid-tick抢占已经处理，跳过tick边界抢占检查
+        if (!_preempt_batch_tasks.empty()) {
+            SCHEDULER_LOG_DEBUG(std::string("⚡ [BTIE] checkAndPreemptOnAllCPUs: 跳过检查，抢占批量size=") +
+                               std::to_string(_preempt_batch_tasks.size()));
+            return;
+        }
 
+        // ⭐ 修复：不使用_running_tasks（它从未被正确填充）
+        // 直接从kernel获取实际运行中的任务
+        if (!_kernel) {
+            _kernel = getKernel();
+            if (!_kernel) {
+                SCHEDULER_LOG_INFO("❌ [BTIE] checkAndPreemptOnAllCPUs: _kernel为null，无法检查抢占");
+                return;
+            }
+        }
+
+        const auto& running_tasks = _kernel->getCurrentExecutingTasks();
+        SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] checkAndPreemptOnAllCPUs: 运行中任务数量=") +
+                          std::to_string(running_tasks.size()) +
+                          " _current_batch_tasks.size()=" + std::to_string(_current_batch_tasks.size()));
+
+        if (running_tasks.empty()) {
+            SCHEDULER_LOG_INFO("❌ [BTIE] checkAndPreemptOnAllCPUs: 没有运行中的任务");
+            return;
+        }
+
+        // ⭐ 关键修复：检查_current_batch_tasks中的第一个任务（最高优先级）
+        // 因为mid-tick抢占可能已经将高优先级任务移到了_batch_tasks头部
+        AbsRTTask *highest = nullptr;
+        if (!_current_batch_tasks.empty()) {
+            highest = _current_batch_tasks[0];
+        }
+
+        // 如果批量任务为空，才从就绪队列查找
+        if (!highest) {
+            highest = getHighestPriorityTaskFromReadyQueue();
+        }
+
+        if (!highest) {
+            SCHEDULER_LOG_INFO("❌ [BTIE] checkAndPreemptOnAllCPUs: 没有候选任务进行抢占");
+            return;
+        }
+
+        SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] checkAndPreemptOnAllCPUs: 最高优先级任务=") +
+                          getTaskName(highest));
+
+        for (const auto& [cpu, running_task] : running_tasks) {
             if (!running_task) {
                 continue;
             }
 
-            AbsRTTask *highest = getHighestPriorityTaskFromReadyQueue();
-            if (!highest) {
-                continue;
-            }
+            SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] checkAndPreemptOnAllCPUs: 检查运行任务=") +
+                              getTaskName(running_task));
 
-            if (shouldPreempt(cpu, highest)) {
+            if (shouldPreempt(running_task, highest)) {
                 SCHEDULER_LOG_INFO(std::string("🔄 [BTIE] 抢占CPU: ") +
                                   " 挂起低优先级任务=" + getTaskName(running_task) +
                                   " 调度高优先级任务=" + getTaskName(highest));
 
-                // ⭐ 实际抢占逻辑：挂起当前运行的任务
-                // suspend会自动调用deschedule()并将任务重新放回调度队列
-                if (_kernel) {
-                    _kernel->suspend(running_task);
-                    SCHEDULER_LOG_DEBUG(std::string("⏸️ [BTIE] 已挂起任务: ") + getTaskName(running_task));
-                } else {
-                    SCHEDULER_LOG_WARNING("⚠️ [BTIE] 抢占失败：_kernel为nullptr");
+                // ⭐ 完整的抢占实现：
+                // 1. 从就绪队列移除高优先级任务（避免重复）
+                removeFromReadyQueue(highest);
+
+                // 2. 从批量任务中移除被抢占的任务
+                auto batch_it = std::find(_current_batch_tasks.begin(), _current_batch_tasks.end(), running_task);
+                if (batch_it != _current_batch_tasks.end()) {
+                    _current_batch_tasks.erase(batch_it);
+                    SCHEDULER_LOG_DEBUG(std::string("🔄 [BTIE] 从批量任务移除: ") + getTaskName(running_task));
                 }
+
+                // 3. 将高优先级任务加入批量任务（放在最前面）
+                _current_batch_tasks.insert(_current_batch_tasks.begin(), highest);
+
+                // 4. 扣除能量
+                double unit_energy = calculateUnitEnergyForTask(highest);
+                _current_energy -= unit_energy;
+                _stats.total_energy_consumed += unit_energy;
+                SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] 抢占扣除能量: ") +
+                                  getTaskName(highest) +
+                                  " -" + std::to_string(unit_energy * 1000) + " mJ");
+
+                // 5. 挂起低优先级任务
+                _kernel->suspend(running_task);
+
+                // 6. 重新调度所有CPU
+                _kernel->dispatch();
+
+                break;  // 只抢占一次，避免重复抢占
             }
         }
     }
 
-    bool BTIEScheduler::shouldPreempt(CPU *cpu, AbsRTTask *new_task) {
-        if (!cpu || !new_task) {
-            return false;
-        }
-
-        AbsRTTask *running_task = getRunningTaskOnCPU(cpu);
-        if (!running_task) {
+    bool BTIEScheduler::shouldPreempt(AbsRTTask *running_task, AbsRTTask *new_task) {
+        if (!running_task || !new_task) {
+            SCHEDULER_LOG_INFO(std::string("❌ [BTIE] shouldPreempt: running_task或new_task为空"));
             return false;
         }
 
@@ -1272,17 +1384,30 @@ namespace RTSim {
         BTIETaskModel *new_model = getTaskModel(new_task);
 
         if (!running_model || !new_model) {
+            SCHEDULER_LOG_INFO(std::string("❌ [BTIE] shouldPreempt: 获取task model失败"));
             return false;
         }
 
         // 检查新任务的能量是否足够
         double unit_energy = calculateUnitEnergyForTask(new_task);
         if (_current_energy < unit_energy) {
+            SCHEDULER_LOG_INFO(std::string("❌ [BTIE] shouldPreempt: 能量不足 _current_energy=") +
+                              std::to_string(_current_energy * 1000) + " < unit_energy=" +
+                              std::to_string(unit_energy * 1000) + " mJ");
             return false;  // 能量不足，不抢占
         }
 
         // 新任务优先级更高（RM优先级数值越小越高）
-        return new_model->getRMPriority() < running_model->getRMPriority();
+        int running_prio = running_model->getRMPriority();
+        int new_prio = new_model->getRMPriority();
+        bool should = new_prio < running_prio;
+
+        SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] shouldPreempt: ") +
+                          getTaskName(running_task) + "(prio=" + std::to_string(running_prio) + ") vs " +
+                          getTaskName(new_task) + "(prio=" + std::to_string(new_prio) + ") = " +
+                          (should ? "true" : "false"));
+
+        return should;
     }
 
     // =====================================================
@@ -1300,8 +1425,72 @@ namespace RTSim {
         Scheduler::insert(task);
         addToReadyQueue(task);
 
-        // ⭐ BTIE修复：不在insert()中触发批量调度
-        // 让所有任务先到达，然后在tick事件中统一批量调度
+        // ⭐ 新增：mid-tick抢占支持
+        // 仅对真正的新任务执行mid-tick抢占，跳过suspend重新插入的任务
+        bool is_reinserted = std::find(_current_batch_tasks.begin(), _current_batch_tasks.end(), task) != _current_batch_tasks.end();
+
+        SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] Mid-tick抢占检查: _kernel=") +
+                          (_kernel ? "valid" : "null") +
+                          " _energy_depleted=" + (_energy_depleted ? "true" : "false") +
+                          " is_reinserted=" + (is_reinserted ? "true" : "false"));
+
+        if (_kernel && !_energy_depleted && !is_reinserted) {
+            const auto& running_tasks = _kernel->getCurrentExecutingTasks();
+
+            SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] 运行中任务数量: ") +
+                              std::to_string(running_tasks.size()));
+
+            for (const auto& [cpu, running_task] : running_tasks) {
+                SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] 检查CPU ") + cpu->toString() +
+                                  " 运行任务=" + (running_task ? getTaskName(running_task) : "nullptr"));
+
+                if (running_task && shouldPreempt(running_task, task)) {
+                    SCHEDULER_LOG_INFO(std::string("✅ [BTIE] shouldPreempt返回true"));
+                    // 检查能量
+                    double unit_energy = calculateUnitEnergyForTask(task);
+                    const double EPSILON = 1e-9;
+
+                    SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] 能量检查: _current_energy=") +
+                                      std::to_string(_current_energy * 1000) + " mJ, unit_energy=" +
+                                      std::to_string(unit_energy * 1000) + " mJ");
+
+                    if (_current_energy >= unit_energy - EPSILON) {
+                        // 能量充足，执行mid-tick抢占
+                        SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] Micro-Batch抢占: ") +
+                                          getTaskName(running_task) + " → " + getTaskName(task) +
+                                          " [微型批量��度]");
+
+                        // 1. ⭐ 修复：不从就绪队列移除任务，保持任务状态有效
+                        // 任务保留在_ready_queue中，状态为TSK_READY
+                        // 抢占批量仅用于优先dispatch，不修改任务状态
+                        // removeFromReadyQueue(task);  // ❌ 删除：这会使命务状态无效
+
+                        // 2. 创建抢占微型批量（size=1），而不是修改当前批量
+                        // 这保持BTIE的批量调度语义
+                        _preempt_batch_tasks.push_back(task);
+
+                        // 3. 扣除能量（微型批量的all-or-nothing能量检查）
+                        _current_energy -= unit_energy;
+                        _stats.total_energy_consumed += unit_energy;
+
+                        SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] Micro-Batch抢占扣除能量: ") +
+                                          getTaskName(task) +
+                                          " -" + std::to_string(unit_energy * 1000) + " mJ" +
+                                          " [抢占批量size=" + std::to_string(_preempt_batch_tasks.size()) + "]");
+
+                        // 4. 挂起低优先级任务（suspend会自动调用dispatch）
+                        // 注意：不修改_current_batch_tasks，让tick调度在下一个tick处理
+                        _kernel->suspend(running_task);
+
+                        // 5. 立即调度抢占任务
+                        SCHEDULER_LOG_INFO(std::string("🚀 [BTIE] 抢占后立即dispatch调度抢占任务"));
+                        _kernel->dispatch();
+
+                        return;  // 抢占完成，退出
+                    }
+                }
+            }
+        }
     }
 
     void BTIEScheduler::extract(AbsRTTask *task) {

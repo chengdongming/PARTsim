@@ -134,7 +134,8 @@ namespace RTSim {
         std::set<AbsRTTask *> _tasks_completed_wcet;  // 已达到WCET的任务集合
 
         // ========== BTIE批量调度状态 ==========
-        std::vector<AbsRTTask *> _current_batch_tasks;  // 当前批量任务
+        std::vector<AbsRTTask *> _current_batch_tasks;  // 当前批量任务（tick边界预计算）
+        std::vector<AbsRTTask *> _preempt_batch_tasks;    // 抢占批量任务（mid-tick抢占创建的微型批量）
         bool _batch_scheduled_this_tick;                // 本tick是否已批量调度
         bool _energy_depleted;                          // 能量是否已耗尽（Bug #5修复）
         int _current_batch_size;                        // 当前批量大小
@@ -197,7 +198,7 @@ namespace RTSim {
         // 抢占管理
         void checkAndPreempt();
         void checkAndPreemptOnAllCPUs();
-        bool shouldPreempt(CPU *cpu, AbsRTTask *new_task);
+        bool shouldPreempt(AbsRTTask *running_task, AbsRTTask *new_task);
         AbsRTTask *getRunningTaskOnCPU(CPU *cpu);
 
         // Tick事件调度

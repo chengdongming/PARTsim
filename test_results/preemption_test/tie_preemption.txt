@@ -1,0 +1,30 @@
+[Time:0]	task_1 arrived at 0
+[Time:0]	task_2 arrived at 0
+[Time:0]	task_3 arrived at 0
+[Time:0]	task_3 scheduled on CPU energy_aware_cpus-0 workload bzip2 speed 1.00437 freq 8100 abs WCET 10 its arrival was 0
+[Time:0]	task_2 scheduled on CPU energy_aware_cpus-1 workload bzip2 speed 1.00437 freq 8100 abs WCET 15 its arrival was 0
+[Time:10]	ExecInstr(10, bzip2) ended for Task task_3
+[Time:10]	task_3 ended, its arrival was 0, its period was 30, RespTime/Period is 0.333333
+[Time:10]	task_1 scheduled on CPU energy_aware_cpus-0 workload bzip2 speed 1.00437 freq 8100 abs WCET 20 its arrival was 0
+[Time:12]	task_2 descheduled its arrival was 0
+[Time:13]	task_1 descheduled its arrival was 0
+[Time:30]	task_3 arrived at 30
+[Time:50]	task_2 arrived at 0
+[Time:50]	task_2 missed its arrival was 0
+[Time:60]	task_3 arrived at 30
+[Time:60]	task_3 missed its arrival was 30
+[Time:90]	task_3 arrived at 30
+[Time:90]	task_3 missed its arrival was 30
+[Time:100]	task_1 arrived at 0
+[Time:100]	task_1 missed its arrival was 0
+[Time:100]	task_2 arrived at 0
+[Time:100]	task_2 missed its arrival was 0
+[Time:120]	task_3 arrived at 30
+[Time:120]	task_3 missed its arrival was 30
+[Time:150]	task_2 arrived at 0
+[Time:150]	task_2 missed its arrival was 0
+[Time:150]	task_3 arrived at 30
+[Time:150]	task_3 missed its arrival was 30
+[Time:180]	task_3 arrived at 30
+[Time:180]	task_3 missed its arrival was 30
+[Time:200]	task_1 arrived at 0

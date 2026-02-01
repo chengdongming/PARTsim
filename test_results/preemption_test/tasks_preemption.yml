@@ -1,0 +1,45 @@
+# =============================================
+# 抢占性测试配置 V2 - 更明显地展示抢占行为
+# =============================================
+# 设计理念：
+# - Task1: 0ms到达，运行时间30ms（���期任务）
+# - Task2: 10ms到达（低优先级，不抢占Task1）
+# - Task3: 20ms到达（高优先级，应该抢占Task1）
+# - Task4: 40ms到达（中优先级）
+# =============================================
+taskset:
+  # Task1: 周期200ms，WCET 30ms（长期运行的任务）
+  - name: task_long
+    iat: 200
+    runtime: 30
+    deadline: 200
+    params: "period=200,wcet=30,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(30, bzip2)
+
+  # Task2: 周期100ms，WCET 15ms（低优先级，10ms到达）
+  - name: task_low
+    iat: 100
+    runtime: 15
+    deadline: 100
+    params: "period=100,wcet=15,arrival_offset=10,workload=bzip2"
+    code:
+      - fixed(15, bzip2)
+
+  # Task3: 周期80ms，WCET 10ms（高优先级，20ms到达，应该抢占Task1）
+  - name: task_high
+    iat: 80
+    runtime: 10
+    deadline: 80
+    params: "period=80,wcet=10,arrival_offset=20,workload=bzip2"
+    code:
+      - fixed(10, bzip2)
+
+  # Task4: 周期90ms，WCET 12ms（中优先级，40ms到达）
+  - name: task_mid
+    iat: 90
+    runtime: 12
+    deadline: 90
+    params: "period=90,wcet=12,arrival_offset=40,workload=bzip2"
+    code:
+      - fixed(12, bzip2)

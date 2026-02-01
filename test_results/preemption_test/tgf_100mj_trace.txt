@@ -1,0 +1,53 @@
+[Time:0]	task_1 arrived at 0
+[Time:0]	task_2 arrived at 0
+[Time:0]	task_3 arrived at 0
+[Time:0]	task_3 scheduled on CPU energy_aware_cpus-1 workload bzip2 speed 1.00437 freq 8100 abs WCET 10 its arrival was 0
+[Time:0]	task_2 scheduled on CPU energy_aware_cpus-0 workload bzip2 speed 1.00437 freq 8100 abs WCET 15 its arrival was 0
+[Time:10]	ExecInstr(10, bzip2) ended for Task task_3
+[Time:10]	task_3 ended, its arrival was 0, its period was 30, RespTime/Period is 0.333333
+[Time:10]	task_1 scheduled on CPU energy_aware_cpus-1 workload bzip2 speed 1.00437 freq 8100 abs WCET 20 its arrival was 0
+[Time:15]	ExecInstr(15, bzip2) ended for Task task_2
+[Time:15]	task_2 ended, its arrival was 0, its period was 50, RespTime/Period is 0.3
+[Time:30]	ExecInstr(20, bzip2) ended for Task task_1
+[Time:30]	task_1 ended, its arrival was 0, its period was 100, RespTime/Period is 0.3
+[Time:30]	task_3 arrived at 30
+[Time:30]	task_3 scheduled on CPU energy_aware_cpus-1 workload bzip2 speed 1.00437 freq 8100 abs WCET 10 its arrival was 30
+[Time:40]	ExecInstr(10, bzip2) ended for Task task_3
+[Time:40]	task_3 ended, its arrival was 30, its period was 30, RespTime/Period is 0.333333
+[Time:50]	task_2 arrived at 50
+[Time:50]	task_2 scheduled on CPU energy_aware_cpus-1 workload bzip2 speed 1.00437 freq 8100 abs WCET 15 its arrival was 50
+[Time:60]	task_3 arrived at 60
+[Time:60]	task_3 scheduled on CPU energy_aware_cpus-0 workload bzip2 speed 1.00437 freq 8100 abs WCET 10 its arrival was 60
+[Time:65]	ExecInstr(15, bzip2) ended for Task task_2
+[Time:65]	task_2 ended, its arrival was 50, its period was 50, RespTime/Period is 0.3
+[Time:70]	ExecInstr(10, bzip2) ended for Task task_3
+[Time:70]	task_3 ended, its arrival was 60, its period was 30, RespTime/Period is 0.333333
+[Time:90]	task_3 arrived at 90
+[Time:90]	task_3 scheduled on CPU energy_aware_cpus-1 workload bzip2 speed 1.00437 freq 8100 abs WCET 10 its arrival was 90
+[Time:100]	ExecInstr(10, bzip2) ended for Task task_3
+[Time:100]	task_3 ended, its arrival was 90, its period was 30, RespTime/Period is 0.333333
+[Time:100]	task_1 arrived at 100
+[Time:100]	task_2 arrived at 100
+[Time:100]	task_2 scheduled on CPU energy_aware_cpus-1 workload bzip2 speed 1.00437 freq 8100 abs WCET 15 its arrival was 100
+[Time:100]	task_1 scheduled on CPU energy_aware_cpus-0 workload bzip2 speed 1.00437 freq 8100 abs WCET 20 its arrival was 100
+[Time:115]	ExecInstr(15, bzip2) ended for Task task_2
+[Time:115]	task_2 ended, its arrival was 100, its period was 50, RespTime/Period is 0.3
+[Time:120]	ExecInstr(20, bzip2) ended for Task task_1
+[Time:120]	task_1 ended, its arrival was 100, its period was 100, RespTime/Period is 0.2
+[Time:120]	task_3 arrived at 120
+[Time:120]	task_3 scheduled on CPU energy_aware_cpus-0 workload bzip2 speed 1.00437 freq 8100 abs WCET 10 its arrival was 120
+[Time:130]	ExecInstr(10, bzip2) ended for Task task_3
+[Time:130]	task_3 ended, its arrival was 120, its period was 30, RespTime/Period is 0.333333
+[Time:150]	task_2 arrived at 150
+[Time:150]	task_3 arrived at 150
+[Time:150]	task_3 scheduled on CPU energy_aware_cpus-1 workload bzip2 speed 1.00437 freq 8100 abs WCET 10 its arrival was 150
+[Time:150]	task_2 scheduled on CPU energy_aware_cpus-0 workload bzip2 speed 1.00437 freq 8100 abs WCET 15 its arrival was 150
+[Time:160]	ExecInstr(10, bzip2) ended for Task task_3
+[Time:160]	task_3 ended, its arrival was 150, its period was 30, RespTime/Period is 0.333333
+[Time:165]	ExecInstr(15, bzip2) ended for Task task_2
+[Time:165]	task_2 ended, its arrival was 150, its period was 50, RespTime/Period is 0.3
+[Time:180]	task_3 arrived at 180
+[Time:180]	task_3 scheduled on CPU energy_aware_cpus-1 workload bzip2 speed 1.00437 freq 8100 abs WCET 10 its arrival was 180
+[Time:190]	ExecInstr(10, bzip2) ended for Task task_3
+[Time:190]	task_3 ended, its arrival was 180, its period was 30, RespTime/Period is 0.333333
+[Time:200]	task_1 arrived at 200
