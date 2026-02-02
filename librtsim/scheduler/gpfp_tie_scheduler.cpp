@@ -1209,6 +1209,23 @@ namespace RTSim {
         return model->getUnitEnergy();
     }
 
+    // ⭐ EnergyInfoProvider接口实现
+    double TIEScheduler::getTaskUnitEnergy(AbsRTTask *task) const {
+        auto it = _task_models.find(task);
+        if (it == _task_models.end()) {
+            return 0.0;
+        }
+        return it->second->getUnitEnergy();
+    }
+
+    double TIEScheduler::getTaskTotalEnergy(AbsRTTask *task) const {
+        auto it = _task_models.find(task);
+        if (it == _task_models.end()) {
+            return 0.0;
+        }
+        return it->second->getTotalEnergy();
+    }
+
     double TIEScheduler::calculateTotalEnergyForTask(AbsRTTask *task) {
         if (!task) {
             return 0.0;

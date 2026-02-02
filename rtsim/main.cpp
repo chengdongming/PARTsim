@@ -235,6 +235,22 @@ int main(int argc, char *argv[]) {
         kernel->setResManager(resmanager.get());
     }
 
+    // ⭐ 设置JSONTrace的能量提供者
+    for (auto &tracer : tracers) {
+        if (tracer.jtrace) {
+            // 获取第一个kernel的调度器作为能量提供者
+            if (!sys.kernels.empty()) {
+                RTSim::Scheduler *sched = sys.kernels[0]->getScheduler();
+                // 尝试转换为EnergyInfoProvider
+                RTSim::EnergyInfoProvider *energy_provider =
+                    dynamic_cast<RTSim::EnergyInfoProvider*>(sched);
+                if (energy_provider) {
+                    tracer.jtrace->setEnergyProvider(energy_provider);
+                }
+            }
+        }
+    }
+
     TaskSet taskset = read_taskset(opts["taskset"]);
     for (auto &[tasksrv, cpu, params] : taskset) {
         if (tasksrv.getServer()) {

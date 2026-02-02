@@ -26,6 +26,8 @@
 
 #include <rtsim/rttask.hpp>
 #include <rtsim/taskevt.hpp>
+#include <rtsim/energy_info_provider.hpp>
+#include <map>
 
 namespace RTSim {
     class JSONTrace {
@@ -33,14 +35,26 @@ namespace RTSim {
         std::ofstream fd;
         bool first_event;
         MetaSim::Tick max_time; // 最大时间，用于过滤事件
+        EnergyInfoProvider *_energy_provider; // ⭐ 能量信息提供者
+
+        // ⭐ 追踪任务执行信息
+        std::map<AbsRTTask*, MetaSim::Tick> _task_start_times; // 任务开始执行时间
+        std::map<AbsRTTask*, double> _task_start_consumed; // 任务开始时的累计消耗能量
 
         void writeTaskEvent(const Task &tt, const std::string &evt_name);
+        void writeEnergyInfo(); // ⭐ 写入能量信息
+        void writeTaskEnergyInfo(AbsRTTask *task); // ⭐ 写入任务能量信息
 
     public:
         JSONTrace(const std::string &name);
         JSONTrace(const std::string &name, MetaSim::Tick max);
 
         ~JSONTrace();
+
+        // ⭐ 设置能量信息提供者
+        void setEnergyProvider(EnergyInfoProvider *provider) {
+            _energy_provider = provider;
+        }
 
         void probe(ArrEvt &e);
 

@@ -6,6 +6,7 @@
 #include "scheduler.hpp"
 #include <rtsim/abstask.hpp>
 #include <rtsim/rttask.hpp>
+#include <rtsim/energy_info_provider.hpp>
 #include <metasim/factory.hpp>
 #include <map>
 #include <memory>
@@ -99,7 +100,7 @@ namespace RTSim {
     // =====================================================
     // BTIEScheduler 类声明 - BTIE批量调度算法
     // =====================================================
-    class BTIEScheduler : public Scheduler {
+    class BTIEScheduler : public Scheduler, public EnergyInfoProvider {
     private:
         // ========== 核心配置参数 ==========
         double _current_energy;              // 当前可用能量
@@ -239,10 +240,16 @@ namespace RTSim {
         void onTaskEnd(AbsRTTask *task);
 
         // 能量管理接口
-        double getCurrentEnergy() const { return _current_energy; }
+        double getCurrentEnergy() const override { return _current_energy; }
         double getInitialEnergy() const { return _initial_energy; }
         double getMaxEnergy() const { return _max_energy; }
         double calculateUnitEnergyForTask(AbsRTTask *task);  // MRTKernel需要调用
+
+        // ⭐ EnergyInfoProvider接口实现
+        double getTotalEnergyConsumed() const override { return _stats.total_energy_consumed; }
+        double getTotalEnergyHarvested() const override { return _stats.total_energy_harvested; }
+        double getTaskUnitEnergy(AbsRTTask *task) const override;
+        double getTaskTotalEnergy(AbsRTTask *task) const override;
 
         // ⭐ 运行时能量检查接口（V28.15新增）
         void startEnergyCheckForTask(AbsRTTask *task, CPU *cpu);  // 开始对任务的能量监控
