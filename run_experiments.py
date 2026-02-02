@@ -1,15 +1,4 @@
 #!/usr/bin/env python3
-"""
-自动化调度算法对比实验脚本 (最终修正版)
-复刻论文 Figure 5 和 Table 1
-
-包含修复:
-1. 绘图数据强制排序，防止折线图乱序。
-2. 表格排名逻辑修复，避免浮点数匹配错误。
-3. 增强 Config 修改逻辑，兼容 absolute/ratio 能量设置。
-4. 规范化 TraceParser 的统计指标命名。
-"""
-
 import json
 import subprocess
 import yaml
@@ -67,7 +56,7 @@ TASK_U = 3.0  # 高负载，逼迫调度器做取舍
 TASK_P_MIN = 20
 TASK_P_MAX = 100
 
-SIMULATOR = './rtsim/rtsim'
+SIMULATOR = './build/rtsim/rtsim'
 OUTPUT_DIR = Path('experiment_results_final')
 TRACE_DIR = OUTPUT_DIR / 'traces'
 TASK_DIR = OUTPUT_DIR / 'tasks'
@@ -114,11 +103,13 @@ class TraceParser:
         unique_instances = set()
         failed_instances_set = set()
         schedule_counts = defaultdict(int)
-        active_tasks = set() 
+        active_tasks = set()
 
         # 按时间排序，确保积分准确
         sorted_events = sorted(self.events, key=lambda e: float(e['time']))
         prev_time = 0.0
+        prev_energy = 0.0  # 用于能量水平积分
+        total_energy_time = 0.0  # 能量×时间的累积值
 
         for event in sorted_events:
             curr_time = float(event['time'])
@@ -132,7 +123,15 @@ class TraceParser:
             if duration > 0 and active_tasks:
                 num_active = min(len(active_tasks), self.num_cores)
                 stats['busy_time'] += duration * num_active
-            
+
+            # 2. 积分计算 Energy Level (时间加权平均)
+            if duration > 0:
+                total_energy_time += prev_energy * duration
+
+            # 更新当前能量水平（从事件中读取，单位转换：mJ -> J）
+            if 'current_energy_mJ' in event:
+                prev_energy = float(event['current_energy_mJ']) / 1000.0
+
             prev_time = curr_time
 
             # 2. 状态维护
@@ -173,8 +172,11 @@ class TraceParser:
         # 开销估算 (事件密度)
         stats['overhead_proxy'] = len(self.events) / 1000.0
 
-        # 占位符 (如果仿真器不输出能量水平)
-        stats['avg_energy_level'] = 0.0 
+        # 计算平均能量水平 (时间加权平均)
+        if SIMULATION_TIME > 0:
+            stats['avg_energy_level'] = total_energy_time / SIMULATION_TIME
+        else:
+            stats['avg_energy_level'] = 0.0
 
         return stats
 
@@ -274,14 +276,19 @@ class ExperimentRunner:
                     ]
                     
                     try:
-                        subprocess.run(cmd, check=True, capture_output=True, env=env)
+                        result = subprocess.run(cmd, check=True, capture_output=True, env=env, text=True)
                         parser = TraceParser(str(trace_file), SYSTEM_CORES)
-                        self.results[algorithm][battery].append(parser.parse())
-                    except subprocess.CalledProcessError:
-                        # 仿真失败通常是因为死锁或断言，记录空结果
+                        parsed_stats = parser.parse()
+                        self.results[algorithm][battery].append(parsed_stats)
+                    except subprocess.CalledProcessError as e:
+                        # 仿真失败，输出错误信息用于调试
+                        if count % 100 == 0:  # 每100次输出一次错误
+                            print(f"   仿真失败: {algorithm} battery={battery} task={task_idx}")
+                            if e.stderr:
+                                print(f"   错误: {e.stderr[:200]}")
                         pass
                     except Exception as e:
-                        print(f"解析错误: {e}")
+                        print(f"   解析错误: {algorithm} battery={battery} task={task_idx}: {e}")
                     
                     count += 1
                     if count % 50 == 0:

@@ -415,9 +415,19 @@ class TraceVisualizer:
         # 绘制每个任务的执行区间
         total_execution = defaultdict(int)
 
-        for task_name, intervals in self.schedule_intervals.items():
+        # ⭐ 根据时间跨度决定刻度间隔（提前计算，用于所有时间轴）
+        if time_span <= 20:
+            tick_interval = 2
+        elif time_span <= 50:
+            tick_interval = 5
+        elif time_span <= 100:
+            tick_interval = 10
+        else:
+            tick_interval = 20
+
+        # ⭐ 为所有任务绘制时间轴（即使没有调度区间）
+        for task_name in self.tasks:
             pos = task_positions[task_name]
-            color = get_color_for_task(task_name)
 
             # 绘制该任务的时间轴（在任务条下方）
             time_axis_y = pos - 0.125  # 任务条下边界（任务条高度0.25，中心在pos）
@@ -425,16 +435,6 @@ class TraceVisualizer:
                    color='gray', linestyle='-', linewidth=0.8, alpha=0.5)
 
             # 添加时间刻度
-            # 根据时间跨度决定刻度间隔
-            if time_span <= 20:
-                tick_interval = 2
-            elif time_span <= 50:
-                tick_interval = 5
-            elif time_span <= 100:
-                tick_interval = 10
-            else:
-                tick_interval = 20
-
             for tick in range(0, int(time_span * 1.02) + 1, tick_interval):
                 # 绘制刻度线
                 ax.plot([tick, tick], [time_axis_y, time_axis_y - 0.05],
@@ -443,6 +443,11 @@ class TraceVisualizer:
                 ax.text(tick, time_axis_y - 0.08, str(tick),
                        ha='center', va='top', fontsize=5, color='gray',
                        fontproperties=self._get_font_prop())
+
+        # 绘制任务的执行区间
+        for task_name, intervals in self.schedule_intervals.items():
+            pos = task_positions[task_name]
+            color = get_color_for_task(task_name)
 
             for start, end in intervals:
                 duration = end - start
@@ -496,7 +501,8 @@ class TraceVisualizer:
         # 设置坐标轴
         ax.set_yticks(range(len(self.tasks)))
         ax.set_yticklabels(self.tasks, fontsize=10, fontproperties=self._get_font_prop())
-        ax.set_xlabel('时间', fontsize=12, fontweight='bold', fontproperties=self._get_font_prop())
+        ax.set_xlabel(f'时间 (刻度间隔: {tick_interval}ms)', fontsize=12, fontweight='bold',
+                     fontproperties=self._get_font_prop())
         ax.set_ylabel('任务', fontsize=12, fontweight='bold', fontproperties=self._get_font_prop())
 
 
