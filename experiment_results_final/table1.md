@@ -1,7 +1,7 @@
 | Metric | TIE | TGF | BTIE |
 |---|---|---|---|
-| failure_rate | **0.44 (Best)** | 0.61 | 0.68 |
-| preemptions | 579.13 | 396.51 | **0.00 (Best)** |
-| total_idle_time | **16194.35 (Best)** | 23685.85 | 24642.10 |
-| avg_execution_time | **15.09 (Best)** | 10.35 | 9.74 |
-| overhead_proxy | 5.42 | 4.73 | **3.83 (Best)** |
+| failure_rate | 0.63 | 0.61 | **0.59 (Best)** |
+| preemptions | 384.70 | 401.18 | **202.54 (Best)** |
+| total_idle_time | 24145.69 | **23494.49 (Best)** | 24784.18 |
+| avg_execution_time | 10.07 | **10.47 (Best)** | 9.67 |
+| overhead_proxy | 4.69 | 4.75 | **4.29 (Best)** |
