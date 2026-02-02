@@ -1834,13 +1834,32 @@ namespace RTSim {
 
     double BTIEScheduler::getSolarIrradiance(int64_t time_ms) {
         if (!_use_real_solar_data) {
-            // 简化模型
+            // ⭐ 分段函数模型：模拟真实太阳能曲线
             int64_t actual_time_ms = time_ms + static_cast<int64_t>(_start_time_offset);
-            int64_t hour_of_day = (actual_time_ms % 86400000) / 3600000;
 
-            if (hour_of_day >= 6 && hour_of_day <= 18) {
-                return 500.0;
+            // 转换为小时（用于分段判断）
+            int64_t ms_of_day = actual_time_ms % 86400000;
+            double hour_of_day = static_cast<double>(ms_of_day) / 3600000.0;  // 0.0-24.0
+
+            // 分段函数定义（更真实的太阳能曲线）
+            const double PEAK_IRRADIANCE = 800.0;  // 峰值辐照度 (W/m²)
+
+            if (hour_of_day < 6.0) {
+                // 夜晚 (0:00-6:00)
+                return 0.0;
+            } else if (hour_of_day < 11.0) {
+                // 日出阶段 (6:00-11:00): 线性增加，5小时
+                double progress = (hour_of_day - 6.0) / 5.0;  // 0.0-1.0
+                return PEAK_IRRADIANCE * progress;
+            } else if (hour_of_day < 13.0) {
+                // 白天峰值 (11:00-13:00): 保持峰值，2小时
+                return PEAK_IRRADIANCE;
+            } else if (hour_of_day < 18.0) {
+                // 日落阶段 (13:00-18:00): 线性降低，5小时
+                double progress = (18.0 - hour_of_day) / 5.0;  // 1.0-0.0
+                return PEAK_IRRADIANCE * progress;
             } else {
+                // 夜晚 (18:00-24:00)
                 return 0.0;
             }
         }
