@@ -659,13 +659,10 @@ namespace RTSim {
         // 这样确保所有任务（包括低优先级task_4）都能被调度
         size_t K = _ready_queue.size();
 
-        // ⭐ Bug #4修复：计算实际能调度的新任务数（考虑CPU限制）
-        // 实际可调度 = min(K - 运行中任务数, 空闲CPU数)
-        int actual_new_tasks_can_schedule = static_cast<int>(K) - static_cast<int>(running_count);
-        if (actual_new_tasks_can_schedule < 0) actual_new_tasks_can_schedule = 0;
-        if (actual_new_tasks_can_schedule > static_cast<int>(free_cpus)) {
-            actual_new_tasks_can_schedule = static_cast<int>(free_cpus);
-        }
+        // ⭐ 批量大小计算：实际可调度的新任务数
+        // 批量大小 = min(就绪队列大小, 空闲CPU数)
+        // 注意：_ready_queue和running_task_list是互斥的，不应该相减
+        int actual_new_tasks_can_schedule = std::min(static_cast<int>(K), static_cast<int>(free_cpus));
 
         std::vector<AbsRTTask *> new_tasks_to_schedule;
         std::vector<AbsRTTask *> all_ready_tasks;
