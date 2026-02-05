@@ -1,0 +1,39 @@
+# 高负载约束截止期任务集 (D < T)
+# T1: period=40, deadline=30 (0.75*40), wcet=15
+# T2: period=60, deadline=45 (0.75*60), wcet=20
+# T3: period=80, deadline=60 (0.75*80), wcet=25
+# T4: period=100, deadline=75 (0.75*100), wcet=30
+# 总利用率 = 15/40 + 20/60 + 25/80 + 30/100 = 0.375 + 0.333 + 0.3125 + 0.3 = 1.32
+
+taskset:
+  - name: T1
+    iat: 40
+    runtime: 15
+    deadline: 30
+    params: "period=40,wcet=15,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(15, bzip2)
+
+  - name: T2
+    iat: 60
+    runtime: 20
+    deadline: 45
+    params: "period=60,wcet=20,arrival_offset=0,workload=hash"
+    code:
+      - fixed(20, hash)
+
+  - name: T3
+    iat: 80
+    runtime: 25
+    deadline: 60
+    params: "period=80,wcet=25,arrival_offset=0,workload=encrypt"
+    code:
+      - fixed(25, encrypt)
+
+  - name: T4
+    iat: 100
+    runtime: 30
+    deadline: 75
+    params: "period=100,wcet=30,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(30, bzip2)

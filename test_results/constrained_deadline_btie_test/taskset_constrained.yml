@@ -1,0 +1,29 @@
+# 约束截止期任务集 (D < T)
+# T1: period=50, deadline=40 (0.8*50), wcet=10
+# T2: period=100, deadline=80 (0.8*100), wcet=20
+# T3: period=150, deadline=120 (0.8*150), wcet=25
+
+taskset:
+  - name: T1
+    iat: 50
+    runtime: 10
+    deadline: 40
+    params: "period=50,wcet=10,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(10, bzip2)
+
+  - name: T2
+    iat: 100
+    runtime: 20
+    deadline: 80
+    params: "period=100,wcet=20,arrival_offset=0,workload=hash"
+    code:
+      - fixed(20, hash)
+
+  - name: T3
+    iat: 150
+    runtime: 25
+    deadline: 120
+    params: "period=150,wcet=25,arrival_offset=0,workload=encrypt"
+    code:
+      - fixed(25, encrypt)
