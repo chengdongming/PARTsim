@@ -1,0 +1,37 @@
+# PARTSim 能量感知全局调度任务集配置 - 约束截止期版本
+# D/T = 0.7 (约束截止期)
+# 任务总数: 4
+# 总利用率: 2.000
+
+taskset:
+  - name: task_0
+    iat: 51
+    runtime: 30
+    deadline: 36
+    params: "period=51,wcet=30,arrival_offset=2,workload=bzip2"
+    code:
+      - fixed(30, bzip2)
+
+  - name: task_1
+    iat: 31
+    runtime: 18
+    deadline: 22
+    params: "period=31,wcet=18,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(18, bzip2)
+
+  - name: task_2
+    iat: 37
+    runtime: 22
+    deadline: 26
+    params: "period=37,wcet=22,arrival_offset=8,workload=bzip2"
+    code:
+      - fixed(22, bzip2)
+
+  - name: task_3
+    iat: 47
+    runtime: 28
+    deadline: 33
+    params: "period=47,wcet=28,arrival_offset=3,workload=control"
+    code:
+      - fixed(28, control)

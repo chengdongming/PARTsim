@@ -1,0 +1,40 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-02-02 23:01:20
+# 任务总数: 3
+# 总利用率: 1.500
+# 能量信息:
+#   总估算能耗: 0.245 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.1%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 91
+    runtime: 54
+    deadline: 91
+    params: "period=91,wcet=54,arrival_offset=10,workload=bzip2"
+    code:
+      - fixed(54, bzip2)
+
+  - name: task_1
+    iat: 91
+    runtime: 54
+    deadline: 91
+    params: "period=91,wcet=54,arrival_offset=27,workload=encrypt"
+    code:
+      - fixed(54, encrypt)
+
+  - name: task_2
+    iat: 59
+    runtime: 35
+    deadline: 59
+    params: "period=59,wcet=35,arrival_offset=8,workload=hash"
+    code:
+      - fixed(35, hash)

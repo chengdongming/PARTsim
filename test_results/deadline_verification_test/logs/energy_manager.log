@@ -1,0 +1,11 @@
+2026-02-05 19:46:27.059 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: ./simconf/systems/gpfp_system.yml
+2026-02-05 19:46:27.059 [ERROR   ] [energy_manager      ] Config file does not exist: ./simconf/systems/gpfp_system.yml
+2026-02-05 19:46:27.059 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-05 19:46:27.059 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-05 19:46:27.060 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-05 19:46:27.060 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-05 19:46:27.060 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-05 19:46:27.060 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-05 19:46:27.060 [INFO    ] [energy_manager      ] 确保配置文件加载: ./simconf/systems/gpfp_system.yml
+2026-02-05 19:46:27.060 [ERROR   ] [energy_manager      ] Config file does not exist: ./simconf/systems/gpfp_system.yml
+2026-02-05 19:46:27.060 [WARNING ] [energy_manager      ] 确保配置文件加载失败: ./simconf/systems/gpfp_system.yml

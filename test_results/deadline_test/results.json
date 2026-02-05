@@ -1,0 +1,272 @@
+[
+  {
+    "algorithm": "gpfp_tie",
+    "battery": 10.0,
+    "d_t_ratio": 1.0,
+    "arrivals": 1747,
+    "completions": 397,
+    "deadline_misses": 1374,
+    "failure_rate": 0.7864911276473955,
+    "completion_rate": 0.22724670864338867
+  },
+  {
+    "algorithm": "gpfp_tie",
+    "battery": 15.0,
+    "d_t_ratio": 1.0,
+    "arrivals": 1747,
+    "completions": 597,
+    "deadline_misses": 1188,
+    "failure_rate": 0.680022896393818,
+    "completion_rate": 0.341728677733257
+  },
+  {
+    "algorithm": "gpfp_tie",
+    "battery": 25.0,
+    "d_t_ratio": 1.0,
+    "arrivals": 1747,
+    "completions": 994,
+    "deadline_misses": 820,
+    "failure_rate": 0.4693760732684602,
+    "completion_rate": 0.5689753863766457
+  },
+  {
+    "algorithm": "gpfp_tgf",
+    "battery": 10.0,
+    "d_t_ratio": 1.0,
+    "arrivals": 1747,
+    "completions": 431,
+    "deadline_misses": 1343,
+    "failure_rate": 0.7687464224384659,
+    "completion_rate": 0.2467086433886663
+  },
+  {
+    "algorithm": "gpfp_tgf",
+    "battery": 15.0,
+    "d_t_ratio": 1.0,
+    "arrivals": 1747,
+    "completions": 645,
+    "deadline_misses": 1144,
+    "failure_rate": 0.654836863194047,
+    "completion_rate": 0.3692043503148254
+  },
+  {
+    "algorithm": "gpfp_tgf",
+    "battery": 25.0,
+    "d_t_ratio": 1.0,
+    "arrivals": 1747,
+    "completions": 1079,
+    "deadline_misses": 744,
+    "failure_rate": 0.42587292501431023,
+    "completion_rate": 0.6176302232398397
+  },
+  {
+    "algorithm": "gpfp_btie",
+    "battery": 10.0,
+    "d_t_ratio": 1.0,
+    "arrivals": 1747,
+    "completions": 430,
+    "deadline_misses": 1315,
+    "failure_rate": 0.7527189467658844,
+    "completion_rate": 0.24613623354321695
+  },
+  {
+    "algorithm": "gpfp_btie",
+    "battery": 15.0,
+    "d_t_ratio": 1.0,
+    "arrivals": 1747,
+    "completions": 649,
+    "deadline_misses": 1097,
+    "failure_rate": 0.6279336004579279,
+    "completion_rate": 0.3714939896966228
+  },
+  {
+    "algorithm": "gpfp_btie",
+    "battery": 25.0,
+    "d_t_ratio": 1.0,
+    "arrivals": 1747,
+    "completions": 1087,
+    "deadline_misses": 660,
+    "failure_rate": 0.37779049799656556,
+    "completion_rate": 0.6222095020034345
+  },
+  {
+    "algorithm": "gpfp_tie",
+    "battery": 10.0,
+    "d_t_ratio": 0.8,
+    "arrivals": 1747,
+    "completions": 397,
+    "deadline_misses": 1374,
+    "failure_rate": 0.7864911276473955,
+    "completion_rate": 0.22724670864338867
+  },
+  {
+    "algorithm": "gpfp_tie",
+    "battery": 15.0,
+    "d_t_ratio": 0.8,
+    "arrivals": 1747,
+    "completions": 597,
+    "deadline_misses": 1188,
+    "failure_rate": 0.680022896393818,
+    "completion_rate": 0.341728677733257
+  },
+  {
+    "algorithm": "gpfp_tie",
+    "battery": 25.0,
+    "d_t_ratio": 0.8,
+    "arrivals": 1747,
+    "completions": 994,
+    "deadline_misses": 820,
+    "failure_rate": 0.4693760732684602,
+    "completion_rate": 0.5689753863766457
+  },
+  {
+    "algorithm": "gpfp_tgf",
+    "battery": 10.0,
+    "d_t_ratio": 0.8,
+    "arrivals": 1747,
+    "completions": 431,
+    "deadline_misses": 1343,
+    "failure_rate": 0.7687464224384659,
+    "completion_rate": 0.2467086433886663
+  },
+  {
+    "algorithm": "gpfp_tgf",
+    "battery": 15.0,
+    "d_t_ratio": 0.8,
+    "arrivals": 1747,
+    "completions": 645,
+    "deadline_misses": 1144,
+    "failure_rate": 0.654836863194047,
+    "completion_rate": 0.3692043503148254
+  },
+  {
+    "algorithm": "gpfp_tgf",
+    "battery": 25.0,
+    "d_t_ratio": 0.8,
+    "arrivals": 1747,
+    "completions": 1079,
+    "deadline_misses": 744,
+    "failure_rate": 0.42587292501431023,
+    "completion_rate": 0.6176302232398397
+  },
+  {
+    "algorithm": "gpfp_btie",
+    "battery": 10.0,
+    "d_t_ratio": 0.8,
+    "arrivals": 1747,
+    "completions": 491,
+    "deadline_misses": 1248,
+    "failure_rate": 0.7143674871207785,
+    "completion_rate": 0.28105323411562677
+  },
+  {
+    "algorithm": "gpfp_btie",
+    "battery": 15.0,
+    "d_t_ratio": 0.8,
+    "arrivals": 1747,
+    "completions": 738,
+    "deadline_misses": 1001,
+    "failure_rate": 0.5729822552947911,
+    "completion_rate": 0.4224384659416142
+  },
+  {
+    "algorithm": "gpfp_btie",
+    "battery": 25.0,
+    "d_t_ratio": 0.8,
+    "arrivals": 1747,
+    "completions": 1235,
+    "deadline_misses": 504,
+    "failure_rate": 0.28849456210646823,
+    "completion_rate": 0.7069261591299371
+  },
+  {
+    "algorithm": "gpfp_tie",
+    "battery": 10.0,
+    "d_t_ratio": 0.6,
+    "arrivals": 1747,
+    "completions": 397,
+    "deadline_misses": 1374,
+    "failure_rate": 0.7864911276473955,
+    "completion_rate": 0.22724670864338867
+  },
+  {
+    "algorithm": "gpfp_tie",
+    "battery": 15.0,
+    "d_t_ratio": 0.6,
+    "arrivals": 1747,
+    "completions": 597,
+    "deadline_misses": 1188,
+    "failure_rate": 0.680022896393818,
+    "completion_rate": 0.341728677733257
+  },
+  {
+    "algorithm": "gpfp_tie",
+    "battery": 25.0,
+    "d_t_ratio": 0.6,
+    "arrivals": 1747,
+    "completions": 994,
+    "deadline_misses": 820,
+    "failure_rate": 0.4693760732684602,
+    "completion_rate": 0.5689753863766457
+  },
+  {
+    "algorithm": "gpfp_tgf",
+    "battery": 10.0,
+    "d_t_ratio": 0.6,
+    "arrivals": 1747,
+    "completions": 431,
+    "deadline_misses": 1343,
+    "failure_rate": 0.7687464224384659,
+    "completion_rate": 0.2467086433886663
+  },
+  {
+    "algorithm": "gpfp_tgf",
+    "battery": 15.0,
+    "d_t_ratio": 0.6,
+    "arrivals": 1747,
+    "completions": 645,
+    "deadline_misses": 1144,
+    "failure_rate": 0.654836863194047,
+    "completion_rate": 0.3692043503148254
+  },
+  {
+    "algorithm": "gpfp_tgf",
+    "battery": 25.0,
+    "d_t_ratio": 0.6,
+    "arrivals": 1747,
+    "completions": 1079,
+    "deadline_misses": 744,
+    "failure_rate": 0.42587292501431023,
+    "completion_rate": 0.6176302232398397
+  },
+  {
+    "algorithm": "gpfp_btie",
+    "battery": 10.0,
+    "d_t_ratio": 0.6,
+    "arrivals": 1747,
+    "completions": 557,
+    "deadline_misses": 1182,
+    "failure_rate": 0.676588437321122,
+    "completion_rate": 0.31883228391528334
+  },
+  {
+    "algorithm": "gpfp_btie",
+    "battery": 15.0,
+    "d_t_ratio": 0.6,
+    "arrivals": 1747,
+    "completions": 851,
+    "deadline_misses": 888,
+    "failure_rate": 0.5082999427590155,
+    "completion_rate": 0.4871207784773898
+  },
+  {
+    "algorithm": "gpfp_btie",
+    "battery": 25.0,
+    "d_t_ratio": 0.6,
+    "arrivals": 1747,
+    "completions": 1331,
+    "deadline_misses": 411,
+    "failure_rate": 0.23526044647967945,
+    "completion_rate": 0.7618775042930739
+  }
+]
