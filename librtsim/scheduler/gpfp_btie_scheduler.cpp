@@ -698,14 +698,25 @@ namespace RTSim {
 
             std::vector<AbsRTTask *> sorted_ready(_ready_queue.begin(), _ready_queue.end());
             std::sort(sorted_ready.begin(), sorted_ready.end(),
-                [](AbsRTTask* a, AbsRTTask* b) { return a->getDeadline() < b->getDeadline(); });
+                [this](AbsRTTask* a, AbsRTTask* b) {
+                    auto model_a = getTaskModel(a);
+                    auto model_b = getTaskModel(b);
+                    if (model_a && model_b) {
+                        // RM排序：周期越短，优先级越高（数值越小）
+                        return model_a->getRMPriority() < model_b->getRMPriority();
+                    }
+                    return false;
+                });
 
             // 🔍 调试：输出就绪队列内容
             SCHEDULER_LOG_INFO(std::string("📋 [BTIE] 就绪队列内容 (共") +
                                std::to_string(sorted_ready.size()) + "个任务):");
             for (size_t i = 0; i < sorted_ready.size() && i < 5; ++i) {
+                auto model = getTaskModel(sorted_ready[i]);
+                Tick rm_priority = model ? model->getRMPriority() : Tick(0);
                 SCHEDULER_LOG_INFO(std::string("  [") + std::to_string(i) + "] " +
                                    getTaskName(sorted_ready[i]) +
+                                   " RM优先级(周期)=" + std::to_string(static_cast<int>(rm_priority)) +
                                    " deadline=" + std::to_string(static_cast<int>(sorted_ready[i]->getDeadline())));
             }
 
