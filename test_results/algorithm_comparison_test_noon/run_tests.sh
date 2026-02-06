@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # =============================================
-# Algorithm Comparison Test Script - NOON (12:00)
-# Tests TIE, TGF, and BTIE schedulers with solar energy at noon
+# Algorithm Comparison Test Script
+# Tests TIE, TGF, and BTIE schedulers with different initial energy levels
 # =============================================
 
 set -e  # Exit on error
@@ -35,17 +35,18 @@ ENERGY_LEVELS=("0j" "100j" "12mj" "15mj")
 
 # Create results summary file
 SUMMARY_FILE="${TEST_DIR}/test_summary.txt"
-echo "Algorithm Comparison Test Results - NOON (12:00)" > "$SUMMARY_FILE"
-echo "=================================================" >> "$SUMMARY_FILE"
+echo "Algorithm Comparison Test Results" > "$SUMMARY_FILE"
+echo "=================================" >> "$SUMMARY_FILE"
 echo "Task Set: tasks.yml (3 periodic tasks)" >> "$SUMMARY_FILE"
 echo "Simulation Time: ${SIMULATION_TIME}ms" >> "$SUMMARY_FILE"
 echo "CPU Cores: 2" >> "$SUMMARY_FILE"
-echo "Time of Day: 12:00 (NOON - Solar Energy Available)" >> "$SUMMARY_FILE"
 echo "" >> "$SUMMARY_FILE"
 
+# Change to project root directory to ensure relative paths work correctly
+cd "$BASE_DIR" || exit 1
+
 # Run tests
-echo "Starting algorithm comparison tests at NOON (12:00)..."
-echo "☀️ Solar energy will be available during simulation"
+echo "Starting algorithm comparison tests..."
 echo ""
 
 test_count=0

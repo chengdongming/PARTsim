@@ -1,9 +1,8 @@
-Algorithm Comparison Test Results - NOON (12:00)
-=================================================
+Algorithm Comparison Test Results
+=================================
 Task Set: tasks.yml (3 periodic tasks)
 Simulation Time: 200ms
 CPU Cores: 2
-Time of Day: 12:00 (NOON - Solar Energy Available)
 
 ✅ TIE with 0j: SUCCESS
 ✅ TIE with 100j: SUCCESS

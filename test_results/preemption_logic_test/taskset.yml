@@ -1,0 +1,30 @@
+taskset:
+  # 高优先级任务 - 周期短，会抢占低优先级任务
+  - name: task_high_priority
+    iat: 50
+    runtime: 15
+    deadline: 50
+    offset: 10
+    params: "period=50,wcet=15,arrival_offset=10,workload=encrypt"
+    code:
+      - fixed(15, encrypt)
+
+  # 中优先级任务
+  - name: task_medium_priority
+    iat: 80
+    runtime: 20
+    deadline: 80
+    offset: 0
+    params: "period=80,wcet=20,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(20, bzip2)
+
+  # 低优先级任务 - 周期长，容易被抢占
+  - name: task_low_priority
+    iat: 100
+    runtime: 30
+    deadline: 100
+    offset: 0
+    params: "period=100,wcet=30,arrival_offset=0,workload=hash"
+    code:
+      - fixed(30, hash)

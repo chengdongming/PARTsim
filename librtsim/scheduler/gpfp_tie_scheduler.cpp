@@ -1401,9 +1401,11 @@ namespace RTSim {
 
         // 使用真实NASA太阳能数据
         int64_t actual_time_ms = time_ms + static_cast<int64_t>(_start_time_offset);
-        int64_t minute_of_day = (actual_time_ms % 86400000) / 60000;  // 0-1439
+        // ⭐ Bug修复：计算从数据开始的总分钟数，而不是当天的分钟数
+        // 数据文件按分钟索引，包含多天的数据（370天 × 1440分钟/天 = 532800分钟）
+        int64_t total_minutes = actual_time_ms / 60000;  // 从数据开始的总分钟数
 
-        int line_number = minute_of_day + 2;  // +2跳过标题行
+        int line_number = total_minutes + 2;  // +2跳过标题行
 
         std::ifstream file(_solar_data_file);
         if (!file.is_open()) {

@@ -42,6 +42,9 @@ echo "Simulation Time: ${SIMULATION_TIME}ms" >> "$SUMMARY_FILE"
 echo "CPU Cores: 2" >> "$SUMMARY_FILE"
 echo "" >> "$SUMMARY_FILE"
 
+# Change to project root directory to ensure relative paths work correctly
+cd "$BASE_DIR" || exit 1
+
 # Run tests
 echo "Starting algorithm comparison tests..."
 echo ""

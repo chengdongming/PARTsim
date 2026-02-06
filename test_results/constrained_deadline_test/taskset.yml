@@ -1,0 +1,18 @@
+taskset:
+  - name: task_1
+    iat: 50
+    runtime: 10
+    deadline: 40
+    offset: 0
+
+  - name: task_2
+    iat: 100
+    runtime: 20
+    deadline: 80
+    offset: 0
+
+  - name: task_3
+    iat: 150
+    runtime: 25
+    deadline: 120
+    offset: 0
