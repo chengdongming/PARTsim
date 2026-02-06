@@ -472,12 +472,12 @@ namespace RTSim {
     // 核心调度逻辑 - BTIE批量调度算法
     // =====================================================
 
-    void BTIEScheduler::performTickScheduling() {
+        void BTIEScheduler::performTickScheduling() {
         SCHEDULER_LOG_DEBUG(std::string("🔄 [BTIE] performTickScheduling @ ") +
                            std::to_string(static_cast<int64_t>(SIMUL.getTime())) + "ms" +
                            " 能量=" + std::to_string(_current_energy) + "J");
 
-        // ⭐ Bug修复3：能量耗尽时跳过���度
+        // ⭐ Bug修复3：能量耗尽时跳过调度
         if (_energy_depleted && _current_energy < 0.000001) {
             SCHEDULER_LOG_INFO(std::string("💀 [BTIE] 能量已耗尽，跳过Tick调度"));
             return;  // 不进行任何调度，包括中断检查
@@ -628,6 +628,12 @@ namespace RTSim {
         if (_energy_depleted) {
             SCHEDULER_LOG_INFO(std::string("💀 [BTIE] 能量已耗尽，跳过批量调度") +
                                " 剩余能量=" + std::to_string(_current_energy * 1000) + " mJ");
+
+            // ⭐ 关键修复：清空批量任务队列，防止后续BeginDispatchMultiEvt事件访问过期批量
+            _current_batch_tasks.clear();
+            _current_batch_size = 0;
+            _preempt_batch_tasks.clear();
+
             return;
         }
 

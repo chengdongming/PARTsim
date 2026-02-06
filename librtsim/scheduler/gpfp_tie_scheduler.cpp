@@ -453,17 +453,13 @@ namespace RTSim {
                            std::to_string(static_cast<int64_t>(SIMUL.getTime())) + "ms =====");
         SCHEDULER_LOG_INFO("⚡ 初始能量: " + std::to_string(_current_energy * 1000) + " mJ");
 
-        // ⭐ Bug修复3：能量耗尽时跳过调度
-        if (_energy_depleted && _current_energy < 0.000001) {
-            SCHEDULER_LOG_INFO(std::string("💀 [TIE] 能量已耗尽，跳过Tick调度"));
-            return;
-        }
-
         _stats.total_tick_count++;
 
         Tick current_time = SIMUL.getTime();
 
         // ========== 第1步：收集太阳能 ==========
+        // ⭐ 关键修复：太阳能收集必须在能量耗尽检查之前执行
+        // 否则当初始能量为0时，系统会因为能量耗尽而跳过太阳能收集，形成死锁
         Tick elapsed = current_time - _last_tick_time;
         if (elapsed > 0) {
             double harvested = collectSolarEnergy(current_time);
@@ -473,9 +469,21 @@ namespace RTSim {
                 SCHEDULER_LOG_INFO("☀️ 收集太阳能: +" +
                                    std::to_string(harvested * 1000) + " mJ → " +
                                    std::to_string(_current_energy * 1000) + " mJ");
+
+                // ⭐ 如果收集到能量，清除能量耗尽标志
+                if (_energy_depleted && _current_energy > 0.000001) {
+                    _energy_depleted = false;
+                    SCHEDULER_LOG_INFO("🔋 [TIE] 太阳能充电成功，恢复调度");
+                }
             }
         }
         _last_tick_time = current_time;
+
+        // ⭐ Bug修复3：能量耗尽时跳过任务调度（但已经收集了太阳能）
+        if (_energy_depleted && _current_energy < 0.000001) {
+            SCHEDULER_LOG_INFO(std::string("💀 [TIE] 能量已耗尽，跳过任务调度"));
+            return;
+        }
 
         // 确保能量不超过最大容量
         if (_current_energy > _max_energy) {
