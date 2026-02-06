@@ -385,7 +385,7 @@ namespace RTSim {
 
             // 读取初始能量
             double bridge_energy = EnergyBridge::getInstance().getCurrentEnergy();
-            if (bridge_energy > 0) {
+            if (bridge_energy >= 0) {  // ⭐ 修复：允许初始能量为0
                 _initial_energy = bridge_energy;
                 _current_energy = _initial_energy;
                 SCHEDULER_LOG_INFO(std::string("💰 [BTIE] 初始能量: ") + std::to_string(_initial_energy) + "J");
@@ -395,7 +395,7 @@ namespace RTSim {
 
             _start_time_offset = configMgr.getStartTimeOffset();
             double config_energy = configMgr.getInitialEnergy();
-            if (config_energy > 0) {
+            if (config_energy >= 0) {  // ⭐ 修复：允许初始能量为0
                 _initial_energy = config_energy;
                 _current_energy = _initial_energy;
                 SCHEDULER_LOG_INFO(std::string("💰 [BTIE] 从ConfigManager获取初始能量: ") +
@@ -477,20 +477,15 @@ namespace RTSim {
                            std::to_string(static_cast<int64_t>(SIMUL.getTime())) + "ms" +
                            " 能量=" + std::to_string(_current_energy) + "J");
 
-        // ⭐ Bug修复3：能量耗尽时跳过调度
-        if (_energy_depleted && _current_energy < 0.000001) {
-            SCHEDULER_LOG_INFO(std::string("💀 [BTIE] 能量已耗尽，跳过Tick调度"));
-            return;  // 不进行任何调度，包括中断检查
-        }
-
         // ⭐ Micro-Batch Preemption：不清除抢占批量，让它在dispatch完成后自然过期
         // 抢占批量中的任务执行完成后，新tick的批量调度会重新计算
         // 这样可以确保mid-tick抢占的任务有机会被调度到CPU上
 
         _stats.total_tick_count++;
 
-        // ⭐ BTIE核心：在tick边界（即上一tick结束、本tick开始）收集能量
-        // 收集太阳能（从上次tick到现在）
+        // ========== 第1步：收集太阳能 ==========
+        // ⭐ 关键修复：太阳能收集必须在能量耗尽检查之前执行
+        // 否则当初始能量为0时，系统会因为能量耗尽而跳过太阳能收集，形成死锁
         Tick current_time = SIMUL.getTime();
         Tick elapsed = current_time - _last_tick_time;
 
@@ -503,10 +498,22 @@ namespace RTSim {
                                    std::to_string(harvested) + "J" +
                                    " 当前能量: " + std::to_string(_current_energy) + "J" +
                                    " 经过时间: " + std::to_string(static_cast<int64_t>(elapsed)) + "ms");
+
+                // ⭐ 如果收集到能量，清除能量耗尽标志
+                if (_energy_depleted && _current_energy > 0.000001) {
+                    _energy_depleted = false;
+                    SCHEDULER_LOG_INFO("🔋 [BTIE] 太阳能充电成功，恢复调度");
+                }
             }
         }
 
         _last_tick_time = current_time;
+
+        // ⭐ Bug修复3：能量耗尽时跳过调度（但已经收集了太阳能）
+        if (_energy_depleted && _current_energy < 0.000001) {
+            SCHEDULER_LOG_INFO(std::string("💀 [BTIE] 能量已耗尽，跳过Tick调度"));
+            return;  // 不进行任何调度，包括中断检查
+        }
 
         // 确保能量不超过最大容量
         if (_current_energy > _max_energy) {
@@ -520,13 +527,6 @@ namespace RTSim {
                 SCHEDULER_LOG_WARNING("⚠️ [BTIE] _kernel为nullptr，跳过批量调度");
                 return;
             }
-        }
-
-        // ⭐ Bug #5修复：能量已耗尽，跳过所有调度
-        const double ENERGY_EPSILON = 1e-9;
-        if (_energy_depleted && _current_energy < ENERGY_EPSILON) {
-            SCHEDULER_LOG_INFO(std::string("💀 [BTIE] 能量已耗尽，跳过批量调度"));
-            return;  // 不再调度任何任务
         }
 
         // ⭐ BTIE关键修复：采用正确的能量扣除逻辑（后扣方式）
