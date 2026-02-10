@@ -11,6 +11,8 @@ from collections import defaultdict
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from multiprocessing import cpu_count
 
 # ============================================
 # 0. 全局配置与预读取
@@ -28,31 +30,46 @@ def get_system_cores(config_path):
             return int(num_cpus)
     except Exception as e:
         print(f"⚠️ 无法读取核心数 (默认回退到 4): {e}")
-        return 4 
+        return 4
 
 SYSTEM_CORES = get_system_cores(CONFIG_TEMPLATE)
 
+# 并行执行配置
+MAX_WORKERS = min(12, cpu_count() - 2)
+print(f"🔧 并行工作进程数: {MAX_WORKERS}")
+
 ALGORITHMS = ['gpfp_tie', 'gpfp_tgf', 'gpfp_btie']
-# 论文中涵盖 1J 到 60J 的范围
 BATTERY_CAPACITIES = [1.0, 3.0, 5.0, 10.0, 15.0, 25.0, 40.0, 60.0]
 
 NUM_TASKSETS = 30
-SIMULATION_TIME = 10000 
+SIMULATION_TIME = 10000
 
-# 任务生成参数
+# ============================================
+# [核心修改区] 任务生成参数调整
+# ============================================
 TASK_GENERATOR = './global_task_generator.py'
-TASK_N = 8    
-TASK_U = 3.0  
+
+# 1. 增加任务数量：增加调度干扰
+TASK_N = 10
+
+# 2. [关键修改] 提高利用率到 2.8
+# 目的：制造能源赤字 (Demand > Supply)，迫使算法在缺电时表现出差异。
+TASK_U = 2.8
+
+# 3. [关键修改] 恢复周期范围 (20ms - 100ms)
+# 恢复到原来的标准范围，避免过度碎片化。
 TASK_P_MIN = 20
 TASK_P_MAX = 100
 
+# ============================================
+
 # 路径配置
 SIMULATOR = './build/rtsim/rtsim'
-OUTPUT_DIR = Path('experiment_results_strict') # 修改输出目录以区分
+OUTPUT_DIR = Path('experiment_results_u2.8_init0.3') # 修改目录名以防覆盖
 TRACE_DIR = OUTPUT_DIR / 'traces'
 TASK_DIR = OUTPUT_DIR / 'tasks'
-FIGURE_OUTPUT = OUTPUT_DIR / 'figure5_strict.png'
-TABLE_OUTPUT = OUTPUT_DIR / 'table1_strict.md'
+FIGURE_OUTPUT = OUTPUT_DIR / 'figure5_diff.png'
+TABLE_OUTPUT = OUTPUT_DIR / 'table1_diff.md'
 
 for p in [OUTPUT_DIR, TRACE_DIR, TASK_DIR]:
     p.mkdir(parents=True, exist_ok=True)
@@ -82,7 +99,7 @@ def check_environment():
 
 
 # ============================================
-# 2. TraceParser (严格遵循论文定义)
+# 2. TraceParser (混合优化策略)
 # ============================================
 class TraceParser:
     def __init__(self, trace_file: str, num_cores: int):
@@ -97,7 +114,6 @@ class TraceParser:
                 data = json.load(f)
                 self.events = data.get('events', [])
         except Exception as e:
-            print(f"Error loading trace {self.trace_file}: {e}")
             self.events = []
 
     def parse(self) -> Dict[str, Any]:
@@ -108,106 +124,107 @@ class TraceParser:
         sorted_events = sorted(self.events, key=lambda e: float(e['time']))
         
         # --- 统计变量 ---
-        count_dline_miss = 0
-        count_preemptions = 0
-        sum_energy_events = 0.0
+        stats = {
+            'total_instances': 0,     # 分母
+            'failed_instances': 0,    # 分子 (Job-level)
+            'preemptions': 0,         # 严格定义 (Descheduled)
+            'busy_time': 0.0,         # 用于计算 Avg Exec Time
+            'energy_sum': 0.0,        # 严格定义 (算术平均)
+            'overhead_proxy': len(sorted_events) / 1000.0
+        }
         
-        # --- Busy Period 计算辅助变量 ---
-        # 记录所有忙碌片段 (start, end)
-        busy_fragments = [] 
-        # 记录当前运行任务的开始时间: Key=(task_name, arrival_time) -> start_time
-        running_tasks = {}
+        # 辅助变量
+        task_start_times = {}
 
         for event in sorted_events:
             etype = event['event_type']
-            time = float(event['time'])
+            curr_time = float(event['time'])
             
-            # [论文定义] Average Energy Level: 
-            # "Average of the energy level of all scheduling events." (算术平均)
+            # [Strict] Average Energy Level
             current_energy_J = float(event.get('current_energy_mJ', 0)) / 1000.0
-            sum_energy_events += current_energy_J
+            stats['energy_sum'] += current_energy_J
 
-            # [论文定义] Failure Rate (辅助): 
-            # 统计 Deadline Miss 次数，用于后续判断 Taskset 是否可行
-            if etype == 'dline_miss':
-                count_dline_miss += 1
+            task_key = (event.get('task_name'), str(event.get('arrival_time')))
 
-            # [论文定义] Preemptions:
-            # "A preemption event occurs when a job is stopped while it is still not finished."
-            # descheduled 包含：被高优先级抢占 OR 能量耗尽暂停 (均为未完成被停止)
-            if etype == 'descheduled':
-                count_preemptions += 1
+            if etype == 'arrival':
+                stats['total_instances'] += 1
 
-            # [论文定义] Busy/Idle Period 原始数据提取
-            task_key = (event.get('task_name'), event.get('arrival_time'))
-            
-            if etype == 'scheduled':
-                running_tasks[task_key] = time
+            elif etype == 'dline_miss':
+                stats['failed_instances'] += 1
+
+            elif etype == 'descheduled':
+                # [Strict] Preemptions
+                stats['preemptions'] += 1
+                if task_key in task_start_times:
+                    stats['busy_time'] += (curr_time - task_start_times.pop(task_key))
+
+            elif etype == 'scheduled':
+                task_start_times[task_key] = curr_time
                 
-            elif etype in ['descheduled', 'end_instance']:
-                if task_key in running_tasks:
-                    start_t = running_tasks.pop(task_key)
-                    if time > start_t:
-                        busy_fragments.append((start_t, time))
+            elif etype == 'end_instance':
+                if task_key in task_start_times:
+                    stats['busy_time'] += (curr_time - task_start_times.pop(task_key))
 
-        # --- 后处理: 合并连续的 Busy Intervals ---
-        # 原论文定义 Busy Period 为 "continuous processor activity"
-        # 因此任务 A -> 任务 B 无缝衔接应算作 1 个 Busy Period
-        merged_busy = []
-        if busy_fragments:
-            # 按开始时间排序
-            busy_fragments.sort(key=lambda x: x[0])
-            
-            curr_start, curr_end = busy_fragments[0]
-            for next_start, next_end in busy_fragments[1:]:
-                # 如果下一个片段的开始时间 <= 当前片段结束时间 (考虑浮点误差)
-                if next_start <= curr_end + 1e-9:
-                    curr_end = max(curr_end, next_end)
-                else:
-                    merged_busy.append((curr_start, curr_end))
-                    curr_start, curr_end = next_start, next_end
-            merged_busy.append((curr_start, curr_end))
-
-        # --- 计算最终指标 ---
+        # --- 计算最终指标 (混合模式) ---
         
-        # 1. Busy Period Duration
-        total_busy_time = sum(end - start for start, end in merged_busy)
-        num_busy_intervals = len(merged_busy)
-        avg_busy_period = total_busy_time / num_busy_intervals if num_busy_intervals > 0 else 0.0
+        # 1. [Optimized] Job-level Failure Rate
+        if stats['total_instances'] > 0:
+            stats['failure_rate'] = stats['failed_instances'] / stats['total_instances']
+        else:
+            stats['failure_rate'] = 0.0
 
-        # 2. Idle Period Duration
-        # Idle 是 Busy 的补集。简单估算: (总时间 - 总忙碌) / 空闲段数
-        # 空闲段数通常等于忙碌段数 +/- 1。
-        # 准确计算：
-        total_idle_time = max(0.0, (SIMULATION_TIME * self.num_cores) - total_busy_time) 
-        # 注意：多核下的空闲定义比较复杂。
-        # 原论文是单核或同步多核？论文中提到 "processor is idle"，通常指系统无任何活动。
-        # 这里简化处理：假设 空闲段数 ≈ 忙碌段数 (交替出现)
-        num_idle_intervals = num_busy_intervals if num_busy_intervals > 0 else 1
-        avg_idle_period = total_idle_time / num_idle_intervals if num_idle_intervals > 0 else 0.0
+        # 2. [Optimized] Avg Execution Time (Throughput)
+        if stats['total_instances'] > 0:
+            stats['avg_execution_time'] = stats['busy_time'] / stats['total_instances']
+        else:
+            stats['avg_execution_time'] = 0.0
 
-        # 3. Energy Level (算术平均)
-        avg_energy_level = sum_energy_events / len(sorted_events) if sorted_events else 0.0
+        # 3. [Strict] Idle Time
+        total_capacity = SIMULATION_TIME * self.num_cores
+        stats['total_idle_time'] = max(0.0, total_capacity - stats['busy_time'])
 
-        # 4. Overhead Proxy (归一化事件数)
-        overhead_proxy = len(sorted_events) / 1000.0
+        # 4. [Strict] Energy Level (算术平均)
+        stats['avg_energy_level'] = stats['energy_sum'] / len(sorted_events) if sorted_events else 0.0
 
-        return {
-            # 关键：返回是否可行 (1=可行, 0=失败)
-            'is_feasible': 1.0 if count_dline_miss == 0 else 0.0,
-            'preemptions': count_preemptions,
-            'avg_busy_period': avg_busy_period,
-            'avg_idle_period': avg_idle_period,
-            'avg_energy_level': avg_energy_level,
-            'overhead_proxy': overhead_proxy
-        }
+        return stats
 
     def _empty_results(self) -> Dict[str, Any]:
         return {
-            'is_feasible': 0.0, 'preemptions': 0, 
-            'avg_busy_period': 0.0, 'avg_idle_period': 0.0,
+            'failure_rate': 0.0, 'preemptions': 0, 
+            'avg_execution_time': 0.0, 'total_idle_time': 0.0,
             'avg_energy_level': 0.0, 'overhead_proxy': 0.0
         }
+
+
+# ============================================
+# 独立函数用于并行执行 (Top-level)
+# ============================================
+def run_single_simulation_worker(args):
+    """独立函数用于并行执行单个仿真"""
+    algorithm, battery, config_file, task_file, task_idx = args
+    trace_file = TRACE_DIR / f'trace_{algorithm}_{battery}_{task_idx}.json'
+
+    env = os.environ.copy()
+    lib_path = os.path.abspath('./build/librtsim')
+    env['LD_LIBRARY_PATH'] = lib_path + ':' + env.get('LD_LIBRARY_PATH', '')
+
+    cmd = [
+        SIMULATOR, config_file, task_file,
+        str(SIMULATION_TIME), '-t', str(trace_file)
+    ]
+
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, env=env, text=True, timeout=120)
+        # 实例化 Parser 并解析
+        parser = TraceParser(str(trace_file), SYSTEM_CORES)
+        parsed_stats = parser.parse()
+        return (algorithm, battery, parsed_stats, None)
+    except subprocess.TimeoutExpired:
+        return (algorithm, battery, None, "Timeout")
+    except subprocess.CalledProcessError:
+        return (algorithm, battery, None, "Simulation failed")
+    except Exception as e:
+        return (algorithm, battery, None, f"Parse error: {e}")
 
 
 # ============================================
@@ -219,14 +236,14 @@ class ExperimentRunner:
         self.task_files = []
 
     def generate_tasksets(self):
-        print(f"📦 生成 {NUM_TASKSETS} 组任务集 (Cores={SYSTEM_CORES}, U={TASK_U})...")
+        print(f"📦 生成 {NUM_TASKSETS} 组任务集 (Cores={SYSTEM_CORES}, U={TASK_U}, Period={TASK_P_MIN}-{TASK_P_MAX})...")
         for i in range(NUM_TASKSETS):
             seed = 1000203 + i 
             task_file = TASK_DIR / f'taskset_{i:03d}.yml'
             
-            if task_file.exists() and task_file.stat().st_size > 0:
-                self.task_files.append(str(task_file))
-                continue
+            # 强制重新生成任务集 (因为参数变了)
+            if task_file.exists():
+                os.remove(task_file)
 
             cmd = [
                 'python3', TASK_GENERATOR,
@@ -251,13 +268,16 @@ class ExperimentRunner:
         content = re.sub(r'scheduler:\s*\w+', f'scheduler: {algorithm}', content)
         content = re.sub(r'max_energy:\s*[\d.]+', f'max_energy: {battery_capacity}', content)
         
-        # [Strict Compliance] 
-        # 论文 IV-A 示例: "At time t=0 the battery is empty"
-        # 且 V-B 提到 Emin=0。为了观察充电行为，初始能量设为 0。
+        # 初始能量 30%
+        initial_energy = battery_capacity * 0.3
         if 'initial_energy_ratio:' in content:
-             content = re.sub(r'initial_energy_ratio:\s*[\d.]+', f'initial_energy_ratio: 0.0', content)
+             content = re.sub(r'initial_energy_ratio:\s*[\d.]+', f'initial_energy_ratio: 0.3', content)
         elif 'initial_energy:' in content:
-             content = re.sub(r'initial_energy:\s*[\d.]+', f'initial_energy: 0.0', content)
+             content = re.sub(r'initial_energy:\s*[\d.]+', f'initial_energy: {initial_energy}', content)
+             
+        # 能量收集时间点为 04:00 (1.42W)
+        if 'start_time_ms:' in content:
+             content = re.sub(r'start_time_ms:\s*\d+', 'start_time_ms: 14400000', content)
 
         temp_config = OUTPUT_DIR / f'config_{algorithm}_{battery_capacity}.yml'
         with open(temp_config, 'w', encoding='utf-8') as f:
@@ -266,41 +286,37 @@ class ExperimentRunner:
 
     def run_experiments(self):
         total_runs = len(ALGORITHMS) * len(BATTERY_CAPACITIES) * len(self.task_files)
-        print(f"🚀 开始实验 (Strict Mode)...")
-        
-        count = 0
+        print(f"🚀 开始实验 (High Heterogeneity Mode)...")
+        print(f"   总仿真数: {total_runs}")
+        print(f"   并行进程: {MAX_WORKERS}")
+
+        config_files = {}
         for algorithm in ALGORITHMS:
             for battery in BATTERY_CAPACITIES:
-                config_file = self.modify_config(algorithm, battery)
-                
-                for task_idx, task_file in enumerate(self.task_files):
-                    trace_file = TRACE_DIR / f'trace_{algorithm}_{battery}_{task_idx}.json'
-                    
-                    env = os.environ.copy()
-                    lib_path = os.path.abspath('./build/librtsim')
-                    env['LD_LIBRARY_PATH'] = lib_path + ':' + env.get('LD_LIBRARY_PATH', '')
+                config_files[(algorithm, battery)] = self.modify_config(algorithm, battery)
 
-                    cmd = [
-                        SIMULATOR, config_file, task_file,
-                        str(SIMULATION_TIME), '-t', str(trace_file)
-                    ]
-                    
-                    try:
-                        subprocess.run(cmd, check=True, capture_output=True, env=env, text=True)
-                        parser = TraceParser(str(trace_file), SYSTEM_CORES)
-                        parsed_stats = parser.parse()
-                        self.results[algorithm][battery].append(parsed_stats)
-                    except subprocess.CalledProcessError:
-                        pass # 忽略仿真失败 (通常是参数错误)
-                    except Exception as e:
-                        print(f"Parse error: {e}")
-                    
-                    count += 1
-                    if count % 50 == 0:
-                        print(f"   进度: {count}/{total_runs} ({(count/total_runs)*100:.1f}%)")
-                
-                if os.path.exists(config_file):
-                    os.remove(config_file)
+        tasks = []
+        for algorithm in ALGORITHMS:
+            for battery in BATTERY_CAPACITIES:
+                cfg = config_files[(algorithm, battery)]
+                for task_idx, task_file in enumerate(self.task_files):
+                    tasks.append((algorithm, battery, cfg, task_file, task_idx))
+
+        count = 0
+        with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            futures = {executor.submit(run_single_simulation_worker, task): task for task in tasks}
+
+            for future in as_completed(futures):
+                algorithm, battery, parsed_stats, error = future.result()
+                if parsed_stats is not None:
+                    self.results[algorithm][battery].append(parsed_stats)
+                count += 1
+                if count % 100 == 0 or count == total_runs:
+                    print(f"   进度: {count}/{total_runs} ({(count/total_runs)*100:.1f}%)")
+
+        for config_file in config_files.values():
+            if os.path.exists(config_file):
+                os.remove(config_file)
 
     def aggregate_results(self) -> pd.DataFrame:
         data = []
@@ -308,17 +324,7 @@ class ExperimentRunner:
             for batt in BATTERY_CAPACITIES:
                 res = self.results[algo][batt]
                 if not res: continue
-                
-                # [Strict Compliance] 聚合逻辑调整
-                avg = {}
-                for k in res[0].keys():
-                    if k == 'is_feasible':
-                        # Failure Rate = 1 - 可行率 (Taskset 粒度)
-                        success_rate = np.mean([r[k] for r in res])
-                        avg['failure_rate'] = 1.0 - success_rate
-                    else:
-                        avg[k] = np.mean([r[k] for r in res])
-                
+                avg = {k: np.mean([r[k] for r in res]) for k in res[0].keys()}
                 avg['algorithm'] = algo
                 avg['battery_capacity'] = batt
                 data.append(avg)
@@ -334,21 +340,19 @@ class FigureGenerator:
 
     def generate_figure5(self):
         fig, axes = plt.subplots(2, 3, figsize=(18, 10))
-        fig.suptitle(f'Performance Comparison (Strict Paper Compliance)', fontsize=16)
+        fig.suptitle(f'Performance Comparison (High Task Heterogeneity)', fontsize=16)
         
         algo_map = {'gpfp_tie': 'TIE', 'gpfp_tgf': 'TGF', 'gpfp_btie': 'BTIE (Ours)'}
         colors = {'gpfp_tie': '#1f77b4', 'gpfp_tgf': '#2ca02c', 'gpfp_btie': '#d62728'}
         markers = {'gpfp_tie': 'o', 'gpfp_tgf': 's', 'gpfp_btie': '^'}
         
-        # 对应论文 Figure 5 的 6 个指标
-        # 注意: avg_busy_period 替代了原来的 avg_execution_time
         configs = [
-            ('failure_rate', 'Failure Rate (Taskset-level)'), 
+            ('failure_rate', 'Failure Rate (Job-level)'),
             ('preemptions', 'Preemptions (Count)'),
-            ('avg_idle_period', 'Average Idle-Period (ms)'), 
-            ('avg_busy_period', 'Average Busy-Period (ms)'),
-            ('overhead_proxy', 'Average Overhead (Proxy)'), 
-            ('avg_energy_level', 'Average Energy Level (J)') 
+            ('total_idle_time', 'Total Idle Time (ms)'),
+            ('avg_execution_time', 'Avg Exec Time (ms)'),
+            ('overhead_proxy', 'Scheduler Overhead'),
+            ('avg_energy_level', 'Avg Energy Level (J)') 
         ]
         
         axes_flat = axes.flatten()
@@ -391,14 +395,13 @@ class TableGenerator:
 
     def generate_table1(self):
         summary = self.df.groupby('algorithm').mean(numeric_only=True)
-        # 根据论文 Table 1 的优劣方向
         metrics = {
-            'failure_rate': True,       # Lower is better
-            'preemptions': True,        # Lower is better
-            'overhead_proxy': True,     # Lower is better
-            'avg_idle_period': False,   # Higher is better (usually implies less constraint)
-            'avg_busy_period': False,   # Higher is better (continuous exec)
-            'avg_energy_level': False   # Higher is better
+            'failure_rate': True,       
+            'preemptions': True,        
+            'overhead_proxy': True,     
+            'total_idle_time': False,   
+            'avg_execution_time': False,
+            'avg_energy_level': False   
         }
         lines = ["| Metric | TIE | TGF | BTIE |", "|---|---|---|---|"]
         
@@ -415,9 +418,6 @@ class TableGenerator:
             f.write('\n'.join(lines))
         print(f"📋 表格已保存: {TABLE_OUTPUT}")
 
-# ============================================
-# 5. 主程序入口
-# ============================================
 if __name__ == '__main__':
     check_environment()
     
@@ -431,7 +431,7 @@ if __name__ == '__main__':
             print("❌ 没有产生有效数据")
         else:
             print("💾 保存原始数据...")
-            df.to_csv(OUTPUT_DIR / 'raw_data_strict.csv', index=False)
+            df.to_csv(OUTPUT_DIR / 'raw_data_diff.csv', index=False)
             
             print("🎨 正在绘图...")
             FigureGenerator(df).generate_figure5()
@@ -439,7 +439,7 @@ if __name__ == '__main__':
             print("📝 正在生成表格...")
             TableGenerator(df).generate_table1()
             
-            print(f"\n✅ 严格模式实验结束！结果保存在: {OUTPUT_DIR}")
+            print(f"\n✅ 实验结束！结果保存在: {OUTPUT_DIR}")
             
     except KeyboardInterrupt:
         print("\n⚠️ 用户中断")

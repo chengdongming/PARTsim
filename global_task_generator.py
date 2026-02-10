@@ -410,8 +410,9 @@ class EnergyAwareTaskGenerator:
             period = random.randint(min_period, max_period)
             
             # 计算执行时间（runtime）
-            execution_time = max(100, int(util * period))
-            execution_time = min(execution_time, int(period * 0.6))
+            # 确保执行时间至少为1ms，且不超过周期的95%（留出调度开销空间）
+            execution_time = max(1, int(util * period))
+            execution_time = min(execution_time, int(period * 0.95))
             
             # 生成截止时间
             if implicit_deadline:
@@ -432,13 +433,21 @@ class EnergyAwareTaskGenerator:
                 if max_arrival_offset_value > 0:
                     arrival_offset_value = random.randint(0, max_arrival_offset_value)
             
-            # 选择工作负载类型 - 大部分是bzip2（70%概率）
-            if random.random() < 0.7:
+            # 选择工作负载类型 - 自定义概率分布
+            # idle: 30%, control: 30%, 其余各10%
+            rand = random.random()
+            if rand < 0.3:
+                workload = "idle"
+            elif rand < 0.6:
+                workload = "control"
+            elif rand < 0.7:
                 workload = "bzip2"
+            elif rand < 0.8:
+                workload = "hash"
+            elif rand < 0.9:
+                workload = "encrypt"
             else:
-                # 从其他类型中随机选择
-                other_workloads = [w for w in self.workload_types if w != "bzip2"]
-                workload = random.choice(other_workloads) if other_workloads else "bzip2"
+                workload = "decrypt"
             
             # 计算能耗 - 使用系统配置参数
             energy = self.calculate_energy(execution_time, workload, self.base_frequency)

@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-02-10 17:24:02
+# 任务总数: 10
+# 总利用率: 0.800
+# 能量信息:
+#   总估算能耗: 0.138 J
+#   初始系统能量: 0.000 J
+#   剩余能量: 0.000 J
+#   能量利用率: 0.0%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 171
+    runtime: 8
+    deadline: 171
+    params: "period=171,wcet=8,arrival_offset=22,workload=idle"
+    code:
+      - fixed(8, idle)
+
+  - name: task_1
+    iat: 59
+    runtime: 2
+    deadline: 59
+    params: "period=59,wcet=2,arrival_offset=6,workload=encrypt"
+    code:
+      - fixed(2, encrypt)
+
+  - name: task_2
+    iat: 127
+    runtime: 12
+    deadline: 127
+    params: "period=127,wcet=12,arrival_offset=28,workload=hash"
+    code:
+      - fixed(12, hash)
+
+  - name: task_3
+    iat: 177
+    runtime: 6
+    deadline: 177
+    params: "period=177,wcet=6,arrival_offset=43,workload=idle"
+    code:
+      - fixed(6, idle)
+
+  - name: task_4
+    iat: 59
+    runtime: 5
+    deadline: 59
+    params: "period=59,wcet=5,arrival_offset=11,workload=idle"
+    code:
+      - fixed(5, idle)
+
+  - name: task_5
+    iat: 183
+    runtime: 17
+    deadline: 183
+    params: "period=183,wcet=17,arrival_offset=52,workload=bzip2"
+    code:
+      - fixed(17, bzip2)
+
+  - name: task_6
+    iat: 75
+    runtime: 7
+    deadline: 75
+    params: "period=75,wcet=7,arrival_offset=19,workload=idle"
+    code:
+      - fixed(7, idle)
+
+  - name: task_7
+    iat: 124
+    runtime: 18
+    deadline: 124
+    params: "period=124,wcet=18,arrival_offset=30,workload=encrypt"
+    code:
+      - fixed(18, encrypt)
+
+  - name: task_8
+    iat: 115
+    runtime: 3
+    deadline: 115
+    params: "period=115,wcet=3,arrival_offset=23,workload=idle"
+    code:
+      - fixed(3, idle)
+
+  - name: task_9
+    iat: 145
+    runtime: 16
+    deadline: 145
+    params: "period=145,wcet=16,arrival_offset=18,workload=control"
+    code:
+      - fixed(16, control)

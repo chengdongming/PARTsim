@@ -1,0 +1,47 @@
+🖥️  系统核心数: 4
+📁 输出目录: acceptance_ratio_experiment
+
+============================================================
+接受率实验：归一化处理器利用率 vs 可调度性（二元）
+============================================================
+🚀 开始实验...
+   利用率点数: 2
+   每点任务集数: 2
+   算法数: 3
+   总仿真数: 12
+   评估方法: 二元可调度性（0=失败, 1=成功）
+
+📊 处理利用率点 1/2: U_norm=0.10
+
+📊 处理利用率点 2/2: U_norm=1.00
+   进度: 10/12 (83.3%)
+❌ 仿真失败: gpfp_tgf, U=1.00
+
+💾 数据已保存: acceptance_ratio_experiment/acceptance_ratio_data.csv
+
+ algorithm  normalized_utilization  acceptance_ratio  num_samples  num_successful
+  gpfp_tie                     0.1               1.0            2               2
+  gpfp_tie                     1.0               0.0            2               0
+  gpfp_tgf                     0.1               1.0            2               2
+  gpfp_tgf                     1.0               0.0            2               0
+ gpfp_btie                     0.1               1.0            2               2
+ gpfp_btie                     1.0               0.0            2               0
+
+🎨 正在生成图表...
+✅ 图表已保存: acceptance_ratio_experiment/acceptance_ratio_figure.png
+
+📊 数据摘要:
+TIE:
+  X范围: [0.100, 1.000]
+  接受率范围: [0.000, 1.000]
+  中点 (X=1.000): 接受率=0.000
+TGF:
+  X范围: [0.100, 1.000]
+  接受率范围: [0.000, 1.000]
+  中点 (X=1.000): 接受率=0.000
+BTIE:
+  X范围: [0.100, 1.000]
+  接受率范围: [0.000, 1.000]
+  中点 (X=1.000): 接受率=0.000
+
+✅ 完成！

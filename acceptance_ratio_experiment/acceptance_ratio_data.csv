@@ -1,0 +1,7 @@
+algorithm,normalized_utilization,acceptance_ratio,num_samples,num_successful
+gpfp_tie,0.1,1.0,2,2
+gpfp_tie,1.0,0.0,2,0
+gpfp_tgf,0.1,1.0,2,2
+gpfp_tgf,1.0,0.0,2,0
+gpfp_btie,0.1,1.0,2,2
+gpfp_btie,1.0,0.0,2,0
