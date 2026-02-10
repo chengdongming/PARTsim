@@ -755,6 +755,23 @@ namespace RTSim {
                             continue;
                         }
 
+                        // ⭐ Bug修复：检查任务是否之前在本周期被dispatch过
+                        // 如果任务之前被抢占，它可能还保留着旧的dispatch时间，会导致时间倒流错误
+                        // 解决方案：跳过那些之前被dispatch但现在不在运行的任务（说明它们被抢占了）
+                        PeriodicTask *pt = dynamic_cast<PeriodicTask *>(next_task);
+                        if (pt) {
+                            // 检查任务是否有剩余执行时间但不在运行
+                            // 这表明任务之前被dispatch过但被抢占了
+                            Tick remaining = pt->getWCET() - pt->getExecTime();
+                            if (remaining > 0 && remaining < pt->getWCET() && !next_is_running) {
+                                SCHEDULER_LOG_DEBUG(std::string("  [TGF] 贪心搜索：跳过被抢占的任务: ") +
+                                                  getTaskName(next_task) +
+                                                  " 剩余=" + std::to_string(static_cast<int64_t>(remaining)) +
+                                                  " WCET=" + std::to_string(static_cast<int64_t>(pt->getWCET())));
+                                continue;
+                            }
+                        }
+
                         double next_unit_energy = calculateUnitEnergyForTask(next_task);
                         double next_available = _current_energy - _dispatching_tasks_total_energy;
 
@@ -1269,10 +1286,6 @@ namespace RTSim {
     // =====================================================
 
     double TGFScheduler::collectSolarEnergy(Tick current_time) {
-        if (!_use_real_solar_data) {
-            return 0.0;
-        }
-
         int64_t current_ms = static_cast<int64_t>(current_time);
 
         // 计算自上次收集以来的时间
@@ -1282,7 +1295,7 @@ namespace RTSim {
             return 0.0;
         }
 
-        // 获取当前辐照度
+        // 获取当前辐照度（根据use_real_solar_data选择NASA数据或函数曲线）
         double irradiance = getSolarIrradiance(current_ms);
 
         // 计算收集能量
