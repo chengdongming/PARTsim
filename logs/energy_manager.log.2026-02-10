@@ -1,0 +1,1723 @@
+2026-02-10 22:12:37.940 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:12:37.941 [ERROR   ] [energy_manager      ] Config file does not exist: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:12:37.941 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-10 22:12:37.942 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-10 22:12:37.942 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:12:37.942 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-10 22:12:37.942 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-10 22:12:37.942 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:12:37.942 [INFO    ] [energy_manager      ] 确保配置文件加载: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:12:37.942 [ERROR   ] [energy_manager      ] Config file does not exist: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:12:37.942 [WARNING ] [energy_manager      ] 确保配置文件加载失败: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:12:38.040 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: acceptance_ratio_experiment/config_gpfp_tie.yml
+2026-02-10 22:12:38.050 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: acceptance_ratio_experiment/config_gpfp_tie.yml
+2026-02-10 22:12:38.050 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 6.0
+2026-02-10 22:12:38.050 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 6.0
+2026-02-10 22:12:38.050 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-10 22:12:38.050 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-10 22:12:38.050 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:12:38.050 [INFO    ] [energy_manager      ] EnergyConfig loaded from acceptance_ratio_experiment/config_gpfp_tie.yml
+2026-02-10 22:12:38.050 [INFO    ] [energy_manager      ]   Initial energy: 6.0 J
+2026-02-10 22:12:38.050 [INFO    ] [energy_manager      ]   Max energy: 15.0 J
+2026-02-10 22:12:38.050 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:12:38.050 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:12:38.051 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:12:38.051 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:12:38.051 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:12:38.051 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:12:38.051 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:12:38.051 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-02-10 22:12:38.051 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:12:38.051 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:12:38.051 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:12:38.051 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:12:38.051 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:12:38.051 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:12:38.051 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:12:38.051 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:12:38.051 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:12:38.052 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:12:38.052 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:12:39.284 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:12:39.284 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:12:39.284 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:12:39.284 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-02-10 22:12:39.284 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 6.0
+2026-02-10 22:12:39.284 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 6.0
+2026-02-10 22:12:39.284 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:12:39.285 [INFO    ] [energy_manager      ] [Python] 初始能量: 6.0/15.0 J
+2026-02-10 22:12:39.285 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-10 22:12:39.285 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:12:39.285 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:12:39.285 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=acceptance_ratio_experiment/config_gpfp_tie.yml, current_config_file=acceptance_ratio_experiment/config_gpfp_tie.yml
+2026-02-10 22:12:39.285 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: acceptance_ratio_experiment/config_gpfp_tie.yml
+2026-02-10 22:12:39.285 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=6.0J
+2026-02-10 22:14:10.070 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_tie_15mj.yml
+2026-02-10 22:14:10.084 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_tie_15mj.yml
+2026-02-10 22:14:10.084 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.015
+2026-02-10 22:14:10.084 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.015
+2026-02-10 22:14:10.084 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=182, time_of_day_ms=43200000 计算 start_offset_minutes=261360
+2026-02-10 22:14:10.085 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=261360, simulation_start_time=15681600000ms
+2026-02-10 22:14:10.085 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:14:10.085 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_tie_15mj.yml
+2026-02-10 22:14:10.085 [INFO    ] [energy_manager      ]   Initial energy: 0.015 J
+2026-02-10 22:14:10.085 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-02-10 22:14:10.085 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:14:10.085 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:14:10.085 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:14:10.085 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:14:10.085 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:14:10.085 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:14:10.085 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:14:10.085 [INFO    ] [energy_manager      ]     时间偏移: 261360 分钟
+2026-02-10 22:14:10.086 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:14:10.086 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:14:10.086 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:14:10.086 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:14:10.086 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:14:10.086 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:14:10.086 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:14:10.086 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:14:10.086 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:14:10.086 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:14:10.086 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:14:11.411 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:14:11.411 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:14:11.411 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:14:11.411 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 261360 分钟
+2026-02-10 22:14:11.411 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.015
+2026-02-10 22:14:11.411 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.015
+2026-02-10 22:14:11.411 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:14:11.411 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-02-10 22:14:11.411 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 15681600000ms
+2026-02-10 22:14:11.411 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:14:11.411 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:14:11.412 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_tie_15mj.yml, current_config_file=test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_tie_15mj.yml
+2026-02-10 22:14:11.412 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_tie_15mj.yml
+2026-02-10 22:14:11.412 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.015J
+2026-02-10 22:14:33.131 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/algorithm_comparison_test/configs/system_2core_gpfp_tie_15mj.yml
+2026-02-10 22:14:33.145 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/algorithm_comparison_test/configs/system_2core_gpfp_tie_15mj.yml
+2026-02-10 22:14:33.145 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.015
+2026-02-10 22:14:33.145 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.015
+2026-02-10 22:14:33.145 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=182, time_of_day_ms=0 计算 start_offset_minutes=260640
+2026-02-10 22:14:33.145 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=260640, simulation_start_time=15638400000ms
+2026-02-10 22:14:33.146 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:14:33.146 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/algorithm_comparison_test/configs/system_2core_gpfp_tie_15mj.yml
+2026-02-10 22:14:33.146 [INFO    ] [energy_manager      ]   Initial energy: 0.015 J
+2026-02-10 22:14:33.146 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-02-10 22:14:33.146 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:14:33.146 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:14:33.146 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:14:33.146 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:14:33.146 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:14:33.146 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:14:33.146 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:14:33.146 [INFO    ] [energy_manager      ]     时间偏移: 260640 分钟
+2026-02-10 22:14:33.146 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:14:33.146 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:14:33.147 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:14:33.147 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:14:33.147 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:14:33.147 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:14:33.147 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:14:33.147 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:14:33.147 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:14:33.147 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:14:33.147 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:14:34.365 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:14:34.366 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:14:34.366 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:14:34.366 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 260640 分钟
+2026-02-10 22:14:34.366 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.015
+2026-02-10 22:14:34.366 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.015
+2026-02-10 22:14:34.366 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:14:34.366 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-02-10 22:14:34.366 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 15638400000ms
+2026-02-10 22:14:34.366 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 00:00:00
+2026-02-10 22:14:34.366 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:14:34.366 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/algorithm_comparison_test/configs/system_2core_gpfp_tie_15mj.yml, current_config_file=test_results/algorithm_comparison_test/configs/system_2core_gpfp_tie_15mj.yml
+2026-02-10 22:14:34.367 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/algorithm_comparison_test/configs/system_2core_gpfp_tie_15mj.yml
+2026-02-10 22:14:34.367 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.015J
+2026-02-10 22:14:45.371 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_tgf_15mj.yml
+2026-02-10 22:14:45.386 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_tgf_15mj.yml
+2026-02-10 22:14:45.386 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.015
+2026-02-10 22:14:45.386 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.015
+2026-02-10 22:14:45.386 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=182, time_of_day_ms=43200000 计算 start_offset_minutes=261360
+2026-02-10 22:14:45.386 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=261360, simulation_start_time=15681600000ms
+2026-02-10 22:14:45.386 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:14:45.386 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_tgf_15mj.yml
+2026-02-10 22:14:45.386 [INFO    ] [energy_manager      ]   Initial energy: 0.015 J
+2026-02-10 22:14:45.386 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-02-10 22:14:45.386 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:14:45.387 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:14:45.387 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:14:45.387 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:14:45.387 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:14:45.387 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:14:45.387 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:14:45.387 [INFO    ] [energy_manager      ]     时间偏移: 261360 分钟
+2026-02-10 22:14:45.387 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:14:45.387 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:14:45.387 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:14:45.387 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:14:45.387 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:14:45.387 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:14:45.387 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:14:45.388 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:14:45.388 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:14:45.388 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:14:45.388 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:14:46.582 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:14:46.582 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:14:46.582 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:14:46.582 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 261360 分钟
+2026-02-10 22:14:46.582 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.015
+2026-02-10 22:14:46.582 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.015
+2026-02-10 22:14:46.582 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:14:46.583 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-02-10 22:14:46.583 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 15681600000ms
+2026-02-10 22:14:46.583 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:14:46.583 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:14:46.583 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_tgf_15mj.yml, current_config_file=test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_tgf_15mj.yml
+2026-02-10 22:14:46.583 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_tgf_15mj.yml
+2026-02-10 22:14:46.583 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.015J
+2026-02-10 22:14:55.377 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_tgf_15mj.yml
+2026-02-10 22:14:55.391 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_tgf_15mj.yml
+2026-02-10 22:14:55.391 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.015
+2026-02-10 22:14:55.391 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.015
+2026-02-10 22:14:55.391 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=182, time_of_day_ms=43200000 计算 start_offset_minutes=261360
+2026-02-10 22:14:55.391 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=261360, simulation_start_time=15681600000ms
+2026-02-10 22:14:55.392 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:14:55.392 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_tgf_15mj.yml
+2026-02-10 22:14:55.392 [INFO    ] [energy_manager      ]   Initial energy: 0.015 J
+2026-02-10 22:14:55.392 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-02-10 22:14:55.392 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:14:55.392 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:14:55.392 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:14:55.392 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:14:55.392 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:14:55.392 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:14:55.392 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:14:55.392 [INFO    ] [energy_manager      ]     时间偏移: 261360 分钟
+2026-02-10 22:14:55.392 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:14:55.393 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:14:55.393 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:14:55.393 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:14:55.393 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:14:55.393 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:14:55.393 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:14:55.393 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:14:55.393 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:14:55.393 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:14:55.393 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:14:56.608 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:14:56.613 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:14:56.613 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:14:56.613 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 261360 分钟
+2026-02-10 22:14:56.613 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.015
+2026-02-10 22:14:56.613 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.015
+2026-02-10 22:14:56.613 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:14:56.613 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-02-10 22:14:56.613 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 15681600000ms
+2026-02-10 22:14:56.613 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:14:56.614 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:14:56.614 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_tgf_15mj.yml, current_config_file=test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_tgf_15mj.yml
+2026-02-10 22:14:56.614 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_tgf_15mj.yml
+2026-02-10 22:14:56.614 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.015J
+2026-02-10 22:15:10.832 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_btie_15mj.yml
+2026-02-10 22:15:10.845 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_btie_15mj.yml
+2026-02-10 22:15:10.845 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.015
+2026-02-10 22:15:10.846 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.015
+2026-02-10 22:15:10.846 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=182, time_of_day_ms=43200000 计算 start_offset_minutes=261360
+2026-02-10 22:15:10.846 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=261360, simulation_start_time=15681600000ms
+2026-02-10 22:15:10.846 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:15:10.846 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_btie_15mj.yml
+2026-02-10 22:15:10.846 [INFO    ] [energy_manager      ]   Initial energy: 0.015 J
+2026-02-10 22:15:10.846 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-02-10 22:15:10.846 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:15:10.846 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:15:10.846 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:15:10.846 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:15:10.846 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:15:10.847 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:15:10.847 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:15:10.847 [INFO    ] [energy_manager      ]     时间偏移: 261360 分钟
+2026-02-10 22:15:10.847 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:15:10.847 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:15:10.847 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:15:10.847 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:15:10.847 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:15:10.847 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:15:10.847 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:15:10.847 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:15:10.847 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:15:10.847 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:15:10.847 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:15:12.034 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:15:12.034 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:15:12.034 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:15:12.034 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 261360 分钟
+2026-02-10 22:15:12.034 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.015
+2026-02-10 22:15:12.034 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.015
+2026-02-10 22:15:12.034 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:15:12.034 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-02-10 22:15:12.034 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 15681600000ms
+2026-02-10 22:15:12.034 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:15:12.035 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:15:12.035 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_btie_15mj.yml, current_config_file=test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_btie_15mj.yml
+2026-02-10 22:15:12.035 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_btie_15mj.yml
+2026-02-10 22:15:12.035 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.015J
+2026-02-10 22:23:26.987 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_tie_15mj.yml
+2026-02-10 22:23:27.002 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_tie_15mj.yml
+2026-02-10 22:23:27.002 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.015
+2026-02-10 22:23:27.002 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.015
+2026-02-10 22:23:27.002 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=182, time_of_day_ms=43200000 计算 start_offset_minutes=261360
+2026-02-10 22:23:27.002 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=261360, simulation_start_time=15681600000ms
+2026-02-10 22:23:27.002 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:23:27.002 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_tie_15mj.yml
+2026-02-10 22:23:27.002 [INFO    ] [energy_manager      ]   Initial energy: 0.015 J
+2026-02-10 22:23:27.002 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-02-10 22:23:27.002 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:23:27.003 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:23:27.003 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:23:27.003 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:23:27.003 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:23:27.003 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:23:27.003 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:23:27.003 [INFO    ] [energy_manager      ]     时间偏移: 261360 分钟
+2026-02-10 22:23:27.003 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:23:27.003 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:23:27.003 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:23:27.003 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:23:27.003 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:23:27.003 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:23:27.004 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:23:27.004 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:23:27.004 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:23:27.004 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:23:27.004 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:23:28.242 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:23:28.242 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:23:28.242 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:23:28.242 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 261360 分钟
+2026-02-10 22:23:28.242 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.015
+2026-02-10 22:23:28.242 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.015
+2026-02-10 22:23:28.242 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:23:28.242 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-02-10 22:23:28.242 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 15681600000ms
+2026-02-10 22:23:28.243 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:23:28.243 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:23:28.243 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_tie_15mj.yml, current_config_file=test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_tie_15mj.yml
+2026-02-10 22:23:28.243 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_tie_15mj.yml
+2026-02-10 22:23:28.243 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.015J
+2026-02-10 22:25:26.882 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_tie_15mj.yml
+2026-02-10 22:25:26.897 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_tie_15mj.yml
+2026-02-10 22:25:26.897 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.015
+2026-02-10 22:25:26.897 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.015
+2026-02-10 22:25:26.897 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=182, time_of_day_ms=43200000 计算 start_offset_minutes=261360
+2026-02-10 22:25:26.897 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=261360, simulation_start_time=15681600000ms
+2026-02-10 22:25:26.897 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:25:26.897 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_tie_15mj.yml
+2026-02-10 22:25:26.897 [INFO    ] [energy_manager      ]   Initial energy: 0.015 J
+2026-02-10 22:25:26.897 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-02-10 22:25:26.898 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:25:26.898 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:25:26.898 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:25:26.898 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:25:26.898 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:25:26.898 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:25:26.898 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:25:26.898 [INFO    ] [energy_manager      ]     时间偏移: 261360 分钟
+2026-02-10 22:25:26.898 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:25:26.898 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:25:26.898 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:25:26.898 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:25:26.898 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:25:26.898 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:25:26.898 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:25:26.899 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:25:26.899 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:25:26.899 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:25:26.899 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:25:28.216 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:25:28.217 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:25:28.217 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:25:28.217 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 261360 分钟
+2026-02-10 22:25:28.217 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.015
+2026-02-10 22:25:28.217 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.015
+2026-02-10 22:25:28.217 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:25:28.217 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/1000.0 J
+2026-02-10 22:25:28.217 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 15681600000ms
+2026-02-10 22:25:28.217 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:25:28.217 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:25:28.218 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_tie_15mj.yml, current_config_file=test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_tie_15mj.yml
+2026-02-10 22:25:28.218 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_results/algorithm_comparison_test_noon/configs/system_2core_gpfp_tie_15mj.yml
+2026-02-10 22:25:28.218 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=2, 基础频率=8100.0MHz, 初始能量=0.015J
+2026-02-10 22:28:01.326 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:28:01.326 [ERROR   ] [energy_manager      ] Config file does not exist: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:28:01.326 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-10 22:28:01.326 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-10 22:28:01.326 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:28:01.327 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-10 22:28:01.327 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-10 22:28:01.327 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:28:01.327 [INFO    ] [energy_manager      ] 确保配置文件加载: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:28:01.327 [ERROR   ] [energy_manager      ] Config file does not exist: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:28:01.327 [WARNING ] [energy_manager      ] 确保配置文件加载失败: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:28:01.385 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:28:01.385 [ERROR   ] [energy_manager      ] Config file does not exist: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:28:01.385 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-10 22:28:01.385 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-10 22:28:01.385 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:28:01.385 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-10 22:28:01.385 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-10 22:28:01.385 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:28:01.385 [INFO    ] [energy_manager      ] 确保配置文件加载: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:28:01.386 [ERROR   ] [energy_manager      ] Config file does not exist: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:28:01.386 [WARNING ] [energy_manager      ] 确保配置文件加载失败: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:28:01.481 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/acceptance_test/config_gpfp_tie.yml
+2026-02-10 22:28:01.492 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/acceptance_test/config_gpfp_tie.yml
+2026-02-10 22:28:01.492 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 6.0
+2026-02-10 22:28:01.492 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 6.0
+2026-02-10 22:28:01.492 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-10 22:28:01.492 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-10 22:28:01.492 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:28:01.492 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/acceptance_test/config_gpfp_tie.yml
+2026-02-10 22:28:01.492 [INFO    ] [energy_manager      ]   Initial energy: 6.0 J
+2026-02-10 22:28:01.492 [INFO    ] [energy_manager      ]   Max energy: 15.0 J
+2026-02-10 22:28:01.492 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:28:01.492 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:28:01.492 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:28:01.493 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:28:01.493 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:28:01.493 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:28:01.493 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:28:01.493 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-02-10 22:28:01.493 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:28:01.493 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:28:01.493 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:28:01.493 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:28:01.493 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:28:01.493 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:28:01.493 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:28:01.493 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:28:01.493 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:28:01.493 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:28:01.494 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:28:02.677 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:28:02.678 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:28:02.678 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:28:02.678 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-02-10 22:28:02.678 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 6.0
+2026-02-10 22:28:02.678 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 6.0
+2026-02-10 22:28:02.678 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:28:02.678 [INFO    ] [energy_manager      ] [Python] 初始能量: 6.0/15.0 J
+2026-02-10 22:28:02.678 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-10 22:28:02.678 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:28:02.678 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:28:02.679 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/acceptance_test/config_gpfp_tie.yml, current_config_file=/tmp/acceptance_test/config_gpfp_tie.yml
+2026-02-10 22:28:02.679 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/acceptance_test/config_gpfp_tie.yml
+2026-02-10 22:28:02.679 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=6.0J
+2026-02-10 22:29:31.966 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/acceptance_test/config_gpfp_tgf.yml
+2026-02-10 22:29:31.976 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/acceptance_test/config_gpfp_tgf.yml
+2026-02-10 22:29:31.976 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 6.0
+2026-02-10 22:29:31.976 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 6.0
+2026-02-10 22:29:31.976 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-10 22:29:31.976 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-10 22:29:31.976 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:29:31.976 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/acceptance_test/config_gpfp_tgf.yml
+2026-02-10 22:29:31.977 [INFO    ] [energy_manager      ]   Initial energy: 6.0 J
+2026-02-10 22:29:31.977 [INFO    ] [energy_manager      ]   Max energy: 15.0 J
+2026-02-10 22:29:31.977 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:29:31.977 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:29:31.977 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:29:31.977 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:29:31.977 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:29:31.977 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:29:31.977 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:29:31.977 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-02-10 22:29:31.977 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:29:31.977 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:29:31.977 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:29:31.977 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:29:31.978 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:29:31.978 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:29:31.978 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:29:31.978 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:29:31.978 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:29:31.978 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:29:31.978 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:29:33.203 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:29:33.203 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:29:33.204 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:29:33.204 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-02-10 22:29:33.204 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 6.0
+2026-02-10 22:29:33.204 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 6.0
+2026-02-10 22:29:33.204 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:29:33.204 [INFO    ] [energy_manager      ] [Python] 初始能量: 6.0/15.0 J
+2026-02-10 22:29:33.204 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-10 22:29:33.204 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:29:33.204 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:29:33.205 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/acceptance_test/config_gpfp_tgf.yml, current_config_file=/tmp/acceptance_test/config_gpfp_tgf.yml
+2026-02-10 22:29:33.205 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/acceptance_test/config_gpfp_tgf.yml
+2026-02-10 22:29:33.205 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=6.0J
+2026-02-10 22:31:02.115 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/acceptance_test/config_gpfp_btie.yml
+2026-02-10 22:31:02.125 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/acceptance_test/config_gpfp_btie.yml
+2026-02-10 22:31:02.125 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 6.0
+2026-02-10 22:31:02.125 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 6.0
+2026-02-10 22:31:02.125 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-10 22:31:02.125 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-10 22:31:02.125 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:31:02.126 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/acceptance_test/config_gpfp_btie.yml
+2026-02-10 22:31:02.126 [INFO    ] [energy_manager      ]   Initial energy: 6.0 J
+2026-02-10 22:31:02.126 [INFO    ] [energy_manager      ]   Max energy: 15.0 J
+2026-02-10 22:31:02.126 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:31:02.126 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:31:02.126 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:31:02.126 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:31:02.126 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:31:02.126 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:31:02.126 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:31:02.126 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-02-10 22:31:02.126 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:31:02.126 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:31:02.127 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:31:02.127 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:31:02.127 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:31:02.127 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:31:02.127 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:31:02.127 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:31:02.127 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:31:02.127 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:31:02.127 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:31:03.334 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:31:03.335 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:31:03.335 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:31:03.335 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-02-10 22:31:03.335 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 6.0
+2026-02-10 22:31:03.335 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 6.0
+2026-02-10 22:31:03.335 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:31:03.335 [INFO    ] [energy_manager      ] [Python] 初始能量: 6.0/15.0 J
+2026-02-10 22:31:03.335 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-10 22:31:03.335 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:31:03.335 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:31:03.336 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/acceptance_test/config_gpfp_btie.yml, current_config_file=/tmp/acceptance_test/config_gpfp_btie.yml
+2026-02-10 22:31:03.336 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/acceptance_test/config_gpfp_btie.yml
+2026-02-10 22:31:03.336 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=6.0J
+2026-02-10 22:32:34.051 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/acceptance_test/config_gpfp_tie.yml
+2026-02-10 22:32:34.062 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/acceptance_test/config_gpfp_tie.yml
+2026-02-10 22:32:34.062 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 6.0
+2026-02-10 22:32:34.062 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 6.0
+2026-02-10 22:32:34.062 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-10 22:32:34.062 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-10 22:32:34.062 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:32:34.062 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/acceptance_test/config_gpfp_tie.yml
+2026-02-10 22:32:34.062 [INFO    ] [energy_manager      ]   Initial energy: 6.0 J
+2026-02-10 22:32:34.062 [INFO    ] [energy_manager      ]   Max energy: 15.0 J
+2026-02-10 22:32:34.062 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:32:34.062 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:32:34.063 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:32:34.063 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:32:34.063 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:32:34.063 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:32:34.063 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:32:34.063 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-02-10 22:32:34.063 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:32:34.063 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:32:34.063 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:32:34.063 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:32:34.063 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:32:34.063 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:32:34.063 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:32:34.064 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:32:34.064 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:32:34.064 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:32:34.064 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:32:35.262 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:32:35.262 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:32:35.262 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:32:35.262 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-02-10 22:32:35.262 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 6.0
+2026-02-10 22:32:35.262 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 6.0
+2026-02-10 22:32:35.262 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:32:35.263 [INFO    ] [energy_manager      ] [Python] 初始能量: 6.0/15.0 J
+2026-02-10 22:32:35.263 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-10 22:32:35.263 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:32:35.263 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:32:35.263 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/acceptance_test/config_gpfp_tie.yml, current_config_file=/tmp/acceptance_test/config_gpfp_tie.yml
+2026-02-10 22:32:35.263 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/acceptance_test/config_gpfp_tie.yml
+2026-02-10 22:32:35.263 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=6.0J
+2026-02-10 22:32:52.163 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:32:52.163 [ERROR   ] [energy_manager      ] Config file does not exist: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:32:52.163 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-10 22:32:52.163 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-10 22:32:52.163 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:32:52.163 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-10 22:32:52.163 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-10 22:32:52.163 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:32:52.163 [INFO    ] [energy_manager      ] 确保配置文件加载: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:32:52.164 [ERROR   ] [energy_manager      ] Config file does not exist: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:32:52.164 [WARNING ] [energy_manager      ] 确保配置文件加载失败: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:32:52.227 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/acceptance_test/config_gpfp_tie.yml
+2026-02-10 22:32:52.237 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/acceptance_test/config_gpfp_tie.yml
+2026-02-10 22:32:52.237 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 6.0
+2026-02-10 22:32:52.237 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 6.0
+2026-02-10 22:32:52.237 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-10 22:32:52.238 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-10 22:32:52.238 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:32:52.238 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/acceptance_test/config_gpfp_tie.yml
+2026-02-10 22:32:52.238 [INFO    ] [energy_manager      ]   Initial energy: 6.0 J
+2026-02-10 22:32:52.238 [INFO    ] [energy_manager      ]   Max energy: 15.0 J
+2026-02-10 22:32:52.238 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:32:52.238 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:32:52.238 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:32:52.238 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:32:52.238 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:32:52.238 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:32:52.238 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:32:52.238 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-02-10 22:32:52.238 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:32:52.239 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:32:52.239 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:32:52.239 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:32:52.239 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:32:52.239 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:32:52.239 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:32:52.239 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:32:52.239 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:32:52.239 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:32:52.239 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:32:53.439 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:32:53.440 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:32:53.440 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:32:53.440 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-02-10 22:32:53.440 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 6.0
+2026-02-10 22:32:53.440 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 6.0
+2026-02-10 22:32:53.440 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:32:53.440 [INFO    ] [energy_manager      ] [Python] 初始能量: 6.0/15.0 J
+2026-02-10 22:32:53.440 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-10 22:32:53.440 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:32:53.440 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:32:53.441 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/acceptance_test/config_gpfp_tie.yml, current_config_file=/tmp/acceptance_test/config_gpfp_tie.yml
+2026-02-10 22:32:53.441 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/acceptance_test/config_gpfp_tie.yml
+2026-02-10 22:32:53.441 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=6.0J
+2026-02-10 22:34:06.652 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:34:06.653 [ERROR   ] [energy_manager      ] Config file does not exist: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:34:06.653 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-10 22:34:06.653 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-10 22:34:06.653 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:34:06.653 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-10 22:34:06.653 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-10 22:34:06.653 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:34:06.653 [INFO    ] [energy_manager      ] 确保配置文件加载: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:34:06.653 [ERROR   ] [energy_manager      ] Config file does not exist: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:34:06.653 [WARNING ] [energy_manager      ] 确保配置文件加载失败: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:34:27.819 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/test_config.yml
+2026-02-10 22:34:27.829 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/test_config.yml
+2026-02-10 22:34:27.829 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 100.0
+2026-02-10 22:34:27.829 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 100.0
+2026-02-10 22:34:27.829 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-10 22:34:27.829 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-10 22:34:27.829 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:34:27.830 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/test_config.yml
+2026-02-10 22:34:27.830 [INFO    ] [energy_manager      ]   Initial energy: 100.0 J
+2026-02-10 22:34:27.830 [INFO    ] [energy_manager      ]   Max energy: 15.0 J
+2026-02-10 22:34:27.830 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:34:27.830 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:34:27.830 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:34:27.830 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:34:27.830 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:34:27.830 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:34:27.830 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:34:27.830 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-02-10 22:34:27.830 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:34:27.830 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:34:27.831 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:34:27.831 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:34:27.831 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:34:27.831 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:34:27.831 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:34:27.831 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:34:27.831 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:34:27.831 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:34:27.831 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:34:29.042 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:34:29.042 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:34:29.042 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:34:29.042 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-02-10 22:34:29.042 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 100.0
+2026-02-10 22:34:29.042 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 100.0
+2026-02-10 22:34:29.043 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:34:29.043 [INFO    ] [energy_manager      ] [Python] 初始能量: 100.0/15.0 J
+2026-02-10 22:34:29.043 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-10 22:34:29.043 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:34:29.043 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:34:29.043 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/test_config.yml, current_config_file=/tmp/test_config.yml
+2026-02-10 22:34:29.043 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/test_config.yml
+2026-02-10 22:34:29.044 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=100.0J
+2026-02-10 22:34:47.104 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/test_config.yml
+2026-02-10 22:34:47.114 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/test_config.yml
+2026-02-10 22:34:47.114 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 100.0
+2026-02-10 22:34:47.115 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 100.0
+2026-02-10 22:34:47.115 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-10 22:34:47.115 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-10 22:34:47.115 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:34:47.115 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/test_config.yml
+2026-02-10 22:34:47.115 [INFO    ] [energy_manager      ]   Initial energy: 100.0 J
+2026-02-10 22:34:47.115 [INFO    ] [energy_manager      ]   Max energy: 15.0 J
+2026-02-10 22:34:47.115 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:34:47.115 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:34:47.115 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:34:47.115 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:34:47.115 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:34:47.115 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:34:47.116 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:34:47.116 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-02-10 22:34:47.116 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:34:47.116 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:34:47.116 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:34:47.116 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:34:47.116 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:34:47.116 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:34:47.116 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:34:47.116 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:34:47.116 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:34:47.116 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:34:47.116 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:34:48.301 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:34:48.301 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:34:48.301 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:34:48.301 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-02-10 22:34:48.301 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 100.0
+2026-02-10 22:34:48.302 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 100.0
+2026-02-10 22:34:48.302 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:34:48.302 [INFO    ] [energy_manager      ] [Python] 初始能量: 100.0/15.0 J
+2026-02-10 22:34:48.302 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-10 22:34:48.302 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:34:48.302 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:34:48.302 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/test_config.yml, current_config_file=/tmp/test_config.yml
+2026-02-10 22:34:48.302 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/test_config.yml
+2026-02-10 22:34:48.302 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=100.0J
+2026-02-10 22:37:08.013 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/test_config.yml
+2026-02-10 22:37:08.023 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/test_config.yml
+2026-02-10 22:37:08.023 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 100.0
+2026-02-10 22:37:08.023 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 100.0
+2026-02-10 22:37:08.023 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-10 22:37:08.023 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-10 22:37:08.024 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:37:08.024 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/test_config.yml
+2026-02-10 22:37:08.024 [INFO    ] [energy_manager      ]   Initial energy: 100.0 J
+2026-02-10 22:37:08.024 [INFO    ] [energy_manager      ]   Max energy: 15.0 J
+2026-02-10 22:37:08.024 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:37:08.024 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:37:08.024 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:37:08.024 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:37:08.024 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:37:08.024 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:37:08.024 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:37:08.024 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-02-10 22:37:08.025 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:37:08.025 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:37:08.025 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:37:08.025 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:37:08.025 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:37:08.025 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:37:08.025 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:37:08.025 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:37:08.025 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:37:08.025 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:37:08.025 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:37:09.209 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:37:09.210 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:37:09.210 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:37:09.210 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-02-10 22:37:09.210 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 100.0
+2026-02-10 22:37:09.210 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 100.0
+2026-02-10 22:37:09.210 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:37:09.210 [INFO    ] [energy_manager      ] [Python] 初始能量: 100.0/15.0 J
+2026-02-10 22:37:09.210 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-10 22:37:09.210 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:37:09.210 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:37:09.211 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/test_config.yml, current_config_file=/tmp/test_config.yml
+2026-02-10 22:37:09.211 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/test_config.yml
+2026-02-10 22:37:09.211 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=100.0J
+2026-02-10 22:38:23.104 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:38:23.104 [ERROR   ] [energy_manager      ] Config file does not exist: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:38:23.104 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-10 22:38:23.104 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-10 22:38:23.104 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:38:23.104 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-10 22:38:23.104 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-10 22:38:23.104 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:38:23.104 [INFO    ] [energy_manager      ] 确保配置文件加载: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:38:23.104 [ERROR   ] [energy_manager      ] Config file does not exist: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:38:23.105 [WARNING ] [energy_manager      ] 确保配置文件加载失败: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:38:23.167 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/acceptance_test_final/config_gpfp_tie.yml
+2026-02-10 22:38:23.177 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/acceptance_test_final/config_gpfp_tie.yml
+2026-02-10 22:38:23.177 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 6.0
+2026-02-10 22:38:23.177 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 6.0
+2026-02-10 22:38:23.177 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-10 22:38:23.178 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-10 22:38:23.178 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:38:23.178 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/acceptance_test_final/config_gpfp_tie.yml
+2026-02-10 22:38:23.178 [INFO    ] [energy_manager      ]   Initial energy: 6.0 J
+2026-02-10 22:38:23.178 [INFO    ] [energy_manager      ]   Max energy: 15.0 J
+2026-02-10 22:38:23.178 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:38:23.178 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:38:23.178 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:38:23.178 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:38:23.178 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:38:23.178 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:38:23.178 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:38:23.178 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-02-10 22:38:23.179 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:38:23.179 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:38:23.179 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:38:23.179 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:38:23.179 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:38:23.179 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:38:23.179 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:38:23.179 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:38:23.179 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:38:23.179 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:38:23.179 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:38:24.364 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:38:24.364 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:38:24.364 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:38:24.364 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-02-10 22:38:24.364 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 6.0
+2026-02-10 22:38:24.364 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 6.0
+2026-02-10 22:38:24.364 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:38:24.365 [INFO    ] [energy_manager      ] [Python] 初始能量: 6.0/15.0 J
+2026-02-10 22:38:24.365 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-10 22:38:24.365 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:38:24.365 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:38:24.365 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/acceptance_test_final/config_gpfp_tie.yml, current_config_file=/tmp/acceptance_test_final/config_gpfp_tie.yml
+2026-02-10 22:38:24.365 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/acceptance_test_final/config_gpfp_tie.yml
+2026-02-10 22:38:24.365 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=6.0J
+2026-02-10 22:39:09.591 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/acceptance_test_final/config_gpfp_tgf.yml
+2026-02-10 22:39:09.602 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/acceptance_test_final/config_gpfp_tgf.yml
+2026-02-10 22:39:09.602 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 6.0
+2026-02-10 22:39:09.602 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 6.0
+2026-02-10 22:39:09.602 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-10 22:39:09.602 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-10 22:39:09.602 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:39:09.602 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/acceptance_test_final/config_gpfp_tgf.yml
+2026-02-10 22:39:09.602 [INFO    ] [energy_manager      ]   Initial energy: 6.0 J
+2026-02-10 22:39:09.602 [INFO    ] [energy_manager      ]   Max energy: 15.0 J
+2026-02-10 22:39:09.602 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:39:09.602 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:39:09.602 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:39:09.603 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:39:09.603 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:39:09.603 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:39:09.603 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:39:09.603 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-02-10 22:39:09.603 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:39:09.603 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:39:09.603 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:39:09.603 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:39:09.603 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:39:09.603 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:39:09.604 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:39:09.604 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:39:09.604 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:39:09.604 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:39:09.604 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:39:10.808 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:39:10.808 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:39:10.808 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:39:10.808 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-02-10 22:39:10.808 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 6.0
+2026-02-10 22:39:10.808 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 6.0
+2026-02-10 22:39:10.808 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:39:10.809 [INFO    ] [energy_manager      ] [Python] 初始能量: 6.0/15.0 J
+2026-02-10 22:39:10.809 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-10 22:39:10.809 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:39:10.809 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:39:10.809 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/acceptance_test_final/config_gpfp_tgf.yml, current_config_file=/tmp/acceptance_test_final/config_gpfp_tgf.yml
+2026-02-10 22:39:10.809 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/acceptance_test_final/config_gpfp_tgf.yml
+2026-02-10 22:39:10.809 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=6.0J
+2026-02-10 22:39:55.670 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/acceptance_test_final/config_gpfp_btie.yml
+2026-02-10 22:39:55.681 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/acceptance_test_final/config_gpfp_btie.yml
+2026-02-10 22:39:55.681 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 6.0
+2026-02-10 22:39:55.681 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 6.0
+2026-02-10 22:39:55.681 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-10 22:39:55.681 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-10 22:39:55.681 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:39:55.681 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/acceptance_test_final/config_gpfp_btie.yml
+2026-02-10 22:39:55.681 [INFO    ] [energy_manager      ]   Initial energy: 6.0 J
+2026-02-10 22:39:55.681 [INFO    ] [energy_manager      ]   Max energy: 15.0 J
+2026-02-10 22:39:55.681 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:39:55.682 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:39:55.682 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:39:55.682 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:39:55.682 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:39:55.682 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:39:55.682 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:39:55.682 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-02-10 22:39:55.682 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:39:55.682 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:39:55.682 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:39:55.683 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:39:55.683 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:39:55.683 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:39:55.683 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:39:55.683 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:39:55.683 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:39:55.683 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:39:55.683 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:39:56.946 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:39:56.946 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:39:56.946 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:39:56.946 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-02-10 22:39:56.946 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 6.0
+2026-02-10 22:39:56.946 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 6.0
+2026-02-10 22:39:56.946 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:39:56.947 [INFO    ] [energy_manager      ] [Python] 初始能量: 6.0/15.0 J
+2026-02-10 22:39:56.947 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-10 22:39:56.947 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:39:56.947 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:39:56.947 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/acceptance_test_final/config_gpfp_btie.yml, current_config_file=/tmp/acceptance_test_final/config_gpfp_btie.yml
+2026-02-10 22:39:56.947 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/acceptance_test_final/config_gpfp_btie.yml
+2026-02-10 22:39:56.947 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=6.0J
+2026-02-10 22:41:06.017 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:41:06.017 [ERROR   ] [energy_manager      ] Config file does not exist: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:41:06.017 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-10 22:41:06.017 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-10 22:41:06.017 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:41:06.017 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-10 22:41:06.017 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-10 22:41:06.017 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:41:06.017 [INFO    ] [energy_manager      ] 确保配置文件加载: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:41:06.017 [ERROR   ] [energy_manager      ] Config file does not exist: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:41:06.017 [WARNING ] [energy_manager      ] 确保配置文件加载失败: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:41:06.078 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:41:06.078 [ERROR   ] [energy_manager      ] Config file does not exist: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:41:06.078 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-10 22:41:06.079 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-10 22:41:06.079 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:41:06.079 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-10 22:41:06.079 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-10 22:41:06.079 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:41:06.079 [INFO    ] [energy_manager      ] 确保配置文件加载: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:41:06.079 [ERROR   ] [energy_manager      ] Config file does not exist: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:41:06.079 [WARNING ] [energy_manager      ] 确保配置文件加载失败: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:41:06.141 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/acceptance_test_full/config_gpfp_tie.yml
+2026-02-10 22:41:06.151 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/acceptance_test_full/config_gpfp_tie.yml
+2026-02-10 22:41:06.152 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 6.0
+2026-02-10 22:41:06.152 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 6.0
+2026-02-10 22:41:06.152 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-10 22:41:06.152 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-10 22:41:06.152 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:41:06.152 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/acceptance_test_full/config_gpfp_tie.yml
+2026-02-10 22:41:06.152 [INFO    ] [energy_manager      ]   Initial energy: 6.0 J
+2026-02-10 22:41:06.152 [INFO    ] [energy_manager      ]   Max energy: 15.0 J
+2026-02-10 22:41:06.152 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:41:06.152 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:41:06.152 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:41:06.153 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:41:06.153 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:41:06.153 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:41:06.153 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:41:06.153 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-02-10 22:41:06.153 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:41:06.153 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:41:06.153 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:41:06.153 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:41:06.153 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:41:06.153 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:41:06.153 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:41:06.153 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:41:06.153 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:41:06.154 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:41:06.154 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:41:07.376 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:41:07.376 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:41:07.376 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:41:07.376 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-02-10 22:41:07.376 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 6.0
+2026-02-10 22:41:07.377 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 6.0
+2026-02-10 22:41:07.377 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:41:07.377 [INFO    ] [energy_manager      ] [Python] 初始能量: 6.0/15.0 J
+2026-02-10 22:41:07.377 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-10 22:41:07.377 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:41:07.377 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:41:07.377 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/acceptance_test_full/config_gpfp_tie.yml, current_config_file=/tmp/acceptance_test_full/config_gpfp_tie.yml
+2026-02-10 22:41:07.377 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/acceptance_test_full/config_gpfp_tie.yml
+2026-02-10 22:41:07.377 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=6.0J
+2026-02-10 22:41:52.157 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/acceptance_test_full/config_gpfp_tgf.yml
+2026-02-10 22:41:52.167 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/acceptance_test_full/config_gpfp_tgf.yml
+2026-02-10 22:41:52.168 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 6.0
+2026-02-10 22:41:52.168 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 6.0
+2026-02-10 22:41:52.168 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-10 22:41:52.168 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-10 22:41:52.168 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:41:52.168 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/acceptance_test_full/config_gpfp_tgf.yml
+2026-02-10 22:41:52.168 [INFO    ] [energy_manager      ]   Initial energy: 6.0 J
+2026-02-10 22:41:52.168 [INFO    ] [energy_manager      ]   Max energy: 15.0 J
+2026-02-10 22:41:52.168 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:41:52.168 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:41:52.168 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:41:52.168 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:41:52.168 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:41:52.169 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:41:52.169 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:41:52.169 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-02-10 22:41:52.169 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:41:52.169 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:41:52.169 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:41:52.169 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:41:52.169 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:41:52.169 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:41:52.169 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:41:52.169 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:41:52.169 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:41:52.169 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:41:52.170 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:41:53.386 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:41:53.386 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:41:53.386 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:41:53.386 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-02-10 22:41:53.386 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 6.0
+2026-02-10 22:41:53.386 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 6.0
+2026-02-10 22:41:53.386 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:41:53.386 [INFO    ] [energy_manager      ] [Python] 初始能量: 6.0/15.0 J
+2026-02-10 22:41:53.386 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-10 22:41:53.386 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:41:53.386 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:41:53.387 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/acceptance_test_full/config_gpfp_tgf.yml, current_config_file=/tmp/acceptance_test_full/config_gpfp_tgf.yml
+2026-02-10 22:41:53.387 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/acceptance_test_full/config_gpfp_tgf.yml
+2026-02-10 22:41:53.387 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=6.0J
+2026-02-10 22:42:37.673 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/acceptance_test_full/config_gpfp_btie.yml
+2026-02-10 22:42:37.684 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/acceptance_test_full/config_gpfp_btie.yml
+2026-02-10 22:42:37.684 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 6.0
+2026-02-10 22:42:37.684 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 6.0
+2026-02-10 22:42:37.684 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-10 22:42:37.685 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-10 22:42:37.685 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:42:37.685 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/acceptance_test_full/config_gpfp_btie.yml
+2026-02-10 22:42:37.685 [INFO    ] [energy_manager      ]   Initial energy: 6.0 J
+2026-02-10 22:42:37.685 [INFO    ] [energy_manager      ]   Max energy: 15.0 J
+2026-02-10 22:42:37.685 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:42:37.685 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:42:37.685 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:42:37.685 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:42:37.685 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:42:37.685 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:42:37.685 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:42:37.685 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-02-10 22:42:37.686 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:42:37.686 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:42:37.686 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:42:37.686 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:42:37.686 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:42:37.686 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:42:37.686 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:42:37.686 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:42:37.686 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:42:37.686 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:42:37.686 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:42:38.935 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:42:38.935 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:42:38.935 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:42:38.935 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-02-10 22:42:38.935 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 6.0
+2026-02-10 22:42:38.935 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 6.0
+2026-02-10 22:42:38.935 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:42:38.935 [INFO    ] [energy_manager      ] [Python] 初始能量: 6.0/15.0 J
+2026-02-10 22:42:38.935 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-10 22:42:38.935 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:42:38.935 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:42:38.936 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/acceptance_test_full/config_gpfp_btie.yml, current_config_file=/tmp/acceptance_test_full/config_gpfp_btie.yml
+2026-02-10 22:42:38.936 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/acceptance_test_full/config_gpfp_btie.yml
+2026-02-10 22:42:38.936 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=6.0J
+2026-02-10 22:43:23.883 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/acceptance_test_full/config_gpfp_tie.yml
+2026-02-10 22:43:23.894 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/acceptance_test_full/config_gpfp_tie.yml
+2026-02-10 22:43:23.894 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 6.0
+2026-02-10 22:43:23.894 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 6.0
+2026-02-10 22:43:23.894 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-10 22:43:23.894 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-10 22:43:23.894 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:43:23.894 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/acceptance_test_full/config_gpfp_tie.yml
+2026-02-10 22:43:23.894 [INFO    ] [energy_manager      ]   Initial energy: 6.0 J
+2026-02-10 22:43:23.895 [INFO    ] [energy_manager      ]   Max energy: 15.0 J
+2026-02-10 22:43:23.895 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:43:23.895 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:43:23.895 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:43:23.895 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:43:23.895 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:43:23.895 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:43:23.895 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:43:23.895 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-02-10 22:43:23.895 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:43:23.895 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:43:23.895 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:43:23.896 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:43:23.896 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:43:23.896 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:43:23.896 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:43:23.896 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:43:23.896 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:43:23.896 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:43:23.896 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:43:25.172 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:43:25.172 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:43:25.172 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:43:25.172 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-02-10 22:43:25.172 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 6.0
+2026-02-10 22:43:25.172 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 6.0
+2026-02-10 22:43:25.172 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:43:25.172 [INFO    ] [energy_manager      ] [Python] 初始能量: 6.0/15.0 J
+2026-02-10 22:43:25.172 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-10 22:43:25.172 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:43:25.172 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:43:25.173 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/acceptance_test_full/config_gpfp_tie.yml, current_config_file=/tmp/acceptance_test_full/config_gpfp_tie.yml
+2026-02-10 22:43:25.173 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/acceptance_test_full/config_gpfp_tie.yml
+2026-02-10 22:43:25.173 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=6.0J
+2026-02-10 22:44:09.784 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/acceptance_test_full/config_gpfp_tgf.yml
+2026-02-10 22:44:09.794 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/acceptance_test_full/config_gpfp_tgf.yml
+2026-02-10 22:44:09.794 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 6.0
+2026-02-10 22:44:09.795 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 6.0
+2026-02-10 22:44:09.795 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-10 22:44:09.795 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-10 22:44:09.795 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:44:09.795 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/acceptance_test_full/config_gpfp_tgf.yml
+2026-02-10 22:44:09.795 [INFO    ] [energy_manager      ]   Initial energy: 6.0 J
+2026-02-10 22:44:09.795 [INFO    ] [energy_manager      ]   Max energy: 15.0 J
+2026-02-10 22:44:09.795 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:44:09.795 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:44:09.795 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:44:09.795 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:44:09.795 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:44:09.795 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:44:09.796 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:44:09.796 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-02-10 22:44:09.796 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:44:09.796 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:44:09.796 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:44:09.796 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:44:09.796 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:44:09.796 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:44:09.796 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:44:09.796 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:44:09.796 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:44:09.796 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:44:09.796 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:44:11.011 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:44:11.012 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:44:11.012 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:44:11.012 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-02-10 22:44:11.012 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 6.0
+2026-02-10 22:44:11.012 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 6.0
+2026-02-10 22:44:11.012 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:44:11.012 [INFO    ] [energy_manager      ] [Python] 初始能量: 6.0/15.0 J
+2026-02-10 22:44:11.012 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-10 22:44:11.012 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:44:11.012 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:44:11.013 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/acceptance_test_full/config_gpfp_tgf.yml, current_config_file=/tmp/acceptance_test_full/config_gpfp_tgf.yml
+2026-02-10 22:44:11.013 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/acceptance_test_full/config_gpfp_tgf.yml
+2026-02-10 22:44:11.013 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=6.0J
+2026-02-10 22:44:56.114 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/acceptance_test_full/config_gpfp_btie.yml
+2026-02-10 22:44:56.124 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/acceptance_test_full/config_gpfp_btie.yml
+2026-02-10 22:44:56.124 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 6.0
+2026-02-10 22:44:56.124 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 6.0
+2026-02-10 22:44:56.124 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-10 22:44:56.124 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-10 22:44:56.124 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:44:56.124 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/acceptance_test_full/config_gpfp_btie.yml
+2026-02-10 22:44:56.124 [INFO    ] [energy_manager      ]   Initial energy: 6.0 J
+2026-02-10 22:44:56.124 [INFO    ] [energy_manager      ]   Max energy: 15.0 J
+2026-02-10 22:44:56.124 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:44:56.125 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:44:56.125 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:44:56.125 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:44:56.125 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:44:56.125 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:44:56.125 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:44:56.125 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-02-10 22:44:56.125 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:44:56.125 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:44:56.125 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:44:56.125 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:44:56.125 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:44:56.125 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:44:56.126 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:44:56.126 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:44:56.126 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:44:56.126 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:44:56.126 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:44:57.330 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:44:57.330 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:44:57.330 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:44:57.330 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-02-10 22:44:57.330 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 6.0
+2026-02-10 22:44:57.330 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 6.0
+2026-02-10 22:44:57.330 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:44:57.330 [INFO    ] [energy_manager      ] [Python] 初始能量: 6.0/15.0 J
+2026-02-10 22:44:57.330 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-10 22:44:57.330 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:44:57.330 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:44:57.331 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/acceptance_test_full/config_gpfp_btie.yml, current_config_file=/tmp/acceptance_test_full/config_gpfp_btie.yml
+2026-02-10 22:44:57.331 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/acceptance_test_full/config_gpfp_btie.yml
+2026-02-10 22:44:57.331 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=6.0J
+2026-02-10 22:45:43.307 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:45:43.307 [ERROR   ] [energy_manager      ] Config file does not exist: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:45:43.307 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-10 22:45:43.307 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-10 22:45:43.307 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:45:43.307 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-10 22:45:43.307 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-10 22:45:43.307 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:45:43.307 [INFO    ] [energy_manager      ] 确保配置文件加载: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:45:43.307 [ERROR   ] [energy_manager      ] Config file does not exist: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:45:43.307 [WARNING ] [energy_manager      ] 确保配置文件加载失败: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:45:43.368 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:45:43.368 [ERROR   ] [energy_manager      ] Config file does not exist: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:45:43.368 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-10 22:45:43.368 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-10 22:45:43.368 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:45:43.368 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-10 22:45:43.368 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-10 22:45:43.368 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:45:43.369 [INFO    ] [energy_manager      ] 确保配置文件加载: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:45:43.369 [ERROR   ] [energy_manager      ] Config file does not exist: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:45:43.369 [WARNING ] [energy_manager      ] 确保配置文件加载失败: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:45:43.432 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/acceptance_test_full/config_gpfp_tie.yml
+2026-02-10 22:45:43.443 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/acceptance_test_full/config_gpfp_tie.yml
+2026-02-10 22:45:43.443 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 6.0
+2026-02-10 22:45:43.443 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 6.0
+2026-02-10 22:45:43.443 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-10 22:45:43.443 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-10 22:45:43.443 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:45:43.443 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/acceptance_test_full/config_gpfp_tie.yml
+2026-02-10 22:45:43.443 [INFO    ] [energy_manager      ]   Initial energy: 6.0 J
+2026-02-10 22:45:43.443 [INFO    ] [energy_manager      ]   Max energy: 15.0 J
+2026-02-10 22:45:43.443 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:45:43.443 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:45:43.443 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:45:43.443 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:45:43.444 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:45:43.444 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:45:43.444 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:45:43.444 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-02-10 22:45:43.444 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:45:43.444 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:45:43.444 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:45:43.444 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:45:43.444 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:45:43.445 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:45:43.445 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:45:43.445 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:45:43.445 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:45:43.445 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:45:43.445 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:45:44.650 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:45:44.651 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:45:44.651 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:45:44.651 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-02-10 22:45:44.651 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 6.0
+2026-02-10 22:45:44.651 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 6.0
+2026-02-10 22:45:44.651 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:45:44.651 [INFO    ] [energy_manager      ] [Python] 初始能量: 6.0/15.0 J
+2026-02-10 22:45:44.651 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-10 22:45:44.651 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:45:44.651 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:45:44.652 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/acceptance_test_full/config_gpfp_tie.yml, current_config_file=/tmp/acceptance_test_full/config_gpfp_tie.yml
+2026-02-10 22:45:44.652 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/acceptance_test_full/config_gpfp_tie.yml
+2026-02-10 22:45:44.652 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=6.0J
+2026-02-10 22:46:30.074 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/acceptance_test_full/config_gpfp_tgf.yml
+2026-02-10 22:46:30.085 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/acceptance_test_full/config_gpfp_tgf.yml
+2026-02-10 22:46:30.085 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 6.0
+2026-02-10 22:46:30.086 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 6.0
+2026-02-10 22:46:30.086 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-10 22:46:30.086 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-10 22:46:30.086 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:46:30.086 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/acceptance_test_full/config_gpfp_tgf.yml
+2026-02-10 22:46:30.086 [INFO    ] [energy_manager      ]   Initial energy: 6.0 J
+2026-02-10 22:46:30.086 [INFO    ] [energy_manager      ]   Max energy: 15.0 J
+2026-02-10 22:46:30.086 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:46:30.086 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:46:30.086 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:46:30.086 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:46:30.087 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:46:30.087 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:46:30.087 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:46:30.087 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-02-10 22:46:30.087 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:46:30.087 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:46:30.087 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:46:30.087 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:46:30.087 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:46:30.087 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:46:30.088 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:46:30.088 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:46:30.088 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:46:30.088 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:46:30.088 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:46:31.303 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:46:31.304 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:46:31.304 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:46:31.304 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-02-10 22:46:31.304 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 6.0
+2026-02-10 22:46:31.304 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 6.0
+2026-02-10 22:46:31.304 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:46:31.304 [INFO    ] [energy_manager      ] [Python] 初始能量: 6.0/15.0 J
+2026-02-10 22:46:31.304 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-10 22:46:31.304 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:46:31.304 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:46:31.305 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/acceptance_test_full/config_gpfp_tgf.yml, current_config_file=/tmp/acceptance_test_full/config_gpfp_tgf.yml
+2026-02-10 22:46:31.305 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/acceptance_test_full/config_gpfp_tgf.yml
+2026-02-10 22:46:31.305 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=6.0J
+2026-02-10 22:47:15.944 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/acceptance_test_full/config_gpfp_btie.yml
+2026-02-10 22:47:15.954 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/acceptance_test_full/config_gpfp_btie.yml
+2026-02-10 22:47:15.955 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 6.0
+2026-02-10 22:47:15.955 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 6.0
+2026-02-10 22:47:15.955 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-10 22:47:15.955 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-10 22:47:15.955 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:47:15.955 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/acceptance_test_full/config_gpfp_btie.yml
+2026-02-10 22:47:15.955 [INFO    ] [energy_manager      ]   Initial energy: 6.0 J
+2026-02-10 22:47:15.955 [INFO    ] [energy_manager      ]   Max energy: 15.0 J
+2026-02-10 22:47:15.955 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:47:15.955 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:47:15.955 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:47:15.955 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:47:15.955 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:47:15.956 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:47:15.956 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:47:15.956 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-02-10 22:47:15.956 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:47:15.956 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:47:15.956 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:47:15.956 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:47:15.956 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:47:15.956 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:47:15.956 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:47:15.956 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:47:15.956 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:47:15.956 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:47:15.956 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:47:17.159 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:47:17.159 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:47:17.159 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:47:17.159 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-02-10 22:47:17.159 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 6.0
+2026-02-10 22:47:17.159 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 6.0
+2026-02-10 22:47:17.159 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:47:17.159 [INFO    ] [energy_manager      ] [Python] 初始能量: 6.0/15.0 J
+2026-02-10 22:47:17.160 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-10 22:47:17.160 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:47:17.160 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:47:17.160 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/acceptance_test_full/config_gpfp_btie.yml, current_config_file=/tmp/acceptance_test_full/config_gpfp_btie.yml
+2026-02-10 22:47:17.160 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/acceptance_test_full/config_gpfp_btie.yml
+2026-02-10 22:47:17.160 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=6.0J
+2026-02-10 22:48:03.264 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/acceptance_test_full/config_gpfp_tie.yml
+2026-02-10 22:48:03.275 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/acceptance_test_full/config_gpfp_tie.yml
+2026-02-10 22:48:03.275 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 6.0
+2026-02-10 22:48:03.275 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 6.0
+2026-02-10 22:48:03.275 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-10 22:48:03.275 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-10 22:48:03.275 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:48:03.275 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/acceptance_test_full/config_gpfp_tie.yml
+2026-02-10 22:48:03.276 [INFO    ] [energy_manager      ]   Initial energy: 6.0 J
+2026-02-10 22:48:03.276 [INFO    ] [energy_manager      ]   Max energy: 15.0 J
+2026-02-10 22:48:03.276 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:48:03.276 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:48:03.276 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:48:03.276 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:48:03.276 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:48:03.276 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:48:03.276 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:48:03.276 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-02-10 22:48:03.277 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:48:03.277 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:48:03.277 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:48:03.277 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:48:03.277 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:48:03.277 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:48:03.277 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:48:03.277 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:48:03.277 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:48:03.277 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:48:03.277 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:48:04.519 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:48:04.519 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:48:04.519 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:48:04.519 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-02-10 22:48:04.519 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 6.0
+2026-02-10 22:48:04.520 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 6.0
+2026-02-10 22:48:04.520 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:48:04.520 [INFO    ] [energy_manager      ] [Python] 初始能量: 6.0/15.0 J
+2026-02-10 22:48:04.520 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-10 22:48:04.520 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:48:04.520 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:48:04.520 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/acceptance_test_full/config_gpfp_tie.yml, current_config_file=/tmp/acceptance_test_full/config_gpfp_tie.yml
+2026-02-10 22:48:04.520 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/acceptance_test_full/config_gpfp_tie.yml
+2026-02-10 22:48:04.521 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=6.0J
+2026-02-10 22:48:50.136 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/acceptance_test_full/config_gpfp_tgf.yml
+2026-02-10 22:48:50.146 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/acceptance_test_full/config_gpfp_tgf.yml
+2026-02-10 22:48:50.146 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 6.0
+2026-02-10 22:48:50.146 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 6.0
+2026-02-10 22:48:50.146 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-10 22:48:50.146 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-10 22:48:50.146 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:48:50.146 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/acceptance_test_full/config_gpfp_tgf.yml
+2026-02-10 22:48:50.147 [INFO    ] [energy_manager      ]   Initial energy: 6.0 J
+2026-02-10 22:48:50.147 [INFO    ] [energy_manager      ]   Max energy: 15.0 J
+2026-02-10 22:48:50.147 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:48:50.147 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:48:50.147 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:48:50.147 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:48:50.147 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:48:50.147 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:48:50.147 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:48:50.147 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-02-10 22:48:50.147 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:48:50.147 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:48:50.147 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:48:50.148 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:48:50.148 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:48:50.148 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:48:50.148 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:48:50.148 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:48:50.148 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:48:50.148 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:48:50.148 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:48:51.372 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:48:51.373 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:48:51.373 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:48:51.373 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-02-10 22:48:51.373 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 6.0
+2026-02-10 22:48:51.373 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 6.0
+2026-02-10 22:48:51.373 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:48:51.373 [INFO    ] [energy_manager      ] [Python] 初始能量: 6.0/15.0 J
+2026-02-10 22:48:51.373 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-10 22:48:51.373 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:48:51.373 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:48:51.374 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/acceptance_test_full/config_gpfp_tgf.yml, current_config_file=/tmp/acceptance_test_full/config_gpfp_tgf.yml
+2026-02-10 22:48:51.374 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/acceptance_test_full/config_gpfp_tgf.yml
+2026-02-10 22:48:51.374 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=6.0J
+2026-02-10 22:49:36.151 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/acceptance_test_full/config_gpfp_btie.yml
+2026-02-10 22:49:36.161 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/acceptance_test_full/config_gpfp_btie.yml
+2026-02-10 22:49:36.161 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 6.0
+2026-02-10 22:49:36.161 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 6.0
+2026-02-10 22:49:36.162 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-10 22:49:36.162 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-10 22:49:36.162 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:49:36.162 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/acceptance_test_full/config_gpfp_btie.yml
+2026-02-10 22:49:36.162 [INFO    ] [energy_manager      ]   Initial energy: 6.0 J
+2026-02-10 22:49:36.162 [INFO    ] [energy_manager      ]   Max energy: 15.0 J
+2026-02-10 22:49:36.162 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:49:36.162 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:49:36.162 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:49:36.162 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:49:36.162 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:49:36.162 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:49:36.162 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:49:36.162 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-02-10 22:49:36.162 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:49:36.162 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:49:36.162 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:49:36.163 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:49:36.163 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:49:36.163 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:49:36.163 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:49:36.163 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:49:36.163 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:49:36.163 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:49:36.163 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:49:37.420 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:49:37.420 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:49:37.420 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:49:37.420 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-02-10 22:49:37.420 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 6.0
+2026-02-10 22:49:37.420 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 6.0
+2026-02-10 22:49:37.420 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:49:37.420 [INFO    ] [energy_manager      ] [Python] 初始能量: 6.0/15.0 J
+2026-02-10 22:49:37.420 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-10 22:49:37.420 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:49:37.421 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:49:37.421 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/acceptance_test_full/config_gpfp_btie.yml, current_config_file=/tmp/acceptance_test_full/config_gpfp_btie.yml
+2026-02-10 22:49:37.421 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/acceptance_test_full/config_gpfp_btie.yml
+2026-02-10 22:49:37.421 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=6.0J
+2026-02-10 22:50:23.647 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:50:23.647 [ERROR   ] [energy_manager      ] Config file does not exist: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:50:23.648 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-10 22:50:23.648 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-10 22:50:23.648 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:50:23.648 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-10 22:50:23.648 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-10 22:50:23.648 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:50:23.648 [INFO    ] [energy_manager      ] 确保配置文件加载: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:50:23.648 [ERROR   ] [energy_manager      ] Config file does not exist: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:50:23.648 [WARNING ] [energy_manager      ] 确保配置文件加载失败: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:50:23.712 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:50:23.712 [ERROR   ] [energy_manager      ] Config file does not exist: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:50:23.712 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-10 22:50:23.712 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-10 22:50:23.712 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:50:23.712 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-10 22:50:23.712 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-10 22:50:23.712 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:50:23.712 [INFO    ] [energy_manager      ] 确保配置文件加载: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:50:23.712 [ERROR   ] [energy_manager      ] Config file does not exist: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:50:23.712 [WARNING ] [energy_manager      ] 确保配置文件加载失败: ./simconf/systems/gpfp_system.yml
+2026-02-10 22:50:23.777 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/acceptance_test_full/config_gpfp_tie.yml
+2026-02-10 22:50:23.787 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/acceptance_test_full/config_gpfp_tie.yml
+2026-02-10 22:50:23.787 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 6.0
+2026-02-10 22:50:23.787 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 6.0
+2026-02-10 22:50:23.788 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-10 22:50:23.788 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-10 22:50:23.788 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:50:23.788 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/acceptance_test_full/config_gpfp_tie.yml
+2026-02-10 22:50:23.788 [INFO    ] [energy_manager      ]   Initial energy: 6.0 J
+2026-02-10 22:50:23.788 [INFO    ] [energy_manager      ]   Max energy: 15.0 J
+2026-02-10 22:50:23.788 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:50:23.788 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:50:23.788 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:50:23.788 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:50:23.788 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:50:23.788 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:50:23.788 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:50:23.789 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-02-10 22:50:23.789 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:50:23.789 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:50:23.789 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:50:23.789 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:50:23.789 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:50:23.789 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:50:23.789 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:50:23.789 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:50:23.789 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:50:23.789 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:50:23.789 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:50:24.981 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:50:24.982 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:50:24.982 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:50:24.982 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-02-10 22:50:24.982 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 6.0
+2026-02-10 22:50:24.982 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 6.0
+2026-02-10 22:50:24.982 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:50:24.982 [INFO    ] [energy_manager      ] [Python] 初始能量: 6.0/15.0 J
+2026-02-10 22:50:24.982 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-10 22:50:24.982 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:50:24.982 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:50:24.983 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/acceptance_test_full/config_gpfp_tie.yml, current_config_file=/tmp/acceptance_test_full/config_gpfp_tie.yml
+2026-02-10 22:50:24.983 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/acceptance_test_full/config_gpfp_tie.yml
+2026-02-10 22:50:24.983 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=6.0J
+2026-02-10 22:51:11.201 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/acceptance_test_full/config_gpfp_tgf.yml
+2026-02-10 22:51:11.213 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/acceptance_test_full/config_gpfp_tgf.yml
+2026-02-10 22:51:11.213 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 6.0
+2026-02-10 22:51:11.213 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 6.0
+2026-02-10 22:51:11.213 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-10 22:51:11.213 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-10 22:51:11.213 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:51:11.213 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/acceptance_test_full/config_gpfp_tgf.yml
+2026-02-10 22:51:11.213 [INFO    ] [energy_manager      ]   Initial energy: 6.0 J
+2026-02-10 22:51:11.214 [INFO    ] [energy_manager      ]   Max energy: 15.0 J
+2026-02-10 22:51:11.214 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:51:11.214 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:51:11.214 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:51:11.214 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:51:11.214 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:51:11.214 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:51:11.214 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:51:11.214 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-02-10 22:51:11.214 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:51:11.214 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:51:11.214 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:51:11.215 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:51:11.215 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:51:11.215 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:51:11.215 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:51:11.215 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:51:11.215 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:51:11.215 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:51:11.215 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:51:12.450 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:51:12.451 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:51:12.451 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:51:12.451 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-02-10 22:51:12.451 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 6.0
+2026-02-10 22:51:12.451 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 6.0
+2026-02-10 22:51:12.451 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:51:12.451 [INFO    ] [energy_manager      ] [Python] 初始能量: 6.0/15.0 J
+2026-02-10 22:51:12.451 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-10 22:51:12.451 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:51:12.451 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:51:12.451 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/acceptance_test_full/config_gpfp_tgf.yml, current_config_file=/tmp/acceptance_test_full/config_gpfp_tgf.yml
+2026-02-10 22:51:12.452 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/acceptance_test_full/config_gpfp_tgf.yml
+2026-02-10 22:51:12.452 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=6.0J
+2026-02-10 22:51:57.147 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/acceptance_test_full/config_gpfp_btie.yml
+2026-02-10 22:51:57.157 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/acceptance_test_full/config_gpfp_btie.yml
+2026-02-10 22:51:57.158 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 6.0
+2026-02-10 22:51:57.158 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 6.0
+2026-02-10 22:51:57.158 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-10 22:51:57.158 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-10 22:51:57.158 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:51:57.158 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/acceptance_test_full/config_gpfp_btie.yml
+2026-02-10 22:51:57.158 [INFO    ] [energy_manager      ]   Initial energy: 6.0 J
+2026-02-10 22:51:57.158 [INFO    ] [energy_manager      ]   Max energy: 15.0 J
+2026-02-10 22:51:57.158 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:51:57.158 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:51:57.158 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:51:57.158 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:51:57.159 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:51:57.159 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:51:57.159 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:51:57.159 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-02-10 22:51:57.159 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:51:57.159 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:51:57.159 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:51:57.159 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:51:57.159 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:51:57.159 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:51:57.159 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:51:57.159 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:51:57.159 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:51:57.160 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:51:57.160 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:51:58.395 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:51:58.395 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:51:58.395 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:51:58.395 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-02-10 22:51:58.395 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 6.0
+2026-02-10 22:51:58.395 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 6.0
+2026-02-10 22:51:58.395 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:51:58.396 [INFO    ] [energy_manager      ] [Python] 初始能量: 6.0/15.0 J
+2026-02-10 22:51:58.396 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-10 22:51:58.396 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:51:58.396 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:51:58.396 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/acceptance_test_full/config_gpfp_btie.yml, current_config_file=/tmp/acceptance_test_full/config_gpfp_btie.yml
+2026-02-10 22:51:58.396 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/acceptance_test_full/config_gpfp_btie.yml
+2026-02-10 22:51:58.396 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=6.0J
+2026-02-10 22:52:45.142 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/acceptance_test_full/config_gpfp_tie.yml
+2026-02-10 22:52:45.153 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/acceptance_test_full/config_gpfp_tie.yml
+2026-02-10 22:52:45.154 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 6.0
+2026-02-10 22:52:45.154 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 6.0
+2026-02-10 22:52:45.154 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-10 22:52:45.154 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-10 22:52:45.154 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:52:45.154 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/acceptance_test_full/config_gpfp_tie.yml
+2026-02-10 22:52:45.154 [INFO    ] [energy_manager      ]   Initial energy: 6.0 J
+2026-02-10 22:52:45.154 [INFO    ] [energy_manager      ]   Max energy: 15.0 J
+2026-02-10 22:52:45.154 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:52:45.155 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:52:45.155 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:52:45.155 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:52:45.155 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:52:45.155 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:52:45.155 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:52:45.155 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-02-10 22:52:45.155 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:52:45.155 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:52:45.155 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:52:45.155 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:52:45.156 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:52:45.156 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:52:45.156 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:52:45.156 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:52:45.156 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:52:45.156 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:52:45.156 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:52:46.397 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:52:46.397 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:52:46.397 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:52:46.397 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-02-10 22:52:46.397 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 6.0
+2026-02-10 22:52:46.397 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 6.0
+2026-02-10 22:52:46.397 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:52:46.397 [INFO    ] [energy_manager      ] [Python] 初始能量: 6.0/15.0 J
+2026-02-10 22:52:46.397 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-10 22:52:46.397 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:52:46.397 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:52:46.398 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/acceptance_test_full/config_gpfp_tie.yml, current_config_file=/tmp/acceptance_test_full/config_gpfp_tie.yml
+2026-02-10 22:52:46.398 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/acceptance_test_full/config_gpfp_tie.yml
+2026-02-10 22:52:46.398 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=6.0J
+2026-02-10 22:53:32.161 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/acceptance_test_full/config_gpfp_tgf.yml
+2026-02-10 22:53:32.171 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/acceptance_test_full/config_gpfp_tgf.yml
+2026-02-10 22:53:32.172 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 6.0
+2026-02-10 22:53:32.172 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 6.0
+2026-02-10 22:53:32.172 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-10 22:53:32.172 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-10 22:53:32.172 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:53:32.172 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/acceptance_test_full/config_gpfp_tgf.yml
+2026-02-10 22:53:32.172 [INFO    ] [energy_manager      ]   Initial energy: 6.0 J
+2026-02-10 22:53:32.172 [INFO    ] [energy_manager      ]   Max energy: 15.0 J
+2026-02-10 22:53:32.172 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:53:32.172 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:53:32.172 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:53:32.172 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:53:32.172 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:53:32.173 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:53:32.173 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:53:32.173 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-02-10 22:53:32.173 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:53:32.173 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:53:32.173 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:53:32.173 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:53:32.173 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:53:32.173 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:53:32.173 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:53:32.173 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:53:32.173 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:53:32.173 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:53:32.173 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:53:33.370 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:53:33.370 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:53:33.370 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:53:33.370 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-02-10 22:53:33.370 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 6.0
+2026-02-10 22:53:33.370 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 6.0
+2026-02-10 22:53:33.370 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:53:33.370 [INFO    ] [energy_manager      ] [Python] 初始能量: 6.0/15.0 J
+2026-02-10 22:53:33.370 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-10 22:53:33.371 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:53:33.371 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:53:33.371 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/acceptance_test_full/config_gpfp_tgf.yml, current_config_file=/tmp/acceptance_test_full/config_gpfp_tgf.yml
+2026-02-10 22:53:33.371 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/acceptance_test_full/config_gpfp_tgf.yml
+2026-02-10 22:53:33.371 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=6.0J
+2026-02-10 22:54:18.612 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /tmp/acceptance_test_full/config_gpfp_btie.yml
+2026-02-10 22:54:18.622 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /tmp/acceptance_test_full/config_gpfp_btie.yml
+2026-02-10 22:54:18.623 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 6.0
+2026-02-10 22:54:18.623 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 6.0
+2026-02-10 22:54:18.623 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-10 22:54:18.623 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-10 22:54:18.623 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-10 22:54:18.623 [INFO    ] [energy_manager      ] EnergyConfig loaded from /tmp/acceptance_test_full/config_gpfp_btie.yml
+2026-02-10 22:54:18.623 [INFO    ] [energy_manager      ]   Initial energy: 6.0 J
+2026-02-10 22:54:18.623 [INFO    ] [energy_manager      ]   Max energy: 15.0 J
+2026-02-10 22:54:18.623 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-10 22:54:18.623 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-10 22:54:18.623 [INFO    ] [energy_manager      ]   === 真实太阳能数据配置 ===
+2026-02-10 22:54:18.623 [INFO    ] [energy_manager      ]     使用真实数据: True
+2026-02-10 22:54:18.624 [INFO    ] [energy_manager      ]     数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:54:18.624 [INFO    ] [energy_manager      ]     光伏效率: 0.18
+2026-02-10 22:54:18.624 [INFO    ] [energy_manager      ]     光伏面积: 1.0 m²
+2026-02-10 22:54:18.624 [INFO    ] [energy_manager      ]     时间偏移: 268560 分钟
+2026-02-10 22:54:18.624 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-10 22:54:18.624 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-10 22:54:18.624 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-10 22:54:18.624 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-10 22:54:18.624 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-10 22:54:18.624 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-10 22:54:18.624 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-10 22:54:18.624 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-10 22:54:18.624 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-10 22:54:18.625 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-10 22:54:18.625 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-10 22:54:19.825 [INFO    ] [energy_manager      ] [EnergyHarvester] 成功初始化真实太阳能数据模型
+2026-02-10 22:54:19.825 [INFO    ] [energy_manager      ] [EnergyHarvester] 使用数据文件: data/processed/shenyang_solar_minute.csv
+2026-02-10 22:54:19.825 [INFO    ] [energy_manager      ] [EnergyHarvester] 光伏参数: 效率=0.18, 面积=1.0m²
+2026-02-10 22:54:19.825 [INFO    ] [energy_manager      ] [EnergyHarvester] 时间偏移: 268560 分钟
+2026-02-10 22:54:19.825 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 6.0
+2026-02-10 22:54:19.825 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 6.0
+2026-02-10 22:54:19.825 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-10 22:54:19.825 [INFO    ] [energy_manager      ] [Python] 初始能量: 6.0/15.0 J
+2026-02-10 22:54:19.825 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-10 22:54:19.825 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-10 22:54:19.825 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-10 22:54:19.826 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/tmp/acceptance_test_full/config_gpfp_btie.yml, current_config_file=/tmp/acceptance_test_full/config_gpfp_btie.yml
+2026-02-10 22:54:19.826 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /tmp/acceptance_test_full/config_gpfp_btie.yml
+2026-02-10 22:54:19.826 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=6.0J

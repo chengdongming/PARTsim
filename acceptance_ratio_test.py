@@ -60,13 +60,14 @@ ALGO_DISPLAY_NAMES = {'gpfp_tie': 'TIE', 'gpfp_tgf': 'TGF', 'gpfp_btie': 'BTIE'}
 # 实验参数（可通过命令行修改）
 DEFAULT_UTILIZATION_POINTS = np.linspace(0.1, 1.0, 10)
 DEFAULT_NUM_TASKSETS = 10  # 快速测试：10个任务集
-DEFAULT_TASK_N = 10
-DEFAULT_TASK_P_MIN = 40  # 周期范围翻倍：从20变为40
-DEFAULT_TASK_P_MAX = 200  # 周期范围翻倍：从100变为200
-DEFAULT_SIMULATION_TIME = 20000  # 20秒仿真，让能量约束生效
-DEFAULT_BATTERY_CAPACITY = 15.0  # 15J电池，平衡能量约束
-DEFAULT_INITIAL_ENERGY_RATIO = 0.4  # 40%初始能量，需要太阳能补充
-DEFAULT_SOLAR_START_TIME_MS = 43200000  # 中午12点（12 * 3600 * 1000 ms）
+DEFAULT_TASK_N = 15  # 增加任务数，产生更多能量约束
+DEFAULT_TASK_P_MIN = 40  # 周期范围：最小40ms
+DEFAULT_TASK_P_MAX = 400  # 周期范围：最大400ms（增加多样性）
+DEFAULT_SIMULATION_TIME = 100000  # 100秒仿真
+DEFAULT_BATTERY_CAPACITY = 5.0  # 5J电池
+DEFAULT_INITIAL_ENERGY_RATIO = 1.0  # 100%初始能量（满电）
+DEFAULT_SOLAR_START_TIME_MS = 21975000  # 早上6:06 AM
+DEFAULT_USE_REAL_SOLAR_DATA = False  # 使用分段函数模拟，不使用真实太阳能数据
 
 # ============================================
 # 追踪文件解析器
@@ -138,7 +139,7 @@ class ExperimentRunner:
 
     def __init__(self, output_dir, utilization_points, num_tasksets,
                  task_n, task_p_min, task_p_max, simulation_time,
-                 battery_capacity, initial_energy_ratio, solar_start_time_ms):
+                 battery_capacity, initial_energy_ratio, solar_start_time_ms, use_real_solar_data=True):
         self.output_dir = Path(output_dir)
         self.trace_dir = self.output_dir / 'traces'
         self.task_dir = self.output_dir / 'tasks'
@@ -157,6 +158,7 @@ class ExperimentRunner:
         self.battery_capacity = battery_capacity
         self.initial_energy_ratio = initial_energy_ratio
         self.solar_start_time_ms = solar_start_time_ms
+        self.use_real_solar_data = use_real_solar_data
 
         print(f"🖥️  系统核心数: {SYSTEM_CORES}")
         print(f"📁 输出目录: {self.output_dir}")
@@ -202,18 +204,35 @@ class ExperimentRunner:
         if 'initial_energy_ratio:' in content:
             content = re.sub(r'initial_energy_ratio:\s*[\d.]+',
                            f'initial_energy_ratio: {self.initial_energy_ratio}', content)
-        elif 'initial_energy:' in content:
-            content = re.sub(r'initial_energy:\s*[\d.]+', f'initial_energy: {initial_energy}', content)
+        else:
+            # 匹配 initial_energy: 数字，可能后面有注释
+            content = re.sub(r'initial_energy:\s*[\d.]+',
+                           f'initial_energy: {initial_energy}', content)
 
-        # ⭐ 关键修复：设置time_of_day_ms
+        # ⭐ 关键修复：设置time_of_day_ms和day_of_year
         # 根据用户测试验证，系统使用time_of_day_ms参数来确定太阳能收集的时间
-        # 例如：12:00 PM = 12 * 3600 * 1000 = 43200000 ms
+        # 例如：4:00 AM = 4 * 3600 * 1000 = 14400000 ms
         solar_time_ms = self.solar_start_time_ms
 
         # 修改energy_management部分的time_of_day_ms参数
         content = re.sub(
             r'time_of_day_ms:\s*\d+',
             f'time_of_day_ms: {solar_time_ms}',
+            content
+        )
+
+        # 设置day_of_year为187天（夏季）
+        content = re.sub(
+            r'day_of_year:\s*\d+',
+            f'day_of_year: 187',
+            content
+        )
+
+        # 设置use_real_solar_data
+        use_solar_str = 'true' if self.use_real_solar_data else 'false'
+        content = re.sub(
+            r'use_real_solar_data:\s*(true|false)',
+            f'use_real_solar_data: {use_solar_str}',
             content
         )
 
@@ -502,7 +521,8 @@ def main():
             simulation_time=DEFAULT_SIMULATION_TIME,
             battery_capacity=args.battery,
             initial_energy_ratio=args.initial_energy,
-            solar_start_time_ms=solar_start_time_ms
+            solar_start_time_ms=solar_start_time_ms,
+            use_real_solar_data=DEFAULT_USE_REAL_SOLAR_DATA
         )
 
         results = runner.run_experiments()
