@@ -1820,10 +1820,6 @@ namespace RTSim {
     // =====================================================
 
     double BTIEScheduler::collectSolarEnergy(Tick current_time) {
-        if (!_use_real_solar_data) {
-            return 0.0;
-        }
-
         int64_t current_ms = static_cast<int64_t>(current_time);
 
         // 计算自上次收集以来的时间
@@ -1833,7 +1829,7 @@ namespace RTSim {
             return 0.0;
         }
 
-        // 获取当前辐照度
+        // 获取当前辐照度（根据use_real_solar_data选择NASA数据或函数曲线）
         double irradiance = getSolarIrradiance(current_ms);
 
         // 计算收集能量
