@@ -456,11 +456,14 @@ namespace RTSim {
 
         // ⭐ V30关键修复：使用_dispatch_start_time作为调度时间，确保同一tick的所有任务使用相同时间
         // _dispatch_start_time在dispatch()开始时设置，在整个tick期间保持不变
+        // ⭐ V31修复：防止时间倒流 - 如果当前时间已超过_dispatch_start_time，使用当前时间
         Tick overhead(_contextSwitchDelay);
         if (st != nullptr && _m_oldExe[st] != p && _m_oldExe[st] != nullptr)
             overhead += _migrationDelay;
 
-        Tick post_time = _dispatch_start_time + overhead;
+        Tick current_time = SIMUL.getTime();
+        Tick base_time = (current_time > _dispatch_start_time) ? current_time : _dispatch_start_time;
+        Tick post_time = base_time + overhead;
         _endEvt[p]->post(post_time);
         std::cout << "[DEBUG] onBeginDispatchMulti - 设置事件: task=" << taskname(st)
                   << " CPU=" << p->toString()
