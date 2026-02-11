@@ -433,21 +433,10 @@ class EnergyAwareTaskGenerator:
                 if max_arrival_offset_value > 0:
                     arrival_offset_value = random.randint(0, max_arrival_offset_value)
             
-            # 选择工作负载类型 - 自定义概率分布
-            # idle: 30%, control: 30%, 其余各10%
-            rand = random.random()
-            if rand < 0.3:
-                workload = "idle"
-            elif rand < 0.6:
-                workload = "control"
-            elif rand < 0.7:
-                workload = "bzip2"
-            elif rand < 0.8:
-                workload = "hash"
-            elif rand < 0.9:
-                workload = "encrypt"
-            else:
-                workload = "decrypt"
+            # 选择工作负载类型 - 均匀分布（所有类型概率相同）
+            # 每种类型: 16.67% (6种工作负载)
+            workload_types = ["idle", "control", "bzip2", "hash", "encrypt", "decrypt"]
+            workload = random.choice(workload_types)
             
             # 计算能耗 - 使用系统配置参数
             energy = self.calculate_energy(execution_time, workload, self.base_frequency)
