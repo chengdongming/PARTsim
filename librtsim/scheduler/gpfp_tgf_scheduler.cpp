@@ -435,10 +435,14 @@ namespace RTSim {
                                    std::to_string(harvested * 1000) + " mJ → " +
                                    std::to_string(_current_energy * 1000) + " mJ");
 
-                // ⭐ 如果收集到能量，清除能量耗尽标志
-                if (_energy_depleted && _current_energy > 0.000001) {
+                // ⭐ V43修复：只有当能量足够时才清除能量耗尽标志
+                // 使用合理阈值（10 mJ）判断能量是否足够恢复调度
+                const double RECOVERY_THRESHOLD = 0.010;  // 10 mJ
+                if (_energy_depleted && _current_energy >= RECOVERY_THRESHOLD) {
                     _energy_depleted = false;
-                    SCHEDULER_LOG_INFO("🔋 [TGF] 太阳能充电成功，恢复调度");
+                    SCHEDULER_LOG_INFO("🔋 [TGF] 太阳能充电成功，恢复调度 (能量=" +
+                                      std::to_string(_current_energy * 1000) + " mJ >= 阈值=" +
+                                      std::to_string(RECOVERY_THRESHOLD * 1000) + " mJ)");
                 }
             }
         }
@@ -484,6 +488,13 @@ namespace RTSim {
                 // 检查是否有足够能量续期1ms
                 const double EPSILON = 1e-9;
                 if (_current_energy < unit_energy - EPSILON) {
+                    // ⭐ V43修复：能量不足时设置能量耗尽标志
+                    if (!_energy_depleted) {
+                        _energy_depleted = true;
+                        _current_energy = 0.0;  // 强制设为0，防止变负
+                        SCHEDULER_LOG_WARNING("💀 [TGF] 能量耗尽，设置_energy_depleted标志");
+                    }
+
                     // 能量不足，加入挂起列表
                     tasks_to_suspend.push_back(task);
                     SCHEDULER_LOG_WARNING("⚠️ 续期能量不足，将挂起: " +
@@ -654,6 +665,14 @@ namespace RTSim {
     // =====================================================
 
     AbsRTTask *TGFScheduler::getTaskN(unsigned int n) {
+        // ⭐ V43修复：能量耗尽时立即返回，不调度任何任务
+        if (_energy_depleted) {
+            SCHEDULER_LOG_DEBUG(std::string("💀 [TGF] getTaskN: 能量已耗尽，拒绝调度") +
+                               " n=" + std::to_string(n) +
+                               " energy=" + std::to_string(_current_energy * 1000) + " mJ");
+            return nullptr;
+        }
+
                 // STAR Critical fix: if energy depleted, don\'t schedule any tasks
         if (_energy_depleted) {
         // STAR Critical fix: if energy depleted, don't schedule any tasks
