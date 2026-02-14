@@ -745,6 +745,18 @@ namespace RTSim {
 
             // 这是第ready_index个未dispatch的任务
             if (ready_index == n) {
+                // ⭐ ALAP时序门控检查（能量充足后）
+                // 即使能量足够，如果当前任务的Slack>0也不应该调度
+                Tick task_slack = calculateSlackForTask(task);
+                if (task_slack > 0) {
+                    SCHEDULER_LOG_INFO(std::string("⏸️ [ALAP-NonBlock] getTaskN: 当前任务Slack>0，跳过 ") +
+                                           getTaskName(task) +
+                                           " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms");
+                    ready_index++;
+                    continue;  // Skip this task
+                }
+                // Slack≤0的任务可以调度
+
                 // ⭐ 计算任务的1ms能耗
                 double unit_energy = calculateUnitEnergyForTask(task);
                 double available_energy = _current_energy - _dispatching_tasks_total_energy;
@@ -803,6 +815,17 @@ namespace RTSim {
                         double next_unit_energy = calculateUnitEnergyForTask(next_task);
                         double next_available = _current_energy - _dispatching_tasks_total_energy;
 
+                        // ⭐ 关键修复：贪心策略中也要检查ALAP时序！
+                        // 即使能量足够，如果next_task的Slack>0也不应该调度
+                        Tick next_task_slack = calculateSlackForTask(next_task);
+                        if (next_task_slack > 0) {
+                            SCHEDULER_LOG_INFO(std::string("⏸️ [ALAP-NonBlock] 贪心搜索：任务Slack>0，跳过 ") +
+                                                   getTaskName(next_task) +
+                                                   " Slack=" + std::to_string(static_cast<int64_t>(next_task_slack)) + "ms");
+                            continue;
+                        }
+                        // Slack≤0的任务可以考虑调度
+
                         if (next_available >= next_unit_energy - EPSILON) {
                             // ⭐ 找到能量足够的后续任务，调度它！
                             // ⭐ 只标记任务，不扣除能量（能量将在dispatch后统一扣除）
@@ -839,6 +862,7 @@ namespace RTSim {
                                           " 1ms能耗=" + std::to_string(unit_energy * 1000) + " mJ");
                     }
                     // 否则已标记过，直接返回任务
+                    return task;
                 }
                 // 运行中任务不需要标记，因为它们已经扣除过初始能量
                 return task;

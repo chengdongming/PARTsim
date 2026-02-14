@@ -3,7 +3,7 @@ cpu_islands:
   - name: energy_aware_cpus
     numcpus: 4                                   # 4核心测试
     kernel:
-      scheduler: gpfp_alap_sync              # 测试时在这里切换: gpfp_alap_block / gpfp_alap_nonblock / gpfp_alap_sync
+      scheduler: gpfp_alap_nonblock              # 测试时在这里切换: gpfp_alap_block / gpfp_alap_nonblock / gpfp_alap_sync
       task_placement: global
     volts: [0.92, 0.94, 0.96, 0.98, 1.00, 1.02, 1.04, 1.06, 1.08, 1.10, 1.12, 1.14]
     freqs: [7000, 7500, 8000, 8100, 8200, 8300, 8400, 8500, 9000, 9500, 10000, 10500]

@@ -9095,3 +9095,2379 @@ yaml.scanner.ScannerError: mapping values are not allowed here
 2026-02-14 19:24:15.933 [WARNING ] [energy_manager      ] 确保配置文件加载失败: alap_test_results/gpfp_system_test.yml
 2026-02-14 19:24:15.933 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/gpfp_system_test.yml, current_config_file=alap_test_results/gpfp_system_test.yml
 2026-02-14 19:24:15.933 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 19:40:52.408 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/gpfp_system_test.yml
+2026-02-14 19:40:52.412 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 19:40:52.414 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 19:40:52.414 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-14 19:40:52.414 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-14 19:40:52.414 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-14 19:40:52.414 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-14 19:40:52.414 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-14 19:40:52.414 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-14 19:40:52.414 [INFO    ] [energy_manager      ] 确保配置文件加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 19:40:52.418 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 19:40:52.419 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 19:40:52.419 [WARNING ] [energy_manager      ] 确保配置文件加载失败: alap_test_results/gpfp_system_test.yml
+2026-02-14 19:40:52.419 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/gpfp_system_test.yml, current_config_file=alap_test_results/gpfp_system_test.yml
+2026-02-14 19:40:52.419 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 19:41:00.603 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/gpfp_system_test.yml
+2026-02-14 19:41:00.608 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 19:41:00.610 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 19:41:00.610 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-14 19:41:00.610 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-14 19:41:00.610 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-14 19:41:00.610 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-14 19:41:00.610 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-14 19:41:00.610 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-14 19:41:00.610 [INFO    ] [energy_manager      ] 确保配置文件加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 19:41:00.614 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 19:41:00.614 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 19:41:00.614 [WARNING ] [energy_manager      ] 确保配置文件加载失败: alap_test_results/gpfp_system_test.yml
+2026-02-14 19:41:00.615 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/gpfp_system_test.yml, current_config_file=alap_test_results/gpfp_system_test.yml
+2026-02-14 19:41:00.615 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 19:44:06.229 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/gpfp_system_test.yml
+2026-02-14 19:44:06.233 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 19:44:06.235 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 19:44:06.236 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-14 19:44:06.236 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-14 19:44:06.236 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-14 19:44:06.236 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-14 19:44:06.236 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-14 19:44:06.236 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-14 19:44:06.236 [INFO    ] [energy_manager      ] 确保配置文件加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 19:44:06.241 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 19:44:06.241 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 19:44:06.241 [WARNING ] [energy_manager      ] 确保配置文件加载失败: alap_test_results/gpfp_system_test.yml
+2026-02-14 19:44:06.241 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/gpfp_system_test.yml, current_config_file=alap_test_results/gpfp_system_test.yml
+2026-02-14 19:44:06.242 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 19:45:08.873 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/gpfp_system_test.yml
+2026-02-14 19:45:08.878 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 19:45:08.880 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 19:45:08.880 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-14 19:45:08.880 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-14 19:45:08.880 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-14 19:45:08.881 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-14 19:45:08.881 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-14 19:45:08.881 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-14 19:45:08.881 [INFO    ] [energy_manager      ] 确保配置文件加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 19:45:08.885 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 19:45:08.885 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 19:45:08.885 [WARNING ] [energy_manager      ] 确保配置文件加载失败: alap_test_results/gpfp_system_test.yml
+2026-02-14 19:45:08.885 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/gpfp_system_test.yml, current_config_file=alap_test_results/gpfp_system_test.yml
+2026-02-14 19:45:08.886 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 19:45:22.376 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/gpfp_system_test.yml
+2026-02-14 19:45:22.381 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 19:45:22.383 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 19:45:22.383 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-14 19:45:22.383 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-14 19:45:22.383 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-14 19:45:22.383 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-14 19:45:22.383 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-14 19:45:22.383 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-14 19:45:22.383 [INFO    ] [energy_manager      ] 确保配置文件加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 19:45:22.387 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 19:45:22.388 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 19:45:22.388 [WARNING ] [energy_manager      ] 确保配置文件加载失败: alap_test_results/gpfp_system_test.yml
+2026-02-14 19:45:22.388 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/gpfp_system_test.yml, current_config_file=alap_test_results/gpfp_system_test.yml
+2026-02-14 19:45:22.388 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 19:57:42.677 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/gpfp_system_test.yml
+2026-02-14 19:57:42.685 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 19:57:42.691 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 19:57:42.691 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-14 19:57:42.691 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-14 19:57:42.691 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-14 19:57:42.691 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-14 19:57:42.691 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-14 19:57:42.692 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-14 19:57:42.692 [INFO    ] [energy_manager      ] 确保配置文件加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 19:57:42.697 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 19:57:42.697 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 19:57:42.697 [WARNING ] [energy_manager      ] 确保配置文件加载失败: alap_test_results/gpfp_system_test.yml
+2026-02-14 19:57:42.698 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/gpfp_system_test.yml, current_config_file=alap_test_results/gpfp_system_test.yml
+2026-02-14 19:57:42.698 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:07:27.743 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:07:27.747 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 20:07:27.749 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 20:07:27.749 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-14 20:07:27.749 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-14 20:07:27.749 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-14 20:07:27.749 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-14 20:07:27.749 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-14 20:07:27.749 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-14 20:07:27.749 [INFO    ] [energy_manager      ] 确保配置文件加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:07:27.753 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 20:07:27.753 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 20:07:27.753 [WARNING ] [energy_manager      ] 确保配置文件加载失败: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:07:27.753 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/gpfp_system_test.yml, current_config_file=alap_test_results/gpfp_system_test.yml
+2026-02-14 20:07:27.753 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:07:55.874 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:07:55.878 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 20:07:55.879 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 20:07:55.879 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-14 20:07:55.880 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-14 20:07:55.880 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-14 20:07:55.880 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-14 20:07:55.880 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-14 20:07:55.880 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-14 20:07:55.880 [INFO    ] [energy_manager      ] 确保配置文件加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:07:55.884 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 20:07:55.884 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 20:07:55.884 [WARNING ] [energy_manager      ] 确保配置文件加载失败: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:07:55.884 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/gpfp_system_test.yml, current_config_file=alap_test_results/gpfp_system_test.yml
+2026-02-14 20:07:55.884 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:13:48.071 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:13:48.076 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 20:13:48.077 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 20:13:48.078 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-14 20:13:48.078 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-14 20:13:48.078 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-14 20:13:48.078 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-14 20:13:48.078 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-14 20:13:48.078 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-14 20:13:48.078 [INFO    ] [energy_manager      ] 确保配置文件加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:13:48.082 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 20:13:48.082 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 20:13:48.082 [WARNING ] [energy_manager      ] 确保配置文件加载失败: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:13:48.082 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/gpfp_system_test.yml, current_config_file=alap_test_results/gpfp_system_test.yml
+2026-02-14 20:13:48.082 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:17:00.496 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:17:00.500 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 20:17:00.505 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 20:17:00.505 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-14 20:17:00.505 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-14 20:17:00.505 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-14 20:17:00.505 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-14 20:17:00.506 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-14 20:17:00.506 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-14 20:17:00.506 [INFO    ] [energy_manager      ] 确保配置文件加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:17:00.510 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 20:17:00.510 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 20:17:00.510 [WARNING ] [energy_manager      ] 确保配置文件加载失败: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:17:00.510 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/gpfp_system_test.yml, current_config_file=alap_test_results/gpfp_system_test.yml
+2026-02-14 20:17:00.510 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:21:58.978 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:21:58.983 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 20:21:58.987 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 20:21:58.987 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-14 20:21:58.987 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-14 20:21:58.987 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-14 20:21:58.987 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-14 20:21:58.988 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-14 20:21:58.988 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-14 20:21:58.988 [INFO    ] [energy_manager      ] 确保配置文件加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:21:58.992 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 20:21:58.992 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 20:21:58.992 [WARNING ] [energy_manager      ] 确保配置文件加载失败: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:21:58.992 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/gpfp_system_test.yml, current_config_file=alap_test_results/gpfp_system_test.yml
+2026-02-14 20:21:58.992 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:27:27.133 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:27:27.138 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 20:27:27.142 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 20:27:27.142 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-14 20:27:27.142 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-14 20:27:27.142 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-14 20:27:27.142 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-14 20:27:27.142 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-14 20:27:27.143 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-14 20:27:27.143 [INFO    ] [energy_manager      ] 确保配置文件加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:27:27.146 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 20:27:27.147 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 20:27:27.147 [WARNING ] [energy_manager      ] 确保配置文件加载失败: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:27:27.147 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/gpfp_system_test.yml, current_config_file=alap_test_results/gpfp_system_test.yml
+2026-02-14 20:27:27.147 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:38:42.383 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:38:42.389 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 20:38:42.396 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 20:38:42.396 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-14 20:38:42.397 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-14 20:38:42.397 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-14 20:38:42.397 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-14 20:38:42.397 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-14 20:38:42.397 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-14 20:38:42.397 [INFO    ] [energy_manager      ] 确保配置文件加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:38:42.402 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 20:38:42.402 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 20:38:42.402 [WARNING ] [energy_manager      ] 确保配置文件加载失败: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:38:42.403 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/gpfp_system_test.yml, current_config_file=alap_test_results/gpfp_system_test.yml
+2026-02-14 20:38:42.403 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:39:11.155 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:39:11.161 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 20:39:11.164 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 20:39:11.164 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-14 20:39:11.164 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-14 20:39:11.164 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-14 20:39:11.165 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-14 20:39:11.165 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-14 20:39:11.165 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-14 20:39:11.165 [INFO    ] [energy_manager      ] 确保配置文件加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:39:11.169 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 20:39:11.169 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 20:39:11.170 [WARNING ] [energy_manager      ] 确保配置文件加载失败: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:39:11.170 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/gpfp_system_test.yml, current_config_file=alap_test_results/gpfp_system_test.yml
+2026-02-14 20:39:11.170 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:39:15.648 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:39:15.653 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 20:39:15.655 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 20:39:15.655 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-14 20:39:15.655 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-14 20:39:15.655 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-14 20:39:15.655 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-14 20:39:15.655 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-14 20:39:15.655 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-14 20:39:15.655 [INFO    ] [energy_manager      ] 确保配置文件加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:39:15.660 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 20:39:15.660 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 20:39:15.660 [WARNING ] [energy_manager      ] 确保配置文件加载失败: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:39:15.661 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/gpfp_system_test.yml, current_config_file=alap_test_results/gpfp_system_test.yml
+2026-02-14 20:39:15.661 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:40:15.510 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:40:15.515 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 20:40:15.516 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 20:40:15.517 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-14 20:40:15.517 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-14 20:40:15.517 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-14 20:40:15.517 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-14 20:40:15.517 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-14 20:40:15.517 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-14 20:40:15.517 [INFO    ] [energy_manager      ] 确保配置文件加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:40:15.521 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 20:40:15.522 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 20:40:15.522 [WARNING ] [energy_manager      ] 确保配置文件加载失败: alap_test_results/gpfp_system_test.yml
+2026-02-14 20:40:15.522 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/gpfp_system_test.yml, current_config_file=alap_test_results/gpfp_system_test.yml
+2026-02-14 20:40:15.522 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:11:52.812 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:11:52.820 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 22:11:52.826 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 22:11:52.826 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-14 22:11:52.827 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-14 22:11:52.827 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-14 22:11:52.827 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-14 22:11:52.827 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-14 22:11:52.827 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-14 22:11:52.827 [INFO    ] [energy_manager      ] 确保配置文件加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:11:52.831 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 22:11:52.832 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 22:11:52.832 [WARNING ] [energy_manager      ] 确保配置文件加载失败: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:11:52.832 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/gpfp_system_test.yml, current_config_file=alap_test_results/gpfp_system_test.yml
+2026-02-14 22:11:52.832 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:12:29.152 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:12:29.157 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 22:12:29.159 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 22:12:29.159 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-14 22:12:29.159 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-14 22:12:29.159 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-14 22:12:29.159 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-14 22:12:29.159 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-14 22:12:29.159 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-14 22:12:29.159 [INFO    ] [energy_manager      ] 确保配置文件加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:12:29.164 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 22:12:29.164 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 22:12:29.164 [WARNING ] [energy_manager      ] 确保配置文件加载失败: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:12:29.165 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/gpfp_system_test.yml, current_config_file=alap_test_results/gpfp_system_test.yml
+2026-02-14 22:12:29.165 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:12:57.707 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:12:57.712 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 22:12:57.714 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 22:12:57.715 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-14 22:12:57.715 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-14 22:12:57.715 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-14 22:12:57.715 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-14 22:12:57.715 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-14 22:12:57.715 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-14 22:12:57.715 [INFO    ] [energy_manager      ] 确保配置文件加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:12:57.720 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 22:12:57.720 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 22:12:57.720 [WARNING ] [energy_manager      ] 确保配置文件加载失败: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:12:57.721 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/gpfp_system_test.yml, current_config_file=alap_test_results/gpfp_system_test.yml
+2026-02-14 22:12:57.721 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:13:46.143 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:13:46.148 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 22:13:46.149 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 22:13:46.149 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-14 22:13:46.150 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-14 22:13:46.150 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-14 22:13:46.150 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-14 22:13:46.150 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-14 22:13:46.150 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-14 22:13:46.150 [INFO    ] [energy_manager      ] 确保配置文件加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:13:46.154 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 22:13:46.154 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 22:13:46.154 [WARNING ] [energy_manager      ] 确保配置文件加载失败: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:13:46.154 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/gpfp_system_test.yml, current_config_file=alap_test_results/gpfp_system_test.yml
+2026-02-14 22:13:46.154 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:13:52.219 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:13:52.223 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 22:13:52.225 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 22:13:52.225 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-14 22:13:52.225 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-14 22:13:52.225 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-14 22:13:52.225 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-14 22:13:52.225 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-14 22:13:52.225 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-14 22:13:52.225 [INFO    ] [energy_manager      ] 确保配置文件加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:13:52.229 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 22:13:52.229 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 22:13:52.229 [WARNING ] [energy_manager      ] 确保配置文件加载失败: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:13:52.230 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/gpfp_system_test.yml, current_config_file=alap_test_results/gpfp_system_test.yml
+2026-02-14 22:13:52.230 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:14:10.306 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:14:10.310 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 22:14:10.314 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 22:14:10.315 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-14 22:14:10.315 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-14 22:14:10.315 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-14 22:14:10.315 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-14 22:14:10.315 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-14 22:14:10.315 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-14 22:14:10.315 [INFO    ] [energy_manager      ] 确保配置文件加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:14:10.319 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 22:14:10.319 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 22:14:10.319 [WARNING ] [energy_manager      ] 确保配置文件加载失败: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:14:10.320 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/gpfp_system_test.yml, current_config_file=alap_test_results/gpfp_system_test.yml
+2026-02-14 22:14:10.320 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:15:14.012 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:15:14.016 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 22:15:14.018 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 22:15:14.018 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-14 22:15:14.018 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-14 22:15:14.018 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-14 22:15:14.018 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-14 22:15:14.018 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-14 22:15:14.018 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-14 22:15:14.018 [INFO    ] [energy_manager      ] 确保配置文件加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:15:14.022 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 22:15:14.022 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 22:15:14.022 [WARNING ] [energy_manager      ] 确保配置文件加载失败: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:15:14.023 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/gpfp_system_test.yml, current_config_file=alap_test_results/gpfp_system_test.yml
+2026-02-14 22:15:14.023 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:15:25.794 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:15:25.798 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 22:15:25.800 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 22:15:25.800 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 200.0
+2026-02-14 22:15:25.800 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 200.0
+2026-02-14 22:15:25.800 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-14 22:15:25.801 [INFO    ] [energy_manager      ] [Python] 初始能量: 200.0/800.0 J
+2026-02-14 22:15:25.801 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 0ms
+2026-02-14 22:15:25.801 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-14 22:15:25.801 [INFO    ] [energy_manager      ] 确保配置文件加载: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:15:25.805 [ERROR   ] [energy_manager      ] Error loading energy config: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+2026-02-14 22:15:25.805 [ERROR   ] [energy_manager      ] Traceback (most recent call last):
+  File "/home/devcontainers/PARTSim-project/./energy_manager.py", line 179, in load_from_file
+    self.system_config = yaml.safe_load(f)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 162, in safe_load
+    return load(stream, SafeLoader)
+  File "/usr/lib/python3/dist-packages/yaml/__init__.py", line 114, in load
+    return loader.get_single_data()
+  File "/usr/lib/python3/dist-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+  File "/usr/lib/python3/dist-packages/yaml/composer.py", line 127, in compose_mapping_node
+    while not self.check_event(MappingEndEvent):
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+  File "/usr/lib/python3/dist-packages/yaml/parser.py", line 428, in parse_block_mapping_key
+    if self.check_token(KeyToken):
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 223, in fetch_more_tokens
+    return self.fetch_value()
+  File "/usr/lib/python3/dist-packages/yaml/scanner.py", line 577, in fetch_value
+    raise ScannerError(None, None,
+yaml.scanner.ScannerError: mapping values are not allowed here
+  in "alap_test_results/gpfp_system_test.yml", line 39, column 23
+
+2026-02-14 22:15:25.805 [WARNING ] [energy_manager      ] 确保配置文件加载失败: alap_test_results/gpfp_system_test.yml
+2026-02-14 22:15:25.805 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/gpfp_system_test.yml, current_config_file=alap_test_results/gpfp_system_test.yml
+2026-02-14 22:15:25.805 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/gpfp_system_test.yml

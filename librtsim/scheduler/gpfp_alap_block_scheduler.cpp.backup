@@ -764,19 +764,6 @@ namespace RTSim {
 
             // 这是第ready_index个未dispatch的任务
             if (ready_index == n) {
-                // ⭐ ALAP时序门控检查（能量充足后）
-                // 即使能量足够，如果当前任务的Slack>0也不应该调度
-                Tick task_slack = calculateSlackForTask(task);
-                if (task_slack > 0) {
-                    SCHEDULER_LOG_INFO(std::string("⏸️ [ALAP-Block] getTaskN: 当前任务Slack>0，跳过 ") +
-                                           getTaskName(task) +
-                                           " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms");
-                    std::cout << "[DEBUG] ALAP-Block::getTaskN(" << n << ") - task slack>0, continue" << std::endl;
-                    ready_index++;
-                    continue;  // Skip this task
-                }
-                // Slack≤0的任务可以调度
-
                 // ⭐ 计算任务的1ms能耗
                 double unit_energy = calculateUnitEnergyForTask(task);
 
@@ -807,6 +794,88 @@ namespace RTSim {
                 } else {
                     SCHEDULER_LOG_DEBUG(std::string("♻️ [ALAP-Block] 任务已标记，直接返回: ") + getTaskName(task));
                 }
+
+                return task;
+                // ⭐ ALAP时序门控检查（能量充足后）
+                // 即使能量足够，如果当前任务的Slack>0也不应该调度
+                Tick task_slack = calculateSlackForTask(task);
+                if (task_slack > 0) {
+                    SCHEDULER_LOG_INFO(std::string("⏸️  [ALAP-Block] getTaskN: 当前任务Slack>0，跳过") +
+                                       " 任务=" + getTaskName(task) +
+                                       " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms");
+                    std::cout << "[DEBUG] ALAP-Block::getTaskN(" << n << ") - task slack>0, continue" << std::endl;
+                    ready_index++;
+                    continue;
+                }
+                SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Block] getTaskN: 调度Slack≤0的任务") +
+                                   " 任务=" + getTaskName(task) +
+                                   " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms");
+
+                return task;
+                // ⭐ ALAP时序门控检查（能量充足后）
+                // 即使能量足够，如果当前任务的Slack>0也不应该调度
+                Tick task_slack = calculateSlackForTask(task);
+                if (task_slack > 0) {
+                    SCHEDULER_LOG_INFO(std::string("⏸️  [ALAP-Block] getTaskN: 当前任务Slack>0，跳过") +
+                                       " 任务=" + getTaskName(task) +
+                                       " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms");
+                    std::cout << "[DEBUG] ALAP-Block::getTaskN(" << n << ") - task slack>0, continue" << std::endl;
+                    ready_index++;
+                    continue;
+                }
+                SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Block] getTaskN: 调度Slack≤0的任务") +
+                                   " 任务=" + getTaskName(task) +
+                                   " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms");
+
+                return task;
+                // ⭐ ALAP时序门控检查（能量充足后）
+                // 即使能量足够，如果当前任务的Slack>0也不应该调度
+                Tick task_slack = calculateSlackForTask(task);
+                if (task_slack > 0) {
+                    SCHEDULER_LOG_INFO(std::string("⏸️  [ALAP-Block] getTaskN: 当前任务Slack>0，跳过") +
+                                       " 任务=" + getTaskName(task) +
+                                       " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms");
+                    std::cout << "[DEBUG] ALAP-Block::getTaskN(" << n << ") - task slack>0, continue" << std::endl;
+                    ready_index++;
+                    continue;
+                }
+                SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Block] getTaskN: 调度Slack≤0的任务") +
+                                   " 任务=" + getTaskName(task) +
+                                   " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms");
+
+                return task;
+                // ⭐ ALAP时序门控检查（能量充足后）
+                // 即使能量足够，如果当前任务的Slack>0也不应该调度
+                Tick task_slack = calculateSlackForTask(task);
+                if (task_slack > 0) {
+                    SCHEDULER_LOG_INFO(std::string("⏸️  [ALAP-Block] getTaskN: 当前任务Slack>0，跳过") +
+                                       " 任务=" + getTaskName(task) +
+                                       " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms");
+                    std::cout << "[DEBUG] ALAP-Block::getTaskN(" << n << ") - task slack>0, continue" << std::endl;
+                    ready_index++;
+                    continue;
+                }
+                SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Block] getTaskN: 调度Slack≤0的任务") +
+                                   " 任务=" + getTaskName(task) +
+                                   " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms");
+
+                return task;
+                // ⭐ ALAP时序门控检查（能量充足后）
+                // 即使能量足够，如果当前任务的Slack>0也不应该调度
+                Tick task_slack = calculateSlackForTask(task);
+                if (task_slack > 0) {
+                    SCHEDULER_LOG_INFO(std::string("⏸️  [ALAP-Block] getTaskN: 当前任务Slack>0，跳过") +
+                                       " 任务=" + getTaskName(task) +
+                                       " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms");
+                    std::cout << "[DEBUG] ALAP-Block::getTaskN(" << n << ") - task slack>0, continue" << std::endl;
+                    ready_index++;
+                    continue;
+                }
+                SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Block] getTaskN: 调度Slack≤0的任务") +
+                                   " 任务=" + getTaskName(task) +
+                                   " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms");
+
+                return task;
 
                 return task;
             } else {
@@ -1698,28 +1767,32 @@ namespace RTSim {
         }
 
         Tick current_time = SIMUL.getTime();
-        Tick min_slack = Tick(-1);
 
-        // 计算所有就绪任务的Slack，找最小值
+        // ⭐ ALAP核心逻辑：检查是否所有任务的Slack都>0
+        // 如果任意一个任务Slack≤0，就应该唤醒开始调度
+        bool all_slack_positive = true;
+
         for (AbsRTTask *task : _ready_queue) {
             if (!task) continue;
 
             Tick slack = calculateSlackForTask(task);
 
-            if (min_slack < 0 || slack < min_slack) {
-                min_slack = slack;
+            if (slack <= 0) {
+                // 只要有一个任务slack≤0，就打破标记
+                all_slack_positive = false;
+                SCHEDULER_LOG_INFO("⏰  [ALAP-Block] ALAP门控: 任务 " + getTaskName(task) +
+                                   " Slack≤0 (" + std::to_string(static_cast<int64_t>(slack)) + "ms)，应该唤醒");
+                break;  // 不需要继续检查了
             }
         }
 
-        // 门控逻辑
-        if (min_slack > 0) {
-            SCHEDULER_LOG_INFO("⏸️  [ALAP-Block] ALAP时序门控：Slack > 0 (" +
-                               std::to_string(static_cast<int64_t>(min_slack)) + "ms)，强制休眠");
+        // 门控逻辑：只有所有任务slack都>0才休眠
+        if (all_slack_positive) {
+            SCHEDULER_LOG_INFO("⏸️  [ALAP-Block] ALAP时序门控：所有任务Slack>0，强制休眠收集能量");
             _stats.total_alap_forced_idle++;
             return false;  // 强制IDLE，不调度任何任务
         } else {
-            SCHEDULER_LOG_INFO("✅ [ALAP-Block] ALAP时序门控：Slack ≤ 0 (" +
-                               std::to_string(static_cast<int64_t>(min_slack)) + "ms)，唤醒，允许调度");
+            SCHEDULER_LOG_INFO("✅ [ALAP-Block] ALAP时序门控：至少一个任务Slack≤0，唤醒允许调度");
             return true;  // 门控通过，允许调度
         }
     }
@@ -1735,7 +1808,8 @@ namespace RTSim {
 
         double remaining_double = task->getRemainingWCET();
         Tick remaining = Tick(remaining_double);
-        Tick slack = absolute_deadline - remaining - current_time;
+        Tick wcet = 20;  // 使用固定值或从任务模型获取
+        Tick slack = absolute_deadline - wcet - current_time;
 
         SCHEDULER_LOG_DEBUG("🧮 [ALAP-Block] Slack计算: " +
                            getTaskName(task) +

@@ -759,9 +759,22 @@ namespace RTSim {
 
             // ⭐ Bug #4修复：只选择实际能调度的任务（从过滤后的队列）
             for (int j = 0; j < actual_new_tasks_can_schedule && j < static_cast<int>(filtered_ready.size()); ++j) {
-                new_tasks_to_schedule.push_back(filtered_ready[j]);
+                AbsRTTask *task = filtered_ready[j];
+
+                // ⭐ ALAP时序门控检查（批量构建时）
+                // 即使能量足够，如果当前任务的Slack>0也不应该加入批量
+                Tick task_slack = calculateSlackForTask(task);
+                if (task_slack > 0) {
+                    SCHEDULER_LOG_INFO(std::string("⏸️ [ALAP-Sync] 批量构建: 任务Slack>0，跳过 ") +
+                                           getTaskName(task) +
+                                           " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms");
+                    continue;  // Skip this task
+                }
+                // Slack≤0的任务可以加入批量
+
+                new_tasks_to_schedule.push_back(task);
                 SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Sync] 选择新任务: ") +
-                                   getTaskName(filtered_ready[j]));
+                                   getTaskName(task));
             }
 
             // 保存所有就绪任务用于日志
