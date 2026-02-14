@@ -1,4 +1,4 @@
-// gpfp_tgf_scheduler.cpp - TGF (Tick-based Greedy First) Scheduler Implementation
+// gpfp_tgf_scheduler.cpp - ALAP-NonBlock (Tick-based Greedy First) Scheduler Implementation
 // 算法特点：
 // 1. 基于当前实际能量进行即时判断（无前瞻性预测）
 // 2. 每ms逐次扣减能耗
@@ -13,7 +13,7 @@
 #include <memory>
 #include <metasim/factory.hpp>
 #include <metasim/simul.hpp>
-#include <rtsim/scheduler/gpfp_tgf_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_alap_nonblock_scheduler.hpp>
 #include <rtsim/task.hpp>
 #include <rtsim/rttask.hpp>
 #include <rtsim/exeinstr.hpp>
@@ -29,16 +29,16 @@ namespace RTSim {
     using namespace MetaSim;
 
     // =====================================================
-    // TGFTickEvent 实现
+    // ALAPNonBlockTickEvent 实现
     // =====================================================
 
-    TGFTickEvent::TGFTickEvent(TGFScheduler *scheduler)
-        : MetaSim::Event("TGFTickEvent", MetaSim::Event::_DEFAULT_PRIORITY + 10),
+    ALAPNonBlockTickEvent::ALAPNonBlockTickEvent(ALAPNonBlockScheduler *scheduler)
+        : MetaSim::Event("ALAPNonBlockTickEvent", MetaSim::Event::_DEFAULT_PRIORITY + 10),
           _scheduler(scheduler) {
         // ⭐ V30修复：较低优先级，确保任务到达事件先于tick执行
     }
 
-    void TGFTickEvent::doit() {
+    void ALAPNonBlockTickEvent::doit() {
         if (!_scheduler) {
             return;
         }
@@ -46,7 +46,7 @@ namespace RTSim {
         Tick current_time = SIMUL.getTime();
         int64_t current_ms = static_cast<int64_t>(current_time);
 
-        SCHEDULER_LOG_INFO(std::string("⏱️ [TGF] ===== Tick事件触发 @ ") +
+        SCHEDULER_LOG_INFO(std::string("⏱️ [ALAP-NonBlock] ===== Tick事件触发 @ ") +
                            std::to_string(current_ms) + "ms =====");
 
         // 执行tick调度
@@ -57,13 +57,13 @@ namespace RTSim {
     }
 
     // =====================================================
-    // TGFEnergyCheckEvent 实现 - 运行时能量检查
+    // ALAP-NonBlockEnergyCheckEvent 实现 - 运行时能量检查
     // ⭐ V40重构：能量检查事件已删除，能量由performTickScheduling���理
     // =====================================================
 
     /*
-    TGFEnergyCheckEvent::TGFEnergyCheckEvent(TGFScheduler *scheduler, AbsRTTask *task, CPU *cpu)
-        : MetaSim::Event("TGFEnergyCheckEvent", MetaSim::Event::_DEFAULT_PRIORITY - 5),
+    ALAP-NonBlockEnergyCheckEvent::ALAP-NonBlockEnergyCheckEvent(ALAPNonBlockScheduler *scheduler, AbsRTTask *task, CPU *cpu)
+        : MetaSim::Event("ALAP-NonBlockEnergyCheckEvent", MetaSim::Event::_DEFAULT_PRIORITY - 5),
           _scheduler(scheduler),
           _task(task),
           _cpu(cpu),
@@ -71,7 +71,7 @@ namespace RTSim {
         // 更高优先级，确保能量检查及时执行
     }
 
-    void TGFEnergyCheckEvent::doit() {
+    void ALAP-NonBlockEnergyCheckEvent::doit() {
         if (!_scheduler || !_task) {
             return;
         }
@@ -79,7 +79,7 @@ namespace RTSim {
         // ⭐ 安全检查：验证任务是否还有效（是否还在task_models中）
         if (_scheduler->_task_models.find(_task) == _scheduler->_task_models.end()) {
             // 任务已被删除，停止这个能量检查事件
-            SCHEDULER_LOG_DEBUG(std::string("⚠️ [TGF] 能量检查：任务已删除，停止检查"));
+            SCHEDULER_LOG_DEBUG(std::string("⚠️ [ALAP-NonBlock] 能量检查：任务已删除，停止检查"));
             return;
         }
 
@@ -87,7 +87,7 @@ namespace RTSim {
         auto it = _scheduler->_energy_check_events.find(_task);
         if (it == _scheduler->_energy_check_events.end() || it->second != this) {
             // 事件已被替换或删除，停止处理
-            SCHEDULER_LOG_DEBUG(std::string("⚠️ [TGF] 能量检查：事件已失效，停止检查"));
+            SCHEDULER_LOG_DEBUG(std::string("⚠️ [ALAP-NonBlock] 能量检查：事件已失效，停止检查"));
             return;
         }
 
@@ -101,7 +101,7 @@ namespace RTSim {
         // ⭐ 检查任务是否仍在执行状态
         // 如果任务已被中断（suspend），则不应再扣除能量
         if (!_task->isExecuting()) {
-            SCHEDULER_LOG_DEBUG(std::string("⚠️ [TGF] 能量检查：任务已停止执行，不再扣除能量: ") +
+            SCHEDULER_LOG_DEBUG(std::string("⚠️ [ALAP-NonBlock] 能量检查：任务已停止执行，不再扣除能量: ") +
                                _scheduler->getTaskName(_task) + " 时间=" + std::to_string(static_cast<long>(SIMUL.getTime())) + "ms");
             // ⭐ 关键修复：清理能量检查事件映射，允许后续实例启动新的检查
             _scheduler->_energy_check_events.erase(_task);
@@ -113,9 +113,9 @@ namespace RTSim {
 
         // ⭐ 关键修复：检查任务是否已经达到WCET
         // 如果已经达到WCET，任务应该完成，不应该再续期
-        TGFTaskModel *task_model = _scheduler->getTaskModel(_task);
+        ALAPNonBlockTaskModel *task_model = _scheduler->getTaskModel(_task);
         if (task_model && _ms_executed >= task_model->getWCET()) {
-            SCHEDULER_LOG_INFO(std::string("✅ [TGF] 任务已达到WCET，完成执行: ") +
+            SCHEDULER_LOG_INFO(std::string("✅ [ALAP-NonBlock] 任务已达到WCET，完成执行: ") +
                                _scheduler->getTaskName(_task) + " 已执行=" + std::to_string(_ms_executed) +
                                "ms WCET=" + std::to_string(task_model->getWCET()) + "ms");
                 // ⭐ 关键修复：从_energy_check_events中移除，允许后续实例启动新的能量检查
@@ -130,14 +130,14 @@ namespace RTSim {
         // ⭐ V29.1修复：恢复运行中任务的续期能量扣除
         // 设计原则：
         // - getTaskN(): 负责新任务的首次能量扣除
-        // - TGFEnergyCheckEvent: 负责运行中任务的续期能量扣除
+        // - ALAP-NonBlockEnergyCheckEvent: 负责运行中任务的续期能量扣除
         
         // 检查是否有足够能量续期1ms
         // ⭐ V35修复：当能量 <= 1ms能耗时，立即中断任务
         // 避免在能量恰好等于单位能耗时继续执行，导致下个Tick能量为负
         if (current_energy <= unit_energy + EPSILON) {
             // ⭐ 能量不足以支撑下一个1ms，立即中断任务（不扣除能量）
-            SCHEDULER_LOG_INFO(std::string("⚡ [TGF] 能量刚好耗尽或不足，立即中断任务: ") +
+            SCHEDULER_LOG_INFO(std::string("⚡ [ALAP-NonBlock] 能量刚好耗尽或不足，立即中断任务: ") +
                                _scheduler->getTaskName(_task) + " 需要=" + std::to_string(unit_energy * 1000) + " mJ" +
                                " 剩余=" + std::to_string(current_energy * 1000) + " mJ" +
                                " 已执行=" + std::to_string(_ms_executed) + "ms");
@@ -155,7 +155,7 @@ namespace RTSim {
             // 中断当前任务
             if (_cpu) {
                 _scheduler->_kernel->suspend(_task);
-                SCHEDULER_LOG_INFO(std::string("⚠️ [TGF] 任务因能量不足被挂起: ") + _scheduler->getTaskName(_task));
+                SCHEDULER_LOG_INFO(std::string("⚠️ [ALAP-NonBlock] 任务因能量不足被挂起: ") + _scheduler->getTaskName(_task));
             }
 
             // ⭐ 关键修复：清理能量检查事件映射，允许后续实例启动新的检查
@@ -177,7 +177,7 @@ namespace RTSim {
         _scheduler->_current_energy -= unit_energy;
         _scheduler->_stats.total_energy_consumed += unit_energy;
 
-        SCHEDULER_LOG_INFO(std::string("⚡ [TGF] 运行中任务续期: ") +
+        SCHEDULER_LOG_INFO(std::string("⚡ [ALAP-NonBlock] 运行中任务续期: ") +
                            _scheduler->getTaskName(_task) + " 1ms能耗=" + std::to_string(unit_energy * 1000) + " mJ" +
                            " " + std::to_string(old_energy * 1000) + " mJ → " +
                            std::to_string(_scheduler->_current_energy * 1000) + " mJ" +
@@ -187,13 +187,13 @@ namespace RTSim {
         post(SIMUL.getTime() + 1);
         return;
     }
-    */  // ⭐ V40重构：TGFEnergyCheckEvent已删除
+    */  // ⭐ V40重构：ALAP-NonBlockEnergyCheckEvent已删除
 
     // =====================================================
-    // TGFTaskModel 实现
+    // ALAPNonBlockTaskModel 实现
     // =====================================================
 
-    TGFTaskModel::TGFTaskModel(AbsRTTask *t, int period, int wcet,
+    ALAPNonBlockTaskModel::ALAPNonBlockTaskModel(AbsRTTask *t, int period, int wcet,
                                const std::string &workload_type,
                                double energy_coefficient,
                                MetaSim::Tick arrival_offset)
@@ -210,26 +210,26 @@ namespace RTSim {
         // 能量计算稍后在调度器初始化时完成
     }
 
-    TGFTaskModel::~TGFTaskModel() {}
+    ALAPNonBlockTaskModel::~ALAPNonBlockTaskModel() {}
 
-    Tick TGFTaskModel::getPriority() const {
+    Tick ALAPNonBlockTaskModel::getPriority() const {
         return _rm_priority;
     }
 
-    void TGFTaskModel::changePriority(Tick p) {
+    void ALAPNonBlockTaskModel::changePriority(Tick p) {
         _rm_priority = p;
     }
 
-    void TGFTaskModel::setPeriod(int period) {
+    void ALAPNonBlockTaskModel::setPeriod(int period) {
         _period = period;
         _rm_priority = period;  // RM优先级等于周期
     }
 
     // =====================================================
-    // TGFScheduler 实现
+    // ALAPNonBlockScheduler 实现
     // =====================================================
 
-    TGFScheduler::TGFScheduler()
+    ALAPNonBlockScheduler::ALAPNonBlockScheduler()
         : Scheduler(),
           _current_energy(0.0),
           _initial_energy(0.0),
@@ -245,30 +245,30 @@ namespace RTSim {
           _first_tick_scheduled(false),
           _kernel(nullptr) {
 
-        SCHEDULER_LOG_INFO("🚀 [TGF] TGF Scheduler 初始化");
+        SCHEDULER_LOG_INFO("🚀 [ALAP-NonBlock] ALAP-NonBlock Scheduler 初始化");
 
         // 从ConfigManager获取配置
         ConfigManager &configMgr = ConfigManager::getInstance();
         std::string config_file = configMgr.getConfigFilePath();
 
         _max_energy = configMgr.getMaxEnergy();
-        SCHEDULER_LOG_INFO(std::string("⚡ [TGF] 最大能量: ") + std::to_string(_max_energy) + "J");
+        SCHEDULER_LOG_INFO(std::string("⚡ [ALAP-NonBlock] 最大能量: ") + std::to_string(_max_energy) + "J");
 
         if (config_file.empty()) {
             const char *config_file_env = std::getenv("ENERGY_CONFIG_FILE");
             config_file = config_file_env ? config_file_env : "gpfp_system.yml";
         }
 
-        SCHEDULER_LOG_INFO(std::string("📁 [TGF] 配置文件: ") + config_file);
+        SCHEDULER_LOG_INFO(std::string("📁 [ALAP-NonBlock] 配置文件: ") + config_file);
         setenv("ENERGY_CONFIG_FILE", config_file.c_str(), 1);
 
         // 初始化EnergyBridge
         bool bridge_initialized = EnergyBridge::getInstance().initialize(config_file);
         if (bridge_initialized) {
-            SCHEDULER_LOG_INFO("✅ [TGF] EnergyBridge 初始化成功");
+            SCHEDULER_LOG_INFO("✅ [ALAP-NonBlock] EnergyBridge 初始化成功");
 
             _start_time_offset = configMgr.getStartTimeOffset();
-            SCHEDULER_LOG_INFO(std::string("⏰ [TGF] 开始时间偏移: ") +
+            SCHEDULER_LOG_INFO(std::string("⏰ [ALAP-NonBlock] 开始时间偏移: ") +
                               std::to_string(static_cast<int64_t>(_start_time_offset)) + "ms");
 
             // 读取太阳能配置
@@ -344,14 +344,14 @@ namespace RTSim {
                         }
                     }
 
-                    SCHEDULER_LOG_INFO(std::string("☀️ [TGF] 太阳能配置: ") +
+                    SCHEDULER_LOG_INFO(std::string("☀️ [ALAP-NonBlock] 太阳能配置: ") +
                                       "use_real=" + (_use_real_solar_data ? "true" : "false") +
                                       " file=" + _solar_data_file +
                                       " eff=" + std::to_string(_pv_efficiency) +
                                       " area=" + std::to_string(_pv_area_m2) + "m²");
                 }
             } catch (const std::exception &e) {
-                SCHEDULER_LOG_WARNING(std::string("⚠️ [TGF] 解析太阳能配置失败: ") + e.what());
+                SCHEDULER_LOG_WARNING(std::string("⚠️ [ALAP-NonBlock] 解析太阳能配置失败: ") + e.what());
             }
 
             // 读取初始能量
@@ -359,40 +359,40 @@ namespace RTSim {
             if (bridge_energy > 0) {
                 _initial_energy = bridge_energy;
                 _current_energy = _initial_energy;
-                SCHEDULER_LOG_INFO(std::string("💰 [TGF] 初始能量: ") + std::to_string(_initial_energy) + "J");
+                SCHEDULER_LOG_INFO(std::string("💰 [ALAP-NonBlock] 初始能量: ") + std::to_string(_initial_energy) + "J");
             }
         } else {
-            SCHEDULER_LOG_WARNING("⚠️ [TGF] EnergyBridge 初始化失败，使用ConfigManager获取能量");
+            SCHEDULER_LOG_WARNING("⚠️ [ALAP-NonBlock] EnergyBridge 初始化失败，使用ConfigManager获取能量");
 
             _start_time_offset = configMgr.getStartTimeOffset();
             double config_energy = configMgr.getInitialEnergy();
             if (config_energy > 0) {
                 _initial_energy = config_energy;
                 _current_energy = _initial_energy;
-                SCHEDULER_LOG_INFO(std::string("💰 [TGF] 从ConfigManager获取初始能量: ") +
+                SCHEDULER_LOG_INFO(std::string("💰 [ALAP-NonBlock] 从ConfigManager获取初始能量: ") +
                                   std::to_string(_initial_energy) + "J");
             } else {
-                SCHEDULER_LOG_ERROR("❌ [TGF] 无法获取初始能量，调度器将无法工作！");
+                SCHEDULER_LOG_ERROR("❌ [ALAP-NonBlock] 无法获取初始能量，调度器将无法工作！");
             }
         }
 
         // 创建Tick事件
-        _tick_event = new TGFTickEvent(this);
+        _tick_event = new ALAPNonBlockTickEvent(this);
 
-        SCHEDULER_LOG_INFO("✅ [TGF] TGF Scheduler 初始化完成");
+        SCHEDULER_LOG_INFO("✅ [ALAP-NonBlock] ALAP-NonBlock Scheduler 初始化完成");
     }
 
-    TGFScheduler::TGFScheduler(const std::vector<std::string> &params)
-        : TGFScheduler() {
+    ALAPNonBlockScheduler::ALAPNonBlockScheduler(const std::vector<std::string> &params)
+        : ALAPNonBlockScheduler() {
         // 委托给默认构造函数
     }
 
-    std::unique_ptr<TGFScheduler>
-        TGFScheduler::createInstance(const std::vector<std::string> &params) {
-        return std::make_unique<TGFScheduler>(params);
+    std::unique_ptr<ALAPNonBlockScheduler>
+        ALAPNonBlockScheduler::createInstance(const std::vector<std::string> &params) {
+        return std::make_unique<ALAPNonBlockScheduler>(params);
     }
 
-    TGFScheduler::~TGFScheduler() {
+    ALAPNonBlockScheduler::~ALAPNonBlockScheduler() {
         if (_tick_event) {
             delete _tick_event;
             _tick_event = nullptr;
@@ -406,19 +406,13 @@ namespace RTSim {
     }
 
     // =====================================================
-    // 核心调度逻辑 - TGF算法的核心
+    // 核心调度逻辑 - ALAP-NonBlock算法的核心
     // =====================================================
 
-    void TGFScheduler::performTickScheduling() {
-        SCHEDULER_LOG_INFO(std::string("🔄 [TGF] ===== Tick ") +
+    void ALAPNonBlockScheduler::performTickScheduling() {
+        SCHEDULER_LOG_INFO(std::string("🔄 [ALAP-NonBlock] ===== Tick ") +
                            std::to_string(static_cast<int64_t>(SIMUL.getTime())) + "ms =====");
         SCHEDULER_LOG_INFO("⚡ 初始能量: " + std::to_string(_current_energy * 1000) + " mJ");
-
-        // ⭐ Bug修复3：能量耗尽时跳过调度
-        if (_energy_depleted && _current_energy < 0.000001) {
-            SCHEDULER_LOG_INFO(std::string("💀 [TGF] 能量已耗尽，跳过Tick调度"));
-            return;
-        }
 
         _stats.total_tick_count++;
 
@@ -429,6 +423,8 @@ namespace RTSim {
         Tick current_time = SIMUL.getTime();
 
         // ========== 第1步：收集太阳能 ==========
+        // ⭐ 关键修复：太阳能收集必须在能量耗尽检查之前执行
+        // 否则当初始能量为0时，系统会因为能量耗尽而跳过太阳能收集，形成死锁
         Tick elapsed = current_time - _last_tick_time;
         if (elapsed > 0) {
             double harvested = collectSolarEnergy(current_time);
@@ -438,17 +434,42 @@ namespace RTSim {
                 SCHEDULER_LOG_INFO("☀️ 收集太阳能: +" +
                                    std::to_string(harvested * 1000) + " mJ → " +
                                    std::to_string(_current_energy * 1000) + " mJ");
+
+                // ⭐ V43修复：只有当能量足够时才清除能量耗尽标志
+                // 使用合理阈值（10 mJ）判断能量是否足够恢复调度
+                const double RECOVERY_THRESHOLD = 0.010;  // 10 mJ
+                if (_energy_depleted && _current_energy >= RECOVERY_THRESHOLD) {
+                    _energy_depleted = false;
+                    SCHEDULER_LOG_INFO("🔋 [ALAP-NonBlock] 太阳能充电成功，恢复调度 (能量=" +
+                                      std::to_string(_current_energy * 1000) + " mJ >= 阈值=" +
+                                      std::to_string(RECOVERY_THRESHOLD * 1000) + " mJ)");
+                }
             }
         }
         _last_tick_time = current_time;
+
+        // ⭐ Bug修复3：能量耗尽时跳过任务调度（但已经收集了太阳能）
+        if (_energy_depleted && _current_energy < 0.000001) {
+            SCHEDULER_LOG_INFO(std::string("💀 [ALAP-NonBlock] 能量已耗尽，跳过任务调度"));
+            return;
+        }
 
         // 确保能量不超过最大容量
         if (_current_energy > _max_energy) {
             _current_energy = _max_energy;
         }
 
+        // ========== 阶段一：ALAP时序门控 ==========
+        // ⭐ ALAP核心：在能量分发之前检查Slack，决定是否强制休眠
+        if (!checkALAPTimingGate()) {
+            // Slack > 0，强制休眠，本tick不进行任何任务调度
+            SCHEDULER_LOG_INFO("⏸️  [ALAP-NonBlock] ALAP时序门控：强制休眠，跳过本Tick调度");
+            return;
+        }
+        // Slack ≤ 0，唤醒，继续进行能量分发
+
         // ========== 第2步：处理运行中任务的续期能量 ==========
-        // ⭐ 重构：在tick边界扣除运行任务的续期能量（替代TGFEnergyCheckEvent）
+        // ⭐ 重构：在tick边界扣除运行任务的续期能量（替代ALAP-NonBlockEnergyCheckEvent）
         // ⭐ V40修复：确保kernel已设置，如果没有则尝试获取
         if (!_kernel) {
             _kernel = getKernel();
@@ -467,7 +488,7 @@ namespace RTSim {
                 // ⭐ V42修复：跳过当前tick中新调度的任务（能量已在getTaskN中扣除）
                 // 使用_newly_dispatched_this_tick而不是_counted_tasks_in_dispatch
                 if (_newly_dispatched_this_tick.find(task) != _newly_dispatched_this_tick.end()) {
-                    SCHEDULER_LOG_DEBUG(std::string("⏭️ [TGF] 跳过新任务的续期扣除: ") + getTaskName(task));
+                    SCHEDULER_LOG_DEBUG(std::string("⏭️ [ALAP-NonBlock] 跳过新任务的续期扣除: ") + getTaskName(task));
                     continue;
                 }
 
@@ -476,6 +497,13 @@ namespace RTSim {
                 // 检查是否有足够能量续期1ms
                 const double EPSILON = 1e-9;
                 if (_current_energy < unit_energy - EPSILON) {
+                    // ⭐ V43修复：能量不足时设置能量耗尽标志
+                    if (!_energy_depleted) {
+                        _energy_depleted = true;
+                        _current_energy = 0.0;  // 强制设为0，防止变负
+                        SCHEDULER_LOG_WARNING("💀 [ALAP-NonBlock] 能量耗尽，设置_energy_depleted标志");
+                    }
+
                     // 能量不足，加入挂起列表
                     tasks_to_suspend.push_back(task);
                     SCHEDULER_LOG_WARNING("⚠️ 续期能量不足，将挂起: " +
@@ -513,11 +541,26 @@ namespace RTSim {
             // 记录调度前的能量
             double energy_before_scheduling = _current_energy;
 
-            // ⭐ V42修复：不在dispatch开始时清空标记
-            // 标记应该在dispatch后自然累积，只在tick边界事件之间保持
-            // 这样可以防止已调度任务在下一个tick被重新扣除
+            // ⭐ 关键：先扣除已标记但未扣除的任务能量（来自arrival或onTaskEnd的dispatch）
+            for (AbsRTTask *task : _counted_tasks_in_dispatch) {
+                if (_energy_deducted_tasks.find(task) == _energy_deducted_tasks.end()) {
+                    double unit_energy = calculateUnitEnergyForTask(task);
+                    _current_energy -= unit_energy;
+                    _stats.total_energy_consumed += unit_energy;
+                    _energy_deducted_tasks.insert(task);
 
-            // ⭐ TGF关键修复：循环调用dispatch()直到所有CPU被填满或无法调度更多任务
+                    SCHEDULER_LOG_INFO("✅ [ALAP-NonBlock] 扣除上周期任务初始能量: " +
+                                       getTaskName(task) +
+                                       " -" + std::to_string(unit_energy * 1000) + " mJ → " +
+                                       std::to_string(_current_energy * 1000) + " mJ");
+                }
+            }
+
+            // ⭐ 清空本次tick的调度记录
+            _counted_tasks_in_dispatch.clear();
+            _dispatching_tasks_total_energy = 0.0;
+
+            // ⭐ ALAP-NonBlock关键修复：循环调用dispatch()直到所有CPU被填满或无法调度更多任务
             int dispatch_attempts = 0;
             const int MAX_DISPATCH_ITERATIONS = 100;  // 防止无限循环
 
@@ -532,7 +575,7 @@ namespace RTSim {
                 }
 
                 if (all_cpus_full) {
-                    SCHEDULER_LOG_DEBUG("✅ [TGF] 所有CPU已填满，停止调度");
+                    SCHEDULER_LOG_DEBUG("✅ [ALAP-NonBlock] 所有CPU已填满，停止调度");
                     break;
                 }
 
@@ -548,22 +591,35 @@ namespace RTSim {
 
                 // 如果没有任务被调度（状态没变化），停止调度
                 if (tasks_before == tasks_after) {
-                    SCHEDULER_LOG_DEBUG("⏹️ [TGF] 无更多任务可调度，停止dispatch循环");
+                    SCHEDULER_LOG_DEBUG("⏹️ [ALAP-NonBlock] 无更多任务可调度，停止dispatch循环");
                     break;
                 }
 
-                SCHEDULER_LOG_DEBUG(std::string("🔄 [TGF] dispatch循环 #") + std::to_string(dispatch_attempts) +
+                SCHEDULER_LOG_DEBUG(std::string("🔄 [ALAP-NonBlock] dispatch循环 #") + std::to_string(dispatch_attempts) +
                                    " _ready_queue.size()=" + std::to_string(_ready_queue.size()) +
                                    " _running_tasks.size()=" + std::to_string(_running_tasks.size()));
             }
 
             if (dispatch_attempts >= MAX_DISPATCH_ITERATIONS) {
-                SCHEDULER_LOG_WARNING("⚠️ [TGF] dispatch循环达到最大迭代次数，可能存在bug");
+                SCHEDULER_LOG_WARNING("⚠️ [ALAP-NonBlock] dispatch循环达到最大迭代次数，可能存在bug");
             }
 
-            // ⭐ V41重构：能量扣除已在getTaskN()中立即完成，此处不需要额外扣除
-            // ⭐ V42修复：不再在此处清空标记，否则会导致中途dispatch的任务被重复扣除
-            // 标记会自然累积，只有在任务真正结束或被抢占时才应该移除
+            // ⭐ 关键：在dispatch后，统一扣除所有已标记任务的能量
+            // 只扣除尚未扣除过的任务（检查_energy_deducted_tasks）
+            for (AbsRTTask *task : _counted_tasks_in_dispatch) {
+                if (_energy_deducted_tasks.find(task) == _energy_deducted_tasks.end()) {
+                    // 任务尚未扣除能量，现在扣除
+                    double unit_energy = calculateUnitEnergyForTask(task);
+                    _current_energy -= unit_energy;
+                    _stats.total_energy_consumed += unit_energy;
+                    _energy_deducted_tasks.insert(task);  // 标记已扣除
+
+                    SCHEDULER_LOG_INFO("✅ [ALAP-NonBlock] 新任务扣除初始能量: " +
+                                       getTaskName(task) +
+                                       " -" + std::to_string(unit_energy * 1000) + " mJ → " +
+                                       std::to_string(_current_energy * 1000) + " mJ");
+                }
+            }
         }
 
         SCHEDULER_LOG_INFO("✅ Tick " +
@@ -572,29 +628,29 @@ namespace RTSim {
                            std::to_string(_current_energy * 1000) + " mJ");
     }
 
-    void TGFScheduler::schedule() {
-        // TGF依赖MRTKernel::dispatch() -> getTaskN()流程
-        SCHEDULER_LOG_DEBUG("🔔 [TGF] schedule() 被调用");
+    void ALAPNonBlockScheduler::schedule() {
+        // ALAP-NonBlock依赖MRTKernel::dispatch() -> getTaskN()流程
+        SCHEDULER_LOG_DEBUG("🔔 [ALAP-NonBlock] schedule() 被调用");
     }
 
     // =====================================================
     // getFirst - 获取第一个要调度的任务
     // =====================================================
 
-    AbsRTTask *TGFScheduler::getFirst() {
-        SCHEDULER_LOG_DEBUG(std::string("🔍 [TGF] getFirst() 被调用") +
+    AbsRTTask *ALAPNonBlockScheduler::getFirst() {
+        SCHEDULER_LOG_DEBUG(std::string("🔍 [ALAP-NonBlock] getFirst() 被调用") +
                            " 当前能量: " + std::to_string(_current_energy) + "J");
 
         // ⭐ 核心：不在这里收集能量，能量收集在tick边界完成
 
         if (_ready_queue.empty()) {
-            SCHEDULER_LOG_DEBUG("📭 [TGF] getFirst: 就绪队列为空");
+            SCHEDULER_LOG_DEBUG("📭 [ALAP-NonBlock] getFirst: 就绪队列为空");
             return nullptr;
         }
 
         AbsRTTask *first_task = _ready_queue.front();
         if (!first_task) {
-            SCHEDULER_LOG_DEBUG("📭 [TGF] getFirst: 队列首任务为空");
+            SCHEDULER_LOG_DEBUG("📭 [ALAP-NonBlock] getFirst: 队列首任务为空");
             return nullptr;
         }
 
@@ -602,7 +658,7 @@ namespace RTSim {
         double unit_energy = calculateUnitEnergyForTask(first_task);
 
         if (_current_energy < unit_energy) {
-            SCHEDULER_LOG_INFO(std::string("❌ [TGF] getFirst: 能量不足") +
+            SCHEDULER_LOG_INFO(std::string("❌ [ALAP-NonBlock] getFirst: 能量不足") +
                               " 任务: " + getTaskName(first_task) +
                               " 需要: " + std::to_string(unit_energy) + "J" +
                               " 当前: " + std::to_string(_current_energy) + "J");
@@ -617,29 +673,37 @@ namespace RTSim {
     // getTaskN - 获取第n个要调度的任务（贪婪策略级联调度）
     // =====================================================
 
-    AbsRTTask *TGFScheduler::getTaskN(unsigned int n) {
-                // STAR Critical fix: if energy depleted, don\'t schedule any tasks
+    AbsRTTask *ALAPNonBlockScheduler::getTaskN(unsigned int n) {
+        // ⭐ V43修复：能量耗尽时立即返回，不调度任何任务
         if (_energy_depleted) {
-        // STAR Critical fix: if energy depleted, don't schedule any tasks
-        if (_energy_depleted) {
-            SCHEDULER_LOG_DEBUG(std::string("STAR [TGF] getTaskN: Energy depleted") +
+            SCHEDULER_LOG_DEBUG(std::string("💀 [ALAP-NonBlock] getTaskN: 能量已耗尽，拒绝调度") +
                                " n=" + std::to_string(n) +
                                " energy=" + std::to_string(_current_energy * 1000) + " mJ");
             return nullptr;
         }
 
-            SCHEDULER_LOG_DEBUG(std::string("STAR [TGF] getTaskN: Energy depleted, not scheduling task") +
+                // STAR Critical fix: if energy depleted, don\'t schedule any tasks
+        if (_energy_depleted) {
+        // STAR Critical fix: if energy depleted, don't schedule any tasks
+        if (_energy_depleted) {
+            SCHEDULER_LOG_DEBUG(std::string("STAR [ALAP-NonBlock] getTaskN: Energy depleted") +
+                               " n=" + std::to_string(n) +
+                               " energy=" + std::to_string(_current_energy * 1000) + " mJ");
+            return nullptr;
+        }
+
+            SCHEDULER_LOG_DEBUG(std::string("STAR [ALAP-NonBlock] getTaskN: Energy depleted, not scheduling task") +
                                " n=" + std::to_string(n) +
                                " current_energy=" + std::to_string(_current_energy * 1000) + " mJ");
             return nullptr;
         }
 
-        SCHEDULER_LOG_DEBUG(std::string("🔍 [TGF] getTaskN(") + std::to_string(n) + ") 被调用" +
+        SCHEDULER_LOG_DEBUG(std::string("🔍 [ALAP-NonBlock] getTaskN(") + std::to_string(n) + ") 被调用" +
                            " 当前能量: " + std::to_string(_current_energy) + "J" +
                            " 已调度能耗=" + std::to_string(_dispatching_tasks_total_energy) + "J");
 
         if (_ready_queue.empty()) {
-            SCHEDULER_LOG_DEBUG("📭 [TGF] getTaskN: 就绪队列为空");
+            SCHEDULER_LOG_DEBUG("📭 [ALAP-NonBlock] getTaskN: 就绪队列为空");
             return nullptr;
         }
 
@@ -650,7 +714,7 @@ namespace RTSim {
         const double EPSILON = 1e-9;
         bool skipped_energy_insufficient = false;  // 是否跳过了能量不足的任务
 
-        std::cout << "[DEBUG] TGF::getTaskN(" << n << ") - ready_queue.size()=" << _ready_queue.size() << std::endl;
+        std::cout << "[DEBUG] ALAP-NonBlock::getTaskN(" << n << ") - ready_queue.size()=" << _ready_queue.size() << std::endl;
         for (size_t i = 0; i < _ready_queue.size(); ++i) {
             AbsRTTask *task = _ready_queue[i];
 
@@ -669,7 +733,7 @@ namespace RTSim {
             }
 
             // 检查是否已在本tick中扣除过能量
-            // ⭐ V29.1修复：运行中任务的续期由TGFEnergyCheckEvent处理
+            // ⭐ V29.1修复：运行中任务的续期由ALAP-NonBlockEnergyCheckEvent处理
             // getTaskN()只负责新任务，运行中任务直接返回
             if (is_running_check) {
                 if (ready_index == n) {
@@ -687,7 +751,7 @@ namespace RTSim {
 
                 // ⭐ 贪心策略：如果能量不足，跳过这个任务���继续查找后面的任务
                 if (available_energy < unit_energy - EPSILON) {
-                    SCHEDULER_LOG_INFO(std::string("⚠️ [TGF] 任务能量不足，跳过（贪心策略）") +
+                    SCHEDULER_LOG_INFO(std::string("⚠️ [ALAP-NonBlock] 任务能量不足，跳过（贪心策略）") +
                                       " 任务=" + getTaskName(task) +
                                       " 需要1ms=" + std::to_string(unit_energy) + "J" +
                                       " 已调度能耗=" + std::to_string(_dispatching_tasks_total_energy) + "J" +
@@ -703,7 +767,7 @@ namespace RTSim {
                         // ⭐ 关键修复：检查任务是否已被调度（在counted_tasks中）
                         if (_counted_tasks_in_dispatch.find(next_task) != _counted_tasks_in_dispatch.end()) {
                             // 任务已被调度（可能还没开始运行），跳过
-                            SCHEDULER_LOG_DEBUG(std::string("  [TGF] 贪心搜索：跳过已调度任务: ") + getTaskName(next_task));
+                            SCHEDULER_LOG_DEBUG(std::string("  [ALAP-NonBlock] 贪心搜索：跳过已调度任务: ") + getTaskName(next_task));
                             continue;
                         }
 
@@ -719,23 +783,37 @@ namespace RTSim {
                             continue;
                         }
 
+                        // ⭐ Bug修复：检查任务是否之前在本周期被dispatch过
+                        // 如果任务之前被抢占，它可能还保留着旧的dispatch时间，会导致时间倒流错误
+                        // 解决方案：跳过那些之前被dispatch但现在不在运行的任务（说明它们被抢占了）
+                        PeriodicTask *pt = dynamic_cast<PeriodicTask *>(next_task);
+                        if (pt) {
+                            // 检查任务是否有剩余执行时间但不在运行
+                            // 这表明任务之前被dispatch过但被抢占了
+                            Tick remaining = pt->getWCET() - pt->getExecTime();
+                            if (remaining > 0 && remaining < pt->getWCET() && !next_is_running) {
+                                SCHEDULER_LOG_DEBUG(std::string("  [ALAP-NonBlock] 贪心搜索：跳过被抢占的任务: ") +
+                                                  getTaskName(next_task) +
+                                                  " 剩余=" + std::to_string(static_cast<int64_t>(remaining)) +
+                                                  " WCET=" + std::to_string(static_cast<int64_t>(pt->getWCET())));
+                                continue;
+                            }
+                        }
+
                         double next_unit_energy = calculateUnitEnergyForTask(next_task);
                         double next_available = _current_energy - _dispatching_tasks_total_energy;
 
                         if (next_available >= next_unit_energy - EPSILON) {
                             // ⭐ 找到能量足够的后续任务，调度它！
-                            // ⭐ V41修复：立即扣除初始能量（仅一次）
+                            // ⭐ 只标记任务，不扣除能量（能量将在dispatch后统一扣除）
                             if (_counted_tasks_in_dispatch.find(next_task) == _counted_tasks_in_dispatch.end()) {
-                                _current_energy -= next_unit_energy;
-                                _stats.total_energy_consumed += next_unit_energy;
                                 _counted_tasks_in_dispatch.insert(next_task);
-                                _newly_dispatched_this_tick.insert(next_task);  // ⭐ V42：标记为当前tick新调度
+                                _newly_dispatched_this_tick.insert(next_task);
 
-                                SCHEDULER_LOG_INFO(std::string("✅ [TGF] 贪心策略：调度后续任务并扣除能量") +
+                                SCHEDULER_LOG_INFO(std::string("✅ [ALAP-NonBlock] 贪心策略：调度后续任务（已标记，暂不扣能量）") +
                                                   " 替换=" + getTaskName(task) +
                                                   " → " + getTaskName(next_task) +
-                                                  " -" + std::to_string(next_unit_energy * 1000) + " mJ → " +
-                                                  std::to_string(_current_energy * 1000) + " mJ");
+                                                  " 1ms能耗=" + std::to_string(next_unit_energy * 1000) + " mJ");
                             }
 
                             return next_task;
@@ -743,7 +821,7 @@ namespace RTSim {
                     }
 
                     // 没有找到能量足够的任务
-                    SCHEDULER_LOG_INFO(std::string("⚠️ [TGF] 贪心策略：未找到能量足够的任务"));
+                    SCHEDULER_LOG_INFO(std::string("⚠️ [ALAP-NonBlock] 贪心策略：未找到能量足够的任务"));
                     return nullptr;
                 }
 
@@ -753,23 +831,16 @@ namespace RTSim {
                 if (!is_running_check) {
                     // 新任务：检查是否已扣除过初始能量
                     if (_counted_tasks_in_dispatch.find(task) == _counted_tasks_in_dispatch.end()) {
-                        // 首次调度此任务，扣除初始能量
-                        _current_energy -= unit_energy;
-                        _stats.total_energy_consumed += unit_energy;
-                        _counted_tasks_in_dispatch.insert(task);  // 标记已扣除
-                        _newly_dispatched_this_tick.insert(task);  // ⭐ V42：标记为当前tick新调度
+                        // 首次调度此任务，标记任务
+                        _counted_tasks_in_dispatch.insert(task);  // 标记已调度
+                        _newly_dispatched_this_tick.insert(task);
 
-                        SCHEDULER_LOG_INFO(std::string("✅ [TGF] 新任务立即扣除初始能量: ") + getTaskName(task) +
-                                          " -" + std::to_string(unit_energy * 1000) + " mJ → " +
-                                          std::to_string(_current_energy * 1000) + " mJ");
+                        SCHEDULER_LOG_INFO(std::string("✅ [ALAP-NonBlock] 新任务已标记（暂不扣能量）: ") + getTaskName(task) +
+                                          " 1ms能耗=" + std::to_string(unit_energy * 1000) + " mJ");
                     }
-                    // 否则已扣除过，直接返回任务
-                } else {
-                    // 运行中任务：标记用于tick边界续期扣除
-                    if (_counted_tasks_in_dispatch.find(task) == _counted_tasks_in_dispatch.end()) {
-                        _counted_tasks_in_dispatch.insert(task);
-                    }
+                    // 否则已标记过，直接返回任务
                 }
+                // 运行中任务不需要标记，因为它们已经扣除过初始能量
                 return task;
             } else {
                 // ⭐ V32关键修复：不是我们要找的第n个任务，继续寻找
@@ -781,10 +852,10 @@ namespace RTSim {
     }
 
     // =====================================================
-    // notify - 每ms逐次扣减能耗（TGF核心逻辑）
+    // notify - 每ms逐次扣减能耗（ALAP-NonBlock核心逻辑）
     // =====================================================
 
-    void TGFScheduler::notify(AbsRTTask *task) {
+    void ALAPNonBlockScheduler::notify(AbsRTTask *task) {
         if (!task) {
             return;
         }
@@ -796,7 +867,7 @@ namespace RTSim {
         // 检查能量是否足够
         const double EPSILON = 1e-9;
         if (_current_energy < unit_energy - EPSILON) {
-            SCHEDULER_LOG_WARNING(std::string("⚠️ [TGF] notify: 能量不足") +
+            SCHEDULER_LOG_WARNING(std::string("⚠️ [ALAP-NonBlock] notify: 能量不足") +
                                  " 任务=" + getTaskName(task) +
                                  " 需要=" + std::to_string(unit_energy) + "J" +
                                  " 当前=" + std::to_string(_current_energy) + "J");
@@ -804,7 +875,7 @@ namespace RTSim {
         }
 
         // 任务到达，添加到就绪队列
-        SCHEDULER_LOG_INFO(std::string("📥 [TGF] 任务到达并添加到就绪队列: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("📥 [ALAP-NonBlock] 任务到达并添加到就绪队列: ") + getTaskName(task));
         addToReadyQueue(task);
     }
 
@@ -812,13 +883,13 @@ namespace RTSim {
     // 添加任务
     // =====================================================
 
-    void TGFScheduler::addTask(AbsRTTask *task, const std::string &params) {
+    void ALAPNonBlockScheduler::addTask(AbsRTTask *task, const std::string &params) {
         if (!task) {
-            SCHEDULER_LOG_WARNING("⚠️ [TGF] addTask: 任务为空");
+            SCHEDULER_LOG_WARNING("⚠️ [ALAP-NonBlock] addTask: 任务为空");
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("📥 [TGF] 添加任务: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("📥 [ALAP-NonBlock] 添加任务: ") + getTaskName(task));
         SCHEDULER_LOG_DEBUG(std::string("   参数: ") + params);
 
         // 解析参数
@@ -864,7 +935,7 @@ namespace RTSim {
         }
 
         // 创建任务模型
-        TGFTaskModel *model = new TGFTaskModel(task, period, wcet, workload, energy_coeff, arrival_offset);
+        ALAPNonBlockTaskModel *model = new ALAPNonBlockTaskModel(task, period, wcet, workload, energy_coeff, arrival_offset);
 
         // ⭐ 关键修复：先将模型添加到映射，再计算能量
         enqueueModel(model);
@@ -877,7 +948,7 @@ namespace RTSim {
         model->_total_energy = total_energy;
         model->_unit_energy = unit_energy;
 
-        SCHEDULER_LOG_INFO(std::string("⚡ [TGF] 任务能耗计算: ") +
+        SCHEDULER_LOG_INFO(std::string("⚡ [ALAP-NonBlock] 任务能耗计算: ") +
                           "总能耗=" + std::to_string(total_energy) + "J" +
                           " 每ms能耗=" + std::to_string(unit_energy) + "J" +
                           " WCET=" + std::to_string(wcet) + "ms");
@@ -885,7 +956,7 @@ namespace RTSim {
         // 添加到就绪队列
         addToReadyQueue(task);
 
-        SCHEDULER_LOG_INFO(std::string("✅ [TGF] 任务已添加: 周期=") + std::to_string(period) +
+        SCHEDULER_LOG_INFO(std::string("✅ [ALAP-NonBlock] 任务已添加: 周期=") + std::to_string(period) +
                           " WCET=" + std::to_string(wcet) +
                           " 工作负载=" + workload);
     }
@@ -894,12 +965,12 @@ namespace RTSim {
     // 移除任务
     // =====================================================
 
-    void TGFScheduler::removeTask(AbsRTTask *task) {
+    void ALAPNonBlockScheduler::removeTask(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("📤 [TGF] 移除任务: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("📤 [ALAP-NonBlock] 移除任务: ") + getTaskName(task));
 
         removeFromReadyQueue(task);
         removeFromWaitingQueue(task);
@@ -916,19 +987,19 @@ namespace RTSim {
             _task_models.erase(it);
         }
 
-        SCHEDULER_LOG_INFO(std::string("✅ [TGF] 任务已移除: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("✅ [ALAP-NonBlock] 任务已移除: ") + getTaskName(task));
     }
 
     // =====================================================
     // 任务到达事件处理
     // =====================================================
 
-    void TGFScheduler::onTaskArrival(AbsRTTask *task) {
+    void ALAPNonBlockScheduler::onTaskArrival(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("📍 [TGF] 任务到达: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("📍 [ALAP-NonBlock] 任务到达: ") + getTaskName(task));
 
         if (!isInReadyQueue(task) && !isInWaitingQueue(task)) {
             addToReadyQueue(task);
@@ -940,12 +1011,12 @@ namespace RTSim {
     // Tick级抢占检查
     // =====================================================
 
-    void TGFScheduler::checkAndPreempt() {
-        SCHEDULER_LOG_DEBUG("🔔 [TGF] Tick级抢占检查");
+    void ALAPNonBlockScheduler::checkAndPreempt() {
+        SCHEDULER_LOG_DEBUG("🔔 [ALAP-NonBlock] Tick级抢占检查");
         checkAndPreemptOnAllCPUs();
     }
 
-    void TGFScheduler::checkAndPreemptOnAllCPUs() {
+    void ALAPNonBlockScheduler::checkAndPreemptOnAllCPUs() {
         for (auto &map_pair : _running_tasks) {
             CPU *cpu = map_pair.first;
             AbsRTTask *running_task = map_pair.second;
@@ -960,7 +1031,7 @@ namespace RTSim {
             }
 
             if (shouldPreempt(cpu, highest)) {
-                SCHEDULER_LOG_INFO(std::string("🔄 [TGF] 抢占CPU: ") +
+                SCHEDULER_LOG_INFO(std::string("🔄 [ALAP-NonBlock] 抢占CPU: ") +
                                   " 挂起低优先级任务=" + getTaskName(running_task) +
                                   " 调度高优先级任务=" + getTaskName(highest));
 
@@ -968,15 +1039,15 @@ namespace RTSim {
                 // suspend会自动调用deschedule()并将任务重新放回调度队列
                 if (_kernel) {
                     _kernel->suspend(running_task);
-                    SCHEDULER_LOG_DEBUG(std::string("⏸️ [TGF] 已挂起任务: ") + getTaskName(running_task));
+                    SCHEDULER_LOG_DEBUG(std::string("⏸️ [ALAP-NonBlock] 已挂起任务: ") + getTaskName(running_task));
                 } else {
-                    SCHEDULER_LOG_WARNING("⚠️ [TGF] 抢占失败：_kernel为nullptr");
+                    SCHEDULER_LOG_WARNING("⚠️ [ALAP-NonBlock] 抢占失败：_kernel为nullptr");
                 }
             }
         }
     }
 
-    bool TGFScheduler::shouldPreempt(CPU *cpu, AbsRTTask *new_task) {
+    bool ALAPNonBlockScheduler::shouldPreempt(CPU *cpu, AbsRTTask *new_task) {
         if (!cpu || !new_task) {
             return false;
         }
@@ -986,8 +1057,8 @@ namespace RTSim {
             return false;
         }
 
-        TGFTaskModel *running_model = getTaskModel(running_task);
-        TGFTaskModel *new_model = getTaskModel(new_task);
+        ALAPNonBlockTaskModel *running_model = getTaskModel(running_task);
+        ALAPNonBlockTaskModel *new_model = getTaskModel(new_task);
 
         if (!running_model || !new_model) {
             return false;
@@ -1007,24 +1078,24 @@ namespace RTSim {
     // 队列管理方法
     // =====================================================
 
-    void TGFScheduler::insert(AbsRTTask *task) {
+    void ALAPNonBlockScheduler::insert(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("➕ [TGF] insert: ") + getTaskName(task) +
+        SCHEDULER_LOG_INFO(std::string("➕ [ALAP-NonBlock] insert: ") + getTaskName(task) +
                           " _ready_queue.size()=" + std::to_string(_ready_queue.size()));
 
         Scheduler::insert(task);
         addToReadyQueue(task);
     }
 
-    void TGFScheduler::extract(AbsRTTask *task) {
+    void ALAPNonBlockScheduler::extract(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("➖ [TGF] extract: ") + getTaskName(task) +
+        SCHEDULER_LOG_INFO(std::string("➖ [ALAP-NonBlock] extract: ") + getTaskName(task) +
                           " _ready_queue.size()=" + std::to_string(_ready_queue.size()));
 
         Scheduler::extract(task);
@@ -1032,22 +1103,22 @@ namespace RTSim {
         removeFromWaitingQueue(task);
     }
 
-    void TGFScheduler::addToReadyQueue(AbsRTTask *task) {
+    void ALAPNonBlockScheduler::addToReadyQueue(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
         // ⭐ 修复重复实例bug：检查任务是否已在就绪队列中
         if (std::find(_ready_queue.begin(), _ready_queue.end(), task) != _ready_queue.end()) {
-            SCHEDULER_LOG_DEBUG(std::string("⚠️ [TGF] 任务已在就绪队列，跳过添加: ") + getTaskName(task));
+            SCHEDULER_LOG_DEBUG(std::string("⚠️ [ALAP-NonBlock] 任务已在就绪队列，跳过添加: ") + getTaskName(task));
             return;
         }
 
         removeFromWaitingQueue(task);
 
-        TGFTaskModel *model = getTaskModel(task);
+        ALAPNonBlockTaskModel *model = getTaskModel(task);
         if (!model) {
-            SCHEDULER_LOG_WARNING("⚠️ [TGF] addToReadyQueue: 任务模型不存在");
+            SCHEDULER_LOG_WARNING("⚠️ [ALAP-NonBlock] addToReadyQueue: 任务模型不存在");
             _ready_queue.push_back(task);
             return;
         }
@@ -1057,7 +1128,7 @@ namespace RTSim {
         // 按RM优先级插入（周期短的优先）
         auto it = _ready_queue.begin();
         while (it != _ready_queue.end()) {
-            TGFTaskModel *other_model = getTaskModel(*it);
+            ALAPNonBlockTaskModel *other_model = getTaskModel(*it);
             if (other_model && other_model->getRMPriority() > priority) {
                 break;
             }
@@ -1066,44 +1137,44 @@ namespace RTSim {
 
         _ready_queue.insert(it, task);
 
-        SCHEDULER_LOG_DEBUG(std::string("➕ [TGF] 任务加入就绪队列: ") + getTaskName(task) +
+        SCHEDULER_LOG_DEBUG(std::string("➕ [ALAP-NonBlock] 任务加入就绪队列: ") + getTaskName(task) +
                            " 优先级=" + std::to_string(static_cast<int64_t>(priority)));
     }
 
-    void TGFScheduler::removeFromReadyQueue(AbsRTTask *task) {
+    void ALAPNonBlockScheduler::removeFromReadyQueue(AbsRTTask *task) {
         auto it = std::find(_ready_queue.begin(), _ready_queue.end(), task);
         if (it != _ready_queue.end()) {
             _ready_queue.erase(it);
-            SCHEDULER_LOG_DEBUG(std::string("➖ [TGF] removeFromReadyQueue: ") + getTaskName(task) +
+            SCHEDULER_LOG_DEBUG(std::string("➖ [ALAP-NonBlock] removeFromReadyQueue: ") + getTaskName(task) +
                                " 剩余size=" + std::to_string(_ready_queue.size()));
         }
     }
 
-    void TGFScheduler::addToWaitingQueue(AbsRTTask *task) {
+    void ALAPNonBlockScheduler::addToWaitingQueue(AbsRTTask *task) {
         if (!task) {
             return;
         }
         removeFromReadyQueue(task);
         _waiting_queue.push_back(task);
-        SCHEDULER_LOG_DEBUG(std::string("⏸️ [TGF] 任务加入等待队列: ") + getTaskName(task));
+        SCHEDULER_LOG_DEBUG(std::string("⏸️ [ALAP-NonBlock] 任务加入等待队列: ") + getTaskName(task));
     }
 
-    void TGFScheduler::removeFromWaitingQueue(AbsRTTask *task) {
+    void ALAPNonBlockScheduler::removeFromWaitingQueue(AbsRTTask *task) {
         auto it = std::find(_waiting_queue.begin(), _waiting_queue.end(), task);
         if (it != _waiting_queue.end()) {
             _waiting_queue.erase(it);
         }
     }
 
-    bool TGFScheduler::isInReadyQueue(AbsRTTask *task) const {
+    bool ALAPNonBlockScheduler::isInReadyQueue(AbsRTTask *task) const {
         return std::find(_ready_queue.begin(), _ready_queue.end(), task) != _ready_queue.end();
     }
 
-    bool TGFScheduler::isInWaitingQueue(AbsRTTask *task) const {
+    bool ALAPNonBlockScheduler::isInWaitingQueue(AbsRTTask *task) const {
         return std::find(_waiting_queue.begin(), _waiting_queue.end(), task) != _waiting_queue.end();
     }
 
-    AbsRTTask *TGFScheduler::getHighestPriorityTaskFromReadyQueue() {
+    AbsRTTask *ALAPNonBlockScheduler::getHighestPriorityTaskFromReadyQueue() {
         if (_ready_queue.empty()) {
             return nullptr;
         }
@@ -1114,10 +1185,10 @@ namespace RTSim {
     // 能量计算方法
     // =====================================================
 
-    double TGFScheduler::calculateUnitEnergyForTask(AbsRTTask *task) {
-        TGFTaskModel *model = getTaskModel(task);
+    double ALAPNonBlockScheduler::calculateUnitEnergyForTask(AbsRTTask *task) {
+        ALAPNonBlockTaskModel *model = getTaskModel(task);
         if (!model) {
-            SCHEDULER_LOG_WARNING("⚠️ [TGF] calculateUnitEnergyForTask: 任务模型不存在");
+            SCHEDULER_LOG_WARNING("⚠️ [ALAP-NonBlock] calculateUnitEnergyForTask: 任务模型不存在");
             return 0.0;
         }
 
@@ -1125,14 +1196,31 @@ namespace RTSim {
         return model->getUnitEnergy();
     }
 
-    double TGFScheduler::calculateTotalEnergyForTask(AbsRTTask *task) {
+    // ⭐ EnergyInfoProvider接口实现
+    double ALAPNonBlockScheduler::getTaskUnitEnergy(AbsRTTask *task) const {
+        auto it = _task_models.find(task);
+        if (it == _task_models.end()) {
+            return 0.0;
+        }
+        return it->second->getUnitEnergy();
+    }
+
+    double ALAPNonBlockScheduler::getTaskTotalEnergy(AbsRTTask *task) const {
+        auto it = _task_models.find(task);
+        if (it == _task_models.end()) {
+            return 0.0;
+        }
+        return it->second->getTotalEnergy();
+    }
+
+    double ALAPNonBlockScheduler::calculateTotalEnergyForTask(AbsRTTask *task) {
         if (!task) {
             return 0.0;
         }
 
-        TGFTaskModel *model = getTaskModel(task);
+        ALAPNonBlockTaskModel *model = getTaskModel(task);
         if (!model) {
-            SCHEDULER_LOG_WARNING("⚠️ [TGF] calculateTotalEnergyForTask: 任务模型不存在");
+            SCHEDULER_LOG_WARNING("⚠️ [ALAP-NonBlock] calculateTotalEnergyForTask: 任务模型不存在");
             return 0.0;
         }
 
@@ -1155,7 +1243,7 @@ namespace RTSim {
         return energy;
     }
 
-    double TGFScheduler::calculatePowerForWorkload(const std::string &workload, double frequency) {
+    double ALAPNonBlockScheduler::calculatePowerForWorkload(const std::string &workload, double frequency) {
         ConfigManager &configMgr = ConfigManager::getInstance();
         double power_coeff = configMgr.getPowerCoefficient(workload);
 
@@ -1165,7 +1253,7 @@ namespace RTSim {
         double base_power = configMgr.getBasePower();
         double power = base_power * power_coeff * freq_ratio;
 
-        SCHEDULER_LOG_DEBUG(std::string("⚡ [TGF] 功率计算: ") +
+        SCHEDULER_LOG_DEBUG(std::string("⚡ [ALAP-NonBlock] 功率计算: ") +
                            "workload=" + workload +
                            " coeff=" + std::to_string(power_coeff) +
                            " freq=" + std::to_string(frequency_mhz) + "MHz" +
@@ -1182,29 +1270,29 @@ namespace RTSim {
     // =====================================================
 
     /*
-    void TGFScheduler::startEnergyCheckForTask(AbsRTTask *task, CPU *cpu) {
+    void ALAPNonBlockScheduler::startEnergyCheckForTask(AbsRTTask *task, CPU *cpu) {
         if (!task || !cpu) {
             return;
         }
 
         // 检查是否已经有能量检查事件
         if (_energy_check_events.find(task) != _energy_check_events.end()) {
-            SCHEDULER_LOG_DEBUG(std::string("⚡ [TGF] 任务已有能量检查事件: ") + getTaskName(task));
+            SCHEDULER_LOG_DEBUG(std::string("⚡ [ALAP-NonBlock] 任务已有能量检查事件: ") + getTaskName(task));
             return;
         }
 
         // 创建并启动能量检查事件
-        TGFEnergyCheckEvent *evt = new TGFEnergyCheckEvent(this, task, cpu);
+        ALAP-NonBlockEnergyCheckEvent *evt = new ALAP-NonBlockEnergyCheckEvent(this, task, cpu);
         _energy_check_events[task] = evt;
 
         // 1ms后触发第一次检查
         evt->post(SIMUL.getTime() + 1);
 
-        SCHEDULER_LOG_INFO(std::string("⚡ [TGF] 启动运行时能量检查: ") +
+        SCHEDULER_LOG_INFO(std::string("⚡ [ALAP-NonBlock] 启动运行时能量检查: ") +
                            getTaskName(task) + " 在CPU " + cpu->toString());
     }
 
-    void TGFScheduler::stopEnergyCheckForTask(AbsRTTask *task) {
+    void ALAPNonBlockScheduler::stopEnergyCheckForTask(AbsRTTask *task) {
         if (!task) {
             return;
         }
@@ -1215,7 +1303,7 @@ namespace RTSim {
 
             _energy_check_events.erase(it);
 
-            SCHEDULER_LOG_INFO(std::string("⚡ [TGF] 停止运行时能量检查: ") +
+            SCHEDULER_LOG_INFO(std::string("⚡ [ALAP-NonBlock] 停止运行时能量检查: ") +
                                getTaskName(task));
         }
     }
@@ -1225,11 +1313,7 @@ namespace RTSim {
     // 能量收集方法
     // =====================================================
 
-    double TGFScheduler::collectSolarEnergy(Tick current_time) {
-        if (!_use_real_solar_data) {
-            return 0.0;
-        }
-
+    double ALAPNonBlockScheduler::collectSolarEnergy(Tick current_time) {
         int64_t current_ms = static_cast<int64_t>(current_time);
 
         // 计算自上次收集以来的时间
@@ -1239,7 +1323,7 @@ namespace RTSim {
             return 0.0;
         }
 
-        // 获取当前辐照度
+        // 获取当前辐照度（根据use_real_solar_data选择NASA数据或函数曲线）
         double irradiance = getSolarIrradiance(current_ms);
 
         // 计算收集能量
@@ -1252,28 +1336,49 @@ namespace RTSim {
         return energy;
     }
 
-    double TGFScheduler::getSolarIrradiance(int64_t time_ms) {
+    double ALAPNonBlockScheduler::getSolarIrradiance(int64_t time_ms) {
         if (!_use_real_solar_data) {
-            // 简化模型
+            // ⭐ 分段函数模型：模拟真实太阳能曲线
             int64_t actual_time_ms = time_ms + static_cast<int64_t>(_start_time_offset);
-            int64_t hour_of_day = (actual_time_ms % 86400000) / 3600000;
 
-            if (hour_of_day >= 6 && hour_of_day <= 18) {
-                return 500.0;
+            // 转换为小时（用于分段判断）
+            int64_t ms_of_day = actual_time_ms % 86400000;
+            double hour_of_day = static_cast<double>(ms_of_day) / 3600000.0;  // 0.0-24.0
+
+            // 分段函数定义（更真实的太阳能曲线）
+            const double PEAK_IRRADIANCE = 800.0;  // 峰值辐照度 (W/m²)
+
+            if (hour_of_day < 6.0) {
+                // 夜晚 (0:00-6:00)
+                return 0.0;
+            } else if (hour_of_day < 11.0) {
+                // 日出阶段 (6:00-11:00): 线性增加，5小时
+                double progress = (hour_of_day - 6.0) / 5.0;  // 0.0-1.0
+                return PEAK_IRRADIANCE * progress;
+            } else if (hour_of_day < 13.0) {
+                // 白天峰值 (11:00-13:00): 保持峰值，2小时
+                return PEAK_IRRADIANCE;
+            } else if (hour_of_day < 18.0) {
+                // 日落阶段 (13:00-18:00): 线性降低，5小时
+                double progress = (18.0 - hour_of_day) / 5.0;  // 1.0-0.0
+                return PEAK_IRRADIANCE * progress;
             } else {
+                // 夜晚 (18:00-24:00)
                 return 0.0;
             }
         }
 
         // 使用真实NASA太阳能数据
         int64_t actual_time_ms = time_ms + static_cast<int64_t>(_start_time_offset);
-        int64_t minute_of_day = (actual_time_ms % 86400000) / 60000;  // 0-1439
+        // ⭐ Bug修复：计算从数据开始的总分钟数，而不是当天的分钟数
+        // 数据文件按分钟索引，包含多天的数据（370天 × 1440分钟/天 = 532800分钟）
+        int64_t total_minutes = actual_time_ms / 60000;  // 从数据开始的总分钟数
 
-        int line_number = minute_of_day + 2;  // +2跳过标题行
+        int line_number = total_minutes + 2;  // +2跳过标题行
 
         std::ifstream file(_solar_data_file);
         if (!file.is_open()) {
-            SCHEDULER_LOG_WARNING(std::string("⚠️ [TGF] 无法打开太阳能数据文件: ") + _solar_data_file);
+            SCHEDULER_LOG_WARNING(std::string("⚠️ [ALAP-NonBlock] 无法打开太阳能数据文件: ") + _solar_data_file);
             return 0.0;
         }
 
@@ -1288,7 +1393,7 @@ namespace RTSim {
                 double irradiance = std::stod(line);
                 return irradiance;
             } catch (const std::exception &e) {
-                SCHEDULER_LOG_WARNING(std::string("⚠️ [TGF] 解析辐照度失败: ") + e.what());
+                SCHEDULER_LOG_WARNING(std::string("⚠️ [ALAP-NonBlock] 解析辐照度失败: ") + e.what());
                 return 0.0;
             }
         }
@@ -1300,7 +1405,7 @@ namespace RTSim {
     // Tick事件调度
     // =====================================================
 
-    void TGFScheduler::scheduleNextTick() {
+    void ALAPNonBlockScheduler::scheduleNextTick() {
         if (!_tick_event) {
             return;
         }
@@ -1320,7 +1425,7 @@ namespace RTSim {
     // 任务管理方法
     // =====================================================
 
-    TGFTaskModel *TGFScheduler::getTaskModel(AbsRTTask *task) {
+    ALAPNonBlockTaskModel *ALAPNonBlockScheduler::getTaskModel(AbsRTTask *task) {
         auto it = _task_models.find(task);
         if (it != _task_models.end()) {
             return it->second;
@@ -1328,14 +1433,14 @@ namespace RTSim {
         return nullptr;
     }
 
-    std::string TGFScheduler::getTaskName(AbsRTTask *task) {
+    std::string ALAPNonBlockScheduler::getTaskName(AbsRTTask *task) {
         if (!task) {
             return "nullptr";
         }
         return task->toString();
     }
 
-    AbsRTTask *TGFScheduler::getRunningTaskOnCPU(CPU *cpu) {
+    AbsRTTask *ALAPNonBlockScheduler::getRunningTaskOnCPU(CPU *cpu) {
         if (!cpu) {
             return nullptr;
         }
@@ -1348,7 +1453,7 @@ namespace RTSim {
         return nullptr;
     }
 
-    int TGFScheduler::getFreeCPUCount() {
+    int ALAPNonBlockScheduler::getFreeCPUCount() {
         int count = 0;
         for (auto &pair : _running_tasks) {
             if (pair.second == nullptr) {
@@ -1358,7 +1463,7 @@ namespace RTSim {
         return count;
     }
 
-    CPU *TGFScheduler::getFreeCPU() {
+    CPU *ALAPNonBlockScheduler::getFreeCPU() {
         for (auto &pair : _running_tasks) {
             if (pair.second == nullptr) {
                 return pair.first;
@@ -1367,13 +1472,13 @@ namespace RTSim {
         return nullptr;
     }
 
-    void TGFScheduler::dispatchTask(AbsRTTask *task, CPU *cpu) {
+    void ALAPNonBlockScheduler::dispatchTask(AbsRTTask *task, CPU *cpu) {
         if (!task || !cpu) {
-            SCHEDULER_LOG_WARNING("⚠️ [TGF] dispatchTask: 任务或CPU为空");
+            SCHEDULER_LOG_WARNING("⚠️ [ALAP-NonBlock] dispatchTask: 任务或CPU为空");
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("📤 [TGF] 调度任务: ") + getTaskName(task) + " 到CPU");
+        SCHEDULER_LOG_INFO(std::string("📤 [ALAP-NonBlock] 调度任务: ") + getTaskName(task) + " 到CPU");
 
         removeFromReadyQueue(task);
         _running_tasks[cpu] = task;
@@ -1383,26 +1488,26 @@ namespace RTSim {
     // 配置方法
     // =====================================================
 
-    void TGFScheduler::setPVConfig(double efficiency, double area, const std::string &solar_file) {
+    void ALAPNonBlockScheduler::setPVConfig(double efficiency, double area, const std::string &solar_file) {
         _pv_efficiency = efficiency;
         _pv_area_m2 = area;
         _solar_data_file = solar_file;
 
-        SCHEDULER_LOG_INFO(std::string("⚙️ [TGF] 太阳能配置更新: ") +
+        SCHEDULER_LOG_INFO(std::string("⚙️ [ALAP-NonBlock] 太阳能配置更新: ") +
                           "效率=" + std::to_string(efficiency) +
                           " 面积=" + std::to_string(area) + "m²" +
                           " 数据文件=" + solar_file);
     }
 
-    void TGFScheduler::setStartTimeOffset(Tick offset) {
+    void ALAPNonBlockScheduler::setStartTimeOffset(Tick offset) {
         _start_time_offset = offset;
     }
 
-    void TGFScheduler::setKernel(MRTKernel *kernel) {
+    void ALAPNonBlockScheduler::setKernel(MRTKernel *kernel) {
         _kernel = kernel;
     }
 
-    MRTKernel *TGFScheduler::getKernel() {
+    MRTKernel *ALAPNonBlockScheduler::getKernel() {
         if (!_kernel && !_ready_queue.empty()) {
             AbsRTTask *task = _ready_queue.front();
             if (task) {
@@ -1416,8 +1521,8 @@ namespace RTSim {
     // 生命周期方法
     // =====================================================
 
-    void TGFScheduler::newRun() {
-        SCHEDULER_LOG_INFO("🏁 [TGF] newRun - 仿真开始");
+    void ALAPNonBlockScheduler::newRun() {
+        SCHEDULER_LOG_INFO("🏁 [ALAP-NonBlock] newRun - 仿真开始");
 
         _current_energy = _initial_energy;
         _last_tick_time = SIMUL.getTime();
@@ -1440,11 +1545,11 @@ namespace RTSim {
         // 启动第一个tick事件
         scheduleNextTick();
 
-        SCHEDULER_LOG_INFO(std::string("💰 [TGF] 初始能量: ") + std::to_string(_current_energy) + "J");
+        SCHEDULER_LOG_INFO(std::string("💰 [ALAP-NonBlock] 初始能量: ") + std::to_string(_current_energy) + "J");
     }
 
-    void TGFScheduler::endRun() {
-        SCHEDULER_LOG_INFO("🏁 [TGF] endRun - 仿真结束");
+    void ALAPNonBlockScheduler::endRun() {
+        SCHEDULER_LOG_INFO("🏁 [ALAP-NonBlock] endRun - 仿真结束");
 
         // 仿真结束前，收集最后一次能量
         Tick current_time = SIMUL.getTime();
@@ -1455,7 +1560,7 @@ namespace RTSim {
         }
 
         // 打印统计信息
-        SCHEDULER_LOG_INFO("📊 [TGF] ===== TGF调度统计 =====");
+        SCHEDULER_LOG_INFO("📊 [ALAP-NonBlock] ===== ALAP-NonBlock调度统计 =====");
         SCHEDULER_LOG_INFO(std::string("  Tick总次数: ") + std::to_string(_stats.total_tick_count));
         SCHEDULER_LOG_INFO(std::string("  任务完成数: ") + std::to_string(_stats.total_task_completions));
         SCHEDULER_LOG_INFO(std::string("  能量不足跳过: ") + std::to_string(_stats.total_skipped_energy));
@@ -1466,12 +1571,12 @@ namespace RTSim {
         SCHEDULER_LOG_INFO("=================================");
     }
 
-    void TGFScheduler::onTaskEnd(AbsRTTask *task) {
+    void ALAPNonBlockScheduler::onTaskEnd(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("✅ [TGF] 任务结束: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("✅ [ALAP-NonBlock] 任务结束: ") + getTaskName(task));
 
         // 从就绪队列移除
         removeFromReadyQueue(task);
@@ -1484,10 +1589,13 @@ namespace RTSim {
             }
         }
 
+        // 从能量扣除记录中移除（任务结束后可以重新扣除）
+        _energy_deducted_tasks.erase(task);
+
         // 打印能量消耗统计
         auto it = _energy_accounts.find(task);
         if (it != _energy_accounts.end()) {
-            SCHEDULER_LOG_INFO(std::string("📊 [TGF] 任务能量消耗: ") +
+            SCHEDULER_LOG_INFO(std::string("📊 [ALAP-NonBlock] 任务能量消耗: ") +
                               getTaskName(task) +
                               " 累计消耗=" + std::to_string(it->second.total_consumed) + "J");
             _energy_accounts.erase(it);
@@ -1495,47 +1603,125 @@ namespace RTSim {
 
         _stats.total_task_completions++;
 
-        SCHEDULER_LOG_INFO(std::string("📊 [TGF] 当前能量: ") + std::to_string(_current_energy) + "J");
+        SCHEDULER_LOG_INFO(std::string("📊 [ALAP-NonBlock] 当前能量: ") + std::to_string(_current_energy) + "J");
 
         // ⭐ 关键修复：任务结束时触发立即调度
         // 检查是否有空闲CPU和等待的任务
         if (!_ready_queue.empty() && _kernel) {
             // ⭐ Bug修复：能量耗尽时不触发立即调度
             if (_energy_depleted) {
-                SCHEDULER_LOG_INFO(std::string("💀 [TGF] 能量已耗尽，跳过任务结束后的立即调度") +
+                SCHEDULER_LOG_INFO(std::string("💀 [ALAP-NonBlock] 能量已耗尽，跳过任务结束后的立即调度") +
                                    " 剩余能量=" + std::to_string(_current_energy * 1000) + " mJ");
                 return;
             }
-            SCHEDULER_LOG_INFO("🔄 [TGF] 任务结束，触发立即调度");
+            SCHEDULER_LOG_INFO("🔄 [ALAP-NonBlock] 任务结束，触发立即调度");
+
             _kernel->dispatch();
+
+            // ⭐ 关键：在dispatch后，扣除新调度任务的能量
+            // 只扣除尚未扣除过的任务（检查_energy_deducted_tasks）
+            for (AbsRTTask *task : _counted_tasks_in_dispatch) {
+                if (_energy_deducted_tasks.find(task) == _energy_deducted_tasks.end()) {
+                    // 任务尚未扣除能量，现在扣除
+                    double unit_energy = calculateUnitEnergyForTask(task);
+                    _current_energy -= unit_energy;
+                    _stats.total_energy_consumed += unit_energy;
+                    _energy_deducted_tasks.insert(task);  // 标记已扣除
+
+                    SCHEDULER_LOG_INFO("✅ [ALAP-NonBlock] onTaskEnd后新任务扣除初始能量: " +
+                                       getTaskName(task) +
+                                       " -" + std::to_string(unit_energy * 1000) + " mJ → " +
+                                       std::to_string(_current_energy * 1000) + " mJ");
+                }
+            }
         }
 
     }
 
-    bool TGFScheduler::isAdmissible(CPU *c, std::vector<AbsRTTask *> tasks,
+    bool ALAPNonBlockScheduler::isAdmissible(CPU *c, std::vector<AbsRTTask *> tasks,
                                     AbsRTTask *t) {
         return true;
+    }
+
+    // =====================================================
+    // ALAP时序门控（阶段一）
+    // =====================================================
+
+    bool ALAPNonBlockScheduler::checkALAPTimingGate() {
+        if (_ready_queue.empty()) {
+            return true;  // 空队列，通过门控
+        }
+
+        Tick current_time = SIMUL.getTime();
+        Tick min_slack = Tick(-1);
+
+        // 计算所有就绪任务的Slack，找最小值
+        for (AbsRTTask *task : _ready_queue) {
+            if (!task) continue;
+
+            Tick slack = calculateSlackForTask(task);
+
+            if (min_slack < 0 || slack < min_slack) {
+                min_slack = slack;
+            }
+        }
+
+        // 门控逻辑
+        if (min_slack > 0) {
+            SCHEDULER_LOG_INFO("⏸️  [ALAP-NonBlock] ALAP时序门控：Slack > 0 (" +
+                               std::to_string(static_cast<int64_t>(min_slack)) + "ms)，强制休眠");
+            _stats.total_alap_forced_idle++;
+            return false;  // 强制IDLE，不调度任何任务
+        } else {
+            SCHEDULER_LOG_INFO("✅ [ALAP-NonBlock] ALAP时序门控：Slack ≤ 0 (" +
+                               std::to_string(static_cast<int64_t>(min_slack)) + "ms)，唤醒，允许调度");
+            return true;  // 门控通过，允许调度
+        }
+    }
+
+    MetaSim::Tick ALAPNonBlockScheduler::calculateSlackForTask(AbsRTTask *task) {
+        if (!task) return MetaSim::Tick(0);
+
+        Tick current_time = SIMUL.getTime();
+        Tick arrival = task->getArrival();
+        int period_int = task->getPeriod();
+        Tick period = Tick(period_int > 0 ? period_int : 100);
+        Tick absolute_deadline = arrival + period;
+
+        double remaining_double = task->getRemainingWCET();
+        Tick remaining = Tick(remaining_double);
+        Tick slack = absolute_deadline - remaining - current_time;
+
+        SCHEDULER_LOG_DEBUG("🧮 [ALAP-NonBlock] Slack计算: " +
+                           getTaskName(task) +
+                           " deadline=" + std::to_string(static_cast<int64_t>(absolute_deadline)) +
+                           " remaining=" + std::to_string(static_cast<int64_t>(remaining)) +
+                           " current=" + std::to_string(static_cast<int64_t>(current_time)) +
+                           " => slack=" + std::to_string(static_cast<int64_t>(slack)) + "ms");
+
+        return slack;
     }
 
     // =====================================================
     // 统计和调试
     // =====================================================
 
-    void TGFScheduler::printStats() const {
-        SCHEDULER_LOG_INFO("📊 [TGF] ===== TGF调度统计 =====");
+    void ALAPNonBlockScheduler::printStats() const {
+        SCHEDULER_LOG_INFO("📊 [ALAP-NonBlock] ===== ALAP-NonBlock调度统计 =====");
         SCHEDULER_LOG_INFO(std::string("  Tick总次数: ") + std::to_string(_stats.total_tick_count));
         SCHEDULER_LOG_INFO(std::string("  任务完成数: ") + std::to_string(_stats.total_task_completions));
         SCHEDULER_LOG_INFO(std::string("  总消耗能量: ") + std::to_string(_stats.total_energy_consumed) + "J");
         SCHEDULER_LOG_INFO(std::string("  总收集能量: ") + std::to_string(_stats.total_energy_harvested) + "J");
         SCHEDULER_LOG_INFO(std::string("  剩余能量: ") + std::to_string(_current_energy) + "J");
+        SCHEDULER_LOG_INFO(std::string("  ALAP强制休眠次数: ") + std::to_string(_stats.total_alap_forced_idle));
         SCHEDULER_LOG_INFO("=================================");
     }
 
-    std::string TGFScheduler::getEnergyStatus() const {
+    std::string ALAPNonBlockScheduler::getEnergyStatus() const {
         return "当前能量: " + std::to_string(_current_energy) + "J";
     }
 
-    const std::map<AbsRTTask *, std::string> TGFScheduler::getTaskWorkloads() const {
+    const std::map<AbsRTTask *, std::string> ALAPNonBlockScheduler::getTaskWorkloads() const {
         std::map<AbsRTTask *, std::string> workloads;
         for (const auto &pair : _task_models) {
             workloads[pair.first] = pair.second->getWorkloadType();
@@ -1543,13 +1729,13 @@ namespace RTSim {
         return workloads;
     }
 
-    void TGFScheduler::checkAndInterruptRunningTasks() {
-        SCHEDULER_LOG_INFO("🔍 [TGF] 检查运行中任务的能量状态");
+    void ALAPNonBlockScheduler::checkAndInterruptRunningTasks() {
+        SCHEDULER_LOG_INFO("🔍 [ALAP-NonBlock] 检查运行中任务的能量状态");
 
         if (!_kernel) {
             _kernel = getKernel();
             if (!_kernel) {
-                SCHEDULER_LOG_WARNING("⚠️ [TGF] checkAndInterruptRunningTasks: _kernel为nullptr，无法中断任务");
+                SCHEDULER_LOG_WARNING("⚠️ [ALAP-NonBlock] checkAndInterruptRunningTasks: _kernel为nullptr，无法中断任务");
                 return;
             }
         }
@@ -1580,7 +1766,7 @@ namespace RTSim {
         //             _current_energy -= total_energy_to_deduct;
         //             _stats.total_energy_consumed += total_energy_to_deduct;
         // 
-        //             SCHEDULER_LOG_INFO(std::string("⚡ [TGF] Tick事件: 扣除运行中任务能量 ") +
+        //             SCHEDULER_LOG_INFO(std::string("⚡ [ALAP-NonBlock] Tick事件: 扣除运行中任务能量 ") +
         //                                std::to_string(total_energy_to_deduct * 1000) + " mJ，" +
         //                                std::to_string(old_energy * 1000) + " mJ → " +
         //                                std::to_string(_current_energy * 1000) + " mJ (" +
@@ -1600,7 +1786,7 @@ namespace RTSim {
 
             // ⭐ 检查：当前能量是否足够该任务继续执行1ms
             if (_current_energy < unit_energy - EPSILON) {
-                SCHEDULER_LOG_WARNING(std::string("⚡ [TGF] 任务能量不足，将中断: ") +
+                SCHEDULER_LOG_WARNING(std::string("⚡ [ALAP-NonBlock] 任务能量不足，将中断: ") +
                                      getTaskName(task) +
                                      " 需要1ms=" + std::to_string(unit_energy) + "J" +
                                      " 当前能量=" + std::to_string(_current_energy) + "J");
@@ -1608,7 +1794,7 @@ namespace RTSim {
                 tasks_to_interrupt.push_back(task);
                 _stats.total_skipped_energy++;
             } else {
-                SCHEDULER_LOG_DEBUG(std::string("✅ [TGF] 任务能量充足: ") +
+                SCHEDULER_LOG_DEBUG(std::string("✅ [ALAP-NonBlock] 任务能量充足: ") +
                                    getTaskName(task) +
                                    " 需要1ms=" + std::to_string(unit_energy) + "J" +
                                    " 当前能量=" + std::to_string(_current_energy) + "J");
@@ -1621,7 +1807,7 @@ namespace RTSim {
                 continue;
             }
 
-            SCHEDULER_LOG_INFO(std::string("🛑 [TGF] 中断任务（能量不足）: ") + getTaskName(task));
+            SCHEDULER_LOG_INFO(std::string("🛑 [ALAP-NonBlock] 中断任务（能量不足）: ") + getTaskName(task));
 
             // 调用kernel的suspend方法��断任务
             // suspend会自动调用deschedule()并将任务重新放回调度队列
@@ -1632,14 +1818,14 @@ namespace RTSim {
 //             if (it != _energy_check_events.end()) {
 //                 // 从map中移除，但不删除事件对象（它会自然结束）
 //                 _energy_check_events.erase(it);
-//                 SCHEDULER_LOG_DEBUG(std::string("⚠️ [TGF] 已取消任务的能量检查事件: ") + getTaskName(task));
+//                 SCHEDULER_LOG_DEBUG(std::string("⚠️ [ALAP-NonBlock] 已取消任务的能量检查事件: ") + getTaskName(task));
 //             }
 
-            SCHEDULER_LOG_INFO(std::string("⏸️ [TGF] 任务已中断，等待能量恢复: ") + getTaskName(task));
+            SCHEDULER_LOG_INFO(std::string("⏸️ [ALAP-NonBlock] 任务已中断，等待能量恢复: ") + getTaskName(task));
         }
 
         if (!tasks_to_interrupt.empty()) {
-            SCHEDULER_LOG_INFO(std::string("📊 [TGF] 本次tick中断了 ") +
+            SCHEDULER_LOG_INFO(std::string("📊 [ALAP-NonBlock] 本次tick中断了 ") +
                                std::to_string(tasks_to_interrupt.size()) + " 个任务（能量不足）");
         }
     }
