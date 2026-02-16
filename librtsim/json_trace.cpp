@@ -216,16 +216,22 @@ namespace RTSim {
 
         // ⭐ 添加descheduled特定信息
         if (task) {
-            // 计算已消耗的部分能量（使用total_consumed的差值）
-            if (_energy_provider && _task_start_consumed.find(task) != _task_start_consumed.end()) {
-                double partial_consumed = _energy_provider->getTotalEnergyConsumed() - _task_start_consumed[task];
-                fd << ", \"partial_consumed_mJ\": " << (partial_consumed * 1000.0);
-            }
-
-            // 计算已执行时间和剩余WCET
+            // 计算已执行时间
             if (_task_start_times.find(task) != _task_start_times.end()) {
                 MetaSim::Tick executed_time = SIMUL.getTime() - _task_start_times[task];
                 fd << ", \"executed_time_ms\": " << executed_time;
+
+                // ⭐ 修复：基于执行时间计算部分消耗能量，而不���能量差值
+                // 原因：能量差值会排除调度时预扣的初始能量（在scheduled事件中扣除的1ms）
+                //       导致partial_consumed记录不准确
+                // 示例：任务执行10ms，单位能耗0.42mJ/ms
+                //       - 能量差值法：4.2 - 0.42 = 3.78mJ (错误！缺少1ms的能量)
+                //       - 执行时间法：10 * 0.42 = 4.2mJ (正确！)
+                if (_energy_provider) {
+                    double task_unit_energy = _energy_provider->getTaskUnitEnergy(task);
+                    double partial_consumed = double(executed_time) * task_unit_energy;
+                    fd << ", \"partial_consumed_mJ\": " << (partial_consumed * 1000.0);
+                }
 
                 // 尝试获取WCET并计算剩余时间
                 // 注意：这里需要从任务模型获取WCET，但我们没有直接访问权限

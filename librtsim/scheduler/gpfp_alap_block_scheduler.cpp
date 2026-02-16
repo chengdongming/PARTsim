@@ -1071,8 +1071,15 @@ namespace RTSim {
             CPU *cand_cpu = _kernel->getProcessor(candidate);
             if (cand_cpu != nullptr) continue;  // 已在运行
 
-            Tick slack = calculateSlackForTask(candidate);
-            if (slack > 0) continue;  // 还不紧急
+            // ⭐ 关键修复：移除抢占检查中的ALAP Slack门控，让高优先级任务可以立即抢占
+            // 原因：ALAP的Slack门控应该在调度时过滤（getTaskN），而不应该在抢占时过滤
+            // 如果在抢占时也过滤Slack，会导致高优先级任务（如Task_Assassin_Hungry, period=50）
+            // 因为Slack>0而无法抢占低优先级任务（如Task_Mid_A, period=100），
+            // 违反RM调度原则，导致饥饿和超时
+            //
+            // 新策略：
+            // - 抢占时只看RM优先级，不看Slack（类似TIE调度器）
+            // - Slack门控在全局门控（第506-512行）和getTaskN调度时生效
 
             ALAPBlockTaskModel *model = getTaskModel(candidate);
             if (!model) continue;
@@ -1080,7 +1087,8 @@ namespace RTSim {
             if (!best_candidate || model->getRMPriority() < best_model->getRMPriority()) {
                 best_candidate = candidate;
                 best_model = model;
-                best_slack = slack;
+                // ⭐ 修复：移除Slack门控后，不再记录best_slack
+                // best_slack = slack;
             }
         }
 

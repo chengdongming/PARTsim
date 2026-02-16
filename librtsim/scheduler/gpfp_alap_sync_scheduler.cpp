@@ -676,6 +676,12 @@ namespace RTSim {
             return;
         }
 
+        // ========== 第2.5步：Tick边界抢占检查 ==========
+        // ⭐ 关键修复：在批量调度决策之前检查抢占
+        // 参考TIE调度器的设计，每个tick都应该检查抢占，让高优先级任务能够抢占低优先级任务
+        // 这样Task_Assassin_Hungry (period=50) 就能抢占Task_Mid_A (period=100)
+        checkAndPreempt();
+
         // ⭐ Bug #9修复：不在批量调度决策之前调用checkAndInterruptRunningTasks()
         // 因为那时_batch_scheduled_this_tick还没有设置，检查结果会被覆盖
         // 只在批量调度决策之后调用一次，让它根据_batch_scheduled_this_tick决定是否检查
@@ -1499,14 +1505,15 @@ namespace RTSim {
             return;
         }
 
-        // ⭐ ALAP抢占条件：候选任务Slack≤0才能抢占
-        Tick highest_slack = calculateSlackForTask(highest);
-        if (highest_slack > 0) {
-            SCHEDULER_LOG_INFO(std::string("⏸️ [ALAP-Sync] 候选任务Slack>0，不抢占: ") +
-                              getTaskName(highest) +
-                              " Slack=" + std::to_string(static_cast<int64_t>(highest_slack)));
-            return;
-        }
+        // ⭐ 关键修复：移除抢占检查中的ALAP Slack门控，让高优先级任务可以立即抢占
+        // 原因：ALAP的Slack门控应该在调度时过滤（getTaskN），而不应该在抢占时过滤
+        // 如果在抢占时也过��Slack，会导致高优先级任务（如Task_Assassin_Hungry, period=50）
+        // 因为Slack>0而无法抢占低优先级任务（如Task_Mid_A, period=100），
+        // 违反RM调度原则，导致饥饿和超时
+        //
+        // 新策略：
+        // - 抢占时只看RM优先级，不看Slack（类似TIE调度器）
+        // - Slack门控在批量调度的任务选择时生效（第799-805行）
 
         // 检查是否需要抢占（新任务优先级更高）
         if (shouldPreempt(lowest_priority_task, highest)) {
