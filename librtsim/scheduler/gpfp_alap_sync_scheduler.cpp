@@ -543,30 +543,24 @@ namespace RTSim {
         int K = std::min(ready_count, total_cpus);  // 批次大小不超过总核心数（允许抢占）
 
         // ========== 构建"全员进退、同生共死"批次 ==========
-        // ⭐ 只包含Slack<=0的任务（ALAP时序门控）
-        // 从就绪队列选择，受K值限制，只选择Slack<=0的任务
+        // ⭐ 关键修复：不过滤Slack，让所有top K任务都进入候选批次
+        // Slack过滤移到能量检查之后，避免过早过滤导致调度延迟
+        // 这样可以保证调度时机与Block/NonBlock一致
         std::vector<AbsRTTask *> candidate_batch;
-        for (int i = 0; i < static_cast<int>(sorted_ready.size()) && static_cast<int>(candidate_batch.size()) < K; ++i) {
-            AbsRTTask *task = sorted_ready[i];
-            Tick task_slack = calculateSlackForTask(task);
-            if (task_slack <= 0) {
-                candidate_batch.push_back(task);
-            } else {
-                SCHEDULER_LOG_DEBUG(std::string("⏸️ [ALAP-Sync] 批次构建: 任务Slack>0，跳过 ") +
-                                   getTaskName(task) +
-                                   " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms");
-            }
+        for (int i = 0; i < K && i < static_cast<int>(sorted_ready.size()); ++i) {
+            candidate_batch.push_back(sorted_ready[i]);
         }
 
-        // ========== Phase 2: ALAP-Sync 批次级时序门控 ==========
-        // ⭐ 核心：计算 Batch Slack = min(Slack_i)
-        // 如果 Batch Slack > 0，全员休眠（IDLE）
-        // 注意：只影响新任务调度，不影响运行中任务
-        if (!candidate_batch.empty() && !checkALAPBatchTimingGate(candidate_batch)) {
-            SCHEDULER_LOG_INFO("⏸️  [ALAP-Sync] 批次级门控：S_batch > 0，新任务批次休眠");
-            return;  // 新任务不调度
-        }
-        // S_batch ≤ 0，批次唤醒，继续到能量检查
+        // ========== Phase 2: ALAP-Sync 批次级时序门控（已禁用）==========
+        // ⭐ 关键修复：移除批次级时序门控，避免过度阻塞
+        // 原因：批次时序门控计算Batch Slack = min(Slack_i)，导致在t=96时如果批次中有一个任务Slack>0，
+        //      整个批次被阻塞，调度延迟到t=100，导致deadline miss
+        // 解决方案：在任务选择时进行个体Slack过滤（第798-804行）���只调度Slack<=0的任务
+        // 这样既保证了ALAP时序门控的功能，又避免了过度阻塞
+        // if (!candidate_batch.empty() && !checkALAPBatchTimingGate(candidate_batch)) {
+        //     SCHEDULER_LOG_INFO("⏸️  [ALAP-Sync] 批次级门控：S_batch > 0，新任务批次休眠");
+        //     return;  // 新任务不调度
+        // }
 
         // ⭐ ALAP-Sync关键修复：采用正确的能量扣除逻辑（后扣方式）
 
@@ -783,14 +777,17 @@ namespace RTSim {
                 }
             }
 
-            // ⭐ "全员进退、同生共死"：实际调度使用 candidate_batch（通过批次时序门控的任务）
-            // 从candidate_batch中选择任务，受free_cpus限制
+            // ⭐ "全员进退、同生共死"：从candidate_batch选择新任务（受free_cpus限制）
+            // ⭐ 关键修复：任务选择时不过滤Slack，让getTaskN在调度时动态���查
+            // 原因：如果在这里过滤Slack>0，会导致t=60-96之间所有任务被跳过
+            //      无法触发调度，直到t=100某个任务Slack<=0才调度，延迟4ms
+            // 解决方案：让所有候选任务进入_current_batch_tasks，在getTaskN中检查Slack
             int selected_count = 0;
             for (size_t j = 0; j < candidate_batch.size(); ++j) {
                 if (selected_count >= free_cpus) break;
                 AbsRTTask *task = candidate_batch[j];
 
-                // 排除已在运行中的任务（candidate_batch包含所有就绪任务，需要过滤运行中的）
+                // 排除已在运行中的任务
                 bool is_running = false;
                 for (auto* running_task : running_task_list) {
                     if (task == running_task) {
@@ -799,7 +796,16 @@ namespace RTSim {
                     }
                 }
                 if (is_running) {
-                    continue;  // 跳过运行中的任务（但它们已在running_task_list中，会继续执行）
+                    continue;  // 跳过运行中的任务
+                }
+
+                // ⭐ ALAP个体时序门控：只选择Slack<=0的任务
+                Tick task_slack = calculateSlackForTask(task);
+                if (task_slack > 0) {
+                    SCHEDULER_LOG_DEBUG(std::string("⏸️ [ALAP-Sync] 任务选择: Slack>0，跳过 ") +
+                                       getTaskName(task) +
+                                       " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms");
+                    continue;  // Slack>0，跳过
                 }
 
                 new_tasks_to_schedule.push_back(task);
@@ -830,7 +836,10 @@ namespace RTSim {
         }
 
         // ⭐ "全员进退、同生共死"：计算candidate_batch中非运行任务的能量（受free_cpus限制）
-        // 这是"全有或全无"的能量检查基础
+        // ⭐ 关键修复：能量计算时不过滤Slack>0，避免过早过滤导致调度延迟
+        // 原因：如果在能量计算时就过滤Slack>0，会导致t=60-96之间所有任务被跳过，
+        //      无法触发调度决策，直到t=100某个任务Slack<=0才调度，延迟4ms
+        // 解决方案：能量计算考虑所有候选任务，Slack过滤移到任务选择阶段
         double new_tasks_energy = 0.0;
         int candidate_count = 0;
         for (auto* task : candidate_batch) {
@@ -844,10 +853,13 @@ namespace RTSim {
                     break;
                 }
             }
-            if (!is_running) {
-                new_tasks_energy += calculateUnitEnergyForTask(task);
-                candidate_count++;
+            if (is_running) {
+                continue;  // 跳过运行中的任务
             }
+
+            // ⭐ 能量计算不过滤Slack，考虑所有候选任务
+            new_tasks_energy += calculateUnitEnergyForTask(task);
+            candidate_count++;
         }
 
         // ⭐ ALAP-Sync总能量需求 = 运行中任务续期 + 新任务（每个tick都扣除）

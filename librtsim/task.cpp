@@ -65,7 +65,7 @@ namespace RTSim {
         deschedEvt(this),
         fakeArrEvt(this),
         killEvt(this),
-        deadEvt(this, false, false) {}
+        deadEvt(this, false, true) {}
 
     string Task::getStateString() {
         string s = std::to_string(double(SIMUL.getTime())) + " ";
