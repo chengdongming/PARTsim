@@ -179,34 +179,13 @@ namespace RTSim {
             return;
         }
 
-            // ⭐ 关键修复：能量已在批量调度时预扣，不再重复扣除
-            // 只检查预扣能量是否耗尽，不再扣除实时能量
-            if (_scheduler->_current_energy < unit_energy * 0.1) {
-                // ❌ 预扣能量已耗尽，立即中断任务
-                SCHEDULER_LOG_WARNING(std::string("⚡ [ALAP-Sync] 预扣能量已耗尽，中断任务: ") +
-                                     _scheduler->getTaskName(_task) +
-                                     " 剩余=" + std::to_string(_scheduler->_current_energy * 1000) + " mJ");
+        // ✅ 能量充足，立即扣除 1ms 的能量
+        _scheduler->_current_energy -= unit_energy;
+        _scheduler->_stats.total_energy_consumed += unit_energy;
 
-                _scheduler->_energy_depleted = true;
-
-                // ⭐ V37关键修复：将剩余��量强制设为0
-                // 确保performTickScheduling的能量检查正确工作
-                _scheduler->_current_energy = 0.0;
-
-                if (_scheduler->_kernel && _task->isExecuting()) {
-                    _scheduler->_kernel->suspend(_task);
-                }
-                return;
-            }
-
-            // ✅ 预扣能量充足，只记录日志，不扣除
-            SCHEDULER_LOG_DEBUG(std::string("✅ [ALAP-Sync] 预扣能量充足，任务继续: ") +
-                               _scheduler->getTaskName(_task) +
-                               " 剩余=" + std::to_string(_scheduler->_current_energy * 1000) + " mJ");
-
-        // ✅ 能量充足，继续执行
-        SCHEDULER_LOG_DEBUG(std::string("✅ [ALAP-Sync] 能量充足，任务继续: ") +
+        SCHEDULER_LOG_DEBUG(std::string("✅ [ALAP-Sync] 扣除 1ms 能量: ") +
                            _scheduler->getTaskName(_task) +
+                           " 扣除=" + std::to_string(unit_energy * 1000) + " mJ" +
                            " 剩余=" + std::to_string(_scheduler->_current_energy * 1000) + " mJ" +
                            " 已执行=" + std::to_string(_ms_executed) + "ms");
 
@@ -483,6 +462,9 @@ namespace RTSim {
 
         _stats.total_tick_count++;
 
+        // ⭐ 逐渐扣除模式：清空本次tick的调度记录
+        _counted_tasks_in_dispatch.clear();
+
         // ========== 第1步：收集太阳能 ==========
         // ⭐ 关键修复：太阳能收集必须在能量耗尽检查之前执行
         // 否则当初始能量为0时，系统会因为能量耗尽而跳过太阳能收集，形成死锁
@@ -521,15 +503,10 @@ namespace RTSim {
         }
 
         // ========== 阶段一：ALAP时序门控 ==========
-        // ⭐ ALAP核心：在能量分发之前检查Slack，决定是否强制休眠
-        if (!checkALAPTimingGate()) {
-            // Slack > 0，强制休眠，本tick不进行任何任务调度
-            SCHEDULER_LOG_INFO("⏸️  [ALAP-Sync] ALAP时序门控：强制休眠，跳过本Tick调度");
-            return;
-        }
-        // Slack ≤ 0，唤醒，继续进行能量分发
+        // ⭐ ALAP-Sync 核心修复：基于批次的 S_batch 计算（而非全局 S_min）
+        // 根据原论文："仅基于该批次内的任务计算最小松弛时间 S_batch"
 
-        // ⭐ ALAP-Sync修复：真正的批量调度 - 收集所有任务（运行中+就绪队列）
+        // 先收集运行中任务和就绪队列（用于构建批次）
         if (!_kernel) {
             _kernel = getKernel();
             if (!_kernel) {
@@ -538,14 +515,45 @@ namespace RTSim {
             }
         }
 
+        // 获取运行中任务
+        const auto& running_tasks = _kernel->getCurrentExecutingTasks();
+        std::vector<AbsRTTask *> running_task_list;
+        for (const auto& map_pair : running_tasks) {
+            if (map_pair.second) {
+                running_task_list.push_back(map_pair.second);
+            }
+        }
+
+        // 获取就绪队列（已按 RM 优先级排序）
+        std::vector<AbsRTTask *> sorted_ready(_ready_queue.begin(), _ready_queue.end());
+
+        // ⭐ 关键：构建候选批次（运行中 + 就绪队列前 K 个任务）
+        int total_cpus = _running_tasks.size();  // 使用 _running_tasks 的大小
+        int free_cpus = total_cpus - running_task_list.size();
+        int K = std::max(1, free_cpus);  // 批次大小
+
+        std::vector<AbsRTTask *> candidate_batch;
+        // 1. 添加运行中任务
+        for (auto* task : running_task_list) {
+            candidate_batch.push_back(task);
+        }
+        // 2. 添加就绪队列前 K 个任务
+        for (int i = 0; i < K && i < static_cast<int>(sorted_ready.size()); ++i) {
+            candidate_batch.push_back(sorted_ready[i]);
+        }
+
+        // ⭐ 关键修复：只计算批次内任务的最小 Slack（S_batch）
+        if (!checkALAPBatchTimingGate(candidate_batch)) {
+            // S_batch > 0，批次集体休眠
+            SCHEDULER_LOG_INFO("⏸️  [ALAP-Sync] ALAP批次时序门控：S_batch > 0，批次集体休眠，跳过本Tick调度");
+            return;
+        }
+        // S_batch ≤ 0，唤醒，继续进行批量调度
+
         // ⭐ ALAP-Sync关键修复：采用正确的能量扣除逻辑（后扣方式）
 
-        // 1. ⭐ ALAP-Sync关键：从kernel获取真正在运行的任务
-        // 因为这些才是实际消耗能量的任务
-        std::vector<AbsRTTask *> running_task_list;
+        // 1. ⭐ ALAP-Sync关键：使用已构建的 running_task_list 和 sorted_ready
         double energy_to_deduct = 0.0;
-
-        const auto& running_tasks = _kernel->getCurrentExecutingTasks();
 
         // 🔍 调试：输出_currExe的内容
         SCHEDULER_LOG_INFO(std::string("🔍 [ALAP-Sync] _currExe内容 (") +
@@ -585,48 +593,58 @@ namespace RTSim {
             }
         }
 
-        // ⭐ 预扣模式：能量将在批量调度时统一扣除，这里不再扣除运行任务的能量
-        // (运行任务的能量已在上一次批量调度时预扣，新任务的能量将在本次批量调度时预扣)
-        if (false) {  // Disabled in pre-deduction mode
+        // ⭐ 逐渐扣除模式：每1ms扣除运行任务的能量（类似TIE的方式）
+        // 不再使用预扣模式，能量在实际执行时每ms扣除一次
+        {
             const double EPSILON = 1e-9;
-            if (_current_energy >= energy_to_deduct - EPSILON) {
-                // ⭐ Bug #5修复：能量不足时，强制结束所有运行中任务
-                SCHEDULER_LOG_WARNING(std::string("⚠️ [ALAP-Sync] 能量不足，强制结束所有运行中任务: ") +
-                                        "需要=" + std::to_string(energy_to_deduct * 1000) + " mJ " +
-                                        "当前=" + std::to_string(_current_energy * 1000) + " mJ " +
-                                        "运行中任务数=" + std::to_string(running_task_list.size()));
+            std::vector<AbsRTTask *> tasks_to_suspend;
 
+            SCHEDULER_LOG_INFO(std::string("⚡ [ALAP-Sync] 检查运行任务续期能量: ") +
+                               std::to_string(running_task_list.size()) + " 个任务, " +
+                               "剩余能量=" + std::to_string(_current_energy * 1000) + " mJ");
+
+            // 对每个运行任务检查是否有足够能量续期1ms
+            for (AbsRTTask* task : running_task_list) {
+                double unit_energy = calculateUnitEnergyForTask(task);
+
+                // 检查是否有足够能量续期1ms
+                if (_current_energy < unit_energy - EPSILON) {
+                    // ⭐ 能量不足，加入挂起列表
+                    tasks_to_suspend.push_back(task);
+                    SCHEDULER_LOG_WARNING(std::string("⚠️ [ALAP-Sync] 续期能量不足，将挂起: ") +
+                                         getTaskName(task) +
+                                         " 需要=" + std::to_string(unit_energy * 1000) + " mJ" +
+                                         " 剩余=" + std::to_string(_current_energy * 1000) + " mJ");
+                } else {
+                    // ⭐ 能量充足，立即扣除1ms能量
+                    double old_energy = _current_energy;
+                    _current_energy -= unit_energy;
+                    _stats.total_energy_consumed += unit_energy;
+
+                    SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Sync] 扣除续期能量: ") +
+                                       getTaskName(task) +
+                                       " -" + std::to_string(unit_energy * 1000) + " mJ " +
+                                       std::to_string(old_energy * 1000) + " → " +
+                                       std::to_string(_current_energy * 1000) + " mJ");
+                }
+            }
+
+            // ⭐ 如果有任务能量不足，挂起这些任务
+            if (!tasks_to_suspend.empty()) {
                 // 设置能量耗尽标志
                 _energy_depleted = true;
 
-                // 强制结束所有运行中任务（直接清理，不调用onTaskEnd避免增加完成计数）
-                std::vector<AbsRTTask *> tasks_to_end = running_task_list;
-                for (auto* task : tasks_to_end) {
-                    SCHEDULER_LOG_INFO(std::string("🛑 [ALAP-Sync] 强制结束任务: ") +
-                                       getTaskName(task) + " (能量不足)");
+                SCHEDULER_LOG_WARNING(std::string("💀 [ALAP-Sync] 能量耗尽，挂起 ") +
+                                     std::to_string(tasks_to_suspend.size()) + " 个任务");
 
-                    // 从就绪队列移除
-                    removeFromReadyQueue(task);
-
-                    // 从运行任务映射中移除
-                    for (auto &pair : _running_tasks) {
-                        if (pair.second == task) {
-                            pair.second = nullptr;
-                            break;
-                        }
+                // 挂起所有能量不足的任务
+                for (AbsRTTask* task : tasks_to_suspend) {
+                    if (_kernel && task->isExecuting()) {
+                        SCHEDULER_LOG_WARNING(std::string("🛑 [ALAP-Sync] 挂起任务: ") +
+                                             getTaskName(task));
+                        _kernel->suspend(task);
                     }
-
-                    // 不增加任务完成计数（这不是真正的完成）
-                    // 不触发立即调度（能量已耗尽）
                 }
-
-                // 记录实际剩余能量为0
-                double old_energy = _current_energy;
-                _current_energy = 0.0;
-                _stats.total_energy_consumed += old_energy;
-
-                SCHEDULER_LOG_INFO(std::string("⚡ [ALAP-Sync] 能量耗尽: ") +
-                                   std::to_string(old_energy * 1000) + " mJ → 0.000000 mJ");
 
                 // ⭐ 关键修复：能量耗尽后，直接返回，不继续调度新任务
                 return;
@@ -662,17 +680,7 @@ namespace RTSim {
         }
 
         // 3. ⭐ 选择K个新任务（不扣除它们的能量）
-        size_t running_count = running_task_list.size();
-
-        // ⭐ 修复硬编码：从kernel获取CPU数量
-        // getCurrentExecutingTasks()返回_currExe的引用，其大小即为CPU总数
-        size_t total_cpus = _kernel->getCurrentExecutingTasks().size();
-
-        size_t free_cpus = total_cpus - running_count;
-
-        // ⭐ Bug #1修复：调度所有就绪任务，而不是限制为空闲CPU数
-        // 这样确保所有任务（包括低优先级task_4）都能被调度
-        size_t K = _ready_queue.size();
+        int running_count = running_task_list.size();
 
         // ⭐ 批量大小计算：实际可调度的新任务数
         // 批量大小 = min(就绪队列大小, 空闲CPU数)
@@ -827,7 +835,7 @@ namespace RTSim {
         // TIE: current_energy <= unit_energy + EPSILON → 挂起
         // ALAP-Sync: current_energy <= total_energy_needed + EPSILON → 挂起
         // 这样当能量 == 需求时，允许继续执行（与TIE一致）
-        if (_current_energy > total_energy_needed - EPSILON) {
+        if (_current_energy > new_tasks_energy - EPSILON) {
             // 能量充足：调度新任务
             _batch_scheduled_this_tick = true;
             
@@ -843,32 +851,36 @@ namespace RTSim {
             for (auto* task : new_tasks_to_schedule) {
                 all_tasks_to_dispatch.push_back(task);
             }
-            
-            // ⭐ ALAP-Sync关键设计："全有或全无"门槛检查，不预扣能量
-            // 能量将在任务实际执行时由ALAPSyncEnergyCheckEvent每1ms扣除
-
-            // ⭐ 关键修复：立即预扣全部能量（实现真正的"全有或全无"）
-            // 只有当前能量足够支撑整个批次时才扣除，避免逐ms批准导致的超额透支
-            double old_energy = _current_energy;
-            _current_energy -= total_energy_needed;
-            _stats.total_energy_consumed += total_energy_needed;
 
             SCHEDULER_LOG_INFO(std::string("⚡ [ALAP-Sync] 批量调度门槛检查通过: ") +
                               "新任务数=" + std::to_string(new_tasks_to_schedule.size()) +
                               " 运行任务数=" + std::to_string(running_count) +
-                              " 总能耗需求=" + std::to_string(total_energy_needed * 1000) + " mJ " +
+                              " 新任务能耗=" + std::to_string(new_tasks_energy * 1000) + " mJ " +
                               "当前能量=" + std::to_string(_current_energy * 1000) + " mJ");
 
             _current_batch_tasks = all_tasks_to_dispatch;
             _current_batch_size = all_tasks_to_dispatch.size();
             _stats.total_batch_schedules++;
-            
+
+            // ⭐ 逐渐扣除模式：扣除新任务的初始能量（1ms）
+            // 运行中任务的续期能量已在performTickScheduling开始时扣除
+            for (auto* task : new_tasks_to_schedule) {
+                double unit_energy = calculateUnitEnergyForTask(task);
+                _current_energy -= unit_energy;
+                _stats.total_energy_consumed += unit_energy;
+
+                SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Sync] 扣除新任务初始能量: ") +
+                                   getTaskName(task) +
+                                   " -" + std::to_string(unit_energy * 1000) + " mJ → " +
+                                   std::to_string(_current_energy * 1000) + " mJ");
+            }
+
             SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Sync] 批量调度成功: ") +
                               "运行中=" + std::to_string(running_count) +
                               " 新任务=" + std::to_string(new_tasks_to_schedule.size()) +
                               " 总任务=" + std::to_string(all_tasks_to_dispatch.size()) +
-                              " 总能耗=" + std::to_string(total_energy_needed * 1000) + " mJ" +
-                              " ⭐ (运行任务能量已扣除，只调度新任务)");
+                              " 新任务能耗=" + std::to_string(new_tasks_energy * 1000) + " mJ" +
+                              " 剩余能量=" + std::to_string(_current_energy * 1000) + " mJ");
 
             // 不调用checkAndInterruptRunningTasks()，避免潜在的segfault
         } else {
@@ -1112,6 +1124,17 @@ namespace RTSim {
         if (_kernel) {
             CPU *proc = _kernel->getProcessor(task);
             is_running = (proc != nullptr);
+        }
+
+        // ⭐ 逐渐扣除模式：跟踪新调度的任务（不包括运行中的任务）
+        // 运行中任务的能量已在performTickScheduling开始时扣除
+        // 新任务的初始能量需要在dispatch后统一扣除
+        if (!is_running) {
+            if (_counted_tasks_in_dispatch.find(task) == _counted_tasks_in_dispatch.end()) {
+                _counted_tasks_in_dispatch.insert(task);
+                SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Sync] getTaskN: 标记新任务待扣除能量: ") +
+                                   getTaskName(task));
+            }
         }
 
         if (is_running) {
@@ -2010,6 +2033,9 @@ namespace RTSim {
 
         removeFromReadyQueue(task);
         _running_tasks[cpu] = task;
+
+        // ⭐ 启动能量检查事件（每 1ms 扣除能量）
+        startEnergyCheckForTask(task, cpu);
     }
 
     // =====================================================
@@ -2112,6 +2138,12 @@ namespace RTSim {
 
         SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Sync] 任务结束: ") + getTaskName(task));
 
+        // ⭐ 逐渐扣除模式：从计数集合中移除任务
+        _counted_tasks_in_dispatch.erase(task);
+
+        // ⭐ 停止能量检查事件
+        stopEnergyCheckForTask(task);
+
         // 从就绪队列移除
         removeFromReadyQueue(task);
 
@@ -2159,6 +2191,40 @@ namespace RTSim {
     // ALAP时序门控（阶段一）
     // =====================================================
 
+    // ⭐ 新增：基于批次的 ALAP 时序门控（原论文正确实现）
+    bool ALAPSyncScheduler::checkALAPBatchTimingGate(const std::vector<AbsRTTask *> &batch) {
+        if (batch.empty()) {
+            return true;  // 空批次，通过门控
+        }
+
+        Tick current_time = SIMUL.getTime();
+        Tick min_slack = Tick(-1);
+
+        // ⭐ 关键修复：只计算批次内任务的 Slack，找最小值（S_batch）
+        for (AbsRTTask *task : batch) {
+            if (!task) continue;
+
+            Tick slack = calculateSlackForTask(task);
+
+            if (min_slack < 0 || slack < min_slack) {
+                min_slack = slack;
+            }
+        }
+
+        // 门控逻辑
+        if (min_slack > 0) {
+            SCHEDULER_LOG_INFO("⏸️  [ALAP-Sync] ALAP批次时序门控：S_batch > 0 (" +
+                               std::to_string(static_cast<int64_t>(min_slack)) + "ms)，批次集体休眠");
+            _stats.total_alap_forced_idle++;
+            return false;  // 批次集体休眠
+        } else {
+            SCHEDULER_LOG_INFO("✅ [ALAP-Sync] ALAP批次时序门控：S_batch ≤ 0 (" +
+                               std::to_string(static_cast<int64_t>(min_slack)) + "ms)，批次唤醒，允许调度");
+            return true;  // 批次唤醒
+        }
+    }
+
+    // ⭐ 保留原有的全局检查函数（供兼容性使用）
     bool ALAPSyncScheduler::checkALAPTimingGate() {
         if (_ready_queue.empty()) {
             return true;  // 空队列，通过门控

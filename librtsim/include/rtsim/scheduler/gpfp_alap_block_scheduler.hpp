@@ -160,6 +160,7 @@ namespace RTSim {
 
         // ========== 能量耗尽管理 ==========
         bool _energy_depleted;  // ⭐ 能量是否已耗尽（Bug修复）
+        bool _alap_blocking;   // ⭐ ALAP-Block 特有：严格阻塞标志（能量不足时阻塞全部调度）
 
         // ========== 私有方法 ==========
 

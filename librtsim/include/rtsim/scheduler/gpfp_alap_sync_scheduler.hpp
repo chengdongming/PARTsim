@@ -121,6 +121,9 @@ namespace RTSim {
         ALAPSyncTickEvent *_tick_event;
         bool _first_tick_scheduled;  // 标记第一个tick是否已调度
 
+        // ========== 本次dispatch中已计数的任务（用于逐渐扣除模式） ==========
+        std::set<AbsRTTask *> _counted_tasks_in_dispatch; // 本次dispatch中已计数的任务，避免重复
+
         // ========== 任务管理 ==========
         std::map<AbsRTTask *, ALAPSyncTaskModel *> _task_models;
         std::deque<AbsRTTask *> _ready_queue;
@@ -171,7 +174,8 @@ namespace RTSim {
         void performTickScheduling();
 
         // ⭐ ALAP时序门控（阶段一）
-        bool checkALAPTimingGate();  // 检查是否需要强制休眠
+        bool checkALAPBatchTimingGate(const std::vector<AbsRTTask *> &batch);  // ⭐ 基于批次的ALAP时序门控（原论文正确实现）
+        bool checkALAPTimingGate();  // 全局ALAP时序门控（保留兼容性）
         MetaSim::Tick calculateSlackForTask(AbsRTTask *task);  // 计算任务的Slack
 
         // ⭐ 运行时能量检查和任务中断（V28.15新增）

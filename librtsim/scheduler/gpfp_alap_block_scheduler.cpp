@@ -272,7 +272,8 @@ namespace RTSim {
           _tick_event(nullptr),
           _first_tick_scheduled(false),
           _kernel(nullptr),
-          _energy_depleted(false) {  // ⭐ 初始化能量耗尽标志
+          _energy_depleted(false),    // ⭐ 初始化能量耗尽标志
+          _alap_blocking(false) {     // ⭐ 初始化ALAP阻塞标志
 
         SCHEDULER_LOG_INFO("🚀 [ALAP-Block] ALAP-Block Scheduler 初始化");
 
@@ -454,6 +455,10 @@ namespace RTSim {
         SCHEDULER_LOG_INFO("⚡ 初始能量: " + std::to_string(_current_energy * 1000) + " mJ");
 
         _stats.total_tick_count++;
+
+        // ⭐ 关键修复：每个 Tick 开始时清除 ALAP 阻塞标志
+        // 阻塞只在一个 Tick 内有效，下一个 Tick 重新评估
+        _alap_blocking = false;
 
         Tick current_time = SIMUL.getTime();
 
@@ -639,12 +644,19 @@ namespace RTSim {
         double unit_energy = calculateUnitEnergyForTask(first_task);
 
         if (_current_energy < unit_energy) {
-            SCHEDULER_LOG_INFO(std::string("❌ [ALAP-Block] getFirst: 能量不足") +
-                              " 任务: " + getTaskName(first_task) +
-                              " 需要: " + std::to_string(unit_energy) + "J" +
-                              " 当前: " + std::to_string(_current_energy) + "J");
+            // ⭐ 关键修复：根据原论文，ALAP-Block 应该"死守高优，宁缺毋滥"
+            // 能量不足时，设置阻塞标志，本 Tick 拒绝调度任何任务（包括次高优先级任务）
+            _alap_blocking = true;
+            SCHEDULER_LOG_WARNING(std::string("🚫 [ALAP-Block] 能量不足，启动严格阻塞模式（死守高优，宁缺毋滥）") +
+                                 " 任务: " + getTaskName(first_task) +
+                                 " 需要: " + std::to_string(unit_energy) + "J" +
+                                 " 当前: " + std::to_string(_current_energy) + "J" +
+                                 " → 本 Tick 阻塞全部调度");
             return nullptr;
         }
+
+        // 能量充足，清除阻塞标志
+        _alap_blocking = false;
 
         // 返回任务（能量在notify时扣减）
         return first_task;
@@ -661,6 +673,15 @@ namespace RTSim {
             SCHEDULER_LOG_DEBUG(std::string("💀 [ALAP-Block] getTaskN: 能量已耗尽，拒绝调度") +
                                " n=" + std::to_string(n) +
                                " energy=" + std::to_string(_current_energy * 1000) + " mJ");
+            return nullptr;
+        }
+
+        // ⭐ 关键修复：ALAP-Block 严格阻塞机制
+        // 如果本 Tick 已触发阻塞（能量不足），拒绝调度任何次高优先级任务
+        if (_alap_blocking) {
+            SCHEDULER_LOG_DEBUG(std::string("🚫 [ALAP-Block] getTaskN: ALAP严格阻塞模式，拒绝调度") +
+                               " n=" + std::to_string(n) +
+                               " 原因：高优先级任务能量不足，宁缺毋滥");
             return nullptr;
         }
 
@@ -764,18 +785,12 @@ namespace RTSim {
 
             // 这是第ready_index个未dispatch的任务
             if (ready_index == n) {
-                // ⭐ ALAP时序门控检查（能量充足后）
-                // 即使能量足够，如果当前任务的Slack>0也不应该调度
-                Tick task_slack = calculateSlackForTask(task);
-                if (task_slack > 0) {
-                    SCHEDULER_LOG_INFO(std::string("⏸️ [ALAP-Block] getTaskN: 当前任务Slack>0，跳过 ") +
-                                           getTaskName(task) +
-                                           " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms");
-                    std::cout << "[DEBUG] ALAP-Block::getTaskN(" << n << ") - task slack>0, continue" << std::endl;
-                    ready_index++;
-                    continue;  // Skip this task
-                }
-                // Slack≤0的任务可以调度
+                // ⭐ 关键修复：移除个体任务Slack检查！
+                // ALAP的正确逻辑：
+                // 1. checkALAPTimingGate() 计算全局min_slack并判断是否唤醒
+                // 2. 一旦唤醒（min_slack≤0），就按优先级顺序调度所有任务
+                // 3. 不应该在getTaskN()中再次检查个体任务的Slack
+                // 原因：全局门控已经决定"可以调度"，这里只应该按优先级调度
 
                 // ⭐ 计算任务的1ms能耗
                 double unit_energy = calculateUnitEnergyForTask(task);
@@ -1693,18 +1708,60 @@ namespace RTSim {
     // =====================================================
 
     bool ALAPBlockScheduler::checkALAPTimingGate() {
-        if (_ready_queue.empty()) {
-            return true;  // 空队列，通过门控
-        }
-
         Tick current_time = SIMUL.getTime();
         Tick min_slack = Tick(-1);
 
-        // 计算所有就绪任务的Slack，找最小值
+        // ⭐ 关键修复：同时检查就绪队列和运行中的任务
+        // 根据原论文，应该检查"所有就绪任务"，包括正在运行的任务
+        std::vector<AbsRTTask *> all_tasks;
+
+        // 1. 添加就绪队列中的未调度任务
         for (AbsRTTask *task : _ready_queue) {
+            if (task) all_tasks.push_back(task);
+        }
+
+        // 2. ⭐ 添加运行中的任务
+        // ⭐ 确保 _kernel 已设置
+        if (!_kernel) {
+            _kernel = getKernel();
+        }
+
+        if (_kernel) {
+            const auto& running_tasks = _kernel->getCurrentExecutingTasks();
+            for (const auto& map_pair : running_tasks) {
+                AbsRTTask *task = map_pair.second;
+                if (task && task->isExecuting()) {
+                    all_tasks.push_back(task);
+                }
+            }
+        }
+
+        // 如果没有任何任务，通过门控
+        if (all_tasks.empty()) {
+            return true;
+        }
+
+        // 计算所有任务的Slack，找最小值
+        for (AbsRTTask *task : all_tasks) {
             if (!task) continue;
 
-            Tick slack = calculateSlackForTask(task);
+            // ⭐ 关键修复：检查任务是否仍然有效
+            // 在任务结束时，任务可能已经被部分删除，导致vtable指针为NULL
+            // 检查任务是否活跃可以防止访问无效的对象
+            if (!task->isActive()) {
+                SCHEDULER_LOG_DEBUG("⏭️ [ALAP-Block] checkALAPTimingGate: 跳过非活跃任务");
+                continue;
+            }
+
+            // ⭐ 使用try-catch保护calculateSlackForTask调用
+            // 防止访问已删除的对象
+            Tick slack;
+            try {
+                slack = calculateSlackForTask(task);
+            } catch (...) {
+                SCHEDULER_LOG_WARNING("⚠️ [ALAP-Block] checkALAPTimingGate: 计算Slack时发生异常，跳过任务");
+                continue;
+            }
 
             if (min_slack < 0 || slack < min_slack) {
                 min_slack = slack;
