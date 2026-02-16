@@ -450,16 +450,31 @@ namespace RTSim {
 
         // from old Task ...
         killEvt.drop();
+        // 防止deschedEvt在kill后触发（killInstance调用deschedule会post deschedEvt）
+        deschedEvt.drop();
+        // 防止endEvt在kill后触发
+        endEvt.drop();
         // normal code
 
         lastArrival = arrival;
 
-        int cpu_index = getCPU()->getIndex();
+        // 安全处理：任务可能不在CPU上执行（例如在就绪队列中等待）
+        CPU *cpu = getCPU();
+        int cpu_index = -1;
+        if (cpu) {
+            cpu_index = cpu->getIndex();
+        }
 
         DBGPRINT("Task ", getName(), " killed on CPU ", cpu_index);
 
-        endEvt.setCPU(cpu_index);
-        _kernel->onEnd(this);
+        if (cpu_index >= 0) {
+            endEvt.setCPU(cpu_index);
+        }
+
+        // 只有当任务在执行时才通知内核
+        if (_kernel && isExecuting()) {
+            _kernel->onEnd(this);
+        }
         state = TSK_IDLE;
 
         if (feedback) {
@@ -477,18 +492,23 @@ namespace RTSim {
             DBGPRINT("[Fake Arrival generated]");
         }
 
-        endRun();
+        // 注意：不再调用endRun()，因为它会清除周期性任务的到达事件
+        // NonPeriodicTask::onKill()会自行调用endRun()
     }
 
     void Task::onSched(Event *e) {
         DBGENTER(_TASK_DBG_LEV);
+
+        // 安全处理：任务可能已被killOnMiss终止
+        if (!isActive()) {
+            DBGPRINT("Task ", getName(), " is not active, skipping sched");
+            return;
+        }
+
         int cpu_index = getCPU()->getIndex();
 
         DBGPRINT("schedEvt for task ", getName(), " on CPU ", cpu_index);
 
-        if (!isActive()) {
-            throw TaskNotActive("OnSched on a non-active task");
-        }
         if (isExecuting()) {
             throw TaskAlreadyExecuting();
         }
@@ -517,15 +537,19 @@ namespace RTSim {
     void Task::onDesched(Event *e) {
         DBGENTER(_TASK_DBG_LEV);
 
-        int cpu_index = getOldCPU()->getIndex();
-
-        DBGPRINT("DeschedEvt for task ", getName(), " from CPU", cpu_index);
-
-        if (!isActive()) {
-            throw TaskNotActive("OnDesched on a non-active task");
+        // 安全处理：任务可能已被killOnMiss终止，此时不再是活动/执行状态
+        if (!isActive() || !isExecuting()) {
+            DBGPRINT("Task ", getName(), " is not active/executing, skipping desched");
+            return;
         }
-        if (!isExecuting()) {
-            throw TaskNotExecuting("OnDesched() on a non-executing task");
+
+        // 安全处理：getOldCPU可能为空（任务首次执行时没有旧CPU）
+        CPU *oldCpu = getOldCPU();
+        int cpu_index = oldCpu ? oldCpu->getIndex() : -1;
+        if (cpu_index < 0) {
+            // 尝试使用当前CPU
+            CPU *curCpu = getCPU();
+            cpu_index = curCpu ? curCpu->getIndex() : 0;
         }
 
         DBGPRINT("CPU: ", getCPU());

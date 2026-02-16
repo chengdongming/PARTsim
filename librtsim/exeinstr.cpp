@@ -181,6 +181,10 @@ namespace RTSim {
 
         if (executing) {
             CPU *p = _father->getOldCPU();
+            // 安全回退：如果getOldCPU为空（首次执行被kill时），使用getCPU
+            if (!p) {
+                p = _father->getCPU();
+            }
             if (!dynamic_cast<CPU *>(p))
                 throw InstrExc("No CPU!", "ExeInstr::deschedule()");
 

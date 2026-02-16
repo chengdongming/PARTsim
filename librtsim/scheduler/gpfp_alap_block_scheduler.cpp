@@ -499,6 +499,10 @@ namespace RTSim {
             _current_energy = _max_energy;
         }
 
+        // ========== 第1.5步：清理过期任务实例 ==========
+        // ⭐ 已改用killOnMiss(true)，框架自动处理过期实例
+        // cleanupExpiredTasks();
+
         // ========== 阶段一：ALAP时序门控 ==========
         // ⭐ ALAP核心：在能量分发之前检查Slack，决定是否强制休眠
         if (!checkALAPTimingGate()) {
@@ -752,7 +756,10 @@ namespace RTSim {
                 continue;
             }
 
-            // ⭐ 关键修复：不再跳过已调度的任务
+            // ⭐ killOnMiss安全检查：跳过已被框架终止的任务实例
+            if (!task->isActive()) {
+                continue;
+            }
             // _counted_tasks_in_dispatch只是用于跟踪本次tick中已扣除能量的任务
             // 避免重复扣除能量
             // 重复调度的问题由内核的_m_dispatched检查来处理
@@ -789,6 +796,21 @@ namespace RTSim {
 
             // 这是第ready_index个未dispatch的任务
             if (ready_index == n) {
+                // ⭐ 关键修复：跳过已过期的任务实例
+                ALAPBlockTaskModel *task_model = getTaskModel(task);
+                if (task_model) {
+                    Tick arrival = task->getArrival();
+                    Tick deadline = arrival + Tick(task_model->getPeriod());
+                    Tick current_time = SIMUL.getTime();
+                    if (deadline <= current_time) {
+                        SCHEDULER_LOG_INFO(std::string("🧹 [ALAP-Block] getTaskN: 跳过过期任务 ") +
+                                          getTaskName(task) +
+                                          " deadline=" + std::to_string(static_cast<int64_t>(deadline)) +
+                                          " current=" + std::to_string(static_cast<int64_t>(current_time)));
+                        continue;
+                    }
+                }
+
                 // ⭐ 关键修复：个体任务ALAP时序门控
                 // 全局门控决定系统是否唤醒，个体门控决定哪些任务可以调度
                 // 只有Slack≤0的任务才应该被调度
@@ -935,6 +957,12 @@ namespace RTSim {
             }
         }
 
+        // ⭐ 启用killOnMiss：当任务超过截止期时，框架自动终止旧实例并启动新实例
+        Task *concrete_task = dynamic_cast<Task *>(task);
+        if (concrete_task) {
+            concrete_task->killOnMiss(true);
+        }
+
         // 创建任务模型
         ALAPBlockTaskModel *model = new ALAPBlockTaskModel(task, period, wcet, workload, energy_coeff, arrival_offset);
 
@@ -1019,33 +1047,75 @@ namespace RTSim {
     }
 
     void ALAPBlockScheduler::checkAndPreemptOnAllCPUs() {
-        for (auto &map_pair : _running_tasks) {
-            CPU *cpu = map_pair.first;
-            AbsRTTask *running_task = map_pair.second;
+        if (!_kernel) {
+            _kernel = getKernel();
+            if (!_kernel) return;
+        }
 
-            if (!running_task) {
-                continue;
+        const auto& running_tasks_map = _kernel->getCurrentExecutingTasks();
+
+        // ⭐ 先检查是否有空闲CPU，有空闲CPU则不需要抢占
+        int free_cpus = 0;
+        for (const auto& [cpu, task] : running_tasks_map) {
+            if (!task || !task->isExecuting()) free_cpus++;
+        }
+        if (free_cpus > 0) return;  // 有空闲CPU，dispatch()会处理
+
+        // 找就绪队列中Slack≤0且优先级最高的候选任务（不在CPU上运行的）
+        AbsRTTask *best_candidate = nullptr;
+        ALAPBlockTaskModel *best_model = nullptr;
+        Tick best_slack = 0;
+
+        for (AbsRTTask *candidate : _ready_queue) {
+            if (!candidate) continue;
+            CPU *cand_cpu = _kernel->getProcessor(candidate);
+            if (cand_cpu != nullptr) continue;  // 已在运行
+
+            Tick slack = calculateSlackForTask(candidate);
+            if (slack > 0) continue;  // 还不紧急
+
+            ALAPBlockTaskModel *model = getTaskModel(candidate);
+            if (!model) continue;
+
+            if (!best_candidate || model->getRMPriority() < best_model->getRMPriority()) {
+                best_candidate = candidate;
+                best_model = model;
+                best_slack = slack;
             }
+        }
 
-            AbsRTTask *highest = getHighestPriorityTaskFromReadyQueue();
-            if (!highest) {
-                continue;
+        if (!best_candidate) return;
+
+        // 找运行中优先级最低的任务
+        AbsRTTask *worst_running = nullptr;
+        ALAPBlockTaskModel *worst_model = nullptr;
+
+        for (const auto& [cpu, task] : running_tasks_map) {
+            if (!task || !task->isExecuting()) continue;
+            ALAPBlockTaskModel *model = getTaskModel(task);
+            if (!model) continue;
+
+            if (!worst_running || model->getRMPriority() > worst_model->getRMPriority()) {
+                worst_running = task;
+                worst_model = model;
             }
+        }
 
-            if (shouldPreempt(cpu, highest)) {
-                SCHEDULER_LOG_INFO(std::string("🔄 [ALAP-Block] 抢占CPU: ") +
-                                  " 挂起低优先级任务=" + getTaskName(running_task) +
-                                  " 调度高优先级任务=" + getTaskName(highest));
+        if (!worst_running || !worst_model) return;
 
-                // ⭐ 实际抢占逻辑：挂起当前运行的任务
-                // suspend会自动调用deschedule()并将任务重新放回调度队列
-                if (_kernel) {
-                    _kernel->suspend(running_task);
-                    SCHEDULER_LOG_DEBUG(std::string("⏸️ [ALAP-Block] 已挂起任务: ") + getTaskName(running_task));
-                } else {
-                    SCHEDULER_LOG_WARNING("⚠️ [ALAP-Block] 抢占失败：_kernel为nullptr");
-                }
-            }
+        // 只有候选任务优先级更高时才抢占（只抢占一个）
+        if (best_model->getRMPriority() < worst_model->getRMPriority()) {
+            double unit_energy = calculateUnitEnergyForTask(best_candidate);
+            if (_current_energy < unit_energy) return;
+
+            SCHEDULER_LOG_INFO(std::string("🔄 [ALAP-Block] ALAP抢占: ") +
+                              " 挂起=" + getTaskName(worst_running) +
+                              "(优先级=" + std::to_string(static_cast<int64_t>(worst_model->getRMPriority())) + ")" +
+                              " 调度=" + getTaskName(best_candidate) +
+                              "(优先级=" + std::to_string(static_cast<int64_t>(best_model->getRMPriority())) +
+                              " Slack=" + std::to_string(static_cast<int64_t>(best_slack)) + ")");
+
+            _kernel->suspend(worst_running);
         }
     }
 
@@ -1711,6 +1781,71 @@ namespace RTSim {
     bool ALAPBlockScheduler::isAdmissible(CPU *c, std::vector<AbsRTTask *> tasks,
                                     AbsRTTask *t) {
         return true;
+    }
+
+    // =====================================================
+    // 过期任务清理 - 清理超过截止期的旧任务实例
+    // =====================================================
+
+    void ALAPBlockScheduler::cleanupExpiredTasks() {
+        Tick current_time = SIMUL.getTime();
+
+        if (!_kernel) {
+            _kernel = getKernel();
+        }
+
+        // 1. 检查运行中的任务，挂起已过期的
+        if (_kernel) {
+            const auto& running = _kernel->getCurrentExecutingTasks();
+            std::vector<AbsRTTask *> to_suspend;
+
+            for (const auto& [cpu, task] : running) {
+                if (!task || !task->isExecuting()) continue;
+                ALAPBlockTaskModel *model = getTaskModel(task);
+                if (!model) continue;
+
+                Tick arrival = task->getArrival();
+                Tick deadline = arrival + Tick(model->getPeriod());
+
+                if (deadline <= current_time) {
+                    to_suspend.push_back(task);
+                    SCHEDULER_LOG_INFO("💀 [ALAP-Block] 过期任务运行中，将挂起: " +
+                        getTaskName(task) +
+                        " arrival=" + std::to_string(static_cast<int64_t>(arrival)) +
+                        " deadline=" + std::to_string(static_cast<int64_t>(deadline)) +
+                        " current=" + std::to_string(static_cast<int64_t>(current_time)));
+                }
+            }
+
+            for (AbsRTTask *task : to_suspend) {
+                _kernel->suspend(task);
+            }
+        }
+
+        // 2. 清理就绪队列中已过期的任务实例
+        std::vector<AbsRTTask *> expired;
+        for (AbsRTTask *task : _ready_queue) {
+            if (!task) continue;
+            ALAPBlockTaskModel *model = getTaskModel(task);
+            if (!model) continue;
+
+            Tick arrival = task->getArrival();
+            Tick deadline = arrival + Tick(model->getPeriod());
+
+            if (deadline <= current_time) {
+                expired.push_back(task);
+                SCHEDULER_LOG_INFO("🧹 [ALAP-Block] 清理过期任务: " +
+                    getTaskName(task) +
+                    " arrival=" + std::to_string(static_cast<int64_t>(arrival)) +
+                    " deadline=" + std::to_string(static_cast<int64_t>(deadline)) +
+                    " current=" + std::to_string(static_cast<int64_t>(current_time)));
+                _stats.total_deadline_misses++;
+            }
+        }
+
+        for (AbsRTTask *task : expired) {
+            removeFromReadyQueue(task);
+        }
     }
 
     // =====================================================

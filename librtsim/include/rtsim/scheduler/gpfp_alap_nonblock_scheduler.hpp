@@ -174,6 +174,9 @@ namespace RTSim {
         bool checkALAPTimingGate();  // 检查是否需要强制休眠
         MetaSim::Tick calculateSlackForTask(AbsRTTask *task);  // 计算任务的Slack
 
+        // ⭐ 过期任务清理
+        void cleanupExpiredTasks();  // 清理超过截止期的旧任务实例
+
         // ⭐ 运行时能量检查和任务中断（V28.15新增）
         void checkAndInterruptRunningTasks();  // 检查所有运行中的任务，能量不足时中断
 
