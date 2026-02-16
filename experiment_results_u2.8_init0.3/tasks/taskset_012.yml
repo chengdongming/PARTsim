@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-02-15 23:46:13
+# 任务总数: 10
+# 总利用率: 2.800
+# 能量信息:
+#   总估算能耗: 0.236 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.1%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 94
+    runtime: 13
+    deadline: 94
+    params: "period=94,wcet=13,arrival_offset=6,workload=bzip2"
+    code:
+      - fixed(13, bzip2)
+
+  - name: task_1
+    iat: 93
+    runtime: 13
+    deadline: 93
+    params: "period=93,wcet=13,arrival_offset=12,workload=idle"
+    code:
+      - fixed(13, idle)
+
+  - name: task_2
+    iat: 22
+    runtime: 4
+    deadline: 22
+    params: "period=22,wcet=4,arrival_offset=2,workload=idle"
+    code:
+      - fixed(4, idle)
+
+  - name: task_3
+    iat: 48
+    runtime: 13
+    deadline: 48
+    params: "period=48,wcet=13,arrival_offset=1,workload=encrypt"
+    code:
+      - fixed(13, encrypt)
+
+  - name: task_4
+    iat: 98
+    runtime: 50
+    deadline: 98
+    params: "period=98,wcet=50,arrival_offset=0,workload=control"
+    code:
+      - fixed(50, control)
+
+  - name: task_5
+    iat: 76
+    runtime: 23
+    deadline: 76
+    params: "period=76,wcet=23,arrival_offset=8,workload=decrypt"
+    code:
+      - fixed(23, decrypt)
+
+  - name: task_6
+    iat: 29
+    runtime: 2
+    deadline: 29
+    params: "period=29,wcet=2,arrival_offset=3,workload=encrypt"
+    code:
+      - fixed(2, encrypt)
+
+  - name: task_7
+    iat: 48
+    runtime: 5
+    deadline: 48
+    params: "period=48,wcet=5,arrival_offset=6,workload=bzip2"
+    code:
+      - fixed(5, bzip2)
+
+  - name: task_8
+    iat: 90
+    runtime: 45
+    deadline: 90
+    params: "period=90,wcet=45,arrival_offset=13,workload=idle"
+    code:
+      - fixed(45, idle)
+
+  - name: task_9
+    iat: 21
+    runtime: 11
+    deadline: 21
+    params: "period=21,wcet=11,arrival_offset=0,workload=control"
+    code:
+      - fixed(11, control)

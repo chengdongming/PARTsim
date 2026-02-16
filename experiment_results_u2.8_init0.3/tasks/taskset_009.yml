@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-02-15 23:46:12
+# 任务总数: 10
+# 总利用率: 2.800
+# 能量信息:
+#   总估算能耗: 0.260 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.1%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 61
+    runtime: 41
+    deadline: 61
+    params: "period=61,wcet=41,arrival_offset=0,workload=encrypt"
+    code:
+      - fixed(41, encrypt)
+
+  - name: task_1
+    iat: 85
+    runtime: 12
+    deadline: 85
+    params: "period=85,wcet=12,arrival_offset=19,workload=idle"
+    code:
+      - fixed(12, idle)
+
+  - name: task_2
+    iat: 43
+    runtime: 4
+    deadline: 43
+    params: "period=43,wcet=4,arrival_offset=10,workload=control"
+    code:
+      - fixed(4, control)
+
+  - name: task_3
+    iat: 42
+    runtime: 4
+    deadline: 42
+    params: "period=42,wcet=4,arrival_offset=3,workload=control"
+    code:
+      - fixed(4, control)
+
+  - name: task_4
+    iat: 27
+    runtime: 7
+    deadline: 27
+    params: "period=27,wcet=7,arrival_offset=3,workload=bzip2"
+    code:
+      - fixed(7, bzip2)
+
+  - name: task_5
+    iat: 21
+    runtime: 3
+    deadline: 21
+    params: "period=21,wcet=3,arrival_offset=2,workload=control"
+    code:
+      - fixed(3, control)
+
+  - name: task_6
+    iat: 59
+    runtime: 38
+    deadline: 59
+    params: "period=59,wcet=38,arrival_offset=12,workload=encrypt"
+    code:
+      - fixed(38, encrypt)
+
+  - name: task_7
+    iat: 47
+    runtime: 1
+    deadline: 47
+    params: "period=47,wcet=1,arrival_offset=12,workload=control"
+    code:
+      - fixed(1, control)
+
+  - name: task_8
+    iat: 57
+    runtime: 2
+    deadline: 57
+    params: "period=57,wcet=2,arrival_offset=6,workload=encrypt"
+    code:
+      - fixed(2, encrypt)
+
+  - name: task_9
+    iat: 58
+    runtime: 36
+    deadline: 58
+    params: "period=58,wcet=36,arrival_offset=6,workload=bzip2"
+    code:
+      - fixed(36, bzip2)

@@ -707,6 +707,58 @@ namespace RTSim {
             return nullptr;
         }
 
+        // ========== 全局ALAP时序门控 ==========
+        // ⭐ 核心修复：计算所有任务（ready + running）的全局min_slack
+        // 如果min_slack > 0，强制IDLE，不调度任何任务（符合���文要求）
+
+        // 收集所有任务（ready + running）
+        std::vector<AbsRTTask *> all_tasks;
+        for (AbsRTTask *task : _ready_queue) {
+            if (task) all_tasks.push_back(task);
+        }
+        if (_kernel) {
+            const auto& running_tasks = _kernel->getCurrentExecutingTasks();
+            for (const auto& map_pair : running_tasks) {
+                AbsRTTask *task = map_pair.second;
+                if (task && task->isExecuting()) {
+                    all_tasks.push_back(task);
+                }
+            }
+        }
+
+        if (!all_tasks.empty()) {
+            Tick global_min_slack = Tick(-1);
+
+            for (AbsRTTask *task : all_tasks) {
+                if (!task) continue;
+
+                // 检查任务是否活跃，防止访问已删除的任务
+                if (!task->isActive()) {
+                    continue;
+                }
+
+                Tick slack;
+                try {
+                    slack = calculateSlackForTask(task);
+                } catch (...) {
+                    continue;  // 跳过计算失败的任务
+                }
+
+                if (global_min_slack < 0 || slack < global_min_slack) {
+                    global_min_slack = slack;
+                }
+            }
+
+            // 门控逻辑：如果全局min_slack > 0，强制IDLE
+            if (global_min_slack > 0) {
+                SCHEDULER_LOG_INFO("⏸️ [ALAP-NonBlock] getTaskN: 全局ALAP时序门控 - min_slack > 0 (" +
+                                   std::to_string(static_cast<int64_t>(global_min_slack)) + "ms)，强制休眠");
+                return nullptr;  // 阻止整个调度周期
+            } else {
+                SCHEDULER_LOG_INFO("✅ [ALAP-NonBlock] getTaskN: 全局ALAP时序门控 - min_slack ≤ 0 (" +
+                                   std::to_string(static_cast<int64_t>(global_min_slack)) + "ms)，允许调度");
+            }
+        }
 
         // ⭐ 级联调度：遍历就绪队列，运行中任务也要检查能量
         unsigned int ready_index = 0;
@@ -745,18 +797,7 @@ namespace RTSim {
 
             // 这是第ready_index个未dispatch的任务
             if (ready_index == n) {
-                // ⭐ ALAP时序门控检查（能量充足后）
-                // 即使能量足够，如果当前任务的Slack>0也不应该调度
-                Tick task_slack = calculateSlackForTask(task);
-                if (task_slack > 0) {
-                    SCHEDULER_LOG_INFO(std::string("⏸️ [ALAP-NonBlock] getTaskN: 当前任务Slack>0，跳过 ") +
-                                           getTaskName(task) +
-                                           " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms");
-                    ready_index++;
-                    continue;  // Skip this task
-                }
-                // Slack≤0的任务可以调度
-
+                // ⭐ 全局ALAP时序门控已在函数开头检查，这里按优先级调度
                 // ⭐ 计算任务的1ms能耗
                 double unit_energy = calculateUnitEnergyForTask(task);
                 double available_energy = _current_energy - _dispatching_tasks_total_energy;
@@ -815,16 +856,8 @@ namespace RTSim {
                         double next_unit_energy = calculateUnitEnergyForTask(next_task);
                         double next_available = _current_energy - _dispatching_tasks_total_energy;
 
-                        // ⭐ 关键修复：贪心策略中也要检查ALAP时序！
-                        // 即使能量足够，如果next_task的Slack>0也不应该调度
-                        Tick next_task_slack = calculateSlackForTask(next_task);
-                        if (next_task_slack > 0) {
-                            SCHEDULER_LOG_INFO(std::string("⏸️ [ALAP-NonBlock] 贪心搜索：任务Slack>0，跳过 ") +
-                                                   getTaskName(next_task) +
-                                                   " Slack=" + std::to_string(static_cast<int64_t>(next_task_slack)) + "ms");
-                            continue;
-                        }
-                        // Slack≤0的任务可以考虑调度
+                        // ⭐ 注意：全局ALAP时序门控已在函数开头检查，这里不需要再检查单个任务的Slack
+                        // 只要能量足够，就可以调度（按优先级）
 
                         if (next_available >= next_unit_energy - EPSILON) {
                             // ⭐ 找到能量足够的后续任务，调度它！
@@ -1672,18 +1705,47 @@ namespace RTSim {
     // =====================================================
 
     bool ALAPNonBlockScheduler::checkALAPTimingGate() {
-        if (_ready_queue.empty()) {
-            return true;  // 空队列，通过门控
+        // ⭐ 关键修复：收集所有任务（ready + running）来计算全局min_slack
+        std::vector<AbsRTTask *> all_tasks;
+
+        // 添加ready queue中的任务
+        for (AbsRTTask *task : _ready_queue) {
+            if (task) all_tasks.push_back(task);
+        }
+
+        // 添加运行中的任务
+        if (_kernel) {
+            const auto& running_tasks = _kernel->getCurrentExecutingTasks();
+            for (const auto& map_pair : running_tasks) {
+                AbsRTTask *task = map_pair.second;
+                if (task && task->isExecuting()) {
+                    all_tasks.push_back(task);
+                }
+            }
+        }
+
+        if (all_tasks.empty()) {
+            return true;  // 没有任务，通过门控
         }
 
         Tick current_time = SIMUL.getTime();
         Tick min_slack = Tick(-1);
 
-        // 计算所有就绪任务的Slack，找最小值
-        for (AbsRTTask *task : _ready_queue) {
+        // 计算所有任务的Slack，找最小值
+        for (AbsRTTask *task : all_tasks) {
             if (!task) continue;
 
-            Tick slack = calculateSlackForTask(task);
+            // 异常处理：防止访问已删除的任务
+            if (!task->isActive()) {
+                continue;
+            }
+
+            Tick slack;
+            try {
+                slack = calculateSlackForTask(task);
+            } catch (...) {
+                continue;  // 跳过计算失败的任务
+            }
 
             if (min_slack < 0 || slack < min_slack) {
                 min_slack = slack;

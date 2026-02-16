@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-02-15 23:46:15
+# 任务总数: 10
+# 总利用率: 2.800
+# 能量信息:
+#   总估算能耗: 0.266 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.1%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 26
+    runtime: 5
+    deadline: 26
+    params: "period=26,wcet=5,arrival_offset=1,workload=hash"
+    code:
+      - fixed(5, hash)
+
+  - name: task_1
+    iat: 50
+    runtime: 20
+    deadline: 50
+    params: "period=50,wcet=20,arrival_offset=15,workload=idle"
+    code:
+      - fixed(20, idle)
+
+  - name: task_2
+    iat: 51
+    runtime: 27
+    deadline: 51
+    params: "period=51,wcet=27,arrival_offset=6,workload=hash"
+    code:
+      - fixed(27, hash)
+
+  - name: task_3
+    iat: 95
+    runtime: 16
+    deadline: 95
+    params: "period=95,wcet=16,arrival_offset=24,workload=decrypt"
+    code:
+      - fixed(16, decrypt)
+
+  - name: task_4
+    iat: 38
+    runtime: 4
+    deadline: 38
+    params: "period=38,wcet=4,arrival_offset=11,workload=hash"
+    code:
+      - fixed(4, hash)
+
+  - name: task_5
+    iat: 55
+    runtime: 15
+    deadline: 55
+    params: "period=55,wcet=15,arrival_offset=6,workload=decrypt"
+    code:
+      - fixed(15, decrypt)
+
+  - name: task_6
+    iat: 55
+    runtime: 30
+    deadline: 55
+    params: "period=55,wcet=30,arrival_offset=11,workload=bzip2"
+    code:
+      - fixed(30, bzip2)
+
+  - name: task_7
+    iat: 78
+    runtime: 12
+    deadline: 78
+    params: "period=78,wcet=12,arrival_offset=4,workload=encrypt"
+    code:
+      - fixed(12, encrypt)
+
+  - name: task_8
+    iat: 95
+    runtime: 23
+    deadline: 95
+    params: "period=95,wcet=23,arrival_offset=24,workload=bzip2"
+    code:
+      - fixed(23, bzip2)
+
+  - name: task_9
+    iat: 96
+    runtime: 9
+    deadline: 96
+    params: "period=96,wcet=9,arrival_offset=23,workload=idle"
+    code:
+      - fixed(9, idle)

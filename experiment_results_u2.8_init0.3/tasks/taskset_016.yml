@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-02-15 23:46:14
+# 任务总数: 10
+# 总利用率: 2.800
+# 能量信息:
+#   总估算能耗: 0.261 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.1%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 36
+    runtime: 19
+    deadline: 36
+    params: "period=36,wcet=19,arrival_offset=5,workload=decrypt"
+    code:
+      - fixed(19, decrypt)
+
+  - name: task_1
+    iat: 50
+    runtime: 12
+    deadline: 50
+    params: "period=50,wcet=12,arrival_offset=13,workload=control"
+    code:
+      - fixed(12, control)
+
+  - name: task_2
+    iat: 61
+    runtime: 2
+    deadline: 61
+    params: "period=61,wcet=2,arrival_offset=3,workload=idle"
+    code:
+      - fixed(2, idle)
+
+  - name: task_3
+    iat: 47
+    runtime: 3
+    deadline: 47
+    params: "period=47,wcet=3,arrival_offset=4,workload=idle"
+    code:
+      - fixed(3, idle)
+
+  - name: task_4
+    iat: 49
+    runtime: 22
+    deadline: 49
+    params: "period=49,wcet=22,arrival_offset=14,workload=control"
+    code:
+      - fixed(22, control)
+
+  - name: task_5
+    iat: 89
+    runtime: 33
+    deadline: 89
+    params: "period=89,wcet=33,arrival_offset=12,workload=encrypt"
+    code:
+      - fixed(33, encrypt)
+
+  - name: task_6
+    iat: 25
+    runtime: 2
+    deadline: 25
+    params: "period=25,wcet=2,arrival_offset=5,workload=control"
+    code:
+      - fixed(2, control)
+
+  - name: task_7
+    iat: 99
+    runtime: 15
+    deadline: 99
+    params: "period=99,wcet=15,arrival_offset=29,workload=bzip2"
+    code:
+      - fixed(15, bzip2)
+
+  - name: task_8
+    iat: 77
+    runtime: 25
+    deadline: 77
+    params: "period=77,wcet=25,arrival_offset=10,workload=decrypt"
+    code:
+      - fixed(25, decrypt)
+
+  - name: task_9
+    iat: 88
+    runtime: 40
+    deadline: 88
+    params: "period=88,wcet=40,arrival_offset=21,workload=hash"
+    code:
+      - fixed(40, hash)
