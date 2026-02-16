@@ -535,24 +535,40 @@ namespace RTSim {
         ConfigManager &configMgr_batch = ConfigManager::getInstance();
         int total_cpus = configMgr_batch.getNumCores();
         int free_cpus = total_cpus - static_cast<int>(running_task_list.size());
-        int K = std::max(1, free_cpus);  // 批次大小
 
+        // ========== 核心参数：K = min(就绪任务数, 空闲核心数)==========
+        // ⭐ 这是"全员进退、同生共死"批处理的关键
+        // K是动态值，受实际就绪任务数和空闲核心���限制
+        int ready_count = static_cast<int>(sorted_ready.size());
+        int K = std::min(ready_count, total_cpus);  // 批次大小不超过总核心数（允许抢占）
+
+        // ========== 构建"全员进退、同生共死"批次 ==========
+        // ⭐ 只包含Slack<=0的任务（ALAP时序门控）
+        // 从就绪队列选择，受K值限制，只选择Slack<=0的任务
         std::vector<AbsRTTask *> candidate_batch;
-        // 1. 添加运行中任务
-        for (auto* task : running_task_list) {
-            candidate_batch.push_back(task);
-        }
-        // 2. 添加就绪队列前 K 个任务
-        for (int i = 0; i < K && i < static_cast<int>(sorted_ready.size()); ++i) {
-            candidate_batch.push_back(sorted_ready[i]);
+        for (int i = 0; i < static_cast<int>(sorted_ready.size()) && static_cast<int>(candidate_batch.size()) < K; ++i) {
+            AbsRTTask *task = sorted_ready[i];
+            Tick task_slack = calculateSlackForTask(task);
+            if (task_slack <= 0) {
+                candidate_batch.push_back(task);
+            } else {
+                SCHEDULER_LOG_DEBUG(std::string("⏸️ [ALAP-Sync] 批次构建: 任务Slack>0，跳过 ") +
+                                   getTaskName(task) +
+                                   " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms");
+            }
         }
 
-        // ⭐ ALAP-Sync修复：移除Phase 1的批次时序门控
-        // 原因：candidate_batch包含所有就绪任务（包括Slack>0的任务）
-        //      对整个批次计算S_batch会导致过度阻塞
-        // 正确做法：Phase 2在任务选择时按个体Slack过滤，Phase 3做能量检查
+        // ========== Phase 2: ALAP-Sync 批次级时序门控 ==========
+        // ⭐ 核心：计算 Batch Slack = min(Slack_i)
+        // 如果 Batch Slack > 0，全员休眠（IDLE）
+        // 注意：只影响新任务调度，不影响运行中任务
+        if (!candidate_batch.empty() && !checkALAPBatchTimingGate(candidate_batch)) {
+            SCHEDULER_LOG_INFO("⏸️  [ALAP-Sync] 批次级门控：S_batch > 0，新任务批次休眠");
+            return;  // 新任务不调度
+        }
+        // S_batch ≤ 0，批次唤醒，继续到能量检查
 
-        // ⭐ ALAP-Sync关键��复：采用正确的能量扣除逻辑（后扣方式）
+        // ⭐ ALAP-Sync关键修复：采用正确的能量扣除逻辑（后扣方式）
 
         // 1. ⭐ ALAP-Sync关键：使用已构建的 running_task_list 和 sorted_ready
         double energy_to_deduct = 0.0;
@@ -767,27 +783,30 @@ namespace RTSim {
                 }
             }
 
-            // ⭐ ALAP-Sync正确实现：按个体Slack过滤任务
-            // 只选择Slack<=0的任务进入批次
+            // ⭐ "全员进退、同生共死"：实际调度使用 candidate_batch（通过批次时序门控的任务）
+            // 从candidate_batch中选择任务，受free_cpus限制
             int selected_count = 0;
-            for (size_t j = 0; j < filtered_ready.size(); ++j) {
-                if (selected_count >= actual_new_tasks_can_schedule) break;
-                AbsRTTask *task = filtered_ready[j];
+            for (size_t j = 0; j < candidate_batch.size(); ++j) {
+                if (selected_count >= free_cpus) break;
+                AbsRTTask *task = candidate_batch[j];
 
-                // ALAP时序门控：只调度Slack<=0的任务
-                Tick task_slack = calculateSlackForTask(task);
-                if (task_slack > 0) {
-                    SCHEDULER_LOG_INFO(std::string("⏸️ [ALAP-Sync] 批量构建: 任务Slack>0，跳过 ") +
-                                           getTaskName(task) +
-                                           " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms");
-                    continue;  // 跳过但不计入已选数量
+                // 排除已在运行中的任务（candidate_batch包含所有就绪任务，需要过滤运行中的）
+                bool is_running = false;
+                for (auto* running_task : running_task_list) {
+                    if (task == running_task) {
+                        is_running = true;
+                        break;
+                    }
                 }
-                // Slack<=0的任务可以加入批量
+                if (is_running) {
+                    continue;  // 跳过运行中的任务（但它们已在running_task_list中，会继续执行）
+                }
 
                 new_tasks_to_schedule.push_back(task);
                 selected_count++;
-                SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Sync] 选择新任务: ") +
-                                   getTaskName(task));
+                SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Sync] 从批次选择新任务: ") +
+                                   getTaskName(task) + " (" + std::to_string(selected_count) + "/" +
+                                   std::to_string(free_cpus) + ")");
             }
 
             // 保存所有就绪任务用于日志
@@ -810,10 +829,25 @@ namespace RTSim {
             running_tasks_renewal_energy += calculateUnitEnergyForTask(task);
         }
 
-        // 计算新任务的能量
+        // ⭐ "全员进退、同生共死"：计算candidate_batch中非运行任务的能量（受free_cpus限制）
+        // 这是"全有或全无"的能量检查基础
         double new_tasks_energy = 0.0;
-        for (auto* task : new_tasks_to_schedule) {
-            new_tasks_energy += calculateUnitEnergyForTask(task);
+        int candidate_count = 0;
+        for (auto* task : candidate_batch) {
+            if (candidate_count >= free_cpus) break;  // 最多free_cpus个新任务
+
+            // 排除运行中的任务
+            bool is_running = false;
+            for (auto* running_task : running_task_list) {
+                if (task == running_task) {
+                    is_running = true;
+                    break;
+                }
+            }
+            if (!is_running) {
+                new_tasks_energy += calculateUnitEnergyForTask(task);
+                candidate_count++;
+            }
         }
 
         // ⭐ ALAP-Sync总能量需求 = 运行中任务续期 + 新任务（每个tick都扣除）
@@ -824,8 +858,9 @@ namespace RTSim {
                           " 运行中=" + std::to_string(running_count) +
                           " 空闲=" + std::to_string(free_cpus) +
                           " 就绪队列=" + std::to_string(_ready_queue.size()) +
-                          " 选择K=" + std::to_string(K) +
-                          " 实际可调度=" + std::to_string(new_tasks_to_schedule.size()) +
+                          " K=min(ready,free)=" + std::to_string(K) +
+                          " 候选批次=" + std::to_string(candidate_batch.size()) +
+                          " 能量计算基数=" + std::to_string(candidate_count) +
                           " ⭐ 运行任务能量已扣除=" + std::to_string(running_count) + "个任务" +
                           " 新任务能耗=" + std::to_string(new_tasks_energy * 1000) + " mJ" +
                           " 总能量需求=" + std::to_string(total_energy_needed * 1000) + " mJ" +
