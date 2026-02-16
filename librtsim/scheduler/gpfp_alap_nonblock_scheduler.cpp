@@ -1662,36 +1662,8 @@ namespace RTSim {
 
         SCHEDULER_LOG_INFO(std::string("📊 [ALAP-NonBlock] 当前能量: ") + std::to_string(_current_energy) + "J");
 
-        // ⭐ 关键修复：任务结束时触发立即调度
-        // 检查是否有空闲CPU和等待的任务
-        if (!_ready_queue.empty() && _kernel) {
-            // ⭐ Bug修复：能量耗尽时不触发立即调度
-            if (_energy_depleted) {
-                SCHEDULER_LOG_INFO(std::string("💀 [ALAP-NonBlock] 能量已耗尽，跳过任务结束后的立即调度") +
-                                   " 剩余能量=" + std::to_string(_current_energy * 1000) + " mJ");
-                return;
-            }
-            SCHEDULER_LOG_INFO("🔄 [ALAP-NonBlock] 任务结束，触发立即调度");
-
-            _kernel->dispatch();
-
-            // ⭐ 关键：在dispatch后，扣除新调度任务的能量
-            // 只扣除尚未扣除过的任务（检查_energy_deducted_tasks）
-            for (AbsRTTask *task : _counted_tasks_in_dispatch) {
-                if (_energy_deducted_tasks.find(task) == _energy_deducted_tasks.end()) {
-                    // 任务尚未扣除能量，现在扣除
-                    double unit_energy = calculateUnitEnergyForTask(task);
-                    _current_energy -= unit_energy;
-                    _stats.total_energy_consumed += unit_energy;
-                    _energy_deducted_tasks.insert(task);  // 标记已扣除
-
-                    SCHEDULER_LOG_INFO("✅ [ALAP-NonBlock] onTaskEnd后新任务扣除初始能量: " +
-                                       getTaskName(task) +
-                                       " -" + std::to_string(unit_energy * 1000) + " mJ → " +
-                                       std::to_string(_current_energy * 1000) + " mJ");
-                }
-            }
-        }
+        // ⭐ 注意：任务结束后的调度由tick事件自动处理，不在此处调用dispatch()
+        // 这样可以避免在任务对象部分销毁时访问导致的崩溃
 
     }
 
