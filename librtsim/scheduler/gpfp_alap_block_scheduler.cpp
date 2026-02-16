@@ -685,6 +685,10 @@ namespace RTSim {
             return nullptr;
         }
 
+        // ⭐ ALAP时序门控：不再在getTaskN中调用全局checkALAPTimingGate()（性能瓶颈）
+        // 改为在遍历任务时逐个检查个体Slack，只调度Slack≤0的任务
+        // 效果等价：如果所有任务Slack>0，getTaskN返回nullptr
+
         SCHEDULER_LOG_DEBUG(std::string("🔍 [ALAP-Block] getTaskN(") + std::to_string(n) + ") " +
                            "已调度能耗=" + std::to_string(_dispatching_tasks_total_energy) + "J " +
                            "当前能量=" + std::to_string(_current_energy) + "J " +
@@ -785,12 +789,18 @@ namespace RTSim {
 
             // 这是第ready_index个未dispatch的任务
             if (ready_index == n) {
-                // ⭐ 关键修复：移除个体任务Slack检查！
-                // ALAP的正确逻辑：
-                // 1. checkALAPTimingGate() 计算全局min_slack并判断是否唤醒
-                // 2. 一旦唤醒（min_slack≤0），就按优先级顺序调度所有任务
-                // 3. 不应该在getTaskN()中再次检查个体任务的Slack
-                // 原因：全局门控已经决定"可以调度"，这里只应该按优先级调度
+                // ⭐ 关键修复：个体任务ALAP时序门控
+                // 全局门控决定系统是否唤醒，个体门控决定哪些任务可以调度
+                // 只有Slack≤0的任务才应该被调度
+                Tick individual_slack = calculateSlackForTask(task);
+                if (individual_slack > 0) {
+                    // 这个任务还有等待余地，跳过（不计入ready_index）
+                    SCHEDULER_LOG_INFO(std::string("⏸️ [ALAP-Block] getTaskN: 个体Slack>0，跳过 ") +
+                                      getTaskName(task) +
+                                      " Slack=" + std::to_string(static_cast<int64_t>(individual_slack)) + "ms");
+                    // 不增加ready_index，继续找下一个Slack≤0的任务
+                    continue;
+                }
 
                 // ⭐ 计算任务的1ms能耗
                 double unit_energy = calculateUnitEnergyForTask(task);

@@ -527,9 +527,11 @@ namespace RTSim {
         // 获取就绪队列（已按 RM 优先级排序）
         std::vector<AbsRTTask *> sorted_ready(_ready_queue.begin(), _ready_queue.end());
 
-        // ⭐ 关键：构建候选批次（运行中 + 就绪队列前 K 个任务）
-        int total_cpus = _running_tasks.size();  // 使用 _running_tasks 的大小
-        int free_cpus = total_cpus - running_task_list.size();
+        // ⭐ 关键修复：使用ConfigManager获取实际CPU核心数，而非_running_tasks.size()
+        // _running_tasks可能为空（未被内核填充），导致total_cpus=0，free_cpus=0，永远无法调度
+        ConfigManager &configMgr_batch = ConfigManager::getInstance();
+        int total_cpus = configMgr_batch.getNumCores();
+        int free_cpus = total_cpus - static_cast<int>(running_task_list.size());
         int K = std::max(1, free_cpus);  // 批次大小
 
         std::vector<AbsRTTask *> candidate_batch;
@@ -1061,6 +1063,10 @@ namespace RTSim {
             _current_batch_size = 0;
             return nullptr;
         }
+
+        // ⭐ ALAP时序门控：不再在getTaskN中调用全局checkALAPTimingGate()（性能瓶颈）
+        // Sync的批量调度已在performTickScheduling中通过checkALAPBatchTimingGate控制
+        // getTaskN只从已构建的_current_batch_tasks中返回任务（空批次=不调度）
 
         if (n == 0) {
             // 注意：能量已在performTickScheduling中批量扣除，这里不重复扣除
