@@ -865,8 +865,17 @@ namespace RTSim {
         // 解决方案：能量计算考虑所有候选任务，Slack过滤移到任务选择阶段
         double new_tasks_energy = 0.0;
         int candidate_count = 0;
+        int skipped_running = 0;
+        int skipped_slack = 0;
+        int checked_count = 0;
+
+        SCHEDULER_LOG_INFO(std::string("🔍 [ALAP-Sync] 开始遍历候选批次: ") +
+                          "批次大小=" + std::to_string(candidate_batch.size()) +
+                          " 空闲CPU=" + std::to_string(free_cpus));
+
         for (auto* task : candidate_batch) {
             if (candidate_count >= free_cpus) break;  // 最多free_cpus个新任务
+            checked_count++;
 
             // 排除运行中的任务
             bool is_running = false;
@@ -877,13 +886,24 @@ namespace RTSim {
                 }
             }
             if (is_running) {
+                skipped_running++;
+                SCHEDULER_LOG_INFO(std::string("🔍 [ALAP-Sync] 跳过运行中任务: ") + getTaskName(task));
                 continue;  // 跳过运行中的任务
             }
 
             // ⭐ ALAP-Sync核心：个体Slack检查，只有Slack<=0的任务才能调度
             // 这体现了"尽可能晚执行"的原则
             Tick task_slack = calculateSlackForTask(task);
+            Tick current_time = SIMUL.getTime();
+            double remaining_double = task->getRemainingWCET();
+            SCHEDULER_LOG_INFO(std::string("🔍 [ALAP-Sync] 检查任务: ") + getTaskName(task) +
+                              " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms" +
+                              " (deadline=" + std::to_string(static_cast<int64_t>(task->getDeadline())) +
+                              " current=" + std::to_string(static_cast<int64_t>(current_time)) +
+                              " remaining=" + std::to_string(static_cast<int64_t>(Tick(remaining_double))) + ")");
+
             if (task_slack > 0) {
+                skipped_slack++;
                 SCHEDULER_LOG_DEBUG(std::string("⏸️  [ALAP-Sync] Slack>0，跳过任务 ") +
                                    getTaskName(task) +
                                    " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms");
@@ -891,9 +911,18 @@ namespace RTSim {
             }
 
             // Slack<=0，任务必须调度，计算其能耗
+            SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Sync] Slack<=0，可选任务: ") + getTaskName(task) +
+                              " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms" +
+                              " 能耗=" + std::to_string(calculateUnitEnergyForTask(task) * 1000) + " mJ");
             new_tasks_energy += calculateUnitEnergyForTask(task);
             candidate_count++;
         }
+
+        SCHEDULER_LOG_INFO(std::string("🔍 [ALAP-Sync] 候选批次遍历完成: ") +
+                          "检查=" + std::to_string(checked_count) +
+                          " 跳过运行中=" + std::to_string(skipped_running) +
+                          " 跳过Slack>0=" + std::to_string(skipped_slack) +
+                          " 可用=" + std::to_string(candidate_count));
 
         // ⭐ ALAP-Sync总能量需求 = 运行中任务续期 + 新任务（每个tick都扣除）
         double total_energy_needed = running_tasks_renewal_energy + new_tasks_energy;
