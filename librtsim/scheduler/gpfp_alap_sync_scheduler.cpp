@@ -658,9 +658,37 @@ namespace RTSim {
                     }
                 }
 
-                // ⭐ 关键修复：能量耗尽后，直接返回，不继续调度新任务
+                // ⭐ 关键修复：能量耗尽后，直接返回，不继续��度新任务
                 return;
             }
+        }
+
+        // ========== 构建完整批次（运行任务 + 新任务） ==========
+        // ⭐ 关键修复：完整批次包括运行任务，实现真正的"全员进退"
+        std::vector<AbsRTTask *> full_batch;
+
+        // 添加运行任务到完整批次
+        for (AbsRTTask* task : running_task_list) {
+            if (_tasks_completed_wcet.find(task) == _tasks_completed_wcet.end()) {
+                full_batch.push_back(task);
+            }
+        }
+
+        // 添加新任务候选到完整批次
+        for (AbsRTTask* task : candidate_batch) {
+            full_batch.push_back(task);
+        }
+
+        // 🔍 调试：输出完整批次内容
+        SCHEDULER_LOG_INFO(std::string("🔍 [ALAP-Sync] 完整批次内容: ") +
+                           "运行任务=" + std::to_string(running_task_list.size()) +
+                           " 候选批次=" + std::to_string(candidate_batch.size()) +
+                           " 完整批次=" + std::to_string(full_batch.size()));
+
+        // ========== ALAP-Sync 批次级时序门控（在完整批次上检查） ==========
+        if (!full_batch.empty() && !checkALAPBatchTimingGate(full_batch)) {
+            SCHEDULER_LOG_INFO("⏸️  [ALAP-Sync] 批次级门控：Batch Slack > 0，完整批次集体休眠");
+            return;  // 完整批次休眠（包括运行任务和新任务）
         }
 
         // ⭐ 关键修复：如果能量已耗尽，不调度新任务
