@@ -33,9 +33,10 @@ namespace RTSim {
     // =====================================================
 
     ALAPSyncTickEvent::ALAPSyncTickEvent(ALAPSyncScheduler *scheduler)
-        : MetaSim::Event("ALAPSyncTickEvent", MetaSim::Event::_DEFAULT_PRIORITY + 10),
+        : MetaSim::Event("ALAPSyncTickEvent", MetaSim::Event::_DEFAULT_PRIORITY - 1),
           _scheduler(scheduler) {
-        // ⭐ V30修复：较低优先级，确保任务到达事件先于tick执行
+        // ⭐ 关键修复：提高tick事件优先级，确保tick事件及时触发
+        // 原优先级_DEFAULT_PRIORITY + 10太低，导致tick事件被延迟
     }
 
     void ALAPSyncTickEvent::doit() {
@@ -46,7 +47,7 @@ namespace RTSim {
         Tick current_time = SIMUL.getTime();
         int64_t current_ms = static_cast<int64_t>(current_time);
 
-        SCHEDULER_LOG_INFO(std::string("⏱️ [ALAP-Sync] ===== Tick事件触发 @ ") +
+        SCHEDULER_LOG_WARNING(std::string("⏱️ [ALAP-Sync] ===== Tick事件触发 @ ") +
                            std::to_string(current_ms) + "ms =====");
 
         // 执行tick调度
@@ -1595,7 +1596,8 @@ namespace RTSim {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("➕ [ALAP-Sync] insert: ") + getTaskName(task) +
+        SCHEDULER_LOG_WARNING(std::string("➕ [ALAP-Sync] insert: ") + getTaskName(task) +
+                          " @ " + std::to_string(static_cast<int64_t>(SIMUL.getTime())) + "ms" +
                           " _ready_queue.size()=" + std::to_string(_ready_queue.size()));
 
         Scheduler::insert(task);
@@ -1611,14 +1613,13 @@ namespace RTSim {
                           " is_reinserted=" + (is_reinserted ? "true" : "false"));
 
         if (_kernel && !_energy_depleted && !is_reinserted) {
-            // ⭐ 关键修复：只有当新任务Slack≤0时才执行mid-tick抢占
-            // 避免kill后新实例到达时不必要地suspend运行中任务
-            Tick new_task_slack = calculateSlackForTask(task);
-            if (new_task_slack > 0) {
-                SCHEDULER_LOG_INFO(std::string("⏸️ [ALAP-Sync] Mid-tick: 新任务Slack>0，跳过抢占 ") +
-                                  getTaskName(task) + " Slack=" + std::to_string(static_cast<int64_t>(new_task_slack)) + "ms");
-                return;
-            }
+            // ⭐ 关键修复：移除mid-tick抢占中的Slack检查
+            // 原因：mid-tick抢占应该由RM优先级决定，而不是Slack
+            // Slack过滤应该在批量调度的任务选择时进行（第808-815行）
+            // 这样可以确保高优先级任务（如Task_Assassin_Hungry, period=50）能及时抢占低优先级任务
+            //
+            // 举例：Task_Assassin_Hungry (arrival=50) 在t=50时Slack=30ms>0，但不抢占会导致
+            //       在t=80时Slack=0ms≤0时，已经没有mid-tick抢占机会，导致deadline miss
 
             const auto& running_tasks = _kernel->getCurrentExecutingTasks();
 
