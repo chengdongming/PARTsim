@@ -558,10 +558,14 @@ namespace RTSim {
         //      整个批次被阻塞，调度延迟到t=100，导致deadline miss
         // 解决方案：在任务选择时进行个体Slack过滤（第798-804行）���只调度Slack<=0的任务
         // 这样既保证了ALAP时序门控的功能，又避免了过度阻塞
-        // if (!candidate_batch.empty() && !checkALAPBatchTimingGate(candidate_batch)) {
-        //     SCHEDULER_LOG_INFO("⏸️  [ALAP-Sync] 批次级门控：S_batch > 0，新任务批次休眠");
-        //     return;  // 新任务不调度
-        // }
+        // ========== Phase 2: ALAP-Sync 个体时序门控 ==========
+        // ⭐ 关键修复：使用个体Slack检查，不是批次级门控
+        // 原因：每个任务有自己的Slack和释放时间，应该独立判断
+        //      Slack<=0的任务进入就绪队列接受调度
+        //      这才是"尽可能晚执行"的正确实现
+        //
+        // ⭐ 批次级门控是错误的！它会让所有任务一起调度，
+        //      违反了"尽可能晚执行"的原则
 
         // ⭐ ALAP-Sync关键修复：采用正确的能量扣除逻辑（后扣方式）
 
@@ -677,18 +681,11 @@ namespace RTSim {
             return;
         }
 
-        // ========== 第2.5步：Tick边界抢占检查 ==========
-        // ⭐ 关键修复：在批量调度决策之前检查抢占
-        // 参考TIE调度器的设计，每个tick都应该检查抢占，让高优先级任务能够抢占低优先级任务
-        // 这样Task_Assassin_Hungry (period=50) 就能抢占Task_Mid_A (period=100)
-        checkAndPreempt();
-
-        // ⭐ Bug #9修复：不在批量调度决策之前调用checkAndInterruptRunningTasks()
-        // 因为那时_batch_scheduled_this_tick还没有设置，检查结果会被覆盖
-        // 只在批量调度决策之后调用一次，让它根据_batch_scheduled_this_tick决定是否检查
-
-        // ⭐ 关键修复：中断任务后，清空上一tick的批量任务队列
-        // 并且如果能量已耗尽（在checkAndInterruptRunningTasks中设置的），直接返回
+        // ⭐ 关键修复：在checkAndPreempt()之前清空上一tick的批量任务队���
+        // 原因：checkAndPreempt()会使用_current_batch_tasks来判断是否需要抢占
+        //      如果不清空，会使用旧的批量任务，导致误判
+        // ⭐ 同时保存running_task_list的快照，用于后续构建新批量
+        std::vector<AbsRTTask *> last_tick_running_tasks(running_task_list);
         _current_batch_tasks.clear();
         _current_batch_size = 0;
 
@@ -697,6 +694,23 @@ namespace RTSim {
                                " 剩余能量=" + std::to_string(_current_energy * 1000) + " mJ");
             return;
         }
+
+        // ========== 第2.5步：Tick边界抢占检查 ==========
+        // ⭐ Bug修复：禁用tick边界抢占，只依赖mid-tick抢占
+        // 原因：tick边界抢占会导致suspend()→insert()→checkAndPreempt()循环，
+        //      因为suspend()会调用insert()重新插入任务，而insert()可能触发抢占，
+        //      形成无��循环（每1ms抢占一次）。
+        // 解决方案：只在真正的新任务到达时触发mid-tick抢占（在insert()中），
+        //          不在tick边界调用checkAndPreempt()。
+        //
+        // ⭐ 关键：mid-tick抢占已经在insert()中实现（Line 1615-1724），
+        //      当有新任务到达时会自动触发抢占，不需要tick边界抢占。
+        //
+        // checkAndPreempt();  // ❌ 禁用tick边界抢占，防止suspend-insert循环
+
+        // ⭐ Bug #9修复：不在批量调度决策之前调用checkAndInterruptRunningTasks()
+        // 因为那时_batch_scheduled_this_tick还没有设置，检查结果会被覆盖
+        // 只在批量调度决策之后调用一次，让它根据_batch_scheduled_this_tick决定是否检查
 
         // 3. ⭐ 选择K个新任务（不扣除它们的能量）
         int running_count = running_task_list.size();
@@ -806,13 +820,15 @@ namespace RTSim {
                     continue;  // 跳过运行中的任务
                 }
 
-                // ⭐ ALAP个体时序门控：只选择Slack<=0的任务
+                // ⭐ ALAP-Sync个体时序门控：只调度Slack<=0的任务
+                // 每个任务独立检查Slack，Slack<=0才进入就绪队列
+                // 这是"尽可能晚执行"原则的体现
                 Tick task_slack = calculateSlackForTask(task);
                 if (task_slack > 0) {
-                    SCHEDULER_LOG_DEBUG(std::string("⏸️ [ALAP-Sync] 任务选择: Slack>0，跳过 ") +
+                    SCHEDULER_LOG_DEBUG(std::string("⏸️  [ALAP-Sync] 任务选择: Slack>0，跳过 ") +
                                        getTaskName(task) +
                                        " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms");
-                    continue;  // Slack>0，跳过
+                    continue;  // Slack>0，跳过（尽可能晚执行）
                 }
 
                 new_tasks_to_schedule.push_back(task);
@@ -864,7 +880,17 @@ namespace RTSim {
                 continue;  // 跳过运行中的任务
             }
 
-            // ⭐ 能量计算不过滤Slack，考虑所有候选任务
+            // ⭐ ALAP-Sync核心：个体Slack检查，只有Slack<=0的任务才能调度
+            // 这体现了"尽可能晚执行"的原则
+            Tick task_slack = calculateSlackForTask(task);
+            if (task_slack > 0) {
+                SCHEDULER_LOG_DEBUG(std::string("⏸️  [ALAP-Sync] Slack>0，跳过任务 ") +
+                                   getTaskName(task) +
+                                   " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms");
+                continue;  // Slack>0，跳过（尽可能晚执行）
+            }
+
+            // Slack<=0，任务必须调度，计算其能耗
             new_tasks_energy += calculateUnitEnergyForTask(task);
             candidate_count++;
         }
@@ -951,17 +977,25 @@ namespace RTSim {
             _current_batch_size = 0;
             _stats.total_batch_skipped++;
 
-            SCHEDULER_LOG_INFO(std::string("⏸️  [ALAP-Sync] 能量不足，跳过新任务调度: ") +
-                              "总需要=" + std::to_string(total_energy_needed * 1000) + " mJ" +
-                              " (新任务能耗=" + std::to_string(new_tasks_energy * 1000) + " mJ)" +
-                              " 当前=" + std::to_string(_current_energy * 1000) + " mJ" +
-                              " 运行中=" + std::to_string(running_count) +
-                              " → 运��中任务继续执行，新任务等待能量收集");
+            SCHEDULER_LOG_WARNING(std::string("⚠️  [ALAP-Sync] 能量不足，全体下处理机: ") +
+                                "总需要=" + std::to_string(total_energy_needed * 1000) + " mJ" +
+                                " (运行��续期=" + std::to_string(running_tasks_renewal_energy * 1000) + " mJ" +
+                                " 新任务=" + std::to_string(new_tasks_energy * 1000) + " mJ)" +
+                                " 当前=" + std::to_string(_current_energy * 1000) + " mJ" +
+                                " 运行中=" + std::to_string(running_count) +
+                                " → 全员休眠，等待能量收集");
 
-            // ⭐ 关键修复：不标记能量已耗尽，不挂起运行中任务
-            // 原因：运行中任务可能还有能量继续执行，挂起它们会浪费已完成的工作
-            // _energy_depleted = true;
-            // _current_energy = 0.0;
+            // ⭐ 关键：挂起运行中的任务（"全员进退、同生共死"）
+            if (!running_task_list.empty()) {
+                SCHEDULER_LOG_WARNING(std::string("🔴 [ALAP-Sync] 挂起运行中的任务: ") +
+                                    std::to_string(running_task_list.size()) + " 个");
+                for (auto* task : running_task_list) {
+                    if (_kernel && task) {
+                        SCHEDULER_LOG_INFO(std::string("🔴 [ALAP-Sync] 挂起任务: ") + getTaskName(task));
+                        _kernel->suspend(task);
+                    }
+                }
+            }
         }
         // 如果有kernel，循环触发dispatch直到填满所有CPU
         if (!_kernel) {
@@ -1436,13 +1470,17 @@ namespace RTSim {
         // ⭐ 关键修复：检查_current_batch_tasks中的第一个任务（最高优先级）
         // 因为mid-tick抢占可能已经将高优先级任务移到了_batch_tasks头部
         AbsRTTask *highest = nullptr;
+        bool from_ready_queue = false;  // 标记是否来自就绪队列
+
         if (!_current_batch_tasks.empty()) {
             highest = _current_batch_tasks[0];
+            from_ready_queue = false;
         }
 
         // 如果批量任务为空，才从就绪队列查找
         if (!highest) {
             highest = getHighestPriorityTaskFromReadyQueue();
+            from_ready_queue = true;
         }
 
         if (!highest) {
@@ -1451,7 +1489,21 @@ namespace RTSim {
         }
 
         SCHEDULER_LOG_INFO(std::string("🔍 [ALAP-Sync] checkAndPreemptOnAllCPUs: 最高优先级任务=") +
-                          getTaskName(highest));
+                          getTaskName(highest) +
+                          " (from_" + (from_ready_queue ? "ready_queue" : "batch") + ")");
+
+        // ⭐ Bug修复：如果最高优先级任务来自就绪队列，且_current_batch_tasks为空，
+        // 说明可能是在suspend()后重新插入的任务。为了避免"假抢占"循���，
+        // 检查该任务是否已经在运行中。如果是，则跳过抢占。
+        if (from_ready_queue && _current_batch_tasks.empty()) {
+            for (const auto& [cpu, running_task] : running_tasks) {
+                if (running_task == highest) {
+                    SCHEDULER_LOG_INFO(std::string("⚠️ [ALAP-Sync] 跳过假抢占: 最高优先级任务正在运行中=") +
+                                      getTaskName(highest));
+                    return;  // 跳过抢占
+                }
+            }
+        }
 
         // ⭐ 关键修复：先检查是否有空闲CPU
         // 统计实际运行中的任务数量（排除nullptr）
@@ -1600,17 +1652,29 @@ namespace RTSim {
                           " @ " + std::to_string(static_cast<int64_t>(SIMUL.getTime())) + "ms" +
                           " _ready_queue.size()=" + std::to_string(_ready_queue.size()));
 
+        // ⭐ ALAP-Sync：任务到达时直接加入等待队列
+        // Slack检查在每Tick的调度决策时进行
         Scheduler::insert(task);
         addToReadyQueue(task);
 
         // ⭐ 新增：mid-tick抢占支持
         // 仅对真正的新任务执行mid-tick抢占，跳过suspend重新插入的任务
-        bool is_reinserted = std::find(_current_batch_tasks.begin(), _current_batch_tasks.end(), task) != _current_batch_tasks.end();
+        //
+        // ⭐ Bug修复：使用isExecuting()作为启发式标志来判断是否是suspend重新插入
+        // 原因：_current_batch_tasks在performTickScheduling()中被清空（Line 692），
+        //      导致is_reinserted检查失效。suspend()后的任务仍然在执行中（isExecuting()=true），
+        //      而真正的新任务不在运行中（isExecuting()=false）。
+        //
+        // ⭐ 关键逻辑：
+        // - suspend()后的任务：isExecuting()=true，刚刚被挂起，应该跳过mid-tick抢占
+        // - 真正的新任务：isExecuting()=false，刚到达，应该触发mid-tick抢占
+        bool is_reinserted = task->isExecuting();
 
         SCHEDULER_LOG_INFO(std::string("🔍 [ALAP-Sync] Mid-tick抢占检查: _kernel=") +
                           (_kernel ? "valid" : "null") +
                           " _energy_depleted=" + (_energy_depleted ? "true" : "false") +
-                          " is_reinserted=" + (is_reinserted ? "true" : "false"));
+                          " is_reinserted=" + (is_reinserted ? "true" : "false") +
+                          " isExecuting()=" + (task->isExecuting() ? "true" : "false"));
 
         if (_kernel && !_energy_depleted && !is_reinserted) {
             // ⭐ 关键修复：移除mid-tick抢占中的Slack检查

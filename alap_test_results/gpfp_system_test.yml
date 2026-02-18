@@ -11,7 +11,7 @@ cpu_islands:
     speed_model: energy_aware_model
 
 energy_management:
-  initial_energy: 5.0
+  initial_energy: 100.0
   max_energy: 1000.0
   day_of_year: 187
   time_of_day_ms: 43200000

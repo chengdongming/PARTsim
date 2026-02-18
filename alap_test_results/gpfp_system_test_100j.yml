@@ -1,0 +1,133 @@
+cpu_islands:
+- base_freq: 8100
+  freqs:
+  - 7000
+  - 7500
+  - 8000
+  - 8100
+  - 8200
+  - 8300
+  - 8400
+  - 8500
+  - 9000
+  - 9500
+  - 10000
+  - 10500
+  kernel:
+    scheduler: gpfp_alap_sync
+    task_placement: global
+  name: energy_aware_cpus
+  numcpus: 4
+  power_model: energy_aware_model
+  speed_model: energy_aware_model
+  volts:
+  - 0.92
+  - 0.94
+  - 0.96
+  - 0.98
+  - 1.0
+  - 1.02
+  - 1.04
+  - 1.06
+  - 1.08
+  - 1.1
+  - 1.12
+  - 1.14
+energy_management:
+  day_of_year: 187
+  enable_energy_recovery: true
+  initial_energy: 100.0
+  max_energy: 1000.0
+  max_recovery_wait_time_ms: 10000
+  periodic_collection_interval_ms: 1
+  pv_area_m2: 0.002
+  pv_efficiency: 0.18
+  scheduler_energy_model:
+    base_power: 0.5
+    frequency_power_ratios:
+    - 7000: 0.85
+    - 7500: 0.88
+    - 8000: 0.92
+    - 8100: 0.93
+    - 8200: 0.94
+    - 8300: 0.95
+    - 8400: 0.96
+    - 8500: 0.97
+    - 9000: 1.0
+    - 9500: 1.05
+    - 10000: 1.1
+    - 10500: 1.15
+    workload_coefficients:
+      bzip2: 1.2
+      control: 0.1
+      decrypt: 1.5
+      encrypt: 2.0
+      hash: 0.8
+      idle: 0.1
+  solar_data_file: data/processed/shenyang_solar_minute.csv
+  time_of_day_ms: 43200000
+  use_real_solar_data: false
+power_models:
+- name: energy_aware_model
+  params:
+  - energy_coefficient: 0.1
+    power_params:
+    - 0
+    - 0
+    - 0
+    - 0
+    speed_params:
+    - 1
+    - 0
+    - 0
+    - 0
+    workload: idle
+  - energy_coefficient: 1.2
+    power_params:
+    - 1
+    - 0
+    - 0
+    - 0
+    speed_params:
+    - 1
+    - 0
+    - 0
+    - 0
+    workload: bzip2
+  - energy_coefficient: 0.8
+    power_params:
+    - 1
+    - 0
+    - 0
+    - 0
+    speed_params:
+    - 1
+    - 0
+    - 0
+    - 0
+    workload: hash
+  - energy_coefficient: 2.0
+    power_params:
+    - 1
+    - 0
+    - 0
+    - 0
+    speed_params:
+    - 1
+    - 0
+    - 0
+    - 0
+    workload: encrypt
+  - energy_coefficient: 0.1
+    power_params:
+    - 1
+    - 0
+    - 0
+    - 0
+    speed_params:
+    - 1
+    - 0
+    - 0
+    - 0
+    workload: control
+  type: balsini_pannocchi
