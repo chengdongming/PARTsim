@@ -463,14 +463,11 @@ namespace RTSim {
         // ⭐ 已改用killOnMiss(true)，框架自动处理过期实例
         // cleanupExpiredTasks();
 
-        // ========== 阶段一：ALAP时序门控 ==========
-        // ⭐ ALAP核心：在能量分发之前检查Slack，决定是否强制休眠
-        if (!checkALAPTimingGate()) {
-            // Slack > 0，强制休眠，本tick不进行任何任务调度
-            SCHEDULER_LOG_INFO("⏸️  [ALAP-NonBlock] ALAP时序门控：强制休眠，跳过本Tick调度");
-            return;
-        }
-        // Slack ≤ 0，唤醒，继续进行能量分发
+        // ========== 阶段一：ALAP个体时序门控 ==========
+        // ⭐ 修复：移除批量级别的S_min门控，改为个体Slack过滤
+        // 原因：每个任务独立计算Slack，Slack<=0的任务才能调度
+        // 个体Slack检查在getTaskN中进行，这里不再做全局门控
+        SCHEDULER_LOG_INFO("✅ [ALAP-NonBlock] 个体时序门控：跳过全局S_min检查，个体Slack在getTaskN中过滤");
 
         // ========== 第2步：处理运行中任务的续期能量 ==========
         // ⭐ 重构：在tick边界扣除运行任务的续期能量（替代ALAP-NonBlockEnergyCheckEvent）
