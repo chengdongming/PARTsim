@@ -1057,12 +1057,23 @@ namespace RTSim {
 
         const auto& running_tasks_map = _kernel->getCurrentExecutingTasks();
 
-        // ⭐ 先检查是否有空闲CPU，有空闲CPU则不需要抢占
+        // ⭐ 修复：先检查是否有空闲CPU
+        // 如果有空闲CPU，只调度新任务，不进行抢占
         int free_cpus = 0;
+        int busy_cpus = 0;
         for (const auto& [cpu, task] : running_tasks_map) {
-            if (!task || !task->isExecuting()) free_cpus++;
+            if (!task || !task->isExecuting()) {
+                free_cpus++;
+            } else {
+                busy_cpus++;
+            }
         }
-        if (free_cpus > 0) return;  // 有空闲CPU，dispatch()会处理
+
+        // 如果有空闲CPU，只调度新任务，不抢占
+        if (free_cpus > 0) {
+            SCHEDULER_LOG_DEBUG("⏭️ [ALAP-Block] 有" + std::to_string(free_cpus) + "个空闲CPU，跳过抢占");
+            return;
+        }
 
         // ⭐ 抢占防抖：检查最近被挂起的任务是否应该被重新调度
         // 如果同一个任务在同一个tick内被连续抢占，跳过本次抢占
