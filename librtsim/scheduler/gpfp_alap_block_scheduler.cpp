@@ -272,8 +272,10 @@ namespace RTSim {
           _tick_event(nullptr),
           _first_tick_scheduled(false),
           _kernel(nullptr),
-          _energy_depleted(false),    // ⭐ 初始化能量耗尽标志
-          _alap_blocking(false) {     // ⭐ 初始化ALAP阻塞标志
+          _energy_depleted(false),
+          _alap_blocking(false),
+          _last_preempted_task(nullptr),
+          _last_preempted_tick(0) {
 
         SCHEDULER_LOG_INFO("🚀 [ALAP-Block] ALAP-Block Scheduler 初始化");
 
@@ -454,6 +456,10 @@ namespace RTSim {
                            std::to_string(static_cast<int64_t>(SIMUL.getTime())) + "ms =====");
         SCHEDULER_LOG_INFO("⚡ 初始能量: " + std::to_string(_current_energy * 1000) + " mJ");
 
+        // ⭐ 每个Tick开始时清除抢占防抖标记
+        // 这样在下一个tick可以正常进行抢占检查
+        _last_preempted_task = nullptr;
+
         _stats.total_tick_count++;
 
         // ⭐ 关键修复：每个 Tick 开始时清除 ALAP 阻塞标志
@@ -566,7 +572,7 @@ namespace RTSim {
         }
 
         // ========== 第3步：检查抢占 ==========
-        checkAndPreempt();
+        // checkAndPreempt();  // 禁用tick边界抢占，防止suspend-insert循环
 
         // ========== 第4步：��度新任务 ==========
         // ⭐ V40修复：确保kernel已设置
@@ -1058,6 +1064,30 @@ namespace RTSim {
         }
         if (free_cpus > 0) return;  // 有空闲CPU，dispatch()会处理
 
+        // ⭐ 抢占防抖：检查最近被挂起的任务是否应该被重新调度
+        // 如果同一个任务在同一个tick内被连续抢占，跳过本次抢占
+        // 这防止了"挂起→调度→挂起"的恶性循环
+        Tick current_time = SIMUL.getTime();
+        if (_last_preempted_task && _last_preempted_tick == current_time) {
+            // 检查是否有更高优先级的候选任务
+            bool has_higher_priority = false;
+            for (AbsRTTask *candidate : _ready_queue) {
+                if (!candidate) continue;
+                ALAPBlockTaskModel *model = getTaskModel(candidate);
+                if (!model) continue;
+                // 如果有任务的优先级高于被挂起的任务，才允许抢占
+                ALAPBlockTaskModel *preempted_model = getTaskModel(_last_preempted_task);
+                if (preempted_model && model->getRMPriority() < preempted_model->getRMPriority()) {
+                    has_higher_priority = true;
+                    break;
+                }
+            }
+            if (!has_higher_priority) {
+                SCHEDULER_LOG_DEBUG("⏸️ [ALAP-Block] 抢占防抖：跳过同tick连续抢占 " + getTaskName(_last_preempted_task));
+                return;
+            }
+        }
+
         // 找就绪队列中Slack≤0且优先级最高的候选任务（不在CPU上运行的）
         AbsRTTask *best_candidate = nullptr;
         ALAPBlockTaskModel *best_model = nullptr;
@@ -1119,6 +1149,10 @@ namespace RTSim {
                               " 调度=" + getTaskName(best_candidate) +
                               "(优先级=" + std::to_string(static_cast<int64_t>(best_model->getRMPriority())) +
                               " Slack=" + std::to_string(static_cast<int64_t>(best_slack)) + ")");
+
+            // ⭐ 记录最近被挂起的任务，用于防抖
+            _last_preempted_task = worst_running;
+            _last_preempted_tick = current_time;
 
             _kernel->suspend(worst_running);
         }

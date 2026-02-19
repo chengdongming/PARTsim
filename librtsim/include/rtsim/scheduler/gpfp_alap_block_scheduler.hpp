@@ -162,6 +162,11 @@ namespace RTSim {
         bool _energy_depleted;  // ⭐ 能量是否已耗尽（Bug修复）
         bool _alap_blocking;   // ⭐ ALAP-Block 特有：严格阻塞标志（能量不足时阻塞全部调度）
 
+        // ========== 抢占防抖 ==========
+        // ⭐ 防止频繁抢占：在同一个tick内，同一个任务不应该被反复抢占
+        AbsRTTask *_last_preempted_task;  // 最近被挂起的任务
+        MetaSim::Tick _last_preempted_tick;  // 最近被挂起的tick
+
         // ========== 私有方法 ==========
 
         // 核心调度逻辑
