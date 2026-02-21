@@ -614,6 +614,13 @@ namespace RTSim {
                                std::to_string(_current_energy * 1000) + " mJ");
         }
 
+        // ========== 第5步：调度后抢占检查 ==========
+        // ⭐ V44修复：在调度新任务后进行抢占检查
+        // 原因：需要让新任务先调度完成，然后再检查是否需要抢占
+        // 这样可以避免"刚调度就被抢占"的问题
+        // 同时确保在tick边界统一进行抢占决策
+        checkAndPreempt();
+
         SCHEDULER_LOG_INFO("✅ Tick " +
                            std::to_string(static_cast<int64_t>(current_time)) +
                            "ms 完成, 剩余能量: " +
@@ -1036,7 +1043,12 @@ namespace RTSim {
 
         if (!isInReadyQueue(task) && !isInWaitingQueue(task)) {
             addToReadyQueue(task);
-            checkAndPreempt();
+            // ⭐ V44修复：移除任务到达时的抢占检查
+            // 原因：
+            // 1. 任务到达时立即抢占会导致刚调度的任务在下一个tick就被抢占
+            // 2. 违背ALAP的"尽可能晚调度"原则
+            // 3. 抢占检查应该在tick边界统一进行，而不是每次任务到达都检查
+            // checkAndPreempt();
         }
     }
 
@@ -1109,24 +1121,35 @@ namespace RTSim {
             CPU *cand_cpu = _kernel->getProcessor(candidate);
             if (cand_cpu != nullptr) continue;  // 已在运行
 
-            // ⭐ 关键修复：移除抢占检查中的ALAP Slack门控，让高优先级任务可以立即抢占
-            // 原因：ALAP的Slack门控应该在调度时过滤（getTaskN），而不应该在抢占时过滤
-            // 如果在抢占时也过滤Slack，会导致高优先级任务（如Task_Assassin_Hungry, period=50）
-            // 因为Slack>0而无法抢占低优先级任务（如Task_Mid_A, period=100），
-            // 违反RM调度原则，导致饥饿和超时
+            // ⭐ V44关键修复：恢复抢占检查中的ALAP Slack门控
+            // 原因：保持与getTaskN中个体Slack门控的一致性
             //
-            // 新策略：
-            // - 抢占时只看RM优先级，不看Slack（类似TIE调度器）
-            // - Slack门控在全局门控（第506-512行）和getTaskN调度时生效
+            // 问题背景：
+            // - getTaskN中：Slack>0的任务被跳过，不调度
+            // - 抢占检查中：如果移除Slack门控，会导致Slack>0的高优先级任务抢占低优先级任务
+            // - 这造成不一致：调度时不用，抢占时用
+            //
+            // 修复策略：
+            // - 抢占检查中也应用Slack门控：只有Slack≤0的任务才能参与抢占
+            // - 这样确保"尽可能晚调度"原则在抢占时也生效
+            // - 避免Slack>0的任务抢占Slack≤0的任务
 
             ALAPBlockTaskModel *model = getTaskModel(candidate);
             if (!model) continue;
 
+            // 计算候选任务的Slack
+            Tick candidate_slack = calculateSlackForTask(candidate);
+
+            // ⭐ Slack门控：只有Slack≤0的任务才能参与抢占
+            if (candidate_slack > 0) {
+                continue;  // Slack>0，跳过这个候选任务
+            }
+
+            // 在Slack≤0的任务中，找优先级最高的
             if (!best_candidate || model->getRMPriority() < best_model->getRMPriority()) {
                 best_candidate = candidate;
                 best_model = model;
-                // ⭐ 修复：移除Slack门控后，不再记录best_slack
-                // best_slack = slack;
+                best_slack = candidate_slack;
             }
         }
 
