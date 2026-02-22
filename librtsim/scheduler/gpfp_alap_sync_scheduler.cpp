@@ -603,61 +603,45 @@ namespace RTSim {
             }
         }
 
-        // ⭐ 逐渐扣除模式：每1ms扣除运行任务的能量（类似TIE的方式）
-        // 不再使用预扣模式，能量在实际执行时每ms扣除一次
+        // ⭐ V61: All-or-Nothing批量能量检查
+        // 1. 计算所有运行任务的总能耗
+        // 2. 如果能量足够：扣除所有运行任务能量，继续执行
+        // 3. 如果能量不足：全部挂起，一个都不执行（All-or-Nothing）
         {
             const double EPSILON = 1e-9;
-            std::vector<AbsRTTask *> tasks_to_suspend;
 
-            SCHEDULER_LOG_INFO(std::string("⚡ [ALAP-Sync] 检查运行任务续期能量: ") +
-                               std::to_string(running_task_list.size()) + " 个任务, " +
-                               "剩余能量=" + std::to_string(_current_energy * 1000) + " mJ");
-
-            // 对每个运行任务检查是否有足够能量续期1ms
+            // 计算运行任务总能耗
+            double running_tasks_total_energy = 0.0;
             for (AbsRTTask* task : running_task_list) {
-                double unit_energy = calculateUnitEnergyForTask(task);
-
-                // 检查是否有足够能量续期1ms
-                if (_current_energy < unit_energy - EPSILON) {
-                    // ⭐ 能量不足，加入挂起列表
-                    tasks_to_suspend.push_back(task);
-                    SCHEDULER_LOG_WARNING(std::string("⚠️ [ALAP-Sync] 续期能量不足，将挂起: ") +
-                                         getTaskName(task) +
-                                         " 需要=" + std::to_string(unit_energy * 1000) + " mJ" +
-                                         " 剩余=" + std::to_string(_current_energy * 1000) + " mJ");
-                } else {
-                    // ⭐ 能量充足，立即扣除1ms能量
-                    double old_energy = _current_energy;
-                    _current_energy -= unit_energy;
-                    _stats.total_energy_consumed += unit_energy;
-
-                    SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Sync] 扣除续期能量: ") +
-                                       getTaskName(task) +
-                                       " -" + std::to_string(unit_energy * 1000) + " mJ " +
-                                       std::to_string(old_energy * 1000) + " → " +
-                                       std::to_string(_current_energy * 1000) + " mJ");
-                }
+                running_tasks_total_energy += calculateUnitEnergyForTask(task);
             }
 
-            // ⭐ 如果有任务能量不足，挂起这些任务
-            if (!tasks_to_suspend.empty()) {
-                // 设置能量耗尽标志
+            SCHEDULER_LOG_INFO(std::string("⚡ [ALAP-Sync] V61 All-or-Nothing检查: ") +
+                               "运行任务=" + std::to_string(running_task_list.size()) +
+                               " 总能耗=" + std::to_string(running_tasks_total_energy * 1000) + " mJ, " +
+                               "当前能量=" + std::to_string(_current_energy * 1000) + " mJ");
+
+            // All-or-Nothing判断
+            if (_current_energy >= running_tasks_total_energy - EPSILON) {
+                // 能量充足：扣除所有运行任务能量
+                for (AbsRTTask* task : running_task_list) {
+                    double unit_energy = calculateUnitEnergyForTask(task);
+                    _current_energy -= unit_energy;
+                    _stats.total_energy_consumed += unit_energy;
+                }
+                SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Sync] V61 All-or-Nothing通过"));
+            } else {
+                // 能量不足：全部挂起（All-or-Nothing）
                 _energy_depleted = true;
+                SCHEDULER_LOG_WARNING(std::string("⚠️ [ALAP-Sync] V61 All-or-Nothing失败，全部挂起"));
 
-                SCHEDULER_LOG_WARNING(std::string("💀 [ALAP-Sync] 能量耗尽，挂起 ") +
-                                     std::to_string(tasks_to_suspend.size()) + " 个任务");
-
-                // 挂起所有能量不足的任务
-                for (AbsRTTask* task : tasks_to_suspend) {
+                for (AbsRTTask* task : running_task_list) {
                     if (_kernel && task->isExecuting()) {
-                        SCHEDULER_LOG_WARNING(std::string("🛑 [ALAP-Sync] 挂起任务: ") +
-                                             getTaskName(task));
+                        SCHEDULER_LOG_WARNING(std::string("🛑 [ALAP-Sync] V61挂起: ") + getTaskName(task));
                         _kernel->suspend(task);
                     }
                 }
-
-                // ⭐ 关键修复：能量耗尽后，直接返回，不继续调度新任务
-                return;
+                return;  // 直接返回，不调度新任务
             }
         }
 
