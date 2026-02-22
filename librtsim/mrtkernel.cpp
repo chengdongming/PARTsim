@@ -318,10 +318,7 @@ namespace RTSim {
         }
         std::cout << "[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=" << num_newtasks << std::endl;
 
-        // Technically, in the old impl i can be less than ncpu, but if we break
-        // before reaching ncpu for sure there are NO tasks to evict and i will
-        // never be used.
-        int i = ncpu;
+        // ⭐ V45修复：移除未使用的变量i（驱逐逻辑已删除）
 
         DBGPRINT(_sched->toString());
         DBGPRINT("New tasks: ", num_newtasks);
@@ -333,46 +330,39 @@ namespace RTSim {
             return;
         }
 
+        // ⭐ V45关键修复：移除自动驱逐逻辑，只调度到空闲CPU
+        // 原因：
+        // 1. 原来的驱逐逻辑会在没有空闲CPU时尝试驱逐正在运行的任务
+        // 2. 这导致"有空闲CPU（上下文切换中）但仍然抢占"的问题
+        // 3. 抢占决策应该由调度器的checkAndPreempt()来做，而不是dispatch()
+        // 4. dispatch()只负责将任务调度到真正空闲的CPU
+        //
+        // 修复策略：
+        // - 只调度到空闲CPU（_m_currExe[p]==nullptr && !isDispatched(p)）
+        // - 如果没有空闲CPU，直接返回，不进行驱逐
+        // - 抢占由调度器的checkAndPreempt()统一处理
+
+        int free_cpus_used = 0;
         for (auto f = getNextFreeProc(_m_currExe.begin(), _m_currExe.end());
-             num_newtasks > 0; f = getNextFreeProc(f, _m_currExe.end())) {
+             num_newtasks > 0 && free_cpus_used < static_cast<int>(ncpu);
+             f = getNextFreeProc(f, _m_currExe.end())) {
             if (f != _m_currExe.end()) {
                 DBGPRINT("Dispatching on free processor ", f->first);
+                std::cout << "[DEBUG] MRTKernel::dispatch() - 调度到空闲CPU: " << f->first->toString() << std::endl;
                 dispatch(f->first);
                 --num_newtasks;
+                ++free_cpus_used;
                 ++f;
             } else {
-                // We have to "evict" a task from being scheduled/dispatched
-                // because there are no more CPUs and a task that is "higher" in
-                // the ready queue has to run on its CPU.
-
-                // ORIGINAL NOTE FROM TOMMASO:
-                // NON-SENSE: this is putting all new tasks on WHAT CPU ?!?
-
-                // NOTE: this loop takes a long while to complete
-                // ⭐ V28.13修复：允许只调度部分任务，不填满所有CPU
-                // 如果找不到可以驱逐的任务，就停止调度
-                for (int max_attempts = 100; max_attempts > 0; --max_attempts) {
-                    AbsRTTask *t = _sched->getTaskN(i++);
-                    if (t == nullptr) {
-                        // 没有更多任务可以驱逐，停止调度
-                        DBGPRINT("No more tasks to deschedule, stopping dispatch");
-                        std::cout << "[DEBUG] MRTKernel::dispatch() - 没有更多任务可驱逐，停止调度 (num_newtasks=" << num_newtasks << ")" << std::endl;
-                        num_newtasks = 0;  // 清零，退出外层循环
-                        break;
-                    }
-
-                    // NOTE: does not check for running tasks, only dispatched
-                    // ones!
-                    CPU *c = _m_dispatched[t];
-                    if (c != nullptr) {
-                        DBGPRINT("Dispatching on processor ", c,
-                                 " which is executing task ", taskname(t));
-                        dispatch(c);
-                        --num_newtasks;
-                        break;
-                    }
-                }
+                // 没有更多空闲CPU，停止调度
+                // 剩余的任务等待下次dispatch()或由checkAndPreempt()处理
+                std::cout << "[DEBUG] MRTKernel::dispatch() - 没有空闲CPU，停止调度 (剩余num_newtasks=" << num_newtasks << ")" << std::endl;
+                break;
             }
+        }
+
+        if (num_newtasks > 0) {
+            std::cout << "[DEBUG] MRTKernel::dispatch() - 还有" << num_newtasks << "个任务未调度，将在下次dispatch或checkAndPreempt中处理" << std::endl;
         }
     }
 

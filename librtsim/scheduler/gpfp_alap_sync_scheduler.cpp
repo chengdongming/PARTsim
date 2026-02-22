@@ -1534,25 +1534,41 @@ namespace RTSim {
             }
         }
 
-        // ⭐ 关键修复：先检查是否有空闲CPU
-        // 统计实际运行中的任务数量（排除nullptr）
-        int actual_running_count = 0;
+        // ⭐ V45关键修复：准确计算真正空闲的CPU数量
+        // 空闲CPU的定义：_m_currExe[cpu] == nullptr 且 没���任务正在dispatch到这个CPU
+        // 注意：上下文切换中的CPU（有任务dispatch但还没执行）不应该被认为是空闲的
+        //       但也不应该被抢占
+        int truly_free_cpus = 0;   // 真正空闲（可以调度新任务）
+        int busy_executing = 0;     // 正在执行任务（可以被抢占）
+        int busy_dispatching = 0;   // 上下文切换中（不应该被抢占）
+
         for (const auto& [cpu, running_task] : running_tasks) {
-            if (running_task != nullptr) {
-                actual_running_count++;
+            bool is_dispatching = _kernel->isCPUDispatching(cpu);
+            if (!running_task) {
+                if (!is_dispatching) {
+                    truly_free_cpus++;
+                } else {
+                    busy_dispatching++;
+                }
+            } else if (running_task->isExecuting()) {
+                busy_executing++;
+            } else {
+                // 任务存在但没有在执行，可能是上下文切换中
+                busy_dispatching++;
             }
         }
 
         int total_cpus = running_tasks.size();
-        int free_cpus = total_cpus - actual_running_count;
 
         SCHEDULER_LOG_INFO(std::string("🔍 [ALAP-Sync] CPU状态: 总数=") +
                           std::to_string(total_cpus) +
-                          " 运行中=" + std::to_string(actual_running_count) +
-                          " 空闲=" + std::to_string(free_cpus));
+                          " 空闲=" + std::to_string(truly_free_cpus) +
+                          " 执行中=" + std::to_string(busy_executing) +
+                          " 上下文切换中=" + std::to_string(busy_dispatching));
 
-        // ⭐ 如果有空闲CPU，不需要抢占，直接返回让dispatch调度新任务
-        if (free_cpus > 0) {
+        // ⭐ V45修复：如果有真正空闲的CPU，不进行抢占
+        // 新任务会被dispatch到空闲CPU，不需要抢占正在运行的任务
+        if (truly_free_cpus > 0) {
             SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Sync] 有空闲CPU，无需抢占，直接调度新任务: ") +
                               getTaskName(highest));
             return;
@@ -1719,27 +1735,38 @@ namespace RTSim {
             SCHEDULER_LOG_INFO(std::string("🔍 [ALAP-Sync] 运行中任务数量: ") +
                               std::to_string(running_tasks.size()));
 
-            // ⭐ 关键修复：先检查是否有空闲CPU
-            int actual_running_count = 0;
+            // ⭐ V45关键修复：准确计算真正空闲的CPU数量
+            int truly_free_cpus = 0;
+            int busy_executing = 0;
+            int busy_dispatching = 0;
+
             for (const auto& [cpu, running_task] : running_tasks) {
-                if (running_task != nullptr) {
-                    actual_running_count++;
+                bool is_dispatching = _kernel->isCPUDispatching(cpu);
+                if (!running_task) {
+                    if (!is_dispatching) {
+                        truly_free_cpus++;
+                    } else {
+                        busy_dispatching++;
+                    }
+                } else if (running_task->isExecuting()) {
+                    busy_executing++;
+                } else {
+                    busy_dispatching++;
                 }
             }
 
             int total_cpus = running_tasks.size();
-            int free_cpus = total_cpus - actual_running_count;
 
             SCHEDULER_LOG_INFO(std::string("🔍 [ALAP-Sync] Mid-tick CPU状态: 总数=") +
                               std::to_string(total_cpus) +
-                              " 运行中=" + std::to_string(actual_running_count) +
-                              " 空闲=" + std::to_string(free_cpus));
+                              " 空闲=" + std::to_string(truly_free_cpus) +
+                              " 执行中=" + std::to_string(busy_executing) +
+                              " 上下文切换中=" + std::to_string(busy_dispatching));
 
-            // ⭐ 如果有空闲CPU，直接调度新任务，不需要抢占
-            if (free_cpus > 0) {
+            // ⭐ V45修复：如果有真正空闲的CPU，不进行抢占
+            if (truly_free_cpus > 0) {
                 SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Sync] Mid-tick: 有空闲CPU，直接调度新任务: ") +
                                   getTaskName(task));
-
                 // 检查能量（但不扣除，让下一个tick的批量调度统一扣除）
                 double unit_energy = calculateUnitEnergyForTask(task);
                 const double EPSILON = 1e-9;

@@ -1069,21 +1069,39 @@ namespace RTSim {
 
         const auto& running_tasks_map = _kernel->getCurrentExecutingTasks();
 
-        // ⭐ 修复：先检查是否有空闲CPU
-        // 如果有空闲CPU，只调度新任务，不进行抢占
-        int free_cpus = 0;
-        int busy_cpus = 0;
+        // ⭐ V45关键修复：准确计算真正空闲的CPU数量
+        // 空闲CPU的定义：_m_currExe[cpu] == nullptr 且 没有任务正在dispatch到这个CPU
+        // 注意：上下文切换中的CPU（有任务dispatch但还没执行）不应该被认为是空闲的
+        //       但也不应该被抢占
+        int truly_free_cpus = 0;   // 真正空闲（可以调度新任务）
+        int busy_executing = 0;     // 正在执行任务（可以被抢占）
+        int busy_dispatching = 0;   // 上下文切换中（不应该被抢占）
+
         for (const auto& [cpu, task] : running_tasks_map) {
-            if (!task || !task->isExecuting()) {
-                free_cpus++;
+            bool is_dispatching = _kernel->isCPUDispatching(cpu);
+            if (!task) {
+                if (!is_dispatching) {
+                    truly_free_cpus++;
+                } else {
+                    busy_dispatching++;
+                }
+            } else if (task->isExecuting()) {
+                busy_executing++;
             } else {
-                busy_cpus++;
+                // 任务存在但没有在执行，可能是上下文切换中
+                busy_dispatching++;
             }
         }
 
-        // 如果有空闲CPU，只调度新任务，不抢占
-        if (free_cpus > 0) {
-            SCHEDULER_LOG_DEBUG("⏭️ [ALAP-Block] 有" + std::to_string(free_cpus) + "个空闲CPU，跳过抢占");
+        SCHEDULER_LOG_INFO(std::string("🔍 [ALAP-Block] CPU状态: 空闲=") +
+                          std::to_string(truly_free_cpus) +
+                          " 执行中=" + std::to_string(busy_executing) +
+                          " 上下文切换中=" + std::to_string(busy_dispatching));
+
+        // ⭐ V45修复：如果有真正空闲的CPU，不进行抢占
+        // 新任务会被dispatch到空闲CPU，不需要抢占正在运行的任务
+        if (truly_free_cpus > 0) {
+            SCHEDULER_LOG_INFO("⏭️ [ALAP-Block] 有" + std::to_string(truly_free_cpus) + "个空闲CPU，跳过抢占");
             return;
         }
 

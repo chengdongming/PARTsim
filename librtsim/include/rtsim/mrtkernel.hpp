@@ -526,6 +526,12 @@ namespace RTSim {
         const std::map<CPU *, AbsRTTask *>& getCurrentExecutingTasks() const {
             return _m_currExe;
         }
+
+        /// ⭐ V45新增：检查CPU是否有任务正在dispatch到它（上下文切换中）
+        /// @return true如果有任务正在dispatch到这个CPU
+        bool isCPUDispatching(CPU *p) const {
+            return isDispatched(p);
+        }
     };
 } // namespace RTSim
 
