@@ -1604,8 +1604,10 @@ namespace RTSim {
                               " 调度高优先级任务=" + getTaskName(highest));
 
             // ⭐ 完整的抢占实现：
-            // 1. 从就绪队列移除高优先级任务（避免重复）
-            removeFromReadyQueue(highest);
+            // ⭐ V60修复：不从_ready_queue移除任务！
+            // 原因：getTaskN()从_ready_queue获取任务，移除后会导致任务无法被调度
+            // _current_batch_tasks只是标记哪些任务需要调度，实际调度仍通过getTaskN()
+            // removeFromReadyQueue(highest);  // V60: 注释掉
 
             // 2. 从批量任务中移除被抢占的任务
             auto batch_it = std::find(_current_batch_tasks.begin(), _current_batch_tasks.end(), lowest_priority_task);
