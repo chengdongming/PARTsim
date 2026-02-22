@@ -1242,13 +1242,31 @@ namespace RTSim {
 
         if (!worst_running || !worst_model) return;
 
-        if (best_model->getRMPriority() < worst_model->getRMPriority()) {
+        // ⭐ V46关键修复：改进抢占条件，支持Slack=0任务的紧急调度
+        //
+        // 原有问题：
+        // - 旧逻辑只有当候选任务优先级更高时才抢占
+        // - 但当Slack=0的任务优先级低于运行任务时，无法被调度
+        // - 这违背了"任务必须在Slack=0的精准时刻被唤醒"的原则
+        //
+        // 修复策略：
+        // 1. 候选任务优先级更高：正常抢占（RM原则）
+        // 2. 候选任务Slack=0（紧急）且被抢占任务Slack>0（不紧急）：
+        //    允许抢占，即使候选任务优先级更低
+
+        Tick worst_slack = calculateSlackForTask(worst_running);
+        bool preempt_by_priority = best_model->getRMPriority() < worst_model->getRMPriority();
+        bool preempt_by_urgency = (best_slack <= 0) && (worst_slack > 0);
+
+        if (preempt_by_priority || preempt_by_urgency) {
             double unit_energy = calculateUnitEnergyForTask(best_candidate);
             if (_current_energy < unit_energy) return;
 
-            SCHEDULER_LOG_INFO(std::string("🔄 [ALAP-NonBlock] ALAP抢占: ") +
+            std::string reason = preempt_by_priority ? "优先级抢占" : "紧急抢占(Slack=0)";
+            SCHEDULER_LOG_INFO(std::string("🔄 [ALAP-NonBlock] ALAP抢占(") + reason + "): " +
                               " 挂起=" + getTaskName(worst_running) +
-                              "(优先级=" + std::to_string(static_cast<int64_t>(worst_model->getRMPriority())) + ")" +
+                              "(优先级=" + std::to_string(static_cast<int64_t>(worst_model->getRMPriority())) +
+                              " Slack=" + std::to_string(static_cast<int64_t>(worst_slack)) + ")" +
                               " 调度=" + getTaskName(best_candidate) +
                               "(优先级=" + std::to_string(static_cast<int64_t>(best_model->getRMPriority())) +
                               " Slack=" + std::to_string(static_cast<int64_t>(best_slack)) + ")");

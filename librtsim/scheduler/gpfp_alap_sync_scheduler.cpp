@@ -603,46 +603,117 @@ namespace RTSim {
             }
         }
 
-        // ⭐ V61: All-or-Nothing批量能量检查
-        // 1. 计算所有运行任务的总能耗
-        // 2. 如果能量足够：扣除所有运行任务能量，继续执行
-        // 3. 如果能量不足：全部挂起，一个都不执行（All-or-Nothing）
-        {
-            const double EPSILON = 1e-9;
-
-            // 计算运行任务总能耗
-            double running_tasks_total_energy = 0.0;
-            for (AbsRTTask* task : running_task_list) {
-                running_tasks_total_energy += calculateUnitEnergyForTask(task);
-            }
-
-            SCHEDULER_LOG_INFO(std::string("⚡ [ALAP-Sync] V61 All-or-Nothing检查: ") +
-                               "运行任务=" + std::to_string(running_task_list.size()) +
-                               " 总能耗=" + std::to_string(running_tasks_total_energy * 1000) + " mJ, " +
-                               "当前能量=" + std::to_string(_current_energy * 1000) + " mJ");
-
-            // All-or-Nothing判断
-            if (_current_energy >= running_tasks_total_energy - EPSILON) {
-                // 能量充足：扣除所有运行任务能量
-                for (AbsRTTask* task : running_task_list) {
-                    double unit_energy = calculateUnitEnergyForTask(task);
-                    _current_energy -= unit_energy;
-                    _stats.total_energy_consumed += unit_energy;
+        // ⭐ V66: All-or-Nothing批量能量检查（完整版）
+        // 1. 收集所有Slack<=0的任务（运行中 + 就绪队列中）
+        // 2. K = min(总候选数, CPU核心数)
+        // 3. 计算K个任务的总能量
+        // 4. 能量足够→全部执行；能量不足→全部挂起
+        
+        const double EPSILON_V66 = 1e-9;
+        
+        // Step 1: 收集Slack<=0的就绪任务
+        std::vector<AbsRTTask*> slack_ready_tasks;
+        
+        // 按RM优先级排序就绪队列
+        std::vector<AbsRTTask*> sorted_ready_v66(_ready_queue.begin(), _ready_queue.end());
+        std::sort(sorted_ready.begin(), sorted_ready.end(),
+            [this](AbsRTTask* a, AbsRTTask* b) {
+                auto model_a = getTaskModel(a);
+                auto model_b = getTaskModel(b);
+                if (model_a && model_b) {
+                    return model_a->getRMPriority() < model_b->getRMPriority();
                 }
-                SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Sync] V61 All-or-Nothing通过"));
-            } else {
-                // 能量不足：全部挂起（All-or-Nothing）
-                _energy_depleted = true;
-                SCHEDULER_LOG_WARNING(std::string("⚠️ [ALAP-Sync] V61 All-or-Nothing失败，全部挂起"));
-
-                for (AbsRTTask* task : running_task_list) {
-                    if (_kernel && task->isExecuting()) {
-                        SCHEDULER_LOG_WARNING(std::string("🛑 [ALAP-Sync] V61挂起: ") + getTaskName(task));
-                        _kernel->suspend(task);
-                    }
-                }
-                return;  // 直接返回，不调度新任务
+                return false;
+            });
+        
+        for (auto* task : sorted_ready_v66) {
+            if (!task || !task->isActive()) continue;
+            
+            // 排除运行中的任务
+            bool is_running = false;
+            for (auto* rt : running_task_list) {
+                if (task == rt) { is_running = true; break; }
             }
+            if (is_running) continue;
+            
+            // 检查Slack<=0
+            Tick task_slack = calculateSlackForTask(task);
+            if (task_slack <= 0) {
+                slack_ready_tasks.push_back(task);
+            }
+        }
+        
+        // Step 2: 计算K
+        int total_candidates_v66 = running_task_list.size() + slack_ready_tasks.size();
+        int K_v66 = std::min(total_candidates_v66, static_cast<int>(total_cpus));
+        
+        SCHEDULER_LOG_INFO(std::string("📊 [ALAP-Sync V66] All-or-Nothing决策: ") +
+                          "运行中=" + std::to_string(running_task_list.size()) +
+                          " Slack<=0就绪=" + std::to_string(slack_ready_tasks.size()) +
+                          " K=" + std::to_string(K_v66));
+        
+        // Step 3: 计算K个任务的总能量
+        double total_energy_v66 = 0.0;
+        std::vector<AbsRTTask*> k_tasks_v66;
+        
+        // 先加入运行中任务
+        for (auto* task : running_task_list) {
+            if (static_cast<int>(k_tasks_v66.size()) >= K_v66) break;
+            if (_tasks_completed_wcet.find(task) == _tasks_completed_wcet.end()) {
+                k_tasks_v66.push_back(task);
+                total_energy_v66 += calculateUnitEnergyForTask(task);
+            }
+        }
+        
+        // 再加入Slack<=0的就绪任务（按优先级）
+        for (auto* task : slack_ready_tasks) {
+            if (static_cast<int>(k_tasks_v66.size()) >= K_v66) break;
+            k_tasks_v66.push_back(task);
+            total_energy_v66 += calculateUnitEnergyForTask(task);
+        }
+        
+        SCHEDULER_LOG_INFO(std::string("📊 [ALAP-Sync V66] 能量需求: ") +
+                          "K个任务=" + std::to_string(k_tasks_v66.size()) +
+                          " 总能量=" + std::to_string(total_energy_v66 * 1000) + " mJ" +
+                          " 当前=" + std::to_string(_current_energy * 1000) + " mJ");
+        
+        // Step 4: All-or-Nothing决策
+        if (_current_energy >= total_energy_v66 - EPSILON_V66) {
+            // 能量充足：扣除能量，设置批量任务
+            for (auto* task : k_tasks_v66) {
+                double unit_energy = calculateUnitEnergyForTask(task);
+                _current_energy -= unit_energy;
+                _stats.total_energy_consumed += unit_energy;
+            }
+            
+            _current_batch_tasks = k_tasks_v66;
+            _current_batch_size = k_tasks_v66.size();
+            _batch_scheduled_this_tick = true;
+            _stats.total_batch_schedules++;
+            
+            SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Sync V66] All-or-Nothing通过: ") +
+                              "调度" + std::to_string(k_tasks_v66.size()) + "个任务");
+        } else {
+            // 能量不足：全部挂起
+            SCHEDULER_LOG_WARNING(std::string("⚠️ [ALAP-Sync V66] All-or-Nothing失败: ") +
+                                 "需要=" + std::to_string(total_energy_v66 * 1000) + " mJ" +
+                                 " 当前=" + std::to_string(_current_energy * 1000) + " mJ");
+            
+            // 挂起所有运行中的任务
+            for (auto* task : running_task_list) {
+                if (_kernel && task->isExecuting()) {
+                    SCHEDULER_LOG_WARNING(std::string("🛑 [ALAP-Sync V66] 挂起: ") + getTaskName(task));
+                    _kernel->suspend(task);
+                }
+            }
+            
+            _current_batch_tasks.clear();
+            _current_batch_size = 0;
+            _batch_scheduled_this_tick = false;
+            _energy_depleted = true;
+            _stats.total_batch_skipped++;
+            
+            return;  // 直接返回
         }
 
         // ⭐ 关键修复：如果能量已耗尽，不调度新任务
@@ -756,7 +827,7 @@ namespace RTSim {
 
             // ⭐ 关键修复：排除已经在运行中的任务，避免重复调度
             std::vector<AbsRTTask *> filtered_ready;
-            for (auto* task : sorted_ready) {
+            for (auto* task : sorted_ready_v66) {
                 bool is_running = false;
                 for (auto* running_task : running_task_list) {
                     if (task == running_task) {
@@ -815,6 +886,7 @@ namespace RTSim {
             all_ready_tasks.assign(sorted_ready.begin(), sorted_ready.end());
         }
 
+#if 0
         // 3. ⭐ ALAP-Sync关键：每个tick都预扣运行任务续期+新任务的能量
         // 这样可以在能量耗尽时及时中断任务
 
@@ -999,6 +1071,9 @@ namespace RTSim {
                 }
             }
         }
+
+#endif
+
         // 如果有kernel，循环触发dispatch直到填满所有CPU
         if (!_kernel) {
             SCHEDULER_LOG_DEBUG("⚠��� [ALAP-Sync] performTickScheduling: _kernel为nullptr，尝试获取");

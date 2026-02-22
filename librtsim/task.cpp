@@ -471,9 +471,33 @@ namespace RTSim {
             endEvt.setCPU(cpu_index);
         }
 
-        // 只有当任务在执行时才通知内核
-        if (_kernel && isExecuting()) {
-            _kernel->onEnd(this);
+        // ⭐ V48关键修复：即使任务不在执行状态，也需要通知内核清理_m_currExe
+        //
+        // 原有问题：
+        // - 旧逻辑只有当isExecuting()返回true时才调用_kernel->onEnd()
+        // - 但在deadline miss场景下，handleDeadlineMiss先调用deschedule()
+        //   这会设置state=TSK_READY，导致isExecuting()返回false
+        // - 结果是onEnd()不会被调用，_m_currExe不会被清理
+        // - 这导致CPU被认为仍然被该任务占用，阻塞后续任务调度
+        //
+        // 修复策略：
+        // 1. 检查任务是否在CPU上（通过getCPU()）
+        // 2. 如果在CPU上，即使状态不是EXEC，也调用onEnd()清理内核状态
+
+        // 先检查任务是否在某个CPU上
+        bool on_cpu = (cpu != nullptr);
+
+        if (_kernel) {
+            if (isExecuting()) {
+                // 任务在执行状态，正常调用onEnd
+                _kernel->onEnd(this);
+            } else if (on_cpu) {
+                // 任务不在执行状态但仍在CPU映射中
+                // 这可能是因为deschedule()已更新状态但内核未清理
+                // 直接调用onEnd清理内核状态
+                DBGPRINT("Task ", getName(), " killed while not in EXEC state but on CPU, forcing cleanup");
+                _kernel->onEnd(this);
+            }
         }
         state = TSK_IDLE;
 

@@ -123,6 +123,9 @@ namespace RTSim {
     }
 
     bool MRTKernel::isDispatched(CPU *p) const {
+        // 检查是否有任务正在dispatch到这个CPU
+        // ⭐ 注意：这个函数用于判断CPU是否有任务正在dispatch（上下文切换中）
+        // 使用_m_dispatched映射来查找
         for (auto it : _m_dispatched) {
             if (it.second == p)
                 return true;
@@ -136,7 +139,8 @@ namespace RTSim {
             bool curr_exe_null = (it->second == nullptr);
             bool is_disp = isDispatched(it->first);
             std::cout << "[DEBUG] getNextFreeProc() - CPU: " << it->first->toString()
-                      << " _m_currExe=null:" << curr_exe_null
+                      << " _m_currExe=" << (it->second ? taskname(it->second) : "nullptr")
+                      << " is_null:" << curr_exe_null
                       << " isDispatched:" << is_disp << std::endl;
             if (curr_exe_null && !is_disp) {
                 std::cout << "[DEBUG] getNextFreeProc() - 找到空闲CPU: " << it->first->toString() << std::endl;
