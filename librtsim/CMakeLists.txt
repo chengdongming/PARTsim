@@ -45,14 +45,17 @@ set(LIBRARY_SOURCE_FILES
     scheduler/gpfp_epp_scheduler.cpp
     scheduler/gpfp_efpp_scheduler.cpp
     scheduler/gpfp_cbpp_scheduler.cpp
-    scheduler/gpfp_tie_scheduler.cpp
-    scheduler/gpfp_btie_scheduler.cpp
-    scheduler/gpfp_tgf_scheduler.cpp
+    scheduler/gpfp_asap_block_scheduler.cpp
+    scheduler/gpfp_asap_sync_scheduler.cpp
+    scheduler/gpfp_asap_nonblock_scheduler.cpp
     scheduler/gpfp_cascade_scheduler.cpp
     scheduler/gpfp_batch_scheduler.cpp
     scheduler/gpfp_alap_block_scheduler.cpp
     scheduler/gpfp_alap_nonblock_scheduler.cpp
     scheduler/gpfp_alap_sync_scheduler.cpp
+    scheduler/gpfp_st_block_scheduler.cpp
+    scheduler/gpfp_st_nonblock_scheduler.cpp
+    scheduler/gpfp_st_sync_scheduler.cpp
     scheduler/energy_bridge.cpp
     scheduler/config_manager.cpp
     # # These two go together. If you want to compile against EnergyMRTKernel

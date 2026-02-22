@@ -1,5 +1,5 @@
-#ifndef GPFP_BTIE_SCHEDULER_HPP
-#define GPFP_BTIE_SCHEDULER_HPP
+#ifndef GPFP_TIE_SCHEDULER_HPP
+#define GPFP_TIE_SCHEDULER_HPP
 
 #include "config_manager.hpp"
 #include "energy_bridge.hpp"
@@ -21,45 +21,48 @@ namespace RTSim {
     // 前向声明
     class CPU;
     class AbsRTTask;
-    class BTIEScheduler;
+    class ASAPBlockScheduler;
     class MRTKernel;
 
     // 时间类型别名
     using TimeMs = int64_t;
 
     // =====================================================
-    // BTIE Tick级调度事件（每1ms触发一次）
+    // TIE Tick级调度事件（每1ms触发一次）
     // =====================================================
-    class BTIETickEvent : public MetaSim::Event {
+    class ASAPBlockTickEvent : public MetaSim::Event {
     private:
-        BTIEScheduler *_scheduler;
+        ASAPBlockScheduler *_scheduler;
 
     public:
-        BTIETickEvent(BTIEScheduler *scheduler);
+        ASAPBlockTickEvent(ASAPBlockScheduler *scheduler);
         void doit() override;
     };
 
     // =====================================================
-    // BTIE运行时能量检查事件（每1ms检查运行中任务的能量）
+    // TIE运行时能量检查事件（每1ms检查运行中任务的能量）
+    // ⭐ V40重构：能量检查事件已删除，能量由performTickScheduling处理
     // =====================================================
-    class BTIEEnergyCheckEvent : public MetaSim::Event {
+    /*
+    class ASAPBlockEnergyCheckEvent : public MetaSim::Event {
     private:
-        BTIEScheduler *_scheduler;
+        ASAPBlockScheduler *_scheduler;
         AbsRTTask *_task;
         CPU *_cpu;
         int _ms_executed;  // 已执行的ms数
 
     public:
-        BTIEEnergyCheckEvent(BTIEScheduler *scheduler, AbsRTTask *task, CPU *cpu);
+        ASAPBlockEnergyCheckEvent(ASAPBlockScheduler *scheduler, AbsRTTask *task, CPU *cpu);
         void doit() override;
         int getMsExecuted() const { return _ms_executed; }
         void setMsExecuted(int ms) { _ms_executed = ms; }
     };
+    */
 
     // =====================================================
-    // BTIETaskModel 类声明
+    // ASAPBlockTaskModel 类声明
     // =====================================================
-    class BTIETaskModel : public TaskModel {
+    class ASAPBlockTaskModel : public TaskModel {
     private:
         int _period;
         int _wcet;
@@ -74,11 +77,11 @@ namespace RTSim {
         double _unit_energy;           // 每ms能耗
 
     public:
-        BTIETaskModel(AbsRTTask *t, int period, int wcet,
-                      const std::string &workload_type,
-                      double energy_coefficient = 1.0,
-                      MetaSim::Tick arrival_offset = 0);
-        virtual ~BTIETaskModel();
+        ASAPBlockTaskModel(AbsRTTask *t, int period, int wcet,
+                     const std::string &workload_type,
+                     double energy_coefficient = 1.0,
+                     MetaSim::Tick arrival_offset = 0);
+        virtual ~ASAPBlockTaskModel();
 
         MetaSim::Tick getPriority() const override;
         void changePriority(MetaSim::Tick p) override;
@@ -98,15 +101,16 @@ namespace RTSim {
     };
 
     // =====================================================
-    // BTIEScheduler 类声明 - BTIE批量调度算法
+    // ASAPBlockScheduler 类声明
     // =====================================================
-    class BTIEScheduler : public Scheduler, public EnergyInfoProvider {
+    class ASAPBlockScheduler : public Scheduler, public EnergyInfoProvider {
     private:
         // ========== 核心配置参数 ==========
         double _current_energy;              // 当前可用能量
         double _initial_energy;              // 初始能量
         double _max_energy;                  // 最大能量容量
         double _dispatching_tasks_total_energy; // 本次dispatch中已调度任务的总能耗
+        std::set<AbsRTTask *> _counted_tasks_in_dispatch; // 本次dispatch中已计数的任务，避免重复
         MetaSim::Tick _last_tick_time;       // 上次tick时间
         MetaSim::Tick _last_collection_time; // 上次能量收集时间
 
@@ -118,28 +122,19 @@ namespace RTSim {
         MetaSim::Tick _start_time_offset;
 
         // ========== Tick事件 ==========
-        BTIETickEvent *_tick_event;
+        ASAPBlockTickEvent *_tick_event;
         bool _first_tick_scheduled;  // 标记第一个tick是否已调度
 
         // ========== 任务管理 ==========
-        std::map<AbsRTTask *, BTIETaskModel *> _task_models;
+        std::map<AbsRTTask *, ASAPBlockTaskModel *> _task_models;
         std::deque<AbsRTTask *> _ready_queue;
         std::vector<AbsRTTask *> _waiting_queue;
         std::map<CPU *, AbsRTTask *> _running_tasks;
         MRTKernel *_kernel;
 
         // ========== 运行时能量检查事件（每任务一个） ==========
-        std::map<AbsRTTask *, BTIEEnergyCheckEvent *> _energy_check_events;
-
-        // ========== WCET完成追踪（用于批量调度判断任务是否已完成） ==========
-        std::set<AbsRTTask *> _tasks_completed_wcet;  // 已达到WCET的任务集合
-
-        // ========== BTIE批量调度状态 ==========
-        std::vector<AbsRTTask *> _current_batch_tasks;  // 当前批量任务（tick边界预计算）
-        std::vector<AbsRTTask *> _preempt_batch_tasks;    // 抢占批量任务（mid-tick抢占创建的微型批量）
-        bool _batch_scheduled_this_tick;                // 本tick是否已批量调度
-        bool _energy_depleted;                          // 能量是否已耗尽（Bug #5修复）
-        int _current_batch_size;                        // 当前批量大小
+        // ⭐ V40重构：能量检查事件已删除，能量由performTickScheduling处理
+        // std::map<AbsRTTask *, ASAPBlockEnergyCheckEvent *> _energy_check_events;
 
         // ========== 能量记账（每ms累计） ==========
         struct TaskEnergyAccount {
@@ -160,21 +155,19 @@ namespace RTSim {
             double total_energy_consumed = 0.0;
             double total_energy_harvested = 0.0;
             int total_tick_count = 0;
-            int total_batch_schedules = 0;        // BTIE: 批量调度次数
-            int total_batch_skipped = 0;          // BTIE: 批量调度跳过次数
         } _stats;
+
+        // ========== 能量耗尽管理 ==========
+        bool _energy_depleted;  // ⭐ 能量是否已耗尽（Bug修复）
 
         // ========== 私有方法 ==========
 
-        // 核心调度逻辑 - BTIE批量调度
+        // 核心调度逻辑
         void performTickScheduling();
+        void collectEnergyAtTickBoundary();
 
         // ⭐ 运行时能量检查和任务中断（V28.15新增）
         void checkAndInterruptRunningTasks();  // 检查所有运行中的任务，能量不足时中断
-
-        // BTIE批量计算
-        int calculateBatchSize();                              // 计算批量大小 k
-        void executeBatchScheduling(const std::vector<AbsRTTask *> &tasks, double total_energy);  // 执行批量调度
 
         // 能量计算
         double calculateTotalEnergyForTask(AbsRTTask *task); // 计算任务总能耗
@@ -183,7 +176,7 @@ namespace RTSim {
         double getSolarIrradiance(int64_t time_ms);
 
         // 任务管理
-        BTIETaskModel *getTaskModel(AbsRTTask *task);
+        ASAPBlockTaskModel *getTaskModel(AbsRTTask *task);
         std::string getTaskName(AbsRTTask *task);
         void onTaskArrival(AbsRTTask *task);
 
@@ -199,7 +192,7 @@ namespace RTSim {
         // 抢占管理
         void checkAndPreempt();
         void checkAndPreemptOnAllCPUs();
-        bool shouldPreempt(AbsRTTask *running_task, AbsRTTask *new_task);
+        bool shouldPreempt(CPU *cpu, AbsRTTask *new_task);
         AbsRTTask *getRunningTaskOnCPU(CPU *cpu);
 
         // Tick事件调度
@@ -212,25 +205,25 @@ namespace RTSim {
 
     public:
         // 构造函数/析构函数
-        BTIEScheduler();
-        BTIEScheduler(const std::vector<std::string> &params);
-        virtual ~BTIEScheduler();
+        ASAPBlockScheduler();
+        ASAPBlockScheduler(const std::vector<std::string> &params);
+        virtual ~ASAPBlockScheduler();
 
         // 工厂方法
-        static std::unique_ptr<BTIEScheduler>
+        static std::unique_ptr<ASAPBlockScheduler>
             createInstance(const std::vector<std::string> &params);
 
         // Scheduler接口实现
         void addTask(AbsRTTask *task, const std::string &params) override;
         void removeTask(AbsRTTask *task) override;
-        void notify(AbsRTTask *task) override;  // BTIE: 不再扣减能量（已在批量时扣减）
+        void notify(AbsRTTask *task) override;
         bool isAdmissible(CPU *c, std::vector<AbsRTTask *> tasks,
                           AbsRTTask *t) override;
 
         // 核心调度方法
         void schedule();
-        AbsRTTask *getFirst() override;    // BTIE: 废弃，返回nullptr
-        AbsRTTask *getTaskN(unsigned int n) override;  // BTIE: 返回批量中的第n个任务
+        AbsRTTask *getFirst() override;
+        AbsRTTask *getTaskN(unsigned int n) override;
         void insert(AbsRTTask *task) override;
         void extract(AbsRTTask *task);
 
@@ -244,6 +237,7 @@ namespace RTSim {
         double getInitialEnergy() const { return _initial_energy; }
         double getMaxEnergy() const { return _max_energy; }
         double calculateUnitEnergyForTask(AbsRTTask *task);  // MRTKernel需要调用
+        double calculateMinTaskEnergyInReadyQueue();  // ⭐ 计算就绪队列中最小任务能耗（修复循环问题）
 
         // ⭐ EnergyInfoProvider接口实现
         double getTotalEnergyConsumed() const override { return _stats.total_energy_consumed; }
@@ -252,17 +246,13 @@ namespace RTSim {
         double getTaskTotalEnergy(AbsRTTask *task) const override;
 
         // ⭐ 运行时能量检查接口（V28.15新增）
-        void startEnergyCheckForTask(AbsRTTask *task, CPU *cpu);  // 开始对任务的能量监控
-        void stopEnergyCheckForTask(AbsRTTask *task);  // 停止对任务的能量监控
+        // ⭐ V40重构：能量检查事件已删除，能量由performTickScheduling处理
+        // void startEnergyCheckForTask(AbsRTTask *task, CPU *cpu);  // 开始对任务的能量监控
+        // void stopEnergyCheckForTask(AbsRTTask *task);  // 停止对任务的能量监控
 
         // 队列访问接口
         const std::deque<AbsRTTask *> &getReadyQueue() const { return _ready_queue; }
         const std::map<AbsRTTask *, std::string> getTaskWorkloads() const;
-
-        // BTIE批量调度接口
-        const std::vector<AbsRTTask *> &getCurrentBatchTasks() const { return _current_batch_tasks; }
-        int getCurrentBatchSize() const { return _current_batch_size; }
-        bool isBatchScheduledThisTick() const { return _batch_scheduled_this_tick; }
 
         // Kernel管理
         void setKernel(MRTKernel *kernel);
@@ -277,16 +267,17 @@ namespace RTSim {
         std::string getEnergyStatus() const;
 
         // 友元类声明
-        friend class BTIETickEvent;
-        friend class BTIEEnergyCheckEvent;
+        friend class ASAPBlockTickEvent;
+        // ⭐ V40重构：能量检查事件已删除
+        // friend class ASAPBlockEnergyCheckEvent;
     };
 
 } // namespace RTSim
 
 // 工厂注册
 namespace RTSim {
-    static registerInFactory<RTSim::Scheduler, RTSim::BTIEScheduler>
-        registerBTIEScheduler("gpfp_btie");
+    static registerInFactory<RTSim::Scheduler, RTSim::ASAPBlockScheduler>
+        registerASAPBlockScheduler("gpfp_asap_block");
 }
 
-#endif // GPFP_BTIE_SCHEDULER_HPP
+#endif // GPFP_TIE_SCHEDULER_HPP

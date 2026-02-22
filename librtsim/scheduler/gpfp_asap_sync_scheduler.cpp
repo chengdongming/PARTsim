@@ -1,4 +1,4 @@
-// gpfp_btie_scheduler.cpp - BTIE (Batch Tick-based Instant Energy-aware) Scheduler Implementation
+// gpfp_asap_sync_scheduler.cpp - ASAP-Sync (As Soon As Possible Sync) Scheduler Implementation
 // 算法特点：
 // 1. 基于当前实际能量进行批量调度判断（无前瞻性预测）
 // 2. 批量扣减能耗（一次性扣减k个任务的1ms能耗）
@@ -13,7 +13,7 @@
 #include <memory>
 #include <metasim/factory.hpp>
 #include <metasim/simul.hpp>
-#include <rtsim/scheduler/gpfp_btie_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_asap_sync_scheduler.hpp>
 #include <rtsim/task.hpp>
 #include <rtsim/rttask.hpp>
 #include <rtsim/exeinstr.hpp>
@@ -29,16 +29,16 @@ namespace RTSim {
     using namespace MetaSim;
 
     // =====================================================
-    // BTIETickEvent 实现
+    // ASAPSyncTickEvent 实现
     // =====================================================
 
-    BTIETickEvent::BTIETickEvent(BTIEScheduler *scheduler)
-        : MetaSim::Event("BTIETickEvent", MetaSim::Event::_DEFAULT_PRIORITY + 10),
+    ASAPSyncTickEvent::ASAPSyncTickEvent(ASAPSyncScheduler *scheduler)
+        : MetaSim::Event("ASAPSyncTickEvent", MetaSim::Event::_DEFAULT_PRIORITY + 10),
           _scheduler(scheduler) {
         // ⭐ V30修复：较低优先级，确保任务到达事件先于tick执行
     }
 
-    void BTIETickEvent::doit() {
+    void ASAPSyncTickEvent::doit() {
         if (!_scheduler) {
             return;
         }
@@ -46,7 +46,7 @@ namespace RTSim {
         Tick current_time = SIMUL.getTime();
         int64_t current_ms = static_cast<int64_t>(current_time);
 
-        SCHEDULER_LOG_INFO(std::string("⏱️ [BTIE] ===== Tick事件触发 @ ") +
+        SCHEDULER_LOG_INFO(std::string("⏱️ [ASAP-Sync] ===== Tick事件触发 @ ") +
                            std::to_string(current_ms) + "ms =====");
 
         // 执行tick调度
@@ -57,11 +57,11 @@ namespace RTSim {
     }
 
     // =====================================================
-    // BTIEEnergyCheckEvent 实现 - 运行时能量检查
+    // ASAPSyncEnergyCheckEvent 实现 - 运行时能量检查
     // =====================================================
 
-    BTIEEnergyCheckEvent::BTIEEnergyCheckEvent(BTIEScheduler *scheduler, AbsRTTask *task, CPU *cpu)
-        : MetaSim::Event("BTIEEnergyCheckEvent", MetaSim::Event::_DEFAULT_PRIORITY - 5),
+    ASAPSyncEnergyCheckEvent::ASAPSyncEnergyCheckEvent(ASAPSyncScheduler *scheduler, AbsRTTask *task, CPU *cpu)
+        : MetaSim::Event("ASAPSyncEnergyCheckEvent", MetaSim::Event::_DEFAULT_PRIORITY - 5),
           _scheduler(scheduler),
           _task(task),
           _cpu(cpu),
@@ -69,14 +69,14 @@ namespace RTSim {
         // 更高优先级，确保能量检查及时执行
     }
 
-    void BTIEEnergyCheckEvent::doit() {
+    void ASAPSyncEnergyCheckEvent::doit() {
         if (!_scheduler || !_task) {
             return;
         }
 
         // 🔍 调试：记录能量检���事件触发时间
         Tick actual_trigger_time = SIMUL.getTime();
-        SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] 能量检查事件触发: ") +
+        SCHEDULER_LOG_INFO(std::string("🔍 [ASAP-Sync] 能量检查事件触发: ") +
                            _scheduler->getTaskName(_task) +
                            " 触发时间=" + std::to_string(static_cast<int64_t>(actual_trigger_time)) + "ms" +
                            " _ms_executed=" + std::to_string(_ms_executed));
@@ -84,7 +84,7 @@ namespace RTSim {
         // ⭐ 安全检查：验证任务是否还有效（是否还在task_models中）
         if (_scheduler->_task_models.find(_task) == _scheduler->_task_models.end()) {
             // 任务已被删除，停止这个能量检查事件
-            SCHEDULER_LOG_DEBUG(std::string("⚠️ [BTIE] 能量检查：任务已删除，停止检查"));
+            SCHEDULER_LOG_DEBUG(std::string("⚠️ [ASAP-Sync] 能量检查：任务已删除，停止检查"));
             return;
         }
 
@@ -92,7 +92,7 @@ namespace RTSim {
         auto it = _scheduler->_energy_check_events.find(_task);
         if (it == _scheduler->_energy_check_events.end() || it->second != this) {
             // 事件已被替换或删除，停止处理
-            SCHEDULER_LOG_DEBUG(std::string("⚠️ [BTIE] 能量检查：事件已失效，停止检查"));
+            SCHEDULER_LOG_DEBUG(std::string("⚠️ [ASAP-Sync] 能量检查：事件已失效，停止检查"));
             return;
         }
 
@@ -106,7 +106,7 @@ namespace RTSim {
         // ⭐ 检查任务是���仍在执行状态
         // 如果任务已被中断（suspend），则不应再扣除能量
         if (!_task->isExecuting()) {
-            SCHEDULER_LOG_DEBUG(std::string("⚠️ [BTIE] 能量检查：任务已停止执行，不再扣除能量: ") +
+            SCHEDULER_LOG_DEBUG(std::string("⚠️ [ASAP-Sync] 能量检查：任务已停止执行，不再扣除能量: ") +
                                _scheduler->getTaskName(_task) + " 时间=" + std::to_string(static_cast<long>(SIMUL.getTime())) + "ms");
             // 不重新调度事件
             return;
@@ -114,40 +114,40 @@ namespace RTSim {
 
         // ⭐ 关键修复：检查任务是否已经达到WCET
         // 如果已经达到WCET，任务应该完成，不应该再续期
-        BTIETaskModel *task_model = _scheduler->getTaskModel(_task);
+        ASAPSyncTaskModel *task_model = _scheduler->getTaskModel(_task);
 
         // 🔍 调试日志：检查WCET
         std::string task_name = _scheduler->getTaskName(_task);
-        SCHEDULER_LOG_DEBUG(std::string("🔍 [BTIE] WCET���查: ") +
+        SCHEDULER_LOG_DEBUG(std::string("🔍 [ASAP-Sync] WCET���查: ") +
                            task_name + " 已执行=" + std::to_string(_ms_executed) +
                            "ms task_model=" + (task_model ? "有效" : "NULL"));
 
         if (task_model) {
             int wcet = task_model->getWCET();
-            SCHEDULER_LOG_DEBUG(std::string("🔍 [BTIE] WCET值: ") +
+            SCHEDULER_LOG_DEBUG(std::string("🔍 [ASAP-Sync] WCET值: ") +
                                std::to_string(wcet) + "ms 判断: " +
                                std::to_string(_ms_executed) + " >= " + std::to_string(wcet) +
                                " = " + (_ms_executed >= wcet ? "TRUE" : "FALSE"));
 
             if (_ms_executed >= wcet) {
-                SCHEDULER_LOG_INFO(std::string("✅ [BTIE] 任务已达到WCET，完成执行: ") +
+                SCHEDULER_LOG_INFO(std::string("✅ [ASAP-Sync] 任务已达到WCET，完成执行: ") +
                                    task_name + " 已执行=" + std::to_string(_ms_executed) +
                                    "ms WCET=" + std::to_string(wcet) + "ms");
                 // ⭐ 关键修复：标记任务已达到WCET，防止批量调度重复扣除能量
                 _scheduler->_tasks_completed_wcet.insert(_task);
-                SCHEDULER_LOG_INFO(std::string("🏁 [BTIE] 标记任务已完成WCET: ") +
+                SCHEDULER_LOG_INFO(std::string("🏁 [ASAP-Sync] 标记任务已完成WCET: ") +
                                    task_name);
 
                 // ⭐ 关键修复：不直接调用onEnd()，而是让任务自然结束
                 // 终止能量检查事件，让内核在下一个tick时检测到任务完成并调用onEnd()
                 // 避免在能量检查事件中调用onEnd()导致的"No CPU"崩溃
-                SCHEDULER_LOG_INFO(std::string("🛑 [BTIE] 任务达到WCET，终止能量检查事件: ") + task_name);
+                SCHEDULER_LOG_INFO(std::string("🛑 [ASAP-Sync] 任务达到WCET，终止能量检查事件: ") + task_name);
 
                 // 任务已完成，不再检查能量预扣，也不重新调度事件
                 return;
             }
         } else {
-            SCHEDULER_LOG_WARNING(std::string("⚠️ [BTIE] WCET检查失败：找不到TaskModel ") + task_name);
+            SCHEDULER_LOG_WARNING(std::string("⚠️ [ASAP-Sync] WCET检查失败：找不到TaskModel ") + task_name);
         }
 
         // ⭐ BTIE关键修复：在扣除能量之前检查是否有足够能量（与TIE保持一致）
@@ -159,7 +159,7 @@ namespace RTSim {
         // 检查是否有足够能量续期1ms
         if (current_energy < unit_energy - EPSILON) {
             // ❌ 能量不足，立即中断任务
-            SCHEDULER_LOG_WARNING(std::string("⚡ [BTIE] 续期能量不足，立即中断任务: ") +
+            SCHEDULER_LOG_WARNING(std::string("⚡ [ASAP-Sync] 续期能量不足，立即中断任务: ") +
                                  _scheduler->getTaskName(_task) +
                                  " 需要=" + std::to_string(unit_energy * 1000) + " mJ" +
                                  " 剩余=" + std::to_string(current_energy * 1000) + " mJ" +
@@ -171,7 +171,7 @@ namespace RTSim {
             // ⭐ 关键修复：立即suspend任务（与TIE保持一致）
             if (_scheduler->_kernel && _task->isExecuting()) {
                 _scheduler->_kernel->suspend(_task);
-                SCHEDULER_LOG_WARNING(std::string("🛑 [BTIE] 任务因能量不足被挂起: ") +
+                SCHEDULER_LOG_WARNING(std::string("🛑 [ASAP-Sync] 任务因能量不足被挂起: ") +
                                      _scheduler->getTaskName(_task));
             }
 
@@ -183,7 +183,7 @@ namespace RTSim {
             // 只检查预扣能量是否耗尽，不再扣除实时能量
             if (_scheduler->_current_energy < unit_energy * 0.1) {
                 // ❌ 预扣能量已耗尽，立即中断任务
-                SCHEDULER_LOG_WARNING(std::string("⚡ [BTIE] 预扣能量已耗尽，中断任务: ") +
+                SCHEDULER_LOG_WARNING(std::string("⚡ [ASAP-Sync] 预扣能量已耗尽，中断任务: ") +
                                      _scheduler->getTaskName(_task) +
                                      " 剩余=" + std::to_string(_scheduler->_current_energy * 1000) + " mJ");
 
@@ -200,12 +200,12 @@ namespace RTSim {
             }
 
             // ✅ 预扣能量充足，只记录日志，不扣除
-            SCHEDULER_LOG_DEBUG(std::string("✅ [BTIE] 预扣能量充足，任务继续: ") +
+            SCHEDULER_LOG_DEBUG(std::string("✅ [ASAP-Sync] 预扣能量充足，任务继续: ") +
                                _scheduler->getTaskName(_task) +
                                " 剩余=" + std::to_string(_scheduler->_current_energy * 1000) + " mJ");
 
         // ✅ 能量充足，继续执行
-        SCHEDULER_LOG_DEBUG(std::string("✅ [BTIE] 能量充足，任务继续: ") +
+        SCHEDULER_LOG_DEBUG(std::string("✅ [ASAP-Sync] 能量充足，任务继续: ") +
                            _scheduler->getTaskName(_task) +
                            " 剩余=" + std::to_string(_scheduler->_current_energy * 1000) + " mJ" +
                            " 已执行=" + std::to_string(_ms_executed) + "ms");
@@ -216,10 +216,10 @@ namespace RTSim {
     }
 
     // =====================================================
-    // BTIETaskModel 实现
+    // ASAPSyncTaskModel 实现
     // =====================================================
 
-    BTIETaskModel::BTIETaskModel(AbsRTTask *t, int period, int wcet,
+    ASAPSyncTaskModel::ASAPSyncTaskModel(AbsRTTask *t, int period, int wcet,
                                const std::string &workload_type,
                                double energy_coefficient,
                                MetaSim::Tick arrival_offset)
@@ -236,26 +236,26 @@ namespace RTSim {
         // 能量计算稍后在调度器初始化时完成
     }
 
-    BTIETaskModel::~BTIETaskModel() {}
+    ASAPSyncTaskModel::~ASAPSyncTaskModel() {}
 
-    Tick BTIETaskModel::getPriority() const {
+    Tick ASAPSyncTaskModel::getPriority() const {
         return _rm_priority;
     }
 
-    void BTIETaskModel::changePriority(Tick p) {
+    void ASAPSyncTaskModel::changePriority(Tick p) {
         _rm_priority = p;
     }
 
-    void BTIETaskModel::setPeriod(int period) {
+    void ASAPSyncTaskModel::setPeriod(int period) {
         _period = period;
         _rm_priority = period;  // RM优先级等于周期
     }
 
     // =====================================================
-    // BTIEScheduler 实现
+    // ASAPSyncScheduler 实现
     // =====================================================
 
-    BTIEScheduler::BTIEScheduler()
+    ASAPSyncScheduler::ASAPSyncScheduler()
         : Scheduler(),
           _current_energy(0.0),
           _initial_energy(0.0),
@@ -274,30 +274,30 @@ namespace RTSim {
           _energy_depleted(false),
           _current_batch_size(0) {
 
-        SCHEDULER_LOG_INFO("🚀 [BTIE] TIE Scheduler 初始化");
+        SCHEDULER_LOG_INFO("🚀 [ASAP-Sync] ASAP Sync Scheduler 初始化");
 
         // 从ConfigManager获取配置
         ConfigManager &configMgr = ConfigManager::getInstance();
         std::string config_file = configMgr.getConfigFilePath();
 
         _max_energy = configMgr.getMaxEnergy();
-        SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] 最大能量: ") + std::to_string(_max_energy) + "J");
+        SCHEDULER_LOG_INFO(std::string("⚡ [ASAP-Sync] 最大能量: ") + std::to_string(_max_energy) + "J");
 
         if (config_file.empty()) {
             const char *config_file_env = std::getenv("ENERGY_CONFIG_FILE");
             config_file = config_file_env ? config_file_env : "gpfp_system.yml";
         }
 
-        SCHEDULER_LOG_INFO(std::string("📁 [BTIE] 配置文件: ") + config_file);
+        SCHEDULER_LOG_INFO(std::string("📁 [ASAP-Sync] 配置文件: ") + config_file);
         setenv("ENERGY_CONFIG_FILE", config_file.c_str(), 1);
 
         // 初始化EnergyBridge
         bool bridge_initialized = EnergyBridge::getInstance().initialize(config_file);
         if (bridge_initialized) {
-            SCHEDULER_LOG_INFO("✅ [BTIE] EnergyBridge 初始化成功");
+            SCHEDULER_LOG_INFO("✅ [ASAP-Sync] EnergyBridge 初始化成功");
 
             _start_time_offset = configMgr.getStartTimeOffset();
-            SCHEDULER_LOG_INFO(std::string("⏰ [BTIE] 开始时间偏移: ") +
+            SCHEDULER_LOG_INFO(std::string("⏰ [ASAP-Sync] 开始时间偏移: ") +
                               std::to_string(static_cast<int64_t>(_start_time_offset)) + "ms");
 
             // 读取太阳能配置
@@ -373,14 +373,14 @@ namespace RTSim {
                         }
                     }
 
-                    SCHEDULER_LOG_INFO(std::string("☀️ [BTIE] 太阳能配置: ") +
+                    SCHEDULER_LOG_INFO(std::string("☀️ [ASAP-Sync] 太阳能配置: ") +
                                       "use_real=" + (_use_real_solar_data ? "true" : "false") +
                                       " file=" + _solar_data_file +
                                       " eff=" + std::to_string(_pv_efficiency) +
                                       " area=" + std::to_string(_pv_area_m2) + "m²");
                 }
             } catch (const std::exception &e) {
-                SCHEDULER_LOG_WARNING(std::string("⚠️ [BTIE] 解析太阳能配置失败: ") + e.what());
+                SCHEDULER_LOG_WARNING(std::string("⚠️ [ASAP-Sync] 解析太阳能配置失败: ") + e.what());
             }
 
             // 读取初始能量
@@ -388,40 +388,40 @@ namespace RTSim {
             if (bridge_energy >= 0) {  // ⭐ 修复：允许初始能量为0
                 _initial_energy = bridge_energy;
                 _current_energy = _initial_energy;
-                SCHEDULER_LOG_INFO(std::string("💰 [BTIE] 初始能量: ") + std::to_string(_initial_energy) + "J");
+                SCHEDULER_LOG_INFO(std::string("💰 [ASAP-Sync] 初始能量: ") + std::to_string(_initial_energy) + "J");
             }
         } else {
-            SCHEDULER_LOG_WARNING("⚠️ [BTIE] EnergyBridge 初始化失败，使用ConfigManager获取能量");
+            SCHEDULER_LOG_WARNING("⚠️ [ASAP-Sync] EnergyBridge 初始化失败，使用ConfigManager获取能量");
 
             _start_time_offset = configMgr.getStartTimeOffset();
             double config_energy = configMgr.getInitialEnergy();
             if (config_energy >= 0) {  // ⭐ 修复：允许初始能量为0
                 _initial_energy = config_energy;
                 _current_energy = _initial_energy;
-                SCHEDULER_LOG_INFO(std::string("💰 [BTIE] 从ConfigManager获取初始能量: ") +
+                SCHEDULER_LOG_INFO(std::string("💰 [ASAP-Sync] 从ConfigManager获取初始能量: ") +
                                   std::to_string(_initial_energy) + "J");
             } else {
-                SCHEDULER_LOG_ERROR("❌ [BTIE] 无法获取初始能量，调度器将无法工作！");
+                SCHEDULER_LOG_ERROR("❌ [ASAP-Sync] 无法获取初始能量，调度器将无法工作！");
             }
         }
 
         // 创建Tick事件
-        _tick_event = new BTIETickEvent(this);
+        _tick_event = new ASAPSyncTickEvent(this);
 
-        SCHEDULER_LOG_INFO("✅ [BTIE] TIE Scheduler 初始化完成");
+        SCHEDULER_LOG_INFO("✅ [ASAP-Sync] ASAP Sync Scheduler 初始化完成");
     }
 
-    BTIEScheduler::BTIEScheduler(const std::vector<std::string> &params)
-        : BTIEScheduler() {
+    ASAPSyncScheduler::ASAPSyncScheduler(const std::vector<std::string> &params)
+        : ASAPSyncScheduler() {
         // 委托给默认构造函数
     }
 
-    std::unique_ptr<BTIEScheduler>
-        BTIEScheduler::createInstance(const std::vector<std::string> &params) {
-        return std::make_unique<BTIEScheduler>(params);
+    std::unique_ptr<ASAPSyncScheduler>
+        ASAPSyncScheduler::createInstance(const std::vector<std::string> &params) {
+        return std::make_unique<ASAPSyncScheduler>(params);
     }
 
-    BTIEScheduler::~BTIEScheduler() {
+    ASAPSyncScheduler::~ASAPSyncScheduler() {
         if (_tick_event) {
             delete _tick_event;
             _tick_event = nullptr;
@@ -438,14 +438,14 @@ namespace RTSim {
     // BTIE批量调度辅助方法
     // =====================================================
 
-    int BTIEScheduler::calculateBatchSize() {
+    int ASAPSyncScheduler::calculateBatchSize() {
         // k = min(CPU核心总数, 就绪队列任务数)
         ConfigManager &configMgr = ConfigManager::getInstance();
         int total_cpus = configMgr.getNumCores();
         int ready_tasks = static_cast<int>(_ready_queue.size());
         int batch_size = std::min(total_cpus, ready_tasks);
 
-        SCHEDULER_LOG_DEBUG(std::string("📊 [BTIE] calculateBatchSize: ") +
+        SCHEDULER_LOG_DEBUG(std::string("📊 [ASAP-Sync] calculateBatchSize: ") +
                            "CPU核心数=" + std::to_string(total_cpus) +
                            " 就绪任务=" + std::to_string(ready_tasks) +
                            " 批量k=" + std::to_string(batch_size));
@@ -454,14 +454,14 @@ namespace RTSim {
     }
 
 
-    void BTIEScheduler::executeBatchScheduling(const std::vector<AbsRTTask *> &tasks, double total_energy) {
+    void ASAPSyncScheduler::executeBatchScheduling(const std::vector<AbsRTTask *> &tasks, double total_energy) {
         // ⭐ BTIE核心：批量调度时一次性扣减k个任务的1ms能耗
         // 当前时刻能量 = 上一时刻结余 + 本次充电能量 - 已消耗能量 - 本次批量调度能耗
         double old_energy = _current_energy;
         _current_energy -= total_energy;
         _stats.total_energy_consumed += total_energy;
 
-        SCHEDULER_LOG_INFO(std::string("📋 [BTIE] 批量调度: ") +
+        SCHEDULER_LOG_INFO(std::string("📋 [ASAP-Sync] 批量调度: ") +
                            "任务数=" + std::to_string(tasks.size()) +
                            " 总能耗=" + std::to_string(total_energy * 1000) + " mJ" +
                            " 能量=" + std::to_string(old_energy * 1000) + " mJ → " +
@@ -472,8 +472,8 @@ namespace RTSim {
     // 核心调度逻辑 - BTIE批量调度算法
     // =====================================================
 
-        void BTIEScheduler::performTickScheduling() {
-        SCHEDULER_LOG_DEBUG(std::string("🔄 [BTIE] performTickScheduling @ ") +
+        void ASAPSyncScheduler::performTickScheduling() {
+        SCHEDULER_LOG_DEBUG(std::string("🔄 [ASAP-Sync] performTickScheduling @ ") +
                            std::to_string(static_cast<int64_t>(SIMUL.getTime())) + "ms" +
                            " 能量=" + std::to_string(_current_energy) + "J");
 
@@ -494,7 +494,7 @@ namespace RTSim {
             if (harvested > 0.000001) {
                 _current_energy += harvested;
                 _stats.total_energy_harvested += harvested;
-                SCHEDULER_LOG_INFO(std::string("☀️ [BTIE] Tick边界收集能量: ") +
+                SCHEDULER_LOG_INFO(std::string("☀️ [ASAP-Sync] Tick边界收集能量: ") +
                                    std::to_string(harvested) + "J" +
                                    " 当前能量: " + std::to_string(_current_energy) + "J" +
                                    " 经过时间: " + std::to_string(static_cast<int64_t>(elapsed)) + "ms");
@@ -502,7 +502,7 @@ namespace RTSim {
                 // ⭐ 如果收集到能量，清除能量耗尽标志
                 if (_energy_depleted && _current_energy > 0.000001) {
                     _energy_depleted = false;
-                    SCHEDULER_LOG_INFO("🔋 [BTIE] 太阳能充电成功，恢复调度");
+                    SCHEDULER_LOG_INFO("🔋 [ASAP-Sync] 太阳能充电成功，恢复调度");
                 }
             }
         }
@@ -511,7 +511,7 @@ namespace RTSim {
 
         // ⭐ Bug修复3：能量耗尽时跳过调度（但已经收集了太阳能）
         if (_energy_depleted && _current_energy < 0.000001) {
-            SCHEDULER_LOG_INFO(std::string("💀 [BTIE] 能量已耗尽，跳过Tick调度"));
+            SCHEDULER_LOG_INFO(std::string("💀 [ASAP-Sync] 能量已耗尽，跳过Tick调度"));
             return;  // 不进行任何调度，包括中断检查
         }
 
@@ -524,7 +524,7 @@ namespace RTSim {
         if (!_kernel) {
             _kernel = getKernel();
             if (!_kernel) {
-                SCHEDULER_LOG_WARNING("⚠️ [BTIE] _kernel为nullptr，跳过批量调度");
+                SCHEDULER_LOG_WARNING("⚠️ [ASAP-Sync] _kernel为nullptr，跳过批量调度");
                 return;
             }
         }
@@ -539,7 +539,7 @@ namespace RTSim {
         const auto& running_tasks = _kernel->getCurrentExecutingTasks();
 
         // 🔍 调试：输出_currExe的内容
-        SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] _currExe内容 (") +
+        SCHEDULER_LOG_INFO(std::string("🔍 [ASAP-Sync] _currExe内容 (") +
                            std::to_string(running_tasks.size()) + "个任务) @ " +
                            std::to_string(static_cast<int64_t>(SIMUL.getTime())) + "ms:");
         for (const auto& map_pair : running_tasks) {
@@ -582,7 +582,7 @@ namespace RTSim {
             const double EPSILON = 1e-9;
             if (_current_energy >= energy_to_deduct - EPSILON) {
                 // ⭐ Bug #5修复：能量不足时，强制结束所有运行中任务
-                SCHEDULER_LOG_WARNING(std::string("⚠️ [BTIE] 能量不足，强制结束所有运行中任务: ") +
+                SCHEDULER_LOG_WARNING(std::string("⚠️ [ASAP-Sync] 能量不足，强制结束所有运行中任务: ") +
                                         "需要=" + std::to_string(energy_to_deduct * 1000) + " mJ " +
                                         "当前=" + std::to_string(_current_energy * 1000) + " mJ " +
                                         "运行中任务数=" + std::to_string(running_task_list.size()));
@@ -593,7 +593,7 @@ namespace RTSim {
                 // 强制结束所有运行中任务（直接清理，不调用onTaskEnd避免增加完成计数）
                 std::vector<AbsRTTask *> tasks_to_end = running_task_list;
                 for (auto* task : tasks_to_end) {
-                    SCHEDULER_LOG_INFO(std::string("🛑 [BTIE] 强制结束任务: ") +
+                    SCHEDULER_LOG_INFO(std::string("🛑 [ASAP-Sync] 强制结束任务: ") +
                                        getTaskName(task) + " (能量不足)");
 
                     // 从就绪队列移除
@@ -616,7 +616,7 @@ namespace RTSim {
                 _current_energy = 0.0;
                 _stats.total_energy_consumed += old_energy;
 
-                SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] 能量耗尽: ") +
+                SCHEDULER_LOG_INFO(std::string("⚡ [ASAP-Sync] 能量耗尽: ") +
                                    std::to_string(old_energy * 1000) + " mJ → 0.000000 mJ");
 
                 // ⭐ 关键修复：能量耗尽后，直接返回，不继续调度新任务
@@ -626,7 +626,7 @@ namespace RTSim {
 
         // ⭐ 关键修复：如果能量已耗尽，不调度新任务
         if (_energy_depleted) {
-            SCHEDULER_LOG_INFO(std::string("💀 [BTIE] 能量已耗尽，跳过批量调度") +
+            SCHEDULER_LOG_INFO(std::string("💀 [ASAP-Sync] 能量已耗尽，跳过批量调度") +
                                " 剩余能量=" + std::to_string(_current_energy * 1000) + " mJ");
 
             // ⭐ 关键修复：清空批量任务队列，防止后续BeginDispatchMultiEvt事件访问过期批量
@@ -647,7 +647,7 @@ namespace RTSim {
         _current_batch_size = 0;
 
         if (_energy_depleted) {
-            SCHEDULER_LOG_INFO(std::string("💀 [BTIE] 检测到能量在运行时检查中耗尽，跳过批量调度") +
+            SCHEDULER_LOG_INFO(std::string("💀 [ASAP-Sync] 检测到能量在运行时检查中耗尽，跳过批量调度") +
                                " 剩余能量=" + std::to_string(_current_energy * 1000) + " mJ");
             return;
         }
@@ -682,13 +682,13 @@ namespace RTSim {
                         if (!task) return true;
                         // 移除不活动的任务
                         if (!task->isActive()) {
-                            SCHEDULER_LOG_DEBUG(std::string("🧹 [BTIE] 清理不活动任务: ") + getTaskName(task));
+                            SCHEDULER_LOG_DEBUG(std::string("🧹 [ASAP-Sync] 清理不活动任务: ") + getTaskName(task));
                             return true;
                         }
                         // ⭐ 移除过期的周期性任务实例：使用getDeadline()获取绝对截止时间
                         Tick deadline = task->getDeadline();
                         if (deadline < current_time) {
-                            SCHEDULER_LOG_DEBUG(std::string("🧹 [BTIE] 清理过期任务实例: ") +
+                            SCHEDULER_LOG_DEBUG(std::string("🧹 [ASAP-Sync] 清理过期任务实例: ") +
                                            getTaskName(task) +
                                            " 截止=" + std::to_string(static_cast<int64_t>(deadline)) +
                                            " 当前=" + std::to_string(static_cast<int64_t>(current_time)));
@@ -712,7 +712,7 @@ namespace RTSim {
                 });
 
             // 🔍 调试：输出就绪队列内容
-            SCHEDULER_LOG_INFO(std::string("📋 [BTIE] 就绪队列内容 (共") +
+            SCHEDULER_LOG_INFO(std::string("📋 [ASAP-Sync] 就绪队列内容 (共") +
                                std::to_string(sorted_ready.size()) + "个任务):");
             for (size_t i = 0; i < sorted_ready.size() && i < 5; ++i) {
                 auto model = getTaskModel(sorted_ready[i]);
@@ -724,7 +724,7 @@ namespace RTSim {
             }
 
             // 🔍 调试：输出运行中任务列表
-            SCHEDULER_LOG_INFO(std::string("🏃 [BTIE] 运行中任务列表 (共") +
+            SCHEDULER_LOG_INFO(std::string("🏃 [ASAP-Sync] 运行中任务列表 (共") +
                                std::to_string(running_task_list.size()) + "个任务):");
             for (size_t i = 0; i < running_task_list.size(); ++i) {
                 SCHEDULER_LOG_INFO(std::string("  [") + std::to_string(i) + "] " +
@@ -738,7 +738,7 @@ namespace RTSim {
                 for (auto* running_task : running_task_list) {
                     if (task == running_task) {
                         is_running = true;
-                        SCHEDULER_LOG_DEBUG(std::string("⚠️ [BTIE] 跳过已在运行中的任务: ") +
+                        SCHEDULER_LOG_DEBUG(std::string("⚠️ [ASAP-Sync] 跳过已在运行中的任务: ") +
                                            getTaskName(task));
                         break;
                     }
@@ -751,7 +751,7 @@ namespace RTSim {
             // ⭐ Bug #4修复：只选择实际能调度的任务（从过滤后的队列）
             for (int j = 0; j < actual_new_tasks_can_schedule && j < static_cast<int>(filtered_ready.size()); ++j) {
                 new_tasks_to_schedule.push_back(filtered_ready[j]);
-                SCHEDULER_LOG_INFO(std::string("✅ [BTIE] 选择新任务: ") +
+                SCHEDULER_LOG_INFO(std::string("✅ [ASAP-Sync] 选择新任务: ") +
                                    getTaskName(filtered_ready[j]));
             }
 
@@ -768,7 +768,7 @@ namespace RTSim {
             // ⭐ 关键修复：跳过已达到WCET的任务，避免重复扣除能量
             // 因为能量检查事件在任务达到WCET时会标记完成，但kernel可能还没处理end_instance
             if (_tasks_completed_wcet.find(task) != _tasks_completed_wcet.end()) {
-                SCHEDULER_LOG_INFO(std::string("⚠️ [BTIE] 批量调度：跳过已完成WCET的任务: ") +
+                SCHEDULER_LOG_INFO(std::string("⚠️ [ASAP-Sync] 批量调度：跳过已完成WCET的任务: ") +
                                    getTaskName(task) + " (能量检查事件已标记完成)");
                 continue;
             }
@@ -784,7 +784,7 @@ namespace RTSim {
         // ⭐ BTIE总能量需求 = 运行中任务续期 + 新任务（每个tick都扣除）
         double total_energy_needed = running_tasks_renewal_energy + new_tasks_energy;
 
-        SCHEDULER_LOG_INFO(std::string("📊 [BTIE] 批量调度决策: ") +
+        SCHEDULER_LOG_INFO(std::string("📊 [ASAP-Sync] 批量调度决策: ") +
                           "总CPU=" + std::to_string(total_cpus) +
                           " 运行中=" + std::to_string(running_count) +
                           " 空闲=" + std::to_string(free_cpus) +
@@ -823,7 +823,7 @@ namespace RTSim {
             }
             
             // ⭐ BTIE关键设计："全有或全无"门槛检查，不预扣能量
-            // 能量将在任务实际执行时由BTIEEnergyCheckEvent每1ms扣除
+            // 能量将在任务实际执行时由ASAPSyncEnergyCheckEvent每1ms扣除
 
             // ⭐ 关键修复：立即预扣全部能量（实现真正的"全有或全无"）
             // 只有当前能量足够支撑整个批次时才扣除，避免逐ms批准导致的超额透支
@@ -831,7 +831,7 @@ namespace RTSim {
             _current_energy -= total_energy_needed;
             _stats.total_energy_consumed += total_energy_needed;
 
-            SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] 批量调度门槛检查通过: ") +
+            SCHEDULER_LOG_INFO(std::string("⚡ [ASAP-Sync] 批量调度门槛检查通过: ") +
                               "新任务数=" + std::to_string(new_tasks_to_schedule.size()) +
                               " 运行任务数=" + std::to_string(running_count) +
                               " 总能耗需求=" + std::to_string(total_energy_needed * 1000) + " mJ " +
@@ -841,7 +841,7 @@ namespace RTSim {
             _current_batch_size = all_tasks_to_dispatch.size();
             _stats.total_batch_schedules++;
             
-            SCHEDULER_LOG_INFO(std::string("✅ [BTIE] 批量调度成功: ") +
+            SCHEDULER_LOG_INFO(std::string("✅ [ASAP-Sync] 批量调度成功: ") +
                               "运行中=" + std::to_string(running_count) +
                               " 新任务=" + std::to_string(new_tasks_to_schedule.size()) +
                               " 总任务=" + std::to_string(all_tasks_to_dispatch.size()) +
@@ -857,7 +857,7 @@ namespace RTSim {
             _current_batch_size = 0;
             _stats.total_batch_skipped++;
 
-            SCHEDULER_LOG_WARNING(std::string("❌ [BTIE] 能量不足，批量调度失败（全无原则）: ") +
+            SCHEDULER_LOG_WARNING(std::string("❌ [ASAP-Sync] 能量不足，批量调度失败（全无原则）: ") +
                               "总需要=" + std::to_string(total_energy_needed * 1000) + " mJ" +
                               " (新任务能耗=" + std::to_string(new_tasks_energy * 1000) + " mJ)" +
                               " 当前=" + std::to_string(_current_energy * 1000) + " mJ" +
@@ -874,7 +874,7 @@ namespace RTSim {
             // ⭐ 关键修复：立即suspend所有运行中任务（BTIE"全无"原则）
             // 不仅仅是取消能量检查事件，还要强制中断运行中的任务
             if (!running_task_list.empty() && _kernel) {
-                SCHEDULER_LOG_WARNING(std::string("🛑 [BTIE] 能量不足，立即中断") +
+                SCHEDULER_LOG_WARNING(std::string("🛑 [ASAP-Sync] 能量不足，立即中断") +
                                      std::to_string(running_task_list.size()) +
                                      "个运行任务（遵循BTIE'全无'原则）");
 
@@ -891,10 +891,10 @@ namespace RTSim {
                     }
                 }
 
-                SCHEDULER_LOG_INFO(std::string("💀 [BTIE] 能量已耗尽，所有运行任务已挂起，系统进入空闲等待状态"));
+                SCHEDULER_LOG_INFO(std::string("💀 [ASAP-Sync] 能量已耗尽，所有运行任务已挂起，系统进入空闲等待状态"));
             } else if (!running_task_list.empty()) {
                 // 如果没有kernel，只取消能量检查事件（降级处理）
-                SCHEDULER_LOG_WARNING(std::string("⚠️ [BTIE] 无法挂起任务（kernel为nullptr），仅取消能量检查事件"));
+                SCHEDULER_LOG_WARNING(std::string("⚠️ [ASAP-Sync] 无法挂起任务（kernel为nullptr），仅取消能量检查事件"));
                 for (auto* task : running_task_list) {
                     auto it = _energy_check_events.find(task);
                     if (it != _energy_check_events.end()) {
@@ -911,19 +911,19 @@ namespace RTSim {
 
         // 如果有kernel，循环触发dispatch直到填满所有CPU
         if (!_kernel) {
-            SCHEDULER_LOG_DEBUG("⚠��� [BTIE] performTickScheduling: _kernel为nullptr，尝试获取");
+            SCHEDULER_LOG_DEBUG("⚠��� [ASAP-Sync] performTickScheduling: _kernel为nullptr，尝试获取");
             _kernel = getKernel();
         }
 
         if (_kernel) {
-            SCHEDULER_LOG_INFO("🔔 [BTIE] performTickScheduling: 开始循环调度填满所有CPU");
+            SCHEDULER_LOG_INFO("🔔 [ASAP-Sync] performTickScheduling: 开始循环调度填满所有CPU");
             // ⭐ V31关键修复：循环调用dispatch()直到所有CPU被填满或无法调度更多任务
             // 这是多核调度器的正确行为：在一个tick内尽可能多地调度任务
             int dispatch_attempts = 0;
             const int MAX_DISPATCH_ITERATIONS = 100;  // 防止无限循环
 
             while (dispatch_attempts < MAX_DISPATCH_ITERATIONS) {
-                SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] dispatch循环 #") + std::to_string(dispatch_attempts) +
+                SCHEDULER_LOG_INFO(std::string("🔍 [ASAP-Sync] dispatch循环 #") + std::to_string(dispatch_attempts) +
                                    " _running_tasks.size()=" + std::to_string(_running_tasks.size()));
 
                 // 检查是否所有CPU都已填满
@@ -940,7 +940,7 @@ namespace RTSim {
                 }
 
                 if (all_cpus_full) {
-                    SCHEDULER_LOG_INFO("✅ [BTIE] 所有CPU已填满，停止调度");
+                    SCHEDULER_LOG_INFO("✅ [ASAP-Sync] 所有CPU已填满，停止调度");
                     break;
                 }
 
@@ -948,14 +948,14 @@ namespace RTSim {
                 size_t tasks_before = _ready_queue.size() + _running_tasks.size();
 
                 // 调用dispatch尝试调度更多任务
-                SCHEDULER_LOG_INFO(std::string("🚀 [BTIE] 调用 _kernel->dispatch()"));
+                SCHEDULER_LOG_INFO(std::string("🚀 [ASAP-Sync] 调用 _kernel->dispatch()"));
                 _kernel->dispatch();
 
                 // ⭐ Micro-Batch Preemption：dispatch后清除抢占批量
                 // 抢占批量用于mid-tick立即调度，dispatch调用后即被"消费"
                 // 无论任务是否成功调度，都清除抢占批量，避免阻塞后续调度
                 if (!_preempt_batch_tasks.empty()) {
-                    SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] dispatch后清除抢占批量") +
+                    SCHEDULER_LOG_INFO(std::string("⚡ [ASAP-Sync] dispatch后清除抢占批量") +
                                        " size=" + std::to_string(_preempt_batch_tasks.size()));
                     _preempt_batch_tasks.clear();
                 }
@@ -967,37 +967,37 @@ namespace RTSim {
 
                 // 如果没有任务被调度（状态没变化），停止调度
                 if (tasks_before == tasks_after) {
-                    SCHEDULER_LOG_DEBUG("⏹️ [BTIE] 无更多任务可调度，停止dispatch循环");
+                    SCHEDULER_LOG_DEBUG("⏹️ [ASAP-Sync] 无更多任务可调度，停止dispatch循环");
                     break;
                 }
 
-                SCHEDULER_LOG_DEBUG(std::string("🔄 [BTIE] dispatch循环 #") + std::to_string(dispatch_attempts) +
+                SCHEDULER_LOG_DEBUG(std::string("🔄 [ASAP-Sync] dispatch循环 #") + std::to_string(dispatch_attempts) +
                                    " _ready_queue.size()=" + std::to_string(_ready_queue.size()) +
                                    " _running_tasks.size()=" + std::to_string(_running_tasks.size()));
             }
 
             if (dispatch_attempts >= MAX_DISPATCH_ITERATIONS) {
-                SCHEDULER_LOG_WARNING("⚠️ [BTIE] dispatch循环达到最大迭代次数，可能存在bug");
+                SCHEDULER_LOG_WARNING("⚠️ [ASAP-Sync] dispatch循环达到最大迭代次数，可能存在bug");
             }
 
             // ⭐ 注意：批量调度后的抢占检查已删除
             // 原因：mid-tick抢占已在insert()中通过Micro-Batch抢占处理
         } else {
-            SCHEDULER_LOG_INFO("⚠️ [BTIE] performTickScheduling: _kernel仍为nullptr，跳过dispatch");
+            SCHEDULER_LOG_INFO("⚠️ [ASAP-Sync] performTickScheduling: _kernel仍为nullptr，跳过dispatch");
         }
     }
 
-    void BTIEScheduler::schedule() {
+    void ASAPSyncScheduler::schedule() {
         // BTIE依赖MRTKernel::dispatch() -> getTaskN()流程
-        SCHEDULER_LOG_DEBUG("🔔 [BTIE] schedule() 被调用");
+        SCHEDULER_LOG_DEBUG("🔔 [ASAP-Sync] schedule() 被调用");
     }
 
     // =====================================================
     // getFirst - BTIE废弃，返回nullptr
     // =====================================================
 
-    AbsRTTask *BTIEScheduler::getFirst() {
-        SCHEDULER_LOG_DEBUG(std::string("🔍 [BTIE] getFirst() 被调用（BTIE已废弃）"));
+    AbsRTTask *ASAPSyncScheduler::getFirst() {
+        SCHEDULER_LOG_DEBUG(std::string("🔍 [ASAP-Sync] getFirst() 被调用（BTIE已废弃）"));
         // BTIE使用批量调度，不使用getFirst
         return nullptr;
     }
@@ -1006,8 +1006,8 @@ namespace RTSim {
     // getTaskN - 返回批量中的第n个任务
     // =====================================================
 
-    AbsRTTask *BTIEScheduler::getTaskN(unsigned int n) {
-        SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] getTaskN(") + std::to_string(n) + ") " +
+    AbsRTTask *ASAPSyncScheduler::getTaskN(unsigned int n) {
+        SCHEDULER_LOG_INFO(std::string("🔍 [ASAP-Sync] getTaskN(") + std::to_string(n) + ") " +
                            "当前能量: " + std::to_string(_current_energy) + "J" +
                            " 批量任务数=" + std::to_string(_current_batch_tasks.size()) +
                            " 抢占批量数=" + std::to_string(_preempt_batch_tasks.size()));
@@ -1019,7 +1019,7 @@ namespace RTSim {
         // 所以需要在getTaskN()中检查_energy_depleted标志
         const double ENERGY_EPSILON = 1e-9;
         if (_energy_depleted && _current_energy < ENERGY_EPSILON) {
-            SCHEDULER_LOG_INFO(std::string("💀 [BTIE] getTaskN: 能量已耗尽，清空批量任务队列并返回nullptr") +
+            SCHEDULER_LOG_INFO(std::string("💀 [ASAP-Sync] getTaskN: 能量已耗尽，清空批量任务队列并返回nullptr") +
                                " 剩余能量=" + std::to_string(_current_energy * 1000) + " mJ");
             // 清空批量任务队列，防止后续getTaskN()调用返回过期任务
             _current_batch_tasks.clear();
@@ -1030,17 +1030,17 @@ namespace RTSim {
 
         if (n == 0) {
             // 注意：能量已在performTickScheduling中批量扣除，这里不重复扣除
-            SCHEDULER_LOG_DEBUG(std::string("🔄 [BTIE] 新调度��期开始"));
+            SCHEDULER_LOG_DEBUG(std::string("🔄 [ASAP-Sync] 新调度��期开始"));
         }
 
         // ⭐ ⭐ ⭐ Micro-Batch Preemption：优先返回抢占批量任务（最高优先级）
         if (!_preempt_batch_tasks.empty()) {
-            SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] getTaskN: 从抢占批量返回任务") +
+            SCHEDULER_LOG_INFO(std::string("⚡ [ASAP-Sync] getTaskN: 从抢占批量返回任务") +
                                " 抢占批量size=" + std::to_string(_preempt_batch_tasks.size()));
 
             // 检查索引是否有效
             if (n >= _preempt_batch_tasks.size()) {
-                SCHEDULER_LOG_DEBUG(std::string("📭 [BTIE] getTaskN: 索引超出抢占批量范围") +
+                SCHEDULER_LOG_DEBUG(std::string("📭 [ASAP-Sync] getTaskN: 索引超出抢占批量范围") +
                                    " n=" + std::to_string(n) +
                                    " size=" + std::to_string(_preempt_batch_tasks.size()));
                 return nullptr;
@@ -1052,7 +1052,7 @@ namespace RTSim {
                 return nullptr;
             }
 
-            SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] getTaskN(") + std::to_string(n) + ") 返回抢占任务: " +
+            SCHEDULER_LOG_INFO(std::string("⚡ [ASAP-Sync] getTaskN(") + std::to_string(n) + ") 返回抢占任务: " +
                               getTaskName(task) + " [抢占批量[" + std::to_string(n) + "]/" +
                               std::to_string(_preempt_batch_tasks.size()) + "]");
 
@@ -1063,13 +1063,13 @@ namespace RTSim {
         // ⭐ 关键修复：使用_current_batch_tasks而不是_ready_queue
         // _current_batch_tasks在performTickScheduling()中设置，已经考虑了能量检查
         if (_current_batch_tasks.empty()) {
-            SCHEDULER_LOG_INFO("📭 [BTIE] getTaskN: 批量任务队列为空（能量不足）");
+            SCHEDULER_LOG_INFO("📭 [ASAP-Sync] getTaskN: 批量任务队列为空（能量不足）");
             return nullptr;
         }
 
         // 检查���引是否有效
         if (n >= _current_batch_tasks.size()) {
-            SCHEDULER_LOG_DEBUG(std::string("📭 [BTIE] getTaskN: 索引超出范围") +
+            SCHEDULER_LOG_DEBUG(std::string("📭 [ASAP-Sync] getTaskN: 索引超出范围") +
                                " n=" + std::to_string(n) +
                                " size=" + std::to_string(_current_batch_tasks.size()));
             return nullptr;
@@ -1081,7 +1081,7 @@ namespace RTSim {
             return nullptr;
         }
 
-        SCHEDULER_LOG_INFO(std::string("📤 [BTIE] getTaskN(") + std::to_string(n) + ") 返回: " +
+        SCHEDULER_LOG_INFO(std::string("📤 [ASAP-Sync] getTaskN(") + std::to_string(n) + ") 返回: " +
                           getTaskName(task) + " (批量任务[" + std::to_string(n) + "]/" +
                           std::to_string(_current_batch_tasks.size()) + ")");
 
@@ -1093,9 +1093,9 @@ namespace RTSim {
         }
 
         if (is_running) {
-            SCHEDULER_LOG_DEBUG(std::string("♻️ [BTIE] 运行中任务续期: ") + getTaskName(task));
+            SCHEDULER_LOG_DEBUG(std::string("♻️ [ASAP-Sync] 运行中任务续期: ") + getTaskName(task));
         } else {
-            SCHEDULER_LOG_DEBUG(std::string("✅ [BTIE] 调度新任务: ") + getTaskName(task));
+            SCHEDULER_LOG_DEBUG(std::string("✅ [ASAP-Sync] 调度新任务: ") + getTaskName(task));
         }
 
         return task;
@@ -1105,19 +1105,19 @@ namespace RTSim {
     // notify - BTIE不再扣减能量（已在批量时扣减）
     // =====================================================
 
-    void BTIEScheduler::notify(AbsRTTask *task) {
+    void ASAPSyncScheduler::notify(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
         // ⭐ 关键修复：清除任务的WCET完成标志（新实例到达）
         // 周期性任务复用同一个AbsRTTask对象，但每个实例都是独立的
-        SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] notify: 检查WCET完成标志: ") +
+        SCHEDULER_LOG_INFO(std::string("🔍 [ASAP-Sync] notify: 检查WCET完成标志: ") +
                            getTaskName(task) + " 集合大小=" + std::to_string(_tasks_completed_wcet.size()));
         auto it = _tasks_completed_wcet.find(task);
         if (it != _tasks_completed_wcet.end()) {
             _tasks_completed_wcet.erase(it);
-            SCHEDULER_LOG_INFO(std::string("🔄 [BTIE] notify: 清除任务的WCET完成标志: ") +
+            SCHEDULER_LOG_INFO(std::string("🔄 [ASAP-Sync] notify: 清除任务的WCET完成标志: ") +
                                getTaskName(task) + " (新实例到达)");
         }
 
@@ -1128,7 +1128,7 @@ namespace RTSim {
         // 检查能量是否充足
         const double EPSILON = 1e-9;
         if (_current_energy < unit_energy - EPSILON) {
-            SCHEDULER_LOG_WARNING(std::string("⚠️ [BTIE] notify: 能量不足") +
+            SCHEDULER_LOG_WARNING(std::string("⚠️ [ASAP-Sync] notify: 能量不足") +
                                  " 任务=" + getTaskName(task) +
                                  " 需要=" + std::to_string(unit_energy) + "J" +
                                  " 当前=" + std::to_string(_current_energy) + "J");
@@ -1136,7 +1136,7 @@ namespace RTSim {
         }
 
         // 任务到达，添加到就绪队列
-        SCHEDULER_LOG_INFO(std::string("📥 [BTIE] 任务到达并添加到就绪队列: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("📥 [ASAP-Sync] 任务到达并添加到就绪队列: ") + getTaskName(task));
         addToReadyQueue(task);
     }
 
@@ -1144,20 +1144,20 @@ namespace RTSim {
     // 添加任务
     // =====================================================
 
-    void BTIEScheduler::addTask(AbsRTTask *task, const std::string &params) {
+    void ASAPSyncScheduler::addTask(AbsRTTask *task, const std::string &params) {
         if (!task) {
-            SCHEDULER_LOG_WARNING("⚠️ [BTIE] addTask: 任务为空");
+            SCHEDULER_LOG_WARNING("⚠️ [ASAP-Sync] addTask: 任务为空");
             return;
         }
 
         // ⭐ Bug修复：能量耗尽时拒绝新任务
         if (_energy_depleted && _current_energy < 0.000001) {
-            SCHEDULER_LOG_WARNING(std::string("💀 [BTIE] 能量已耗尽，拒绝添加新任务: ") +
+            SCHEDULER_LOG_WARNING(std::string("💀 [ASAP-Sync] 能量已耗尽，拒绝添加新任务: ") +
                                          getTaskName(task));
             return;  // 拒绝任务
         }
 
-        SCHEDULER_LOG_INFO(std::string("📥 [BTIE] 添加任务: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("📥 [ASAP-Sync] 添加任务: ") + getTaskName(task));
         SCHEDULER_LOG_DEBUG(std::string("   参数: ") + params);
 
         // 解析参数
@@ -1203,7 +1203,7 @@ namespace RTSim {
         }
 
         // 创建任务模型
-        BTIETaskModel *model = new BTIETaskModel(task, period, wcet, workload, energy_coeff, arrival_offset);
+        ASAPSyncTaskModel *model = new ASAPSyncTaskModel(task, period, wcet, workload, energy_coeff, arrival_offset);
 
         // ⭐ 关键修复：先将模型添加到映射，再计算能量
         enqueueModel(model);
@@ -1216,7 +1216,7 @@ namespace RTSim {
         model->_total_energy = total_energy;
         model->_unit_energy = unit_energy;
 
-        SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] 任务能耗计算: ") +
+        SCHEDULER_LOG_INFO(std::string("⚡ [ASAP-Sync] 任务能耗计算: ") +
                           "总能耗=" + std::to_string(total_energy) + "J" +
                           " 每ms能耗=" + std::to_string(unit_energy) + "J" +
                           " WCET=" + std::to_string(wcet) + "ms");
@@ -1224,7 +1224,7 @@ namespace RTSim {
         // 添加到就绪队列
         addToReadyQueue(task);
 
-        SCHEDULER_LOG_INFO(std::string("✅ [BTIE] 任务已添加: 周期=") + std::to_string(period) +
+        SCHEDULER_LOG_INFO(std::string("✅ [ASAP-Sync] 任务已添加: 周期=") + std::to_string(period) +
                           " WCET=" + std::to_string(wcet) +
                           " 工作负载=" + workload);
     }
@@ -1233,12 +1233,12 @@ namespace RTSim {
     // 移除任务
     // =====================================================
 
-    void BTIEScheduler::removeTask(AbsRTTask *task) {
+    void ASAPSyncScheduler::removeTask(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("📤 [BTIE] 移除任务: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("📤 [ASAP-Sync] 移除任务: ") + getTaskName(task));
 
         removeFromReadyQueue(task);
         removeFromWaitingQueue(task);
@@ -1255,26 +1255,26 @@ namespace RTSim {
             _task_models.erase(it);
         }
 
-        SCHEDULER_LOG_INFO(std::string("✅ [BTIE] 任务已移除: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("✅ [ASAP-Sync] 任务已移除: ") + getTaskName(task));
     }
 
     // =====================================================
     // 任务到达事件处理
     // =====================================================
 
-    void BTIEScheduler::onTaskArrival(AbsRTTask *task) {
+    void ASAPSyncScheduler::onTaskArrival(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("📍 [BTIE] 任务到达: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("📍 [ASAP-Sync] 任务到达: ") + getTaskName(task));
 
         // ⭐ 关键修复：清除任务的WCET完成标志（新实例重新开始）
         // 周期性任务复用同一个AbsRTTask对象，但每个实例都是独立的
         auto it = _tasks_completed_wcet.find(task);
         if (it != _tasks_completed_wcet.end()) {
             _tasks_completed_wcet.erase(it);
-            SCHEDULER_LOG_INFO(std::string("🔄 [BTIE] 清除任务的WCET完成标志: ") +
+            SCHEDULER_LOG_INFO(std::string("🔄 [ASAP-Sync] 清除任务的WCET完成标志: ") +
                                getTaskName(task) + " (新实例到达)");
         }
 
@@ -1289,15 +1289,15 @@ namespace RTSim {
     // Tick级抢占检查
     // =====================================================
 
-    void BTIEScheduler::checkAndPreempt() {
-        SCHEDULER_LOG_DEBUG("🔔 [BTIE] Tick级抢占检查");
+    void ASAPSyncScheduler::checkAndPreempt() {
+        SCHEDULER_LOG_DEBUG("🔔 [ASAP-Sync] Tick级抢占检查");
         checkAndPreemptOnAllCPUs();
     }
 
-    void BTIEScheduler::checkAndPreemptOnAllCPUs() {
+    void ASAPSyncScheduler::checkAndPreemptOnAllCPUs() {
         // ⭐ 优化：如果有抢占批量任务，说明mid-tick抢占已经处理，跳过tick边界抢占检查
         if (!_preempt_batch_tasks.empty()) {
-            SCHEDULER_LOG_DEBUG(std::string("⚡ [BTIE] checkAndPreemptOnAllCPUs: 跳过检查，抢占批量size=") +
+            SCHEDULER_LOG_DEBUG(std::string("⚡ [ASAP-Sync] checkAndPreemptOnAllCPUs: 跳过检查，抢占批量size=") +
                                std::to_string(_preempt_batch_tasks.size()));
             return;
         }
@@ -1307,18 +1307,18 @@ namespace RTSim {
         if (!_kernel) {
             _kernel = getKernel();
             if (!_kernel) {
-                SCHEDULER_LOG_INFO("❌ [BTIE] checkAndPreemptOnAllCPUs: _kernel为null，无法检查抢占");
+                SCHEDULER_LOG_INFO("❌ [ASAP-Sync] checkAndPreemptOnAllCPUs: _kernel为null，无法检查抢占");
                 return;
             }
         }
 
         const auto& running_tasks = _kernel->getCurrentExecutingTasks();
-        SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] checkAndPreemptOnAllCPUs: 运行中任务数量=") +
+        SCHEDULER_LOG_INFO(std::string("🔍 [ASAP-Sync] checkAndPreemptOnAllCPUs: 运行中任务数量=") +
                           std::to_string(running_tasks.size()) +
                           " _current_batch_tasks.size()=" + std::to_string(_current_batch_tasks.size()));
 
         if (running_tasks.empty()) {
-            SCHEDULER_LOG_INFO("❌ [BTIE] checkAndPreemptOnAllCPUs: 没有运行中的任务");
+            SCHEDULER_LOG_INFO("❌ [ASAP-Sync] checkAndPreemptOnAllCPUs: 没有运行中的任务");
             return;
         }
 
@@ -1335,11 +1335,11 @@ namespace RTSim {
         }
 
         if (!highest) {
-            SCHEDULER_LOG_INFO("❌ [BTIE] checkAndPreemptOnAllCPUs: 没有候选任务进行抢占");
+            SCHEDULER_LOG_INFO("❌ [ASAP-Sync] checkAndPreemptOnAllCPUs: 没有候选任务进行抢占");
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] checkAndPreemptOnAllCPUs: 最高优先级任务=") +
+        SCHEDULER_LOG_INFO(std::string("🔍 [ASAP-Sync] checkAndPreemptOnAllCPUs: 最高优先级任务=") +
                           getTaskName(highest));
 
         // ⭐ 关键修复：先检查是否有空闲CPU
@@ -1354,20 +1354,20 @@ namespace RTSim {
         int total_cpus = running_tasks.size();
         int free_cpus = total_cpus - actual_running_count;
 
-        SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] CPU状态: 总数=") +
+        SCHEDULER_LOG_INFO(std::string("🔍 [ASAP-Sync] CPU状态: 总数=") +
                           std::to_string(total_cpus) +
                           " 运行中=" + std::to_string(actual_running_count) +
                           " 空闲=" + std::to_string(free_cpus));
 
         // ⭐ 如果有空闲CPU，不需要抢占，直接返回让dispatch调度新任务
         if (free_cpus > 0) {
-            SCHEDULER_LOG_INFO(std::string("✅ [BTIE] 有空闲CPU，无需抢占，直接调度新任务: ") +
+            SCHEDULER_LOG_INFO(std::string("✅ [ASAP-Sync] 有空闲CPU，无需抢占，直接调度新任务: ") +
                               getTaskName(highest));
             return;
         }
 
         // ⭐ 没有空闲CPU，需要抢占最低优先级的运行任务
-        SCHEDULER_LOG_INFO("⚠️ [BTIE] CPU已满，需要抢占最低优先级任务");
+        SCHEDULER_LOG_INFO("⚠️ [ASAP-Sync] CPU已满，需要抢占最低优先级任务");
 
         // 找到优先级最低的运行任务
         AbsRTTask *lowest_priority_task = nullptr;
@@ -1378,7 +1378,7 @@ namespace RTSim {
                 continue;
             }
 
-            BTIETaskModel *model = getTaskModel(running_task);
+            ASAPSyncTaskModel *model = getTaskModel(running_task);
             if (!model) {
                 continue;
             }
@@ -1391,13 +1391,13 @@ namespace RTSim {
         }
 
         if (!lowest_priority_task) {
-            SCHEDULER_LOG_INFO("❌ [BTIE] 未找到可抢占的任务");
+            SCHEDULER_LOG_INFO("❌ [ASAP-Sync] 未找到可抢占的任务");
             return;
         }
 
         // 检查是否需要抢占（新任务优先级更高）
         if (shouldPreempt(lowest_priority_task, highest)) {
-            SCHEDULER_LOG_INFO(std::string("🔄 [BTIE] 抢占CPU: ") +
+            SCHEDULER_LOG_INFO(std::string("🔄 [ASAP-Sync] 抢占CPU: ") +
                               " 挂起低优先级任务=" + getTaskName(lowest_priority_task) +
                               " 调度高优先级任务=" + getTaskName(highest));
 
@@ -1409,7 +1409,7 @@ namespace RTSim {
             auto batch_it = std::find(_current_batch_tasks.begin(), _current_batch_tasks.end(), lowest_priority_task);
             if (batch_it != _current_batch_tasks.end()) {
                 _current_batch_tasks.erase(batch_it);
-                SCHEDULER_LOG_DEBUG(std::string("🔄 [BTIE] 从批量任务移除: ") + getTaskName(lowest_priority_task));
+                SCHEDULER_LOG_DEBUG(std::string("🔄 [ASAP-Sync] 从批量任务移除: ") + getTaskName(lowest_priority_task));
             }
 
             // 3. 将高优先级任务加入批量任务（放在最前面）
@@ -1417,7 +1417,7 @@ namespace RTSim {
 
             // ⭐ 修复：不在tick边界抢占时扣除能量，避免双重扣除
             // 能量将在批量调度中统一扣除
-            SCHEDULER_LOG_INFO(std::string("✅ [BTIE] Tick边界抢占: 任务加入批量（能量将在批量调度中扣除）: ") +
+            SCHEDULER_LOG_INFO(std::string("✅ [ASAP-Sync] Tick边界抢占: 任务加入批量（能量将在批量调度中扣除）: ") +
                               getTaskName(highest));
 
             // 5. 挂起低优先级任务
@@ -1426,28 +1426,28 @@ namespace RTSim {
             // 6. 重新调度所有CPU
             _kernel->dispatch();
         } else {
-            SCHEDULER_LOG_INFO(std::string("❌ [BTIE] 新任务优先级不够高，无需抢占"));
+            SCHEDULER_LOG_INFO(std::string("❌ [ASAP-Sync] 新任务优先级不够高，无需抢占"));
         }
     }
 
-    bool BTIEScheduler::shouldPreempt(AbsRTTask *running_task, AbsRTTask *new_task) {
+    bool ASAPSyncScheduler::shouldPreempt(AbsRTTask *running_task, AbsRTTask *new_task) {
         if (!running_task || !new_task) {
-            SCHEDULER_LOG_INFO(std::string("❌ [BTIE] shouldPreempt: running_task或new_task为空"));
+            SCHEDULER_LOG_INFO(std::string("❌ [ASAP-Sync] shouldPreempt: running_task或new_task为空"));
             return false;
         }
 
-        BTIETaskModel *running_model = getTaskModel(running_task);
-        BTIETaskModel *new_model = getTaskModel(new_task);
+        ASAPSyncTaskModel *running_model = getTaskModel(running_task);
+        ASAPSyncTaskModel *new_model = getTaskModel(new_task);
 
         if (!running_model || !new_model) {
-            SCHEDULER_LOG_INFO(std::string("❌ [BTIE] shouldPreempt: 获取task model失败"));
+            SCHEDULER_LOG_INFO(std::string("❌ [ASAP-Sync] shouldPreempt: 获取task model失败"));
             return false;
         }
 
         // 检查新任务的能量是否足够
         double unit_energy = calculateUnitEnergyForTask(new_task);
         if (_current_energy < unit_energy) {
-            SCHEDULER_LOG_INFO(std::string("❌ [BTIE] shouldPreempt: 能量不足 _current_energy=") +
+            SCHEDULER_LOG_INFO(std::string("❌ [ASAP-Sync] shouldPreempt: 能量不足 _current_energy=") +
                               std::to_string(_current_energy * 1000) + " < unit_energy=" +
                               std::to_string(unit_energy * 1000) + " mJ");
             return false;  // 能量不足，不抢占
@@ -1458,7 +1458,7 @@ namespace RTSim {
         int new_prio = new_model->getRMPriority();
         bool should = new_prio < running_prio;
 
-        SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] shouldPreempt: ") +
+        SCHEDULER_LOG_INFO(std::string("🔍 [ASAP-Sync] shouldPreempt: ") +
                           getTaskName(running_task) + "(prio=" + std::to_string(running_prio) + ") vs " +
                           getTaskName(new_task) + "(prio=" + std::to_string(new_prio) + ") = " +
                           (should ? "true" : "false"));
@@ -1470,12 +1470,12 @@ namespace RTSim {
     // 队列管理方法
     // =====================================================
 
-    void BTIEScheduler::insert(AbsRTTask *task) {
+    void ASAPSyncScheduler::insert(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("➕ [BTIE] insert: ") + getTaskName(task) +
+        SCHEDULER_LOG_INFO(std::string("➕ [ASAP-Sync] insert: ") + getTaskName(task) +
                           " _ready_queue.size()=" + std::to_string(_ready_queue.size()));
 
         Scheduler::insert(task);
@@ -1485,7 +1485,7 @@ namespace RTSim {
         // 仅对真正的新任务执行mid-tick抢占，跳过suspend重新插入的任务
         bool is_reinserted = std::find(_current_batch_tasks.begin(), _current_batch_tasks.end(), task) != _current_batch_tasks.end();
 
-        SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] Mid-tick抢占检查: _kernel=") +
+        SCHEDULER_LOG_INFO(std::string("🔍 [ASAP-Sync] Mid-tick抢占检查: _kernel=") +
                           (_kernel ? "valid" : "null") +
                           " _energy_depleted=" + (_energy_depleted ? "true" : "false") +
                           " is_reinserted=" + (is_reinserted ? "true" : "false"));
@@ -1493,7 +1493,7 @@ namespace RTSim {
         if (_kernel && !_energy_depleted && !is_reinserted) {
             const auto& running_tasks = _kernel->getCurrentExecutingTasks();
 
-            SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] 运行中任务数量: ") +
+            SCHEDULER_LOG_INFO(std::string("🔍 [ASAP-Sync] 运行中任务数量: ") +
                               std::to_string(running_tasks.size()));
 
             // ⭐ 关键修复：先检查是否有空闲CPU
@@ -1507,14 +1507,14 @@ namespace RTSim {
             int total_cpus = running_tasks.size();
             int free_cpus = total_cpus - actual_running_count;
 
-            SCHEDULER_LOG_INFO(std::string("🔍 [BTIE] Mid-tick CPU状态: 总数=") +
+            SCHEDULER_LOG_INFO(std::string("🔍 [ASAP-Sync] Mid-tick CPU状态: 总数=") +
                               std::to_string(total_cpus) +
                               " 运行中=" + std::to_string(actual_running_count) +
                               " 空闲=" + std::to_string(free_cpus));
 
             // ⭐ 如果有空闲CPU，直接调度新任务，不需要抢占
             if (free_cpus > 0) {
-                SCHEDULER_LOG_INFO(std::string("✅ [BTIE] Mid-tick: 有空闲CPU，直接调度新任务: ") +
+                SCHEDULER_LOG_INFO(std::string("✅ [ASAP-Sync] Mid-tick: 有空闲CPU，直接调度新任务: ") +
                                   getTaskName(task));
 
                 // 检查能量（但不扣除，让下一个tick的批量调度统一扣除）
@@ -1524,7 +1524,7 @@ namespace RTSim {
                 if (_current_energy >= unit_energy - EPSILON) {
                     // ⭐ 修复：不在mid-tick扣除能量，避免双重扣除
                     // 能量将在下一个tick的批量调度中统一扣除
-                    SCHEDULER_LOG_INFO(std::string("✅ [BTIE] Mid-tick: 能量充足，调度任务（能量将在下一tick扣除）: ") +
+                    SCHEDULER_LOG_INFO(std::string("✅ [ASAP-Sync] Mid-tick: 能量充足，调度任务（能量将在下一tick扣除）: ") +
                                       getTaskName(task));
 
                     // 创建抢占微型批量
@@ -1537,7 +1537,7 @@ namespace RTSim {
             }
 
             // ⭐ CPU已满，需要找到优先级最低的任务进行抢占
-            SCHEDULER_LOG_INFO("⚠️ [BTIE] Mid-tick: CPU已满，需要抢占最低优先级任务");
+            SCHEDULER_LOG_INFO("⚠️ [ASAP-Sync] Mid-tick: CPU已满，需要抢占最低优先级任务");
 
             AbsRTTask *lowest_priority_task = nullptr;
             int lowest_priority = -1;
@@ -1547,7 +1547,7 @@ namespace RTSim {
                     continue;
                 }
 
-                BTIETaskModel *model = getTaskModel(running_task);
+                ASAPSyncTaskModel *model = getTaskModel(running_task);
                 if (!model) {
                     continue;
                 }
@@ -1560,7 +1560,7 @@ namespace RTSim {
             }
 
             if (lowest_priority_task && shouldPreempt(lowest_priority_task, task)) {
-                SCHEDULER_LOG_INFO(std::string("✅ [BTIE] Mid-tick: 找到可抢占任务: ") +
+                SCHEDULER_LOG_INFO(std::string("✅ [ASAP-Sync] Mid-tick: 找到可抢占任务: ") +
                                   getTaskName(lowest_priority_task));
 
                 // 检查能量（但不扣除，让下一个tick的批量调度统一扣除）
@@ -1569,7 +1569,7 @@ namespace RTSim {
 
                 if (_current_energy >= unit_energy - EPSILON) {
                     // 能量充足，执行mid-tick抢占
-                    SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] Micro-Batch抢占: ") +
+                    SCHEDULER_LOG_INFO(std::string("⚡ [ASAP-Sync] Micro-Batch抢占: ") +
                                       getTaskName(lowest_priority_task) + " → " + getTaskName(task) +
                                       " [微型批量调度]");
 
@@ -1578,14 +1578,14 @@ namespace RTSim {
 
                     // ⭐ 修复：不在mid-tick扣除能量，避免双重扣除
                     // 能量将在下一个tick的批量调度中统一扣除
-                    SCHEDULER_LOG_INFO(std::string("✅ [BTIE] Micro-Batch: 能量充足，执行抢占（能量将在下一tick扣除）: ") +
+                    SCHEDULER_LOG_INFO(std::string("✅ [ASAP-Sync] Micro-Batch: 能量充足，执行抢占（能量将在下一tick扣除）: ") +
                                       getTaskName(task));
 
                     // 挂起低优先级任务
                     _kernel->suspend(lowest_priority_task);
 
                     // 立即调度高优先级任务
-                    SCHEDULER_LOG_INFO(std::string("🚀 [BTIE] 对调后立即dispatch调度高优先级任务"));
+                    SCHEDULER_LOG_INFO(std::string("🚀 [ASAP-Sync] 对调后立即dispatch调度高优先级任务"));
                     _kernel->dispatch();
 
                     return;  // 抢占完成，退出
@@ -1595,12 +1595,12 @@ namespace RTSim {
 
     }
 
-    void BTIEScheduler::extract(AbsRTTask *task) {
+    void ASAPSyncScheduler::extract(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("➖ [BTIE] extract: ") + getTaskName(task) +
+        SCHEDULER_LOG_INFO(std::string("➖ [ASAP-Sync] extract: ") + getTaskName(task) +
                           " _ready_queue.size()=" + std::to_string(_ready_queue.size()));
 
         Scheduler::extract(task);
@@ -1608,22 +1608,22 @@ namespace RTSim {
         removeFromWaitingQueue(task);
     }
 
-    void BTIEScheduler::addToReadyQueue(AbsRTTask *task) {
+    void ASAPSyncScheduler::addToReadyQueue(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
         // ⭐ 修复重复实例bug：检查任务是否已在就绪队列中
         if (std::find(_ready_queue.begin(), _ready_queue.end(), task) != _ready_queue.end()) {
-            SCHEDULER_LOG_DEBUG(std::string("⚠️ [BTIE] 任务已在就绪队列，跳过添加: ") + getTaskName(task));
+            SCHEDULER_LOG_DEBUG(std::string("⚠️ [ASAP-Sync] 任务已在就绪队列，跳过添加: ") + getTaskName(task));
             return;
         }
 
         removeFromWaitingQueue(task);
 
-        BTIETaskModel *model = getTaskModel(task);
+        ASAPSyncTaskModel *model = getTaskModel(task);
         if (!model) {
-            SCHEDULER_LOG_WARNING("⚠️ [BTIE] addToReadyQueue: 任务模型不存在");
+            SCHEDULER_LOG_WARNING("⚠️ [ASAP-Sync] addToReadyQueue: 任务模型不存在");
             _ready_queue.push_back(task);
             return;
         }
@@ -1633,7 +1633,7 @@ namespace RTSim {
         // 按RM优先级插入（周期短的优先）
         auto it = _ready_queue.begin();
         while (it != _ready_queue.end()) {
-            BTIETaskModel *other_model = getTaskModel(*it);
+            ASAPSyncTaskModel *other_model = getTaskModel(*it);
             if (other_model && other_model->getRMPriority() > priority) {
                 break;
             }
@@ -1642,44 +1642,44 @@ namespace RTSim {
 
         _ready_queue.insert(it, task);
 
-        SCHEDULER_LOG_DEBUG(std::string("➕ [BTIE] 任务加入就绪队列: ") + getTaskName(task) +
+        SCHEDULER_LOG_DEBUG(std::string("➕ [ASAP-Sync] 任务加入就绪队列: ") + getTaskName(task) +
                            " 优先级=" + std::to_string(static_cast<int64_t>(priority)));
     }
 
-    void BTIEScheduler::removeFromReadyQueue(AbsRTTask *task) {
+    void ASAPSyncScheduler::removeFromReadyQueue(AbsRTTask *task) {
         auto it = std::find(_ready_queue.begin(), _ready_queue.end(), task);
         if (it != _ready_queue.end()) {
             _ready_queue.erase(it);
-            SCHEDULER_LOG_DEBUG(std::string("➖ [BTIE] removeFromReadyQueue: ") + getTaskName(task) +
+            SCHEDULER_LOG_DEBUG(std::string("➖ [ASAP-Sync] removeFromReadyQueue: ") + getTaskName(task) +
                                " 剩余size=" + std::to_string(_ready_queue.size()));
         }
     }
 
-    void BTIEScheduler::addToWaitingQueue(AbsRTTask *task) {
+    void ASAPSyncScheduler::addToWaitingQueue(AbsRTTask *task) {
         if (!task) {
             return;
         }
         removeFromReadyQueue(task);
         _waiting_queue.push_back(task);
-        SCHEDULER_LOG_DEBUG(std::string("⏸️ [BTIE] 任务加入等待队列: ") + getTaskName(task));
+        SCHEDULER_LOG_DEBUG(std::string("⏸️ [ASAP-Sync] 任务加入等待队列: ") + getTaskName(task));
     }
 
-    void BTIEScheduler::removeFromWaitingQueue(AbsRTTask *task) {
+    void ASAPSyncScheduler::removeFromWaitingQueue(AbsRTTask *task) {
         auto it = std::find(_waiting_queue.begin(), _waiting_queue.end(), task);
         if (it != _waiting_queue.end()) {
             _waiting_queue.erase(it);
         }
     }
 
-    bool BTIEScheduler::isInReadyQueue(AbsRTTask *task) const {
+    bool ASAPSyncScheduler::isInReadyQueue(AbsRTTask *task) const {
         return std::find(_ready_queue.begin(), _ready_queue.end(), task) != _ready_queue.end();
     }
 
-    bool BTIEScheduler::isInWaitingQueue(AbsRTTask *task) const {
+    bool ASAPSyncScheduler::isInWaitingQueue(AbsRTTask *task) const {
         return std::find(_waiting_queue.begin(), _waiting_queue.end(), task) != _waiting_queue.end();
     }
 
-    AbsRTTask *BTIEScheduler::getHighestPriorityTaskFromReadyQueue() {
+    AbsRTTask *ASAPSyncScheduler::getHighestPriorityTaskFromReadyQueue() {
         if (_ready_queue.empty()) {
             return nullptr;
         }
@@ -1690,10 +1690,10 @@ namespace RTSim {
     // 能量计算方法
     // =====================================================
 
-    double BTIEScheduler::calculateUnitEnergyForTask(AbsRTTask *task) {
-        BTIETaskModel *model = getTaskModel(task);
+    double ASAPSyncScheduler::calculateUnitEnergyForTask(AbsRTTask *task) {
+        ASAPSyncTaskModel *model = getTaskModel(task);
         if (!model) {
-            SCHEDULER_LOG_WARNING("⚠️ [BTIE] calculateUnitEnergyForTask: 任务模型不存在");
+            SCHEDULER_LOG_WARNING("⚠️ [ASAP-Sync] calculateUnitEnergyForTask: 任务模型不存在");
             return 0.0;
         }
 
@@ -1702,7 +1702,7 @@ namespace RTSim {
     }
 
     // ⭐ EnergyInfoProvider接口实现
-    double BTIEScheduler::getTaskUnitEnergy(AbsRTTask *task) const {
+    double ASAPSyncScheduler::getTaskUnitEnergy(AbsRTTask *task) const {
         auto it = _task_models.find(task);
         if (it == _task_models.end()) {
             return 0.0;
@@ -1710,7 +1710,7 @@ namespace RTSim {
         return it->second->getUnitEnergy();
     }
 
-    double BTIEScheduler::getTaskTotalEnergy(AbsRTTask *task) const {
+    double ASAPSyncScheduler::getTaskTotalEnergy(AbsRTTask *task) const {
         auto it = _task_models.find(task);
         if (it == _task_models.end()) {
             return 0.0;
@@ -1718,14 +1718,14 @@ namespace RTSim {
         return it->second->getTotalEnergy();
     }
 
-    double BTIEScheduler::calculateTotalEnergyForTask(AbsRTTask *task) {
+    double ASAPSyncScheduler::calculateTotalEnergyForTask(AbsRTTask *task) {
         if (!task) {
             return 0.0;
         }
 
-        BTIETaskModel *model = getTaskModel(task);
+        ASAPSyncTaskModel *model = getTaskModel(task);
         if (!model) {
-            SCHEDULER_LOG_WARNING("⚠️ [BTIE] calculateTotalEnergyForTask: 任务模型不存在");
+            SCHEDULER_LOG_WARNING("⚠️ [ASAP-Sync] calculateTotalEnergyForTask: 任务模型不存在");
             return 0.0;
         }
 
@@ -1748,7 +1748,7 @@ namespace RTSim {
         return energy;
     }
 
-    double BTIEScheduler::calculatePowerForWorkload(const std::string &workload, double frequency) {
+    double ASAPSyncScheduler::calculatePowerForWorkload(const std::string &workload, double frequency) {
         ConfigManager &configMgr = ConfigManager::getInstance();
         double power_coeff = configMgr.getPowerCoefficient(workload);
 
@@ -1758,7 +1758,7 @@ namespace RTSim {
         double base_power = configMgr.getBasePower();
         double power = base_power * power_coeff * freq_ratio;
 
-        SCHEDULER_LOG_DEBUG(std::string("⚡ [BTIE] 功率计算: ") +
+        SCHEDULER_LOG_DEBUG(std::string("⚡ [ASAP-Sync] 功率计算: ") +
                            "workload=" + workload +
                            " coeff=" + std::to_string(power_coeff) +
                            " freq=" + std::to_string(frequency_mhz) + "MHz" +
@@ -1773,19 +1773,19 @@ namespace RTSim {
     // 运行时能量检查方法（V28.15新增）
     // =====================================================
 
-    void BTIEScheduler::startEnergyCheckForTask(AbsRTTask *task, CPU *cpu) {
+    void ASAPSyncScheduler::startEnergyCheckForTask(AbsRTTask *task, CPU *cpu) {
         if (!task || !cpu) {
             return;
         }
 
         // 检查是否已经有能量检查事件
         if (_energy_check_events.find(task) != _energy_check_events.end()) {
-            SCHEDULER_LOG_DEBUG(std::string("⚡ [BTIE] 任务已有能量检查事件: ") + getTaskName(task));
+            SCHEDULER_LOG_DEBUG(std::string("⚡ [ASAP-Sync] 任务已有能量检查事件: ") + getTaskName(task));
             return;
         }
 
         // 创建并启动能量检查事件
-        BTIEEnergyCheckEvent *evt = new BTIEEnergyCheckEvent(this, task, cpu);
+        ASAPSyncEnergyCheckEvent *evt = new ASAPSyncEnergyCheckEvent(this, task, cpu);
         _energy_check_events[task] = evt;
 
         // 1ms后触发第一次检查
@@ -1793,13 +1793,13 @@ namespace RTSim {
         Tick scheduled_time = current_time + 1;
         evt->post(scheduled_time);
 
-        SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] 启动运行时能量检查: ") +
+        SCHEDULER_LOG_INFO(std::string("⚡ [ASAP-Sync] 启动运行时能量检查: ") +
                            getTaskName(task) + " 在CPU " + cpu->toString() +
                            " 当前时间=" + std::to_string(static_cast<int64_t>(current_time)) + "ms" +
                            " 调度时间=" + std::to_string(static_cast<int64_t>(scheduled_time)) + "ms");
     }
 
-    void BTIEScheduler::stopEnergyCheckForTask(AbsRTTask *task) {
+    void ASAPSyncScheduler::stopEnergyCheckForTask(AbsRTTask *task) {
         if (!task) {
             return;
         }
@@ -1810,7 +1810,7 @@ namespace RTSim {
             // 事件会自然结束（不再重新 post）
             _energy_check_events.erase(it);
 
-            SCHEDULER_LOG_INFO(std::string("⚡ [BTIE] 停止运行时能量检查: ") +
+            SCHEDULER_LOG_INFO(std::string("⚡ [ASAP-Sync] 停止运行时能量检查: ") +
                                getTaskName(task));
         }
     }
@@ -1819,7 +1819,7 @@ namespace RTSim {
     // 能量收集方法
     // =====================================================
 
-    double BTIEScheduler::collectSolarEnergy(Tick current_time) {
+    double ASAPSyncScheduler::collectSolarEnergy(Tick current_time) {
         int64_t current_ms = static_cast<int64_t>(current_time);
 
         // 计算自上次收集以来的时间
@@ -1842,7 +1842,7 @@ namespace RTSim {
         return energy;
     }
 
-    double BTIEScheduler::getSolarIrradiance(int64_t time_ms) {
+    double ASAPSyncScheduler::getSolarIrradiance(int64_t time_ms) {
         if (!_use_real_solar_data) {
             // ⭐ 分段函数模型：模拟真实太阳能曲线
             int64_t actual_time_ms = time_ms + static_cast<int64_t>(_start_time_offset);
@@ -1884,7 +1884,7 @@ namespace RTSim {
 
         std::ifstream file(_solar_data_file);
         if (!file.is_open()) {
-            SCHEDULER_LOG_WARNING(std::string("⚠️ [BTIE] 无法打开太阳能数据文件: ") + _solar_data_file);
+            SCHEDULER_LOG_WARNING(std::string("⚠️ [ASAP-Sync] 无法打开太阳能数据文件: ") + _solar_data_file);
             return 0.0;
         }
 
@@ -1899,7 +1899,7 @@ namespace RTSim {
                 double irradiance = std::stod(line);
                 return irradiance;
             } catch (const std::exception &e) {
-                SCHEDULER_LOG_WARNING(std::string("⚠️ [BTIE] 解析辐照度失败: ") + e.what());
+                SCHEDULER_LOG_WARNING(std::string("⚠️ [ASAP-Sync] 解析辐照度失败: ") + e.what());
                 return 0.0;
             }
         }
@@ -1911,7 +1911,7 @@ namespace RTSim {
     // Tick事件调度
     // =====================================================
 
-    void BTIEScheduler::scheduleNextTick() {
+    void ASAPSyncScheduler::scheduleNextTick() {
         if (!_tick_event) {
             return;
         }
@@ -1931,7 +1931,7 @@ namespace RTSim {
     // 任务管理方法
     // =====================================================
 
-    BTIETaskModel *BTIEScheduler::getTaskModel(AbsRTTask *task) {
+    ASAPSyncTaskModel *ASAPSyncScheduler::getTaskModel(AbsRTTask *task) {
         auto it = _task_models.find(task);
         if (it != _task_models.end()) {
             return it->second;
@@ -1939,14 +1939,14 @@ namespace RTSim {
         return nullptr;
     }
 
-    std::string BTIEScheduler::getTaskName(AbsRTTask *task) {
+    std::string ASAPSyncScheduler::getTaskName(AbsRTTask *task) {
         if (!task) {
             return "nullptr";
         }
         return task->toString();
     }
 
-    AbsRTTask *BTIEScheduler::getRunningTaskOnCPU(CPU *cpu) {
+    AbsRTTask *ASAPSyncScheduler::getRunningTaskOnCPU(CPU *cpu) {
         if (!cpu) {
             return nullptr;
         }
@@ -1959,7 +1959,7 @@ namespace RTSim {
         return nullptr;
     }
 
-    int BTIEScheduler::getFreeCPUCount() {
+    int ASAPSyncScheduler::getFreeCPUCount() {
         int count = 0;
         for (auto &pair : _running_tasks) {
             if (pair.second == nullptr) {
@@ -1969,7 +1969,7 @@ namespace RTSim {
         return count;
     }
 
-    CPU *BTIEScheduler::getFreeCPU() {
+    CPU *ASAPSyncScheduler::getFreeCPU() {
         for (auto &pair : _running_tasks) {
             if (pair.second == nullptr) {
                 return pair.first;
@@ -1978,13 +1978,13 @@ namespace RTSim {
         return nullptr;
     }
 
-    void BTIEScheduler::dispatchTask(AbsRTTask *task, CPU *cpu) {
+    void ASAPSyncScheduler::dispatchTask(AbsRTTask *task, CPU *cpu) {
         if (!task || !cpu) {
-            SCHEDULER_LOG_WARNING("⚠️ [BTIE] dispatchTask: 任务或CPU为空");
+            SCHEDULER_LOG_WARNING("⚠️ [ASAP-Sync] dispatchTask: 任务或CPU为空");
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("📤 [BTIE] 调度任务: ") + getTaskName(task) + " 到CPU");
+        SCHEDULER_LOG_INFO(std::string("📤 [ASAP-Sync] 调度任务: ") + getTaskName(task) + " 到CPU");
 
         removeFromReadyQueue(task);
         _running_tasks[cpu] = task;
@@ -1994,26 +1994,26 @@ namespace RTSim {
     // 配置方法
     // =====================================================
 
-    void BTIEScheduler::setPVConfig(double efficiency, double area, const std::string &solar_file) {
+    void ASAPSyncScheduler::setPVConfig(double efficiency, double area, const std::string &solar_file) {
         _pv_efficiency = efficiency;
         _pv_area_m2 = area;
         _solar_data_file = solar_file;
 
-        SCHEDULER_LOG_INFO(std::string("⚙️ [BTIE] 太阳能配置更新: ") +
+        SCHEDULER_LOG_INFO(std::string("⚙️ [ASAP-Sync] 太阳能配置更新: ") +
                           "效率=" + std::to_string(efficiency) +
                           " 面积=" + std::to_string(area) + "m²" +
                           " 数据文件=" + solar_file);
     }
 
-    void BTIEScheduler::setStartTimeOffset(Tick offset) {
+    void ASAPSyncScheduler::setStartTimeOffset(Tick offset) {
         _start_time_offset = offset;
     }
 
-    void BTIEScheduler::setKernel(MRTKernel *kernel) {
+    void ASAPSyncScheduler::setKernel(MRTKernel *kernel) {
         _kernel = kernel;
     }
 
-    MRTKernel *BTIEScheduler::getKernel() {
+    MRTKernel *ASAPSyncScheduler::getKernel() {
         if (!_kernel && !_ready_queue.empty()) {
             AbsRTTask *task = _ready_queue.front();
             if (task) {
@@ -2027,8 +2027,8 @@ namespace RTSim {
     // 生命周期方法
     // =====================================================
 
-    void BTIEScheduler::newRun() {
-        SCHEDULER_LOG_INFO("🏁 [BTIE] newRun - 仿真开始");
+    void ASAPSyncScheduler::newRun() {
+        SCHEDULER_LOG_INFO("🏁 [ASAP-Sync] newRun - 仿真开始");
 
         _current_energy = _initial_energy;
         _last_tick_time = SIMUL.getTime();
@@ -2057,11 +2057,11 @@ namespace RTSim {
         // 启动第一个tick事件
         scheduleNextTick();
 
-        SCHEDULER_LOG_INFO(std::string("💰 [BTIE] 初始能量: ") + std::to_string(_current_energy) + "J");
+        SCHEDULER_LOG_INFO(std::string("💰 [ASAP-Sync] 初始能量: ") + std::to_string(_current_energy) + "J");
     }
 
-    void BTIEScheduler::endRun() {
-        SCHEDULER_LOG_INFO("🏁 [BTIE] endRun - 仿真结束");
+    void ASAPSyncScheduler::endRun() {
+        SCHEDULER_LOG_INFO("🏁 [ASAP-Sync] endRun - 仿真结束");
 
         // 仿真结束前，收集最后一次能量
         Tick current_time = SIMUL.getTime();
@@ -2072,7 +2072,7 @@ namespace RTSim {
         }
 
         // 打印统计信息
-        SCHEDULER_LOG_INFO("📊 [BTIE] ===== BTIE批量调度统计 =====");
+        SCHEDULER_LOG_INFO("📊 [ASAP-Sync] ===== BTIE批量调度统计 =====");
         SCHEDULER_LOG_INFO(std::string("  Tick总次数: ") + std::to_string(_stats.total_tick_count));
         SCHEDULER_LOG_INFO(std::string("  任务完成数: ") + std::to_string(_stats.total_task_completions));
         SCHEDULER_LOG_INFO(std::string("  批量调度成功: ") + std::to_string(_stats.total_batch_schedules));
@@ -2083,12 +2083,12 @@ namespace RTSim {
         SCHEDULER_LOG_INFO("=================================");
     }
 
-    void BTIEScheduler::onTaskEnd(AbsRTTask *task) {
+    void ASAPSyncScheduler::onTaskEnd(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("✅ [BTIE] 任务结束: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("✅ [ASAP-Sync] 任务结束: ") + getTaskName(task));
 
         // 从就绪队列移除
         removeFromReadyQueue(task);
@@ -2104,7 +2104,7 @@ namespace RTSim {
         // 打印能量消耗统计
         auto it = _energy_accounts.find(task);
         if (it != _energy_accounts.end()) {
-            SCHEDULER_LOG_INFO(std::string("📊 [BTIE] 任务能量消耗: ") +
+            SCHEDULER_LOG_INFO(std::string("📊 [ASAP-Sync] 任务能量消耗: ") +
                               getTaskName(task) +
                               " 累计消耗=" + std::to_string(it->second.total_consumed) + "J");
             _energy_accounts.erase(it);
@@ -2112,23 +2112,23 @@ namespace RTSim {
 
         _stats.total_task_completions++;
 
-        SCHEDULER_LOG_INFO(std::string("📊 [BTIE] 当前能量: ") + std::to_string(_current_energy) + "J");
+        SCHEDULER_LOG_INFO(std::string("📊 [ASAP-Sync] 当前能量: ") + std::to_string(_current_energy) + "J");
 
         // ⭐ 关键修复：任务结束时触发立即调度
         // 检查是否有空闲CPU和等待的任务
         if (!_ready_queue.empty() && _kernel) {
             // ⭐ Bug修复：能量耗尽时不触发立即调度
             if (_energy_depleted) {
-                SCHEDULER_LOG_INFO(std::string("💀 [BTIE] 能量已耗尽，跳过任务结束后的立即调度") +
+                SCHEDULER_LOG_INFO(std::string("💀 [ASAP-Sync] 能量已耗尽，跳过任务结束后的立即调度") +
                                    " 剩余能量=" + std::to_string(_current_energy * 1000) + " mJ");
                 return;
             }
-            SCHEDULER_LOG_INFO("🔄 [BTIE] 任务结束，触发立即调度");
+            SCHEDULER_LOG_INFO("🔄 [ASAP-Sync] 任务结束，触发立即调度");
             _kernel->dispatch();
         }
     }
 
-    bool BTIEScheduler::isAdmissible(CPU *c, std::vector<AbsRTTask *> tasks,
+    bool ASAPSyncScheduler::isAdmissible(CPU *c, std::vector<AbsRTTask *> tasks,
                                     AbsRTTask *t) {
         return true;
     }
@@ -2137,8 +2137,8 @@ namespace RTSim {
     // 统计和调试
     // =====================================================
 
-    void BTIEScheduler::printStats() const {
-        SCHEDULER_LOG_INFO("📊 [BTIE] ===== BTIE批量调度统计 =====");
+    void ASAPSyncScheduler::printStats() const {
+        SCHEDULER_LOG_INFO("📊 [ASAP-Sync] ===== BTIE批量调度统计 =====");
         SCHEDULER_LOG_INFO(std::string("  Tick总次数: ") + std::to_string(_stats.total_tick_count));
         SCHEDULER_LOG_INFO(std::string("  任务完成数: ") + std::to_string(_stats.total_task_completions));
         SCHEDULER_LOG_INFO(std::string("  批量调度成功: ") + std::to_string(_stats.total_batch_schedules));
@@ -2149,11 +2149,11 @@ namespace RTSim {
         SCHEDULER_LOG_INFO("=================================");
     }
 
-    std::string BTIEScheduler::getEnergyStatus() const {
+    std::string ASAPSyncScheduler::getEnergyStatus() const {
         return "当前能量: " + std::to_string(_current_energy) + "J";
     }
 
-    const std::map<AbsRTTask *, std::string> BTIEScheduler::getTaskWorkloads() const {
+    const std::map<AbsRTTask *, std::string> ASAPSyncScheduler::getTaskWorkloads() const {
         std::map<AbsRTTask *, std::string> workloads;
         for (const auto &pair : _task_models) {
             workloads[pair.first] = pair.second->getWorkloadType();
@@ -2161,13 +2161,13 @@ namespace RTSim {
         return workloads;
     }
 
-    void BTIEScheduler::checkAndInterruptRunningTasks() {
-        SCHEDULER_LOG_INFO("🔍 [BTIE] 检查运行中任务的能量状态");
+    void ASAPSyncScheduler::checkAndInterruptRunningTasks() {
+        SCHEDULER_LOG_INFO("🔍 [ASAP-Sync] 检查运行中任务的能量状态");
 
         if (!_kernel) {
             _kernel = getKernel();
             if (!_kernel) {
-                SCHEDULER_LOG_WARNING("⚠️ [BTIE] checkAndInterruptRunningTasks: _kernel为nullptr，无法中断任务");
+                SCHEDULER_LOG_WARNING("⚠️ [ASAP-Sync] checkAndInterruptRunningTasks: _kernel为nullptr，无法中断任务");
                 return;
             }
         }
@@ -2196,13 +2196,13 @@ namespace RTSim {
         if (total_energy_to_deduct > 0) {
             if (_current_energy >= total_energy_to_deduct) {
                 // ✅ 能量充足，记录日志
-                SCHEDULER_LOG_DEBUG(std::string("✅ [BTIE] 运行任务续期能量充足: ") +
+                SCHEDULER_LOG_DEBUG(std::string("✅ [ASAP-Sync] 运行任务续期能量充足: ") +
                                    "需要=" + std::to_string(total_energy_to_deduct * 1000) + " mJ " +
                                    "当前=" + std::to_string(_current_energy * 1000) + " mJ " +
                                    "(能量已在批量调度中扣除)");
             } else {
                 // ❌ 能量不足，中断所有运行中的任务
-                SCHEDULER_LOG_WARNING(std::string("❌ [BTIE] 运行任务续期能量不足，将中断所有运行任务: ") +
+                SCHEDULER_LOG_WARNING(std::string("❌ [ASAP-Sync] 运行任务续期能量不足，将中断所有运行任务: ") +
                                         "需要=" + std::to_string(total_energy_to_deduct * 1000) + " mJ " +
                                         "当前=" + std::to_string(_current_energy * 1000) + " mJ");
 
@@ -2217,7 +2217,7 @@ namespace RTSim {
                 // 标记能量已耗尽
                 _energy_depleted = true;
 
-                SCHEDULER_LOG_INFO(std::string("💀 [BTIE] 能量已耗尽，将中断") +
+                SCHEDULER_LOG_INFO(std::string("💀 [ASAP-Sync] 能量已耗尽，将中断") +
                                    std::to_string(tasks_to_interrupt.size()) + "个运行任务");
             }
         }
@@ -2229,7 +2229,7 @@ namespace RTSim {
         // - 如果没有任务在运行：检查能量是否足够调度新任务
         bool has_running_tasks = !running_tasks.empty();
         if (has_running_tasks) {
-            SCHEDULER_LOG_DEBUG(std::string("✅ [BTIE] 当前tick有") +
+            SCHEDULER_LOG_DEBUG(std::string("✅ [ASAP-Sync] 当前tick有") +
                                std::to_string(running_tasks.size()) +
                                "个任务在运行，允许继续执行到下一个tick");
         }
@@ -2246,7 +2246,7 @@ namespace RTSim {
 
                 // ⭐ 检查：当前能量是否足够该任务继续执行1ms
                 if (_current_energy < unit_energy - EPSILON) {
-                    SCHEDULER_LOG_WARNING(std::string("⚡ [BTIE] 任务能量不足，将中断: ") +
+                    SCHEDULER_LOG_WARNING(std::string("⚡ [ASAP-Sync] 任务能量不足，将中断: ") +
                                          getTaskName(task) +
                                          " 需要1ms=" + std::to_string(unit_energy) + "J" +
                                          " 当前能量=" + std::to_string(_current_energy) + "J");
@@ -2254,7 +2254,7 @@ namespace RTSim {
                     tasks_to_interrupt.push_back(task);
                     _stats.total_skipped_energy++;
                 } else {
-                    SCHEDULER_LOG_DEBUG(std::string("✅ [BTIE] 任务能量充足: ") +
+                    SCHEDULER_LOG_DEBUG(std::string("✅ [ASAP-Sync] 任务能量充足: ") +
                                        getTaskName(task) +
                                        " 需要1ms=" + std::to_string(unit_energy) + "J" +
                                        " 当前能量=" + std::to_string(_current_energy) + "J");
@@ -2269,7 +2269,7 @@ namespace RTSim {
         //   - getTaskN()会返回nullptr
         // 所以不会有任何新任务被调度，当前任务完成后就会停止
         if (!tasks_to_interrupt.empty()) {
-            SCHEDULER_LOG_INFO(std::string("💀 [BTIE] 能量已耗尽，") +
+            SCHEDULER_LOG_INFO(std::string("💀 [ASAP-Sync] 能量已耗尽，") +
                                std::to_string(tasks_to_interrupt.size()) + "个任务将自然完成" +
                                "（不再调度新任务，遵循BTIE'全无'原则）");
         }

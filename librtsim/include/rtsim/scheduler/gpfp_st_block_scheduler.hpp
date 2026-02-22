@@ -1,5 +1,5 @@
-#ifndef GPFP_TIE_SCHEDULER_HPP
-#define GPFP_TIE_SCHEDULER_HPP
+#ifndef GPFP_ST_BLOCK_SCHEDULER_HPP
+#define GPFP_ST_BLOCK_SCHEDULER_HPP
 
 #include "config_manager.hpp"
 #include "energy_bridge.hpp"
@@ -21,38 +21,38 @@ namespace RTSim {
     // 前向声明
     class CPU;
     class AbsRTTask;
-    class TIEScheduler;
+    class STBlockScheduler;
     class MRTKernel;
 
     // 时间类型别名
     using TimeMs = int64_t;
 
     // =====================================================
-    // TIE Tick级调度事件（每1ms触发一次）
+    // ALAP-Block Tick级调度事件（每1ms触发一次）
     // =====================================================
-    class TIETickEvent : public MetaSim::Event {
+    class STBlockTickEvent : public MetaSim::Event {
     private:
-        TIEScheduler *_scheduler;
+        STBlockScheduler *_scheduler;
 
     public:
-        TIETickEvent(TIEScheduler *scheduler);
+        STBlockTickEvent(STBlockScheduler *scheduler);
         void doit() override;
     };
 
     // =====================================================
-    // TIE运行时能量检查事件（每1ms检查运行中任务的能量）
+    // ALAP-Block运行时能量检查事件（每1ms检查运行中任务的能量）
     // ⭐ V40重构：能量检查事件已删除，能量由performTickScheduling处理
     // =====================================================
     /*
-    class TIEEnergyCheckEvent : public MetaSim::Event {
+    class STBlockEnergyCheckEvent : public MetaSim::Event {
     private:
-        TIEScheduler *_scheduler;
+        STBlockScheduler *_scheduler;
         AbsRTTask *_task;
         CPU *_cpu;
         int _ms_executed;  // 已执行的ms数
 
     public:
-        TIEEnergyCheckEvent(TIEScheduler *scheduler, AbsRTTask *task, CPU *cpu);
+        ALAP-BLOCKEnergyCheckEvent(STBlockScheduler *scheduler, AbsRTTask *task, CPU *cpu);
         void doit() override;
         int getMsExecuted() const { return _ms_executed; }
         void setMsExecuted(int ms) { _ms_executed = ms; }
@@ -60,9 +60,9 @@ namespace RTSim {
     */
 
     // =====================================================
-    // TIETaskModel 类声明
+    // STBlockTaskModel 类声明
     // =====================================================
-    class TIETaskModel : public TaskModel {
+    class STBlockTaskModel : public TaskModel {
     private:
         int _period;
         int _wcet;
@@ -77,11 +77,11 @@ namespace RTSim {
         double _unit_energy;           // 每ms能耗
 
     public:
-        TIETaskModel(AbsRTTask *t, int period, int wcet,
+        STBlockTaskModel(AbsRTTask *t, int period, int wcet,
                      const std::string &workload_type,
                      double energy_coefficient = 1.0,
                      MetaSim::Tick arrival_offset = 0);
-        virtual ~TIETaskModel();
+        virtual ~STBlockTaskModel();
 
         MetaSim::Tick getPriority() const override;
         void changePriority(MetaSim::Tick p) override;
@@ -101,9 +101,9 @@ namespace RTSim {
     };
 
     // =====================================================
-    // TIEScheduler 类声明
+    // STBlockScheduler ��声明 - ALAP-Block调度算法（基于TIE + ALAP时序门控）
     // =====================================================
-    class TIEScheduler : public Scheduler, public EnergyInfoProvider {
+    class STBlockScheduler : public Scheduler, public EnergyInfoProvider {
     private:
         // ========== 核心配置参数 ==========
         double _current_energy;              // 当前可用能量
@@ -122,11 +122,11 @@ namespace RTSim {
         MetaSim::Tick _start_time_offset;
 
         // ========== Tick事件 ==========
-        TIETickEvent *_tick_event;
+        STBlockTickEvent *_tick_event;
         bool _first_tick_scheduled;  // 标记第一个tick是否已调度
 
         // ========== 任务管理 ==========
-        std::map<AbsRTTask *, TIETaskModel *> _task_models;
+        std::map<AbsRTTask *, STBlockTaskModel *> _task_models;
         std::deque<AbsRTTask *> _ready_queue;
         std::vector<AbsRTTask *> _waiting_queue;
         std::map<CPU *, AbsRTTask *> _running_tasks;
@@ -134,7 +134,7 @@ namespace RTSim {
 
         // ========== 运行时能量检查事件（每任务一个） ==========
         // ⭐ V40重构：能量检查事件已删除，能量由performTickScheduling处理
-        // std::map<AbsRTTask *, TIEEnergyCheckEvent *> _energy_check_events;
+        // std::map<AbsRTTask *, ALAP-BLOCKEnergyCheckEvent *> _energy_check_events;
 
         // ========== 能量记账（每ms累计） ==========
         struct TaskEnergyAccount {
@@ -155,16 +155,36 @@ namespace RTSim {
             double total_energy_consumed = 0.0;
             double total_energy_harvested = 0.0;
             int total_tick_count = 0;
+            int total_alap_forced_idle = 0;  // ⭐ ALAP: 强制休眠次数
         } _stats;
 
         // ========== 能量耗尽管理 ==========
         bool _energy_depleted;  // ⭐ 能量是否已耗尽（Bug修复）
+        bool _alap_blocking;   // ⭐ ALAP-Block 特有：严格阻塞标志（能量不足时阻塞全部调度）
+
+        // ========== ST深度充电管理 ==========
+        bool _deep_charging;           // ⭐ ST特有：是否处于深度充电模式
+        MetaSim::Tick _charge_start_time;  // 充电开始时间
+        MetaSim::Tick _charge_until_slack_zero;  // 充电直到Slack=0的时间
+
+        // ========== 抢占防抖 ==========
+        // ⭐ 防止频繁抢占：在同一个tick内，同一个任务不应该被反复抢占
+        AbsRTTask *_last_preempted_task;  // 最近被挂起的任务
+        MetaSim::Tick _last_preempted_tick;  // 最近被挂起的tick
 
         // ========== 私有方法 ==========
 
         // 核心调度逻辑
         void performTickScheduling();
         void collectEnergyAtTickBoundary();
+
+        // ⭐ ALAP时序门控（阶段一）
+        bool checkALAPTimingGate();  // 检查是否需要强制休眠
+        MetaSim::Tick calculateSlackForTask(AbsRTTask *task);  // 计算任务的Slack
+        MetaSim::Tick calculateMinSlack();  // ⭐ ST特有：计算���有就绪任务的最小Slack
+
+        // ⭐ 过期任务清理
+        void cleanupExpiredTasks();  // 清理超过截止期的旧任务实例
 
         // ⭐ 运行时能量检查和任务中断（V28.15新增）
         void checkAndInterruptRunningTasks();  // 检查所有运行中的任务，能量不足时中断
@@ -176,7 +196,7 @@ namespace RTSim {
         double getSolarIrradiance(int64_t time_ms);
 
         // 任务管理
-        TIETaskModel *getTaskModel(AbsRTTask *task);
+        STBlockTaskModel *getTaskModel(AbsRTTask *task);
         std::string getTaskName(AbsRTTask *task);
         void onTaskArrival(AbsRTTask *task);
 
@@ -205,12 +225,12 @@ namespace RTSim {
 
     public:
         // 构造函数/析构函数
-        TIEScheduler();
-        TIEScheduler(const std::vector<std::string> &params);
-        virtual ~TIEScheduler();
+        STBlockScheduler();
+        STBlockScheduler(const std::vector<std::string> &params);
+        virtual ~STBlockScheduler();
 
         // 工厂方法
-        static std::unique_ptr<TIEScheduler>
+        static std::unique_ptr<STBlockScheduler>
             createInstance(const std::vector<std::string> &params);
 
         // Scheduler接口实现
@@ -267,17 +287,17 @@ namespace RTSim {
         std::string getEnergyStatus() const;
 
         // 友元类声明
-        friend class TIETickEvent;
+        friend class STBlockTickEvent;
         // ⭐ V40重构：能量检查事件已删除
-        // friend class TIEEnergyCheckEvent;
+        // friend class ALAP-BLOCKEnergyCheckEvent;
     };
 
 } // namespace RTSim
 
 // 工厂注册
 namespace RTSim {
-    static registerInFactory<RTSim::Scheduler, RTSim::TIEScheduler>
-        registerTIEScheduler("gpfp_tie");
+    static registerInFactory<RTSim::Scheduler, RTSim::STBlockScheduler>
+        registerSTBlockScheduler("gpfp_st_block");
 }
 
-#endif // GPFP_TIE_SCHEDULER_HPP
+#endif // GPFP_ST_BLOCK_SCHEDULER_HPP

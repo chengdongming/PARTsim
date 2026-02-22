@@ -1,9 +1,9 @@
-// gpfp_tgf_scheduler.cpp - TGF (Tick-based Greedy First) Scheduler Implementation
+// gpfp_st_nonblock_scheduler.cpp - ST-NonBlock (Slack Time NonBlock) Scheduler Implementation
 // 算法特点：
-// 1. 基于当前实际能量进行即时判断（无前瞻性预测）
-// 2. 每ms逐次扣减能耗
-// 3. 级联调度：能量不足跳过，继续检查次优先级任务（贪婪策略）
-// 4. Tick级抢占
+// 1. ASAP调度：尽可能早执行任务（不需要等Slack=0）
+// 2. 贪心填充：高优先级缺电时跳过，继续搜索低优先级任务
+// 3. 深度充电：仿真过程中一直充电
+// 4. Tick级能量检查和续期
 // 5. Tick末尾收集能量
 
 #include <algorithm>
@@ -13,7 +13,7 @@
 #include <memory>
 #include <metasim/factory.hpp>
 #include <metasim/simul.hpp>
-#include <rtsim/scheduler/gpfp_tgf_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_st_nonblock_scheduler.hpp>
 #include <rtsim/task.hpp>
 #include <rtsim/rttask.hpp>
 #include <rtsim/exeinstr.hpp>
@@ -29,16 +29,16 @@ namespace RTSim {
     using namespace MetaSim;
 
     // =====================================================
-    // TGFTickEvent 实现
+    // STNonBlockTickEvent 实现
     // =====================================================
 
-    TGFTickEvent::TGFTickEvent(TGFScheduler *scheduler)
-        : MetaSim::Event("TGFTickEvent", MetaSim::Event::_DEFAULT_PRIORITY + 10),
+    STNonBlockTickEvent::STNonBlockTickEvent(STNonBlockScheduler *scheduler)
+        : MetaSim::Event("STNonBlockTickEvent", MetaSim::Event::_DEFAULT_PRIORITY + 10),
           _scheduler(scheduler) {
         // ⭐ V30修复：较低优先级，确保任务到达事件先于tick执行
     }
 
-    void TGFTickEvent::doit() {
+    void STNonBlockTickEvent::doit() {
         if (!_scheduler) {
             return;
         }
@@ -46,7 +46,7 @@ namespace RTSim {
         Tick current_time = SIMUL.getTime();
         int64_t current_ms = static_cast<int64_t>(current_time);
 
-        SCHEDULER_LOG_INFO(std::string("⏱️ [TGF] ===== Tick事件触发 @ ") +
+        SCHEDULER_LOG_INFO(std::string("⏱️ [ST-NonBlock] ===== Tick事件触发 @ ") +
                            std::to_string(current_ms) + "ms =====");
 
         // 执行tick调度
@@ -57,13 +57,13 @@ namespace RTSim {
     }
 
     // =====================================================
-    // TGFEnergyCheckEvent 实现 - 运行时能量检查
+    // ST-NonBlockEnergyCheckEvent 实现 - 运行时能量检查
     // ⭐ V40重构：能量检查事件已删除，能量由performTickScheduling���理
     // =====================================================
 
     /*
-    TGFEnergyCheckEvent::TGFEnergyCheckEvent(TGFScheduler *scheduler, AbsRTTask *task, CPU *cpu)
-        : MetaSim::Event("TGFEnergyCheckEvent", MetaSim::Event::_DEFAULT_PRIORITY - 5),
+    ST-NonBlockEnergyCheckEvent::ST-NonBlockEnergyCheckEvent(STNonBlockScheduler *scheduler, AbsRTTask *task, CPU *cpu)
+        : MetaSim::Event("ST-NonBlockEnergyCheckEvent", MetaSim::Event::_DEFAULT_PRIORITY - 5),
           _scheduler(scheduler),
           _task(task),
           _cpu(cpu),
@@ -71,7 +71,7 @@ namespace RTSim {
         // 更高优先级，确保能量检查及时执行
     }
 
-    void TGFEnergyCheckEvent::doit() {
+    void ST-NonBlockEnergyCheckEvent::doit() {
         if (!_scheduler || !_task) {
             return;
         }
@@ -79,7 +79,7 @@ namespace RTSim {
         // ⭐ 安全检查：验证任务是否还有效（是否还在task_models中）
         if (_scheduler->_task_models.find(_task) == _scheduler->_task_models.end()) {
             // 任务已被删除，停止这个能量检查事件
-            SCHEDULER_LOG_DEBUG(std::string("⚠️ [TGF] 能量检查：任务已删除，停止检查"));
+            SCHEDULER_LOG_DEBUG(std::string("⚠️ [ST-NonBlock] 能量检查：任务已删除，停止检查"));
             return;
         }
 
@@ -87,7 +87,7 @@ namespace RTSim {
         auto it = _scheduler->_energy_check_events.find(_task);
         if (it == _scheduler->_energy_check_events.end() || it->second != this) {
             // 事件已被替换或删除，停止处理
-            SCHEDULER_LOG_DEBUG(std::string("⚠️ [TGF] 能量检查：事件已失效，停止检查"));
+            SCHEDULER_LOG_DEBUG(std::string("⚠️ [ST-NonBlock] 能量检查：事件已失效，停止检查"));
             return;
         }
 
@@ -101,7 +101,7 @@ namespace RTSim {
         // ⭐ 检查任务是否仍在执行状态
         // 如果任务已被中断（suspend），则不应再扣除能量
         if (!_task->isExecuting()) {
-            SCHEDULER_LOG_DEBUG(std::string("⚠️ [TGF] 能量检查：任务已停止执行，不再扣除能量: ") +
+            SCHEDULER_LOG_DEBUG(std::string("⚠️ [ST-NonBlock] 能量检查：任务已停止执行，不再扣除能量: ") +
                                _scheduler->getTaskName(_task) + " 时间=" + std::to_string(static_cast<long>(SIMUL.getTime())) + "ms");
             // ⭐ 关键修复：清理能量检查事件映射，允许后续实例启动新的检查
             _scheduler->_energy_check_events.erase(_task);
@@ -113,9 +113,9 @@ namespace RTSim {
 
         // ⭐ 关键修复：检查任务是否已经达到WCET
         // 如果已经达到WCET，任务应该完成，不应该再续期
-        TGFTaskModel *task_model = _scheduler->getTaskModel(_task);
+        STNonBlockTaskModel *task_model = _scheduler->getTaskModel(_task);
         if (task_model && _ms_executed >= task_model->getWCET()) {
-            SCHEDULER_LOG_INFO(std::string("✅ [TGF] 任务已达到WCET，完成执行: ") +
+            SCHEDULER_LOG_INFO(std::string("✅ [ST-NonBlock] 任务已达到WCET，完成执行: ") +
                                _scheduler->getTaskName(_task) + " 已执行=" + std::to_string(_ms_executed) +
                                "ms WCET=" + std::to_string(task_model->getWCET()) + "ms");
                 // ⭐ 关键修复：从_energy_check_events中移除，允许后续实例启动新的能量检查
@@ -130,14 +130,14 @@ namespace RTSim {
         // ⭐ V29.1修复：恢复运行中任务的续期能量扣除
         // 设计原则：
         // - getTaskN(): 负责新任务的首次能量扣除
-        // - TGFEnergyCheckEvent: 负责运行中任务的续期能量扣除
+        // - ST-NonBlockEnergyCheckEvent: 负责运行中任务的续期能量扣除
         
         // 检查是否有足够能量续期1ms
         // ⭐ V35修复：当能量 <= 1ms能耗时，立即中断任务
         // 避免在能量恰好等于单位能耗时继续执行，导致下个Tick能量为负
         if (current_energy <= unit_energy + EPSILON) {
             // ⭐ 能量不足以支撑下一个1ms，立即中断任务（不扣除能量）
-            SCHEDULER_LOG_INFO(std::string("⚡ [TGF] 能量刚好耗尽或不足，立即中断任务: ") +
+            SCHEDULER_LOG_INFO(std::string("⚡ [ST-NonBlock] 能量刚好耗尽或不足，立即中断任务: ") +
                                _scheduler->getTaskName(_task) + " 需要=" + std::to_string(unit_energy * 1000) + " mJ" +
                                " 剩余=" + std::to_string(current_energy * 1000) + " mJ" +
                                " 已执行=" + std::to_string(_ms_executed) + "ms");
@@ -155,7 +155,7 @@ namespace RTSim {
             // 中断当前任务
             if (_cpu) {
                 _scheduler->_kernel->suspend(_task);
-                SCHEDULER_LOG_INFO(std::string("⚠️ [TGF] 任务因能量不足被挂起: ") + _scheduler->getTaskName(_task));
+                SCHEDULER_LOG_INFO(std::string("⚠️ [ST-NonBlock] 任务因能量不足被挂起: ") + _scheduler->getTaskName(_task));
             }
 
             // ⭐ 关键修复：清理能量检查事件映射，允许后续实例启动新的检查
@@ -177,7 +177,7 @@ namespace RTSim {
         _scheduler->_current_energy -= unit_energy;
         _scheduler->_stats.total_energy_consumed += unit_energy;
 
-        SCHEDULER_LOG_INFO(std::string("⚡ [TGF] 运行中任务续期: ") +
+        SCHEDULER_LOG_INFO(std::string("⚡ [ST-NonBlock] 运行中任务续期: ") +
                            _scheduler->getTaskName(_task) + " 1ms能耗=" + std::to_string(unit_energy * 1000) + " mJ" +
                            " " + std::to_string(old_energy * 1000) + " mJ → " +
                            std::to_string(_scheduler->_current_energy * 1000) + " mJ" +
@@ -187,13 +187,13 @@ namespace RTSim {
         post(SIMUL.getTime() + 1);
         return;
     }
-    */  // ⭐ V40重构：TGFEnergyCheckEvent已删除
+    */  // ⭐ V40重构：ST-NonBlockEnergyCheckEvent已删除
 
     // =====================================================
-    // TGFTaskModel 实现
+    // STNonBlockTaskModel 实现
     // =====================================================
 
-    TGFTaskModel::TGFTaskModel(AbsRTTask *t, int period, int wcet,
+    STNonBlockTaskModel::STNonBlockTaskModel(AbsRTTask *t, int period, int wcet,
                                const std::string &workload_type,
                                double energy_coefficient,
                                MetaSim::Tick arrival_offset)
@@ -210,26 +210,26 @@ namespace RTSim {
         // 能量计算稍后在调度器初始化时完成
     }
 
-    TGFTaskModel::~TGFTaskModel() {}
+    STNonBlockTaskModel::~STNonBlockTaskModel() {}
 
-    Tick TGFTaskModel::getPriority() const {
+    Tick STNonBlockTaskModel::getPriority() const {
         return _rm_priority;
     }
 
-    void TGFTaskModel::changePriority(Tick p) {
+    void STNonBlockTaskModel::changePriority(Tick p) {
         _rm_priority = p;
     }
 
-    void TGFTaskModel::setPeriod(int period) {
+    void STNonBlockTaskModel::setPeriod(int period) {
         _period = period;
         _rm_priority = period;  // RM优先级等于周期
     }
 
     // =====================================================
-    // TGFScheduler 实现
+    // STNonBlockScheduler 实现
     // =====================================================
 
-    TGFScheduler::TGFScheduler()
+    STNonBlockScheduler::STNonBlockScheduler()
         : Scheduler(),
           _current_energy(0.0),
           _initial_energy(0.0),
@@ -243,32 +243,37 @@ namespace RTSim {
           _start_time_offset(0),
           _tick_event(nullptr),
           _first_tick_scheduled(false),
-          _kernel(nullptr) {
+          _kernel(nullptr),
+          _energy_depleted(false),
+          _deep_charging(false),
+          _charge_start_time(0),
+          _last_preempted_task(nullptr),
+          _last_preempted_tick(0) {
 
-        SCHEDULER_LOG_INFO("🚀 [TGF] TGF Scheduler 初始化");
+        SCHEDULER_LOG_INFO("🚀 [ST-NonBlock] ST-NonBlock Scheduler 初始化");
 
         // 从ConfigManager获取配置
         ConfigManager &configMgr = ConfigManager::getInstance();
         std::string config_file = configMgr.getConfigFilePath();
 
         _max_energy = configMgr.getMaxEnergy();
-        SCHEDULER_LOG_INFO(std::string("⚡ [TGF] 最大能量: ") + std::to_string(_max_energy) + "J");
+        SCHEDULER_LOG_INFO(std::string("⚡ [ST-NonBlock] 最大能量: ") + std::to_string(_max_energy) + "J");
 
         if (config_file.empty()) {
             const char *config_file_env = std::getenv("ENERGY_CONFIG_FILE");
             config_file = config_file_env ? config_file_env : "gpfp_system.yml";
         }
 
-        SCHEDULER_LOG_INFO(std::string("📁 [TGF] 配置文件: ") + config_file);
+        SCHEDULER_LOG_INFO(std::string("📁 [ST-NonBlock] 配置文件: ") + config_file);
         setenv("ENERGY_CONFIG_FILE", config_file.c_str(), 1);
 
         // 初始化EnergyBridge
         bool bridge_initialized = EnergyBridge::getInstance().initialize(config_file);
         if (bridge_initialized) {
-            SCHEDULER_LOG_INFO("✅ [TGF] EnergyBridge 初始化成功");
+            SCHEDULER_LOG_INFO("✅ [ST-NonBlock] EnergyBridge 初始化成功");
 
             _start_time_offset = configMgr.getStartTimeOffset();
-            SCHEDULER_LOG_INFO(std::string("⏰ [TGF] 开始时间偏移: ") +
+            SCHEDULER_LOG_INFO(std::string("⏰ [ST-NonBlock] 开始时间偏移: ") +
                               std::to_string(static_cast<int64_t>(_start_time_offset)) + "ms");
 
             // 读取太阳能配置
@@ -344,14 +349,14 @@ namespace RTSim {
                         }
                     }
 
-                    SCHEDULER_LOG_INFO(std::string("☀️ [TGF] 太阳能配置: ") +
+                    SCHEDULER_LOG_INFO(std::string("☀️ [ST-NonBlock] 太阳能配置: ") +
                                       "use_real=" + (_use_real_solar_data ? "true" : "false") +
                                       " file=" + _solar_data_file +
                                       " eff=" + std::to_string(_pv_efficiency) +
                                       " area=" + std::to_string(_pv_area_m2) + "m²");
                 }
             } catch (const std::exception &e) {
-                SCHEDULER_LOG_WARNING(std::string("⚠️ [TGF] 解析太阳能配置失败: ") + e.what());
+                SCHEDULER_LOG_WARNING(std::string("⚠️ [ST-NonBlock] 解析太阳能配置失败: ") + e.what());
             }
 
             // 读取初始能量
@@ -359,40 +364,40 @@ namespace RTSim {
             if (bridge_energy > 0) {
                 _initial_energy = bridge_energy;
                 _current_energy = _initial_energy;
-                SCHEDULER_LOG_INFO(std::string("💰 [TGF] 初始能量: ") + std::to_string(_initial_energy) + "J");
+                SCHEDULER_LOG_INFO(std::string("💰 [ST-NonBlock] 初始能量: ") + std::to_string(_initial_energy) + "J");
             }
         } else {
-            SCHEDULER_LOG_WARNING("⚠️ [TGF] EnergyBridge 初始化失败，使用ConfigManager获取能量");
+            SCHEDULER_LOG_WARNING("⚠️ [ST-NonBlock] EnergyBridge 初始化失败，使用ConfigManager获取能量");
 
             _start_time_offset = configMgr.getStartTimeOffset();
             double config_energy = configMgr.getInitialEnergy();
             if (config_energy > 0) {
                 _initial_energy = config_energy;
                 _current_energy = _initial_energy;
-                SCHEDULER_LOG_INFO(std::string("💰 [TGF] 从ConfigManager获取初始能量: ") +
+                SCHEDULER_LOG_INFO(std::string("💰 [ST-NonBlock] 从ConfigManager获取初始能量: ") +
                                   std::to_string(_initial_energy) + "J");
             } else {
-                SCHEDULER_LOG_ERROR("❌ [TGF] 无法获取初始能量，调度器将无法工作！");
+                SCHEDULER_LOG_ERROR("❌ [ST-NonBlock] 无法获取初始能量，调度器将无法工作！");
             }
         }
 
         // 创建Tick事件
-        _tick_event = new TGFTickEvent(this);
+        _tick_event = new STNonBlockTickEvent(this);
 
-        SCHEDULER_LOG_INFO("✅ [TGF] TGF Scheduler 初始化完成");
+        SCHEDULER_LOG_INFO("✅ [ST-NonBlock] ST-NonBlock Scheduler 初始化完成");
     }
 
-    TGFScheduler::TGFScheduler(const std::vector<std::string> &params)
-        : TGFScheduler() {
+    STNonBlockScheduler::STNonBlockScheduler(const std::vector<std::string> &params)
+        : STNonBlockScheduler() {
         // 委托给默认构造函数
     }
 
-    std::unique_ptr<TGFScheduler>
-        TGFScheduler::createInstance(const std::vector<std::string> &params) {
-        return std::make_unique<TGFScheduler>(params);
+    std::unique_ptr<STNonBlockScheduler>
+        STNonBlockScheduler::createInstance(const std::vector<std::string> &params) {
+        return std::make_unique<STNonBlockScheduler>(params);
     }
 
-    TGFScheduler::~TGFScheduler() {
+    STNonBlockScheduler::~STNonBlockScheduler() {
         if (_tick_event) {
             delete _tick_event;
             _tick_event = nullptr;
@@ -406,13 +411,17 @@ namespace RTSim {
     }
 
     // =====================================================
-    // 核心调度逻辑 - TGF算法的核心
+    // 核心调度逻辑 - ST-NonBlock算法的核心
     // =====================================================
 
-    void TGFScheduler::performTickScheduling() {
-        SCHEDULER_LOG_INFO(std::string("🔄 [TGF] ===== Tick ") +
+    void STNonBlockScheduler::performTickScheduling() {
+        SCHEDULER_LOG_INFO(std::string("🔄 [ST-NonBlock] ===== Tick ") +
                            std::to_string(static_cast<int64_t>(SIMUL.getTime())) + "ms =====");
         SCHEDULER_LOG_INFO("⚡ 初始能量: " + std::to_string(_current_energy * 1000) + " mJ");
+
+        // ⭐ 每个Tick开始时清除抢占防抖标记
+        // 这样在下一个tick可以正常进行抢占检查
+        _last_preempted_task = nullptr;
 
         _stats.total_tick_count++;
 
@@ -440,7 +449,7 @@ namespace RTSim {
                 const double RECOVERY_THRESHOLD = 0.010;  // 10 mJ
                 if (_energy_depleted && _current_energy >= RECOVERY_THRESHOLD) {
                     _energy_depleted = false;
-                    SCHEDULER_LOG_INFO("🔋 [TGF] 太阳能充电成功，恢复调度 (能量=" +
+                    SCHEDULER_LOG_INFO("🔋 [ST-NonBlock] 太阳能充电成功，恢复调度 (能量=" +
                                       std::to_string(_current_energy * 1000) + " mJ >= 阈值=" +
                                       std::to_string(RECOVERY_THRESHOLD * 1000) + " mJ)");
                 }
@@ -450,7 +459,7 @@ namespace RTSim {
 
         // ⭐ Bug修复3：能量耗尽时跳过任务调度（但已经收集了太阳能）
         if (_energy_depleted && _current_energy < 0.000001) {
-            SCHEDULER_LOG_INFO(std::string("💀 [TGF] 能量已耗尽，跳过任务调度"));
+            SCHEDULER_LOG_INFO(std::string("💀 [ST-NonBlock] 能量已耗尽，跳过任务调度"));
             return;
         }
 
@@ -459,8 +468,18 @@ namespace RTSim {
             _current_energy = _max_energy;
         }
 
+        // ========== 第1.5步：清理过期任务实例 ==========
+        // ⭐ 已改用killOnMiss(true)，框架自动处理过期实例
+        // cleanupExpiredTasks();
+
+        // ========== 阶段一：ALAP个体时序门控 ==========
+        // ⭐ 修复：移除批量级别的S_min门控，改为个体Slack过滤
+        // 原因：每个任务独立计算Slack，Slack<=0的任务才能调度
+        // 个体Slack检查在getTaskN中进行，这里不再做全局门控
+        SCHEDULER_LOG_INFO("✅ [ST-NonBlock] 个体时序门控：跳过全局S_min检查，个体Slack在getTaskN中过滤");
+
         // ========== 第2步：处理运行中任务的续期能量 ==========
-        // ⭐ 重构：在tick边界扣除运行任务的续期能量（替代TGFEnergyCheckEvent）
+        // ⭐ 重构：在tick边界扣除运行任务的续期能量（替代ST-NonBlockEnergyCheckEvent）
         // ⭐ V40修复：确保kernel已设置，如果没有则尝试获取
         if (!_kernel) {
             _kernel = getKernel();
@@ -479,7 +498,7 @@ namespace RTSim {
                 // ⭐ V42修复：跳过当前tick中新调度的任务（能量已在getTaskN中扣除）
                 // 使用_newly_dispatched_this_tick而不是_counted_tasks_in_dispatch
                 if (_newly_dispatched_this_tick.find(task) != _newly_dispatched_this_tick.end()) {
-                    SCHEDULER_LOG_DEBUG(std::string("⏭️ [TGF] 跳过新任务的续期扣除: ") + getTaskName(task));
+                    SCHEDULER_LOG_DEBUG(std::string("⏭️ [ST-NonBlock] 跳过新任务的续期扣除: ") + getTaskName(task));
                     continue;
                 }
 
@@ -492,7 +511,7 @@ namespace RTSim {
                     if (!_energy_depleted) {
                         _energy_depleted = true;
                         _current_energy = 0.0;  // 强制设为0，防止变负
-                        SCHEDULER_LOG_WARNING("💀 [TGF] 能量耗尽，设置_energy_depleted标志");
+                        SCHEDULER_LOG_WARNING("💀 [ST-NonBlock] 能量耗尽，设置_energy_depleted标志");
                     }
 
                     // 能量不足，加入挂起列表
@@ -523,7 +542,7 @@ namespace RTSim {
         }
 
         // ========== 第3步：检查抢占 ==========
-        checkAndPreempt();
+        // checkAndPreempt();  // 禁用tick边界抢占，防止suspend-insert循环
 
         // ========== 第4步：调度新任务 ==========
         if (_kernel) {
@@ -540,7 +559,7 @@ namespace RTSim {
                     _stats.total_energy_consumed += unit_energy;
                     _energy_deducted_tasks.insert(task);
 
-                    SCHEDULER_LOG_INFO("✅ [TGF] 扣除上周期任务初始能量: " +
+                    SCHEDULER_LOG_INFO("✅ [ST-NonBlock] 扣除上周期任务初始能量: " +
                                        getTaskName(task) +
                                        " -" + std::to_string(unit_energy * 1000) + " mJ → " +
                                        std::to_string(_current_energy * 1000) + " mJ");
@@ -551,22 +570,26 @@ namespace RTSim {
             _counted_tasks_in_dispatch.clear();
             _dispatching_tasks_total_energy = 0.0;
 
-            // ⭐ TGF关键修复：循环调用dispatch()直到所有CPU被填满或无法调度更多任务
+            // ⭐ ST-NonBlock关键修复：循环调用dispatch()直到所有CPU被填满或无法调度更多任务
             int dispatch_attempts = 0;
             const int MAX_DISPATCH_ITERATIONS = 100;  // 防止无限循环
 
             while (dispatch_attempts < MAX_DISPATCH_ITERATIONS) {
                 // 检查是否所有CPU都已填满
-                bool all_cpus_full = true;
-                for (auto &map_pair : _running_tasks) {
-                    if (map_pair.second == nullptr) {
-                        all_cpus_full = false;
-                        break;
+                // ⭐ 关键修复：_running_tasks为空时不应认为所有CPU已满
+                bool all_cpus_full = false;
+                if (!_running_tasks.empty()) {
+                    all_cpus_full = true;
+                    for (auto &map_pair : _running_tasks) {
+                        if (map_pair.second == nullptr) {
+                            all_cpus_full = false;
+                            break;
+                        }
                     }
                 }
 
                 if (all_cpus_full) {
-                    SCHEDULER_LOG_DEBUG("✅ [TGF] 所有CPU已填满，停止调度");
+                    SCHEDULER_LOG_DEBUG("✅ [ST-NonBlock] 所有CPU已填满，停止调度");
                     break;
                 }
 
@@ -582,17 +605,17 @@ namespace RTSim {
 
                 // 如果没有任务被调度（状态没变化），停止调度
                 if (tasks_before == tasks_after) {
-                    SCHEDULER_LOG_DEBUG("⏹️ [TGF] 无更多任务可调度，停止dispatch循环");
+                    SCHEDULER_LOG_DEBUG("⏹️ [ST-NonBlock] 无更多任务可调度，停止dispatch循环");
                     break;
                 }
 
-                SCHEDULER_LOG_DEBUG(std::string("🔄 [TGF] dispatch循环 #") + std::to_string(dispatch_attempts) +
+                SCHEDULER_LOG_DEBUG(std::string("🔄 [ST-NonBlock] dispatch循环 #") + std::to_string(dispatch_attempts) +
                                    " _ready_queue.size()=" + std::to_string(_ready_queue.size()) +
                                    " _running_tasks.size()=" + std::to_string(_running_tasks.size()));
             }
 
             if (dispatch_attempts >= MAX_DISPATCH_ITERATIONS) {
-                SCHEDULER_LOG_WARNING("⚠️ [TGF] dispatch循环达到最大迭代次数，可能存在bug");
+                SCHEDULER_LOG_WARNING("⚠️ [ST-NonBlock] dispatch循环达到最大迭代次数，可能存在bug");
             }
 
             // ⭐ 关键：在dispatch后，统一扣除所有已标记任务的能量
@@ -605,7 +628,7 @@ namespace RTSim {
                     _stats.total_energy_consumed += unit_energy;
                     _energy_deducted_tasks.insert(task);  // 标记已扣除
 
-                    SCHEDULER_LOG_INFO("✅ [TGF] 新任务扣除初始能量: " +
+                    SCHEDULER_LOG_INFO("✅ [ST-NonBlock] 新任务扣除初始能量: " +
                                        getTaskName(task) +
                                        " -" + std::to_string(unit_energy * 1000) + " mJ → " +
                                        std::to_string(_current_energy * 1000) + " mJ");
@@ -613,35 +636,42 @@ namespace RTSim {
             }
         }
 
+        // ========== 第5步：调度后抢占检查 ==========
+        // ⭐ V44修复：在调度新任务后进行抢占检查
+        // 原因：需要让新任务先调度完成，然后再检查是否需要抢占
+        // 这样可以避免"刚调度就被抢占"的问题
+        // ��时确保在tick边界统一进行抢占决策
+        checkAndPreempt();
+
         SCHEDULER_LOG_INFO("✅ Tick " +
                            std::to_string(static_cast<int64_t>(current_time)) +
                            "ms 完成, 剩余能量: " +
                            std::to_string(_current_energy * 1000) + " mJ");
     }
 
-    void TGFScheduler::schedule() {
-        // TGF依赖MRTKernel::dispatch() -> getTaskN()流程
-        SCHEDULER_LOG_DEBUG("🔔 [TGF] schedule() 被调用");
+    void STNonBlockScheduler::schedule() {
+        // ST-NonBlock依赖MRTKernel::dispatch() -> getTaskN()流程
+        SCHEDULER_LOG_DEBUG("🔔 [ST-NonBlock] schedule() 被调用");
     }
 
     // =====================================================
     // getFirst - 获取第一个要调度的任务
     // =====================================================
 
-    AbsRTTask *TGFScheduler::getFirst() {
-        SCHEDULER_LOG_DEBUG(std::string("🔍 [TGF] getFirst() 被调用") +
+    AbsRTTask *STNonBlockScheduler::getFirst() {
+        SCHEDULER_LOG_DEBUG(std::string("🔍 [ST-NonBlock] getFirst() 被调用") +
                            " 当前能量: " + std::to_string(_current_energy) + "J");
 
         // ⭐ 核心：不在这里收集能量，能量收集在tick边界完成
 
         if (_ready_queue.empty()) {
-            SCHEDULER_LOG_DEBUG("📭 [TGF] getFirst: 就绪队列为空");
+            SCHEDULER_LOG_DEBUG("📭 [ST-NonBlock] getFirst: 就绪队列为空");
             return nullptr;
         }
 
         AbsRTTask *first_task = _ready_queue.front();
         if (!first_task) {
-            SCHEDULER_LOG_DEBUG("📭 [TGF] getFirst: 队列首任务为空");
+            SCHEDULER_LOG_DEBUG("📭 [ST-NonBlock] getFirst: 队列首任务为空");
             return nullptr;
         }
 
@@ -649,7 +679,7 @@ namespace RTSim {
         double unit_energy = calculateUnitEnergyForTask(first_task);
 
         if (_current_energy < unit_energy) {
-            SCHEDULER_LOG_INFO(std::string("❌ [TGF] getFirst: 能量不足") +
+            SCHEDULER_LOG_INFO(std::string("❌ [ST-NonBlock] getFirst: 能量不足") +
                               " 任务: " + getTaskName(first_task) +
                               " 需要: " + std::to_string(unit_energy) + "J" +
                               " 当前: " + std::to_string(_current_energy) + "J");
@@ -664,10 +694,10 @@ namespace RTSim {
     // getTaskN - 获取第n个要调度的任务（贪婪策略级联调度）
     // =====================================================
 
-    AbsRTTask *TGFScheduler::getTaskN(unsigned int n) {
+    AbsRTTask *STNonBlockScheduler::getTaskN(unsigned int n) {
         // ⭐ V43修复：能量耗尽时立即返回，不调度任何任务
         if (_energy_depleted) {
-            SCHEDULER_LOG_DEBUG(std::string("💀 [TGF] getTaskN: 能量已耗尽，拒绝调度") +
+            SCHEDULER_LOG_DEBUG(std::string("💀 [ST-NonBlock] getTaskN: 能量已耗尽，拒绝调度") +
                                " n=" + std::to_string(n) +
                                " energy=" + std::to_string(_current_energy * 1000) + " mJ");
             return nullptr;
@@ -677,27 +707,30 @@ namespace RTSim {
         if (_energy_depleted) {
         // STAR Critical fix: if energy depleted, don't schedule any tasks
         if (_energy_depleted) {
-            SCHEDULER_LOG_DEBUG(std::string("STAR [TGF] getTaskN: Energy depleted") +
+            SCHEDULER_LOG_DEBUG(std::string("STAR [ST-NonBlock] getTaskN: Energy depleted") +
                                " n=" + std::to_string(n) +
                                " energy=" + std::to_string(_current_energy * 1000) + " mJ");
             return nullptr;
         }
 
-            SCHEDULER_LOG_DEBUG(std::string("STAR [TGF] getTaskN: Energy depleted, not scheduling task") +
+            SCHEDULER_LOG_DEBUG(std::string("STAR [ST-NonBlock] getTaskN: Energy depleted, not scheduling task") +
                                " n=" + std::to_string(n) +
                                " current_energy=" + std::to_string(_current_energy * 1000) + " mJ");
             return nullptr;
         }
 
-        SCHEDULER_LOG_DEBUG(std::string("🔍 [TGF] getTaskN(") + std::to_string(n) + ") 被调用" +
+        SCHEDULER_LOG_DEBUG(std::string("🔍 [ST-NonBlock] getTaskN(") + std::to_string(n) + ") 被调用" +
                            " 当前能量: " + std::to_string(_current_energy) + "J" +
                            " 已调度能耗=" + std::to_string(_dispatching_tasks_total_energy) + "J");
 
         if (_ready_queue.empty()) {
-            SCHEDULER_LOG_DEBUG("📭 [TGF] getTaskN: 就绪队列为空");
+            SCHEDULER_LOG_DEBUG("📭 [ST-NonBlock] getTaskN: 就绪队列为空");
             return nullptr;
         }
 
+        // ⭐ ALAP时序门控：不再在getTaskN中调用全局min_slack检查（性能瓶颈）
+        // 改为在遍历任务时逐个检查个体Slack，只调度Slack≤0的任务
+        // 效果等价：如果所有任务Slack>0，getTaskN返回nullptr
 
         // ⭐ 级联调度：遍历就绪队列，运行中任务也要检查能量
         unsigned int ready_index = 0;
@@ -705,11 +738,16 @@ namespace RTSim {
         const double EPSILON = 1e-9;
         bool skipped_energy_insufficient = false;  // 是否跳过了能量不足的任务
 
-        std::cout << "[DEBUG] TGF::getTaskN(" << n << ") - ready_queue.size()=" << _ready_queue.size() << std::endl;
+        std::cout << "[DEBUG] ST-NonBlock::getTaskN(" << n << ") - ready_queue.size()=" << _ready_queue.size() << std::endl;
         for (size_t i = 0; i < _ready_queue.size(); ++i) {
             AbsRTTask *task = _ready_queue[i];
 
             if (!task) {
+                continue;
+            }
+
+            // ⭐ killOnMiss安全检查：跳过已被框架终止的任务实例
+            if (!task->isActive()) {
                 continue;
             }
 
@@ -724,7 +762,7 @@ namespace RTSim {
             }
 
             // 检查是否已在本tick中扣除过能量
-            // ⭐ V29.1修复：运行中任务的续期由TGFEnergyCheckEvent处理
+            // ⭐ V29.1修复：运行中任务的续期由ST-NonBlockEnergyCheckEvent处理
             // getTaskN()只负责新任务，运行中任务直接返回
             if (is_running_check) {
                 if (ready_index == n) {
@@ -736,13 +774,41 @@ namespace RTSim {
 
             // 这是第ready_index个未dispatch的任务
             if (ready_index == n) {
+                // ⭐ 关键修复：跳过已过期的任务实例
+                STNonBlockTaskModel *task_model = getTaskModel(task);
+                if (task_model) {
+                    Tick arrival = task->getArrival();
+                    Tick deadline = arrival + Tick(task_model->getPeriod());
+                    Tick current_time = SIMUL.getTime();
+                    if (deadline <= current_time) {
+                        SCHEDULER_LOG_INFO(std::string("🧹 [ST-NonBlock] getTaskN: 跳过过期任务 ") +
+                                          getTaskName(task) +
+                                          " deadline=" + std::to_string(static_cast<int64_t>(deadline)) +
+                                          " current=" + std::to_string(static_cast<int64_t>(current_time)));
+                        continue;
+                    }
+                }
+
+                // ⭐ 关键修复：个体任务ALAP时序门控
+                // 全局门控决定系统是否唤醒，个体门控决定哪些任务可以调度
+                // 只有Slack≤0的任务才应该被调度
+                Tick individual_slack = calculateSlackForTask(task);
+                if (individual_slack > 0) {
+                    // 这个任务还有等待余地，跳过（不计入ready_index）
+                    SCHEDULER_LOG_INFO(std::string("⏸️ [ST-NonBlock] getTaskN: 个体Slack>0，跳过 ") +
+                                      getTaskName(task) +
+                                      " Slack=" + std::to_string(static_cast<int64_t>(individual_slack)) + "ms");
+                    continue;
+                }
+
+                // ⭐ 全局ALAP时序门控已在函数开头检查，这里按优先级调度
                 // ⭐ 计算任务的1ms能耗
                 double unit_energy = calculateUnitEnergyForTask(task);
                 double available_energy = _current_energy - _dispatching_tasks_total_energy;
 
                 // ⭐ 贪心策略：如果能量不足，跳过这个任务���继续查找后面的任务
                 if (available_energy < unit_energy - EPSILON) {
-                    SCHEDULER_LOG_INFO(std::string("⚠️ [TGF] 任务能量不足，跳过（贪心策略）") +
+                    SCHEDULER_LOG_INFO(std::string("⚠️ [ST-NonBlock] 任务能量不足，跳过（贪心策略）") +
                                       " 任务=" + getTaskName(task) +
                                       " 需要1ms=" + std::to_string(unit_energy) + "J" +
                                       " 已调度能耗=" + std::to_string(_dispatching_tasks_total_energy) + "J" +
@@ -758,7 +824,7 @@ namespace RTSim {
                         // ⭐ 关键修复：检查任务是否已被调度（在counted_tasks中）
                         if (_counted_tasks_in_dispatch.find(next_task) != _counted_tasks_in_dispatch.end()) {
                             // 任务已被调度（可能还没开始运行），跳过
-                            SCHEDULER_LOG_DEBUG(std::string("  [TGF] 贪心搜索：跳过已调度任务: ") + getTaskName(next_task));
+                            SCHEDULER_LOG_DEBUG(std::string("  [ST-NonBlock] 贪心搜索：跳过已调度任务: ") + getTaskName(next_task));
                             continue;
                         }
 
@@ -783,7 +849,7 @@ namespace RTSim {
                             // 这表明任务之前被dispatch过但被抢占了
                             Tick remaining = pt->getWCET() - pt->getExecTime();
                             if (remaining > 0 && remaining < pt->getWCET() && !next_is_running) {
-                                SCHEDULER_LOG_DEBUG(std::string("  [TGF] 贪心搜索：跳过被抢占的任务: ") +
+                                SCHEDULER_LOG_DEBUG(std::string("  [ST-NonBlock] 贪心搜索：跳过被抢占的任务: ") +
                                                   getTaskName(next_task) +
                                                   " 剩余=" + std::to_string(static_cast<int64_t>(remaining)) +
                                                   " WCET=" + std::to_string(static_cast<int64_t>(pt->getWCET())));
@@ -794,6 +860,26 @@ namespace RTSim {
                         double next_unit_energy = calculateUnitEnergyForTask(next_task);
                         double next_available = _current_energy - _dispatching_tasks_total_energy;
 
+                        // ⭐ 关键修复：贪心搜索跳过过期任务
+                        STNonBlockTaskModel *next_model = getTaskModel(next_task);
+                        if (next_model) {
+                            Tick next_arrival = next_task->getArrival();
+                            Tick next_deadline = next_arrival + Tick(next_model->getPeriod());
+                            if (next_deadline <= SIMUL.getTime()) {
+                                continue;  // 过期任务，跳过
+                            }
+                        }
+
+                        // ⭐ 关键修复：贪心搜索也需要检查个体Slack
+                        // 只有Slack≤0的任务才能被贪心回填
+                        Tick next_slack = calculateSlackForTask(next_task);
+                        if (next_slack > 0) {
+                            SCHEDULER_LOG_DEBUG(std::string("  [ST-NonBlock] 贪心搜索：Slack>0，跳过 ") +
+                                              getTaskName(next_task) +
+                                              " Slack=" + std::to_string(static_cast<int64_t>(next_slack)) + "ms");
+                            continue;
+                        }
+
                         if (next_available >= next_unit_energy - EPSILON) {
                             // ⭐ 找到能量足够的后续任务，调度它！
                             // ⭐ 只标记任务，不扣除能量（能量将在dispatch后统一扣除）
@@ -801,7 +887,7 @@ namespace RTSim {
                                 _counted_tasks_in_dispatch.insert(next_task);
                                 _newly_dispatched_this_tick.insert(next_task);
 
-                                SCHEDULER_LOG_INFO(std::string("✅ [TGF] 贪心策略：调度后续任务（已标记，暂不扣能量）") +
+                                SCHEDULER_LOG_INFO(std::string("✅ [ST-NonBlock] 贪心策略：调度后续任务（已标记，暂不扣能量）") +
                                                   " 替换=" + getTaskName(task) +
                                                   " → " + getTaskName(next_task) +
                                                   " 1ms能耗=" + std::to_string(next_unit_energy * 1000) + " mJ");
@@ -812,7 +898,7 @@ namespace RTSim {
                     }
 
                     // 没有找到能量足够的任务
-                    SCHEDULER_LOG_INFO(std::string("⚠️ [TGF] 贪心策略：未找到能量足够的任务"));
+                    SCHEDULER_LOG_INFO(std::string("⚠️ [ST-NonBlock] 贪心策略：未找到能量足够的任务"));
                     return nullptr;
                 }
 
@@ -826,10 +912,11 @@ namespace RTSim {
                         _counted_tasks_in_dispatch.insert(task);  // 标记已调度
                         _newly_dispatched_this_tick.insert(task);
 
-                        SCHEDULER_LOG_INFO(std::string("✅ [TGF] 新任务已标记（暂不扣能量）: ") + getTaskName(task) +
+                        SCHEDULER_LOG_INFO(std::string("✅ [ST-NonBlock] 新任务已标记（暂不扣能量）: ") + getTaskName(task) +
                                           " 1ms能耗=" + std::to_string(unit_energy * 1000) + " mJ");
                     }
                     // 否则已标记过，直接返回任务
+                    return task;
                 }
                 // 运行中任务不需要标记，因为它们已经扣除过初始能量
                 return task;
@@ -843,10 +930,10 @@ namespace RTSim {
     }
 
     // =====================================================
-    // notify - 每ms逐次扣减能耗（TGF核心逻辑）
+    // notify - 每ms逐次扣减能耗（ST-NonBlock核心逻辑）
     // =====================================================
 
-    void TGFScheduler::notify(AbsRTTask *task) {
+    void STNonBlockScheduler::notify(AbsRTTask *task) {
         if (!task) {
             return;
         }
@@ -858,7 +945,7 @@ namespace RTSim {
         // 检查能量是否足够
         const double EPSILON = 1e-9;
         if (_current_energy < unit_energy - EPSILON) {
-            SCHEDULER_LOG_WARNING(std::string("⚠️ [TGF] notify: 能量不足") +
+            SCHEDULER_LOG_WARNING(std::string("⚠️ [ST-NonBlock] notify: 能量不足") +
                                  " 任务=" + getTaskName(task) +
                                  " 需要=" + std::to_string(unit_energy) + "J" +
                                  " 当前=" + std::to_string(_current_energy) + "J");
@@ -866,7 +953,7 @@ namespace RTSim {
         }
 
         // 任务到达，添加到就绪队列
-        SCHEDULER_LOG_INFO(std::string("📥 [TGF] 任务到达并添加到就绪队列: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("📥 [ST-NonBlock] 任务到达并添加到就绪队列: ") + getTaskName(task));
         addToReadyQueue(task);
     }
 
@@ -874,13 +961,13 @@ namespace RTSim {
     // 添加任务
     // =====================================================
 
-    void TGFScheduler::addTask(AbsRTTask *task, const std::string &params) {
+    void STNonBlockScheduler::addTask(AbsRTTask *task, const std::string &params) {
         if (!task) {
-            SCHEDULER_LOG_WARNING("⚠️ [TGF] addTask: 任务为空");
+            SCHEDULER_LOG_WARNING("⚠️ [ST-NonBlock] addTask: 任务为空");
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("📥 [TGF] 添加任务: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("📥 [ST-NonBlock] 添加任务: ") + getTaskName(task));
         SCHEDULER_LOG_DEBUG(std::string("   参数: ") + params);
 
         // 解析参数
@@ -925,8 +1012,14 @@ namespace RTSim {
             }
         }
 
+        // ⭐ 启用killOnMiss：当任务超过截止期时，框架自动终止旧实例并启动新实例
+        Task *concrete_task = dynamic_cast<Task *>(task);
+        if (concrete_task) {
+            concrete_task->killOnMiss(true);
+        }
+
         // 创建任务模型
-        TGFTaskModel *model = new TGFTaskModel(task, period, wcet, workload, energy_coeff, arrival_offset);
+        STNonBlockTaskModel *model = new STNonBlockTaskModel(task, period, wcet, workload, energy_coeff, arrival_offset);
 
         // ⭐ 关键修复：先将模型添加到映射，再计算能量
         enqueueModel(model);
@@ -939,7 +1032,7 @@ namespace RTSim {
         model->_total_energy = total_energy;
         model->_unit_energy = unit_energy;
 
-        SCHEDULER_LOG_INFO(std::string("⚡ [TGF] 任务能耗计算: ") +
+        SCHEDULER_LOG_INFO(std::string("⚡ [ST-NonBlock] 任务能耗计算: ") +
                           "总能耗=" + std::to_string(total_energy) + "J" +
                           " 每ms能耗=" + std::to_string(unit_energy) + "J" +
                           " WCET=" + std::to_string(wcet) + "ms");
@@ -947,7 +1040,7 @@ namespace RTSim {
         // 添加到就绪队列
         addToReadyQueue(task);
 
-        SCHEDULER_LOG_INFO(std::string("✅ [TGF] 任务已添加: 周期=") + std::to_string(period) +
+        SCHEDULER_LOG_INFO(std::string("✅ [ST-NonBlock] 任务已添加: 周期=") + std::to_string(period) +
                           " WCET=" + std::to_string(wcet) +
                           " 工作负载=" + workload);
     }
@@ -956,12 +1049,12 @@ namespace RTSim {
     // 移除任务
     // =====================================================
 
-    void TGFScheduler::removeTask(AbsRTTask *task) {
+    void STNonBlockScheduler::removeTask(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("📤 [TGF] 移除任务: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("📤 [ST-NonBlock] 移除任务: ") + getTaskName(task));
 
         removeFromReadyQueue(task);
         removeFromWaitingQueue(task);
@@ -978,23 +1071,28 @@ namespace RTSim {
             _task_models.erase(it);
         }
 
-        SCHEDULER_LOG_INFO(std::string("✅ [TGF] 任务已移除: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("✅ [ST-NonBlock] 任务已移除: ") + getTaskName(task));
     }
 
     // =====================================================
     // 任务到达事件处理
     // =====================================================
 
-    void TGFScheduler::onTaskArrival(AbsRTTask *task) {
+    void STNonBlockScheduler::onTaskArrival(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("📍 [TGF] 任务到达: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("📍 [ST-NonBlock] 任务到达: ") + getTaskName(task));
 
         if (!isInReadyQueue(task) && !isInWaitingQueue(task)) {
             addToReadyQueue(task);
-            checkAndPreempt();
+            // ⭐ V44修复：移除任务到达时的抢占检查
+            // 原因：
+            // 1. 任务到达时立即抢占会导致刚调度的任务在下一个tick就被抢占
+            // 2. 违背ALAP的"尽可能晚调度"原则
+            // 3. 抢占检查应该在tick边界统一进行，而不是每次任务到达都检查
+            // checkAndPreempt();
         }
     }
 
@@ -1002,43 +1100,188 @@ namespace RTSim {
     // Tick级抢占检查
     // =====================================================
 
-    void TGFScheduler::checkAndPreempt() {
-        SCHEDULER_LOG_DEBUG("🔔 [TGF] Tick级抢占检查");
+    void STNonBlockScheduler::checkAndPreempt() {
+        SCHEDULER_LOG_DEBUG("🔔 [ST-NonBlock] Tick级抢占检查");
         checkAndPreemptOnAllCPUs();
     }
 
-    void TGFScheduler::checkAndPreemptOnAllCPUs() {
-        for (auto &map_pair : _running_tasks) {
-            CPU *cpu = map_pair.first;
-            AbsRTTask *running_task = map_pair.second;
+    void STNonBlockScheduler::checkAndPreemptOnAllCPUs() {
+        if (!_kernel) {
+            _kernel = getKernel();
+            if (!_kernel) return;
+        }
 
-            if (!running_task) {
-                continue;
-            }
+        const auto& running_tasks_map = _kernel->getCurrentExecutingTasks();
 
-            AbsRTTask *highest = getHighestPriorityTaskFromReadyQueue();
-            if (!highest) {
-                continue;
-            }
+        // ⭐ V45关键修复：准确计算真正空闲的CPU数量
+        // 空闲CPU的定义：_m_currExe[cpu] == nullptr 且 没有任务正在dispatch到这个CPU
+        // 注意：上下文切换中的CPU（有任务dispatch但还没执行）不应该被认为是空闲的
+        //       但也不应该被抢占
+        int truly_free_cpus = 0;   // 真正空闲（可以调度新任务）
+        int busy_executing = 0;     // 正在执行任务（可以被抢占）
+        int busy_dispatching = 0;   // 上下文切换中（不应该被抢占）
 
-            if (shouldPreempt(cpu, highest)) {
-                SCHEDULER_LOG_INFO(std::string("🔄 [TGF] 抢占CPU: ") +
-                                  " 挂起低优先级任务=" + getTaskName(running_task) +
-                                  " 调度高优先级任务=" + getTaskName(highest));
-
-                // ⭐ 实际抢占逻辑：挂起当前运行的任务
-                // suspend会自动调用deschedule()并将任务重新放回调度队列
-                if (_kernel) {
-                    _kernel->suspend(running_task);
-                    SCHEDULER_LOG_DEBUG(std::string("⏸️ [TGF] 已挂起任务: ") + getTaskName(running_task));
+        for (const auto& [cpu, task] : running_tasks_map) {
+            bool is_dispatching = _kernel->isCPUDispatching(cpu);
+            if (!task) {
+                if (!is_dispatching) {
+                    truly_free_cpus++;
                 } else {
-                    SCHEDULER_LOG_WARNING("⚠️ [TGF] 抢占失败：_kernel为nullptr");
+                    busy_dispatching++;
+                }
+            } else if (task->isExecuting()) {
+                busy_executing++;
+            } else {
+                // 任务存在但没有在执行，可能是上下文切换中
+                busy_dispatching++;
+            }
+        }
+
+        SCHEDULER_LOG_INFO(std::string("🔍 [ST-NonBlock] CPU状态: 空闲=") +
+                          std::to_string(truly_free_cpus) +
+                          " 执行中=" + std::to_string(busy_executing) +
+                          " 上下文切换中=" + std::to_string(busy_dispatching));
+
+        // ⭐ V45修复：如果有真正空闲的CPU，不进行抢占
+        // 新任务会被dispatch到空闲CPU，不需要抢占正在运行的任务
+        if (truly_free_cpus > 0) {
+            SCHEDULER_LOG_INFO("⏭️ [ST-NonBlock] 有" + std::to_string(truly_free_cpus) + "个空闲CPU，跳过抢占");
+            return;
+        }
+
+        // ⭐ 抢占防抖：检查最近被挂起的任务是否应该被重新调度
+        // 如果同一个任务在同一个tick内被连续抢占，跳过本次抢占
+        // 这防止了"挂起→调度→挂起"的恶性循环
+        Tick current_time = SIMUL.getTime();
+        if (_last_preempted_task && _last_preempted_tick == current_time) {
+            // 检查是否有更高优先级的候选任务
+            bool has_higher_priority = false;
+            for (AbsRTTask *candidate : _ready_queue) {
+                if (!candidate) continue;
+                STNonBlockTaskModel *model = getTaskModel(candidate);
+                if (!model) continue;
+                // 如果有任务的优先级高于被挂起的任务，才允许抢占
+                STNonBlockTaskModel *preempted_model = getTaskModel(_last_preempted_task);
+                if (preempted_model && model->getRMPriority() < preempted_model->getRMPriority()) {
+                    has_higher_priority = true;
+                    break;
                 }
             }
+            if (!has_higher_priority) {
+                SCHEDULER_LOG_DEBUG("⏸️ [ST-NonBlock] 抢占防抖：跳过同tick连续抢占 " + getTaskName(_last_preempted_task));
+                return;
+            }
+        }
+
+        // 找就绪队列中Slack≤0且优先级最高的候选任务
+        AbsRTTask *best_candidate = nullptr;
+        STNonBlockTaskModel *best_model = nullptr;
+        Tick best_slack = 0;
+
+        for (AbsRTTask *candidate : _ready_queue) {
+            if (!candidate) continue;
+            CPU *cand_cpu = _kernel->getProcessor(candidate);
+            if (cand_cpu != nullptr) continue;
+
+            // ⭐ 关键修复：移除抢占检查中的ALAP Slack门控，让高优先级任务可以立即抢占
+            // 原因：ALAP的Slack门控应该在调度时过滤（getTaskN），而不应该在抢占时过滤
+            // 如果在抢占时也过滤Slack，��导致高优先级任务（如Task_Assassin_Hungry, period=50）
+            // 因为Slack>0而无法抢占低优先级任务（如Task_Mid_A, period=100），
+            // 违反RM调度原则，导致饥饿和超时
+            //
+            // 新策略：
+            // - 抢占时只看RM优先级，不看Slack（类似TIE调度器）
+            // - Slack门控在个体门控检查和getTaskN调度时生效
+
+            // ⭐ V44关键修复：恢复抢占检查中的ALAP Slack门控
+            // 原因：保持与getTaskN中个体Slack门控的一致性
+            //
+            // 问题背景：
+            // - getTaskN中：Slack>0的任务被跳过，不调度
+            // - 抢占检查中：如果移除Slack门控，会导致Slack>0的高优先级任务抢占低优先级任务
+            // - 这造成不一致：调度时不用，抢占时用
+            //
+            // 修复策略：
+            // - 抢占检查中也应用Slack门控：只有Slack≤0的任务才能参与抢占
+            // - 这样确保"尽可能晚调度"原则在抢占时也生效
+            // - 避免Slack>0的任务抢占Slack≤0的任务
+
+            STNonBlockTaskModel *model = getTaskModel(candidate);
+            if (!model) continue;
+
+            // 计算候选任务的Slack
+            Tick candidate_slack = calculateSlackForTask(candidate);
+
+            // ⭐ Slack门控：只有Slack≤0的任务才能参与抢占
+            if (candidate_slack > 0) {
+                continue;  // Slack>0，跳过这个候选任务
+            }
+
+            // 在Slack≤0的任务中，找优先级最高的
+            if (!best_candidate || model->getRMPriority() < best_model->getRMPriority()) {
+                best_candidate = candidate;
+                best_model = model;
+                best_slack = candidate_slack;
+            }
+        }
+
+        if (!best_candidate) return;
+
+        // 找运行中优先级最低的任务
+        AbsRTTask *worst_running = nullptr;
+        STNonBlockTaskModel *worst_model = nullptr;
+
+        for (const auto& [cpu, task] : running_tasks_map) {
+            if (!task || !task->isExecuting()) continue;
+            STNonBlockTaskModel *model = getTaskModel(task);
+            if (!model) continue;
+
+            if (!worst_running || model->getRMPriority() > worst_model->getRMPriority()) {
+                worst_running = task;
+                worst_model = model;
+            }
+        }
+
+        if (!worst_running || !worst_model) return;
+
+        // ⭐ V46关键修复：改进抢占条件，支持Slack=0任务的紧急调度
+        //
+        // 原有问题：
+        // - 旧逻辑只有当候选任务优先级更高时才抢占
+        // - 但当Slack=0的任务优先级低于运行任务时，无法被调度
+        // - 这违背了"任务必须在Slack=0的精准时刻被唤醒"的原则
+        //
+        // 修复策略：
+        // 1. 候选任务优先级更高：正常抢占（RM原则）
+        // 2. 候选任务Slack=0（紧急）且被抢占任务Slack>0（不紧急）：
+        //    允许抢占，即使候选任务优先级更低
+
+        Tick worst_slack = calculateSlackForTask(worst_running);
+        bool preempt_by_priority = best_model->getRMPriority() < worst_model->getRMPriority();
+        bool preempt_by_urgency = (best_slack <= 0) && (worst_slack > 0);
+
+        if (preempt_by_priority || preempt_by_urgency) {
+            double unit_energy = calculateUnitEnergyForTask(best_candidate);
+            if (_current_energy < unit_energy) return;
+
+            std::string reason = preempt_by_priority ? "优先级抢占" : "紧急抢占(Slack=0)";
+            SCHEDULER_LOG_INFO(std::string("🔄 [ST-NonBlock] ALAP抢占(") + reason + "): " +
+                              " 挂起=" + getTaskName(worst_running) +
+                              "(优先级=" + std::to_string(static_cast<int64_t>(worst_model->getRMPriority())) +
+                              " Slack=" + std::to_string(static_cast<int64_t>(worst_slack)) + ")" +
+                              " 调度=" + getTaskName(best_candidate) +
+                              "(优先级=" + std::to_string(static_cast<int64_t>(best_model->getRMPriority())) +
+                              " Slack=" + std::to_string(static_cast<int64_t>(best_slack)) + ")");
+
+            // ⭐ 记录最近被挂起的任务，用于防抖
+            _last_preempted_task = worst_running;
+            _last_preempted_tick = current_time;
+
+            _kernel->suspend(worst_running);
         }
     }
 
-    bool TGFScheduler::shouldPreempt(CPU *cpu, AbsRTTask *new_task) {
+    bool STNonBlockScheduler::shouldPreempt(CPU *cpu, AbsRTTask *new_task) {
         if (!cpu || !new_task) {
             return false;
         }
@@ -1048,8 +1291,8 @@ namespace RTSim {
             return false;
         }
 
-        TGFTaskModel *running_model = getTaskModel(running_task);
-        TGFTaskModel *new_model = getTaskModel(new_task);
+        STNonBlockTaskModel *running_model = getTaskModel(running_task);
+        STNonBlockTaskModel *new_model = getTaskModel(new_task);
 
         if (!running_model || !new_model) {
             return false;
@@ -1069,24 +1312,24 @@ namespace RTSim {
     // 队列管理方法
     // =====================================================
 
-    void TGFScheduler::insert(AbsRTTask *task) {
+    void STNonBlockScheduler::insert(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("➕ [TGF] insert: ") + getTaskName(task) +
+        SCHEDULER_LOG_INFO(std::string("➕ [ST-NonBlock] insert: ") + getTaskName(task) +
                           " _ready_queue.size()=" + std::to_string(_ready_queue.size()));
 
         Scheduler::insert(task);
         addToReadyQueue(task);
     }
 
-    void TGFScheduler::extract(AbsRTTask *task) {
+    void STNonBlockScheduler::extract(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("➖ [TGF] extract: ") + getTaskName(task) +
+        SCHEDULER_LOG_INFO(std::string("➖ [ST-NonBlock] extract: ") + getTaskName(task) +
                           " _ready_queue.size()=" + std::to_string(_ready_queue.size()));
 
         Scheduler::extract(task);
@@ -1094,22 +1337,22 @@ namespace RTSim {
         removeFromWaitingQueue(task);
     }
 
-    void TGFScheduler::addToReadyQueue(AbsRTTask *task) {
+    void STNonBlockScheduler::addToReadyQueue(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
         // ⭐ 修复重复实例bug：检查任务是否已在就绪队列中
         if (std::find(_ready_queue.begin(), _ready_queue.end(), task) != _ready_queue.end()) {
-            SCHEDULER_LOG_DEBUG(std::string("⚠️ [TGF] 任务已在就绪队列，跳过添加: ") + getTaskName(task));
+            SCHEDULER_LOG_DEBUG(std::string("⚠️ [ST-NonBlock] 任务已在就绪队列，跳过添加: ") + getTaskName(task));
             return;
         }
 
         removeFromWaitingQueue(task);
 
-        TGFTaskModel *model = getTaskModel(task);
+        STNonBlockTaskModel *model = getTaskModel(task);
         if (!model) {
-            SCHEDULER_LOG_WARNING("⚠️ [TGF] addToReadyQueue: 任务模型不存在");
+            SCHEDULER_LOG_WARNING("⚠️ [ST-NonBlock] addToReadyQueue: 任务模型不存在");
             _ready_queue.push_back(task);
             return;
         }
@@ -1119,7 +1362,7 @@ namespace RTSim {
         // 按RM优先级插入（周期短的优先）
         auto it = _ready_queue.begin();
         while (it != _ready_queue.end()) {
-            TGFTaskModel *other_model = getTaskModel(*it);
+            STNonBlockTaskModel *other_model = getTaskModel(*it);
             if (other_model && other_model->getRMPriority() > priority) {
                 break;
             }
@@ -1128,44 +1371,44 @@ namespace RTSim {
 
         _ready_queue.insert(it, task);
 
-        SCHEDULER_LOG_DEBUG(std::string("➕ [TGF] 任务加入就绪队列: ") + getTaskName(task) +
+        SCHEDULER_LOG_DEBUG(std::string("➕ [ST-NonBlock] 任务加入就绪队列: ") + getTaskName(task) +
                            " 优先级=" + std::to_string(static_cast<int64_t>(priority)));
     }
 
-    void TGFScheduler::removeFromReadyQueue(AbsRTTask *task) {
+    void STNonBlockScheduler::removeFromReadyQueue(AbsRTTask *task) {
         auto it = std::find(_ready_queue.begin(), _ready_queue.end(), task);
         if (it != _ready_queue.end()) {
             _ready_queue.erase(it);
-            SCHEDULER_LOG_DEBUG(std::string("➖ [TGF] removeFromReadyQueue: ") + getTaskName(task) +
+            SCHEDULER_LOG_DEBUG(std::string("➖ [ST-NonBlock] removeFromReadyQueue: ") + getTaskName(task) +
                                " 剩余size=" + std::to_string(_ready_queue.size()));
         }
     }
 
-    void TGFScheduler::addToWaitingQueue(AbsRTTask *task) {
+    void STNonBlockScheduler::addToWaitingQueue(AbsRTTask *task) {
         if (!task) {
             return;
         }
         removeFromReadyQueue(task);
         _waiting_queue.push_back(task);
-        SCHEDULER_LOG_DEBUG(std::string("⏸️ [TGF] 任务加入等待队列: ") + getTaskName(task));
+        SCHEDULER_LOG_DEBUG(std::string("⏸️ [ST-NonBlock] 任务加入等待队列: ") + getTaskName(task));
     }
 
-    void TGFScheduler::removeFromWaitingQueue(AbsRTTask *task) {
+    void STNonBlockScheduler::removeFromWaitingQueue(AbsRTTask *task) {
         auto it = std::find(_waiting_queue.begin(), _waiting_queue.end(), task);
         if (it != _waiting_queue.end()) {
             _waiting_queue.erase(it);
         }
     }
 
-    bool TGFScheduler::isInReadyQueue(AbsRTTask *task) const {
+    bool STNonBlockScheduler::isInReadyQueue(AbsRTTask *task) const {
         return std::find(_ready_queue.begin(), _ready_queue.end(), task) != _ready_queue.end();
     }
 
-    bool TGFScheduler::isInWaitingQueue(AbsRTTask *task) const {
+    bool STNonBlockScheduler::isInWaitingQueue(AbsRTTask *task) const {
         return std::find(_waiting_queue.begin(), _waiting_queue.end(), task) != _waiting_queue.end();
     }
 
-    AbsRTTask *TGFScheduler::getHighestPriorityTaskFromReadyQueue() {
+    AbsRTTask *STNonBlockScheduler::getHighestPriorityTaskFromReadyQueue() {
         if (_ready_queue.empty()) {
             return nullptr;
         }
@@ -1176,10 +1419,10 @@ namespace RTSim {
     // 能量计算方法
     // =====================================================
 
-    double TGFScheduler::calculateUnitEnergyForTask(AbsRTTask *task) {
-        TGFTaskModel *model = getTaskModel(task);
+    double STNonBlockScheduler::calculateUnitEnergyForTask(AbsRTTask *task) {
+        STNonBlockTaskModel *model = getTaskModel(task);
         if (!model) {
-            SCHEDULER_LOG_WARNING("⚠️ [TGF] calculateUnitEnergyForTask: 任务模型不存在");
+            SCHEDULER_LOG_WARNING("⚠️ [ST-NonBlock] calculateUnitEnergyForTask: 任务模型不存在");
             return 0.0;
         }
 
@@ -1188,7 +1431,7 @@ namespace RTSim {
     }
 
     // ⭐ EnergyInfoProvider接口实现
-    double TGFScheduler::getTaskUnitEnergy(AbsRTTask *task) const {
+    double STNonBlockScheduler::getTaskUnitEnergy(AbsRTTask *task) const {
         auto it = _task_models.find(task);
         if (it == _task_models.end()) {
             return 0.0;
@@ -1196,7 +1439,7 @@ namespace RTSim {
         return it->second->getUnitEnergy();
     }
 
-    double TGFScheduler::getTaskTotalEnergy(AbsRTTask *task) const {
+    double STNonBlockScheduler::getTaskTotalEnergy(AbsRTTask *task) const {
         auto it = _task_models.find(task);
         if (it == _task_models.end()) {
             return 0.0;
@@ -1204,14 +1447,14 @@ namespace RTSim {
         return it->second->getTotalEnergy();
     }
 
-    double TGFScheduler::calculateTotalEnergyForTask(AbsRTTask *task) {
+    double STNonBlockScheduler::calculateTotalEnergyForTask(AbsRTTask *task) {
         if (!task) {
             return 0.0;
         }
 
-        TGFTaskModel *model = getTaskModel(task);
+        STNonBlockTaskModel *model = getTaskModel(task);
         if (!model) {
-            SCHEDULER_LOG_WARNING("⚠️ [TGF] calculateTotalEnergyForTask: 任务模型不存在");
+            SCHEDULER_LOG_WARNING("⚠️ [ST-NonBlock] calculateTotalEnergyForTask: 任务模型不存在");
             return 0.0;
         }
 
@@ -1234,7 +1477,7 @@ namespace RTSim {
         return energy;
     }
 
-    double TGFScheduler::calculatePowerForWorkload(const std::string &workload, double frequency) {
+    double STNonBlockScheduler::calculatePowerForWorkload(const std::string &workload, double frequency) {
         ConfigManager &configMgr = ConfigManager::getInstance();
         double power_coeff = configMgr.getPowerCoefficient(workload);
 
@@ -1244,7 +1487,7 @@ namespace RTSim {
         double base_power = configMgr.getBasePower();
         double power = base_power * power_coeff * freq_ratio;
 
-        SCHEDULER_LOG_DEBUG(std::string("⚡ [TGF] 功率计算: ") +
+        SCHEDULER_LOG_DEBUG(std::string("⚡ [ST-NonBlock] 功率计算: ") +
                            "workload=" + workload +
                            " coeff=" + std::to_string(power_coeff) +
                            " freq=" + std::to_string(frequency_mhz) + "MHz" +
@@ -1261,29 +1504,29 @@ namespace RTSim {
     // =====================================================
 
     /*
-    void TGFScheduler::startEnergyCheckForTask(AbsRTTask *task, CPU *cpu) {
+    void STNonBlockScheduler::startEnergyCheckForTask(AbsRTTask *task, CPU *cpu) {
         if (!task || !cpu) {
             return;
         }
 
         // 检查是否已经有能量检查事件
         if (_energy_check_events.find(task) != _energy_check_events.end()) {
-            SCHEDULER_LOG_DEBUG(std::string("⚡ [TGF] 任务已有能量检查事件: ") + getTaskName(task));
+            SCHEDULER_LOG_DEBUG(std::string("⚡ [ST-NonBlock] 任务已有能量检查事件: ") + getTaskName(task));
             return;
         }
 
         // 创建并启动能量检查事件
-        TGFEnergyCheckEvent *evt = new TGFEnergyCheckEvent(this, task, cpu);
+        ST-NonBlockEnergyCheckEvent *evt = new ST-NonBlockEnergyCheckEvent(this, task, cpu);
         _energy_check_events[task] = evt;
 
         // 1ms后触发第一次检查
         evt->post(SIMUL.getTime() + 1);
 
-        SCHEDULER_LOG_INFO(std::string("⚡ [TGF] 启动运行时能量检查: ") +
+        SCHEDULER_LOG_INFO(std::string("⚡ [ST-NonBlock] 启动运行时能量检查: ") +
                            getTaskName(task) + " 在CPU " + cpu->toString());
     }
 
-    void TGFScheduler::stopEnergyCheckForTask(AbsRTTask *task) {
+    void STNonBlockScheduler::stopEnergyCheckForTask(AbsRTTask *task) {
         if (!task) {
             return;
         }
@@ -1294,7 +1537,7 @@ namespace RTSim {
 
             _energy_check_events.erase(it);
 
-            SCHEDULER_LOG_INFO(std::string("⚡ [TGF] 停止运行时能量检查: ") +
+            SCHEDULER_LOG_INFO(std::string("⚡ [ST-NonBlock] 停止运行时能量检查: ") +
                                getTaskName(task));
         }
     }
@@ -1304,7 +1547,7 @@ namespace RTSim {
     // 能量收集方法
     // =====================================================
 
-    double TGFScheduler::collectSolarEnergy(Tick current_time) {
+    double STNonBlockScheduler::collectSolarEnergy(Tick current_time) {
         int64_t current_ms = static_cast<int64_t>(current_time);
 
         // 计算自上次收集以来的时间
@@ -1327,7 +1570,7 @@ namespace RTSim {
         return energy;
     }
 
-    double TGFScheduler::getSolarIrradiance(int64_t time_ms) {
+    double STNonBlockScheduler::getSolarIrradiance(int64_t time_ms) {
         if (!_use_real_solar_data) {
             // ⭐ 分段函数模型：模拟真实太阳能曲线
             int64_t actual_time_ms = time_ms + static_cast<int64_t>(_start_time_offset);
@@ -1369,7 +1612,7 @@ namespace RTSim {
 
         std::ifstream file(_solar_data_file);
         if (!file.is_open()) {
-            SCHEDULER_LOG_WARNING(std::string("⚠️ [TGF] 无法打开太阳能数据文件: ") + _solar_data_file);
+            SCHEDULER_LOG_WARNING(std::string("⚠️ [ST-NonBlock] 无法打开太阳能数据文件: ") + _solar_data_file);
             return 0.0;
         }
 
@@ -1384,7 +1627,7 @@ namespace RTSim {
                 double irradiance = std::stod(line);
                 return irradiance;
             } catch (const std::exception &e) {
-                SCHEDULER_LOG_WARNING(std::string("⚠️ [TGF] 解析辐照度失败: ") + e.what());
+                SCHEDULER_LOG_WARNING(std::string("⚠️ [ST-NonBlock] 解析辐照度失败: ") + e.what());
                 return 0.0;
             }
         }
@@ -1396,7 +1639,7 @@ namespace RTSim {
     // Tick事件调度
     // =====================================================
 
-    void TGFScheduler::scheduleNextTick() {
+    void STNonBlockScheduler::scheduleNextTick() {
         if (!_tick_event) {
             return;
         }
@@ -1416,7 +1659,7 @@ namespace RTSim {
     // 任务管理方法
     // =====================================================
 
-    TGFTaskModel *TGFScheduler::getTaskModel(AbsRTTask *task) {
+    STNonBlockTaskModel *STNonBlockScheduler::getTaskModel(AbsRTTask *task) {
         auto it = _task_models.find(task);
         if (it != _task_models.end()) {
             return it->second;
@@ -1424,14 +1667,14 @@ namespace RTSim {
         return nullptr;
     }
 
-    std::string TGFScheduler::getTaskName(AbsRTTask *task) {
+    std::string STNonBlockScheduler::getTaskName(AbsRTTask *task) {
         if (!task) {
             return "nullptr";
         }
         return task->toString();
     }
 
-    AbsRTTask *TGFScheduler::getRunningTaskOnCPU(CPU *cpu) {
+    AbsRTTask *STNonBlockScheduler::getRunningTaskOnCPU(CPU *cpu) {
         if (!cpu) {
             return nullptr;
         }
@@ -1444,7 +1687,7 @@ namespace RTSim {
         return nullptr;
     }
 
-    int TGFScheduler::getFreeCPUCount() {
+    int STNonBlockScheduler::getFreeCPUCount() {
         int count = 0;
         for (auto &pair : _running_tasks) {
             if (pair.second == nullptr) {
@@ -1454,7 +1697,7 @@ namespace RTSim {
         return count;
     }
 
-    CPU *TGFScheduler::getFreeCPU() {
+    CPU *STNonBlockScheduler::getFreeCPU() {
         for (auto &pair : _running_tasks) {
             if (pair.second == nullptr) {
                 return pair.first;
@@ -1463,13 +1706,13 @@ namespace RTSim {
         return nullptr;
     }
 
-    void TGFScheduler::dispatchTask(AbsRTTask *task, CPU *cpu) {
+    void STNonBlockScheduler::dispatchTask(AbsRTTask *task, CPU *cpu) {
         if (!task || !cpu) {
-            SCHEDULER_LOG_WARNING("⚠️ [TGF] dispatchTask: 任务或CPU为空");
+            SCHEDULER_LOG_WARNING("⚠️ [ST-NonBlock] dispatchTask: 任务或CPU为空");
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("📤 [TGF] 调度任务: ") + getTaskName(task) + " 到CPU");
+        SCHEDULER_LOG_INFO(std::string("📤 [ST-NonBlock] 调度任务: ") + getTaskName(task) + " 到CPU");
 
         removeFromReadyQueue(task);
         _running_tasks[cpu] = task;
@@ -1479,26 +1722,26 @@ namespace RTSim {
     // 配置方法
     // =====================================================
 
-    void TGFScheduler::setPVConfig(double efficiency, double area, const std::string &solar_file) {
+    void STNonBlockScheduler::setPVConfig(double efficiency, double area, const std::string &solar_file) {
         _pv_efficiency = efficiency;
         _pv_area_m2 = area;
         _solar_data_file = solar_file;
 
-        SCHEDULER_LOG_INFO(std::string("⚙️ [TGF] 太阳能配置更新: ") +
+        SCHEDULER_LOG_INFO(std::string("⚙️ [ST-NonBlock] 太阳能配置更新: ") +
                           "效率=" + std::to_string(efficiency) +
                           " 面积=" + std::to_string(area) + "m²" +
                           " 数据文件=" + solar_file);
     }
 
-    void TGFScheduler::setStartTimeOffset(Tick offset) {
+    void STNonBlockScheduler::setStartTimeOffset(Tick offset) {
         _start_time_offset = offset;
     }
 
-    void TGFScheduler::setKernel(MRTKernel *kernel) {
+    void STNonBlockScheduler::setKernel(MRTKernel *kernel) {
         _kernel = kernel;
     }
 
-    MRTKernel *TGFScheduler::getKernel() {
+    MRTKernel *STNonBlockScheduler::getKernel() {
         if (!_kernel && !_ready_queue.empty()) {
             AbsRTTask *task = _ready_queue.front();
             if (task) {
@@ -1512,8 +1755,8 @@ namespace RTSim {
     // 生命周期方法
     // =====================================================
 
-    void TGFScheduler::newRun() {
-        SCHEDULER_LOG_INFO("🏁 [TGF] newRun - 仿真开始");
+    void STNonBlockScheduler::newRun() {
+        SCHEDULER_LOG_INFO("🏁 [ST-NonBlock] newRun - 仿真开始");
 
         _current_energy = _initial_energy;
         _last_tick_time = SIMUL.getTime();
@@ -1536,11 +1779,11 @@ namespace RTSim {
         // 启动第一个tick事件
         scheduleNextTick();
 
-        SCHEDULER_LOG_INFO(std::string("💰 [TGF] 初始能量: ") + std::to_string(_current_energy) + "J");
+        SCHEDULER_LOG_INFO(std::string("💰 [ST-NonBlock] 初始能量: ") + std::to_string(_current_energy) + "J");
     }
 
-    void TGFScheduler::endRun() {
-        SCHEDULER_LOG_INFO("🏁 [TGF] endRun - 仿真结束");
+    void STNonBlockScheduler::endRun() {
+        SCHEDULER_LOG_INFO("🏁 [ST-NonBlock] endRun - 仿真结束");
 
         // 仿真结束前，收集最后一次能量
         Tick current_time = SIMUL.getTime();
@@ -1551,7 +1794,7 @@ namespace RTSim {
         }
 
         // 打印统计信息
-        SCHEDULER_LOG_INFO("📊 [TGF] ===== TGF调度统计 =====");
+        SCHEDULER_LOG_INFO("📊 [ST-NonBlock] ===== ST-NonBlock调度统计 =====");
         SCHEDULER_LOG_INFO(std::string("  Tick总次数: ") + std::to_string(_stats.total_tick_count));
         SCHEDULER_LOG_INFO(std::string("  任务完成数: ") + std::to_string(_stats.total_task_completions));
         SCHEDULER_LOG_INFO(std::string("  能量不足跳过: ") + std::to_string(_stats.total_skipped_energy));
@@ -1562,12 +1805,12 @@ namespace RTSim {
         SCHEDULER_LOG_INFO("=================================");
     }
 
-    void TGFScheduler::onTaskEnd(AbsRTTask *task) {
+    void STNonBlockScheduler::onTaskEnd(AbsRTTask *task) {
         if (!task) {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("✅ [TGF] 任务结束: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("✅ [ST-NonBlock] 任务结束: ") + getTaskName(task));
 
         // 从就绪队列移除
         removeFromReadyQueue(task);
@@ -1586,7 +1829,7 @@ namespace RTSim {
         // 打印能量消耗统计
         auto it = _energy_accounts.find(task);
         if (it != _energy_accounts.end()) {
-            SCHEDULER_LOG_INFO(std::string("📊 [TGF] 任务能量消耗: ") +
+            SCHEDULER_LOG_INFO(std::string("📊 [ST-NonBlock] 任务能量消耗: ") +
                               getTaskName(task) +
                               " 累计消耗=" + std::to_string(it->second.total_consumed) + "J");
             _energy_accounts.erase(it);
@@ -1594,65 +1837,214 @@ namespace RTSim {
 
         _stats.total_task_completions++;
 
-        SCHEDULER_LOG_INFO(std::string("📊 [TGF] 当前能量: ") + std::to_string(_current_energy) + "J");
+        SCHEDULER_LOG_INFO(std::string("📊 [ST-NonBlock] 当前能量: ") + std::to_string(_current_energy) + "J");
 
-        // ⭐ 关键修复：任务结束时触发立即调度
-        // 检查是否有空闲CPU和等待的任务
-        if (!_ready_queue.empty() && _kernel) {
-            // ⭐ Bug修复：能量耗尽时不触发立即调度
-            if (_energy_depleted) {
-                SCHEDULER_LOG_INFO(std::string("💀 [TGF] 能量已耗尽，跳过任务结束后的立即调度") +
-                                   " 剩余能量=" + std::to_string(_current_energy * 1000) + " mJ");
-                return;
+        // ⭐ 注意：任务结束后的调度由tick事件自动处理，不在此处调用dispatch()
+        // 这样可以避免在任务对象部分销毁时访问导致的崩溃
+
+    }
+
+    bool STNonBlockScheduler::isAdmissible(CPU *c, std::vector<AbsRTTask *> tasks,
+                                    AbsRTTask *t) {
+        return true;
+    }
+
+    // =====================================================
+    // 过期任务清理 - 清理超过截止期的旧任务实例
+    // =====================================================
+
+    void STNonBlockScheduler::cleanupExpiredTasks() {
+        Tick current_time = SIMUL.getTime();
+
+        if (!_kernel) {
+            _kernel = getKernel();
+        }
+
+        // 1. 检查运行中的任务，挂起已过期的
+        if (_kernel) {
+            const auto& running = _kernel->getCurrentExecutingTasks();
+            std::vector<AbsRTTask *> to_suspend;
+
+            for (const auto& [cpu, task] : running) {
+                if (!task || !task->isExecuting()) continue;
+                STNonBlockTaskModel *model = getTaskModel(task);
+                if (!model) continue;
+
+                Tick arrival = task->getArrival();
+                Tick deadline = arrival + Tick(model->getPeriod());
+
+                if (deadline <= current_time) {
+                    to_suspend.push_back(task);
+                    SCHEDULER_LOG_INFO("💀 [ST-NonBlock] 过期任务运行中，将挂起: " +
+                        getTaskName(task) +
+                        " arrival=" + std::to_string(static_cast<int64_t>(arrival)) +
+                        " deadline=" + std::to_string(static_cast<int64_t>(deadline)) +
+                        " current=" + std::to_string(static_cast<int64_t>(current_time)));
+                }
             }
-            SCHEDULER_LOG_INFO("🔄 [TGF] 任务结束，触发立即调度");
 
-            _kernel->dispatch();
+            for (AbsRTTask *task : to_suspend) {
+                _kernel->suspend(task);
+            }
+        }
 
-            // ⭐ 关键：在dispatch后，扣除新调度任务的能量
-            // 只扣除尚未扣除过的任务（检查_energy_deducted_tasks）
-            for (AbsRTTask *task : _counted_tasks_in_dispatch) {
-                if (_energy_deducted_tasks.find(task) == _energy_deducted_tasks.end()) {
-                    // 任务尚未扣除能量，现在扣除
-                    double unit_energy = calculateUnitEnergyForTask(task);
-                    _current_energy -= unit_energy;
-                    _stats.total_energy_consumed += unit_energy;
-                    _energy_deducted_tasks.insert(task);  // 标记已扣除
+        // 2. 清理就绪队列中已过期的任务实例
+        std::vector<AbsRTTask *> expired;
+        for (AbsRTTask *task : _ready_queue) {
+            if (!task) continue;
+            STNonBlockTaskModel *model = getTaskModel(task);
+            if (!model) continue;
 
-                    SCHEDULER_LOG_INFO("✅ [TGF] onTaskEnd后新任务扣除初始能量: " +
-                                       getTaskName(task) +
-                                       " -" + std::to_string(unit_energy * 1000) + " mJ → " +
-                                       std::to_string(_current_energy * 1000) + " mJ");
+            Tick arrival = task->getArrival();
+            Tick deadline = arrival + Tick(model->getPeriod());
+
+            if (deadline <= current_time) {
+                expired.push_back(task);
+                SCHEDULER_LOG_INFO("🧹 [ST-NonBlock] 清理过期任务: " +
+                    getTaskName(task) +
+                    " arrival=" + std::to_string(static_cast<int64_t>(arrival)) +
+                    " deadline=" + std::to_string(static_cast<int64_t>(deadline)) +
+                    " current=" + std::to_string(static_cast<int64_t>(current_time)));
+                _stats.total_deadline_misses++;
+            }
+        }
+
+        for (AbsRTTask *task : expired) {
+            removeFromReadyQueue(task);
+        }
+    }
+
+    // =====================================================
+    // ALAP时序门控（阶段一）
+    // =====================================================
+
+    bool STNonBlockScheduler::checkALAPTimingGate() {
+        // ⭐ 关键修复：收集所有任务（ready + running）来计算全局min_slack
+        std::vector<AbsRTTask *> all_tasks;
+
+        // 添加ready queue中的任务
+        for (AbsRTTask *task : _ready_queue) {
+            if (task) all_tasks.push_back(task);
+        }
+
+        // 添加运行中的任务
+        if (_kernel) {
+            const auto& running_tasks = _kernel->getCurrentExecutingTasks();
+            for (const auto& map_pair : running_tasks) {
+                AbsRTTask *task = map_pair.second;
+                if (task && task->isExecuting()) {
+                    all_tasks.push_back(task);
                 }
             }
         }
 
+        if (all_tasks.empty()) {
+            return true;  // 没有任务，通过门控
+        }
+
+        Tick current_time = SIMUL.getTime();
+        Tick min_slack = Tick(-1);
+
+        // 计算所有任务的Slack，找最小值
+        for (AbsRTTask *task : all_tasks) {
+            if (!task) continue;
+
+            // 异常处理：防止访问已删除的任务
+            if (!task->isActive()) {
+                continue;
+            }
+
+            Tick slack;
+            try {
+                slack = calculateSlackForTask(task);
+            } catch (...) {
+                continue;  // 跳过计算失败的任务
+            }
+
+            if (min_slack < 0 || slack < min_slack) {
+                min_slack = slack;
+            }
+        }
+
+        // 门控逻辑
+        if (min_slack > 0) {
+            SCHEDULER_LOG_INFO("⏸️  [ST-NonBlock] ALAP时序门控：Slack > 0 (" +
+                               std::to_string(static_cast<int64_t>(min_slack)) + "ms)，强制休眠");
+            _stats.total_alap_forced_idle++;
+            return false;  // 强制IDLE，不调度任何任务
+        } else {
+            SCHEDULER_LOG_INFO("✅ [ST-NonBlock] ALAP时序门控：Slack ≤ 0 (" +
+                               std::to_string(static_cast<int64_t>(min_slack)) + "ms)，唤醒，允许调度");
+            return true;  // 门控通过，允许调度
+        }
     }
 
-    bool TGFScheduler::isAdmissible(CPU *c, std::vector<AbsRTTask *> tasks,
-                                    AbsRTTask *t) {
-        return true;
+    MetaSim::Tick STNonBlockScheduler::calculateSlackForTask(AbsRTTask *task) {
+        if (!task) return MetaSim::Tick(0);
+
+        Tick current_time = SIMUL.getTime();
+        Tick arrival = task->getArrival();
+        int period_int = task->getPeriod();
+        Tick period = Tick(period_int > 0 ? period_int : 100);
+        Tick absolute_deadline = arrival + period;
+
+        double remaining_double = task->getRemainingWCET();
+        Tick remaining = Tick(remaining_double);
+        Tick slack = absolute_deadline - remaining - current_time;
+
+        SCHEDULER_LOG_DEBUG("🧮 [ST-NonBlock] Slack计算: " +
+                           getTaskName(task) +
+                           " deadline=" + std::to_string(static_cast<int64_t>(absolute_deadline)) +
+                           " remaining=" + std::to_string(static_cast<int64_t>(remaining)) +
+                           " current=" + std::to_string(static_cast<int64_t>(current_time)) +
+                           " => slack=" + std::to_string(static_cast<int64_t>(slack)) + "ms");
+
+        return slack;
+    }
+
+    // ⭐ ST特有：计算所有就绪任务的最小Slack
+    MetaSim::Tick STNonBlockScheduler::calculateMinSlack() {
+        Tick min_slack = std::numeric_limits<Tick>::max();
+
+        // 检查就绪队列中所有任务的Slack
+        for (auto* task : _ready_queue) {
+            if (!task) continue;
+            Tick slack = calculateSlackForTask(task);
+            if (slack < min_slack) {
+                min_slack = slack;
+            }
+        }
+
+        // 如果没有就绪任务，返回0
+        if (min_slack == std::numeric_limits<Tick>::max()) {
+            min_slack = 0;
+        }
+
+        SCHEDULER_LOG_DEBUG("🧮 [ST-NonBlock] calculateMinSlack: min_slack=" +
+                           std::to_string(static_cast<int64_t>(min_slack)) + "ms");
+        return min_slack;
     }
 
     // =====================================================
     // 统计和调试
     // =====================================================
 
-    void TGFScheduler::printStats() const {
-        SCHEDULER_LOG_INFO("📊 [TGF] ===== TGF调度统计 =====");
+    void STNonBlockScheduler::printStats() const {
+        SCHEDULER_LOG_INFO("📊 [ST-NonBlock] ===== ST-NonBlock调度统计 =====");
         SCHEDULER_LOG_INFO(std::string("  Tick总次数: ") + std::to_string(_stats.total_tick_count));
         SCHEDULER_LOG_INFO(std::string("  任务完成数: ") + std::to_string(_stats.total_task_completions));
         SCHEDULER_LOG_INFO(std::string("  总消耗能量: ") + std::to_string(_stats.total_energy_consumed) + "J");
         SCHEDULER_LOG_INFO(std::string("  总收集能量: ") + std::to_string(_stats.total_energy_harvested) + "J");
         SCHEDULER_LOG_INFO(std::string("  剩余能量: ") + std::to_string(_current_energy) + "J");
+        SCHEDULER_LOG_INFO(std::string("  ALAP强制休眠次数: ") + std::to_string(_stats.total_alap_forced_idle));
         SCHEDULER_LOG_INFO("=================================");
     }
 
-    std::string TGFScheduler::getEnergyStatus() const {
+    std::string STNonBlockScheduler::getEnergyStatus() const {
         return "当前能量: " + std::to_string(_current_energy) + "J";
     }
 
-    const std::map<AbsRTTask *, std::string> TGFScheduler::getTaskWorkloads() const {
+    const std::map<AbsRTTask *, std::string> STNonBlockScheduler::getTaskWorkloads() const {
         std::map<AbsRTTask *, std::string> workloads;
         for (const auto &pair : _task_models) {
             workloads[pair.first] = pair.second->getWorkloadType();
@@ -1660,13 +2052,13 @@ namespace RTSim {
         return workloads;
     }
 
-    void TGFScheduler::checkAndInterruptRunningTasks() {
-        SCHEDULER_LOG_INFO("🔍 [TGF] 检查运行中任务的能量状态");
+    void STNonBlockScheduler::checkAndInterruptRunningTasks() {
+        SCHEDULER_LOG_INFO("🔍 [ST-NonBlock] 检查运行中任务的能量状态");
 
         if (!_kernel) {
             _kernel = getKernel();
             if (!_kernel) {
-                SCHEDULER_LOG_WARNING("⚠️ [TGF] checkAndInterruptRunningTasks: _kernel为nullptr，无法中断任务");
+                SCHEDULER_LOG_WARNING("⚠️ [ST-NonBlock] checkAndInterruptRunningTasks: _kernel为nullptr，无法中断任务");
                 return;
             }
         }
@@ -1697,7 +2089,7 @@ namespace RTSim {
         //             _current_energy -= total_energy_to_deduct;
         //             _stats.total_energy_consumed += total_energy_to_deduct;
         // 
-        //             SCHEDULER_LOG_INFO(std::string("⚡ [TGF] Tick事件: 扣除运行中任务能量 ") +
+        //             SCHEDULER_LOG_INFO(std::string("⚡ [ST-NonBlock] Tick事件: 扣除运行中任务能量 ") +
         //                                std::to_string(total_energy_to_deduct * 1000) + " mJ，" +
         //                                std::to_string(old_energy * 1000) + " mJ → " +
         //                                std::to_string(_current_energy * 1000) + " mJ (" +
@@ -1717,7 +2109,7 @@ namespace RTSim {
 
             // ⭐ 检查：当前能量是否足够该任务继续执行1ms
             if (_current_energy < unit_energy - EPSILON) {
-                SCHEDULER_LOG_WARNING(std::string("⚡ [TGF] 任务能量不足，将中断: ") +
+                SCHEDULER_LOG_WARNING(std::string("⚡ [ST-NonBlock] 任务能量不足，将中断: ") +
                                      getTaskName(task) +
                                      " 需要1ms=" + std::to_string(unit_energy) + "J" +
                                      " 当前能量=" + std::to_string(_current_energy) + "J");
@@ -1725,7 +2117,7 @@ namespace RTSim {
                 tasks_to_interrupt.push_back(task);
                 _stats.total_skipped_energy++;
             } else {
-                SCHEDULER_LOG_DEBUG(std::string("✅ [TGF] 任务能量充足: ") +
+                SCHEDULER_LOG_DEBUG(std::string("✅ [ST-NonBlock] 任务能量充足: ") +
                                    getTaskName(task) +
                                    " 需要1ms=" + std::to_string(unit_energy) + "J" +
                                    " 当前能量=" + std::to_string(_current_energy) + "J");
@@ -1738,7 +2130,7 @@ namespace RTSim {
                 continue;
             }
 
-            SCHEDULER_LOG_INFO(std::string("🛑 [TGF] 中断任务（能量不足）: ") + getTaskName(task));
+            SCHEDULER_LOG_INFO(std::string("🛑 [ST-NonBlock] 中断任务（能量不足）: ") + getTaskName(task));
 
             // 调用kernel的suspend方法��断任务
             // suspend会自动调用deschedule()并将任务重新放回调度队列
@@ -1749,14 +2141,14 @@ namespace RTSim {
 //             if (it != _energy_check_events.end()) {
 //                 // 从map中移除，但不删除事件对象（它会自然结束）
 //                 _energy_check_events.erase(it);
-//                 SCHEDULER_LOG_DEBUG(std::string("⚠️ [TGF] 已取消任务的能量检查事件: ") + getTaskName(task));
+//                 SCHEDULER_LOG_DEBUG(std::string("⚠️ [ST-NonBlock] 已取消任务的能量检查事件: ") + getTaskName(task));
 //             }
 
-            SCHEDULER_LOG_INFO(std::string("⏸️ [TGF] 任务已中断，等待能量恢复: ") + getTaskName(task));
+            SCHEDULER_LOG_INFO(std::string("⏸️ [ST-NonBlock] 任务已中断，等待能量恢复: ") + getTaskName(task));
         }
 
         if (!tasks_to_interrupt.empty()) {
-            SCHEDULER_LOG_INFO(std::string("📊 [TGF] 本次tick中断了 ") +
+            SCHEDULER_LOG_INFO(std::string("📊 [ST-NonBlock] 本次tick中断了 ") +
                                std::to_string(tasks_to_interrupt.size()) + " 个任务（能量不足）");
         }
     }

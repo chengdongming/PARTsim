@@ -24,9 +24,9 @@
 #include <rtsim/scheduler/gpfp_epp_scheduler.hpp>
 #include <rtsim/scheduler/gpfp_efpp_scheduler.hpp>
 #include <rtsim/scheduler/gpfp_cbpp_scheduler.hpp>
-#include <rtsim/scheduler/gpfp_tie_scheduler.hpp>
-#include <rtsim/scheduler/gpfp_btie_scheduler.hpp>
-#include <rtsim/scheduler/gpfp_tgf_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_asap_block_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_asap_sync_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_asap_nonblock_scheduler.hpp>
 
 namespace RTSim {
     // =========================================================================
@@ -590,20 +590,20 @@ namespace RTSim {
                 st->schedule();
                 DBGPRINT("Task scheduled: ", taskname(st));
 
-                // ⭐ V28.15新增：为TIE/BTIE/TGF调度器启动运行时能量检查
-                // ⭐ V40重构：TIE/TGF已移除能量检查事件，能量在performTickScheduling中处理
-                TIEScheduler *tie_sched = dynamic_cast<TIEScheduler*>(_sched);
-                BTIEScheduler *btie_sched = dynamic_cast<BTIEScheduler*>(_sched);
-                TGFScheduler *tgf_sched = dynamic_cast<TGFScheduler*>(_sched);
+                // ⭐ V28.15新增：为ASAP调度器启动运行时能量检查
+                // ⭐ V40重构：ASAP-Block/ASAP-NonBlock已移除能量检查事件，能量在performTickScheduling中处理
+                ASAPBlockScheduler *asap_block_sched = dynamic_cast<ASAPBlockScheduler*>(_sched);
+                ASAPSyncScheduler *asap_sync_sched = dynamic_cast<ASAPSyncScheduler*>(_sched);
+                ASAPNonBlockScheduler *asap_nonblock_sched = dynamic_cast<ASAPNonBlockScheduler*>(_sched);
 
-                if (tie_sched) {
-                    // ❌ V40重构：TIE能量检查事件已移除，能量由performTickScheduling处理
-                    // tie_sched->startEnergyCheckForTask(st, p);
-                } else if (btie_sched) {
-                    btie_sched->startEnergyCheckForTask(st, p);
-                } else if (tgf_sched) {
-                    // ❌ V40重构：TGF能量检查事件已移除，能量由performTickScheduling处理
-                    // tgf_sched->startEnergyCheckForTask(st, p);
+                if (asap_block_sched) {
+                    // ❌ V40重构：ASAP-Block能量检查事件已移除，能量由performTickScheduling处理
+                    // asap_block_sched->startEnergyCheckForTask(st, p);
+                } else if (asap_sync_sched) {
+                    asap_sync_sched->startEnergyCheckForTask(st, p);
+                } else if (asap_nonblock_sched) {
+                    // ❌ V40重构：ASAP-NonBlock能量检查事件已移除，能量由performTickScheduling处理
+                    // asap_nonblock_sched->startEnergyCheckForTask(st, p);
                 }
             } else {
                 // 任务不在就绪或执行状态，可能能量不足或已完成

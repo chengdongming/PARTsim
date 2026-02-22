@@ -21,7 +21,7 @@ namespace RTSim {
     // 前向声明
     class CPU;
     class AbsRTTask;
-    class TGFScheduler;
+    class ASAPNonBlockScheduler;
     class MRTKernel;
 
     // 时间类型别名
@@ -30,12 +30,12 @@ namespace RTSim {
     // =====================================================
     // TGF Tick级调度事件（每1ms触发一次）
     // =====================================================
-    class TGFTickEvent : public MetaSim::Event {
+    class ASAPNonBlockTickEvent : public MetaSim::Event {
     private:
-        TGFScheduler *_scheduler;
+        ASAPNonBlockScheduler *_scheduler;
 
     public:
-        TGFTickEvent(TGFScheduler *scheduler);
+        ASAPNonBlockTickEvent(ASAPNonBlockScheduler *scheduler);
         void doit() override;
     };
 
@@ -44,15 +44,15 @@ namespace RTSim {
     // ⭐ V40重构：能量检查事件已删除，能量由performTickScheduling处理
     // =====================================================
     /*
-    class TGFEnergyCheckEvent : public MetaSim::Event {
+    class ASAPNonBlockEnergyCheckEvent : public MetaSim::Event {
     private:
-        TGFScheduler *_scheduler;
+        ASAPNonBlockScheduler *_scheduler;
         AbsRTTask *_task;
         CPU *_cpu;
         int _ms_executed;  // 已执行的ms数
 
     public:
-        TGFEnergyCheckEvent(TGFScheduler *scheduler, AbsRTTask *task, CPU *cpu);
+        ASAPNonBlockEnergyCheckEvent(ASAPNonBlockScheduler *scheduler, AbsRTTask *task, CPU *cpu);
         void doit() override;
         int getMsExecuted() const { return _ms_executed; }
         void setMsExecuted(int ms) { _ms_executed = ms; }
@@ -60,9 +60,9 @@ namespace RTSim {
     */
 
     // =====================================================
-    // TGFTaskModel 类声明
+    // ASAPNonBlockTaskModel 类声明
     // =====================================================
-    class TGFTaskModel : public TaskModel {
+    class ASAPNonBlockTaskModel : public TaskModel {
     private:
         int _period;
         int _wcet;
@@ -77,11 +77,11 @@ namespace RTSim {
         double _unit_energy;           // 每ms能耗
 
     public:
-        TGFTaskModel(AbsRTTask *t, int period, int wcet,
+        ASAPNonBlockTaskModel(AbsRTTask *t, int period, int wcet,
                      const std::string &workload_type,
                      double energy_coefficient = 1.0,
                      MetaSim::Tick arrival_offset = 0);
-        virtual ~TGFTaskModel();
+        virtual ~ASAPNonBlockTaskModel();
 
         MetaSim::Tick getPriority() const override;
         void changePriority(MetaSim::Tick p) override;
@@ -101,9 +101,9 @@ namespace RTSim {
     };
 
     // =====================================================
-    // TGFScheduler 类声明
+    // ASAPNonBlockScheduler 类声明
     // =====================================================
-    class TGFScheduler : public Scheduler, public EnergyInfoProvider {
+    class ASAPNonBlockScheduler : public Scheduler, public EnergyInfoProvider {
     private:
         // ========== 核心配置参数 ==========
         double _current_energy;              // 当前可用能量
@@ -125,11 +125,11 @@ namespace RTSim {
         MetaSim::Tick _start_time_offset;
 
         // ========== Tick事件 ==========
-        TGFTickEvent *_tick_event;
+        ASAPNonBlockTickEvent *_tick_event;
         bool _first_tick_scheduled;  // 标记第一个tick是否已调度
 
         // ========== 任务管理 ==========
-        std::map<AbsRTTask *, TGFTaskModel *> _task_models;
+        std::map<AbsRTTask *, ASAPNonBlockTaskModel *> _task_models;
         std::deque<AbsRTTask *> _ready_queue;
         std::vector<AbsRTTask *> _waiting_queue;
         std::map<CPU *, AbsRTTask *> _running_tasks;
@@ -137,7 +137,7 @@ namespace RTSim {
 
         // ========== 运行时能量检查事件（每任务一个） ==========
         // ⭐ V40��构：能量检查事件已删除，能量由performTickScheduling处理
-        // std::map<AbsRTTask *, TGFEnergyCheckEvent *> _energy_check_events;
+        // std::map<AbsRTTask *, ASAPNonBlockEnergyCheckEvent *> _energy_check_events;
 
         // ========== 能量耗尽管理 ==========
         bool _energy_depleted;  // ⭐ 能量是否已耗尽（Bug修复）
@@ -179,7 +179,7 @@ namespace RTSim {
         double getSolarIrradiance(int64_t time_ms);
 
         // 任务管理
-        TGFTaskModel *getTaskModel(AbsRTTask *task);
+        ASAPNonBlockTaskModel *getTaskModel(AbsRTTask *task);
         std::string getTaskName(AbsRTTask *task);
         void onTaskArrival(AbsRTTask *task);
 
@@ -208,12 +208,12 @@ namespace RTSim {
 
     public:
         // 构造函数/析构函数
-        TGFScheduler();
-        TGFScheduler(const std::vector<std::string> &params);
-        virtual ~TGFScheduler();
+        ASAPNonBlockScheduler();
+        ASAPNonBlockScheduler(const std::vector<std::string> &params);
+        virtual ~ASAPNonBlockScheduler();
 
         // 工厂方法
-        static std::unique_ptr<TGFScheduler>
+        static std::unique_ptr<ASAPNonBlockScheduler>
             createInstance(const std::vector<std::string> &params);
 
         // Scheduler接口实现
@@ -269,16 +269,16 @@ namespace RTSim {
         std::string getEnergyStatus() const;
 
         // 友元类声明
-        friend class TGFTickEvent;
-        // friend class TGFEnergyCheckEvent;  /* V40重构：能量检查事件已删除 */
+        friend class ASAPNonBlockTickEvent;
+        // friend class ASAPNonBlockEnergyCheckEvent;  /* V40重构：能量检查事件已删除 */
     };
 
 } // namespace RTSim
 
 // 工厂注册
 namespace RTSim {
-    static registerInFactory<RTSim::Scheduler, RTSim::TGFScheduler>
-        registerTGFScheduler("gpfp_tgf");
+    static registerInFactory<RTSim::Scheduler, RTSim::ASAPNonBlockScheduler>
+        registerASAPNonBlockScheduler("gpfp_asap_nonblock");
 }
 
 #endif // GPFP_TGF_SCHEDULER_HPP
