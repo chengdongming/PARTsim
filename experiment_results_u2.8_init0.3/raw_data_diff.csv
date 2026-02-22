@@ -1,2 +1,0 @@
-total_instances,failed_instances,preemptions,busy_time,energy_sum,overhead_proxy,failure_rate,avg_execution_time,total_idle_time,avg_energy_level,algorithm,battery_capacity
-2131.0833333333335,0.0,92.66666666666667,19756.666666666668,6558.381279666776,6.575666666666667,0.0,9.343162859439614,20243.333333333332,0.9973675705623698,gpfp_tie,1.0

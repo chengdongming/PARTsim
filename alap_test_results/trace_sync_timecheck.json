@@ -1,0 +1,15 @@
+{
+    "events" : [
+{ "time": "0", "event_type": "arrival", "task_name": "Task_Assassin_Hungry", "arrival_time": "0", "current_energy_mJ": 200, "total_consumed_mJ": 0, "total_harvested_mJ": 0},
+{ "time": "0", "event_type": "arrival", "task_name": "Task_Survivor_Eco", "arrival_time": "0", "current_energy_mJ": 200, "total_consumed_mJ": 0, "total_harvested_mJ": 0},
+{ "time": "0", "event_type": "arrival", "task_name": "Task_Mid_A", "arrival_time": "0", "current_energy_mJ": 200, "total_consumed_mJ": 0, "total_harvested_mJ": 0},
+{ "time": "0", "event_type": "arrival", "task_name": "Task_Mid_B", "arrival_time": "0", "current_energy_mJ": 200, "total_consumed_mJ": 0, "total_harvested_mJ": 0},
+{ "time": "0", "event_type": "arrival", "task_name": "Task_Low_A", "arrival_time": "0", "current_energy_mJ": 200, "total_consumed_mJ": 0, "total_harvested_mJ": 0},
+{ "time": "0", "event_type": "arrival", "task_name": "Task_Low_B", "arrival_time": "0", "current_energy_mJ": 200, "total_consumed_mJ": 0, "total_harvested_mJ": 0},
+{ "time": "30", "event_type": "scheduled", "task_name": "Task_Assassin_Hungry", "arrival_time": "0", "current_energy_mJ": 205.64, "total_consumed_mJ": 3, "total_harvested_mJ": 8.64, "task_unit_energy_mJ": 0.75, "task_total_energy_mJ": 15, "energy_sufficient": true},
+{ "time": "36", "event_type": "scheduled", "task_name": "Task_Survivor_Eco", "arrival_time": "0", "current_energy_mJ": 202.668, "total_consumed_mJ": 7.7, "total_harvested_mJ": 10.368, "task_unit_energy_mJ": 0.05, "task_total_energy_mJ": 1.2, "energy_sufficient": true},
+{ "time": "48", "event_type": "scheduled", "task_name": "Task_Mid_B", "arrival_time": "0", "current_energy_mJ": 194.124, "total_consumed_mJ": 19.7, "total_harvested_mJ": 13.824, "task_unit_energy_mJ": 0.6, "task_total_energy_mJ": 43.2, "energy_sufficient": true},
+{ "time": "50", "event_type": "end_instance", "task_name": "Task_Assassin_Hungry", "arrival_time": "0", "current_energy_mJ": 192.612, "total_consumed_mJ": 21.5, "total_harvested_mJ": 14.112, "task_unit_energy_mJ": 0.75, "task_total_energy_mJ": 15, "execution_time_ms": 20, "task_consumed_mJ": 18.5},
+{ "time": "50", "event_type": "arrival", "task_name": "Task_Assassin_Hungry", "arrival_time": "50", "current_energy_mJ": 190.2, "total_consumed_mJ": 24.2, "total_harvested_mJ": 14.4},
+{ "time": "50", "event_type": "scheduled", "task_name": "Task_Mid_A", "arrival_time": "0", "current_energy_mJ": 189.8, "total_consumed_mJ": 24.6, "total_harvested_mJ": 14.4, "task_unit_energy_mJ": 0.4, "task_total_energy_mJ": 20, "energy_sufficient": true},
+{ "time": "51", "event_type": "scheduled", "task_name": "Task_Low_B", "arrival_time": "0", "current_energy_mJ": 188.888, "total_consumed_mJ": 25.8, "total_harvested_mJ": 14.688, "task_unit_energy_mJ": 0.05, "task_total_energy_mJ": 22.5, "energy_sufficient": true}] }
