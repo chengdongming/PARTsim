@@ -1,4 +1,4 @@
-// gpfp_btie_scheduler.cpp - ALAP-Sync (Batch Tick-based Instant Energy-aware) Scheduler Implementation
+// gpfp_asap_sync_scheduler.cpp - ALAP-Sync (Batch Tick-based Instant Energy-aware) Scheduler Implementation
 // 算法特点：
 // 1. 基于当前实际能量进行批量调度判断（无前瞻性预测）
 // 2. 批量扣减能耗（一次性扣减k个任务的1ms能耗）

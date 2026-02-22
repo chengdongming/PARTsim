@@ -1,4 +1,4 @@
-// gpfp_tie_scheduler.cpp - ALAP-Block (Tick-based Instant Energy-aware) Scheduler Implementation
+// gpfp_asap_block_scheduler.cpp - ALAP-Block (Tick-based Instant Energy-aware) Scheduler Implementation
 // 算法特点：
 // 1. 基于当前实际能量进行即时判断（无前瞻性预测）
 // 2. 每ms逐次扣减能耗

@@ -1,4 +1,4 @@
-// gpfp_tgf_scheduler.cpp - ALAP-NonBlock (Tick-based Greedy First) Scheduler Implementation
+// gpfp_asap_nonblock_scheduler.cpp - ALAP-NonBlock (Tick-based Greedy First) Scheduler Implementation
 // 算法特点：
 // 1. 基于当前实际能量进行即时判断（无前瞻性预测）
 // 2. 每ms逐次扣减能耗
