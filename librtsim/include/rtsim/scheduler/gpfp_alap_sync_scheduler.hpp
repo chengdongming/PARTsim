@@ -144,6 +144,10 @@ namespace RTSim {
         bool _energy_depleted;                          // 能量是否已耗尽（Bug #5修复）
         int _current_batch_size;                        // 当前批量大小
 
+        // ========== 抢占防抖 ==========
+        AbsRTTask *_last_preempted_task;                // 最近被抢占的任务
+        MetaSim::Tick _last_preempted_tick;             // 最近抢占发生的时间
+
         // ========== 能量记账（每ms累计） ==========
         struct TaskEnergyAccount {
             double total_consumed;      // 累计消耗能量（每ms累加）
