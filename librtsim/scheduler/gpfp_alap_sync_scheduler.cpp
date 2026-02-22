@@ -524,9 +524,13 @@ namespace RTSim {
         // 获取运行中任务
         const auto& running_tasks = _kernel->getCurrentExecutingTasks();
         std::vector<AbsRTTask *> running_task_list;
+        double energy_to_deduct = 0.0;  // ⭐ V58：统一在这里计算energy_to_deduct
+        // ⭐ V58修复：只添加真正在执行且未完成WCET的任务
         for (const auto& map_pair : running_tasks) {
-            if (map_pair.second) {
-                running_task_list.push_back(map_pair.second);
+            AbsRTTask* task = map_pair.second;
+            if (task && task->isExecuting() && _tasks_completed_wcet.find(task) == _tasks_completed_wcet.end()) {
+                running_task_list.push_back(task);
+                energy_to_deduct += calculateUnitEnergyForTask(task);
             }
         }
 
@@ -570,9 +574,7 @@ namespace RTSim {
         //      违反了"尽可能晚执行"的原则
 
         // ⭐ ALAP-Sync关键修复：采用正确的能量扣除逻辑（后扣方式）
-
-        // 1. ⭐ ALAP-Sync关键：使用已构建的 running_task_list 和 sorted_ready
-        double energy_to_deduct = 0.0;
+        // ⭐ V58：energy_to_deduct已在上面统一计算
 
         // 🔍 调试：输出_currExe的内容
         SCHEDULER_LOG_INFO(std::string("🔍 [ALAP-Sync] _currExe内容 (") +
@@ -588,17 +590,6 @@ namespace RTSim {
             }
         }
 
-        for (const auto& map_pair : running_tasks) {
-            AbsRTTask* task = map_pair.second;
-            // ⭐ 关键修复：只统计真正在执行的任务，过滤已达到WCET的任务
-            // _currExe可能包含已完成的任务（isExecuting=TRUE，但已达到WCET）
-            // 使用_tasks_completed_wcet集合来判断任务是否真正完成
-            if (task && task->isExecuting() && _tasks_completed_wcet.find(task) == _tasks_completed_wcet.end()) {
-                running_task_list.push_back(task);
-                double unit_energy = calculateUnitEnergyForTask(task);
-                energy_to_deduct += unit_energy;
-            }
-        }
 
         // 如果kernel中还没有运行任务（第一次调度），检查_current_batch_tasks
         if (running_task_list.empty() && !_current_batch_tasks.empty()) {
@@ -1448,17 +1439,46 @@ namespace RTSim {
             return;
         }
 
-        // ⭐ 关键修复：检查_current_batch_tasks中的第一个任务（最高优先级）
+        // ⭐ 关键修复：检查_current_batch_tasks中的第一个Slack<=0的任务
         // 因为mid-tick抢占可能已经将高优先级任务移到了_batch_tasks头部
+        // ⭐ V59修复：遍历_current_batch_tasks找到第一个Slack<=0的任务
+        // 原因：最高RM优先级任务的Slack可能>0，此时应该选择下一个Slack<=0的任务
         AbsRTTask *highest = nullptr;
         bool from_ready_queue = false;  // 标记是否来自就绪队列
 
         if (!_current_batch_tasks.empty()) {
-            highest = _current_batch_tasks[0];
-            from_ready_queue = false;
+            // ⭐ V59：遍历_current_batch_tasks找第一个Slack<=0的任务
+            for (AbsRTTask *task : _current_batch_tasks) {
+                if (!task || !task->isActive()) continue;
+
+                // 检查是否已在运行
+                bool is_running = false;
+                for (const auto& [cpu, running_task] : running_tasks) {
+                    if (running_task == task) {
+                        is_running = true;
+                        break;
+                    }
+                }
+                if (is_running) continue;
+
+                // ⭐ V59关键：检查Slack
+                Tick task_slack = calculateSlackForTask(task);
+                if (task_slack <= 0) {
+                    highest = task;
+                    from_ready_queue = false;
+                    SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Sync] checkAndPreempt: 从batch选择Slack<=0任务: ") +
+                                      getTaskName(task) +
+                                      " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms");
+                    break;  // 找到了，退出循环
+                } else {
+                    SCHEDULER_LOG_INFO(std::string("⏸️ [ALAP-Sync] checkAndPreempt: 跳过batch任务Slack>0: ") +
+                                      getTaskName(task) +
+                                      " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms");
+                }
+            }
         }
 
-        // 如果批量任务为空，才从就绪队列查找
+        // 如果批量任务中没有Slack<=0的，才从就绪队列查找
         if (!highest) {
             highest = getHighestPriorityTaskFromReadyQueue();
             from_ready_queue = true;
@@ -1520,9 +1540,21 @@ namespace RTSim {
 
         // ⭐ V45修复：如果有真正空闲的CPU，不进行抢占
         // 新任务会被dispatch到空闲CPU，不需要抢占正在运行的任务
+        // ⭐ V59修复：有空闲CPU时，需要将highest任务加入批量并触发dispatch
         if (truly_free_cpus > 0) {
             SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Sync] 有空闲CPU，无需抢占，直接调度新任务: ") +
                               getTaskName(highest));
+            // ⭐ V59：将任务加入批量并触发调度
+            if (highest) {
+                // 检查任务是否已在批量中
+                auto batch_it = std::find(_current_batch_tasks.begin(), _current_batch_tasks.end(), highest);
+                if (batch_it == _current_batch_tasks.end()) {
+                    _current_batch_tasks.push_back(highest);
+                    SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Sync] 将任务加入批量: ") + getTaskName(highest));
+                }
+                // 触发dispatch
+                _kernel->dispatch();
+            }
             return;
         }
 
