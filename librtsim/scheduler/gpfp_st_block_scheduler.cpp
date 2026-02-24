@@ -57,6 +57,41 @@ namespace RTSim {
     }
 
     // =====================================================
+    // STBlockWakeEvent 实现 - 深度充电唤醒定时器
+    // ⭐ V74新增：在Slack=0或电池充满时唤醒系统
+    // =====================================================
+
+    STBlockWakeEvent::STBlockWakeEvent(STBlockScheduler *scheduler, MetaSim::Tick wake_time)
+        : MetaSim::Event("STBlockWakeEvent", MetaSim::Event::_DEFAULT_PRIORITY + 5),
+          _scheduler(scheduler),
+          _wake_time(wake_time) {
+        // 设置唤醒时间
+        SCHEDULER_LOG_INFO(std::string("⏰ [ST-Block] 唤醒定时器创建: wake_time=") +
+                          std::to_string(static_cast<int64_t>(wake_time)) + "ms");
+    }
+
+    void STBlockWakeEvent::doit() {
+        if (!_scheduler) {
+            return;
+        }
+
+        Tick current_time = SIMUL.getTime();
+        int64_t current_ms = static_cast<int64_t>(current_time);
+
+        SCHEDULER_LOG_INFO(std::string("🔔 [ST-Block] ===== 唤醒定时器触发 @ ") +
+                           std::to_string(current_ms) + "ms =====");
+
+        // 清除深度充电模式
+        _scheduler->_deep_charging = false;
+        _scheduler->_energy_depleted = false;
+
+        // 立即执行一次tick调度
+        _scheduler->performTickScheduling();
+
+        // 注意：不需要调度下一个tick，因为tick事件仍在正常运行
+    }
+
+    // =====================================================
     // ALAP-BlockEnergyCheckEvent 实现 - 运行时能量检查
     // ⭐ V40重构：能量检查事件已删除，能量由performTickScheduling处理
     // =====================================================
@@ -277,6 +312,7 @@ namespace RTSim {
           _deep_charging(false),
           _charge_start_time(0),
           _charge_until_slack_zero(0),
+          _wake_event(nullptr),  // ⭐ V74：初始化唤醒定时器
           _last_preempted_task(nullptr),
           _last_preempted_tick(0) {
 
@@ -433,6 +469,13 @@ namespace RTSim {
             _tick_event = nullptr;
         }
 
+        // ⭐ V74：清理唤醒定时器
+        if (_wake_event) {
+            _wake_event->drop();
+            delete _wake_event;
+            _wake_event = nullptr;
+        }
+
         // 清理任务模型
         for (auto &pair : _task_models) {
             delete pair.second;
@@ -494,25 +537,61 @@ namespace RTSim {
         }
 
         // ========== ST深度充电检查 ==========
-        // ⭐ ST特有：检查是否处于深度充电模式，决定是否唤醒
+        // ⭐ V74重构：使用唤醒定时器代替轮询检查
         if (_deep_charging) {
             // 计算所有就绪任务的最小Slack
             Tick min_slack = calculateMinSlack();
+            int64_t min_slack_ms = static_cast<int64_t>(min_slack);
 
-            // 唤醒条件：Slack=0 或 电池充满
-            if (min_slack <= 0) {
-                SCHEDULER_LOG_INFO("🔋 [ST-Block] 深度充电结束：Slack=0，唤醒调度");
+            SCHEDULER_LOG_INFO(std::string("🔋 [ST-Block] 深度充电中... Slack=") +
+                              std::to_string(min_slack_ms) + "ms " +
+                              "能量=" + std::to_string(_current_energy * 1000) + "mJ");
+
+            // 唤醒条件：Slack<=0 或 电池充满
+            if (min_slack_ms <= 0) {
+                SCHEDULER_LOG_INFO("🔋 [ST-Block] 深度充电结束：Slack<=0，唤醒调度");
                 _deep_charging = false;
                 _energy_depleted = false;
+                // 取消唤醒定时器
+                if (_wake_event) {
+                    _wake_event->drop();
+                    delete _wake_event;
+                    _wake_event = nullptr;
+                }
             } else if (_current_energy >= _max_energy - 0.000001) {
                 SCHEDULER_LOG_INFO("🔋 [ST-Block] 深度充电结束：电池充满，唤醒调度");
                 _deep_charging = false;
                 _energy_depleted = false;
+                // 取消唤醒定时器
+                if (_wake_event) {
+                    _wake_event->drop();
+                    delete _wake_event;
+                    _wake_event = nullptr;
+                }
             } else {
-                SCHEDULER_LOG_INFO(std::string("🔋 [ST-Block] 深度充电中... Slack=") +
-                                  std::to_string(static_cast<int64_t>(min_slack)) + "ms " +
-                                  "能量=" + std::to_string(_current_energy * 1000) + "mJ");
-                // 继续充电，跳过本tick调度
+                // ⭐ V74：设置唤醒定时器（如果还没设置或需要更新）
+                Tick current_time = SIMUL.getTime();
+                Tick wake_time = current_time + min_slack;
+
+                // 如果没有唤醒定时器，或者唤醒时间需要更新
+                if (!_wake_event || static_cast<int64_t>(_wake_event->getWakeTime()) != min_slack_ms + static_cast<int64_t>(current_time)) {
+                    // 取消旧的定时器
+                    if (_wake_event) {
+                        _wake_event->drop();
+                        delete _wake_event;
+                    }
+
+                    // 创建新的唤醒定时器
+                    _wake_event = new STBlockWakeEvent(this, wake_time);
+                    _wake_event->post(wake_time);
+
+                    SCHEDULER_LOG_INFO(std::string("⏰ [ST-Block] 设置唤醒定时器: 当前时间=") +
+                                      std::to_string(static_cast<int64_t>(current_time)) + "ms " +
+                                      "Slack=" + std::to_string(min_slack_ms) + "ms " +
+                                      "唤醒时间=" + std::to_string(static_cast<int64_t>(wake_time)) + "ms");
+                }
+
+                // 继续充电，跳过本tick的任务调度（但仍收集能量）
                 return;
             }
         }
@@ -547,7 +626,13 @@ namespace RTSim {
                                std::to_string(running_tasks_map.size()) + " 个");
 
             for (const auto& [cpu, task] : running_tasks_map) {
-                if (!task || !task->isExecuting()) continue;
+                // ⭐ 关键修复：移除isExecuting()检查
+                // 原因：在MRTKernel::onEndDispatchMulti中，任务先被添加到_m_currExe（第474行），
+                // 然后schedule()才被调用（第590行）设置state=TSK_EXEC
+                // 如果任务在_m_currExe中但state还是TSK_READY，isExecuting()返回false，
+                // 导致能量不会被扣除，形成"永动机"bug
+                // 修复：只要任务在_m_currExe中，就应该扣除能量，不管isExecuting()返回值
+                if (!task) continue;
 
                 double unit_energy = calculateUnitEnergyForTask(task);
 
@@ -1821,6 +1906,15 @@ namespace RTSim {
         _waiting_queue.clear();
         _energy_accounts.clear();
         _running_tasks.clear();
+
+        // ⭐ V74：重置深度充电状态
+        _deep_charging = false;
+        _energy_depleted = false;
+        if (_wake_event) {
+            _wake_event->drop();
+            delete _wake_event;
+            _wake_event = nullptr;
+        }
 
         _stats.total_scheduled = 0;
         _stats.total_task_completions = 0;

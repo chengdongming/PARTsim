@@ -40,6 +40,21 @@ namespace RTSim {
     };
 
     // =====================================================
+    // ST-Block 深度充电唤醒事件
+    // ⭐ V74新增：当能量不足进入深度充电时，设置此定时器在Slack=0时唤醒
+    // =====================================================
+    class STBlockWakeEvent : public MetaSim::Event {
+    private:
+        STBlockScheduler *_scheduler;
+        MetaSim::Tick _wake_time;
+
+    public:
+        STBlockWakeEvent(STBlockScheduler *scheduler, MetaSim::Tick wake_time);
+        void doit() override;
+        MetaSim::Tick getWakeTime() const { return _wake_time; }
+    };
+
+    // =====================================================
     // ALAP-Block运行时能量检查事件（每1ms检查运行中任务的能量）
     // ⭐ V40重构：能量检查事件已删除，能量由performTickScheduling处理
     // =====================================================
@@ -166,6 +181,7 @@ namespace RTSim {
         bool _deep_charging;           // ⭐ ST特有：是否处于深度充电模式
         MetaSim::Tick _charge_start_time;  // 充电开始时间
         MetaSim::Tick _charge_until_slack_zero;  // 充电直到Slack=0的时间
+        STBlockWakeEvent *_wake_event;  // ⭐ V74：深度充电唤醒定时器
 
         // ========== 抢占防抖 ==========
         // ⭐ 防止频繁抢占：在同一个tick内，同一个任务不应该被反复抢占
@@ -288,6 +304,7 @@ namespace RTSim {
 
         // 友元类声明
         friend class STBlockTickEvent;
+        friend class STBlockWakeEvent;  // ⭐ V74：深度充电唤醒事件
         // ⭐ V40重构：能量检查事件已删除
         // friend class ALAP-BLOCKEnergyCheckEvent;
     };
