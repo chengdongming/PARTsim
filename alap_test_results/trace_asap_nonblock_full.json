@@ -1,8 +1,0 @@
-{
-    "events" : [
-{ "time": "0", "event_type": "arrival", "task_name": "Task_Assassin_Hungry", "arrival_time": "0"},
-{ "time": "0", "event_type": "arrival", "task_name": "Task_Survivor_Eco", "arrival_time": "0"},
-{ "time": "0", "event_type": "arrival", "task_name": "Task_Mid_A", "arrival_time": "0"},
-{ "time": "0", "event_type": "arrival", "task_name": "Task_Mid_B", "arrival_time": "0"},
-{ "time": "0", "event_type": "arrival", "task_name": "Task_Low_A", "arrival_time": "0"},
-{ "time": "0", "event_type": "arrival", "task_name": "Task_Low_B", "arrival_time": "0"},

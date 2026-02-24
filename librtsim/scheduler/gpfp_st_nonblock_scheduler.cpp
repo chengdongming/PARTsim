@@ -57,6 +57,97 @@ namespace RTSim {
     }
 
     // =====================================================
+    // STNonBlockWakeEvent 实现 - 被跳过任务的专属唤醒定时器
+    // ⭐ 策略2核心：当被跳过任务的Slack=0或电池充满时唤醒
+    // =====================================================
+
+    STNonBlockWakeEvent::STNonBlockWakeEvent(STNonBlockScheduler *scheduler, AbsRTTask *task, Tick wake_time)
+        : MetaSim::Event("STNonBlockWakeEvent", MetaSim::Event::_DEFAULT_PRIORITY - 10),
+          _scheduler(scheduler),
+          _task(task),
+          _wake_time(wake_time) {
+        // 更高优先级，确保唤醒事件及时触发
+    }
+
+    void STNonBlockWakeEvent::doit() {
+        if (!_scheduler || !_task) {
+            return;
+        }
+
+        Tick current_time = SIMUL.getTime();
+        std::string task_name = _scheduler->getTaskName(_task);
+
+        SCHEDULER_LOG_INFO(std::string("🔔 [ST-NonBlock] 唤醒定时器触发: ") +
+                           "任务=" + task_name +
+                           " 时间=" + std::to_string(static_cast<int64_t>(current_time)) + "ms");
+
+        // ⭐ 检查任务是否仍在被跳过集合中
+        if (_scheduler->_skipped_tasks.find(_task) == _scheduler->_skipped_tasks.end()) {
+            // 任务已被调度或完成，无需处理
+            SCHEDULER_LOG_DEBUG(std::string("  任务已不在跳过集合中，忽略唤醒"));
+            return;
+        }
+
+        // ⭐ 检查任务是否还有效
+        if (!_task->isActive()) {
+            SCHEDULER_LOG_DEBUG(std::string("  任务已不活动，移出跳过集合"));
+            _scheduler->_skipped_tasks.erase(_task);
+            _scheduler->_skip_wake_events.erase(_task);
+            return;
+        }
+
+        // ⭐ 检查当前能量是否足够执行1ms
+        double unit_energy = _scheduler->calculateUnitEnergyForTask(_task);
+        double current_energy = _scheduler->getCurrentEnergy();
+
+        if (current_energy >= unit_energy - 1e-9) {
+            // 能量充足，触发抢占调度
+            SCHEDULER_LOG_INFO(std::string("✅ [ST-NonBlock] 唤醒时能量充足，触发抢占: ") +
+                               "任务=" + task_name +
+                               " 需要=" + std::to_string(unit_energy * 1000) + "mJ" +
+                               " 当前=" + std::to_string(current_energy * 1000) + "mJ");
+
+            // 从跳过集合中移除
+            _scheduler->_skipped_tasks.erase(_task);
+
+            // ⭐ 触发抢占：让内核重新调度
+            // 如果有低优先级任务在运行，高优先级任务应该抢占它
+            if (_scheduler->_kernel) {
+                _scheduler->_kernel->dispatch();
+            }
+        } else {
+            // 能量仍然不足，重新设置唤醒
+            SCHEDULER_LOG_INFO(std::string("⚠️ [ST-NonBlock] 唤醒时能量仍不足，继续等待: ") +
+                               "任务=" + task_name +
+                               " 需要=" + std::to_string(unit_energy * 1000) + "mJ" +
+                               " 当前=" + std::to_string(current_energy * 1000) + "mJ");
+
+            // 计算新的唤醒时间：等到电池充满或Slack=0
+            Tick slack = _scheduler->calculateSlackForTask(_task);
+            Tick new_wake_time;
+
+            if (slack <= 0) {
+                // Slack已为0，必须立即尝试
+                new_wake_time = current_time + 1;
+            } else {
+                // 等待能量收集
+                double energy_needed = unit_energy - current_energy;
+                double harvest_rate = 0.008;  // 默认收集率 mJ/ms
+                int64_t charge_time_ms = static_cast<int64_t>(energy_needed * 1000 / harvest_rate) + 1;
+                new_wake_time = current_time + std::min(static_cast<int64_t>(slack), charge_time_ms);
+            }
+
+            // 创建新的唤醒事件
+            STNonBlockWakeEvent *new_event = new STNonBlockWakeEvent(_scheduler, _task, new_wake_time);
+            _scheduler->_skip_wake_events[_task] = new_event;
+            new_event->post(new_wake_time);
+
+            SCHEDULER_LOG_INFO(std::string("  重新设置唤醒时间: ") +
+                               std::to_string(static_cast<int64_t>(new_wake_time)) + "ms");
+        }
+    }
+
+    // =====================================================
     // ST-NonBlockEnergyCheckEvent 实现 - 运行时能量检查
     // ⭐ V40重构：能量检查事件已删除，能量由performTickScheduling���理
     // =====================================================
@@ -899,6 +990,39 @@ namespace RTSim {
 
                     // 没有找到能量足够的任务
                     SCHEDULER_LOG_INFO(std::string("⚠️ [ST-NonBlock] 贪心策略：未找到能量足够的任务"));
+
+                    // ⭐ 策略2核心修复：为被跳过的高优先级任务设置专属唤醒定时器
+                    // 当任务Slack=0或电池充满时唤醒，抢占正在运行的低优先级任务
+                    if (_skipped_tasks.find(task) == _skipped_tasks.end()) {
+                        // 首次跳过此任务，设置唤醒定时器
+                        Tick slack = calculateSlackForTask(task);
+                        Tick current_time = SIMUL.getTime();
+                        Tick wake_time;
+
+                        if (slack <= 0) {
+                            // Slack已为0，尽快唤醒
+                            wake_time = current_time + 1;
+                        } else {
+                            // 计算充电所需时间
+                            double energy_needed = unit_energy - available_energy;
+                            double harvest_rate = 0.008;  // mJ/ms
+                            int64_t charge_time_ms = static_cast<int64_t>(energy_needed * 1000 / harvest_rate) + 1;
+                            // 唤醒时间 = min(Slack到期时间, 充满电时间)
+                            wake_time = current_time + std::min(static_cast<int64_t>(slack), charge_time_ms);
+                        }
+
+                        // 创建并设置唤醒事件
+                        STNonBlockWakeEvent *wake_event = new STNonBlockWakeEvent(this, task, wake_time);
+                        _skip_wake_events[task] = wake_event;
+                        _skipped_tasks.insert(task);
+                        wake_event->post(wake_time);
+
+                        SCHEDULER_LOG_INFO(std::string("⏰ [ST-NonBlock] 设置唤醒定时器: ") +
+                                          "任务=" + getTaskName(task) +
+                                          " Slack=" + std::to_string(static_cast<int64_t>(slack)) + "ms" +
+                                          " 唤醒时间=" + std::to_string(static_cast<int64_t>(wake_time)) + "ms");
+                    }
+
                     return nullptr;
                 }
 
@@ -917,6 +1041,18 @@ namespace RTSim {
                     }
                     // 否则已标记过，直接返回任务
                     return task;
+                    // ⭐ 策略2修复：任务成功调度，从跳过集合中移除并取消唤醒定时器
+                    if (_skipped_tasks.find(task) != _skipped_tasks.end()) {
+                        _skipped_tasks.erase(task);
+                        auto it = _skip_wake_events.find(task);
+                        if (it != _skip_wake_events.end()) {
+                            it->second->drop();  // 取消定时器
+                            delete it->second;
+                            _skip_wake_events.erase(it);
+                            SCHEDULER_LOG_INFO(std::string("🗑️ [ST-NonBlock] 取消唤醒定时器: ") + getTaskName(task));
+                        }
+                    }
+
                 }
                 // 运行中任务不需要标记，因为它们已经扣除过初始能量
                 return task;

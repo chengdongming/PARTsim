@@ -53,18 +53,73 @@ def get_system_cores(config_path):
 
 SYSTEM_CORES = get_system_cores(CONFIG_TEMPLATE)
 
-# 算法配置
-ALGORITHMS = ['gpfp_tie', 'gpfp_tgf', 'gpfp_btie']
-ALGO_DISPLAY_NAMES = {'gpfp_tie': 'TIE', 'gpfp_tgf': 'TGF', 'gpfp_btie': 'BTIE'}
+# 算法配置 - 9种调度器
+# ASAP系列（贪婪策略）
+# ALAP系列（最晚策略）
+# ST系列（标准策略）
+ALGORITHMS = [
+    'gpfp_asap_block', 'gpfp_asap_nonblock', 'gpfp_asap_sync',
+    'gpfp_alap_block', 'gpfp_alap_nonblock', 'gpfp_alap_sync',
+    'gpfp_st_block', 'gpfp_st_nonblock', 'gpfp_st_sync'
+]
 
-# 实验参数（可通过命令行修改）
-DEFAULT_UTILIZATION_POINTS = np.linspace(0.1, 1.0, 10)
-DEFAULT_NUM_TASKSETS = 10  # 快速测试：10个任务集
-DEFAULT_TASK_N = 15  # 增加任务数，产生更多能量约束
+# 算法显示名称映射
+ALGO_DISPLAY_NAMES = {
+    'gpfp_asap_block': 'ASAP-Block',
+    'gpfp_asap_nonblock': 'ASAP-NonBlock',
+    'gpfp_asap_sync': 'ASAP-Sync',
+    'gpfp_alap_block': 'ALAP-Block',
+    'gpfp_alap_nonblock': 'ALAP-NonBlock',
+    'gpfp_alap_sync': 'ALAP-Sync',
+    'gpfp_st_block': 'ST-Block',
+    'gpfp_st_nonblock': 'ST-NonBlock',
+    'gpfp_st_sync': 'ST-Sync'
+}
+
+# 算法分类（用于图表分组）
+ALGO_GROUPS = {
+    'asap': ['gpfp_asap_block', 'gpfp_asap_nonblock', 'gpfp_asap_sync'],
+    'alap': ['gpfp_alap_block', 'gpfp_alap_nonblock', 'gpfp_alap_sync'],
+    'st': ['gpfp_st_block', 'gpfp_st_nonblock', 'gpfp_st_sync'],
+    'block': ['gpfp_asap_block', 'gpfp_alap_block', 'gpfp_st_block'],
+    'nonblock': ['gpfp_asap_nonblock', 'gpfp_alap_nonblock', 'gpfp_st_nonblock'],
+    'sync': ['gpfp_asap_sync', 'gpfp_alap_sync', 'gpfp_st_sync']
+}
+
+# 图表显示名称
+GROUP_DISPLAY_NAMES = {
+    'asap': 'ASAP系列',
+    'alap': 'ALAP系列',
+    'st': 'ST系列',
+    'block': 'Block系列',
+    'nonblock': 'NonBlock系列',
+    'sync': 'Sync系列'
+}
+
+# 算法样式配置（颜色和标记）
+ALGO_STYLES = {
+    # ASAP系列 - 蓝色系
+    'gpfp_asap_block': {'color': '#1f77b4', 'marker': 'o', 'linestyle': '-'},
+    'gpfp_asap_nonblock': {'color': '#1f77b4', 'marker': 's', 'linestyle': '--'},
+    'gpfp_asap_sync': {'color': '#1f77b4', 'marker': '^', 'linestyle': ':'},
+    # ALAP系列 - 绿色系
+    'gpfp_alap_block': {'color': '#2ca02c', 'marker': 'o', 'linestyle': '-'},
+    'gpfp_alap_nonblock': {'color': '#2ca02c', 'marker': 's', 'linestyle': '--'},
+    'gpfp_alap_sync': {'color': '#2ca02c', 'marker': '^', 'linestyle': ':'},
+    # ST系列 - 红色系
+    'gpfp_st_block': {'color': '#d62728', 'marker': 'o', 'linestyle': '-'},
+    'gpfp_st_nonblock': {'color': '#d62728', 'marker': 's', 'linestyle': '--'},
+    'gpfp_st_sync': {'color': '#d62728', 'marker': '^', 'linestyle': ':'}
+}
+
+# 实验��数（可通过命令行修改）
+DEFAULT_UTILIZATION_POINTS = np.around(np.linspace(0.1, 1.0, 10), 2)  # 四舍五入避免浮点精度问题
+DEFAULT_NUM_TASKSETS = 20  # 每个利用率点20个任务集
+DEFAULT_TASK_N = 10  # 每个任务集10个任务
 DEFAULT_TASK_P_MIN = 40  # 周期范围：最小40ms
 DEFAULT_TASK_P_MAX = 400  # 周期范围：最大400ms（增加多样性）
-DEFAULT_SIMULATION_TIME = 50000  # 50秒仿真
-DEFAULT_BATTERY_CAPACITY = 5.0  # 5J电池
+DEFAULT_SIMULATION_TIME = 30000  # 30秒仿真
+DEFAULT_BATTERY_CAPACITY = 20.0  # 20J电池
 DEFAULT_INITIAL_ENERGY_RATIO = 1.0  # 100%初始能量（满电）
 DEFAULT_SOLAR_START_TIME_MS = 21975000  # 早上6:06 AM
 DEFAULT_USE_REAL_SOLAR_DATA = False  # 使用分段函数模拟，不使用真实太阳能数据
@@ -369,39 +424,48 @@ class FigureGenerator:
                 algo_data = algo_data.sort_values('normalized_utilization')
                 x = algo_data['normalized_utilization'].values
                 y = algo_data['acceptance_ratio'].values
-                results[display_name] = (x, y)
+                results[internal_name] = (x, y)  # 使用内部名称作为key
 
         return results
 
     @staticmethod
-    def plot_acceptance_ratio(results, save_path, x_label=None):
-        """绘制接受率图表"""
-        # 修复：确保输出目录存在
+    def plot_single_group(results, group_name, save_path, x_label=None):
+        """
+        绘制单个分组的接受率图表
+
+        Args:
+            results: 所有算法的数据 {internal_name: (x, y)}
+            group_name: 分组名称 ('asap', 'alap', 'st', 'block', 'nonblock', 'sync')
+            save_path: 保存路径
+            x_label: X轴标签
+        """
         save_path = Path(save_path)
         save_path.parent.mkdir(parents=True, exist_ok=True)
 
         # 创建图表
         fig, ax = plt.subplots(figsize=(8, 6))
 
-        # 定义算法样式
-        styles = {
-            'TIE': {'color': 'blue', 'marker': 'o', 'label': 'TIE'},
-            'TGF': {'color': 'green', 'marker': 's', 'label': 'TGF'},
-            'BTIE': {'color': 'red', 'marker': '^', 'label': 'BTIE'}
-        }
+        # 获取该分组的算法列表
+        algo_list = ALGO_GROUPS.get(group_name, [])
+        if not algo_list:
+            print(f"⚠️ 未知的分组: {group_name}")
+            return None, None
 
-        # 绘制每个算法的曲线
-        for algo_name in ['TIE', 'TGF', 'BTIE']:
-            if algo_name not in results:
+        # 绘制每条曲线
+        for algo_internal in algo_list:
+            if algo_internal not in results:
                 continue
-            x, y = results[algo_name]
-            style = styles[algo_name]
+            x, y = results[algo_internal]
+            style = ALGO_STYLES.get(algo_internal, {'color': 'black', 'marker': 'o', 'linestyle': '-'})
+            display_name = ALGO_DISPLAY_NAMES.get(algo_internal, algo_internal)
+
             ax.plot(x, y,
                    color=style['color'],
                    marker=style['marker'],
                    markersize=6,
                    linewidth=2,
-                   label=style['label'],
+                   linestyle=style['linestyle'],
+                   label=display_name,
                    markerfacecolor='white',
                    markeredgewidth=1.5,
                    markeredgecolor=style['color'])
@@ -419,6 +483,9 @@ class FigureGenerator:
         ax.grid(True, linestyle='--', alpha=0.5, color='grey', linewidth=0.5)
         ax.set_axisbelow(True)
 
+        # 设置标题
+        ax.set_title(GROUP_DISPLAY_NAMES.get(group_name, group_name), fontsize=14, fontweight='bold')
+
         # 配置图例
         ax.legend(loc='upper right', frameon=True, fancybox=False,
                  edgecolor='black', framealpha=1.0)
@@ -435,14 +502,103 @@ class FigureGenerator:
                    facecolor='white', edgecolor='none')
         print(f"✅ 图表已保存: {save_path}")
 
+        plt.close(fig)
+        return fig, ax
+
+    @staticmethod
+    def plot_all_groups(results, output_dir, x_label=None):
+        """
+        生成所有6张分组图表
+
+        Args:
+            results: 所有算法的数据 {internal_name: (x, y)}
+            output_dir: 输出目录
+            x_label: X轴标签
+        """
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # 分组顺序
+        groups = ['asap', 'alap', 'st', 'block', 'nonblock', 'sync']
+
+        for group_name in groups:
+            save_path = output_dir / f'acceptance_ratio_{group_name}.png'
+            print(f"\n🎨 正在生成 {GROUP_DISPLAY_NAMES[group_name]} 图表...")
+            FigureGenerator.plot_single_group(results, group_name, save_path, x_label)
+
+        print(f"\n✅ 所有图表已保存到: {output_dir}")
+
+    @staticmethod
+    def plot_acceptance_ratio(results, save_path, x_label=None):
+        """
+        绘制所有9种算法的单张综合图表（向后兼容）
+        """
+        save_path = Path(save_path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+
+        fig, ax = plt.subplots(figsize=(10, 7))
+
+        # 定义不同系列的颜色
+        series_colors = {
+            'asap': '#1f77b4',  # 蓝色
+            'alap': '#2ca02c',  # 绿色
+            'st': '#d62728'     # 红色
+        }
+
+        # 绘制所有算法
+        for algo_internal, display_name in ALGO_DISPLAY_NAMES.items():
+            if algo_internal not in results:
+                continue
+            x, y = results[algo_internal]
+            style = ALGO_STYLES.get(algo_internal, {})
+
+            ax.plot(x, y,
+                   color=style.get('color', 'black'),
+                   marker=style.get('marker', 'o'),
+                   markersize=5,
+                   linewidth=1.5,
+                   linestyle=style.get('linestyle', '-'),
+                   label=display_name,
+                   markerfacecolor='white',
+                   markeredgewidth=1.2,
+                   markeredgecolor=style.get('color', 'black'),
+                   alpha=0.8)
+
+        if x_label:
+            ax.set_xlabel(x_label)
+        else:
+            ax.set_xlabel(r'Normalized Processor Utilization ($\sum U_i / M$)')
+        ax.set_ylabel('Acceptance Ratio')
+        ax.set_xlim([0, 1.05])
+        ax.set_ylim([-0.05, 1.05])
+
+        ax.grid(True, linestyle='--', alpha=0.5, color='grey', linewidth=0.5)
+        ax.set_axisbelow(True)
+
+        # 图例分两列显示
+        ax.legend(loc='upper right', frameon=True, fancybox=False,
+                 edgecolor='black', framealpha=1.0, ncol=2, fontsize=9)
+
+        ax.set_facecolor('white')
+        fig.patch.set_facecolor('white')
+
+        plt.tight_layout()
+        plt.savefig(str(save_path), dpi=300, bbox_inches='tight',
+                   facecolor='white', edgecolor='none')
+        print(f"✅ 综合图表已保存: {save_path}")
+
+        plt.close(fig)
         return fig, ax
 
     @staticmethod
     def print_data_summary(results):
         """打印数据摘要"""
         print("\n📊 数据摘要:")
-        for algo_name, (x, y) in results.items():
-            print(f"{algo_name}:")
+        for algo_internal, display_name in ALGO_DISPLAY_NAMES.items():
+            if algo_internal not in results:
+                continue
+            x, y = results[algo_internal]
+            print(f"{display_name}:")
             print(f"  X范围: [{x.min():.3f}, {x.max():.3f}]")
             print(f"  接受率范围: [{y.min():.3f}, {y.max():.3f}]")
             mid_idx = len(x) // 2
@@ -454,22 +610,31 @@ class FigureGenerator:
 # ============================================
 def main():
     parser = argparse.ArgumentParser(
-        description='接受率分析：实验执行 + 图表生成（二元可调度性）',
+        description='接受率分析：9种算法实验 + 6张分组图表生成',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例用法:
-  # 运行完整实验并生成图表
-  python3 acceptance_ratio_analysis.py --run-experiment
+  # 运行完整实验并生成6张分组图表
+  python3 acceptance_ratio_test.py --run-experiment
 
   # 仅从已有数据生成图表
-  python3 acceptance_ratio_analysis.py --csv acceptance_ratio_experiment/acceptance_ratio_data.csv
+  python3 acceptance_ratio_test.py --csv acceptance_ratio_experiment/acceptance_ratio_data.csv
 
   # 自定义实验参数
-  python3 acceptance_ratio_analysis.py --run-experiment --num-points 15 --num-tasksets 10
+  python3 acceptance_ratio_test.py --run-experiment --num-points 10 --num-tasksets 5
 
-注意：本脚本实现二元可调度性评估（Binary Schedulability）
-- 每个任务集要么完全成功（1.0），要么失败（0.0）
-- 接受率 = 成功任务集数量 / 总任务集数量
+算法说明:
+  ASAP系列 (贪婪策略): ASAP-Block, ASAP-NonBlock, ASAP-Sync
+  ALAP系列 (最晚策略): ALAP-Block, ALAP-NonBlock, ALAP-Sync
+  ST系列  (标准策略): ST-Block, ST-NonBlock, ST-Sync
+
+图表输出:
+  1. ASAP系列对比图 (Block/NonBlock/Sync)
+  2. ALAP系列对比图 (Block/NonBlock/Sync)
+  3. ST系列对比图 (Block/NonBlock/Sync)
+  4. Block系列对比图 (ASAP/ALAP/ST)
+  5. NonBlock系列对比图 (ASAP/ALAP/ST)
+  6. Sync系列对比图 (ASAP/ALAP/ST)
         """
     )
 
@@ -486,8 +651,8 @@ def main():
                        help='利用率采样点数 (默认: 10)')
     parser.add_argument('--num-tasksets', type=int, default=DEFAULT_NUM_TASKSETS,
                        help=f'每个利用率点的任务集数量 (默认: {DEFAULT_NUM_TASKSETS})')
-    parser.add_argument('--task-n', type=int, default=10,
-                       help='每个任务集的任务数 (默认: 10)')
+    parser.add_argument('--task-n', type=int, default=DEFAULT_TASK_N,
+                       help=f'每个任务集的任务数 (默认: {DEFAULT_TASK_N})')
     parser.add_argument('--battery', type=float, default=DEFAULT_BATTERY_CAPACITY,
                        help=f'电池容量 (Joules) (默认: {DEFAULT_BATTERY_CAPACITY})')
     parser.add_argument('--initial-energy', type=float, default=DEFAULT_INITIAL_ENERGY_RATIO,
@@ -497,16 +662,18 @@ def main():
 
     # 图表参数
     parser.add_argument('--figure-output', type=str, default=None,
-                       help='图表输出文件名')
+                       help='综合图表输出文件名（可选，默认生成6张分组图表）')
     parser.add_argument('--x-label', type=str, default=None,
                        help='自定义X轴标签')
+    parser.add_argument('--no-group-figures', action='store_true',
+                       help='不生成分组图表，只生成综合图表')
 
     args = parser.parse_args()
 
     # 决定数据来源
     if args.run_experiment:
         # 运行实验
-        utilization_points = np.linspace(0.1, 1.0, args.num_points)
+        utilization_points = np.around(np.linspace(0.1, 1.0, args.num_points), 2)
 
         # 计算太阳能开始时间（小时转毫秒）
         solar_start_time_ms = args.solar_time * 3600 * 1000
@@ -553,13 +720,6 @@ def main():
         plot_data = FigureGenerator.load_data_from_csv(args.csv)
         print(f"✅ 成功加载 {len(plot_data)} 个算法的数据")
 
-        # 设置图表输出路径
-        if args.figure_output:
-            figure_path = args.figure_output
-        else:
-            csv_path = Path(args.csv)
-            figure_path = csv_path.parent / 'acceptance_ratio_figure.png'
-
     else:
         print("❌ 错误：必须指定 --run-experiment 或 --csv")
         print("使用 --help 查看帮助信息")
@@ -567,6 +727,18 @@ def main():
 
     # 生成图表
     print("\n🎨 正在生成图表...")
+
+    # 生成分组图表（6张）
+    if not args.no_group_figures:
+        figures_dir = Path(args.output_dir) / 'figures'
+        FigureGenerator.plot_all_groups(plot_data, figures_dir, args.x_label)
+
+    # 生成综合图表
+    if args.figure_output:
+        figure_path = args.figure_output
+    else:
+        figure_path = Path(args.output_dir) / 'acceptance_ratio_all.png'
+
     FigureGenerator.plot_acceptance_ratio(plot_data, figure_path, args.x_label)
     FigureGenerator.print_data_summary(plot_data)
 

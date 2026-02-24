@@ -229,6 +229,21 @@ namespace RTSim {
                                 SCHEDULER_LOG_INFO("ConfigManager: periodic_collection_interval = " + std::to_string(_periodic_collection_interval) + " ms");
                                 continue;
                             }
+
+                            // ⭐ V73新增：解析time_of_day_ms（用于太阳能辐照度计算）
+                            if (line.find("time_of_day_ms:") != std::string::npos) {
+                                size_t colon_pos = line.find(':');
+                                std::string value = line.substr(colon_pos + 1);
+                                size_t comment_pos = value.find('#');
+                                if (comment_pos != std::string::npos) {
+                                    value = value.substr(0, comment_pos);
+                                }
+                                value.erase(0, value.find_first_not_of(" \t"));
+                                value.erase(value.find_last_not_of(" \t\r\n") + 1);
+                                _start_time_offset = std::stoll(value);
+                                SCHEDULER_LOG_INFO("ConfigManager: time_of_day_ms (start_time_offset) = " + std::to_string(_start_time_offset) + " ms");
+                                continue;
+                            }
                         }
 
                         // 检测scheduler_energy_model部分

@@ -28,7 +28,7 @@ namespace RTSim {
     using TimeMs = int64_t;
 
     // =====================================================
-    // ST-NonBlock Tick级调度事件（每1ms触发一次）
+    // ST-NonBlock Tick级调度事件（每1ms触发一次��
     // =====================================================
     class STNonBlockTickEvent : public MetaSim::Event {
     private:
@@ -37,6 +37,23 @@ namespace RTSim {
     public:
         STNonBlockTickEvent(STNonBlockScheduler *scheduler);
         void doit() override;
+    };
+
+    // =====================================================
+    // ST-NonBlock 被跳过任务的专属唤醒定时器
+    // ⭐ 策略2核心：高优缺电时设置专属定时器，Slack=0或满电时唤醒抢占
+    // =====================================================
+    class STNonBlockWakeEvent : public MetaSim::Event {
+    private:
+        STNonBlockScheduler *_scheduler;
+        AbsRTTask *_task;           // 被跳过的任务
+        MetaSim::Tick _wake_time;   // 唤醒时间
+
+    public:
+        STNonBlockWakeEvent(STNonBlockScheduler *scheduler, AbsRTTask *task, MetaSim::Tick wake_time);
+        void doit() override;
+        AbsRTTask *getTask() const { return _task; }
+        MetaSim::Tick getWakeTime() const { return _wake_time; }
     };
 
     // =====================================================
@@ -145,6 +162,11 @@ namespace RTSim {
         // ========== ST深度充电管理 ==========
         bool _deep_charging;           // ⭐ ST特有：是否处于深度充电模式
         MetaSim::Tick _charge_start_time;  // 充电开始时间
+
+        // ========== ST-NonBlock专属：被跳过任务的唤醒定时器 ==========
+        // ⭐ 策略2核心：高优缺电时设置专属定时器，Slack=0或满电时唤醒抢占
+        std::map<AbsRTTask *, STNonBlockWakeEvent *> _skip_wake_events;  // 被跳过任务的唤醒定时器
+        std::set<AbsRTTask *> _skipped_tasks;  // 当前被跳过（因能量不足）的任务集合
 
         // ========== 抢占防抖 ==========
         // ⭐ 防止频繁抢占：在同一个tick内，同一个任务不应该被反复抢占
@@ -288,6 +310,7 @@ namespace RTSim {
 
         // 友元类声明
         friend class STNonBlockTickEvent;
+        friend class STNonBlockWakeEvent;  // ⭐ 策略2：被跳过任务的唤醒定时器
         // friend class ST-NonBlockEnergyCheckEvent;  /* V40重构：能量检查事件已删除 */
     };
 

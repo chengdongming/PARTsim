@@ -297,107 +297,98 @@ namespace RTSim {
         SCHEDULER_LOG_INFO(std::string("📁 [ST-Block] 配置文件: ") + config_file);
         setenv("ENERGY_CONFIG_FILE", config_file.c_str(), 1);
 
-        // 初始化EnergyBridge
-        bool bridge_initialized = EnergyBridge::getInstance().initialize(config_file);
-        if (bridge_initialized) {
-            SCHEDULER_LOG_INFO("✅ [ST-Block] EnergyBridge 初始化成功");
+        // ⭐ V73修复：先读取太阳能配置（无论EnergyBridge是否成功都要读取）
+        _start_time_offset = configMgr.getStartTimeOffset();
+        SCHEDULER_LOG_INFO(std::string("⏰ [ST-Block] 开始时间偏移: ") +
+                          std::to_string(static_cast<int64_t>(_start_time_offset)) + "ms");
 
-            _start_time_offset = configMgr.getStartTimeOffset();
-            SCHEDULER_LOG_INFO(std::string("⏰ [ST-Block] 开始时间偏移: ") +
-                              std::to_string(static_cast<int64_t>(_start_time_offset)) + "ms");
+        // 读取太阳能配置
+        try {
+            std::ifstream yaml_file(config_file);
+            if (yaml_file.good()) {
+                std::string line;
+                bool in_energy_section = false;
 
-            // 读取太阳能配置
-            try {
-                std::ifstream yaml_file(config_file);
-                if (yaml_file.good()) {
-                    std::string line;
-                    bool in_energy_section = false;
+                while (std::getline(yaml_file, line)) {
+                    std::string original_line = line;
+                    line.erase(0, line.find_first_not_of(" \t"));
+                    line.erase(line.find_last_not_of(" \t") + 1);
 
-                    while (std::getline(yaml_file, line)) {
-                        std::string original_line = line;
-                        line.erase(0, line.find_first_not_of(" \t"));
-                        line.erase(line.find_last_not_of(" \t") + 1);
+                    if (line.empty() || line[0] == '#') {
+                        continue;
+                    }
 
-                        if (line.empty() || line[0] == '#') {
-                            continue;
-                        }
+                    if (line.find("energy_management:") != std::string::npos) {
+                        in_energy_section = true;
+                        continue;
+                    }
 
-                        if (line.find("energy_management:") != std::string::npos) {
-                            in_energy_section = true;
-                            continue;
-                        }
-
-                        if (in_energy_section && !line.empty() && line[0] != '-' && line[0] != '#') {
-                            size_t leading_spaces = original_line.find_first_not_of(" \t");
-                            if (leading_spaces == 0 && line.find(':') != std::string::npos &&
-                                line.find("energy_management:") == std::string::npos) {
-                                break;
-                            }
-                        }
-
-                        if (in_energy_section) {
-                            // DEBUG: 显示所有energy section的行（注释行除外）
-                            if (line.find("use_real_solar_data:") == std::string::npos &&
-                                line.find("solar_data_file:") == std::string::npos &&
-                                line.find("pv_efficiency:") == std::string::npos &&
-                                line.find("pv_area_m2:") == std::string::npos &&
-                                !line.empty()) {
-                                SCHEDULER_LOG_DEBUG(std::string("📄 [ST-Block] YAML行: '") + line + "'");
-                            }
-
-                            if (line.find("use_real_solar_data:") != std::string::npos) {
-                                std::string value = line.substr(line.find(":") + 1);
-                                size_t comment_pos = value.find('#');
-                                if (comment_pos != std::string::npos) {
-                                    value = value.substr(0, comment_pos);
-                                }
-                                value.erase(0, value.find_first_not_of(" \t"));
-                                value.erase(value.find_last_not_of(" \t") + 1);
-                                _use_real_solar_data = (value == "true");
-                            }
-                            else if (line.find("solar_data_file:") != std::string::npos) {
-                                std::string value = line.substr(line.find(":") + 1);
-                                size_t comment_pos = value.find('#');
-                                if (comment_pos != std::string::npos) {
-                                    value = value.substr(0, comment_pos);
-                                }
-                                value.erase(0, value.find_first_not_of(" \t\""));
-                                value.erase(value.find_last_not_of(" \t\"") + 1);
-                                _solar_data_file = value;
-                                SCHEDULER_LOG_INFO(std::string("📖 [ST-Block] 解析到solar_data_file: '") + value + "'");
-                            }
-                            else if (line.find("pv_efficiency:") != std::string::npos) {
-                                std::string value = line.substr(line.find(":") + 1);
-                                size_t comment_pos = value.find('#');
-                                if (comment_pos != std::string::npos) {
-                                    value = value.substr(0, comment_pos);
-                                }
-                                value.erase(0, value.find_first_not_of(" \t"));
-                                value.erase(value.find_last_not_of(" \t") + 1);
-                                _pv_efficiency = std::stod(value);
-                            }
-                            else if (line.find("pv_area_m2:") != std::string::npos) {
-                                std::string value = line.substr(line.find(":") + 1);
-                                size_t comment_pos = value.find('#');
-                                if (comment_pos != std::string::npos) {
-                                    value = value.substr(0, comment_pos);
-                                }
-                                value.erase(0, value.find_first_not_of(" \t"));
-                                value.erase(value.find_last_not_of(" \t") + 1);
-                                _pv_area_m2 = std::stod(value);
-                            }
+                    if (in_energy_section && !line.empty() && line[0] != '-' && line[0] != '#') {
+                        size_t leading_spaces = original_line.find_first_not_of(" \t");
+                        if (leading_spaces == 0 && line.find(':') != std::string::npos &&
+                            line.find("energy_management:") == std::string::npos) {
+                            break;
                         }
                     }
 
-                    SCHEDULER_LOG_INFO(std::string("☀️ [ST-Block] 太阳能配置: ") +
-                                      "use_real=" + (_use_real_solar_data ? "true" : "false") +
-                                      " file=" + _solar_data_file +
-                                      " eff=" + std::to_string(_pv_efficiency) +
-                                      " area=" + std::to_string(_pv_area_m2) + "m²");
+                    if (in_energy_section) {
+                        if (line.find("use_real_solar_data:") != std::string::npos) {
+                            std::string value = line.substr(line.find(":") + 1);
+                            size_t comment_pos = value.find('#');
+                            if (comment_pos != std::string::npos) {
+                                value = value.substr(0, comment_pos);
+                            }
+                            value.erase(0, value.find_first_not_of(" \t"));
+                            value.erase(value.find_last_not_of(" \t") + 1);
+                            _use_real_solar_data = (value == "true");
+                        }
+                        else if (line.find("solar_data_file:") != std::string::npos) {
+                            std::string value = line.substr(line.find(":") + 1);
+                            size_t comment_pos = value.find('#');
+                            if (comment_pos != std::string::npos) {
+                                value = value.substr(0, comment_pos);
+                            }
+                            value.erase(0, value.find_first_not_of(" \t\""));
+                            value.erase(value.find_last_not_of(" \t\"") + 1);
+                            _solar_data_file = value;
+                        }
+                        else if (line.find("pv_efficiency:") != std::string::npos) {
+                            std::string value = line.substr(line.find(":") + 1);
+                            size_t comment_pos = value.find('#');
+                            if (comment_pos != std::string::npos) {
+                                value = value.substr(0, comment_pos);
+                            }
+                            value.erase(0, value.find_first_not_of(" \t"));
+                            value.erase(value.find_last_not_of(" \t") + 1);
+                            _pv_efficiency = std::stod(value);
+                        }
+                        else if (line.find("pv_area_m2:") != std::string::npos) {
+                            std::string value = line.substr(line.find(":") + 1);
+                            size_t comment_pos = value.find('#');
+                            if (comment_pos != std::string::npos) {
+                                value = value.substr(0, comment_pos);
+                            }
+                            value.erase(0, value.find_first_not_of(" \t"));
+                            value.erase(value.find_last_not_of(" \t") + 1);
+                            _pv_area_m2 = std::stod(value);
+                        }
+                    }
                 }
-            } catch (const std::exception &e) {
-                SCHEDULER_LOG_WARNING(std::string("⚠️ [ST-Block] 解析太阳能配置失败: ") + e.what());
+
+                SCHEDULER_LOG_INFO(std::string("☀️ [ST-Block] 太阳能配置: ") +
+                                  "use_real=" + (_use_real_solar_data ? "true" : "false") +
+                                  " file=" + _solar_data_file +
+                                  " eff=" + std::to_string(_pv_efficiency) +
+                                  " area=" + std::to_string(_pv_area_m2) + "m²");
             }
+        } catch (const std::exception &e) {
+            SCHEDULER_LOG_WARNING(std::string("⚠️ [ST-Block] 解析太阳能配置失败: ") + e.what());
+        }
+
+        // 初始化EnergyBridge并获取初始能量
+        bool bridge_initialized = EnergyBridge::getInstance().initialize(config_file);
+        if (bridge_initialized) {
+            SCHEDULER_LOG_INFO("✅ [ST-Block] EnergyBridge 初始化成功");
 
             // 读取初始能量
             double bridge_energy = EnergyBridge::getInstance().getCurrentEnergy();
@@ -409,7 +400,6 @@ namespace RTSim {
         } else {
             SCHEDULER_LOG_WARNING("⚠️ [ST-Block] EnergyBridge 初始化失败，使用ConfigManager获取能量");
 
-            _start_time_offset = configMgr.getStartTimeOffset();
             double config_energy = configMgr.getInitialEnergy();
             if (config_energy >= 0) {  // ⭐ 修复：允许initial_energy=0的情况
                 _initial_energy = config_energy;
@@ -565,10 +555,12 @@ namespace RTSim {
                 const double EPSILON = 1e-9;
                 if (_current_energy < unit_energy - EPSILON) {
                     // ⭐ V43修复：能量不足时设置能量耗尽标志
+                    // ⭐ V70修复：同时设置_deep_charging，进入深度充电模式
                     if (!_energy_depleted) {
                         _energy_depleted = true;
+                        _deep_charging = true;  // ⭐ 关键修复：进入深度充电模式
                         _current_energy = 0.0;  // 强制设为0，防止变负
-                        SCHEDULER_LOG_WARNING("💀 [ST-Block] 能量耗尽，设置_energy_depleted标志");
+                        SCHEDULER_LOG_WARNING("💀 [ST-Block] 能量耗尽，设置_energy_depleted和_deep_charging标志");
                     }
 
                     // 能量不足，加入挂起列表
@@ -2085,23 +2077,47 @@ namespace RTSim {
 
     // ⭐ ST特有：计算所有就绪任务的最小Slack
     MetaSim::Tick STBlockScheduler::calculateMinSlack() {
-        Tick min_slack = std::numeric_limits<Tick>::max();
+        // ⭐ V72修复：使用MAXTICK代替std::numeric_limits<Tick>::max()
+        // Tick是自定义类，std::numeric_limits不正确
+        int64_t min_slack_value = INT64_MAX;
+        bool found_valid_task = false;
+
+        SCHEDULER_LOG_INFO(std::string("🧮 [ST-Block] calculateMinSlack: 就绪队列大小=") +
+                          std::to_string(_ready_queue.size()));
 
         // 检查就绪队列中所有任务的Slack
         for (auto* task : _ready_queue) {
             if (!task) continue;
+            if (!task->isActive()) {
+                SCHEDULER_LOG_INFO(std::string("🧮 [ST-Block] 跳过不活跃任务: ") + getTaskName(task));
+                continue;
+            }
             Tick slack = calculateSlackForTask(task);
-            if (slack < min_slack) {
-                min_slack = slack;
+            int64_t slack_value = static_cast<int64_t>(slack);
+            SCHEDULER_LOG_INFO(std::string("🧮 [ST-Block] 任务Slack: ") +
+                              getTaskName(task) + " Slack=" +
+                              std::to_string(slack_value) + "ms");
+            if (slack_value < min_slack_value) {
+                min_slack_value = slack_value;
+                found_valid_task = true;
             }
         }
 
-        // 如果没有就绪任务，返回0
-        if (min_slack == std::numeric_limits<Tick>::max()) {
-            min_slack = 0;
+        Tick min_slack;
+        if (!found_valid_task) {
+            // 没有活跃任务，返回一个大值让系统继续充电
+            // 但不超过最大充电时间（到电池充满）
+            double energy_to_full = _max_energy - _current_energy;
+            double harvest_rate = 0.008;  // mJ/ms
+            int64_t charge_time_ms = static_cast<int64_t>(energy_to_full * 1000 / harvest_rate) + 1;
+            min_slack = Tick(charge_time_ms);
+            SCHEDULER_LOG_INFO(std::string("🧮 [ST-Block] 没有活跃任务，返回充电时间: ") +
+                              std::to_string(charge_time_ms) + "ms");
+        } else {
+            min_slack = Tick(min_slack_value);
         }
 
-        SCHEDULER_LOG_DEBUG("🧮 [ST-Block] calculateMinSlack: min_slack=" +
+        SCHEDULER_LOG_INFO("🧮 [ST-Block] calculateMinSlack: min_slack=" +
                            std::to_string(static_cast<int64_t>(min_slack)) + "ms");
         return min_slack;
     }
