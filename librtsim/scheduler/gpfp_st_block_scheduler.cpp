@@ -569,12 +569,31 @@ namespace RTSim {
                     _wake_event = nullptr;
                 }
             } else {
-                // ⭐ V74：设置唤醒定时器（如果还没设置或需要更新）
+                // ⭐ V77修复：设置唤醒定时器（只在更早唤醒时才更新）
+                // 原因：V75在能量耗尽时设置了正确的唤醒时间，但后续tick的深度充电检查
+                //       会因为getRemainingWCET()返回错误值而计算出更大的唤醒时间
+                //       例如：Time 6设置wake_time=96，但Time 7计算出wake_time=100（覆盖了96！）
+                // 修复：只有当新的唤醒时间比现有唤醒时间更早时，才更新
                 Tick current_time = SIMUL.getTime();
                 Tick wake_time = current_time + min_slack;
 
-                // 如果没有唤醒定时器，或者唤醒时间需要更新
-                if (!_wake_event || static_cast<int64_t>(_wake_event->getWakeTime()) != min_slack_ms + static_cast<int64_t>(current_time)) {
+                bool should_update = false;
+                if (!_wake_event) {
+                    // 没有唤醒定时器，需要设置
+                    should_update = true;
+                } else {
+                    // 已有唤醒定时器，只有新唤醒时间更早时才更新
+                    int64_t existing_wake_time = static_cast<int64_t>(_wake_event->getWakeTime());
+                    int64_t new_wake_time = static_cast<int64_t>(wake_time);
+                    if (new_wake_time < existing_wake_time) {
+                        should_update = true;
+                        SCHEDULER_LOG_INFO(std::string("⏰ [ST-Block] V77修复：发现更早的唤醒时间: ") +
+                                          "现有=" + std::to_string(existing_wake_time) + "ms " +
+                                          "新=" + std::to_string(new_wake_time) + "ms，更新");
+                    }
+                }
+
+                if (should_update) {
                     // 取消旧的定时器
                     if (_wake_event) {
                         _wake_event->drop();
@@ -646,6 +665,28 @@ namespace RTSim {
                         _deep_charging = true;  // ⭐ 关键修复：进入深度充电模式
                         _current_energy = 0.0;  // 强制设为0，防止变负
                         SCHEDULER_LOG_WARNING("💀 [ST-Block] 能量耗尽，设置_energy_depleted和_deep_charging标志");
+
+                        // ⭐ V75关键修复：立即设置唤醒定时器
+                        // 原因：深度充电检查在tick开头已经执行过了，本次tick不会再设置唤醒定时器
+                        // 必须在这里立即设置，否则系统会"睡过头"
+                        Tick min_slack = calculateMinSlack();
+                        int64_t min_slack_ms = static_cast<int64_t>(min_slack);
+                        Tick wake_time = current_time + min_slack;
+
+                        // 取消旧的唤醒定时器（如果存在）
+                        if (_wake_event) {
+                            _wake_event->drop();
+                            delete _wake_event;
+                        }
+
+                        // 创建新的唤醒定时器
+                        _wake_event = new STBlockWakeEvent(this, wake_time);
+                        _wake_event->post(wake_time);
+
+                        SCHEDULER_LOG_WARNING(std::string("⏰ [ST-Block] V75修复：能量耗尽时立即设置唤醒定时器: ") +
+                                             "当前时间=" + std::to_string(static_cast<int64_t>(current_time)) + "ms " +
+                                             "Slack=" + std::to_string(min_slack_ms) + "ms " +
+                                             "唤醒时间=" + std::to_string(static_cast<int64_t>(wake_time)) + "ms");
                     }
 
                     // 能量不足，加入挂起列表
@@ -2156,8 +2197,26 @@ namespace RTSim {
         Tick absolute_deadline = arrival + period;
 
         double remaining_double = task->getRemainingWCET();
+
+        // ⭐ V76关键修复：处理剩余时间为负的情况
+        // 原因：当任务被suspend时，execdTime可能被累加导致超过WCET
+        // 修复：剩余时间最小为0（任务已完成或超时）
+        if (remaining_double < 0) {
+            remaining_double = 0;
+        }
+
         Tick remaining = Tick(remaining_double);
         Tick slack = absolute_deadline - remaining - current_time;
+
+        // ⭐ V76调试：使用INFO级别输出详细信息
+        SCHEDULER_LOG_INFO("🧮 [ST-Block] Slack计算: " +
+                           getTaskName(task) +
+                           " arrival=" + std::to_string(static_cast<int64_t>(arrival)) +
+                           " deadline=" + std::to_string(static_cast<int64_t>(absolute_deadline)) +
+                           " remaining_double=" + std::to_string(remaining_double) +
+                           " remaining_int=" + std::to_string(static_cast<int64_t>(remaining)) +
+                           " current=" + std::to_string(static_cast<int64_t>(current_time)) +
+                           " => slack=" + std::to_string(static_cast<int64_t>(slack)) + "ms");
 
         SCHEDULER_LOG_DEBUG("🧮 [ST-Block] Slack计算: " +
                            getTaskName(task) +

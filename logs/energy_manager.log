@@ -25831,3 +25831,531 @@
 2026-02-24 15:30:43.353 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/config_st_block_wake_extreme.yml, current_config_file=alap_test_results/config_st_block_wake_extreme.yml
 2026-02-24 15:30:43.353 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/config_st_block_wake_extreme.yml
 2026-02-24 15:30:43.353 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=4, 基础频率=8100.0MHz, 初始能量=0.005J
+2026-02-24 18:06:50.798 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:06:50.804 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:06:50.804 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.005
+2026-02-24 18:06:50.804 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.005
+2026-02-24 18:06:50.804 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-24 18:06:50.804 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-24 18:06:50.805 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-24 18:06:50.805 [INFO    ] [energy_manager      ] EnergyConfig loaded from alap_test_results/config_st_block_v75.yml
+2026-02-24 18:06:50.805 [INFO    ] [energy_manager      ]   Initial energy: 0.005 J
+2026-02-24 18:06:50.805 [INFO    ] [energy_manager      ]   Max energy: 0.15 J
+2026-02-24 18:06:50.805 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-24 18:06:50.805 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-24 18:06:50.805 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-24 18:06:50.805 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-24 18:06:50.805 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-24 18:06:50.805 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-24 18:06:50.805 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-24 18:06:50.805 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-24 18:06:50.805 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-24 18:06:50.806 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-24 18:06:50.806 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-24 18:06:50.806 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-24 18:06:50.806 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-24 18:06:50.806 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.005
+2026-02-24 18:06:50.806 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.005
+2026-02-24 18:06:50.806 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-24 18:06:50.806 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/0.1 J
+2026-02-24 18:06:50.806 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-24 18:06:50.806 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-24 18:06:50.806 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-24 18:06:50.807 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/config_st_block_v75.yml, current_config_file=alap_test_results/config_st_block_v75.yml
+2026-02-24 18:06:50.807 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:06:50.807 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.005J
+2026-02-24 18:07:16.563 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:07:16.569 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:07:16.569 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.005
+2026-02-24 18:07:16.569 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.005
+2026-02-24 18:07:16.569 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-24 18:07:16.569 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-24 18:07:16.570 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-24 18:07:16.570 [INFO    ] [energy_manager      ] EnergyConfig loaded from alap_test_results/config_st_block_v75.yml
+2026-02-24 18:07:16.570 [INFO    ] [energy_manager      ]   Initial energy: 0.005 J
+2026-02-24 18:07:16.570 [INFO    ] [energy_manager      ]   Max energy: 0.15 J
+2026-02-24 18:07:16.570 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-24 18:07:16.570 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-24 18:07:16.570 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-24 18:07:16.570 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-24 18:07:16.570 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-24 18:07:16.570 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-24 18:07:16.570 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-24 18:07:16.570 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-24 18:07:16.570 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-24 18:07:16.570 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-24 18:07:16.570 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-24 18:07:16.571 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-24 18:07:16.571 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-24 18:07:16.571 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.005
+2026-02-24 18:07:16.571 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.005
+2026-02-24 18:07:16.571 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-24 18:07:16.571 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/0.1 J
+2026-02-24 18:07:16.571 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-24 18:07:16.571 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-24 18:07:16.571 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-24 18:07:16.571 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/config_st_block_v75.yml, current_config_file=alap_test_results/config_st_block_v75.yml
+2026-02-24 18:07:16.572 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:07:16.572 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.005J
+2026-02-24 18:07:22.713 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:07:22.720 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:07:22.720 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.005
+2026-02-24 18:07:22.720 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.005
+2026-02-24 18:07:22.720 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-24 18:07:22.720 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-24 18:07:22.720 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-24 18:07:22.720 [INFO    ] [energy_manager      ] EnergyConfig loaded from alap_test_results/config_st_block_v75.yml
+2026-02-24 18:07:22.720 [INFO    ] [energy_manager      ]   Initial energy: 0.005 J
+2026-02-24 18:07:22.720 [INFO    ] [energy_manager      ]   Max energy: 0.15 J
+2026-02-24 18:07:22.720 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-24 18:07:22.721 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-24 18:07:22.721 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-24 18:07:22.721 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-24 18:07:22.721 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-24 18:07:22.721 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-24 18:07:22.721 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-24 18:07:22.721 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-24 18:07:22.721 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-24 18:07:22.721 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-24 18:07:22.721 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-24 18:07:22.721 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-24 18:07:22.721 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-24 18:07:22.721 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.005
+2026-02-24 18:07:22.721 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.005
+2026-02-24 18:07:22.722 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-24 18:07:22.722 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/0.1 J
+2026-02-24 18:07:22.722 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-24 18:07:22.722 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-24 18:07:22.722 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-24 18:07:22.722 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/config_st_block_v75.yml, current_config_file=alap_test_results/config_st_block_v75.yml
+2026-02-24 18:07:22.722 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:07:22.722 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.005J
+2026-02-24 18:07:56.794 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:07:56.801 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:07:56.801 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.005
+2026-02-24 18:07:56.801 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.005
+2026-02-24 18:07:56.801 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-24 18:07:56.801 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-24 18:07:56.801 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-24 18:07:56.801 [INFO    ] [energy_manager      ] EnergyConfig loaded from alap_test_results/config_st_block_v75.yml
+2026-02-24 18:07:56.801 [INFO    ] [energy_manager      ]   Initial energy: 0.005 J
+2026-02-24 18:07:56.801 [INFO    ] [energy_manager      ]   Max energy: 0.15 J
+2026-02-24 18:07:56.802 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-24 18:07:56.802 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-24 18:07:56.802 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-24 18:07:56.802 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-24 18:07:56.802 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-24 18:07:56.802 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-24 18:07:56.802 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-24 18:07:56.802 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-24 18:07:56.802 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-24 18:07:56.802 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-24 18:07:56.802 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-24 18:07:56.802 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-24 18:07:56.802 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-24 18:07:56.803 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.005
+2026-02-24 18:07:56.803 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.005
+2026-02-24 18:07:56.803 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-24 18:07:56.803 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/0.1 J
+2026-02-24 18:07:56.803 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-24 18:07:56.803 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-24 18:07:56.803 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-24 18:07:56.803 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/config_st_block_v75.yml, current_config_file=alap_test_results/config_st_block_v75.yml
+2026-02-24 18:07:56.803 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:07:56.803 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.005J
+2026-02-24 18:08:22.080 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:08:22.087 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:08:22.087 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.005
+2026-02-24 18:08:22.087 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.005
+2026-02-24 18:08:22.087 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-24 18:08:22.087 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-24 18:08:22.087 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-24 18:08:22.087 [INFO    ] [energy_manager      ] EnergyConfig loaded from alap_test_results/config_st_block_v75.yml
+2026-02-24 18:08:22.087 [INFO    ] [energy_manager      ]   Initial energy: 0.005 J
+2026-02-24 18:08:22.087 [INFO    ] [energy_manager      ]   Max energy: 0.15 J
+2026-02-24 18:08:22.087 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-24 18:08:22.087 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-24 18:08:22.087 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-24 18:08:22.087 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-24 18:08:22.088 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-24 18:08:22.088 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-24 18:08:22.088 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-24 18:08:22.088 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-24 18:08:22.088 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-24 18:08:22.088 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-24 18:08:22.088 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-24 18:08:22.088 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-24 18:08:22.088 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-24 18:08:22.088 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.005
+2026-02-24 18:08:22.088 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.005
+2026-02-24 18:08:22.088 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-24 18:08:22.089 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/0.1 J
+2026-02-24 18:08:22.089 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-24 18:08:22.089 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-24 18:08:22.089 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-24 18:08:22.089 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/config_st_block_v75.yml, current_config_file=alap_test_results/config_st_block_v75.yml
+2026-02-24 18:08:22.089 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:08:22.089 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.005J
+2026-02-24 18:10:05.540 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:10:05.546 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:10:05.547 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.005
+2026-02-24 18:10:05.547 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.005
+2026-02-24 18:10:05.547 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-24 18:10:05.547 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-24 18:10:05.547 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-24 18:10:05.547 [INFO    ] [energy_manager      ] EnergyConfig loaded from alap_test_results/config_st_block_v75.yml
+2026-02-24 18:10:05.547 [INFO    ] [energy_manager      ]   Initial energy: 0.005 J
+2026-02-24 18:10:05.547 [INFO    ] [energy_manager      ]   Max energy: 0.15 J
+2026-02-24 18:10:05.547 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-24 18:10:05.547 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-24 18:10:05.547 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-24 18:10:05.547 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-24 18:10:05.547 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-24 18:10:05.548 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-24 18:10:05.548 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-24 18:10:05.548 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-24 18:10:05.548 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-24 18:10:05.548 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-24 18:10:05.548 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-24 18:10:05.548 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-24 18:10:05.548 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-24 18:10:05.548 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.005
+2026-02-24 18:10:05.548 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.005
+2026-02-24 18:10:05.548 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-24 18:10:05.548 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/0.1 J
+2026-02-24 18:10:05.548 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-24 18:10:05.549 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-24 18:10:05.549 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-24 18:10:05.549 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/config_st_block_v75.yml, current_config_file=alap_test_results/config_st_block_v75.yml
+2026-02-24 18:10:05.549 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:10:05.549 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.005J
+2026-02-24 18:10:17.270 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:10:17.276 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:10:17.276 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.005
+2026-02-24 18:10:17.277 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.005
+2026-02-24 18:10:17.277 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-24 18:10:17.277 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-24 18:10:17.277 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-24 18:10:17.277 [INFO    ] [energy_manager      ] EnergyConfig loaded from alap_test_results/config_st_block_v75.yml
+2026-02-24 18:10:17.277 [INFO    ] [energy_manager      ]   Initial energy: 0.005 J
+2026-02-24 18:10:17.277 [INFO    ] [energy_manager      ]   Max energy: 0.15 J
+2026-02-24 18:10:17.277 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-24 18:10:17.277 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-24 18:10:17.277 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-24 18:10:17.277 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-24 18:10:17.277 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-24 18:10:17.277 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-24 18:10:17.278 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-24 18:10:17.278 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-24 18:10:17.278 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-24 18:10:17.278 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-24 18:10:17.278 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-24 18:10:17.278 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-24 18:10:17.278 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-24 18:10:17.278 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.005
+2026-02-24 18:10:17.278 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.005
+2026-02-24 18:10:17.278 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-24 18:10:17.278 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/0.1 J
+2026-02-24 18:10:17.278 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-24 18:10:17.278 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-24 18:10:17.278 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-24 18:10:17.279 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/config_st_block_v75.yml, current_config_file=alap_test_results/config_st_block_v75.yml
+2026-02-24 18:10:17.279 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:10:17.279 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.005J
+2026-02-24 18:11:54.357 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:11:54.364 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:11:54.364 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.005
+2026-02-24 18:11:54.364 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.005
+2026-02-24 18:11:54.364 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-24 18:11:54.364 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-24 18:11:54.364 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-24 18:11:54.364 [INFO    ] [energy_manager      ] EnergyConfig loaded from alap_test_results/config_st_block_v75.yml
+2026-02-24 18:11:54.365 [INFO    ] [energy_manager      ]   Initial energy: 0.005 J
+2026-02-24 18:11:54.365 [INFO    ] [energy_manager      ]   Max energy: 0.15 J
+2026-02-24 18:11:54.365 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-24 18:11:54.365 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-24 18:11:54.365 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-24 18:11:54.365 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-24 18:11:54.365 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-24 18:11:54.365 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-24 18:11:54.365 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-24 18:11:54.365 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-24 18:11:54.365 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-24 18:11:54.365 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-24 18:11:54.365 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-24 18:11:54.366 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-24 18:11:54.366 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-24 18:11:54.366 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.005
+2026-02-24 18:11:54.366 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.005
+2026-02-24 18:11:54.366 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-24 18:11:54.366 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/0.1 J
+2026-02-24 18:11:54.366 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-24 18:11:54.366 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-24 18:11:54.366 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-24 18:11:54.366 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/config_st_block_v75.yml, current_config_file=alap_test_results/config_st_block_v75.yml
+2026-02-24 18:11:54.367 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:11:54.367 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.005J
+2026-02-24 18:13:19.832 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:13:19.838 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:13:19.838 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.005
+2026-02-24 18:13:19.838 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.005
+2026-02-24 18:13:19.838 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-24 18:13:19.838 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-24 18:13:19.839 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-24 18:13:19.839 [INFO    ] [energy_manager      ] EnergyConfig loaded from alap_test_results/config_st_block_v75.yml
+2026-02-24 18:13:19.839 [INFO    ] [energy_manager      ]   Initial energy: 0.005 J
+2026-02-24 18:13:19.839 [INFO    ] [energy_manager      ]   Max energy: 0.15 J
+2026-02-24 18:13:19.839 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-24 18:13:19.839 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-24 18:13:19.839 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-24 18:13:19.839 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-24 18:13:19.839 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-24 18:13:19.839 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-24 18:13:19.839 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-24 18:13:19.839 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-24 18:13:19.839 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-24 18:13:19.839 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-24 18:13:19.840 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-24 18:13:19.840 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-24 18:13:19.840 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-24 18:13:19.840 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.005
+2026-02-24 18:13:19.840 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.005
+2026-02-24 18:13:19.840 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-24 18:13:19.840 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/0.1 J
+2026-02-24 18:13:19.840 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-24 18:13:19.840 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-24 18:13:19.840 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-24 18:13:19.841 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/config_st_block_v75.yml, current_config_file=alap_test_results/config_st_block_v75.yml
+2026-02-24 18:13:19.841 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:13:19.841 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.005J
+2026-02-24 18:13:46.419 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:13:46.425 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:13:46.425 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.005
+2026-02-24 18:13:46.425 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.005
+2026-02-24 18:13:46.425 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-24 18:13:46.425 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-24 18:13:46.425 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-24 18:13:46.425 [INFO    ] [energy_manager      ] EnergyConfig loaded from alap_test_results/config_st_block_v75.yml
+2026-02-24 18:13:46.425 [INFO    ] [energy_manager      ]   Initial energy: 0.005 J
+2026-02-24 18:13:46.425 [INFO    ] [energy_manager      ]   Max energy: 0.15 J
+2026-02-24 18:13:46.425 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-24 18:13:46.426 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-24 18:13:46.426 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-24 18:13:46.426 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-24 18:13:46.426 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-24 18:13:46.426 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-24 18:13:46.426 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-24 18:13:46.426 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-24 18:13:46.426 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-24 18:13:46.426 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-24 18:13:46.426 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-24 18:13:46.426 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-24 18:13:46.426 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-24 18:13:46.426 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.005
+2026-02-24 18:13:46.426 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.005
+2026-02-24 18:13:46.426 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-24 18:13:46.427 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/0.1 J
+2026-02-24 18:13:46.427 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-24 18:13:46.427 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-24 18:13:46.427 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-24 18:13:46.427 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/config_st_block_v75.yml, current_config_file=alap_test_results/config_st_block_v75.yml
+2026-02-24 18:13:46.427 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:13:46.427 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.005J
+2026-02-24 18:14:04.855 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:14:04.861 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:14:04.861 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.005
+2026-02-24 18:14:04.862 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.005
+2026-02-24 18:14:04.862 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-24 18:14:04.862 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-24 18:14:04.862 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-24 18:14:04.862 [INFO    ] [energy_manager      ] EnergyConfig loaded from alap_test_results/config_st_block_v75.yml
+2026-02-24 18:14:04.862 [INFO    ] [energy_manager      ]   Initial energy: 0.005 J
+2026-02-24 18:14:04.862 [INFO    ] [energy_manager      ]   Max energy: 0.15 J
+2026-02-24 18:14:04.862 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-24 18:14:04.862 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-24 18:14:04.862 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-24 18:14:04.862 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-24 18:14:04.862 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-24 18:14:04.862 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-24 18:14:04.863 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-24 18:14:04.863 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-24 18:14:04.863 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-24 18:14:04.863 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-24 18:14:04.863 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-24 18:14:04.863 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-24 18:14:04.863 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-24 18:14:04.863 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.005
+2026-02-24 18:14:04.863 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.005
+2026-02-24 18:14:04.863 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-24 18:14:04.863 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/0.1 J
+2026-02-24 18:14:04.863 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-24 18:14:04.863 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-24 18:14:04.863 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-24 18:14:04.864 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/config_st_block_v75.yml, current_config_file=alap_test_results/config_st_block_v75.yml
+2026-02-24 18:14:04.864 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:14:04.864 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.005J
+2026-02-24 18:14:22.966 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:14:22.972 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:14:22.972 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.005
+2026-02-24 18:14:22.972 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.005
+2026-02-24 18:14:22.972 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-24 18:14:22.973 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-24 18:14:22.973 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-24 18:14:22.973 [INFO    ] [energy_manager      ] EnergyConfig loaded from alap_test_results/config_st_block_v75.yml
+2026-02-24 18:14:22.973 [INFO    ] [energy_manager      ]   Initial energy: 0.005 J
+2026-02-24 18:14:22.973 [INFO    ] [energy_manager      ]   Max energy: 0.15 J
+2026-02-24 18:14:22.973 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-24 18:14:22.973 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-24 18:14:22.973 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-24 18:14:22.973 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-24 18:14:22.973 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-24 18:14:22.973 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-24 18:14:22.973 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-24 18:14:22.973 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-24 18:14:22.974 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-24 18:14:22.974 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-24 18:14:22.974 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-24 18:14:22.974 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-24 18:14:22.974 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-24 18:14:22.974 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.005
+2026-02-24 18:14:22.974 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.005
+2026-02-24 18:14:22.974 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-24 18:14:22.974 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/0.1 J
+2026-02-24 18:14:22.974 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-24 18:14:22.974 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-24 18:14:22.974 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-24 18:14:22.975 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/config_st_block_v75.yml, current_config_file=alap_test_results/config_st_block_v75.yml
+2026-02-24 18:14:22.975 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:14:22.975 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.005J
+2026-02-24 18:14:35.472 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:14:35.478 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:14:35.478 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.005
+2026-02-24 18:14:35.478 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.005
+2026-02-24 18:14:35.478 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-24 18:14:35.478 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-24 18:14:35.478 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-24 18:14:35.479 [INFO    ] [energy_manager      ] EnergyConfig loaded from alap_test_results/config_st_block_v75.yml
+2026-02-24 18:14:35.479 [INFO    ] [energy_manager      ]   Initial energy: 0.005 J
+2026-02-24 18:14:35.479 [INFO    ] [energy_manager      ]   Max energy: 0.15 J
+2026-02-24 18:14:35.479 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-24 18:14:35.479 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-24 18:14:35.479 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-24 18:14:35.479 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-24 18:14:35.479 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-24 18:14:35.479 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-24 18:14:35.479 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-24 18:14:35.479 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-24 18:14:35.479 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-24 18:14:35.479 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-24 18:14:35.479 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-24 18:14:35.480 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-24 18:14:35.480 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-24 18:14:35.480 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.005
+2026-02-24 18:14:35.480 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.005
+2026-02-24 18:14:35.480 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-24 18:14:35.480 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/0.1 J
+2026-02-24 18:14:35.480 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-24 18:14:35.480 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-24 18:14:35.480 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-24 18:14:35.480 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/config_st_block_v75.yml, current_config_file=alap_test_results/config_st_block_v75.yml
+2026-02-24 18:14:35.481 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:14:35.481 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.005J
+2026-02-24 18:17:45.962 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:17:45.969 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:17:45.969 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.005
+2026-02-24 18:17:45.969 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.005
+2026-02-24 18:17:45.969 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-24 18:17:45.969 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-24 18:17:45.969 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-24 18:17:45.969 [INFO    ] [energy_manager      ] EnergyConfig loaded from alap_test_results/config_st_block_v75.yml
+2026-02-24 18:17:45.969 [INFO    ] [energy_manager      ]   Initial energy: 0.005 J
+2026-02-24 18:17:45.969 [INFO    ] [energy_manager      ]   Max energy: 0.15 J
+2026-02-24 18:17:45.969 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-24 18:17:45.969 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-24 18:17:45.969 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-24 18:17:45.970 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-24 18:17:45.970 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-24 18:17:45.970 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-24 18:17:45.970 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-24 18:17:45.970 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-24 18:17:45.970 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-24 18:17:45.970 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-24 18:17:45.970 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-24 18:17:45.970 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-24 18:17:45.970 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-24 18:17:45.970 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.005
+2026-02-24 18:17:45.971 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.005
+2026-02-24 18:17:45.971 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-24 18:17:45.971 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/0.1 J
+2026-02-24 18:17:45.971 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-24 18:17:45.971 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-24 18:17:45.971 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-24 18:17:45.971 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/config_st_block_v75.yml, current_config_file=alap_test_results/config_st_block_v75.yml
+2026-02-24 18:17:45.971 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:17:45.971 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.005J
+2026-02-24 18:19:42.225 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:19:42.231 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:19:42.231 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.005
+2026-02-24 18:19:42.231 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.005
+2026-02-24 18:19:42.231 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-24 18:19:42.232 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-24 18:19:42.232 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-24 18:19:42.232 [INFO    ] [energy_manager      ] EnergyConfig loaded from alap_test_results/config_st_block_v75.yml
+2026-02-24 18:19:42.232 [INFO    ] [energy_manager      ]   Initial energy: 0.005 J
+2026-02-24 18:19:42.232 [INFO    ] [energy_manager      ]   Max energy: 0.15 J
+2026-02-24 18:19:42.232 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-24 18:19:42.232 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-24 18:19:42.232 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-24 18:19:42.232 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-24 18:19:42.232 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-24 18:19:42.232 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-24 18:19:42.232 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-24 18:19:42.232 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-24 18:19:42.232 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-24 18:19:42.233 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-24 18:19:42.233 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-24 18:19:42.233 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-24 18:19:42.233 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-24 18:19:42.233 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.005
+2026-02-24 18:19:42.233 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.005
+2026-02-24 18:19:42.233 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-24 18:19:42.233 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/0.1 J
+2026-02-24 18:19:42.233 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-24 18:19:42.233 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-24 18:19:42.233 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-24 18:19:42.234 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/config_st_block_v75.yml, current_config_file=alap_test_results/config_st_block_v75.yml
+2026-02-24 18:19:42.234 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:19:42.234 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.005J
+2026-02-24 18:20:08.763 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:20:08.769 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:20:08.769 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.005
+2026-02-24 18:20:08.769 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.005
+2026-02-24 18:20:08.769 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=43200000 计算 start_offset_minutes=268560
+2026-02-24 18:20:08.769 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268560, simulation_start_time=16113600000ms
+2026-02-24 18:20:08.769 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-02-24 18:20:08.769 [INFO    ] [energy_manager      ] EnergyConfig loaded from alap_test_results/config_st_block_v75.yml
+2026-02-24 18:20:08.769 [INFO    ] [energy_manager      ]   Initial energy: 0.005 J
+2026-02-24 18:20:08.769 [INFO    ] [energy_manager      ]   Max energy: 0.15 J
+2026-02-24 18:20:08.769 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-02-24 18:20:08.769 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-02-24 18:20:08.770 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-02-24 18:20:08.770 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-02-24 18:20:08.770 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-02-24 18:20:08.770 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-02-24 18:20:08.770 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-02-24 18:20:08.770 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-02-24 18:20:08.770 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-02-24 18:20:08.770 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-02-24 18:20:08.770 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-02-24 18:20:08.770 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-02-24 18:20:08.770 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-02-24 18:20:08.770 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.005
+2026-02-24 18:20:08.770 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.005
+2026-02-24 18:20:08.770 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-02-24 18:20:08.771 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.0/0.1 J
+2026-02-24 18:20:08.771 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16113600000ms
+2026-02-24 18:20:08.771 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 12:00:00
+2026-02-24 18:20:08.771 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-02-24 18:20:08.771 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=alap_test_results/config_st_block_v75.yml, current_config_file=alap_test_results/config_st_block_v75.yml
+2026-02-24 18:20:08.771 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: alap_test_results/config_st_block_v75.yml
+2026-02-24 18:20:08.771 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.005J
