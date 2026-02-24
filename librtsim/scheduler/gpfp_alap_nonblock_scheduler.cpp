@@ -1987,6 +1987,14 @@ namespace RTSim {
         Tick absolute_deadline = arrival + period;
 
         double remaining_double = task->getRemainingWCET();
+
+        // ⭐ V76关键修复：处理剩余时间为负的情况
+        // 原因：当任务被suspend时，execdTime可能被累加导致超过WCET
+        // 修复：剩余时间最小为0（任务已完成或超时）
+        if (remaining_double < 0) {
+            remaining_double = 0;
+        }
+
         Tick remaining = Tick(remaining_double);
         Tick slack = absolute_deadline - remaining - current_time;
 

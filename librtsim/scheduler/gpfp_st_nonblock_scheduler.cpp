@@ -110,6 +110,13 @@ namespace RTSim {
             // 从跳过集合中移除
             _scheduler->_skipped_tasks.erase(_task);
 
+            // ⭐ V79修复：重置能量耗尽标志
+            // 当能量足够时，应该允许调度器继续调度任务
+            if (_scheduler->_energy_depleted) {
+                _scheduler->_energy_depleted = false;
+                SCHEDULER_LOG_INFO("🔋 [ST-NonBlock] 唤醒时重置能量耗尽标志，恢复调度");
+            }
+
             // ⭐ 触发抢占：让内核重新调度
             // 如果有低优先级任务在运行，高优先级任务应该抢占它
             if (_scheduler->_kernel) {
@@ -122,28 +129,36 @@ namespace RTSim {
                                " 需要=" + std::to_string(unit_energy * 1000) + "mJ" +
                                " 当前=" + std::to_string(current_energy * 1000) + "mJ");
 
-            // 计算新的唤醒时间：等到电池充满或Slack=0
+            // ⭐ ST核心修复：新的唤醒���间必须考虑Slack=0的死线
+            // 唤醒条件：电量充满 或 Slack归零（取较早者）
             Tick slack = _scheduler->calculateSlackForTask(_task);
             Tick new_wake_time;
 
             if (slack <= 0) {
-                // Slack已为0，必须立即尝试
+                // Slack已为0，必须立即尝试（即使电量不足也要强制尝试）
                 new_wake_time = current_time + 1;
+                SCHEDULER_LOG_INFO(std::string("  Slack=0，立即重试"));
             } else {
-                // 等待能量收集
+                // 计算充满电需要的时间
                 double energy_needed = unit_energy - current_energy;
-                double harvest_rate = 0.008;  // 默认收集率 mJ/ms
+                if (energy_needed < 0) energy_needed = 0;
+                double harvest_rate = 0.003;  // mJ/ms (与配置一致)
                 int64_t charge_time_ms = static_cast<int64_t>(energy_needed * 1000 / harvest_rate) + 1;
-                new_wake_time = current_time + std::min(static_cast<int64_t>(slack), charge_time_ms);
+
+                // ⭐ 关键：唤醒时间 = min(Slack到期时间, 充满电时间)
+                // 确保不会睡过头错过deadline
+                int64_t slack_deadline = static_cast<int64_t>(slack);
+                new_wake_time = current_time + std::min(slack_deadline, charge_time_ms);
+
+                SCHEDULER_LOG_INFO(std::string("  Slack=") + std::to_string(slack_deadline) + "ms" +
+                                  " 充电时间=" + std::to_string(charge_time_ms) + "ms" +
+                                  " 新唤醒时间=" + std::to_string(static_cast<int64_t>(new_wake_time)) + "ms");
             }
 
             // 创建新的唤醒事件
             STNonBlockWakeEvent *new_event = new STNonBlockWakeEvent(_scheduler, _task, new_wake_time);
             _scheduler->_skip_wake_events[_task] = new_event;
             new_event->post(new_wake_time);
-
-            SCHEDULER_LOG_INFO(std::string("  重新设置唤醒时间: ") +
-                               std::to_string(static_cast<int64_t>(new_wake_time)) + "ms");
         }
     }
 
@@ -629,6 +644,43 @@ namespace RTSim {
             for (AbsRTTask *task : tasks_to_suspend) {
                 _kernel->suspend(task);
                 SCHEDULER_LOG_INFO("🛑 挂起任务: " + getTaskName(task));
+
+                // ⭐ ST核心修复：为被挂起的任务设置Slack唤醒定时器
+                // ST算法要求：在Slack=0或电量充足时唤醒任务
+                // 计算 wake_time = min(Slack到期时间, 充满电时间)
+                Tick slack = calculateSlackForTask(task);
+                Tick current_time = SIMUL.getTime();
+                Tick wake_time;
+
+                if (slack <= 0) {
+                    // Slack已为0，尽快唤醒
+                    wake_time = current_time + 1;
+                    SCHEDULER_LOG_INFO("⏰ [ST-NonBlock] Slack=0，立即设置唤醒: " + getTaskName(task));
+                } else {
+                    // 计算充满电需要的时间
+                    double unit_energy = calculateUnitEnergyForTask(task);
+                    double energy_needed = unit_energy - _current_energy;
+                    if (energy_needed < 0) energy_needed = 0;
+                    double harvest_rate = 0.003;  // mJ/ms (从配置读取或使用默认值)
+                    int64_t charge_time_ms = static_cast<int64_t>(energy_needed * 1000 / harvest_rate) + 1;
+
+                    // 唤醒时间 = min(Slack到期时间, 充满电时间)
+                    // 确保不会睡过头错过deadline
+                    int64_t slack_deadline = static_cast<int64_t>(slack);
+                    wake_time = current_time + std::min(slack_deadline, charge_time_ms);
+
+                    SCHEDULER_LOG_INFO(std::string("⏰ [ST-NonBlock] 设置Slack唤醒定时器: ") +
+                                      "任务=" + getTaskName(task) +
+                                      " Slack=" + std::to_string(slack_deadline) + "ms" +
+                                      " 充电时间=" + std::to_string(charge_time_ms) + "ms" +
+                                      " 唤醒时间=" + std::to_string(static_cast<int64_t>(wake_time)) + "ms");
+                }
+
+                // 创建并设置唤醒事件
+                STNonBlockWakeEvent *wake_event = new STNonBlockWakeEvent(this, task, wake_time);
+                _skip_wake_events[task] = wake_event;
+                _skipped_tasks.insert(task);
+                wake_event->post(wake_time);
             }
         }
 
@@ -829,7 +881,6 @@ namespace RTSim {
         const double EPSILON = 1e-9;
         bool skipped_energy_insufficient = false;  // 是否跳过了能量不足的任务
 
-        std::cout << "[DEBUG] ST-NonBlock::getTaskN(" << n << ") - ready_queue.size()=" << _ready_queue.size() << std::endl;
         for (size_t i = 0; i < _ready_queue.size(); ++i) {
             AbsRTTask *task = _ready_queue[i];
 
@@ -842,9 +893,17 @@ namespace RTSim {
                 continue;
             }
 
+            // ⭐ V78修复：跳过在_skipped_tasks中的任务
+            // 这些任务因能量不足被挂起，正在等待唤醒定时器
+            // 只有唤醒定时器触发后才会从_skipped_tasks中移除
+            if (_skipped_tasks.find(task) != _skipped_tasks.end()) {
+                SCHEDULER_LOG_DEBUG(std::string("⏭️ [ST-NonBlock] getTaskN: 跳过等待唤醒的任务: ") + getTaskName(task));
+                continue;
+            }
+
             // ⭐ 关键修复：不再跳过已调度的任务（与TIE保持一致）
             // _counted_tasks_in_dispatch只是用于跟踪本次tick中已扣除能量的任务
-            // 避免重复扣除能量
+            // 避免重复扣除能���
             // 重复调度的问题由内核的_m_dispatched检查来处理
             bool is_running_check = false;
             if (_kernel) {
@@ -880,17 +939,14 @@ namespace RTSim {
                     }
                 }
 
-                // ⭐ 关键修复：个体任务ALAP时序门控
-                // 全局门控决定系统是否唤醒，个体门控决定哪些任务可以调度
-                // 只有Slack≤0的任务才应该被调度
-                Tick individual_slack = calculateSlackForTask(task);
-                if (individual_slack > 0) {
-                    // 这个任务还有等待余地，跳过（不计入ready_index）
-                    SCHEDULER_LOG_INFO(std::string("⏸️ [ST-NonBlock] getTaskN: 个体Slack>0，跳过 ") +
-                                      getTaskName(task) +
-                                      " Slack=" + std::to_string(static_cast<int64_t>(individual_slack)) + "ms");
-                    continue;
-                }
+                // ⭐ ST (Slack-Time) 核心逻辑：能量充足时立即执行，不管Slack
+                // ST与ALAP的核心区别：
+                // - ALAP：尽可能晚执行，只有Slack≤0才调度
+                // - ST：能量充足时像ASAP一样立即执行，能量不足时才休眠到Slack=0
+                // 因此：ST在能量充足时移除Slack门控，直接调度
+                // Slack检查仅在能量不足时的唤醒机制中使用（WakeEvent）
+                SCHEDULER_LOG_DEBUG(std::string("✅ [ST-NonBlock] ST模式：能量充足，立即调度（不检查Slack） ") +
+                                  getTaskName(task));
 
                 // ⭐ 全局ALAP时序门控已在函数开头检查，这里按优先级调度
                 // ⭐ 计算任务的1ms能耗
@@ -1319,45 +1375,17 @@ namespace RTSim {
             CPU *cand_cpu = _kernel->getProcessor(candidate);
             if (cand_cpu != nullptr) continue;
 
-            // ⭐ 关键修复：移除抢占检查中的ALAP Slack门控，让高优先级任务可以立即抢占
-            // 原因：ALAP的Slack门控应该在调度时过滤（getTaskN），而不应该在抢占时过滤
-            // 如果在抢占时也过滤Slack，��导致高优先级任务（如Task_Assassin_Hungry, period=50）
-            // 因为Slack>0而无法抢占低优先级任务（如Task_Mid_A, period=100），
-            // 违反RM调度原则，导致饥饿和超时
-            //
-            // 新策略：
-            // - 抢占时只看RM优先级，不看Slack（类似TIE调度器）
-            // - Slack门控在个体门控检查和getTaskN调度时生效
-
-            // ⭐ V44关键修复：恢复抢占检查中的ALAP Slack门控
-            // 原因：保持与getTaskN中个体Slack门控的一致性
-            //
-            // 问题背景：
-            // - getTaskN中：Slack>0的任务被跳过，不调度
-            // - 抢占检查中：如果移除Slack门控，会导致Slack>0的高优先级任务抢占低优先级任务
-            // - 这造成不一致：调度时不用，抢占时用
-            //
-            // 修复策略：
-            // - 抢占检查中也应用Slack门控：只有Slack≤0的任务才能参与抢占
-            // - 这样确保"尽可能晚调度"原则在抢占时也生效
-            // - 避免Slack>0的任务抢占Slack≤0的任务
+            // ⭐ ST (Slack-Time) 核心：抢占时也不检查Slack，能量充足时按RM优先级抢占
+            // ST与ALAP的区别：能量充足时像ASAP一样，不管Slack
+            // 因此：抢占检查只看RM优先级，不看Slack
 
             STNonBlockTaskModel *model = getTaskModel(candidate);
             if (!model) continue;
 
-            // 计算候选任务的Slack
-            Tick candidate_slack = calculateSlackForTask(candidate);
-
-            // ⭐ Slack门控：只有Slack≤0的任务才能参与抢占
-            if (candidate_slack > 0) {
-                continue;  // Slack>0，跳过这个候选任务
-            }
-
-            // 在Slack≤0的任务中，找优先级最高的
+            // ⭐ ST模式：不检查Slack，按RM优先级选择候选任务
             if (!best_candidate || model->getRMPriority() < best_model->getRMPriority()) {
                 best_candidate = candidate;
                 best_model = model;
-                best_slack = candidate_slack;
             }
         }
 

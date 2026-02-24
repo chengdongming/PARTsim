@@ -1,0 +1,74 @@
+# 临界能量测试配置 - ALAP Sync - 高负载+低能量=必定超时
+cpu_islands:
+  - name: test_cpus
+    numcpus: 4
+    kernel:
+      scheduler: gpfp_alap_sync
+      task_placement: global
+    volts: [0.92, 0.94, 0.96, 0.98, 1.00, 1.02, 1.04, 1.06, 1.08, 1.10, 1.12, 1.14]
+    freqs: [7000, 7500, 8000, 8100, 8200, 8300, 8400, 8500, 9000, 9500, 10000, 10500]
+    base_freq: 8100
+    power_model: test_model
+    speed_model: test_model
+
+energy_management:
+  initial_energy: 0.5
+  max_energy: 600.0
+  day_of_year: 187
+  time_of_day_ms: 43200000
+  use_real_solar_data: false
+  solar_data_file: ""
+  pv_efficiency: 0.18
+  pv_area_m2: 0.001
+  periodic_collection_interval_ms: 1
+  enable_energy_recovery: true
+  max_recovery_wait_time_ms: 5000
+  base_harvesting_rate: 0.008
+
+  scheduler_energy_model:
+    base_power: 0.5
+    workload_coefficients:
+      bzip2: 1.2
+      hash: 0.8
+      encrypt: 1.5
+      decrypt: 1.5
+      control: 0.1
+      idle: 0.1
+    frequency_power_ratios:
+      - 7000: 0.85
+      - 7500: 0.88
+      - 8000: 0.92
+      - 8100: 0.93
+      - 8200: 0.94
+      - 8300: 0.95
+      - 8400: 0.96
+      - 8500: 0.97
+      - 9000: 1.0
+      - 9500: 1.05
+      - 10000: 1.1
+      - 10500: 1.15
+
+power_models:
+  - name: test_model
+    type: balsini_pannocchi
+    params:
+      - workload: idle
+        power_params: [0, 0, 0, 0]
+        speed_params: [1, 0, 0, 0]
+        energy_coefficient: 0.1
+      - workload: bzip2
+        power_params: [1, 0, 0, 0]
+        speed_params: [1, 0, 0, 0]
+        energy_coefficient: 1.2
+      - workload: hash
+        power_params: [1, 0, 0, 0]
+        speed_params: [1, 0, 0, 0]
+        energy_coefficient: 0.8
+      - workload: encrypt
+        power_params: [1, 0, 0, 0]
+        speed_params: [1, 0, 0, 0]
+        energy_coefficient: 1.5
+      - workload: control
+        power_params: [1, 0, 0, 0]
+        speed_params: [1, 0, 0, 0]
+        energy_coefficient: 0.1
