@@ -159,6 +159,10 @@ namespace RTSim {
         // ========== 能量耗尽管理 ==========
         bool _energy_depleted;  // ⭐ 能量是否已耗尽（Bug修复）
 
+        // ========== V87：待唤醒任务能量预留 ==========
+        AbsRTTask *_pending_wake_task;  // ⭐ 待唤醒的高优先级任务
+        double _pending_wake_energy;    // ⭐ 为待唤醒任务预留的能量
+
         // ========== ST深度充电管理 ==========
         bool _deep_charging;           // ⭐ ST特有：是否处于深度充电模式
         MetaSim::Tick _charge_start_time;  // 充电开始时间

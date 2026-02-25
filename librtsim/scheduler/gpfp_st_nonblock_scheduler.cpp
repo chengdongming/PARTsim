@@ -130,6 +130,14 @@ namespace RTSim {
                 SCHEDULER_LOG_INFO("🔋 [ST-NonBlock] 唤醒时重置能量耗尽标志，恢复调度");
             }
 
+            // ⭐ V87修复：设置待唤醒任务标志
+            // 告诉下一个tick有高优先级任务需要立即调度
+            // 在tick的能量检查中，需要为这个任务预留能量
+            _scheduler->_pending_wake_task = _task;
+            _scheduler->_pending_wake_energy = unit_energy;
+            SCHEDULER_LOG_INFO("🔔 [ST-NonBlock] V87: 设置待唤醒任务=" + task_name +
+                              " 预留能量=" + std::to_string(unit_energy * 1000) + "mJ");
+
             // ⭐ 触发抢占：让内核重新调度
             // 如果有低优先级任务在运行，高优先级任务应该抢占它
             if (_scheduler->_kernel) {
@@ -376,6 +384,8 @@ namespace RTSim {
           _kernel(nullptr),
           _energy_depleted(false),
           _deep_charging(false),
+          _pending_wake_task(nullptr),
+          _pending_wake_energy(0.0),
           _charge_start_time(0),
           _last_preempted_task(nullptr),
           _last_preempted_tick(0) {
@@ -622,36 +632,75 @@ namespace RTSim {
             SCHEDULER_LOG_INFO("🏃 检查运行任务: " +
                                std::to_string(running_tasks_map.size()) + " 个");
 
+            // ⭐ V86修复：多核能量同步检查
+            // 问题：原代码逐个检查任务能量，导致先检查的任务先扣除能量，
+            // 后检查的任务可能"看到"已耗尽的能量但仍然运行1ms
+            // 解决：先计算所有运行任务的总能耗，再判断是否需要全部挂起
+            
+            // 第一步：收集所有需要续期的任务及其能耗
+            std::vector<std::pair<AbsRTTask*, double>> tasks_to_check;
+            double total_renewal_energy = 0.0;
+            
             for (const auto& [cpu, task] : running_tasks_map) {
                 if (!task || !task->isActive()) continue;
 
                 // ⭐ V42修复：跳过当前tick中新调度的任务（能量已在getTaskN中扣除）
-                // 使用_newly_dispatched_this_tick而不是_counted_tasks_in_dispatch
                 if (_newly_dispatched_this_tick.find(task) != _newly_dispatched_this_tick.end()) {
                     SCHEDULER_LOG_DEBUG(std::string("⏭️ [ST-NonBlock] 跳过新任务的续期扣除: ") + getTaskName(task));
                     continue;
                 }
 
                 double unit_energy = calculateUnitEnergyForTask(task);
+                tasks_to_check.push_back({task, unit_energy});
+                total_renewal_energy += unit_energy;
+            }
 
-                // 检查是否有足够能量续期1ms
-                const double EPSILON = 1e-9;
-                if (_current_energy < unit_energy - EPSILON) {
-                    // ⭐ V43修复：能量不足时设置能量耗尽标志
-                    if (!_energy_depleted) {
-                        _energy_depleted = true;
-                        _current_energy = 0.0;  // 强制设为0，防止变负
-                        SCHEDULER_LOG_WARNING("💀 [ST-NonBlock] 能量耗尽，设置_energy_depleted标志");
-                    }
+            // 第二步：检查是否有足够能量为所有任务续期
+            // ⭐ V87修复：如果有待唤醒的高优先级任务，需要为它预留能量
+            double reserved_energy = 0.0;
+            if (_pending_wake_task != nullptr) {
+                reserved_energy = _pending_wake_energy;
+                SCHEDULER_LOG_INFO("🔔 V87: 为待唤醒任务预留能量: " + 
+                                  std::to_string(reserved_energy * 1000) + "mJ");
+            }
+            
+            const double EPSILON = 1e-9;
+            double available_for_renewal = _current_energy - reserved_energy;
+            bool energy_sufficient_for_all = (available_for_renewal >= total_renewal_energy - EPSILON);
 
-                    // 能量不足，加入挂起列表
+            SCHEDULER_LOG_INFO("🔋 V86+V87能量检查: 剩余=" + std::to_string(_current_energy * 1000) + 
+                              "mJ 预留=" + std::to_string(reserved_energy * 1000) +
+                              "mJ 可用=" + std::to_string(available_for_renewal * 1000) +
+                              "mJ 总需求=" + std::to_string(total_renewal_energy * 1000) + 
+                              "mJ 任务数=" + std::to_string(tasks_to_check.size()) +
+                              " 足够=" + (energy_sufficient_for_all ? "是" : "否"));
+
+            if (!energy_sufficient_for_all && !tasks_to_check.empty()) {
+                // ⭐ 能量不足，设置能量耗尽标志，并挂起所有任务
+                // 但如果有待唤醒任务，不清除能量（让待唤醒任务可以执行）
+                if (!_energy_depleted && _pending_wake_task == nullptr) {
+                    _energy_depleted = true;
+                    _current_energy = 0.0;  // 强制设为0，防止变负
+                    SCHEDULER_LOG_WARNING("💀 [ST-NonBlock] V86: 能量耗尽，设置_energy_depleted标志");
+                } else if (_pending_wake_task != nullptr) {
+                    SCHEDULER_LOG_WARNING("💀 [ST-NonBlock] V86: 能量不足但有待唤醒任务，保留能量给待唤醒任务");
+                }
+
+                // 所有需要续期的任务都加入挂起列表
+                for (const auto& [task, unit_energy] : tasks_to_check) {
                     tasks_to_suspend.push_back(task);
-                    SCHEDULER_LOG_WARNING("⚠️ 续期能量不足，将挂起: " +
+                    SCHEDULER_LOG_WARNING("⚠️ V86续期能量不足，将挂起: " +
                                          getTaskName(task) +
                                          " 需要=" + std::to_string(unit_energy * 1000) + " mJ" +
                                          " 剩余=" + std::to_string(_current_energy * 1000) + " mJ");
-                } else {
-                    // 扣除续期能量
+                }
+            } else {
+                // 能量充足，逐个扣除续期能量
+                // ⭐ V87：清除待唤醒任务标志（已经不需要了）
+                _pending_wake_task = nullptr;
+                _pending_wake_energy = 0.0;
+                
+                for (const auto& [task, unit_energy] : tasks_to_check) {
                     double old_energy = _current_energy;
                     _current_energy -= unit_energy;
                     _stats.total_energy_consumed += unit_energy;
