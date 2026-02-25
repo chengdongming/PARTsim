@@ -99,13 +99,26 @@ namespace RTSim {
         // ⭐ 检查当前能量是否足够执行1ms
         double unit_energy = _scheduler->calculateUnitEnergyForTask(_task);
         double current_energy = _scheduler->getCurrentEnergy();
+        Tick slack = _scheduler->calculateSlackForTask(_task);
 
-        if (current_energy >= unit_energy - 1e-9) {
-            // 能量充足，触发抢占调度
-            SCHEDULER_LOG_INFO(std::string("✅ [ST-NonBlock] 唤醒时能量充足，触发抢占: ") +
+        // ⭐ V81关键修复：当Slack<=0时，强制执行任务
+        // 即使能量不足，也要尝试执行，否则任务必然miss deadline
+        bool force_execute = (slack <= 0);
+
+        if (current_energy >= unit_energy - 1e-9 || force_execute) {
+            // 能量充足 或 Slack=0需要强制执行
+            if (force_execute && current_energy < unit_energy - 1e-9) {
+                SCHEDULER_LOG_WARNING(std::string("🚨 [ST-NonBlock] V81: Slack=0强制执行（能量不足）: ") +
                                "任务=" + task_name +
                                " 需要=" + std::to_string(unit_energy * 1000) + "mJ" +
-                               " 当前=" + std::to_string(current_energy * 1000) + "mJ");
+                               " 当前=" + std::to_string(current_energy * 1000) + "mJ" +
+                               " Slack=" + std::to_string(static_cast<int64_t>(slack)) + "ms");
+            } else {
+                SCHEDULER_LOG_INFO(std::string("✅ [ST-NonBlock] 唤醒时能量充足，触发抢占: ") +
+                                   "任务=" + task_name +
+                                   " 需要=" + std::to_string(unit_energy * 1000) + "mJ" +
+                                   " 当前=" + std::to_string(current_energy * 1000) + "mJ");
+            }
 
             // 从跳过集合中移除
             _scheduler->_skipped_tasks.erase(_task);
@@ -145,14 +158,25 @@ namespace RTSim {
                 double harvest_rate = 0.003;  // mJ/ms (与配置一致)
                 int64_t charge_time_ms = static_cast<int64_t>(energy_needed * 1000 / harvest_rate) + 1;
 
-                // ⭐ 关键：唤醒时间 = min(Slack到期时间, 充满电时间)
-                // 确保不会睡过头错过deadline
+                // ⭐ V80关键修复：当充电时间 >= Slack时，必须立即尝试执行
+                // 如果等待充满电的时间超过Slack时间，说明无论如何都会miss deadline
+                // 此时应该立即尝试执行，而不是继续等待
                 int64_t slack_deadline = static_cast<int64_t>(slack);
-                new_wake_time = current_time + std::min(slack_deadline, charge_time_ms);
 
-                SCHEDULER_LOG_INFO(std::string("  Slack=") + std::to_string(slack_deadline) + "ms" +
-                                  " 充电时间=" + std::to_string(charge_time_ms) + "ms" +
-                                  " 新唤醒时间=" + std::to_string(static_cast<int64_t>(new_wake_time)) + "ms");
+                if (charge_time_ms >= slack_deadline) {
+                    // 充电时间 >= Slack时间，意味着即使充满电也来不及
+                    // 立即尝试执行，希望能赶在deadline前完成部分工作
+                    new_wake_time = current_time + 1;
+                    SCHEDULER_LOG_INFO(std::string("  ⚠️ V80: 充电时间(") + std::to_string(charge_time_ms) +
+                                      "ms) >= Slack(" + std::to_string(slack_deadline) +
+                                      "ms)，立即尝试执行");
+                } else {
+                    // 充电时间 < Slack时间，可以等待充满电
+                    new_wake_time = current_time + charge_time_ms;
+                    SCHEDULER_LOG_INFO(std::string("  Slack=") + std::to_string(slack_deadline) + "ms" +
+                                      " 充电时间=" + std::to_string(charge_time_ms) + "ms" +
+                                      " 新唤醒时间=" + std::to_string(static_cast<int64_t>(new_wake_time)) + "ms");
+                }
             }
 
             // 创建新的唤醒事件
@@ -846,22 +870,6 @@ namespace RTSim {
             return nullptr;
         }
 
-                // STAR Critical fix: if energy depleted, don\'t schedule any tasks
-        if (_energy_depleted) {
-        // STAR Critical fix: if energy depleted, don't schedule any tasks
-        if (_energy_depleted) {
-            SCHEDULER_LOG_DEBUG(std::string("STAR [ST-NonBlock] getTaskN: Energy depleted") +
-                               " n=" + std::to_string(n) +
-                               " energy=" + std::to_string(_current_energy * 1000) + " mJ");
-            return nullptr;
-        }
-
-            SCHEDULER_LOG_DEBUG(std::string("STAR [ST-NonBlock] getTaskN: Energy depleted, not scheduling task") +
-                               " n=" + std::to_string(n) +
-                               " current_energy=" + std::to_string(_current_energy * 1000) + " mJ");
-            return nullptr;
-        }
-
         SCHEDULER_LOG_DEBUG(std::string("🔍 [ST-NonBlock] getTaskN(") + std::to_string(n) + ") 被调用" +
                            " 当前能量: " + std::to_string(_current_energy) + "J" +
                            " 已调度能耗=" + std::to_string(_dispatching_tasks_total_energy) + "J");
@@ -953,8 +961,16 @@ namespace RTSim {
                 double unit_energy = calculateUnitEnergyForTask(task);
                 double available_energy = _current_energy - _dispatching_tasks_total_energy;
 
-                // ⭐ 贪心策略：如果能量不足，跳过这个任务���继续查找后面的任务
-                if (available_energy < unit_energy - EPSILON) {
+                // ⭐ V82修复：检查Slack是否<=0
+                // 如果Slack<=0，必须强制执行，否则必然miss deadline
+                Tick task_slack = calculateSlackForTask(task);
+                // ⭐ V85修复：只有��能量>0时才允许强制执行
+                // 如果能量为0或负数，强制执行没有任何意义，只会导致无限循环
+                bool has_min_energy = (available_energy >= unit_energy - EPSILON);
+                bool force_execute_v82 = (task_slack <= 0 && has_min_energy);
+
+                // ⭐ 贪心策略：如果能量不足且Slack>0，跳过这个任务，继续查找后面的任务
+                if (available_energy < unit_energy - EPSILON && !force_execute_v82) {
                     SCHEDULER_LOG_INFO(std::string("⚠️ [ST-NonBlock] 任务能量不足，跳过（贪心策略）") +
                                       " 任务=" + getTaskName(task) +
                                       " 需要1ms=" + std::to_string(unit_energy) + "J" +

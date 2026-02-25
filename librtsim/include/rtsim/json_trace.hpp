@@ -28,6 +28,7 @@
 #include <rtsim/taskevt.hpp>
 #include <rtsim/energy_info_provider.hpp>
 #include <map>
+#include <set>
 
 namespace RTSim {
     class JSONTrace {
@@ -38,8 +39,11 @@ namespace RTSim {
         EnergyInfoProvider *_energy_provider; // ⭐ 能量信息提供者
 
         // ⭐ 追踪任务执行信息
-        std::map<AbsRTTask*, MetaSim::Tick> _task_start_times; // 任务开始执行时间
+        std::map<AbsRTTask*, MetaSim::Tick> _task_start_times; // 任务开始执行时��
         std::map<AbsRTTask*, double> _task_start_consumed; // 任务开始时的累计消耗能量
+
+        // ⭐ V83修复：跟踪已deadline miss的任务，避免重复记录descheduled事件
+        std::set<AbsRTTask*> _deadline_missed_tasks;
 
         void writeTaskEvent(const Task &tt, const std::string &evt_name);
         void writeEnergyInfo(); // ⭐ 写入能量信息

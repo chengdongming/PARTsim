@@ -200,6 +200,15 @@ namespace RTSim {
             return;
         }
 
+        // ⭐ V83修复：跳过已经deadline miss的任务
+        // 当任务已经触发deadline miss时，不应该再记录descheduled事件
+        // 因为任务已经被标记为死亡，descheduled事件在逻辑上是错误的
+        if (task && _deadline_missed_tasks.find(task) != _deadline_missed_tasks.end()) {
+            // 从集合中移除（因为kill事件会紧随其后）
+            _deadline_missed_tasks.erase(task);
+            return;
+        }
+
         if (!first_event)
             fd << "," << std::endl;
         else
@@ -265,6 +274,7 @@ namespace RTSim {
 
     void JSONTrace::probe(DeadEvt &e) {
         Task &tt = *(e.getTask());
+        AbsRTTask *task = dynamic_cast<AbsRTTask*>(&tt);
 
         // 修复假阳性deadline miss：只有当前时间 >= 绝对截止时间才记录为deadline miss
         // 这是RTSim框架的一个已知问题，在Buffered模式下会调用deadEvt.process()
@@ -281,6 +291,12 @@ namespace RTSim {
             // 因为对于周期性任务，getLastArrival()可能返回第一次实例的到达时间
             if (max_time >= 0 && SIMUL.getTime() >= max_time) {
                 return;
+            }
+
+            // ⭐ V83修复：将任务添加到deadline miss集合
+            // 这样后续的descheduled事件会被跳过
+            if (task) {
+                _deadline_missed_tasks.insert(task);
             }
 
             if (!first_event)
