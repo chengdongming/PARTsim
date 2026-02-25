@@ -1,0 +1,82 @@
+# Slack唤醒测试配置 - 合理的能量设置，能够展示Slack唤醒机制正常工作
+# 设计原则：
+# 1. 初始能量足够启动任务，但会在执行中耗尽
+# 2. 能量恢复率足够在Slack时间内充满
+# 3. 任务会在中途因能量不足被挂起，然后在Slack=0时唤醒
+
+cpu_islands:
+  - name: test_cpus
+    numcpus: 4
+    kernel:
+      scheduler: gpfp_st_nonblock
+      task_placement: global
+    volts: [0.92, 0.94, 0.96, 0.98, 1.00, 1.02, 1.04, 1.06, 1.08, 1.10, 1.12, 1.14]
+    freqs: [7000, 7500, 8000, 8100, 8200, 8300, 8400, 8500, 9000, 9500, 10000, 10500]
+    base_freq: 8100
+    power_model: test_model
+    speed_model: test_model
+
+energy_management:
+  # 初始能量：25mJ，足够任务执行一段时间
+  initial_energy: 0.025
+  max_energy: 600.0
+  day_of_year: 187
+  time_of_day_ms: 43200000
+  use_real_solar_data: false
+  solar_data_file: ""
+  pv_efficiency: 0.18
+  pv_area_m2: 0.0005
+  periodic_collection_interval_ms: 1
+  enable_energy_recovery: true
+  max_recovery_wait_time_ms: 2000
+  # 能量恢复率：0.1 mJ/ms = 100 mJ/s
+  # 这样在40ms的Slack时间内可以恢复约4mJ，足够运行3-4ms
+  base_harvesting_rate: 0.1
+
+  scheduler_energy_model:
+    base_power: 0.5
+    workload_coefficients:
+      bzip2: 1.2
+      hash: 0.8
+      encrypt: 1.5
+      decrypt: 1.5
+      control: 0.1
+      idle: 0.1
+    frequency_power_ratios:
+      - 7000: 0.85
+      - 7500: 0.88
+      - 8000: 0.92
+      - 8100: 0.93
+      - 8200: 0.94
+      - 8300: 0.95
+      - 8400: 0.96
+      - 8500: 0.97
+      - 9000: 1.0
+      - 9500: 1.05
+      - 10000: 1.1
+      - 10500: 1.15
+
+power_models:
+  - name: test_model
+    type: balsini_pannocchi
+    params:
+      - workload: idle
+        power_params: [0, 0, 0, 0]
+        speed_params: [1, 0, 0, 0]
+        energy_coefficient: 0.1
+      - workload: bzip2
+        power_params: [1, 0, 0, 0]
+        speed_params: [1, 0, 0, 0]
+        energy_coefficient: 1.2
+      - workload: hash
+        power_params: [1, 0, 0, 0]
+        speed_params: [1, 0, 0, 0]
+        energy_coefficient: 0.8
+      - workload: encrypt
+        power_params: [1, 0, 0, 0]
+        speed_params: [1, 0, 0, 0]
+        energy_coefficient: 1.5
+      - workload: control
+        power_params: [1, 0, 0, 0]
+        speed_params: [1, 0, 0, 0]
+        energy_coefficient: 0.1

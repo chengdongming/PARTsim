@@ -151,6 +151,7 @@ namespace RTSim {
         // ========== 抢占防抖 ==========
         AbsRTTask *_last_preempted_task;                // 最近被抢占的任务
         MetaSim::Tick _last_preempted_tick;             // 最近抢占发生的时间
+        size_t _last_ready_queue_size;                  // V96：上次tick的就绪队列大小
 
         // ========== 能量记账（每ms累计） ==========
         struct TaskEnergyAccount {
@@ -186,6 +187,10 @@ namespace RTSim {
         bool checkALAPTimingGate();  // 全局ALAP时序门控（保留兼容性）
         MetaSim::Tick calculateSlackForTask(AbsRTTask *task);  // 计算任务的Slack
         MetaSim::Tick calculateMinSlack();  // ⭐ ST特有：计算所有就绪任务的最小Slack
+
+        // ⭐ V89: 同步组充电相关
+        MetaSim::Tick calculateGroupWakeTime(MetaSim::Tick group_slack, double group_energy);  // 计算组唤醒时间
+        void scheduleGroupWakeEvent(MetaSim::Tick wake_time);  // 设置组唤醒定时器
 
         // ⭐ 过期任务清理
         void cleanupExpiredTasks();  // 清理超过截止期的旧任务实例
