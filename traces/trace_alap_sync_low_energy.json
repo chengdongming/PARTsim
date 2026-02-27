@@ -1,0 +1,5 @@
+{
+    "events" : [
+{ "time": "0", "event_type": "arrival", "task_name": "Task_High", "arrival_time": "0"},
+{ "time": "0", "event_type": "arrival", "task_name": "Task_Mid", "arrival_time": "0"},
+{ "time": "0", "event_type": "arrival", "task_name": "Task_Low", "arrival_time": "0"},

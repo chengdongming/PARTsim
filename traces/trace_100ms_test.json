@@ -1,0 +1,11 @@
+{
+    "events" : [
+{ "time": "0", "event_type": "arrival", "task_name": "Task_High", "arrival_time": "0", "current_energy_mJ": 29.4, "total_consumed_mJ": 0.6, "total_harvested_mJ": 0},
+{ "time": "0", "event_type": "arrival", "task_name": "Task_Mid", "arrival_time": "0", "current_energy_mJ": 28.4, "total_consumed_mJ": 1.6, "total_harvested_mJ": 0},
+{ "time": "0", "event_type": "arrival", "task_name": "Task_Low", "arrival_time": "0", "current_energy_mJ": 27.35, "total_consumed_mJ": 2.65, "total_harvested_mJ": 0},
+{ "time": "0", "event_type": "scheduled", "task_name": "Task_High", "arrival_time": "0", "current_energy_mJ": 24.7, "total_consumed_mJ": 5.3, "total_harvested_mJ": 0, "task_unit_energy_mJ": 0.6, "task_total_energy_mJ": 6, "energy_sufficient": true},
+{ "time": "0", "event_type": "scheduled", "task_name": "Task_Mid", "arrival_time": "0", "current_energy_mJ": 24.7, "total_consumed_mJ": 5.3, "total_harvested_mJ": 0, "task_unit_energy_mJ": 0.4, "task_total_energy_mJ": 6, "energy_sufficient": true},
+{ "time": "0", "event_type": "scheduled", "task_name": "Task_Low", "arrival_time": "0", "current_energy_mJ": 24.7, "total_consumed_mJ": 5.3, "total_harvested_mJ": 0, "task_unit_energy_mJ": 0.05, "task_total_energy_mJ": 1, "energy_sufficient": true},
+{ "time": "10", "event_type": "end_instance", "task_name": "Task_High", "arrival_time": "0", "current_energy_mJ": 24.772, "total_consumed_mJ": 5.3, "total_harvested_mJ": 0.072, "task_unit_energy_mJ": 0.6, "task_total_energy_mJ": 6, "execution_time_ms": 10, "task_consumed_mJ": 0},
+{ "time": "15", "event_type": "end_instance", "task_name": "Task_Mid", "arrival_time": "0", "current_energy_mJ": 24.812, "total_consumed_mJ": 5.3, "total_harvested_mJ": 0.112, "task_unit_energy_mJ": 0.4, "task_total_energy_mJ": 6, "execution_time_ms": 15, "task_consumed_mJ": 0},
+{ "time": "20", "event_type": "end_instance", "task_name": "Task_Low", "arrival_time": "0", "current_energy_mJ": 24.852, "total_consumed_mJ": 5.3, "total_harvested_mJ": 0.152, "task_unit_energy_mJ": 0.05, "task_total_energy_mJ": 1, "execution_time_ms": 20, "task_consumed_mJ": 0}] }

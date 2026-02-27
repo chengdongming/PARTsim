@@ -1,0 +1,14 @@
+{
+    "events" : [
+{ "time": "0", "event_type": "arrival", "task_name": "Task_High", "arrival_time": "0", "current_energy_mJ": 9.4, "total_consumed_mJ": 0.6, "total_harvested_mJ": 0},
+{ "time": "0", "event_type": "arrival", "task_name": "Task_Mid1", "arrival_time": "0", "current_energy_mJ": 8.4, "total_consumed_mJ": 1.6, "total_harvested_mJ": 0},
+{ "time": "0", "event_type": "arrival", "task_name": "Task_Mid2", "arrival_time": "0", "current_energy_mJ": 6.65, "total_consumed_mJ": 3.35, "total_harvested_mJ": 0},
+{ "time": "0", "event_type": "arrival", "task_name": "Task_Low", "arrival_time": "0", "current_energy_mJ": 4.9, "total_consumed_mJ": 5.1, "total_harvested_mJ": 0},
+{ "time": "0", "event_type": "scheduled", "task_name": "Task_High", "arrival_time": "0", "current_energy_mJ": 1.55, "total_consumed_mJ": 8.45, "total_harvested_mJ": 0, "task_unit_energy_mJ": 0.6, "task_total_energy_mJ": 6, "energy_sufficient": true},
+{ "time": "0", "event_type": "scheduled", "task_name": "Task_Mid1", "arrival_time": "0", "current_energy_mJ": 1.55, "total_consumed_mJ": 8.45, "total_harvested_mJ": 0, "task_unit_energy_mJ": 0.4, "task_total_energy_mJ": 4.8, "energy_sufficient": true},
+{ "time": "0", "event_type": "scheduled", "task_name": "Task_Mid2", "arrival_time": "0", "current_energy_mJ": 1.55, "total_consumed_mJ": 8.45, "total_harvested_mJ": 0, "task_unit_energy_mJ": 0.75, "task_total_energy_mJ": 11.25, "energy_sufficient": true},
+{ "time": "1", "event_type": "descheduled", "task_name": "Task_High", "arrival_time": "0", "current_energy_mJ": 1.558, "total_consumed_mJ": 8.45, "total_harvested_mJ": 0.008, "executed_time_ms": 1, "partial_consumed_mJ": 0.6, "preempted_by": "energy_insufficient", "reason": "insufficient_energy"},
+{ "time": "1", "event_type": "descheduled", "task_name": "Task_Mid1", "arrival_time": "0", "current_energy_mJ": 1.558, "total_consumed_mJ": 8.45, "total_harvested_mJ": 0.008, "executed_time_ms": 1, "partial_consumed_mJ": 0.4, "preempted_by": "energy_insufficient", "reason": "insufficient_energy"},
+{ "time": "1", "event_type": "descheduled", "task_name": "Task_Mid2", "arrival_time": "0", "current_energy_mJ": 1.558, "total_consumed_mJ": 8.45, "total_harvested_mJ": 0.008, "executed_time_ms": 1, "partial_consumed_mJ": 0.75, "preempted_by": "energy_insufficient", "reason": "insufficient_energy"},
+{ "time": "1", "event_type": "scheduled", "task_name": "Task_High", "arrival_time": "0", "current_energy_mJ": 0.358, "total_consumed_mJ": 9.65, "total_harvested_mJ": 0.008, "task_unit_energy_mJ": 0.6, "task_total_energy_mJ": 6, "energy_sufficient": false},
+{ "time": "2", "event_type": "descheduled", "task_name": "Task_High", "arrival_time": "0", "current_energy_mJ": 0.366, "total_consumed_mJ": 9.65, "total_harvested_mJ": 0.016, "executed_time_ms": 1, "partial_consumed_mJ": 0.6, "preempted_by": "energy_insufficient", "reason": "insufficient_energy"}] }

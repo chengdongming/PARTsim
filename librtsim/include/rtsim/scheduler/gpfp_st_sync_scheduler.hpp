@@ -143,6 +143,14 @@ namespace RTSim {
         bool _batch_scheduled_this_tick;                // 本tick是否已批量调度
         bool _energy_depleted;                          // 能量是否已耗尽（Bug #5修复）
         int _current_batch_size;                        // 当前批量大小
+        bool _v108_batch_energy_checked;                // ⭐ V108: 本tick是否已做过批量能量检查
+        bool _v108_batch_energy_sufficient;             // ⭐ V108: 本tick批量能量是否充足
+        int _v108_batch_k_approved;                     // ⭐ V108: 已批准扣除能量的任务数
+        double _v108_batch_start_energy;                // ⭐ V108: 批量检查开始时的能量快照
+        double _v108_batch_total_energy;                // ⭐ V108: 批量任务总能量（已扣除）
+        MetaSim::Tick _last_v108_insert_time;            // ⭐ V108: 上次insert的时间
+        size_t _v108_last_ready_queue_size;           // ⭐ V108: 上次检查时的就绪队列大小
+        MetaSim::Tick _last_v108_check_time;             // ⭐ V108: 上次检查的时间
 
         // ========== ST深度充电管理 ==========
         bool _deep_charging;           // ⭐ ST特有：是否处于深度充电模式

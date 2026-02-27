@@ -1,0 +1,8 @@
+{
+    "events" : [
+{ "time": "0", "event_type": "arrival", "task_name": "Task_High", "arrival_time": "0", "current_energy_mJ": 4.4, "total_consumed_mJ": 0.6, "total_harvested_mJ": 0},
+{ "time": "0", "event_type": "arrival", "task_name": "Task_Mid1", "arrival_time": "0", "current_energy_mJ": 3.4, "total_consumed_mJ": 1.6, "total_harvested_mJ": 0},
+{ "time": "0", "event_type": "arrival", "task_name": "Task_Mid2", "arrival_time": "0", "current_energy_mJ": 1.65, "total_consumed_mJ": 3.35, "total_harvested_mJ": 0},
+{ "time": "0", "event_type": "arrival", "task_name": "Task_Low", "arrival_time": "0", "current_energy_mJ": 0.65, "total_consumed_mJ": 4.35, "total_harvested_mJ": 0},
+{ "time": "0", "event_type": "scheduled", "task_name": "Task_High", "arrival_time": "0", "current_energy_mJ": 0.05, "total_consumed_mJ": 4.95, "total_harvested_mJ": 0, "task_unit_energy_mJ": 0.6, "task_total_energy_mJ": 6, "energy_sufficient": false},
+{ "time": "1", "event_type": "descheduled", "task_name": "Task_High", "arrival_time": "0", "current_energy_mJ": 0.058, "total_consumed_mJ": 4.95, "total_harvested_mJ": 0.008, "executed_time_ms": 1, "partial_consumed_mJ": 0.6, "preempted_by": "energy_insufficient", "reason": "insufficient_energy"}] }

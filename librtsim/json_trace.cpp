@@ -249,16 +249,18 @@ namespace RTSim {
 
             // ⭐ preempted_by字段
             // 检查是否因为能量不足而被下处理机
+            // V103修复：使用5ms作为阈值，而不是1ms
             if (_energy_provider) {
                 double current_energy = _energy_provider->getCurrentEnergy();
                 double task_unit_energy = _energy_provider->getTaskUnitEnergy(task);
+                double min_run_energy = task_unit_energy * 5;  // V103：至少能运行5ms
 
-                if (current_energy < task_unit_energy) {
+                if (current_energy < min_run_energy) {
                     // 能量不足导致的下处理机
                     fd << ", \"preempted_by\": \"energy_insufficient\"";
                     fd << ", \"reason\": \"insufficient_energy\"";
                 } else {
-                    // 被其他任务抢占（具体是哪个任务需要调度器提供信息）
+                    // 被其他任务抢占
                     fd << ", \"preempted_by\": \"higher_priority_task\"";
                     fd << ", \"reason\": \"preemption\"";
                 }
