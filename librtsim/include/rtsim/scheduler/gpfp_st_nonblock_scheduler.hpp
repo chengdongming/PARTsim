@@ -302,7 +302,7 @@ namespace RTSim {
         const std::map<AbsRTTask *, std::string> getTaskWorkloads() const;
 
         // Kernel管理
-        void setKernel(MRTKernel *kernel);
+        void setKernel(AbsKernel *kernel) override;  // ⭐ V96修复
         MRTKernel *getKernel();
 
         // 配置接口

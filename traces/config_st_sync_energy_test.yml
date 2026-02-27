@@ -12,18 +12,18 @@ cpu_islands:
     speed_model: test_model
 
 energy_management:
-  initial_energy: 0.001       # 初始能量 1mJ (极少)
+  initial_energy: 0.0001      # 初始能量 0.1mJ (极少)
   max_energy: 0.01            # 最大 10mJ
   day_of_year: 1
-  time_of_day_ms: 0           # 00:00 午夜（无太阳能）
-  use_real_solar_data: false
+  time_of_day_ms: 0           # 00:00 午夜（无太阳能，time_factor=0）
+  use_real_solar_data: false  # 使用线性函数
   solar_data_file: ""
   pv_efficiency: 0.18
   pv_area_m2: 0.01
   periodic_collection_interval_ms: 1
   enable_energy_recovery: true
   max_recovery_wait_time_ms: 50
-  base_harvesting_rate: 1.44  # 800 W/m² 峰值
+  base_harvesting_rate: 0.0   # 收集率为0，完全无能量补充
 
   scheduler_energy_model:
     base_power: 0.5

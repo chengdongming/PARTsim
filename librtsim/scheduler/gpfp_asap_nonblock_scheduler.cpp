@@ -1550,8 +1550,10 @@ namespace RTSim {
         _start_time_offset = offset;
     }
 
-    void ASAPNonBlockScheduler::setKernel(MRTKernel *kernel) {
-        _kernel = kernel;
+    void ASAPNonBlockScheduler::setKernel(AbsKernel *kernel) {
+        // ⭐ V96修复：重写基类方法，同时设置基类和派生类的_kernel成员
+        Scheduler::setKernel(kernel);
+        _kernel = dynamic_cast<MRTKernel*>(kernel);
     }
 
     MRTKernel *ASAPNonBlockScheduler::getKernel() {

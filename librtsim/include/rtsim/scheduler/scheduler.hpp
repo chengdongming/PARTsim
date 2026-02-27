@@ -268,7 +268,7 @@ namespace RTSim {
         /**
            Sets the kernel for this scheduler.
         */
-        void setKernel(AbsKernel *k);
+        virtual void setKernel(AbsKernel *k);
 
         /**
          * Insert a task in the queue.

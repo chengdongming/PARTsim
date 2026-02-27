@@ -2853,8 +2853,17 @@ namespace RTSim {
         _start_time_offset = offset;
     }
 
-    void STSyncScheduler::setKernel(MRTKernel *kernel) {
-        _kernel = kernel;
+    // ⭐ V96修复：重���基类的setKernel方法，同时设置基类和派生类的_kernel成员
+    void STSyncScheduler::setKernel(AbsKernel *kernel) {
+        // 调用基类方法设置基类的_kernel
+        Scheduler::setKernel(kernel);
+        // 同时设置派生类的_kernel（转换为MRTKernel*）
+        _kernel = dynamic_cast<MRTKernel*>(kernel);
+        if (_kernel) {
+            SCHEDULER_LOG_INFO("🏁 [ST-Sync] setKernel: _kernel设置成功");
+        } else {
+            SCHEDULER_LOG_WARNING("⚠️ [ST-Sync] setKernel: _kernel设置失败（kernel不是MRTKernel）");
+        }
     }
 
     MRTKernel *STSyncScheduler::getKernel() {

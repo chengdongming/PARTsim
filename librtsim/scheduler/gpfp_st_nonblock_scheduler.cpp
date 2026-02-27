@@ -2022,8 +2022,10 @@ namespace RTSim {
         _start_time_offset = offset;
     }
 
-    void STNonBlockScheduler::setKernel(MRTKernel *kernel) {
-        _kernel = kernel;
+    void STNonBlockScheduler::setKernel(AbsKernel *kernel) {
+        // ⭐ V96修复：重写基类方法，同时设置基类和派生类的_kernel成员
+        Scheduler::setKernel(kernel);
+        _kernel = dynamic_cast<MRTKernel*>(kernel);
     }
 
     MRTKernel *STNonBlockScheduler::getKernel() {

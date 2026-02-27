@@ -301,7 +301,7 @@ namespace RTSim {
         bool isBatchScheduledThisTick() const { return _batch_scheduled_this_tick; }
 
         // Kernel管理
-        void setKernel(MRTKernel *kernel);
+        void setKernel(AbsKernel *kernel) override;  // ⭐ V96修复：重写基类方法
         MRTKernel *getKernel();
 
         // 配置接口
