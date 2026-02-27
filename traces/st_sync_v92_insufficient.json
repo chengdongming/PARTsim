@@ -1,0 +1,17 @@
+{
+    "events" : [
+{ "time": "0", "event_type": "arrival", "task_name": "Task_High", "arrival_time": "0", "current_energy_mJ": 9.4, "total_consumed_mJ": 0.6, "total_harvested_mJ": 0},
+{ "time": "0", "event_type": "arrival", "task_name": "Task_Med", "arrival_time": "0", "current_energy_mJ": 9, "total_consumed_mJ": 1, "total_harvested_mJ": 0},
+{ "time": "0", "event_type": "arrival", "task_name": "Task_Low", "arrival_time": "0", "current_energy_mJ": 8.25, "total_consumed_mJ": 1.75, "total_harvested_mJ": 0},
+{ "time": "0", "event_type": "scheduled", "task_name": "Task_High", "arrival_time": "0", "current_energy_mJ": 8.25, "total_consumed_mJ": 1.75, "total_harvested_mJ": 0, "task_unit_energy_mJ": 0.6, "task_total_energy_mJ": 4.8, "energy_sufficient": true},
+{ "time": "0", "event_type": "scheduled", "task_name": "Task_Med", "arrival_time": "0", "current_energy_mJ": 8.25, "total_consumed_mJ": 1.75, "total_harvested_mJ": 0, "task_unit_energy_mJ": 0.4, "task_total_energy_mJ": 4, "energy_sufficient": true},
+{ "time": "0", "event_type": "scheduled", "task_name": "Task_Low", "arrival_time": "0", "current_energy_mJ": 8.25, "total_consumed_mJ": 1.75, "total_harvested_mJ": 0, "task_unit_energy_mJ": 0.75, "task_total_energy_mJ": 9, "energy_sufficient": true},
+{ "time": "8", "event_type": "end_instance", "task_name": "Task_High", "arrival_time": "0", "current_energy_mJ": 18.33, "total_consumed_mJ": 1.75, "total_harvested_mJ": 10.08, "task_unit_energy_mJ": 0.6, "task_total_energy_mJ": 4.8, "execution_time_ms": 8, "task_consumed_mJ": 0},
+{ "time": "10", "event_type": "end_instance", "task_name": "Task_Med", "arrival_time": "0", "current_energy_mJ": 21.21, "total_consumed_mJ": 1.75, "total_harvested_mJ": 12.96, "task_unit_energy_mJ": 0.4, "task_total_energy_mJ": 4, "execution_time_ms": 10, "task_consumed_mJ": 0},
+{ "time": "12", "event_type": "end_instance", "task_name": "Task_Low", "arrival_time": "0", "current_energy_mJ": 24.09, "total_consumed_mJ": 1.75, "total_harvested_mJ": 15.84, "task_unit_energy_mJ": 0.75, "task_total_energy_mJ": 9, "execution_time_ms": 12, "task_consumed_mJ": 0},
+{ "time": "50", "event_type": "arrival", "task_name": "Task_High", "arrival_time": "50", "current_energy_mJ": 49.4, "total_consumed_mJ": 2.35, "total_harvested_mJ": 72},
+{ "time": "50", "event_type": "scheduled", "task_name": "Task_High", "arrival_time": "50", "current_energy_mJ": 49.4, "total_consumed_mJ": 2.35, "total_harvested_mJ": 72, "task_unit_energy_mJ": 0.6, "task_total_energy_mJ": 4.8, "energy_sufficient": true},
+{ "time": "58", "event_type": "end_instance", "task_name": "Task_High", "arrival_time": "50", "current_energy_mJ": 50, "total_consumed_mJ": 2.35, "total_harvested_mJ": 82.08, "task_unit_energy_mJ": 0.6, "task_total_energy_mJ": 4.8, "execution_time_ms": 8, "task_consumed_mJ": 0},
+{ "time": "80", "event_type": "arrival", "task_name": "Task_Med", "arrival_time": "80", "current_energy_mJ": 49.6, "total_consumed_mJ": 2.75, "total_harvested_mJ": 115.2},
+{ "time": "80", "event_type": "scheduled", "task_name": "Task_Med", "arrival_time": "80", "current_energy_mJ": 49.6, "total_consumed_mJ": 2.75, "total_harvested_mJ": 115.2, "task_unit_energy_mJ": 0.4, "task_total_energy_mJ": 4, "energy_sufficient": true},
+{ "time": "90", "event_type": "end_instance", "task_name": "Task_Med", "arrival_time": "80", "current_energy_mJ": 50, "total_consumed_mJ": 2.75, "total_harvested_mJ": 128.16, "task_unit_energy_mJ": 0.4, "task_total_energy_mJ": 4, "execution_time_ms": 10, "task_consumed_mJ": 0}] }

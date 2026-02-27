@@ -247,6 +247,7 @@ namespace RTSim {
           _pv_area_m2(1.0),
           _use_real_solar_data(false),
           _start_time_offset(0),
+          _base_harvest_rate(0.054),  // ⭐ V93修复：默认值 54 mW
           _tick_event(nullptr),
           _first_tick_scheduled(false),
           _kernel(nullptr),
@@ -362,6 +363,20 @@ namespace RTSim {
                                 value.erase(0, value.find_first_not_of(" \t"));
                                 value.erase(value.find_last_not_of(" \t") + 1);
                                 _pv_area_m2 = std::stod(value);
+                            }
+                            // ⭐ V93修复：读取base_harvesting_rate配置
+                            else if (line.find("base_harvesting_rate:") != std::string::npos) {
+                                std::string value = line.substr(line.find(":") + 1);
+                                size_t comment_pos = value.find('#');
+                                if (comment_pos != std::string::npos) {
+                                    value = value.substr(0, comment_pos);
+                                }
+                                value.erase(0, value.find_first_not_of(" \t"));
+                                value.erase(value.find_last_not_of(" \t") + 1);
+                                _base_harvest_rate = std::stod(value);
+                                SCHEDULER_LOG_INFO(std::string("☀️ [ST-Sync] V93: base_harvesting_rate = ") +
+                                                  std::to_string(_base_harvest_rate) + " J/ms (" +
+                                                  std::to_string(_base_harvest_rate * 1000) + " mW)");
                             }
                         }
                     }
@@ -762,38 +777,46 @@ namespace RTSim {
         int running_cnt_v90 = static_cast<int>(running_task_list.size());
         int free_cpus_v90 = total_cpus - running_cnt_v90;
 
-        // 先加入运行中任务（必须续期）
+        // ⭐⭐⭐ V92修复：使用单步能量（unit energy）而非总能量 ⭐⭐⭐
+        // 原因：tick-by-tick调度只需要检查下一毫秒的能量是否足够
+        // 使用总能量会导致抖动（thrashing）：
+        //   - 任务有7ms剩余时需要7*unit_energy才能"通过"
+        //   - 能量不足时被挂起，但下一tick能量收集后又调度
+        //   - 结果：每1ms都在调度和挂起
+        // 正确做法：只检查下一毫秒的unit_energy
         for (auto* task : running_task_list) {
             if (_tasks_completed_wcet.find(task) == _tasks_completed_wcet.end()) {
                 k_tasks_v90.push_back(task);
+                // 运行中任务：只需要下一毫秒的能量
                 total_energy_v90 += calculateUnitEnergyForTask(task);
             }
         }
 
-        // 再加入新任务：min(K_v90, free_cpus_v90)
+        // 再加入新任务：min(K_v90, free_cpus_v90) - 使用单步能量
         int num_new_tasks = std::min(K_v90, free_cpus_v90);
         for (int i = 0; i < num_new_tasks && i < static_cast<int>(ready_tasks_v90.size()); ++i) {
             auto* task = ready_tasks_v90[i];
             k_tasks_v90.push_back(task);
+            // 新任务：只需要第一毫秒的能量
             total_energy_v90 += calculateUnitEnergyForTask(task);
         }
 
-        SCHEDULER_LOG_INFO(std::string("📊 [ST-Sync V90] 批量决策: ") +
+        SCHEDULER_LOG_INFO(std::string("📊 [ST-Sync V92] 批量决策: ") +
                           "运行中=" + std::to_string(running_task_list.size()) +
                           " 就绪=" + std::to_string(ready_tasks_v90.size()) +
                           " K(新任务)=" + std::to_string(K_v90) +
                           " 可调度=" + std::to_string(num_new_tasks) +
                           " 最短Slack=" + std::to_string(static_cast<int64_t>(min_slack)) + "ms");
         
-        SCHEDULER_LOG_INFO(std::string("📊 [ST-Sync V90] 能量需求: ") +
+        SCHEDULER_LOG_INFO(std::string("📊 [ST-Sync V92] 能量需求(单步): ") +
                           "K个任务=" + std::to_string(k_tasks_v90.size()) +
-                          " 总能量=" + std::to_string(total_energy_v90 * 1000) + " mJ" +
+                          " 单步能量=" + std::to_string(total_energy_v90 * 1000) + " mJ" +
                           " 当前=" + std::to_string(_current_energy * 1000) + " mJ");
         
         // ========== Step 5: All-or-Nothing决策（ST特有充电逻辑）==========
         if (_current_energy >= total_energy_v90 - EPSILON_V90) {
             // ⭐⭐⭐ 能量充足：像ASAP一样，全部调度 ⭐⭐⭐
-            SCHEDULER_LOG_INFO(std::string("✅ [ST-Sync V90] 能量充足��全部调度"));
+            SCHEDULER_LOG_INFO(std::string("✅ [ST-Sync V92] 能量充足��全部调度"));
 
             // ⭐ 关键修复：不在 tick 边界扣除能量！
             // 能量由 STSyncEnergyCheckEvent 在实际执行时每 1ms 扣除
@@ -810,7 +833,7 @@ namespace RTSim {
 
             // ⭐⭐⭐ V91修复：V90成功后直接返回，跳过旧的批量调度代码 ⭐⭐⭐
             // 旧的代码会覆盖_current_batch_tasks并应用Slack过滤，导致任务丢��
-            SCHEDULER_LOG_INFO(std::string("✅ [ST-Sync V91] V90批量调度成功，跳过旧代码路径") +
+            SCHEDULER_LOG_INFO(std::string("✅ [ST-Sync V92] V92批量调度成功，跳过旧代码路径") +
                               " 批量任务数=" + std::to_string(_current_batch_tasks.size()));
 
             // ⭐ V99修复：只在有新任务时才调用dispatch
@@ -827,7 +850,7 @@ namespace RTSim {
 
         } else {
             // ⭐⭐⭐ 能量不足���全部挂起，充电到能量满或最短Slack归零 ⭐⭐⭐
-            SCHEDULER_LOG_WARNING(std::string("⚠️ [ST-Sync V90] 能量不足，全部挂起") +
+            SCHEDULER_LOG_WARNING(std::string("⚠️ [ST-Sync V92] 能量不足，全部挂起") +
                                  " 需要=" + std::to_string(total_energy_v90 * 1000) + " mJ" +
                                  " 当前=" + std::to_string(_current_energy * 1000) + " mJ" +
                                  " 最短Slack=" + std::to_string(static_cast<int64_t>(min_slack)) + "ms");
@@ -1237,6 +1260,15 @@ namespace RTSim {
         if (!_kernel) {
             SCHEDULER_LOG_DEBUG("⚠��� [ST-Sync] performTickScheduling: _kernel为nullptr，尝试获取");
             _kernel = getKernel();
+        }
+
+        // ⭐⭐⭐ Bug修复3：深度充电状态下跳过dispatch循环 ⭐⭐⭐
+        // 如果在深度充电状态或能量耗尽，不应该尝试调度任务
+        if (_deep_charging || _energy_depleted) {
+            SCHEDULER_LOG_INFO(std::string("🔋 [ST-Sync] 深度充电/能量耗尽状态，跳过dispatch循环") +
+                              " _deep_charging=" + (_deep_charging ? "true" : "false") +
+                              " _energy_depleted=" + (_energy_depleted ? "true" : "false"));
+            return;
         }
 
         if (_kernel) {
@@ -2466,6 +2498,57 @@ namespace RTSim {
         return energy;
     }
 
+    double STSyncScheduler::calculateRemainingEnergyForTask(AbsRTTask *task) {
+        if (!task) {
+            return 0.0;
+        }
+
+        STSyncTaskModel *model = getTaskModel(task);
+        if (!model) {
+            SCHEDULER_LOG_WARNING("⚠️ [ST-Sync] calculateRemainingEnergyForTask: 任务模型不存在");
+            return 0.0;
+        }
+
+        // 获取 WCET
+        Tick wcet = model->getWCET();
+
+        // 从能量检查事件中获取已执行时间（如果任务正在运行）
+        Tick executed = 0;
+        auto it = _energy_check_events.find(task);
+        if (it != _energy_check_events.end() && it->second) {
+            executed = it->second->getMsExecuted();
+        }
+
+        Tick remaining = wcet - executed;
+
+        if (remaining <= 0) {
+            return 0.0;  // 任务已完成
+        }
+
+        std::string workload = model->getWorkloadType();
+
+        // 从ConfigManager获取base_freq
+        ConfigManager &configMgr = ConfigManager::getInstance();
+        double base_frequency = configMgr.getBaseFrequency();  // MHz
+        double power = calculatePowerForWorkload(workload, base_frequency);
+
+        // 能量 = 功率(W) × 时间(s)
+        double remaining_seconds = static_cast<double>(remaining) * 0.001;
+        double energy = power * remaining_seconds;
+
+        // 应用能量系数
+        energy *= model->getEnergyCoefficient();
+
+        SCHEDULER_LOG_DEBUG(std::string("🔋 [ST-Sync] 剩余能量计算: ") +
+                           "task=" + getTaskName(task) +
+                           " wcet=" + std::to_string(static_cast<int>(wcet)) +
+                           " executed=" + std::to_string(static_cast<int>(executed)) +
+                           " remaining=" + std::to_string(static_cast<int>(remaining)) +
+                           " energy=" + std::to_string(energy * 1000) + " mJ");
+
+        return energy;
+    }
+
     double STSyncScheduler::calculatePowerForWorkload(const std::string &workload, double frequency) {
         ConfigManager &configMgr = ConfigManager::getInstance();
         double power_coeff = configMgr.getPowerCoefficient(workload);
@@ -2547,12 +2630,35 @@ namespace RTSim {
             return 0.0;
         }
 
-        // 获取当前辐照度（根据use_real_solar_data选择NASA数据或函数曲线）
-        double irradiance = getSolarIrradiance(current_ms);
+        // ⭐ V93修复：使用配置的base_harvest_rate，而不是硬编码的辐照度模型
+        // base_harvest_rate 单位是 J/ms，代表峰值收集率
+        // 根据时间（白天/黑夜）计算收集因子
 
-        // 计算收集能量
-        double elapsed_seconds = static_cast<double>(elapsed) * 0.001;
-        double energy = irradiance * _pv_area_m2 * _pv_efficiency * elapsed_seconds;
+        int64_t actual_time_ms = current_ms + static_cast<int64_t>(_start_time_offset);
+        int64_t ms_of_day = actual_time_ms % 86400000;
+        double hour_of_day = static_cast<double>(ms_of_day) / 3600000.0;  // 0.0-24.0
+
+        // 计算时间因子（与辐照度曲线类似）
+        double time_factor = 0.0;
+        if (hour_of_day < 6.0) {
+            // 夜晚 (0:00-6:00)
+            time_factor = 0.0;
+        } else if (hour_of_day < 11.0) {
+            // 日出阶段 (6:00-11:00): 线性增加
+            time_factor = (hour_of_day - 6.0) / 5.0;  // 0.0-1.0
+        } else if (hour_of_day < 13.0) {
+            // 白天峰值 (11:00-13:00): 保持峰值
+            time_factor = 1.0;
+        } else if (hour_of_day < 18.0) {
+            // 日落阶段 (13:00-18:00): 线性降低
+            time_factor = (18.0 - hour_of_day) / 5.0;  // 1.0-0.0
+        } else {
+            // 夜晚 (18:00-24:00)
+            time_factor = 0.0;
+        }
+
+        // 计算收集能量：base_harvest_rate (J/ms) * elapsed (ms) * time_factor
+        double energy = _base_harvest_rate * static_cast<double>(elapsed) * time_factor;
 
         // 更新最后收集时间
         _last_collection_time = current_time;

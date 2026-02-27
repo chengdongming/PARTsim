@@ -135,6 +135,7 @@ namespace RTSim {
         double _pv_area_m2;
         bool _use_real_solar_data;
         MetaSim::Tick _start_time_offset;
+        double _base_harvest_rate;  // ⭐ V93修复：从配置读取基础收集率 (J/ms)
 
         // ========== Tick事件 ==========
         STBlockTickEvent *_tick_event;

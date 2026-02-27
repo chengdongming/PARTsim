@@ -379,6 +379,7 @@ namespace RTSim {
           _pv_area_m2(1.0),
           _use_real_solar_data(false),
           _start_time_offset(0),
+          _base_harvest_rate(0.054),  // ⭐ V93修复：默认值 54 mW
           _tick_event(nullptr),
           _first_tick_scheduled(false),
           _kernel(nullptr),
@@ -486,6 +487,20 @@ namespace RTSim {
                                 value.erase(value.find_last_not_of(" \t") + 1);
                                 _pv_area_m2 = std::stod(value);
                             }
+                            // ⭐ V93修复：读取base_harvesting_rate配置
+                            else if (line.find("base_harvesting_rate:") != std::string::npos) {
+                                std::string value = line.substr(line.find(":") + 1);
+                                size_t comment_pos = value.find('#');
+                                if (comment_pos != std::string::npos) {
+                                    value = value.substr(0, comment_pos);
+                                }
+                                value.erase(0, value.find_first_not_of(" \t"));
+                                value.erase(value.find_last_not_of(" \t") + 1);
+                                _base_harvest_rate = std::stod(value);
+                                SCHEDULER_LOG_INFO(std::string("☀️ [ST-NonBlock] V93: base_harvesting_rate = ") +
+                                                  std::to_string(_base_harvest_rate) + " J/ms (" +
+                                                  std::to_string(_base_harvest_rate * 1000) + " mW)");
+                            }
                         }
                     }
 
@@ -493,7 +508,8 @@ namespace RTSim {
                                       "use_real=" + (_use_real_solar_data ? "true" : "false") +
                                       " file=" + _solar_data_file +
                                       " eff=" + std::to_string(_pv_efficiency) +
-                                      " area=" + std::to_string(_pv_area_m2) + "m²");
+                                      " area=" + std::to_string(_pv_area_m2) + "m²" +
+                                      " harvest_rate=" + std::to_string(_base_harvest_rate * 1000) + "mW");
                 }
             } catch (const std::exception &e) {
                 SCHEDULER_LOG_WARNING(std::string("⚠️ [ST-NonBlock] 解析太阳能配置失败: ") + e.what());
@@ -1786,12 +1802,35 @@ namespace RTSim {
             return 0.0;
         }
 
-        // 获取当前辐照度（根据use_real_solar_data选择NASA数据或函数曲线）
-        double irradiance = getSolarIrradiance(current_ms);
+        // ⭐ V93修复：使用配置的base_harvest_rate，而不是硬编码的辐照度模型
+        // base_harvest_rate 单位是 J/ms，代表峰值收集率
+        // 根据时间（白天/黑夜）计算收集因子
 
-        // 计算收集能量
-        double elapsed_seconds = static_cast<double>(elapsed) * 0.001;
-        double energy = irradiance * _pv_area_m2 * _pv_efficiency * elapsed_seconds;
+        int64_t actual_time_ms = current_ms + static_cast<int64_t>(_start_time_offset);
+        int64_t ms_of_day = actual_time_ms % 86400000;
+        double hour_of_day = static_cast<double>(ms_of_day) / 3600000.0;  // 0.0-24.0
+
+        // 计算时间因子（与辐照度曲线类似）
+        double time_factor = 0.0;
+        if (hour_of_day < 6.0) {
+            // 夜晚 (0:00-6:00)
+            time_factor = 0.0;
+        } else if (hour_of_day < 11.0) {
+            // 日出阶段 (6:00-11:00): 线性增加
+            time_factor = (hour_of_day - 6.0) / 5.0;  // 0.0-1.0
+        } else if (hour_of_day < 13.0) {
+            // 白天峰值 (11:00-13:00): 保持峰值
+            time_factor = 1.0;
+        } else if (hour_of_day < 18.0) {
+            // 日落阶段 (13:00-18:00): 线性降低
+            time_factor = (18.0 - hour_of_day) / 5.0;  // 1.0-0.0
+        } else {
+            // 夜晚 (18:00-24:00)
+            time_factor = 0.0;
+        }
+
+        // 计算收集能量：base_harvest_rate (J/ms) * elapsed (ms) * time_factor
+        double energy = _base_harvest_rate * static_cast<double>(elapsed) * time_factor;
 
         // 更新最后收集时间
         _last_collection_time = current_time;

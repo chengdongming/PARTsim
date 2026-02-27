@@ -116,6 +116,7 @@ namespace RTSim {
         double _pv_area_m2;
         bool _use_real_solar_data;
         MetaSim::Tick _start_time_offset;
+        double _base_harvest_rate;  // ⭐ V93修复：从配置读取基础收集率 (J/ms)
 
         // ========== Tick事件 ==========
         STSyncTickEvent *_tick_event;
@@ -212,6 +213,7 @@ namespace RTSim {
 
         // 能量计算
         double calculateTotalEnergyForTask(AbsRTTask *task); // 计算任务总能耗
+        double calculateRemainingEnergyForTask(AbsRTTask *task); // 计算任务剩余能耗
         double calculatePowerForWorkload(const std::string &workload, double frequency);
         double collectSolarEnergy(MetaSim::Tick current_time);
         double getSolarIrradiance(int64_t time_ms);
