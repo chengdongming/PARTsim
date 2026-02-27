@@ -1,0 +1,12 @@
+{
+  "tasks": [
+    {
+      "name": "task1",
+      "workload": "idle",
+      "period": 1000,
+      "wcet": 100,
+      "offset": 0,
+      "deadline": "hard"
+    }
+  ]
+}

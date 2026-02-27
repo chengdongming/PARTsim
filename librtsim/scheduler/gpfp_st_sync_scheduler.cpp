@@ -2630,35 +2630,49 @@ namespace RTSim {
             return 0.0;
         }
 
-        // ⭐ V93修复：使用配置的base_harvest_rate，而不是硬编码的辐照度模型
-        // base_harvest_rate 单位是 J/ms，代表峰值收集率
-        // 根据时间（白天/黑夜）计算收集因子
+        double energy = 0.0;
 
-        int64_t actual_time_ms = current_ms + static_cast<int64_t>(_start_time_offset);
-        int64_t ms_of_day = actual_time_ms % 86400000;
-        double hour_of_day = static_cast<double>(ms_of_day) / 3600000.0;  // 0.0-24.0
-
-        // 计算时间因子（与辐照度曲线类似）
-        double time_factor = 0.0;
-        if (hour_of_day < 6.0) {
-            // 夜晚 (0:00-6:00)
-            time_factor = 0.0;
-        } else if (hour_of_day < 11.0) {
-            // 日出阶段 (6:00-11:00): 线性增加
-            time_factor = (hour_of_day - 6.0) / 5.0;  // 0.0-1.0
-        } else if (hour_of_day < 13.0) {
-            // 白天峰值 (11:00-13:00): 保持峰值
-            time_factor = 1.0;
-        } else if (hour_of_day < 18.0) {
-            // 日落阶段 (13:00-18:00): 线性降低
-            time_factor = (18.0 - hour_of_day) / 5.0;  // 1.0-0.0
+        if (_use_real_solar_data) {
+            // ⭐ 使用真实NASA太阳能数据
+            double irradiance = getSolarIrradiance(current_ms);  // W/m²
+            double elapsed_seconds = static_cast<double>(elapsed) * 0.001;
+            energy = irradiance * _pv_area_m2 * _pv_efficiency * elapsed_seconds;
         } else {
-            // 夜晚 (18:00-24:00)
-            time_factor = 0.0;
-        }
+            // ⭐ V95修复：线性函数模型也应该使用面积和效率
+            // 与真实太阳能模式使用相同的公式：energy = irradiance × area × efficiency × time
+            int64_t actual_time_ms = current_ms + static_cast<int64_t>(_start_time_offset);
+            int64_t ms_of_day = actual_time_ms % 86400000;
+            double hour_of_day = static_cast<double>(ms_of_day) / 3600000.0;  // 0.0-24.0
 
-        // 计算收集能量：base_harvest_rate (J/ms) * elapsed (ms) * time_factor
-        double energy = _base_harvest_rate * static_cast<double>(elapsed) * time_factor;
+            // 计算时间因子（线性函数）
+            double time_factor = 0.0;
+            if (hour_of_day < 6.0) {
+                // 夜晚 (0:00-6:00)
+                time_factor = 0.0;
+            } else if (hour_of_day < 11.0) {
+                // 日出阶段 (6:00-11:00): 线性增加
+                time_factor = (hour_of_day - 6.0) / 5.0;  // 0.0-1.0
+            } else if (hour_of_day < 13.0) {
+                // 白天峰值 (11:00-13:00): 保持峰值
+                time_factor = 1.0;
+            } else if (hour_of_day < 18.0) {
+                // 日落阶段 (13:00-18:00): 线性降低
+                time_factor = (18.0 - hour_of_day) / 5.0;  // 1.0-0.0
+            } else {
+                // 夜晚 (18:00-24:00)
+                time_factor = 0.0;
+            }
+
+            // 计算峰值辐照度 (W/m²)
+            // base_harvest_rate (W) = irradiance (W/m²) × area (m²) × efficiency
+            // 所以 peak_irradiance = base_harvest_rate / (area × efficiency)
+            const double PEAK_IRRADIANCE = _base_harvest_rate / (_pv_area_m2 * _pv_efficiency);
+            double irradiance = PEAK_IRRADIANCE * time_factor;  // W/m²
+
+            // 使用与真实太阳能模式相同的公式
+            double elapsed_seconds = static_cast<double>(elapsed) * 0.001;
+            energy = irradiance * _pv_area_m2 * _pv_efficiency * elapsed_seconds;
+        }
 
         // 更新最后收集时间
         _last_collection_time = current_time;
@@ -2676,7 +2690,10 @@ namespace RTSim {
             double hour_of_day = static_cast<double>(ms_of_day) / 3600000.0;  // 0.0-24.0
 
             // 分段函数定义（更真实的太阳能曲线）
-            const double PEAK_IRRADIANCE = 800.0;  // 峰值辐照度 (W/m²)
+            // ⭐ V94修复：使用base_harvest_rate计算等效辐照度，而不是硬编码
+            // base_harvest_rate (J/ms) = irradiance (W/m²) * area (m²) * efficiency * 0.001 (s/ms)
+            // 所以 irradiance = base_harvest_rate / (area * efficiency * 0.001)
+            const double PEAK_IRRADIANCE = _base_harvest_rate / (_pv_area_m2 * _pv_efficiency * 0.001);
 
             if (hour_of_day < 6.0) {
                 // 夜晚 (0:00-6:00)
