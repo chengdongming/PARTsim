@@ -1,0 +1,37 @@
+# 3核心4任务测试��
+taskset:
+  - name: Task_High
+    iat: 50
+    runtime: 10
+    deadline: 50
+    startcpu: 0
+    params: "period=50,wcet=10,workload=bzip2"
+    code:
+      - fixed(10, bzip2)
+
+  - name: Task_Med1
+    iat: 100
+    runtime: 15
+    deadline: 100
+    startcpu: 1
+    params: "period=100,wcet=15,workload=hash"
+    code:
+      - fixed(15, hash)
+
+  - name: Task_Med2
+    iat: 150
+    runtime: 12
+    deadline: 150
+    startcpu: 2
+    params: "period=150,wcet=12,workload=control"
+    code:
+      - fixed(12, control)
+
+  - name: Task_Low
+    iat: 200
+    runtime: 20
+    deadline: 200
+    startcpu: 0
+    params: "period=200,wcet=20,workload=encrypt"
+    code:
+      - fixed(20, encrypt)

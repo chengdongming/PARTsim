@@ -138,9 +138,12 @@ namespace RTSim {
                 MetaSim::Tick execution_time = SIMUL.getTime() - _task_start_times[task];
                 fd << ", \"execution_time_ms\": " << execution_time;
 
-                // 计算该实例消耗的能量（使用total_consumed的差值）
-                if (_energy_provider && _task_start_consumed.find(task) != _task_start_consumed.end()) {
-                    double task_consumed = _energy_provider->getTotalEnergyConsumed() - _task_start_consumed[task];
+                // ⭐ V115修复：task_consumed 必须是"该任务本身的消耗"
+                // 正确公式：executed_time (ms) × task_unit_energy (mJ/ms)
+                // 不能用 global_total_consumed 的差值（那包含了所有并行任务的消耗）
+                if (_energy_provider) {
+                    double unit_energy = _energy_provider->getTaskUnitEnergy(task);  // J/ms
+                    double task_consumed = (double)execution_time * unit_energy;     // J
                     fd << ", \"task_consumed_mJ\": " << (task_consumed * 1000.0);
                 }
 
@@ -254,23 +257,32 @@ namespace RTSim {
                 // 所以这个字段可能需要调度器提供额外接口
             }
 
-            // ⭐ preempted_by字段
-            // 检查是否因为能量不足而被下处理机
-            // V103修复：使用5ms作为阈值，而不是1ms
+            // ⭐ V115修复：使用调度器记录的真正挂起原因，消灭"幽灵抢占"
             if (_energy_provider) {
-                double current_energy = _energy_provider->getCurrentEnergy();
-                double task_unit_energy = _energy_provider->getTaskUnitEnergy(task);
-                double min_run_energy = task_unit_energy * 5;  // V103：至少能运行5ms
+                std::string suspend_reason = _energy_provider->getSuspendReason(task);
 
-                if (current_energy < min_run_energy) {
-                    // 能量不足导致的下处理机
+                if (suspend_reason == "energy_depleted" || suspend_reason == "insufficient_energy") {
                     fd << ", \"preempted_by\": \"energy_insufficient\"";
                     fd << ", \"reason\": \"insufficient_energy\"";
-                } else {
-                    // 被其他任务抢占
+                } else if (suspend_reason == "preemption") {
                     fd << ", \"preempted_by\": \"higher_priority_task\"";
                     fd << ", \"reason\": \"preemption\"";
+                } else {
+                    // 未知原因，使用能量启发式作为后备
+                    double current_energy = _energy_provider->getCurrentEnergy();
+                    double task_unit_energy = _energy_provider->getTaskUnitEnergy(task);
+                    double min_run_energy = task_unit_energy * 5;
+                    if (current_energy < min_run_energy) {
+                        fd << ", \"preempted_by\": \"energy_insufficient\"";
+                        fd << ", \"reason\": \"insufficient_energy\"";
+                    } else {
+                        fd << ", \"preempted_by\": \"higher_priority_task\"";
+                        fd << ", \"reason\": \"preemption\"";
+                    }
                 }
+
+                // 清除挂起原因记录
+                _energy_provider->clearSuspendReason(task);
             }
 
             // 清除记录（任务被下处理机）

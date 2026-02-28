@@ -1,6 +1,8 @@
 #ifndef __ENERGY_INFO_PROVIDER_HPP__
 #define __ENERGY_INFO_PROVIDER_HPP__
 
+#include <string>
+
 namespace RTSim {
     class AbsRTTask;
 
@@ -13,6 +15,15 @@ namespace RTSim {
         virtual double getTotalEnergyHarvested() const = 0;
         virtual double getTaskUnitEnergy(AbsRTTask *task) const = 0;
         virtual double getTaskTotalEnergy(AbsRTTask *task) const = 0;
+
+        // ⭐ V115：获取任务被挂起的真正原因（消灭幽灵抢占）
+        virtual std::string getSuspendReason(AbsRTTask *task) const {
+            (void)task;  // 默认实现
+            return "unknown";
+        }
+        virtual void clearSuspendReason(AbsRTTask *task) {
+            (void)task;  // 默认实现：什么都不做
+        }
     };
 } // namespace RTSim
 

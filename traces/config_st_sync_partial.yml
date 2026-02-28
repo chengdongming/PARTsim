@@ -1,4 +1,4 @@
-# ST-Sync 能量不足测试配置
+# ST-Sync 部分能量测试配置 - 能量足够开始但运行中耗尽
 cpu_islands:
   - name: test_cpus
     numcpus: 3
@@ -12,10 +12,10 @@ cpu_islands:
     speed_model: test_model
 
 energy_management:
-  initial_energy: 0.01        # 初始能量 10mJ (足够开始调度，但不足完成所有任务)
-  max_energy: 0.05            # 最大 50mJ
+  initial_energy: 0.08        # 初始能量 80mJ (足够完成第一批任务，但第二批会不足)
+  max_energy: 0.1             # 最大 100mJ
   day_of_year: 1
-  time_of_day_ms: 0           # 00:00 午夜（无太阳能）
+  time_of_day_ms: 28800000      # 8:00 AM（有太阳能）
   use_real_solar_data: false
   solar_data_file: ""
   pv_efficiency: 0.18
@@ -23,7 +23,7 @@ energy_management:
   periodic_collection_interval_ms: 1
   enable_energy_recovery: true
   max_recovery_wait_time_ms: 50
-  base_harvesting_rate: 1.44  # 800 W/m² 峰值
+  base_harvesting_rate: 0.05    # 50mW 收集率
 
   scheduler_energy_model:
     base_power: 0.5

@@ -162,6 +162,12 @@ namespace RTSim {
         MetaSim::Tick _last_preempted_tick;             // 最近抢占发生的时间
         size_t _last_ready_queue_size;                  // V96：上次tick的就绪队列大小
 
+        // ========== V115：挂起原因追踪（消灭幽灵抢占） ==========
+        std::map<AbsRTTask *, std::string> _suspend_reasons;  // 任务被挂起的真正原因
+        void setSuspendReason(AbsRTTask *task, const std::string &reason);
+        std::string getSuspendReason(AbsRTTask *task) const override;  // 实现EnergyInfoProvider接口
+        void clearSuspendReason(AbsRTTask *task) override;  // 实现EnergyInfoProvider接口
+
         // ========== 能量记账（每ms累计） ==========
         struct TaskEnergyAccount {
             double total_consumed;      // 累计消耗能量（每ms累加）
