@@ -33,21 +33,25 @@
 namespace RTSim {
     class JSONTrace {
     protected:
-        std::ofstream fd;
+        // V98修复：成员变量按析构需要顺序排列
+        // 成员变量按声明顺序的逆序销毁，所以 fd 放在最后，确保先销毁
         bool first_event;
         MetaSim::Tick max_time; // 最大时间，用于过滤事件
-        EnergyInfoProvider *_energy_provider; // ⭐ 能量信息提供者
+        EnergyInfoProvider *_energy_provider; // 能量信息提供者
 
-        // ⭐ 追踪任务执行信息
-        std::map<AbsRTTask*, MetaSim::Tick> _task_start_times; // 任务开始执行时��
+        // 追踪任务执行信息
+        std::map<AbsRTTask*, MetaSim::Tick> _task_start_times; // 任务开始执行时间
         std::map<AbsRTTask*, double> _task_start_consumed; // 任务开始时的累计消耗能量
 
-        // ⭐ V83修复：跟踪已deadline miss的任务，避免重复记录descheduled事件
+        // V83修复：跟踪已deadline miss的任务，避免重复记录descheduled事件
         std::set<AbsRTTask*> _deadline_missed_tasks;
 
+        // V98: fd 放在最后，确保先被销毁，避免缓冲区问题影响其他成员
+        std::ofstream fd;
+
         void writeTaskEvent(const Task &tt, const std::string &evt_name);
-        void writeEnergyInfo(); // ⭐ 写入能量信息
-        void writeTaskEnergyInfo(AbsRTTask *task); // ⭐ 写入任务能量信息
+        void writeEnergyInfo(); // 写入能量信息
+        void writeTaskEnergyInfo(AbsRTTask *task); // 写入任务能量信息
 
     public:
         JSONTrace(const std::string &name);
@@ -55,7 +59,7 @@ namespace RTSim {
 
         ~JSONTrace();
 
-        // ⭐ 设置能量信息提供者
+        // 设置能量信息提供者
         void setEnergyProvider(EnergyInfoProvider *provider) {
             _energy_provider = provider;
         }

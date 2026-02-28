@@ -7,23 +7,30 @@ namespace RTSim {
     JSONTrace::JSONTrace(const string &name) {
         fd.open(name.c_str());
         fd << "{" << std::endl;
-        fd << "    \"events\" : \[" << std::endl;
+        fd << "    \"events\" : [" << std::endl;
         first_event = true;
-        max_time = MetaSim::Tick(-1); // 默认不限制
-        _energy_provider = nullptr; // ⭐ 初始化能量提供者
+        max_time = MetaSim::Tick(-1);
+        _energy_provider = nullptr;
     }
 
     JSONTrace::JSONTrace(const string &name, MetaSim::Tick max) {
         fd.open(name.c_str());
         fd << "{" << std::endl;
-        fd << "    \"events\" : \[" << std::endl;
+        fd << "    \"events\" : [" << std::endl;
         first_event = true;
         max_time = max;
-        _energy_provider = nullptr; // ⭐ 初始化能量提供者
+        _energy_provider = nullptr;
     }
 
+    // V98修复：显式清空容器，避免析构顺序问题
     JSONTrace::~JSONTrace() {
         fd << "] }" << std::endl;
+
+        // 先清空所有容器
+        _task_start_times.clear();
+        _task_start_consumed.clear();
+        _deadline_missed_tasks.clear();
+
         fd.close();
     }
 
@@ -335,6 +342,16 @@ namespace RTSim {
 
     void JSONTrace::probe(KillEvt &e) {
         Task &tt = *(e.getTask());
+        AbsRTTask *task = dynamic_cast<AbsRTTask*>(&tt);
+
+        // ⭐ V109修复：在任务被kill时，清理所有相关的指针
+        // 避免在JSONTrace析构时访问无效指针导致崩溃
+        if (task) {
+            _task_start_times.erase(task);
+            _task_start_consumed.erase(task);
+            _deadline_missed_tasks.erase(task);
+        }
+
         writeTaskEvent(tt, "kill");
     }
 

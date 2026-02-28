@@ -27,6 +27,7 @@
 #include <rtsim/scheduler/gpfp_asap_block_scheduler.hpp>
 #include <rtsim/scheduler/gpfp_asap_sync_scheduler.hpp>
 #include <rtsim/scheduler/gpfp_asap_nonblock_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_st_sync_scheduler.hpp>
 
 namespace RTSim {
     // =========================================================================
@@ -595,6 +596,7 @@ namespace RTSim {
                 ASAPBlockScheduler *asap_block_sched = dynamic_cast<ASAPBlockScheduler*>(_sched);
                 ASAPSyncScheduler *asap_sync_sched = dynamic_cast<ASAPSyncScheduler*>(_sched);
                 ASAPNonBlockScheduler *asap_nonblock_sched = dynamic_cast<ASAPNonBlockScheduler*>(_sched);
+                STSyncScheduler *st_sync_sched = dynamic_cast<STSyncScheduler*>(_sched);
 
                 if (asap_block_sched) {
                     // ❌ V40重构：ASAP-Block能量检查事件已移除，能量由performTickScheduling处理
@@ -604,6 +606,9 @@ namespace RTSim {
                 } else if (asap_nonblock_sched) {
                     // ❌ V40重构：ASAP-NonBlock能量检查事件已移除，能量由performTickScheduling处理
                     // asap_nonblock_sched->startEnergyCheckForTask(st, p);
+                } else if (st_sync_sched) {
+                    // ⭐ V110修复：ST-Sync也需要启动运行时能量检查事件
+                    st_sync_sched->startEnergyCheckForTask(st, p);
                 }
             } else {
                 // 任务不在就绪或执行状态，可能能量不足或已完成
