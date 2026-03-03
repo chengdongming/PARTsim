@@ -40,6 +40,24 @@ namespace RTSim {
     };
 
     // =====================================================
+    // V116: ST-Sync 组唤醒事件（消灭"迷失在深渊的松弛时间闹钟"Bug）
+    // 当能量不足挂起任务组时，在最小Slack时间后唤醒调度器
+    // =====================================================
+    class STSyncGroupWakeEvent : public MetaSim::Event {
+    private:
+        STSyncScheduler *_scheduler;
+        MetaSim::Tick _wake_time;
+        bool _valid;  // 防止幽灵唤醒
+
+    public:
+        STSyncGroupWakeEvent(STSyncScheduler *scheduler);
+        void doit() override;
+        void schedule(MetaSim::Tick wake_time);
+        void invalidate() { _valid = false; }
+        bool isValid() const { return _valid; }
+    };
+
+    // =====================================================
     // ST-Sync运行时能量检查事件（每1ms检查运行中任务的能量）
     // =====================================================
     class STSyncEnergyCheckEvent : public MetaSim::Event {
@@ -121,6 +139,9 @@ namespace RTSim {
         // ========== Tick事件 ==========
         STSyncTickEvent *_tick_event;
         bool _first_tick_scheduled;  // 标记第一个tick是否已调度
+
+        // ========== V116: 组唤醒事件（消灭"迷失在深渊的松弛时间闹钟"Bug） ==========
+        STSyncGroupWakeEvent *_group_wake_event;  // Slack时间后的唤醒定时器
 
         // ========== 本次dispatch中已计数的任务（用于逐渐扣除模式） ==========
         std::set<AbsRTTask *> _counted_tasks_in_dispatch; // 本次dispatch中已计数的任务，避免重复
@@ -321,6 +342,7 @@ namespace RTSim {
         // 友元类声明
         friend class STSyncTickEvent;
         friend class STSyncEnergyCheckEvent;
+        friend class STSyncGroupWakeEvent;  // ⭐ V116：组唤醒事件需要访问私有成员
     };
 
 } // namespace RTSim
