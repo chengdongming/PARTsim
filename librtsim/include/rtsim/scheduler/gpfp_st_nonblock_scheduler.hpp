@@ -168,6 +168,10 @@ namespace RTSim {
         bool _deep_charging;           // ⭐ ST特有：是否处于深度充电模式
         MetaSim::Tick _charge_start_time;  // 充电开始时间
 
+        // ========== V130: 深度休眠锁（注意：ST-NonBlock不使用全局锁！） ==========
+        // ⭐ ST-NonBlock特有：不上锁，只设置专属唤醒定时器，继续贪婪捡漏
+        bool _is_charging_sleep;       // 保留变量但不使用，仅用于兼容性
+
         // ========== ST-NonBlock专属：被跳过任务的唤醒定时器 ==========
         // ⭐ 策略2核心：高优缺电时设置专属定时器，Slack=0或满电时唤醒抢占
         std::map<AbsRTTask *, STNonBlockWakeEvent *> _skip_wake_events;  // 被跳过任务的唤醒定时器

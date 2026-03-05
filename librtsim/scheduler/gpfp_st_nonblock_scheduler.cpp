@@ -372,6 +372,7 @@ namespace RTSim {
           _current_energy(0.0),
           _initial_energy(0.0),
           _max_energy(1000.0),
+          _dispatching_tasks_total_energy(0.0),  // ⭐ V130修复：初始化
           _last_tick_time(0),
           _last_collection_time(0),
           _solar_data_file(""),
@@ -388,6 +389,7 @@ namespace RTSim {
           _pending_wake_task(nullptr),
           _pending_wake_energy(0.0),
           _charge_start_time(0),
+          _is_charging_sleep(false),  // ⭐ V130: 深度休眠锁初始化（NonBlock不使用全局锁）
           _last_preempted_task(nullptr),
           _last_preempted_tick(0) {
 
@@ -575,6 +577,29 @@ namespace RTSim {
                            std::to_string(static_cast<int64_t>(SIMUL.getTime())) + "ms =====");
         SCHEDULER_LOG_INFO("⚡ 初始能量: " + std::to_string(_current_energy * 1000) + " mJ");
 
+        // ========== V131: 深度休眠锁检查（消灭1ms碎片化抖动） ==========
+        if (_is_charging_sleep) {
+            // 计算最小Slack
+            Tick min_slack = calculateMinSlack();
+
+            // 唤醒条件1：电池充满
+            if (_current_energy >= _max_energy - 0.000001) {
+                _is_charging_sleep = false;
+                SCHEDULER_LOG_INFO("🔋 [ST-NonBlock V131] 深度休眠解锁：电池充满");
+            }
+            // 唤醒条件2：Slack=0（死线已至，必须执行）
+            else if (min_slack <= 0) {
+                _is_charging_sleep = false;
+                SCHEDULER_LOG_WARNING("🚨 [ST-NonBlock V131] 深度休眠解锁：Slack=0强制唤醒");
+            }
+            // 继续休眠
+            else {
+                SCHEDULER_LOG_INFO(std::string("[ST-NonBlock V131] Deep sleep: energy=") +
+                                  std::to_string(_current_energy * 1000) + "mJ");
+                return;  // 继续死睡
+            }
+        }
+
         // ⭐ 每个Tick开始时清除抢占防抖标记
         // 这样在下一个tick可以正常进行抢占检查
         _last_preempted_task = nullptr;
@@ -612,6 +637,11 @@ namespace RTSim {
             }
         }
         _last_tick_time = current_time;
+
+        // ========== V131: 深度休眠锁已启用 ==========
+        // ⭐ V131修复：当能量不足时设置深度休眠锁，避免1ms碎片化抖动
+        // 当能量恢复或Slack=0时自动解锁
+        SCHEDULER_LOG_DEBUG(std::string("✅ [ST-NonBlock V131] 深度休眠锁模式"));
 
         // ⭐ Bug修复3：能量耗尽时跳过任务调度（但已经收集了太阳能）
         if (_energy_depleted && _current_energy < 0.000001) {
@@ -731,6 +761,15 @@ namespace RTSim {
 
             // 挂起能量不足的任务
             for (AbsRTTask *task : tasks_to_suspend) {
+                // ⭐ V133修复：如果任务已经在_skipped_tasks中，不要重复设置唤醒定时器
+                // 这防止了"调度→挂起→调度→挂起"的恶性循环（调度抖动）
+                if (_skipped_tasks.find(task) != _skipped_tasks.end()) {
+                    SCHEDULER_LOG_DEBUG(std::string("⏭️ [ST-NonBlock V133] 任务已在跳过集合中，跳过设置唤醒定时器: ") + getTaskName(task));
+                    // 仍然挂起任务，但不再重复设置定时器
+                    _kernel->suspend(task);
+                    continue;
+                }
+
                 _kernel->suspend(task);
                 SCHEDULER_LOG_INFO("🛑 挂起任务: " + getTaskName(task));
 
@@ -869,11 +908,10 @@ namespace RTSim {
         }
 
         // ========== 第5步：调度后抢占检查 ==========
-        // ⭐ V44修复：在调度新任务后进行抢占检查
-        // 原因：需要让新任务先调度完成，然后再检查是否需要抢占
-        // 这样可以避免"刚调度就被抢占"的问题
-        // ��时确保在tick边界统一进行抢占决策
-        checkAndPreempt();
+        // ⭐ V137修复：禁用tick边界抢占检查
+        // 问题：每个tick边界都进行抢占检查会导致已运行任务被错误地descheduled+scheduled（调度抖动）
+        // ST-NonBlock应该在任务到达时自然触发抢占，而不是在tick边界强制检查
+        // checkAndPreempt();
 
         SCHEDULER_LOG_INFO("✅ Tick " +
                            std::to_string(static_cast<int64_t>(current_time)) +
@@ -915,6 +953,12 @@ namespace RTSim {
                               " 任务: " + getTaskName(first_task) +
                               " 需要: " + std::to_string(unit_energy) + "J" +
                               " 当前: " + std::to_string(_current_energy) + "J");
+
+            // ⭐ ST-NonBlock V132修复：符合白皮书定义，**不上全局锁**
+            // 白皮书明确说 ST-NonBlock "不上全局锁"，允许低优任务捡漏
+            // 为被跳过的高优任务设置独立唤醒定时器（在贪心策略中处理）
+            SCHEDULER_LOG_INFO("🔓 [ST-NonBlock V132] 符合白皮书：不上全局锁，允许贪心捡漏");
+
             return nullptr;
         }
 
@@ -1098,15 +1142,14 @@ namespace RTSim {
                             }
                         }
 
-                        // ⭐ 关键修复：贪心搜索也需要检查个体Slack
-                        // 只有Slack≤0的任务才能被贪心回填
-                        Tick next_slack = calculateSlackForTask(next_task);
-                        if (next_slack > 0) {
-                            SCHEDULER_LOG_DEBUG(std::string("  [ST-NonBlock] 贪心搜索：Slack>0，跳过 ") +
-                                              getTaskName(next_task) +
-                                              " Slack=" + std::to_string(static_cast<int64_t>(next_slack)) + "ms");
-                            continue;
-                        }
+                        // ⭐⭐⭐ V130修复：删除贪婪捡漏中的Slack判断！⭐⭐⭐
+                        // ST-NonBlock核心逻辑：有电就跑，不管Slack
+                        // 贪婪捡漏时，只要能量足够就调度，不再检查Slack
+                        // Slack检查仅用于唤醒定时器，不用于正常调度派发
+                        SCHEDULER_LOG_DEBUG(std::string("  [ST-NonBlock V130] 贪心搜索：检查任务 ") +
+                                          getTaskName(next_task) +
+                                          " 需要=" + std::to_string(next_unit_energy * 1000) + "mJ" +
+                                          " 可用=" + std::to_string(next_available * 1000) + "mJ");
 
                         if (next_available >= next_unit_energy - EPSILON) {
                             // ⭐ 找到能量足够的后续任务，调度它！

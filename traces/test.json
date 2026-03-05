@@ -1,8 +1,2 @@
 {
     "events" : [
-{ "time": "0", "event_type": "arrival", "task_name": "Task_High", "arrival_time": "0"},
-{ "time": "0", "event_type": "arrival", "task_name": "Task_Med", "arrival_time": "0"},
-{ "time": "0", "event_type": "arrival", "task_name": "Task_Low", "arrival_time": "0"},
-{ "time": "50", "event_type": "arrival", "task_name": "Task_High", "arrival_time": "50"},
-{ "time": "50", "event_type": "dline_miss", "task_name": "Task_High", "arrival_time": "0", "deadline": "50", "miss_amount": "0", "reason": "unknown"},
-{ "time": "50", "event_type": "kill", "task_name": "Task_High", "arrival_time": "0"}] }

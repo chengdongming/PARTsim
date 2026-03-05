@@ -178,6 +178,9 @@ namespace RTSim {
         bool _deep_charging;           // ⭐ ST特有：是否处于深度充电模式
         MetaSim::Tick _charge_start_time;  // 充电开始时间
 
+        // ========== V130: 深度休眠锁（消灭1ms碎片化抖动） ==========
+        bool _is_charging_sleep;       // ⭐ 全局深度休眠锁：能量不足时锁住，充满电或Slack=0时解锁
+
         // ========== 抢占防抖 ==========
         AbsRTTask *_last_preempted_task;                // 最近被抢占的任务
         MetaSim::Tick _last_preempted_tick;             // 最近抢占发生的时间

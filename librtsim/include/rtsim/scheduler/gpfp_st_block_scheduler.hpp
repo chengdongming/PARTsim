@@ -184,6 +184,9 @@ namespace RTSim {
         MetaSim::Tick _charge_until_slack_zero;  // 充电直到Slack=0的时间
         STBlockWakeEvent *_wake_event;  // ⭐ V74：深度充电唤醒定时器
 
+        // ========== V130: 深度休眠锁（消灭1ms碎片化抖动） ==========
+        bool _is_charging_sleep;       // ⭐ 全局深度休眠锁：能量不足时锁住，充满电或Slack=0时解锁
+
         // ========== 抢占防抖 ==========
         // ⭐ 防止频繁抢占：在同一个tick内，同一个任务不应该被反复抢占
         AbsRTTask *_last_preempted_task;  // 最近被挂起的任务

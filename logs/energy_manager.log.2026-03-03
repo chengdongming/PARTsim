@@ -1,0 +1,1287 @@
+2026-03-03 09:32:27.333 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 09:32:27.347 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 09:32:27.347 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 09:32:27.348 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 09:32:27.348 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 09:32:27.348 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 09:32:27.348 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 09:32:27.348 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 09:32:27.348 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 09:32:27.348 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 09:32:27.348 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 09:32:27.348 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 09:32:27.348 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 09:32:27.348 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 09:32:27.349 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 09:32:27.349 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 09:32:27.349 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 09:32:27.349 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 09:32:27.349 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 09:32:27.349 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 09:32:27.350 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 09:32:27.350 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 09:32:27.350 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 09:32:27.350 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 09:32:27.350 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 09:32:27.350 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 09:32:27.350 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 09:32:27.350 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 09:32:27.351 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 09:32:27.351 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 09:32:27.351 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 09:32:27.351 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 09:32:27.351 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 09:32:46.123 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 09:32:46.132 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 09:32:46.132 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 09:32:46.132 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 09:32:46.132 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 09:32:46.132 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 09:32:46.132 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 09:32:46.132 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 09:32:46.132 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 09:32:46.133 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 09:32:46.133 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 09:32:46.133 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 09:32:46.133 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 09:32:46.133 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 09:32:46.133 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 09:32:46.133 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 09:32:46.133 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 09:32:46.133 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 09:32:46.133 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 09:32:46.133 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 09:32:46.133 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 09:32:46.134 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 09:32:46.134 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 09:32:46.134 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 09:32:46.134 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 09:32:46.134 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 09:32:46.134 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 09:32:46.135 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 09:32:46.135 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 09:32:46.135 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 09:32:46.135 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 09:32:46.135 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 09:32:46.135 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 09:33:04.049 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 09:33:04.058 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 09:33:04.058 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 09:33:04.058 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 09:33:04.058 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 09:33:04.058 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 09:33:04.058 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 09:33:04.058 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 09:33:04.059 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 09:33:04.059 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 09:33:04.059 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 09:33:04.059 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 09:33:04.059 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 09:33:04.059 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 09:33:04.059 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 09:33:04.059 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 09:33:04.059 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 09:33:04.060 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 09:33:04.060 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 09:33:04.060 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 09:33:04.060 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 09:33:04.060 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 09:33:04.060 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 09:33:04.060 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 09:33:04.060 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 09:33:04.061 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 09:33:04.061 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 09:33:04.061 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 09:33:04.061 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 09:33:04.061 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 09:33:04.061 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 09:33:04.062 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 09:33:04.062 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 12:31:04.181 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 12:31:04.188 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 12:31:04.188 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 12:31:04.188 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 12:31:04.188 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 12:31:04.188 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 12:31:04.188 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 12:31:04.188 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 12:31:04.189 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 12:31:04.189 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 12:31:04.189 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 12:31:04.189 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 12:31:04.189 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 12:31:04.189 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 12:31:04.189 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 12:31:04.189 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 12:31:04.189 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 12:31:04.189 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 12:31:04.189 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 12:31:04.189 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 12:31:04.190 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 12:31:04.190 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 12:31:04.190 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 12:31:04.190 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 12:31:04.190 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 12:31:04.190 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 12:31:04.190 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 12:31:04.190 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 12:31:04.190 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 12:31:04.190 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 12:31:04.191 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 12:31:04.191 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 12:31:04.191 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 12:31:20.472 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 12:31:20.481 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 12:31:20.481 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 12:31:20.481 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 12:31:20.481 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 12:31:20.481 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 12:31:20.482 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 12:31:20.482 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 12:31:20.482 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 12:31:20.482 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 12:31:20.482 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 12:31:20.482 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 12:31:20.482 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 12:31:20.482 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 12:31:20.482 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 12:31:20.482 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 12:31:20.482 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 12:31:20.483 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 12:31:20.483 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 12:31:20.483 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 12:31:20.483 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 12:31:20.483 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 12:31:20.483 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 12:31:20.483 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 12:31:20.483 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 12:31:20.483 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 12:31:20.483 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 12:31:20.483 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 12:31:20.484 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 12:31:20.484 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 12:31:20.484 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 12:31:20.484 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 12:31:20.484 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 12:31:29.921 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 12:31:29.929 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 12:31:29.929 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 12:31:29.929 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 12:31:29.929 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 12:31:29.930 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 12:31:29.930 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 12:31:29.930 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 12:31:29.930 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 12:31:29.930 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 12:31:29.930 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 12:31:29.930 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 12:31:29.930 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 12:31:29.930 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 12:31:29.930 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 12:31:29.931 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 12:31:29.931 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 12:31:29.931 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 12:31:29.931 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 12:31:29.931 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 12:31:29.931 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 12:31:29.931 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 12:31:29.931 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 12:31:29.931 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 12:31:29.931 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 12:31:29.932 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 12:31:29.932 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 12:31:29.932 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 12:31:29.932 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 12:31:29.932 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 12:31:29.932 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 12:31:29.933 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 12:31:29.933 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 12:31:50.263 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 12:31:50.271 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 12:31:50.272 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 12:31:50.272 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 12:31:50.272 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 12:31:50.272 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 12:31:50.272 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 12:31:50.272 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 12:31:50.272 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 12:31:50.272 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 12:31:50.272 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 12:31:50.272 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 12:31:50.273 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 12:31:50.273 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 12:31:50.273 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 12:31:50.273 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 12:31:50.273 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 12:31:50.273 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 12:31:50.273 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 12:31:50.273 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 12:31:50.273 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 12:31:50.274 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 12:31:50.274 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 12:31:50.274 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 12:31:50.274 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 12:31:50.274 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 12:31:50.274 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 12:31:50.274 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 12:31:50.274 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 12:31:50.274 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 12:31:50.275 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 12:31:50.275 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 12:31:50.275 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 12:32:01.621 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 12:32:01.629 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 12:32:01.629 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 12:32:01.629 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 12:32:01.629 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 12:32:01.630 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 12:32:01.630 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 12:32:01.630 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 12:32:01.630 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 12:32:01.630 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 12:32:01.630 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 12:32:01.630 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 12:32:01.630 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 12:32:01.630 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 12:32:01.630 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 12:32:01.631 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 12:32:01.631 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 12:32:01.631 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 12:32:01.631 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 12:32:01.631 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 12:32:01.631 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 12:32:01.631 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 12:32:01.631 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 12:32:01.631 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 12:32:01.631 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 12:32:01.631 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 12:32:01.632 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 12:32:01.632 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 12:32:01.632 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 12:32:01.632 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 12:32:01.632 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 12:32:01.632 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 12:32:01.633 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 12:35:34.088 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 12:35:34.096 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 12:35:34.096 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 12:35:34.096 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 12:35:34.096 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 12:35:34.096 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 12:35:34.096 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 12:35:34.096 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 12:35:34.097 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 12:35:34.097 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 12:35:34.097 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 12:35:34.097 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 12:35:34.097 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 12:35:34.097 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 12:35:34.097 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 12:35:34.097 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 12:35:34.097 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 12:35:34.097 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 12:35:34.097 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 12:35:34.098 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 12:35:34.098 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 12:35:34.098 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 12:35:34.098 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 12:35:34.098 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 12:35:34.098 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 12:35:34.098 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 12:35:34.098 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 12:35:34.098 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 12:35:34.098 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 12:35:34.098 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 12:35:34.099 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 12:35:34.099 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 12:35:34.099 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 12:35:57.475 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 12:35:57.482 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 12:35:57.482 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 12:35:57.483 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 12:35:57.483 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 12:35:57.483 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 12:35:57.483 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 12:35:57.483 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 12:35:57.483 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 12:35:57.483 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 12:35:57.483 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 12:35:57.483 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 12:35:57.483 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 12:35:57.483 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 12:35:57.484 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 12:35:57.484 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 12:35:57.484 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 12:35:57.484 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 12:35:57.484 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 12:35:57.484 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 12:35:57.484 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 12:35:57.484 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 12:35:57.484 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 12:35:57.484 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 12:35:57.484 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 12:35:57.485 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 12:35:57.485 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 12:35:57.485 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 12:35:57.485 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 12:35:57.485 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 12:35:57.485 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 12:35:57.485 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 12:35:57.485 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 12:39:10.785 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 12:39:10.793 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 12:39:10.793 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 12:39:10.793 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 12:39:10.793 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 12:39:10.794 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 12:39:10.794 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 12:39:10.794 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 12:39:10.794 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 12:39:10.794 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 12:39:10.794 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 12:39:10.794 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 12:39:10.794 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 12:39:10.794 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 12:39:10.794 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 12:39:10.795 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 12:39:10.795 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 12:39:10.795 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 12:39:10.795 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 12:39:10.795 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 12:39:10.795 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 12:39:10.795 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 12:39:10.795 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 12:39:10.795 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 12:39:10.795 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 12:39:10.796 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 12:39:10.796 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 12:39:10.796 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 12:39:10.796 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 12:39:10.796 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 12:39:10.796 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 12:39:10.796 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 12:39:10.797 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 12:40:18.936 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 12:40:18.946 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 12:40:18.946 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 12:40:18.946 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 12:40:18.946 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 12:40:18.946 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 12:40:18.947 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 12:40:18.947 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 12:40:18.947 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 12:40:18.947 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 12:40:18.947 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 12:40:18.947 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 12:40:18.947 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 12:40:18.947 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 12:40:18.948 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 12:40:18.948 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 12:40:18.948 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 12:40:18.948 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 12:40:18.948 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 12:40:18.948 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 12:40:18.948 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 12:40:18.948 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 12:40:18.948 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 12:40:18.948 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 12:40:18.949 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 12:40:18.949 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 12:40:18.949 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 12:40:18.949 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 12:40:18.949 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 12:40:18.949 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 12:40:18.950 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 12:40:18.950 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 12:40:18.950 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 12:40:32.985 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 12:40:32.993 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 12:40:32.993 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 12:40:32.993 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 12:40:32.993 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 12:40:32.993 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 12:40:32.993 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 12:40:32.993 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 12:40:32.993 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 12:40:32.993 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 12:40:32.993 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 12:40:32.993 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 12:40:32.993 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 12:40:32.994 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 12:40:32.994 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 12:40:32.994 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 12:40:32.994 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 12:40:32.994 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 12:40:32.994 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 12:40:32.994 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 12:40:32.994 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 12:40:32.994 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 12:40:32.994 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 12:40:32.995 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 12:40:32.995 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 12:40:32.995 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 12:40:32.995 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 12:40:32.995 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 12:40:32.995 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 12:40:32.995 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 12:40:32.996 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 12:40:32.996 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 12:40:32.996 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 12:40:45.223 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 12:40:45.231 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 12:40:45.231 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 12:40:45.231 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 12:40:45.231 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 12:40:45.231 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 12:40:45.231 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 12:40:45.231 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 12:40:45.232 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 12:40:45.232 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 12:40:45.232 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 12:40:45.232 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 12:40:45.232 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 12:40:45.232 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 12:40:45.232 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 12:40:45.232 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 12:40:45.232 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 12:40:45.232 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 12:40:45.232 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 12:40:45.233 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 12:40:45.233 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 12:40:45.233 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 12:40:45.233 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 12:40:45.233 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 12:40:45.233 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 12:40:45.233 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 12:40:45.233 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 12:40:45.233 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 12:40:45.234 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 12:40:45.234 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 12:40:45.234 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 12:40:45.234 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 12:40:45.235 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 12:41:50.286 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_high_harvest.yml
+2026-03-03 12:41:50.294 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_high_harvest.yml
+2026-03-03 12:41:50.294 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 12:41:50.294 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 12:41:50.294 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 12:41:50.295 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 12:41:50.295 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 12:41:50.295 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_high_harvest.yml
+2026-03-03 12:41:50.295 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 12:41:50.295 [INFO    ] [energy_manager      ]   Max energy: 0.2 J
+2026-03-03 12:41:50.295 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 12:41:50.295 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 12:41:50.295 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 12:41:50.295 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 12:41:50.295 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 12:41:50.295 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 12:41:50.296 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 12:41:50.296 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 12:41:50.296 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 12:41:50.296 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 12:41:50.296 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 12:41:50.296 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 12:41:50.296 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 12:41:50.296 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 12:41:50.296 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 12:41:50.296 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 12:41:50.297 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.2 J
+2026-03-03 12:41:50.297 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 12:41:50.297 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 12:41:50.297 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 12:41:50.297 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_high_harvest.yml, current_config_file=traces/config_st_sync_high_harvest.yml
+2026-03-03 12:41:50.297 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_high_harvest.yml
+2026-03-03 12:41:50.298 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 12:56:50.175 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 12:56:50.185 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 12:56:50.186 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 12:56:50.186 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 12:56:50.186 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 12:56:50.186 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 12:56:50.186 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 12:56:50.186 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 12:56:50.186 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 12:56:50.187 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 12:56:50.187 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 12:56:50.187 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 12:56:50.187 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 12:56:50.187 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 12:56:50.187 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 12:56:50.187 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 12:56:50.187 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 12:56:50.187 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 12:56:50.187 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 12:56:50.187 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 12:56:50.188 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 12:56:50.188 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 12:56:50.188 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 12:56:50.188 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 12:56:50.188 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 12:56:50.188 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 12:56:50.188 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 12:56:50.188 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 12:56:50.188 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 12:56:50.188 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 12:56:50.189 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 12:56:50.189 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 12:56:50.189 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 12:57:01.049 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 12:57:01.058 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 12:57:01.058 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 12:57:01.058 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 12:57:01.058 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 12:57:01.058 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 12:57:01.058 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 12:57:01.058 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 12:57:01.059 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 12:57:01.059 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 12:57:01.059 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 12:57:01.059 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 12:57:01.059 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 12:57:01.059 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 12:57:01.059 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 12:57:01.059 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 12:57:01.059 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 12:57:01.059 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 12:57:01.059 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 12:57:01.060 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 12:57:01.060 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 12:57:01.060 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 12:57:01.060 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 12:57:01.060 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 12:57:01.060 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 12:57:01.060 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 12:57:01.060 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 12:57:01.061 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 12:57:01.061 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 12:57:01.061 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 12:57:01.061 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 12:57:01.062 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 12:57:01.062 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 12:57:17.190 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 12:57:17.199 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 12:57:17.200 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 12:57:17.200 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 12:57:17.200 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 12:57:17.200 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 12:57:17.200 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 12:57:17.200 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 12:57:17.200 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 12:57:17.200 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 12:57:17.200 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 12:57:17.200 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 12:57:17.200 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 12:57:17.200 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 12:57:17.201 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 12:57:17.201 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 12:57:17.201 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 12:57:17.201 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 12:57:17.201 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 12:57:17.201 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 12:57:17.201 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 12:57:17.201 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 12:57:17.201 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 12:57:17.202 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 12:57:17.202 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 12:57:17.202 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 12:57:17.202 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 12:57:17.202 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 12:57:17.202 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 12:57:17.202 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 12:57:17.203 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 12:57:17.203 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 12:57:17.203 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 12:57:30.269 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 12:57:30.278 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 12:57:30.278 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 12:57:30.278 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 12:57:30.279 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 12:57:30.279 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 12:57:30.279 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 12:57:30.279 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 12:57:30.279 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 12:57:30.279 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 12:57:30.279 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 12:57:30.279 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 12:57:30.279 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 12:57:30.280 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 12:57:30.280 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 12:57:30.280 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 12:57:30.280 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 12:57:30.280 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 12:57:30.280 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 12:57:30.280 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 12:57:30.280 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 12:57:30.280 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 12:57:30.280 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 12:57:30.281 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 12:57:30.281 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 12:57:30.281 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 12:57:30.281 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 12:57:30.281 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 12:57:30.281 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 12:57:30.281 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 12:57:30.282 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 12:57:30.282 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 12:57:30.282 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 12:58:01.492 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 12:58:01.500 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 12:58:01.500 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 12:58:01.500 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 12:58:01.501 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 12:58:01.501 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 12:58:01.501 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 12:58:01.501 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 12:58:01.501 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 12:58:01.501 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 12:58:01.501 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 12:58:01.501 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 12:58:01.501 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 12:58:01.502 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 12:58:01.502 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 12:58:01.502 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 12:58:01.502 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 12:58:01.502 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 12:58:01.502 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 12:58:01.502 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 12:58:01.502 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 12:58:01.502 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 12:58:01.502 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 12:58:01.502 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 12:58:01.503 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 12:58:01.503 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 12:58:01.503 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 12:58:01.503 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 12:58:01.503 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 12:58:01.503 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 12:58:01.504 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 12:58:01.504 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 12:58:01.504 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 12:58:24.992 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 12:58:25.000 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 12:58:25.000 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 12:58:25.000 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 12:58:25.000 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 12:58:25.000 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 12:58:25.000 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 12:58:25.000 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 12:58:25.000 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 12:58:25.000 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 12:58:25.000 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 12:58:25.000 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 12:58:25.000 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 12:58:25.001 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 12:58:25.001 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 12:58:25.001 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 12:58:25.001 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 12:58:25.001 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 12:58:25.001 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 12:58:25.001 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 12:58:25.001 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 12:58:25.001 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 12:58:25.001 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 12:58:25.002 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 12:58:25.002 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 12:58:25.002 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 12:58:25.002 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 12:58:25.002 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 12:58:25.002 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 12:58:25.002 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 12:58:25.003 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 12:58:25.003 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 12:58:25.003 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 12:58:34.797 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 12:58:34.806 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 12:58:34.806 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 12:58:34.806 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 12:58:34.806 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 12:58:34.806 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 12:58:34.806 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 12:58:34.806 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 12:58:34.807 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 12:58:34.807 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 12:58:34.807 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 12:58:34.807 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 12:58:34.807 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 12:58:34.807 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 12:58:34.807 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 12:58:34.807 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 12:58:34.807 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 12:58:34.807 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 12:58:34.807 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 12:58:34.808 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 12:58:34.808 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 12:58:34.808 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 12:58:34.808 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 12:58:34.808 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 12:58:34.808 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 12:58:34.808 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 12:58:34.808 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 12:58:34.808 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 12:58:34.808 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 12:58:34.809 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 12:58:34.809 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 12:58:34.809 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 12:58:34.810 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 12:58:45.268 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 12:58:45.276 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 12:58:45.277 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 12:58:45.277 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 12:58:45.277 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 12:58:45.277 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 12:58:45.277 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 12:58:45.277 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 12:58:45.277 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 12:58:45.277 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 12:58:45.277 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 12:58:45.277 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 12:58:45.277 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 12:58:45.278 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 12:58:45.278 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 12:58:45.278 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 12:58:45.278 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 12:58:45.278 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 12:58:45.278 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 12:58:45.278 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 12:58:45.278 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 12:58:45.278 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 12:58:45.278 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 12:58:45.279 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 12:58:45.279 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 12:58:45.279 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 12:58:45.279 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 12:58:45.279 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 12:58:45.279 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 12:58:45.279 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 12:58:45.280 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 12:58:45.280 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 12:58:45.280 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 12:59:11.071 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 12:59:11.080 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 12:59:11.081 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 12:59:11.081 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 12:59:11.081 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 12:59:11.081 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 12:59:11.081 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 12:59:11.081 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 12:59:11.082 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 12:59:11.082 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 12:59:11.082 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 12:59:11.082 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 12:59:11.082 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 12:59:11.082 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 12:59:11.082 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 12:59:11.082 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 12:59:11.082 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 12:59:11.083 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 12:59:11.083 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 12:59:11.083 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 12:59:11.083 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 12:59:11.083 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 12:59:11.083 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 12:59:11.083 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 12:59:11.083 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 12:59:11.083 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 12:59:11.083 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 12:59:11.083 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 12:59:11.083 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 12:59:11.084 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 12:59:11.084 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 12:59:11.084 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 12:59:11.084 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 13:02:29.066 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 13:02:29.074 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 13:02:29.074 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 13:02:29.074 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 13:02:29.074 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 13:02:29.074 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 13:02:29.074 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 13:02:29.074 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 13:02:29.074 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 13:02:29.074 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 13:02:29.074 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 13:02:29.074 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 13:02:29.075 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 13:02:29.075 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 13:02:29.075 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 13:02:29.075 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 13:02:29.075 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 13:02:29.075 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 13:02:29.075 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 13:02:29.075 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 13:02:29.076 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 13:02:29.076 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 13:02:29.076 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 13:02:29.076 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 13:02:29.076 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 13:02:29.076 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 13:02:29.076 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 13:02:29.076 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 13:02:29.076 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 13:02:29.076 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 13:02:29.077 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 13:02:29.077 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 13:02:29.077 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 13:02:38.083 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 13:02:38.092 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 13:02:38.092 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 13:02:38.092 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 13:02:38.092 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 13:02:38.092 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 13:02:38.093 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 13:02:38.093 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 13:02:38.093 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 13:02:38.093 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 13:02:38.093 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 13:02:38.093 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 13:02:38.094 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 13:02:38.094 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 13:02:38.094 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 13:02:38.094 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 13:02:38.094 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 13:02:38.094 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 13:02:38.094 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 13:02:38.094 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 13:02:38.095 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 13:02:38.095 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 13:02:38.095 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 13:02:38.095 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 13:02:38.095 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 13:02:38.095 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 13:02:38.095 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 13:02:38.096 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 13:02:38.096 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 13:02:38.096 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 13:02:38.096 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 13:02:38.097 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 13:02:38.097 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 13:02:55.095 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 13:02:55.103 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 13:02:55.103 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 13:02:55.103 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 13:02:55.103 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 13:02:55.103 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 13:02:55.103 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 13:02:55.103 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 13:02:55.103 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 13:02:55.103 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 13:02:55.103 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 13:02:55.103 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 13:02:55.104 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 13:02:55.104 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 13:02:55.104 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 13:02:55.104 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 13:02:55.104 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 13:02:55.104 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 13:02:55.104 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 13:02:55.104 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 13:02:55.104 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 13:02:55.104 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 13:02:55.104 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 13:02:55.105 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 13:02:55.105 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 13:02:55.105 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 13:02:55.105 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 13:02:55.105 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 13:02:55.105 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 13:02:55.105 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 13:02:55.106 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 13:02:55.106 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 13:02:55.106 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 13:04:09.983 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_high_harvest.yml
+2026-03-03 13:04:09.991 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_high_harvest.yml
+2026-03-03 13:04:09.991 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 13:04:09.991 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 13:04:09.991 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 13:04:09.992 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 13:04:09.992 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 13:04:09.992 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_high_harvest.yml
+2026-03-03 13:04:09.992 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 13:04:09.992 [INFO    ] [energy_manager      ]   Max energy: 0.2 J
+2026-03-03 13:04:09.992 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 13:04:09.992 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 13:04:09.992 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 13:04:09.992 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 13:04:09.993 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 13:04:09.993 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 13:04:09.993 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 13:04:09.993 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 13:04:09.993 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 13:04:09.993 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 13:04:09.993 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 13:04:09.993 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 13:04:09.993 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 13:04:09.994 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 13:04:09.994 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 13:04:09.994 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 13:04:09.994 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.2 J
+2026-03-03 13:04:09.994 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 13:04:09.994 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 13:04:09.994 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 13:04:09.995 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_high_harvest.yml, current_config_file=traces/config_st_sync_high_harvest.yml
+2026-03-03 13:04:09.995 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_high_harvest.yml
+2026-03-03 13:04:09.995 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 13:10:38.737 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 13:10:38.745 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 13:10:38.745 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 13:10:38.745 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 13:10:38.745 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 13:10:38.745 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 13:10:38.745 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 13:10:38.745 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 13:10:38.745 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 13:10:38.745 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 13:10:38.745 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 13:10:38.745 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 13:10:38.746 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 13:10:38.746 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 13:10:38.746 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 13:10:38.746 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 13:10:38.746 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 13:10:38.746 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 13:10:38.746 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 13:10:38.746 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 13:10:38.746 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 13:10:38.746 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 13:10:38.746 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 13:10:38.746 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 13:10:38.746 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 13:10:38.747 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 13:10:38.747 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 13:10:38.747 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 13:10:38.747 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 13:10:38.747 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 13:10:38.747 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 13:10:38.747 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 13:10:38.747 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 13:10:56.175 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 13:10:56.182 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 13:10:56.182 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 13:10:56.182 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 13:10:56.182 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 13:10:56.182 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 13:10:56.182 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 13:10:56.182 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 13:10:56.182 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 13:10:56.182 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 13:10:56.182 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 13:10:56.182 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 13:10:56.183 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 13:10:56.183 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 13:10:56.183 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 13:10:56.183 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 13:10:56.183 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 13:10:56.183 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 13:10:56.183 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 13:10:56.183 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 13:10:56.183 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 13:10:56.183 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 13:10:56.183 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 13:10:56.183 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 13:10:56.183 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 13:10:56.183 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 13:10:56.184 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 13:10:56.184 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 13:10:56.184 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 13:10:56.184 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 13:10:56.184 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 13:10:56.184 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 13:10:56.184 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 15:59:33.259 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 15:59:33.266 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 15:59:33.267 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 15:59:33.267 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 15:59:33.267 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 15:59:33.267 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 15:59:33.267 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 15:59:33.267 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 15:59:33.267 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 15:59:33.267 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 15:59:33.267 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 15:59:33.267 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 15:59:33.267 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 15:59:33.267 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 15:59:33.268 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 15:59:33.268 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 15:59:33.268 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 15:59:33.268 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 15:59:33.268 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 15:59:33.268 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 15:59:33.268 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 15:59:33.268 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 15:59:33.268 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 15:59:33.268 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 15:59:33.268 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 15:59:33.268 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 15:59:33.269 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 15:59:33.269 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 15:59:33.269 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 15:59:33.269 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 15:59:33.269 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 15:59:33.269 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 15:59:33.269 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 15:59:58.913 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 15:59:58.920 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 15:59:58.921 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 15:59:58.921 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 15:59:58.921 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 15:59:58.921 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 15:59:58.921 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 15:59:58.921 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 15:59:58.921 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 15:59:58.921 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 15:59:58.921 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 15:59:58.921 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 15:59:58.921 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 15:59:58.921 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 15:59:58.922 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 15:59:58.922 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 15:59:58.922 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 15:59:58.922 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 15:59:58.922 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 15:59:58.922 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 15:59:58.922 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 15:59:58.922 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 15:59:58.922 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 15:59:58.922 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 15:59:58.922 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 15:59:58.922 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 15:59:58.922 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 15:59:58.922 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 15:59:58.923 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 15:59:58.923 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 15:59:58.923 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 15:59:58.923 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 15:59:58.923 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 16:19:15.963 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 16:19:15.971 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 16:19:15.971 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 16:19:15.971 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 16:19:15.971 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 16:19:15.971 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 16:19:15.971 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 16:19:15.971 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 16:19:15.971 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 16:19:15.972 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 16:19:15.972 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 16:19:15.972 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 16:19:15.972 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 16:19:15.972 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 16:19:15.972 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 16:19:15.972 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 16:19:15.972 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 16:19:15.972 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 16:19:15.972 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 16:19:15.972 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 16:19:15.972 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 16:19:15.972 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 16:19:15.973 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 16:19:15.973 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 16:19:15.973 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 16:19:15.973 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 16:19:15.973 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 16:19:15.973 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 16:19:15.973 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 16:19:15.973 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 16:19:15.974 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 16:19:15.974 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 16:19:15.974 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 16:19:59.474 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 16:19:59.481 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 16:19:59.481 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 16:19:59.481 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 16:19:59.481 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 16:19:59.481 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 16:19:59.481 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 16:19:59.481 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 16:19:59.481 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 16:19:59.481 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 16:19:59.481 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 16:19:59.481 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 16:19:59.481 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 16:19:59.482 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 16:19:59.482 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 16:19:59.482 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 16:19:59.482 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 16:19:59.482 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 16:19:59.482 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 16:19:59.482 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 16:19:59.482 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 16:19:59.482 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 16:19:59.482 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 16:19:59.482 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 16:19:59.482 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 16:19:59.482 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 16:19:59.483 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 16:19:59.483 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 16:19:59.483 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 16:19:59.483 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 16:19:59.483 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 16:19:59.483 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 16:19:59.483 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 16:20:42.982 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 16:20:42.990 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 16:20:42.990 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 16:20:42.990 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 16:20:42.990 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 16:20:42.990 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 16:20:42.991 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 16:20:42.991 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 16:20:42.991 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 16:20:42.991 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 16:20:42.991 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 16:20:42.991 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 16:20:42.991 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 16:20:42.991 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 16:20:42.991 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 16:20:42.991 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 16:20:42.991 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 16:20:42.991 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 16:20:42.991 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 16:20:42.991 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 16:20:42.992 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 16:20:42.992 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 16:20:42.992 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 16:20:42.992 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 16:20:42.992 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 16:20:42.992 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 16:20:42.992 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 16:20:42.992 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 16:20:42.992 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 16:20:42.992 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 16:20:42.993 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 16:20:42.993 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 16:20:42.993 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 16:24:00.071 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 16:24:00.078 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 16:24:00.079 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 16:24:00.079 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 16:24:00.079 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 16:24:00.079 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 16:24:00.079 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 16:24:00.079 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 16:24:00.079 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 16:24:00.079 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 16:24:00.079 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 16:24:00.079 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 16:24:00.080 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 16:24:00.080 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 16:24:00.080 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 16:24:00.080 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 16:24:00.080 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 16:24:00.080 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 16:24:00.080 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 16:24:00.080 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 16:24:00.080 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 16:24:00.080 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 16:24:00.080 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 16:24:00.081 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 16:24:00.081 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 16:24:00.081 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 16:24:00.081 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 16:24:00.081 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 16:24:00.081 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 16:24:00.081 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 16:24:00.081 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 16:24:00.082 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 16:24:00.082 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 16:24:55.634 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_high_harvest.yml
+2026-03-03 16:24:55.643 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_high_harvest.yml
+2026-03-03 16:24:55.643 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 16:24:55.643 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 16:24:55.643 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 16:24:55.644 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 16:24:55.644 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 16:24:55.644 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_high_harvest.yml
+2026-03-03 16:24:55.644 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 16:24:55.644 [INFO    ] [energy_manager      ]   Max energy: 0.2 J
+2026-03-03 16:24:55.644 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 16:24:55.644 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 16:24:55.644 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 16:24:55.644 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 16:24:55.644 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 16:24:55.644 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 16:24:55.644 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 16:24:55.644 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 16:24:55.645 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 16:24:55.645 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 16:24:55.645 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 16:24:55.645 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 16:24:55.645 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 16:24:55.645 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 16:24:55.645 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 16:24:55.645 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 16:24:55.645 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.2 J
+2026-03-03 16:24:55.645 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 16:24:55.645 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 16:24:55.645 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 16:24:55.646 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_high_harvest.yml, current_config_file=traces/config_st_sync_high_harvest.yml
+2026-03-03 16:24:55.646 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_high_harvest.yml
+2026-03-03 16:24:55.646 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 22:42:35.182 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_partial.yml
+2026-03-03 22:42:35.192 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_partial.yml
+2026-03-03 22:42:35.192 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 22:42:35.193 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 22:42:35.193 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 22:42:35.193 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 22:42:35.193 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 22:42:35.193 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_partial.yml
+2026-03-03 22:42:35.193 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 22:42:35.193 [INFO    ] [energy_manager      ]   Max energy: 0.1 J
+2026-03-03 22:42:35.193 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 22:42:35.193 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 22:42:35.193 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 22:42:35.194 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 22:42:35.194 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 22:42:35.194 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 22:42:35.194 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 22:42:35.194 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 22:42:35.194 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 22:42:35.194 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 22:42:35.194 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 22:42:35.194 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 22:42:35.194 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 22:42:35.195 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 22:42:35.195 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 22:42:35.195 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 22:42:35.195 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.1 J
+2026-03-03 22:42:35.195 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 22:42:35.195 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 22:42:35.195 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 22:42:35.196 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_partial.yml, current_config_file=traces/config_st_sync_partial.yml
+2026-03-03 22:42:35.196 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_partial.yml
+2026-03-03 22:42:35.196 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J
+2026-03-03 22:43:27.831 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: traces/config_st_sync_high_harvest.yml
+2026-03-03 22:43:27.839 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: traces/config_st_sync_high_harvest.yml
+2026-03-03 22:43:27.839 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.08
+2026-03-03 22:43:27.839 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.08
+2026-03-03 22:43:27.839 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=1, time_of_day_ms=28800000 计算 start_offset_minutes=480
+2026-03-03 22:43:27.839 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=480, simulation_start_time=28800000ms
+2026-03-03 22:43:27.839 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-03 22:43:27.840 [INFO    ] [energy_manager      ] EnergyConfig loaded from traces/config_st_sync_high_harvest.yml
+2026-03-03 22:43:27.840 [INFO    ] [energy_manager      ]   Initial energy: 0.08 J
+2026-03-03 22:43:27.840 [INFO    ] [energy_manager      ]   Max energy: 0.2 J
+2026-03-03 22:43:27.840 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-03 22:43:27.840 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-03 22:43:27.840 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-03 22:43:27.840 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-03 22:43:27.840 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-03 22:43:27.840 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-03 22:43:27.840 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-03 22:43:27.840 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-03 22:43:27.840 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-03 22:43:27.840 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-03 22:43:27.840 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-03 22:43:27.840 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-03 22:43:27.841 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-03 22:43:27.841 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.08
+2026-03-03 22:43:27.841 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.08
+2026-03-03 22:43:27.841 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-03 22:43:27.841 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.1/0.2 J
+2026-03-03 22:43:27.841 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 28800000ms
+2026-03-03 22:43:27.841 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 08:00:00
+2026-03-03 22:43:27.841 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-03 22:43:27.842 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=traces/config_st_sync_high_harvest.yml, current_config_file=traces/config_st_sync_high_harvest.yml
+2026-03-03 22:43:27.842 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: traces/config_st_sync_high_harvest.yml
+2026-03-03 22:43:27.842 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.08J

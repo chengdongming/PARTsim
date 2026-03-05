@@ -75,13 +75,16 @@ namespace RTSim {
         }
 
         Tick current_time = SIMUL.getTime();
-        SCHEDULER_LOG_WARNING(std::string("⏰ [ST-Sync V122] 组唤醒事件触发 @ ") +
+        SCHEDULER_LOG_WARNING(std::string("⏰ [ST-Sync V130] 组唤醒事件触发 @ ") +
                              std::to_string(static_cast<int64_t>(current_time)) + "ms");
 
-        // 清除深度充电状态，允许调度
+        // ⭐ V130修复：清除深度休眠锁（关键！）
+        _scheduler->_is_charging_sleep = false;
         _scheduler->_deep_charging = false;
         _scheduler->_energy_depleted = false;
         _valid = false;
+
+        SCHEDULER_LOG_INFO(std::string("🔓 [ST-Sync V130] 深度休眠锁已解除，触发调度"));
 
         // 立即触发一次调度
         _scheduler->performTickScheduling();
@@ -288,6 +291,7 @@ namespace RTSim {
           _start_time_offset(0),
           _base_harvest_rate(0.054),  // ⭐ V93修复：默认值 54 mW
           _tick_event(nullptr),
+          _group_wake_event(nullptr),  // ⭐ V131修复：初始化为nullptr
           _first_tick_scheduled(false),
           _kernel(nullptr),
           _batch_scheduled_this_tick(false),
@@ -303,6 +307,7 @@ namespace RTSim {
           _current_batch_size(0),
           _deep_charging(false),
           _charge_start_time(0),
+          _is_charging_sleep(false),  // ⭐ V130: 深度休眠锁初始化
           _last_preempted_task(nullptr),
           _last_preempted_tick(0),
           _last_ready_queue_size(0) {
@@ -558,6 +563,34 @@ namespace RTSim {
         }
 
         _last_tick_time = current_time;
+
+        // ========== V130: 深度休眠锁检查（消灭1ms碎片化抖动） ==========
+        // ⭐ 核心逻辑：能量不足时锁住系统，只有充满电或Slack=0时才解锁
+        if (_is_charging_sleep) {
+            // 计算最小Slack
+            Tick min_slack = calculateMinSlack();
+            int64_t min_slack_ms = static_cast<int64_t>(min_slack);
+
+            // 唤醒条件1：电池充满
+            if (_current_energy >= _max_energy - 0.000001) {
+                _is_charging_sleep = false;
+                SCHEDULER_LOG_INFO(std::string("🔋 [ST-Sync V130] 深度休眠解锁：电池充满") +
+                                  " 能量=" + std::to_string(_current_energy * 1000) + "mJ");
+            }
+            // 唤醒条件2：Slack=0（死线已至，必须执行）
+            else if (min_slack_ms <= 0) {
+                _is_charging_sleep = false;
+                SCHEDULER_LOG_WARNING(std::string("🚨 [ST-Sync V130] 深度休眠解锁：Slack=0强制唤醒") +
+                                     " Slack=" + std::to_string(min_slack_ms) + "ms");
+            }
+            // 继续休眠
+            else {
+                SCHEDULER_LOG_INFO(std::string("😴 [ST-Sync V130] 深度休眠中...") +
+                                  " 能量=" + std::to_string(_current_energy * 1000) + "mJ" +
+                                  " Slack=" + std::to_string(min_slack_ms) + "ms");
+                return;  // 继续死睡，不执行任何调度
+            }
+        }
 
         // ⭐ Bug修复3：能量耗尽时跳过调度（但已经收集了太阳能）
         if (_energy_depleted && _current_energy < 0.000001) {
@@ -993,70 +1026,36 @@ namespace RTSim {
             
             // 设置深度充电状态
             _deep_charging = true;
-            // V125修复：Slack<=0时的紧急调度 - 必须使用完整WCET能量判断
-            // V123的bug：使用unit_energy导致任务只能运行1ms就被踢下核（仰卧起坐）
-            // V125修复：使用total_energy（完整WCET能量），只调度真正能完成的任务
-            if (static_cast<int64_t>(min_slack) <= 0 && !ready_tasks_v90.empty()) {
-                SCHEDULER_LOG_WARNING("Emergency: Slack<=0, trying degraded scheduling (V125: using total_energy)");
-                std::vector<AbsRTTask*> emergency_tasks;
-                double emergency_energy = 0.0;
-                std::vector<AbsRTTask*> sorted_emergency(ready_tasks_v90.begin(), ready_tasks_v90.end());
-                std::sort(sorted_emergency.begin(), sorted_emergency.end(),
-                    [this](AbsRTTask* a, AbsRTTask* b) {
-                        auto model_a = getTaskModel(a);
-                        auto model_b = getTaskModel(b);
-                        if (model_a && model_b) return model_a->getRMPriority() < model_b->getRMPriority();
-                        return false;
-                    });
-                for (auto* task : sorted_emergency) {
-                    if (!task || !task->isActive()) continue;
-                    // V125修复：使用完整WCET能量，确保任务能真正完成
-                    STSyncTaskModel *model = getTaskModel(task);
-                    int64_t wcet_ms = model ? model->getWCET() : 10;
-                    if (wcet_ms < 1) wcet_ms = 1;
-                    double task_unit_energy = calculateUnitEnergyForTask(task);
-                    double task_total_energy = task_unit_energy * wcet_ms;  // 完整WCET能量
 
-                    if (_current_energy >= emergency_energy + task_total_energy - 1e-9) {
-                        emergency_tasks.push_back(task);
-                        emergency_energy += task_total_energy;
-                        SCHEDULER_LOG_INFO(std::string("Emergency task: ") + getTaskName(task) +
-                                          " total_energy=" + std::to_string(task_total_energy * 1000) + "mJ" +
-                                          " (WCET=" + std::to_string(wcet_ms) + "ms)");
-                    } else {
-                        // 能量不足以调度这个任务，跳过
-                        SCHEDULER_LOG_INFO(std::string("Emergency skip: ") + getTaskName(task) +
-                                          " total_energy=" + std::to_string(task_total_energy * 1000) + "mJ" +
-                                          " > available=" + std::to_string((_current_energy - emergency_energy) * 1000) + "mJ");
-                    }
-                }
-                if (!emergency_tasks.empty()) {
-                    SCHEDULER_LOG_WARNING(std::string("V125 Emergency scheduling ") + std::to_string(emergency_tasks.size()) + " tasks" +
-                                         " total_energy=" + std::to_string(emergency_energy * 1000) + "mJ");
-                    // 清除深度充电状态
-                    _deep_charging = false;
-                    _energy_depleted = false;
-                    _current_batch_tasks = emergency_tasks;
-                    _current_batch_size = emergency_tasks.size();
-                    _batch_scheduled_this_tick = true;
-                    _stats.total_batch_schedules++;
-                    if (_kernel && !_current_batch_tasks.empty()) _kernel->dispatch();
-                    return;
-                }
-            }
+            // ⭐⭐⭐ V131修复：删除V125紧急调度逻辑 ⭐⭐⭐
+            // ST-Sync核心设计：全员进退（All-or-Nothing）
+            // 能量不足时只能选择：
+            //   1. K个任务全部调度（能量充足）
+            //   2. 0个任务都不调度（能量不足，进入深度充电）
+            // 绝对不能出现部分调度（1个或2个）的情况！
+            // 因此直接跳过紧急调度逻辑，进入深度充电
+            SCHEDULER_LOG_WARNING("⚠️ [ST-Sync V131] 能量不足，进入深度充电（全员进退原则）");
             _energy_depleted = true;
-            
+
+            // ⭐⭐⭐ V130修复：设置深度休眠锁，消灭1ms碎片化抖动 ⭐⭐⭐
+            // 核心改动：设置全局锁，系统将死睡直到充满电或Slack=0
+            _is_charging_sleep = true;
+            SCHEDULER_LOG_WARNING(std::string("🔒 [ST-Sync V130] 深度休眠锁已启用！") +
+                                 " 能量=" + std::to_string(_current_energy * 1000) + "mJ" +
+                                 " 需要=" + std::to_string(total_energy_budget * 1000) + "mJ" +
+                                 " minSlack=" + std::to_string(static_cast<int64_t>(min_slack)) + "ms");
+
             // 计算唤醒时间：最短Slack归零 或 电池充满（取较早者）
             Tick wake_time = calculateGroupWakeTime(min_slack, total_energy_budget);
-            
-            SCHEDULER_LOG_INFO(std::string("🔋 [ST-Sync V90] 深度充电：唤醒时间=") +
+
+            SCHEDULER_LOG_INFO(std::string("🔋 [ST-Sync V130] 深度充电：唤醒时间=") +
                               std::to_string(static_cast<int64_t>(wake_time)) + "ms");
-            
+
             // 挂起所有运行中的任务（All-or-Nothing）
             for (auto* task : running_task_list) {
                 if (_kernel && task->isExecuting()) {
                     setSuspendReason(task, "insufficient_energy");  // V115：记录挂起原因
-                    SCHEDULER_LOG_WARNING(std::string("🛑 [ST-Sync V90] 挂起: ") + getTaskName(task));
+                    SCHEDULER_LOG_WARNING(std::string("🛑 [ST-Sync V130] 挂起: ") + getTaskName(task));
                     _kernel->suspend(task);
                 }
             }
@@ -1651,20 +1650,16 @@ namespace RTSim {
                             return false;
                         });
 
-                    // ⭐⭐⭐ V113修复：计算K个任务的"总能量预算"而非"单步能量" ⭐⭐⭐
-                    // ST算法核心原则：只有当电量足以支撑任务组"一口气跑完全程"时才调度
-                    // - 新任务：完整WCET × 单位能耗
+                    // ⭐⭐⭐ V131修复：计算K个任务的1ms总功耗（符合白皮书"1ms查票公理"） ⭐⭐⭐
+                    // 白皮书定义：E_batch = Σ unit_energy(T_j)，即下一毫秒的总功耗
                     double batch_energy_v108 = 0.0;
                     for (int i = 0; i < K_v108 && i < static_cast<int>(sorted_ready_v108.size()); ++i) {
                         AbsRTTask* task = sorted_ready_v108[i];
                         double unit_energy = calculateUnitEnergyForTask(task);
-                        STSyncTaskModel *model = getTaskModel(task);
-                        int64_t wcet_ms = model ? model->getWCET() : 10;  // 默认10ms
-                        if (wcet_ms < 1) wcet_ms = 1;
-                        batch_energy_v108 += unit_energy * wcet_ms;  // 总能量预算 = 单位能耗 × WCET
+                        batch_energy_v108 += unit_energy;  // 1ms总功耗（不是WCET总能量）
                     }
 
-                    SCHEDULER_LOG_INFO(std::string("🔍 [ST-Sync V113] 批量能量检查(总预算): K=") +
+                    SCHEDULER_LOG_INFO(std::string("🔍 [ST-Sync V131] 批量能量检查(1ms总功耗): K=") +
                                       std::to_string(K_v108) +
                                       " 需要=" + std::to_string(batch_energy_v108 * 1000) + " mJ" +
                                       " 快照=" + std::to_string(_v108_batch_start_energy * 1000) + " mJ" +
@@ -1680,6 +1675,8 @@ namespace RTSim {
                                              "需要=" + std::to_string(batch_energy_v108 * 1000) + " mJ" +
                                              " 快照=" + std::to_string(_v108_batch_start_energy * 1000) + " mJ");
                         _energy_depleted = true;
+                        // ⭐ ST-Sync V131修复：全组挂起时激活深度休眠锁（符合白皮书定义）
+                        _is_charging_sleep = true;
                         return nullptr;
                     }
 

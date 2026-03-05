@@ -78,12 +78,16 @@ namespace RTSim {
         Tick current_time = SIMUL.getTime();
         int64_t current_ms = static_cast<int64_t>(current_time);
 
-        SCHEDULER_LOG_INFO(std::string("🔔 [ST-Block] ===== 唤醒定时器触发 @ ") +
+        SCHEDULER_LOG_WARNING(std::string("🔔 [ST-Block V130] ===== 唤醒定时器触发 @ ") +
                            std::to_string(current_ms) + "ms =====");
 
-        // 清除深度充电模式
+        // ⭐⭐⭐ V130修复：清除深度休眠锁（关键！）⭐⭐⭐
+        _scheduler->_is_charging_sleep = false;
         _scheduler->_deep_charging = false;
         _scheduler->_energy_depleted = false;
+        _scheduler->_alap_blocking = false;
+
+        SCHEDULER_LOG_INFO(std::string("🔓 [ST-Block V130] 深度休眠锁已解除，触发调度"));
 
         // 立即执行一次tick调度
         _scheduler->performTickScheduling();
@@ -297,6 +301,7 @@ namespace RTSim {
           _current_energy(0.0),
           _initial_energy(0.0),
           _max_energy(1000.0),
+          _dispatching_tasks_total_energy(0.0),  // ⭐ V130修复：初始化
           _last_tick_time(0),
           _last_collection_time(0),
           _solar_data_file(""),
@@ -314,6 +319,7 @@ namespace RTSim {
           _charge_start_time(0),
           _charge_until_slack_zero(0),
           _wake_event(nullptr),  // ⭐ V74：初始化唤醒定时器
+          _is_charging_sleep(false),  // ⭐ V130: 深度休眠锁初始化
           _last_preempted_task(nullptr),
           _last_preempted_tick(0) {
 
@@ -545,6 +551,34 @@ namespace RTSim {
             }
         }
         _last_tick_time = current_time;
+
+        // ========== V130: 深度休眠锁检查（消灭1ms碎片化抖动） ==========
+        // ⭐ ST-Block核心逻辑：高优先级任务能量不足时锁住整个系统
+        if (_is_charging_sleep) {
+            // 计算高优先级任务的Slack
+            Tick min_slack = calculateMinSlack();
+            int64_t min_slack_ms = static_cast<int64_t>(min_slack);
+
+            // 唤醒条件1：电池充满
+            if (_current_energy >= _max_energy - 0.000001) {
+                _is_charging_sleep = false;
+                SCHEDULER_LOG_INFO(std::string("🔋 [ST-Block V130] 深度休眠解锁：电池充满") +
+                                  " 能量=" + std::to_string(_current_energy * 1000) + "mJ");
+            }
+            // 唤醒条件2：Slack=0（死线已至，必须执行）
+            else if (min_slack_ms <= 0) {
+                _is_charging_sleep = false;
+                SCHEDULER_LOG_WARNING(std::string("🚨 [ST-Block V130] 深度休眠解锁：Slack=0强制唤醒") +
+                                     " Slack=" + std::to_string(min_slack_ms) + "ms");
+            }
+            // 继续休眠
+            else {
+                SCHEDULER_LOG_INFO(std::string("😴 [ST-Block V130] 深度休眠中...") +
+                                  " 能量=" + std::to_string(_current_energy * 1000) + "mJ" +
+                                  " Slack=" + std::to_string(min_slack_ms) + "ms");
+                return;  // 继续死睡，不执行任何调度
+            }
+        }
 
         // ⭐ Bug修复3：能量耗尽时跳过任务调度（但已经收集了太阳能）
         if (_energy_depleted && _current_energy < 0.000001) {
@@ -819,14 +853,55 @@ namespace RTSim {
         double unit_energy = calculateUnitEnergyForTask(first_task);
 
         if (_current_energy < unit_energy) {
-            // ⭐ 关键修复：根据原论文，ALAP-Block 应该"死守高优，宁缺毋滥"
-            // 能量不足时，设置阻塞标志，本 Tick 拒绝调度任何任务（包括次高优先级任务）
+            // ⭐⭐⭐ V130修复：深度休眠锁（消灭1ms碎片化抖动） ⭐⭐⭐
+            // 核心逻辑：高优先级任务能量不足时，设置全局锁，系统死睡直到充满电或Slack=0
+
+            // 计算高优先级任务的Slack
+            Tick slack = calculateSlackForTask(first_task);
+            int64_t slack_ms = static_cast<int64_t>(slack);
+
+            // 设置深度休眠锁和阻塞标志
+            _is_charging_sleep = true;
             _alap_blocking = true;
-            SCHEDULER_LOG_WARNING(std::string("🚫 [ST-Block] 能量不足，启动严格阻塞模式（死守高优，宁缺毋滥）") +
-                                 " 任务: " + getTaskName(first_task) +
-                                 " 需要: " + std::to_string(unit_energy) + "J" +
-                                 " 当前: " + std::to_string(_current_energy) + "J" +
-                                 " → 本 Tick 阻塞全部调度");
+            _energy_depleted = true;
+
+            SCHEDULER_LOG_WARNING(std::string("🔒 [ST-Block V130] 深度休眠锁已启用！") +
+                                 " 任务=" + getTaskName(first_task) +
+                                 " 需要=" + std::to_string(unit_energy * 1000) + "mJ" +
+                                 " 当前=" + std::to_string(_current_energy * 1000) + "mJ" +
+                                 " Slack=" + std::to_string(slack_ms) + "ms");
+
+            // 设置唤醒定时器（Slack归零或充满电时唤醒）
+            Tick current_time = SIMUL.getTime();
+            Tick wake_time;
+
+            if (slack_ms <= 0) {
+                // Slack已为0，立即唤醒（绝境冲锋）
+                wake_time = current_time + 1;
+                SCHEDULER_LOG_WARNING(std::string("🚨 [ST-Block V130] Slack=0，立即唤醒！"));
+            } else {
+                // 计算充满电需要的时间
+                double energy_needed = _max_energy - _current_energy;
+                double harvest_rate = _base_harvest_rate;  // J/ms
+                int64_t charge_time_ms = static_cast<int64_t>(energy_needed / harvest_rate) + 1;
+
+                // 唤醒时间 = min(Slack归零时间, 充满电时间)
+                wake_time = current_time + std::min(slack_ms, charge_time_ms);
+
+                SCHEDULER_LOG_INFO(std::string("⏰ [ST-Block V130] 设置唤醒定时器:") +
+                                  " Slack=" + std::to_string(slack_ms) + "ms" +
+                                  " 充电时间=" + std::to_string(charge_time_ms) + "ms" +
+                                  " 唤醒时间=" + std::to_string(static_cast<int64_t>(wake_time)) + "ms");
+            }
+
+            // 注册唤醒事件
+            if (_wake_event) {
+                _wake_event->drop();
+                delete _wake_event;
+            }
+            _wake_event = new STBlockWakeEvent(this, wake_time);
+            _wake_event->post(wake_time);
+
             return nullptr;
         }
 
@@ -1002,11 +1077,15 @@ namespace RTSim {
                                       " 需要1ms=" + std::to_string(unit_energy) + "J" +
                                       " 当前能量=" + std::to_string(_current_energy) + "J");
 
-                    // 设置能量耗尽标志，系统将进入充电模式
+                    // ⭐ ST-Block V130修复: 高优任务能量不足， 立即激活全局深度休眠锁
+                    // 符合白皮书定义: 在锁解开前，禁止任何任务上核
+                    _is_charging_sleep = true;
+
+                    // 设置能量耗尽标志,系统将进入充电模式
                     _energy_depleted = true;
                     _deep_charging = true;
 
-                    std::cout << "[DEBUG] ST-Block::getTaskN(" << n << ") - 能量不足，进入深度充电" << std::endl;
+                    std::cout << "[DEBUG] ST-Block::getTaskN(" << n << ") - 能量不足， 进入深度充电" << std::endl;
                     return nullptr;  // ⭐ 立即停止级联，进入充电模式
                 }
 

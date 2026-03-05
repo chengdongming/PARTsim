@@ -1,0 +1,51 @@
+# V130 测试任务集：5个周期任务
+# 用于测试3核心5任务的调度场景
+
+tasks:
+  # 高优先级任务 (短周期)
+  - name: task_high_1
+    type: periodic
+    period: 50          # 50ms 周期
+    wcet: 10            # 10ms WCET
+    deadline: 50
+    workload: control
+    energy_coefficient: 0.3
+    arrival_offset: 0
+
+  - name: task_high_2
+    type: periodic
+    period: 60          # 60ms 周期
+    wcet: 8             # 8ms WCET
+    deadline: 60
+    workload: hash
+    energy_coefficient: 0.5
+    arrival_offset: 0
+
+  # 中优先级任务
+  - name: task_mid_1
+    type: periodic
+    period: 100         # 100ms 周期
+    wcet: 15            # 15ms WCET
+    deadline: 100
+    workload: bzip2
+    energy_coefficient: 0.6
+    arrival_offset: 0
+
+  - name: task_mid_2
+    type: periodic
+    period: 120         # 120ms 周期
+    wcet: 12            # 12ms WCET
+    deadline: 120
+    workload: hash
+    energy_coefficient: 0.5
+    arrival_offset: 0
+
+  # 低优先级任务 (长周期)
+  - name: task_low_1
+    type: periodic
+    period: 200         # 200ms 周期
+    wcet: 20            # 20ms WCET
+    deadline: 200
+    workload: encrypt
+    energy_coefficient: 0.8
+    arrival_offset: 0
