@@ -1374,6 +1374,7 @@ namespace RTSim {
 
         removeFromReadyQueue(task);
         removeFromWaitingQueue(task);
+        clearPersistentTaskState(task);
 
         for (auto &map_pair : _running_tasks) {
             if (map_pair.second == task) {
@@ -1383,7 +1384,6 @@ namespace RTSim {
 
         auto it = _task_models.find(task);
         if (it != _task_models.end()) {
-            
             _task_models.erase(it);
         }
 
@@ -1623,6 +1623,7 @@ namespace RTSim {
         Scheduler::extract(task);
         removeFromReadyQueue(task);
         removeFromWaitingQueue(task);
+        clearPersistentTaskState(task);
     }
 
     void STNonBlockScheduler::addToReadyQueue(AbsRTTask *task) {
@@ -2002,6 +2003,40 @@ namespace RTSim {
         return task->toString();
     }
 
+    void STNonBlockScheduler::clearSkippedWakeState(AbsRTTask *task) {
+        if (!task) {
+            return;
+        }
+
+        _skipped_tasks.erase(task);
+        auto wake_it = _skip_wake_events.find(task);
+        if (wake_it != _skip_wake_events.end()) {
+            _skip_wake_events.erase(wake_it);
+        }
+    }
+
+    void STNonBlockScheduler::clearPersistentTaskState(AbsRTTask *task) {
+        if (!task) {
+            return;
+        }
+
+        _counted_tasks_in_dispatch.erase(task);
+        _energy_deducted_tasks.erase(task);
+        _newly_dispatched_this_tick.erase(task);
+        _energy_accounts.erase(task);
+        clearSkippedWakeState(task);
+
+        if (_pending_wake_task == task) {
+            _pending_wake_task = nullptr;
+            _pending_wake_energy = 0.0;
+        }
+
+        if (_last_preempted_task == task) {
+            _last_preempted_task = nullptr;
+            _last_preempted_tick = 0;
+        }
+    }
+
     AbsRTTask *STNonBlockScheduler::getRunningTaskOnCPU(CPU *cpu) {
         if (!cpu) {
             return nullptr;
@@ -2144,6 +2179,8 @@ namespace RTSim {
 
         // 从就绪队列移除
         removeFromReadyQueue(task);
+        removeFromWaitingQueue(task);
+        clearPersistentTaskState(task);
 
         // 从运行任务映射中移除
         for (auto &pair : _running_tasks) {
@@ -2151,18 +2188,6 @@ namespace RTSim {
                 pair.second = nullptr;
                 break;
             }
-        }
-
-        // 从能量扣除记录中移除（任务结束后可以重新扣除）
-        _energy_deducted_tasks.erase(task);
-
-        // 打印能量消耗统计
-        auto it = _energy_accounts.find(task);
-        if (it != _energy_accounts.end()) {
-            SCHEDULER_LOG_INFO(std::string("📊 [ST-NonBlock] 任务能量消耗: ") +
-                              getTaskName(task) +
-                              " 累计消耗=" + std::to_string(it->second.total_consumed) + "J");
-            _energy_accounts.erase(it);
         }
 
         _stats.total_task_completions++;
@@ -2241,6 +2266,8 @@ namespace RTSim {
 
         for (AbsRTTask *task : expired) {
             removeFromReadyQueue(task);
+            removeFromWaitingQueue(task);
+            clearPersistentTaskState(task);
         }
     }
 

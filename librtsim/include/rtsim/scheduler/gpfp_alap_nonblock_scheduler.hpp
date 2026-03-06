@@ -196,6 +196,11 @@ namespace RTSim {
         ALAPNonBlockTaskModel *getTaskModel(AbsRTTask *task);
         std::string getTaskName(AbsRTTask *task);
         void onTaskArrival(AbsRTTask *task);
+        void clearPersistentTaskState(AbsRTTask *task);
+        void resetTickDispatchState();
+        void clearTaskTickSelection(AbsRTTask *task);
+        void markTaskSelectedThisTick(AbsRTTask *task);
+        void accountInitialEnergyForSelectedTasks(const std::string &log_prefix);
 
         // 队列管理
         void addToReadyQueue(AbsRTTask *task);

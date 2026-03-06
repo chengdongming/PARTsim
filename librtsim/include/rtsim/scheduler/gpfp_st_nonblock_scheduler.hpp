@@ -231,6 +231,8 @@ namespace RTSim {
         STNonBlockTaskModel *getTaskModel(AbsRTTask *task);
         std::string getTaskName(AbsRTTask *task);
         void onTaskArrival(AbsRTTask *task);
+        void clearSkippedWakeState(AbsRTTask *task);
+        void clearPersistentTaskState(AbsRTTask *task);
 
         // 队列管理
         void addToReadyQueue(AbsRTTask *task);

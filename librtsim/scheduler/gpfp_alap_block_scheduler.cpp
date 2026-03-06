@@ -275,6 +275,7 @@ namespace RTSim {
           _kernel(nullptr),
           _energy_depleted(false),
           _alap_blocking(false),
+          _blocking_task(nullptr),
           _last_preempted_task(nullptr),
           _last_preempted_tick(0) {
 
@@ -472,6 +473,9 @@ namespace RTSim {
                            std::to_string(static_cast<int64_t>(SIMUL.getTime())) + "ms =====");
         SCHEDULER_LOG_INFO("⚡ 初始能量: " + std::to_string(_current_energy * 1000) + " mJ");
 
+        // ⭐ 新Tick开始时，阻塞所有权重新评估
+        _blocking_task = nullptr;
+
         // ⭐ 每个Tick开始时清除抢占防抖标记
         // 这样在下一个tick可以正常进行抢占检查
         _last_preempted_task = nullptr;
@@ -525,11 +529,13 @@ namespace RTSim {
         // ⭐ 已改用killOnMiss(true)，框架自动处理过期实例
         // cleanupExpiredTasks();
 
-        // ========== 阶段一：ALAP个体时序门控 ==========
-        // ⭐ 修复：移除批量级别的S_min门控，改为个体Slack过滤
-        // 原因：每个任务独立计算Slack，Slack<=0的任务才能调度
-        // 个体Slack检查在getTaskN中进行，这里不再做全局门控
-        SCHEDULER_LOG_INFO("✅ [ALAP-Block] 个体时序门控：跳过全局S_min检查，个体Slack在getTaskN中过滤");
+        // ========== 阶段一：ALAP全局时序门控 ==========
+        // ALAP-Block 的正确语义是：先用全局最小Slack决定本tick是否允许"唤醒新调度"。
+        // 但不能因此跳过对已在运行任务的续期能量处理，否则运行任务会在休眠窗口中“免费执行”。
+        const bool allow_new_dispatch = checkALAPTimingGate();
+        if (!allow_new_dispatch) {
+            SCHEDULER_LOG_INFO("⏸️ [ALAP-Block] 全局S_min>0，本Tick禁止唤醒新的调度决策，但保留运行中任务续期");
+        }
 
         // ========== 第2步：处理运行中任务的续期能量 ==========
         // ⭐ 重构：在tick边界扣除运行任务的续期能量（替代ALAP-BlockEnergyCheckEvent）
@@ -590,13 +596,13 @@ namespace RTSim {
         // ========== 第3步：检查抢占 ==========
         // checkAndPreempt();  // 禁用tick边界抢占，防止suspend-insert循环
 
-        // ========== 第4步：��度新任务 ==========
+        // ========== 第4步：调度新任务 ==========
         // ⭐ V40修复：确保kernel已设置
         if (!_kernel) {
             _kernel = getKernel();
         }
 
-        if (_kernel) {
+        if (_kernel && allow_new_dispatch) {
             SCHEDULER_LOG_INFO("🔔 开始调度新任务");
 
             // 记录调度前的能量
@@ -628,6 +634,10 @@ namespace RTSim {
                                " 扣除能量=" + std::to_string(_dispatching_tasks_total_energy * 1000) + " mJ " +
                                std::to_string(energy_before_scheduling * 1000) + " → " +
                                std::to_string(_current_energy * 1000) + " mJ");
+        } else if (!allow_new_dispatch) {
+            _counted_tasks_in_dispatch.clear();
+            _dispatching_tasks_total_energy = 0.0;
+            SCHEDULER_LOG_DEBUG("⏸️ [ALAP-Block] 跳过新任务调度：本Tick仍处于ALAP休眠窗口");
         }
 
         // ========== 第5步：调度后抢占检查 ==========
@@ -677,6 +687,7 @@ namespace RTSim {
             // ⭐ 关键修复：根据原论文，ALAP-Block 应该"死守高优，宁缺毋滥"
             // 能量不足时，设置阻塞标志，本 Tick 拒绝调度任何任务（包括次高优先级任务）
             _alap_blocking = true;
+            _blocking_task = first_task;
             SCHEDULER_LOG_WARNING(std::string("🚫 [ALAP-Block] 能量不足，启动严格阻塞模式（死守高优，宁缺毋滥）") +
                                  " 任务: " + getTaskName(first_task) +
                                  " 需要: " + std::to_string(unit_energy) + "J" +
@@ -687,6 +698,7 @@ namespace RTSim {
 
         // 能量充足，清除阻塞标志
         _alap_blocking = false;
+        _blocking_task = nullptr;
 
         // 返回任务（能量在notify时扣减）
         return first_task;
@@ -837,18 +849,8 @@ namespace RTSim {
                     }
                 }
 
-                // ⭐ 关键修复：个体任务ALAP时序门控
-                // 全局门控决定系统是否唤醒，个体门控决定哪些任务可以调度
-                // 只有Slack≤0的任务才应该被调度
-                Tick individual_slack = calculateSlackForTask(task);
-                if (individual_slack > 0) {
-                    // 这个任务还有等待余地，跳过（不计入ready_index）
-                    SCHEDULER_LOG_INFO(std::string("⏸️ [ALAP-Block] getTaskN: 个体Slack>0，跳过 ") +
-                                      getTaskName(task) +
-                                      " Slack=" + std::to_string(static_cast<int64_t>(individual_slack)) + "ms");
-                    // 不增加ready_index，继续找下一个Slack≤0的任务
-                    continue;
-                }
+                // 全局 ALAP 门控已经在 tick 入口完成。
+                // 这里保留实例有效性与能量检查，不再对单个候选追加第二层 Slack 拒绝。
 
                 // ⭐ 计算任务的1ms能耗
                 double unit_energy = calculateUnitEnergyForTask(task);
@@ -902,22 +904,13 @@ namespace RTSim {
             return;
         }
 
-        // ⭐ 修复：任务到达时只检查能量，不扣减能耗
-        // 能耗在任务调度时通过getTaskN()方法扣减
+        // ⭐ 修复：任务到达时只记录实例进入调度器生命周期，不在准入阶段按能量丢弃
+        // 具体是否可运行仍由 getFirst()/getTaskN() 在调度阶段决定
         double unit_energy = calculateUnitEnergyForTask(task);
-
-        // 检查能量是否足够
-        const double EPSILON = 1e-9;
-        if (_current_energy < unit_energy - EPSILON) {
-            SCHEDULER_LOG_WARNING(std::string("⚠️ [ALAP-Block] notify: 能量不足") +
-                                 " 任务=" + getTaskName(task) +
-                                 " 需要=" + std::to_string(unit_energy) + "J" +
-                                 " 当前=" + std::to_string(_current_energy) + "J");
-            return;
-        }
-
-        // 任务到达，添加到就绪队列
-        SCHEDULER_LOG_INFO(std::string("📥 [ALAP-Block] 任务到达并添加到就绪队列: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("📥 [ALAP-Block] 任务到达并添加到就绪队列: ") +
+                          getTaskName(task) +
+                          " 当前能量=" + std::to_string(_current_energy) + "J" +
+                          " 每ms需求=" + std::to_string(unit_energy) + "J");
         addToReadyQueue(task);
     }
 
@@ -929,13 +922,6 @@ namespace RTSim {
         if (!task) {
             SCHEDULER_LOG_WARNING("⚠️ [ALAP-Block] addTask: 任务为空");
             return;
-        }
-
-        // ⭐ Bug修复4：能量耗尽时拒绝新任务
-        if (_energy_depleted && _current_energy < 0.000001) {
-            SCHEDULER_LOG_WARNING(std::string("💀 [ALAP-Block] 能量已耗尽，拒绝添加新任务: ") +
-                                     getTaskName(task));
-            return;  // 拒绝添加
         }
 
         SCHEDULER_LOG_INFO(std::string("📥 [ALAP-Block] 添加任务: ") + getTaskName(task));
@@ -1029,6 +1015,7 @@ namespace RTSim {
 
         removeFromReadyQueue(task);
         removeFromWaitingQueue(task);
+        clearBlockingStateIfOwner(task, "removeTask");
 
         // ⭐ Bug修复：不再使用_running_tasks，内核管理任务状态
         // for (auto &map_pair : _running_tasks) {
@@ -1155,31 +1142,13 @@ namespace RTSim {
             CPU *cand_cpu = _kernel->getProcessor(candidate);
             if (cand_cpu != nullptr) continue;  // 已在运行
 
-            // ⭐ V44关键修复：恢复抢占检查中的ALAP Slack门控
-            // 原因：保持与getTaskN中个体Slack门控的一致性
-            //
-            // 问题背景：
-            // - getTaskN中：Slack>0的任务被跳过，不调度
-            // - 抢占检查中：如果移除Slack门控，会导致Slack>0的高优先级任务抢占低优先级任务
-            // - 这造成不一致：调度时不用，抢占时用
-            //
-            // 修复策略：
-            // - 抢占检查中也应用Slack门控：只有Slack≤0的任务才能参与抢占
-            // - 这样确保"尽可能晚调度"原则在抢占时也生效
-            // - 避免Slack>0的任务抢占Slack≤0的任务
-
             ALAPBlockTaskModel *model = getTaskModel(candidate);
             if (!model) continue;
 
-            // 计算候选任务的Slack
+            // ALAP 的全局唤醒/休眠已在 tick 入口判定。
+            // 抢占阶段继续按 RM/能量语义挑选候选，不再要求个体 Slack<=0。
             Tick candidate_slack = calculateSlackForTask(candidate);
 
-            // ⭐ Slack门控：只有Slack≤0的任务才能参与抢占
-            if (candidate_slack > 0) {
-                continue;  // Slack>0，跳过这个候选任务
-            }
-
-            // 在Slack≤0的任务中，找优先级最高的
             if (!best_candidate || model->getRMPriority() < best_model->getRMPriority()) {
                 best_candidate = candidate;
                 best_model = model;
@@ -1385,6 +1354,48 @@ namespace RTSim {
         Scheduler::extract(task);
         removeFromReadyQueue(task);
         removeFromWaitingQueue(task);
+        clearBlockingStateIfOwner(task, "extract");
+    }
+
+    void ALAPBlockScheduler::tryImmediateRedispatch(const char *reason) {
+        if (!_kernel) {
+            _kernel = getKernel();
+        }
+
+        if (!_kernel) {
+            return;
+        }
+
+        if (_energy_depleted && _current_energy < 0.000001) {
+            SCHEDULER_LOG_INFO(std::string("💀 [ALAP-Block] 跳过立即重调度，能量已耗尽: ") + reason);
+            return;
+        }
+
+        if (_ready_queue.empty()) {
+            SCHEDULER_LOG_DEBUG(std::string("📭 [ALAP-Block] 跳过立即重调度，就绪队列为空: ") + reason);
+            return;
+        }
+
+        SCHEDULER_LOG_INFO(std::string("🔄 [ALAP-Block] 立即重调度: ") + reason);
+        _kernel->dispatch();
+    }
+
+    void ALAPBlockScheduler::clearBlockingStateIfOwner(AbsRTTask *task, const char *reason) {
+        if (!task) {
+            return;
+        }
+
+        if (_blocking_task != task) {
+            return;
+        }
+
+        SCHEDULER_LOG_WARNING(std::string("🔓 [ALAP-Block] 阻塞拥有者已离开系统，清除严格阻塞: ") +
+                              getTaskName(task) + " reason=" + reason);
+
+        _blocking_task = nullptr;
+        _alap_blocking = false;
+
+        tryImmediateRedispatch(reason);
     }
 
     void ALAPBlockScheduler::addToReadyQueue(AbsRTTask *task) {
@@ -1864,6 +1875,8 @@ namespace RTSim {
         _waiting_queue.clear();
         _energy_accounts.clear();
         _running_tasks.clear();
+        _alap_blocking = false;
+        _blocking_task = nullptr;
 
         _stats.total_scheduled = 0;
         _stats.total_task_completions = 0;
@@ -1908,6 +1921,8 @@ namespace RTSim {
         }
 
         SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Block] 任务结束: ") + getTaskName(task));
+
+        clearBlockingStateIfOwner(task, "onTaskEnd");
 
         // 从就绪队列移除
         removeFromReadyQueue(task);
@@ -2105,6 +2120,9 @@ namespace RTSim {
         Tick absolute_deadline = arrival + period;
 
         double remaining_double = task->getRemainingWCET();
+        if (remaining_double < 0) {
+            remaining_double = 0;
+        }
         Tick remaining = Tick(remaining_double);
         Tick slack = absolute_deadline - remaining - current_time;
 

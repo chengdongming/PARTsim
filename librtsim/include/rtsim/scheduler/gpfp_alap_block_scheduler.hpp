@@ -162,6 +162,7 @@ namespace RTSim {
         // ========== 能量耗尽管理 ==========
         bool _energy_depleted;  // ⭐ 能量是否已耗尽（Bug修复）
         bool _alap_blocking;   // ⭐ ALAP-Block 特有：严格阻塞标志（能量不足时阻塞全部调度）
+        AbsRTTask *_blocking_task;  // ⭐ 当前导致严格阻塞的任务实例
 
         // ========== 抢占防抖 ==========
         // ⭐ 防止频繁抢占：在同一个tick内，同一个任务不应该被反复抢占
@@ -210,8 +211,11 @@ namespace RTSim {
         bool shouldPreempt(CPU *cpu, AbsRTTask *new_task);
         AbsRTTask *getRunningTaskOnCPU(CPU *cpu);
 
-        // Tick事件调度
         void scheduleNextTick();
+
+        // 阻塞状态管理
+        void clearBlockingStateIfOwner(AbsRTTask *task, const char *reason);
+        void tryImmediateRedispatch(const char *reason);
 
         // CPU管理
         int getFreeCPUCount();

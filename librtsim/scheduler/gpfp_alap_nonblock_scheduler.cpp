@@ -439,9 +439,7 @@ namespace RTSim {
 
         _stats.total_tick_count++;
 
-        // ⭐ V42修复：清空当前tick新调度任务标记
-        // 这样只有本次tick中新调度的任务才会被跳过续期扣除
-        _newly_dispatched_this_tick.clear();
+        resetTickDispatchState();
 
         Tick current_time = SIMUL.getTime();
 
@@ -550,6 +548,7 @@ namespace RTSim {
 
             // 挂起能量不足的任务
             for (AbsRTTask *task : tasks_to_suspend) {
+                clearTaskTickSelection(task);
                 _kernel->suspend(task);
                 SCHEDULER_LOG_INFO("🛑 挂起任务: " + getTaskName(task));
             }
@@ -566,19 +565,7 @@ namespace RTSim {
             double energy_before_scheduling = _current_energy;
 
             // ⭐ 关键：先扣除已标记但未扣除的任务能量（来自arrival或onTaskEnd的dispatch）
-            for (AbsRTTask *task : _counted_tasks_in_dispatch) {
-                if (_energy_deducted_tasks.find(task) == _energy_deducted_tasks.end()) {
-                    double unit_energy = calculateUnitEnergyForTask(task);
-                    _current_energy -= unit_energy;
-                    _stats.total_energy_consumed += unit_energy;
-                    _energy_deducted_tasks.insert(task);
-
-                    SCHEDULER_LOG_INFO("✅ [ALAP-NonBlock] 扣除上周期任务初始能量: " +
-                                       getTaskName(task) +
-                                       " -" + std::to_string(unit_energy * 1000) + " mJ → " +
-                                       std::to_string(_current_energy * 1000) + " mJ");
-                }
-            }
+            accountInitialEnergyForSelectedTasks("✅ [ALAP-NonBlock] 扣除上周期任务初始能量: ");
 
             // ⭐ 清空本次tick的调度记录
             _counted_tasks_in_dispatch.clear();
@@ -634,20 +621,7 @@ namespace RTSim {
 
             // ⭐ 关键：在dispatch后，统一扣除所有已标记任务的能量
             // 只扣除尚未扣除过的任务（检查_energy_deducted_tasks）
-            for (AbsRTTask *task : _counted_tasks_in_dispatch) {
-                if (_energy_deducted_tasks.find(task) == _energy_deducted_tasks.end()) {
-                    // 任务尚未扣除能量，现在扣除
-                    double unit_energy = calculateUnitEnergyForTask(task);
-                    _current_energy -= unit_energy;
-                    _stats.total_energy_consumed += unit_energy;
-                    _energy_deducted_tasks.insert(task);  // 标记已扣除
-
-                    SCHEDULER_LOG_INFO("✅ [ALAP-NonBlock] 新任务扣除初始能量: " +
-                                       getTaskName(task) +
-                                       " -" + std::to_string(unit_energy * 1000) + " mJ → " +
-                                       std::to_string(_current_energy * 1000) + " mJ");
-                }
-            }
+            accountInitialEnergyForSelectedTasks("✅ [ALAP-NonBlock] 新任务扣除初始能量: ");
         }
 
         // ========== 第5步：调度后抢占检查 ==========
@@ -714,22 +688,6 @@ namespace RTSim {
             SCHEDULER_LOG_DEBUG(std::string("💀 [ALAP-NonBlock] getTaskN: 能量已耗尽，拒绝调度") +
                                " n=" + std::to_string(n) +
                                " energy=" + std::to_string(_current_energy * 1000) + " mJ");
-            return nullptr;
-        }
-
-                // STAR Critical fix: if energy depleted, don\'t schedule any tasks
-        if (_energy_depleted) {
-        // STAR Critical fix: if energy depleted, don't schedule any tasks
-        if (_energy_depleted) {
-            SCHEDULER_LOG_DEBUG(std::string("STAR [ALAP-NonBlock] getTaskN: Energy depleted") +
-                               " n=" + std::to_string(n) +
-                               " energy=" + std::to_string(_current_energy * 1000) + " mJ");
-            return nullptr;
-        }
-
-            SCHEDULER_LOG_DEBUG(std::string("STAR [ALAP-NonBlock] getTaskN: Energy depleted, not scheduling task") +
-                               " n=" + std::to_string(n) +
-                               " current_energy=" + std::to_string(_current_energy * 1000) + " mJ");
             return nullptr;
         }
 
@@ -898,8 +856,7 @@ namespace RTSim {
                             // ⭐ 找到能量足够的后续任务，调度它！
                             // ⭐ 只标记任务，不扣除能量（能量将在dispatch后统一扣除）
                             if (_counted_tasks_in_dispatch.find(next_task) == _counted_tasks_in_dispatch.end()) {
-                                _counted_tasks_in_dispatch.insert(next_task);
-                                _newly_dispatched_this_tick.insert(next_task);
+                                markTaskSelectedThisTick(next_task);
 
                                 SCHEDULER_LOG_INFO(std::string("✅ [ALAP-NonBlock] 贪心策略：调度后续任务（已标记，暂不扣能量）") +
                                                   " 替换=" + getTaskName(task) +
@@ -923,8 +880,7 @@ namespace RTSim {
                     // 新任务：检查是否已扣除过初始能量
                     if (_counted_tasks_in_dispatch.find(task) == _counted_tasks_in_dispatch.end()) {
                         // 首次调度此任务，标记任务
-                        _counted_tasks_in_dispatch.insert(task);  // 标记已调度
-                        _newly_dispatched_this_tick.insert(task);
+                        markTaskSelectedThisTick(task);
 
                         SCHEDULER_LOG_INFO(std::string("✅ [ALAP-NonBlock] 新任务已标记（暂不扣能量）: ") + getTaskName(task) +
                                           " 1ms能耗=" + std::to_string(unit_energy * 1000) + " mJ");
@@ -1072,6 +1028,7 @@ namespace RTSim {
 
         removeFromReadyQueue(task);
         removeFromWaitingQueue(task);
+        clearPersistentTaskState(task);
 
         for (auto &map_pair : _running_tasks) {
             if (map_pair.second == task) {
@@ -1081,7 +1038,6 @@ namespace RTSim {
 
         auto it = _task_models.find(task);
         if (it != _task_models.end()) {
-            
             _task_models.erase(it);
         }
 
@@ -1349,6 +1305,7 @@ namespace RTSim {
         Scheduler::extract(task);
         removeFromReadyQueue(task);
         removeFromWaitingQueue(task);
+        clearPersistentTaskState(task);
     }
 
     void ALAPNonBlockScheduler::addToReadyQueue(AbsRTTask *task) {
@@ -1728,6 +1685,63 @@ namespace RTSim {
         return task->toString();
     }
 
+    void ALAPNonBlockScheduler::clearPersistentTaskState(AbsRTTask *task) {
+        if (!task) {
+            return;
+        }
+
+        clearTaskTickSelection(task);
+        _energy_deducted_tasks.erase(task);
+        _energy_accounts.erase(task);
+
+        if (_last_preempted_task == task) {
+            _last_preempted_task = nullptr;
+            _last_preempted_tick = 0;
+        }
+    }
+
+    void ALAPNonBlockScheduler::resetTickDispatchState() {
+        _newly_dispatched_this_tick.clear();
+        _counted_tasks_in_dispatch.clear();
+        _dispatching_tasks_total_energy = 0.0;
+    }
+
+    void ALAPNonBlockScheduler::clearTaskTickSelection(AbsRTTask *task) {
+        if (!task) {
+            return;
+        }
+
+        _counted_tasks_in_dispatch.erase(task);
+        _newly_dispatched_this_tick.erase(task);
+    }
+
+    void ALAPNonBlockScheduler::markTaskSelectedThisTick(AbsRTTask *task) {
+        if (!task) {
+            return;
+        }
+
+        if (_counted_tasks_in_dispatch.insert(task).second) {
+            _newly_dispatched_this_tick.insert(task);
+        }
+    }
+
+    void ALAPNonBlockScheduler::accountInitialEnergyForSelectedTasks(const std::string &log_prefix) {
+        for (AbsRTTask *task : _counted_tasks_in_dispatch) {
+            if (_energy_deducted_tasks.find(task) != _energy_deducted_tasks.end()) {
+                continue;
+            }
+
+            double unit_energy = calculateUnitEnergyForTask(task);
+            _current_energy -= unit_energy;
+            _stats.total_energy_consumed += unit_energy;
+            _energy_deducted_tasks.insert(task);
+
+            SCHEDULER_LOG_INFO(log_prefix + getTaskName(task) +
+                               " -" + std::to_string(unit_energy * 1000) + " mJ → " +
+                               std::to_string(_current_energy * 1000) + " mJ");
+        }
+    }
+
     AbsRTTask *ALAPNonBlockScheduler::getRunningTaskOnCPU(CPU *cpu) {
         if (!cpu) {
             return nullptr;
@@ -1870,6 +1884,8 @@ namespace RTSim {
 
         // 从就绪队列移除
         removeFromReadyQueue(task);
+        removeFromWaitingQueue(task);
+        clearPersistentTaskState(task);
 
         // 从运行任务映射中移除
         for (auto &pair : _running_tasks) {
@@ -1877,18 +1893,6 @@ namespace RTSim {
                 pair.second = nullptr;
                 break;
             }
-        }
-
-        // 从能量扣除记录中移除（任务结束后可以重新扣除）
-        _energy_deducted_tasks.erase(task);
-
-        // 打印能量消耗统计
-        auto it = _energy_accounts.find(task);
-        if (it != _energy_accounts.end()) {
-            SCHEDULER_LOG_INFO(std::string("📊 [ALAP-NonBlock] 任务能量消耗: ") +
-                              getTaskName(task) +
-                              " 累计消耗=" + std::to_string(it->second.total_consumed) + "J");
-            _energy_accounts.erase(it);
         }
 
         _stats.total_task_completions++;
@@ -1967,6 +1971,8 @@ namespace RTSim {
 
         for (AbsRTTask *task : expired) {
             removeFromReadyQueue(task);
+            removeFromWaitingQueue(task);
+            clearPersistentTaskState(task);
         }
     }
 

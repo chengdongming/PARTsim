@@ -1,0 +1,12 @@
+# ALAP调度算法测试配置 - 3核心(���能量测试)
+cpu_islands:
+  - name: test_cpus
+    numcpus: 3
+    kernel:
+      scheduler: gpfp_alap_sync
+      task_placement: global
+    volts: [0.92, 0.94, 0.96, 0.98, 1.00, 1.02, 1.04, 1.06, 1.08, 1.10, 1.12, 1.14]
+    freqs: [7000, 7500, 8000, 8100, 8200, 8300, 8400, 8500, 9000, 9500, 10000, 10500]
+    base_freq: 8100
+    power_model: test_model
+    speed_model: test_model
