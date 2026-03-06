@@ -234,6 +234,14 @@ namespace RTSim {
         void clearSkippedWakeState(AbsRTTask *task);
         void clearPersistentTaskState(AbsRTTask *task);
 
+        // ST wake/pending helpers (Phase 4 - for future use)
+        void handleWakeTrigger(AbsRTTask *task);
+        void scheduleWakeForSkippedTask(AbsRTTask *task, MetaSim::Tick current_time);
+        void clearPendingWakeIfMatches(AbsRTTask *task);
+
+        // Allow wake event to access scheduler internals
+        friend class STNonBlockWakeEvent;
+
         // 队列管理
         void addToReadyQueue(AbsRTTask *task);
         void removeFromReadyQueue(AbsRTTask *task);

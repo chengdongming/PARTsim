@@ -501,14 +501,13 @@ namespace RTSim {
                                    std::to_string(harvested * 1000) + " mJ → " +
                                    std::to_string(_current_energy * 1000) + " mJ");
 
-                // ⭐ V43修复：只有当能量足够时才清除能量耗尽标志
-                // 使用合理阈值（10 mJ）判断能量是否足够恢复调度
-                const double RECOVERY_THRESHOLD = 0.010;  // 10 mJ
-                if (_energy_depleted && _current_energy >= RECOVERY_THRESHOLD) {
+                // 只要重新收集到正能量，就允许恢复调度。
+                // 具体能否启动任务仍由 getTaskN() 的逐任务能量检查决定，
+                // 不应再用 10mJ 的全局阈值把系统额外锁死到更晚时刻。
+                if (_energy_depleted && _current_energy > 0.000001) {
                     _energy_depleted = false;
                     SCHEDULER_LOG_INFO("🔋 [ALAP-Block] 太阳能充电成功，恢复调度 (能量=" +
-                                      std::to_string(_current_energy * 1000) + " mJ >= 阈值=" +
-                                      std::to_string(RECOVERY_THRESHOLD * 1000) + " mJ)");
+                                      std::to_string(_current_energy * 1000) + " mJ)");
                 }
             }
         }
@@ -849,8 +848,21 @@ namespace RTSim {
                     }
                 }
 
-                // 全局 ALAP 门控已经在 tick 入口完成。
-                // 这里保留实例有效性与能量检查，不再对单个候选追加第二层 Slack 拒绝。
+                // ⭐ ALAP 个体时序门控：每个任务必须满足以下任一条件才能被调度
+                // 条件 A：该任务的 Slack ≤ 0（时序告急）
+                // 条件 B：电池已满（防止能量溢出浪费）
+                Tick individual_slack = calculateSlackForTask(task);
+                bool battery_full = (_current_energy >= _max_energy - 1e-6);
+
+                if (individual_slack > 0 && !battery_full) {
+                    SCHEDULER_LOG_INFO(std::string("⏸️ [ALAP-Block] getTaskN: 个体Slack>0且电池未满，拒绝调度 ") +
+                                      getTaskName(task) +
+                                      " Slack=" + std::to_string(static_cast<int64_t>(individual_slack)) + "ms" +
+                                      " 能量=" + std::to_string(_current_energy * 1000) + "/" +
+                                      std::to_string(_max_energy * 1000) + " mJ");
+                    // 跳过这个任务，继续寻找下一个候选
+                    continue;
+                }
 
                 // ⭐ 计算任务的1ms能耗
                 double unit_energy = calculateUnitEnergyForTask(task);

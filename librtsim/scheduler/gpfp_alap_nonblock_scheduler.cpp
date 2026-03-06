@@ -706,11 +706,8 @@ namespace RTSim {
 
         // ⭐ 级联调度：遍历就绪队列，运行中任务也要检查能量
         unsigned int ready_index = 0;
-        unsigned int original_target_n = n;  // 记住最初请求的n值
         const double EPSILON = 1e-9;
-        bool skipped_energy_insufficient = false;  // 是否跳过了能量不足的任务
 
-        std::cout << "[DEBUG] ALAP-NonBlock::getTaskN(" << n << ") - ready_queue.size()=" << _ready_queue.size() << std::endl;
         for (size_t i = 0; i < _ready_queue.size(); ++i) {
             AbsRTTask *task = _ready_queue[i];
 
@@ -1711,7 +1708,12 @@ namespace RTSim {
             return;
         }
 
-        _counted_tasks_in_dispatch.erase(task);
+        if (_counted_tasks_in_dispatch.erase(task) > 0) {
+            _dispatching_tasks_total_energy -= calculateUnitEnergyForTask(task);
+            if (_dispatching_tasks_total_energy < 0.0) {
+                _dispatching_tasks_total_energy = 0.0;
+            }
+        }
         _newly_dispatched_this_tick.erase(task);
     }
 
@@ -1722,6 +1724,7 @@ namespace RTSim {
 
         if (_counted_tasks_in_dispatch.insert(task).second) {
             _newly_dispatched_this_tick.insert(task);
+            _dispatching_tasks_total_energy += calculateUnitEnergyForTask(task);
         }
     }
 
