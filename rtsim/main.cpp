@@ -13,6 +13,7 @@
 #include <rtsim/cbserver.hpp>
 #include <rtsim/json_trace.hpp>
 #include <rtsim/resource/fcfsresmanager.hpp>
+#include <rtsim/scheduler/config_manager.hpp>
 #include <rtsim/system.hpp>
 #include <rtsim/texttrace.hpp>
 #include <rtsim/waitinstr.hpp>
@@ -228,6 +229,9 @@ int main(int argc, char *argv[]) {
         tracers.emplace_back(fname, duration);
     }
 
+    TaskSet taskset = read_taskset(opts["taskset"]);
+    RTSim::ConfigManager::getInstance().setExpectedTaskCount(static_cast<int>(taskset.size()));
+
     RTSim::System sys{opts["system"]};
 
     auto resmanager = read_resources(opts["taskset"]);
@@ -251,7 +255,6 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    TaskSet taskset = read_taskset(opts["taskset"]);
     for (auto &[tasksrv, cpu, params] : taskset) {
         if (tasksrv.getServer()) {
             sys.cpus[cpu]->getKernel()->addTask(*tasksrv.getServer(), params);

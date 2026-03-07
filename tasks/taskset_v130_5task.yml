@@ -1,51 +1,61 @@
 # V130 测试任务集：5个周期任务
 # 用于测试3核心5任务的调度场景
 
-tasks:
+taskset:
   # 高优先级任务 (短周期)
-  - name: task_high_1
-    type: periodic
-    period: 50          # 50ms 周期
-    wcet: 10            # 10ms WCET
+  - name: Task_High1
+    iat: 50
+    runtime: 10
     deadline: 50
-    workload: control
-    energy_coefficient: 0.3
-    arrival_offset: 0
+    startcpu: 0
+    ph: 0
+    qs: 100
+    params: "period=50,wcet=10,arrival_offset=0,workload=control"
+    code:
+      - fixed(10, control)
 
-  - name: task_high_2
-    type: periodic
-    period: 60          # 60ms 周期
-    wcet: 8             # 8ms WCET
+  - name: Task_High2
+    iat: 60
+    runtime: 8
     deadline: 60
-    workload: hash
-    energy_coefficient: 0.5
-    arrival_offset: 0
+    startcpu: 1
+    ph: 0
+    qs: 100
+    params: "period=60,wcet=8,arrival_offset=0,workload=hash"
+    code:
+      - fixed(8, hash)
 
   # 中优先级任务
-  - name: task_mid_1
-    type: periodic
-    period: 100         # 100ms 周期
-    wcet: 15            # 15ms WCET
+  - name: Task_Mid1
+    iat: 100
+    runtime: 15
     deadline: 100
-    workload: bzip2
-    energy_coefficient: 0.6
-    arrival_offset: 0
+    startcpu: 2
+    ph: 0
+    qs: 100
+    params: "period=100,wcet=15,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(15, bzip2)
 
-  - name: task_mid_2
-    type: periodic
-    period: 120         # 120ms 周期
-    wcet: 12            # 12ms WCET
+  - name: Task_Mid2
+    iat: 120
+    runtime: 12
     deadline: 120
-    workload: hash
-    energy_coefficient: 0.5
-    arrival_offset: 0
+    startcpu: 0
+    ph: 0
+    qs: 100
+    params: "period=120,wcet=12,arrival_offset=0,workload=hash"
+    code:
+      - fixed(12, hash)
 
   # 低优先级任务 (长周期)
-  - name: task_low_1
-    type: periodic
-    period: 200         # 200ms 周期
-    wcet: 20            # 20ms WCET
+  - name: Task_Low1
+    iat: 200
+    runtime: 20
     deadline: 200
-    workload: encrypt
-    energy_coefficient: 0.8
-    arrival_offset: 0
+    startcpu: 1
+    ph: 0
+    qs: 100
+    params: "period=200,wcet=20,arrival_offset=0,workload=encrypt"
+    code:
+      - fixed(20, encrypt)

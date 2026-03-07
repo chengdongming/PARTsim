@@ -466,7 +466,8 @@ namespace RTSim {
         }
 
         SCHEDULER_LOG_INFO("\n任务配置:");
-        SCHEDULER_LOG_INFO("  任务数量: " + std::to_string(_tasks.size()));
+        size_t reported_task_count = !_tasks.empty() ? _tasks.size() : static_cast<size_t>(_expected_task_count);
+        SCHEDULER_LOG_INFO("  任务数量: " + std::to_string(reported_task_count));
 
         // 显示前几个任务的详细信息
         int show_count = std::min(3, static_cast<int>(_tasks.size()));

@@ -170,6 +170,7 @@ namespace RTSim {
 
             // ⭐ 关键修复：立即suspend任务（与TIE保持一致）
             if (_scheduler->_kernel && _task->isExecuting()) {
+                _scheduler->setSuspendReason(_task, "insufficient_energy");
                 _scheduler->_kernel->suspend(_task);
                 SCHEDULER_LOG_WARNING(std::string("🛑 [ASAP-Sync] 任务因能量不足被挂起: ") +
                                      _scheduler->getTaskName(_task));
@@ -194,6 +195,7 @@ namespace RTSim {
                 _scheduler->_current_energy = 0.0;
 
                 if (_scheduler->_kernel && _task->isExecuting()) {
+                    _scheduler->setSuspendReason(_task, "insufficient_energy");
                     _scheduler->_kernel->suspend(_task);
                 }
                 return;
@@ -897,6 +899,7 @@ namespace RTSim {
                 for (auto* task : running_task_list) {
                     if (task && task->isExecuting()) {
                         SCHEDULER_LOG_WARNING(std::string("  - 挂起任务: ") + getTaskName(task));
+                        setSuspendReason(task, "insufficient_energy");
                         _kernel->suspend(task);
 
                         // 取消能量检查事件
@@ -1437,6 +1440,7 @@ namespace RTSim {
                               getTaskName(highest));
 
             // 5. 挂起低优先级任务
+            setSuspendReason(lowest_priority_task, "preemption");
             _kernel->suspend(lowest_priority_task);
 
             // 6. 重新调度所有CPU
@@ -1598,6 +1602,7 @@ namespace RTSim {
                                       getTaskName(task));
 
                     // 挂起低优先级任务
+                    setSuspendReason(lowest_priority_task, "preemption");
                     _kernel->suspend(lowest_priority_task);
 
                     // 立即调度高优先级任务
@@ -1732,6 +1737,29 @@ namespace RTSim {
             return 0.0;
         }
         return it->second->getTotalEnergy();
+    }
+
+    void ASAPSyncScheduler::setSuspendReason(AbsRTTask *task, const std::string &reason) {
+        if (task) {
+            _suspend_reasons[task] = reason;
+        }
+    }
+
+    std::string ASAPSyncScheduler::getSuspendReason(AbsRTTask *task) const {
+        if (!task) {
+            return "unknown";
+        }
+        auto it = _suspend_reasons.find(task);
+        if (it != _suspend_reasons.end()) {
+            return it->second;
+        }
+        return "unknown";
+    }
+
+    void ASAPSyncScheduler::clearSuspendReason(AbsRTTask *task) {
+        if (task) {
+            _suspend_reasons.erase(task);
+        }
     }
 
     double ASAPSyncScheduler::calculateTotalEnergyForTask(AbsRTTask *task) {

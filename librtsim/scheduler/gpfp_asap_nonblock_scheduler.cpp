@@ -154,6 +154,7 @@ namespace RTSim {
 
             // 中断当前任务
             if (_cpu) {
+                _scheduler->setSuspendReason(_task, "insufficient_energy");
                 _scheduler->_kernel->suspend(_task);
                 SCHEDULER_LOG_INFO(std::string("⚠️ [ASAP-NonBlock] 任务因能量不足被挂起: ") + _scheduler->getTaskName(_task));
             }
@@ -532,6 +533,7 @@ namespace RTSim {
             // 挂起能量不足的任务
             for (AbsRTTask *task : tasks_to_suspend) {
                 clearTaskTickSelection(task);
+                setSuspendReason(task, "insufficient_energy");
                 _kernel->suspend(task);
                 SCHEDULER_LOG_INFO("🛑 挂起任务: " + getTaskName(task));
             }
@@ -998,6 +1000,7 @@ namespace RTSim {
                 // ⭐ 实际抢占逻辑：挂起当前运行的任务
                 // suspend会自动调用deschedule()并将任务重新放回调度队列
                 if (_kernel) {
+                    setSuspendReason(running_task, "preemption");
                     _kernel->suspend(running_task);
                     SCHEDULER_LOG_DEBUG(std::string("⏸️ [ASAP-NonBlock] 已挂起任务: ") + getTaskName(running_task));
                 } else {
@@ -1172,6 +1175,29 @@ namespace RTSim {
             return 0.0;
         }
         return it->second->getTotalEnergy();
+    }
+
+    void ASAPNonBlockScheduler::setSuspendReason(AbsRTTask *task, const std::string &reason) {
+        if (task) {
+            _suspend_reasons[task] = reason;
+        }
+    }
+
+    std::string ASAPNonBlockScheduler::getSuspendReason(AbsRTTask *task) const {
+        if (!task) {
+            return "unknown";
+        }
+        auto it = _suspend_reasons.find(task);
+        if (it != _suspend_reasons.end()) {
+            return it->second;
+        }
+        return "unknown";
+    }
+
+    void ASAPNonBlockScheduler::clearSuspendReason(AbsRTTask *task) {
+        if (task) {
+            _suspend_reasons.erase(task);
+        }
     }
 
     double ASAPNonBlockScheduler::calculateTotalEnergyForTask(AbsRTTask *task) {
@@ -1800,8 +1826,9 @@ namespace RTSim {
 
             SCHEDULER_LOG_INFO(std::string("🛑 [ASAP-NonBlock] 中断任务（能量不足）: ") + getTaskName(task));
 
-            // 调用kernel的suspend方法��断任务
+            // 调用kernel的suspend方法中断任务
             // suspend会自动调用deschedule()并将任务重新放回调度队列
+            setSuspendReason(task, "insufficient_energy");
             _kernel->suspend(task);
 
             // ⭐ 取消该任务的能量检查事件，防止继续扣除能量

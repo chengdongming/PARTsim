@@ -96,7 +96,6 @@ namespace RTSim {
             config.setBaseFrequency(1400.0);
             // ⭐ 修复：删除硬编码的unit_time，让配置文件的值生效
             // config.setUnitTime(50);  // 删除硬编码
-            config.setExpectedTaskCount(12);
             config.setInitialEnergy(200.0); // 默认200J
             config.setMaxEnergy(600.0);
             // ⭐ 修复：不再硬编码base_harvest_rate，让Python配置文件的值生效
@@ -163,8 +162,12 @@ namespace RTSim {
                 } else if (key_name == "expected_task_count" &&
                            PyLong_Check(value)) {
                     int task_count = PyLong_AsLong(value);
-                    config.setExpectedTaskCount(task_count);
-                    SCHEDULER_LOG_INFO("  expected_task_count: " + std::to_string(task_count));
+                    if (config.getExpectedTaskCount() <= 0) {
+                        config.setExpectedTaskCount(task_count);
+                        SCHEDULER_LOG_INFO("  expected_task_count: " + std::to_string(task_count));
+                    } else {
+                        SCHEDULER_LOG_INFO("  expected_task_count ignored, keep loaded taskset count: " + std::to_string(config.getExpectedTaskCount()));
+                    }
                 } else if (key_name == "initial_energy" &&
                            PyFloat_Check(value)) {
                     double initial_energy = PyFloat_AsDouble(value);

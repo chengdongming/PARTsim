@@ -292,6 +292,7 @@ namespace RTSim {
 
             // 中断当前任务
             if (_cpu) {
+                _scheduler->setSuspendReason(_task, "insufficient_energy");
                 _scheduler->_kernel->suspend(_task);
                 SCHEDULER_LOG_INFO(std::string("⚠️ [ST-NonBlock] 任务因能量不足被挂起: ") + _scheduler->getTaskName(_task));
             }
@@ -766,10 +767,12 @@ namespace RTSim {
                 if (_skipped_tasks.find(task) != _skipped_tasks.end()) {
                     SCHEDULER_LOG_DEBUG(std::string("⏭️ [ST-NonBlock V133] 任务已在跳过集合中，跳过设置唤醒定时器: ") + getTaskName(task));
                     // 仍然挂起任务，但不再重复设置定时器
+                    setSuspendReason(task, "insufficient_energy");
                     _kernel->suspend(task);
                     continue;
                 }
 
+                setSuspendReason(task, "insufficient_energy");
                 _kernel->suspend(task);
                 SCHEDULER_LOG_INFO("🛑 挂起任务: " + getTaskName(task));
 
@@ -1565,6 +1568,7 @@ namespace RTSim {
             _last_preempted_task = worst_running;
             _last_preempted_tick = current_time;
 
+            setSuspendReason(worst_running, "preemption");
             _kernel->suspend(worst_running);
         }
     }
@@ -1734,6 +1738,29 @@ namespace RTSim {
             return 0.0;
         }
         return it->second->getTotalEnergy();
+    }
+
+    void STNonBlockScheduler::setSuspendReason(AbsRTTask *task, const std::string &reason) {
+        if (task) {
+            _suspend_reasons[task] = reason;
+        }
+    }
+
+    std::string STNonBlockScheduler::getSuspendReason(AbsRTTask *task) const {
+        if (!task) {
+            return "unknown";
+        }
+        auto it = _suspend_reasons.find(task);
+        if (it != _suspend_reasons.end()) {
+            return it->second;
+        }
+        return "unknown";
+    }
+
+    void STNonBlockScheduler::clearSuspendReason(AbsRTTask *task) {
+        if (task) {
+            _suspend_reasons.erase(task);
+        }
     }
 
     double STNonBlockScheduler::calculateTotalEnergyForTask(AbsRTTask *task) {
@@ -2489,8 +2516,9 @@ namespace RTSim {
 
             SCHEDULER_LOG_INFO(std::string("🛑 [ST-NonBlock] 中断任务（能量不足）: ") + getTaskName(task));
 
-            // 调用kernel的suspend方法��断任务
+            // 调用kernel的suspend方法中断任务
             // suspend会自动调用deschedule()并将任务重新放回调度队列
+            setSuspendReason(task, "insufficient_energy");
             _kernel->suspend(task);
 
             // ⭐ 取消该任务的能量检查事件，防止继续扣除能量

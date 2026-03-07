@@ -1010,7 +1010,6 @@ class EnergyManager:
                 "num_cores": num_cores,
                 "base_frequency": base_frequency,
                 "unit_time": int(self.config.unit_time),
-                "expected_task_count": 12,
                 "initial_energy": float(self.config.initial_energy),
                 "max_energy": float(self.config.max_energy),
                 "base_harvest_rate": float(self.config.base_harvest_rate_per_ms),

@@ -221,6 +221,7 @@ namespace RTSim {
 
             // 中断当前任务（调用kernel的suspend机制）
             if (_cpu) {
+                _scheduler->setSuspendReason(_task, "insufficient_energy");
                 _scheduler->_kernel->suspend(_task);
                 SCHEDULER_LOG_INFO(std::string("⚠️ [ST-Block] 任务因能量不足被挂起: ") + task_name);
             }
@@ -774,6 +775,7 @@ namespace RTSim {
 
             // 挂起能量不足的任务
             for (AbsRTTask *task : tasks_to_suspend) {
+                setSuspendReason(task, "insufficient_energy");
                 _kernel->suspend(task);
                 SCHEDULER_LOG_INFO("🛑 挂起任务: " + getTaskName(task));
             }
@@ -1483,6 +1485,7 @@ namespace RTSim {
             _last_preempted_task = worst_running;
             _last_preempted_tick = current_time;
 
+            setSuspendReason(worst_running, "preemption");
             _kernel->suspend(worst_running);
         }
     }
@@ -1553,7 +1556,8 @@ namespace RTSim {
             SCHEDULER_LOG_INFO(std::string("🛑 [ST-Block] 中断任务（能量不足）: ") + getTaskName(task));
 
             // 调用kernel的suspend方法中断任务
-            // suspend会自动调用deschedule()并将任务重新放回调���队列
+            // suspend会自动调用deschedule()并将任务重新放回调度队列
+            setSuspendReason(task, "insufficient_energy");
             _kernel->suspend(task);
 
             // ⭐ V40重构：能量检查事件已删除，不再需要取消能量检查事件
@@ -1739,6 +1743,29 @@ namespace RTSim {
             return 0.0;
         }
         return it->second->getTotalEnergy();
+    }
+
+    void STBlockScheduler::setSuspendReason(AbsRTTask *task, const std::string &reason) {
+        if (task) {
+            _suspend_reasons[task] = reason;
+        }
+    }
+
+    std::string STBlockScheduler::getSuspendReason(AbsRTTask *task) const {
+        if (!task) {
+            return "unknown";
+        }
+        auto it = _suspend_reasons.find(task);
+        if (it != _suspend_reasons.end()) {
+            return it->second;
+        }
+        return "unknown";
+    }
+
+    void STBlockScheduler::clearSuspendReason(AbsRTTask *task) {
+        if (task) {
+            _suspend_reasons.erase(task);
+        }
     }
 
     double STBlockScheduler::calculateTotalEnergyForTask(AbsRTTask *task) {

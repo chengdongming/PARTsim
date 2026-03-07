@@ -161,6 +161,7 @@ namespace RTSim {
             TaskEnergyAccount() : total_consumed(0.0), start_time(0), last_unit_time(0) {}
         };
         std::map<AbsRTTask *, TaskEnergyAccount> _energy_accounts;
+        std::map<AbsRTTask *, std::string> _suspend_reasons;
 
         // ========== 统计信息 ==========
         struct {
@@ -285,6 +286,9 @@ namespace RTSim {
         double getTotalEnergyHarvested() const override { return _stats.total_energy_harvested; }
         double getTaskUnitEnergy(AbsRTTask *task) const override;
         double getTaskTotalEnergy(AbsRTTask *task) const override;
+        void setSuspendReason(AbsRTTask *task, const std::string &reason);
+        std::string getSuspendReason(AbsRTTask *task) const override;
+        void clearSuspendReason(AbsRTTask *task) override;
 
         // ⭐ 运行时能量检查接口（V28.15新增）
         // ⭐ V40重构：能量检查事件已删除，能量由performTickScheduling处理
