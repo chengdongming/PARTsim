@@ -17,7 +17,6 @@ import subprocess
 import yaml
 import os
 import sys
-import re
 import argparse
 from pathlib import Path
 import numpy as np
@@ -45,13 +44,12 @@ CONFIG_TEMPLATE = 'system_config_unified_template.yml'
 TASK_GENERATOR = './global_task_generator.py'
 SIMULATOR = './build/rtsim/rtsim'
 
+
 def get_system_cores(config_path):
     """从配置文件中读取系统核心数"""
     with open(config_path, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f.read())
         return int(config['cpu_islands'][0]['numcpus'])
-
-SYSTEM_CORES = get_system_cores(CONFIG_TEMPLATE)
 
 # 算法配置 - 9种调度器
 # ASAP系列（贪婪策略）
@@ -112,7 +110,7 @@ ALGO_STYLES = {
     'gpfp_st_sync': {'color': '#d62728', 'marker': '^', 'linestyle': ':'}
 }
 
-# 实验��数（可通过命令行修改）
+# 实验常数（可通过命令行修改）
 DEFAULT_UTILIZATION_POINTS = np.around(np.linspace(0.1, 1.0, 10), 2)  # 四舍五入避免浮点精度问题
 DEFAULT_NUM_TASKSETS = 20  # 每个利用率点20个任务集
 DEFAULT_TASK_N = 10  # 每个任务集10个任务
@@ -121,7 +119,7 @@ DEFAULT_TASK_P_MAX = 400  # 周期范围：最大400ms（增加多样性）
 DEFAULT_SIMULATION_TIME = 30000  # 30秒仿真
 DEFAULT_BATTERY_CAPACITY = 20.0  # 20J电池
 DEFAULT_INITIAL_ENERGY_RATIO = 1.0  # 100%初始能量（满电）
-DEFAULT_SOLAR_START_TIME_MS = 21975000  # 早上6:06 AM
+DEFAULT_SOLAR_START_TIME_MS = 21975000  # 太阳能起始时间（毫秒）
 DEFAULT_USE_REAL_SOLAR_DATA = False  # 使用分段函数模拟，不使用真实太阳能数据
 
 # ============================================
@@ -147,44 +145,49 @@ class TraceParser:
 
     def get_acceptance_ratio(self):
         """
-        计算二元可调度性（Binary Schedulability）
+        计算严格二元可调度性（Strict Binary Schedulability）
 
         逻辑：
         - 如果追踪文件为空或无效 -> 返回 0.0（失败）
-        - 如果存在任何 'dline_miss' 事件 -> 返回 0.0（任务集失败，一票否决）
-        - 如果没有任何 'dline_miss' 且至少有一个 'arrival' -> 返回 1.0（任务集成功）
-        - 如果没有任何任务到达 -> 返回 0.0（无效测试）
+        - 如果不存在任何 'arrival' -> 返回 0.0（无效测试）
+        - 如果存在任何 'dline_miss' -> 返回 0.0（任务集失败，一票否决）
+        - 如果存在已释放但未闭合的 job（既没有 end_instance，也没有 dline_miss）-> 返回 0.0
+        - 只有当所有已释放 job 都完整闭合且无 deadline miss 时 -> 返回 1.0
 
-        这与作业级成功率不同：不返回 0.99 这样的分数，只返回 0.0 或 1.0
+        说明：
+        - 仍然是二元判定，只返回 0.0 或 1.0
+        - job 使用 (task_name, arrival_time) 进行匹配
         """
         if not self.events:
-            # 空追踪文件视为失败
             return 0.0
 
+        open_jobs = set()
         has_arrivals = False
-        has_deadline_miss = False
 
         for event in self.events:
             event_type = event.get('event_type', '')
+            task_name = event.get('task_name')
+            arrival_time = event.get('arrival_time')
 
             if event_type == 'arrival':
                 has_arrivals = True
+                job_key = (task_name, str(arrival_time if arrival_time is not None else event.get('time')))
+                open_jobs.add(job_key)
+
             elif event_type == 'dline_miss':
-                has_deadline_miss = True
-                # 一旦发现截止期错过，立即判定为失败（一票否决）
-                break
+                return 0.0
 
-        # 二元判定逻辑
+            elif event_type == 'end_instance':
+                job_key = (task_name, str(arrival_time if arrival_time is not None else event.get('time')))
+                open_jobs.discard(job_key)
+
         if not has_arrivals:
-            # 没有任务到达，视为无效测试
             return 0.0
 
-        if has_deadline_miss:
-            # 存在截止期错过，任务集失败
+        if open_jobs:
             return 0.0
-        else:
-            # 没有截止期错过，任务集成功
-            return 1.0
+
+        return 1.0
 
 # ============================================
 # 实验执行器
@@ -194,7 +197,8 @@ class ExperimentRunner:
 
     def __init__(self, output_dir, utilization_points, num_tasksets,
                  task_n, task_p_min, task_p_max, simulation_time,
-                 battery_capacity, initial_energy_ratio, solar_start_time_ms, use_real_solar_data=True):
+                 battery_capacity, initial_energy_ratio, solar_start_time_ms,
+                 use_real_solar_data=True, system_cores=None):
         self.output_dir = Path(output_dir)
         self.trace_dir = self.output_dir / 'traces'
         self.task_dir = self.output_dir / 'tasks'
@@ -214,8 +218,9 @@ class ExperimentRunner:
         self.initial_energy_ratio = initial_energy_ratio
         self.solar_start_time_ms = solar_start_time_ms
         self.use_real_solar_data = use_real_solar_data
+        self.system_cores = system_cores if system_cores is not None else get_system_cores(CONFIG_TEMPLATE)
 
-        print(f"🖥️  系统核心数: {SYSTEM_CORES}")
+        print(f"🖥️  系统核心数: {self.system_cores}")
         print(f"📁 输出目录: {self.output_dir}")
 
     def generate_taskset(self, utilization, task_idx, seed):
@@ -223,7 +228,7 @@ class ExperimentRunner:
         task_file = self.task_dir / f'taskset_u{utilization:.2f}_{task_idx:03d}.yml'
 
         # 计算总利用率（归一化利用率 × 核心数）
-        total_utilization = utilization * SYSTEM_CORES
+        total_utilization = utilization * self.system_cores
 
         # 修复：格式化为4位小数，防止浮点精度问题
         utilization_str = f"{total_utilization:.4f}"
@@ -234,71 +239,49 @@ class ExperimentRunner:
             '-u', utilization_str,  # 使用格式化后的字符串
             '-p', str(self.task_p_min),
             '-P', str(self.task_p_max),
-            '-c', str(SYSTEM_CORES),
+            '-c', str(self.system_cores),
             '--seed', str(seed),
             '-o', str(task_file)
         ]
 
         try:
-            subprocess.run(cmd, check=True, capture_output=True, timeout=30)
+            subprocess.run(cmd, check=True, capture_output=True, timeout=30, text=True)
             return str(task_file)
+        except subprocess.CalledProcessError as e:
+            error_output = (e.stderr or e.stdout or '').strip()
+            print(f"❌ 生成任务集失败 (U={utilization:.2f}, idx={task_idx}, seed={seed}): {error_output or e}")
+            return None
         except Exception as e:
-            print(f"❌ 生成任务集失败 (U={utilization:.2f}): {e}")
+            print(f"❌ 生成任务集失败 (U={utilization:.2f}, idx={task_idx}, seed={seed}): {e}")
             return None
 
     def modify_config(self, algorithm: str):
         """修改系统配置文件"""
         with open(CONFIG_TEMPLATE, 'r', encoding='utf-8') as f:
-            content = f.read()
+            config = yaml.safe_load(f)
 
-        content = re.sub(r'scheduler:\s*\w+', f'scheduler: {algorithm}', content)
-        content = re.sub(r'max_energy:\s*[\d.]+', f'max_energy: {self.battery_capacity}', content)
+        config['cpu_islands'][0]['kernel']['scheduler'] = algorithm
 
-        # 设置初始能量
-        initial_energy = self.battery_capacity * self.initial_energy_ratio
-        if 'initial_energy_ratio:' in content:
-            content = re.sub(r'initial_energy_ratio:\s*[\d.]+',
-                           f'initial_energy_ratio: {self.initial_energy_ratio}', content)
+        energy_management = config.setdefault('energy_management', {})
+        energy_management['max_energy'] = self.battery_capacity
+
+        if 'initial_energy_ratio' in energy_management:
+            energy_management['initial_energy_ratio'] = self.initial_energy_ratio
         else:
-            # 匹配 initial_energy: 数字，可能后面有注释
-            content = re.sub(r'initial_energy:\s*[\d.]+',
-                           f'initial_energy: {initial_energy}', content)
+            energy_management['initial_energy'] = self.battery_capacity * self.initial_energy_ratio
 
-        # ⭐ 关键修复：设置time_of_day_ms和day_of_year
-        # 根据用户测试验证，系统使用time_of_day_ms参数来确定太阳能收集的时间
-        # 例如：4:00 AM = 4 * 3600 * 1000 = 14400000 ms
-        solar_time_ms = self.solar_start_time_ms
-
-        # 修改energy_management部分的time_of_day_ms参数
-        content = re.sub(
-            r'time_of_day_ms:\s*\d+',
-            f'time_of_day_ms: {solar_time_ms}',
-            content
-        )
-
-        # 设置day_of_year为187天（夏季）
-        content = re.sub(
-            r'day_of_year:\s*\d+',
-            f'day_of_year: 187',
-            content
-        )
-
-        # 设置use_real_solar_data
-        use_solar_str = 'true' if self.use_real_solar_data else 'false'
-        content = re.sub(
-            r'use_real_solar_data:\s*(true|false)',
-            f'use_real_solar_data: {use_solar_str}',
-            content
-        )
+        energy_management['time_of_day_ms'] = self.solar_start_time_ms
+        energy_management['day_of_year'] = 187
+        energy_management['use_real_solar_data'] = bool(self.use_real_solar_data)
 
         temp_config = self.output_dir / f'config_{algorithm}.yml'
         with open(temp_config, 'w', encoding='utf-8') as f:
-            f.write(content)
+            yaml.safe_dump(config, f, allow_unicode=True, sort_keys=False)
         return str(temp_config)
 
     def run_simulation(self, algorithm, config_file, task_file, utilization, task_idx):
         """运行单次仿真"""
-        trace_file = self.trace_dir / f'trace_{algorithm}_u{utilization:.2f}_{task_idx}.json'
+        trace_file = self.trace_dir / f'trace_{algorithm}_u{utilization:.2f}_{task_idx:03d}.json'
 
         env = os.environ.copy()
         lib_path = os.path.abspath('./build/librtsim')
@@ -313,10 +296,13 @@ class ExperimentRunner:
             subprocess.run(cmd, check=True, capture_output=True, env=env, text=True, timeout=120)
             return str(trace_file)
         except subprocess.TimeoutExpired:
-            print(f"⏱️ 仿真超时: {algorithm}, U={utilization:.2f}")
+            print(f"⏱️ 仿真超时: {algorithm}, U={utilization:.2f}, idx={task_idx}")
             return None
-        except subprocess.CalledProcessError:
-            print(f"❌ 仿真失败: {algorithm}, U={utilization:.2f}")
+        except subprocess.CalledProcessError as e:
+            error_output = (e.stderr or e.stdout or '').strip()
+            print(f"❌ 仿真失败: {algorithm}, U={utilization:.2f}, idx={task_idx}")
+            if error_output:
+                print(error_output)
             return None
 
     def run_experiments(self):
@@ -349,14 +335,14 @@ class ExperimentRunner:
                 seed = 2000 + int(utilization * 100) * 100 + task_idx
                 task_file = self.generate_taskset(utilization, task_idx, seed)
                 if task_file:
-                    task_files.append(task_file)
+                    task_files.append((task_idx, task_file))
 
             if not task_files:
                 print(f"⚠️ 没有成功生成任务集，跳过 U={utilization:.2f}")
                 continue
 
-            # 对每个任务集运行三种算法
-            for task_idx, task_file in enumerate(task_files):
+            # 对每个任务集运行9种算法
+            for task_idx, task_file in task_files:
                 for algo in ALGORITHMS:
                     trace_file = self.run_simulation(algo, config_files[algo],
                                                     task_file, utilization, task_idx)
@@ -657,8 +643,8 @@ def main():
                        help=f'电池容量 (Joules) (默认: {DEFAULT_BATTERY_CAPACITY})')
     parser.add_argument('--initial-energy', type=float, default=DEFAULT_INITIAL_ENERGY_RATIO,
                        help=f'初始能量比例 (0.0-1.0) (默认: {DEFAULT_INITIAL_ENERGY_RATIO})')
-    parser.add_argument('--solar-time', type=int, default=int(DEFAULT_SOLAR_START_TIME_MS / 3600000),
-                       help=f'太阳能收集开始时间（小时，0-23）(默认: {int(DEFAULT_SOLAR_START_TIME_MS / 3600000)})')
+    parser.add_argument('--solar-time-ms', type=int, default=DEFAULT_SOLAR_START_TIME_MS,
+                       help=f'太阳能收集开始时间（毫秒）(默认: {DEFAULT_SOLAR_START_TIME_MS})')
 
     # 图表参数
     parser.add_argument('--figure-output', type=str, default=None,
@@ -674,9 +660,7 @@ def main():
     if args.run_experiment:
         # 运行实验
         utilization_points = np.around(np.linspace(0.1, 1.0, args.num_points), 2)
-
-        # 计算太阳能开始时间（小时转毫秒）
-        solar_start_time_ms = args.solar_time * 3600 * 1000
+        system_cores = get_system_cores(CONFIG_TEMPLATE)
 
         runner = ExperimentRunner(
             output_dir=args.output_dir,
@@ -688,8 +672,9 @@ def main():
             simulation_time=DEFAULT_SIMULATION_TIME,
             battery_capacity=args.battery,
             initial_energy_ratio=args.initial_energy,
-            solar_start_time_ms=solar_start_time_ms,
-            use_real_solar_data=DEFAULT_USE_REAL_SOLAR_DATA
+            solar_start_time_ms=args.solar_time_ms,
+            use_real_solar_data=DEFAULT_USE_REAL_SOLAR_DATA,
+            system_cores=system_cores
         )
 
         results = runner.run_experiments()

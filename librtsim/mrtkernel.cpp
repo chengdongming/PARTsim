@@ -232,6 +232,12 @@ namespace RTSim {
             std::cout << "[DEBUG] MRTKernel::suspend() - 任务已重新插入队列: "
                       << taskname(task) << " (剩余执行时间保留)" << std::endl;
 
+            ASAPSyncScheduler *asap_sync_sched = dynamic_cast<ASAPSyncScheduler *>(_sched);
+            if (asap_sync_sched && !asap_sync_sched->shouldDispatchAtTickBoundary()) {
+                std::cout << "[DEBUG] MRTKernel::suspend() - ASAP-Sync等待下一个tick再调度" << std::endl;
+                return;
+            }
+
             dispatch(p);
         }
     }
@@ -253,6 +259,10 @@ namespace RTSim {
         // 这样支持带等待队列的调度器（如CASCADE）在任务结束时检查等待队列
         _sched->onTaskEnd(task);
 
+        ASAPSyncScheduler *asap_sync_sched = dynamic_cast<ASAPSyncScheduler *>(_sched);
+        if (asap_sync_sched && !asap_sync_sched->shouldDispatchAtTickBoundary()) {
+            return;
+        }
 
         dispatch(p);
     }

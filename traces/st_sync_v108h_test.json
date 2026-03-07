@@ -1,6 +1,0 @@
-{
-    "events" : [
-{ "time": "0", "event_type": "arrival", "task_name": "Task_High", "arrival_time": "0", "current_energy_mJ": 0.4, "total_consumed_mJ": 0.6, "total_harvested_mJ": 0},
-{ "time": "0", "event_type": "arrival", "task_name": "Task_Mid1", "arrival_time": "0", "current_energy_mJ": 0.4, "total_consumed_mJ": 0.6, "total_harvested_mJ": 0},
-{ "time": "0", "event_type": "arrival", "task_name": "Task_Mid2", "arrival_time": "0", "current_energy_mJ": 0.4, "total_consumed_mJ": 0.6, "total_harvested_mJ": 0},
-{ "time": "0", "event_type": "arrival", "task_name": "Task_Low", "arrival_time": "0", "current_energy_mJ": 0.4, "total_consumed_mJ": 0.6, "total_harvested_mJ": 0}] }

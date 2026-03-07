@@ -1,0 +1,10 @@
+algorithm,normalized_utilization,acceptance_ratio,num_samples,num_successful
+gpfp_asap_block,0.1,0.0,1,0
+gpfp_asap_nonblock,0.1,0.0,1,0
+gpfp_asap_sync,0.1,0.0,1,0
+gpfp_alap_block,0.1,0.0,1,0
+gpfp_alap_nonblock,0.1,0.0,1,0
+gpfp_alap_sync,0.1,0.0,1,0
+gpfp_st_block,0.1,0.0,1,0
+gpfp_st_nonblock,0.1,0.0,1,0
+gpfp_st_sync,0.1,0.0,1,0

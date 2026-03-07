@@ -268,6 +268,7 @@ namespace RTSim {
         const std::vector<AbsRTTask *> &getCurrentBatchTasks() const { return _current_batch_tasks; }
         int getCurrentBatchSize() const { return _current_batch_size; }
         bool isBatchScheduledThisTick() const { return _batch_scheduled_this_tick; }
+        bool shouldDispatchAtTickBoundary() const;
 
         // Kernel管理
         void setKernel(AbsKernel *kernel) override;  // ⭐ V96修复

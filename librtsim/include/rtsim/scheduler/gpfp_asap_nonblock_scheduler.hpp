@@ -109,11 +109,7 @@ namespace RTSim {
         double _current_energy;              // 当前可用能量
         double _initial_energy;              // 初始能量
         double _max_energy;                  // 最大能量容量
-        double _dispatching_tasks_total_energy; // 本次dispatch中已调度任务的总能耗
-        std::set<AbsRTTask *> _counted_tasks_in_dispatch; // 本次dispatch中已计数的任务，避免重复
-        std::set<AbsRTTask *> _energy_deducted_tasks; // 已扣除初始能量的任务（跨tick持久化）
-        std::set<AbsRTTask *> _newly_dispatched_this_tick; // ⭐ V42：当前tick新调度的任务（用于跳过续期扣除）
-        bool _in_tick_boundary_dispatch = false;  // ⭐ 标记是否在tick边界调度中（用于能量扣除时机控制）
+        std::set<AbsRTTask *> _energy_blocked_tasks; // 因缺电被挂起的任务黑名单
         MetaSim::Tick _last_tick_time;       // 上次tick时间
         MetaSim::Tick _last_collection_time; // 上次能量收集时间
 
@@ -185,10 +181,7 @@ namespace RTSim {
         std::string getTaskName(AbsRTTask *task);
         void onTaskArrival(AbsRTTask *task);
         void clearPersistentTaskState(AbsRTTask *task);
-        void resetTickDispatchState();
-        void clearTaskTickSelection(AbsRTTask *task);
-        void markTaskSelectedThisTick(AbsRTTask *task);
-        void accountInitialEnergyForSelectedTasks(const std::string &log_prefix);
+        void restoreEnergyBlockedTasks();
 
         // 队列管理
         void addToReadyQueue(AbsRTTask *task);
