@@ -236,6 +236,12 @@ namespace RTSim {
 
         // ⭐ 运行时能量检查和任务中断（V28.15新增）
         void checkAndInterruptRunningTasks();  // 检查所有运行中的任务，能量不足时中断
+        void clampCurrentEnergyNonNegative(const std::string &context);
+        std::vector<AbsRTTask *> collectActiveRunningBatchTasks();
+        double calculateBatchUnitEnergy(const std::vector<AbsRTTask *> &tasks);
+        void suspendBatchForInsufficientEnergy(const std::vector<AbsRTTask *> &tasks,
+                                              double required_energy,
+                                              const std::string &context);
 
         // ST-Sync批量计算
         int calculateBatchSize();                              // 计算批量大小 k

@@ -268,17 +268,8 @@ namespace RTSim {
                     fd << ", \"preempted_by\": \"higher_priority_task\"";
                     fd << ", \"reason\": \"preemption\"";
                 } else {
-                    // 未知原因，使用能量启发式作为后备
-                    double current_energy = _energy_provider->getCurrentEnergy();
-                    double task_unit_energy = _energy_provider->getTaskUnitEnergy(task);
-                    double min_run_energy = task_unit_energy * 5;
-                    if (current_energy < min_run_energy) {
-                        fd << ", \"preempted_by\": \"energy_insufficient\"";
-                        fd << ", \"reason\": \"insufficient_energy\"";
-                    } else {
-                        fd << ", \"preempted_by\": \"higher_priority_task\"";
-                        fd << ", \"reason\": \"preemption\"";
-                    }
+                    fd << ", \"preempted_by\": \"higher_priority_task\"";
+                    fd << ", \"reason\": \"preemption\"";
                 }
 
                 // 清除挂起原因记录
