@@ -214,6 +214,7 @@ namespace RTSim {
         double calculatePowerForWorkload(const std::string &workload, double frequency);
         double collectSolarEnergy(MetaSim::Tick current_time);
         double getSolarIrradiance(int64_t time_ms);
+        void clampCurrentEnergyNonNegative(const std::string &context);
 
         // 任务管理
         STBlockTaskModel *getTaskModel(AbsRTTask *task);

@@ -35,7 +35,7 @@ energy_management:
   solar_data_file: ""
   pv_efficiency: 0.18
   pv_area_m2: 0.01
-  base_harvesting_rate: 0.010  # 10mW 收集率
+  base_harvesting_rate: 0.04  # 40mW 收集率
 
   # 调度器能量模型
   scheduler_energy_model:

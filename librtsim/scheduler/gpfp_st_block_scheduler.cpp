@@ -505,6 +505,18 @@ namespace RTSim {
         _task_models.clear();
     }
 
+    void STBlockScheduler::clampCurrentEnergyNonNegative(const std::string &context) {
+        const double ENERGY_EPSILON = 1e-9;
+        if (_current_energy < 0.0) {
+            SCHEDULER_LOG_WARNING(std::string("⚠️ [ST-Block] 负能量保护触发: ") +
+                                 context +
+                                 " energy=" + std::to_string(_current_energy * 1000) + " mJ");
+            _current_energy = 0.0;
+        } else if (_current_energy < ENERGY_EPSILON) {
+            _current_energy = 0.0;
+        }
+    }
+
     // =====================================================
     // 核心调度逻辑 - ALAP-Block算法的核心
     // =====================================================
@@ -749,6 +761,7 @@ namespace RTSim {
                     // 扣除续期能量
                     double old_energy = _current_energy;
                     _current_energy -= unit_energy;
+                    clampCurrentEnergyNonNegative(std::string("performTickScheduling renewal: ") + getTaskName(task));
                     _stats.total_energy_consumed += unit_energy;
 
                     SCHEDULER_LOG_INFO("⚡ 扣除续期能量: " +
@@ -782,7 +795,7 @@ namespace RTSim {
             double energy_before_scheduling = _current_energy;
 
             // ⭐ 关键：清空本次tick的调度记录
-            // getTaskN会填充这个集合，但不扣除能量
+            // getTaskN会填充这个集合，并同步累计本次dispatch预留的总能耗
             _counted_tasks_in_dispatch.clear();
             _dispatching_tasks_total_energy = 0.0;
 
@@ -793,8 +806,8 @@ namespace RTSim {
             for (AbsRTTask *task : _counted_tasks_in_dispatch) {
                 double unit_energy = calculateUnitEnergyForTask(task);
                 _current_energy -= unit_energy;
+                clampCurrentEnergyNonNegative(std::string("performTickScheduling dispatch: ") + getTaskName(task));
                 _stats.total_energy_consumed += unit_energy;
-                _dispatching_tasks_total_energy += unit_energy;
 
                 SCHEDULER_LOG_INFO("✅ 新任务扣除初始能量: " +
                                    getTaskName(task) +
@@ -920,6 +933,7 @@ namespace RTSim {
 
         // ⭐ V43修复：能量耗尽时立即返回，不调度任何任务
         if (_energy_depleted) {
+            clampCurrentEnergyNonNegative("getTaskN entry");
             SCHEDULER_LOG_DEBUG(std::string("💀 [ST-Block] getTaskN: 能量已耗尽，拒绝调度") +
                                " n=" + std::to_string(n) +
                                " energy=" + std::to_string(_current_energy * 1000) + " mJ");
@@ -1070,12 +1084,16 @@ namespace RTSim {
 
                 const double EPSILON = 1e-9;
                 // ⭐ 预扣模式：检查当前能量是否足够当前任务的1ms能耗
-                if (_current_energy < unit_energy - EPSILON) {
+                // 同时计入本次dispatch中已预留给更高优先级任务的能量，避免超卖电量
+                double projected_energy_after_dispatch =
+                    _current_energy - _dispatching_tasks_total_energy - unit_energy;
+                if (projected_energy_after_dispatch < -EPSILON) {
                     // ⭐ ST-Block深度充电：能量不足时，设置唤醒时间
                     SCHEDULER_LOG_INFO(std::string("⚠️ [ST-Block] 能量不足，启动深度充电模式") +
                                       " 任务=" + getTaskName(task) +
                                       " 需要1ms=" + std::to_string(unit_energy) + "J" +
-                                      " 当前能量=" + std::to_string(_current_energy) + "J");
+                                      " 当前能量=" + std::to_string(_current_energy) + "J" +
+                                      " 已预留=" + std::to_string(_dispatching_tasks_total_energy) + "J");
 
                     // ⭐ ST-Block V130修复: 高优任务能量不足， 立即激活全局深度休眠锁
                     // 符合白皮书定义: 在锁解开前，禁止任何任务上核
@@ -1094,9 +1112,11 @@ namespace RTSim {
                 if (_counted_tasks_in_dispatch.find(task) == _counted_tasks_in_dispatch.end()) {
                     // 尚未标记，标记任务
                     _counted_tasks_in_dispatch.insert(task);
+                    _dispatching_tasks_total_energy += unit_energy;
 
                     SCHEDULER_LOG_INFO(std::string("✅ [ST-Block] 决定调度任务（已标记，暂不扣能量）: ") + getTaskName(task) +
-                                      " 1ms能耗=" + std::to_string(unit_energy * 1000) + " mJ");
+                                      " 1ms能耗=" + std::to_string(unit_energy * 1000) + " mJ" +
+                                      " 本轮预留总能耗=" + std::to_string(_dispatching_tasks_total_energy * 1000) + " mJ");
                 } else {
                     SCHEDULER_LOG_DEBUG(std::string("♻️ [ST-Block] 任务已标记，直接返回: ") + getTaskName(task));
                 }
@@ -1124,6 +1144,7 @@ namespace RTSim {
 
         // ⭐ 修复：任务到达时只检查能量，不扣减能耗
         // 能耗在任务调度时通过getTaskN()方法扣减
+        clampCurrentEnergyNonNegative(std::string("notify: ") + getTaskName(task));
         double unit_energy = calculateUnitEnergyForTask(task);
 
         // 检查能量是否足够
@@ -1472,6 +1493,7 @@ namespace RTSim {
 
     void STBlockScheduler::checkAndInterruptRunningTasks() {
         SCHEDULER_LOG_INFO("🔍 [ST-Block] 检查运行中任务的能量状态");
+        clampCurrentEnergyNonNegative("checkAndInterruptRunningTasks entry");
 
         if (!_kernel) {
             _kernel = getKernel();
@@ -1549,6 +1571,8 @@ namespace RTSim {
             SCHEDULER_LOG_INFO(std::string("📊 [ST-Block] 本次tick中断了 ") +
                                std::to_string(tasks_to_interrupt.size()) + " 个任务（能量不足）");
         }
+
+        clampCurrentEnergyNonNegative("checkAndInterruptRunningTasks exit");
     }
 
     bool STBlockScheduler::shouldPreempt(CPU *cpu, AbsRTTask *new_task) {
@@ -2137,6 +2161,7 @@ namespace RTSim {
         }
 
         SCHEDULER_LOG_INFO(std::string("✅ [ST-Block] 任务结束: ") + getTaskName(task));
+        clampCurrentEnergyNonNegative(std::string("onTaskEnd: ") + getTaskName(task));
 
         // 从就绪队列移除
         removeFromReadyQueue(task);

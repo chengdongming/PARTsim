@@ -201,6 +201,9 @@ namespace RTSim {
         void clearTaskTickSelection(AbsRTTask *task);
         void markTaskSelectedThisTick(AbsRTTask *task);
         void accountInitialEnergyForSelectedTasks(const std::string &log_prefix);
+        bool shouldDropHopelessTask(AbsRTTask *task, double available_energy);
+        bool dropHopelessTask(AbsRTTask *task, const std::string &reason, bool count_deadline_miss = true);
+        void refreshSchedulingAfterQueueMutation(const std::string &reason, bool immediate_dispatch = false);
 
         // 队列管理
         void addToReadyQueue(AbsRTTask *task);

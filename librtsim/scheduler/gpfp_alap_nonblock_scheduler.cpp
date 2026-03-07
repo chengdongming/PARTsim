@@ -455,23 +455,21 @@ namespace RTSim {
                 SCHEDULER_LOG_INFO("☀️ 收集太阳能: +" +
                                    std::to_string(harvested * 1000) + " mJ → " +
                                    std::to_string(_current_energy * 1000) + " mJ");
-
-                // ⭐ V43修复：只有当能量足够时才清除能量耗尽标志
-                // 使用合理阈值（10 mJ）判断能量是否足够恢复调度
-                const double RECOVERY_THRESHOLD = 0.010;  // 10 mJ
-                if (_energy_depleted && _current_energy >= RECOVERY_THRESHOLD) {
-                    _energy_depleted = false;
-                    SCHEDULER_LOG_INFO("🔋 [ALAP-NonBlock] 太阳能充电成功，恢复调度 (能量=" +
-                                      std::to_string(_current_energy * 1000) + " mJ >= 阈值=" +
-                                      std::to_string(RECOVERY_THRESHOLD * 1000) + " mJ)");
-                }
             }
         }
         _last_tick_time = current_time;
 
-        // ⭐ Bug修复3：能量耗尽时跳过任务调度（但已经收集了太阳能）
+        // ⭐ NonBlock语义修复：绝不因历史的energy_depleted标志全局锁死调度
+        // 只要当前能量重新大于0，就允许本tick继续尝试调度可运行任务
+        if (_energy_depleted && _current_energy > 0.000001) {
+            _energy_depleted = false;
+            SCHEDULER_LOG_INFO("🔋 [ALAP-NonBlock] 检测到能量恢复，解除历史energy_depleted标志");
+        }
+
+        // ⭐ NonBlock语义修复：energy_depleted只表示“当前这一tick无法续期运行任务”
+        // 不能演变成跨tick的全局充电休眠锁；下一次tick收集到能量后必须允许重新尝试调度
         if (_energy_depleted && _current_energy < 0.000001) {
-            SCHEDULER_LOG_INFO(std::string("💀 [ALAP-NonBlock] 能量已耗尽，跳过任务调度"));
+            SCHEDULER_LOG_INFO(std::string("💀 [ALAP-NonBlock] 当前tick能量为0，仅跳过本tick调度"));
             return;
         }
 
@@ -519,6 +517,15 @@ namespace RTSim {
                 // 检查是否有足够能量续期1ms
                 const double EPSILON = 1e-9;
                 if (_current_energy < unit_energy - EPSILON) {
+                    Tick slack = calculateSlackForTask(task);
+                    if (slack <= 0) {
+                        SCHEDULER_LOG_WARNING("💀 [ALAP-NonBlock] 运行中任务续期失败且Slack<=0，立即止损: " +
+                                             getTaskName(task) +
+                                             " slack=" + std::to_string(static_cast<int64_t>(slack)) + "ms");
+                        dropHopelessTask(task, "running continuation energy exhausted");
+                        continue;
+                    }
+
                     // ⭐ V43修复：能量不足时设置能量耗尽标志
                     if (!_energy_depleted) {
                         _energy_depleted = true;
@@ -683,9 +690,10 @@ namespace RTSim {
     // =====================================================
 
     AbsRTTask *ALAPNonBlockScheduler::getTaskN(unsigned int n) {
-        // ⭐ V43修复：能量耗尽时立即返回，不调度任何任务
-        if (_energy_depleted) {
-            SCHEDULER_LOG_DEBUG(std::string("💀 [ALAP-NonBlock] getTaskN: 能量已耗尽，拒绝调度") +
+        // ⭐ NonBlock语义修复：不要因历史的energy_depleted标志阻断新的tick调度
+        // 只要当前能量已恢复到可用，就允许继续按ALAP规则挑选任务
+        if (_energy_depleted && _current_energy < 0.000001) {
+            SCHEDULER_LOG_DEBUG(std::string("💀 [ALAP-NonBlock] getTaskN: 当前tick能量为0，拒绝调度") +
                                " n=" + std::to_string(n) +
                                " energy=" + std::to_string(_current_energy * 1000) + " mJ");
             return nullptr;
@@ -777,6 +785,11 @@ namespace RTSim {
 
                 // ⭐ 贪心策略：如果能量不足，跳过这个任务���继续查找后面的任务
                 if (available_energy < unit_energy - EPSILON) {
+                    if (shouldDropHopelessTask(task, available_energy)) {
+                        dropHopelessTask(task, "ready admission energy insufficient");
+                        continue;
+                    }
+
                     SCHEDULER_LOG_INFO(std::string("⚠️ [ALAP-NonBlock] 任务能量不足，跳过（贪心策略）") +
                                       " 任务=" + getTaskName(task) +
                                       " 需要1ms=" + std::to_string(unit_energy) + "J" +
@@ -1021,7 +1034,8 @@ namespace RTSim {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("📤 [ALAP-NonBlock] 移除任务: ") + getTaskName(task));
+        const std::string task_name = getTaskName(task);
+        SCHEDULER_LOG_INFO(std::string("📤 [ALAP-NonBlock] 移除任务: ") + task_name);
 
         removeFromReadyQueue(task);
         removeFromWaitingQueue(task);
@@ -1038,7 +1052,8 @@ namespace RTSim {
             _task_models.erase(it);
         }
 
-        SCHEDULER_LOG_INFO(std::string("✅ [ALAP-NonBlock] 任务已移除: ") + getTaskName(task));
+        SCHEDULER_LOG_INFO(std::string("✅ [ALAP-NonBlock] 任务已移除: ") + task_name);
+        refreshSchedulingAfterQueueMutation("removeTask " + task_name);
     }
 
     // =====================================================
@@ -1296,13 +1311,15 @@ namespace RTSim {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("➖ [ALAP-NonBlock] extract: ") + getTaskName(task) +
+        const std::string task_name = getTaskName(task);
+        SCHEDULER_LOG_INFO(std::string("➖ [ALAP-NonBlock] extract: ") + task_name +
                           " _ready_queue.size()=" + std::to_string(_ready_queue.size()));
 
         Scheduler::extract(task);
         removeFromReadyQueue(task);
         removeFromWaitingQueue(task);
         clearPersistentTaskState(task);
+        refreshSchedulingAfterQueueMutation("extract " + task_name);
     }
 
     void ALAPNonBlockScheduler::addToReadyQueue(AbsRTTask *task) {
@@ -1745,6 +1762,80 @@ namespace RTSim {
         }
     }
 
+    bool ALAPNonBlockScheduler::shouldDropHopelessTask(AbsRTTask *task, double available_energy) {
+        if (!task || !task->isActive()) {
+            return false;
+        }
+
+        Tick slack = calculateSlackForTask(task);
+        if (slack > 0) {
+            return false;
+        }
+
+        double unit_energy = calculateUnitEnergyForTask(task);
+        const double EPSILON = 1e-9;
+        return available_energy < unit_energy - EPSILON;
+    }
+
+    bool ALAPNonBlockScheduler::dropHopelessTask(AbsRTTask *task, const std::string &reason, bool count_deadline_miss) {
+        if (!task || !task->isActive()) {
+            return false;
+        }
+
+        const std::string task_name = getTaskName(task);
+        Tick slack = calculateSlackForTask(task);
+        double unit_energy = calculateUnitEnergyForTask(task);
+
+        SCHEDULER_LOG_WARNING("💀 [ALAP-NonBlock] Early Stop-Loss drop: " +
+                              task_name +
+                              " reason=" + reason +
+                              " slack=" + std::to_string(static_cast<int64_t>(slack)) + "ms" +
+                              " need_1ms=" + std::to_string(unit_energy * 1000) + " mJ" +
+                              " energy=" + std::to_string(_current_energy * 1000) + " mJ");
+
+        clearTaskTickSelection(task);
+        removeFromReadyQueue(task);
+        removeFromWaitingQueue(task);
+
+        for (auto &pair : _running_tasks) {
+            if (pair.second == task) {
+                pair.second = nullptr;
+            }
+        }
+
+        clearPersistentTaskState(task);
+
+        if (count_deadline_miss) {
+            _stats.total_deadline_misses++;
+        }
+
+        Task *concrete_task = dynamic_cast<Task *>(task);
+        if (!concrete_task) {
+            SCHEDULER_LOG_WARNING("⚠️ [ALAP-NonBlock] Early Stop-Loss drop失败：任务不支持killInstance: " + task_name);
+            return false;
+        }
+
+        concrete_task->killInstance();
+        refreshSchedulingAfterQueueMutation("drop " + task_name, true);
+        return true;
+    }
+
+    void ALAPNonBlockScheduler::refreshSchedulingAfterQueueMutation(const std::string &reason, bool immediate_dispatch) {
+        if (!_kernel) {
+            _kernel = getKernel();
+        }
+
+        if (!_kernel) {
+            return;
+        }
+
+        SCHEDULER_LOG_INFO("🔄 [ALAP-NonBlock] 刷新调度视图: " + reason);
+
+        if (immediate_dispatch) {
+            _kernel->dispatch();
+        }
+    }
+
     AbsRTTask *ALAPNonBlockScheduler::getRunningTaskOnCPU(CPU *cpu) {
         if (!cpu) {
             return nullptr;
@@ -1883,7 +1974,8 @@ namespace RTSim {
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("✅ [ALAP-NonBlock] 任务结束: ") + getTaskName(task));
+        const std::string task_name = getTaskName(task);
+        SCHEDULER_LOG_INFO(std::string("✅ [ALAP-NonBlock] 任务结束: ") + task_name);
 
         // 从就绪队列移除
         removeFromReadyQueue(task);
@@ -1901,9 +1993,7 @@ namespace RTSim {
         _stats.total_task_completions++;
 
         SCHEDULER_LOG_INFO(std::string("📊 [ALAP-NonBlock] 当前能量: ") + std::to_string(_current_energy) + "J");
-
-        // ⭐ 注意：任务结束后的调度由tick事件自动处理，不在此处调用dispatch()
-        // 这样可以避免在任务对象部分销毁时访问导致的崩溃
+        refreshSchedulingAfterQueueMutation("onTaskEnd " + task_name);
 
     }
 
@@ -1972,10 +2062,16 @@ namespace RTSim {
             }
         }
 
+        bool removed_any = false;
         for (AbsRTTask *task : expired) {
             removeFromReadyQueue(task);
             removeFromWaitingQueue(task);
             clearPersistentTaskState(task);
+            removed_any = true;
+        }
+
+        if (removed_any) {
+            refreshSchedulingAfterQueueMutation("cleanupExpiredTasks");
         }
     }
 

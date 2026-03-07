@@ -22,9 +22,9 @@ cpu_islands:
 # 能量管理配置 - V130测试
 # =============================================
 energy_management:
-  # 基本能量参数 - 低能量测试深度休眠锁
-  initial_energy: 0.008       # 初始 8mJ
-  max_energy: 0.05            # 最大 50mJ
+  # 基本能量参数 - 充足能量测试3核心调度
+  initial_energy: 0.05        # 初始 50mJ（足够调度多个任务）
+  max_energy: 0.2             # 最大 200mJ
 
   # 时间设置：中午12点（有太阳能充电）
   day_of_year: 182
@@ -35,7 +35,7 @@ energy_management:
   solar_data_file: ""
   pv_efficiency: 0.18
   pv_area_m2: 0.01
-  base_harvesting_rate: 0.003  # 3mW 收集率
+  base_harvesting_rate: 0.04  # 40mW 收集率
 
   # 调度器能量模型
   scheduler_energy_model:
