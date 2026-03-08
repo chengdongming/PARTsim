@@ -256,27 +256,91 @@ class ExperimentRunner:
             return None
 
     def modify_config(self, algorithm: str):
-        """修改系统配置文件"""
+        """修改系统配置文件，同时保持原始YAML格式风格以兼容rtsim解析器"""
         with open(CONFIG_TEMPLATE, 'r', encoding='utf-8') as f:
-            config = yaml.safe_load(f)
+            lines = f.readlines()
 
-        config['cpu_islands'][0]['kernel']['scheduler'] = algorithm
+        initial_energy = self.battery_capacity * self.initial_energy_ratio
+        use_real_solar_data = 'true' if self.use_real_solar_data else 'false'
 
-        energy_management = config.setdefault('energy_management', {})
-        energy_management['max_energy'] = self.battery_capacity
+        updated_lines = []
+        in_energy_management = False
+        in_cpu_islands = False
+        in_kernel = False
 
-        if 'initial_energy_ratio' in energy_management:
-            energy_management['initial_energy_ratio'] = self.initial_energy_ratio
-        else:
-            energy_management['initial_energy'] = self.battery_capacity * self.initial_energy_ratio
+        for line in lines:
+            stripped = line.strip()
 
-        energy_management['time_of_day_ms'] = self.solar_start_time_ms
-        energy_management['day_of_year'] = 187
-        energy_management['use_real_solar_data'] = bool(self.use_real_solar_data)
+            if stripped == 'cpu_islands:':
+                in_cpu_islands = True
+                in_energy_management = False
+            elif stripped == 'energy_management:':
+                in_energy_management = True
+                in_cpu_islands = False
+                in_kernel = False
+            elif stripped.endswith(':') and stripped not in {'cpu_islands:', 'energy_management:', 'kernel:'}:
+                if not line.startswith(' '):
+                    in_energy_management = False
+                    in_cpu_islands = False
+                    in_kernel = False
+
+            if in_cpu_islands and stripped == 'kernel:':
+                in_kernel = True
+            elif in_cpu_islands and in_kernel and not line.startswith('      '):
+                in_kernel = False
+
+            if in_cpu_islands and in_kernel and stripped.startswith('scheduler:'):
+                indent = line[:len(line) - len(line.lstrip())]
+                updated_lines.append(f'{indent}scheduler: {algorithm}\n')
+                continue
+
+            if in_energy_management and stripped.startswith('initial_energy_ratio:'):
+                indent = line[:len(line) - len(line.lstrip())]
+                updated_lines.append(f'{indent}initial_energy_ratio: {self.initial_energy_ratio}\n')
+                continue
+
+            if in_energy_management and stripped.startswith('initial_energy:'):
+                indent = line[:len(line) - len(line.lstrip())]
+                comment = ''
+                if '#' in line:
+                    comment = '  #' + line.split('#', 1)[1].rstrip('\n')
+                updated_lines.append(f'{indent}initial_energy: {initial_energy}{comment}\n')
+                continue
+
+            if in_energy_management and stripped.startswith('max_energy:'):
+                indent = line[:len(line) - len(line.lstrip())]
+                comment = ''
+                if '#' in line:
+                    comment = '  #' + line.split('#', 1)[1].rstrip('\n')
+                updated_lines.append(f'{indent}max_energy: {self.battery_capacity}{comment}\n')
+                continue
+
+            if in_energy_management and stripped.startswith('time_of_day_ms:'):
+                indent = line[:len(line) - len(line.lstrip())]
+                comment = ''
+                if '#' in line:
+                    comment = '  #' + line.split('#', 1)[1].rstrip('\n')
+                updated_lines.append(f'{indent}time_of_day_ms: {self.solar_start_time_ms}{comment}\n')
+                continue
+
+            if in_energy_management and stripped.startswith('day_of_year:'):
+                indent = line[:len(line) - len(line.lstrip())]
+                updated_lines.append(f'{indent}day_of_year: 187\n')
+                continue
+
+            if in_energy_management and stripped.startswith('use_real_solar_data:'):
+                indent = line[:len(line) - len(line.lstrip())]
+                comment = ''
+                if '#' in line:
+                    comment = '  #' + line.split('#', 1)[1].rstrip('\n')
+                updated_lines.append(f'{indent}use_real_solar_data: {use_real_solar_data}{comment}\n')
+                continue
+
+            updated_lines.append(line)
 
         temp_config = self.output_dir / f'config_{algorithm}.yml'
         with open(temp_config, 'w', encoding='utf-8') as f:
-            yaml.safe_dump(config, f, allow_unicode=True, sort_keys=False)
+            f.writelines(updated_lines)
         return str(temp_config)
 
     def run_simulation(self, algorithm, config_file, task_file, utilization, task_idx):

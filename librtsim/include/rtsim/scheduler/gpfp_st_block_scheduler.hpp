@@ -216,6 +216,7 @@ namespace RTSim {
         double collectSolarEnergy(MetaSim::Tick current_time);
         double getSolarIrradiance(int64_t time_ms);
         void clampCurrentEnergyNonNegative(const std::string &context);
+        MetaSim::Tick computeSafeWakeTimeFromOffset(int64_t offset_ms) const;
 
         // 任务管理
         STBlockTaskModel *getTaskModel(AbsRTTask *task);

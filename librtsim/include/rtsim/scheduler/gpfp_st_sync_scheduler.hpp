@@ -55,6 +55,7 @@ namespace RTSim {
         void schedule(MetaSim::Tick wake_time);
         void invalidate() { _valid = false; }
         bool isValid() const { return _valid; }
+        MetaSim::Tick getWakeTime() const { return _wake_time; }
     };
 
     // =====================================================
@@ -238,6 +239,7 @@ namespace RTSim {
         void checkAndInterruptRunningTasks();  // 检查所有运行中的任务，能量不足时中断
         void clampCurrentEnergyNonNegative(const std::string &context);
         std::vector<AbsRTTask *> collectActiveRunningBatchTasks();
+        bool isTaskInActiveRunningBatch(AbsRTTask *task);
         double calculateBatchUnitEnergy(const std::vector<AbsRTTask *> &tasks);
         void suspendBatchForInsufficientEnergy(const std::vector<AbsRTTask *> &tasks,
                                               double required_energy,

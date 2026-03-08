@@ -120,7 +120,7 @@ namespace RTSim {
         }
 
         Tick actual_trigger_time = SIMUL.getTime();
-        SCHEDULER_LOG_INFO(std::string("🔍 [ST-Sync] 能量检查事件触发: ") +
+        SCHEDULER_LOG_DEBUG(std::string("🔍 [ST-Sync] 能量检查事件触发: ") +
                            _scheduler->getTaskName(_task) +
                            " 触发时间=" + std::to_string(static_cast<int64_t>(actual_trigger_time)) + "ms" +
                            " _ms_executed=" + std::to_string(_ms_executed));
@@ -133,6 +133,24 @@ namespace RTSim {
         auto it = _scheduler->_energy_check_events.find(_task);
         if (it == _scheduler->_energy_check_events.end() || it->second != this) {
             SCHEDULER_LOG_DEBUG(std::string("⚠️ [ST-Sync] 能量检查：事件已失效，停止检查"));
+            return;
+        }
+
+        if (_scheduler->_is_charging_sleep || _scheduler->_deep_charging) {
+            SCHEDULER_LOG_DEBUG(std::string("⚠️ [ST-Sync] 能量检查：调度器处于充电休眠，停止检查: ") +
+                               _scheduler->getTaskName(_task));
+            return;
+        }
+
+        if (_scheduler->_tasks_completed_wcet.find(_task) != _scheduler->_tasks_completed_wcet.end()) {
+            SCHEDULER_LOG_DEBUG(std::string("⚠️ [ST-Sync] 能量检查：任务已完成WCET，停止检查: ") +
+                               _scheduler->getTaskName(_task));
+            return;
+        }
+
+        if (!_scheduler->isTaskInActiveRunningBatch(_task)) {
+            SCHEDULER_LOG_DEBUG(std::string("⚠️ [ST-Sync] 能量检查：任务不在活动运行批次中，停止检查: ") +
+                               _scheduler->getTaskName(_task));
             return;
         }
 
@@ -1710,6 +1728,11 @@ namespace RTSim {
             return;
         }
 
+        if (_kernel && _kernel->getProcessor(task) != nullptr) {
+            SCHEDULER_LOG_DEBUG(std::string("⏭️ [ST-Sync] notify: 跳过运行中任务: ") + getTaskName(task));
+            return;
+        }
+
         // ⭐ 关键修复：清除任务的WCET完成标志（新实例到达）
         // 周期性任务复用同一个AbsRTTask对象，但每个实例都是独立的
         SCHEDULER_LOG_INFO(std::string("🔍 [ST-Sync] notify: 检查WCET完成标志: ") +
@@ -2653,6 +2676,36 @@ namespace RTSim {
         return running_batch;
     }
 
+    bool STSyncScheduler::isTaskInActiveRunningBatch(AbsRTTask *task) {
+        if (!task) {
+            return false;
+        }
+
+        if (_tasks_completed_wcet.find(task) != _tasks_completed_wcet.end()) {
+            return false;
+        }
+
+        if (!_kernel) {
+            _kernel = getKernel();
+        }
+        if (!_kernel) {
+            return false;
+        }
+
+        CPU *cpu = _kernel->getProcessor(task);
+        if (!cpu) {
+            return false;
+        }
+
+        const auto &running_tasks = _kernel->getCurrentExecutingTasks();
+        auto it = running_tasks.find(cpu);
+        if (it == running_tasks.end() || it->second != task) {
+            return false;
+        }
+
+        return task->isExecuting();
+    }
+
     double STSyncScheduler::calculateBatchUnitEnergy(const std::vector<AbsRTTask *> &tasks) {
         double total_unit_energy = 0.0;
         for (auto *task : tasks) {
@@ -2701,6 +2754,7 @@ namespace RTSim {
 
         for (auto *task : tasks) {
             if (_kernel && task && task->isExecuting()) {
+                stopEnergyCheckForTask(task);
                 setSuspendReason(task, "insufficient_energy");
                 SCHEDULER_LOG_WARNING(std::string("🛑 [ST-Sync] 原子挂起任务: ") + getTaskName(task));
                 _kernel->suspend(task);
@@ -2728,6 +2782,21 @@ namespace RTSim {
             return;
         }
 
+        if (_is_charging_sleep || _deep_charging) {
+            SCHEDULER_LOG_DEBUG(std::string("⚡ [ST-Sync] 调度器处于充电休眠，跳过启动能量检查: ") + getTaskName(task));
+            return;
+        }
+
+        if (_tasks_completed_wcet.find(task) != _tasks_completed_wcet.end()) {
+            SCHEDULER_LOG_DEBUG(std::string("⚡ [ST-Sync] 任务已完成WCET，跳过启动能量检查: ") + getTaskName(task));
+            return;
+        }
+
+        if (!isTaskInActiveRunningBatch(task)) {
+            SCHEDULER_LOG_DEBUG(std::string("⚡ [ST-Sync] 任务尚未处于活动运行批次，跳过启动能量检查: ") + getTaskName(task));
+            return;
+        }
+
         // 创建并启动能量检查事件
         STSyncEnergyCheckEvent *evt = new STSyncEnergyCheckEvent(this, task, cpu);
         _energy_check_events[task] = evt;
@@ -2737,7 +2806,7 @@ namespace RTSim {
         Tick scheduled_time = current_time + 1;
         evt->post(scheduled_time);
 
-        SCHEDULER_LOG_INFO(std::string("⚡ [ST-Sync] 启动运行时能量检查: ") +
+        SCHEDULER_LOG_DEBUG(std::string("⚡ [ST-Sync] 启动运行时能量检查: ") +
                            getTaskName(task) + " 在CPU " + cpu->toString() +
                            " 当前时间=" + std::to_string(static_cast<int64_t>(current_time)) + "ms" +
                            " 调度时间=" + std::to_string(static_cast<int64_t>(scheduled_time)) + "ms");
@@ -2754,7 +2823,7 @@ namespace RTSim {
             // 事件会自然结束（不再重新 post）
             _energy_check_events.erase(it);
 
-            SCHEDULER_LOG_INFO(std::string("⚡ [ST-Sync] 停止运行时能量检查: ") +
+            SCHEDULER_LOG_DEBUG(std::string("⚡ [ST-Sync] 停止运行时能量检查: ") +
                                getTaskName(task));
         }
     }
@@ -3390,12 +3459,32 @@ namespace RTSim {
 
     // ⭐ V122: 设置组唤醒定时器 - 真正注册事件到模拟器
     void STSyncScheduler::scheduleGroupWakeEvent(MetaSim::Tick wake_time) {
-        // V122修复：每次创建新事件，避免重复post问题
+        // 只在没有定时器或新唤醒时间更早时更新，避免重复无效重建
+        bool should_update = false;
+        if (!_group_wake_event || !_group_wake_event->isValid()) {
+            should_update = true;
+        } else {
+            const int64_t existing_wake_time = static_cast<int64_t>(_group_wake_event->getWakeTime());
+            const int64_t new_wake_time = static_cast<int64_t>(wake_time);
+            if (new_wake_time < existing_wake_time) {
+                should_update = true;
+                SCHEDULER_LOG_INFO(std::string("⏰ [ST-Sync] 发现更早的组唤醒时间: ") +
+                                  "现有=" + std::to_string(existing_wake_time) + "ms " +
+                                  "新=" + std::to_string(new_wake_time) + "ms，更新");
+            }
+        }
+
+        if (!should_update) {
+            SCHEDULER_LOG_DEBUG(std::string("⏰ [ST-Sync] 保留现有组唤醒定时器: ") +
+                               "现有=" + std::to_string(static_cast<int64_t>(_group_wake_event->getWakeTime())) + "ms " +
+                               "新=" + std::to_string(static_cast<int64_t>(wake_time)) + "ms");
+            return;
+        }
+
         if (_group_wake_event) {
-            // 使旧事件失效
             _group_wake_event->invalidate();
         }
-        // 创建新事件
+
         _group_wake_event = new STSyncGroupWakeEvent(this);
         _group_wake_event->schedule(wake_time);
 

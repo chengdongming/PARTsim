@@ -518,6 +518,18 @@ namespace RTSim {
         }
     }
 
+    MetaSim::Tick STBlockScheduler::computeSafeWakeTimeFromOffset(int64_t offset_ms) const {
+        Tick current_time = SIMUL.getTime();
+        int64_t safe_offset_ms = offset_ms;
+        if (safe_offset_ms < 1) {
+            SCHEDULER_LOG_WARNING(std::string("⏰ [ST-Block] 唤醒偏移过小，钳制到1ms: 原始偏移=") +
+                                 std::to_string(offset_ms) + "ms 当前时间=" +
+                                 std::to_string(static_cast<int64_t>(current_time)) + "ms");
+            safe_offset_ms = 1;
+        }
+        return current_time + safe_offset_ms;
+    }
+
     // =====================================================
     // 核心调度逻辑 - ALAP-Block算法的核心
     // =====================================================
@@ -638,7 +650,7 @@ namespace RTSim {
                 //       例如：Time 6设置wake_time=96，但Time 7计算出wake_time=100（覆盖了96！）
                 // 修复：只有当新的唤醒时间比现有唤醒时间更早时，才更新
                 Tick current_time = SIMUL.getTime();
-                Tick wake_time = current_time + min_slack;
+                Tick wake_time = computeSafeWakeTimeFromOffset(min_slack_ms);
 
                 bool should_update = false;
                 if (!_wake_event) {
@@ -734,7 +746,7 @@ namespace RTSim {
                         // 必须在这里立即设置，否则系统会"睡过头"
                         Tick min_slack = calculateMinSlack();
                         int64_t min_slack_ms = static_cast<int64_t>(min_slack);
-                        Tick wake_time = current_time + min_slack;
+                        Tick wake_time = computeSafeWakeTimeFromOffset(min_slack_ms);
 
                         // 取消旧的唤醒定时器（如果存在）
                         if (_wake_event) {
@@ -892,16 +904,17 @@ namespace RTSim {
 
             if (slack_ms <= 0) {
                 // Slack已为0，立即唤醒（绝境冲锋）
-                wake_time = current_time + 1;
+                wake_time = computeSafeWakeTimeFromOffset(0);
                 SCHEDULER_LOG_WARNING(std::string("🚨 [ST-Block V130] Slack=0，立即唤醒！"));
             } else {
                 // 计算充满电需要的时间
                 double energy_needed = _max_energy - _current_energy;
                 double harvest_rate = _base_harvest_rate;  // J/ms
                 int64_t charge_time_ms = static_cast<int64_t>(energy_needed / harvest_rate) + 1;
+                int64_t wake_offset_ms = std::min(slack_ms, charge_time_ms);
 
                 // 唤醒时间 = min(Slack归零时间, 充满电时间)
-                wake_time = current_time + std::min(slack_ms, charge_time_ms);
+                wake_time = computeSafeWakeTimeFromOffset(wake_offset_ms);
 
                 SCHEDULER_LOG_INFO(std::string("⏰ [ST-Block V130] 设置唤醒定时器:") +
                                   " Slack=" + std::to_string(slack_ms) + "ms" +
