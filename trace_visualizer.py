@@ -13,12 +13,10 @@ Real-Time Scheduling Trace File Visualizer (Enhanced)
 示例:
     python3 trace_visualizer.py trace.json
     python3 trace_visualizer.py trace.json --output my_chart.png
-    python3 trace_visualizer.py trace.json --format pdf --dpi 300
-    python3 trace_visualizer.py trace.json --width 30 --height 10
 """
 
 import matplotlib
-matplotlib.use('Agg')  # 使用非交互式后端，避免显示问题
+matplotlib.use('Agg')  # 使用非交互式后端
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import json
@@ -29,27 +27,23 @@ import os
 from typing import List, Dict, Tuple, Any
 from collections import defaultdict
 
-# 配置中文字体（解决中文显示问题）
-# 直接指定字体文件路径
+# 配置中文字体
 import matplotlib.font_manager as fm
 font_path = '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc'
 font_prop = fm.FontProperties(fname=font_path)
 plt.rcParams['font.family'] = font_prop.get_name()
 plt.rcParams['axes.unicode_minus'] = False
-print(f"✓ 使用中文字体: {font_prop.get_name()}")
 
 # ===============================
-# 第一部分：参数配置区
+# 默认配置
 # ===============================
-
-# 默认配置（可通过命令行参数覆盖）
 DEFAULT_CONFIG = {
-    'figure_size': (20, 8),  # 图表大小（宽，高）英寸
-    'dpi': 150,              # 图表分辨率
-    'format': 'png',         # 保存格式：'png', 'pdf', 'svg'
-    'output': None,          # 输出文件名（None=自动生成）
-    'title': None,           # 图表标题（None=自动生成）
-    'verbose': True,         # 是否显示详细信息
+    'figure_size': (20, 8),
+    'dpi': 150,
+    'format': 'png',
+    'output': None,
+    'title': None,
+    'verbose': True,
 }
 
 # 学术配色方案
@@ -66,101 +60,57 @@ COLOR_SCHEME = {
     'task_9': '#8e44ad',   # 深紫
 }
 
-# 为未定义的任务自动生成颜色
 def get_color_for_task(task_name: str) -> str:
-    """为任务获取或生成颜色"""
+    """为任务获取颜色"""
     if task_name in COLOR_SCHEME:
         return COLOR_SCHEME[task_name]
-
-    # 自动生成颜色（基于哈希）
     hash_val = hash(task_name) % 16777215
     color = f'#{hash_val:06x}'
     COLOR_SCHEME[task_name] = color
     return color
 
 # ===============================
-# 第二部分：命令行参数解析
+# 命令行参数解析
 # ===============================
-
 def parse_arguments():
-    """解析命令行参数"""
     parser = argparse.ArgumentParser(
-        description='实时调度追踪文件可视化工具 / Real-Time Scheduling Trace File Visualizer',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-示例:
-  %(prog)s trace.json
-  %(prog)s trace.json --output my_chart.png
-  %(prog)s trace.json --format pdf --dpi 300
-  %(prog)s trace.json --width 30 --height 10
-  %(prog)s trace.json --no-stats
-        """
+        description='实时调度追踪文件可视化工具',
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
-    # 必需参数
-    parser.add_argument('trace_file', type=str,
-                       help='追踪文件路径 (JSON格式)')
-
-    # 可选参数
-    parser.add_argument('-o', '--output', type=str, default=None,
-                       help='输出文件名 (默认: 自动生成)')
-
-    parser.add_argument('-f', '--format', type=str, default='png',
-                       choices=['png', 'pdf', 'svg'],
-                       help='输出格式 (默认: png)')
-
-    parser.add_argument('--dpi', type=int, default=150,
-                       help='图表分辨率 (默认: 150)')
-
-    parser.add_argument('--width', type=float, default=20,
-                       help='图表宽度（英寸）(默认: 20)')
-
-    parser.add_argument('--height', type=float, default=8,
-                       help='图表高度（英寸）(默认: 8)')
-
-    parser.add_argument('-t', '--title', type=str, default=None,
-                       help='图表标题 (默认: 自动生成)')
-
-    parser.add_argument('--no-stats', action='store_true',
-                       help='不显示统计信息')
-
-    parser.add_argument('--no-grid', action='store_true',
-                       help='不显示网格线')
-
-    parser.add_argument('--taskset', type=str, default=None,
-                       help='任务集配置文件 (YAML格式) - 用于显示到达和截止时��标记')
+    parser.add_argument('trace_file', type=str, help='追踪文件路径 (JSON格式)')
+    parser.add_argument('-o', '--output', type=str, default=None, help='输出文件名')
+    parser.add_argument('-f', '--format', type=str, default='png', choices=['png', 'pdf', 'svg'])
+    parser.add_argument('--dpi', type=int, default=150, help='图表分辨率')
+    parser.add_argument('--width', type=float, default=20, help='图表宽度（英寸）')
+    parser.add_argument('--height', type=float, default=8, help='图表高度（英寸）')
+    parser.add_argument('-t', '--title', type=str, default=None, help='图表标题')
+    parser.add_argument('--no-stats', action='store_true', help='不显示统计信息')
+    parser.add_argument('--no-grid', action='store_true', help='不显示网格线')
+    parser.add_argument('--taskset', type=str, default=None, help='任务集配置文件 (YAML)')
 
     return parser.parse_args()
 
 # ===============================
-# 第三部分：追踪文件解析器
+# 追踪文件解析器（核心逻辑修复版）
 # ===============================
-
 class TraceParser:
-    """追踪文件解析器：解析JSON格式的调度追踪"""
+    """追踪文件解析器 - 使用唯一实例标识"""
 
     def __init__(self, trace_file: str, verbose: bool = True):
-        """
-        初始化解析器
-
-        参数：
-            trace_file: 追踪文件路径
-            verbose: 是否显示详细信息
-        """
         self.trace_file = trace_file
         self.events = []
         self.tasks = set()
         self.schedule_intervals = {}  # {task_name: [(start, end), ...]}
-        self.task_arrivals = {}  # {task_name: [arrival_times]}
-        self.task_completions = {}  # {task_name: [completion_times]}
+        self.task_arrivals = {}       # {task_name: [arrival_times]}
+        self.task_completions = {}    # {task_name: [completion_times]}
         self.deadline_misses = defaultdict(dict)  # {task_name: {arrival_time: miss_time}}
-        self.time_range = (float('inf'), 0)  # 初始化为无穷大和0，以便正确计算最小值
+        self.time_range = (float('inf'), 0)
         self.verbose = verbose
 
         self._parse_trace()
 
     def _parse_trace(self):
-        """解析追踪文件"""
         if self.verbose:
             print(f"正在解析追踪文件: {self.trace_file}")
 
@@ -179,7 +129,6 @@ class TraceParser:
             print("错误：追踪文件中没有事件")
             sys.exit(1)
 
-        # 提取任务信息和调度间隔
         self._extract_schedule_info()
 
         if self.verbose:
@@ -187,19 +136,26 @@ class TraceParser:
             print(f"✓ 时间范围: {self.time_range[0]} - {self.time_range[1]}")
 
     def _extract_schedule_info(self):
-        """从事件中提取调度信息"""
+        """
+        从事件中提取调度信息 - 核心修复版
+        1. 使用唯一实例标识: task_name + arrival_time
+        2. 正确处理 kill 事件
+        """
         # 初始化数据结构
         self.schedule_intervals = defaultdict(list)
         self.task_arrivals = defaultdict(list)
         self.task_completions = defaultdict(list)
 
-        # 跟踪当前正在执行的任务
-        active_tasks = {}  # {task_name: start_time}
+        # ⭐ 核心修复1: 使用唯一实例标识 (task_name, arrival_time)
+        # active_tasks 存储: {(task_name, arrival_time): start_time}
+        active_tasks = {}  # {(task_name, arrival_time): start_time}
 
-        # 事件类型统计
+        # 记录每个任务的最新到达时间（用于处理没有明确arrival_time的场景）
+        latest_arrival = {}  # {task_name: arrival_time}
+
         event_stats = defaultdict(int)
 
-        # 直接使用原始时间值，不进行偏移
+        # 按时间顺序处理事件
         for event in self.events:
             event_type = event['event_type']
             task_name = event.get('task_name', 'unknown')
@@ -208,45 +164,62 @@ class TraceParser:
             # 记录任务
             self.tasks.add(task_name)
 
-            # 记录时间范围（使用原始时间）
+            # 更新时间范围
             self.time_range = (min(self.time_range[0], time), max(self.time_range[1], time))
 
             # 统计事件类型
             event_stats[event_type] += 1
 
+            # 获取或更新到达时间
+            arrival_time = int(event.get('arrival_time', time))
+            if task_name in latest_arrival:
+                # 如果当前时间小于最新到达时间，说明是旧实例的事件
+                if time < latest_arrival[task_name]:
+                    arrival_time = latest_arrival[task_name]
+            latest_arrival[task_name] = max(latest_arrival.get(task_name, 0), arrival_time)
+
+            # 实例唯一标识
+            instance_key = (task_name, arrival_time)
+
             # 处理不同类型的事件
             if event_type == 'arrival':
-                # 任务到达
                 self.task_arrivals[task_name].append(time)
+                latest_arrival[task_name] = time
 
             elif event_type == 'scheduled':
-                # 任务开始执行
-                if task_name not in active_tasks:
-                    active_tasks[task_name] = time
+                # 任务开始执行 - 使用唯一实例标识
+                if instance_key not in active_tasks:
+                    active_tasks[instance_key] = time
 
             elif event_type == 'descheduled':
-                # 任务停止执行
-                if task_name in active_tasks:
-                    start_time = active_tasks[task_name]
+                # 任务被抢占 - 使用唯一实例标识
+                if instance_key in active_tasks:
+                    start_time = active_tasks[instance_key]
                     self.schedule_intervals[task_name].append((start_time, time))
-                    del active_tasks[task_name]
+                    del active_tasks[instance_key]
 
             elif event_type == 'end_instance':
-                # 任务实例结束（也作为descheduled处理）
+                # 任务实例正常结束 - 使用唯一实例标识
                 self.task_completions[task_name].append(time)
-                # 如果任务还在活跃，记录完成时间作为区间结束
-                if task_name in active_tasks:
-                    start_time = active_tasks[task_name]
+                if instance_key in active_tasks:
+                    start_time = active_tasks[instance_key]
                     self.schedule_intervals[task_name].append((start_time, time))
-                    del active_tasks[task_name]
+                    del active_tasks[instance_key]
 
+            # ⭐ 核心修复2: 处理 kill 事件（强制终止）
+            elif event_type == 'kill':
+                if instance_key in active_tasks:
+                    start_time = active_tasks[instance_key]
+                    self.schedule_intervals[task_name].append((start_time, time))
+                    del active_tasks[instance_key]
+
+            # ⭐ 核心修复3: 记录 deadline miss（使用唯一实例标识）
             elif event_type == 'dline_miss':
-                # 记录deadline miss事件（同时记录arrival_time）
-                arrival_time = int(event.get('arrival_time', time))
-                self.deadline_misses[task_name][arrival_time] = time
+                miss_arrival = int(event.get('arrival_time', time))
+                self.deadline_misses[task_name][miss_arrival] = time
 
         # 处理可能未关闭的任务（以防追踪文件不完整）
-        for task_name, start_time in active_tasks.items():
+        for (task_name, arrival_time), start_time in active_tasks.items():
             self.schedule_intervals[task_name].append((start_time, self.time_range[1]))
 
         # 打印统计信息
@@ -263,46 +236,31 @@ class TraceParser:
                 print(f"  {task}: {intervals} 个执行区间, 总执行时间 {total_time}, Deadline Miss: {misses}")
 
     def get_schedule_intervals(self) -> Dict[str, List[Tuple[int, int]]]:
-        """获取所有任务的调度间隔"""
         return dict(self.schedule_intervals)
 
     def get_task_arrivals(self) -> Dict[str, List[int]]:
-        """获取所有任务的到达时间"""
         return dict(self.task_arrivals)
 
     def get_tasks(self) -> List[str]:
-        """获取任务列表"""
         return sorted(self.tasks)
 
     def get_time_range(self) -> Tuple[int, int]:
-        """获取时间范围"""
         return self.time_range
 
-    def get_deadline_misses(self) -> Dict[str, List[int]]:
-        """获取所有任务的deadline miss时间"""
+    def get_deadline_misses(self) -> Dict[str, Dict[int, int]]:
         return dict(self.deadline_misses)
 
 # ===============================
 # 任务集配置解析器
 # ===============================
-
 class TaskSetParser:
-    """任务集配置解析器：解析YAML格式的任务集配置"""
-
     def __init__(self, taskset_file: str):
-        """
-        初始化解析器
-
-        参数：
-            taskset_file: 任务集配置文件路径（YAML格式）
-        """
         self.taskset_file = taskset_file
-        self.task_configs = {}  # {task_name: {'period': int, 'deadline': int, 'arrival_offset': int}}
+        self.task_configs = {}
 
         self._parse_taskset()
 
     def _parse_taskset(self):
-        """解析任务集配置文件"""
         try:
             with open(self.taskset_file, 'r', encoding='utf-8') as f:
                 data = yaml.safe_load(f)
@@ -310,7 +268,6 @@ class TaskSetParser:
 
                 for task in tasks:
                     name = task['name']
-                    # 从params中提取参数，格式如 "period=50,wcet=20,arrival_offset=0"
                     params_str = task.get('params', '')
                     params = {}
 
@@ -320,55 +277,35 @@ class TaskSetParser:
                             try:
                                 params[key] = int(value)
                             except ValueError:
-                                # 保持字符串值（如 workload=bzip2）
                                 params[key] = value
 
-                    # 按照要求提取参数：
-                    # T (Period): 优先取 params['period']，其次取顶层 iat。必填。
                     T = params.get('period', task.get('iat'))
-
-                    # D (Relative Deadline): 优先取 deadline，如果未定义则默认 D = T
                     D = task.get('deadline', T)
-
-                    # O (Offset): 优先取 params['arrival_offset']，如果未定义则默认 O = 0
                     O = params.get('arrival_offset', 0)
 
-                    self.task_configs[name] = {
-                        'T': T,  # Period
-                        'D': D,  # Relative Deadline
-                        'O': O   # Offset
-                    }
+                    self.task_configs[name] = {'T': T, 'D': D, 'O': O}
 
             print(f"✓ 解析任务集配置完成：{len(self.task_configs)} 个任务")
             for task_name, config in self.task_configs.items():
                 print(f"  {task_name}: T={config['T']}, D={config['D']}, O={config['O']}")
-
-        except FileNotFoundError:
-            print(f"警告：找不到任务集配置文件 {self.taskset_file}")
         except Exception as e:
             print(f"警告：解析任务集配置失败 - {e}")
 
     def get_task_config(self, task_name: str) -> Dict[str, int]:
-        """获取指定任务的配置"""
         return self.task_configs.get(task_name, {})
 
     def get_all_configs(self) -> Dict[str, Dict[str, int]]:
-        """获取所有任务配置"""
         return self.task_configs
 
-# ===============================
-# 第四部分：可视化绘图器
-# ===============================
 
+# ===============================
+# 可视化绘图器（增强版）
+# ===============================
 class TraceVisualizer:
-    """追踪可视化器：根据追踪文件生成甘特图"""
-
-    # 类级别的字体属性
     _font_prop = None
 
     @classmethod
     def _get_font_prop(cls):
-        """获取字体属性"""
         if cls._font_prop is None:
             import matplotlib.font_manager as fm
             font_path = '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc'
@@ -376,14 +313,6 @@ class TraceVisualizer:
         return cls._font_prop
 
     def __init__(self, parser: TraceParser, config: Dict[str, Any], taskset_parser: TaskSetParser = None):
-        """
-        初始化可视化器
-
-        参数：
-            parser: 已解析的追踪文件解析器
-            config: 配置字典
-            taskset_parser: 任务集配置解析器（可选）
-        """
         self.parser = parser
         self.config = config
         self.taskset_parser = taskset_parser
@@ -394,28 +323,14 @@ class TraceVisualizer:
         self.deadline_misses = parser.get_deadline_misses()
 
     def plot_gantt_chart(self, output_file: str = None):
-        """
-        绘制调度甘特图
-
-        参数：
-            output_file: 输出文件路径（可选）
-        """
-        # 创建图表
+        """绘制调度甘特图 - 带防重叠的起止时间标注"""
         fig, ax = plt.subplots(figsize=self.config['figure_size'], dpi=self.config['dpi'])
 
-        # 任务位置映射
         task_positions = {task: i for i, task in enumerate(self.tasks)}
-
-        # 时间偏移量（将起始时间归零）
         time_offset = self.time_range[0]
-
-        # 计算时间跨度
         time_span = self.time_range[1] - self.time_range[0]
 
-        # 绘制每个任务的执行区间
-        total_execution = defaultdict(int)
-
-        # ⭐ 根据时间跨度决定刻度间隔（提前计算，用于所有时间轴）
+        # ⭐ 计算刻度间隔
         if time_span <= 20:
             tick_interval = 2
         elif time_span <= 50:
@@ -425,78 +340,39 @@ class TraceVisualizer:
         else:
             tick_interval = 20
 
-        # ⭐ 为所有任务绘制时间轴（即使没有调度区间）
+        # ⭐ 绘制时间轴和刻度
         for task_name in self.tasks:
             pos = task_positions[task_name]
-
-            # 绘制该任务的时间轴（在任务条下方）
-            time_axis_y = pos - 0.125  # 任务条下边界（任务条高度0.25，中心在pos）
+            time_axis_y = pos - 0.125
             ax.plot([0, time_span * 1.02], [time_axis_y, time_axis_y],
                    color='gray', linestyle='-', linewidth=0.8, alpha=0.5)
 
-            # 添加时间刻度
             for tick in range(0, int(time_span * 1.02) + 1, tick_interval):
-                # 绘制刻度线
                 ax.plot([tick, tick], [time_axis_y, time_axis_y - 0.05],
                        color='gray', linestyle='-', linewidth=0.5, alpha=0.5)
-                # 绘制刻度值
                 ax.text(tick, time_axis_y - 0.08, str(tick),
                        ha='center', va='top', fontsize=5, color='gray',
                        fontproperties=self._get_font_prop())
 
-        # 绘制任务的执行区间
+        # ⭐ 用于跟踪已标注的时间点（去重）
+        labeled_times = defaultdict(set)  # {task_name: {time1, time2, ...}}
+
+        # 绘制任务执行区间
         for task_name, intervals in self.schedule_intervals.items():
             pos = task_positions[task_name]
             color = get_color_for_task(task_name)
 
             for start, end in intervals:
                 duration = end - start
-                total_execution[task_name] += duration
-
-                # 使用偏移后的时间
                 adjusted_start = start - time_offset
                 adjusted_end = end - time_offset
-
-                # 获取该任务的arrival_time（用于计算deadline）
-                # 找到最接近start时间的arrival
-                has_miss = False
-                deadline_time = None
-
-                arrivals = self.task_arrivals.get(task_name, [])
-                # 找到不晚于start时间的最近arrival
-                relevant_arrival = None
-                for arr_time in sorted(arrivals):
-                    if arr_time <= start:
-                        relevant_arrival = arr_time
-                    else:
-                        break
-
-                if relevant_arrival is not None and self.taskset_parser:
-                    # 从任务配置获取参数
-                    task_config = self.taskset_parser.get_task_config(task_name)
-                    if task_config:
-                        D = task_config['D']
-                        # 计算deadline = arrival_time + D
-                        deadline_time = relevant_arrival + D
-                        adjusted_deadline = deadline_time - time_offset
-
-                        # 检查：是否有deadline_miss事件与该arrival_time匹配
-                        # 这会检查该任务实例是否有deadline_miss记录
-                        task_misses = self.deadline_misses.get(task_name, {})
-                        if relevant_arrival in task_misses:
-                            has_miss = True
 
                 # 绘制任务条
                 ax.barh(pos, duration, left=adjusted_start, height=0.25,
                        color=color, edgecolor='black', linewidth=1.0, alpha=0.85)
 
-                # ⭐ 修复：deadline miss标记稍后统一添加，避免遗漏
-
-                # 添加任务标签（如果区间足够长）
-                if duration >= (self.time_range[1] - self.time_range[0]) * 0.02:
-                    mid_time = adjusted_start + duration / 2
-                    ax.text(mid_time, pos, task_name, ha='center', va='center',
-                           fontsize=6, fontweight='bold', color='white')
+                # ⭐ 防重叠的起止时间标注
+                self._add_time_labels(ax, task_name, pos, adjusted_start, adjusted_end, duration, time_span, labeled_times)
 
         # 设置坐标轴
         ax.set_yticks(range(len(self.tasks)))
@@ -505,106 +381,18 @@ class TraceVisualizer:
                      fontproperties=self._get_font_prop())
         ax.set_ylabel('任务', fontsize=12, fontweight='bold', fontproperties=self._get_font_prop())
 
-
-        # 设置Y轴范围（留出空间给箭头和时间轴）
         ax.set_ylim(-0.7, len(self.tasks) + 0.1)
-        
-        # ⭐ 绘制所有deadline miss标记（改进版）
-        for task_name in self.tasks:
-            pos = task_positions[task_name]
-            task_misses = self.deadline_misses.get(task_name, {})
-            task_intervals = self.schedule_intervals.get(task_name, [])
-            
-            for arrival_time, miss_time in task_misses.items():
-                # 转换为图表坐标
-                adjusted_miss_time = miss_time - time_offset
-                
-                # 只绘制在时间范围内的标记
-                if adjusted_miss_time <= time_span * 1.02:
-                    # 检查该任务实例是否有执行区间
-                    has_execution = False
-                    interval_end_time = None
-                    
-                    for start, end in task_intervals:
-                        # 找到该arrival对应的执行区间
-                        # 如果arrival_time <= start < end，认为是该实例的执行
-                        if start >= arrival_time and end > arrival_time:
-                            has_execution = True
-                            interval_end_time = end - time_offset
-                            break
-                    
-                    if has_execution and interval_end_time is not None:
-                        # 情况1: 有任务条 - 在任务条右侧末尾添加红色X
-                        ax.plot(interval_end_time, pos, marker='x', markersize=10,
-                               color='red', markeredgewidth=2, label='_nolegend_', zorder=10)
-                    else:
-                        # 情况2: 无任务条 - 在到达时间位置右侧添加红色X
-                        adjusted_arrival = arrival_time - time_offset
-                        # ⭐ 改进：与有任务条的位置一致，都在时间轴右侧位置
-                        ax.plot(adjusted_arrival + 0.5, pos, marker='x', markersize=10,
-                               color='red', markeredgewidth=2, label='_nolegend_', zorder=10)
 
+        # ⭐ 绘制 deadline miss 标记（使用唯一实例标识）
+        self._plot_deadline_misses(ax, task_positions, time_offset, time_span)
 
-        # 绘制到达时间和截止时间标记（如果有任务集配置）
+        # 绘制到达时间和截止时间标记
         if self.taskset_parser:
-            for task_name in self.tasks:
-                pos = task_positions[task_name]
-                task_config = self.taskset_parser.get_task_config(task_name)
+            self._plot_arrival_deadlines(ax, task_positions, time_offset, time_span)
 
-                if not task_config:
-                    continue
-
-                T = task_config['T']  # Period
-                D = task_config['D']  # Relative Deadline
-                O = task_config['O']  # Offset
-
-                # 理论时间轴计算循环
-                k = 0
-                while True:
-                    # 1. 计算理论到达时间 (Offset + k * Period)
-                    abs_release = O + (k * T)
-
-                    # 停止条件：到达时间超过了Trace的总时长
-                    if abs_release > self.time_range[1]:
-                        break
-
-                    # 2. 计算理论截止时间 (Release + Relative Deadline)
-                    # 严禁使用 release + period，必须使用 release + D
-                    abs_deadline = abs_release + D
-
-                    # 3. 转换为图表坐标（减去偏移）
-                    adjusted_release = abs_release - time_offset
-                    adjusted_deadline = abs_deadline - time_offset
-
-                    # ⭐ 修复：只绘制到达时间在范围内的标记（而不是deadline）
-                    # 这样可以确保最后一个到达事件的箭头也能显示
-                    if adjusted_release <= time_span * 1.02:
-                        # 绘制到达时间标记（向上箭头，绿色）+ 垂直线
-                        # 从任务条上边缘向上延伸
-                        ax.plot([adjusted_release, adjusted_release], [pos - 0.125, pos + 0.3],
-                               color='green', linestyle='-', linewidth=1.5, alpha=0.7)
-                        ax.plot(adjusted_release, pos + 0.3, marker='^', markersize=8,
-                               color='green', markeredgecolor='darkgreen', markeredgewidth=1,
-                               label='到达' if task_name == self.tasks[0] and k == 0 else '')
-                        # 绘制截止时间标记（向下箭头，红色）+ 垂直线
-                        # 从任务条上边缘向下延伸
-                        # ⭐ 只有当deadline也在合理范围内时才绘制
-                        if adjusted_deadline <= time_span * 1.02:
-                            ax.plot([adjusted_deadline, adjusted_deadline], [pos + 0.3, pos - 0.125],
-                                   color='red', linestyle='-', linewidth=1.5, alpha=0.7)
-                            ax.plot(adjusted_deadline, pos - 0.125, marker='v', markersize=8,
-                                   color='red', markeredgecolor='darkred', markeredgewidth=1,
-                                   label='截止' if task_name == self.tasks[0] and k == 0 else '')
-
-                    k += 1
-
-        # 设置X轴范围（从0开始，留一些右边距）
         ax.set_xlim(0, time_span * 1.02)
-
-        # 隐藏底部X轴刻度和标签（因为每个任务都有独立的时间轴）
         ax.tick_params(axis='x', bottom=False, labelbottom=False)
 
-        # 添加网格
         if not self.config.get('no_grid', False):
             ax.grid(True, axis='x', linestyle='--', alpha=0.3)
             ax.set_axisbelow(True)
@@ -614,46 +402,40 @@ class TraceVisualizer:
             title = self.config['title']
         else:
             title = f'调度甘特图 - {os.path.basename(self.parser.trace_file)}'
-
         ax.set_title(title, fontsize=14, fontweight='bold', pad=20,
                     fontproperties=self._get_font_prop())
 
         # 创建图例
         legend_elements = []
-        
-        # ⭐ 添加Deadline Miss图例项（如果存在miss事件）
+        total_execution = defaultdict(int)
+        for task_name, intervals in self.schedule_intervals.items():
+            for start, end in intervals:
+                total_execution[task_name] += (end - start)
+
         has_any_miss = any(len(misses) > 0 for misses in self.deadline_misses.values())
         if has_any_miss:
             from matplotlib.lines import Line2D
-            legend_elements.append(
-                Line2D([0], [0], marker='x', markersize=10, linestyle='None',
-                       color='red', markeredgewidth=2, label='Deadline Miss')
-            )
+            legend_elements.append(Line2D([0], [0], marker='x', markersize=10, linestyle='None',
+                           color='red', markeredgewidth=2, label='Deadline Miss'))
+
         for task in self.tasks:
             color = get_color_for_task(task)
             intervals = len(self.schedule_intervals.get(task, []))
             exec_time = total_execution.get(task, 0)
-            legend_elements.append(
-                mpatches.Patch(color=color,
-                             label=f'{task} ({intervals}x, {exec_time}t)')
-            )
+            legend_elements.append(mpatches.Patch(color=color,
+                         label=f'{task} ({intervals}x, {exec_time}t)'))
 
-        ax.legend(handles=legend_elements, loc='upper left',
-                 fontsize=9, framealpha=0.9, ncol=2)
+        ax.legend(handles=legend_elements, loc='upper left', fontsize=9, framealpha=0.9, ncol=2)
 
-        # 调整布局
         plt.tight_layout()
 
         # 保存图表
         if output_file is None:
-            # 自动生成文件名
             base_name = os.path.splitext(os.path.basename(self.parser.trace_file))[0]
             output_format = self.config['format']
             output_file = f'scheduling_gantt_{base_name}.{output_format}'
         else:
-            # 确保使用指定的格式扩展名
             if not output_file.endswith(f".{self.config['format']}"):
-                # 移除旧扩展名并添加新扩展名
                 base = os.path.splitext(output_file)[0]
                 output_file = f"{base}.{self.config['format']}"
 
@@ -661,7 +443,105 @@ class TraceVisualizer:
         print(f"\n✓ 图表已保存至: {output_file}")
         print(f"  图表大小: {self.config['figure_size'][0]}x{self.config['figure_size'][1]} 英寸, DPI: {self.config['dpi']}")
 
-        plt.close(fig)  # 关闭图表，释放内存
+        plt.close(fig)
+
+    def _add_time_labels(self, ax, task_name: str, pos: int, adjusted_start: float, adjusted_end: float,
+                         duration: float, time_span: float, labeled_times: dict):
+        """
+        ⭐ 防重叠的起止时间标注策略
+        1. 时间标注在任务条上方
+        2. 颜色为灰色，和底部刻度一致
+        3. 去重：同一任务同一时间只标注一次
+        """
+        # 去重检查 - 开始时间
+        start_key = int(adjusted_start)
+        if start_key not in labeled_times[task_name]:
+            labeled_times[task_name].add(start_key)
+
+            # 开始时间标注在任务条上方
+            ax.text(adjusted_start, pos + 0.35, f'{start_key}',
+                   ha='center', va='bottom', fontsize=7, color='gray',
+                   fontproperties=self._get_font_prop())
+
+        # 去重检查 - 结束时间（避免和下一个区块的开始重叠）
+        end_key = int(adjusted_end)
+        # 只有当结束时间和开始时间不同时才标注
+        if end_key != start_key and end_key not in labeled_times[task_name]:
+            labeled_times[task_name].add(end_key)
+
+            # 结束时间标注在任务条上方
+            ax.text(adjusted_end, pos + 0.35, f'{end_key}',
+                   ha='center', va='bottom', fontsize=7, color='gray',
+                   fontproperties=self._get_font_prop())
+
+    def _plot_deadline_misses(self, ax, task_positions: dict, time_offset: float, time_span: float):
+        """绘制 deadline miss 标记"""
+        for task_name in self.tasks:
+            pos = task_positions[task_name]
+            task_misses = self.deadline_misses.get(task_name, {})
+            task_intervals = self.schedule_intervals.get(task_name, [])
+
+            for arrival_time, miss_time in task_misses.items():
+                adjusted_miss_time = miss_time - time_offset
+
+                if adjusted_miss_time <= time_span * 1.02:
+                    # 检查该任务实例是否有执行区间
+                    has_execution = False
+                    interval_end_time = None
+
+                    for start, end in task_intervals:
+                        if start >= arrival_time and end > arrival_time:
+                            has_execution = True
+                            interval_end_time = end - time_offset
+                            break
+
+                    if has_execution and interval_end_time is not None:
+                        ax.plot(interval_end_time, pos, marker='x', markersize=10,
+                               color='red', markeredgewidth=2, label='_nolegend_', zorder=10)
+                    else:
+                        adjusted_arrival = arrival_time - time_offset
+                        ax.plot(adjusted_arrival + 0.5, pos, marker='x', markersize=10,
+                               color='red', markeredgewidth=2, label='_nolegend_', zorder=10)
+
+    def _plot_arrival_deadlines(self, ax, task_positions: dict, time_offset: float, time_span: float):
+        """绘制到达时间和截止时间标记"""
+        for task_name in self.tasks:
+            pos = task_positions[task_name]
+            task_config = self.taskset_parser.get_task_config(task_name)
+
+            if not task_config:
+                continue
+
+            T = task_config['T']
+            D = task_config['D']
+            O = task_config['O']
+
+            k = 0
+            while True:
+                abs_release = O + (k * T)
+                if abs_release > self.time_range[1]:
+                    break
+
+                abs_deadline = abs_release + D
+
+                adjusted_release = abs_release - time_offset
+                adjusted_deadline = abs_deadline - time_offset
+
+                if adjusted_release <= time_span * 1.02:
+                    ax.plot([adjusted_release, adjusted_release], [pos - 0.125, pos + 0.3],
+                           color='green', linestyle='-', linewidth=1.5, alpha=0.7)
+                    ax.plot(adjusted_release, pos + 0.3, marker='^', markersize=8,
+                           color='green', markeredgecolor='darkgreen', markeredgewidth=1,
+                           label='到达' if task_name == self.tasks[0] and k == 0 else '')
+
+                    if adjusted_deadline <= time_span * 1.02:
+                        ax.plot([adjusted_deadline, adjusted_deadline], [pos + 0.3, pos - 0.125],
+                               color='red', linestyle='-', linewidth=1.5, alpha=0.7)
+                        ax.plot(adjusted_deadline, pos - 0.125, marker='v', markersize=8,
+                               color='red', markeredgecolor='darkred', markeredgewidth=1,
+                               label='截止' if task_name == self.tasks[0] and k == 0 else '')
+
+                k += 1
 
     def print_statistics(self):
         """打印调度统计信息"""
@@ -704,15 +584,11 @@ class TraceVisualizer:
         print("="*70 + "\n")
 
 # ===============================
-# 第五部分：主程序
+# 主程序
 # ===============================
-
 def main():
-    """主函数"""
-    # 解析命令行参数
     args = parse_arguments()
 
-    # 构建配置字典
     config = DEFAULT_CONFIG.copy()
     config['format'] = args.format
     config['dpi'] = args.dpi
@@ -722,28 +598,26 @@ def main():
     config['verbose'] = not args.no_stats
     config['no_grid'] = args.no_grid
 
-    # 打印标题
     if config['verbose']:
         print("\n" + "="*70)
         print("实时调度追踪文件可视化工具")
-        print("Real-Time Scheduling Trace File Visualizer")
         print("="*70 + "\n")
 
-    # 1. 解析追踪文件
+    # 解析追踪文件
     parser = TraceParser(args.trace_file, verbose=config['verbose'])
 
-    # 2. 解析任务集配置（如果提供）
+    # 解析任务集配置
     taskset_parser = None
     if args.taskset:
         taskset_parser = TaskSetParser(args.taskset)
 
-    # 3. 创建可视化器
+    # 创建可视化器
     visualizer = TraceVisualizer(parser, config, taskset_parser)
 
-    # 3. 打印统计信息
+    # 打印统计信息
     visualizer.print_statistics()
 
-    # 4. 生成甘特图
+    # 生成甘特图
     if config['verbose']:
         print("\n正在生成甘特图...")
     visualizer.plot_gantt_chart(output_file=config['output'])

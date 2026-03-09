@@ -38,7 +38,41 @@ SYSTEM_CORES = get_system_cores(CONFIG_TEMPLATE)
 MAX_WORKERS = min(12, cpu_count() - 2)
 print(f"🔧 并行工作进程数: {MAX_WORKERS}")
 
-ALGORITHMS = ['gpfp_tie', 'gpfp_tgf', 'gpfp_btie']
+ALGORITHMS = [
+    'gpfp_asap_block', 'gpfp_asap_nonblock', 'gpfp_asap_sync',
+    'gpfp_alap_block', 'gpfp_alap_nonblock', 'gpfp_alap_sync',
+    'gpfp_st_block', 'gpfp_st_nonblock', 'gpfp_st_sync'
+]
+
+ALGORITHM_FAMILIES = {
+    'asap': ['gpfp_asap_block', 'gpfp_asap_nonblock', 'gpfp_asap_sync'],
+    'alap': ['gpfp_alap_block', 'gpfp_alap_nonblock', 'gpfp_alap_sync'],
+    'st': ['gpfp_st_block', 'gpfp_st_nonblock', 'gpfp_st_sync'],
+}
+
+ALGO_DISPLAY_NAMES = {
+    'gpfp_asap_block': 'asapblock',
+    'gpfp_asap_nonblock': 'asapnonblock',
+    'gpfp_asap_sync': 'asapsync',
+    'gpfp_alap_block': 'alapblock',
+    'gpfp_alap_nonblock': 'alapnonblock',
+    'gpfp_alap_sync': 'alapsync',
+    'gpfp_st_block': 'stblock',
+    'gpfp_st_nonblock': 'stnonblock',
+    'gpfp_st_sync': 'stsync',
+}
+
+ALGO_STYLES = {
+    'gpfp_asap_block': {'color': '#1f77b4', 'marker': 'o'},
+    'gpfp_asap_nonblock': {'color': '#2ca02c', 'marker': 's'},
+    'gpfp_asap_sync': {'color': '#d62728', 'marker': '^'},
+    'gpfp_alap_block': {'color': '#1f77b4', 'marker': 'o'},
+    'gpfp_alap_nonblock': {'color': '#2ca02c', 'marker': 's'},
+    'gpfp_alap_sync': {'color': '#d62728', 'marker': '^'},
+    'gpfp_st_block': {'color': '#1f77b4', 'marker': 'o'},
+    'gpfp_st_nonblock': {'color': '#2ca02c', 'marker': 's'},
+    'gpfp_st_sync': {'color': '#d62728', 'marker': '^'},
+}
 BATTERY_CAPACITIES = [1.0, 3.0, 5.0, 10.0, 15.0, 25.0, 40.0, 60.0]
 
 NUM_TASKSETS = 30
@@ -68,7 +102,11 @@ SIMULATOR = './build/rtsim/rtsim'
 OUTPUT_DIR = Path('experiment_results_u2.8_init0.3') # 修改目录名以防覆盖
 TRACE_DIR = OUTPUT_DIR / 'traces'
 TASK_DIR = OUTPUT_DIR / 'tasks'
-FIGURE_OUTPUT = OUTPUT_DIR / 'figure5_diff.png'
+FIGURE_OUTPUTS = {
+    'asap': OUTPUT_DIR / 'figure_asap_diff.png',
+    'alap': OUTPUT_DIR / 'figure_alap_diff.png',
+    'st': OUTPUT_DIR / 'figure_st_diff.png',
+}
 TABLE_OUTPUT = OUTPUT_DIR / 'table1_diff.md'
 
 for p in [OUTPUT_DIR, TRACE_DIR, TASK_DIR]:
@@ -338,53 +376,61 @@ class FigureGenerator:
     def __init__(self, df: pd.DataFrame):
         self.df = df
 
-    def generate_figure5(self):
-        fig, axes = plt.subplots(2, 3, figsize=(18, 10))
-        fig.suptitle(f'Performance Comparison (High Task Heterogeneity)', fontsize=16)
-        
-        algo_map = {'gpfp_tie': 'TIE', 'gpfp_tgf': 'TGF', 'gpfp_btie': 'BTIE (Ours)'}
-        colors = {'gpfp_tie': '#1f77b4', 'gpfp_tgf': '#2ca02c', 'gpfp_btie': '#d62728'}
-        markers = {'gpfp_tie': 'o', 'gpfp_tgf': 's', 'gpfp_btie': '^'}
-        
-        configs = [
+    @staticmethod
+    def _metric_configs():
+        return [
             ('failure_rate', 'Failure Rate (Job-level)'),
             ('preemptions', 'Preemptions (Count)'),
             ('total_idle_time', 'Total Idle Time (ms)'),
             ('avg_execution_time', 'Avg Exec Time (ms)'),
             ('overhead_proxy', 'Scheduler Overhead'),
-            ('avg_energy_level', 'Avg Energy Level (J)') 
+            ('avg_energy_level', 'Avg Energy Level (J)')
         ]
-        
+
+    def generate_family_figure(self, family: str):
+        family_algorithms = ALGORITHM_FAMILIES[family]
+        fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+        fig.suptitle(f'{family.upper()} Performance Comparison (High Task Heterogeneity)', fontsize=16)
+
         axes_flat = axes.flatten()
-        
-        for idx, (col, title) in enumerate(configs):
+
+        for idx, (col, title) in enumerate(self._metric_configs()):
             ax = axes_flat[idx]
-            for algo in ALGORITHMS:
+            for algo in family_algorithms:
                 d = self.df[self.df['algorithm'] == algo]
                 if not d.empty:
                     d = d.sort_values('battery_capacity')
-                    ax.plot(d['battery_capacity'], d[col], 
-                           marker=markers[algo], markersize=6, linewidth=2,
-                           label=algo_map[algo], color=colors[algo], alpha=0.8)
-            
+                    style = ALGO_STYLES[algo]
+                    ax.plot(
+                        d['battery_capacity'], d[col],
+                        marker=style['marker'], markersize=6, linewidth=2,
+                        label=ALGO_DISPLAY_NAMES[algo], color=style['color'], alpha=0.8
+                    )
+
             ax.set_title(title, fontweight='bold')
             ax.set_xlabel('Battery Capacity (Joules)')
             ax.grid(True, linestyle='--', alpha=0.5)
-            
+
             if col == 'failure_rate':
                 ax.set_ylim(-0.05, 1.05)
-            
-            if idx == 0: 
+
+            if idx == 0:
                 ax.legend(loc='upper right')
 
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-        plt.savefig(FIGURE_OUTPUT, dpi=300)
-        print(f"📊 图表已保存: {FIGURE_OUTPUT}")
+        output_path = FIGURE_OUTPUTS[family]
+        plt.savefig(output_path, dpi=300)
+        plt.close(fig)
+        print(f"📊 图表已保存: {output_path}")
+
+    def generate_all_family_figures(self):
+        for family in ['asap', 'alap', 'st']:
+            self.generate_family_figure(family)
 
 class TableGenerator:
     def __init__(self, df: pd.DataFrame):
         self.df = df
-    
+
     def _get_rank(self, metric_series, smaller_is_better=True):
         items = list(metric_series.items())
         items.sort(key=lambda x: x[1], reverse=not smaller_is_better)
@@ -396,24 +442,34 @@ class TableGenerator:
     def generate_table1(self):
         summary = self.df.groupby('algorithm').mean(numeric_only=True)
         metrics = {
-            'failure_rate': True,       
-            'preemptions': True,        
-            'overhead_proxy': True,     
-            'total_idle_time': False,   
+            'failure_rate': True,
+            'preemptions': True,
+            'overhead_proxy': True,
+            'total_idle_time': False,
             'avg_execution_time': False,
-            'avg_energy_level': False   
+            'avg_energy_level': False
         }
-        lines = ["| Metric | TIE | TGF | BTIE |", "|---|---|---|---|"]
-        
-        for metric, smaller_is_better in metrics.items():
-            if metric not in summary.columns: continue
-            series = summary[metric]
-            rank_map = self._get_rank(series, smaller_is_better)
-            row = f"| {metric} |"
-            for algo in ALGORITHMS:
-                row += f" {rank_map.get(algo, 'N/A')} |"
-            lines.append(row)
-            
+        lines = []
+
+        for family in ['asap', 'alap', 'st']:
+            family_algorithms = ALGORITHM_FAMILIES[family]
+            lines.append(f"## {family.upper()}\n")
+            header = "| Metric | " + " | ".join(ALGO_DISPLAY_NAMES[algo] for algo in family_algorithms) + " |"
+            divider = "|---|" + "---|" * len(family_algorithms)
+            lines.extend([header, divider])
+
+            family_summary = summary.loc[summary.index.intersection(family_algorithms)]
+            for metric, smaller_is_better in metrics.items():
+                if metric not in family_summary.columns:
+                    continue
+                series = family_summary[metric]
+                rank_map = self._get_rank(series, smaller_is_better)
+                row = f"| {metric} |"
+                for algo in family_algorithms:
+                    row += f" {rank_map.get(algo, 'N/A')} |"
+                lines.append(row)
+            lines.append("")
+
         with open(TABLE_OUTPUT, 'w', encoding='utf-8') as f:
             f.write('\n'.join(lines))
         print(f"📋 表格已保存: {TABLE_OUTPUT}")
@@ -434,8 +490,8 @@ if __name__ == '__main__':
             df.to_csv(OUTPUT_DIR / 'raw_data_diff.csv', index=False)
             
             print("🎨 正在绘图...")
-            FigureGenerator(df).generate_figure5()
-            
+            FigureGenerator(df).generate_all_family_figures()
+
             print("📝 正在生成表格...")
             TableGenerator(df).generate_table1()
             

@@ -18,6 +18,8 @@ import yaml
 import os
 import sys
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from multiprocessing import cpu_count
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -50,6 +52,38 @@ def get_system_cores(config_path):
     with open(config_path, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f.read())
         return int(config['cpu_islands'][0]['numcpus'])
+
+
+def run_single_simulation_worker(task):
+    """执行单次仿真并返回二元可调度性结果"""
+    algorithm, config_file, task_file, task_idx, utilization, simulation_time, trace_dir = task
+    trace_file = Path(trace_dir) / f'trace_{algorithm}_u{utilization:.2f}_{task_idx:03d}.json'
+
+    env = os.environ.copy()
+    lib_path = os.path.abspath('./build/librtsim')
+    env['LD_LIBRARY_PATH'] = lib_path + ':' + env.get('LD_LIBRARY_PATH', '')
+
+    cmd = [
+        SIMULATOR, config_file, task_file,
+        str(simulation_time), '-t', str(trace_file)
+    ]
+
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, env=env, text=True, timeout=120)
+        acceptance_ratio = TraceParser(str(trace_file)).get_acceptance_ratio()
+        return (algorithm, utilization, acceptance_ratio, None)
+    except subprocess.TimeoutExpired:
+        return (algorithm, utilization, 0.0,
+                f"⏱️ 仿真超时: {algorithm}, U={utilization:.2f}, idx={task_idx}")
+    except subprocess.CalledProcessError as e:
+        error_output = (e.stderr or e.stdout or '').strip()
+        message = f"❌ 仿真失败: {algorithm}, U={utilization:.2f}, idx={task_idx}"
+        if error_output:
+            message = f"{message}\n{error_output}"
+        return (algorithm, utilization, 0.0, message)
+    except Exception as e:
+        return (algorithm, utilization, 0.0,
+                f"❌ 仿真异常: {algorithm}, U={utilization:.2f}, idx={task_idx}: {e}")
 
 # 算法配置 - 9种调度器
 # ASAP系列（贪婪策略）
@@ -121,6 +155,7 @@ DEFAULT_BATTERY_CAPACITY = 20.0  # 20J电池
 DEFAULT_INITIAL_ENERGY_RATIO = 1.0  # 100%初始能量（满电）
 DEFAULT_SOLAR_START_TIME_MS = 21975000  # 太阳能起始时间（毫秒）
 DEFAULT_USE_REAL_SOLAR_DATA = False  # 使用分段函数模拟，不使用真实太阳能数据
+DEFAULT_MAX_WORKERS = max(1, min(12, cpu_count() - 2))
 
 # ============================================
 # 追踪文件解析器
@@ -198,7 +233,7 @@ class ExperimentRunner:
     def __init__(self, output_dir, utilization_points, num_tasksets,
                  task_n, task_p_min, task_p_max, simulation_time,
                  battery_capacity, initial_energy_ratio, solar_start_time_ms,
-                 use_real_solar_data=True, system_cores=None):
+                 use_real_solar_data=True, system_cores=None, max_workers=DEFAULT_MAX_WORKERS):
         self.output_dir = Path(output_dir)
         self.trace_dir = self.output_dir / 'traces'
         self.task_dir = self.output_dir / 'tasks'
@@ -219,9 +254,11 @@ class ExperimentRunner:
         self.solar_start_time_ms = solar_start_time_ms
         self.use_real_solar_data = use_real_solar_data
         self.system_cores = system_cores if system_cores is not None else get_system_cores(CONFIG_TEMPLATE)
+        self.max_workers = max(1, max_workers)
 
         print(f"🖥️  系统核心数: {self.system_cores}")
         print(f"📁 输出目录: {self.output_dir}")
+        print(f"⚙️  并发进程数: {self.max_workers}")
 
     def generate_taskset(self, utilization, task_idx, seed):
         """生成指定利用率的任务集"""
@@ -383,17 +420,16 @@ class ExperimentRunner:
         print(f"   算法数: {len(ALGORITHMS)}")
         print(f"   总仿真数: {total_runs}")
         print(f"   评估方法: 二元可调度性（0=失败, 1=成功）")
+        print(f"   并发线程数: {self.max_workers}")
 
-        # 为每个算法生成配置文件
         config_files = {}
         for algo in ALGORITHMS:
             config_files[algo] = self.modify_config(algo)
 
-        count = 0
+        tasks = []
         for u_idx, utilization in enumerate(self.utilization_points):
             print(f"\n📊 处理利用率点 {u_idx+1}/{len(self.utilization_points)}: U_norm={utilization:.2f}")
 
-            # 生成任务集
             task_files = []
             for task_idx in range(self.num_tasksets):
                 seed = 2000 + int(utilization * 100) * 100 + task_idx
@@ -405,26 +441,32 @@ class ExperimentRunner:
                 print(f"⚠️ 没有成功生成任务集，跳过 U={utilization:.2f}")
                 continue
 
-            # 对每个任务集运行9种算法
             for task_idx, task_file in task_files:
                 for algo in ALGORITHMS:
-                    trace_file = self.run_simulation(algo, config_files[algo],
-                                                    task_file, utilization, task_idx)
+                    tasks.append((
+                        algo,
+                        config_files[algo],
+                        task_file,
+                        task_idx,
+                        utilization,
+                        self.simulation_time,
+                        str(self.trace_dir),
+                    ))
 
-                    if trace_file and os.path.exists(trace_file):
-                        # 解析追踪文件（二元可调度性）
-                        parser = TraceParser(trace_file)
-                        acceptance_ratio = parser.get_acceptance_ratio()
-                        results[algo][utilization].append(acceptance_ratio)
-                    else:
-                        # 仿真失败视为任务集失败
-                        results[algo][utilization].append(0.0)
+        count = 0
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            futures = {executor.submit(run_single_simulation_worker, task): task for task in tasks}
 
-                    count += 1
-                    if count % 10 == 0:
-                        print(f"   进度: {count}/{total_runs} ({(count/total_runs)*100:.1f}%)")
+            for future in as_completed(futures):
+                algorithm, utilization, acceptance_ratio, error = future.result()
+                if error:
+                    print(error)
+                results[algorithm][utilization].append(acceptance_ratio)
 
-        # 清理临时配置文件
+                count += 1
+                if count % 10 == 0 or count == total_runs:
+                    print(f"   进度: {count}/{total_runs} ({(count/total_runs)*100:.1f}%)")
+
         for config_file in config_files.values():
             if os.path.exists(config_file):
                 os.remove(config_file)
@@ -709,6 +751,8 @@ def main():
                        help=f'初始能量比例 (0.0-1.0) (默认: {DEFAULT_INITIAL_ENERGY_RATIO})')
     parser.add_argument('--solar-time-ms', type=int, default=DEFAULT_SOLAR_START_TIME_MS,
                        help=f'太阳能收集开始时间（毫秒）(默认: {DEFAULT_SOLAR_START_TIME_MS})')
+    parser.add_argument('--max-workers', type=int, default=DEFAULT_MAX_WORKERS,
+                       help=f'并发线程数 (默认: {DEFAULT_MAX_WORKERS})')
 
     # 图表参数
     parser.add_argument('--figure-output', type=str, default=None,
@@ -738,7 +782,8 @@ def main():
             initial_energy_ratio=args.initial_energy,
             solar_start_time_ms=args.solar_time_ms,
             use_real_solar_data=DEFAULT_USE_REAL_SOLAR_DATA,
-            system_cores=system_cores
+            system_cores=system_cores,
+            max_workers=args.max_workers
         )
 
         results = runner.run_experiments()
