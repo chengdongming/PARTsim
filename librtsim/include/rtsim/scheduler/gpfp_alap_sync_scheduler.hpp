@@ -145,6 +145,10 @@ namespace RTSim {
         bool _energy_depleted;                          // 能量是否已耗尽（Bug #5修复）
         int _current_batch_size;                        // 当前批量大小
 
+        // ⭐ 同时间戳并发派发修复：待派发任务队列和能量预占
+        std::vector<AbsRTTask *> _pending_dispatch_tasks;   // 待派发任务列表
+        double _pending_dispatch_energy;                   // 待扣除能量（在commitDispatch时真正扣除）
+
         // ========== 抢占防抖 ==========
         AbsRTTask *_last_preempted_task;                // 最近被抢占的任务
         MetaSim::Tick _last_preempted_tick;             // 最近抢占发生的时间
@@ -249,6 +253,8 @@ namespace RTSim {
         void schedule();
         AbsRTTask *getFirst() override;    // ALAP-Sync: 废弃，返回nullptr
         AbsRTTask *getTaskN(unsigned int n) override;  // ALAP-Sync: 返回批量中的第n个任务
+        void commitDispatch();  // ⭐ 确认派发，真正扣除能量（同时间戳并发派发修复）
+
         void insert(AbsRTTask *task) override;
         void extract(AbsRTTask *task);
 

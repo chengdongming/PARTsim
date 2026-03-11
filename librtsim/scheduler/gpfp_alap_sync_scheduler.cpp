@@ -255,6 +255,8 @@ namespace RTSim {
           _batch_scheduled_this_tick(false),
           _energy_depleted(false),
           _current_batch_size(0),
+          _pending_dispatch_tasks(),
+          _pending_dispatch_energy(0.0),
           _last_preempted_task(nullptr),
           _last_preempted_tick(0) {
 
@@ -1132,8 +1134,15 @@ namespace RTSim {
                     break;
                 }
 
-                // 记录调度前的任务数
-                size_t tasks_before = _ready_queue.size() + _running_tasks.size();
+                // ⭐ Bug修复：统计正在运行的任务数量（非nullptr的数量）
+                // 不使用 _ready_queue.size() + _running_tasks.size()
+                // 因为任务从 ready_queue 移动到 running_tasks 时总数不变
+                int running_count_before = 0;
+                for (auto &map_pair : _running_tasks) {
+                    if (map_pair.second != nullptr) {
+                        running_count_before++;
+                    }
+                }
 
                 // 调用dispatch尝试调度更多任务
                 SCHEDULER_LOG_INFO(std::string("🚀 [ALAP-Sync] 调用 _kernel->dispatch()"));
@@ -1150,23 +1159,33 @@ namespace RTSim {
 
                 dispatch_attempts++;
 
-                // 记录调度后的任务数
-                size_t tasks_after = _ready_queue.size() + _running_tasks.size();
+                // ⭐ Bug修复：统计调度后的运行任务数量
+                int running_count_after = 0;
+                for (auto &map_pair : _running_tasks) {
+                    if (map_pair.second != nullptr) {
+                        running_count_after++;
+                    }
+                }
 
-                // 如果没有任务被调度（状态没变化），停止调度
-                if (tasks_before == tasks_after) {
-                    SCHEDULER_LOG_DEBUG("⏹️ [ALAP-Sync] 无更多任务可调度，停止dispatch循环");
+                // ⭐ 关键修复：只有当运行任务数量没变化时才退出
+                // 如果有新任务被调度，继续循环尝试调度更多
+                if (running_count_before == running_count_after) {
+                    SCHEDULER_LOG_DEBUG("⏹️ [ALAP-Sync] 无更多任务可调度（运行任务数量未变化），停止dispatch循环");
                     break;
                 }
 
                 SCHEDULER_LOG_DEBUG(std::string("🔄 [ALAP-Sync] dispatch循环 #") + std::to_string(dispatch_attempts) +
                                    " _ready_queue.size()=" + std::to_string(_ready_queue.size()) +
-                                   " _running_tasks.size()=" + std::to_string(_running_tasks.size()));
+                                   " _running_tasks.size()=" + std::to_string(_running_tasks.size()) +
+                                   " 运行任务数: " + std::to_string(running_count_before) + " -> " + std::to_string(running_count_after));
             }
 
             if (dispatch_attempts >= MAX_DISPATCH_ITERATIONS) {
                 SCHEDULER_LOG_WARNING("⚠️ [ALAP-Sync] dispatch循环达到最大迭代次数，可能存在bug");
             }
+
+            // ⭐ 同时间戳并发派发修复：在dispatch完成后确认能量扣除
+            commitDispatch();
 
             // ⭐ 注意：批量调度后的抢占检查已删除
             // 原因：mid-tick抢占已在insert()中通过Micro-Batch抢占处理
@@ -1212,6 +1231,8 @@ namespace RTSim {
         // ⭐ n==0时重置计数器
         if (n == 0) {
             _counted_tasks_in_dispatch.clear();
+            _pending_dispatch_tasks.clear();  // ⭐ 清除待派发任务列表
+            _pending_dispatch_energy = 0.0;    // ⭐ 重置待扣除能量
         }
 
         // ⭐ V52核心：实时遍历ready_queue，按RM优先级找Slack<=0且能量足够的任务
@@ -1235,7 +1256,10 @@ namespace RTSim {
         // ⭐ 遍历找到第n个Slack<=0且能量足够的任务
         unsigned int found_count = 0;
         for (AbsRTTask *task : sorted_ready) {
+            std::string task_name = getTaskName(task);
+
             if (!task || !task->isActive()) {
+                SCHEDULER_LOG_INFO(std::string("  ❌ 跳过: ") + task_name + " isActive=false");
                 continue;
             }
 
@@ -1246,42 +1270,55 @@ namespace RTSim {
                 is_running = (proc != nullptr);
             }
             if (is_running) {
+                SCHEDULER_LOG_INFO(std::string("  ❌ 跳过: ") + task_name + " 已在运行");
                 continue;  // 跳过已运行的任务
             }
 
             // 检查是否已在本轮dispatch中处理过（避免重复扣除能量）
+            // ⭐ 关键修复：已在 _counted_tasks_in_dispatch 中的任务应该计入 found_count
+            // 因为这些任务已经被之前的 getTaskN 调用返回了
             if (_counted_tasks_in_dispatch.find(task) != _counted_tasks_in_dispatch.end()) {
+                SCHEDULER_LOG_INFO(std::string("  ❌ 跳过: ") + task_name + " 已处理过（计入found_count）");
+                found_count++;  // ⭐ 计入已返回的任务
                 continue;
             }
 
             // ⭐ V52核心：实时检查Slack
             Tick task_slack = calculateSlackForTask(task);
+            SCHEDULER_LOG_INFO(std::string("  📊 检查: ") + task_name +
+                              " Slack=" + std::to_string(static_cast<int64_t>(task_slack)));
             if (task_slack > 0) {
+                SCHEDULER_LOG_INFO(std::string("  ❌ 跳过: ") + task_name + " Slack>0");
                 // Slack>0，跳过（ALAP：尽可能晚执行）
                 continue;
             }
 
-            // ⭐ 检查能量是否足够
+            // ⭐ 检查能量是否足够（考虑待扣除能量）
             double unit_energy = calculateUnitEnergyForTask(task);
-            if (_current_energy < unit_energy - ENERGY_EPSILON) {
+            double effective_energy = _current_energy - _pending_dispatch_energy;
+            if (effective_energy < unit_energy - ENERGY_EPSILON) {
                 SCHEDULER_LOG_WARNING(std::string("⚠️ [ALAP-Sync] 能量不足: ") + getTaskName(task) +
                                      " 需要=" + std::to_string(unit_energy * 1000) + " mJ" +
-                                     " 剩余=" + std::to_string(_current_energy * 1000) + " mJ");
+                                     " 有效能量=" + std::to_string(effective_energy * 1000) + " mJ" +
+                                     " (当前=" + std::to_string(_current_energy * 1000) +
+                                     " 待扣=" + std::to_string(_pending_dispatch_energy * 1000) + ")");
                 continue;
             }
 
             // 找到第n个有效任务
             if (found_count == n) {
-                // ⭐ 扣除能量
-                _current_energy -= unit_energy;
-                _stats.total_energy_consumed += unit_energy;
+                // ⭐ Bug修复：不在此处扣除能量！改为"预占"能量
+                // 能量在commitDispatch()时真正扣除，确保同时间戳多任务能同时派发
+                _pending_dispatch_energy += unit_energy;
                 _counted_tasks_in_dispatch.insert(task);
+                _pending_dispatch_tasks.push_back(task);
 
                 SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Sync] getTaskN(") + std::to_string(n) + ") 返回: " +
                                   getTaskName(task) +
                                   " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) +
                                   " 能量=" + std::to_string(unit_energy * 1000) + " mJ" +
-                                  " 剩余=" + std::to_string(_current_energy * 1000) + " mJ");
+                                  " 预占后=" + std::to_string(_pending_dispatch_energy * 1000) + " mJ" +
+                                  " 当前实际=" + std::to_string(_current_energy * 1000) + " mJ");
                 return task;
             }
 
@@ -1292,6 +1329,25 @@ namespace RTSim {
         SCHEDULER_LOG_INFO(std::string("📭 [ALAP-Sync] getTaskN(") + std::to_string(n) +
                            ") 没有更多可调度任务，found_count=" + std::to_string(found_count));
         return nullptr;
+    }
+
+    // =====================================================
+    // commitDispatch - 确认派发，真正扣除能量
+    // =====================================================
+    // ⭐ 新增接口：在MRTKernel完成dispatch后调用，确认能量扣除
+    void ALAPSyncScheduler::commitDispatch() {
+        if (_pending_dispatch_energy > 0) {
+            _current_energy -= _pending_dispatch_energy;
+            _stats.total_energy_consumed += _pending_dispatch_energy;
+
+            SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Sync] commitDispatch: 确认派发 ") +
+                              std::to_string(_pending_dispatch_tasks.size()) + " 个任务" +
+                              " 扣除能量=" + std::to_string(_pending_dispatch_energy * 1000) + " mJ" +
+                              " 剩余=" + std::to_string(_current_energy * 1000) + " mJ");
+
+            _pending_dispatch_tasks.clear();
+            _pending_dispatch_energy = 0.0;
+        }
     }
 
     // =====================================================
@@ -2708,10 +2764,19 @@ namespace RTSim {
         if (!task) return MetaSim::Tick(0);
 
         Tick current_time = SIMUL.getTime();
-        Tick arrival = task->getArrival();
+
+        // ⭐ Bug修复：使用 getLastArrival() + getPeriod() 来计算绝对截止时间
+        // getDeadline() 可能返回旧实例的值，需要使用 getLastArrival() 获取当前实例的到达时间
+        Tick last_arrival = task->getLastArrival();
         int period_int = task->getPeriod();
         Tick period = Tick(period_int > 0 ? period_int : 100);
-        Tick absolute_deadline = arrival + period;
+        Tick absolute_deadline = last_arrival + period;
+
+        SCHEDULER_LOG_INFO(std::string("🧮 [ALAP-Sync] Slack计算: ") +
+                           getTaskName(task) +
+                           " last_arrival=" + std::to_string(static_cast<int64_t>(last_arrival)) +
+                           " period=" + std::to_string(static_cast<int64_t>(period)) +
+                           " absolute_deadline=" + std::to_string(static_cast<int64_t>(absolute_deadline)));
 
         double remaining_double = task->getRemainingWCET();
 
