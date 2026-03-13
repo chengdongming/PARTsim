@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:20
+# 任务总数: 10
+# 总利用率: 0.400
+# 能量信息:
+#   总估算能耗: 0.143 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.1%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 80
+    runtime: 1
+    deadline: 80
+    params: "period=80,wcet=1,arrival_offset=17,workload=control"
+    code:
+      - fixed(1, control)
+
+  - name: task_1
+    iat: 320
+    runtime: 20
+    deadline: 320
+    params: "period=320,wcet=20,arrival_offset=70,workload=bzip2"
+    code:
+      - fixed(20, bzip2)
+
+  - name: task_2
+    iat: 124
+    runtime: 3
+    deadline: 124
+    params: "period=124,wcet=3,arrival_offset=7,workload=control"
+    code:
+      - fixed(3, control)
+
+  - name: task_3
+    iat: 222
+    runtime: 8
+    deadline: 222
+    params: "period=222,wcet=8,arrival_offset=53,workload=control"
+    code:
+      - fixed(8, control)
+
+  - name: task_4
+    iat: 46
+    runtime: 1
+    deadline: 46
+    params: "period=46,wcet=1,arrival_offset=2,workload=control"
+    code:
+      - fixed(1, control)
+
+  - name: task_5
+    iat: 278
+    runtime: 8
+    deadline: 278
+    params: "period=278,wcet=8,arrival_offset=14,workload=control"
+    code:
+      - fixed(8, control)
+
+  - name: task_6
+    iat: 59
+    runtime: 3
+    deadline: 59
+    params: "period=59,wcet=3,arrival_offset=6,workload=decrypt"
+    code:
+      - fixed(3, decrypt)
+
+  - name: task_7
+    iat: 251
+    runtime: 8
+    deadline: 251
+    params: "period=251,wcet=8,arrival_offset=69,workload=hash"
+    code:
+      - fixed(8, hash)
+
+  - name: task_8
+    iat: 333
+    runtime: 13
+    deadline: 333
+    params: "period=333,wcet=13,arrival_offset=69,workload=encrypt"
+    code:
+      - fixed(13, encrypt)
+
+  - name: task_9
+    iat: 373
+    runtime: 32
+    deadline: 373
+    params: "period=373,wcet=32,arrival_offset=76,workload=bzip2"
+    code:
+      - fixed(32, bzip2)

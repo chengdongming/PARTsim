@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:20
+# 任务总数: 10
+# 总利用率: 0.800
+# 能量信息:
+#   总估算能耗: 0.184 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.1%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 167
+    runtime: 9
+    deadline: 167
+    params: "period=167,wcet=9,arrival_offset=25,workload=decrypt"
+    code:
+      - fixed(9, decrypt)
+
+  - name: task_1
+    iat: 148
+    runtime: 11
+    deadline: 148
+    params: "period=148,wcet=11,arrival_offset=39,workload=bzip2"
+    code:
+      - fixed(11, bzip2)
+
+  - name: task_2
+    iat: 158
+    runtime: 8
+    deadline: 158
+    params: "period=158,wcet=8,arrival_offset=1,workload=idle"
+    code:
+      - fixed(8, idle)
+
+  - name: task_3
+    iat: 371
+    runtime: 7
+    deadline: 371
+    params: "period=371,wcet=7,arrival_offset=88,workload=encrypt"
+    code:
+      - fixed(7, encrypt)
+
+  - name: task_4
+    iat: 143
+    runtime: 11
+    deadline: 143
+    params: "period=143,wcet=11,arrival_offset=36,workload=idle"
+    code:
+      - fixed(11, idle)
+
+  - name: task_5
+    iat: 136
+    runtime: 10
+    deadline: 136
+    params: "period=136,wcet=10,arrival_offset=33,workload=encrypt"
+    code:
+      - fixed(10, encrypt)
+
+  - name: task_6
+    iat: 154
+    runtime: 53
+    deadline: 154
+    params: "period=154,wcet=53,arrival_offset=18,workload=hash"
+    code:
+      - fixed(53, hash)
+
+  - name: task_7
+    iat: 331
+    runtime: 3
+    deadline: 331
+    params: "period=331,wcet=3,arrival_offset=35,workload=control"
+    code:
+      - fixed(3, control)
+
+  - name: task_8
+    iat: 79
+    runtime: 1
+    deadline: 79
+    params: "period=79,wcet=1,arrival_offset=6,workload=control"
+    code:
+      - fixed(1, control)
+
+  - name: task_9
+    iat: 355
+    runtime: 22
+    deadline: 355
+    params: "period=355,wcet=22,arrival_offset=6,workload=control"
+    code:
+      - fixed(22, control)

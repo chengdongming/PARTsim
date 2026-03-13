@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:39
+# 任务总数: 10
+# 总利用率: 3.600
+# 能量信息:
+#   总估算能耗: 0.952 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.5%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 84
+    runtime: 62
+    deadline: 84
+    params: "period=84,wcet=62,arrival_offset=16,workload=idle"
+    code:
+      - fixed(62, idle)
+
+  - name: task_1
+    iat: 347
+    runtime: 228
+    deadline: 347
+    params: "period=347,wcet=228,arrival_offset=54,workload=bzip2"
+    code:
+      - fixed(228, bzip2)
+
+  - name: task_2
+    iat: 325
+    runtime: 78
+    deadline: 325
+    params: "period=325,wcet=78,arrival_offset=30,workload=idle"
+    code:
+      - fixed(78, idle)
+
+  - name: task_3
+    iat: 319
+    runtime: 72
+    deadline: 319
+    params: "period=319,wcet=72,arrival_offset=47,workload=bzip2"
+    code:
+      - fixed(72, bzip2)
+
+  - name: task_4
+    iat: 127
+    runtime: 19
+    deadline: 127
+    params: "period=127,wcet=19,arrival_offset=10,workload=idle"
+    code:
+      - fixed(19, idle)
+
+  - name: task_5
+    iat: 88
+    runtime: 23
+    deadline: 88
+    params: "period=88,wcet=23,arrival_offset=24,workload=control"
+    code:
+      - fixed(23, control)
+
+  - name: task_6
+    iat: 51
+    runtime: 19
+    deadline: 51
+    params: "period=51,wcet=19,arrival_offset=9,workload=bzip2"
+    code:
+      - fixed(19, bzip2)
+
+  - name: task_7
+    iat: 90
+    runtime: 9
+    deadline: 90
+    params: "period=90,wcet=9,arrival_offset=14,workload=decrypt"
+    code:
+      - fixed(9, decrypt)
+
+  - name: task_8
+    iat: 43
+    runtime: 1
+    deadline: 43
+    params: "period=43,wcet=1,arrival_offset=8,workload=decrypt"
+    code:
+      - fixed(1, decrypt)
+
+  - name: task_9
+    iat: 134
+    runtime: 106
+    deadline: 134
+    params: "period=134,wcet=106,arrival_offset=30,workload=hash"
+    code:
+      - fixed(106, hash)

@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:35
+# 任务总数: 10
+# 总利用率: 3.200
+# 能量信息:
+#   总估算能耗: 1.081 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.5%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 316
+    runtime: 152
+    deadline: 316
+    params: "period=316,wcet=152,arrival_offset=56,workload=idle"
+    code:
+      - fixed(152, idle)
+
+  - name: task_1
+    iat: 71
+    runtime: 35
+    deadline: 71
+    params: "period=71,wcet=35,arrival_offset=0,workload=hash"
+    code:
+      - fixed(35, hash)
+
+  - name: task_2
+    iat: 195
+    runtime: 9
+    deadline: 195
+    params: "period=195,wcet=9,arrival_offset=10,workload=idle"
+    code:
+      - fixed(9, idle)
+
+  - name: task_3
+    iat: 172
+    runtime: 36
+    deadline: 172
+    params: "period=172,wcet=36,arrival_offset=16,workload=decrypt"
+    code:
+      - fixed(36, decrypt)
+
+  - name: task_4
+    iat: 299
+    runtime: 79
+    deadline: 299
+    params: "period=299,wcet=79,arrival_offset=84,workload=control"
+    code:
+      - fixed(79, control)
+
+  - name: task_5
+    iat: 233
+    runtime: 34
+    deadline: 233
+    params: "period=233,wcet=34,arrival_offset=22,workload=idle"
+    code:
+      - fixed(34, idle)
+
+  - name: task_6
+    iat: 253
+    runtime: 140
+    deadline: 253
+    params: "period=253,wcet=140,arrival_offset=3,workload=encrypt"
+    code:
+      - fixed(140, encrypt)
+
+  - name: task_7
+    iat: 79
+    runtime: 9
+    deadline: 79
+    params: "period=79,wcet=9,arrival_offset=14,workload=bzip2"
+    code:
+      - fixed(9, bzip2)
+
+  - name: task_8
+    iat: 287
+    runtime: 121
+    deadline: 287
+    params: "period=287,wcet=121,arrival_offset=70,workload=bzip2"
+    code:
+      - fixed(121, bzip2)
+
+  - name: task_9
+    iat: 185
+    runtime: 82
+    deadline: 185
+    params: "period=185,wcet=82,arrival_offset=7,workload=idle"
+    code:
+      - fixed(82, idle)

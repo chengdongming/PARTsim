@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:36
+# 任务总数: 10
+# 总利用率: 3.200
+# 能量信息:
+#   总估算能耗: 0.892 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.4%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 166
+    runtime: 36
+    deadline: 166
+    params: "period=166,wcet=36,arrival_offset=35,workload=bzip2"
+    code:
+      - fixed(36, bzip2)
+
+  - name: task_1
+    iat: 241
+    runtime: 176
+    deadline: 241
+    params: "period=241,wcet=176,arrival_offset=54,workload=bzip2"
+    code:
+      - fixed(176, bzip2)
+
+  - name: task_2
+    iat: 317
+    runtime: 32
+    deadline: 317
+    params: "period=317,wcet=32,arrival_offset=35,workload=hash"
+    code:
+      - fixed(32, hash)
+
+  - name: task_3
+    iat: 181
+    runtime: 71
+    deadline: 181
+    params: "period=181,wcet=71,arrival_offset=13,workload=control"
+    code:
+      - fixed(71, control)
+
+  - name: task_4
+    iat: 199
+    runtime: 32
+    deadline: 199
+    params: "period=199,wcet=32,arrival_offset=23,workload=control"
+    code:
+      - fixed(32, control)
+
+  - name: task_5
+    iat: 219
+    runtime: 125
+    deadline: 219
+    params: "period=219,wcet=125,arrival_offset=8,workload=control"
+    code:
+      - fixed(125, control)
+
+  - name: task_6
+    iat: 179
+    runtime: 45
+    deadline: 179
+    params: "period=179,wcet=45,arrival_offset=29,workload=hash"
+    code:
+      - fixed(45, hash)
+
+  - name: task_7
+    iat: 49
+    runtime: 2
+    deadline: 49
+    params: "period=49,wcet=2,arrival_offset=5,workload=decrypt"
+    code:
+      - fixed(2, decrypt)
+
+  - name: task_8
+    iat: 62
+    runtime: 17
+    deadline: 62
+    params: "period=62,wcet=17,arrival_offset=13,workload=decrypt"
+    code:
+      - fixed(17, decrypt)
+
+  - name: task_9
+    iat: 353
+    runtime: 151
+    deadline: 353
+    params: "period=353,wcet=151,arrival_offset=72,workload=bzip2"
+    code:
+      - fixed(151, bzip2)

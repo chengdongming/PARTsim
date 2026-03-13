@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-13 21:12:55
+# 任务总数: 10
+# 总利用率: 2.800
+# 能量信息:
+#   总估算能耗: 0.246 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.1%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 95
+    runtime: 18
+    deadline: 95
+    params: "period=95,wcet=18,arrival_offset=5,workload=control"
+    code:
+      - fixed(18, control)
+
+  - name: task_1
+    iat: 40
+    runtime: 16
+    deadline: 40
+    params: "period=40,wcet=16,arrival_offset=12,workload=decrypt"
+    code:
+      - fixed(16, decrypt)
+
+  - name: task_2
+    iat: 34
+    runtime: 20
+    deadline: 34
+    params: "period=34,wcet=20,arrival_offset=9,workload=idle"
+    code:
+      - fixed(20, idle)
+
+  - name: task_3
+    iat: 77
+    runtime: 11
+    deadline: 77
+    params: "period=77,wcet=11,arrival_offset=5,workload=idle"
+    code:
+      - fixed(11, idle)
+
+  - name: task_4
+    iat: 32
+    runtime: 5
+    deadline: 32
+    params: "period=32,wcet=5,arrival_offset=9,workload=control"
+    code:
+      - fixed(5, control)
+
+  - name: task_5
+    iat: 66
+    runtime: 2
+    deadline: 66
+    params: "period=66,wcet=2,arrival_offset=5,workload=encrypt"
+    code:
+      - fixed(2, encrypt)
+
+  - name: task_6
+    iat: 73
+    runtime: 54
+    deadline: 73
+    params: "period=73,wcet=54,arrival_offset=16,workload=decrypt"
+    code:
+      - fixed(54, decrypt)
+
+  - name: task_7
+    iat: 47
+    runtime: 16
+    deadline: 47
+    params: "period=47,wcet=16,arrival_offset=3,workload=encrypt"
+    code:
+      - fixed(16, encrypt)
+
+  - name: task_8
+    iat: 32
+    runtime: 1
+    deadline: 32
+    params: "period=32,wcet=1,arrival_offset=3,workload=encrypt"
+    code:
+      - fixed(1, encrypt)
+
+  - name: task_9
+    iat: 74
+    runtime: 4
+    deadline: 74
+    params: "period=74,wcet=4,arrival_offset=15,workload=decrypt"
+    code:
+      - fixed(4, decrypt)

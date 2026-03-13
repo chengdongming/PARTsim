@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:21
+# 任务总数: 10
+# 总利用率: 0.800
+# 能量信息:
+#   总估算能耗: 0.308 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.2%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 147
+    runtime: 5
+    deadline: 147
+    params: "period=147,wcet=5,arrival_offset=10,workload=control"
+    code:
+      - fixed(5, control)
+
+  - name: task_1
+    iat: 350
+    runtime: 22
+    deadline: 350
+    params: "period=350,wcet=22,arrival_offset=26,workload=decrypt"
+    code:
+      - fixed(22, decrypt)
+
+  - name: task_2
+    iat: 301
+    runtime: 84
+    deadline: 301
+    params: "period=301,wcet=84,arrival_offset=48,workload=decrypt"
+    code:
+      - fixed(84, decrypt)
+
+  - name: task_3
+    iat: 316
+    runtime: 28
+    deadline: 316
+    params: "period=316,wcet=28,arrival_offset=74,workload=hash"
+    code:
+      - fixed(28, hash)
+
+  - name: task_4
+    iat: 170
+    runtime: 8
+    deadline: 170
+    params: "period=170,wcet=8,arrival_offset=42,workload=idle"
+    code:
+      - fixed(8, idle)
+
+  - name: task_5
+    iat: 61
+    runtime: 7
+    deadline: 61
+    params: "period=61,wcet=7,arrival_offset=15,workload=decrypt"
+    code:
+      - fixed(7, decrypt)
+
+  - name: task_6
+    iat: 210
+    runtime: 11
+    deadline: 210
+    params: "period=210,wcet=11,arrival_offset=22,workload=idle"
+    code:
+      - fixed(11, idle)
+
+  - name: task_7
+    iat: 95
+    runtime: 2
+    deadline: 95
+    params: "period=95,wcet=2,arrival_offset=0,workload=hash"
+    code:
+      - fixed(2, hash)
+
+  - name: task_8
+    iat: 367
+    runtime: 5
+    deadline: 367
+    params: "period=367,wcet=5,arrival_offset=34,workload=idle"
+    code:
+      - fixed(5, idle)
+
+  - name: task_9
+    iat: 43
+    runtime: 2
+    deadline: 43
+    params: "period=43,wcet=2,arrival_offset=8,workload=encrypt"
+    code:
+      - fixed(2, encrypt)

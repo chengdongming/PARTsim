@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:19
+# 任务总数: 10
+# 总利用率: 0.400
+# 能量信息:
+#   总估算能耗: 0.192 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.1%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 369
+    runtime: 36
+    deadline: 369
+    params: "period=369,wcet=36,arrival_offset=8,workload=decrypt"
+    code:
+      - fixed(36, decrypt)
+
+  - name: task_1
+    iat: 254
+    runtime: 2
+    deadline: 254
+    params: "period=254,wcet=2,arrival_offset=3,workload=idle"
+    code:
+      - fixed(2, idle)
+
+  - name: task_2
+    iat: 235
+    runtime: 8
+    deadline: 235
+    params: "period=235,wcet=8,arrival_offset=35,workload=encrypt"
+    code:
+      - fixed(8, encrypt)
+
+  - name: task_3
+    iat: 107
+    runtime: 2
+    deadline: 107
+    params: "period=107,wcet=2,arrival_offset=30,workload=decrypt"
+    code:
+      - fixed(2, decrypt)
+
+  - name: task_4
+    iat: 95
+    runtime: 2
+    deadline: 95
+    params: "period=95,wcet=2,arrival_offset=2,workload=idle"
+    code:
+      - fixed(2, idle)
+
+  - name: task_5
+    iat: 150
+    runtime: 6
+    deadline: 150
+    params: "period=150,wcet=6,arrival_offset=37,workload=bzip2"
+    code:
+      - fixed(6, bzip2)
+
+  - name: task_6
+    iat: 355
+    runtime: 15
+    deadline: 355
+    params: "period=355,wcet=15,arrival_offset=62,workload=idle"
+    code:
+      - fixed(15, idle)
+
+  - name: task_7
+    iat: 378
+    runtime: 4
+    deadline: 378
+    params: "period=378,wcet=4,arrival_offset=39,workload=decrypt"
+    code:
+      - fixed(4, decrypt)
+
+  - name: task_8
+    iat: 333
+    runtime: 26
+    deadline: 333
+    params: "period=333,wcet=26,arrival_offset=33,workload=decrypt"
+    code:
+      - fixed(26, decrypt)
+
+  - name: task_9
+    iat: 97
+    runtime: 2
+    deadline: 97
+    params: "period=97,wcet=2,arrival_offset=19,workload=control"
+    code:
+      - fixed(2, control)

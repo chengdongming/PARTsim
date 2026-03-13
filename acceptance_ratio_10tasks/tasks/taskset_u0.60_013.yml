@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:31
+# 任务总数: 10
+# 总利用率: 2.400
+# 能量信息:
+#   总估算能耗: 0.811 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.4%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 85
+    runtime: 42
+    deadline: 85
+    params: "period=85,wcet=42,arrival_offset=19,workload=control"
+    code:
+      - fixed(42, control)
+
+  - name: task_1
+    iat: 292
+    runtime: 17
+    deadline: 292
+    params: "period=292,wcet=17,arrival_offset=40,workload=bzip2"
+    code:
+      - fixed(17, bzip2)
+
+  - name: task_2
+    iat: 211
+    runtime: 6
+    deadline: 211
+    params: "period=211,wcet=6,arrival_offset=54,workload=encrypt"
+    code:
+      - fixed(6, encrypt)
+
+  - name: task_3
+    iat: 233
+    runtime: 79
+    deadline: 233
+    params: "period=233,wcet=79,arrival_offset=35,workload=bzip2"
+    code:
+      - fixed(79, bzip2)
+
+  - name: task_4
+    iat: 332
+    runtime: 54
+    deadline: 332
+    params: "period=332,wcet=54,arrival_offset=78,workload=hash"
+    code:
+      - fixed(54, hash)
+
+  - name: task_5
+    iat: 174
+    runtime: 5
+    deadline: 174
+    params: "period=174,wcet=5,arrival_offset=43,workload=control"
+    code:
+      - fixed(5, control)
+
+  - name: task_6
+    iat: 363
+    runtime: 122
+    deadline: 363
+    params: "period=363,wcet=122,arrival_offset=54,workload=control"
+    code:
+      - fixed(122, control)
+
+  - name: task_7
+    iat: 300
+    runtime: 35
+    deadline: 300
+    params: "period=300,wcet=35,arrival_offset=50,workload=encrypt"
+    code:
+      - fixed(35, encrypt)
+
+  - name: task_8
+    iat: 241
+    runtime: 11
+    deadline: 241
+    params: "period=241,wcet=11,arrival_offset=25,workload=hash"
+    code:
+      - fixed(11, hash)
+
+  - name: task_9
+    iat: 250
+    runtime: 190
+    deadline: 250
+    params: "period=250,wcet=190,arrival_offset=8,workload=decrypt"
+    code:
+      - fixed(190, decrypt)

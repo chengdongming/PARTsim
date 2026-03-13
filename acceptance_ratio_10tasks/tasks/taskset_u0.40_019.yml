@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:26
+# 任务总数: 10
+# 总利用率: 1.600
+# 能量信息:
+#   总估算能耗: 0.268 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.1%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 106
+    runtime: 58
+    deadline: 106
+    params: "period=106,wcet=58,arrival_offset=19,workload=idle"
+    code:
+      - fixed(58, idle)
+
+  - name: task_1
+    iat: 400
+    runtime: 28
+    deadline: 400
+    params: "period=400,wcet=28,arrival_offset=113,workload=control"
+    code:
+      - fixed(28, control)
+
+  - name: task_2
+    iat: 83
+    runtime: 2
+    deadline: 83
+    params: "period=83,wcet=2,arrival_offset=16,workload=encrypt"
+    code:
+      - fixed(2, encrypt)
+
+  - name: task_3
+    iat: 61
+    runtime: 4
+    deadline: 61
+    params: "period=61,wcet=4,arrival_offset=14,workload=decrypt"
+    code:
+      - fixed(4, decrypt)
+
+  - name: task_4
+    iat: 360
+    runtime: 29
+    deadline: 360
+    params: "period=360,wcet=29,arrival_offset=61,workload=control"
+    code:
+      - fixed(29, control)
+
+  - name: task_5
+    iat: 178
+    runtime: 17
+    deadline: 178
+    params: "period=178,wcet=17,arrival_offset=5,workload=encrypt"
+    code:
+      - fixed(17, encrypt)
+
+  - name: task_6
+    iat: 56
+    runtime: 1
+    deadline: 56
+    params: "period=56,wcet=1,arrival_offset=0,workload=idle"
+    code:
+      - fixed(1, idle)
+
+  - name: task_7
+    iat: 62
+    runtime: 15
+    deadline: 62
+    params: "period=62,wcet=15,arrival_offset=5,workload=bzip2"
+    code:
+      - fixed(15, bzip2)
+
+  - name: task_8
+    iat: 63
+    runtime: 18
+    deadline: 63
+    params: "period=63,wcet=18,arrival_offset=14,workload=decrypt"
+    code:
+      - fixed(18, decrypt)
+
+  - name: task_9
+    iat: 234
+    runtime: 25
+    deadline: 234
+    params: "period=234,wcet=25,arrival_offset=66,workload=idle"
+    code:
+      - fixed(25, idle)

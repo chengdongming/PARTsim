@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:36
+# 任务总数: 10
+# 总利用率: 3.200
+# 能量信息:
+#   总估算能耗: 0.859 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.4%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 312
+    runtime: 75
+    deadline: 312
+    params: "period=312,wcet=75,arrival_offset=82,workload=idle"
+    code:
+      - fixed(75, idle)
+
+  - name: task_1
+    iat: 153
+    runtime: 121
+    deadline: 153
+    params: "period=153,wcet=121,arrival_offset=31,workload=hash"
+    code:
+      - fixed(121, hash)
+
+  - name: task_2
+    iat: 229
+    runtime: 23
+    deadline: 229
+    params: "period=229,wcet=23,arrival_offset=61,workload=bzip2"
+    code:
+      - fixed(23, bzip2)
+
+  - name: task_3
+    iat: 127
+    runtime: 57
+    deadline: 127
+    params: "period=127,wcet=57,arrival_offset=13,workload=bzip2"
+    code:
+      - fixed(57, bzip2)
+
+  - name: task_4
+    iat: 290
+    runtime: 76
+    deadline: 290
+    params: "period=290,wcet=76,arrival_offset=51,workload=encrypt"
+    code:
+      - fixed(76, encrypt)
+
+  - name: task_5
+    iat: 170
+    runtime: 14
+    deadline: 170
+    params: "period=170,wcet=14,arrival_offset=31,workload=hash"
+    code:
+      - fixed(14, hash)
+
+  - name: task_6
+    iat: 329
+    runtime: 19
+    deadline: 329
+    params: "period=329,wcet=19,arrival_offset=68,workload=control"
+    code:
+      - fixed(19, control)
+
+  - name: task_7
+    iat: 57
+    runtime: 34
+    deadline: 57
+    params: "period=57,wcet=34,arrival_offset=6,workload=idle"
+    code:
+      - fixed(34, idle)
+
+  - name: task_8
+    iat: 299
+    runtime: 110
+    deadline: 299
+    params: "period=299,wcet=110,arrival_offset=63,workload=control"
+    code:
+      - fixed(110, control)
+
+  - name: task_9
+    iat: 397
+    runtime: 91
+    deadline: 397
+    params: "period=397,wcet=91,arrival_offset=73,workload=bzip2"
+    code:
+      - fixed(91, bzip2)

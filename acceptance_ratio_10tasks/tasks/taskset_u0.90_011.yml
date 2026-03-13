@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:38
+# 任务总数: 10
+# 总利用率: 3.600
+# 能量信息:
+#   总估算能耗: 1.456 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.7%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 363
+    runtime: 117
+    deadline: 363
+    params: "period=363,wcet=117,arrival_offset=29,workload=idle"
+    code:
+      - fixed(117, idle)
+
+  - name: task_1
+    iat: 234
+    runtime: 64
+    deadline: 234
+    params: "period=234,wcet=64,arrival_offset=15,workload=bzip2"
+    code:
+      - fixed(64, bzip2)
+
+  - name: task_2
+    iat: 119
+    runtime: 31
+    deadline: 119
+    params: "period=119,wcet=31,arrival_offset=22,workload=decrypt"
+    code:
+      - fixed(31, decrypt)
+
+  - name: task_3
+    iat: 270
+    runtime: 30
+    deadline: 270
+    params: "period=270,wcet=30,arrival_offset=43,workload=control"
+    code:
+      - fixed(30, control)
+
+  - name: task_4
+    iat: 232
+    runtime: 139
+    deadline: 232
+    params: "period=232,wcet=139,arrival_offset=15,workload=idle"
+    code:
+      - fixed(139, idle)
+
+  - name: task_5
+    iat: 261
+    runtime: 203
+    deadline: 261
+    params: "period=261,wcet=203,arrival_offset=51,workload=idle"
+    code:
+      - fixed(203, idle)
+
+  - name: task_6
+    iat: 186
+    runtime: 77
+    deadline: 186
+    params: "period=186,wcet=77,arrival_offset=19,workload=idle"
+    code:
+      - fixed(77, idle)
+
+  - name: task_7
+    iat: 254
+    runtime: 68
+    deadline: 254
+    params: "period=254,wcet=68,arrival_offset=52,workload=bzip2"
+    code:
+      - fixed(68, bzip2)
+
+  - name: task_8
+    iat: 361
+    runtime: 167
+    deadline: 361
+    params: "period=361,wcet=167,arrival_offset=18,workload=encrypt"
+    code:
+      - fixed(167, encrypt)
+
+  - name: task_9
+    iat: 88
+    runtime: 7
+    deadline: 88
+    params: "period=88,wcet=7,arrival_offset=16,workload=encrypt"
+    code:
+      - fixed(7, encrypt)

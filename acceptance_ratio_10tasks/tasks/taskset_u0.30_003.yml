@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:23
+# 任务总数: 10
+# 总利用率: 1.200
+# 能量信息:
+#   总估算能耗: 0.429 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.2%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 160
+    runtime: 32
+    deadline: 160
+    params: "period=160,wcet=32,arrival_offset=47,workload=bzip2"
+    code:
+      - fixed(32, bzip2)
+
+  - name: task_1
+    iat: 290
+    runtime: 9
+    deadline: 290
+    params: "period=290,wcet=9,arrival_offset=60,workload=control"
+    code:
+      - fixed(9, control)
+
+  - name: task_2
+    iat: 319
+    runtime: 44
+    deadline: 319
+    params: "period=319,wcet=44,arrival_offset=92,workload=idle"
+    code:
+      - fixed(44, idle)
+
+  - name: task_3
+    iat: 395
+    runtime: 42
+    deadline: 395
+    params: "period=395,wcet=42,arrival_offset=66,workload=bzip2"
+    code:
+      - fixed(42, bzip2)
+
+  - name: task_4
+    iat: 130
+    runtime: 4
+    deadline: 130
+    params: "period=130,wcet=4,arrival_offset=31,workload=control"
+    code:
+      - fixed(4, control)
+
+  - name: task_5
+    iat: 207
+    runtime: 3
+    deadline: 207
+    params: "period=207,wcet=3,arrival_offset=60,workload=hash"
+    code:
+      - fixed(3, hash)
+
+  - name: task_6
+    iat: 43
+    runtime: 4
+    deadline: 43
+    params: "period=43,wcet=4,arrival_offset=12,workload=control"
+    code:
+      - fixed(4, control)
+
+  - name: task_7
+    iat: 346
+    runtime: 6
+    deadline: 346
+    params: "period=346,wcet=6,arrival_offset=27,workload=encrypt"
+    code:
+      - fixed(6, encrypt)
+
+  - name: task_8
+    iat: 121
+    runtime: 24
+    deadline: 121
+    params: "period=121,wcet=24,arrival_offset=14,workload=bzip2"
+    code:
+      - fixed(24, bzip2)
+
+  - name: task_9
+    iat: 379
+    runtime: 131
+    deadline: 379
+    params: "period=379,wcet=131,arrival_offset=86,workload=hash"
+    code:
+      - fixed(131, hash)

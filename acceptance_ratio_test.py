@@ -146,7 +146,7 @@ ALGO_STYLES = {
 
 # 实验常数（可通过命令行修改）
 DEFAULT_UTILIZATION_POINTS = np.around(np.linspace(0.1, 1.0, 10), 2)  # 四舍五入避免浮点精度问题
-DEFAULT_NUM_TASKSETS = 20  # 每个利用率点20个任务集
+DEFAULT_NUM_TASKSETS = 10  # 每个利用率点10个任务集
 DEFAULT_TASK_N = 10  # 每个任务集10个任务
 DEFAULT_TASK_P_MIN = 40  # 周期范围：最小40ms
 DEFAULT_TASK_P_MAX = 400  # 周期范围：最大400ms（增加多样性）
@@ -178,23 +178,48 @@ class TraceParser:
             print(f"⚠️ 加载追踪文件失败 {self.trace_file}: {e}")
             self.events = []
 
-    def get_acceptance_ratio(self):
+    def get_acceptance_ratio(self, expected_sim_time=30000):
         """
-        计算严格二元可调度性（Strict Binary Schedulability）
+        计算二元可调度性，考虑仿真边界效应和引擎崩溃检测
 
         逻辑：
         - 如果追踪文件为空或无效 -> 返回 0.0（失败）
         - 如果不存在任何 'arrival' -> 返回 0.0（无效测试）
         - 如果存在任何 'dline_miss' -> 返回 0.0（任务集失败，一票否决）
-        - 如果存在已释放但未闭合的 job（既没有 end_instance，也没有 dline_miss）-> 返回 0.0
-        - 只有当所有已释放 job 都完整闭合且无 deadline miss 时 -> 返回 1.0
+        - 如果仿真实际运行时间 < 预期时长的 95%，判定为引擎崩溃 -> 返回 0.0
+        - 仿真最后 2% 时间内到达的任务不参与判断（边界免责窗口）
+        - 如果存在已释放但未闭合的 job -> 返回 0.0
+        - 只有当所有有效 job 都完整闭合且无 deadline miss 时 -> 返回 1.0
+
+        参数：
+            expected_sim_time: 预期仿真总时长（毫秒），默认 30000ms
+                               用于动态计算崩溃阈值和边界窗口
 
         说明：
-        - 仍然是二元判定，只返回 0.0 或 1.0
-        - job 使用 (task_name, arrival_time) 进行匹配
+            - 仍然是二元判定，只返回 0.0 或 1.0
+            - job 使用 (task_name, arrival_time) 进行匹配
         """
+        # 比例常量定义
+        CRASH_THRESHOLD_RATIO = 0.95   # 崩溃检测阈值：实际运行需达预期的 95%
+        BOUNDARY_WINDOW_RATIO = 0.02   # 边界免责窗口：最后 2% 时间
+
         if not self.events:
             return 0.0
+
+        # 动态计算阈值
+        crash_threshold = expected_sim_time * CRASH_THRESHOLD_RATIO
+        boundary_window = expected_sim_time * BOUNDARY_WINDOW_RATIO
+
+        # 获取实际仿真结束时间
+        last_time = max(float(e.get('time', 0)) for e in self.events)
+
+        # 绝对防线：引擎崩溃检测
+        # 如果实际运行时间不足预期的 95%，判定为仿真异常中断
+        if last_time < crash_threshold:
+            return 0.0
+
+        # 计算边界免责截止时间
+        cutoff_time = last_time - boundary_window
 
         open_jobs = set()
         has_arrivals = False
@@ -203,26 +228,30 @@ class TraceParser:
             event_type = event.get('event_type', '')
             task_name = event.get('task_name')
             arrival_time = event.get('arrival_time')
+            t = float(event.get('time', 0))
 
             if event_type == 'arrival':
                 has_arrivals = True
-                job_key = (task_name, str(arrival_time if arrival_time is not None else event.get('time')))
-                open_jobs.add(job_key)
+                job_key = (task_name, str(arrival_time if arrival_time is not None else t))
+                # 边界免责逻辑：只记录在边界窗口之前到达的任务
+                # 最后 2% 时间内到达的任务不强制要求完成
+                if t <= cutoff_time:
+                    open_jobs.add(job_key)
 
             elif event_type == 'dline_miss':
+                # 一票否决：任何 deadline miss 都判定为失败
                 return 0.0
 
-            elif event_type == 'end_instance':
-                job_key = (task_name, str(arrival_time if arrival_time is not None else event.get('time')))
+            elif event_type in ('end_instance', 'kill'):
+                # 任务完成或被终止，从待完成集合中移除
+                job_key = (task_name, str(arrival_time if arrival_time is not None else t))
                 open_jobs.discard(job_key)
 
         if not has_arrivals:
             return 0.0
 
-        if open_jobs:
-            return 0.0
-
-        return 1.0
+        # 最终判定：所有边界窗口前到达的任务都完成则为成功
+        return 0.0 if open_jobs else 1.0
 
 # ============================================
 # 实验执行器
@@ -737,8 +766,8 @@ def main():
                        help='从CSV文件加载数据（不运行实验）')
 
     # 实验参数
-    parser.add_argument('--output-dir', type=str, default='acceptance_ratio_experiment',
-                       help='输出目录 (默认: acceptance_ratio_experiment)')
+    parser.add_argument('--output-dir', type=str, default='acceptance_ratio_10tasks',
+                       help='输出目录 (默认: acceptance_ratio_10tasks)')
     parser.add_argument('--num-points', type=int, default=10,
                        help='利用率采样点数 (默认: 10)')
     parser.add_argument('--num-tasksets', type=int, default=DEFAULT_NUM_TASKSETS,

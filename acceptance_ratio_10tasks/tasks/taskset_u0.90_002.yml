@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:37
+# 任务总数: 10
+# 总利用率: 3.600
+# 能量信息:
+#   总估算能耗: 1.233 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.6%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 102
+    runtime: 14
+    deadline: 102
+    params: "period=102,wcet=14,arrival_offset=4,workload=decrypt"
+    code:
+      - fixed(14, decrypt)
+
+  - name: task_1
+    iat: 274
+    runtime: 95
+    deadline: 274
+    params: "period=274,wcet=95,arrival_offset=62,workload=idle"
+    code:
+      - fixed(95, idle)
+
+  - name: task_2
+    iat: 227
+    runtime: 65
+    deadline: 227
+    params: "period=227,wcet=65,arrival_offset=35,workload=control"
+    code:
+      - fixed(65, control)
+
+  - name: task_3
+    iat: 79
+    runtime: 41
+    deadline: 79
+    params: "period=79,wcet=41,arrival_offset=15,workload=control"
+    code:
+      - fixed(41, control)
+
+  - name: task_4
+    iat: 314
+    runtime: 4
+    deadline: 314
+    params: "period=314,wcet=4,arrival_offset=12,workload=control"
+    code:
+      - fixed(4, control)
+
+  - name: task_5
+    iat: 349
+    runtime: 143
+    deadline: 349
+    params: "period=349,wcet=143,arrival_offset=48,workload=encrypt"
+    code:
+      - fixed(143, encrypt)
+
+  - name: task_6
+    iat: 315
+    runtime: 98
+    deadline: 315
+    params: "period=315,wcet=98,arrival_offset=64,workload=control"
+    code:
+      - fixed(98, control)
+
+  - name: task_7
+    iat: 254
+    runtime: 190
+    deadline: 254
+    params: "period=254,wcet=190,arrival_offset=29,workload=decrypt"
+    code:
+      - fixed(190, decrypt)
+
+  - name: task_8
+    iat: 372
+    runtime: 186
+    deadline: 372
+    params: "period=372,wcet=186,arrival_offset=73,workload=hash"
+    code:
+      - fixed(186, hash)
+
+  - name: task_9
+    iat: 165
+    runtime: 49
+    deadline: 165
+    params: "period=165,wcet=49,arrival_offset=23,workload=control"
+    code:
+      - fixed(49, control)

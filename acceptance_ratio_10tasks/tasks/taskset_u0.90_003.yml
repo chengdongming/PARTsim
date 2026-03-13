@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:37
+# 任务总数: 10
+# 总利用率: 3.600
+# 能量信息:
+#   总估算能耗: 1.259 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.6%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 362
+    runtime: 188
+    deadline: 362
+    params: "period=362,wcet=188,arrival_offset=65,workload=idle"
+    code:
+      - fixed(188, idle)
+
+  - name: task_1
+    iat: 156
+    runtime: 32
+    deadline: 156
+    params: "period=156,wcet=32,arrival_offset=15,workload=idle"
+    code:
+      - fixed(32, idle)
+
+  - name: task_2
+    iat: 347
+    runtime: 167
+    deadline: 347
+    params: "period=347,wcet=167,arrival_offset=53,workload=hash"
+    code:
+      - fixed(167, hash)
+
+  - name: task_3
+    iat: 397
+    runtime: 71
+    deadline: 397
+    params: "period=397,wcet=71,arrival_offset=27,workload=bzip2"
+    code:
+      - fixed(71, bzip2)
+
+  - name: task_4
+    iat: 346
+    runtime: 158
+    deadline: 346
+    params: "period=346,wcet=158,arrival_offset=25,workload=idle"
+    code:
+      - fixed(158, idle)
+
+  - name: task_5
+    iat: 123
+    runtime: 26
+    deadline: 123
+    params: "period=123,wcet=26,arrival_offset=6,workload=decrypt"
+    code:
+      - fixed(26, decrypt)
+
+  - name: task_6
+    iat: 236
+    runtime: 69
+    deadline: 236
+    params: "period=236,wcet=69,arrival_offset=55,workload=control"
+    code:
+      - fixed(69, control)
+
+  - name: task_7
+    iat: 139
+    runtime: 50
+    deadline: 139
+    params: "period=139,wcet=50,arrival_offset=41,workload=hash"
+    code:
+      - fixed(50, hash)
+
+  - name: task_8
+    iat: 69
+    runtime: 28
+    deadline: 69
+    params: "period=69,wcet=28,arrival_offset=17,workload=control"
+    code:
+      - fixed(28, control)
+
+  - name: task_9
+    iat: 228
+    runtime: 105
+    deadline: 228
+    params: "period=228,wcet=105,arrival_offset=22,workload=bzip2"
+    code:
+      - fixed(105, bzip2)

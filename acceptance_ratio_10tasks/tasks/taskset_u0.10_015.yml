@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:19
+# 任务总数: 10
+# 总利用率: 0.400
+# 能量信息:
+#   总估算能耗: 0.109 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.1%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 112
+    runtime: 4
+    deadline: 112
+    params: "period=112,wcet=4,arrival_offset=30,workload=encrypt"
+    code:
+      - fixed(4, encrypt)
+
+  - name: task_1
+    iat: 41
+    runtime: 1
+    deadline: 41
+    params: "period=41,wcet=1,arrival_offset=6,workload=hash"
+    code:
+      - fixed(1, hash)
+
+  - name: task_2
+    iat: 136
+    runtime: 3
+    deadline: 136
+    params: "period=136,wcet=3,arrival_offset=24,workload=control"
+    code:
+      - fixed(3, control)
+
+  - name: task_3
+    iat: 307
+    runtime: 13
+    deadline: 307
+    params: "period=307,wcet=13,arrival_offset=41,workload=hash"
+    code:
+      - fixed(13, hash)
+
+  - name: task_4
+    iat: 217
+    runtime: 10
+    deadline: 217
+    params: "period=217,wcet=10,arrival_offset=39,workload=control"
+    code:
+      - fixed(10, control)
+
+  - name: task_5
+    iat: 393
+    runtime: 11
+    deadline: 393
+    params: "period=393,wcet=11,arrival_offset=27,workload=encrypt"
+    code:
+      - fixed(11, encrypt)
+
+  - name: task_6
+    iat: 266
+    runtime: 10
+    deadline: 266
+    params: "period=266,wcet=10,arrival_offset=46,workload=bzip2"
+    code:
+      - fixed(10, bzip2)
+
+  - name: task_7
+    iat: 330
+    runtime: 11
+    deadline: 330
+    params: "period=330,wcet=11,arrival_offset=63,workload=bzip2"
+    code:
+      - fixed(11, bzip2)
+
+  - name: task_8
+    iat: 241
+    runtime: 19
+    deadline: 241
+    params: "period=241,wcet=19,arrival_offset=24,workload=control"
+    code:
+      - fixed(19, control)
+
+  - name: task_9
+    iat: 148
+    runtime: 4
+    deadline: 148
+    params: "period=148,wcet=4,arrival_offset=7,workload=idle"
+    code:
+      - fixed(4, idle)

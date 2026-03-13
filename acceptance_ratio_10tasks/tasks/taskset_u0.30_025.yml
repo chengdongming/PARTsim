@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:24
+# 任务总数: 10
+# 总利用率: 1.200
+# 能量信息:
+#   总估算能耗: 0.308 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.2%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 145
+    runtime: 14
+    deadline: 145
+    params: "period=145,wcet=14,arrival_offset=29,workload=bzip2"
+    code:
+      - fixed(14, bzip2)
+
+  - name: task_1
+    iat: 249
+    runtime: 20
+    deadline: 249
+    params: "period=249,wcet=20,arrival_offset=3,workload=control"
+    code:
+      - fixed(20, control)
+
+  - name: task_2
+    iat: 150
+    runtime: 4
+    deadline: 150
+    params: "period=150,wcet=4,arrival_offset=31,workload=bzip2"
+    code:
+      - fixed(4, bzip2)
+
+  - name: task_3
+    iat: 133
+    runtime: 25
+    deadline: 133
+    params: "period=133,wcet=25,arrival_offset=38,workload=idle"
+    code:
+      - fixed(25, idle)
+
+  - name: task_4
+    iat: 276
+    runtime: 38
+    deadline: 276
+    params: "period=276,wcet=38,arrival_offset=24,workload=bzip2"
+    code:
+      - fixed(38, bzip2)
+
+  - name: task_5
+    iat: 229
+    runtime: 38
+    deadline: 229
+    params: "period=229,wcet=38,arrival_offset=9,workload=decrypt"
+    code:
+      - fixed(38, decrypt)
+
+  - name: task_6
+    iat: 203
+    runtime: 16
+    deadline: 203
+    params: "period=203,wcet=16,arrival_offset=38,workload=idle"
+    code:
+      - fixed(16, idle)
+
+  - name: task_7
+    iat: 349
+    runtime: 11
+    deadline: 349
+    params: "period=349,wcet=11,arrival_offset=14,workload=bzip2"
+    code:
+      - fixed(11, bzip2)
+
+  - name: task_8
+    iat: 124
+    runtime: 10
+    deadline: 124
+    params: "period=124,wcet=10,arrival_offset=33,workload=idle"
+    code:
+      - fixed(10, idle)
+
+  - name: task_9
+    iat: 179
+    runtime: 50
+    deadline: 179
+    params: "period=179,wcet=50,arrival_offset=37,workload=control"
+    code:
+      - fixed(50, control)

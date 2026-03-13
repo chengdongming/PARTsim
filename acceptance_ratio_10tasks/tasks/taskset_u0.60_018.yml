@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:31
+# 任务总数: 10
+# 总利用率: 2.400
+# 能量信息:
+#   总估算能耗: 0.830 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.4%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 316
+    runtime: 217
+    deadline: 316
+    params: "period=316,wcet=217,arrival_offset=61,workload=bzip2"
+    code:
+      - fixed(217, bzip2)
+
+  - name: task_1
+    iat: 152
+    runtime: 40
+    deadline: 152
+    params: "period=152,wcet=40,arrival_offset=24,workload=control"
+    code:
+      - fixed(40, control)
+
+  - name: task_2
+    iat: 47
+    runtime: 21
+    deadline: 47
+    params: "period=47,wcet=21,arrival_offset=7,workload=bzip2"
+    code:
+      - fixed(21, bzip2)
+
+  - name: task_3
+    iat: 223
+    runtime: 6
+    deadline: 223
+    params: "period=223,wcet=6,arrival_offset=29,workload=control"
+    code:
+      - fixed(6, control)
+
+  - name: task_4
+    iat: 254
+    runtime: 100
+    deadline: 254
+    params: "period=254,wcet=100,arrival_offset=54,workload=bzip2"
+    code:
+      - fixed(100, bzip2)
+
+  - name: task_5
+    iat: 60
+    runtime: 1
+    deadline: 60
+    params: "period=60,wcet=1,arrival_offset=3,workload=idle"
+    code:
+      - fixed(1, idle)
+
+  - name: task_6
+    iat: 215
+    runtime: 2
+    deadline: 215
+    params: "period=215,wcet=2,arrival_offset=52,workload=idle"
+    code:
+      - fixed(2, idle)
+
+  - name: task_7
+    iat: 191
+    runtime: 53
+    deadline: 191
+    params: "period=191,wcet=53,arrival_offset=23,workload=encrypt"
+    code:
+      - fixed(53, encrypt)
+
+  - name: task_8
+    iat: 237
+    runtime: 13
+    deadline: 237
+    params: "period=237,wcet=13,arrival_offset=31,workload=hash"
+    code:
+      - fixed(13, hash)
+
+  - name: task_9
+    iat: 269
+    runtime: 50
+    deadline: 269
+    params: "period=269,wcet=50,arrival_offset=17,workload=decrypt"
+    code:
+      - fixed(50, decrypt)

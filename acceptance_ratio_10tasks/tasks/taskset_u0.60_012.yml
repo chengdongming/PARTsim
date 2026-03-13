@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:31
+# 任务总数: 10
+# 总利用率: 2.400
+# 能量信息:
+#   总估算能耗: 0.710 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.4%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 244
+    runtime: 95
+    deadline: 244
+    params: "period=244,wcet=95,arrival_offset=70,workload=decrypt"
+    code:
+      - fixed(95, decrypt)
+
+  - name: task_1
+    iat: 40
+    runtime: 3
+    deadline: 40
+    params: "period=40,wcet=3,arrival_offset=1,workload=encrypt"
+    code:
+      - fixed(3, encrypt)
+
+  - name: task_2
+    iat: 149
+    runtime: 47
+    deadline: 149
+    params: "period=149,wcet=47,arrival_offset=23,workload=bzip2"
+    code:
+      - fixed(47, bzip2)
+
+  - name: task_3
+    iat: 298
+    runtime: 41
+    deadline: 298
+    params: "period=298,wcet=41,arrival_offset=26,workload=control"
+    code:
+      - fixed(41, control)
+
+  - name: task_4
+    iat: 318
+    runtime: 3
+    deadline: 318
+    params: "period=318,wcet=3,arrival_offset=76,workload=idle"
+    code:
+      - fixed(3, idle)
+
+  - name: task_5
+    iat: 293
+    runtime: 22
+    deadline: 293
+    params: "period=293,wcet=22,arrival_offset=62,workload=hash"
+    code:
+      - fixed(22, hash)
+
+  - name: task_6
+    iat: 382
+    runtime: 34
+    deadline: 382
+    params: "period=382,wcet=34,arrival_offset=75,workload=decrypt"
+    code:
+      - fixed(34, decrypt)
+
+  - name: task_7
+    iat: 385
+    runtime: 237
+    deadline: 385
+    params: "period=385,wcet=237,arrival_offset=5,workload=control"
+    code:
+      - fixed(237, control)
+
+  - name: task_8
+    iat: 60
+    runtime: 17
+    deadline: 60
+    params: "period=60,wcet=17,arrival_offset=18,workload=hash"
+    code:
+      - fixed(17, hash)
+
+  - name: task_9
+    iat: 194
+    runtime: 72
+    deadline: 194
+    params: "period=194,wcet=72,arrival_offset=6,workload=decrypt"
+    code:
+      - fixed(72, decrypt)

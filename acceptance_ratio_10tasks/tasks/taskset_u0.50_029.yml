@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:30
+# 任务总数: 10
+# 总利用率: 2.000
+# 能量信息:
+#   总估算能耗: 0.414 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.2%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 94
+    runtime: 22
+    deadline: 94
+    params: "period=94,wcet=22,arrival_offset=12,workload=control"
+    code:
+      - fixed(22, control)
+
+  - name: task_1
+    iat: 60
+    runtime: 7
+    deadline: 60
+    params: "period=60,wcet=7,arrival_offset=11,workload=hash"
+    code:
+      - fixed(7, hash)
+
+  - name: task_2
+    iat: 160
+    runtime: 103
+    deadline: 160
+    params: "period=160,wcet=103,arrival_offset=17,workload=hash"
+    code:
+      - fixed(103, hash)
+
+  - name: task_3
+    iat: 275
+    runtime: 20
+    deadline: 275
+    params: "period=275,wcet=20,arrival_offset=81,workload=encrypt"
+    code:
+      - fixed(20, encrypt)
+
+  - name: task_4
+    iat: 143
+    runtime: 26
+    deadline: 143
+    params: "period=143,wcet=26,arrival_offset=28,workload=control"
+    code:
+      - fixed(26, control)
+
+  - name: task_5
+    iat: 211
+    runtime: 41
+    deadline: 211
+    params: "period=211,wcet=41,arrival_offset=61,workload=hash"
+    code:
+      - fixed(41, hash)
+
+  - name: task_6
+    iat: 252
+    runtime: 9
+    deadline: 252
+    params: "period=252,wcet=9,arrival_offset=54,workload=idle"
+    code:
+      - fixed(9, idle)
+
+  - name: task_7
+    iat: 219
+    runtime: 35
+    deadline: 219
+    params: "period=219,wcet=35,arrival_offset=18,workload=control"
+    code:
+      - fixed(35, control)
+
+  - name: task_8
+    iat: 198
+    runtime: 48
+    deadline: 198
+    params: "period=198,wcet=48,arrival_offset=51,workload=decrypt"
+    code:
+      - fixed(48, decrypt)
+
+  - name: task_9
+    iat: 325
+    runtime: 31
+    deadline: 325
+    params: "period=325,wcet=31,arrival_offset=8,workload=control"
+    code:
+      - fixed(31, control)

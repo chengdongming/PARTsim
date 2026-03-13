@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:21
+# 任务总数: 10
+# 总利用率: 0.800
+# 能量信息:
+#   总估算能耗: 0.267 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.1%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 299
+    runtime: 3
+    deadline: 299
+    params: "period=299,wcet=3,arrival_offset=38,workload=bzip2"
+    code:
+      - fixed(3, bzip2)
+
+  - name: task_1
+    iat: 361
+    runtime: 8
+    deadline: 361
+    params: "period=361,wcet=8,arrival_offset=10,workload=decrypt"
+    code:
+      - fixed(8, decrypt)
+
+  - name: task_2
+    iat: 208
+    runtime: 4
+    deadline: 208
+    params: "period=208,wcet=4,arrival_offset=2,workload=bzip2"
+    code:
+      - fixed(4, bzip2)
+
+  - name: task_3
+    iat: 265
+    runtime: 9
+    deadline: 265
+    params: "period=265,wcet=9,arrival_offset=77,workload=idle"
+    code:
+      - fixed(9, idle)
+
+  - name: task_4
+    iat: 126
+    runtime: 19
+    deadline: 126
+    params: "period=126,wcet=19,arrival_offset=23,workload=decrypt"
+    code:
+      - fixed(19, decrypt)
+
+  - name: task_5
+    iat: 344
+    runtime: 5
+    deadline: 344
+    params: "period=344,wcet=5,arrival_offset=54,workload=decrypt"
+    code:
+      - fixed(5, decrypt)
+
+  - name: task_6
+    iat: 254
+    runtime: 38
+    deadline: 254
+    params: "period=254,wcet=38,arrival_offset=10,workload=decrypt"
+    code:
+      - fixed(38, decrypt)
+
+  - name: task_7
+    iat: 146
+    runtime: 20
+    deadline: 146
+    params: "period=146,wcet=20,arrival_offset=40,workload=bzip2"
+    code:
+      - fixed(20, bzip2)
+
+  - name: task_8
+    iat: 166
+    runtime: 17
+    deadline: 166
+    params: "period=166,wcet=17,arrival_offset=39,workload=idle"
+    code:
+      - fixed(17, idle)
+
+  - name: task_9
+    iat: 157
+    runtime: 21
+    deadline: 157
+    params: "period=157,wcet=21,arrival_offset=27,workload=decrypt"
+    code:
+      - fixed(21, decrypt)

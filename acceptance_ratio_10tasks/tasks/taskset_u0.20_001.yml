@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:20
+# 任务总数: 10
+# 总利用率: 0.800
+# 能量信息:
+#   总估算能耗: 0.237 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.1%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 164
+    runtime: 11
+    deadline: 164
+    params: "period=164,wcet=11,arrival_offset=49,workload=bzip2"
+    code:
+      - fixed(11, bzip2)
+
+  - name: task_1
+    iat: 298
+    runtime: 43
+    deadline: 298
+    params: "period=298,wcet=43,arrival_offset=57,workload=hash"
+    code:
+      - fixed(43, hash)
+
+  - name: task_2
+    iat: 385
+    runtime: 41
+    deadline: 385
+    params: "period=385,wcet=41,arrival_offset=46,workload=control"
+    code:
+      - fixed(41, control)
+
+  - name: task_3
+    iat: 98
+    runtime: 1
+    deadline: 98
+    params: "period=98,wcet=1,arrival_offset=22,workload=idle"
+    code:
+      - fixed(1, idle)
+
+  - name: task_4
+    iat: 290
+    runtime: 7
+    deadline: 290
+    params: "period=290,wcet=7,arrival_offset=11,workload=idle"
+    code:
+      - fixed(7, idle)
+
+  - name: task_5
+    iat: 349
+    runtime: 8
+    deadline: 349
+    params: "period=349,wcet=8,arrival_offset=82,workload=encrypt"
+    code:
+      - fixed(8, encrypt)
+
+  - name: task_6
+    iat: 363
+    runtime: 5
+    deadline: 363
+    params: "period=363,wcet=5,arrival_offset=44,workload=control"
+    code:
+      - fixed(5, control)
+
+  - name: task_7
+    iat: 124
+    runtime: 10
+    deadline: 124
+    params: "period=124,wcet=10,arrival_offset=35,workload=idle"
+    code:
+      - fixed(10, idle)
+
+  - name: task_8
+    iat: 149
+    runtime: 8
+    deadline: 149
+    params: "period=149,wcet=8,arrival_offset=19,workload=idle"
+    code:
+      - fixed(8, idle)
+
+  - name: task_9
+    iat: 218
+    runtime: 53
+    deadline: 218
+    params: "period=218,wcet=53,arrival_offset=44,workload=idle"
+    code:
+      - fixed(53, idle)

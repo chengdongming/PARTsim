@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:22
+# 任务总数: 10
+# 总利用率: 0.800
+# 能量信息:
+#   总估算能耗: 0.194 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.1%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 64
+    runtime: 1
+    deadline: 64
+    params: "period=64,wcet=1,arrival_offset=15,workload=encrypt"
+    code:
+      - fixed(1, encrypt)
+
+  - name: task_1
+    iat: 335
+    runtime: 20
+    deadline: 335
+    params: "period=335,wcet=20,arrival_offset=80,workload=bzip2"
+    code:
+      - fixed(20, bzip2)
+
+  - name: task_2
+    iat: 42
+    runtime: 3
+    deadline: 42
+    params: "period=42,wcet=3,arrival_offset=12,workload=decrypt"
+    code:
+      - fixed(3, decrypt)
+
+  - name: task_3
+    iat: 76
+    runtime: 3
+    deadline: 76
+    params: "period=76,wcet=3,arrival_offset=19,workload=encrypt"
+    code:
+      - fixed(3, encrypt)
+
+  - name: task_4
+    iat: 369
+    runtime: 15
+    deadline: 369
+    params: "period=369,wcet=15,arrival_offset=60,workload=decrypt"
+    code:
+      - fixed(15, decrypt)
+
+  - name: task_5
+    iat: 377
+    runtime: 5
+    deadline: 377
+    params: "period=377,wcet=5,arrival_offset=104,workload=control"
+    code:
+      - fixed(5, control)
+
+  - name: task_6
+    iat: 191
+    runtime: 23
+    deadline: 191
+    params: "period=191,wcet=23,arrival_offset=3,workload=decrypt"
+    code:
+      - fixed(23, decrypt)
+
+  - name: task_7
+    iat: 321
+    runtime: 21
+    deadline: 321
+    params: "period=321,wcet=21,arrival_offset=25,workload=control"
+    code:
+      - fixed(21, control)
+
+  - name: task_8
+    iat: 202
+    runtime: 6
+    deadline: 202
+    params: "period=202,wcet=6,arrival_offset=56,workload=control"
+    code:
+      - fixed(6, control)
+
+  - name: task_9
+    iat: 271
+    runtime: 85
+    deadline: 271
+    params: "period=271,wcet=85,arrival_offset=7,workload=control"
+    code:
+      - fixed(85, control)

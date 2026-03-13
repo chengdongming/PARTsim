@@ -75,7 +75,7 @@ ALGO_STYLES = {
 }
 BATTERY_CAPACITIES = [1.0, 3.0, 5.0, 10.0, 15.0, 25.0, 40.0, 60.0]
 
-NUM_TASKSETS = 30
+NUM_TASKSETS = 20
 SIMULATION_TIME = 10000
 
 # ============================================
@@ -160,24 +160,26 @@ class TraceParser:
 
         # 按时间排序
         sorted_events = sorted(self.events, key=lambda e: float(e['time']))
-        
+
         # --- 统计变量 ---
         stats = {
-            'total_instances': 0,     # 分母
-            'failed_instances': 0,    # 分子 (Job-level)
-            'preemptions': 0,         # 严格定义 (Descheduled)
-            'busy_time': 0.0,         # 用于计算 Avg Exec Time
-            'energy_sum': 0.0,        # 严格定义 (算术平均)
+            'total_instances': 0,        # 总到达任务数 (分母)
+            'completed_instances': 0,    # 实际完成任务数
+            'failed_instances': 0,       # 失败任务数 (显式 dline_miss)
+            'preemptions': 0,            # 抢占次数 (Descheduled)
+            'busy_time': 0.0,            # 累计执行时间
+            'energy_sum': 0.0,           # 能量累加 (算术平均用)
             'overhead_proxy': len(sorted_events) / 1000.0
         }
-        
+
         # 辅助变量
-        task_start_times = {}
+        task_start_times = {}      # task_key -> 开始时间
+        open_jobs = set()          # 未完成/未失败的作业集合
 
         for event in sorted_events:
             etype = event['event_type']
             curr_time = float(event['time'])
-            
+
             # [Strict] Average Energy Level
             current_energy_J = float(event.get('current_energy_mJ', 0)) / 1000.0
             stats['energy_sum'] += current_energy_J
@@ -186,9 +188,22 @@ class TraceParser:
 
             if etype == 'arrival':
                 stats['total_instances'] += 1
+                # 记录到达时间用于饿死判定 (task_key, arrival_time)
+                open_jobs.add((task_key, curr_time))
 
             elif etype == 'dline_miss':
                 stats['failed_instances'] += 1
+                # 从 open_jobs 中移除
+                to_remove = [j for j in open_jobs if j[0] == task_key]
+                for j in to_remove:
+                    open_jobs.remove(j)
+
+            elif etype == 'kill':
+                # kill 事件也视为失败
+                stats['failed_instances'] += 1
+                to_remove = [j for j in open_jobs if j[0] == task_key]
+                for j in to_remove:
+                    open_jobs.remove(j)
 
             elif etype == 'descheduled':
                 # [Strict] Preemptions
@@ -198,22 +213,41 @@ class TraceParser:
 
             elif etype == 'scheduled':
                 task_start_times[task_key] = curr_time
-                
+
             elif etype == 'end_instance':
+                stats['completed_instances'] += 1
                 if task_key in task_start_times:
                     stats['busy_time'] += (curr_time - task_start_times.pop(task_key))
+                # 从 open_jobs 中移除
+                to_remove = [j for j in open_jobs if j[0] == task_key]
+                for j in to_remove:
+                    open_jobs.remove(j)
 
-        # --- 计算最终指标 (混合模式) ---
-        
-        # 1. [Optimized] Job-level Failure Rate
+        # --- 饿死判定逻辑 ---
+        # 获取最后一个事件的时间戳
+        last_time = float(sorted_events[-1]['time']) if sorted_events else 0.0
+        # 边界免责期：最后 200ms 内到达的任务不算饿死
+        starvation_threshold = last_time - 200.0
+
+        starved_count = 0
+        for job_key, arrival_time in open_jobs:
+            if arrival_time <= starvation_threshold:
+                # 该任务在队列中被饿死
+                starved_count += 1
+
+        stats['failed_instances'] += starved_count
+
+        # --- 计算最终指标 (修正后) ---
+
+        # 1. [Fixed] Job-level Failure Rate
         if stats['total_instances'] > 0:
             stats['failure_rate'] = stats['failed_instances'] / stats['total_instances']
         else:
             stats['failure_rate'] = 0.0
 
-        # 2. [Optimized] Avg Execution Time (Throughput)
-        if stats['total_instances'] > 0:
-            stats['avg_execution_time'] = stats['busy_time'] / stats['total_instances']
+        # 2. [Fixed] Avg Execution Time (使用 completed_instances 作为分母)
+        if stats['completed_instances'] > 0:
+            stats['avg_execution_time'] = stats['busy_time'] / stats['completed_instances']
         else:
             stats['avg_execution_time'] = 0.0
 
@@ -258,6 +292,7 @@ def run_single_simulation_worker(args):
         parsed_stats = parser.parse()
         return (algorithm, battery, parsed_stats, None)
     except subprocess.TimeoutExpired:
+        print(f"\n❌ [致命错误] 算法 {algorithm} 在 Battery={battery} 时死锁卡住，超过120秒被强杀！请检查 C++ 代码！")
         return (algorithm, battery, None, "Timeout")
     except subprocess.CalledProcessError:
         return (algorithm, battery, None, "Simulation failed")

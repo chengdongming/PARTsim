@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:35
+# 任务总数: 10
+# 总利用率: 3.200
+# 能量信息:
+#   总估算能耗: 1.026 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.5%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 254
+    runtime: 88
+    deadline: 254
+    params: "period=254,wcet=88,arrival_offset=23,workload=decrypt"
+    code:
+      - fixed(88, decrypt)
+
+  - name: task_1
+    iat: 157
+    runtime: 52
+    deadline: 157
+    params: "period=157,wcet=52,arrival_offset=32,workload=bzip2"
+    code:
+      - fixed(52, bzip2)
+
+  - name: task_2
+    iat: 110
+    runtime: 15
+    deadline: 110
+    params: "period=110,wcet=15,arrival_offset=23,workload=decrypt"
+    code:
+      - fixed(15, decrypt)
+
+  - name: task_3
+    iat: 400
+    runtime: 150
+    deadline: 400
+    params: "period=400,wcet=150,arrival_offset=8,workload=encrypt"
+    code:
+      - fixed(150, encrypt)
+
+  - name: task_4
+    iat: 299
+    runtime: 176
+    deadline: 299
+    params: "period=299,wcet=176,arrival_offset=18,workload=control"
+    code:
+      - fixed(176, control)
+
+  - name: task_5
+    iat: 53
+    runtime: 1
+    deadline: 53
+    params: "period=53,wcet=1,arrival_offset=2,workload=encrypt"
+    code:
+      - fixed(1, encrypt)
+
+  - name: task_6
+    iat: 184
+    runtime: 57
+    deadline: 184
+    params: "period=184,wcet=57,arrival_offset=18,workload=encrypt"
+    code:
+      - fixed(57, encrypt)
+
+  - name: task_7
+    iat: 381
+    runtime: 4
+    deadline: 381
+    params: "period=381,wcet=4,arrival_offset=88,workload=decrypt"
+    code:
+      - fixed(4, decrypt)
+
+  - name: task_8
+    iat: 103
+    runtime: 29
+    deadline: 103
+    params: "period=103,wcet=29,arrival_offset=4,workload=encrypt"
+    code:
+      - fixed(29, encrypt)
+
+  - name: task_9
+    iat: 145
+    runtime: 111
+    deadline: 145
+    params: "period=145,wcet=111,arrival_offset=17,workload=hash"
+    code:
+      - fixed(111, hash)

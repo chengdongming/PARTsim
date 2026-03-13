@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:26
+# 任务总数: 10
+# 总利用率: 1.600
+# 能量信息:
+#   总估算能耗: 0.579 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.3%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 382
+    runtime: 63
+    deadline: 382
+    params: "period=382,wcet=63,arrival_offset=99,workload=hash"
+    code:
+      - fixed(63, hash)
+
+  - name: task_1
+    iat: 192
+    runtime: 44
+    deadline: 192
+    params: "period=192,wcet=44,arrival_offset=56,workload=hash"
+    code:
+      - fixed(44, hash)
+
+  - name: task_2
+    iat: 217
+    runtime: 68
+    deadline: 217
+    params: "period=217,wcet=68,arrival_offset=43,workload=bzip2"
+    code:
+      - fixed(68, bzip2)
+
+  - name: task_3
+    iat: 206
+    runtime: 45
+    deadline: 206
+    params: "period=206,wcet=45,arrival_offset=47,workload=encrypt"
+    code:
+      - fixed(45, encrypt)
+
+  - name: task_4
+    iat: 328
+    runtime: 7
+    deadline: 328
+    params: "period=328,wcet=7,arrival_offset=72,workload=control"
+    code:
+      - fixed(7, control)
+
+  - name: task_5
+    iat: 335
+    runtime: 18
+    deadline: 335
+    params: "period=335,wcet=18,arrival_offset=49,workload=control"
+    code:
+      - fixed(18, control)
+
+  - name: task_6
+    iat: 248
+    runtime: 52
+    deadline: 248
+    params: "period=248,wcet=52,arrival_offset=15,workload=encrypt"
+    code:
+      - fixed(52, encrypt)
+
+  - name: task_7
+    iat: 393
+    runtime: 28
+    deadline: 393
+    params: "period=393,wcet=28,arrival_offset=8,workload=bzip2"
+    code:
+      - fixed(28, bzip2)
+
+  - name: task_8
+    iat: 131
+    runtime: 21
+    deadline: 131
+    params: "period=131,wcet=21,arrival_offset=26,workload=bzip2"
+    code:
+      - fixed(21, bzip2)
+
+  - name: task_9
+    iat: 391
+    runtime: 54
+    deadline: 391
+    params: "period=391,wcet=54,arrival_offset=71,workload=control"
+    code:
+      - fixed(54, control)

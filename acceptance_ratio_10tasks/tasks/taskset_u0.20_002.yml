@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:20
+# 任务总数: 10
+# 总利用率: 0.800
+# 能量信息:
+#   总估算能耗: 0.305 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.2%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 62
+    runtime: 1
+    deadline: 62
+    params: "period=62,wcet=1,arrival_offset=17,workload=bzip2"
+    code:
+      - fixed(1, bzip2)
+
+  - name: task_1
+    iat: 116
+    runtime: 1
+    deadline: 116
+    params: "period=116,wcet=1,arrival_offset=18,workload=decrypt"
+    code:
+      - fixed(1, decrypt)
+
+  - name: task_2
+    iat: 56
+    runtime: 1
+    deadline: 56
+    params: "period=56,wcet=1,arrival_offset=15,workload=decrypt"
+    code:
+      - fixed(1, decrypt)
+
+  - name: task_3
+    iat: 240
+    runtime: 72
+    deadline: 240
+    params: "period=240,wcet=72,arrival_offset=70,workload=decrypt"
+    code:
+      - fixed(72, decrypt)
+
+  - name: task_4
+    iat: 95
+    runtime: 1
+    deadline: 95
+    params: "period=95,wcet=1,arrival_offset=8,workload=idle"
+    code:
+      - fixed(1, idle)
+
+  - name: task_5
+    iat: 84
+    runtime: 2
+    deadline: 84
+    params: "period=84,wcet=2,arrival_offset=14,workload=control"
+    code:
+      - fixed(2, control)
+
+  - name: task_6
+    iat: 361
+    runtime: 70
+    deadline: 361
+    params: "period=361,wcet=70,arrival_offset=106,workload=hash"
+    code:
+      - fixed(70, hash)
+
+  - name: task_7
+    iat: 357
+    runtime: 24
+    deadline: 357
+    params: "period=357,wcet=24,arrival_offset=26,workload=idle"
+    code:
+      - fixed(24, idle)
+
+  - name: task_8
+    iat: 133
+    runtime: 5
+    deadline: 133
+    params: "period=133,wcet=5,arrival_offset=25,workload=idle"
+    code:
+      - fixed(5, idle)
+
+  - name: task_9
+    iat: 134
+    runtime: 12
+    deadline: 134
+    params: "period=134,wcet=12,arrival_offset=13,workload=idle"
+    code:
+      - fixed(12, idle)

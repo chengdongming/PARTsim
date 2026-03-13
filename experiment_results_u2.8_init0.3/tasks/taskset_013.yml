@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-13 21:12:55
+# 任务总数: 10
+# 总利用率: 2.800
+# 能量信息:
+#   总估算能耗: 0.303 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.2%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 51
+    runtime: 13
+    deadline: 51
+    params: "period=51,wcet=13,arrival_offset=6,workload=encrypt"
+    code:
+      - fixed(13, encrypt)
+
+  - name: task_1
+    iat: 77
+    runtime: 26
+    deadline: 77
+    params: "period=77,wcet=26,arrival_offset=15,workload=decrypt"
+    code:
+      - fixed(26, decrypt)
+
+  - name: task_2
+    iat: 88
+    runtime: 2
+    deadline: 88
+    params: "period=88,wcet=2,arrival_offset=6,workload=idle"
+    code:
+      - fixed(2, idle)
+
+  - name: task_3
+    iat: 100
+    runtime: 31
+    deadline: 100
+    params: "period=100,wcet=31,arrival_offset=4,workload=control"
+    code:
+      - fixed(31, control)
+
+  - name: task_4
+    iat: 35
+    runtime: 18
+    deadline: 35
+    params: "period=35,wcet=18,arrival_offset=1,workload=decrypt"
+    code:
+      - fixed(18, decrypt)
+
+  - name: task_5
+    iat: 68
+    runtime: 23
+    deadline: 68
+    params: "period=68,wcet=23,arrival_offset=20,workload=encrypt"
+    code:
+      - fixed(23, encrypt)
+
+  - name: task_6
+    iat: 43
+    runtime: 8
+    deadline: 43
+    params: "period=43,wcet=8,arrival_offset=3,workload=encrypt"
+    code:
+      - fixed(8, encrypt)
+
+  - name: task_7
+    iat: 81
+    runtime: 1
+    deadline: 81
+    params: "period=81,wcet=1,arrival_offset=22,workload=idle"
+    code:
+      - fixed(1, idle)
+
+  - name: task_8
+    iat: 92
+    runtime: 10
+    deadline: 92
+    params: "period=92,wcet=10,arrival_offset=27,workload=idle"
+    code:
+      - fixed(10, idle)
+
+  - name: task_9
+    iat: 95
+    runtime: 59
+    deadline: 95
+    params: "period=95,wcet=59,arrival_offset=24,workload=idle"
+    code:
+      - fixed(59, idle)

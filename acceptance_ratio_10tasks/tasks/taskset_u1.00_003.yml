@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:40
+# 任务总数: 10
+# 总利用率: 4.000
+# 能量信息:
+#   总估算能耗: 1.226 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.6%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 209
+    runtime: 53
+    deadline: 209
+    params: "period=209,wcet=53,arrival_offset=58,workload=encrypt"
+    code:
+      - fixed(53, encrypt)
+
+  - name: task_1
+    iat: 168
+    runtime: 131
+    deadline: 168
+    params: "period=168,wcet=131,arrival_offset=29,workload=decrypt"
+    code:
+      - fixed(131, decrypt)
+
+  - name: task_2
+    iat: 90
+    runtime: 42
+    deadline: 90
+    params: "period=90,wcet=42,arrival_offset=4,workload=bzip2"
+    code:
+      - fixed(42, bzip2)
+
+  - name: task_3
+    iat: 377
+    runtime: 240
+    deadline: 377
+    params: "period=377,wcet=240,arrival_offset=60,workload=idle"
+    code:
+      - fixed(240, idle)
+
+  - name: task_4
+    iat: 376
+    runtime: 41
+    deadline: 376
+    params: "period=376,wcet=41,arrival_offset=18,workload=idle"
+    code:
+      - fixed(41, idle)
+
+  - name: task_5
+    iat: 171
+    runtime: 126
+    deadline: 171
+    params: "period=171,wcet=126,arrival_offset=37,workload=control"
+    code:
+      - fixed(126, control)
+
+  - name: task_6
+    iat: 262
+    runtime: 33
+    deadline: 262
+    params: "period=262,wcet=33,arrival_offset=30,workload=hash"
+    code:
+      - fixed(33, hash)
+
+  - name: task_7
+    iat: 160
+    runtime: 42
+    deadline: 160
+    params: "period=160,wcet=42,arrival_offset=47,workload=encrypt"
+    code:
+      - fixed(42, encrypt)
+
+  - name: task_8
+    iat: 268
+    runtime: 26
+    deadline: 268
+    params: "period=268,wcet=26,arrival_offset=73,workload=idle"
+    code:
+      - fixed(26, idle)
+
+  - name: task_9
+    iat: 187
+    runtime: 95
+    deadline: 187
+    params: "period=187,wcet=95,arrival_offset=34,workload=hash"
+    code:
+      - fixed(95, hash)

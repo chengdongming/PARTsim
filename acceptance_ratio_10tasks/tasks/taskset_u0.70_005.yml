@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:33
+# 任务总数: 10
+# 总利用率: 2.800
+# 能量信息:
+#   总估算能耗: 1.015 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.5%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 211
+    runtime: 58
+    deadline: 211
+    params: "period=211,wcet=58,arrival_offset=53,workload=decrypt"
+    code:
+      - fixed(58, decrypt)
+
+  - name: task_1
+    iat: 354
+    runtime: 5
+    deadline: 354
+    params: "period=354,wcet=5,arrival_offset=5,workload=encrypt"
+    code:
+      - fixed(5, encrypt)
+
+  - name: task_2
+    iat: 265
+    runtime: 99
+    deadline: 265
+    params: "period=265,wcet=99,arrival_offset=25,workload=encrypt"
+    code:
+      - fixed(99, encrypt)
+
+  - name: task_3
+    iat: 344
+    runtime: 63
+    deadline: 344
+    params: "period=344,wcet=63,arrival_offset=55,workload=control"
+    code:
+      - fixed(63, control)
+
+  - name: task_4
+    iat: 300
+    runtime: 121
+    deadline: 300
+    params: "period=300,wcet=121,arrival_offset=60,workload=encrypt"
+    code:
+      - fixed(121, encrypt)
+
+  - name: task_5
+    iat: 329
+    runtime: 105
+    deadline: 329
+    params: "period=329,wcet=105,arrival_offset=10,workload=idle"
+    code:
+      - fixed(105, idle)
+
+  - name: task_6
+    iat: 152
+    runtime: 17
+    deadline: 152
+    params: "period=152,wcet=17,arrival_offset=25,workload=encrypt"
+    code:
+      - fixed(17, encrypt)
+
+  - name: task_7
+    iat: 189
+    runtime: 70
+    deadline: 189
+    params: "period=189,wcet=70,arrival_offset=33,workload=encrypt"
+    code:
+      - fixed(70, encrypt)
+
+  - name: task_8
+    iat: 229
+    runtime: 7
+    deadline: 229
+    params: "period=229,wcet=7,arrival_offset=44,workload=encrypt"
+    code:
+      - fixed(7, encrypt)
+
+  - name: task_9
+    iat: 157
+    runtime: 109
+    deadline: 157
+    params: "period=157,wcet=109,arrival_offset=23,workload=control"
+    code:
+      - fixed(109, control)

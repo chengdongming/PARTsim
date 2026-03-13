@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:34
+# 任务总数: 10
+# 总利用率: 2.800
+# 能量信息:
+#   总估算能耗: 1.005 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.5%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 313
+    runtime: 163
+    deadline: 313
+    params: "period=313,wcet=163,arrival_offset=87,workload=bzip2"
+    code:
+      - fixed(163, bzip2)
+
+  - name: task_1
+    iat: 335
+    runtime: 52
+    deadline: 335
+    params: "period=335,wcet=52,arrival_offset=65,workload=bzip2"
+    code:
+      - fixed(52, bzip2)
+
+  - name: task_2
+    iat: 77
+    runtime: 18
+    deadline: 77
+    params: "period=77,wcet=18,arrival_offset=4,workload=encrypt"
+    code:
+      - fixed(18, encrypt)
+
+  - name: task_3
+    iat: 140
+    runtime: 22
+    deadline: 140
+    params: "period=140,wcet=22,arrival_offset=33,workload=control"
+    code:
+      - fixed(22, control)
+
+  - name: task_4
+    iat: 157
+    runtime: 82
+    deadline: 157
+    params: "period=157,wcet=82,arrival_offset=1,workload=encrypt"
+    code:
+      - fixed(82, encrypt)
+
+  - name: task_5
+    iat: 285
+    runtime: 112
+    deadline: 285
+    params: "period=285,wcet=112,arrival_offset=36,workload=decrypt"
+    code:
+      - fixed(112, decrypt)
+
+  - name: task_6
+    iat: 100
+    runtime: 8
+    deadline: 100
+    params: "period=100,wcet=8,arrival_offset=25,workload=bzip2"
+    code:
+      - fixed(8, bzip2)
+
+  - name: task_7
+    iat: 229
+    runtime: 11
+    deadline: 229
+    params: "period=229,wcet=11,arrival_offset=47,workload=decrypt"
+    code:
+      - fixed(11, decrypt)
+
+  - name: task_8
+    iat: 128
+    runtime: 1
+    deadline: 128
+    params: "period=128,wcet=1,arrival_offset=11,workload=hash"
+    code:
+      - fixed(1, hash)
+
+  - name: task_9
+    iat: 195
+    runtime: 127
+    deadline: 195
+    params: "period=195,wcet=127,arrival_offset=25,workload=hash"
+    code:
+      - fixed(127, hash)

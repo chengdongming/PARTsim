@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:33
+# 任务总数: 10
+# 总利用率: 2.800
+# 能量信息:
+#   总估算能耗: 1.079 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.5%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 188
+    runtime: 22
+    deadline: 188
+    params: "period=188,wcet=22,arrival_offset=1,workload=bzip2"
+    code:
+      - fixed(22, bzip2)
+
+  - name: task_1
+    iat: 274
+    runtime: 203
+    deadline: 274
+    params: "period=274,wcet=203,arrival_offset=79,workload=idle"
+    code:
+      - fixed(203, idle)
+
+  - name: task_2
+    iat: 50
+    runtime: 1
+    deadline: 50
+    params: "period=50,wcet=1,arrival_offset=4,workload=decrypt"
+    code:
+      - fixed(1, decrypt)
+
+  - name: task_3
+    iat: 362
+    runtime: 113
+    deadline: 362
+    params: "period=362,wcet=113,arrival_offset=88,workload=decrypt"
+    code:
+      - fixed(113, decrypt)
+
+  - name: task_4
+    iat: 302
+    runtime: 6
+    deadline: 302
+    params: "period=302,wcet=6,arrival_offset=82,workload=decrypt"
+    code:
+      - fixed(6, decrypt)
+
+  - name: task_5
+    iat: 185
+    runtime: 119
+    deadline: 185
+    params: "period=185,wcet=119,arrival_offset=16,workload=control"
+    code:
+      - fixed(119, control)
+
+  - name: task_6
+    iat: 299
+    runtime: 25
+    deadline: 299
+    params: "period=299,wcet=25,arrival_offset=74,workload=bzip2"
+    code:
+      - fixed(25, bzip2)
+
+  - name: task_7
+    iat: 122
+    runtime: 36
+    deadline: 122
+    params: "period=122,wcet=36,arrival_offset=12,workload=encrypt"
+    code:
+      - fixed(36, encrypt)
+
+  - name: task_8
+    iat: 138
+    runtime: 18
+    deadline: 138
+    params: "period=138,wcet=18,arrival_offset=37,workload=encrypt"
+    code:
+      - fixed(18, encrypt)
+
+  - name: task_9
+    iat: 394
+    runtime: 162
+    deadline: 394
+    params: "period=394,wcet=162,arrival_offset=40,workload=bzip2"
+    code:
+      - fixed(162, bzip2)

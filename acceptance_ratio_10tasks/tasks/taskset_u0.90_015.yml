@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:38
+# 任务总数: 10
+# 总利用率: 3.600
+# 能量信息:
+#   总估算能耗: 1.036 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.5%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 51
+    runtime: 34
+    deadline: 51
+    params: "period=51,wcet=34,arrival_offset=12,workload=hash"
+    code:
+      - fixed(34, hash)
+
+  - name: task_1
+    iat: 321
+    runtime: 99
+    deadline: 321
+    params: "period=321,wcet=99,arrival_offset=13,workload=control"
+    code:
+      - fixed(99, control)
+
+  - name: task_2
+    iat: 307
+    runtime: 6
+    deadline: 307
+    params: "period=307,wcet=6,arrival_offset=25,workload=hash"
+    code:
+      - fixed(6, hash)
+
+  - name: task_3
+    iat: 119
+    runtime: 27
+    deadline: 119
+    params: "period=119,wcet=27,arrival_offset=23,workload=hash"
+    code:
+      - fixed(27, hash)
+
+  - name: task_4
+    iat: 397
+    runtime: 206
+    deadline: 397
+    params: "period=397,wcet=206,arrival_offset=53,workload=bzip2"
+    code:
+      - fixed(206, bzip2)
+
+  - name: task_5
+    iat: 400
+    runtime: 8
+    deadline: 400
+    params: "period=400,wcet=8,arrival_offset=76,workload=encrypt"
+    code:
+      - fixed(8, encrypt)
+
+  - name: task_6
+    iat: 111
+    runtime: 20
+    deadline: 111
+    params: "period=111,wcet=20,arrival_offset=3,workload=decrypt"
+    code:
+      - fixed(20, decrypt)
+
+  - name: task_7
+    iat: 200
+    runtime: 111
+    deadline: 200
+    params: "period=200,wcet=111,arrival_offset=53,workload=idle"
+    code:
+      - fixed(111, idle)
+
+  - name: task_8
+    iat: 177
+    runtime: 117
+    deadline: 177
+    params: "period=177,wcet=117,arrival_offset=7,workload=decrypt"
+    code:
+      - fixed(117, decrypt)
+
+  - name: task_9
+    iat: 151
+    runtime: 64
+    deadline: 151
+    params: "period=151,wcet=64,arrival_offset=8,workload=hash"
+    code:
+      - fixed(64, hash)

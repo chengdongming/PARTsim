@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:21
+# 任务总数: 10
+# 总利用率: 0.800
+# 能量信息:
+#   总估算能耗: 0.214 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.1%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 336
+    runtime: 26
+    deadline: 336
+    params: "period=336,wcet=26,arrival_offset=50,workload=hash"
+    code:
+      - fixed(26, hash)
+
+  - name: task_1
+    iat: 241
+    runtime: 34
+    deadline: 241
+    params: "period=241,wcet=34,arrival_offset=41,workload=control"
+    code:
+      - fixed(34, control)
+
+  - name: task_2
+    iat: 241
+    runtime: 15
+    deadline: 241
+    params: "period=241,wcet=15,arrival_offset=36,workload=hash"
+    code:
+      - fixed(15, hash)
+
+  - name: task_3
+    iat: 56
+    runtime: 3
+    deadline: 56
+    params: "period=56,wcet=3,arrival_offset=13,workload=hash"
+    code:
+      - fixed(3, hash)
+
+  - name: task_4
+    iat: 309
+    runtime: 31
+    deadline: 309
+    params: "period=309,wcet=31,arrival_offset=87,workload=idle"
+    code:
+      - fixed(31, idle)
+
+  - name: task_5
+    iat: 145
+    runtime: 10
+    deadline: 145
+    params: "period=145,wcet=10,arrival_offset=2,workload=bzip2"
+    code:
+      - fixed(10, bzip2)
+
+  - name: task_6
+    iat: 156
+    runtime: 15
+    deadline: 156
+    params: "period=156,wcet=15,arrival_offset=14,workload=control"
+    code:
+      - fixed(15, control)
+
+  - name: task_7
+    iat: 248
+    runtime: 18
+    deadline: 248
+    params: "period=248,wcet=18,arrival_offset=74,workload=encrypt"
+    code:
+      - fixed(18, encrypt)
+
+  - name: task_8
+    iat: 185
+    runtime: 9
+    deadline: 185
+    params: "period=185,wcet=9,arrival_offset=13,workload=control"
+    code:
+      - fixed(9, control)
+
+  - name: task_9
+    iat: 344
+    runtime: 17
+    deadline: 344
+    params: "period=344,wcet=17,arrival_offset=43,workload=hash"
+    code:
+      - fixed(17, hash)

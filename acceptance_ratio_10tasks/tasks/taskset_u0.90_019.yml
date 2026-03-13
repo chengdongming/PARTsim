@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:38
+# 任务总数: 10
+# 总利用率: 3.600
+# 能量信息:
+#   总估算能耗: 1.445 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.7%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 123
+    runtime: 6
+    deadline: 123
+    params: "period=123,wcet=6,arrival_offset=22,workload=bzip2"
+    code:
+      - fixed(6, bzip2)
+
+  - name: task_1
+    iat: 361
+    runtime: 45
+    deadline: 361
+    params: "period=361,wcet=45,arrival_offset=88,workload=bzip2"
+    code:
+      - fixed(45, bzip2)
+
+  - name: task_2
+    iat: 140
+    runtime: 34
+    deadline: 140
+    params: "period=140,wcet=34,arrival_offset=1,workload=bzip2"
+    code:
+      - fixed(34, bzip2)
+
+  - name: task_3
+    iat: 224
+    runtime: 94
+    deadline: 224
+    params: "period=224,wcet=94,arrival_offset=63,workload=bzip2"
+    code:
+      - fixed(94, bzip2)
+
+  - name: task_4
+    iat: 199
+    runtime: 80
+    deadline: 199
+    params: "period=199,wcet=80,arrival_offset=27,workload=hash"
+    code:
+      - fixed(80, hash)
+
+  - name: task_5
+    iat: 117
+    runtime: 37
+    deadline: 117
+    params: "period=117,wcet=37,arrival_offset=32,workload=control"
+    code:
+      - fixed(37, control)
+
+  - name: task_6
+    iat: 334
+    runtime: 96
+    deadline: 334
+    params: "period=334,wcet=96,arrival_offset=75,workload=idle"
+    code:
+      - fixed(96, idle)
+
+  - name: task_7
+    iat: 398
+    runtime: 205
+    deadline: 398
+    params: "period=398,wcet=205,arrival_offset=1,workload=hash"
+    code:
+      - fixed(205, hash)
+
+  - name: task_8
+    iat: 354
+    runtime: 193
+    deadline: 354
+    params: "period=354,wcet=193,arrival_offset=90,workload=decrypt"
+    code:
+      - fixed(193, decrypt)
+
+  - name: task_9
+    iat: 161
+    runtime: 109
+    deadline: 161
+    params: "period=161,wcet=109,arrival_offset=31,workload=decrypt"
+    code:
+      - fixed(109, decrypt)

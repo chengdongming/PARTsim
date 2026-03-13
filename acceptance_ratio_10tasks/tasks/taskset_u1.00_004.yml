@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:40
+# 任务总数: 10
+# 总利用率: 4.000
+# 能量信息:
+#   总估算能耗: 1.713 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.9%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 177
+    runtime: 54
+    deadline: 177
+    params: "period=177,wcet=54,arrival_offset=22,workload=idle"
+    code:
+      - fixed(54, idle)
+
+  - name: task_1
+    iat: 308
+    runtime: 13
+    deadline: 308
+    params: "period=308,wcet=13,arrival_offset=7,workload=decrypt"
+    code:
+      - fixed(13, decrypt)
+
+  - name: task_2
+    iat: 227
+    runtime: 94
+    deadline: 227
+    params: "period=227,wcet=94,arrival_offset=62,workload=control"
+    code:
+      - fixed(94, control)
+
+  - name: task_3
+    iat: 132
+    runtime: 75
+    deadline: 132
+    params: "period=132,wcet=75,arrival_offset=7,workload=idle"
+    code:
+      - fixed(75, idle)
+
+  - name: task_4
+    iat: 246
+    runtime: 129
+    deadline: 246
+    params: "period=246,wcet=129,arrival_offset=14,workload=decrypt"
+    code:
+      - fixed(129, decrypt)
+
+  - name: task_5
+    iat: 359
+    runtime: 218
+    deadline: 359
+    params: "period=359,wcet=218,arrival_offset=57,workload=decrypt"
+    code:
+      - fixed(218, decrypt)
+
+  - name: task_6
+    iat: 175
+    runtime: 89
+    deadline: 175
+    params: "period=175,wcet=89,arrival_offset=24,workload=decrypt"
+    code:
+      - fixed(89, decrypt)
+
+  - name: task_7
+    iat: 229
+    runtime: 72
+    deadline: 229
+    params: "period=229,wcet=72,arrival_offset=31,workload=encrypt"
+    code:
+      - fixed(72, encrypt)
+
+  - name: task_8
+    iat: 398
+    runtime: 92
+    deadline: 398
+    params: "period=398,wcet=92,arrival_offset=78,workload=hash"
+    code:
+      - fixed(92, hash)
+
+  - name: task_9
+    iat: 326
+    runtime: 151
+    deadline: 326
+    params: "period=326,wcet=151,arrival_offset=73,workload=encrypt"
+    code:
+      - fixed(151, encrypt)

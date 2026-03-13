@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:40
+# 任务总数: 10
+# 总利用率: 4.000
+# 能量信息:
+#   总估算能耗: 1.196 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.6%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 171
+    runtime: 53
+    deadline: 171
+    params: "period=171,wcet=53,arrival_offset=21,workload=bzip2"
+    code:
+      - fixed(53, bzip2)
+
+  - name: task_1
+    iat: 110
+    runtime: 43
+    deadline: 110
+    params: "period=110,wcet=43,arrival_offset=3,workload=idle"
+    code:
+      - fixed(43, idle)
+
+  - name: task_2
+    iat: 102
+    runtime: 66
+    deadline: 102
+    params: "period=102,wcet=66,arrival_offset=2,workload=idle"
+    code:
+      - fixed(66, idle)
+
+  - name: task_3
+    iat: 115
+    runtime: 21
+    deadline: 115
+    params: "period=115,wcet=21,arrival_offset=21,workload=idle"
+    code:
+      - fixed(21, idle)
+
+  - name: task_4
+    iat: 155
+    runtime: 122
+    deadline: 155
+    params: "period=155,wcet=122,arrival_offset=30,workload=bzip2"
+    code:
+      - fixed(122, bzip2)
+
+  - name: task_5
+    iat: 396
+    runtime: 293
+    deadline: 396
+    params: "period=396,wcet=293,arrival_offset=79,workload=hash"
+    code:
+      - fixed(293, hash)
+
+  - name: task_6
+    iat: 322
+    runtime: 11
+    deadline: 322
+    params: "period=322,wcet=11,arrival_offset=17,workload=hash"
+    code:
+      - fixed(11, hash)
+
+  - name: task_7
+    iat: 55
+    runtime: 4
+    deadline: 55
+    params: "period=55,wcet=4,arrival_offset=13,workload=hash"
+    code:
+      - fixed(4, hash)
+
+  - name: task_8
+    iat: 300
+    runtime: 74
+    deadline: 300
+    params: "period=300,wcet=74,arrival_offset=19,workload=encrypt"
+    code:
+      - fixed(74, encrypt)
+
+  - name: task_9
+    iat: 163
+    runtime: 91
+    deadline: 163
+    params: "period=163,wcet=91,arrival_offset=3,workload=bzip2"
+    code:
+      - fixed(91, bzip2)

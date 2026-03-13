@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:27
+# 任务总数: 10
+# 总利用率: 1.600
+# 能量信息:
+#   总估算能耗: 0.691 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.3%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 130
+    runtime: 2
+    deadline: 130
+    params: "period=130,wcet=2,arrival_offset=16,workload=decrypt"
+    code:
+      - fixed(2, decrypt)
+
+  - name: task_1
+    iat: 323
+    runtime: 46
+    deadline: 323
+    params: "period=323,wcet=46,arrival_offset=44,workload=decrypt"
+    code:
+      - fixed(46, decrypt)
+
+  - name: task_2
+    iat: 242
+    runtime: 4
+    deadline: 242
+    params: "period=242,wcet=4,arrival_offset=41,workload=idle"
+    code:
+      - fixed(4, idle)
+
+  - name: task_3
+    iat: 365
+    runtime: 11
+    deadline: 365
+    params: "period=365,wcet=11,arrival_offset=0,workload=idle"
+    code:
+      - fixed(11, idle)
+
+  - name: task_4
+    iat: 388
+    runtime: 163
+    deadline: 388
+    params: "period=388,wcet=163,arrival_offset=96,workload=decrypt"
+    code:
+      - fixed(163, decrypt)
+
+  - name: task_5
+    iat: 167
+    runtime: 3
+    deadline: 167
+    params: "period=167,wcet=3,arrival_offset=26,workload=control"
+    code:
+      - fixed(3, control)
+
+  - name: task_6
+    iat: 77
+    runtime: 9
+    deadline: 77
+    params: "period=77,wcet=9,arrival_offset=0,workload=encrypt"
+    code:
+      - fixed(9, encrypt)
+
+  - name: task_7
+    iat: 95
+    runtime: 8
+    deadline: 95
+    params: "period=95,wcet=8,arrival_offset=15,workload=encrypt"
+    code:
+      - fixed(8, encrypt)
+
+  - name: task_8
+    iat: 46
+    runtime: 23
+    deadline: 46
+    params: "period=46,wcet=23,arrival_offset=12,workload=bzip2"
+    code:
+      - fixed(23, bzip2)
+
+  - name: task_9
+    iat: 394
+    runtime: 86
+    deadline: 394
+    params: "period=394,wcet=86,arrival_offset=37,workload=encrypt"
+    code:
+      - fixed(86, encrypt)

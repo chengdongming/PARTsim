@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:36
+# 任务总数: 10
+# 总利用率: 3.200
+# 能量信息:
+#   总估算能耗: 0.735 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.4%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 94
+    runtime: 29
+    deadline: 94
+    params: "period=94,wcet=29,arrival_offset=19,workload=encrypt"
+    code:
+      - fixed(29, encrypt)
+
+  - name: task_1
+    iat: 138
+    runtime: 87
+    deadline: 138
+    params: "period=138,wcet=87,arrival_offset=16,workload=hash"
+    code:
+      - fixed(87, hash)
+
+  - name: task_2
+    iat: 383
+    runtime: 97
+    deadline: 383
+    params: "period=383,wcet=97,arrival_offset=73,workload=idle"
+    code:
+      - fixed(97, idle)
+
+  - name: task_3
+    iat: 205
+    runtime: 21
+    deadline: 205
+    params: "period=205,wcet=21,arrival_offset=55,workload=bzip2"
+    code:
+      - fixed(21, bzip2)
+
+  - name: task_4
+    iat: 319
+    runtime: 26
+    deadline: 319
+    params: "period=319,wcet=26,arrival_offset=14,workload=idle"
+    code:
+      - fixed(26, idle)
+
+  - name: task_5
+    iat: 88
+    runtime: 38
+    deadline: 88
+    params: "period=88,wcet=38,arrival_offset=4,workload=idle"
+    code:
+      - fixed(38, idle)
+
+  - name: task_6
+    iat: 359
+    runtime: 53
+    deadline: 359
+    params: "period=359,wcet=53,arrival_offset=98,workload=encrypt"
+    code:
+      - fixed(53, encrypt)
+
+  - name: task_7
+    iat: 196
+    runtime: 12
+    deadline: 196
+    params: "period=196,wcet=12,arrival_offset=27,workload=hash"
+    code:
+      - fixed(12, hash)
+
+  - name: task_8
+    iat: 77
+    runtime: 35
+    deadline: 77
+    params: "period=77,wcet=35,arrival_offset=5,workload=control"
+    code:
+      - fixed(35, control)
+
+  - name: task_9
+    iat: 103
+    runtime: 72
+    deadline: 103
+    params: "period=103,wcet=72,arrival_offset=30,workload=encrypt"
+    code:
+      - fixed(72, encrypt)

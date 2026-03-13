@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:40
+# 任务总数: 10
+# 总利用率: 4.000
+# 能量信息:
+#   总估算能耗: 1.134 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.6%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 374
+    runtime: 14
+    deadline: 374
+    params: "period=374,wcet=14,arrival_offset=49,workload=control"
+    code:
+      - fixed(14, control)
+
+  - name: task_1
+    iat: 206
+    runtime: 111
+    deadline: 206
+    params: "period=206,wcet=111,arrival_offset=2,workload=encrypt"
+    code:
+      - fixed(111, encrypt)
+
+  - name: task_2
+    iat: 184
+    runtime: 124
+    deadline: 184
+    params: "period=184,wcet=124,arrival_offset=47,workload=bzip2"
+    code:
+      - fixed(124, bzip2)
+
+  - name: task_3
+    iat: 203
+    runtime: 8
+    deadline: 203
+    params: "period=203,wcet=8,arrival_offset=30,workload=control"
+    code:
+      - fixed(8, control)
+
+  - name: task_4
+    iat: 260
+    runtime: 184
+    deadline: 260
+    params: "period=260,wcet=184,arrival_offset=23,workload=encrypt"
+    code:
+      - fixed(184, encrypt)
+
+  - name: task_5
+    iat: 369
+    runtime: 63
+    deadline: 369
+    params: "period=369,wcet=63,arrival_offset=77,workload=idle"
+    code:
+      - fixed(63, idle)
+
+  - name: task_6
+    iat: 102
+    runtime: 13
+    deadline: 102
+    params: "period=102,wcet=13,arrival_offset=2,workload=decrypt"
+    code:
+      - fixed(13, decrypt)
+
+  - name: task_7
+    iat: 144
+    runtime: 69
+    deadline: 144
+    params: "period=144,wcet=69,arrival_offset=28,workload=control"
+    code:
+      - fixed(69, control)
+
+  - name: task_8
+    iat: 125
+    runtime: 64
+    deadline: 125
+    params: "period=125,wcet=64,arrival_offset=27,workload=control"
+    code:
+      - fixed(64, control)
+
+  - name: task_9
+    iat: 116
+    runtime: 80
+    deadline: 116
+    params: "period=116,wcet=80,arrival_offset=18,workload=idle"
+    code:
+      - fixed(80, idle)

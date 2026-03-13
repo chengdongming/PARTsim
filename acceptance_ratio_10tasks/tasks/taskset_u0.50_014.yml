@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:28
+# 任务总数: 10
+# 总利用率: 2.000
+# 能量信息:
+#   总估算能耗: 0.367 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.2%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 51
+    runtime: 25
+    deadline: 51
+    params: "period=51,wcet=25,arrival_offset=1,workload=control"
+    code:
+      - fixed(25, control)
+
+  - name: task_1
+    iat: 297
+    runtime: 74
+    deadline: 297
+    params: "period=297,wcet=74,arrival_offset=39,workload=encrypt"
+    code:
+      - fixed(74, encrypt)
+
+  - name: task_2
+    iat: 374
+    runtime: 24
+    deadline: 374
+    params: "period=374,wcet=24,arrival_offset=75,workload=decrypt"
+    code:
+      - fixed(24, decrypt)
+
+  - name: task_3
+    iat: 137
+    runtime: 13
+    deadline: 137
+    params: "period=137,wcet=13,arrival_offset=27,workload=hash"
+    code:
+      - fixed(13, hash)
+
+  - name: task_4
+    iat: 246
+    runtime: 80
+    deadline: 246
+    params: "period=246,wcet=80,arrival_offset=24,workload=control"
+    code:
+      - fixed(80, control)
+
+  - name: task_5
+    iat: 52
+    runtime: 19
+    deadline: 52
+    params: "period=52,wcet=19,arrival_offset=1,workload=decrypt"
+    code:
+      - fixed(19, decrypt)
+
+  - name: task_6
+    iat: 316
+    runtime: 22
+    deadline: 316
+    params: "period=316,wcet=22,arrival_offset=23,workload=idle"
+    code:
+      - fixed(22, idle)
+
+  - name: task_7
+    iat: 114
+    runtime: 16
+    deadline: 114
+    params: "period=114,wcet=16,arrival_offset=18,workload=control"
+    code:
+      - fixed(16, control)
+
+  - name: task_8
+    iat: 48
+    runtime: 6
+    deadline: 48
+    params: "period=48,wcet=6,arrival_offset=11,workload=hash"
+    code:
+      - fixed(6, hash)
+
+  - name: task_9
+    iat: 122
+    runtime: 4
+    deadline: 122
+    params: "period=122,wcet=4,arrival_offset=33,workload=control"
+    code:
+      - fixed(4, control)

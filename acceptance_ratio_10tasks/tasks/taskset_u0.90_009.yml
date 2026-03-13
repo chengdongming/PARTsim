@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:37
+# 任务总数: 10
+# 总利用率: 3.600
+# 能量信息:
+#   总估算能耗: 1.236 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.6%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 324
+    runtime: 223
+    deadline: 324
+    params: "period=324,wcet=223,arrival_offset=93,workload=decrypt"
+    code:
+      - fixed(223, decrypt)
+
+  - name: task_1
+    iat: 181
+    runtime: 55
+    deadline: 181
+    params: "period=181,wcet=55,arrival_offset=17,workload=idle"
+    code:
+      - fixed(55, idle)
+
+  - name: task_2
+    iat: 58
+    runtime: 21
+    deadline: 58
+    params: "period=58,wcet=21,arrival_offset=14,workload=bzip2"
+    code:
+      - fixed(21, bzip2)
+
+  - name: task_3
+    iat: 298
+    runtime: 15
+    deadline: 298
+    params: "period=298,wcet=15,arrival_offset=12,workload=bzip2"
+    code:
+      - fixed(15, bzip2)
+
+  - name: task_4
+    iat: 247
+    runtime: 156
+    deadline: 247
+    params: "period=247,wcet=156,arrival_offset=47,workload=hash"
+    code:
+      - fixed(156, hash)
+
+  - name: task_5
+    iat: 109
+    runtime: 20
+    deadline: 109
+    params: "period=109,wcet=20,arrival_offset=21,workload=hash"
+    code:
+      - fixed(20, hash)
+
+  - name: task_6
+    iat: 103
+    runtime: 19
+    deadline: 103
+    params: "period=103,wcet=19,arrival_offset=11,workload=decrypt"
+    code:
+      - fixed(19, decrypt)
+
+  - name: task_7
+    iat: 303
+    runtime: 126
+    deadline: 303
+    params: "period=303,wcet=126,arrival_offset=61,workload=decrypt"
+    code:
+      - fixed(126, decrypt)
+
+  - name: task_8
+    iat: 181
+    runtime: 19
+    deadline: 181
+    params: "period=181,wcet=19,arrival_offset=1,workload=bzip2"
+    code:
+      - fixed(19, bzip2)
+
+  - name: task_9
+    iat: 86
+    runtime: 56
+    deadline: 86
+    params: "period=86,wcet=56,arrival_offset=16,workload=bzip2"
+    code:
+      - fixed(56, bzip2)

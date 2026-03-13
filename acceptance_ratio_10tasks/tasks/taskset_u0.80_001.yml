@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:35
+# 任务总数: 10
+# 总利用率: 3.200
+# 能量信息:
+#   总估算能耗: 1.450 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.7%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 59
+    runtime: 21
+    deadline: 59
+    params: "period=59,wcet=21,arrival_offset=15,workload=idle"
+    code:
+      - fixed(21, idle)
+
+  - name: task_1
+    iat: 346
+    runtime: 144
+    deadline: 346
+    params: "period=346,wcet=144,arrival_offset=82,workload=encrypt"
+    code:
+      - fixed(144, encrypt)
+
+  - name: task_2
+    iat: 242
+    runtime: 38
+    deadline: 242
+    params: "period=242,wcet=38,arrival_offset=44,workload=idle"
+    code:
+      - fixed(38, idle)
+
+  - name: task_3
+    iat: 356
+    runtime: 16
+    deadline: 356
+    params: "period=356,wcet=16,arrival_offset=103,workload=decrypt"
+    code:
+      - fixed(16, decrypt)
+
+  - name: task_4
+    iat: 227
+    runtime: 75
+    deadline: 227
+    params: "period=227,wcet=75,arrival_offset=2,workload=idle"
+    code:
+      - fixed(75, idle)
+
+  - name: task_5
+    iat: 393
+    runtime: 111
+    deadline: 393
+    params: "period=393,wcet=111,arrival_offset=24,workload=bzip2"
+    code:
+      - fixed(111, bzip2)
+
+  - name: task_6
+    iat: 72
+    runtime: 7
+    deadline: 72
+    params: "period=72,wcet=7,arrival_offset=1,workload=hash"
+    code:
+      - fixed(7, hash)
+
+  - name: task_7
+    iat: 221
+    runtime: 94
+    deadline: 221
+    params: "period=221,wcet=94,arrival_offset=32,workload=idle"
+    code:
+      - fixed(94, idle)
+
+  - name: task_8
+    iat: 308
+    runtime: 147
+    deadline: 308
+    params: "period=308,wcet=147,arrival_offset=22,workload=encrypt"
+    code:
+      - fixed(147, encrypt)
+
+  - name: task_9
+    iat: 294
+    runtime: 174
+    deadline: 294
+    params: "period=294,wcet=174,arrival_offset=83,workload=bzip2"
+    code:
+      - fixed(174, bzip2)

@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:31
+# 任务总数: 10
+# 总利用率: 2.400
+# 能量信息:
+#   总估算能耗: 0.675 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.3%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 72
+    runtime: 6
+    deadline: 72
+    params: "period=72,wcet=6,arrival_offset=21,workload=bzip2"
+    code:
+      - fixed(6, bzip2)
+
+  - name: task_1
+    iat: 61
+    runtime: 26
+    deadline: 61
+    params: "period=61,wcet=26,arrival_offset=6,workload=hash"
+    code:
+      - fixed(26, hash)
+
+  - name: task_2
+    iat: 186
+    runtime: 56
+    deadline: 186
+    params: "period=186,wcet=56,arrival_offset=14,workload=encrypt"
+    code:
+      - fixed(56, encrypt)
+
+  - name: task_3
+    iat: 386
+    runtime: 51
+    deadline: 386
+    params: "period=386,wcet=51,arrival_offset=40,workload=idle"
+    code:
+      - fixed(51, idle)
+
+  - name: task_4
+    iat: 251
+    runtime: 80
+    deadline: 251
+    params: "period=251,wcet=80,arrival_offset=49,workload=bzip2"
+    code:
+      - fixed(80, bzip2)
+
+  - name: task_5
+    iat: 286
+    runtime: 35
+    deadline: 286
+    params: "period=286,wcet=35,arrival_offset=40,workload=decrypt"
+    code:
+      - fixed(35, decrypt)
+
+  - name: task_6
+    iat: 96
+    runtime: 41
+    deadline: 96
+    params: "period=96,wcet=41,arrival_offset=10,workload=idle"
+    code:
+      - fixed(41, idle)
+
+  - name: task_7
+    iat: 261
+    runtime: 28
+    deadline: 261
+    params: "period=261,wcet=28,arrival_offset=47,workload=hash"
+    code:
+      - fixed(28, hash)
+
+  - name: task_8
+    iat: 159
+    runtime: 45
+    deadline: 159
+    params: "period=159,wcet=45,arrival_offset=42,workload=hash"
+    code:
+      - fixed(45, hash)
+
+  - name: task_9
+    iat: 361
+    runtime: 62
+    deadline: 361
+    params: "period=361,wcet=62,arrival_offset=104,workload=hash"
+    code:
+      - fixed(62, hash)

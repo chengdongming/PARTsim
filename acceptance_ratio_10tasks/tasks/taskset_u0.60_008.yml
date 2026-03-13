@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:30
+# 任务总数: 10
+# 总利用率: 2.400
+# 能量信息:
+#   总估算能耗: 1.184 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.6%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 142
+    runtime: 21
+    deadline: 142
+    params: "period=142,wcet=21,arrival_offset=16,workload=idle"
+    code:
+      - fixed(21, idle)
+
+  - name: task_1
+    iat: 297
+    runtime: 47
+    deadline: 297
+    params: "period=297,wcet=47,arrival_offset=51,workload=decrypt"
+    code:
+      - fixed(47, decrypt)
+
+  - name: task_2
+    iat: 317
+    runtime: 148
+    deadline: 317
+    params: "period=317,wcet=148,arrival_offset=89,workload=decrypt"
+    code:
+      - fixed(148, decrypt)
+
+  - name: task_3
+    iat: 381
+    runtime: 74
+    deadline: 381
+    params: "period=381,wcet=74,arrival_offset=4,workload=idle"
+    code:
+      - fixed(74, idle)
+
+  - name: task_4
+    iat: 86
+    runtime: 9
+    deadline: 86
+    params: "period=86,wcet=9,arrival_offset=4,workload=decrypt"
+    code:
+      - fixed(9, decrypt)
+
+  - name: task_5
+    iat: 309
+    runtime: 76
+    deadline: 309
+    params: "period=309,wcet=76,arrival_offset=7,workload=hash"
+    code:
+      - fixed(76, hash)
+
+  - name: task_6
+    iat: 73
+    runtime: 6
+    deadline: 73
+    params: "period=73,wcet=6,arrival_offset=9,workload=encrypt"
+    code:
+      - fixed(6, encrypt)
+
+  - name: task_7
+    iat: 205
+    runtime: 18
+    deadline: 205
+    params: "period=205,wcet=18,arrival_offset=22,workload=hash"
+    code:
+      - fixed(18, hash)
+
+  - name: task_8
+    iat: 293
+    runtime: 45
+    deadline: 293
+    params: "period=293,wcet=45,arrival_offset=43,workload=idle"
+    code:
+      - fixed(45, idle)
+
+  - name: task_9
+    iat: 296
+    runtime: 216
+    deadline: 296
+    params: "period=296,wcet=216,arrival_offset=10,workload=encrypt"
+    code:
+      - fixed(216, encrypt)

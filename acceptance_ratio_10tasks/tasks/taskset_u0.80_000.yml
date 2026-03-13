@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:35
+# 任务总数: 10
+# 总利用率: 3.200
+# 能量信息:
+#   总估算能耗: 1.684 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.8%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 192
+    runtime: 78
+    deadline: 192
+    params: "period=192,wcet=78,arrival_offset=31,workload=encrypt"
+    code:
+      - fixed(78, encrypt)
+
+  - name: task_1
+    iat: 299
+    runtime: 86
+    deadline: 299
+    params: "period=299,wcet=86,arrival_offset=75,workload=decrypt"
+    code:
+      - fixed(86, decrypt)
+
+  - name: task_2
+    iat: 261
+    runtime: 17
+    deadline: 261
+    params: "period=261,wcet=17,arrival_offset=9,workload=hash"
+    code:
+      - fixed(17, hash)
+
+  - name: task_3
+    iat: 147
+    runtime: 33
+    deadline: 147
+    params: "period=147,wcet=33,arrival_offset=30,workload=idle"
+    code:
+      - fixed(33, idle)
+
+  - name: task_4
+    iat: 156
+    runtime: 23
+    deadline: 156
+    params: "period=156,wcet=23,arrival_offset=9,workload=hash"
+    code:
+      - fixed(23, hash)
+
+  - name: task_5
+    iat: 345
+    runtime: 38
+    deadline: 345
+    params: "period=345,wcet=38,arrival_offset=94,workload=encrypt"
+    code:
+      - fixed(38, encrypt)
+
+  - name: task_6
+    iat: 331
+    runtime: 159
+    deadline: 331
+    params: "period=331,wcet=159,arrival_offset=95,workload=idle"
+    code:
+      - fixed(159, idle)
+
+  - name: task_7
+    iat: 333
+    runtime: 47
+    deadline: 333
+    params: "period=333,wcet=47,arrival_offset=42,workload=decrypt"
+    code:
+      - fixed(47, decrypt)
+
+  - name: task_8
+    iat: 304
+    runtime: 236
+    deadline: 304
+    params: "period=304,wcet=236,arrival_offset=4,workload=encrypt"
+    code:
+      - fixed(236, encrypt)
+
+  - name: task_9
+    iat: 349
+    runtime: 187
+    deadline: 349
+    params: "period=349,wcet=187,arrival_offset=4,workload=encrypt"
+    code:
+      - fixed(187, encrypt)

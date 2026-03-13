@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:41
+# 任务总数: 10
+# 总利用率: 4.000
+# 能量信息:
+#   总估算能耗: 0.982 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.5%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 215
+    runtime: 90
+    deadline: 215
+    params: "period=215,wcet=90,arrival_offset=34,workload=bzip2"
+    code:
+      - fixed(90, bzip2)
+
+  - name: task_1
+    iat: 55
+    runtime: 18
+    deadline: 55
+    params: "period=55,wcet=18,arrival_offset=7,workload=control"
+    code:
+      - fixed(18, control)
+
+  - name: task_2
+    iat: 208
+    runtime: 123
+    deadline: 208
+    params: "period=208,wcet=123,arrival_offset=13,workload=decrypt"
+    code:
+      - fixed(123, decrypt)
+
+  - name: task_3
+    iat: 109
+    runtime: 63
+    deadline: 109
+    params: "period=109,wcet=63,arrival_offset=22,workload=hash"
+    code:
+      - fixed(63, hash)
+
+  - name: task_4
+    iat: 105
+    runtime: 30
+    deadline: 105
+    params: "period=105,wcet=30,arrival_offset=31,workload=bzip2"
+    code:
+      - fixed(30, bzip2)
+
+  - name: task_5
+    iat: 239
+    runtime: 151
+    deadline: 239
+    params: "period=239,wcet=151,arrival_offset=18,workload=bzip2"
+    code:
+      - fixed(151, bzip2)
+
+  - name: task_6
+    iat: 344
+    runtime: 101
+    deadline: 344
+    params: "period=344,wcet=101,arrival_offset=94,workload=control"
+    code:
+      - fixed(101, control)
+
+  - name: task_7
+    iat: 102
+    runtime: 16
+    deadline: 102
+    params: "period=102,wcet=16,arrival_offset=22,workload=hash"
+    code:
+      - fixed(16, hash)
+
+  - name: task_8
+    iat: 192
+    runtime: 25
+    deadline: 192
+    params: "period=192,wcet=25,arrival_offset=41,workload=hash"
+    code:
+      - fixed(25, hash)
+
+  - name: task_9
+    iat: 211
+    runtime: 114
+    deadline: 211
+    params: "period=211,wcet=114,arrival_offset=43,workload=control"
+    code:
+      - fixed(114, control)

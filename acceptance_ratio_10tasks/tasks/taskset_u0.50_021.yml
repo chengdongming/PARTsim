@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:29
+# 任务总数: 10
+# 总利用率: 2.000
+# 能量信息:
+#   总估算能耗: 0.729 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.4%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 252
+    runtime: 42
+    deadline: 252
+    params: "period=252,wcet=42,arrival_offset=42,workload=encrypt"
+    code:
+      - fixed(42, encrypt)
+
+  - name: task_1
+    iat: 286
+    runtime: 20
+    deadline: 286
+    params: "period=286,wcet=20,arrival_offset=78,workload=bzip2"
+    code:
+      - fixed(20, bzip2)
+
+  - name: task_2
+    iat: 175
+    runtime: 19
+    deadline: 175
+    params: "period=175,wcet=19,arrival_offset=47,workload=encrypt"
+    code:
+      - fixed(19, encrypt)
+
+  - name: task_3
+    iat: 319
+    runtime: 125
+    deadline: 319
+    params: "period=319,wcet=125,arrival_offset=3,workload=bzip2"
+    code:
+      - fixed(125, bzip2)
+
+  - name: task_4
+    iat: 302
+    runtime: 134
+    deadline: 302
+    params: "period=302,wcet=134,arrival_offset=39,workload=idle"
+    code:
+      - fixed(134, idle)
+
+  - name: task_5
+    iat: 51
+    runtime: 3
+    deadline: 51
+    params: "period=51,wcet=3,arrival_offset=6,workload=hash"
+    code:
+      - fixed(3, hash)
+
+  - name: task_6
+    iat: 335
+    runtime: 14
+    deadline: 335
+    params: "period=335,wcet=14,arrival_offset=33,workload=encrypt"
+    code:
+      - fixed(14, encrypt)
+
+  - name: task_7
+    iat: 64
+    runtime: 12
+    deadline: 64
+    params: "period=64,wcet=12,arrival_offset=0,workload=encrypt"
+    code:
+      - fixed(12, encrypt)
+
+  - name: task_8
+    iat: 235
+    runtime: 3
+    deadline: 235
+    params: "period=235,wcet=3,arrival_offset=44,workload=bzip2"
+    code:
+      - fixed(3, bzip2)
+
+  - name: task_9
+    iat: 103
+    runtime: 49
+    deadline: 103
+    params: "period=103,wcet=49,arrival_offset=22,workload=encrypt"
+    code:
+      - fixed(49, encrypt)

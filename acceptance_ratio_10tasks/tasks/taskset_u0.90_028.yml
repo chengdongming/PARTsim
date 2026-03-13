@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:39
+# 任务总数: 10
+# 总利用率: 3.600
+# 能量信息:
+#   总估算能耗: 0.830 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.4%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 356
+    runtime: 60
+    deadline: 356
+    params: "period=356,wcet=60,arrival_offset=75,workload=hash"
+    code:
+      - fixed(60, hash)
+
+  - name: task_1
+    iat: 111
+    runtime: 51
+    deadline: 111
+    params: "period=111,wcet=51,arrival_offset=9,workload=hash"
+    code:
+      - fixed(51, hash)
+
+  - name: task_2
+    iat: 171
+    runtime: 27
+    deadline: 171
+    params: "period=171,wcet=27,arrival_offset=30,workload=control"
+    code:
+      - fixed(27, control)
+
+  - name: task_3
+    iat: 211
+    runtime: 128
+    deadline: 211
+    params: "period=211,wcet=128,arrival_offset=25,workload=encrypt"
+    code:
+      - fixed(128, encrypt)
+
+  - name: task_4
+    iat: 87
+    runtime: 54
+    deadline: 87
+    params: "period=87,wcet=54,arrival_offset=15,workload=decrypt"
+    code:
+      - fixed(54, decrypt)
+
+  - name: task_5
+    iat: 171
+    runtime: 67
+    deadline: 171
+    params: "period=171,wcet=67,arrival_offset=6,workload=hash"
+    code:
+      - fixed(67, hash)
+
+  - name: task_6
+    iat: 291
+    runtime: 41
+    deadline: 291
+    params: "period=291,wcet=41,arrival_offset=80,workload=bzip2"
+    code:
+      - fixed(41, bzip2)
+
+  - name: task_7
+    iat: 178
+    runtime: 55
+    deadline: 178
+    params: "period=178,wcet=55,arrival_offset=52,workload=bzip2"
+    code:
+      - fixed(55, bzip2)
+
+  - name: task_8
+    iat: 181
+    runtime: 2
+    deadline: 181
+    params: "period=181,wcet=2,arrival_offset=29,workload=bzip2"
+    code:
+      - fixed(2, bzip2)
+
+  - name: task_9
+    iat: 56
+    runtime: 40
+    deadline: 56
+    params: "period=56,wcet=40,arrival_offset=2,workload=hash"
+    code:
+      - fixed(40, hash)

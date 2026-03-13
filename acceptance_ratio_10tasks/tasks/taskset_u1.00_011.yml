@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:40
+# 任务总数: 10
+# 总利用率: 4.000
+# 能量信息:
+#   总估算能耗: 1.284 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.6%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 321
+    runtime: 31
+    deadline: 321
+    params: "period=321,wcet=31,arrival_offset=72,workload=bzip2"
+    code:
+      - fixed(31, bzip2)
+
+  - name: task_1
+    iat: 92
+    runtime: 46
+    deadline: 92
+    params: "period=92,wcet=46,arrival_offset=17,workload=bzip2"
+    code:
+      - fixed(46, bzip2)
+
+  - name: task_2
+    iat: 258
+    runtime: 68
+    deadline: 258
+    params: "period=258,wcet=68,arrival_offset=69,workload=bzip2"
+    code:
+      - fixed(68, bzip2)
+
+  - name: task_3
+    iat: 184
+    runtime: 22
+    deadline: 184
+    params: "period=184,wcet=22,arrival_offset=21,workload=encrypt"
+    code:
+      - fixed(22, encrypt)
+
+  - name: task_4
+    iat: 44
+    runtime: 28
+    deadline: 44
+    params: "period=44,wcet=28,arrival_offset=13,workload=encrypt"
+    code:
+      - fixed(28, encrypt)
+
+  - name: task_5
+    iat: 294
+    runtime: 28
+    deadline: 294
+    params: "period=294,wcet=28,arrival_offset=16,workload=control"
+    code:
+      - fixed(28, control)
+
+  - name: task_6
+    iat: 315
+    runtime: 191
+    deadline: 315
+    params: "period=315,wcet=191,arrival_offset=1,workload=hash"
+    code:
+      - fixed(191, hash)
+
+  - name: task_7
+    iat: 289
+    runtime: 184
+    deadline: 289
+    params: "period=289,wcet=184,arrival_offset=75,workload=decrypt"
+    code:
+      - fixed(184, decrypt)
+
+  - name: task_8
+    iat: 68
+    runtime: 44
+    deadline: 68
+    params: "period=68,wcet=44,arrival_offset=5,workload=control"
+    code:
+      - fixed(44, control)
+
+  - name: task_9
+    iat: 368
+    runtime: 139
+    deadline: 368
+    params: "period=368,wcet=139,arrival_offset=71,workload=encrypt"
+    code:
+      - fixed(139, encrypt)

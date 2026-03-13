@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:29
+# 任务总数: 10
+# 总利用率: 2.000
+# 能量信息:
+#   总估算能耗: 0.627 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.3%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 252
+    runtime: 106
+    deadline: 252
+    params: "period=252,wcet=106,arrival_offset=26,workload=encrypt"
+    code:
+      - fixed(106, encrypt)
+
+  - name: task_1
+    iat: 361
+    runtime: 80
+    deadline: 361
+    params: "period=361,wcet=80,arrival_offset=104,workload=hash"
+    code:
+      - fixed(80, hash)
+
+  - name: task_2
+    iat: 380
+    runtime: 19
+    deadline: 380
+    params: "period=380,wcet=19,arrival_offset=1,workload=decrypt"
+    code:
+      - fixed(19, decrypt)
+
+  - name: task_3
+    iat: 57
+    runtime: 23
+    deadline: 57
+    params: "period=57,wcet=23,arrival_offset=5,workload=decrypt"
+    code:
+      - fixed(23, decrypt)
+
+  - name: task_4
+    iat: 231
+    runtime: 13
+    deadline: 231
+    params: "period=231,wcet=13,arrival_offset=8,workload=bzip2"
+    code:
+      - fixed(13, bzip2)
+
+  - name: task_5
+    iat: 313
+    runtime: 35
+    deadline: 313
+    params: "period=313,wcet=35,arrival_offset=81,workload=hash"
+    code:
+      - fixed(35, hash)
+
+  - name: task_6
+    iat: 386
+    runtime: 100
+    deadline: 386
+    params: "period=386,wcet=100,arrival_offset=103,workload=control"
+    code:
+      - fixed(100, control)
+
+  - name: task_7
+    iat: 88
+    runtime: 2
+    deadline: 88
+    params: "period=88,wcet=2,arrival_offset=14,workload=idle"
+    code:
+      - fixed(2, idle)
+
+  - name: task_8
+    iat: 158
+    runtime: 8
+    deadline: 158
+    params: "period=158,wcet=8,arrival_offset=17,workload=bzip2"
+    code:
+      - fixed(8, bzip2)
+
+  - name: task_9
+    iat: 358
+    runtime: 138
+    deadline: 358
+    params: "period=358,wcet=138,arrival_offset=57,workload=control"
+    code:
+      - fixed(138, control)

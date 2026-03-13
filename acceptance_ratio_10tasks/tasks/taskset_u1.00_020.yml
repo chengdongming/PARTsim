@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:41
+# 任务总数: 10
+# 总利用率: 4.000
+# 能量信息:
+#   总估算能耗: 1.718 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.9%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 390
+    runtime: 171
+    deadline: 390
+    params: "period=390,wcet=171,arrival_offset=89,workload=bzip2"
+    code:
+      - fixed(171, bzip2)
+
+  - name: task_1
+    iat: 396
+    runtime: 27
+    deadline: 396
+    params: "period=396,wcet=27,arrival_offset=80,workload=control"
+    code:
+      - fixed(27, control)
+
+  - name: task_2
+    iat: 260
+    runtime: 137
+    deadline: 260
+    params: "period=260,wcet=137,arrival_offset=25,workload=bzip2"
+    code:
+      - fixed(137, bzip2)
+
+  - name: task_3
+    iat: 80
+    runtime: 17
+    deadline: 80
+    params: "period=80,wcet=17,arrival_offset=0,workload=idle"
+    code:
+      - fixed(17, idle)
+
+  - name: task_4
+    iat: 267
+    runtime: 19
+    deadline: 267
+    params: "period=267,wcet=19,arrival_offset=3,workload=bzip2"
+    code:
+      - fixed(19, bzip2)
+
+  - name: task_5
+    iat: 305
+    runtime: 156
+    deadline: 305
+    params: "period=305,wcet=156,arrival_offset=36,workload=idle"
+    code:
+      - fixed(156, idle)
+
+  - name: task_6
+    iat: 343
+    runtime: 67
+    deadline: 343
+    params: "period=343,wcet=67,arrival_offset=70,workload=bzip2"
+    code:
+      - fixed(67, bzip2)
+
+  - name: task_7
+    iat: 333
+    runtime: 265
+    deadline: 333
+    params: "period=333,wcet=265,arrival_offset=5,workload=hash"
+    code:
+      - fixed(265, hash)
+
+  - name: task_8
+    iat: 283
+    runtime: 170
+    deadline: 283
+    params: "period=283,wcet=170,arrival_offset=69,workload=bzip2"
+    code:
+      - fixed(170, bzip2)
+
+  - name: task_9
+    iat: 191
+    runtime: 107
+    deadline: 191
+    params: "period=191,wcet=107,arrival_offset=5,workload=hash"
+    code:
+      - fixed(107, hash)

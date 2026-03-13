@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:26
+# 任务总数: 10
+# 总利用率: 1.600
+# 能量信息:
+#   总估算能耗: 0.463 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.2%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 342
+    runtime: 4
+    deadline: 342
+    params: "period=342,wcet=4,arrival_offset=69,workload=hash"
+    code:
+      - fixed(4, hash)
+
+  - name: task_1
+    iat: 257
+    runtime: 31
+    deadline: 257
+    params: "period=257,wcet=31,arrival_offset=39,workload=hash"
+    code:
+      - fixed(31, hash)
+
+  - name: task_2
+    iat: 367
+    runtime: 67
+    deadline: 367
+    params: "period=367,wcet=67,arrival_offset=34,workload=idle"
+    code:
+      - fixed(67, idle)
+
+  - name: task_3
+    iat: 317
+    runtime: 25
+    deadline: 317
+    params: "period=317,wcet=25,arrival_offset=23,workload=decrypt"
+    code:
+      - fixed(25, decrypt)
+
+  - name: task_4
+    iat: 278
+    runtime: 68
+    deadline: 278
+    params: "period=278,wcet=68,arrival_offset=73,workload=decrypt"
+    code:
+      - fixed(68, decrypt)
+
+  - name: task_5
+    iat: 296
+    runtime: 9
+    deadline: 296
+    params: "period=296,wcet=9,arrival_offset=67,workload=hash"
+    code:
+      - fixed(9, hash)
+
+  - name: task_6
+    iat: 111
+    runtime: 1
+    deadline: 111
+    params: "period=111,wcet=1,arrival_offset=15,workload=encrypt"
+    code:
+      - fixed(1, encrypt)
+
+  - name: task_7
+    iat: 197
+    runtime: 10
+    deadline: 197
+    params: "period=197,wcet=10,arrival_offset=13,workload=hash"
+    code:
+      - fixed(10, hash)
+
+  - name: task_8
+    iat: 294
+    runtime: 25
+    deadline: 294
+    params: "period=294,wcet=25,arrival_offset=60,workload=control"
+    code:
+      - fixed(25, control)
+
+  - name: task_9
+    iat: 196
+    runtime: 149
+    deadline: 196
+    params: "period=196,wcet=149,arrival_offset=19,workload=control"
+    code:
+      - fixed(149, control)

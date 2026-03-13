@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:34
+# 任务总数: 10
+# 总利用率: 2.800
+# 能量信息:
+#   总估算能耗: 1.027 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.5%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 175
+    runtime: 133
+    deadline: 175
+    params: "period=175,wcet=133,arrival_offset=24,workload=decrypt"
+    code:
+      - fixed(133, decrypt)
+
+  - name: task_1
+    iat: 264
+    runtime: 46
+    deadline: 264
+    params: "period=264,wcet=46,arrival_offset=22,workload=control"
+    code:
+      - fixed(46, control)
+
+  - name: task_2
+    iat: 316
+    runtime: 62
+    deadline: 316
+    params: "period=316,wcet=62,arrival_offset=23,workload=encrypt"
+    code:
+      - fixed(62, encrypt)
+
+  - name: task_3
+    iat: 215
+    runtime: 32
+    deadline: 215
+    params: "period=215,wcet=32,arrival_offset=60,workload=decrypt"
+    code:
+      - fixed(32, decrypt)
+
+  - name: task_4
+    iat: 315
+    runtime: 52
+    deadline: 315
+    params: "period=315,wcet=52,arrival_offset=91,workload=decrypt"
+    code:
+      - fixed(52, decrypt)
+
+  - name: task_5
+    iat: 203
+    runtime: 92
+    deadline: 203
+    params: "period=203,wcet=92,arrival_offset=29,workload=control"
+    code:
+      - fixed(92, control)
+
+  - name: task_6
+    iat: 338
+    runtime: 4
+    deadline: 338
+    params: "period=338,wcet=4,arrival_offset=96,workload=decrypt"
+    code:
+      - fixed(4, decrypt)
+
+  - name: task_7
+    iat: 314
+    runtime: 49
+    deadline: 314
+    params: "period=314,wcet=49,arrival_offset=58,workload=decrypt"
+    code:
+      - fixed(49, decrypt)
+
+  - name: task_8
+    iat: 191
+    runtime: 23
+    deadline: 191
+    params: "period=191,wcet=23,arrival_offset=41,workload=idle"
+    code:
+      - fixed(23, idle)
+
+  - name: task_9
+    iat: 209
+    runtime: 123
+    deadline: 209
+    params: "period=209,wcet=123,arrival_offset=6,workload=decrypt"
+    code:
+      - fixed(123, decrypt)

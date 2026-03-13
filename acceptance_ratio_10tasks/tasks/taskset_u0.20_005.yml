@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:20
+# 任务总数: 10
+# 总利用率: 0.800
+# 能量信息:
+#   总估算能耗: 0.367 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.2%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 114
+    runtime: 2
+    deadline: 114
+    params: "period=114,wcet=2,arrival_offset=18,workload=idle"
+    code:
+      - fixed(2, idle)
+
+  - name: task_1
+    iat: 397
+    runtime: 11
+    deadline: 397
+    params: "period=397,wcet=11,arrival_offset=97,workload=bzip2"
+    code:
+      - fixed(11, bzip2)
+
+  - name: task_2
+    iat: 303
+    runtime: 14
+    deadline: 303
+    params: "period=303,wcet=14,arrival_offset=1,workload=bzip2"
+    code:
+      - fixed(14, bzip2)
+
+  - name: task_3
+    iat: 239
+    runtime: 44
+    deadline: 239
+    params: "period=239,wcet=44,arrival_offset=69,workload=decrypt"
+    code:
+      - fixed(44, decrypt)
+
+  - name: task_4
+    iat: 378
+    runtime: 6
+    deadline: 378
+    params: "period=378,wcet=6,arrival_offset=43,workload=encrypt"
+    code:
+      - fixed(6, encrypt)
+
+  - name: task_5
+    iat: 368
+    runtime: 38
+    deadline: 368
+    params: "period=368,wcet=38,arrival_offset=78,workload=decrypt"
+    code:
+      - fixed(38, decrypt)
+
+  - name: task_6
+    iat: 171
+    runtime: 8
+    deadline: 171
+    params: "period=171,wcet=8,arrival_offset=7,workload=idle"
+    code:
+      - fixed(8, idle)
+
+  - name: task_7
+    iat: 338
+    runtime: 66
+    deadline: 338
+    params: "period=338,wcet=66,arrival_offset=32,workload=idle"
+    code:
+      - fixed(66, idle)
+
+  - name: task_8
+    iat: 289
+    runtime: 5
+    deadline: 289
+    params: "period=289,wcet=5,arrival_offset=1,workload=idle"
+    code:
+      - fixed(5, idle)
+
+  - name: task_9
+    iat: 138
+    runtime: 16
+    deadline: 138
+    params: "period=138,wcet=16,arrival_offset=15,workload=bzip2"
+    code:
+      - fixed(16, bzip2)

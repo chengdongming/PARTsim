@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:29
+# 任务总数: 10
+# 总利用率: 2.000
+# 能量信息:
+#   总估算能耗: 1.072 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.5%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 366
+    runtime: 11
+    deadline: 366
+    params: "period=366,wcet=11,arrival_offset=47,workload=control"
+    code:
+      - fixed(11, control)
+
+  - name: task_1
+    iat: 86
+    runtime: 24
+    deadline: 86
+    params: "period=86,wcet=24,arrival_offset=6,workload=encrypt"
+    code:
+      - fixed(24, encrypt)
+
+  - name: task_2
+    iat: 345
+    runtime: 6
+    deadline: 345
+    params: "period=345,wcet=6,arrival_offset=83,workload=bzip2"
+    code:
+      - fixed(6, bzip2)
+
+  - name: task_3
+    iat: 362
+    runtime: 85
+    deadline: 362
+    params: "period=362,wcet=85,arrival_offset=20,workload=decrypt"
+    code:
+      - fixed(85, decrypt)
+
+  - name: task_4
+    iat: 361
+    runtime: 172
+    deadline: 361
+    params: "period=361,wcet=172,arrival_offset=86,workload=bzip2"
+    code:
+      - fixed(172, bzip2)
+
+  - name: task_5
+    iat: 374
+    runtime: 17
+    deadline: 374
+    params: "period=374,wcet=17,arrival_offset=48,workload=idle"
+    code:
+      - fixed(17, idle)
+
+  - name: task_6
+    iat: 179
+    runtime: 34
+    deadline: 179
+    params: "period=179,wcet=34,arrival_offset=48,workload=encrypt"
+    code:
+      - fixed(34, encrypt)
+
+  - name: task_7
+    iat: 385
+    runtime: 14
+    deadline: 385
+    params: "period=385,wcet=14,arrival_offset=54,workload=bzip2"
+    code:
+      - fixed(14, bzip2)
+
+  - name: task_8
+    iat: 246
+    runtime: 10
+    deadline: 246
+    params: "period=246,wcet=10,arrival_offset=63,workload=idle"
+    code:
+      - fixed(10, idle)
+
+  - name: task_9
+    iat: 327
+    runtime: 206
+    deadline: 327
+    params: "period=327,wcet=206,arrival_offset=75,workload=encrypt"
+    code:
+      - fixed(206, encrypt)

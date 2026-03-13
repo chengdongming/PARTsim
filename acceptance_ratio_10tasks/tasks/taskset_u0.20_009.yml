@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:21
+# 任务总数: 10
+# 总利用率: 0.800
+# 能量信息:
+#   总估算能耗: 0.200 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.1%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 110
+    runtime: 8
+    deadline: 110
+    params: "period=110,wcet=8,arrival_offset=0,workload=encrypt"
+    code:
+      - fixed(8, encrypt)
+
+  - name: task_1
+    iat: 110
+    runtime: 23
+    deadline: 110
+    params: "period=110,wcet=23,arrival_offset=14,workload=idle"
+    code:
+      - fixed(23, idle)
+
+  - name: task_2
+    iat: 387
+    runtime: 4
+    deadline: 387
+    params: "period=387,wcet=4,arrival_offset=66,workload=idle"
+    code:
+      - fixed(4, idle)
+
+  - name: task_3
+    iat: 200
+    runtime: 13
+    deadline: 200
+    params: "period=200,wcet=13,arrival_offset=45,workload=bzip2"
+    code:
+      - fixed(13, bzip2)
+
+  - name: task_4
+    iat: 75
+    runtime: 9
+    deadline: 75
+    params: "period=75,wcet=9,arrival_offset=21,workload=decrypt"
+    code:
+      - fixed(9, decrypt)
+
+  - name: task_5
+    iat: 327
+    runtime: 22
+    deadline: 327
+    params: "period=327,wcet=22,arrival_offset=52,workload=control"
+    code:
+      - fixed(22, control)
+
+  - name: task_6
+    iat: 382
+    runtime: 12
+    deadline: 382
+    params: "period=382,wcet=12,arrival_offset=54,workload=idle"
+    code:
+      - fixed(12, idle)
+
+  - name: task_7
+    iat: 212
+    runtime: 22
+    deadline: 212
+    params: "period=212,wcet=22,arrival_offset=33,workload=hash"
+    code:
+      - fixed(22, hash)
+
+  - name: task_8
+    iat: 250
+    runtime: 8
+    deadline: 250
+    params: "period=250,wcet=8,arrival_offset=6,workload=encrypt"
+    code:
+      - fixed(8, encrypt)
+
+  - name: task_9
+    iat: 252
+    runtime: 14
+    deadline: 252
+    params: "period=252,wcet=14,arrival_offset=36,workload=decrypt"
+    code:
+      - fixed(14, decrypt)

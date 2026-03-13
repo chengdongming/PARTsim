@@ -1,0 +1,96 @@
+# PARTSim 能量感知全局调度任务集配置 - 增强版
+# 系统配置: ./simconf/systems/gpfp_system.yml
+# 生成时间: 2026-03-12 14:19:36
+# 任务总数: 10
+# 总利用率: 3.200
+# 能量信息:
+#   总估算能耗: 1.479 J
+#   初始系统能量: 200.000 J
+#   剩余能量: 200.000 J
+#   能量利用率: 0.7%
+#   能量受限: 否
+# 前驱约束: 禁用
+# 到达时间偏移: 启用
+# 调度策略: 能量感知全局EDF
+# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数
+
+taskset:
+  - name: task_0
+    iat: 329
+    runtime: 155
+    deadline: 329
+    params: "period=329,wcet=155,arrival_offset=38,workload=decrypt"
+    code:
+      - fixed(155, decrypt)
+
+  - name: task_1
+    iat: 212
+    runtime: 83
+    deadline: 212
+    params: "period=212,wcet=83,arrival_offset=4,workload=hash"
+    code:
+      - fixed(83, hash)
+
+  - name: task_2
+    iat: 151
+    runtime: 21
+    deadline: 151
+    params: "period=151,wcet=21,arrival_offset=29,workload=hash"
+    code:
+      - fixed(21, hash)
+
+  - name: task_3
+    iat: 309
+    runtime: 8
+    deadline: 309
+    params: "period=309,wcet=8,arrival_offset=22,workload=decrypt"
+    code:
+      - fixed(8, decrypt)
+
+  - name: task_4
+    iat: 75
+    runtime: 25
+    deadline: 75
+    params: "period=75,wcet=25,arrival_offset=12,workload=idle"
+    code:
+      - fixed(25, idle)
+
+  - name: task_5
+    iat: 71
+    runtime: 12
+    deadline: 71
+    params: "period=71,wcet=12,arrival_offset=7,workload=encrypt"
+    code:
+      - fixed(12, encrypt)
+
+  - name: task_6
+    iat: 185
+    runtime: 16
+    deadline: 185
+    params: "period=185,wcet=16,arrival_offset=17,workload=decrypt"
+    code:
+      - fixed(16, decrypt)
+
+  - name: task_7
+    iat: 339
+    runtime: 156
+    deadline: 339
+    params: "period=339,wcet=156,arrival_offset=34,workload=encrypt"
+    code:
+      - fixed(156, encrypt)
+
+  - name: task_8
+    iat: 225
+    runtime: 78
+    deadline: 225
+    params: "period=225,wcet=78,arrival_offset=1,workload=decrypt"
+    code:
+      - fixed(78, decrypt)
+
+  - name: task_9
+    iat: 306
+    runtime: 228
+    deadline: 306
+    params: "period=306,wcet=228,arrival_offset=71,workload=decrypt"
+    code:
+      - fixed(228, decrypt)
