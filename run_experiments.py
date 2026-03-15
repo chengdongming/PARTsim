@@ -34,8 +34,8 @@ def get_system_cores(config_path):
 
 SYSTEM_CORES = get_system_cores(CONFIG_TEMPLATE)
 
-# 并行执行配置
-MAX_WORKERS = min(12, cpu_count() - 2)
+# 并行执行配置 (减少到4以提高稳定性)
+MAX_WORKERS = min(4, cpu_count() - 2)
 print(f"🔧 并行工作进程数: {MAX_WORKERS}")
 
 ALGORITHMS = [
@@ -286,13 +286,13 @@ def run_single_simulation_worker(args):
     ]
 
     try:
-        subprocess.run(cmd, check=True, capture_output=True, env=env, text=True, timeout=120)
+        subprocess.run(cmd, check=True, capture_output=True, env=env, text=True, timeout=1200)
         # 实例化 Parser 并解析
         parser = TraceParser(str(trace_file), SYSTEM_CORES)
         parsed_stats = parser.parse()
         return (algorithm, battery, parsed_stats, None)
     except subprocess.TimeoutExpired:
-        print(f"\n❌ [致命错误] 算法 {algorithm} 在 Battery={battery} 时死锁卡住，超过120秒被强杀！请检查 C++ 代码！")
+        print(f"\n❌ [致命错误] 算法 {algorithm} 在 Battery={battery} 时死锁卡住，超过1200秒被强杀！请检查 C++ 代码！")
         return (algorithm, battery, None, "Timeout")
     except subprocess.CalledProcessError:
         return (algorithm, battery, None, "Simulation failed")
@@ -348,7 +348,10 @@ class ExperimentRunner:
         elif 'initial_energy:' in content:
              content = re.sub(r'initial_energy:\s*[\d.]+', f'initial_energy: {initial_energy}', content)
              
-        # 能量收集时间点为 04:00 (1.42W)
+        # 能量收集时间点为 04:00 AM (辐照度接近0)
+        # 修复：模板使用 time_of_day_ms，而不是 start_time_ms
+        if 'time_of_day_ms:' in content:
+             content = re.sub(r'time_of_day_ms:\s*\d+', 'time_of_day_ms: 14400000  # 04:00 AM', content)
         if 'start_time_ms:' in content:
              content = re.sub(r'start_time_ms:\s*\d+', 'start_time_ms: 14400000', content)
 
@@ -368,24 +371,58 @@ class ExperimentRunner:
             for battery in BATTERY_CAPACITIES:
                 config_files[(algorithm, battery)] = self.modify_config(algorithm, battery)
 
+        # ============================================
+        # [断点续传] 检查已存在的 trace 文件
+        # ============================================
         tasks = []
         for algorithm in ALGORITHMS:
             for battery in BATTERY_CAPACITIES:
                 cfg = config_files[(algorithm, battery)]
                 for task_idx, task_file in enumerate(self.task_files):
+                    trace_file = TRACE_DIR / f'trace_{algorithm}_{battery}_{task_idx}.json'
+
+                    if trace_file.exists():
+                        # 解析已存在的trace文件
+                        parser = TraceParser(str(trace_file), SYSTEM_CORES)
+
+                        # [护城河] 检查文件是否合法（是否有事件记录）
+                        if len(parser.events) > 0:
+                            # 合法JSON：C++引擎正常跑完的输出，哪怕任务全饿死也是真实记录
+                            parsed_stats = parser.parse()
+                            self.results[algorithm][battery].append(parsed_stats)
+                            continue
+                        else:
+                            # 损坏文件：Timeout强杀或其他异常留下的残缺文件
+                            print(f"🧹 发现损坏的残缺文件，已清理并准备重跑: {trace_file.name}")
+                            os.remove(trace_file)
+                            # 删除后不 continue，让它落入下方 tasks 队列重跑
+
                     tasks.append((algorithm, battery, cfg, task_file, task_idx))
 
         count = 0
-        with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            futures = {executor.submit(run_single_simulation_worker, task): task for task in tasks}
+        total_to_run = len(tasks)  # 实际需要运行的任务数
+        print(f"   待运行任务数: {total_to_run}")
 
-            for future in as_completed(futures):
-                algorithm, battery, parsed_stats, error = future.result()
-                if parsed_stats is not None:
-                    self.results[algorithm][battery].append(parsed_stats)
-                count += 1
-                if count % 100 == 0 or count == total_runs:
-                    print(f"   进度: {count}/{total_runs} ({(count/total_runs)*100:.1f}%)")
+        if total_to_run == 0:
+            print("   ✅ 所有任务已完成，无需重新运行")
+        else:
+            try:
+                with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                    futures = {executor.submit(run_single_simulation_worker, task): task for task in tasks}
+
+                    for future in as_completed(futures):
+                        try:
+                            algorithm, battery, parsed_stats, error = future.result()
+                            if parsed_stats is not None:
+                                self.results[algorithm][battery].append(parsed_stats)
+                            count += 1
+                            if count % 50 == 0 or count == total_to_run:
+                                print(f"   进度: {count}/{total_to_run} ({(count/total_to_run)*100:.1f}%)")
+                        except Exception as e:
+                            count += 1
+                            print(f"   ⚠️ 任务执行异常: {e}")
+            except Exception as e:
+                print(f"   ⚠️ 进程池异常: {e}")
 
         for config_file in config_files.values():
             if os.path.exists(config_file):

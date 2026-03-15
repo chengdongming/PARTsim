@@ -768,16 +768,19 @@ class EnergyManager:
         with self._lock:
             # 设置开始时间偏移
             self.simulation_start_time = offset_ms
-            
+
             # 初始化 EnergyHarvester
             self.harvester.set_start_time_offset(offset_ms)
-            
-            # 修复：初始化 last_update_time 为0，表示还未开始收集
-            self.last_update_time = 0
-            
+
+            # === 关键修复：初始化 last_update_time 为仿真开始时间 ===
+            # 这样首次能量收集时，get_harvesting_rate(last_update_time) 会访问正确的时间索引
+            # 而不是访问索引 0（00:00 时间点）
+            self.last_update_time = offset_ms
+
             hour = (offset_ms // 3600000) % 24
             minute = (offset_ms % 3600000) // 60000
             logger.info(f"EnergyManager: 仿真开始时间设置为: {hour:02d}:{minute:02d} (偏移: {offset_ms}ms)")
+            logger.info(f"EnergyManager: last_update_time 初始化为: {self.last_update_time}ms")
             
             # 修复：清空harvester的缓存
             if hasattr(self.harvester, '_harvest_rate_cache'):
@@ -1679,9 +1682,17 @@ ASAP Recovery: {'IN PROGRESS' if status['asap_recovery_in_progress'] else 'IDLE'
             logger.error(traceback.format_exc())
             return 0.0
 
-    def _update_energy_with_absolute_time(self, absolute_time_ms: int) -> float:
-        """使用绝对时间更新能量 - 修复版，避免初始化时收集过多能量"""
+    def _update_energy_with_absolute_time(self, relative_time_ms: int) -> float:
+        """使用相对时间更新能量 - 修复版
+
+        注意：C++ 仿真器传入的是相对时间（从0开始），需要转换为绝对时间
+        绝对时间 = 相对时间 + simulation_start_time
+        """
         with self._lock:
+            # === 关键修复：将相对时间转换为绝对时间 ===
+            # C++ 仿真器传入的是相对时间（t=0, t=2...），需要加上偏移量
+            absolute_time_ms = relative_time_ms + self.simulation_start_time
+
             # === 关键修复：检查能量收集是否启用 ===
             # 如果配置文件中禁用了能量收集，直接返回0
             harvesting_sources = self.config.__dict__.get('harvesting_sources', {})
@@ -1697,14 +1708,15 @@ ASAP Recovery: {'IN PROGRESS' if status['asap_recovery_in_progress'] else 'IDLE'
                     return 0.0
 
             # 首次调用初始化
-            # 首次调用初始化
-            if self.last_update_time == 0:
-                # === 关键修复：设置last_update_time为当前时间 ===
+            # === 修复：使用 simulation_start_time 而不是 0 来判断首次调用 ===
+            if self.last_update_time == self.simulation_start_time or self.last_update_time == 0:
+                # 首次调用：设置 last_update_time 为当前绝对时间
                 # 这样下次调用时才能正确计算时间差并收集能量
+                old_last_update = self.last_update_time
                 self.last_update_time = absolute_time_ms
                 hour = int((absolute_time_ms // 3600000) % 24)
                 minute = int((absolute_time_ms % 3600000) // 60000)
-                logger.info(f"能量收集器初始化: 绝对时间={hour:02d}:{minute:02d}，起始时间={absolute_time_ms}ms")
+                logger.info(f"能量收集器初始化: 绝对时间={hour:02d}:{minute:02d}，last_update_time 从 {old_last_update} 更新为 {absolute_time_ms}ms")
                 return 0.0  # 首次调用不收集能量（因为没有时间间隔）
             
             

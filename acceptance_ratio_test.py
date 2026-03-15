@@ -146,7 +146,7 @@ ALGO_STYLES = {
 
 # 实验常数（可通过命令行修改）
 DEFAULT_UTILIZATION_POINTS = np.around(np.linspace(0.1, 1.0, 10), 2)  # 四舍五入避免浮点精度问题
-DEFAULT_NUM_TASKSETS = 10  # 每个利用率点10个任务集
+DEFAULT_NUM_TASKSETS = 50  # 每个利用率点50个任务集
 DEFAULT_TASK_N = 10  # 每个任务集10个任务
 DEFAULT_TASK_P_MIN = 40  # 周期范围：最小40ms
 DEFAULT_TASK_P_MAX = 400  # 周期范围：最大400ms（增加多样性）
@@ -766,8 +766,8 @@ def main():
                        help='从CSV文件加载数据（不运行实验）')
 
     # 实验参数
-    parser.add_argument('--output-dir', type=str, default='acceptance_ratio_10tasks',
-                       help='输出目录 (默认: acceptance_ratio_10tasks)')
+    parser.add_argument('--output-dir', type=str, default='acceptance_ratio_50tasks',
+                       help='输出目录 (默认: acceptance_ratio_50tasks)')
     parser.add_argument('--num-points', type=int, default=10,
                        help='利用率采样点数 (默认: 10)')
     parser.add_argument('--num-tasksets', type=int, default=DEFAULT_NUM_TASKSETS,
