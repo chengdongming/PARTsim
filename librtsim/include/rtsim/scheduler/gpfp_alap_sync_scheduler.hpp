@@ -1,5 +1,5 @@
-#ifndef GPFP_ALAP-Sync_SCHEDULER_HPP
-#define GPFP_ALAP-Sync_SCHEDULER_HPP
+#ifndef GPFP_ALAP_Sync_SCHEDULER_HPP
+#define GPFP_ALAP_Sync_SCHEDULER_HPP
 
 #include "config_manager.hpp"
 #include "energy_bridge.hpp"
@@ -36,6 +36,18 @@ namespace RTSim {
 
     public:
         ALAPSyncTickEvent(ALAPSyncScheduler *scheduler);
+        void doit() override;
+    };
+    class ALAPSyncScheduler; // 前置声明
+
+    // =====================================================
+    // ALAP-Sync 专属唤醒闹钟事件
+    // =====================================================
+    class ALAPSyncWakeEvent : public MetaSim::Event {
+    private:
+        ALAPSyncScheduler *_scheduler;
+    public:
+        ALAPSyncWakeEvent(ALAPSyncScheduler *scheduler);
         void doit() override;
     };
 
@@ -109,6 +121,7 @@ namespace RTSim {
         double _dispatching_tasks_total_energy; // 本次dispatch中已调度任务的总能耗
         MetaSim::Tick _last_tick_time;       // 上次tick时间
         MetaSim::Tick _last_collection_time; // 上次能量收集时间
+        ALAPSyncWakeEvent* _alap_wake_event = nullptr;
 
         // ========== 太阳能配置 ==========
         std::string _solar_data_file;

@@ -27,6 +27,23 @@
 namespace RTSim {
 
     using namespace MetaSim;
+    // =====================================================
+    // ALAPNonBlockWakeEvent 实现
+    // =====================================================
+    ALAPNonBlockWakeEvent::ALAPNonBlockWakeEvent(ALAPNonBlockScheduler *scheduler)
+        : MetaSim::Event("ALAPNonBlockWakeEvent", MetaSim::Event::_DEFAULT_PRIORITY - 1),
+          _scheduler(scheduler) {
+    }
+
+    void ALAPNonBlockWakeEvent::doit() {
+        if (!_scheduler) return;
+        
+        MRTKernel* kernel = _scheduler->getKernel();
+        if (kernel) {
+            SCHEDULER_LOG_INFO("⏰ [ALAP-NonBlock] 闹钟响起！Slack归零，触发内核抢占调度！");
+            kernel->dispatch();
+        }
+    }
 
     // =====================================================
     // ALAPNonBlockTickEvent 实现
@@ -398,7 +415,7 @@ namespace RTSim {
 
         // 创建Tick事件
         _tick_event = new ALAPNonBlockTickEvent(this);
-
+        _alap_wake_event = new ALAPNonBlockWakeEvent(this);
         SCHEDULER_LOG_INFO("✅ [ALAP-NonBlock] ALAP-NonBlock Scheduler 初始化完成");
     }
 
@@ -417,7 +434,11 @@ namespace RTSim {
             delete _tick_event;
             _tick_event = nullptr;
         }
-
+        if (_alap_wake_event) {
+            _alap_wake_event->drop();
+            delete _alap_wake_event;
+            _alap_wake_event = nullptr;
+        }
         // 清理任务模型
         for (auto &pair : _task_models) {
             delete pair.second;
@@ -2105,16 +2126,26 @@ namespace RTSim {
     // ALAP时序门控（阶段一）
     // =====================================================
 
+// =====================================================
+    // ALAP时序门控（阶段一）
+    // =====================================================
     bool ALAPNonBlockScheduler::checkALAPTimingGate() {
-        // ⭐ 关键修复：收集所有任务（ready + running）来计算全局min_slack
+        Tick current_time = SIMUL.getTime();
+        Tick min_slack = 0;
+        bool first_task = true; // 关键修复：用于正确初始化最小值
+
         std::vector<AbsRTTask *> all_tasks;
 
-        // 添加ready queue中的任务
+        // 1. 添加就绪队列中的未调度任务
         for (AbsRTTask *task : _ready_queue) {
             if (task) all_tasks.push_back(task);
         }
 
-        // 添加运行中的任务
+        // 2. 添加运行中的任务
+        if (!_kernel) {
+            _kernel = getKernel();
+        }
+
         if (_kernel) {
             const auto& running_tasks = _kernel->getCurrentExecutingTasks();
             for (const auto& map_pair : running_tasks) {
@@ -2129,34 +2160,42 @@ namespace RTSim {
             return true;  // 没有任务，通过门控
         }
 
-        Tick current_time = SIMUL.getTime();
-        Tick min_slack = Tick(-1);
-
         // 计算所有任务的Slack，找最小值
         for (AbsRTTask *task : all_tasks) {
-            if (!task) continue;
-
-            // 异常处理：防止访问已删除的任务
-            if (!task->isActive()) {
-                continue;
-            }
+            if (!task || !task->isActive()) continue;
 
             Tick slack;
             try {
                 slack = calculateSlackForTask(task);
             } catch (...) {
-                continue;  // 跳过计算失败的任务
+                continue;
             }
 
-            if (min_slack < 0 || slack < min_slack) {
+            // ⭐ 关键修复：绝对安全的求最小值逻辑
+            if (first_task) {
+                min_slack = slack;
+                first_task = false;
+            } else if (slack < min_slack) {
                 min_slack = slack;
             }
         }
 
+        // 如果没有有效任务，通过
+        if (first_task) return true;
+
         // 门控逻辑
         if (min_slack > 0) {
+            // ⭐ 纯正 ALAP 核心：设置精确唤醒闹钟
+            Tick wake_time = current_time + min_slack;
+            
+            if (_alap_wake_event) {
+                _alap_wake_event->drop();
+                _alap_wake_event->post(wake_time);
+            }
+
             SCHEDULER_LOG_INFO("⏸️  [ALAP-NonBlock] ALAP时序门控：Slack > 0 (" +
-                               std::to_string(static_cast<int64_t>(min_slack)) + "ms)，强制休眠");
+                               std::to_string(static_cast<int64_t>(min_slack)) + "ms)，强制休眠。已定闹钟于 " +
+                               std::to_string(static_cast<int64_t>(wake_time)) + "ms");
             _stats.total_alap_forced_idle++;
             return false;  // 强制IDLE，不调度任何任务
         } else {
@@ -2165,6 +2204,8 @@ namespace RTSim {
             return true;  // 门控通过，允许调度
         }
     }
+
+
 
     MetaSim::Tick ALAPNonBlockScheduler::calculateSlackForTask(AbsRTTask *task) {
         if (!task) return MetaSim::Tick(0);

@@ -1103,23 +1103,36 @@ namespace RTSim {
                 double projected_energy_after_dispatch =
                     _current_energy - _dispatching_tasks_total_energy - unit_energy;
                 if (projected_energy_after_dispatch < -EPSILON) {
-                    // ⭐ ST-Block深度充电：能量不足时，设置唤醒时间
-                    SCHEDULER_LOG_INFO(std::string("⚠️ [ST-Block] 能量不足，启动深度充电模式") +
-                                      " 任务=" + getTaskName(task) +
-                                      " 需要1ms=" + std::to_string(unit_energy) + "J" +
-                                      " 当前能量=" + std::to_string(_current_energy) + "J" +
-                                      " 已预留=" + std::to_string(_dispatching_tasks_total_energy) + "J");
+                    // ⭐ ST-Block核心：能量不足时，检查Slack决定策略
+                    Tick task_slack = calculateSlackForTask(task);
+                    int64_t slack_ms = static_cast<int64_t>(task_slack);
 
-                    // ⭐ ST-Block V130修复: 高优任务能量不足， 立即激活全局深度休眠锁
-                    // 符合白皮书定义: 在锁解开前，禁止任何任务上核
-                    _is_charging_sleep = true;
+                    if (task_slack > 0) {
+                        // Slack > 0：任务有退让余地，全局阻塞等待充电
+                        SCHEDULER_LOG_INFO(std::string("🔋 [ST-Block] 能量不足且Slack>0，全局阻塞等待充电") +
+                                          " 任务=" + getTaskName(task) +
+                                          " Slack=" + std::to_string(slack_ms) + "ms" +
+                                          " 需要=" + std::to_string(unit_energy * 1000) + " mJ" +
+                                          " 当前=" + std::to_string(_current_energy * 1000) + " mJ");
 
-                    // 设置能量耗尽标志,系统将进入充电模式
-                    _energy_depleted = true;
-                    _deep_charging = true;
+                        // 激活全局深度休眠锁，禁止任何任务上核
+                        _is_charging_sleep = true;
+                        _energy_depleted = true;
+                        _deep_charging = true;
 
-                    std::cout << "[DEBUG] ST-Block::getTaskN(" << n << ") - 能量不足， 进入深度充电" << std::endl;
-                    return nullptr;  // ⭐ 立即停止级联，进入充电模式
+                        std::cout << "[DEBUG] ST-Block::getTaskN(" << n << ") - Slack>0，进入深度充电" << std::endl;
+                        return nullptr;  // 全局阻塞，进入深度充电模式
+                    } else {
+                        // Slack <= 0：死线已至，退无可退，强制放行
+                        SCHEDULER_LOG_WARNING(std::string("🚨 [ST-Block] 能量不足但Slack<=0，死线已至强制放行") +
+                                             " 任务=" + getTaskName(task) +
+                                             " Slack=" + std::to_string(slack_ms) + "ms" +
+                                             " 需要=" + std::to_string(unit_energy * 1000) + " mJ" +
+                                             " 当前=" + std::to_string(_current_energy * 1000) + " mJ");
+
+                        std::cout << "[DEBUG] ST-Block::getTaskN(" << n << ") - Slack<=0，强制放行" << std::endl;
+                        // 继续执行，不阻塞（交由底层物理引擎处理能量耗尽）
+                    }
                 }
 
                 // ⭐ 重构：只标记任务，不扣除能量

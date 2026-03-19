@@ -39,6 +39,19 @@ namespace RTSim {
         void doit() override;
     };
 
+    class ALAPNonBlockScheduler; // 前置声明
+
+    // =====================================================
+    // ALAP专属唤醒闹钟事件
+    // =====================================================
+    class ALAPNonBlockWakeEvent : public MetaSim::Event {
+    private:
+        ALAPNonBlockScheduler *_scheduler;
+    public:
+        ALAPNonBlockWakeEvent(ALAPNonBlockScheduler *scheduler);
+        void doit() override;
+    };
+
     // =====================================================
     // ALAP-NonBlock运行时能量检查事件（每1ms检查运行中任务的能量）
     // ⭐ V40重构：能量检查事件已删除，能量由performTickScheduling处理
@@ -116,6 +129,7 @@ namespace RTSim {
         bool _in_tick_boundary_dispatch = false;  // ⭐ 标记是否在tick边界调度中（用于能量扣除时机控制）
         MetaSim::Tick _last_tick_time;       // 上次tick时间
         MetaSim::Tick _last_collection_time; // 上次能量收集时间
+        ALAPNonBlockWakeEvent* _alap_wake_event = nullptr;
 
         // ========== 太阳能配置 ==========
         std::string _solar_data_file;

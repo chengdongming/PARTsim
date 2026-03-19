@@ -38,6 +38,18 @@ namespace RTSim {
         ALAPBlockTickEvent(ALAPBlockScheduler *scheduler);
         void doit() override;
     };
+    class ALAPBlockScheduler; // 前置声明
+
+    // =====================================================
+    // ALAP专属唤醒闹钟事件
+    // =====================================================
+    class ALAPWakeEvent : public MetaSim::Event {
+    private:
+        ALAPBlockScheduler *_scheduler;
+    public:
+        ALAPWakeEvent(ALAPBlockScheduler *scheduler);
+        void doit() override;
+    };
 
     // =====================================================
     // ALAP-Block运行时能量检查事件（每1ms检查运行中任务的能量）
@@ -125,6 +137,8 @@ namespace RTSim {
         // ========== Tick事件 ==========
         ALAPBlockTickEvent *_tick_event;
         bool _first_tick_scheduled;  // 标记第一个tick是否已调度
+        // ALAP 专属唤醒闹钟
+        ALAPWakeEvent* _alap_wake_event;
 
         // ========== 任务管理 ==========
         std::map<AbsRTTask *, ALAPBlockTaskModel *> _task_models;

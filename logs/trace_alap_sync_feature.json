@@ -1,0 +1,6 @@
+{
+    "events" : [
+{ "time": "0", "event_type": "arrival", "task_name": "task_high", "arrival_time": "0", "current_energy_mJ": 100000, "total_consumed_mJ": 0, "total_harvested_mJ": 0},
+{ "time": "0", "event_type": "arrival", "task_name": "task_low", "arrival_time": "0", "current_energy_mJ": 100000, "total_consumed_mJ": 0, "total_harvested_mJ": 0},
+{ "time": "1", "event_type": "scheduled", "task_name": "task_high", "arrival_time": "0", "current_energy_mJ": 100038, "total_consumed_mJ": 0.65, "total_harvested_mJ": 38.889, "task_unit_energy_mJ": 0.6, "task_total_energy_mJ": 120, "energy_sufficient": true},
+{ "time": "1", "event_type": "scheduled", "task_name": "task_low", "arrival_time": "0", "current_energy_mJ": 100038, "total_consumed_mJ": 0.65, "total_harvested_mJ": 38.889, "task_unit_energy_mJ": 0.05, "task_total_energy_mJ": 10, "energy_sufficient": true}] }

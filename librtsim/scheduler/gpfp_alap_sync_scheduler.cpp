@@ -29,6 +29,23 @@ namespace RTSim {
     using namespace MetaSim;
 
     // =====================================================
+    // ALAPSyncWakeEvent 实现
+    // =====================================================
+    ALAPSyncWakeEvent::ALAPSyncWakeEvent(ALAPSyncScheduler *scheduler)
+        : MetaSim::Event("ALAPSyncWakeEvent", MetaSim::Event::_DEFAULT_PRIORITY - 1),
+          _scheduler(scheduler) {
+    }
+
+    void ALAPSyncWakeEvent::doit() {
+        if (!_scheduler) return;
+        MRTKernel* kernel = _scheduler->getKernel();
+        if (kernel) {
+            SCHEDULER_LOG_INFO("⏰ [ALAP-Sync] 闹钟响起！全局最小 Slack 归零，触发内核抢占调度！");
+            kernel->dispatch();
+        }
+    }
+
+    // =====================================================
     // ALAPSyncTickEvent 实现
     // =====================================================
 
@@ -408,7 +425,7 @@ namespace RTSim {
 
         // 创建Tick事件
         _tick_event = new ALAPSyncTickEvent(this);
-
+        _alap_wake_event = new ALAPSyncWakeEvent(this);
         SCHEDULER_LOG_INFO("✅ [ALAP-Sync] TIE Scheduler 初始化完成");
     }
 
@@ -426,6 +443,11 @@ namespace RTSim {
         if (_tick_event) {
             delete _tick_event;
             _tick_event = nullptr;
+        }
+        if (_alap_wake_event) {
+            _alap_wake_event->drop();
+            delete _alap_wake_event;
+            _alap_wake_event = nullptr;
         }
 
         // 清理任务模型
@@ -524,6 +546,20 @@ namespace RTSim {
             _current_energy = _max_energy;
         }
 
+
+        // ⭐ Bug修复3：能量耗尽时跳过调度（但已经收集了太阳能）
+        if (_energy_depleted && _current_energy < 0.000001) {
+            SCHEDULER_LOG_INFO(std::string("💀 [ALAP-Sync] 能量已耗尽，跳过Tick调度"));
+            return;  // 不进行任何调度
+        }
+        if (_current_energy > _max_energy) { _current_energy = _max_energy; }
+
+        // ================= 这里是新增的门控调用 =================
+        // ⭐ 阶段一：ALAP 全局唤醒门控，如果时间不到直接休眠
+        if (!checkALAPTimingGate()) {
+            return; 
+        }
+        // ========================================================
         // ========== 第1.5步：清理过期任务实例 ==========
         // ⭐ 已改用killOnMiss(true)，框架自动处理过期实例
         // cleanupExpiredTasks();
@@ -753,9 +789,9 @@ namespace RTSim {
         // 原因：checkAndPreempt()会使用_current_batch_tasks来判断是否需要抢占
         //      如果不清空，会使用旧的批量任务，导致误判
         // ⭐ 同时保存running_task_list的快照，用于后续构建新批量
-        std::vector<AbsRTTask *> last_tick_running_tasks(running_task_list);
-        _current_batch_tasks.clear();
-        _current_batch_size = 0;
+        // std::vector<AbsRTTask *> last_tick_running_tasks(running_task_list);
+        // _current_batch_tasks.clear();
+        // _current_batch_size = 0;
 
         if (_energy_depleted) {
             SCHEDULER_LOG_INFO(std::string("💀 [ALAP-Sync] 检测到能量在运行时检查中耗尽，跳过批量调度") +
@@ -1213,142 +1249,52 @@ namespace RTSim {
     // getTaskN - 返回批量中的第n个任务
     // =====================================================
 
+    // =====================================================
+    // getTaskN - 返回批量中的第n个任务（坚决服从 V66 批次）
+    // =====================================================
     AbsRTTask *ALAPSyncScheduler::getTaskN(unsigned int n) {
-        Tick current_time = SIMUL.getTime();
-        SCHEDULER_LOG_INFO(std::string("🔍 [ALAP-Sync] getTaskN(") + std::to_string(n) + ") @ " +
-                           std::to_string(static_cast<int64_t>(current_time)) + "ms " +
-                           "能量: " + std::to_string(_current_energy * 1000) + " mJ " +
-                           "ready_queue: " + std::to_string(_ready_queue.size()));
-
-        const double ENERGY_EPSILON = 1e-9;
-
-        // ⭐ 能量耗尽检查
-        if (_energy_depleted && _current_energy < ENERGY_EPSILON) {
-            SCHEDULER_LOG_INFO("💀 [ALAP-Sync] getTaskN: 能量已耗尽");
+        // 如果本 tick 批次装配失败（能量不足），坚决不调度任何任务
+        if (!_batch_scheduled_this_tick) {
             return nullptr;
         }
 
-        // ⭐ n==0时重置计数器
-        if (n == 0) {
-            _counted_tasks_in_dispatch.clear();
-            _pending_dispatch_tasks.clear();  // ⭐ 清除待派发任务列表
-            _pending_dispatch_energy = 0.0;    // ⭐ 重置待扣除能量
-        }
-
-        // ⭐ V52核心：实时遍历ready_queue，按RM优先级找Slack<=0且能量足够的任务
-        if (_ready_queue.empty()) {
-            SCHEDULER_LOG_INFO("📭 [ALAP-Sync] getTaskN: 就绪队列为空");
-            return nullptr;
-        }
-
-        // 按RM优先级排序（周期越短优先级越高）
-        std::vector<AbsRTTask *> sorted_ready(_ready_queue.begin(), _ready_queue.end());
-        std::sort(sorted_ready.begin(), sorted_ready.end(),
-            [this](AbsRTTask* a, AbsRTTask* b) {
-                auto model_a = getTaskModel(a);
-                auto model_b = getTaskModel(b);
-                if (model_a && model_b) {
-                    return model_a->getRMPriority() < model_b->getRMPriority();
-                }
-                return false;
-            });
-
-        // ⭐ 遍历找到第n个Slack<=0且能量足够的任务
+        // ⭐ 绝对忠诚于 Sync 批次：只从 _current_batch_tasks 中分配任务！
         unsigned int found_count = 0;
-        for (AbsRTTask *task : sorted_ready) {
-            std::string task_name = getTaskName(task);
+        
+        for (AbsRTTask *task : _current_batch_tasks) {
+            if (!task || !task->isActive()) continue;
 
-            if (!task || !task->isActive()) {
-                SCHEDULER_LOG_INFO(std::string("  ❌ 跳过: ") + task_name + " isActive=false");
-                continue;
-            }
-
-            // 检查是否已在运行（通过kernel的getProcessor）
+            // 检查任务是否已经真正在 CPU 上运行了
             bool is_running = false;
             if (_kernel) {
                 CPU *proc = _kernel->getProcessor(task);
                 is_running = (proc != nullptr);
             }
-            if (is_running) {
-                SCHEDULER_LOG_INFO(std::string("  ❌ 跳过: ") + task_name + " 已在运行");
-                continue;  // 跳过已运行的任务
-            }
+            if (is_running) continue;
 
-            // 检查是否已在本轮dispatch中处理过（避免重复扣除能量）
-            // ⭐ 关键修复：已在 _counted_tasks_in_dispatch 中的任务应该计入 found_count
-            // 因为这些任务已经被之前的 getTaskN 调用返回了
-            if (_counted_tasks_in_dispatch.find(task) != _counted_tasks_in_dispatch.end()) {
-                SCHEDULER_LOG_INFO(std::string("  ❌ 跳过: ") + task_name + " 已处理过（计入found_count）");
-                found_count++;  // ⭐ 计入已返回的任务
-                continue;
-            }
-
-            // ⭐ V52核心：实时检查Slack
-            Tick task_slack = calculateSlackForTask(task);
-            SCHEDULER_LOG_INFO(std::string("  📊 检查: ") + task_name +
-                              " Slack=" + std::to_string(static_cast<int64_t>(task_slack)));
-            if (task_slack > 0) {
-                SCHEDULER_LOG_INFO(std::string("  ❌ 跳过: ") + task_name + " Slack>0");
-                // Slack>0，跳过（ALAP：尽可能晚执行）
-                continue;
-            }
-
-            // ⭐ 检查能量是否足够（考虑待扣除能量）
-            double unit_energy = calculateUnitEnergyForTask(task);
-            double effective_energy = _current_energy - _pending_dispatch_energy;
-            if (effective_energy < unit_energy - ENERGY_EPSILON) {
-                SCHEDULER_LOG_WARNING(std::string("⚠️ [ALAP-Sync] 能量不足: ") + getTaskName(task) +
-                                     " 需要=" + std::to_string(unit_energy * 1000) + " mJ" +
-                                     " 有效能量=" + std::to_string(effective_energy * 1000) + " mJ" +
-                                     " (当前=" + std::to_string(_current_energy * 1000) +
-                                     " 待扣=" + std::to_string(_pending_dispatch_energy * 1000) + ")");
-                continue;
-            }
-
-            // 找到第n个有效任务
+            // 找到了第 n 个未运行的批次内任务
             if (found_count == n) {
-                // ⭐ Bug修复：不在此处扣除能量！改为"预占"能量
-                // 能量在commitDispatch()时真正扣除，确保同时间戳多任务能同时派发
-                _pending_dispatch_energy += unit_energy;
-                _counted_tasks_in_dispatch.insert(task);
-                _pending_dispatch_tasks.push_back(task);
-
-                SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Sync] getTaskN(") + std::to_string(n) + ") 返回: " +
-                                  getTaskName(task) +
-                                  " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) +
-                                  " 能量=" + std::to_string(unit_energy * 1000) + " mJ" +
-                                  " 预占后=" + std::to_string(_pending_dispatch_energy * 1000) + " mJ" +
-                                  " 当前实际=" + std::to_string(_current_energy * 1000) + " mJ");
-                return task;
+                SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Sync] getTaskN 返回批次内合法任务: ") + getTaskName(task));
+                // 注意：这里绝不能再扣能量！已经在 V66 组装批次时统一扣除了
+                return task; 
             }
-
+            
             found_count++;
         }
 
-        // 没找到足够的任务
-        SCHEDULER_LOG_INFO(std::string("📭 [ALAP-Sync] getTaskN(") + std::to_string(n) +
-                           ") 没有更多可调度任务，found_count=" + std::to_string(found_count));
         return nullptr;
     }
 
     // =====================================================
-    // commitDispatch - 确认派发，真正扣除能量
+    // commitDispatch - 确认派发
     // =====================================================
-    // ⭐ 新增接口：在MRTKernel完成dispatch后调用，确认能量扣除
     void ALAPSyncScheduler::commitDispatch() {
-        if (_pending_dispatch_energy > 0) {
-            _current_energy -= _pending_dispatch_energy;
-            _stats.total_energy_consumed += _pending_dispatch_energy;
-
-            SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Sync] commitDispatch: 确认派发 ") +
-                              std::to_string(_pending_dispatch_tasks.size()) + " 个任务" +
-                              " 扣除能量=" + std::to_string(_pending_dispatch_energy * 1000) + " mJ" +
-                              " 剩余=" + std::to_string(_current_energy * 1000) + " mJ");
-
-            _pending_dispatch_tasks.clear();
-            _pending_dispatch_energy = 0.0;
-        }
+        // ALAP-Sync 的能量已在 performTickScheduling 中由 V66 的 All-or-Nothing 统一扣除。
+        // ⭐ 严禁在此处重复扣费！只需清空待办列表即可。
+        _pending_dispatch_tasks.clear();
+        _pending_dispatch_energy = 0.0;
     }
+
 
     // =====================================================
     // notify - ALAP-Sync不再扣减能量（已在批量时扣减）
@@ -2727,38 +2673,63 @@ namespace RTSim {
         }
     }
 
-    // ⭐ 保留原有的全局检查函数（供兼容性使用）
+    // =====================================================
+    // ALAP 全局时序门控（阶段一）
+    // =====================================================
     bool ALAPSyncScheduler::checkALAPTimingGate() {
-        if (_ready_queue.empty()) {
-            return true;  // 空队列，通过门控
-        }
-
         Tick current_time = SIMUL.getTime();
-        Tick min_slack = Tick(-1);
+        Tick min_slack = 0;
+        bool first_task = true;
 
-        // 计算所有就绪任务的Slack，找最小值
-        for (AbsRTTask *task : _ready_queue) {
-            if (!task) continue;
-
-            Tick slack = calculateSlackForTask(task);
-
-            if (min_slack < 0 || slack < min_slack) {
-                min_slack = slack;
+        std::vector<AbsRTTask *> all_tasks;
+        for (AbsRTTask *task : _ready_queue) { 
+            if (task) all_tasks.push_back(task); 
+        }
+        
+        if (!_kernel) _kernel = getKernel();
+        if (_kernel) {
+            const auto& running_tasks = _kernel->getCurrentExecutingTasks();
+            for (const auto& map_pair : running_tasks) {
+                if (map_pair.second && map_pair.second->isExecuting()) {
+                    all_tasks.push_back(map_pair.second);
+                }
             }
         }
 
-        // 门控逻辑
-        if (min_slack > 0) {
-            SCHEDULER_LOG_INFO("⏸️  [ALAP-Sync] ALAP时序门控：Slack > 0 (" +
-                               std::to_string(static_cast<int64_t>(min_slack)) + "ms)，强制休眠");
-            _stats.total_alap_forced_idle++;
-            return false;  // 强制IDLE，不调度任何任务
-        } else {
-            SCHEDULER_LOG_INFO("✅ [ALAP-Sync] ALAP时序门控：Slack ≤ 0 (" +
-                               std::to_string(static_cast<int64_t>(min_slack)) + "ms)，唤醒，允许调度");
-            return true;  // 门控通过，允许调度
+        if (all_tasks.empty()) return true;
+
+        for (AbsRTTask *task : all_tasks) {
+            if (!task || !task->isActive()) continue;
+            Tick slack;
+            try { slack = calculateSlackForTask(task); } catch (...) { continue; }
+
+            if (first_task) { 
+                min_slack = slack; 
+                first_task = false; 
+            } else if (slack < min_slack) { 
+                min_slack = slack; 
+            }
         }
+
+        if (first_task) return true;
+
+        if (min_slack > 0) {
+            // ⭐ 纯正 ALAP 核心：设定精确唤醒闹钟！
+            Tick wake_time = current_time + min_slack;
+            if (_alap_wake_event) {
+                _alap_wake_event->drop();
+                _alap_wake_event->post(wake_time);
+            }
+            SCHEDULER_LOG_INFO("⏸️  [ALAP-Sync] 全局时序门控：Slack > 0 (" +
+                               std::to_string(static_cast<int64_t>(min_slack)) + "ms)，强制休眠。已定闹钟于 " +
+                               std::to_string(static_cast<int64_t>(wake_time)) + "ms");
+            _stats.total_alap_forced_idle++;
+            return false; // 强制系统休眠
+        }
+        
+        return true; // 允许调度
     }
+
 
     MetaSim::Tick ALAPSyncScheduler::calculateSlackForTask(AbsRTTask *task) {
         if (!task) return MetaSim::Tick(0);

@@ -1,0 +1,20 @@
+taskset:
+  # 低优先级任务（被极度拖延的受害者）
+  # 特点：周期长，早就到达了，但被 ALAP 一直按在冷板凳上
+  - name: task_low
+    iat: 200
+    runtime: 100
+    deadline: 200
+    params: "period=200,wcet=100,arrival_offset=0,workload=idle"
+    code:
+      - fixed(100, idle)
+
+  # 高优先级任务（突然杀出的刺客）
+  # 特点：周期短，半路突然到达，但不着急执行（Slack>0）
+  - name: task_high
+    iat: 50
+    runtime: 10
+    deadline: 50
+    params: "period=50,wcet=10,arrival_offset=110,workload=bzip2"
+    code:
+      - fixed(10, bzip2)

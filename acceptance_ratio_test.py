@@ -68,20 +68,36 @@ def run_single_simulation_worker(task):
         str(simulation_time), '-t', str(trace_file)
     ]
 
+    def cleanup_trace():
+        """清理追踪文件"""
+        try:
+            if trace_file.exists():
+                os.remove(str(trace_file))
+        except Exception:
+            pass
+
     try:
         subprocess.run(cmd, check=True, capture_output=True, env=env, text=True, timeout=120)
         acceptance_ratio = TraceParser(str(trace_file)).get_acceptance_ratio()
+        # 阅后即焚：提取完数据后立即删除追踪文件
+        cleanup_trace()
         return (algorithm, utilization, acceptance_ratio, None)
     except subprocess.TimeoutExpired:
+        # 超时也要清理残留文件
+        cleanup_trace()
         return (algorithm, utilization, 0.0,
                 f"⏱️ 仿真超时: {algorithm}, U={utilization:.2f}, idx={task_idx}")
     except subprocess.CalledProcessError as e:
+        # 仿真失败也要清理残留文件
+        cleanup_trace()
         error_output = (e.stderr or e.stdout or '').strip()
         message = f"❌ 仿真失败: {algorithm}, U={utilization:.2f}, idx={task_idx}"
         if error_output:
             message = f"{message}\n{error_output}"
         return (algorithm, utilization, 0.0, message)
     except Exception as e:
+        # 异常也要清理残留文件
+        cleanup_trace()
         return (algorithm, utilization, 0.0,
                 f"❌ 仿真异常: {algorithm}, U={utilization:.2f}, idx={task_idx}: {e}")
 
@@ -180,78 +196,59 @@ class TraceParser:
 
     def get_acceptance_ratio(self, expected_sim_time=30000):
         """
-        计算二元可调度性，考虑仿真边界效应和引擎崩溃检测
+        计算二元可调度性，采用"没有消息就是好消息"原则
 
         逻辑：
+        - 如果发生任何异常（如文件损坏）-> 返回 0.0（失败）
         - 如果追踪文件为空或无效 -> 返回 0.0（失败）
         - 如果不存在任何 'arrival' -> 返回 0.0（无效测试）
-        - 如果存在任何 'dline_miss' -> 返回 0.0（任务集失败，一票否决）
         - 如果仿真实际运行时间 < 预期时长的 95%，判定为引擎崩溃 -> 返回 0.0
-        - 仿真最后 2% 时间内到达的任务不参与判断（边界免责窗口）
-        - 如果存在已释放但未闭合的 job -> 返回 0.0
-        - 只有当所有有效 job 都完整闭合且无 deadline miss 时 -> 返回 1.0
+        - 只要出现一次 'dline_miss'，立刻返回 0.0（一票否决）
+        - 遍历全程没有 'dline_miss'，且存在至少一次 'arrival'，且引擎未崩溃 -> 返回 1.0
 
         参数：
             expected_sim_time: 预期仿真总时长（毫秒），默认 30000ms
-                               用于动态计算崩溃阈值和边界窗口
 
         说明：
-            - 仍然是二元判定，只返回 0.0 或 1.0
-            - job 使用 (task_name, arrival_time) 进行匹配
+            - 二元判定，只返回 0.0 或 1.0
+            - 不再维护 open_jobs 集合，避免长周期任务的边界伪下降
         """
-        # 比例常量定义
-        CRASH_THRESHOLD_RATIO = 0.95   # 崩溃检测阈值：实际运行需达预期的 95%
-        BOUNDARY_WINDOW_RATIO = 0.02   # 边界免责窗口：最后 2% 时间
+        CRASH_THRESHOLD_RATIO = 0.95  # 崩溃检测阈值
 
-        if not self.events:
-            return 0.0
-
-        # 动态计算阈值
-        crash_threshold = expected_sim_time * CRASH_THRESHOLD_RATIO
-        boundary_window = expected_sim_time * BOUNDARY_WINDOW_RATIO
-
-        # 获取实际仿真结束时间
-        last_time = max(float(e.get('time', 0)) for e in self.events)
-
-        # 绝对防线：引擎崩溃检测
-        # 如果实际运行时间不足预期的 95%，判定为仿真异常中断
-        if last_time < crash_threshold:
-            return 0.0
-
-        # 计算边界免责截止时间
-        cutoff_time = last_time - boundary_window
-
-        open_jobs = set()
-        has_arrivals = False
-
-        for event in self.events:
-            event_type = event.get('event_type', '')
-            task_name = event.get('task_name')
-            arrival_time = event.get('arrival_time')
-            t = float(event.get('time', 0))
-
-            if event_type == 'arrival':
-                has_arrivals = True
-                job_key = (task_name, str(arrival_time if arrival_time is not None else t))
-                # 边界免责逻辑：只记录在边界窗口之前到达的任务
-                # 最后 2% 时间内到达的任务不强制要求完成
-                if t <= cutoff_time:
-                    open_jobs.add(job_key)
-
-            elif event_type == 'dline_miss':
-                # 一票否决：任何 deadline miss 都判定为失败
+        try:
+            if not self.events:
                 return 0.0
 
-            elif event_type in ('end_instance', 'kill'):
-                # 任务完成或被终止，从待完成集合中移除
-                job_key = (task_name, str(arrival_time if arrival_time is not None else t))
-                open_jobs.discard(job_key)
+            crash_threshold = expected_sim_time * CRASH_THRESHOLD_RATIO
 
-        if not has_arrivals:
+            # 获取实际仿真结束时间
+            last_time = max(float(e.get('time', 0)) for e in self.events)
+
+            # 引擎崩溃检测
+            if last_time < crash_threshold:
+                return 0.0
+
+            has_arrivals = False
+
+            for event in self.events:
+                event_type = event.get('event_type', '')
+
+                if event_type == 'arrival':
+                    has_arrivals = True
+                elif event_type == 'dline_miss':
+                    # 一票否决：任何 deadline miss 都判定为失败
+                    return 0.0
+
+            if not has_arrivals:
+                return 0.0
+
+            # 无 dline_miss、有 arrival、引擎未崩溃 -> 成功
+            return 1.0
+
+        except Exception as e:
+            # 任何异常（文件损坏、解析错误等）都当作失败
+            print(f"⚠️ 解析追踪文件异常 {self.trace_file}: {e}")
             return 0.0
-
-        # 最终判定：所有边界窗口前到达的任务都完成则为成功
-        return 0.0 if open_jobs else 1.0
 
 # ============================================
 # 实验执行器
@@ -461,7 +458,7 @@ class ExperimentRunner:
 
             task_files = []
             for task_idx in range(self.num_tasksets):
-                seed = 2000 + int(utilization * 100) * 100 + task_idx
+                seed = 2000 + int(round(utilization * 100)) * 100 + task_idx
                 task_file = self.generate_taskset(utilization, task_idx, seed)
                 if task_file:
                     task_files.append((task_idx, task_file))

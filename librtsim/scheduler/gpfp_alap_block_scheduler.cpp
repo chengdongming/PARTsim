@@ -37,6 +37,23 @@ namespace RTSim {
           _scheduler(scheduler) {
         // ⭐ V30修复：较低优先级，确保任务到达事件先于tick执行，这样所有任务都在ready queue中
     }
+    // =====================================================
+    // ALAPWakeEvent 实现
+    // =====================================================
+    ALAPWakeEvent::ALAPWakeEvent(ALAPBlockScheduler *scheduler)
+        : MetaSim::Event("ALAPWakeEvent", MetaSim::Event::_DEFAULT_PRIORITY - 1),
+          _scheduler(scheduler) {
+    }
+
+    void ALAPWakeEvent::doit() {
+        if (!_scheduler) return;
+        
+        MRTKernel* kernel = _scheduler->getKernel();
+        if (kernel) {
+            SCHEDULER_LOG_INFO("⏰ [ALAP-Block] 闹钟响起！Slack归零，触发内核抢占调度！");
+            kernel->dispatch();
+        }
+    }
 
     void ALAPBlockTickEvent::doit() {
         if (!_scheduler) {
@@ -438,7 +455,7 @@ namespace RTSim {
 
         // 创建Tick事件
         _tick_event = new ALAPBlockTickEvent(this);
-
+        _alap_wake_event = new ALAPWakeEvent(this);
         SCHEDULER_LOG_INFO("✅ [ALAP-Block] ALAP-Block Scheduler 初始化完成");
     }
 
@@ -456,6 +473,11 @@ namespace RTSim {
         if (_tick_event) {
             delete _tick_event;
             _tick_event = nullptr;
+        }
+        if (_alap_wake_event) {
+            _alap_wake_event->drop(); 
+            delete _alap_wake_event;
+            _alap_wake_event = nullptr;
         }
 
         // 清理任务模型
@@ -850,19 +872,13 @@ namespace RTSim {
                     }
                 }
 
-                // ⭐ ALAP 个体时序门控：每个任务必须满足以下任一条件才能被调度
-                // 条件 A：该任务的 Slack ≤ 0（时序告急）
-                // 条件 B：电池已满（防止能量溢出浪费）
+                // ⭐ 纯正 ALAP 个体时序门控：只看 Slack，不管能量是否溢出
                 Tick individual_slack = calculateSlackForTask(task);
-                bool battery_full = (_current_energy >= _max_energy - 1e-6);
 
-                if (individual_slack > 0 && !battery_full) {
-                    SCHEDULER_LOG_INFO(std::string("⏸️ [ALAP-Block] getTaskN: 个体Slack>0且电池未满，拒绝调度 ") +
+                if (individual_slack > 0) {
+                    SCHEDULER_LOG_INFO(std::string("⏸️ [ALAP-Block] getTaskN: 个体Slack>0，纯正ALAP拒绝提前调度 ") +
                                       getTaskName(task) +
-                                      " Slack=" + std::to_string(static_cast<int64_t>(individual_slack)) + "ms" +
-                                      " 能量=" + std::to_string(_current_energy * 1000) + "/" +
-                                      std::to_string(_max_energy * 1000) + " mJ");
-                    // 跳过这个任务，继续寻找下一个候选
+                                      " Slack=" + std::to_string(static_cast<int64_t>(individual_slack)) + "ms");
                     continue;
                 }
 
@@ -2074,22 +2090,20 @@ namespace RTSim {
     // =====================================================
     // ALAP时序门控（阶段一）
     // =====================================================
-
     bool ALAPBlockScheduler::checkALAPTimingGate() {
         Tick current_time = SIMUL.getTime();
-        Tick min_slack = Tick(-1);
+        Tick min_slack = 0;
+        bool first_task = true; // 关键修复：用于正确初始化最小值
 
-        // ⭐ 关键修复：同时检查就绪队列和运行中的任务
-        // 根据原论文，应该检查"所有就绪任务"，包括正在运行的任务
+        // 收集所有需要评估的任务
         std::vector<AbsRTTask *> all_tasks;
 
-        // 1. 添加就绪队列中的未调度任务
+        // 1. 就绪队列中的未调度任务
         for (AbsRTTask *task : _ready_queue) {
             if (task) all_tasks.push_back(task);
         }
 
-        // 2. ⭐ 添加运行中的任务
-        // ⭐ 确保 _kernel 已设置
+        // 2. 运行中的任务
         if (!_kernel) {
             _kernel = getKernel();
         }
@@ -2111,35 +2125,41 @@ namespace RTSim {
 
         // 计算所有任务的Slack，找最小值
         for (AbsRTTask *task : all_tasks) {
-            if (!task) continue;
+            if (!task || !task->isActive()) continue;
 
-            // ⭐ 关键修复：检查任务是否仍然有效
-            // 在任务结束时，任务可能已经被部分删除，导致vtable指针为NULL
-            // 检查任务是否活跃可以防止访问无效的对象
-            if (!task->isActive()) {
-                SCHEDULER_LOG_DEBUG("⏭️ [ALAP-Block] checkALAPTimingGate: 跳过非活跃任务");
-                continue;
-            }
-
-            // ⭐ 使用try-catch保护calculateSlackForTask调用
-            // 防止访问已删除的对象
             Tick slack;
             try {
                 slack = calculateSlackForTask(task);
             } catch (...) {
-                SCHEDULER_LOG_WARNING("⚠️ [ALAP-Block] checkALAPTimingGate: 计算Slack时发生异常，跳过任务");
                 continue;
             }
 
-            if (min_slack < 0 || slack < min_slack) {
+            // ⭐ 关键修复：绝对安全的求最小值逻辑
+            if (first_task) {
+                min_slack = slack;
+                first_task = false;
+            } else if (slack < min_slack) {
                 min_slack = slack;
             }
         }
 
+        // 如果仍为 first_task，说明有效任务为空
+        if (first_task) return true;
+
         // 门控逻辑
         if (min_slack > 0) {
+            // ⭐ 纯正 ALAP 核心：设置精确唤醒闹钟
+            Tick wake_time = current_time + min_slack;
+            
+            // 直接 drop() 旧闹钟，发布新闹钟
+            if (_alap_wake_event) {
+                _alap_wake_event->drop();
+                _alap_wake_event->post(wake_time);
+            }
+
             SCHEDULER_LOG_INFO("⏸️  [ALAP-Block] ALAP时序门控：Slack > 0 (" +
-                               std::to_string(static_cast<int64_t>(min_slack)) + "ms)，强制休眠");
+                               std::to_string(static_cast<int64_t>(min_slack)) + "ms)，强制休眠。已定闹钟于 " +
+                               std::to_string(static_cast<int64_t>(wake_time)) + "ms");
             _stats.total_alap_forced_idle++;
             return false;  // 强制IDLE，不调度任何任务
         } else {
@@ -2148,6 +2168,7 @@ namespace RTSim {
             return true;  // 门控通过，允许调度
         }
     }
+
 
     MetaSim::Tick ALAPBlockScheduler::calculateSlackForTask(AbsRTTask *task) {
         if (!task) return MetaSim::Tick(0);
