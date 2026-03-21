@@ -504,11 +504,15 @@ namespace RTSim {
         // ⭐ 已改用killOnMiss(true)，框架自动处理过期实例
         // cleanupExpiredTasks();
 
-        // ========== 阶段一：ALAP个体时序门控 ==========
-        // ⭐ 修复：移除批量级别的S_min门控，改为个体Slack过滤
-        // 原因：每个任务独立计算Slack，Slack<=0的任务才能调度
-        // 个体Slack检查在getTaskN中进行，这里不再做全局门控
-        SCHEDULER_LOG_INFO("✅ [ALAP-NonBlock] 个体时序门控：跳过全局S_min检查，个体Slack在getTaskN中过滤");
+        // ========== 阶段一：ALAP全局唤醒门控（定时器漏唤醒修复） ==========
+        // ⭐ 关键修复：必须调用checkALAPTimingGate()来设置唤醒定时器
+        // 否则当所有任务Slack>0时，系统不会设置_alap_wake_event定时器
+        // 导致任务永远无法被唤醒（Timer Miss Bug）
+        if (!checkALAPTimingGate()) {
+            SCHEDULER_LOG_INFO("💤 [ALAP-NonBlock] Slack > 0，系统休眠等待唤醒");
+            return;
+        }
+        SCHEDULER_LOG_INFO("✅ [ALAP-NonBlock] ALAP时序门控通过，允许调度");
 
         // ========== 第2步：处理运行中任务的续期能量 ==========
         // ⭐ 重构：在tick边界扣除运行任务的续期能量（替代ALAP-NonBlockEnergyCheckEvent）
@@ -2226,6 +2230,17 @@ namespace RTSim {
         }
 
         Tick remaining = Tick(remaining_double);
+
+        // ⭐ 关键修复：任务必须在到达后才能计算有效的Slack
+        // 如果任务还没到达（arrival > current_time），返回0表示可以立即调度
+        // 这样可以确保唤醒时间计算正确，不会漏掉任何紧迫任务
+        if (arrival > current_time) {
+            // 任务还没到达，其"有效 Slack"应该是从当前到到达的时间
+            // 实际上任务未到达时，其 effective slack = 0（可以立即执行）
+            // 因为 ALAP 的核心是"尽可能晚"，未到达的任务应该被立即调度（如果能量足够）
+            return MetaSim::Tick(0);
+        }
+
         Tick slack = absolute_deadline - remaining - current_time;
 
         SCHEDULER_LOG_DEBUG("🧮 [ALAP-NonBlock] Slack计算: " +

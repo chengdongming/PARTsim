@@ -1253,6 +1253,12 @@ namespace RTSim {
     // getTaskN - 返回批量中的第n个任务（坚决服从 V66 批次）
     // =====================================================
     AbsRTTask *ALAPSyncScheduler::getTaskN(unsigned int n) {
+        // ⭐ 安全检查：如果 _current_batch_tasks 为空，直接返回 nullptr
+        if (_current_batch_tasks.empty()) {
+            SCHEDULER_LOG_DEBUG("⏸️ [ALAP-Sync] getTaskN: _current_batch_tasks为空，跳过");
+            return nullptr;
+        }
+
         // 如果本 tick 批次装配失败（能量不足），坚决不调度任何任务
         if (!_batch_scheduled_this_tick) {
             return nullptr;
@@ -1260,9 +1266,35 @@ namespace RTSim {
 
         // ⭐ 绝对忠诚于 Sync 批次：只从 _current_batch_tasks 中分配任务！
         unsigned int found_count = 0;
-        
+
         for (AbsRTTask *task : _current_batch_tasks) {
-            if (!task || !task->isActive()) continue;
+            if (!task) {
+                SCHEDULER_LOG_DEBUG("⏸️ [ALAP-Sync] getTaskN: 批次中有空任务指针，跳过");
+                continue;
+            }
+
+            if (!task->isActive()) {
+                SCHEDULER_LOG_DEBUG(std::string("⏸️ [ALAP-Sync] getTaskN: 任务不活跃: ") + getTaskName(task));
+                continue;
+            }
+
+            // ⭐ Bug修复(双重执行): 检查任务是否已完成
+            // 必须在 Slack 检查之前先检查剩余执行时间
+            double remaining = task->getRemainingWCET();
+            if (remaining <= 0) {
+                SCHEDULER_LOG_DEBUG(std::string("⏸️ [ALAP-Sync] getTaskN: 任务已完成(remaining<=0)，跳过: ") + getTaskName(task));
+                continue;
+            }
+
+            // ⭐ Bug修复(ASAP泄漏): 必须检查 Slack <= 0
+            // ALAP 核心原则：任务只有在 Slack <= 0 时才能调度
+            // 绝对不允许 Slack > 0 的任务被提前调度（变成 ASAP 行为）
+            Tick slack = calculateSlackForTask(task);
+            if (slack > 0) {
+                SCHEDULER_LOG_DEBUG(std::string("⏸️ [ALAP-Sync] getTaskN: Slack>0，跳过任务: ") +
+                                   getTaskName(task) + " slack=" + std::to_string(static_cast<int64_t>(slack)) + "ms");
+                continue;  // Slack > 0，不允许调度
+            }
 
             // 检查任务是否已经真正在 CPU 上运行了
             bool is_running = false;
@@ -1270,15 +1302,18 @@ namespace RTSim {
                 CPU *proc = _kernel->getProcessor(task);
                 is_running = (proc != nullptr);
             }
-            if (is_running) continue;
+            if (is_running) {
+                SCHEDULER_LOG_DEBUG(std::string("⏸️ [ALAP-Sync] getTaskN: 任务已在CPU运行: ") + getTaskName(task));
+                continue;
+            }
 
             // 找到了第 n 个未运行的批次内任务
             if (found_count == n) {
                 SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Sync] getTaskN 返回批次内合法任务: ") + getTaskName(task));
                 // 注意：这里绝不能再扣能量！已经在 V66 组装批次时统一扣除了
-                return task; 
+                return task;
             }
-            
+
             found_count++;
         }
 
@@ -2499,6 +2534,14 @@ namespace RTSim {
 
         SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Sync] 任务结束: ") + getTaskName(task));
 
+        // ⭐ Bug修复：从批量任务中移除已结束的任务
+        // 防止双重执行：已结束的任务不应该再被调度
+        auto batch_it = std::find(_current_batch_tasks.begin(), _current_batch_tasks.end(), task);
+        if (batch_it != _current_batch_tasks.end()) {
+            _current_batch_tasks.erase(batch_it);
+            SCHEDULER_LOG_DEBUG(std::string("🧹 [ALAP-Sync] 从批量中移除已结束任务: ") + getTaskName(task));
+        }
+
         // ⭐ 逐渐扣除模式：从计数集合中移除任务
         _counted_tasks_in_dispatch.erase(task);
 
@@ -2528,6 +2571,10 @@ namespace RTSim {
         _stats.total_task_completions++;
 
         SCHEDULER_LOG_INFO(std::string("📊 [ALAP-Sync] 当前能量: ") + std::to_string(_current_energy) + "J");
+
+        // ⭐ Bug修复：清除批次标记，防止 dispatch() 中调用 getTaskN 时崩溃
+        // 当任务结束时，旧的批次已经失效，需要清除标记
+        _batch_scheduled_this_tick = false;
 
         // ⭐ 关键修复：任务结束时触发立即调度
         // 检查是否有空闲CPU和等待的任务
@@ -2735,6 +2782,14 @@ namespace RTSim {
         if (!task) return MetaSim::Tick(0);
 
         Tick current_time = SIMUL.getTime();
+
+        // ⭐ 安全检查：检查任务是否已完成（remaining <= 0）
+        // 如果任务已完成，返回一个很大的正 Slack，让它被跳过
+        double remaining_check = task->getRemainingWCET();
+        if (remaining_check <= 0) {
+            SCHEDULER_LOG_DEBUG(std::string("⏸️ [ALAP-Sync] calculateSlack: 任务已完成: ") + getTaskName(task));
+            return MetaSim::Tick(99999);  // 很大的正 Slack，会被跳过
+        }
 
         // ⭐ Bug修复：使用 getLastArrival() + getPeriod() 来计算绝对截止时间
         // getDeadline() 可能返回旧实例的值，需要使用 getLastArrival() 获取当前实例的到达时间

@@ -1175,9 +1175,14 @@ namespace RTSim {
             ALAPBlockTaskModel *model = getTaskModel(candidate);
             if (!model) continue;
 
-            // ALAP 的全局唤醒/休眠已在 tick 入口判定。
-            // 抢占阶段继续按 RM/能量语义挑选候选，不再要求个体 Slack<=0。
             Tick candidate_slack = calculateSlackForTask(candidate);
+
+            // ⭐ ALAP核心修复：抢占候选任务必须满足 Slack <= 0
+            // 如果 Slack > 0，说明任务还没到执行时间，不能作为抢占候选
+            // 这防止了"高优任务到达但Slack>0时盲目抢占低优任务"导致的1ms抖动
+            if (candidate_slack > 0) {
+                continue;  // 跳过 Slack > 0 的候选任务
+            }
 
             if (!best_candidate || model->getRMPriority() < best_model->getRMPriority()) {
                 best_candidate = candidate;

@@ -469,6 +469,13 @@ namespace RTSim {
         Tick current_time = SIMUL.getTime();
         Tick base_time = (current_time > _dispatch_start_time) ? current_time : _dispatch_start_time;
         Tick post_time = base_time + overhead;
+
+        // ⭐ 修复：确保 _endEvt[p] 不在队列中，避免重复 post 导致 "already posted" 异常
+        // 这种情况发生在 _isContextSwitching[p] 为 true 时，dispatch(CPU*) 方法
+        // 延迟了 _beginEvt[p] 但没有正确处理 _endEvt[p] 的状态
+        // drop() 是幂等的：如果事件不在队列中，只是设置 _isInQueue=false，不会报错
+        _endEvt[p]->drop();
+
         _endEvt[p]->post(post_time);
         std::cout << "[DEBUG] onBeginDispatchMulti - 设置事件: task=" << taskname(st)
                   << " CPU=" << p->toString()
