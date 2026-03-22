@@ -76,7 +76,7 @@ namespace RTSim {
     // 当系统预测到电池将在某时刻耗尽时，在事件队列中插入此事件
     // 确保任务在电池真正耗尽时被正确中断，而不是"惯性"跑完
     // =====================================================
-    class EnergyDepletedEvent : public MetaSim::Event {
+    class ALAPBlockEnergyDepletedEvent : public MetaSim::Event {
     private:
         ALAPBlockScheduler *_scheduler;
 
@@ -85,7 +85,7 @@ namespace RTSim {
         double _energy_at_prediction;               // 预测时的能量值
 
     public:
-        EnergyDepletedEvent(ALAPBlockScheduler *scheduler);
+        ALAPBlockEnergyDepletedEvent(ALAPBlockScheduler *scheduler);
         void doit() override;
 
         MetaSim::Tick getScheduledDepletionTime() const { return _scheduled_depletion_time; }
@@ -158,10 +158,11 @@ namespace RTSim {
         // ========== Tick事件 ==========
         ALAPBlockTickEvent *_tick_event;
         bool _first_tick_scheduled;  // 标记第一个tick是否已调度
+        MetaSim::Tick _last_prediction_tick = -1;  // ⭐ 上次更新能量预测的tick（防止同一tick内重复预测）
         // ALAP 专属唤醒闹钟
         ALAPWakeEvent* _alap_wake_event;
         // ⭐ 能量耗尽预测事件（Bug修复：防止虚空借电）
-        EnergyDepletedEvent *_energy_depleted_event;
+        ALAPBlockEnergyDepletedEvent *_energy_depleted_event;
 
         // ========== 任务管理 ==========
         std::map<AbsRTTask *, ALAPBlockTaskModel *> _task_models;
@@ -267,7 +268,7 @@ namespace RTSim {
         void dispatchTask(AbsRTTask *task, CPU *cpu);
 
     public:
-        // ⭐ 能量耗尽处理（public供EnergyDepletedEvent调用）
+        // ⭐ 能量耗尽处理（public供ALAPBlockEnergyDepletedEvent调用）
         void onEnergyDepleted();
         // 构造函数/析构函数
         ALAPBlockScheduler();

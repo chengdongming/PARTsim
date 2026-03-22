@@ -69,6 +69,27 @@ namespace RTSim {
     };
 
     // =====================================================
+    // ⭐ 能量耗尽预测事件（虚空借电Bug修复）
+    // 当系统预测到电池将在某时刻耗尽时，在事件队列中插入此事件
+    // 确保任务在电池真正耗尽时被正确中断，而不是"惯性"跑完
+    // =====================================================
+    class ALAPSyncEnergyDepletedEvent : public MetaSim::Event {
+    private:
+        ALAPSyncScheduler *_scheduler;
+
+    public:
+        MetaSim::Tick _scheduled_depletion_time;  // 预测的耗尽时刻
+        double _energy_at_prediction;               // 预测时的能量值
+
+    public:
+        ALAPSyncEnergyDepletedEvent(ALAPSyncScheduler *scheduler);
+        void doit() override;
+
+        MetaSim::Tick getScheduledDepletionTime() const { return _scheduled_depletion_time; }
+        double getEnergyAtPrediction() const { return _energy_at_prediction; }
+    };
+
+    // =====================================================
     // ALAPSyncTaskModel 类声明
     // =====================================================
     class ALAPSyncTaskModel : public TaskModel {
@@ -122,6 +143,9 @@ namespace RTSim {
         MetaSim::Tick _last_tick_time;       // 上次tick时间
         MetaSim::Tick _last_collection_time; // 上次能量收集时间
         ALAPSyncWakeEvent* _alap_wake_event = nullptr;
+
+        // ⭐ 能量耗尽预测事件（Bug修复：防止虚空借电）
+        ALAPSyncEnergyDepletedEvent *_energy_depleted_event = nullptr;
 
         // ========== 太阳能配置 ==========
         std::string _solar_data_file;
@@ -217,6 +241,12 @@ namespace RTSim {
         double collectSolarEnergy(MetaSim::Tick current_time);
         double getSolarIrradiance(int64_t time_ms);
 
+        // ⭐ 能量耗尽预测与事件注册（Bug修复）
+        double calculateTotalPowerConsumption();                              // 计算当前总功耗
+        MetaSim::Tick predictTimeToDepletion(double energy, double power);    // 预测能量耗尽时间
+        void scheduleEnergyDepletionEvent(MetaSim::Tick depletion_time);     // 注册能量耗尽事件
+        void cancelEnergyDepletionEvent();                                    // 取消能量耗尽事件
+
         // 任务管理
         ALAPSyncTaskModel *getTaskModel(AbsRTTask *task);
         std::string getTaskName(AbsRTTask *task);
@@ -276,6 +306,9 @@ namespace RTSim {
         void endRun() override;
         void onTaskEnd(AbsRTTask *task);
 
+        // ⭐ 能量耗尽处理（public供ALAPSyncEnergyDepletedEvent调用）
+        void onEnergyDepleted();
+
         // 能量管理接口
         double getCurrentEnergy() const override { return _current_energy; }
         double getInitialEnergy() const { return _initial_energy; }
@@ -319,6 +352,7 @@ namespace RTSim {
         // 友元类声明
         friend class ALAPSyncTickEvent;
         friend class ALAPSyncEnergyCheckEvent;
+        friend class ALAPSyncEnergyDepletedEvent;  // ⭐ Bug修复：能量耗尽预测事件
     };
 
 } // namespace RTSim

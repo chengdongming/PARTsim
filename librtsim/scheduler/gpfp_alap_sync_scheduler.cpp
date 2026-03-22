@@ -250,6 +250,23 @@ namespace RTSim {
     }
 
     // =====================================================
+    // ⭐ ALAPSyncEnergyDepletedEvent 实现（Bug修复：防止虚空借电）
+    // =====================================================
+
+    ALAPSyncEnergyDepletedEvent::ALAPSyncEnergyDepletedEvent(ALAPSyncScheduler *scheduler)
+        : MetaSim::Event("ALAPSyncEnergyDepletedEvent", MetaSim::Event::_DEFAULT_PRIORITY - 100),
+          _scheduler(scheduler),
+          _scheduled_depletion_time(0),
+          _energy_at_prediction(0.0) {
+        // ⭐ 最高优先级（_DEFAULT_PRIORITY - 100 确保在其他事件之前处理）
+    }
+
+    void ALAPSyncEnergyDepletedEvent::doit() {
+        if (!_scheduler) return;
+        _scheduler->onEnergyDepleted();
+    }
+
+    // =====================================================
     // ALAPSyncScheduler 实现
     // =====================================================
 
@@ -426,6 +443,7 @@ namespace RTSim {
         // 创建Tick事件
         _tick_event = new ALAPSyncTickEvent(this);
         _alap_wake_event = new ALAPSyncWakeEvent(this);
+        _energy_depleted_event = new ALAPSyncEnergyDepletedEvent(this);  // ⭐ Bug修复：能量耗尽预测事件
         SCHEDULER_LOG_INFO("✅ [ALAP-Sync] TIE Scheduler 初始化完成");
     }
 
@@ -448,6 +466,12 @@ namespace RTSim {
             _alap_wake_event->drop();
             delete _alap_wake_event;
             _alap_wake_event = nullptr;
+        }
+        // ⭐ Bug修复：清理能量耗尽事件
+        if (_energy_depleted_event) {
+            _energy_depleted_event->drop();
+            delete _energy_depleted_event;
+            _energy_depleted_event = nullptr;
         }
 
         // 清理任务模型
@@ -482,6 +506,12 @@ namespace RTSim {
         // 当前时刻能量 = 上一时刻结余 + 本次充电能量 - 已消耗能量 - 本次批量调度能耗
         double old_energy = _current_energy;
         _current_energy -= total_energy;
+        // ⭐ V51修复：软性守卫 - 防止能量透支（不使用assert避免core dump）
+        if (_current_energy < 0.0) {
+            SCHEDULER_LOG_WARNING("⚠️ [ALAP-Sync] 能量透支检测！强制归零: " +
+                                 std::to_string(_current_energy * 1000) + " mJ → 0 mJ");
+            _current_energy = 0.0;
+        }
         _stats.total_energy_consumed += total_energy;
 
         SCHEDULER_LOG_INFO(std::string("📋 [ALAP-Sync] 批量调度: ") +
@@ -738,6 +768,13 @@ namespace RTSim {
             for (auto* task : k_tasks_v66) {
                 double unit_energy = calculateUnitEnergyForTask(task);
                 _current_energy -= unit_energy;
+                // ⭐ V51修复：软性能量守卫（不中断仿真）
+                if (_current_energy < 0.0) {
+                    SCHEDULER_LOG_WARNING("⚠️ [ALAP-Sync] 能量透支！强制归零: " +
+                                         getTaskName(task) + " 透支=" +
+                                         std::to_string(-_current_energy * 1000) + " mJ");
+                    _current_energy = 0.0;
+                }
                 _stats.total_energy_consumed += unit_energy;
             }
             
@@ -748,6 +785,14 @@ namespace RTSim {
             
             SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Sync V66] All-or-Nothing通过: ") +
                               "调度" + std::to_string(k_tasks_v66.size()) + "个任务");
+
+            // ⭐ V51修复：能量耗尽预测 - 批量调度成功后更新预测
+            cancelEnergyDepletionEvent();
+            double total_power = calculateTotalPowerConsumption();
+            if (total_power > 0.0 && _current_energy > 0.0) {
+                MetaSim::Tick time_to_deplete = predictTimeToDepletion(_current_energy, total_power);
+                scheduleEnergyDepletionEvent(time_to_deplete);
+            }
         } else {
             // 能量不足：全部挂起
             SCHEDULER_LOG_WARNING(std::string("⚠️ [ALAP-Sync V66] All-or-Nothing失败: ") +
@@ -2967,5 +3012,111 @@ namespace RTSim {
                                std::to_string(tasks_to_interrupt.size()) + "个任务将自然完成" +
                                "（不再调度新任务，遵循ALAP-Sync'全无'原则）");
         }
+    }
+
+    // =====================================================
+    // ⭐ 能量耗尽预测机制（Bug修复：防止虚空借电）
+    // =====================================================
+
+    double ALAPSyncScheduler::calculateTotalPowerConsumption() {
+        if (!_kernel) {
+            return 0.0;
+        }
+
+        const auto& running_tasks_map = _kernel->getCurrentExecutingTasks();
+        double total_power = 0.0;
+
+        for (const auto& [cpu, task] : running_tasks_map) {
+            if (!task || !task->isExecuting()) continue;
+            total_power += calculateUnitEnergyForTask(task);
+        }
+
+        return total_power;
+    }
+
+    MetaSim::Tick ALAPSyncScheduler::predictTimeToDepletion(double energy, double power) {
+        if (power <= 0.0 || energy <= 0.0) {
+            return MetaSim::Tick(-1);  // 无法预测
+        }
+        // time_to_deplete = energy / power (单位：ms)
+        // 返回从当前时间算起，还能运行多少ms
+        double time_ms = energy / power;
+        return static_cast<MetaSim::Tick>(ceil(time_ms));
+    }
+
+    void ALAPSyncScheduler::scheduleEnergyDepletionEvent(MetaSim::Tick time_until_depletion) {
+        if (!_energy_depleted_event) return;
+
+        Tick current_time = SIMUL.getTime();
+        Tick depletion_time = current_time + time_until_depletion;
+
+        if (time_until_depletion <= 0) {
+            // 能量已经耗尽，立即触发
+            SCHEDULER_LOG_WARNING("⚠️ [ALAP-Sync] 能量已耗尽，立即触发耗尽处理");
+            onEnergyDepleted();
+            return;
+        }
+
+        // 取消旧的事件
+        _energy_depleted_event->drop();
+
+        // 设置耗尽时刻
+        _energy_depleted_event->_scheduled_depletion_time = depletion_time;
+        _energy_depleted_event->_energy_at_prediction = _current_energy;
+
+        // 注册新事件
+        _energy_depleted_event->post(depletion_time);
+
+        SCHEDULER_LOG_INFO("⚡ [ALAP-Sync] ⭐ 注册能量耗尽预测事件: "
+                          "当前=" + std::to_string(static_cast<int64_t>(current_time)) + "ms, "
+                          "预测耗尽=" + std::to_string(static_cast<int64_t>(depletion_time)) + "ms, "
+                          "剩余=" + std::to_string(static_cast<int64_t>(time_until_depletion)) + "ms, "
+                          "剩余能量=" + std::to_string(_current_energy * 1000) + "mJ, "
+                          "总功耗=" + std::to_string(calculateTotalPowerConsumption() * 1000) + "mJ/ms");
+    }
+
+    void ALAPSyncScheduler::cancelEnergyDepletionEvent() {
+        if (_energy_depleted_event) {
+            _energy_depleted_event->drop();
+        }
+    }
+
+    void ALAPSyncScheduler::onEnergyDepleted() {
+        Tick current_time = SIMUL.getTime();
+
+        SCHEDULER_LOG_WARNING("💀💀💀 [ALAP-Sync] ⭐ 能量耗尽事件触发！时间=" +
+                             std::to_string(static_cast<int64_t>(current_time)) + "ms, " +
+                             "剩余能量=" + std::to_string(_current_energy * 1000) + "mJ");
+
+        // ⭐ V51修复：软性守卫 - 不使用assert，直接强制归零
+        if (_current_energy < 0.0) {
+            SCHEDULER_LOG_WARNING("⚠️ [ALAP-Sync] 检测到能量透支！强制归零");
+        }
+
+        // 强制清零能量
+        _current_energy = 0.0;
+        _energy_depleted = true;
+
+        // 挂起所有运行中的任务
+        if (_kernel) {
+            const auto& running_tasks_map = _kernel->getCurrentExecutingTasks();
+            std::vector<AbsRTTask *> tasks_to_suspend;
+
+            for (const auto& [cpu, task] : running_tasks_map) {
+                if (!task || !task->isExecuting()) continue;
+                tasks_to_suspend.push_back(task);
+            }
+
+            for (AbsRTTask *task : tasks_to_suspend) {
+                setSuspendReason(task, "energy_depleted");
+                _kernel->suspend(task);
+                SCHEDULER_LOG_WARNING("💀 [ALAP-Sync] 强制挂起任务(能量耗尽): " + getTaskName(task));
+            }
+        }
+
+        // 取消能量耗尽事件
+        cancelEnergyDepletionEvent();
+
+        SCHEDULER_LOG_WARNING("💀 [ALAP-Sync] 能量耗尽处理完成，跳过后续调度");
     }
 } // namespace RTSim

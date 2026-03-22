@@ -60,15 +60,15 @@ namespace RTSim {
     // ⭐ EnergyDepletedEvent 实现（Bug修复：防止虚空借电）
     // =====================================================
 
-    EnergyDepletedEvent::EnergyDepletedEvent(ALAPBlockScheduler *scheduler)
-        : MetaSim::Event("EnergyDepletedEvent", MetaSim::Event::_DEFAULT_PRIORITY - 100),
+    ALAPBlockEnergyDepletedEvent::ALAPBlockEnergyDepletedEvent(ALAPBlockScheduler *scheduler)
+        : MetaSim::Event("ALAPBlockEnergyDepletedEvent", MetaSim::Event::_DEFAULT_PRIORITY - 100),
           _scheduler(scheduler),
           _scheduled_depletion_time(0),
           _energy_at_prediction(0.0) {
         // ⭐ 最高优先级（负数确保在其他事件之前处理）
     }
 
-    void EnergyDepletedEvent::doit() {
+    void ALAPBlockEnergyDepletedEvent::doit() {
         if (!_scheduler) return;
         _scheduler->onEnergyDepleted();
     }
@@ -474,7 +474,7 @@ namespace RTSim {
         // 创建Tick事件
         _tick_event = new ALAPBlockTickEvent(this);
         _alap_wake_event = new ALAPWakeEvent(this);
-        _energy_depleted_event = new EnergyDepletedEvent(this);
+        _energy_depleted_event = new ALAPBlockEnergyDepletedEvent(this);
         SCHEDULER_LOG_INFO("✅ [ALAP-Block] ALAP-Block Scheduler 初始化完成");
     }
 
@@ -639,16 +639,17 @@ namespace RTSim {
             }
 
             // ⭐ V50修复：能量耗尽预测 - 每次系统状态改变时重新计算
-            // 1. 取消之前的能量耗尽闹钟
-            cancelEnergyDepletionEvent();
-
-            // 2. 重新计算当前系统总功耗
-            double total_power = calculateTotalPowerConsumption();
-
-            // 3. 如果当前有任务在跑（总功耗 > 0），立刻定下绝对时刻的没电闹钟
-            if (total_power > 0.0 && _current_energy > 0.0) {
-                MetaSim::Tick time_to_deplete = predictTimeToDepletion(_current_energy, total_power);
-                scheduleEnergyDepletionEvent(time_to_deplete);
+            // ⭐ V51修复：每个tick只更新一次（防止同一tick内多次dispatch导致重复预测）
+            if (_last_prediction_tick == current_time) {
+                SCHEDULER_LOG_DEBUG("⏭️ [ALAP-Block] 跳过重复预测（本tick已更新）");
+            } else {
+                _last_prediction_tick = current_time;
+                cancelEnergyDepletionEvent();
+                double total_power = calculateTotalPowerConsumption();
+                if (total_power > 0.0 && _current_energy > 0.0) {
+                    MetaSim::Tick time_to_deplete = predictTimeToDepletion(_current_energy, total_power);
+                    scheduleEnergyDepletionEvent(time_to_deplete);
+                }
             }
 
             // 挂起能量不足的任务
@@ -707,14 +708,6 @@ namespace RTSim {
                                " 扣除能量=" + std::to_string(_dispatching_tasks_total_energy * 1000) + " mJ " +
                                std::to_string(energy_before_scheduling * 1000) + " → " +
                                std::to_string(_current_energy * 1000) + " mJ");
-
-            // ⭐ V50修复：新任务调度后也要更新能量耗尽预测
-            cancelEnergyDepletionEvent();
-            double total_power = calculateTotalPowerConsumption();
-            if (total_power > 0.0 && _current_energy > 0.0) {
-                MetaSim::Tick time_to_deplete = predictTimeToDepletion(_current_energy, total_power);
-                scheduleEnergyDepletionEvent(time_to_deplete);
-            }
         } else if (!allow_new_dispatch) {
             _counted_tasks_in_dispatch.clear();
             _dispatching_tasks_total_energy = 0.0;

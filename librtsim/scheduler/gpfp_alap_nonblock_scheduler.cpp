@@ -74,6 +74,23 @@ namespace RTSim {
     }
 
     // =====================================================
+    // ⭐ ALAPNonBlockEnergyDepletedEvent 实现（Bug修复：防止虚空借电）
+    // =====================================================
+
+    ALAPNonBlockEnergyDepletedEvent::ALAPNonBlockEnergyDepletedEvent(ALAPNonBlockScheduler *scheduler)
+        : MetaSim::Event("ALAPNonBlockEnergyDepletedEvent", MetaSim::Event::_DEFAULT_PRIORITY - 100),
+          _scheduler(scheduler),
+          _scheduled_depletion_time(0),
+          _energy_at_prediction(0.0) {
+        // ⭐ 最高优先级（_DEFAULT_PRIORITY - 100 确保在其他事件之前处理）
+    }
+
+    void ALAPNonBlockEnergyDepletedEvent::doit() {
+        if (!_scheduler) return;
+        _scheduler->onEnergyDepleted();
+    }
+
+    // =====================================================
     // ALAP-NonBlockEnergyCheckEvent 实现 - 运行时能量检查
     // ⭐ V40重构：能量检查事件已删除，能量由performTickScheduling���理
     // =====================================================
@@ -416,6 +433,7 @@ namespace RTSim {
         // 创建Tick事件
         _tick_event = new ALAPNonBlockTickEvent(this);
         _alap_wake_event = new ALAPNonBlockWakeEvent(this);
+        _energy_depleted_event = new ALAPNonBlockEnergyDepletedEvent(this);  // ⭐ Bug修复：能量耗尽预测事件
         SCHEDULER_LOG_INFO("✅ [ALAP-NonBlock] ALAP-NonBlock Scheduler 初始化完成");
     }
 
@@ -438,6 +456,12 @@ namespace RTSim {
             _alap_wake_event->drop();
             delete _alap_wake_event;
             _alap_wake_event = nullptr;
+        }
+        // ⭐ Bug修复：清理能量耗尽事件
+        if (_energy_depleted_event) {
+            _energy_depleted_event->drop();
+            delete _energy_depleted_event;
+            _energy_depleted_event = nullptr;
         }
         // 清理任务模型
         for (auto &pair : _task_models) {
@@ -569,6 +593,12 @@ namespace RTSim {
                     // 扣除续期能量
                     double old_energy = _current_energy;
                     _current_energy -= unit_energy;
+                    // ⭐ V51修复：软性守卫 - 防止能量透支（不使用assert避免core dump）
+                    if (_current_energy < 0.0) {
+                        SCHEDULER_LOG_WARNING("⚠️ [ALAP-NonBlock] 能量透支检测！强制归零: " +
+                                             std::to_string(_current_energy * 1000) + " mJ → 0 mJ");
+                        _current_energy = 0.0;
+                    }
                     _stats.total_energy_consumed += unit_energy;
 
                     SCHEDULER_LOG_INFO("⚡ 扣除续期能量: " +
@@ -656,6 +686,20 @@ namespace RTSim {
             // ⭐ 关键：在dispatch后，统一扣除所有已标记任务的能量
             // 只扣除尚未扣除过的任务（检查_energy_deducted_tasks）
             accountInitialEnergyForSelectedTasks("✅ [ALAP-NonBlock] 新任务扣除初始能量: ");
+        }
+
+        // ⭐ V51修复：能量耗尽预测 - 每个tick只更新一次（防止同一tick内多次dispatch导致重复预测）
+        // ⭐ 守卫：如果本tick已更新过预测，跳过（ALAP-Sync只有tick事件会调用，无此问题）
+        if (_last_prediction_tick == current_time) {
+            SCHEDULER_LOG_DEBUG("⏭️ [ALAP-NonBlock] 跳过重复预测（本tick已更新）");
+        } else {
+            _last_prediction_tick = current_time;
+            cancelEnergyDepletionEvent();
+            double total_power = calculateTotalPowerConsumption();
+            if (total_power > 0.0 && _current_energy > 0.0) {
+                MetaSim::Tick time_to_deplete = predictTimeToDepletion(_current_energy, total_power);
+                scheduleEnergyDepletionEvent(time_to_deplete);
+            }
         }
 
         // ========== 第5步：调度后抢占检查 ==========
@@ -1804,6 +1848,13 @@ namespace RTSim {
 
             double unit_energy = calculateUnitEnergyForTask(task);
             _current_energy -= unit_energy;
+            // ⭐ V51修复：软性能量守卫（不中断仿真）
+            if (_current_energy < 0.0) {
+                SCHEDULER_LOG_WARNING("⚠️ [ALAP-NonBlock] 能量透支！强制归零: " +
+                                     getTaskName(task) + " 透支=" +
+                                     std::to_string(-_current_energy * 1000) + " mJ");
+                _current_energy = 0.0;
+            }
             _stats.total_energy_consumed += unit_energy;
             _energy_deducted_tasks.insert(task);
 
@@ -2380,5 +2431,111 @@ namespace RTSim {
             SCHEDULER_LOG_INFO(std::string("📊 [ALAP-NonBlock] 本次tick中断了 ") +
                                std::to_string(tasks_to_interrupt.size()) + " 个任务（能量不足）");
         }
+    }
+
+    // =====================================================
+    // ⭐ 能量耗尽预测机制（Bug修复：防止虚空借电）
+    // =====================================================
+
+    double ALAPNonBlockScheduler::calculateTotalPowerConsumption() {
+        if (!_kernel) {
+            return 0.0;
+        }
+
+        const auto& running_tasks_map = _kernel->getCurrentExecutingTasks();
+        double total_power = 0.0;
+
+        for (const auto& [cpu, task] : running_tasks_map) {
+            if (!task || !task->isExecuting()) continue;
+            total_power += calculateUnitEnergyForTask(task);
+        }
+
+        return total_power;
+    }
+
+    MetaSim::Tick ALAPNonBlockScheduler::predictTimeToDepletion(double energy, double power) {
+        if (power <= 0.0 || energy <= 0.0) {
+            return MetaSim::Tick(-1);  // 无法预测
+        }
+        // time_to_deplete = energy / power (单位：ms)
+        // 返回从当前时间算起，还能运行多少ms
+        double time_ms = energy / power;
+        return static_cast<MetaSim::Tick>(ceil(time_ms));
+    }
+
+    void ALAPNonBlockScheduler::scheduleEnergyDepletionEvent(MetaSim::Tick time_until_depletion) {
+        if (!_energy_depleted_event) return;
+
+        Tick current_time = SIMUL.getTime();
+        Tick depletion_time = current_time + time_until_depletion;
+
+        if (time_until_depletion <= 0) {
+            // 能量已经耗尽，立即触发
+            SCHEDULER_LOG_WARNING("⚠️ [ALAP-NonBlock] 能量已耗尽，立即触发耗尽处理");
+            onEnergyDepleted();
+            return;
+        }
+
+        // 取消旧的事件
+        _energy_depleted_event->drop();
+
+        // 设置耗尽时刻
+        _energy_depleted_event->_scheduled_depletion_time = depletion_time;
+        _energy_depleted_event->_energy_at_prediction = _current_energy;
+
+        // 注册新事件
+        _energy_depleted_event->post(depletion_time);
+
+        SCHEDULER_LOG_INFO("⚡ [ALAP-NonBlock] ⭐ 注册能量耗尽预测事件: "
+                          "当前=" + std::to_string(static_cast<int64_t>(current_time)) + "ms, "
+                          "预测耗尽=" + std::to_string(static_cast<int64_t>(depletion_time)) + "ms, "
+                          "剩余=" + std::to_string(static_cast<int64_t>(time_until_depletion)) + "ms, "
+                          "剩余能量=" + std::to_string(_current_energy * 1000) + "mJ, "
+                          "总功耗=" + std::to_string(calculateTotalPowerConsumption() * 1000) + "mJ/ms");
+    }
+
+    void ALAPNonBlockScheduler::cancelEnergyDepletionEvent() {
+        if (_energy_depleted_event) {
+            _energy_depleted_event->drop();
+        }
+    }
+
+    void ALAPNonBlockScheduler::onEnergyDepleted() {
+        Tick current_time = SIMUL.getTime();
+
+        SCHEDULER_LOG_WARNING("💀💀💀 [ALAP-NonBlock] ⭐ 能量耗尽事件触发！时间=" +
+                             std::to_string(static_cast<int64_t>(current_time)) + "ms, " +
+                             "剩余能量=" + std::to_string(_current_energy * 1000) + "mJ");
+
+        // ⭐ V51修复：软性守卫 - 不使用assert，直接强制归零
+        if (_current_energy < 0.0) {
+            SCHEDULER_LOG_WARNING("⚠️ [ALAP-NonBlock] 检测到能量透支！强制归零");
+        }
+
+        // 强制清零能量
+        _current_energy = 0.0;
+        _energy_depleted = true;
+
+        // 挂起所有运行中的任务
+        if (_kernel) {
+            const auto& running_tasks_map = _kernel->getCurrentExecutingTasks();
+            std::vector<AbsRTTask *> tasks_to_suspend;
+
+            for (const auto& [cpu, task] : running_tasks_map) {
+                if (!task || !task->isExecuting()) continue;
+                tasks_to_suspend.push_back(task);
+            }
+
+            for (AbsRTTask *task : tasks_to_suspend) {
+                setSuspendReason(task, "energy_depleted");
+                _kernel->suspend(task);
+                SCHEDULER_LOG_WARNING("💀 [ALAP-NonBlock] 强制挂起任务(能量耗尽): " + getTaskName(task));
+            }
+        }
+
+        // 取消能量耗尽事件
+        cancelEnergyDepletionEvent();
+
+        SCHEDULER_LOG_WARNING("💀 [ALAP-NonBlock] 能量耗尽处理完成，跳过后续调度");
     }
 } // namespace RTSim
