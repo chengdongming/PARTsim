@@ -510,7 +510,7 @@ namespace RTSim {
         if (_current_energy < 0.0) {
             SCHEDULER_LOG_WARNING("⚠️ [ALAP-Sync] 能量透支检测！强制归零: " +
                                  std::to_string(_current_energy * 1000) + " mJ → 0 mJ");
-            _current_energy = 0.0;
+            _current_energy = 0.0; // ⭐ 能量守恒：消除浮点误差
         }
         _stats.total_energy_consumed += total_energy;
 
@@ -773,7 +773,7 @@ namespace RTSim {
                     SCHEDULER_LOG_WARNING("⚠️ [ALAP-Sync] 能量透支！强制归零: " +
                                          getTaskName(task) + " 透支=" +
                                          std::to_string(-_current_energy * 1000) + " mJ");
-                    _current_energy = 0.0;
+                    _current_energy = 0.0; // ⭐ 能量守恒：消除浮点误差
                 }
                 _stats.total_energy_consumed += unit_energy;
             }
@@ -3094,7 +3094,7 @@ namespace RTSim {
         }
 
         // 强制清零能量
-        _current_energy = 0.0;
+        // ⭐ 能量守恒修复：保留真实残血电量，不强制清零
         _energy_depleted = true;
 
         // 挂起所有运行中的任务

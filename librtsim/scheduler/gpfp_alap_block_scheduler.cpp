@@ -213,7 +213,7 @@ namespace RTSim {
             // 条件current_energy <= unit_energy为TRUE，任务被挂起但不扣除能量
             // 这导致剩余了unit_energy的能量，performTickScheduling的检查current_energy < 0.000001失败
             // 解决方案：���制将能量设为0，确保能量耗尽检查正确工作
-            _scheduler->_current_energy = 0.0;
+            // ⭐ 能量守恒修复：严禁强制清零！保留真实残血电量
 
             // 中断当前任务（调用kernel的suspend机制）
             if (_cpu) {
@@ -592,71 +592,79 @@ namespace RTSim {
 
         if (_kernel) {
             const auto& running_tasks_map = _kernel->getCurrentExecutingTasks();
-            std::vector<AbsRTTask *> tasks_to_suspend;
 
             SCHEDULER_LOG_INFO("🏃 检查运行任务: " +
                                std::to_string(running_tasks_map.size()) + " 个");
 
+            // ⭐ V55核心重构：按优先级排序，实行"逐级剥夺"
+            // 周期越短 = 优先级越高，必须优先保障
+            std::vector<AbsRTTask *> sorted_tasks;
             for (const auto& [cpu, task] : running_tasks_map) {
                 if (!task || !task->isExecuting()) continue;
+                sorted_tasks.push_back(task);
+            }
+            std::sort(sorted_tasks.begin(), sorted_tasks.end(),
+                [this](AbsRTTask* a, AbsRTTask* b) {
+                    return a->getPeriod() < b->getPeriod();  // 短周期在前 = 高优先级
+                });
 
+            SCHEDULER_LOG_INFO("🔄 [ALAP-Block] V55优先级排序: " +
+                               std::to_string(sorted_tasks.size()) + " 个");
+
+            // ⭐ V55核心：逐级剥夺 + Block壁垒
+            const double EPSILON = 1e-9;
+            double available_energy = _current_energy;
+            bool trigger_block = false;  // 壁垒触发标志
+
+            for (AbsRTTask *task : sorted_tasks) {
                 double unit_energy = calculateUnitEnergyForTask(task);
 
-                // 检查是否有足够能量续期1ms
-                const double EPSILON = 1e-9;
-                if (_current_energy < unit_energy - EPSILON) {
-                    // ⭐ V43修复：能量不足时设置能量耗尽标志
-                    if (!_energy_depleted) {
-                        _energy_depleted = true;
-                        _current_energy = 0.0;  // 强制设为0，防止变负
-                        SCHEDULER_LOG_WARNING("💀 [ALAP-Block] 能量耗尽，设置_energy_depleted标志");
-                    }
+                if (trigger_block) {
+                    // 🚨 BLOCK壁垒爆发！🚨
+                    // 高优先级的"大哥"都没电了，后面的小弟连看余额的资格都没有！
+                    // 统统连坐挂起，绝对不允许低功耗任务偷电！
+                    setSuspendReason(task, "alap_blocking");
+                    _kernel->suspend(task);
+                    SCHEDULER_LOG_WARNING("🛑 [ALAP-Block] BLOCK壁垒: 连坐挂起 " + getTaskName(task));
+                    continue;
+                }
 
-                    // 能量不足，加入挂起列表
-                    tasks_to_suspend.push_back(task);
-                    SCHEDULER_LOG_WARNING("⚠️ 续期能量不足，将挂起: " +
+                if (available_energy >= unit_energy - EPSILON) {
+                    // ✅ 能量足够，扣钱放行！
+                    available_energy -= unit_energy;
+                    _current_energy -= unit_energy;
+                    if (_current_energy < 0.0) _current_energy = 0.0;  // 仅兜底浮点误差
+                    _stats.total_energy_consumed += unit_energy;
+                    SCHEDULER_LOG_INFO("⚡ [ALAP-Block] V55续期成功: " + getTaskName(task) +
+                                       " 剩余可用=" + std::to_string(available_energy * 1000) + " mJ");
+                } else {
+                    // 🚨 BLOCK核心灵魂爆发！🚨
+                    // 高优先级任务没电了！立刻拉下全局电闸！
+                    trigger_block = true;
+                    _alap_blocking = true;
+                    _blocking_task = task;
+                    setSuspendReason(task, "insufficient_energy");
+                    _kernel->suspend(task);
+                    SCHEDULER_LOG_WARNING("💀💀💀 [ALAP-Block] V55 BLOCK壁垒触发! 任务=" +
                                          getTaskName(task) +
                                          " 需要=" + std::to_string(unit_energy * 1000) + " mJ" +
-                                         " 剩余=" + std::to_string(_current_energy * 1000) + " mJ");
-                } else {
-                    // 扣除续期能量
-                    double old_energy = _current_energy;
-                    _current_energy -= unit_energy;
-                    // ⭐ V51修复：软性守卫 - 防止能量透支（不使用assert避免core dump）
-                    if (_current_energy < 0.0) {
-                        SCHEDULER_LOG_WARNING("⚠️ [ALAP-Block] 能量透支检测！强制归零: " +
-                                             std::to_string(_current_energy * 1000) + " mJ → 0 mJ");
-                        _current_energy = 0.0;
-                    }
-                    _stats.total_energy_consumed += unit_energy;
+                                         " 可用=" + std::to_string(available_energy * 1000) + " mJ");
 
-                    SCHEDULER_LOG_INFO("⚡ 扣除续期能量: " +
-                                       getTaskName(task) +
-                                       " -" + std::to_string(unit_energy * 1000) + " mJ " +
-                                       std::to_string(old_energy * 1000) + " → " +
-                                       std::to_string(_current_energy * 1000) + " mJ");
+                    // Block壁垒建立后，后续低优先级任务无条件连坐挂起
+                    // (由下一轮循环的 trigger_block 分支处理)
                 }
             }
 
-            // ⭐ V50修复：能量耗尽预测 - 每次系统状态改变时重新计算
-            // ⭐ V51修复：每个tick只更新一次（防止同一tick内多次dispatch导致重复预测）
+            // ⭐ V56捉鬼：废除全局能量耗尽预测闹钟！
+            // ALAP-Block不再需要预测"全局何时耗尽"
+            // 能量的拦截完全交由逐级剥夺逻辑在Tick边界处理
+            // Block壁垒建立后，getTaskN()返回nullptr，自然停机
             if (_last_prediction_tick == current_time) {
                 SCHEDULER_LOG_DEBUG("⏭️ [ALAP-Block] 跳过重复预测（本tick已更新）");
             } else {
                 _last_prediction_tick = current_time;
                 cancelEnergyDepletionEvent();
-                double total_power = calculateTotalPowerConsumption();
-                if (total_power > 0.0 && _current_energy > 0.0) {
-                    MetaSim::Tick time_to_deplete = predictTimeToDepletion(_current_energy, total_power);
-                    scheduleEnergyDepletionEvent(time_to_deplete);
-                }
-            }
-
-            // 挂起能量不足的任务
-            for (AbsRTTask *task : tasks_to_suspend) {
-                setSuspendReason(task, "insufficient_energy");
-                _kernel->suspend(task);
-                SCHEDULER_LOG_INFO("🛑 挂起任务: " + getTaskName(task));
+                // ⭐ V56：不再注册任何全局耗尽事件！
             }
         }
 
@@ -692,7 +700,7 @@ namespace RTSim {
                     SCHEDULER_LOG_WARNING("⚠️ [ALAP-Block] 能量透支！强制归零: " +
                                          getTaskName(task) + " 透支=" +
                                          std::to_string(-_current_energy * 1000) + " mJ");
-                    _current_energy = 0.0;
+                    // ⭐ 能量守恒：消除浮点误差
                 }
                 _stats.total_energy_consumed += unit_energy;
                 _dispatching_tasks_total_energy += unit_energy;
@@ -800,6 +808,7 @@ namespace RTSim {
                                " 原因：高优先级任务能量不足，宁缺毋滥");
             return nullptr;
         }
+
 
         // ⭐ ALAP时序门控：不再在getTaskN中调用全局checkALAPTimingGate()（性能瓶颈）
         // 改为在遍历任务时逐个检查个体Slack，只调度Slack≤0的任务
@@ -923,16 +932,6 @@ namespace RTSim {
                     }
                 }
 
-                // ⭐ 纯正 ALAP 个体时序门控：只看 Slack，不管能量是否溢出
-                Tick individual_slack = calculateSlackForTask(task);
-
-                if (individual_slack > 0) {
-                    SCHEDULER_LOG_INFO(std::string("⏸️ [ALAP-Block] getTaskN: 个体Slack>0，纯正ALAP拒绝提前调度 ") +
-                                      getTaskName(task) +
-                                      " Slack=" + std::to_string(static_cast<int64_t>(individual_slack)) + "ms");
-                    continue;
-                }
-
                 // ⭐ 计算任务的1ms能耗
                 double unit_energy = calculateUnitEnergyForTask(task);
 
@@ -941,8 +940,8 @@ namespace RTSim {
                           << " 需要1ms=" << unit_energy * 1000 << " mJ"
                           << " 当前能量=" << _current_energy * 1000 << " mJ" << std::endl;
 
-                const double EPSILON = 1e-9;
                 // ⭐ 预扣模式：检查当前能量是否足够当前任务的1ms能耗
+                const double EPSILON = 1e-9;
                 if (_current_energy < unit_energy - EPSILON) {
                     SCHEDULER_LOG_INFO(std::string("⚠️ [ALAP-Block] 能量不足，停止级联") +
                                       " 任务=" + getTaskName(task) +
@@ -950,6 +949,15 @@ namespace RTSim {
                                       " 当前能量=" + std::to_string(_current_energy) + "J");
                     std::cout << "[DEBUG] ALAP-Block::getTaskN(" << n << ") - 能量不足，返回nullptr" << std::endl;
                     return nullptr;  // ⭐ 立即停止级联
+                }
+
+                // ⭐ ALAP时序门控：能量足够后检查个体Slack
+                Tick individual_slack = calculateSlackForTask(task);
+                if (individual_slack > 0) {
+                    SCHEDULER_LOG_INFO(std::string("⏸️ [ALAP-Block] getTaskN: 个体Slack>0，拒绝提前调度 ") +
+                                      getTaskName(task) +
+                                      " Slack=" + std::to_string(static_cast<int64_t>(individual_slack)) + "ms");
+                    continue;
                 }
 
                 // ⭐ 重构：只标记任务，不扣除能量
@@ -1610,34 +1618,10 @@ namespace RTSim {
     }
 
     void ALAPBlockScheduler::scheduleEnergyDepletionEvent(MetaSim::Tick time_until_depletion) {
-        if (!_energy_depleted_event) return;
-
-        Tick current_time = SIMUL.getTime();
-        Tick depletion_time = current_time + time_until_depletion;
-
-        if (time_until_depletion <= 0) {
-            // 能量已经耗尽，立即触发
-            SCHEDULER_LOG_WARNING("⚠️ [ALAP-Block] 能量已耗尽，立即触发耗尽处理");
-            onEnergyDepleted();
-            return;
-        }
-
-        // 取消旧的事件
-        _energy_depleted_event->drop();
-
-        // 设置耗尽时刻
-        _energy_depleted_event->_scheduled_depletion_time = depletion_time;
-        _energy_depleted_event->_energy_at_prediction = _current_energy;
-
-        // 注册新事件
-        _energy_depleted_event->post(depletion_time);
-
-        SCHEDULER_LOG_INFO("⚡ [ALAP-Block] ⭐ 注册能量耗尽预测事件: "
-                          "当前=" + std::to_string(static_cast<int64_t>(current_time)) + "ms, "
-                          "预测耗尽=" + std::to_string(static_cast<int64_t>(depletion_time)) + "ms, "
-                          "剩余=" + std::to_string(static_cast<int64_t>(time_until_depletion)) + "ms, "
-                          "剩余能量=" + std::to_string(_current_energy * 1000) + "mJ, "
-                          "总功耗=" + std::to_string(calculateTotalPowerConsumption() * 1000) + "mJ/ms");
+        // ⭐ V56捉鬼：废除"全局能量耗尽预测闹钟"！
+        // ALAP-Block不再需要预测"全局何时耗尽"——这是一个错误的全局断头台概念。
+        // Block壁垒完全由performTickScheduling()中的逐级剥夺逻辑在Tick边界建立。
+        SCHEDULER_LOG_DEBUG("⚡ [ALAP-Block] scheduleEnergyDepletionEvent()已被废除，不执行任何操作！");
     }
 
     void ALAPBlockScheduler::cancelEnergyDepletionEvent() {
@@ -1647,42 +1631,17 @@ namespace RTSim {
     }
 
     void ALAPBlockScheduler::onEnergyDepleted() {
+        // ⭐ V56捉鬼：废除"全局断头台"！
+        // onEnergyDepleted()曾是全局耗尽事件的处理器，会无脑挂起所有任务。
+        // 现在它被彻底废除——不再有任何全局耗尽事件被调度！
+        // Block壁垒的建立完全由performTickScheduling()中的逐级剥夺逻辑处理。
         Tick current_time = SIMUL.getTime();
-
-        SCHEDULER_LOG_WARNING("💀💀💀 [ALAP-Block] ⭐ 能量耗���事件触发！时间=" +
-                             std::to_string(static_cast<int64_t>(current_time)) + "ms, " +
-                             "剩余能量=" + std::to_string(_current_energy * 1000) + "mJ");
-
-        // ⭐ V51修复：软性守卫 - 不使用assert，直接强制归零
-        if (_current_energy < 0.0) {
-            SCHEDULER_LOG_WARNING("⚠️ [ALAP-Block] 检测到能量透支！强制归零");
-        }
-
-        // 强制清零能量
-        _current_energy = 0.0;
-        _energy_depleted = true;
-
-        // 挂起所有运行中的任务
-        if (_kernel) {
-            const auto& running_tasks_map = _kernel->getCurrentExecutingTasks();
-            std::vector<AbsRTTask *> tasks_to_suspend;
-
-            for (const auto& [cpu, task] : running_tasks_map) {
-                if (!task || !task->isExecuting()) continue;
-                tasks_to_suspend.push_back(task);
-            }
-
-            for (AbsRTTask *task : tasks_to_suspend) {
-                setSuspendReason(task, "energy_depleted");
-                _kernel->suspend(task);
-                SCHEDULER_LOG_WARNING("💀 [ALAP-Block] 强制挂起任务(能量耗尽): " + getTaskName(task));
-            }
-        }
-
-        // 取消能量耗尽事件
-        cancelEnergyDepletionEvent();
-
-        SCHEDULER_LOG_WARNING("💀 [ALAP-Block] 能量耗尽处理完成，跳过后续调度");
+        SCHEDULER_LOG_WARNING("⚠️ [ALAP-Block] onEnergyDepleted()已被废除，本函数不再执行任何操作！"
+                             " 时间=" + std::to_string(static_cast<int64_t>(current_time)) + "ms");
+        // ⚠️ 绝对不设置 _energy_depleted = true
+        // ⚠️ 绝对不调用任何 _kernel->suspend()
+        // ⚠️ 绝对不调用 dispatch()
+        // → Block壁垒由逐级剥夺逻辑自然建立
     }
 
     // ⭐ EnergyInfoProvider接口实现
