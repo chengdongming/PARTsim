@@ -24,6 +24,26 @@ namespace RTSim {
         virtual void clearSuspendReason(AbsRTTask *task) {
             (void)task;  // 默认实现：什么都不做
         }
+
+        // ⭐ V58新增：强制记录dline_miss事件（用于Early Abort场景）
+        // 当调度器因能量耗尽等原因主动kill任务时，
+        // DeadEvt可能被drop掉不会触发，需要主动注入dline_miss记录
+        virtual void logDlineMiss(AbsRTTask *task, const std::string &reason = "early_abort") {
+            (void)task;  // 默认实现：什么都不做
+            (void)reason;
+        }
+
+        // Early Abort专用：若任务先suspend，需要在descheduled之后补记dline_miss
+        virtual void logDlineMissAfterDesched(AbsRTTask *task, const std::string &reason = "early_abort") {
+            (void)task;
+            (void)reason;
+        }
+
+        // ⭐ V58新增：设置JSONTrace指针，用于Early Abort时注入dline_miss记录
+        // 子类重写此方法，将JSONTrace指针注册到调度器
+        virtual void setTraceLogger(void *trace) {
+            (void)trace;  // 默认实现：什么都不做
+        }
     };
 } // namespace RTSim
 

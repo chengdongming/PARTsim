@@ -46,12 +46,16 @@ namespace RTSim {
         // V83修复：跟踪已deadline miss的任务，避免重复记录descheduled事件
         std::set<AbsRTTask*> _deadline_missed_tasks;
 
+        // Early Abort专用：等待在descheduled之后补记的dline_miss
+        std::map<AbsRTTask*, std::string> _pending_forced_dline_miss;
+
         // V98: fd 放在最后，确保先被销毁，避免缓冲区问题影响其他成员
         std::ofstream fd;
 
         void writeTaskEvent(const Task &tt, const std::string &evt_name);
         void writeEnergyInfo(); // 写入能量信息
         void writeTaskEnergyInfo(AbsRTTask *task); // 写入任务能量信息
+        void writeForcedDlineMissNow(AbsRTTask *task, const std::string &reason);
 
     public:
         JSONTrace(const std::string &name);
@@ -77,6 +81,14 @@ namespace RTSim {
         void probe(KillEvt &e);
 
         void attachToTask(AbsRTTask &t);
+
+        // ⭐ V58新增：强制记录dline_miss事件（用于Early Abort场景）
+        // 当调度器因能量耗尽/Slack<0等原因主动kill任务时，
+        // DeadEvt可能不会被触发，需要主动注入dline_miss记录供Python脚本统计
+        void forceLogDlineMiss(AbsRTTask *task, const std::string &reason = "early_abort_energy_depleted");
+
+        // Early Abort专用：若任务刚被suspend，则等descheduled落盘后再补记dline_miss
+        void forceLogDlineMissAfterDesched(AbsRTTask *task, const std::string &reason = "early_abort_energy_depleted");
 
         template <class X>
         void probe(GEvent<X> &e) {

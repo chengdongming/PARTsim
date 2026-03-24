@@ -30,6 +30,7 @@ namespace RTSim {
         _task_start_times.clear();
         _task_start_consumed.clear();
         _deadline_missed_tasks.clear();
+        _pending_forced_dline_miss.clear();
 
         fd.close();
     }
@@ -49,6 +50,46 @@ namespace RTSim {
             fd << ", \"task_unit_energy_mJ\": " << (_energy_provider->getTaskUnitEnergy(task) * 1000.0);
             fd << ", \"task_total_energy_mJ\": " << (_energy_provider->getTaskTotalEnergy(task) * 1000.0);
         }
+    }
+
+    // ⭐ 写入Early Abort强制注入的dline_miss事件
+    void JSONTrace::writeForcedDlineMissNow(AbsRTTask *task, const std::string &reason) {
+        if (!task) return;
+
+        // 检查当前时间是否超过最大时间
+        if (max_time >= 0 && SIMUL.getTime() >= max_time) {
+            return;
+        }
+
+        Task *tt = dynamic_cast<Task*>(task);
+        if (!tt) return;
+
+        // 将任务添加到deadline miss集合（防止后续重复记录descheduled）
+        _deadline_missed_tasks.insert(task);
+
+        // 清除任务开始时间记录
+        _task_start_times.erase(task);
+        _task_start_consumed.erase(task);
+
+        if (!first_event)
+            fd << "," << std::endl;
+        else
+            first_event = false;
+
+        fd << "{ ";
+        fd << "\"time\": \"" << SIMUL.getTime() << "\", ";
+        fd << "\"event_type\": \"dline_miss\", ";
+        fd << "\"task_name\": \"" << tt->getName() << "\", ";
+        fd << "\"arrival_time\": \"" << tt->getLastArrival() << "\"";
+        MetaSim::Tick arrival_time = tt->getLastArrival();
+        MetaSim::Tick relative_deadline = tt->getRelDline();
+        MetaSim::Tick absolute_deadline = arrival_time + relative_deadline;
+        fd << ", \"deadline\": \"" << absolute_deadline << "\"";
+        fd << ", \"miss_amount\": \"" << (MetaSim::SIMUL.getTime() - absolute_deadline) << "\"";
+
+        writeEnergyInfo();
+        fd << ", \"reason\": \"" << reason << "\"";
+        fd << "}";
     }
 
     void JSONTrace::writeTaskEvent(const Task &tt,
@@ -261,7 +302,8 @@ namespace RTSim {
             if (_energy_provider) {
                 std::string suspend_reason = _energy_provider->getSuspendReason(task);
 
-                if (suspend_reason == "energy_depleted" || suspend_reason == "insufficient_energy") {
+                if (suspend_reason == "energy_depleted" || suspend_reason == "insufficient_energy" ||
+                    suspend_reason == "early_abort_energy_depleted") {
                     fd << ", \"preempted_by\": \"energy_insufficient\"";
                     fd << ", \"reason\": \"insufficient_energy\"";
                 } else if (suspend_reason == "preemption") {
@@ -279,6 +321,14 @@ namespace RTSim {
             // 清除记录（任务被下处理机）
             _task_start_times.erase(task);
             _task_start_consumed.erase(task);
+
+            auto pending_it = _pending_forced_dline_miss.find(task);
+            if (pending_it != _pending_forced_dline_miss.end()) {
+                fd << "}";
+                writeForcedDlineMissNow(task, pending_it->second);
+                _pending_forced_dline_miss.erase(pending_it);
+                return;
+            }
         }
 
         fd << "}";
@@ -353,6 +403,7 @@ namespace RTSim {
             _task_start_times.erase(task);
             _task_start_consumed.erase(task);
             _deadline_missed_tasks.erase(task);
+            _pending_forced_dline_miss.erase(task);
         }
 
         writeTaskEvent(tt, "kill");
@@ -372,5 +423,23 @@ namespace RTSim {
         attach_stat(*this, tt.deschedEvt);
         attach_stat(*this, tt.deadEvt);
         attach_stat(*this, tt.killEvt);
+    }
+
+    // ⭐ V58新增：强制记录dline_miss事件（用于Early Abort场景）
+    // 当调度器因能量耗尽等原因主动kill任务时，DeadEvt可能不会被触发
+    void JSONTrace::forceLogDlineMiss(AbsRTTask *task, const std::string &reason) {
+        writeForcedDlineMissNow(task, reason);
+    }
+
+    void JSONTrace::forceLogDlineMissAfterDesched(AbsRTTask *task, const std::string &reason) {
+        if (!task) return;
+
+        // 如果任务还有正在结算的执行片段，则延迟到descheduled之后再补记
+        if (_task_start_times.find(task) != _task_start_times.end()) {
+            _pending_forced_dline_miss[task] = reason;
+            return;
+        }
+
+        writeForcedDlineMissNow(task, reason);
     }
 } // namespace RTSim

@@ -7,6 +7,7 @@
 #include <rtsim/abstask.hpp>
 #include <rtsim/rttask.hpp>
 #include <rtsim/energy_info_provider.hpp>
+#include <rtsim/json_trace.hpp>
 #include <metasim/factory.hpp>
 #include <map>
 #include <memory>
@@ -210,6 +211,9 @@ namespace RTSim {
             int total_alap_forced_idle = 0;  // ⭐ ALAP: 强制休眠次数
         } _stats;
 
+        // ⭐ V58新增：JSONTrace指针，用于在Early Abort时注入dline_miss记录
+        JSONTrace *_trace_logger = nullptr;
+
         // ========== 私有方法 ==========
 
         // 核心调度逻辑
@@ -247,8 +251,6 @@ namespace RTSim {
         void clearTaskTickSelection(AbsRTTask *task);
         void markTaskSelectedThisTick(AbsRTTask *task);
         void accountInitialEnergyForSelectedTasks(const std::string &log_prefix);
-        bool shouldDropHopelessTask(AbsRTTask *task, double available_energy);
-        bool dropHopelessTask(AbsRTTask *task, const std::string &reason, bool count_deadline_miss = true);
         void refreshSchedulingAfterQueueMutation(const std::string &reason, bool immediate_dispatch = false);
 
         // 队列管理
@@ -321,6 +323,10 @@ namespace RTSim {
         void setSuspendReason(AbsRTTask *task, const std::string &reason);
         std::string getSuspendReason(AbsRTTask *task) const override;
         void clearSuspendReason(AbsRTTask *task) override;
+
+        void setTraceLogger(void *trace) override {
+            _trace_logger = static_cast<JSONTrace *>(trace);
+        }
 
         // ⭐ 运行时能量检查接口（V28.15新增）
 //         void startEnergyCheckForTask(AbsRTTask *task, CPU *cpu);  // 开始对任务的能量监控
