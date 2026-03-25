@@ -766,6 +766,17 @@ namespace RTSim {
             return nullptr;
         }
 
+        if (n < _dispatch_selection_order.size()) {
+            AbsRTTask *selected_task = _dispatch_selection_order[n];
+            if (selected_task && selected_task->isActive() &&
+                _counted_tasks_in_dispatch.find(selected_task) != _counted_tasks_in_dispatch.end()) {
+                SCHEDULER_LOG_DEBUG(std::string("♻️ [ALAP-NonBlock] 复用本轮dispatch已选任务: ") +
+                                   getTaskName(selected_task) +
+                                   " slot=" + std::to_string(n));
+                return selected_task;
+            }
+        }
+
         // ⭐ ALAP时序门控：不再在getTaskN中调用全局min_slack检查（性能瓶颈）
         // 改为在遍历任务时逐个检查个体Slack，只调度Slack≤0的任务
         // 效果等价：如果所有任务Slack>0，getTaskN返回nullptr
@@ -777,6 +788,16 @@ namespace RTSim {
         auto tryOpportunisticBypass = [&](size_t blocked_index,
                                           AbsRTTask *blocked_task,
                                           const std::string &blocked_reason) -> AbsRTTask * {
+            Tick blocked_deadline = Tick(0);
+            bool has_blocked_deadline = false;
+            if (blocked_task) {
+                ALAPNonBlockTaskModel *blocked_model = getTaskModel(blocked_task);
+                if (blocked_model) {
+                    blocked_deadline = blocked_task->getArrival() + Tick(blocked_model->getPeriod());
+                    has_blocked_deadline = true;
+                }
+            }
+
             for (size_t j = blocked_index + 1; j < _ready_queue.size(); ++j) {
                 AbsRTTask *next_task = _ready_queue[j];
                 if (!next_task || !next_task->isActive()) {
@@ -815,6 +836,16 @@ namespace RTSim {
                     Tick next_arrival = next_task->getArrival();
                     Tick next_deadline = next_arrival + Tick(next_model->getPeriod());
                     if (next_deadline <= SIMUL.getTime()) {
+                        continue;
+                    }
+
+                    // 缺电旁路不能让截止期晚于阻塞任务的任务偷走更紧急任务面前的残余能量。
+                    // deadline 相等时允许旁路，与“更早或相等均可”的目标语义保持一致。
+                    if (has_blocked_deadline && next_deadline > blocked_deadline) {
+                        SCHEDULER_LOG_DEBUG(std::string("  [ALAP-NonBlock] 贪心搜索：跳过deadline晚于阻塞任务的旁路任务: ") +
+                                            getTaskName(next_task) +
+                                            " candidate_deadline=" + std::to_string(static_cast<int64_t>(next_deadline)) +
+                                            " blocked_deadline=" + std::to_string(static_cast<int64_t>(blocked_deadline)));
                         continue;
                     }
                 }
@@ -901,9 +932,22 @@ namespace RTSim {
                     }
                 }
 
-                // ⭐ 主候选任务保持严格ALAP门控：只有Slack≤0才允许正常启动
                 Tick individual_slack = calculateSlackForTask(task);
+                double unit_energy = calculateUnitEnergyForTask(task);
+                double available_energy = _current_energy - _dispatching_tasks_total_energy;
+
+                // 纯 ALAP 约束：如果更高优先级任务虽然还没到 ALAP 时刻，但当前残余能量连它都无法启动，
+                // 那么本轮不能继续向后搜索更低优先级任务，否则就变成了对 Slack>0 主候选的非法绕过。
                 if (individual_slack > 0) {
+                    if (available_energy < unit_energy - EPSILON) {
+                        SCHEDULER_LOG_INFO(std::string("⛔ [ALAP-NonBlock] getTaskN: 更高优先级任务Slack>0且当前能量不足，禁止绕过 ") +
+                                          getTaskName(task) +
+                                          " Slack=" + std::to_string(static_cast<int64_t>(individual_slack)) + "ms" +
+                                          " 需要1ms=" + std::to_string(unit_energy) + "J" +
+                                          " 剩余=" + std::to_string(available_energy) + "J");
+                        return nullptr;
+                    }
+
                     SCHEDULER_LOG_INFO(std::string("⏸️ [ALAP-NonBlock] getTaskN: 主候选Slack>0，保持纯ALAP空闲 ") +
                                       getTaskName(task) +
                                       " Slack=" + std::to_string(static_cast<int64_t>(individual_slack)) + "ms");
@@ -912,8 +956,6 @@ namespace RTSim {
 
                 // ⭐ 全局ALAP时序门控已在函数开头检查，这里按优先级调度
                 // ⭐ 计算任务的1ms能耗
-                double unit_energy = calculateUnitEnergyForTask(task);
-                double available_energy = _current_energy - _dispatching_tasks_total_energy;
 
                 // 缺电时不再提前处决，只保留NonBlock的贪心旁路搜索
                 if (available_energy < unit_energy - EPSILON) {
@@ -959,7 +1001,7 @@ namespace RTSim {
     }
 
     // =====================================================
-    // notify - 每ms逐次扣减能耗（ALAP-NonBlock核心逻辑）
+    // notify - arrival 仅入队，由 ALAP 门控 / 贪心旁路逻辑决定是否上机
     // =====================================================
 
     void ALAPNonBlockScheduler::notify(AbsRTTask *task) {
@@ -967,22 +1009,9 @@ namespace RTSim {
             return;
         }
 
-        // ⭐ 修复：任务到达时只检查能量，不扣减能耗
-        // 能耗在任务调度时通过getTaskN()方法扣减
-        double unit_energy = calculateUnitEnergyForTask(task);
-
-        // 检查能量是否足够
-        const double EPSILON = 1e-9;
-        if (_current_energy < unit_energy - EPSILON) {
-            SCHEDULER_LOG_WARNING(std::string("⚠️ [ALAP-NonBlock] notify: 能量不足") +
-                                 " 任务=" + getTaskName(task) +
-                                 " 需要=" + std::to_string(unit_energy) + "J" +
-                                 " 当前=" + std::to_string(_current_energy) + "J");
-            return;
-        }
-
-        // 任务到达，添加到就绪队列
-        SCHEDULER_LOG_INFO(std::string("📥 [ALAP-NonBlock] 任务到达并添加到就绪队列: ") + getTaskName(task));
+        // 缺电实例也必须进入系统生命周期，等待后续 ALAP 门控 / 旁路逻辑决定是否上机。
+        SCHEDULER_LOG_INFO(std::string("📥 [ALAP-NonBlock] 任务到达并添加到就绪队列（不再做arrival能量门槛）: ") +
+                          getTaskName(task));
         addToReadyQueue(task);
     }
 
@@ -1790,6 +1819,7 @@ namespace RTSim {
     void ALAPNonBlockScheduler::resetTickDispatchState() {
         _newly_dispatched_this_tick.clear();
         _counted_tasks_in_dispatch.clear();
+        _dispatch_selection_order.clear();
         _dispatching_tasks_total_energy = 0.0;
     }
 
@@ -1804,6 +1834,9 @@ namespace RTSim {
                 _dispatching_tasks_total_energy = 0.0;
             }
         }
+        _dispatch_selection_order.erase(
+            std::remove(_dispatch_selection_order.begin(), _dispatch_selection_order.end(), task),
+            _dispatch_selection_order.end());
         _newly_dispatched_this_tick.erase(task);
     }
 
@@ -1813,6 +1846,7 @@ namespace RTSim {
         }
 
         if (_counted_tasks_in_dispatch.insert(task).second) {
+            _dispatch_selection_order.push_back(task);
             _newly_dispatched_this_tick.insert(task);
             _dispatching_tasks_total_energy += calculateUnitEnergyForTask(task);
         }

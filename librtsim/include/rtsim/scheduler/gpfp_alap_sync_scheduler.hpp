@@ -159,8 +159,11 @@ namespace RTSim {
         ALAPSyncTickEvent *_tick_event;
         bool _first_tick_scheduled;  // 标记第一个tick是否已调度
 
-        // ========== 本次dispatch中已计数的任务（用于逐渐扣除模式） ==========
+        // ========== 本次dispatch中已计数的任务（用于稳定选择与统一扣费） ==========
         std::set<AbsRTTask *> _counted_tasks_in_dispatch; // 本次dispatch中已计数的任务，避免重复
+        std::vector<AbsRTTask *> _dispatch_selection_order; // 本次dispatch已选中的稳定顺序
+        std::set<AbsRTTask *> _newly_dispatched_this_tick; // 当前tick新选择的任务
+        std::set<AbsRTTask *> _energy_deducted_tasks; // 当前实例是否已完成本轮初始扣费
 
         // ========== 任务管理 ==========
         std::map<AbsRTTask *, ALAPSyncTaskModel *> _task_models;
@@ -175,12 +178,12 @@ namespace RTSim {
         // ========== WCET完成追踪（用于批量调度判断任务是否已完成） ==========
         std::set<AbsRTTask *> _tasks_completed_wcet;  // 已达到WCET的任务集合
 
-        // ========== ALAP-Sync批量调度状态 ==========
-        std::vector<AbsRTTask *> _current_batch_tasks;  // 当前批量任务（tick边界预计算）
+        // ========== ALAP-Sync 同步组状态 ==========
+        std::vector<AbsRTTask *> _current_batch_tasks;  // 当前同步组任务集合（下一拍计划同时运行的完整 sync group 快照）
         std::vector<AbsRTTask *> _preempt_batch_tasks;    // 抢占批量任务（mid-tick抢占创建的微型批量）
-        bool _batch_scheduled_this_tick;                // 本tick是否已批量调度
+        bool _batch_scheduled_this_tick;                // 本tick是否已形成稳定同步组
         bool _energy_depleted;                          // 能量是否已耗尽（Bug #5修复）
-        int _current_batch_size;                        // 当前批量大小
+        int _current_batch_size;                        // 当前同步组大小 K（始终与 _current_batch_tasks.size() 一致）
 
         // ⭐ 同时间戳并发派发修复：待派发任务队列和能量预占
         std::vector<AbsRTTask *> _pending_dispatch_tasks;   // 待派发任务列表
@@ -217,6 +220,12 @@ namespace RTSim {
 
         // ========== 私有方法 ==========
 
+        void resetTickDispatchState();
+        void clearTaskTickSelection(AbsRTTask *task);
+        void markTaskSelectedThisTick(AbsRTTask *task);
+        void accountInitialEnergyForSelectedTasks(const std::string &log_prefix);
+        void clearPersistentTaskState(AbsRTTask *task);
+
         // 核心调度逻辑 - ALAP-Sync批量调度
         void performTickScheduling();
 
@@ -231,8 +240,8 @@ namespace RTSim {
         // ⭐ 运行时能量检查和任务中断（V28.15新增）
         void checkAndInterruptRunningTasks();  // 检查所有运行中的任务，能量不足时中断
 
-        // ALAP-Sync批量计算
-        int calculateBatchSize();                              // 计算批量大小 k
+        // ALAP-Sync 同步组大小快照（K = 下一拍计划同时运行的完整同步组人数）
+        int calculateBatchSize();
         void executeBatchScheduling(const std::vector<AbsRTTask *> &tasks, double total_energy);  // 执行批量调度
 
         // 能量计算
@@ -288,7 +297,7 @@ namespace RTSim {
         // Scheduler接口实现
         void addTask(AbsRTTask *task, const std::string &params) override;
         void removeTask(AbsRTTask *task) override;
-        void notify(AbsRTTask *task) override;  // ALAP-Sync: 不再扣减能量（已在批量时扣减）
+        void notify(AbsRTTask *task) override;  // ALAP-Sync: arrival 只入队，由同步组准入逻辑决定是否上机
         bool isAdmissible(CPU *c, std::vector<AbsRTTask *> tasks,
                           AbsRTTask *t) override;
 
@@ -332,7 +341,7 @@ namespace RTSim {
         const std::deque<AbsRTTask *> &getReadyQueue() const { return _ready_queue; }
         const std::map<AbsRTTask *, std::string> getTaskWorkloads() const;
 
-        // ALAP-Sync批量调度接口
+        // ALAP-Sync 当前同步组接口
         const std::vector<AbsRTTask *> &getCurrentBatchTasks() const { return _current_batch_tasks; }
         int getCurrentBatchSize() const { return _current_batch_size; }
         bool isBatchScheduledThisTick() const { return _batch_scheduled_this_tick; }

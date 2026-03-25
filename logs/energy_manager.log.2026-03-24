@@ -1,0 +1,1155 @@
+2026-03-24 09:41:06.533 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 09:41:06.558 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 09:41:06.558 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 09:41:06.558 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 09:41:06.558 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 09:41:06.558 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 09:41:06.559 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 09:41:06.559 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 09:41:06.559 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 09:41:06.559 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 09:41:06.559 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 09:41:06.559 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 09:41:06.560 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 09:41:06.560 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 09:41:06.560 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 09:41:06.561 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 09:41:06.561 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 09:41:06.561 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 09:41:06.561 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 09:41:06.561 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 09:41:06.562 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 09:41:06.562 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 09:41:06.562 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 09:41:06.562 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 09:41:06.563 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 09:41:06.563 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 09:41:06.563 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 09:41:06.564 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 09:41:06.564 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 09:41:06.564 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 09:41:06.566 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_alap_3c5t/sys_3c_alap_block.yml, current_config_file=test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 09:41:06.566 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 09:41:06.566 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 09:41:17.558 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 09:41:17.567 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 09:41:17.568 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 09:41:17.568 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 09:41:17.568 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 09:41:17.568 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 09:41:17.568 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 09:41:17.568 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 09:41:17.568 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 09:41:17.568 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 09:41:17.568 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 09:41:17.568 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 09:41:17.568 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 09:41:17.569 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 09:41:17.569 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 09:41:17.569 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 09:41:17.569 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 09:41:17.569 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 09:41:17.569 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 09:41:17.569 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 09:41:17.569 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 09:41:17.569 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 09:41:17.569 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 09:41:17.569 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 09:41:17.569 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 09:41:17.569 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 09:41:17.569 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 09:41:17.569 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 09:41:17.570 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 09:41:17.570 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 09:41:17.570 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_alap_3c5t/sys_3c_alap_nonblock.yml, current_config_file=test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 09:41:17.570 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 09:41:17.570 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 13:06:39.364 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 13:06:39.373 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 13:06:39.373 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 13:06:39.373 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 13:06:39.373 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 13:06:39.373 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 13:06:39.373 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 13:06:39.373 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 13:06:39.373 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 13:06:39.374 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 13:06:39.374 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 13:06:39.374 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 13:06:39.374 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 13:06:39.374 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 13:06:39.374 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 13:06:39.374 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 13:06:39.374 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 13:06:39.374 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 13:06:39.374 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 13:06:39.374 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 13:06:39.374 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 13:06:39.375 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 13:06:39.375 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 13:06:39.375 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 13:06:39.375 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 13:06:39.375 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 13:06:39.375 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 13:06:39.375 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 13:06:39.375 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 13:06:39.375 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 13:06:39.376 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_alap_3c5t/sys_3c_alap_nonblock.yml, current_config_file=test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 13:06:39.376 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 13:06:39.376 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 13:10:14.629 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 13:10:14.638 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 13:10:14.638 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 13:10:14.638 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 13:10:14.638 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 13:10:14.638 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 13:10:14.638 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 13:10:14.638 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 13:10:14.638 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 13:10:14.638 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 13:10:14.638 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 13:10:14.638 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 13:10:14.638 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 13:10:14.639 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 13:10:14.639 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 13:10:14.639 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 13:10:14.639 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 13:10:14.639 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 13:10:14.639 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 13:10:14.639 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 13:10:14.639 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 13:10:14.639 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 13:10:14.639 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 13:10:14.639 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 13:10:14.639 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 13:10:14.639 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 13:10:14.639 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 13:10:14.640 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 13:10:14.640 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 13:10:14.640 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 13:10:14.640 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_alap_3c5t/sys_3c_alap_nonblock.yml, current_config_file=test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 13:10:14.640 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 13:10:14.640 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 13:14:16.993 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 13:14:17.002 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 13:14:17.002 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 13:14:17.002 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 13:14:17.002 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 13:14:17.002 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 13:14:17.003 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 13:14:17.003 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 13:14:17.003 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 13:14:17.003 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 13:14:17.003 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 13:14:17.003 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 13:14:17.003 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 13:14:17.003 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 13:14:17.003 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 13:14:17.003 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 13:14:17.003 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 13:14:17.003 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 13:14:17.003 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 13:14:17.003 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 13:14:17.004 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 13:14:17.004 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 13:14:17.004 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 13:14:17.004 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 13:14:17.004 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 13:14:17.004 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 13:14:17.004 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 13:14:17.004 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 13:14:17.004 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 13:14:17.004 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 13:14:17.005 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_alap_3c5t/sys_3c_alap_nonblock.yml, current_config_file=test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 13:14:17.005 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 13:14:17.005 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 13:16:26.107 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 13:16:26.116 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 13:16:26.116 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 13:16:26.116 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 13:16:26.117 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 13:16:26.117 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 13:16:26.117 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 13:16:26.117 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 13:16:26.117 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 13:16:26.117 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 13:16:26.117 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 13:16:26.117 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 13:16:26.117 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 13:16:26.117 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 13:16:26.117 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 13:16:26.117 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 13:16:26.118 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 13:16:26.118 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 13:16:26.118 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 13:16:26.118 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 13:16:26.118 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 13:16:26.118 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 13:16:26.118 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 13:16:26.118 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 13:16:26.118 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 13:16:26.118 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 13:16:26.118 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 13:16:26.118 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 13:16:26.118 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 13:16:26.119 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 13:16:26.119 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_alap_3c5t/sys_3c_alap_nonblock.yml, current_config_file=test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 13:16:26.119 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 13:16:26.119 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 13:25:15.447 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 13:25:15.457 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 13:25:15.457 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 13:25:15.457 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 13:25:15.457 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 13:25:15.457 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 13:25:15.457 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 13:25:15.457 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 13:25:15.457 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 13:25:15.457 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 13:25:15.457 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 13:25:15.458 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 13:25:15.458 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 13:25:15.458 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 13:25:15.458 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 13:25:15.458 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 13:25:15.458 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 13:25:15.458 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 13:25:15.458 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 13:25:15.458 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 13:25:15.458 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 13:25:15.458 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 13:25:15.458 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 13:25:15.458 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 13:25:15.458 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 13:25:15.459 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 13:25:15.459 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 13:25:15.459 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 13:25:15.459 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 13:25:15.459 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 13:25:15.459 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_alap_3c5t/sys_3c_alap_block.yml, current_config_file=test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 13:25:15.459 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 13:25:15.459 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 13:25:26.150 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 13:25:26.159 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 13:25:26.159 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 13:25:26.159 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 13:25:26.159 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 13:25:26.159 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 13:25:26.160 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 13:25:26.160 [INFO    ] [energy_manager      ] EnergyConfig loaded from test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 13:25:26.160 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 13:25:26.160 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 13:25:26.160 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 13:25:26.160 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 13:25:26.160 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 13:25:26.160 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 13:25:26.160 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 13:25:26.160 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 13:25:26.160 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 13:25:26.160 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 13:25:26.160 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 13:25:26.161 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 13:25:26.161 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 13:25:26.161 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 13:25:26.161 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 13:25:26.161 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 13:25:26.161 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 13:25:26.161 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 13:25:26.161 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 13:25:26.161 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 13:25:26.161 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 13:25:26.161 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 13:25:26.162 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=test_alap_3c5t/sys_3c_alap_nonblock.yml, current_config_file=test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 13:25:26.162 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 13:25:26.162 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 13:38:58.197 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 13:38:58.206 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 13:38:58.207 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 13:38:58.207 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 13:38:58.207 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 13:38:58.207 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 13:38:58.207 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 13:38:58.207 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 13:38:58.207 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 13:38:58.207 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 13:38:58.207 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 13:38:58.207 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 13:38:58.207 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 13:38:58.207 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 13:38:58.207 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 13:38:58.207 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 13:38:58.207 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 13:38:58.207 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 13:38:58.207 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 13:38:58.207 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 13:38:58.207 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 13:38:58.207 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 13:38:58.207 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 13:38:58.207 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 13:38:58.207 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 13:38:58.207 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 13:38:58.207 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 13:38:58.207 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 13:38:58.207 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 13:38:58.208 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 13:38:58.208 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml, current_config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 13:38:58.208 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 13:38:58.208 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 13:38:58.731 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 13:38:58.741 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 13:38:58.741 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 13:38:58.741 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 13:38:58.741 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 13:38:58.741 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 13:38:58.741 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 13:38:58.741 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 13:38:58.741 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 13:38:58.741 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 13:38:58.741 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 13:38:58.741 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 13:38:58.741 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 13:38:58.741 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 13:38:58.741 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 13:38:58.742 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 13:38:58.742 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 13:38:58.742 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 13:38:58.742 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 13:38:58.742 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 13:38:58.742 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 13:38:58.742 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 13:38:58.742 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 13:38:58.742 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 13:38:58.742 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 13:38:58.742 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 13:38:58.742 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 13:38:58.742 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 13:38:58.742 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 13:38:58.742 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 13:38:58.742 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml, current_config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 13:38:58.742 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 13:38:58.742 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 14:25:20.131 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 14:25:20.141 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 14:25:20.141 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 14:25:20.141 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 14:25:20.141 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 14:25:20.141 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 14:25:20.141 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 14:25:20.142 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 14:25:20.142 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 14:25:20.142 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 14:25:20.142 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 14:25:20.142 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 14:25:20.142 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 14:25:20.142 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 14:25:20.142 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 14:25:20.142 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 14:25:20.142 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 14:25:20.142 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 14:25:20.142 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 14:25:20.142 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 14:25:20.142 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 14:25:20.142 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 14:25:20.142 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 14:25:20.142 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 14:25:20.142 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 14:25:20.142 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 14:25:20.142 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 14:25:20.142 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 14:25:20.142 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 14:25:20.142 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 14:25:20.143 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml, current_config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 14:25:20.143 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 14:25:20.143 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 14:25:20.705 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 14:25:20.715 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 14:25:20.715 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 14:25:20.715 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 14:25:20.715 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 14:25:20.715 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 14:25:20.715 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 14:25:20.715 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 14:25:20.715 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 14:25:20.715 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 14:25:20.715 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 14:25:20.715 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 14:25:20.715 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 14:25:20.715 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 14:25:20.715 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 14:25:20.715 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 14:25:20.715 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 14:25:20.715 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 14:25:20.715 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 14:25:20.715 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 14:25:20.715 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 14:25:20.715 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 14:25:20.715 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 14:25:20.715 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 14:25:20.716 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 14:25:20.716 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 14:25:20.716 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 14:25:20.716 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 14:25:20.716 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 14:25:20.716 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 14:25:20.716 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml, current_config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 14:25:20.716 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 14:25:20.716 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 15:13:24.827 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 15:13:24.837 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 15:13:24.837 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 15:13:24.837 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 15:13:24.837 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 15:13:24.837 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 15:13:24.837 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 15:13:24.838 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 15:13:24.838 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 15:13:24.838 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 15:13:24.838 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 15:13:24.838 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 15:13:24.838 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 15:13:24.838 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 15:13:24.838 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 15:13:24.838 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 15:13:24.838 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 15:13:24.838 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 15:13:24.838 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 15:13:24.838 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 15:13:24.838 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 15:13:24.838 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 15:13:24.838 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 15:13:24.838 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 15:13:24.838 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 15:13:24.838 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 15:13:24.838 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 15:13:24.838 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 15:13:24.838 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 15:13:24.838 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 15:13:24.839 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml, current_config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 15:13:24.839 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 15:13:24.839 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 15:13:25.592 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 15:13:25.603 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 15:13:25.603 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 15:13:25.603 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 15:13:25.603 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 15:13:25.603 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 15:13:25.604 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 15:13:25.604 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 15:13:25.604 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 15:13:25.604 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 15:13:25.604 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 15:13:25.604 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 15:13:25.604 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 15:13:25.604 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 15:13:25.604 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 15:13:25.604 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 15:13:25.604 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 15:13:25.604 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 15:13:25.604 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 15:13:25.604 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 15:13:25.604 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 15:13:25.604 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 15:13:25.605 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 15:13:25.605 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 15:13:25.605 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 15:13:25.605 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 15:13:25.605 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 15:13:25.605 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 15:13:25.605 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 15:13:25.605 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 15:13:25.605 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml, current_config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 15:13:25.606 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 15:13:25.606 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 15:15:25.536 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 15:15:25.548 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 15:15:25.548 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 15:15:25.548 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 15:15:25.548 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 15:15:25.548 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 15:15:25.549 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 15:15:25.549 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 15:15:25.549 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 15:15:25.549 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 15:15:25.549 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 15:15:25.549 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 15:15:25.549 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 15:15:25.549 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 15:15:25.549 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 15:15:25.549 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 15:15:25.549 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 15:15:25.549 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 15:15:25.549 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 15:15:25.549 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 15:15:25.549 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 15:15:25.549 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 15:15:25.549 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 15:15:25.550 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 15:15:25.550 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 15:15:25.550 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 15:15:25.550 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 15:15:25.550 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 15:15:25.550 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 15:15:25.550 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 15:15:25.550 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml, current_config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 15:15:25.550 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 15:15:25.551 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 15:15:26.279 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 15:15:26.291 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 15:15:26.291 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 15:15:26.291 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 15:15:26.291 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 15:15:26.291 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 15:15:26.291 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 15:15:26.291 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 15:15:26.291 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 15:15:26.291 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 15:15:26.291 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 15:15:26.291 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 15:15:26.291 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 15:15:26.291 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 15:15:26.291 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 15:15:26.292 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 15:15:26.292 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 15:15:26.292 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 15:15:26.292 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 15:15:26.292 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 15:15:26.292 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 15:15:26.292 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 15:15:26.292 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 15:15:26.292 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 15:15:26.292 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 15:15:26.292 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 15:15:26.292 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 15:15:26.292 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 15:15:26.292 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 15:15:26.292 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 15:15:26.292 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml, current_config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 15:15:26.293 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 15:15:26.293 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 15:22:23.301 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 15:22:23.314 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 15:22:23.314 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 15:22:23.314 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 15:22:23.314 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 15:22:23.315 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 15:22:23.315 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 15:22:23.315 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 15:22:23.315 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 15:22:23.315 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 15:22:23.315 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 15:22:23.315 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 15:22:23.315 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 15:22:23.315 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 15:22:23.315 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 15:22:23.315 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 15:22:23.315 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 15:22:23.315 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 15:22:23.315 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 15:22:23.315 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 15:22:23.315 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 15:22:23.315 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 15:22:23.315 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 15:22:23.316 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 15:22:23.316 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 15:22:23.316 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 15:22:23.316 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 15:22:23.316 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 15:22:23.316 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 15:22:23.316 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 15:22:23.316 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml, current_config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 15:22:23.316 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 15:22:23.317 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 15:22:24.087 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 15:22:24.099 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 15:22:24.099 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 15:22:24.099 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 15:22:24.099 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 15:22:24.099 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 15:22:24.099 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 15:22:24.099 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 15:22:24.099 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 15:22:24.099 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 15:22:24.099 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 15:22:24.099 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 15:22:24.099 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 15:22:24.099 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 15:22:24.099 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 15:22:24.100 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 15:22:24.100 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 15:22:24.100 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 15:22:24.100 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 15:22:24.100 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 15:22:24.100 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 15:22:24.100 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 15:22:24.100 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 15:22:24.100 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 15:22:24.100 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 15:22:24.100 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 15:22:24.100 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 15:22:24.100 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 15:22:24.100 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 15:22:24.100 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 15:22:24.101 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml, current_config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 15:22:24.101 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 15:22:24.101 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 16:29:42.915 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 16:29:42.928 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 16:29:42.929 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 16:29:42.929 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 16:29:42.929 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 16:29:42.929 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 16:29:42.929 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 16:29:42.929 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 16:29:42.929 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 16:29:42.929 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 16:29:42.929 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 16:29:42.929 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 16:29:42.929 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 16:29:42.929 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 16:29:42.929 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 16:29:42.929 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 16:29:42.929 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 16:29:42.929 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 16:29:42.929 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 16:29:42.929 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 16:29:42.929 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 16:29:42.929 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 16:29:42.929 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 16:29:42.929 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 16:29:42.929 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 16:29:42.930 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 16:29:42.930 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 16:29:42.930 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 16:29:42.930 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 16:29:42.930 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 16:29:42.930 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml, current_config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 16:29:42.930 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 16:29:42.930 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 16:29:43.669 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 16:29:43.682 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 16:29:43.682 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 16:29:43.682 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 16:29:43.682 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 16:29:43.682 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 16:29:43.682 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 16:29:43.682 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 16:29:43.682 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 16:29:43.682 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 16:29:43.682 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 16:29:43.682 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 16:29:43.682 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 16:29:43.682 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 16:29:43.683 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 16:29:43.683 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 16:29:43.683 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 16:29:43.683 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 16:29:43.683 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 16:29:43.683 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 16:29:43.683 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 16:29:43.683 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 16:29:43.683 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 16:29:43.683 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 16:29:43.683 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 16:29:43.683 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 16:29:43.683 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 16:29:43.683 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 16:29:43.683 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 16:29:43.683 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 16:29:43.684 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml, current_config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 16:29:43.684 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 16:29:43.684 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 17:00:52.248 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 17:00:52.260 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 17:00:52.260 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 17:00:52.260 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 17:00:52.260 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 17:00:52.260 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 17:00:52.260 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 17:00:52.260 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 17:00:52.260 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 17:00:52.260 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 17:00:52.261 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 17:00:52.261 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 17:00:52.261 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 17:00:52.261 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 17:00:52.261 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 17:00:52.261 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 17:00:52.261 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 17:00:52.261 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 17:00:52.261 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 17:00:52.261 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 17:00:52.261 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 17:00:52.262 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 17:00:52.262 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 17:00:52.262 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 17:00:52.264 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 17:00:52.264 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 17:00:52.264 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 17:00:52.265 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 17:00:52.265 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 17:00:52.265 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 17:00:52.265 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml, current_config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 17:00:52.265 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 17:00:52.265 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 17:00:52.782 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 17:00:52.796 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 17:00:52.796 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 17:00:52.797 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 17:00:52.797 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 17:00:52.797 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 17:00:52.797 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 17:00:52.797 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 17:00:52.797 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 17:00:52.797 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 17:00:52.797 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 17:00:52.797 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 17:00:52.797 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 17:00:52.797 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 17:00:52.797 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 17:00:52.797 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 17:00:52.797 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 17:00:52.797 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 17:00:52.797 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 17:00:52.797 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 17:00:52.797 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 17:00:52.797 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 17:00:52.797 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 17:00:52.797 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 17:00:52.797 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 17:00:52.797 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 17:00:52.797 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 17:00:52.797 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 17:00:52.797 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 17:00:52.798 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 17:00:52.798 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml, current_config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 17:00:52.798 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 17:00:52.798 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 17:31:23.816 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 17:31:23.825 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 17:31:23.825 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 17:31:23.825 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 17:31:23.825 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 17:31:23.825 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 17:31:23.825 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 17:31:23.825 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 17:31:23.825 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 17:31:23.825 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 17:31:23.825 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 17:31:23.825 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 17:31:23.825 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 17:31:23.825 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 17:31:23.825 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 17:31:23.825 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 17:31:23.825 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 17:31:23.825 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 17:31:23.826 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 17:31:23.826 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 17:31:23.826 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 17:31:23.826 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 17:31:23.826 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 17:31:23.826 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 17:31:23.826 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 17:31:23.826 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 17:31:23.826 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 17:31:23.826 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 17:31:23.826 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 17:31:23.826 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 17:31:23.826 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml, current_config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 17:31:23.826 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 17:31:23.826 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 19:03:41.811 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 19:03:41.822 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 19:03:41.822 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 19:03:41.822 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 19:03:41.822 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 19:03:41.822 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 19:03:41.822 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 19:03:41.822 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 19:03:41.822 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 19:03:41.822 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 19:03:41.822 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 19:03:41.822 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 19:03:41.822 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 19:03:41.822 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 19:03:41.822 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 19:03:41.822 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 19:03:41.822 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 19:03:41.822 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 19:03:41.823 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 19:03:41.823 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 19:03:41.823 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 19:03:41.823 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 19:03:41.823 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 19:03:41.823 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 19:03:41.823 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 19:03:41.823 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 19:03:41.823 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 19:03:41.823 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 19:03:41.823 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 19:03:41.823 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 19:03:41.823 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml, current_config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 19:03:41.823 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 19:03:41.824 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 20:46:19.660 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 20:46:19.670 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 20:46:19.670 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 20:46:19.670 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 20:46:19.670 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 20:46:19.670 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 20:46:19.670 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 20:46:19.670 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 20:46:19.670 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 20:46:19.670 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 20:46:19.670 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 20:46:19.670 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 20:46:19.670 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 20:46:19.670 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 20:46:19.670 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 20:46:19.670 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 20:46:19.670 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 20:46:19.670 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 20:46:19.670 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 20:46:19.670 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 20:46:19.670 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 20:46:19.671 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 20:46:19.671 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 20:46:19.671 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 20:46:19.671 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 20:46:19.671 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 20:46:19.671 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 20:46:19.671 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 20:46:19.671 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 20:46:19.671 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 20:46:19.671 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml, current_config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 20:46:19.671 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 20:46:19.671 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 20:46:20.131 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 20:46:20.142 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 20:46:20.142 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 20:46:20.142 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 20:46:20.142 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 20:46:20.142 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 20:46:20.142 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 20:46:20.142 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 20:46:20.142 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 20:46:20.143 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 20:46:20.143 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 20:46:20.143 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 20:46:20.143 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 20:46:20.143 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 20:46:20.143 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 20:46:20.143 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 20:46:20.143 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 20:46:20.143 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 20:46:20.143 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 20:46:20.143 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 20:46:20.143 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 20:46:20.143 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 20:46:20.143 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 20:46:20.143 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 20:46:20.143 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 20:46:20.143 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 20:46:20.143 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 20:46:20.143 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 20:46:20.143 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 20:46:20.143 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 20:46:20.143 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml, current_config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 20:46:20.144 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 20:46:20.144 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 21:02:51.551 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 21:02:51.560 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 21:02:51.561 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 21:02:51.561 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 21:02:51.561 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 21:02:51.561 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 21:02:51.561 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 21:02:51.561 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 21:02:51.561 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 21:02:51.561 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 21:02:51.561 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 21:02:51.561 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 21:02:51.561 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 21:02:51.561 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 21:02:51.561 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 21:02:51.561 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 21:02:51.561 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 21:02:51.561 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 21:02:51.561 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 21:02:51.561 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 21:02:51.561 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 21:02:51.561 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 21:02:51.561 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 21:02:51.561 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 21:02:51.561 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 21:02:51.562 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 21:02:51.562 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 21:02:51.562 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 21:02:51.562 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 21:02:51.562 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 21:02:51.562 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml, current_config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 21:02:51.562 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 21:02:51.562 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 21:02:52.116 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 21:02:52.126 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 21:02:52.126 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 21:02:52.126 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 21:02:52.127 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 21:02:52.127 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 21:02:52.127 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 21:02:52.127 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 21:02:52.127 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 21:02:52.127 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 21:02:52.127 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 21:02:52.127 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 21:02:52.127 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 21:02:52.127 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 21:02:52.127 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 21:02:52.127 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 21:02:52.127 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 21:02:52.127 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 21:02:52.127 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 21:02:52.127 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 21:02:52.127 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 21:02:52.127 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 21:02:52.127 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 21:02:52.127 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 21:02:52.127 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 21:02:52.127 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 21:02:52.127 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 21:02:52.127 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 21:02:52.127 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 21:02:52.127 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 21:02:52.128 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml, current_config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 21:02:52.128 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 21:02:52.128 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 21:08:22.096 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 21:08:22.106 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 21:08:22.106 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 21:08:22.106 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 21:08:22.106 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 21:08:22.106 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 21:08:22.106 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 21:08:22.106 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 21:08:22.106 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 21:08:22.106 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 21:08:22.106 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 21:08:22.106 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 21:08:22.106 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 21:08:22.106 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 21:08:22.106 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 21:08:22.106 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 21:08:22.106 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 21:08:22.106 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 21:08:22.106 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 21:08:22.106 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 21:08:22.106 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 21:08:22.106 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 21:08:22.106 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 21:08:22.106 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 21:08:22.107 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 21:08:22.107 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 21:08:22.107 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 21:08:22.107 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 21:08:22.107 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 21:08:22.107 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 21:08:22.107 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml, current_config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 21:08:22.107 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 21:08:22.107 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 21:08:22.666 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 21:08:22.676 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 21:08:22.676 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 21:08:22.676 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 21:08:22.676 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 21:08:22.676 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 21:08:22.676 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 21:08:22.676 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 21:08:22.676 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 21:08:22.677 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 21:08:22.677 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 21:08:22.677 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 21:08:22.677 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 21:08:22.677 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 21:08:22.677 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 21:08:22.677 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 21:08:22.677 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 21:08:22.677 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 21:08:22.677 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 21:08:22.677 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 21:08:22.677 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 21:08:22.677 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 21:08:22.677 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 21:08:22.677 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 21:08:22.677 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 21:08:22.677 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 21:08:22.677 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 21:08:22.677 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 21:08:22.677 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 21:08:22.677 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 21:08:22.677 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml, current_config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 21:08:22.678 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 21:08:22.678 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 21:09:55.764 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 21:09:55.775 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 21:09:55.776 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 21:09:55.776 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 21:09:55.776 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 21:09:55.776 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 21:09:55.776 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 21:09:55.776 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 21:09:55.776 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 21:09:55.776 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 21:09:55.776 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 21:09:55.776 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 21:09:55.776 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 21:09:55.776 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 21:09:55.776 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 21:09:55.776 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 21:09:55.776 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 21:09:55.776 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 21:09:55.776 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 21:09:55.776 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 21:09:55.776 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 21:09:55.776 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 21:09:55.776 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 21:09:55.776 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 21:09:55.776 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 21:09:55.776 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 21:09:55.776 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 21:09:55.776 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 21:09:55.777 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 21:09:55.777 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 21:09:55.777 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml, current_config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 21:09:55.777 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 21:09:55.777 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 21:09:56.228 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 21:09:56.238 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 21:09:56.239 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 21:09:56.239 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 21:09:56.239 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 21:09:56.239 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 21:09:56.239 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 21:09:56.239 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 21:09:56.239 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 21:09:56.239 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 21:09:56.239 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 21:09:56.239 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 21:09:56.239 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 21:09:56.239 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 21:09:56.239 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 21:09:56.239 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 21:09:56.239 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 21:09:56.239 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 21:09:56.239 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 21:09:56.239 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 21:09:56.239 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 21:09:56.239 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 21:09:56.239 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 21:09:56.239 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 21:09:56.239 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 21:09:56.239 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 21:09:56.239 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 21:09:56.239 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 21:09:56.239 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 21:09:56.239 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 21:09:56.240 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml, current_config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 21:09:56.240 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 21:09:56.240 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 21:30:57.424 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 21:30:57.435 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 21:30:57.435 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 21:30:57.435 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 21:30:57.435 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 21:30:57.435 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 21:30:57.435 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 21:30:57.435 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 21:30:57.436 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 21:30:57.436 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 21:30:57.436 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 21:30:57.436 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 21:30:57.436 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 21:30:57.436 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 21:30:57.436 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 21:30:57.436 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 21:30:57.436 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 21:30:57.436 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 21:30:57.436 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 21:30:57.436 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 21:30:57.436 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 21:30:57.436 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 21:30:57.436 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 21:30:57.436 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 21:30:57.436 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 21:30:57.436 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 21:30:57.436 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 21:30:57.436 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 21:30:57.436 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 21:30:57.436 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 21:30:57.437 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml, current_config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 21:30:57.437 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_block.yml
+2026-03-24 21:30:57.437 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 21:30:58.040 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 21:30:58.049 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 21:30:58.049 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 21:30:58.049 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 21:30:58.049 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 21:30:58.049 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 21:30:58.049 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 21:30:58.049 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 21:30:58.049 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 21:30:58.049 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 21:30:58.049 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 21:30:58.050 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 21:30:58.050 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 21:30:58.050 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 21:30:58.050 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 21:30:58.050 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 21:30:58.050 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 21:30:58.050 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 21:30:58.050 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 21:30:58.050 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 21:30:58.050 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 21:30:58.050 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 21:30:58.050 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 21:30:58.050 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 21:30:58.050 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 21:30:58.050 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 21:30:58.050 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 21:30:58.050 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 21:30:58.050 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 21:30:58.050 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 21:30:58.050 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml, current_config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 21:30:58.050 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_nonblock.yml
+2026-03-24 21:30:58.051 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
+2026-03-24 21:46:28.908 [INFO    ] [energy_manager      ] [EnergyManager] __init__ called with config_file: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_sync.yml
+2026-03-24 21:46:28.917 [INFO    ] [energy_manager      ] [EnergyConfig] 加载配置文件: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_sync.yml
+2026-03-24 21:46:28.918 [INFO    ] [energy_manager      ] [EnergyConfig] initial_energy from config: 0.5
+2026-03-24 21:46:28.918 [INFO    ] [energy_manager      ] [EnergyConfig] self.initial_energy after loading: 0.5
+2026-03-24 21:46:28.918 [INFO    ] [energy_manager      ] [EnergyConfig] 从 day_of_year=187, time_of_day_ms=21900000 计算 start_offset_minutes=268205
+2026-03-24 21:46:28.918 [INFO    ] [energy_manager      ] [Python] 从配置文件更新start_offset_minutes=268205, simulation_start_time=16092300000ms
+2026-03-24 21:46:28.918 [INFO    ] [energy_manager      ] [EnergyConfig] 使用默认能量收集源配置
+2026-03-24 21:46:28.918 [INFO    ] [energy_manager      ] EnergyConfig loaded from /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_sync.yml
+2026-03-24 21:46:28.918 [INFO    ] [energy_manager      ]   Initial energy: 0.5 J
+2026-03-24 21:46:28.918 [INFO    ] [energy_manager      ]   Max energy: 1000.0 J
+2026-03-24 21:46:28.918 [INFO    ] [energy_manager      ]   Unit time: 50 ms
+2026-03-24 21:46:28.918 [INFO    ] [energy_manager      ]   Debug mode: False
+2026-03-24 21:46:28.918 [INFO    ] [energy_manager      ] 加载的季节配置:
+2026-03-24 21:46:28.918 [INFO    ] [energy_manager      ]   spring: 第60天 - 第151天
+2026-03-24 21:46:28.918 [INFO    ] [energy_manager      ]   summer: 第152天 - 第243天
+2026-03-24 21:46:28.918 [INFO    ] [energy_manager      ]   autumn: 第244天 - 第334天
+2026-03-24 21:46:28.918 [INFO    ] [energy_manager      ]   winter: 第335天 - 第365天
+2026-03-24 21:46:28.918 [INFO    ] [energy_manager      ] 加载的时间段配置:
+2026-03-24 21:46:28.918 [INFO    ] [energy_manager      ]   morning: 6:00 - 11:00 (倍率: 2.0)
+2026-03-24 21:46:28.918 [INFO    ] [energy_manager      ]   noon: 12:00 - 13:00 (倍率: 5.0)
+2026-03-24 21:46:28.918 [INFO    ] [energy_manager      ]   afternoon: 14:00 - 17:00 (倍率: 3.0)
+2026-03-24 21:46:28.918 [INFO    ] [energy_manager      ]   evening: 18:00 - 21:00 (倍率: 1.0)
+2026-03-24 21:46:28.919 [INFO    ] [energy_manager      ]   night: 22:00 - 5:00 (倍率: 0.5)
+2026-03-24 21:46:28.919 [INFO    ] [energy_manager      ] [EnergyManager] self.config.initial_energy: 0.5
+2026-03-24 21:46:28.919 [INFO    ] [energy_manager      ] [EnergyManager] self.current_energy set to: 0.5
+2026-03-24 21:46:28.919 [INFO    ] [energy_manager      ] [Python] EnergyManager初始化完成
+2026-03-24 21:46:28.919 [INFO    ] [energy_manager      ] [Python] 初始能量: 0.5/1000.0 J
+2026-03-24 21:46:28.919 [INFO    ] [energy_manager      ] [Python] 仿真开始时间偏移: 16092300000ms
+2026-03-24 21:46:28.919 [INFO    ] [energy_manager      ] [Python] 仿真开始时间: 06:05:00
+2026-03-24 21:46:28.919 [INFO    ] [energy_manager      ] 全局EnergyManager实例创建成功
+2026-03-24 21:46:28.919 [INFO    ] [energy_manager      ] [get_energy_manager] config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_sync.yml, current_config_file=/home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_sync.yml
+2026-03-24 21:46:28.919 [INFO    ] [energy_manager      ] 配置文件相同，无需重新加载: /home/devcontainers/PARTSim-project/test_alap_3c5t/sys_3c_alap_sync.yml
+2026-03-24 21:46:28.919 [INFO    ] [energy_manager      ] [Python] 返回C++配置: 核心数=3, 基础频率=8100.0MHz, 初始能量=0.5J
