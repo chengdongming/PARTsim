@@ -33,10 +33,10 @@ namespace RTSim {
     // =====================================================
 
     STSyncTickEvent::STSyncTickEvent(STSyncScheduler *scheduler)
-        : MetaSim::Event("STSyncTickEvent", MetaSim::Event::_DEFAULT_PRIORITY - 1),
+        : MetaSim::Event("STSyncTickEvent", MetaSim::Event::_DEFAULT_PRIORITY + 10),
           _scheduler(scheduler) {
-        // ⭐ 关键修复：提高tick事件优先级，确保tick事件及时触发
-        // 原优先级_DEFAULT_PRIORITY + 10太低，导致tick事件被延迟
+        // 与 ST-Block / ST-NonBlock 对齐：tick 优先级低于 arrival，
+        // 确保 0ms 到达任务先入队，再进行首个同步批次调度。
     }
 
     void STSyncTickEvent::doit() {
@@ -78,16 +78,12 @@ namespace RTSim {
         SCHEDULER_LOG_WARNING(std::string("⏰ [ST-Sync V130] 组唤醒事件触发 @ ") +
                              std::to_string(static_cast<int64_t>(current_time)) + "ms");
 
-        // ⭐ V130修复：清除深度休眠锁（关键！）
-        _scheduler->_is_charging_sleep = false;
-        _scheduler->_deep_charging = false;
-        _scheduler->_energy_depleted = false;
         _valid = false;
 
-        SCHEDULER_LOG_INFO(std::string("🔓 [ST-Sync V130] 深度休眠锁已解除，触发调度"));
-
-        // 立即触发一次调度
-        _scheduler->performTickScheduling();
+        // 唤醒事件只负责把“重新评估时刻”对齐到当前 tick。
+        // 真正的解锁、等待队列回流与批次重建都放在 performTickScheduling() 内统一完成，
+        // 避免 wake event 在 tick 之前抢先清锁，导致等待中的同步组丢失窗口语义。
+        SCHEDULER_LOG_INFO(std::string("🔔 [ST-Sync V130] 唤醒时刻已到，等待同tick统一解锁与重建同步组"));
     }
 
     void STSyncGroupWakeEvent::schedule(MetaSim::Tick wake_time) {
@@ -101,9 +97,8 @@ namespace RTSim {
                           "唤醒时间=" + std::to_string(static_cast<int64_t>(wake_time)) + "ms");
     }
 
-    // =====================================================
-    // STSyncEnergyCheckEvent 实现 - 运行时能量检查
-    // =====================================================
+    // 兼容旧接口的空壳事件。
+    // 当前 ST-Sync 的能量记账完全在 tick 级批量逻辑中完成。
 
     STSyncEnergyCheckEvent::STSyncEnergyCheckEvent(STSyncScheduler *scheduler, AbsRTTask *task, CPU *cpu)
         : MetaSim::Event("STSyncEnergyCheckEvent", MetaSim::Event::_DEFAULT_PRIORITY - 5),
@@ -111,7 +106,7 @@ namespace RTSim {
           _task(task),
           _cpu(cpu),
           _ms_executed(0) {
-        // 更高优先级，确保能量检查及时执行
+        // 当前实现没有按任务运行时能量事件；能量在 tick 级批量逻辑中统一处理。
     }
 
     void STSyncEnergyCheckEvent::doit() {
@@ -119,105 +114,6 @@ namespace RTSim {
             return;
         }
 
-        Tick actual_trigger_time = SIMUL.getTime();
-        SCHEDULER_LOG_DEBUG(std::string("🔍 [ST-Sync] 能量检查事件触发: ") +
-                           _scheduler->getTaskName(_task) +
-                           " 触发时间=" + std::to_string(static_cast<int64_t>(actual_trigger_time)) + "ms" +
-                           " _ms_executed=" + std::to_string(_ms_executed));
-
-        if (_scheduler->_task_models.find(_task) == _scheduler->_task_models.end()) {
-            SCHEDULER_LOG_DEBUG(std::string("⚠️ [ST-Sync] 能量检查：任务已删除，停止检查"));
-            return;
-        }
-
-        auto it = _scheduler->_energy_check_events.find(_task);
-        if (it == _scheduler->_energy_check_events.end() || it->second != this) {
-            SCHEDULER_LOG_DEBUG(std::string("⚠️ [ST-Sync] 能量检查：事件已失效，停止检查"));
-            return;
-        }
-
-        if (_scheduler->_is_charging_sleep || _scheduler->_deep_charging) {
-            SCHEDULER_LOG_DEBUG(std::string("⚠️ [ST-Sync] 能量检查：调度器处于充电休眠，停止检查: ") +
-                               _scheduler->getTaskName(_task));
-            return;
-        }
-
-        if (_scheduler->_tasks_completed_wcet.find(_task) != _scheduler->_tasks_completed_wcet.end()) {
-            SCHEDULER_LOG_DEBUG(std::string("⚠️ [ST-Sync] 能量检查：任务已完成WCET，停止检查: ") +
-                               _scheduler->getTaskName(_task));
-            return;
-        }
-
-        if (!_scheduler->isTaskInActiveRunningBatch(_task)) {
-            SCHEDULER_LOG_DEBUG(std::string("⚠️ [ST-Sync] 能量检查：任务不在活动运行批次中，停止检查: ") +
-                               _scheduler->getTaskName(_task));
-            return;
-        }
-
-        _ms_executed++;
-
-        if (!_task->isExecuting()) {
-            SCHEDULER_LOG_DEBUG(std::string("⚠️ [ST-Sync] 能量检查：任务已停止执行，不再扣除能量: ") +
-                               _scheduler->getTaskName(_task) + " 时间=" + std::to_string(static_cast<long>(SIMUL.getTime())) + "ms");
-            return;
-        }
-
-        STSyncTaskModel *task_model = _scheduler->getTaskModel(_task);
-        std::string task_name = _scheduler->getTaskName(_task);
-        SCHEDULER_LOG_DEBUG(std::string("🔍 [ST-Sync] WCET检查: ") +
-                           task_name + " 已执行=" + std::to_string(_ms_executed) +
-                           "ms task_model=" + (task_model ? "有效" : "NULL"));
-
-        if (task_model) {
-            int wcet = task_model->getWCET();
-            SCHEDULER_LOG_DEBUG(std::string("🔍 [ST-Sync] WCET值: ") +
-                               std::to_string(wcet) + "ms 判断: " +
-                               std::to_string(_ms_executed) + " >= " + std::to_string(wcet) +
-                               " = " + (_ms_executed >= wcet ? "TRUE" : "FALSE"));
-
-            if (_ms_executed >= wcet) {
-                SCHEDULER_LOG_INFO(std::string("✅ [ST-Sync] 任务已达到WCET，完成执行: ") +
-                                   task_name + " 已执行=" + std::to_string(_ms_executed) +
-                                   "ms WCET=" + std::to_string(wcet) + "ms");
-                _scheduler->_tasks_completed_wcet.insert(_task);
-                SCHEDULER_LOG_INFO(std::string("🏁 [ST-Sync] 标记任务已完成WCET: ") + task_name);
-                SCHEDULER_LOG_INFO(std::string("🛑 [ST-Sync] 任务达到WCET，终止能量检查事件: ") + task_name);
-                return;
-            }
-        } else {
-            SCHEDULER_LOG_WARNING(std::string("⚠️ [ST-Sync] WCET检查失败：找不到TaskModel ") + task_name);
-        }
-
-        const std::vector<AbsRTTask *> running_batch = _scheduler->collectActiveRunningBatchTasks();
-        const double runtime_batch_unit_energy = _scheduler->calculateBatchUnitEnergy(running_batch);
-        const double EPSILON = 1e-9;
-
-        if (runtime_batch_unit_energy <= EPSILON) {
-            SCHEDULER_LOG_DEBUG("⚠️ [ST-Sync] 能量检查：当前无活动批次，停止本次扣能检查");
-            return;
-        }
-
-        if (_scheduler->_current_energy + EPSILON < runtime_batch_unit_energy) {
-            _scheduler->suspendBatchForInsufficientEnergy(
-                running_batch,
-                runtime_batch_unit_energy,
-                std::string("runtime renewal before deduct @ ") + std::to_string(static_cast<int64_t>(actual_trigger_time)) + "ms");
-            return;
-        }
-
-        double unit_energy = _scheduler->calculateUnitEnergyForTask(_task);
-        _scheduler->_current_energy -= unit_energy;
-        _scheduler->_stats.total_energy_consumed += unit_energy;
-        _scheduler->clampCurrentEnergyNonNegative(std::string("energy check deduct: ") + task_name);
-
-        SCHEDULER_LOG_DEBUG(std::string("✅ [ST-Sync] 扣除 1ms 能量: ") +
-                           task_name +
-                           " 扣除=" + std::to_string(unit_energy * 1000) + " mJ" +
-                           " 批次需求=" + std::to_string(runtime_batch_unit_energy * 1000) + " mJ" +
-                           " 剩余=" + std::to_string(_scheduler->_current_energy * 1000) + " mJ" +
-                           " 已执行=" + std::to_string(_ms_executed) + "ms");
-
-        post(SIMUL.getTime() + 1);
         return;
     }
 
@@ -548,32 +444,72 @@ namespace RTSim {
 
         _last_tick_time = current_time;
 
+        // 每个物理 tick 都重新开始一轮批次审批。
+        // 旧 tick 批准的同步组不能跨 tick 泄漏到新的 dispatch 回合里继续被消费。
+        _batch_scheduled_this_tick = false;
+        _current_batch_size = 0;
+        _preempt_batch_tasks.clear();
+
         // ========== V130: 深度休眠锁检查（消灭1ms碎片化抖动） ==========
-        // ⭐ 核心逻辑：能量不足时锁住系统，只有充满电或Slack=0时才解锁
+        // ⭐ 核心逻辑：缺电后锁住整个同步组；只有阻塞组自然消亡或电池充满才真正解锁。
+        // Slack 归零只意味着“停止继续延期充电”，不意味着允许用残余能量做 1ms 脉冲式重调度。
         if (_is_charging_sleep) {
-            // 计算最小Slack
             Tick min_slack = calculateMinSlack();
             int64_t min_slack_ms = static_cast<int64_t>(min_slack);
 
-            // 唤醒条件1：电池充满
-            if (_current_energy >= _max_energy - 0.000001) {
+            if (_waiting_queue.empty()) {
                 _is_charging_sleep = false;
+                _deep_charging = false;
+                _energy_depleted = false;
+                if (_group_wake_event) {
+                    _group_wake_event->invalidate();
+                }
+                SCHEDULER_LOG_INFO("🧹 [ST-Sync V130] 阻塞同步组已清空，释放充电休眠锁");
+            }
+            else if (_current_energy >= _max_energy - 0.000001) {
+                _is_charging_sleep = false;
+                _deep_charging = false;
+                _energy_depleted = false;
+                if (_group_wake_event) {
+                    _group_wake_event->invalidate();
+                }
                 SCHEDULER_LOG_INFO(std::string("🔋 [ST-Sync V130] 深度休眠解锁：电池充满") +
-                                  " 能量=" + std::to_string(_current_energy * 1000) + "mJ");
+                                  " 能量=" + std::to_string(_current_energy * 1000) + "mJ" +
+                                  "（保留阻塞同步组在waiting_queue，优先恢复原组）");
             }
-            // 唤醒条件2：Slack=0（死线已至，必须执行）
             else if (min_slack_ms <= 0) {
-                _is_charging_sleep = false;
-                SCHEDULER_LOG_WARNING(std::string("🚨 [ST-Sync V130] 深度休眠解锁：Slack=0强制唤醒") +
-                                     " Slack=" + std::to_string(min_slack_ms) + "ms");
+                if (_group_wake_event) {
+                    _group_wake_event->invalidate();
+                }
+                SCHEDULER_LOG_WARNING(std::string("⏳ [ST-Sync V130] 阻塞同步组Slack已耗尽，但旧组尚未自然清空") +
+                                     " Slack=" + std::to_string(min_slack_ms) + "ms" +
+                                     " waiting=" + std::to_string(_waiting_queue.size()) +
+                                     " energy=" + std::to_string(_current_energy * 1000) + "mJ" +
+                                     "（继续保持charging wall，等待旧组miss/kill或电池充满）");
+                return;
             }
-            // 继续休眠
             else {
                 SCHEDULER_LOG_INFO(std::string("😴 [ST-Sync V130] 深度休眠中...") +
                                   " 能量=" + std::to_string(_current_energy * 1000) + "mJ" +
                                   " Slack=" + std::to_string(min_slack_ms) + "ms");
-                return;  // 继续死睡，不执行任何调度
+                return;
             }
+        }
+
+        if (!_deferred_arrivals.empty()) {
+            std::vector<AbsRTTask *> deferred(_deferred_arrivals.begin(), _deferred_arrivals.end());
+            _deferred_arrivals.clear();
+            for (AbsRTTask *task : deferred) {
+                if (!task || !task->isActive()) {
+                    continue;
+                }
+                if (isInWaitingQueue(task) || isInReadyQueue(task)) {
+                    continue;
+                }
+                addToReadyQueue(task);
+            }
+            SCHEDULER_LOG_INFO(std::string("📥 [ST-Sync] tick边界吸纳延后到达任务: count=") +
+                              std::to_string(deferred.size()));
         }
 
         // ⭐ Bug修复3：能量耗尽时跳过调度（但已经收集了太阳能）
@@ -582,9 +518,8 @@ namespace RTSim {
             return;  // 不进行任何调度，包括中断检查
         }
 
-        // ⭐ V121修复：删除Tick级能量扣除，避免与EnergyCheckEvent双重扣电
-        // EnergyCheckEvent已经在每毫秒精确扣除每个任务的能量
-        // 之前这里额外扣除一次导致2倍速耗电
+        // Tick 入口不再做额外扣电；
+        // ST-Sync 的能量记账由下面的批量准入/续期路径统一处理。
 
         // ========== ST深度充电检查 ==========
         // 能量不足时进入深度充电模式，充电到 minSlack=0 或电池充满
@@ -653,18 +588,19 @@ namespace RTSim {
                               "K=" + std::to_string(K) +
                               " 1ms预算=" + std::to_string(total_energy_needed * 1000) + "mJ");
 
-            // 唤醒条件：Slack<=0 或 电池充满 或 能量足够调度K个任务
+            // 唤醒条件：阻塞组Slack到期、阻塞组已全部自然消亡，或电池充满。
+            // Slack<=0 时结束本轮充电窗口，但不把旧阻塞组回流到 ready queue，
+            // 这样旧组仍等待真实 deadline miss / kill，同时允许系统重新评估新实例形成的新同步组。
             if (min_slack_ms <= 0) {
-                SCHEDULER_LOG_INFO("🔋 [ST-Sync] 深度充电结束：Slack<=0，唤醒调度");
+                SCHEDULER_LOG_INFO("🔋 [ST-Sync] 深度充电结束：阻塞组Slack到期，重新评估新同步组");
+                _deep_charging = false;
+                _energy_depleted = false;
+            } else if (_waiting_queue.empty()) {
+                SCHEDULER_LOG_INFO("🔋 [ST-Sync] 深度充电结束：阻塞同步组已清空");
                 _deep_charging = false;
                 _energy_depleted = false;
             } else if (_current_energy >= _max_energy - 0.000001) {
-                SCHEDULER_LOG_INFO("🔋 [ST-Sync] 深度充电结束：电池充满，唤醒调度");
-                _deep_charging = false;
-                _energy_depleted = false;
-            } else if (_current_energy >= total_energy_needed - 1e-9) {
-                // 新增：能量已足够调度K个任务，唤醒调度
-                SCHEDULER_LOG_INFO("🔋 [ST-Sync] 深度充电结束：能量已足够，唤醒调度");
+                SCHEDULER_LOG_INFO("🔋 [ST-Sync] 深度充电结束：电池充满，恢复阻塞同步组的重新评估");
                 _deep_charging = false;
                 _energy_depleted = false;
             } else {
@@ -784,32 +720,47 @@ namespace RTSim {
         
         const double EPSILON_V90 = 1e-9;
         
-        // ========== Step 1: 收集候选任务（ST特有：能量充足时不管Slack）==========
-        // 按RM优先级排序就绪队列
-        std::vector<AbsRTTask*> sorted_ready_v90(_ready_queue.begin(), _ready_queue.end());
-        std::sort(sorted_ready_v90.begin(), sorted_ready_v90.end(),
-            [this](AbsRTTask* a, AbsRTTask* b) {
-                auto model_a = getTaskModel(a);
-                auto model_b = getTaskModel(b);
-                if (model_a && model_b) {
-                    return model_a->getRMPriority() < model_b->getRMPriority();
-                }
-                return false;
-            });
-        
-        // ST逻辑：收集所有就绪任务（排除运行中的），不管Slack
+        // ========== Step 1: 收集候选任务（ST-Sync：优先恢复阻塞同步组）==========
+        // 先按 waiting_queue 恢复被阻塞的同步组；只有当其成员自然消亡后，新的实例才会填补空位。
         std::vector<AbsRTTask*> ready_tasks_v90;
-        for (auto* task : sorted_ready_v90) {
-            if (!task || !task->isActive()) continue;
-            
-            // 排除运行中的任务
-            bool is_running = false;
-            for (auto* rt : running_task_list) {
-                if (task == rt) { is_running = true; break; }
+        if (!_waiting_queue.empty()) {
+            for (auto* task : _waiting_queue) {
+                if (!task || !task->isActive()) continue;
+
+                bool is_running = false;
+                for (auto* rt : running_task_list) {
+                    if (task == rt) { is_running = true; break; }
+                }
+                if (is_running) continue;
+
+                ready_tasks_v90.push_back(task);
             }
-            if (is_running) continue;
-            
-            ready_tasks_v90.push_back(task);
+            SCHEDULER_LOG_INFO(std::string("🧱 [ST-Sync Atomic] 当前存在阻塞同步组，优先恢复 waiting_queue 任务: count=") +
+                              std::to_string(ready_tasks_v90.size()));
+        } else {
+            // 按RM优先级排序就绪队列
+            std::vector<AbsRTTask*> sorted_ready_v90(_ready_queue.begin(), _ready_queue.end());
+            std::sort(sorted_ready_v90.begin(), sorted_ready_v90.end(),
+                [this](AbsRTTask* a, AbsRTTask* b) {
+                    auto model_a = getTaskModel(a);
+                    auto model_b = getTaskModel(b);
+                    if (model_a && model_b) {
+                        return model_a->getRMPriority() < model_b->getRMPriority();
+                    }
+                    return false;
+                });
+
+            for (auto* task : sorted_ready_v90) {
+                if (!task || !task->isActive()) continue;
+
+                bool is_running = false;
+                for (auto* rt : running_task_list) {
+                    if (task == rt) { is_running = true; break; }
+                }
+                if (is_running) continue;
+
+                ready_tasks_v90.push_back(task);
+            }
         }
         
         // ========== Step 2: 计算K（批量大小）==========
@@ -874,11 +825,33 @@ namespace RTSim {
         bool should_reevaluate = (!has_running_tasks) ||  // 没有运行任务时需要评估
                                   _energy_depleted ||      // 能量耗尽时需要评估
                                   _deep_charging;          // 深度充电状态变化时需要评估
+        int available_free_cpus_v90 = total_cpus - static_cast<int>(running_task_list.size());
 
-        if (has_running_tasks && !_energy_depleted && !_deep_charging) {
-            // 有运行中的任务且能量充足，跳过 V92 批量调度评估
-            // 让任务继续运行，不要在每次 Tick 都重新评估
-            SCHEDULER_LOG_INFO("⏭️ [ST-Sync V128] 有运行中的任务，跳过 V92 批量调度评估");
+        if (has_running_tasks && !_energy_depleted && !_deep_charging &&
+            (available_free_cpus_v90 <= 0 || !has_ready_tasks)) {
+            double running_batch_energy = calculateBatchUnitEnergy(running_task_list);
+            const double EPSILON_V90_RUNNING = 1e-9;
+
+            if (_current_energy + EPSILON_V90_RUNNING < running_batch_energy) {
+                SCHEDULER_LOG_WARNING(std::string("⚠️ [ST-Sync Atomic] 运行中同步组续期能量不足，整组挂起") +
+                                     " 需要=" + std::to_string(running_batch_energy * 1000) + " mJ" +
+                                     " 当前=" + std::to_string(_current_energy * 1000) + " mJ");
+                suspendBatchForInsufficientEnergy(running_task_list,
+                                                 running_batch_energy,
+                                                 std::string("running batch renewal @ ") + std::to_string(static_cast<int64_t>(current_time)) + "ms");
+                return;
+            }
+
+            double old_energy = _current_energy;
+            _current_energy -= running_batch_energy;
+            _stats.total_energy_consumed += running_batch_energy;
+            clampCurrentEnergyNonNegative(std::string("running batch renew @ ") + std::to_string(static_cast<int64_t>(current_time)) + "ms");
+
+            SCHEDULER_LOG_INFO(std::string("⚡ [ST-Sync] 组级统一扣除续期1ms能量: ") +
+                              "任务数=" + std::to_string(running_task_list.size()) +
+                              " 扣除=" + std::to_string(running_batch_energy * 1000) + " mJ" +
+                              " " + std::to_string(old_energy * 1000) + " → " +
+                              std::to_string(_current_energy * 1000) + " mJ");
             return;
         }
 
@@ -937,6 +910,22 @@ namespace RTSim {
             _batch_scheduled_this_tick = true;
             _stats.total_batch_schedules++;
 
+            if (!_current_batch_tasks.empty()) {
+                double batch_energy_to_deduct = calculateBatchUnitEnergy(_current_batch_tasks);
+                if (batch_energy_to_deduct > EPSILON_V90) {
+                    double old_energy = _current_energy;
+                    _current_energy -= batch_energy_to_deduct;
+                    _stats.total_energy_consumed += batch_energy_to_deduct;
+                    clampCurrentEnergyNonNegative(std::string("batch dispatch deduct @ ") + std::to_string(static_cast<int64_t>(current_time)) + "ms");
+
+                    SCHEDULER_LOG_INFO(std::string("⚡ [ST-Sync] 组级统一扣除首个1ms能量: ") +
+                                      "任务数=" + std::to_string(_current_batch_tasks.size()) +
+                                      " 扣除=" + std::to_string(batch_energy_to_deduct * 1000) + " mJ" +
+                                      " " + std::to_string(old_energy * 1000) + " → " +
+                                      std::to_string(_current_energy * 1000) + " mJ");
+                }
+            }
+
             _deep_charging = false;
             _energy_depleted = false;
             _is_charging_sleep = false;
@@ -963,453 +952,8 @@ namespace RTSim {
             return;
         }
 
-        // ⭐ 关键修复：如果能量已耗尽，不调度新任务
-        if (_energy_depleted) {
-            SCHEDULER_LOG_INFO(std::string("💀 [ST-Sync] 能量已耗尽，跳过批量调度") +
-                               " 剩余能量=" + std::to_string(_current_energy * 1000) + " mJ");
-
-            // ⭐ 关键修复：清空批量任务队列，防止后续BeginDispatchMultiEvt事件访问过期批量
-            _current_batch_tasks.clear();
-            _current_batch_size = 0;
-            _preempt_batch_tasks.clear();
-
-            return;
-        }
-
-        // ⭐ 关键修复：在checkAndPreempt()之前清空上一tick的批量任务队���
-        // 原因：checkAndPreempt()会使用_current_batch_tasks来判断是否需要抢占
-        //      如果不清空，会使用旧的批量任务，导致误判
-        // ⭐ 同时保存running_task_list的快照，用于后续构建新批量
-        std::vector<AbsRTTask *> last_tick_running_tasks(running_task_list);
-        _current_batch_tasks.clear();
-        _current_batch_size = 0;
-
-        if (_energy_depleted) {
-            SCHEDULER_LOG_INFO(std::string("💀 [ST-Sync] 检测到能量在运行时检查中耗尽，跳过批量调度") +
-                               " 剩余能量=" + std::to_string(_current_energy * 1000) + " mJ");
-            return;
-        }
-
-        \
-        // ========== 第2.5步：Tick边界抢占检查 ==========
-        // ⭐ V56修复：重新启用tick边界抢占，添加防抖机制
-        // 每个tick开始时清除抢占防抖标记
-        _last_preempted_task = nullptr;
-
-        // ⭐ V96修复：大幅减少不必要的抢占检查
-        // 问题：V95的条件太宽松，导致每个tick都触发抢占
-        // 解决：只在有新任务到达时才检查抢占
-        // 判断方法：比较当前就绪队列大小与上次记录的大小
-        size_t current_ready_size = _ready_queue.size();
-        bool has_new_tasks = (current_ready_size > _last_ready_queue_size);
-        _last_ready_queue_size = current_ready_size;  // 更新记录
-
-        // ⭐ 调用checkAndPreempt进行抢占检查（V96：只在有新任务时触发）
-        if (has_new_tasks) {
-            SCHEDULER_LOG_INFO(std::string("🔔 [ST-Sync V96] 有新任务到达，触发抢占检查") +
-                              " 当前就绪=" + std::to_string(current_ready_size));
-            checkAndPreempt();
-        }
-
-        // ⭐ Bug #9修复：不在批量调度决策之前调用checkAndInterruptRunningTasks()
-        // 因为那时_batch_scheduled_this_tick还没有设置，检查结果会被覆盖
-        // 只在批量调度决策之后调用一次，让它根据_batch_scheduled_this_tick决定是否检查
-
-        // 3. ⭐ 选择K个新任务（不扣除它们的能量）
-        int running_count = running_task_list.size();
-
-        // ⭐ 批量大小计算：实际可调度的新任务数
-        // 批量大小 = min(就绪队列大小, 空闲CPU数)
-        // 注意：_ready_queue和running_task_list是互斥的，不应该相减
-        int actual_new_tasks_can_schedule = std::min(static_cast<int>(K), static_cast<int>(free_cpus));
-
-        std::vector<AbsRTTask *> new_tasks_to_schedule;
-        std::vector<AbsRTTask *> all_ready_tasks_2;
-        if (K > 0) {
-            // ⭐ 关键修复：清理_ready_queue中过期的周期性任务实例（同步TIE修复）
-            // 周期性任务的旧实例在完成后会留在队列中，需要定期清理
-            Tick current_time = SIMUL.getTime();
-            _ready_queue.erase(
-                std::remove_if(_ready_queue.begin(), _ready_queue.end(),
-                    [this, current_time](AbsRTTask *task) {
-                        if (!task) return true;
-                        // 移除不活动的任务
-                        if (!task->isActive()) {
-                            SCHEDULER_LOG_DEBUG(std::string("🧹 [ST-Sync] 清理不活动任务: ") + getTaskName(task));
-                            return true;
-                        }
-                        // ⭐ 移除过期的周期性任务实例：使用getDeadline()获取绝对截止时间
-                        Tick deadline = task->getDeadline();
-                        if (deadline < current_time) {
-                            SCHEDULER_LOG_DEBUG(std::string("🧹 [ST-Sync] 清理过期任务实例: ") +
-                                           getTaskName(task) +
-                                           " 截止=" + std::to_string(static_cast<int64_t>(deadline)) +
-                                           " 当前=" + std::to_string(static_cast<int64_t>(current_time)));
-                            return true;
-                        }
-                        return false;
-                    }),
-                _ready_queue.end()
-            );
-
-            std::vector<AbsRTTask *> sorted_ready(_ready_queue.begin(), _ready_queue.end());
-            std::sort(sorted_ready.begin(), sorted_ready.end(),
-                [this](AbsRTTask* a, AbsRTTask* b) {
-                    auto model_a = getTaskModel(a);
-                    auto model_b = getTaskModel(b);
-                    if (model_a && model_b) {
-                        // RM排序：周期越短，优先级越高（数值越小）
-                        return model_a->getRMPriority() < model_b->getRMPriority();
-                    }
-                    return false;
-                });
-
-            // 🔍 调试：输出就绪队列内容
-            SCHEDULER_LOG_INFO(std::string("📋 [ST-Sync] 就绪队列内容 (共") +
-                               std::to_string(sorted_ready.size()) + "个任务):");
-            for (size_t i = 0; i < sorted_ready.size() && i < 5; ++i) {
-                auto model = getTaskModel(sorted_ready[i]);
-                Tick rm_priority = model ? model->getRMPriority() : Tick(0);
-                SCHEDULER_LOG_INFO(std::string("  [") + std::to_string(i) + "] " +
-                                   getTaskName(sorted_ready[i]) +
-                                   " RM优先级(周期)=" + std::to_string(static_cast<int>(rm_priority)) +
-                                   " deadline=" + std::to_string(static_cast<int>(sorted_ready[i]->getDeadline())));
-            }
-
-            // 🔍 调试：输出运行中任务列表
-            SCHEDULER_LOG_INFO(std::string("🏃 [ST-Sync] 运行中任务列表 (共") +
-                               std::to_string(running_task_list.size()) + "个任务):");
-            for (size_t i = 0; i < running_task_list.size(); ++i) {
-                SCHEDULER_LOG_INFO(std::string("  [") + std::to_string(i) + "] " +
-                                   getTaskName(running_task_list[i]));
-            }
-
-            // ⭐ 关键修复：排除已经在运行中的任务，避免重复调度
-            std::vector<AbsRTTask *> filtered_ready;
-            for (auto* task : sorted_ready_v90) {
-                bool is_running = false;
-                for (auto* running_task : running_task_list) {
-                    if (task == running_task) {
-                        is_running = true;
-                        SCHEDULER_LOG_DEBUG(std::string("⚠️ [ST-Sync] 跳过已在运行中的任务: ") +
-                                           getTaskName(task));
-                        break;
-                    }
-                }
-                if (!is_running) {
-                    filtered_ready.push_back(task);
-                }
-            }
-
-            // ⭐ "全员进退、同生共死"：从candidate_batch选择新任务（受free_cpus限制）
-            // ⭐ 关键修复：任务选择时不过滤Slack，让getTaskN在调度时动态���查
-            // 原因：如果在这里过滤Slack>0，会导致t=60-96之间所有任务被跳过
-            //      无法触发调度，直到t=100某个任务Slack<=0才调度，延迟4ms
-            // 解决方案：让所有候选任务进入_current_batch_tasks，在getTaskN中检查Slack
-            int selected_count = 0;
-            for (size_t j = 0; j < candidate_batch.size(); ++j) {
-                if (selected_count >= free_cpus) break;
-                AbsRTTask *task = candidate_batch[j];
-
-                // 排除已在运行中的任务
-                bool is_running = false;
-                for (auto* running_task : running_task_list) {
-                    if (task == running_task) {
-                        is_running = true;
-                        break;
-                    }
-                }
-                if (is_running) {
-                    continue;  // 跳过运行中的任务
-                }
-
-                // ⭐ ST-Sync个体时序门控：只调度Slack<=0的任务
-                // 每个任务独立检查Slack，Slack<=0才进入就绪队列
-                // 这是"尽可能晚执行"原则的体现
-                Tick task_slack = calculateSlackForTask(task);
-                if (task_slack > 0) {
-                    SCHEDULER_LOG_DEBUG(std::string("⏸️  [ST-Sync] 任务选择: Slack>0，跳过 ") +
-                                       getTaskName(task) +
-                                       " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms");
-                    continue;  // Slack>0，跳过（尽可能晚执行）
-                }
-
-                new_tasks_to_schedule.push_back(task);
-                selected_count++;
-                SCHEDULER_LOG_INFO(std::string("✅ [ST-Sync] 从批次选择新任务: ") +
-                                   getTaskName(task) + " (" + std::to_string(selected_count) + "/" +
-                                   std::to_string(free_cpus) + ")");
-            }
-
-            // 保存所有就绪任务用于日志
-            all_ready_tasks_2.assign(sorted_ready.begin(), sorted_ready.end());
-        }
-
-#if 0
-        // 3. ⭐ ST-Sync关键：每个tick都预扣运行任务续期+新任务的能量
-        // 这样可以在能量耗尽时及时中断任务
-
-        // 计算运行中任务的续期能���（每个tick都要续期）
-        double running_tasks_renewal_energy = 0.0;
-        for (auto* task : running_task_list) {
-            // ⭐ 关键修复：跳过已达到WCET的任务，避免重复扣除能量
-            // 因为能量检查事件在任务达到WCET时会标记完成，但kernel可能还没处理end_instance
-            if (_tasks_completed_wcet.find(task) != _tasks_completed_wcet.end()) {
-                SCHEDULER_LOG_INFO(std::string("⚠️ [ST-Sync] 批量调度：跳过已完成WCET的任务: ") +
-                                   getTaskName(task) + " (能量检查事件已标记完成)");
-                continue;
-            }
-            running_tasks_renewal_energy += calculateUnitEnergyForTask(task);
-        }
-
-        // ⭐ "全员进退、同生共死"：计算candidate_batch中非运行任务的能量（受free_cpus限制）
-        // ⭐ 关键修复：能量计算时不过滤Slack>0，避免过早过滤导致调度延迟
-        // 原因：如果在能量计算时就过滤Slack>0，会导致t=60-96之间所有任务被跳过，
-        //      无法触发调度决策，直到t=100某个任务Slack<=0才调度，延迟4ms
-        // 解决方案：能量计算考虑所有候选任务，Slack过滤移到任务选择阶段
-        double new_tasks_energy = 0.0;
-        int candidate_count = 0;
-        int skipped_running = 0;
-        int skipped_slack = 0;
-        int checked_count = 0;
-
-        SCHEDULER_LOG_INFO(std::string("🔍 [ST-Sync] 开始遍历候选批次: ") +
-                          "批次大小=" + std::to_string(candidate_batch.size()) +
-                          " 空闲CPU=" + std::to_string(free_cpus));
-
-        for (auto* task : candidate_batch) {
-            if (candidate_count >= free_cpus) break;  // 最多free_cpus个新任务
-            checked_count++;
-
-            // 排除运行中的任务
-            bool is_running = false;
-            for (auto* running_task : running_task_list) {
-                if (task == running_task) {
-                    is_running = true;
-                    break;
-                }
-            }
-            if (is_running) {
-                skipped_running++;
-                SCHEDULER_LOG_INFO(std::string("🔍 [ST-Sync] 跳过运行中任务: ") + getTaskName(task));
-                continue;  // 跳过运行中的任务
-            }
-
-            // ⭐ ST-Sync核心：个体Slack检查，只有Slack<=0的任务才能调度
-            // 这体现了"尽可能晚执行"的原则
-            Tick task_slack = calculateSlackForTask(task);
-            Tick current_time = SIMUL.getTime();
-            double remaining_double = task->getRemainingWCET();
-            SCHEDULER_LOG_INFO(std::string("🔍 [ST-Sync] 检查任务: ") + getTaskName(task) +
-                              " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms" +
-                              " (deadline=" + std::to_string(static_cast<int64_t>(task->getDeadline())) +
-                              " current=" + std::to_string(static_cast<int64_t>(current_time)) +
-                              " remaining=" + std::to_string(static_cast<int64_t>(Tick(remaining_double))) + ")");
-
-            if (task_slack > 0) {
-                skipped_slack++;
-                SCHEDULER_LOG_DEBUG(std::string("⏸️  [ST-Sync] Slack>0，跳过任务 ") +
-                                   getTaskName(task) +
-                                   " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms");
-                continue;  // Slack>0，跳过（尽可能晚执行）
-            }
-
-            // Slack<=0，任务必须调度，计算其能耗
-            SCHEDULER_LOG_INFO(std::string("✅ [ST-Sync] Slack<=0，可选任务: ") + getTaskName(task) +
-                              " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms" +
-                              " 能耗=" + std::to_string(calculateUnitEnergyForTask(task) * 1000) + " mJ");
-            new_tasks_energy += calculateUnitEnergyForTask(task);
-            candidate_count++;
-        }
-
-        SCHEDULER_LOG_INFO(std::string("🔍 [ST-Sync] 候选批次遍历完成: ") +
-                          "检查=" + std::to_string(checked_count) +
-                          " 跳过运行中=" + std::to_string(skipped_running) +
-                          " 跳过Slack>0=" + std::to_string(skipped_slack) +
-                          " 可用=" + std::to_string(candidate_count));
-
-        // ⭐ ST-Sync总能量需求 = 运行中任务续期 + 新任务（每个tick都扣除）
-        double total_energy_needed = running_tasks_renewal_energy + new_tasks_energy;
-
-        SCHEDULER_LOG_INFO(std::string("📊 [ST-Sync] 批量调度决策: ") +
-                          "总CPU=" + std::to_string(total_cpus) +
-                          " 运行中=" + std::to_string(running_count) +
-                          " 空闲=" + std::to_string(free_cpus) +
-                          " 就绪队列=" + std::to_string(_ready_queue.size()) +
-                          " K=min(ready,free)=" + std::to_string(K) +
-                          " 候选批次=" + std::to_string(candidate_batch.size()) +
-                          " 能量计算基数=" + std::to_string(candidate_count) +
-                          " ⭐ 运行任务能量已扣除=" + std::to_string(running_count) + "个任务" +
-                          " 新任务能耗=" + std::to_string(new_tasks_energy * 1000) + " mJ" +
-                          " 总能量需求=" + std::to_string(total_energy_needed * 1000) + " mJ" +
-                          " 当前能量=" + std::to_string(_current_energy * 1000) + " mJ");
-
-        // 4. ⭐ ST-Sync核心：批量能量判断（"全有或全无"���
-        // ⭐ Bug #3修复：检查总能量需求（运行中续期+新任务），确保有足夠能量才调度
-        const double EPSILON = 1e-9;
-        // ⭐ V38修复：使用与TIE/TGF相同的能量检查条件
-        // 当能量 <= 总能量需求时，立即中断任务（不扣除能量），避免超额透支
-        // ⭐ V39修复：使用与TIE/TGF完全相同的能量检查条件
-        // TIE: current_energy <= unit_energy + EPSILON → 挂起
-        // ST-Sync: current_energy <= total_energy_needed + EPSILON → 挂起
-        // 这样当能量 == 需求时，允许继续执行（与TIE一致）
-        // ⭐ 关键修复：运行任务能量已扣除，���检查新任务能量
-        if (_current_energy > new_tasks_energy - EPSILON) {
-            // 能量充足：调度新任务
-            _batch_scheduled_this_tick = true;
-            
-            // _current_batch_tasks包含：运行中任务 + 新任务
-            std::vector<AbsRTTask *> all_tasks_to_dispatch;
-            for (auto* task : running_task_list) {
-                // ⭐ 关键修复：跳过已达到WCET的任务
-                if (_tasks_completed_wcet.find(task) != _tasks_completed_wcet.end()) {
-                    continue;
-                }
-                all_tasks_to_dispatch.push_back(task);
-            }
-            for (auto* task : new_tasks_to_schedule) {
-                all_tasks_to_dispatch.push_back(task);
-            }
-
-            SCHEDULER_LOG_INFO(std::string("⚡ [ST-Sync] 批量调度门槛检查通过: ") +
-                              "新任务数=" + std::to_string(new_tasks_to_schedule.size()) +
-                              " 运行任务数=" + std::to_string(running_count) +
-                              " 新任务能耗=" + std::to_string(new_tasks_energy * 1000) + " mJ " +
-                              "当前能量=" + std::to_string(_current_energy * 1000) + " mJ");
-
-            _current_batch_tasks = all_tasks_to_dispatch;
-            _current_batch_size = all_tasks_to_dispatch.size();
-            _stats.total_batch_schedules++;
-
-            // ⭐ V122修复：删除这里的能量扣除
-            // 能量由EnergyCheckEvent在实际执行时每1ms精确扣除
-            // 之前这里额外扣除导致total_consumed被重复计算
-
-            SCHEDULER_LOG_INFO(std::string("✅ [ST-Sync] 批量调度成功: ") +
-                              "运行中=" + std::to_string(running_count) +
-                              " 新任务=" + std::to_string(new_tasks_to_schedule.size()) +
-                              " 总任务=" + std::to_string(all_tasks_to_dispatch.size()) +
-                              " 新任务能耗=" + std::to_string(new_tasks_energy * 1000) + " mJ" +
-                              " 剩余能量=" + std::to_string(_current_energy * 1000) + " mJ");
-
-            // 不调用checkAndInterruptRunningTasks()，避免潜在的segfault
-        } else {
-            // ⭐ 修复：能量不足时只拒绝调度新任务，不挂起运行中的高优先级任务
-            _batch_scheduled_this_tick = false;
-            _current_batch_tasks.clear();
-            _preempt_batch_tasks.clear();
-            _current_batch_size = 0;
-            _stats.total_batch_skipped++;
-
-            SCHEDULER_LOG_WARNING(std::string("⚠️  [ST-Sync] 能量不足，全体下处理机: ") +
-                                "总需要=" + std::to_string(total_energy_needed * 1000) + " mJ" +
-                                " (运行��续期=" + std::to_string(running_tasks_renewal_energy * 1000) + " mJ" +
-                                " 新任务=" + std::to_string(new_tasks_energy * 1000) + " mJ)" +
-                                " 当前=" + std::to_string(_current_energy * 1000) + " mJ" +
-                                " 运行中=" + std::to_string(running_count) +
-                                " → 全员休眠，等待能量收集");
-
-            // ⭐ 关键：挂起运行中的任务（"全员进退、同生共死"）
-            if (!running_task_list.empty()) {
-                SCHEDULER_LOG_WARNING(std::string("🔴 [ST-Sync] 挂起运行中的任务: ") +
-                                    std::to_string(running_task_list.size()) + " 个");
-                for (auto* task : running_task_list) {
-                    if (_kernel && task) {
-                        setSuspendReason(task, "insufficient_energy");
-                        SCHEDULER_LOG_INFO(std::string("🔴 [ST-Sync] 挂起任务: ") + getTaskName(task));
-                        _kernel->suspend(task);
-                    }
-                }
-            }
-        }
-
-#endif
-
-        // 如果有kernel，循环触发dispatch直到填满所有CPU
-        if (!_kernel) {
-            SCHEDULER_LOG_DEBUG("⚠��� [ST-Sync] performTickScheduling: _kernel为nullptr，尝试获取");
-            _kernel = getKernel();
-        }
-
-        // ⭐⭐⭐ Bug修复3：深度充电状态下跳过dispatch循环 ⭐⭐⭐
-        // 如果在深度充电状态或能量耗尽，不应该尝试调度任务
-        if (_deep_charging || _energy_depleted) {
-            SCHEDULER_LOG_INFO(std::string("🔋 [ST-Sync] 深度充电/能量耗尽状态，跳过dispatch循环") +
-                              " _deep_charging=" + (_deep_charging ? "true" : "false") +
-                              " _energy_depleted=" + (_energy_depleted ? "true" : "false"));
-            return;
-        }
-
-        if (_kernel) {
-            SCHEDULER_LOG_INFO("🔔 [ST-Sync] performTickScheduling: 开始循环调度填满所有CPU");
-            // ⭐ V31关键修复：循环调用dispatch()直到所有CPU被填满或无法调度更多任务
-            // 这是多核调度器的正确行为：在一个tick内尽可能多地调度任务
-            int dispatch_attempts = 0;
-            const int MAX_DISPATCH_ITERATIONS = 100;  // 防止无限循环
-
-            while (dispatch_attempts < MAX_DISPATCH_ITERATIONS) {
-                SCHEDULER_LOG_INFO(std::string("🔍 [ST-Sync] dispatch循环 #") + std::to_string(dispatch_attempts) +
-                                   " _running_tasks.size()=" + std::to_string(_running_tasks.size()));
-
-                // 检查是否所有CPU都已填满
-                // ⭐ 关键修复：如果_running_tasks为空，说明没有任何CPU被占用，应该继续调度
-                bool all_cpus_full = false;
-                if (!_running_tasks.empty()) {
-                    all_cpus_full = true;
-                    for (auto &map_pair : _running_tasks) {
-                        if (map_pair.second == nullptr) {
-                            all_cpus_full = false;
-                            break;
-                        }
-                    }
-                }
-
-                if (all_cpus_full) {
-                    SCHEDULER_LOG_INFO("✅ [ST-Sync] 所有CPU已填满，停止调度");
-                    break;
-                }
-
-                // 记录调度前的任务数
-                size_t tasks_before = _ready_queue.size() + _running_tasks.size();
-
-                // 调用dispatch尝试调度更多任务
-                SCHEDULER_LOG_INFO(std::string("🚀 [ST-Sync] 调用 _kernel->dispatch()"));
-                // _kernel->dispatch(); // V105: 禁用，避免频繁deschedule
-
-                // ⭐ Micro-Batch Preemption：dispatch后清除抢占批量
-                // 抢占批量用于mid-tick立即调度，dispatch调用后即被"消费"
-                // 无论任务是否成功调度，都清除抢占批量，避免阻塞后续调度
-                if (!_preempt_batch_tasks.empty()) {
-                    SCHEDULER_LOG_INFO(std::string("⚡ [ST-Sync] dispatch后清除抢占批量") +
-                                       " size=" + std::to_string(_preempt_batch_tasks.size()));
-                    _preempt_batch_tasks.clear();
-                }
-
-                dispatch_attempts++;
-
-                // 记录调度后的任务数
-                size_t tasks_after = _ready_queue.size() + _running_tasks.size();
-
-                // 如果没有任务被调度（状态没变化），停止调度
-                if (tasks_before == tasks_after) {
-                    SCHEDULER_LOG_DEBUG("⏹️ [ST-Sync] 无更多任务可调度，停止dispatch循环");
-                    break;
-                }
-
-                SCHEDULER_LOG_DEBUG(std::string("🔄 [ST-Sync] dispatch循环 #") + std::to_string(dispatch_attempts) +
-                                   " _ready_queue.size()=" + std::to_string(_ready_queue.size()) +
-                                   " _running_tasks.size()=" + std::to_string(_running_tasks.size()));
-            }
-
-            if (dispatch_attempts >= MAX_DISPATCH_ITERATIONS) {
-                SCHEDULER_LOG_WARNING("⚠️ [ST-Sync] dispatch循环达到最大迭代次数，可能存在bug");
-            }
-
-            // ⭐ 注意：批量调度后的抢占检查已删除
-            // 原因：mid-tick抢占已在insert()中通过Micro-Batch抢占处理
-        } else {
-            SCHEDULER_LOG_INFO("⚠️ [ST-Sync] performTickScheduling: _kernel仍为nullptr，跳过dispatch");
-        }
+        // 旧的 V9x/V12x fallback 调度路径已删除。
+        // ST-Sync 现在只保留上面的单一原子批次决策与 dispatch 通道。
     }
 
     void STSyncScheduler::schedule() {
@@ -1439,216 +983,35 @@ namespace RTSim {
                            "ready_queue: " + std::to_string(_ready_queue.size()));
 
         const double ENERGY_EPSILON = 1e-9;
-
-        // ⭐ 能量耗尽检查
         if (_energy_depleted && _current_energy < ENERGY_EPSILON) {
             SCHEDULER_LOG_INFO("💀 [ST-Sync] getTaskN: 能量已耗尽");
             return nullptr;
         }
 
-        // ⭐⭐⭐ V112修复：深度充电时拒绝调度新任务 ⭐⭐⭐
-        // 深度充电模式下，不应返回任何新任务
-        // 直到能量恢复或Slack归零
-        if (_deep_charging) {
-            SCHEDULER_LOG_INFO(std::string("🔋 [ST-Sync V112] getTaskN: 深度充电中，拒绝调度"));
+        if (_is_charging_sleep || _deep_charging) {
+            SCHEDULER_LOG_INFO("🔋 [ST-Sync] getTaskN: 充电休眠中，拒绝调度");
             return nullptr;
         }
 
-        // ⭐ n==0时重置计数器
-        // 注意：虽然kernel会多次调用getTaskN(0)，但必须在���里清除
-        // 否则_counted_tasks_in_dispatch会累积导致任务无法被选择
-        if (n == 0) {
-            _counted_tasks_in_dispatch.clear();
-
-            // ⭐ V124修复：如果紧急调度已设置批量任务，不清空它
-            if (!_current_batch_tasks.empty()) {
-                SCHEDULER_LOG_INFO(std::string("V124: Emergency batch set, size=") +
-                                  std::to_string(_current_batch_tasks.size()));
-                // 直接返回紧急批量中的任务
-                if (n < _current_batch_tasks.size()) {
-                    AbsRTTask* task = _current_batch_tasks[n];
-                    if (task) {
-                        _counted_tasks_in_dispatch.insert(task);
-                        return task;
-                    }
-                }
-                return nullptr;
-            }
-
-            // ⭐ V107修复：清除旧的批量状态
-            // 当任务完成触发新的dispatch时，需要重新构建批量
-            // 否则会使用过时的批量列表，导致已完成的任务被重复返回
-            _batch_scheduled_this_tick = false;
-            _current_batch_tasks.clear();
-            // _v108_batch_energy_checked = false;  // ⭐ V108: 不再每次重置，改用时间戳检查
-
-            // ⭐⭐⭐ V108修复：ST-Sync "全有或全无"批量能量检查 ⭐⭐⭐
-            // 在返回任何任���之前，先检查是否有足够能量调度K个任务
-            // 如果能量不足，不返回任何任务（全无）- 这才是SYNC的正确行为
-            // 使用缓存机制避免重复计算
-            // ⭐ V108时间戳修复：只在时间推进时重新检查
-            size_t current_ready_size_v108 = _ready_queue.size();
-            MetaSim::Tick current_time_v108 = SIMUL.getTime();
-            bool time_changed_v108 = (current_time_v108 != _last_v108_check_time);
-            bool queue_changed_v108 = (current_ready_size_v108 != _v108_last_ready_queue_size);
-            bool need_check_v108 = (!_v108_batch_energy_checked) ||
-                                   time_changed_v108 ||
-                                   queue_changed_v108;
-            _last_v108_check_time = current_time_v108;
-            _v108_last_ready_queue_size = current_ready_size_v108;
-
-            // ⭐ V124修复：如果紧急调度已设置批量任务，跳过V108检查
-            bool emergency_batch_set = !_current_batch_tasks.empty();
-
-            if (need_check_v108 && !_ready_queue.empty() && !_energy_depleted && !emergency_batch_set) {
-                // ⭐ V108: 保存能量快照，用于后续比较
-                // 只在首次检查时保存快照，后续检查使用已保存的快照
-                // 这样即使getTaskN()扣减了能量，批量检查仍然使用原始值
-                if (!_v108_batch_energy_checked) {
-                    _v108_batch_start_energy = _current_energy;
-                }
-
-                // 获取核心数
-                ConfigManager &configMgr_v108 = ConfigManager::getInstance();
-                int total_cpus_v108 = configMgr_v108.getNumCores();
-
-                // 获取运行中任务数
-                int running_cnt_v108 = 0;
-                if (_kernel) {
-                    const auto& running_v108 = _kernel->getCurrentExecutingTasks();
-                    for (const auto& pair : running_v108) {
-                        if (pair.second && pair.second->isExecuting()) {
-                            running_cnt_v108++;
-                        }
-                    }
-                }
-
-                // 计算K = min(就绪任务数, 空闲核心数)
-                int ready_cnt_v108 = static_cast<int>(_ready_queue.size());
-                int free_cpus_v108 = total_cpus_v108 - running_cnt_v108;
-                int K_v108 = std::min(ready_cnt_v108, free_cpus_v108);
-
-                if (K_v108 > 0) {
-                    // 按RM优先级排序就绪队列
-                    std::vector<AbsRTTask*> sorted_ready_v108(_ready_queue.begin(), _ready_queue.end());
-                    std::sort(sorted_ready_v108.begin(), sorted_ready_v108.end(),
-                        [this](AbsRTTask* a, AbsRTTask* b) {
-                            auto model_a = getTaskModel(a);
-                            auto model_b = getTaskModel(b);
-                            if (model_a && model_b) {
-                                return model_a->getRMPriority() < model_b->getRMPriority();
-                            }
-                            return false;
-                        });
-
-                    // ⭐⭐⭐ V131修复：计算K个任务的1ms总功耗（符合白皮书"1ms查票公理"） ⭐⭐⭐
-                    // 白皮书定义：E_batch = Σ unit_energy(T_j)，即下一毫秒的总功耗
-                    double batch_energy_v108 = 0.0;
-                    for (int i = 0; i < K_v108 && i < static_cast<int>(sorted_ready_v108.size()); ++i) {
-                        AbsRTTask* task = sorted_ready_v108[i];
-                        double unit_energy = calculateUnitEnergyForTask(task);
-                        batch_energy_v108 += unit_energy;  // 1ms总功耗（不是WCET总能量）
-                    }
-
-                    SCHEDULER_LOG_INFO(std::string("🔍 [ST-Sync V131] 批量能量检查(1ms总功耗): K=") +
-                                      std::to_string(K_v108) +
-                                      " 需要=" + std::to_string(batch_energy_v108 * 1000) + " mJ" +
-                                      " 快照=" + std::to_string(_v108_batch_start_energy * 1000) + " mJ" +
-                                      " 当前=" + std::to_string(_current_energy * 1000) + " mJ" +
-                                      " 已扣除=" + std::to_string(_v108_batch_total_energy * 1000) + " mJ");
-
-                    // 缓存检查结果 - 使用快照能量，不受getTaskN()扣减影响
-                    _v108_batch_energy_sufficient = (_v108_batch_start_energy >= batch_energy_v108 - ENERGY_EPSILON);
-                    _v108_batch_energy_checked = true;
-
-                    if (!_v108_batch_energy_sufficient) {
-                        SCHEDULER_LOG_WARNING(std::string("⚠️ [ST-Sync V114] 批量能量不足���全部不调度: ") +
-                                             "需要=" + std::to_string(batch_energy_v108 * 1000) + " mJ" +
-                                             " 快照=" + std::to_string(_v108_batch_start_energy * 1000) + " mJ");
-                        _energy_depleted = true;
-                        // ⭐ ST-Sync V131修复：全组挂起时激活深度休眠锁（符合白皮书定义）
-                        _is_charging_sleep = true;
-                        return nullptr;
-                    }
-
-                    // ⭐⭐⭐ V114修复：移除双重扣费 ⭐⭐⭐
-                    // getTaskN()只做检查，不扣费！
-                    // 能量只在Tick级（V111）扣除，避免"进餐厅点菜先收一顿饭钱，吃的时候再收一次"的问题
-                    SCHEDULER_LOG_INFO(std::string("✅ [ST-Sync V114] 批量能量检查通过（只检查不扣费）: ") +
-                                      "需要=" + std::to_string(batch_energy_v108 * 1000) + " mJ" +
-                                      " 快照=" + std::to_string(_v108_batch_start_energy * 1000) + " mJ" +
-                                      " 当前=" + std::to_string(_current_energy * 1000) + " mJ");
-                    _v108_batch_k_approved = K_v108;
-                }
-            } else if (_v108_batch_energy_checked && !_v108_batch_energy_sufficient) {
-                // 已经检查过且能量不足，直接返回nullptr
-                SCHEDULER_LOG_INFO("⚠️ [ST-Sync V108] 使用缓存的能量检查结果：能量不足");
-                return nullptr;
-            }
-        }
-        // ⭐⭐⭐ V92修复：优先使用_current_batch_tasks ⭐⭐⭐
-        // 当V90批量调度成功时，_current_batch_tasks包含正确排序的任务列表
-        // getTaskN应该直接使用这个列表，而不是重新排序_ready_queue
-        if (_batch_scheduled_this_tick && !_current_batch_tasks.empty()) {
-            // 按RM优先级排序批量任务（确保顺序正确）
-            std::vector<AbsRTTask*> sorted_batch = _current_batch_tasks;
-            std::sort(sorted_batch.begin(), sorted_batch.end(),
-                [this](AbsRTTask* a, AbsRTTask* b) {
-                    auto model_a = getTaskModel(a);
-                    auto model_b = getTaskModel(b);
-                    if (model_a && model_b) {
-                        return model_a->getRMPriority() < model_b->getRMPriority();
-                    }
-                    return false;
-                });
-
-            SCHEDULER_LOG_INFO(std::string("📦 [ST-Sync V92] getTaskN使用批量任务列表: ") +
-                              "n=" + std::to_string(n) +
-                              " 批量大小=" + std::to_string(sorted_batch.size()));
-
-            // 返回第n个任务（如果存在）
-            if (n < sorted_batch.size()) {
-                AbsRTTask* task = sorted_batch[n];
-
-                // 检查任务是否有效
-                if (task && task->isActive()) {
-                    // 检查是否已在运行
-                    bool is_running = false;
-                    if (_kernel) {
-                        CPU *proc = _kernel->getProcessor(task);
-                        is_running = (proc != nullptr);
-                    }
-
-                    if (!is_running) {
-                        // 检查是否已在本轮dispatch中处理过
-                        if (_counted_tasks_in_dispatch.find(task) == _counted_tasks_in_dispatch.end()) {
-                            // ⭐ V122修复：删除能量扣除，由EnergyCheckEvent负责
-                            _counted_tasks_in_dispatch.insert(task);
-
-                            SCHEDULER_LOG_INFO(std::string("✅ [ST-Sync V92] getTaskN(") + std::to_string(n) +
-                                              ") 从批量返回: " + getTaskName(task));
-                            return task;
-                        }
-                    }
-                }
-            }
-
-            // 批量中没有足够的任务，返回nullptr
-            SCHEDULER_LOG_INFO(std::string("📭 [ST-Sync V92] getTaskN(") + std::to_string(n) +
-                              std::string(") 批量中没有更多任务"));
+        if (!_batch_scheduled_this_tick || _current_batch_tasks.empty()) {
+            SCHEDULER_LOG_INFO("📭 [ST-Sync] getTaskN: 当前没有已批准的同步组");
             return nullptr;
         }
 
-        // ⭐ V52核心：实时遍历ready_queue，按RM优先级找Slack<=0且能量足够的任务
-        if (_ready_queue.empty()) {
-            SCHEDULER_LOG_INFO("📭 [ST-Sync] getTaskN: 就绪队列为空");
-            return nullptr;
+        std::vector<AbsRTTask *> stable_batch;
+        stable_batch.reserve(_current_batch_tasks.size());
+        for (AbsRTTask *task : _current_batch_tasks) {
+            if (!task || !task->isActive()) {
+                continue;
+            }
+            if (_tasks_completed_wcet.find(task) != _tasks_completed_wcet.end()) {
+                continue;
+            }
+            stable_batch.push_back(task);
         }
 
-        // 按RM优先级排序（周期越短优先级越高）
-        std::vector<AbsRTTask *> sorted_ready(_ready_queue.begin(), _ready_queue.end());
-        std::sort(sorted_ready.begin(), sorted_ready.end(),
-            [this](AbsRTTask* a, AbsRTTask* b) {
+        std::sort(stable_batch.begin(), stable_batch.end(),
+            [this](AbsRTTask *a, AbsRTTask *b) {
                 auto model_a = getTaskModel(a);
                 auto model_b = getTaskModel(b);
                 if (model_a && model_b) {
@@ -1657,66 +1020,22 @@ namespace RTSim {
                 return false;
             });
 
-        // ⭐ V92调试：输出排序后的任务列表
-        SCHEDULER_LOG_INFO(std::string("📋 [ST-Sync V92] 排序后的就绪队列 (n=") + std::to_string(n) + "):");
-        for (size_t i = 0; i < sorted_ready.size() && i < 5; ++i) {
-            auto model = getTaskModel(sorted_ready[i]);
-            Tick rm_priority = model ? model->getRMPriority() : Tick(0);
-            SCHEDULER_LOG_INFO(std::string("  [") + std::to_string(i) + "] " +
-                               getTaskName(sorted_ready[i]) +
-                               " RM优先级=" + std::to_string(static_cast<int>(rm_priority)));
+        if (n >= stable_batch.size()) {
+            SCHEDULER_LOG_INFO(std::string("📭 [ST-Sync] getTaskN(") + std::to_string(n) +
+                               ") 批量中没有更多任务，batch_size=" + std::to_string(stable_batch.size()));
+            return nullptr;
         }
 
-        // ⭐ 遍历找到第n个Slack<=0且能量足够的任务
-        unsigned int found_count = 0;
-        for (AbsRTTask *task : sorted_ready) {
-            if (!task || !task->isActive()) {
-                continue;
-            }
-
-            // 检查是否已在运行（通过kernel的getProcessor）
-            bool is_running = false;
-            if (_kernel) {
-                CPU *proc = _kernel->getProcessor(task);
-                is_running = (proc != nullptr);
-            }
-            if (is_running) {
-                continue;  // 跳过已运行的任务
-            }
-
-            // ⭐ 关键修复：检查是否已在本轮dispatch中处理过
-            // 如果任务已被处理，仍然需要递增found_count以保持索引一致性
-            // 这样getTaskN(n)才能正确返回第n+1个任务
-            if (_counted_tasks_in_dispatch.find(task) != _counted_tasks_in_dispatch.end()) {
-                found_count++;  // 递增计数以保持索引一致
-                continue;
-            }
-
-            // ⭐ V88修复：ST算法在能量充足时移除Slack门控
-            // getTaskN只负责选择任务，不检查Slack
-            // Slack检查在performTickScheduling的All-or-Nothing逻辑中进行
-            // 这样能量充足时可以像ASAP一样立即调度所有任务
-
-            // ⭐ V131修复：回退到旧路径时，仍然遵守批次 1ms 原子语义
-            // 这里只负责挑选未在当前批次中的任务，不再做单任务 WCET 总能量门控
-
-            // 找到第n个有效任务
-            if (found_count == n) {
-                // ⭐ V131修复：旧回退路径不再单独做能量门控，避免把原子批次退化成单任务准入
-                _counted_tasks_in_dispatch.insert(task);
-
-                SCHEDULER_LOG_INFO(std::string("✅ [ST-Sync] getTaskN(") + std::to_string(n) + ") 返回: " +
-                                  getTaskName(task));
-                return task;
-            }
-
-            found_count++;
+        AbsRTTask *task = stable_batch[n];
+        if (!task) {
+            SCHEDULER_LOG_INFO(std::string("📭 [ST-Sync] getTaskN(") + std::to_string(n) +
+                               ") 目标任务为空");
+            return nullptr;
         }
 
-        // 没找到足够的任务
-        SCHEDULER_LOG_INFO(std::string("📭 [ST-Sync] getTaskN(") + std::to_string(n) +
-                           ") 没有更多可调度任务，found_count=" + std::to_string(found_count));
-        return nullptr;
+        SCHEDULER_LOG_INFO(std::string("✅ [ST-Sync] getTaskN(") + std::to_string(n) +
+                           ") 返回已批准批量任务: " + getTaskName(task));
+        return task;
     }
 
     // =====================================================
@@ -1733,6 +1052,14 @@ namespace RTSim {
             return;
         }
 
+        if (_is_charging_sleep || _deep_charging) {
+            if (std::find(_deferred_arrivals.begin(), _deferred_arrivals.end(), task) == _deferred_arrivals.end()) {
+                _deferred_arrivals.push_back(task);
+            }
+            SCHEDULER_LOG_INFO(std::string("⏸️ [ST-Sync] notify: 充电窗口内延后吸纳任务到下一tick: ") + getTaskName(task));
+            return;
+        }
+
         // ⭐ 关键修复：清除任务的WCET完成标志（新实例到达）
         // 周期性任务复用同一个AbsRTTask对象，但每个实例都是独立的
         SCHEDULER_LOG_INFO(std::string("🔍 [ST-Sync] notify: 检查WCET完成标志: ") +
@@ -1744,21 +1071,6 @@ namespace RTSim {
                                getTaskName(task) + " (新实例到达)");
         }
 
-        // ⭐ 修复：任务到达时只检查能量，不扣减能耗
-        // 能耗在任务调度时通过getTaskN()方法扣减
-        double unit_energy = calculateUnitEnergyForTask(task);
-
-        // 检查能量是否充足
-        const double EPSILON = 1e-9;
-        if (_current_energy < unit_energy - EPSILON) {
-            SCHEDULER_LOG_WARNING(std::string("⚠️ [ST-Sync] notify: 能量不足") +
-                                 " 任务=" + getTaskName(task) +
-                                 " 需要=" + std::to_string(unit_energy) + "J" +
-                                 " 当前=" + std::to_string(_current_energy) + "J");
-            return;
-        }
-
-        // 任务到达，添加到就绪队列
         SCHEDULER_LOG_INFO(std::string("📥 [ST-Sync] 任务到达并添加到就绪队列: ") + getTaskName(task));
         addToReadyQueue(task);
     }
@@ -1780,13 +1092,6 @@ namespace RTSim {
             if (_kernel) {
                 SCHEDULER_LOG_INFO("📥 [ST-Sync] addTask: _kernel初始化成功");
             }
-        }
-
-        // ⭐ Bug修复：能量耗尽时拒绝新任务
-        if (_energy_depleted && _current_energy < 0.000001) {
-            SCHEDULER_LOG_WARNING(std::string("💀 [ST-Sync] 能量已耗尽，拒绝添加新任务: ") +
-                                         getTaskName(task));
-            return;  // 拒绝任务
         }
 
         SCHEDULER_LOG_INFO(std::string("📥 [ST-Sync] 添加任务: ") + getTaskName(task));
@@ -1909,6 +1214,7 @@ namespace RTSim {
 
         // ⭐ 关键修复：清除任务的WCET完成标志（新实例重新开始）
         // 周期性任务复用同一个AbsRTTask对象，但每个实例都是独立的
+        clearPersistentTaskState(task);
         auto it = _tasks_completed_wcet.find(task);
         if (it != _tasks_completed_wcet.end()) {
             _tasks_completed_wcet.erase(it);
@@ -2216,10 +1522,27 @@ namespace RTSim {
                               std::to_string(static_cast<int64_t>(current_insert_time)) + "ms");
         }
 
-        // ⭐ ST-Sync：任务到达时直接加入等待队列
-        // Slack检查在每Tick的调度决策时进行
+        // ⭐ ST-Sync：新到达任务也必须服从 tick 边界统一准入。
+        // 缺电充电窗口期间，不允许新实例在 tick 中途直接改写 ready_group。
+        // 旧阻塞组由 waiting_queue 保持；新实例暂时只留在调度器基类容器，等待下一 tick 统一吸纳。
         Scheduler::insert(task);
-        addToReadyQueue(task);
+
+        bool suspended_for_energy = (getSuspendReason(task) == "insufficient_energy");
+        bool in_charging_window = (_is_charging_sleep || _deep_charging);
+
+        if (suspended_for_energy) {
+            addToWaitingQueue(task);
+        } else if (in_charging_window) {
+            removeFromReadyQueue(task);
+            removeFromWaitingQueue(task);
+            if (std::find(_deferred_arrivals.begin(), _deferred_arrivals.end(), task) == _deferred_arrivals.end()) {
+                _deferred_arrivals.push_back(task);
+            }
+            SCHEDULER_LOG_INFO(std::string("⏸️ [ST-Sync] charging窗口内延后吸纳新实例到下一tick: ") +
+                              getTaskName(task));
+        } else {
+            addToReadyQueue(task);
+        }
 
         // ⭐ 新增：mid-tick抢占支持
         // 仅对真正的新任务执行mid-tick抢占，跳过suspend重新插入的任务
@@ -2394,6 +1717,15 @@ namespace RTSim {
         }
     }
 
+    void STSyncScheduler::clearPersistentTaskState(AbsRTTask *task) {
+        if (!task) {
+            return;
+        }
+
+        removeFromWaitingQueue(task);
+        clearSuspendReason(task);
+    }
+
     void STSyncScheduler::extract(AbsRTTask *task) {
         if (!task) {
             return;
@@ -2403,8 +1735,18 @@ namespace RTSim {
                           " _ready_queue.size()=" + std::to_string(_ready_queue.size()));
 
         Scheduler::extract(task);
+        clearPersistentTaskState(task);
         removeFromReadyQueue(task);
-        removeFromWaitingQueue(task);
+        auto deferred_it = std::find(_deferred_arrivals.begin(), _deferred_arrivals.end(), task);
+        if (deferred_it != _deferred_arrivals.end()) {
+            _deferred_arrivals.erase(deferred_it);
+        }
+        stopEnergyCheckForTask(task);
+        _tasks_completed_wcet.erase(task);
+        auto batch_it = std::find(_current_batch_tasks.begin(), _current_batch_tasks.end(), task);
+        if (batch_it != _current_batch_tasks.end()) {
+            _current_batch_tasks.erase(batch_it);
+        }
     }
 
     void STSyncScheduler::addToReadyQueue(AbsRTTask *task) {
@@ -2415,6 +1757,11 @@ namespace RTSim {
         // ⭐ 修复重复实例bug：检查任务是否已在就绪队列中
         if (std::find(_ready_queue.begin(), _ready_queue.end(), task) != _ready_queue.end()) {
             SCHEDULER_LOG_DEBUG(std::string("⚠️ [ST-Sync] 任务已在就绪队列，跳过添加: ") + getTaskName(task));
+            return;
+        }
+
+        if (_kernel && _kernel->getProcessor(task) != nullptr) {
+            SCHEDULER_LOG_DEBUG(std::string("⚠️ [ST-Sync] 任务已在CPU上运行，跳过重新入队: ") + getTaskName(task));
             return;
         }
 
@@ -2458,7 +1805,12 @@ namespace RTSim {
         if (!task) {
             return;
         }
+
         removeFromReadyQueue(task);
+        if (isInWaitingQueue(task)) {
+            return;
+        }
+
         _waiting_queue.push_back(task);
         SCHEDULER_LOG_DEBUG(std::string("⏸️ [ST-Sync] 任务加入等待队列: ") + getTaskName(task));
     }
@@ -2468,6 +1820,26 @@ namespace RTSim {
         if (it != _waiting_queue.end()) {
             _waiting_queue.erase(it);
         }
+    }
+
+    void STSyncScheduler::promoteWaitingTasksToReadyQueue(const std::string &context) {
+        if (_waiting_queue.empty()) {
+            return;
+        }
+
+        std::vector<AbsRTTask *> waiting_tasks(_waiting_queue.begin(), _waiting_queue.end());
+        _waiting_queue.clear();
+
+        for (AbsRTTask *task : waiting_tasks) {
+            if (!task || !task->isActive()) {
+                continue;
+            }
+            addToReadyQueue(task);
+        }
+
+        SCHEDULER_LOG_INFO(std::string("🔓 [ST-Sync] 充电窗口结束，等待队列任务回到就绪队列: ") +
+                          context +
+                          " count=" + std::to_string(waiting_tasks.size()));
     }
 
     bool STSyncScheduler::isInReadyQueue(AbsRTTask *task) const {
@@ -2582,10 +1954,6 @@ namespace RTSim {
 
         // 从能量检查事件中获取已执行时间（如果任务正在运行）
         Tick executed = 0;
-        auto it = _energy_check_events.find(task);
-        if (it != _energy_check_events.end() && it->second) {
-            executed = it->second->getMsExecuted();
-        }
 
         Tick remaining = wcet - executed;
 
@@ -2746,6 +2114,7 @@ namespace RTSim {
         _deep_charging = true;
         _energy_depleted = true;
         _is_charging_sleep = true;
+        clampCurrentEnergyNonNegative("suspendBatchForInsufficientEnergy");
 
         Tick wake_time = calculateGroupWakeTime(min_slack, required_energy);
         if (wake_time > SIMUL.getTime()) {
@@ -2753,7 +2122,11 @@ namespace RTSim {
         }
 
         for (auto *task : tasks) {
-            if (_kernel && task && task->isExecuting()) {
+            if (!task) {
+                continue;
+            }
+            addToWaitingQueue(task);
+            if (_kernel && task->isExecuting()) {
                 stopEnergyCheckForTask(task);
                 setSuspendReason(task, "insufficient_energy");
                 SCHEDULER_LOG_WARNING(std::string("🛑 [ST-Sync] 原子挂起任务: ") + getTaskName(task));
@@ -2762,54 +2135,18 @@ namespace RTSim {
         }
 
         _current_batch_tasks.clear();
+        _preempt_batch_tasks.clear();
         _current_batch_size = 0;
         _batch_scheduled_this_tick = false;
         _stats.total_batch_skipped++;
     }
 
-    // =====================================================
-    // 运行时能量检查方法（V28.15新增）
-    // =====================================================
+    // 兼容旧调用点；当前 ST-Sync 不启动按任务运行时能量事件。
 
     void STSyncScheduler::startEnergyCheckForTask(AbsRTTask *task, CPU *cpu) {
-        if (!task || !cpu) {
-            return;
-        }
-
-        // 检查是否已经有能量检查事件
-        if (_energy_check_events.find(task) != _energy_check_events.end()) {
-            SCHEDULER_LOG_DEBUG(std::string("⚡ [ST-Sync] 任务已有能量检查事件: ") + getTaskName(task));
-            return;
-        }
-
-        if (_is_charging_sleep || _deep_charging) {
-            SCHEDULER_LOG_DEBUG(std::string("⚡ [ST-Sync] 调度器处于充电休眠，跳过启动能量检查: ") + getTaskName(task));
-            return;
-        }
-
-        if (_tasks_completed_wcet.find(task) != _tasks_completed_wcet.end()) {
-            SCHEDULER_LOG_DEBUG(std::string("⚡ [ST-Sync] 任务已完成WCET，跳过启动能量检查: ") + getTaskName(task));
-            return;
-        }
-
-        if (!isTaskInActiveRunningBatch(task)) {
-            SCHEDULER_LOG_DEBUG(std::string("⚡ [ST-Sync] 任务尚未处于活动运行批次，跳过启动能量检查: ") + getTaskName(task));
-            return;
-        }
-
-        // 创建并启动能量检查事件
-        STSyncEnergyCheckEvent *evt = new STSyncEnergyCheckEvent(this, task, cpu);
-        _energy_check_events[task] = evt;
-
-        // 1ms后触发第一次检查
-        Tick current_time = SIMUL.getTime();
-        Tick scheduled_time = current_time + 1;
-        evt->post(scheduled_time);
-
-        SCHEDULER_LOG_DEBUG(std::string("⚡ [ST-Sync] 启动运行时能量检查: ") +
-                           getTaskName(task) + " 在CPU " + cpu->toString() +
-                           " 当前时间=" + std::to_string(static_cast<int64_t>(current_time)) + "ms" +
-                           " 调度时间=" + std::to_string(static_cast<int64_t>(scheduled_time)) + "ms");
+        (void)task;
+        (void)cpu;
+        return;
     }
 
     void STSyncScheduler::stopEnergyCheckForTask(AbsRTTask *task) {
@@ -2819,12 +2156,7 @@ namespace RTSim {
 
         auto it = _energy_check_events.find(task);
         if (it != _energy_check_events.end()) {
-            // ⚠️ 不要删除事件对象，只从映射中移除
-            // 事件会自然结束（不再重新 post）
             _energy_check_events.erase(it);
-
-            SCHEDULER_LOG_DEBUG(std::string("⚡ [ST-Sync] 停止运行时能量检查: ") +
-                               getTaskName(task));
         }
     }
 
@@ -3112,6 +2444,7 @@ namespace RTSim {
 
         _ready_queue.clear();
         _waiting_queue.clear();
+        _deferred_arrivals.clear();
         _energy_accounts.clear();
         _running_tasks.clear();
 
@@ -3129,6 +2462,7 @@ namespace RTSim {
         _batch_scheduled_this_tick = false;
         _current_batch_size = 0;
         _current_batch_tasks.clear();
+        _preempt_batch_tasks.clear();
 
         // 启动第一个tick事件
         scheduleNextTick();
@@ -3166,11 +2500,20 @@ namespace RTSim {
 
         SCHEDULER_LOG_INFO(std::string("✅ [ST-Sync] 任务结束: ") + getTaskName(task));
 
+        // MRTKernel::onEnd() 已先调用 extract()；这里不要再次清理 ready/waiting，
+        // 否则周期复用对象会在“新实例已到达、旧实例随后kill/end”时误删新实例状态。
+
         // ⭐ 逐渐扣除模式：从计数集合中移除任务
         _counted_tasks_in_dispatch.erase(task);
+        _tasks_completed_wcet.erase(task);
 
         // ⭐ 停止能量检查事件
         stopEnergyCheckForTask(task);
+
+        auto batch_it = std::find(_current_batch_tasks.begin(), _current_batch_tasks.end(), task);
+        if (batch_it != _current_batch_tasks.end()) {
+            _current_batch_tasks.erase(batch_it);
+        }
 
         // 从就绪队列移除
         removeFromReadyQueue(task);
@@ -3196,18 +2539,10 @@ namespace RTSim {
 
         SCHEDULER_LOG_INFO(std::string("📊 [ST-Sync] 当前能量: ") + std::to_string(_current_energy) + "J");
 
-        // ⭐ 关键修复：任务结束时触发立即调度
-        // 检查是否有空闲CPU和等待的任务
-        if (!_ready_queue.empty() && _kernel) {
-            // ⭐ Bug修复：能量耗尽时不触发立即调度
-            if (_energy_depleted) {
-                SCHEDULER_LOG_INFO(std::string("💀 [ST-Sync] 能量已耗尽，跳过任务结束后的立即调度") +
-                                   " 剩余能量=" + std::to_string(_current_energy * 1000) + " mJ");
-                return;
-            }
-            SCHEDULER_LOG_INFO("🔄 [ST-Sync] 任务结束，触发立即调度");
-            // ⭐ V106修复：重新启用dispatch，解决核心碎片化问题
-            _kernel->dispatch();
+        // ST-Sync 的组装与准入只在 tick 边界进行。
+        // 任务中途结束后保持 CPU 空闲，等待下一个 tick 统一重建同步组。
+        if (!_ready_queue.empty()) {
+            SCHEDULER_LOG_INFO("⏭️ [ST-Sync] 任务结束后不做 mid-tick dispatch，等待下一 tick 统一调度");
         }
     }
 
@@ -3409,16 +2744,26 @@ namespace RTSim {
         // 注意: Tick是类，需要用impl_t获取最大值
         Tick min_slack = std::numeric_limits<Tick::impl_t>::max();
 
-        // 检查就绪队列中所有任务的Slack
-        for (auto* task : _ready_queue) {
-            if (!task) continue;
-            Tick slack = calculateSlackForTask(task);
-            if (slack < min_slack) {
-                min_slack = slack;
+        // 充电窗口内优先只看等待中的同步组，避免组外任务改变当前窗口的唤醒时机。
+        if (!_waiting_queue.empty()) {
+            for (auto* task : _waiting_queue) {
+                if (!task) continue;
+                Tick slack = calculateSlackForTask(task);
+                if (slack < min_slack) {
+                    min_slack = slack;
+                }
+            }
+        } else {
+            for (auto* task : _ready_queue) {
+                if (!task) continue;
+                Tick slack = calculateSlackForTask(task);
+                if (slack < min_slack) {
+                    min_slack = slack;
+                }
             }
         }
 
-        // 如果没有就绪任务，返回0
+        // 如果没有任务，返回0
         if (min_slack == std::numeric_limits<Tick::impl_t>::max()) {
             min_slack = 0;
         }
@@ -3433,12 +2778,16 @@ namespace RTSim {
     MetaSim::Tick STSyncScheduler::calculateGroupWakeTime(MetaSim::Tick group_slack, double group_energy) {
         Tick current_time = SIMUL.getTime();
 
-        // 计算充满电需要的时间
-        double energy_needed = group_energy - _current_energy;
+        // 计算充满电需要的时间。
+        // ST-Sync 缺电后进入整组充电窗口，唤醒条件是组Slack归零或电池充满，
+        // 不是“只要够下一拍就提前放行”。
+        double energy_needed = _max_energy - _current_energy;
         if (energy_needed < 0) energy_needed = 0;
 
-        double harvest_rate = 0.003;  // mJ/ms (默认值，实际应从配置获取)
-        int64_t charge_time_ms = static_cast<int64_t>(energy_needed * 1000 / harvest_rate) + 1;
+        double harvest_rate = _base_harvest_rate;
+        int64_t charge_time_ms = (harvest_rate > 1e-12)
+            ? static_cast<int64_t>(std::ceil(energy_needed / harvest_rate))
+            : static_cast<int64_t>(group_slack);
 
         // 计算Slack归零时刻
         int64_t slack_deadline = static_cast<int64_t>(group_slack);

@@ -151,10 +151,11 @@ namespace RTSim {
         std::map<AbsRTTask *, STSyncTaskModel *> _task_models;
         std::deque<AbsRTTask *> _ready_queue;
         std::vector<AbsRTTask *> _waiting_queue;
+        std::vector<AbsRTTask *> _deferred_arrivals;
         std::map<CPU *, AbsRTTask *> _running_tasks;
         MRTKernel *_kernel;
 
-        // ========== 运行时能量检查事件（每任务一个） ==========
+        // 空壳映射，仅用于兼容旧清理路径；ST-Sync 不再依赖按任务运行时能量事件。
         std::map<AbsRTTask *, STSyncEnergyCheckEvent *> _energy_check_events;
 
         // ========== WCET完成追踪（用于批量调度判断任务是否已完成） ==========
@@ -192,6 +193,7 @@ namespace RTSim {
         void setSuspendReason(AbsRTTask *task, const std::string &reason);
         std::string getSuspendReason(AbsRTTask *task) const override;  // 实现EnergyInfoProvider接口
         void clearSuspendReason(AbsRTTask *task) override;  // 实现EnergyInfoProvider接口
+        void clearPersistentTaskState(AbsRTTask *task);
 
         // ========== 能量记账（每ms累计） ==========
         struct TaskEnergyAccount {
@@ -266,6 +268,7 @@ namespace RTSim {
         void removeFromReadyQueue(AbsRTTask *task);
         void addToWaitingQueue(AbsRTTask *task);
         void removeFromWaitingQueue(AbsRTTask *task);
+        void promoteWaitingTasksToReadyQueue(const std::string &context);
         bool isInReadyQueue(AbsRTTask *task) const;
         bool isInWaitingQueue(AbsRTTask *task) const;
         AbsRTTask *getHighestPriorityTaskFromReadyQueue();
@@ -317,6 +320,8 @@ namespace RTSim {
         double getCurrentEnergy() const override { return _current_energy; }
         double getInitialEnergy() const { return _initial_energy; }
         double getMaxEnergy() const { return _max_energy; }
+        bool isChargingSleepActive() const { return _is_charging_sleep || _deep_charging; }
+        bool isEnergyDepletedActive() const { return _energy_depleted; }
         double calculateUnitEnergyForTask(AbsRTTask *task);  // MRTKernel需要调用
 
         // ⭐ EnergyInfoProvider接口实现
@@ -325,9 +330,9 @@ namespace RTSim {
         double getTaskUnitEnergy(AbsRTTask *task) const override;
         double getTaskTotalEnergy(AbsRTTask *task) const override;
 
-        // ⭐ 运行时能量检查接口（V28.15新增）
-        void startEnergyCheckForTask(AbsRTTask *task, CPU *cpu);  // 开始对任务的能量监控
-        void stopEnergyCheckForTask(AbsRTTask *task);  // 停止对任务的能量监控
+        // 兼容旧调用点；当前实现不启动按任务运行时能量事件。
+        void startEnergyCheckForTask(AbsRTTask *task, CPU *cpu);
+        void stopEnergyCheckForTask(AbsRTTask *task);
 
         // 队列访问接口
         const std::deque<AbsRTTask *> &getReadyQueue() const { return _ready_queue; }

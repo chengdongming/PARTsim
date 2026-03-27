@@ -225,11 +225,15 @@ namespace RTSim {
             writeTaskEnergyInfo(task);
 
             // ⭐ 添加energy_sufficient字段
+            // 注意：这里读取的是scheduled事件写出时的当前能量，
+            // 因此它反映的是“post-schedule snapshot”，不是admission前判定点。
             if (_energy_provider) {
                 double current_energy = _energy_provider->getCurrentEnergy();
                 double task_unit_energy = _energy_provider->getTaskUnitEnergy(task);
-                bool energy_sufficient = (current_energy >= task_unit_energy);
-                fd << ", \"energy_sufficient\": " << (energy_sufficient ? "true" : "false");
+                bool energy_sufficient_post_schedule = (current_energy >= task_unit_energy);
+                fd << ", \"energy_sufficient\": " << (energy_sufficient_post_schedule ? "true" : "false");
+                fd << ", \"energy_sufficient_post_schedule\": " << (energy_sufficient_post_schedule ? "true" : "false");
+                fd << ", \"energy_snapshot_phase\": \"post_schedule\"";
             }
 
             // ⭐ 记录任务开始执行的时间和累计消耗

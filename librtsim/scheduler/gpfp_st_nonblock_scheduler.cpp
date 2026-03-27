@@ -77,6 +77,11 @@ namespace RTSim {
         Tick current_time = SIMUL.getTime();
         std::string task_name = _scheduler->getTaskName(_task);
 
+        auto wake_it = _scheduler->_skip_wake_events.find(_task);
+        if (wake_it != _scheduler->_skip_wake_events.end() && wake_it->second == this) {
+            _scheduler->_skip_wake_events.erase(wake_it);
+        }
+
         SCHEDULER_LOG_INFO(std::string("🔔 [ST-NonBlock] 唤醒定时器触发: ") +
                            "任务=" + task_name +
                            " 时间=" + std::to_string(static_cast<int64_t>(current_time)) + "ms");
@@ -607,9 +612,7 @@ namespace RTSim {
 
         _stats.total_tick_count++;
 
-        // ⭐ V42修复：清空当前tick新调度任务标记
-        // 这样只有本次tick中新调度的任务才会被跳过续期扣除
-        _newly_dispatched_this_tick.clear();
+        resetTickDispatchState();
 
         Tick current_time = SIMUL.getTime();
 
@@ -826,22 +829,11 @@ namespace RTSim {
             double energy_before_scheduling = _current_energy;
 
             // ⭐ 关键：先扣除已标记但未扣除的任务能量（来自arrival或onTaskEnd的dispatch）
-            for (AbsRTTask *task : _counted_tasks_in_dispatch) {
-                if (_energy_deducted_tasks.find(task) == _energy_deducted_tasks.end()) {
-                    double unit_energy = calculateUnitEnergyForTask(task);
-                    _current_energy -= unit_energy;
-                    _stats.total_energy_consumed += unit_energy;
-                    _energy_deducted_tasks.insert(task);
-
-                    SCHEDULER_LOG_INFO("✅ [ST-NonBlock] 扣除上周期任务初始能量: " +
-                                       getTaskName(task) +
-                                       " -" + std::to_string(unit_energy * 1000) + " mJ → " +
-                                       std::to_string(_current_energy * 1000) + " mJ");
-                }
-            }
+            accountInitialEnergyForSelectedTasks("✅ [ST-NonBlock] 扣除上周期任务初始能量: ");
 
             // ⭐ 清空本次tick的调度记录
             _counted_tasks_in_dispatch.clear();
+            _dispatch_selection_order.clear();
             _dispatching_tasks_total_energy = 0.0;
 
             // ⭐ ST-NonBlock关键修复：循环调用dispatch()直到所有CPU被填满或无法调度更多任务
@@ -894,20 +886,7 @@ namespace RTSim {
 
             // ⭐ 关键：在dispatch后，统一扣除所有已标记任务的能量
             // 只扣除尚未扣除过的任务（检查_energy_deducted_tasks）
-            for (AbsRTTask *task : _counted_tasks_in_dispatch) {
-                if (_energy_deducted_tasks.find(task) == _energy_deducted_tasks.end()) {
-                    // 任务尚未扣除能量，现在扣除
-                    double unit_energy = calculateUnitEnergyForTask(task);
-                    _current_energy -= unit_energy;
-                    _stats.total_energy_consumed += unit_energy;
-                    _energy_deducted_tasks.insert(task);  // 标记已扣除
-
-                    SCHEDULER_LOG_INFO("✅ [ST-NonBlock] 新任务扣除初始能量: " +
-                                       getTaskName(task) +
-                                       " -" + std::to_string(unit_energy * 1000) + " mJ → " +
-                                       std::to_string(_current_energy * 1000) + " mJ");
-                }
-            }
+            accountInitialEnergyForSelectedTasks("✅ [ST-NonBlock] 新任务扣除初始能量: ");
         }
 
         // ========== 第5步：调度后抢占检查 ==========
@@ -989,6 +968,17 @@ namespace RTSim {
         if (_ready_queue.empty()) {
             SCHEDULER_LOG_DEBUG("📭 [ST-NonBlock] getTaskN: 就绪队列为空");
             return nullptr;
+        }
+
+        if (n < _dispatch_selection_order.size()) {
+            AbsRTTask *selected_task = _dispatch_selection_order[n];
+            if (selected_task && selected_task->isActive() &&
+                _counted_tasks_in_dispatch.find(selected_task) != _counted_tasks_in_dispatch.end()) {
+                SCHEDULER_LOG_DEBUG(std::string("♻️ [ST-NonBlock] 复用本轮dispatch已选任务: ") +
+                                   getTaskName(selected_task) +
+                                   " slot=" + std::to_string(n));
+                return selected_task;
+            }
         }
 
         // ⭐ ALAP时序门控：不再在getTaskN中调用全局min_slack检查（性能瓶颈）
@@ -1158,8 +1148,7 @@ namespace RTSim {
                             // ⭐ 找到能量足够的后续任务，调度它！
                             // ⭐ 只标记任务，不扣除能量（能量将在dispatch后统一扣除）
                             if (_counted_tasks_in_dispatch.find(next_task) == _counted_tasks_in_dispatch.end()) {
-                                _counted_tasks_in_dispatch.insert(next_task);
-                                _newly_dispatched_this_tick.insert(next_task);
+                                markTaskSelectedThisTick(next_task);
 
                                 SCHEDULER_LOG_INFO(std::string("✅ [ST-NonBlock] 贪心策略：调度后续任务（已标记，暂不扣能量）") +
                                                   " 替换=" + getTaskName(task) +
@@ -1213,29 +1202,15 @@ namespace RTSim {
                 // ⭐ V41修复���对于新任务（非运行中），立即扣除初始能量
                 // 这解决了tick边界处理时序问题（任务在tick结束时被调度，但能量在下一tick才扣除）
                 if (!is_running_check) {
-                    // 新任务：检查是否已扣除过初始能量
                     if (_counted_tasks_in_dispatch.find(task) == _counted_tasks_in_dispatch.end()) {
-                        // 首次调度此任务，标记任务
-                        _counted_tasks_in_dispatch.insert(task);  // 标记已调度
-                        _newly_dispatched_this_tick.insert(task);
+                        markTaskSelectedThisTick(task);
 
                         SCHEDULER_LOG_INFO(std::string("✅ [ST-NonBlock] 新任务已标记（暂不扣能量）: ") + getTaskName(task) +
                                           " 1ms能耗=" + std::to_string(unit_energy * 1000) + " mJ");
                     }
-                    // 否则已标记过，直接返回任务
-                    return task;
-                    // ⭐ 策略2修复：任务成功调度，从跳过集合中移除并取消唤醒定时器
-                    if (_skipped_tasks.find(task) != _skipped_tasks.end()) {
-                        _skipped_tasks.erase(task);
-                        auto it = _skip_wake_events.find(task);
-                        if (it != _skip_wake_events.end()) {
-                            it->second->drop();  // 取消定时器
-                            delete it->second;
-                            _skip_wake_events.erase(it);
-                            SCHEDULER_LOG_INFO(std::string("🗑️ [ST-NonBlock] 取消唤醒定时器: ") + getTaskName(task));
-                        }
-                    }
 
+                    clearSkippedWakeState(task);
+                    return task;
                 }
                 // 运行中任务不需要标记，因为它们已经扣除过初始能量
                 return task;
@@ -1257,21 +1232,6 @@ namespace RTSim {
             return;
         }
 
-        // ⭐ 修复：任务到达时只检查能量，不扣减能耗
-        // 能耗在任务调度时通过getTaskN()方法扣减
-        double unit_energy = calculateUnitEnergyForTask(task);
-
-        // 检查能量是否足够
-        const double EPSILON = 1e-9;
-        if (_current_energy < unit_energy - EPSILON) {
-            SCHEDULER_LOG_WARNING(std::string("⚠️ [ST-NonBlock] notify: 能量不足") +
-                                 " 任务=" + getTaskName(task) +
-                                 " 需要=" + std::to_string(unit_energy) + "J" +
-                                 " 当前=" + std::to_string(_current_energy) + "J");
-            return;
-        }
-
-        // 任务到达，添加到就绪队列
         SCHEDULER_LOG_INFO(std::string("📥 [ST-NonBlock] 任务到达并添加到就绪队列: ") + getTaskName(task));
         addToReadyQueue(task);
     }
@@ -2038,6 +1998,10 @@ namespace RTSim {
         _skipped_tasks.erase(task);
         auto wake_it = _skip_wake_events.find(task);
         if (wake_it != _skip_wake_events.end()) {
+            if (wake_it->second) {
+                wake_it->second->drop();
+                delete wake_it->second;
+            }
             _skip_wake_events.erase(wake_it);
         }
     }
@@ -2047,9 +2011,8 @@ namespace RTSim {
             return;
         }
 
-        _counted_tasks_in_dispatch.erase(task);
+        clearTaskTickSelection(task);
         _energy_deducted_tasks.erase(task);
-        _newly_dispatched_this_tick.erase(task);
         _energy_accounts.erase(task);
         clearSkippedWakeState(task);
 
@@ -2061,6 +2024,63 @@ namespace RTSim {
         if (_last_preempted_task == task) {
             _last_preempted_task = nullptr;
             _last_preempted_tick = 0;
+        }
+    }
+
+    void STNonBlockScheduler::resetTickDispatchState() {
+        _newly_dispatched_this_tick.clear();
+        _counted_tasks_in_dispatch.clear();
+        _dispatch_selection_order.clear();
+        _dispatching_tasks_total_energy = 0.0;
+    }
+
+    void STNonBlockScheduler::clearTaskTickSelection(AbsRTTask *task) {
+        if (!task) {
+            return;
+        }
+
+        if (_counted_tasks_in_dispatch.erase(task) > 0) {
+            _dispatching_tasks_total_energy -= calculateUnitEnergyForTask(task);
+            if (_dispatching_tasks_total_energy < 0.0) {
+                _dispatching_tasks_total_energy = 0.0;
+            }
+        }
+
+        _dispatch_selection_order.erase(
+            std::remove(_dispatch_selection_order.begin(), _dispatch_selection_order.end(), task),
+            _dispatch_selection_order.end());
+        _newly_dispatched_this_tick.erase(task);
+    }
+
+    void STNonBlockScheduler::markTaskSelectedThisTick(AbsRTTask *task) {
+        if (!task) {
+            return;
+        }
+
+        if (_counted_tasks_in_dispatch.insert(task).second) {
+            _dispatch_selection_order.push_back(task);
+            _newly_dispatched_this_tick.insert(task);
+            _dispatching_tasks_total_energy += calculateUnitEnergyForTask(task);
+        }
+    }
+
+    void STNonBlockScheduler::accountInitialEnergyForSelectedTasks(const std::string &log_prefix) {
+        for (AbsRTTask *task : _counted_tasks_in_dispatch) {
+            if (_energy_deducted_tasks.find(task) != _energy_deducted_tasks.end()) {
+                continue;
+            }
+
+            double unit_energy = calculateUnitEnergyForTask(task);
+            _current_energy -= unit_energy;
+            if (_current_energy < 0.0) {
+                _current_energy = 0.0;
+            }
+            _stats.total_energy_consumed += unit_energy;
+            _energy_deducted_tasks.insert(task);
+
+            SCHEDULER_LOG_INFO(log_prefix + getTaskName(task) +
+                               " -" + std::to_string(unit_energy * 1000) + " mJ → " +
+                               std::to_string(_current_energy * 1000) + " mJ");
         }
     }
 

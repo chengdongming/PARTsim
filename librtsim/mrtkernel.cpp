@@ -27,6 +27,7 @@
 #include <rtsim/scheduler/gpfp_asap_block_scheduler.hpp>
 #include <rtsim/scheduler/gpfp_asap_sync_scheduler.hpp>
 #include <rtsim/scheduler/gpfp_asap_nonblock_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_st_block_scheduler.hpp>
 #include <rtsim/scheduler/gpfp_st_sync_scheduler.hpp>
 
 namespace RTSim {
@@ -202,6 +203,13 @@ namespace RTSim {
         }
 
         _sched->insert(task);
+
+        STSyncScheduler *st_sync_sched = dynamic_cast<STSyncScheduler *>(_sched);
+        if (st_sync_sched) {
+            std::cout << "[DEBUG] MRTKernel::onArrival() - ST-Sync等待tick边界统一重建同步组，跳过立即dispatch" << std::endl;
+            return;
+        }
+
         dispatch();
 
         std::cout << "[DEBUG] MRTKernel::onArrival() - 完成: " << taskname(task) << std::endl;
@@ -225,6 +233,12 @@ namespace RTSim {
             // 正确做法：将任务重新插入到就绪队列，而不是终止它
             // _sched->onTaskEnd(task);  // ❌ 错误：这会终止任务实例
 
+            STSyncScheduler *st_sync_sched = dynamic_cast<STSyncScheduler *>(_sched);
+            if (st_sync_sched) {
+                std::cout << "[DEBUG] MRTKernel::suspend() - ST-Sync缺电挂起后保留waiting态，不做kernel reinsert" << std::endl;
+                return;
+            }
+
             // ✅ 修复：将任务重新插入到就绪队列
             // 这样任务会保留剩余执行时间，等待能量恢复后继续执行
             _sched->insert(task);
@@ -235,6 +249,12 @@ namespace RTSim {
             ASAPSyncScheduler *asap_sync_sched = dynamic_cast<ASAPSyncScheduler *>(_sched);
             if (asap_sync_sched && !asap_sync_sched->shouldDispatchAtTickBoundary()) {
                 std::cout << "[DEBUG] MRTKernel::suspend() - ASAP-Sync等待下一个tick再调度" << std::endl;
+                return;
+            }
+
+            STBlockScheduler *st_block_sched = dynamic_cast<STBlockScheduler *>(_sched);
+            if (st_block_sched && st_block_sched->isChargingSleepActive()) {
+                std::cout << "[DEBUG] MRTKernel::suspend() - ST-Block处于充电休眠，跳过立即dispatch" << std::endl;
                 return;
             }
 
@@ -261,6 +281,12 @@ namespace RTSim {
 
         ASAPSyncScheduler *asap_sync_sched = dynamic_cast<ASAPSyncScheduler *>(_sched);
         if (asap_sync_sched && !asap_sync_sched->shouldDispatchAtTickBoundary()) {
+            return;
+        }
+
+        STSyncScheduler *st_sync_sched = dynamic_cast<STSyncScheduler *>(_sched);
+        if (st_sync_sched) {
+            std::cout << "[DEBUG] MRTKernel::onEnd() - ST-Sync等待下一个tick再重建同步组" << std::endl;
             return;
         }
 
