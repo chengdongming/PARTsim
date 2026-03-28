@@ -399,6 +399,13 @@ namespace RTSim {
         Tick current_time = SIMUL.getTime();
         Tick elapsed = current_time - _last_tick_time;
 
+        if (_batch_scheduled_this_tick && !_current_batch_tasks.empty()) {
+            SCHEDULER_LOG_DEBUG(std::string("🛡️ [ASAP-Sync] 保留arrival-time已批准批次，跳过tick重算 @ ") +
+                               std::to_string(static_cast<int64_t>(current_time)) + "ms");
+            _last_tick_time = current_time;
+            return;
+        }
+
         if (elapsed > 0) {
             double harvested = collectSolarEnergy(current_time);
             if (harvested > 0.000001) {
@@ -650,14 +657,15 @@ namespace RTSim {
     // =====================================================
 
     void ASAPSyncScheduler::notify(AbsRTTask *task) {
+        Scheduler::notify(task);
+
         if (!task) {
             return;
         }
 
-        // ⭐ 关键修复：清除任务的WCET完成标志（新实例到达）
-        // 周期性任务复用同一个AbsRTTask对象，但每个实例都是独立的
-        SCHEDULER_LOG_INFO(std::string("🔍 [ASAP-Sync] notify: 检查WCET完成标志: ") +
-                           getTaskName(task) + " 集合大小=" + std::to_string(_tasks_completed_wcet.size()));
+        SCHEDULER_LOG_INFO(std::string("🔔 [ASAP-Sync] notify: 任务进入执行态（不再做二次能量门槛）: ") +
+                          getTaskName(task));
+
         auto it = _tasks_completed_wcet.find(task);
         if (it != _tasks_completed_wcet.end()) {
             _tasks_completed_wcet.erase(it);
@@ -665,23 +673,7 @@ namespace RTSim {
                                getTaskName(task) + " (新实例到达)");
         }
 
-        // ⭐ 修复：任务到达时只检查能量，不扣减能耗
-        // 能耗在任务调度时通过getTaskN()方法扣减
-        double unit_energy = calculateUnitEnergyForTask(task);
-
-        // 检查能量是否充足
-        const double EPSILON = 1e-9;
-        if (_current_energy < unit_energy - EPSILON) {
-            SCHEDULER_LOG_WARNING(std::string("⚠️ [ASAP-Sync] notify: 能量不足") +
-                                 " 任务=" + getTaskName(task) +
-                                 " 需要=" + std::to_string(unit_energy) + "J" +
-                                 " 当前=" + std::to_string(_current_energy) + "J");
-            return;
-        }
-
-        // 任务到达，添加到就绪队列
-        SCHEDULER_LOG_INFO(std::string("📥 [ASAP-Sync] 任务到达并添加到就绪队列: ") + getTaskName(task));
-        if (!isInReadyQueue(task)) {
+        if (!isInReadyQueue(task) && !isInWaitingQueue(task)) {
             addToReadyQueue(task);
         }
     }
@@ -819,8 +811,6 @@ namespace RTSim {
 
         SCHEDULER_LOG_INFO(std::string("📍 [ASAP-Sync] 任务到达: ") + getTaskName(task));
 
-        // ⭐ 关键修复：清除任务的WCET完成标志（新实例重新开始）
-        // 周期性任务复用同一个AbsRTTask对象，但每个实例都是独立的
         auto it = _tasks_completed_wcet.find(task);
         if (it != _tasks_completed_wcet.end()) {
             _tasks_completed_wcet.erase(it);
@@ -831,6 +821,17 @@ namespace RTSim {
         if (!isInReadyQueue(task) && !isInWaitingQueue(task)) {
             addToReadyQueue(task);
         }
+
+        if (!_kernel) {
+            _kernel = getKernel();
+        }
+
+        if (!_kernel) {
+            return;
+        }
+
+        SCHEDULER_LOG_INFO(std::string("⚡ [ASAP-Sync] 到达任务立即参与RM抢占检查: ") + getTaskName(task));
+        checkAndPreempt();
     }
 
     // =====================================================
@@ -838,17 +839,241 @@ namespace RTSim {
     // =====================================================
 
     void ASAPSyncScheduler::checkAndPreempt() {
-        // ASAP-Sync 只在1ms tick边界做整批准入，不执行tick内抢占。
+        SCHEDULER_LOG_DEBUG("🔔 [ASAP-Sync] arrival-time RM抢占检查");
+        checkAndPreemptOnAllCPUs();
+    }
+
+    std::vector<AbsRTTask *> ASAPSyncScheduler::collectActiveRunningBatchTasks() {
+        std::vector<AbsRTTask *> running_batch;
+        if (!_kernel) {
+            _kernel = getKernel();
+        }
+        if (!_kernel) {
+            return running_batch;
+        }
+
+        for (AbsRTTask *task : _current_batch_tasks) {
+            if (!task || !task->isActive()) {
+                continue;
+            }
+            if (_tasks_completed_wcet.find(task) != _tasks_completed_wcet.end()) {
+                continue;
+            }
+            if (_kernel->getProcessor(task) == nullptr) {
+                continue;
+            }
+            running_batch.push_back(task);
+        }
+        return running_batch;
+    }
+
+    void ASAPSyncScheduler::rebuildApprovedBatchForImmediateDispatch() {
+        if (!_kernel) {
+            _kernel = getKernel();
+        }
+        if (!_kernel) {
+            return;
+        }
+
+        std::vector<AbsRTTask *> approved_batch = collectActiveRunningBatchTasks();
+        size_t target_size = _kernel->getCurrentExecutingTasks().size();
+
+        for (const auto &entry : _kernel->getCurrentExecutingTasks()) {
+            if (entry.second == nullptr && !_kernel->isCPUDispatching(entry.first)) {
+                target_size += 1;
+            }
+        }
+
+        for (AbsRTTask *task : _ready_queue) {
+            if (approved_batch.size() >= target_size) {
+                break;
+            }
+            if (!task || !task->isActive()) {
+                continue;
+            }
+            if (_tasks_completed_wcet.find(task) != _tasks_completed_wcet.end()) {
+                continue;
+            }
+            if (_kernel->getProcessor(task) != nullptr) {
+                continue;
+            }
+            if (std::find(approved_batch.begin(), approved_batch.end(), task) != approved_batch.end()) {
+                continue;
+            }
+            approved_batch.push_back(task);
+        }
+
+        std::sort(approved_batch.begin(), approved_batch.end(),
+            [this](AbsRTTask *a, AbsRTTask *b) {
+                ASAPSyncTaskModel *model_a = getTaskModel(a);
+                ASAPSyncTaskModel *model_b = getTaskModel(b);
+                if (model_a && model_b) {
+                    return model_a->getRMPriority() < model_b->getRMPriority();
+                }
+                return false;
+            });
+
+        double batch_unit_energy = 0.0;
+        for (AbsRTTask *task : approved_batch) {
+            batch_unit_energy += calculateUnitEnergyForTask(task);
+        }
+
+        const double EPSILON = 1e-9;
+        if (!approved_batch.empty() && _current_energy + EPSILON < batch_unit_energy) {
+            SCHEDULER_LOG_WARNING(std::string("❌ [ASAP-Sync] arrival-time重建批次失败：组门票不足") +
+                                 " size=" + std::to_string(approved_batch.size()) +
+                                 " 需要=" + std::to_string(batch_unit_energy * 1000) + " mJ" +
+                                 " 当前=" + std::to_string(_current_energy * 1000) + " mJ");
+            _current_batch_tasks.clear();
+            _current_batch_size = 0;
+            _batch_scheduled_this_tick = false;
+            return;
+        }
+
+        _current_batch_tasks = approved_batch;
+        _current_batch_size = static_cast<int>(_current_batch_tasks.size());
+        _batch_scheduled_this_tick = !_current_batch_tasks.empty();
+
+        SCHEDULER_LOG_INFO(std::string("🧩 [ASAP-Sync] 立即重建稳定批次: size=") +
+                          std::to_string(_current_batch_tasks.size()) +
+                          " 门票=" + std::to_string(batch_unit_energy * 1000) + " mJ");
     }
 
     void ASAPSyncScheduler::checkAndPreemptOnAllCPUs() {
-        // ASAP-Sync 只在1ms tick边界做整批准入，不执行tick内抢占。
+        if (!_kernel) {
+            _kernel = getKernel();
+        }
+        if (!_kernel) {
+            return;
+        }
+
+        std::vector<CPU *> truly_free_cpus;
+        std::vector<std::pair<CPU *, AbsRTTask *>> running_entries;
+
+        for (const auto &entry : _kernel->getCurrentExecutingTasks()) {
+            CPU *cpu = entry.first;
+            AbsRTTask *running = entry.second;
+            if (running != nullptr) {
+                running_entries.push_back(entry);
+                continue;
+            }
+            if (_kernel->isCPUDispatching(cpu)) {
+                continue;
+            }
+            truly_free_cpus.push_back(cpu);
+        }
+
+        if (!truly_free_cpus.empty()) {
+            rebuildApprovedBatchForImmediateDispatch();
+            SCHEDULER_LOG_INFO(std::string("⏭️ [ASAP-Sync] 有") + std::to_string(truly_free_cpus.size()) +
+                              "个空闲CPU，arrival-time立即重建稳定批次");
+            _kernel->dispatch();
+            return;
+        }
+
+        AbsRTTask *best_candidate = nullptr;
+        for (AbsRTTask *task : _ready_queue) {
+            if (!task || !task->isActive()) {
+                continue;
+            }
+            if (_tasks_completed_wcet.find(task) != _tasks_completed_wcet.end()) {
+                continue;
+            }
+            if (_kernel->getProcessor(task) != nullptr) {
+                continue;
+            }
+            best_candidate = task;
+            break;
+        }
+
+        if (!best_candidate) {
+            return;
+        }
+
+        CPU *worst_cpu = nullptr;
+        AbsRTTask *worst_running = nullptr;
+        ASAPSyncTaskModel *worst_model = nullptr;
+        for (const auto &entry : running_entries) {
+            AbsRTTask *running = entry.second;
+            if (!running || !running->isActive()) {
+                continue;
+            }
+            ASAPSyncTaskModel *running_model = getTaskModel(running);
+            if (!running_model) {
+                continue;
+            }
+            if (!worst_model || running_model->getRMPriority() > worst_model->getRMPriority()) {
+                worst_cpu = entry.first;
+                worst_running = running;
+                worst_model = running_model;
+            }
+        }
+
+        if (!worst_cpu || !worst_running) {
+            return;
+        }
+
+        if (!shouldPreempt(worst_running, best_candidate)) {
+            return;
+        }
+
+        SCHEDULER_LOG_INFO(std::string("⚡ [ASAP-Sync] 触发arrival-time实时抢占: ") +
+                          getTaskName(best_candidate) + " 抢占 " + getTaskName(worst_running) +
+                          " @ " + std::to_string(static_cast<long>(SIMUL.getTime())) + "ms");
+
+        setSuspendReason(worst_running, "preemption");
+        _kernel->suspend(worst_running);
+        clearSuspendReason(worst_running);
+        rebuildApprovedBatchForImmediateDispatch();
+        _kernel->dispatch();
     }
 
     bool ASAPSyncScheduler::shouldPreempt(AbsRTTask *running_task, AbsRTTask *new_task) {
-        (void)running_task;
-        (void)new_task;
-        return false;
+        if (!running_task || !new_task) {
+            return false;
+        }
+
+        ASAPSyncTaskModel *running_model = getTaskModel(running_task);
+        ASAPSyncTaskModel *new_model = getTaskModel(new_task);
+        if (!running_model || !new_model) {
+            return false;
+        }
+
+        if (new_model->getRMPriority() >= running_model->getRMPriority()) {
+            return false;
+        }
+
+        std::vector<AbsRTTask *> rebuilt_batch = collectActiveRunningBatchTasks();
+        rebuilt_batch.erase(std::remove(rebuilt_batch.begin(), rebuilt_batch.end(), running_task), rebuilt_batch.end());
+        if (std::find(rebuilt_batch.begin(), rebuilt_batch.end(), new_task) == rebuilt_batch.end()) {
+            rebuilt_batch.push_back(new_task);
+        }
+
+        std::sort(rebuilt_batch.begin(), rebuilt_batch.end(),
+            [this](AbsRTTask *a, AbsRTTask *b) {
+                ASAPSyncTaskModel *model_a = getTaskModel(a);
+                ASAPSyncTaskModel *model_b = getTaskModel(b);
+                if (model_a && model_b) {
+                    return model_a->getRMPriority() < model_b->getRMPriority();
+                }
+                return false;
+            });
+
+        double rebuilt_batch_energy = 0.0;
+        for (AbsRTTask *task : rebuilt_batch) {
+            rebuilt_batch_energy += calculateUnitEnergyForTask(task);
+        }
+
+        const double EPSILON = 1e-9;
+        if (_current_energy + EPSILON < rebuilt_batch_energy) {
+            SCHEDULER_LOG_INFO(std::string("🚫 [ASAP-Sync] arrival-time抢占被拒绝：重组批次门票不足") +
+                              " 候选=" + getTaskName(new_task) +
+                              " 需要=" + std::to_string(rebuilt_batch_energy * 1000) + " mJ" +
+                              " 当前=" + std::to_string(_current_energy * 1000) + " mJ");
+            return false;
+        }
+
+        return true;
     }
 
     // =====================================================

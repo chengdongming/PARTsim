@@ -109,6 +109,10 @@ namespace RTSim {
         double _current_energy;              // 当前可用能量
         double _initial_energy;              // 初始能量
         double _max_energy;                  // 最大能量容量
+        double _dispatching_tasks_total_energy; // 本次dispatch中已批准任务的总能耗
+        std::set<AbsRTTask *> _counted_tasks_in_dispatch; // 本次dispatch中已计数的任务，避免重复
+        std::vector<AbsRTTask *> _dispatch_selection_order; // 本轮dispatch已选中的稳定顺序
+        std::set<AbsRTTask *> _energy_deducted_tasks; // 已扣除初始能量的任务（跨dispatch持久化）
         std::set<AbsRTTask *> _energy_blocked_tasks; // 因缺电被挂起的任务黑名单
         MetaSim::Tick _last_tick_time;       // 上次tick时间
         MetaSim::Tick _last_collection_time; // 上次能量收集时间
@@ -182,6 +186,10 @@ namespace RTSim {
         void onTaskArrival(AbsRTTask *task);
         void clearPersistentTaskState(AbsRTTask *task);
         void restoreEnergyBlockedTasks();
+        void resetTickDispatchState();
+        void clearTaskTickSelection(AbsRTTask *task);
+        void markTaskSelectedThisTick(AbsRTTask *task);
+        void accountInitialEnergyForSelectedTasks(const std::string &log_prefix);
 
         // 队列管理
         void addToReadyQueue(AbsRTTask *task);
@@ -272,6 +280,7 @@ namespace RTSim {
         std::string getEnergyStatus() const;
 
         // 友元类声明
+        friend class MRTKernel;
         friend class ASAPNonBlockTickEvent;
         // friend class ASAPNonBlockEnergyCheckEvent;  /* V40重构：能量检查事件已删除 */
     };

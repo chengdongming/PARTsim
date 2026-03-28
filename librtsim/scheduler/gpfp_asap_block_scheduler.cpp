@@ -263,6 +263,7 @@ namespace RTSim {
           _current_energy(0.0),
           _initial_energy(0.0),
           _max_energy(1000.0),
+          _dispatching_tasks_total_energy(0.0),
           _last_tick_time(0),
           _last_collection_time(0),
           _solar_data_file(""),
@@ -473,6 +474,7 @@ namespace RTSim {
         _stats.total_tick_count++;
 
         Tick current_time = SIMUL.getTime();
+        bool has_pending_begin_dispatch = false;
 
         // ========== 第1步：收集太阳能 ==========
         // ⭐ 关键修复：太阳能收集必须在能量耗尽检查之前执行
@@ -511,6 +513,10 @@ namespace RTSim {
             _current_energy = _max_energy;
         }
 
+        // 先兑现上一轮已批准但尚未在tick边界记账的初始1ms能量。
+        // 这保证 arrival-time dispatch 在下一拍续期判断前，已经先支付了第一个时间片。
+        accountInitialEnergyForSelectedTasks("✅ [ASAP-Block] 兑现待生效任务初始能量: ");
+
         // ========== 第2步：处理运行中任务的续期能量 ==========
         // ⭐ 重构：在tick边界扣除运行任务的续期能量（替代ASAPBlockEnergyCheckEvent）
         // ⭐ V40修复：确保kernel已设置，如果没有则尝试获取
@@ -520,6 +526,12 @@ namespace RTSim {
 
         if (_kernel) {
             const auto& running_tasks_map = _kernel->getCurrentExecutingTasks();
+            for (const auto& [cpu, _] : running_tasks_map) {
+                if (_kernel->hasPendingBeginDispatch(cpu)) {
+                    has_pending_begin_dispatch = true;
+                    break;
+                }
+            }
             std::vector<AbsRTTask *> tasks_to_suspend;
 
             SCHEDULER_LOG_INFO("🏃 检查运行任务: " +
@@ -568,6 +580,11 @@ namespace RTSim {
             }
         }
 
+        if (has_pending_begin_dispatch) {
+            SCHEDULER_LOG_INFO("⏸️ [ASAP-Block] 检测到挂起后的待处理BeginDispatch事件，本tick跳过新调度");
+            return;
+        }
+
         // ========== 第3步：检查抢占 ==========
         checkAndPreempt();
 
@@ -580,33 +597,20 @@ namespace RTSim {
         if (_kernel) {
             SCHEDULER_LOG_INFO("🔔 开始调度新任务");
 
-            // 记录调度前的能量
             double energy_before_scheduling = _current_energy;
 
-            // ⭐ 关键：清空本次tick的调度记录
-            // getTaskN会填充这个集合，但不扣除能量
-            _counted_tasks_in_dispatch.clear();
-            _dispatching_tasks_total_energy = 0.0;
+            // 开启新的稳定 dispatch round。
+            resetTickDispatchState();
 
-            // 调度任务（getTaskN只做决策和标记，不扣除能量）
+            // 调度任务（getTaskN 只做决策和预留，不直接扣除 current_energy）。
             _kernel->dispatch();
 
-            // ⭐ 关键：在dispatch后，统一扣除所有已标记任务的能量
-            for (AbsRTTask *task : _counted_tasks_in_dispatch) {
-                double unit_energy = calculateUnitEnergyForTask(task);
-                _current_energy -= unit_energy;
-                _stats.total_energy_consumed += unit_energy;
-                _dispatching_tasks_total_energy += unit_energy;
-
-                SCHEDULER_LOG_INFO("✅ 新任务扣除初始能量: " +
-                                   getTaskName(task) +
-                                   " -" + std::to_string(unit_energy * 1000) + " mJ → " +
-                                   std::to_string(_current_energy * 1000) + " mJ");
-            }
+            // 在 dispatch 后统一扣除本轮首次批准的新任务能量。
+            accountInitialEnergyForSelectedTasks("✅ [ASAP-Block] 新任务扣除初始能量: ");
 
             SCHEDULER_LOG_INFO("📊 调度完成: 新任务=" +
                                std::to_string(_counted_tasks_in_dispatch.size()) +
-                               " 扣除能量=" + std::to_string(_dispatching_tasks_total_energy * 1000) + " mJ " +
+                               " 扣除能量=" + std::to_string((energy_before_scheduling - _current_energy) * 1000) + " mJ " +
                                std::to_string(energy_before_scheduling * 1000) + " → " +
                                std::to_string(_current_energy * 1000) + " mJ");
         }
@@ -664,8 +668,18 @@ namespace RTSim {
     // =====================================================
 
     AbsRTTask *ASAPBlockScheduler::getTaskN(unsigned int n) {
+        if (n < _dispatch_selection_order.size()) {
+            AbsRTTask *selected_task = _dispatch_selection_order[n];
+            if (selected_task && selected_task->isActive() &&
+                _counted_tasks_in_dispatch.find(selected_task) != _counted_tasks_in_dispatch.end() &&
+                (!_kernel || _kernel->getProcessor(selected_task) == nullptr)) {
+                SCHEDULER_LOG_DEBUG(std::string("♻️ [ASAP-Block] 复用本轮dispatch已选任务: ") +
+                                   getTaskName(selected_task) +
+                                   " slot=" + std::to_string(n));
+                return selected_task;
+            }
+        }
 
-        // ⭐ V43修复：能量耗尽时立即返回，不调度任何任务
         if (_energy_depleted) {
             SCHEDULER_LOG_DEBUG(std::string("💀 [ASAP-Block] getTaskN: 能量已耗尽，拒绝调度") +
                                " n=" + std::to_string(n) +
@@ -673,175 +687,74 @@ namespace RTSim {
             return nullptr;
         }
 
-        SCHEDULER_LOG_DEBUG(std::string("🔍 [ASAP-Block] getTaskN(") + std::to_string(n) + ") " +
-                           "已调度能耗=" + std::to_string(_dispatching_tasks_total_energy) + "J " +
-                           "当前能量=" + std::to_string(_current_energy) + "J " +
-                           "队���大小=" + std::to_string(_ready_queue.size()));
-
-
         if (_ready_queue.empty()) {
             SCHEDULER_LOG_INFO("📭 [ASAP-Block] getTaskN: 就绪队列为空");
             return nullptr;
         }
 
-        // ⭐ 暂时注释掉清理逻辑，先观察队列实际状态
-        /*
-        // ⭐ 关键修复：清理_ready_queue中过期的周期性任务实例
-        // 对于周期性任务，使用到达时间来判断实例是否过期
-        Tick current_time = SIMUL.getTime();
-        _ready_queue.erase(
-            std::remove_if(_ready_queue.begin(), _ready_queue.end(),
-                [this, current_time](AbsRTTask *task) {
-                    if (!task) return true;
-                    // 移除不活动的任务
-                    if (!task->isActive()) {
-                        SCHEDULER_LOG_DEBUG(std::string("🧹 [ASAP-Block] 清理不活动任务: ") + getTaskName(task));
-                        return true;
-                    }
-                    // ⭐ 移除过期的周期性任务实例：到达时间+截止时间 < 当前时间
-                    Tick arrival = task->getArrival();
-                    Tick deadline = arrival + Tick(20);  // 周期性任务的截止时间是到达时间+周期
-                    if (deadline < current_time) {
-                        SCHEDULER_LOG_DEBUG(std::string("🧹 [ASAP-Block] 清理过期任务实例: ") +
-                                       getTaskName(task) +
-                                       " 到达=" + std::to_string(static_cast<int64_t>(arrival)) +
-                                       " 截止=" + std::to_string(static_cast<int64_t>(deadline)) +
-                                       " 当前=" + std::to_string(static_cast<int64_t>(current_time)));
-                        return true;
-                    }
-                    return false;
-                }),
-            _ready_queue.end()
-        );
+        const double EPSILON = 1e-9;
 
-        if (_ready_queue.empty()) {
-            SCHEDULER_LOG_DEBUG("📭 [ASAP-Block] getTaskN: 清理后队列为空");
-            return nullptr;
-        }
-        */
-
-        // ⭐ V30调试：输出ready queue信息
-        std::cout << "[DEBUG] ASAP-Block::getTaskN(" << n << ") - ready_queue.size()=" << _ready_queue.size() << std::endl;
-        for (size_t i = 0; i < _ready_queue.size(); ++i) {
-            std::cout << "[DEBUG]   ready_queue[" << i << "]=" << getTaskName(_ready_queue[i]) << std::endl;
-        }
-
-        // ⭐ 级联调度：遍历就绪队列，运行中任务也要检查能量
-        unsigned int ready_index = 0;
-        std::cout << "[DEBUG] ASAP-Block::getTaskN(" << n << ") - 开始遍历ready_queue, 查找第" << n << "个未调度任务" << std::endl;
-        for (size_t i = 0; i < _ready_queue.size(); ++i) {
-            AbsRTTask *task = _ready_queue[i];
-
-            if (!task) {
+        for (AbsRTTask *task : _ready_queue) {
+            if (!task || !task->isActive()) {
                 continue;
             }
 
-            // ⭐ 关键修复：不再跳过已调度的任务
-            // _counted_tasks_in_dispatch只是用于跟踪本次tick中已扣除能量的任务
-            // 避免重复扣除能量
-            // 重复调度的问题由内核的_m_dispatched检查来处理
+            if (_counted_tasks_in_dispatch.find(task) != _counted_tasks_in_dispatch.end()) {
+                continue;
+            }
+
             bool is_running = false;
             if (_kernel) {
                 CPU *proc = _kernel->getProcessor(task);
                 is_running = (proc != nullptr);
             }
-
-            // 检查是否已在本tick中扣除过能量
-            bool already_counted = _counted_tasks_in_dispatch.find(task) != _counted_tasks_in_dispatch.end();
-
-            std::cout << "[DEBUG] ASAP-Block::getTaskN(" << n << ") - i=" << i << " task=" << getTaskName(task)
-                      << " ready_index=" << ready_index << " is_running=" << is_running
-                      << " already_counted=" << already_counted << std::endl;
-
-            // ⭐ V29.1修复：运行中任务的续期由ASAPBlockEnergyCheckEvent处理，getTaskN()不再扣除续期能量
-            // 设计原则：
-            // - getTaskN(): 只负责新任务的首次调度和能量扣除
-            // - ASAPBlockEnergyCheckEvent: 负责运行中任务的续期能量扣除（每1ms触发一次）
             if (is_running) {
-                // 运行中任务：直接返回让kernel继续调度
-                // 不检查能量（由ASAPBlockEnergyCheckEvent检查）
-                // 不扣除能量（由ASAPBlockEnergyCheckEvent扣除）
-
-                if (ready_index == n) {
-                    return task;
-                }
-
-                ready_index++;
                 continue;
             }
 
-
-            // 这是第ready_index个未dispatch的任务
-            if (ready_index == n) {
-                // ⭐ 计算任务的1ms能耗
-                double unit_energy = calculateUnitEnergyForTask(task);
-
-                // ⭐ V30调试：输出能量检查信息
-                std::cout << "[DEBUG] ASAP-Block::getTaskN(" << n << ") - 准备调度第" << ready_index << "个任务: " << getTaskName(task)
-                          << " 需要1ms=" << unit_energy * 1000 << " mJ"
-                          << " 当前能量=" << _current_energy * 1000 << " mJ" << std::endl;
-
-                const double EPSILON = 1e-9;
-                // ⭐ 预扣模式：检查当前能量是否足够当前任务的1ms能耗
-                if (_current_energy < unit_energy - EPSILON) {
-                    SCHEDULER_LOG_INFO(std::string("⚠️ [ASAP-Block] 能量不足，停止级联") +
-                                      " 任务=" + getTaskName(task) +
-                                      " 需要1ms=" + std::to_string(unit_energy) + "J" +
-                                      " 当前能量=" + std::to_string(_current_energy) + "J");
-                    std::cout << "[DEBUG] ASAP-Block::getTaskN(" << n << ") - 能量不足，返回nullptr" << std::endl;
-                    return nullptr;  // ⭐ 立即停止级联
-                }
-
-                // ⭐ 重构：只标记任务，不扣除能量
-                // 能量将在performTickScheduling的dispatch后统一扣除
-                if (_counted_tasks_in_dispatch.find(task) == _counted_tasks_in_dispatch.end()) {
-                    // 尚未标记，标记任务
-                    _counted_tasks_in_dispatch.insert(task);
-
-                    SCHEDULER_LOG_INFO(std::string("✅ [ASAP-Block] 决定调度任务（已标记，暂不扣能量）: ") + getTaskName(task) +
-                                      " 1ms能耗=" + std::to_string(unit_energy * 1000) + " mJ");
-                } else {
-                    SCHEDULER_LOG_DEBUG(std::string("♻️ [ASAP-Block] 任务已标记，直接返回: ") + getTaskName(task));
-                }
-
-                return task;
-            } else {
-                // ⭐ V32关键修复：不是我们要找的第n个任务，继续寻找
-                ready_index++;
+            double unit_energy = calculateUnitEnergyForTask(task);
+            double projected_energy_after_dispatch =
+                _current_energy - _dispatching_tasks_total_energy - unit_energy;
+            if (projected_energy_after_dispatch < -EPSILON) {
+                SCHEDULER_LOG_INFO(std::string("⛔ [ASAP-Block] 最高优先级待调度任务不可负担，形成阻塞墙: ") +
+                                  getTaskName(task) +
+                                  " 需要=" + std::to_string(unit_energy * 1000) + " mJ" +
+                                  " 当前=" + std::to_string(_current_energy * 1000) + " mJ" +
+                                  " 已预留=" + std::to_string(_dispatching_tasks_total_energy * 1000) + " mJ");
+                return nullptr;
             }
 
+            markTaskSelectedThisTick(task);
+            SCHEDULER_LOG_INFO(std::string("✅ [ASAP-Block] 决定调度任务（已标记，暂不扣能量）: ") +
+                              getTaskName(task) +
+                              " 1ms能耗=" + std::to_string(unit_energy * 1000) + " mJ" +
+                              " 本轮预留总能耗=" + std::to_string(_dispatching_tasks_total_energy * 1000) + " mJ");
+
+            if (n < _dispatch_selection_order.size()) {
+                return _dispatch_selection_order[n];
+            }
         }
 
-        std::cout << "[DEBUG] ASAP-Block::getTaskN(" << n << ") - 循环结束，未找到第" << n << "个任务，返回nullptr (ready_index=" << ready_index << ")" << std::endl;
         return nullptr;
     }
 
     // =====================================================
-    // notify - 每ms逐次扣减能耗（TIE核心逻辑）
+    // notify - dispatch完成后仅同步执行态，不再做二次能量门槛
     // =====================================================
 
     void ASAPBlockScheduler::notify(AbsRTTask *task) {
+        Scheduler::notify(task);
+
         if (!task) {
             return;
         }
 
-        // ⭐ 修复：任务到达时只检查能量，不扣减能耗
-        // 能耗在任务调度时通过getTaskN()方法扣减
-        double unit_energy = calculateUnitEnergyForTask(task);
+        SCHEDULER_LOG_INFO(std::string("🔔 [ASAP-Block] notify: 任务进入执行态（不再做二次能量门槛）: ") +
+                          getTaskName(task));
 
-        // 检查能量是否足够
-        const double EPSILON = 1e-9;
-        if (_current_energy < unit_energy - EPSILON) {
-            SCHEDULER_LOG_WARNING(std::string("⚠️ [ASAP-Block] notify: 能量不足") +
-                                 " 任务=" + getTaskName(task) +
-                                 " 需要=" + std::to_string(unit_energy) + "J" +
-                                 " 当前=" + std::to_string(_current_energy) + "J");
-            return;
+        if (!isInReadyQueue(task) && !isInWaitingQueue(task)) {
+            addToReadyQueue(task);
         }
-
-        // 任务到达，添加到就绪队列
-        SCHEDULER_LOG_INFO(std::string("📥 [ASAP-Block] 任务到达并添加到就绪队列: ") + getTaskName(task));
-        addToReadyQueue(task);
     }
 
     // =====================================================
@@ -946,6 +859,10 @@ namespace RTSim {
 
         removeFromReadyQueue(task);
         removeFromWaitingQueue(task);
+        clearTaskTickSelection(task);
+        _energy_deducted_tasks.erase(task);
+        _energy_accounts.erase(task);
+        _suspend_reasons.erase(task);
 
         // ⭐ Bug修复：不再使用_running_tasks，内核管理任务状态
         // for (auto &map_pair : _running_tasks) {
@@ -976,6 +893,13 @@ namespace RTSim {
 
         if (!isInReadyQueue(task) && !isInWaitingQueue(task)) {
             addToReadyQueue(task);
+        }
+
+        if (!_kernel) {
+            _kernel = getKernel();
+        }
+
+        if (_kernel) {
             checkAndPreempt();
         }
     }
@@ -990,34 +914,85 @@ namespace RTSim {
     }
 
     void ASAPBlockScheduler::checkAndPreemptOnAllCPUs() {
-        for (auto &map_pair : _running_tasks) {
-            CPU *cpu = map_pair.first;
-            AbsRTTask *running_task = map_pair.second;
-
-            if (!running_task) {
-                continue;
+        if (!_kernel) {
+            _kernel = getKernel();
+            if (!_kernel) {
+                return;
             }
+        }
 
-            AbsRTTask *highest = getHighestPriorityTaskFromReadyQueue();
-            if (!highest) {
-                continue;
-            }
+        const auto& running_tasks_map = _kernel->getCurrentExecutingTasks();
 
-            if (shouldPreempt(cpu, highest)) {
-                SCHEDULER_LOG_INFO(std::string("🔄 [ASAP-Block] 抢占CPU: ") +
-                                  " 挂起低优先级任务=" + getTaskName(running_task) +
-                                  " 调度高优先级任务=" + getTaskName(highest));
-
-                // ⭐ 实际抢占逻辑：挂起当前运行的任务
-                // suspend会自动调用deschedule()并将任务重新放回调度队列
-                if (_kernel) {
-                    setSuspendReason(running_task, "preemption");
-                    _kernel->suspend(running_task);
-                    SCHEDULER_LOG_DEBUG(std::string("⏸️ [ASAP-Block] 已挂起任务: ") + getTaskName(running_task));
-                } else {
-                    SCHEDULER_LOG_WARNING("⚠️ [ASAP-Block] 抢占失败：_kernel为nullptr");
+        int truly_free_cpus = 0;
+        for (const auto& [cpu, task] : running_tasks_map) {
+            bool is_dispatching = _kernel->isCPUDispatching(cpu);
+            if (!task) {
+                if (!is_dispatching) {
+                    truly_free_cpus++;
                 }
             }
+        }
+
+        if (truly_free_cpus > 0) {
+            return;
+        }
+
+        AbsRTTask *best_candidate = getHighestPriorityTaskFromReadyQueue();
+        if (!best_candidate) {
+            return;
+        }
+
+        ASAPBlockTaskModel *best_model = getTaskModel(best_candidate);
+        if (!best_model) {
+            return;
+        }
+
+        double candidate_unit_energy = calculateUnitEnergyForTask(best_candidate);
+        bool candidate_affordable = (_current_energy >= candidate_unit_energy - 1e-9);
+
+        AbsRTTask *worst_running = nullptr;
+        ASAPBlockTaskModel *worst_model = nullptr;
+        std::vector<AbsRTTask *> running_to_suspend;
+
+        for (const auto& [cpu, task] : running_tasks_map) {
+            if (!task || !task->isExecuting()) {
+                continue;
+            }
+
+            ASAPBlockTaskModel *model = getTaskModel(task);
+            if (!model) {
+                continue;
+            }
+
+            if (best_model->getRMPriority() >= model->getRMPriority()) {
+                continue;
+            }
+
+            running_to_suspend.push_back(task);
+            if (!worst_running || model->getRMPriority() > worst_model->getRMPriority()) {
+                worst_running = task;
+                worst_model = model;
+            }
+        }
+
+        if (running_to_suspend.empty()) {
+            return;
+        }
+
+        if (candidate_affordable) {
+            SCHEDULER_LOG_INFO(std::string("🔄 [ASAP-Block] RM抢占: 挂起=") +
+                              getTaskName(worst_running) +
+                              " 调度=" + getTaskName(best_candidate));
+            setSuspendReason(worst_running, "preemption");
+            _kernel->suspend(worst_running);
+            return;
+        }
+
+        SCHEDULER_LOG_WARNING(std::string("🧱 [ASAP-Block] 高优任务缺电，阻塞墙生效，挂起所有低优运行任务: ") +
+                             getTaskName(best_candidate));
+        for (AbsRTTask *task : running_to_suspend) {
+            setSuspendReason(task, "preemption");
+            _kernel->suspend(task);
         }
     }
 
@@ -1158,9 +1133,23 @@ namespace RTSim {
         SCHEDULER_LOG_INFO(std::string("➖ [ASAP-Block] extract: ") + getTaskName(task) +
                           " _ready_queue.size()=" + std::to_string(_ready_queue.size()));
 
+        std::string suspend_reason = getSuspendReason(task);
+        bool preserve_dispatch_state = (suspend_reason == "preemption" ||
+                                        suspend_reason == "insufficient_energy");
+
         Scheduler::extract(task);
         removeFromReadyQueue(task);
         removeFromWaitingQueue(task);
+
+        if (preserve_dispatch_state) {
+            clearTaskTickSelection(task);
+            _energy_deducted_tasks.erase(task);
+            _energy_accounts.erase(task);
+            return;
+        }
+
+        clearTaskTickSelection(task);
+        _energy_deducted_tasks.erase(task);
     }
 
     void ASAPBlockScheduler::addToReadyQueue(AbsRTTask *task) {
@@ -1238,7 +1227,17 @@ namespace RTSim {
         if (_ready_queue.empty()) {
             return nullptr;
         }
-        return _ready_queue.front();
+
+        for (AbsRTTask *task : _ready_queue) {
+            if (!task || !task->isActive()) {
+                continue;
+            }
+            if (_kernel && _kernel->getProcessor(task) != nullptr) {
+                continue;
+            }
+            return task;
+        }
+        return nullptr;
     }
 
     // =====================================================
@@ -1569,6 +1568,66 @@ namespace RTSim {
         return task->toString();
     }
 
+    void ASAPBlockScheduler::resetTickDispatchState() {
+        _counted_tasks_in_dispatch.clear();
+        _dispatch_selection_order.clear();
+        _dispatching_tasks_total_energy = 0.0;
+    }
+
+    void ASAPBlockScheduler::clearTaskTickSelection(AbsRTTask *task) {
+        if (!task) {
+            return;
+        }
+
+        if (_counted_tasks_in_dispatch.erase(task) > 0) {
+            _dispatching_tasks_total_energy -= calculateUnitEnergyForTask(task);
+            if (_dispatching_tasks_total_energy < 0.0) {
+                _dispatching_tasks_total_energy = 0.0;
+            }
+        }
+
+        _dispatch_selection_order.erase(
+            std::remove(_dispatch_selection_order.begin(), _dispatch_selection_order.end(), task),
+            _dispatch_selection_order.end());
+    }
+
+    void ASAPBlockScheduler::markTaskSelectedThisTick(AbsRTTask *task) {
+        if (!task) {
+            return;
+        }
+
+        if (_counted_tasks_in_dispatch.insert(task).second) {
+            _dispatch_selection_order.push_back(task);
+            _dispatching_tasks_total_energy += calculateUnitEnergyForTask(task);
+        }
+    }
+
+    void ASAPBlockScheduler::accountInitialEnergyForSelectedTasks(const std::string &log_prefix) {
+        for (AbsRTTask *task : _dispatch_selection_order) {
+            if (!task) {
+                continue;
+            }
+            if (_counted_tasks_in_dispatch.find(task) == _counted_tasks_in_dispatch.end()) {
+                continue;
+            }
+            if (_energy_deducted_tasks.find(task) != _energy_deducted_tasks.end()) {
+                continue;
+            }
+
+            double unit_energy = calculateUnitEnergyForTask(task);
+            _current_energy -= unit_energy;
+            if (_current_energy < 0.0) {
+                _current_energy = 0.0;
+            }
+            _stats.total_energy_consumed += unit_energy;
+            _energy_deducted_tasks.insert(task);
+
+            SCHEDULER_LOG_INFO(log_prefix + getTaskName(task) +
+                               " -" + std::to_string(unit_energy * 1000) + " mJ → " +
+                               std::to_string(_current_energy * 1000) + " mJ");
+        }
+    }
+
     AbsRTTask *ASAPBlockScheduler::getRunningTaskOnCPU(CPU *cpu) {
         if (!cpu) {
             return nullptr;
@@ -1658,11 +1717,17 @@ namespace RTSim {
         _current_energy = _initial_energy;
         _last_tick_time = SIMUL.getTime();
         _last_collection_time = SIMUL.getTime();
+        _energy_depleted = false;
 
         _ready_queue.clear();
         _waiting_queue.clear();
         _energy_accounts.clear();
         _running_tasks.clear();
+        _counted_tasks_in_dispatch.clear();
+        _dispatch_selection_order.clear();
+        _energy_deducted_tasks.clear();
+        _dispatching_tasks_total_energy = 0.0;
+        _suspend_reasons.clear();
 
         _stats.total_scheduled = 0;
         _stats.total_task_completions = 0;
@@ -1680,6 +1745,9 @@ namespace RTSim {
 
     void ASAPBlockScheduler::endRun() {
         SCHEDULER_LOG_INFO("🏁 [ASAP-Block] endRun - 仿真结束");
+
+        resetTickDispatchState();
+        _energy_deducted_tasks.clear();
 
         // 仿真结束前，收集最后一次能量
         Tick current_time = SIMUL.getTime();
@@ -1708,24 +1776,18 @@ namespace RTSim {
 
         SCHEDULER_LOG_INFO(std::string("✅ [ASAP-Block] 任务结束: ") + getTaskName(task));
 
-        // 从就绪队列移除
         removeFromReadyQueue(task);
+        removeFromWaitingQueue(task);
+        clearTaskTickSelection(task);
+        _energy_deducted_tasks.erase(task);
+        _energy_accounts.erase(task);
+        clearSuspendReason(task);
 
-        // 从运行任务映射中移除
         for (auto &pair : _running_tasks) {
             if (pair.second == task) {
                 pair.second = nullptr;
                 break;
             }
-        }
-
-        // 打印能量消耗统计
-        auto it = _energy_accounts.find(task);
-        if (it != _energy_accounts.end()) {
-            SCHEDULER_LOG_INFO(std::string("📊 [ASAP-Block] 任务能量消耗: ") +
-                              getTaskName(task) +
-                              " 累计消耗=" + std::to_string(it->second.total_consumed) + "J");
-            _energy_accounts.erase(it);
         }
 
         _stats.total_task_completions++;

@@ -203,6 +203,8 @@ namespace RTSim {
         void checkAndPreemptOnAllCPUs();
         bool shouldPreempt(AbsRTTask *running_task, AbsRTTask *new_task);
         AbsRTTask *getRunningTaskOnCPU(CPU *cpu);
+        std::vector<AbsRTTask *> collectActiveRunningBatchTasks();
+        void rebuildApprovedBatchForImmediateDispatch();
 
         // Tick事件调度
         void scheduleNextTick();
@@ -283,6 +285,7 @@ namespace RTSim {
         std::string getEnergyStatus() const;
 
         // 友元类声明
+        friend class MRTKernel;
         friend class ASAPSyncTickEvent;
         friend class ASAPSyncEnergyCheckEvent;
     };

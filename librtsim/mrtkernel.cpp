@@ -140,7 +140,7 @@ namespace RTSim {
         std::cout << "[DEBUG] getNextFreeProc() - 开始查找空闲CPU" << std::endl;
         for (auto it = begin; it != end; ++it) {
             bool curr_exe_null = (it->second == nullptr);
-            bool is_disp = isDispatched(it->first);
+            bool is_disp = isCPUDispatching(it->first);
             std::cout << "[DEBUG] getNextFreeProc() - CPU: " << it->first->toString()
                       << " _m_currExe=" << (it->second ? taskname(it->second) : "nullptr")
                       << " is_null:" << curr_exe_null
@@ -221,6 +221,17 @@ namespace RTSim {
             std::cout << "[DEBUG] MRTKernel::onArrival() - ST-Sync到达后重新进入通用dispatch" << std::endl;
         }
 
+        ASAPBlockScheduler *asap_block_sched = dynamic_cast<ASAPBlockScheduler *>(_sched);
+        if (asap_block_sched) {
+            asap_block_sched->onTaskArrival(task);
+        }
+
+        ASAPSyncScheduler *asap_sync_sched = dynamic_cast<ASAPSyncScheduler *>(_sched);
+        if (asap_sync_sched) {
+            asap_sync_sched->onTaskArrival(task);
+            std::cout << "[DEBUG] MRTKernel::onArrival() - ASAP-Sync到达后立即参与实时batch重建" << std::endl;
+        }
+
         dispatch();
 
         std::cout << "[DEBUG] MRTKernel::onArrival() - 完成: " << taskname(task) << std::endl;
@@ -239,6 +250,24 @@ namespace RTSim {
         std::string st_nonblock_suspend_reason;
         if (st_nonblock_sched) {
             st_nonblock_suspend_reason = st_nonblock_sched->getSuspendReason(task);
+        }
+
+        ASAPBlockScheduler *asap_block_sched = dynamic_cast<ASAPBlockScheduler *>(_sched);
+        std::string asap_block_suspend_reason;
+        if (asap_block_sched) {
+            asap_block_suspend_reason = asap_block_sched->getSuspendReason(task);
+        }
+
+        ASAPNonBlockScheduler *asap_nonblock_sched = dynamic_cast<ASAPNonBlockScheduler *>(_sched);
+        std::string asap_nonblock_suspend_reason;
+        if (asap_nonblock_sched) {
+            asap_nonblock_suspend_reason = asap_nonblock_sched->getSuspendReason(task);
+        }
+
+        ASAPSyncScheduler *asap_sync_sched = dynamic_cast<ASAPSyncScheduler *>(_sched);
+        std::string asap_sync_suspend_reason;
+        if (asap_sync_sched) {
+            asap_sync_suspend_reason = asap_sync_sched->getSuspendReason(task);
         }
 
         _sched->extract(task);
@@ -273,14 +302,27 @@ namespace RTSim {
             std::cout << "[DEBUG] MRTKernel::suspend() - 任务已重新插入队列: "
                       << taskname(task) << " (剩余执行时间保留)" << std::endl;
 
-            ASAPSyncScheduler *asap_sync_sched = dynamic_cast<ASAPSyncScheduler *>(_sched);
-            if (asap_sync_sched && !asap_sync_sched->shouldDispatchAtTickBoundary()) {
-                std::cout << "[DEBUG] MRTKernel::suspend() - ASAP-Sync等待下一个tick再调度" << std::endl;
-                return;
+            if (asap_sync_sched) {
+                if (asap_sync_suspend_reason == "preemption") {
+                    std::cout << "[DEBUG] MRTKernel::suspend() - ASAP-Sync抢占挂起后立即参与重建批次" << std::endl;
+                } else if (!asap_sync_sched->shouldDispatchAtTickBoundary()) {
+                    std::cout << "[DEBUG] MRTKernel::suspend() - ASAP-Sync等待下一个tick再调度" << std::endl;
+                    return;
+                }
             }
 
             if (st_nonblock_sched && st_nonblock_suspend_reason == "insufficient_energy") {
                 std::cout << "[DEBUG] MRTKernel::suspend() - ST-NonBlock缺电挂起，跳过立即dispatch，等待正常tick/wake" << std::endl;
+                return;
+            }
+
+            if (asap_nonblock_sched && asap_nonblock_suspend_reason == "insufficient_energy") {
+                std::cout << "[DEBUG] MRTKernel::suspend() - ASAP-NonBlock缺电挂起，跳过立即dispatch，等待下个tick重新旁路评估" << std::endl;
+                return;
+            }
+
+            if (asap_block_sched && asap_block_suspend_reason == "insufficient_energy") {
+                std::cout << "[DEBUG] MRTKernel::suspend() - ASAP-Block缺电挂起，维持阻塞墙，等待充电后再开放调度" << std::endl;
                 return;
             }
 
@@ -313,7 +355,9 @@ namespace RTSim {
 
         ASAPSyncScheduler *asap_sync_sched = dynamic_cast<ASAPSyncScheduler *>(_sched);
         if (asap_sync_sched && !asap_sync_sched->shouldDispatchAtTickBoundary()) {
-            return;
+            if (asap_sync_sched->getSuspendReason(task) != "preemption") {
+                return;
+            }
         }
 
         STSyncScheduler *st_sync_sched = dynamic_cast<STSyncScheduler *>(_sched);
