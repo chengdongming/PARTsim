@@ -321,6 +321,7 @@ namespace RTSim {
         std::string getEnergyStatus() const;
 
         // 友元类声明
+        friend class MRTKernel;
         friend class STBlockTickEvent;
         friend class STBlockWakeEvent;  // ⭐ V74：深度充电唤醒事件
         // ⭐ V40重构：能量检查事件已删除

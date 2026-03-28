@@ -1139,12 +1139,14 @@ namespace RTSim {
 
         if (!isInReadyQueue(task) && !isInWaitingQueue(task)) {
             addToReadyQueue(task);
-            // ⭐ V44修复：移除任务到达时的抢占检查
-            // 原因：
-            // 1. 任务到达时立即抢占会导致刚调度的任务在下一个tick就被抢占
-            // 2. 违背ALAP的"尽可能晚调度"原则
-            // 3. 抢占检查应该在tick边界统一进行，而不是每次任务到达都检查
-            // checkAndPreempt();
+        }
+
+        if (!_kernel) {
+            _kernel = getKernel();
+        }
+
+        if (_kernel && !_is_charging_sleep && !_deep_charging && !_energy_depleted) {
+            checkAndPreempt();
         }
     }
 

@@ -246,6 +246,7 @@ namespace RTSim {
         void suspendBatchForInsufficientEnergy(const std::vector<AbsRTTask *> &tasks,
                                               double required_energy,
                                               const std::string &context);
+        void rebuildApprovedBatchForImmediateDispatch();
 
         // ST-Sync批量计算
         int calculateBatchSize();                              // 计算批量大小 k
@@ -356,6 +357,7 @@ namespace RTSim {
         std::string getEnergyStatus() const;
 
         // 友元类声明
+        friend class MRTKernel;
         friend class STSyncTickEvent;
         friend class STSyncEnergyCheckEvent;
         friend class STSyncGroupWakeEvent;  // ⭐ V116：组唤醒事件需要访问私有成员

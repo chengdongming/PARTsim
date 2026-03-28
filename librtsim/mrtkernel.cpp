@@ -28,6 +28,7 @@
 #include <rtsim/scheduler/gpfp_asap_sync_scheduler.hpp>
 #include <rtsim/scheduler/gpfp_asap_nonblock_scheduler.hpp>
 #include <rtsim/scheduler/gpfp_st_block_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_st_nonblock_scheduler.hpp>
 #include <rtsim/scheduler/gpfp_st_sync_scheduler.hpp>
 
 namespace RTSim {
@@ -204,10 +205,20 @@ namespace RTSim {
 
         _sched->insert(task);
 
+        STBlockScheduler *st_block_sched = dynamic_cast<STBlockScheduler *>(_sched);
+        if (st_block_sched) {
+            st_block_sched->onTaskArrival(task);
+        }
+
+        STNonBlockScheduler *st_nonblock_sched = dynamic_cast<STNonBlockScheduler *>(_sched);
+        if (st_nonblock_sched) {
+            st_nonblock_sched->onTaskArrival(task);
+        }
+
         STSyncScheduler *st_sync_sched = dynamic_cast<STSyncScheduler *>(_sched);
         if (st_sync_sched) {
-            std::cout << "[DEBUG] MRTKernel::onArrival() - ST-Sync等待tick边界统一重建同步组，跳过立即dispatch" << std::endl;
-            return;
+            st_sync_sched->onTaskArrival(task);
+            std::cout << "[DEBUG] MRTKernel::onArrival() - ST-Sync到达后重新进入通用dispatch" << std::endl;
         }
 
         dispatch();
@@ -217,6 +228,18 @@ namespace RTSim {
 
     void MRTKernel::suspend(AbsRTTask *task) {
         DBGENTER(_MRTKERNEL_DBG_LEV);
+
+        STSyncScheduler *st_sync_sched = dynamic_cast<STSyncScheduler *>(_sched);
+        std::string st_sync_suspend_reason;
+        if (st_sync_sched) {
+            st_sync_suspend_reason = st_sync_sched->getSuspendReason(task);
+        }
+
+        STNonBlockScheduler *st_nonblock_sched = dynamic_cast<STNonBlockScheduler *>(_sched);
+        std::string st_nonblock_suspend_reason;
+        if (st_nonblock_sched) {
+            st_nonblock_suspend_reason = st_nonblock_sched->getSuspendReason(task);
+        }
 
         _sched->extract(task);
         CPU *p = getProcessor(task);
@@ -233,9 +256,13 @@ namespace RTSim {
             // 正确做法：将任务重新插入到就绪队列，而不是终止它
             // _sched->onTaskEnd(task);  // ❌ 错误：这会终止任务实例
 
-            STSyncScheduler *st_sync_sched = dynamic_cast<STSyncScheduler *>(_sched);
             if (st_sync_sched) {
-                std::cout << "[DEBUG] MRTKernel::suspend() - ST-Sync缺电挂起后保留waiting态，不做kernel reinsert" << std::endl;
+                if (st_sync_suspend_reason == "preemption") {
+                    _sched->insert(task);
+                    std::cout << "[DEBUG] MRTKernel::suspend() - ST-Sync抢占挂起后重新插入ready，等待新的dispatch" << std::endl;
+                } else {
+                    std::cout << "[DEBUG] MRTKernel::suspend() - ST-Sync缺电挂起后保留waiting态，不做kernel reinsert" << std::endl;
+                }
                 return;
             }
 
@@ -249,6 +276,11 @@ namespace RTSim {
             ASAPSyncScheduler *asap_sync_sched = dynamic_cast<ASAPSyncScheduler *>(_sched);
             if (asap_sync_sched && !asap_sync_sched->shouldDispatchAtTickBoundary()) {
                 std::cout << "[DEBUG] MRTKernel::suspend() - ASAP-Sync等待下一个tick再调度" << std::endl;
+                return;
+            }
+
+            if (st_nonblock_sched && st_nonblock_suspend_reason == "insufficient_energy") {
+                std::cout << "[DEBUG] MRTKernel::suspend() - ST-NonBlock缺电挂起，跳过立即dispatch，等待正常tick/wake" << std::endl;
                 return;
             }
 

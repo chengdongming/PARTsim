@@ -1222,11 +1222,36 @@ namespace RTSim {
                                getTaskName(task) + " (新实例到达)");
         }
 
+        if (_is_charging_sleep || _deep_charging || _energy_depleted) {
+            removeFromReadyQueue(task);
+            if (std::find(_deferred_arrivals.begin(), _deferred_arrivals.end(), task) == _deferred_arrivals.end()) {
+                _deferred_arrivals.push_back(task);
+            }
+
+            SCHEDULER_LOG_INFO(std::string("⏸️ [ST-Sync] 充电/缺电窗口内到达，保持延后到下一tick: ") +
+                              getTaskName(task));
+            return;
+        }
+
+        auto deferred_it = std::find(_deferred_arrivals.begin(), _deferred_arrivals.end(), task);
+        if (deferred_it != _deferred_arrivals.end()) {
+            _deferred_arrivals.erase(deferred_it);
+        }
+
         if (!isInReadyQueue(task) && !isInWaitingQueue(task)) {
             addToReadyQueue(task);
-
-            // ⭐ 注意：mid-tick抢占已在insert()中通过Micro-Batch机制实现
         }
+
+        if (!_kernel) {
+            _kernel = getKernel();
+        }
+
+        if (!_kernel) {
+            return;
+        }
+
+        SCHEDULER_LOG_INFO(std::string("⚡ [ST-Sync] 到达任务立即参与RM抢占检查: ") + getTaskName(task));
+        checkAndPreempt();
     }
 
     // =====================================================
@@ -1234,231 +1259,154 @@ namespace RTSim {
     // =====================================================
 
     void STSyncScheduler::checkAndPreempt() {
-        SCHEDULER_LOG_DEBUG("🔔 [ST-Sync] Tick级抢占检查");
+        SCHEDULER_LOG_DEBUG("🔔 [ST-Sync] arrival-time RM抢占检查");
         checkAndPreemptOnAllCPUs();
     }
 
     void STSyncScheduler::checkAndPreemptOnAllCPUs() {
-        // ⭐ 优化：如果有抢占批量任务，说明mid-tick抢占已经处理，跳过tick边界抢占检查
-        if (!_preempt_batch_tasks.empty()) {
-            SCHEDULER_LOG_DEBUG(std::string("⚡ [ST-Sync] checkAndPreemptOnAllCPUs: 跳过检查，抢占批量size=") +
-                               std::to_string(_preempt_batch_tasks.size()));
-            return;
-        }
-
-        // ⭐ 修复：不使用_running_tasks（它从未被正确填充）
-        // 直接从kernel获取实际运行中的任务
         if (!_kernel) {
             _kernel = getKernel();
             if (!_kernel) {
-                SCHEDULER_LOG_INFO("❌ [ST-Sync] checkAndPreemptOnAllCPUs: _kernel为null，无法检查抢占");
                 return;
             }
         }
 
-        const auto& running_tasks = _kernel->getCurrentExecutingTasks();
-        SCHEDULER_LOG_INFO(std::string("🔍 [ST-Sync] checkAndPreemptOnAllCPUs: 运行中任务数量=") +
-                          std::to_string(running_tasks.size()) +
-                          " _current_batch_tasks.size()=" + std::to_string(_current_batch_tasks.size()));
-
-        if (running_tasks.empty()) {
-            SCHEDULER_LOG_INFO("❌ [ST-Sync] checkAndPreemptOnAllCPUs: 没有运行中的任务");
+        if (_is_charging_sleep || _deep_charging || _energy_depleted) {
+            SCHEDULER_LOG_DEBUG("⏸️ [ST-Sync] charging/depleted窗口内跳过arrival-time抢占");
             return;
         }
 
-        // ⭐ 关键修复：检查_current_batch_tasks中的第一个Slack<=0的任务
-        // 因为mid-tick抢占可能已经将高优先级任务移到了_batch_tasks头部
-        // ⭐ V59修复：遍历_current_batch_tasks找到第一个Slack<=0的任务
-        // 原因：最高RM优先级任务的Slack可能>0，此时应该选择下一个Slack<=0的任务
-        AbsRTTask *highest = nullptr;
-        bool from_ready_queue = false;  // 标记是否来自就绪队列
-
-        if (!_current_batch_tasks.empty()) {
-            // ⭐ V59：遍历_current_batch_tasks找第一个Slack<=0的任务
-            for (AbsRTTask *task : _current_batch_tasks) {
-                if (!task || !task->isActive()) continue;
-
-                // 检查是否已在运行
-                bool is_running = false;
-                for (const auto& [cpu, running_task] : running_tasks) {
-                    if (running_task == task) {
-                        is_running = true;
-                        break;
-                    }
-                }
-                if (is_running) continue;
-
-                // ⭐ V59关键：检查Slack
-                Tick task_slack = calculateSlackForTask(task);
-                if (task_slack <= 0) {
-                    highest = task;
-                    from_ready_queue = false;
-                    SCHEDULER_LOG_INFO(std::string("✅ [ST-Sync] checkAndPreempt: 从batch选择Slack<=0任务: ") +
-                                      getTaskName(task) +
-                                      " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms");
-                    break;  // 找到了，退出循环
-                } else {
-                    SCHEDULER_LOG_INFO(std::string("⏸️ [ST-Sync] checkAndPreempt: 跳过batch任务Slack>0: ") +
-                                      getTaskName(task) +
-                                      " Slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms");
-                }
-            }
-        }
-
-        // 如果批量任务中没有Slack<=0的，才从就绪队列查找
-        if (!highest) {
-            highest = getHighestPriorityTaskFromReadyQueue();
-            from_ready_queue = true;
-        }
-
-        if (!highest) {
-            SCHEDULER_LOG_INFO("❌ [ST-Sync] checkAndPreemptOnAllCPUs: 没有候选任务进行抢占");
+        if (!_waiting_queue.empty()) {
+            SCHEDULER_LOG_DEBUG("⏸️ [ST-Sync] waiting_queue拥有当前恢复窗口，arrival-time不改写批次");
             return;
         }
 
-        SCHEDULER_LOG_INFO(std::string("🔍 [ST-Sync] checkAndPreemptOnAllCPUs: 最高优先级任务=") +
-                          getTaskName(highest) +
-                          " (from_" + (from_ready_queue ? "ready_queue" : "batch") + ")");
+        const auto &running_tasks_map = _kernel->getCurrentExecutingTasks();
 
-        // ⭐ Bug修复：如果最高优先级任务来自就绪队列，且_current_batch_tasks为空，
-        // 说明可能是在suspend()后重新插入的任务。为了避免"假抢占"循���，
-        // 检查该任务是否已经在运行中。如果是，则跳过抢占。
-        if (from_ready_queue && _current_batch_tasks.empty()) {
-            for (const auto& [cpu, running_task] : running_tasks) {
-                if (running_task == highest) {
-                    SCHEDULER_LOG_INFO(std::string("⚠️ [ST-Sync] 跳过假抢占: 最高优先级任务正在运行中=") +
-                                      getTaskName(highest));
-                    return;  // 跳过抢占
-                }
-            }
-        }
+        int truly_free_cpus = 0;
+        int busy_executing = 0;
+        int busy_dispatching = 0;
 
-        // ⭐ V45关键修复：准确计算真正空闲的CPU数量
-        // 空闲CPU的定义：_m_currExe[cpu] == nullptr 且 没���任务正在dispatch到这个CPU
-        // 注意：上下文切换中的CPU（有任务dispatch但还没执行）不应该被认为是空闲的
-        //       但也不应该被抢占
-        int truly_free_cpus = 0;   // 真正空闲（可以调度新任务）
-        int busy_executing = 0;     // 正在执行任务（可以被抢占）
-        int busy_dispatching = 0;   // 上下文切换中（不应该被抢占）
-
-        for (const auto& [cpu, running_task] : running_tasks) {
+        for (const auto &[cpu, task] : running_tasks_map) {
             bool is_dispatching = _kernel->isCPUDispatching(cpu);
-            if (!running_task) {
+            if (!task) {
                 if (!is_dispatching) {
                     truly_free_cpus++;
                 } else {
                     busy_dispatching++;
                 }
-            } else if (running_task->isExecuting()) {
+            } else if (task->isExecuting()) {
                 busy_executing++;
             } else {
-                // 任务存在但没有在执行，可能是上下文切换中
                 busy_dispatching++;
             }
         }
 
-        int total_cpus = running_tasks.size();
-
-        SCHEDULER_LOG_INFO(std::string("🔍 [ST-Sync] CPU状态: 总数=") +
-                          std::to_string(total_cpus) +
-                          " 空闲=" + std::to_string(truly_free_cpus) +
+        SCHEDULER_LOG_INFO(std::string("🔍 [ST-Sync] CPU状态: 空闲=") +
+                          std::to_string(truly_free_cpus) +
                           " 执行中=" + std::to_string(busy_executing) +
                           " 上下文切换中=" + std::to_string(busy_dispatching));
 
-        // ⭐ V45修复：如果有真正空闲的CPU，不进行抢占
-        // 新任务会被dispatch到空闲CPU，不需要抢占正在运行的任务
-        // ⭐ V59修复：有空闲CPU时，需要将highest任务加入批量并触发dispatch
         if (truly_free_cpus > 0) {
-            SCHEDULER_LOG_INFO(std::string("✅ [ST-Sync] 有空闲CPU，无需抢占，直接调度新任务: ") +
-                              getTaskName(highest));
-            // ⭐ V59：将任务加入批量并触发调度
-            if (highest) {
-                // 检查任务是否已在批量中
-                auto batch_it = std::find(_current_batch_tasks.begin(), _current_batch_tasks.end(), highest);
-                if (batch_it == _current_batch_tasks.end()) {
-                    _current_batch_tasks.push_back(highest);
-                    SCHEDULER_LOG_INFO(std::string("✅ [ST-Sync] 将任务加入批量: ") + getTaskName(highest));
-                }
-                // 触发dispatch
-                // _kernel->dispatch(); // V105: 禁用，避免频繁deschedule
-            }
+            rebuildApprovedBatchForImmediateDispatch();
+            SCHEDULER_LOG_INFO(std::string("⏭️ [ST-Sync] 有") + std::to_string(truly_free_cpus) +
+                              "个空闲CPU，arrival-time不抢占，仅重建稳定批次");
             return;
         }
 
-        // ⭐ 没有空闲CPU，需要抢占最低优先级的运行任务
-        SCHEDULER_LOG_INFO("⚠️ [ST-Sync] CPU已满，需要抢占最低优先级任务");
+        Tick current_time = SIMUL.getTime();
+        if (_last_preempted_task && _last_preempted_tick == current_time) {
+            bool has_higher_priority = false;
+            STSyncTaskModel *preempted_model = getTaskModel(_last_preempted_task);
 
-        // 找到优先级最低的运行任务
-        AbsRTTask *lowest_priority_task = nullptr;
-        int lowest_priority = -1;
+            for (AbsRTTask *candidate : _ready_queue) {
+                if (!candidate) {
+                    continue;
+                }
+                STSyncTaskModel *model = getTaskModel(candidate);
+                if (!model) {
+                    continue;
+                }
+                if (preempted_model && model->getRMPriority() < preempted_model->getRMPriority()) {
+                    has_higher_priority = true;
+                    break;
+                }
+            }
 
-        for (const auto& [cpu, running_task] : running_tasks) {
-            if (!running_task) {
+            if (!has_higher_priority) {
+                SCHEDULER_LOG_DEBUG(std::string("⏸️ [ST-Sync] 抢占防抖：跳过同tick连续抢占 ") +
+                                   getTaskName(_last_preempted_task));
+                return;
+            }
+        }
+
+        AbsRTTask *best_candidate = nullptr;
+        STSyncTaskModel *best_model = nullptr;
+
+        for (AbsRTTask *candidate : _ready_queue) {
+            if (!candidate || !candidate->isActive()) {
                 continue;
             }
 
-            STSyncTaskModel *model = getTaskModel(running_task);
+            CPU *cand_cpu = _kernel->getProcessor(candidate);
+            if (cand_cpu != nullptr) {
+                continue;
+            }
+
+            STSyncTaskModel *model = getTaskModel(candidate);
             if (!model) {
                 continue;
             }
 
-            int priority = model->getRMPriority();
-            if (lowest_priority_task == nullptr || priority > lowest_priority) {
-                lowest_priority_task = running_task;
-                lowest_priority = priority;
+            if (!best_candidate || model->getRMPriority() < best_model->getRMPriority()) {
+                best_candidate = candidate;
+                best_model = model;
             }
         }
 
-        if (!lowest_priority_task) {
-            SCHEDULER_LOG_INFO("❌ [ST-Sync] 未找到可抢占的任务");
+        if (!best_candidate || !best_model) {
             return;
         }
 
-        // ⭐ 关键修复：移除抢占检查中的ALAP Slack门控，让高优先级任务可以立即抢占
-        // 原因：ALAP的Slack门控应该在调度时过滤（getTaskN），而不应该在抢占时过滤
-        // 如果在抢占时也过��Slack，会导致高优先级任务（如Task_Assassin_Hungry, period=50）
-        // 因为Slack>0而无法抢占低优先级任务（如Task_Mid_A, period=100），
-        // 违反RM调度原则，导致饥饿和超时
-        //
-        // 新策略：
-        // - 抢占时只看RM优先级，不看Slack（类似TIE调度器）
-        // - Slack门控在批量调度的任务选择时生效（第799-805行）
+        AbsRTTask *worst_running = nullptr;
+        STSyncTaskModel *worst_model = nullptr;
 
-        // 检查是否需要抢占（新任务优先级更高）
-        if (shouldPreempt(lowest_priority_task, highest)) {
-            SCHEDULER_LOG_INFO(std::string("🔄 [ST-Sync] 抢占CPU: ") +
-                              " 挂起低优先级任务=" + getTaskName(lowest_priority_task) +
-                              " 调度高优先级任务=" + getTaskName(highest));
-
-            // ⭐ 完整的抢占实现：
-            // ⭐ V60修复：不从_ready_queue移除任务！
-            // 原因：getTaskN()从_ready_queue获取任务，移除后会导致任务无法被调度
-            // _current_batch_tasks只是标记哪些任务需要调度，实际调度仍通过getTaskN()
-            // removeFromReadyQueue(highest);  // V60: 注释掉
-
-            // 2. 从批量任务中移除被抢占的任务
-            auto batch_it = std::find(_current_batch_tasks.begin(), _current_batch_tasks.end(), lowest_priority_task);
-            if (batch_it != _current_batch_tasks.end()) {
-                _current_batch_tasks.erase(batch_it);
-                SCHEDULER_LOG_DEBUG(std::string("🔄 [ST-Sync] 从批量任务移除: ") + getTaskName(lowest_priority_task));
+        for (const auto &[cpu, task] : running_tasks_map) {
+            if (!task || !task->isExecuting()) {
+                continue;
             }
 
-            // 3. 将高优先级任务加入批量任务（放在最前面）
-            _current_batch_tasks.insert(_current_batch_tasks.begin(), highest);
+            STSyncTaskModel *model = getTaskModel(task);
+            if (!model) {
+                continue;
+            }
 
-            // ⭐ 修复：不在tick边界抢占时扣除能量，避免双重扣除
-            // 能量将在批量调度中统一扣除
-            SCHEDULER_LOG_INFO(std::string("✅ [ST-Sync] Tick边界抢占: 任务加入批量（能量将在批量调度中扣除）: ") +
-                              getTaskName(highest));
-
-            // 5. 挂起低优先级任务
-            _kernel->suspend(lowest_priority_task);
-
-            // 6. 重新调度所有CPU
-            // _kernel->dispatch(); // V105: 禁用，避免频繁deschedule
-        } else {
-            SCHEDULER_LOG_INFO(std::string("❌ [ST-Sync] 新任务优先级不够高，无需抢占"));
+            if (!worst_running || model->getRMPriority() > worst_model->getRMPriority()) {
+                worst_running = task;
+                worst_model = model;
+            }
         }
+
+        if (!worst_running || !worst_model) {
+            return;
+        }
+
+        if (!shouldPreempt(worst_running, best_candidate)) {
+            return;
+        }
+
+        SCHEDULER_LOG_INFO(std::string("🔄 [ST-Sync] RM抢占: 挂起=") +
+                          getTaskName(worst_running) +
+                          "(优先级=" + std::to_string(static_cast<int64_t>(worst_model->getRMPriority())) + ")" +
+                          " 调度=" + getTaskName(best_candidate) +
+                          "(优先级=" + std::to_string(static_cast<int64_t>(best_model->getRMPriority())) + ")");
+
+        _last_preempted_task = worst_running;
+        _last_preempted_tick = current_time;
+
+        setSuspendReason(worst_running, "preemption");
+        _kernel->suspend(worst_running);
+        rebuildApprovedBatchForImmediateDispatch();
     }
 
     bool STSyncScheduler::shouldPreempt(AbsRTTask *running_task, AbsRTTask *new_task) {
@@ -1528,7 +1476,7 @@ namespace RTSim {
         Scheduler::insert(task);
 
         bool suspended_for_energy = (getSuspendReason(task) == "insufficient_energy");
-        bool in_charging_window = (_is_charging_sleep || _deep_charging);
+        bool in_charging_window = (_is_charging_sleep || _deep_charging || _energy_depleted);
 
         if (suspended_for_energy) {
             addToWaitingQueue(task);
@@ -1543,154 +1491,6 @@ namespace RTSim {
         } else {
             addToReadyQueue(task);
         }
-
-        // ⭐ 新增：mid-tick抢占支持
-        // 仅对真正的新任务执行mid-tick抢占，跳过suspend重新插入的任务
-        //
-        // ⭐ Bug修复：使用isExecuting()作为启发式标志来判断是否是suspend重新插入
-        // 原因：_current_batch_tasks在performTickScheduling()中被清空（Line 692），
-        //      导致is_reinserted检查失效。suspend()后的任务仍然在执行中（isExecuting()=true），
-        //      而真正的新任务不在运行中（isExecuting()=false）。
-        //
-        // ⭐ 关键逻辑：
-        // - suspend()后的任务：isExecuting()=true，刚刚被挂起，应该跳过mid-tick抢占
-        // - 真正的新任务：isExecuting()=false，刚到达，应该触发mid-tick抢占
-        bool is_reinserted = task->isExecuting();
-
-        SCHEDULER_LOG_INFO(std::string("🔍 [ST-Sync] Mid-tick抢占检查: _kernel=") +
-                          (_kernel ? "valid" : "null") +
-                          " _energy_depleted=" + (_energy_depleted ? "true" : "false") +
-                          " is_reinserted=" + (is_reinserted ? "true" : "false") +
-                          " isExecuting()=" + (task->isExecuting() ? "true" : "false"));
-
-        // ⭐ V97修复：暂时禁用mid-tick抢占，因为它导致频繁调度循环
-        // 问题：任务被descheduled后重新插入，触发mid-tick抢占，然后又dispatch，循环...
-        // 解决：只在任务到达时（不是重新插入）且确实需要抢占时才触发
-        // 暂时完全禁用mid-tick抢占，让tick边界的调度处理所有任务
-        bool disable_mid_tick_preempt = true;  // V97：禁用mid-tick抢占
-
-        if (_kernel && !_energy_depleted && !is_reinserted && !disable_mid_tick_preempt) {
-            // ⭐ 关键修复：移除mid-tick抢占中的Slack检查
-            // 原因：mid-tick抢占应该由RM优先级决定，而不是Slack
-            // Slack过滤应该在批量调度的任务选择时进行（第808-815行）
-            // 这样可以确保高优先级任务（如Task_Assassin_Hungry, period=50）能及时抢占低优先级任务
-            //
-            // 举例：Task_Assassin_Hungry (arrival=50) 在t=50时Slack=30ms>0，但不抢占会导致
-            //       在t=80时Slack=0ms≤0时，已经没有mid-tick抢占机会，导致deadline miss
-
-            const auto& running_tasks = _kernel->getCurrentExecutingTasks();
-
-            SCHEDULER_LOG_INFO(std::string("🔍 [ST-Sync] 运行中任务数量: ") +
-                              std::to_string(running_tasks.size()));
-
-            // ⭐ V45关键修复：准确计算真正空闲的CPU数量
-            int truly_free_cpus = 0;
-            int busy_executing = 0;
-            int busy_dispatching = 0;
-
-            for (const auto& [cpu, running_task] : running_tasks) {
-                bool is_dispatching = _kernel->isCPUDispatching(cpu);
-                if (!running_task) {
-                    if (!is_dispatching) {
-                        truly_free_cpus++;
-                    } else {
-                        busy_dispatching++;
-                    }
-                } else if (running_task->isExecuting()) {
-                    busy_executing++;
-                } else {
-                    busy_dispatching++;
-                }
-            }
-
-            int total_cpus = running_tasks.size();
-
-            SCHEDULER_LOG_INFO(std::string("🔍 [ST-Sync] Mid-tick CPU状态: 总数=") +
-                              std::to_string(total_cpus) +
-                              " 空闲=" + std::to_string(truly_free_cpus) +
-                              " 执行中=" + std::to_string(busy_executing) +
-                              " 上下文切换中=" + std::to_string(busy_dispatching));
-
-            // ⭐ V45修复：如果有真正空闲的CPU，不进行抢占
-            if (truly_free_cpus > 0) {
-                SCHEDULER_LOG_INFO(std::string("✅ [ST-Sync] Mid-tick: 有空闲CPU，直接调度新任务: ") +
-                                  getTaskName(task));
-                // 检查能量（但不扣除，让下一个tick的批量调度统一扣除）
-                double unit_energy = calculateUnitEnergyForTask(task);
-                const double EPSILON = 1e-9;
-
-                if (_current_energy >= unit_energy - EPSILON) {
-                    // ⭐ 修复：不在mid-tick扣除能量，避免双重扣除
-                    // 能量将在下一个tick的批量调度中统一扣除
-                    SCHEDULER_LOG_INFO(std::string("✅ [ST-Sync] Mid-tick: 能量充足，调度任务（能量将在下一tick扣除）: ") +
-                                      getTaskName(task));
-
-                    // 创建抢占微型批量
-                    _preempt_batch_tasks.push_back(task);
-
-                    // 立即调度到空闲CPU
-                    // _kernel->dispatch(); // V105: 禁用，避免频繁deschedule
-                }
-                return;
-            }
-
-            // ⭐ CPU已满，需要找到优先级最低的任务进行抢占
-            SCHEDULER_LOG_INFO("⚠️ [ST-Sync] Mid-tick: CPU已满，需要抢占最低优先级任务");
-
-            AbsRTTask *lowest_priority_task = nullptr;
-            int lowest_priority = -1;
-
-            for (const auto& [cpu, running_task] : running_tasks) {
-                if (!running_task) {
-                    continue;
-                }
-
-                STSyncTaskModel *model = getTaskModel(running_task);
-                if (!model) {
-                    continue;
-                }
-
-                int priority = model->getRMPriority();
-                if (lowest_priority_task == nullptr || priority > lowest_priority) {
-                    lowest_priority_task = running_task;
-                    lowest_priority = priority;
-                }
-            }
-
-            if (lowest_priority_task && shouldPreempt(lowest_priority_task, task)) {
-                SCHEDULER_LOG_INFO(std::string("✅ [ST-Sync] Mid-tick: 找到可抢占任务: ") +
-                                  getTaskName(lowest_priority_task));
-
-                // 检查能量（但不扣除，让下一个tick的批量调度统一扣除）
-                double unit_energy = calculateUnitEnergyForTask(task);
-                const double EPSILON = 1e-9;
-
-                if (_current_energy >= unit_energy - EPSILON) {
-                    // 能量充足，执行mid-tick抢占
-                    SCHEDULER_LOG_INFO(std::string("⚡ [ST-Sync] Micro-Batch抢占: ") +
-                                      getTaskName(lowest_priority_task) + " → " + getTaskName(task) +
-                                      " [微型批量调度]");
-
-                    // 创建抢占微型批量
-                    _preempt_batch_tasks.push_back(task);
-
-                    // ⭐ 修复：不在mid-tick扣除能量，避免双重扣除
-                    // 能量将在下一个tick的批量调度中统一扣除
-                    SCHEDULER_LOG_INFO(std::string("✅ [ST-Sync] Micro-Batch: 能量充足，执行抢占（能量将在下一tick扣除）: ") +
-                                      getTaskName(task));
-
-                    // 挂起低优先级任务
-                    _kernel->suspend(lowest_priority_task);
-
-                    // 立即调度高优先级任务
-                    SCHEDULER_LOG_INFO(std::string("🚀 [ST-Sync] 对调后立即dispatch调度高优先级任务"));
-                    // _kernel->dispatch(); // V105: 禁用，避免频繁deschedule
-
-                    return;  // 抢占完成，退出
-                }
-            }
-        }
-
     }
 
     // ========== V115：挂起原因追踪（消灭幽灵抢占） ==========
@@ -1840,6 +1640,54 @@ namespace RTSim {
         SCHEDULER_LOG_INFO(std::string("🔓 [ST-Sync] 充电窗口结束，等待队列任务回到就绪队列: ") +
                           context +
                           " count=" + std::to_string(waiting_tasks.size()));
+    }
+
+    void STSyncScheduler::rebuildApprovedBatchForImmediateDispatch() {
+        if (!_kernel) {
+            _kernel = getKernel();
+        }
+        if (!_kernel) {
+            return;
+        }
+
+        std::vector<AbsRTTask *> approved_batch = collectActiveRunningBatchTasks();
+        size_t target_size = _kernel->getCurrentExecutingTasks().size();
+
+        for (AbsRTTask *task : _ready_queue) {
+            if (approved_batch.size() >= target_size) {
+                break;
+            }
+            if (!task || !task->isActive()) {
+                continue;
+            }
+            if (_tasks_completed_wcet.find(task) != _tasks_completed_wcet.end()) {
+                continue;
+            }
+            if (_kernel->getProcessor(task) != nullptr) {
+                continue;
+            }
+            if (std::find(approved_batch.begin(), approved_batch.end(), task) != approved_batch.end()) {
+                continue;
+            }
+            approved_batch.push_back(task);
+        }
+
+        std::sort(approved_batch.begin(), approved_batch.end(),
+            [this](AbsRTTask *a, AbsRTTask *b) {
+                STSyncTaskModel *model_a = getTaskModel(a);
+                STSyncTaskModel *model_b = getTaskModel(b);
+                if (model_a && model_b) {
+                    return model_a->getRMPriority() < model_b->getRMPriority();
+                }
+                return false;
+            });
+
+        _current_batch_tasks = approved_batch;
+        _current_batch_size = static_cast<int>(_current_batch_tasks.size());
+        _batch_scheduled_this_tick = !_current_batch_tasks.empty();
+
+        SCHEDULER_LOG_INFO(std::string("🧩 [ST-Sync] 立即重建稳定批次: size=") +
+                          std::to_string(_current_batch_tasks.size()));
     }
 
     bool STSyncScheduler::isInReadyQueue(AbsRTTask *task) const {

@@ -337,6 +337,7 @@ namespace RTSim {
         std::string getEnergyStatus() const;
 
         // 友元类声明
+        friend class MRTKernel;
         friend class STNonBlockTickEvent;
         friend class STNonBlockWakeEvent;  // ⭐ 策略2：被跳过任务的唤醒定时器
         // friend class ST-NonBlockEnergyCheckEvent;  /* V40重构：能量检查事件已删除 */
