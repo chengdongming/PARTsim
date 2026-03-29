@@ -30,6 +30,9 @@
 #include <rtsim/scheduler/gpfp_st_block_scheduler.hpp>
 #include <rtsim/scheduler/gpfp_st_nonblock_scheduler.hpp>
 #include <rtsim/scheduler/gpfp_st_sync_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_alap_block_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_alap_nonblock_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_alap_sync_scheduler.hpp>
 
 namespace RTSim {
     // =========================================================================
@@ -270,6 +273,12 @@ namespace RTSim {
             asap_sync_suspend_reason = asap_sync_sched->getSuspendReason(task);
         }
 
+        ALAPSyncScheduler *alap_sync_sched = dynamic_cast<ALAPSyncScheduler *>(_sched);
+        std::string alap_sync_suspend_reason;
+        if (alap_sync_sched) {
+            alap_sync_suspend_reason = alap_sync_sched->getSuspendReason(task);
+        }
+
         _sched->extract(task);
         CPU *p = getProcessor(task);
         if (p != nullptr) {
@@ -293,6 +302,14 @@ namespace RTSim {
                     std::cout << "[DEBUG] MRTKernel::suspend() - ST-Sync缺电挂起后保留waiting态，不做kernel reinsert" << std::endl;
                 }
                 return;
+            }
+
+            if (alap_sync_sched) {
+                if (alap_sync_suspend_reason == "insufficient_energy") {
+                    _sched->insert(task);
+                    std::cout << "[DEBUG] MRTKernel::suspend() - ALAP-Sync缺电挂起后重新插入ready，等待下一个tick/wake重建批次" << std::endl;
+                    return;
+                }
             }
 
             // ✅ 修复：将任务重新插入到就绪队列
@@ -611,11 +628,17 @@ namespace RTSim {
             // ⭐ V28.11修复：EPP/EFPP/CBPP调度器已在getTaskN中预扣能量，kernel不再重复检查
             GPFPCASCADEScheduler *cascade_sched = dynamic_cast<GPFPCASCADEScheduler*>(_sched);
             GPFPASAPScheduler *asap_sched = dynamic_cast<GPFPASAPScheduler*>(_sched);
+            ALAPBlockScheduler *alap_block_sched = dynamic_cast<ALAPBlockScheduler*>(_sched);
+            ALAPNonBlockScheduler *alap_nonblock_sched = dynamic_cast<ALAPNonBlockScheduler*>(_sched);
+            ALAPSyncScheduler *alap_sync_sched = dynamic_cast<ALAPSyncScheduler*>(_sched);
             EPPScheduler *epp_sched = dynamic_cast<EPPScheduler*>(_sched);
             EFPFPScheduler *efpp_sched = dynamic_cast<EFPFPScheduler*>(_sched);
             CBPPScheduler *cbpp_sched = dynamic_cast<CBPPScheduler*>(_sched);
             std::cout << "[DEBUG] _sched类型: " << typeid(*_sched).name() << std::endl;
             std::cout << "[DEBUG] cascade_sched指针: " << cascade_sched << " asap_sched指针: " << asap_sched
+                      << " alap_block_sched指针: " << alap_block_sched
+                      << " alap_nonblock_sched指针: " << alap_nonblock_sched
+                      << " alap_sync_sched指针: " << alap_sync_sched
                       << " epp_sched指针: " << epp_sched << " efpp_sched指针: " << efpp_sched
                       << " cbpp_sched指针: " << cbpp_sched << std::endl;
 
@@ -665,6 +688,18 @@ namespace RTSim {
                         return;
                     }
                 }
+            } else if (alap_block_sched && task) {
+                unit_energy = alap_block_sched->calculateUnitEnergyForTask(st);
+                current_energy = alap_block_sched->getCurrentEnergy();
+                check_energy = true;
+            } else if (alap_nonblock_sched && task) {
+                unit_energy = alap_nonblock_sched->calculateUnitEnergyForTask(st);
+                current_energy = alap_nonblock_sched->getCurrentEnergy();
+                check_energy = true;
+            } else if (alap_sync_sched && task) {
+                unit_energy = alap_sync_sched->calculateUnitEnergyForTask(st);
+                current_energy = alap_sync_sched->getCurrentEnergy();
+                check_energy = true;
             }
 
             if (check_energy) {
@@ -678,8 +713,16 @@ namespace RTSim {
                               << " current_energy(" << current_energy << ") < unit_energy(" << unit_energy << ")" << std::endl;
                     std::cout << "[DEBUG] MRTKernel::onEndDispatchMulti() - 能量不足，跳过schedule(): " << task->getName() << std::endl;
                     DBGPRINT("Energy insufficient, skipping schedule(): ", taskname(st));
+                    if (alap_sync_sched) {
+                        alap_sync_sched->rejectDispatchedTask(st);
+                    }
+                    if (alap_block_sched || alap_nonblock_sched) {
+                        _m_dispatched[st] = nullptr;
+                    }
                     // 从队列中移除任务
                     _sched->extract(st);
+                    // 清理dispatch占位，避免下一个tick误判为仍在派发中
+                    _m_dispatched[st] = nullptr;
                     // 将_m_currExe[p]设置为null，避免后续问题
                     _m_currExe[p] = nullptr;
                     _isContextSwitching[p] = false;

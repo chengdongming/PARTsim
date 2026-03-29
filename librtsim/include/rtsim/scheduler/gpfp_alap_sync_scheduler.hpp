@@ -225,6 +225,7 @@ namespace RTSim {
         void markTaskSelectedThisTick(AbsRTTask *task);
         void accountInitialEnergyForSelectedTasks(const std::string &log_prefix);
         void clearPersistentTaskState(AbsRTTask *task);
+        void rollbackFailedRunningTasks(const std::vector<AbsRTTask *> &running_task_list);
 
         // 核心调度逻辑 - ALAP-Sync批量调度
         void performTickScheduling();
@@ -306,6 +307,7 @@ namespace RTSim {
         AbsRTTask *getFirst() override;    // ALAP-Sync: 废弃，返回nullptr
         AbsRTTask *getTaskN(unsigned int n) override;  // ALAP-Sync: 返回批量中的第n个任务
         void commitDispatch();  // ⭐ 确认派发，真正扣除能量（同时间戳并发派发修复）
+        void rejectDispatchedTask(AbsRTTask *task);  // 移除本tick未真正完成准入的候选，避免假扣费
 
         void insert(AbsRTTask *task) override;
         void extract(AbsRTTask *task);

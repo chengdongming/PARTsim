@@ -1253,17 +1253,67 @@ namespace RTSim {
         if (!best_candidate) return;
 
         // 找运行中优先级最低的任务
+        // ⭐ V67修复：确定性 victim 选择
+        // 当多个运行任务 RM 优先级相同时，需要稳定 tie-break：
+        //   1. RM 优先级数值越大越差（周期越长优先级越低）
+        //   2. 同优先级时，Slack 越大越不紧急，优先被踢
+        //   3. Slack 也相同时，deadline 越晚越不紧急，优先被踢
         AbsRTTask *worst_running = nullptr;
         ALAPBlockTaskModel *worst_model = nullptr;
+        Tick worst_running_slack = 0;
+        Tick worst_running_deadline = 0;
 
         for (const auto& [cpu, task] : running_tasks_map) {
             if (!task || !task->isExecuting()) continue;
             ALAPBlockTaskModel *model = getTaskModel(task);
             if (!model) continue;
 
-            if (!worst_running || model->getRMPriority() > worst_model->getRMPriority()) {
+            Tick task_slack = calculateSlackForTask(task);
+            Tick task_deadline = task->getArrival() + Tick(model->getPeriod());
+
+            if (!worst_running) {
                 worst_running = task;
                 worst_model = model;
+                worst_running_slack = task_slack;
+                worst_running_deadline = task_deadline;
+                continue;
+            }
+
+            // 比较：谁更"差"谁被踢
+            Tick cur_pri = model->getRMPriority();
+            Tick worst_pri = worst_model->getRMPriority();
+
+            if (cur_pri > worst_pri) {
+                // 当前任务优先级更低，替换
+                worst_running = task;
+                worst_model = model;
+                worst_running_slack = task_slack;
+                worst_running_deadline = task_deadline;
+            } else if (cur_pri == worst_pri) {
+                // 同优先级：Slack 更大 = 更不紧急 = 更该被踢
+                if (task_slack > worst_running_slack) {
+                    worst_running = task;
+                    worst_model = model;
+                    worst_running_slack = task_slack;
+                    worst_running_deadline = task_deadline;
+                } else if (task_slack == worst_running_slack) {
+                    // Slack 也相同：deadline 更晚 = 更不紧急
+                    if (task_deadline > worst_running_deadline) {
+                        worst_running = task;
+                        worst_model = model;
+                        worst_running_slack = task_slack;
+                        worst_running_deadline = task_deadline;
+                    } else if (task_deadline == worst_running_deadline) {
+                        // 最终稳定 tie-break：名称字典序更大的任务视为更差
+                        // 这样在完全并列的情况下也不会退回到 map 遍历顺序
+                        if (getTaskName(task) > getTaskName(worst_running)) {
+                            worst_running = task;
+                            worst_model = model;
+                            worst_running_slack = task_slack;
+                            worst_running_deadline = task_deadline;
+                        }
+                    }
+                }
             }
         }
 
