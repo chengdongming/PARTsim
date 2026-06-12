@@ -13,6 +13,7 @@
 """
 
 import json
+import hashlib
 import subprocess
 import yaml
 import os
@@ -45,6 +46,8 @@ rcParams['figure.figsize'] = (8, 6)
 CONFIG_TEMPLATE = 'system_config_unified_template.yml'
 TASK_GENERATOR = './global_task_generator.py'
 SIMULATOR = './build/rtsim/rtsim'
+RTA_TOOL = str(Path(__file__).resolve().parent / 'asap_block_rta.py')
+ASAP_BLOCK_ALGORITHM = 'gpfp_asap_block'
 
 
 def get_system_cores(config_path):
@@ -54,9 +57,150 @@ def get_system_cores(config_path):
         return int(config['cpu_islands'][0]['numcpus'])
 
 
+def hash_file(path):
+    """Return the SHA-256 digest of a file used by an experiment run."""
+    digest = hashlib.sha256()
+    with open(path, 'rb') as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b''):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _base_rta_result(status='disabled'):
+    return {
+        'rta_enabled': False,
+        'rta_status': status,
+        'rta_proven_under_assumptions': False,
+        'rta_conditional': True,
+        'rta_assumptions': [],
+        'rta_horizon_ms': None,
+        'rta_unproven_tasks': [],
+        'rta_failure_reasons': {},
+        'rta_error': None,
+        'rta_system_config': None,
+        'rta_system_config_hash': None,
+        'rta_report': None,
+    }
+
+
+def parse_rta_json(payload, assume_no_overflow):
+    """Convert the RTA JSON contract into an observational run result."""
+    if isinstance(payload, str):
+        payload = json.loads(payload)
+    if not isinstance(payload, dict):
+        raise ValueError('RTA output must be a JSON object')
+    if 'proven_under_assumptions' not in payload:
+        raise ValueError('RTA JSON is missing proven_under_assumptions')
+
+    tasks = payload.get('tasks', [])
+    if not isinstance(tasks, list):
+        raise ValueError('RTA JSON tasks must be a list')
+
+    unproven_tasks = []
+    failure_reasons = {}
+    for task_result in tasks:
+        if not isinstance(task_result, dict):
+            raise ValueError('RTA JSON task entries must be objects')
+        task_name = str(task_result.get('task_name', '<unknown>'))
+        if not bool(task_result.get('proven_under_assumptions', False)):
+            unproven_tasks.append(task_name)
+            reason = task_result.get('failure_reason')
+            if reason:
+                failure_reasons[task_name] = str(reason)
+
+    reported_proven = payload['proven_under_assumptions']
+    if not isinstance(reported_proven, bool):
+        raise ValueError('RTA proven_under_assumptions must be boolean')
+    proven = reported_proven and bool(assume_no_overflow)
+    if not assume_no_overflow:
+        failure_reasons.setdefault(
+            '_analysis',
+            'no-overflow assumption was not explicitly acknowledged',
+        )
+
+    return {
+        'rta_status': (
+            'proven_under_assumptions' if proven else 'rta_unproven'
+        ),
+        'rta_proven_under_assumptions': proven,
+        'rta_conditional': bool(payload.get('conditional', True)),
+        'rta_assumptions': list(payload.get('assumptions', [])),
+        'rta_unproven_tasks': unproven_tasks,
+        'rta_failure_reasons': failure_reasons,
+        'rta_error': None,
+        'rta_report': payload,
+    }
+
+
+def run_asap_block_rta(algorithm, system_config, task_file, horizon_ms,
+                       assume_no_overflow=False, timeout=300):
+    """Run the offline checker only for ASAP-BLOCK."""
+    if algorithm != ASAP_BLOCK_ALGORITHM:
+        return _base_rta_result(status='not_applicable')
+
+    result = _base_rta_result(status='rta_error')
+    result.update({
+        'rta_enabled': True,
+        'rta_horizon_ms': horizon_ms,
+        'rta_system_config': str(Path(system_config).resolve()),
+    })
+
+    try:
+        result['rta_system_config_hash'] = hash_file(system_config)
+        if horizon_ms is None or int(horizon_ms) <= 0:
+            raise ValueError('RTA horizon must be explicitly positive')
+
+        cmd = [
+            'python3',
+            RTA_TOOL,
+            '--system', str(system_config),
+            '--tasks', str(task_file),
+            '--horizon-ms', str(horizon_ms),
+        ]
+        if assume_no_overflow:
+            cmd.append('--assume-no-overflow')
+        cmd.append('--json')
+
+        completed = subprocess.run(
+            cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        if completed.returncode != 0:
+            error_output = (completed.stderr or completed.stdout or '').strip()
+            raise RuntimeError(
+                'RTA exited with code {}{}'.format(
+                    completed.returncode,
+                    ': {}'.format(error_output) if error_output else '',
+                )
+            )
+
+        result.update(parse_rta_json(completed.stdout, assume_no_overflow))
+        return result
+    except subprocess.TimeoutExpired:
+        result['rta_error'] = 'RTA timed out after {} seconds'.format(timeout)
+    except (OSError, ValueError, RuntimeError) as exc:
+        result['rta_error'] = str(exc)
+    return result
+
+
+def validate_rta_cli_args(parser, args):
+    """Reject incomplete opt-in RTA configurations before experiments start."""
+    if args.enable_rta and args.rta_horizon_ms is None:
+        parser.error('--rta-horizon-ms is required when --enable-rta is used')
+    if args.rta_horizon_ms is not None and args.rta_horizon_ms <= 0:
+        parser.error('--rta-horizon-ms must be positive')
+    if args.rta_timeout <= 0:
+        parser.error('--rta-timeout must be positive')
+
+
 def run_single_simulation_worker(task):
-    """执行单次仿真并返回二元可调度性结果"""
-    algorithm, config_file, task_file, task_idx, utilization, simulation_time, trace_dir = task
+    """执行单次仿真，并独立记录可选的ASAP-BLOCK RTA结果。"""
+    (algorithm, config_file, task_file, task_idx, utilization,
+     simulation_time, trace_dir) = task[:7]
+    rta_options = task[7] if len(task) > 7 else {}
     trace_file = Path(trace_dir) / f'trace_{algorithm}_u{utilization:.2f}_{task_idx:03d}.json'
 
     env = os.environ.copy()
@@ -76,30 +220,67 @@ def run_single_simulation_worker(task):
         except Exception:
             pass
 
+    acceptance_ratio = 0.0
+    simulation_status = 'simulation_error'
+    simulation_error = None
+
     try:
         subprocess.run(cmd, check=True, capture_output=True, env=env, text=True, timeout=120)
         acceptance_ratio = TraceParser(str(trace_file)).get_acceptance_ratio()
-        # 阅后即焚：提取完数据后立即删除追踪文件
-        cleanup_trace()
-        return (algorithm, utilization, acceptance_ratio, None)
+        simulation_status = (
+            'accepted' if acceptance_ratio == 1.0 else 'rejected'
+        )
     except subprocess.TimeoutExpired:
-        # 超时也要清理残留文件
-        cleanup_trace()
-        return (algorithm, utilization, 0.0,
-                f"⏱️ 仿真超时: {algorithm}, U={utilization:.2f}, idx={task_idx}")
+        simulation_status = 'simulation_timeout'
+        simulation_error = (
+            f"⏱️ 仿真超时: {algorithm}, U={utilization:.2f}, idx={task_idx}"
+        )
     except subprocess.CalledProcessError as e:
-        # 仿真失败也要清理残留文件
-        cleanup_trace()
         error_output = (e.stderr or e.stdout or '').strip()
-        message = f"❌ 仿真失败: {algorithm}, U={utilization:.2f}, idx={task_idx}"
+        simulation_error = (
+            f"❌ 仿真失败: {algorithm}, U={utilization:.2f}, idx={task_idx}"
+        )
         if error_output:
-            message = f"{message}\n{error_output}"
-        return (algorithm, utilization, 0.0, message)
+            simulation_error = f"{simulation_error}\n{error_output}"
     except Exception as e:
-        # 异常也要清理残留文件
+        simulation_error = (
+            f"❌ 仿真异常: {algorithm}, U={utilization:.2f}, "
+            f"idx={task_idx}: {e}"
+        )
+    finally:
         cleanup_trace()
-        return (algorithm, utilization, 0.0,
-                f"❌ 仿真异常: {algorithm}, U={utilization:.2f}, idx={task_idx}: {e}")
+
+    if (
+        rta_options.get('enable_rta', False)
+        and algorithm == ASAP_BLOCK_ALGORITHM
+    ):
+        rta_result = run_asap_block_rta(
+            algorithm=algorithm,
+            system_config=config_file,
+            task_file=task_file,
+            horizon_ms=rta_options.get('horizon_ms'),
+            assume_no_overflow=rta_options.get(
+                'assume_no_overflow', False
+            ),
+            timeout=rta_options.get('timeout', 300),
+        )
+    elif rta_options.get('enable_rta', False):
+        rta_result = _base_rta_result(status='not_applicable')
+    else:
+        rta_result = _base_rta_result(status='disabled')
+
+    run_result = {
+        'algorithm': algorithm,
+        'utilization': float(utilization),
+        'task_idx': int(task_idx),
+        'task_file': str(Path(task_file).resolve()),
+        'simulation_acceptance': float(acceptance_ratio),
+        'acceptance_ratio': float(acceptance_ratio),
+        'simulation_status': simulation_status,
+        'simulation_error': simulation_error,
+    }
+    run_result.update(rta_result)
+    return run_result
 
 # 算法配置 - 9种调度器
 # ASAP系列（贪婪策略）
@@ -259,7 +440,10 @@ class ExperimentRunner:
     def __init__(self, output_dir, utilization_points, num_tasksets,
                  task_n, task_p_min, task_p_max, simulation_time,
                  battery_capacity, initial_energy_ratio, solar_start_time_ms,
-                 use_real_solar_data=True, system_cores=None, max_workers=DEFAULT_MAX_WORKERS):
+                 use_real_solar_data=True, system_cores=None,
+                 max_workers=DEFAULT_MAX_WORKERS, enable_rta=False,
+                 rta_horizon_ms=None, rta_assume_no_overflow=False,
+                 rta_timeout=300):
         self.output_dir = Path(output_dir)
         self.trace_dir = self.output_dir / 'traces'
         self.task_dir = self.output_dir / 'tasks'
@@ -281,14 +465,31 @@ class ExperimentRunner:
         self.use_real_solar_data = use_real_solar_data
         self.system_cores = system_cores if system_cores is not None else get_system_cores(CONFIG_TEMPLATE)
         self.max_workers = max(1, max_workers)
+        self.enable_rta = bool(enable_rta)
+        self.rta_horizon_ms = rta_horizon_ms
+        self.rta_assume_no_overflow = bool(rta_assume_no_overflow)
+        self.rta_timeout = max(1, int(rta_timeout))
+        self.rta_results_file = self.output_dir / 'rta_results.jsonl'
 
         print(f"🖥️  系统核心数: {self.system_cores}")
         print(f"📁 输出目录: {self.output_dir}")
         print(f"⚙️  并发进程数: {self.max_workers}")
+        if self.enable_rta:
+            print(
+                "🔎 ASAP-BLOCK RTA: enabled, horizon={}ms, "
+                "assume_no_overflow={}, timeout={}s".format(
+                    self.rta_horizon_ms,
+                    self.rta_assume_no_overflow,
+                    self.rta_timeout,
+                )
+            )
 
-    def generate_taskset(self, utilization, task_idx, seed):
+    def generate_taskset(self, utilization, task_idx, seed,
+                         system_config_file=None):
         """生成指定利用率的任务集"""
         task_file = self.task_dir / f'taskset_u{utilization:.2f}_{task_idx:03d}.yml'
+        if system_config_file is None:
+            system_config_file = CONFIG_TEMPLATE
 
         # 计算总利用率（归一化利用率 × 核心数）
         total_utilization = utilization * self.system_cores
@@ -304,6 +505,7 @@ class ExperimentRunner:
             '-P', str(self.task_p_max),
             '-c', str(self.system_cores),
             '--seed', str(seed),
+            '-s', str(system_config_file),
             '-o', str(task_file)
         ]
 
@@ -451,6 +653,7 @@ class ExperimentRunner:
         config_files = {}
         for algo in ALGORITHMS:
             config_files[algo] = self.modify_config(algo)
+        task_generation_config = config_files[ASAP_BLOCK_ALGORITHM]
 
         tasks = []
         for u_idx, utilization in enumerate(self.utilization_points):
@@ -459,7 +662,12 @@ class ExperimentRunner:
             task_files = []
             for task_idx in range(self.num_tasksets):
                 seed = 2000 + int(round(utilization * 100)) * 100 + task_idx
-                task_file = self.generate_taskset(utilization, task_idx, seed)
+                task_file = self.generate_taskset(
+                    utilization,
+                    task_idx,
+                    seed,
+                    system_config_file=task_generation_config,
+                )
                 if task_file:
                     task_files.append((task_idx, task_file))
 
@@ -477,21 +685,62 @@ class ExperimentRunner:
                         utilization,
                         self.simulation_time,
                         str(self.trace_dir),
+                        {
+                            'enable_rta': self.enable_rta,
+                            'horizon_ms': self.rta_horizon_ms,
+                            'assume_no_overflow': (
+                                self.rta_assume_no_overflow
+                            ),
+                            'timeout': self.rta_timeout,
+                        },
                     ))
 
         count = 0
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            futures = {executor.submit(run_single_simulation_worker, task): task for task in tasks}
+        rta_output = None
+        try:
+            if self.enable_rta:
+                rta_output = open(
+                    self.rta_results_file, 'w', encoding='utf-8'
+                )
 
-            for future in as_completed(futures):
-                algorithm, utilization, acceptance_ratio, error = future.result()
-                if error:
-                    print(error)
-                results[algorithm][utilization].append(acceptance_ratio)
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                futures = {
+                    executor.submit(run_single_simulation_worker, task): task
+                    for task in tasks
+                }
 
-                count += 1
-                if count % 10 == 0 or count == total_runs:
-                    print(f"   进度: {count}/{total_runs} ({(count/total_runs)*100:.1f}%)")
+                for future in as_completed(futures):
+                    run_result = future.result()
+                    algorithm = run_result['algorithm']
+                    utilization = run_result['utilization']
+                    if run_result['simulation_error']:
+                        print(run_result['simulation_error'])
+                    if run_result['rta_error']:
+                        print(
+                            "⚠️ RTA error: {}, U={:.2f}, idx={}: {}".format(
+                                algorithm,
+                                utilization,
+                                run_result['task_idx'],
+                                run_result['rta_error'],
+                            )
+                        )
+                    results[algorithm][utilization].append(run_result)
+
+                    if rta_output is not None and run_result['rta_enabled']:
+                        rta_output.write(
+                            json.dumps(run_result, ensure_ascii=False) + '\n'
+                        )
+                        rta_output.flush()
+
+                    count += 1
+                    if count % 10 == 0 or count == total_runs:
+                        print(
+                            f"   进度: {count}/{total_runs} "
+                            f"({(count/total_runs)*100:.1f}%)"
+                        )
+        finally:
+            if rta_output is not None:
+                rta_output.close()
 
         for config_file in config_files.values():
             if os.path.exists(config_file):
@@ -509,17 +758,71 @@ class ExperimentRunner:
         data = []
         for algo in ALGORITHMS:
             for utilization in self.utilization_points:
-                acceptance_ratios = results[algo][utilization]
-                if acceptance_ratios:
+                run_results = results[algo][utilization]
+                if run_results:
+                    acceptance_ratios = [
+                        (
+                            result['acceptance_ratio']
+                            if isinstance(result, dict)
+                            else result
+                        )
+                        for result in run_results
+                    ]
                     # 计算平均接受率（即可调度任务集的比例）
                     avg_acceptance = np.mean(acceptance_ratios)
-                    data.append({
+                    row = {
                         'algorithm': algo,
                         'normalized_utilization': utilization,
                         'acceptance_ratio': avg_acceptance,
                         'num_samples': len(acceptance_ratios),
                         'num_successful': int(sum(acceptance_ratios))  # 成功的任务集数量
-                    })
+                    }
+
+                    if self.enable_rta:
+                        rta_results = [
+                            result for result in run_results
+                            if isinstance(result, dict)
+                            and result.get('rta_enabled', False)
+                        ]
+                        rta_num_proven = sum(
+                            result.get('rta_status')
+                            == 'proven_under_assumptions'
+                            for result in rta_results
+                        )
+                        rta_num_unproven = sum(
+                            result.get('rta_status') == 'rta_unproven'
+                            for result in rta_results
+                        )
+                        rta_num_errors = sum(
+                            result.get('rta_status') == 'rta_error'
+                            for result in rta_results
+                        )
+                        rta_num_analyzed = (
+                            rta_num_proven + rta_num_unproven
+                        )
+                        row.update({
+                            'rta_num_analyzed': rta_num_analyzed,
+                            'rta_num_proven': rta_num_proven,
+                            'rta_num_unproven': rta_num_unproven,
+                            'rta_num_errors': rta_num_errors,
+                            'rta_proven_ratio': (
+                                rta_num_proven / rta_num_analyzed
+                                if rta_num_analyzed else np.nan
+                            ),
+                            'sim_success_rta_proven': sum(
+                                result.get('acceptance_ratio') == 1.0
+                                and result.get('rta_status')
+                                == 'proven_under_assumptions'
+                                for result in rta_results
+                            ),
+                            'sim_success_rta_unproven': sum(
+                                result.get('acceptance_ratio') == 1.0
+                                and result.get('rta_status')
+                                == 'rta_unproven'
+                                for result in rta_results
+                            ),
+                        })
+                    data.append(row)
 
         return pd.DataFrame(data)
 
@@ -779,6 +1082,14 @@ def main():
                        help=f'太阳能收集开始时间（毫秒）(默认: {DEFAULT_SOLAR_START_TIME_MS})')
     parser.add_argument('--max-workers', type=int, default=DEFAULT_MAX_WORKERS,
                        help=f'并发线程数 (默认: {DEFAULT_MAX_WORKERS})')
+    parser.add_argument('--enable-rta', action='store_true',
+                       help='仅为 ASAP-BLOCK 启用离线RTA观察指标')
+    parser.add_argument('--rta-horizon-ms', type=int, default=None,
+                       help='RTA harvesting服务曲线分析时域（启用RTA时必填）')
+    parser.add_argument('--rta-assume-no-overflow', action='store_true',
+                       help='显式确认RTA的电池不溢出条件假设')
+    parser.add_argument('--rta-timeout', type=int, default=300,
+                       help='单次RTA超时时间（秒，默认: 300）')
 
     # 图表参数
     parser.add_argument('--figure-output', type=str, default=None,
@@ -789,6 +1100,7 @@ def main():
                        help='不生成分组图表，只生成综合图表')
 
     args = parser.parse_args()
+    validate_rta_cli_args(parser, args)
 
     # 决定数据来源
     if args.run_experiment:
@@ -809,7 +1121,11 @@ def main():
             solar_start_time_ms=args.solar_time_ms,
             use_real_solar_data=DEFAULT_USE_REAL_SOLAR_DATA,
             system_cores=system_cores,
-            max_workers=args.max_workers
+            max_workers=args.max_workers,
+            enable_rta=args.enable_rta,
+            rta_horizon_ms=args.rta_horizon_ms,
+            rta_assume_no_overflow=args.rta_assume_no_overflow,
+            rta_timeout=args.rta_timeout,
         )
 
         results = runner.run_experiments()
