@@ -608,6 +608,21 @@ namespace RTSim {
         AbsRTTask *st = e->getTask();
         CPU *p = e->getCPU();
 
+        ASAPBlockScheduler *asap_block_sched =
+            dynamic_cast<ASAPBlockScheduler *>(_sched);
+        if (st && asap_block_sched &&
+            !asap_block_sched->acceptsDispatchCompletion(st)) {
+            _m_dispatched[st] = nullptr;
+            _m_currExe[p] = nullptr;
+            _isContextSwitching[p] = false;
+            e->setTask(nullptr);
+
+            // The rejected task remains ready. Re-dispatch can only see the
+            // current tick's frozen ASAP-Block selection through getTaskN().
+            dispatch(p);
+            return;
+        }
+
         _m_currExe[p] = st;
 
         DBGPRINT("CPU: ", p->toString());
