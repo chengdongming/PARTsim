@@ -410,7 +410,7 @@ namespace RTSim {
         SCHEDULER_LOG_INFO("  基础功耗: " + std::to_string(_base_power) + " W");
         for (const auto &pair : _power_coefficients) {
             SCHEDULER_LOG_INFO("  " + pair.first +
-                     " 功率系数: " + std::to_string(pair.second) + " W");
+                     " 功率系数: " + std::to_string(pair.second));
         }
 
         validateEnergyCalculations();

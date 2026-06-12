@@ -17,3 +17,19 @@ target_link_libraries(
 
 include(GoogleTest)
 gtest_discover_tests(test_librtsim)
+
+add_executable(
+  test_asap_energy_model
+  scheduler/asap_energy_model.cpp
+)
+
+target_link_libraries(
+    test_asap_energy_model
+    PRIVATE GTest::gtest_main
+    PRIVATE rtsim
+)
+
+gtest_discover_tests(
+    test_asap_energy_model
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+)

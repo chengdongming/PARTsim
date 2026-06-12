@@ -33,6 +33,98 @@ except ImportError:
         logger.addHandler(handler)
     logger.warning("无法导入统一日志系统，使用标准日志")
 
+DEFAULT_POWER_COEFFICIENTS = {
+    "bzip2": 1.2,
+    "hash": 0.8,
+    "encrypt": 1.5,
+    "decrypt": 1.5,
+    "control": 0.1,
+    "idle": 0.1,
+}
+
+DEFAULT_FREQUENCY_POWER_RATIOS = {
+    7000: 0.85,
+    7500: 0.88,
+    8000: 0.92,
+    8100: 0.93,
+    8200: 0.94,
+    8300: 0.95,
+    8400: 0.96,
+    8500: 0.97,
+    9000: 1.00,
+    9500: 1.05,
+    10000: 1.10,
+    10500: 1.15,
+}
+
+
+def _normalise_energy_model(model: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalise model values so canonical and legacy configs can be compared."""
+    if not isinstance(model, dict):
+        return {}
+
+    frequencies = model.get(
+        "frequency_power_ratios",
+        model.get("frequency_scaling", {}),
+    )
+    return {
+        "base_power": (
+            float(model["base_power"]) if "base_power" in model else None
+        ),
+        "workload_coefficients": {
+            str(key): float(value)
+            for key, value in model.get("workload_coefficients", {}).items()
+        },
+        "frequency_power_ratios": {
+            int(key): float(value) for key, value in frequencies.items()
+        },
+    }
+
+
+def _resolve_scheduler_energy_model(energy_config: Dict[str, Any]) -> Dict[str, Any]:
+    """Select the canonical scheduler model with legacy compatibility."""
+    canonical = energy_config.get("scheduler_energy_model", {})
+    legacy = energy_config.get("consumption_model", {})
+
+    if canonical and legacy:
+        if _normalise_energy_model(canonical) != _normalise_energy_model(legacy):
+            logger.warning(
+                "scheduler_energy_model与consumption_model配置不同；"
+                "使用scheduler_energy_model"
+            )
+        return canonical
+    return canonical or legacy or {}
+
+
+def _resolve_frequency_ratios(model: Dict[str, Any]) -> Dict[int, float]:
+    """Prefer frequency_power_ratios and fall back to frequency_scaling."""
+    canonical = model.get("frequency_power_ratios")
+    legacy = model.get("frequency_scaling")
+
+    if canonical is not None:
+        if legacy is not None:
+            canonical_values = {
+                int(key): float(value) for key, value in canonical.items()
+            }
+            legacy_values = {
+                int(key): float(value) for key, value in legacy.items()
+            }
+            if canonical_values != legacy_values:
+                logger.warning(
+                    "frequency_power_ratios与frequency_scaling配置不同；"
+                    "使用frequency_power_ratios"
+                )
+        return {
+            int(key): float(value) for key, value in canonical.items()
+        }
+
+    if legacy is not None:
+        return {
+            int(key): float(value) for key, value in legacy.items()
+        }
+    return {}
+
+
 # 导入能量管理器 - 修复导入问题
 try:
     from energy_manager import EnergyManager, get_energy_manager
@@ -60,11 +152,12 @@ except ImportError:
             self.unit_time = energy_config.get('unit_time', 50)
             
             # 工作负载功率系数
-            consumption_config = energy_config.get('consumption_model', {})
-            self.base_power = consumption_config.get('base_power', 0.5)
-            self.workload_coefficients = consumption_config.get('workload_coefficients', {
-                "bzip2": 1.2, "hash": 0.8, "encrypt": 1.5, "decrypt": 1.5, "control": 0.1
-            })
+            scheduler_model = _resolve_scheduler_energy_model(energy_config)
+            self.base_power = scheduler_model.get('base_power', 0.5)
+            self.workload_coefficients = scheduler_model.get(
+                'workload_coefficients',
+                dict(DEFAULT_POWER_COEFFICIENTS),
+            )
             
             logger.info(f"简单能量管理器初始化完成 - 初始能量: {self.initial_energy}J")
         
@@ -218,6 +311,9 @@ class EnergyAwareTaskGenerator:
         # 从系统配置加载能量参数
         self.system_config = self._load_system_config(system_config_path)
         self.energy_config = self._extract_energy_config()
+        self.scheduler_energy_model = _resolve_scheduler_energy_model(
+            self.energy_config
+        )
         
         # 从配置中获取工作负载类型
         self.workload_types = self._get_workload_types()
@@ -227,8 +323,7 @@ class EnergyAwareTaskGenerator:
         self.base_power = self._load_base_power()
         self.frequency_power_ratios = self._load_frequency_ratios()
 
-        # ⭐ 修复：基础频率默认为 8100 MHz（与配置文件一致）
-        self.base_frequency = 8100.0
+        self.base_frequency = self._load_base_frequency()
         
         # 调试模式
         self._debug = False
@@ -265,76 +360,51 @@ class EnergyAwareTaskGenerator:
     
     def _get_workload_types(self) -> List[str]:
         """从系统配置中获取工作负载类型"""
-        if not self.energy_config:
-            return ["bzip2", "hash", "encrypt", "decrypt", "control"]
-        
-        consumption_model = self.energy_config.get('consumption_model', {})
-        workload_coeffs = consumption_model.get('workload_coefficients', {})
+        workload_coeffs = self.scheduler_energy_model.get(
+            'workload_coefficients',
+            {},
+        )
         
         if workload_coeffs:
             return list(workload_coeffs.keys())
         
         # 默认工作负载类型
-        return ["bzip2", "hash", "encrypt", "decrypt", "control"]
+        return list(DEFAULT_POWER_COEFFICIENTS.keys())
     
     def _load_power_coefficients(self) -> Dict[str, float]:
         """从配置加载功率系数"""
-        if not self.energy_config:
-            # 默认值
-            return {
-                "bzip2": 1.2, "hash": 0.8, "encrypt": 1.5, 
-                "decrypt": 1.5, "control": 0.1
-            }
-        
-        consumption_model = self.energy_config.get('consumption_model', {})
-        workload_coeffs = consumption_model.get('workload_coefficients', {})
+        workload_coeffs = self.scheduler_energy_model.get(
+            'workload_coefficients',
+            {},
+        )
         
         if workload_coeffs:
-            coefficients = {}
+            coefficients = dict(DEFAULT_POWER_COEFFICIENTS)
             for workload, coeff in workload_coeffs.items():
                 coefficients[workload] = float(coeff)
             return coefficients
         
-        # 默认值
-        return {
-            "bzip2": 1.2, "hash": 0.8, "encrypt": 1.5, 
-            "decrypt": 1.5, "control": 0.1
-        }
+        return dict(DEFAULT_POWER_COEFFICIENTS)
     
     def _load_base_power(self) -> float:
         """从配置加载基础功耗"""
-        if not self.energy_config:
-            return 0.5
-        
-        consumption_model = self.energy_config.get('consumption_model', {})
-        return float(consumption_model.get('base_power', 0.5))
+        return float(self.scheduler_energy_model.get('base_power', 0.5))
     
     def _load_frequency_ratios(self) -> Dict[int, float]:
         """从配置加载频率功率比"""
-        if not self.energy_config:
-            # ⭐ 修复：使用 MHz 单位，匹配配置文件中的频率范围（7000-10500 MHz）
-            # 以 8100 MHz 为基准频率（比率=1.0）
-            return {
-                7000: 0.90, 7500: 0.95, 8000: 0.98, 8100: 1.00,
-                8200: 1.02, 8300: 1.04, 8400: 1.06, 8500: 1.08,
-                9000: 1.15, 9500: 1.22, 10000: 1.30, 10500: 1.38
-            }
-
-        consumption_model = self.energy_config.get('consumption_model', {})
-        freq_scaling = consumption_model.get('frequency_scaling', {})
-
-        if freq_scaling:
-            ratios = {}
-            for freq_str, ratio in freq_scaling.items():
-                ratios[int(freq_str)] = float(ratio)
+        configured = _resolve_frequency_ratios(self.scheduler_energy_model)
+        if configured:
+            ratios = dict(DEFAULT_FREQUENCY_POWER_RATIOS)
+            ratios.update(configured)
             return ratios
+        return dict(DEFAULT_FREQUENCY_POWER_RATIOS)
 
-        # ⭐ 修复：使用 MHz 单位
-        return {
-            7000: 0.90, 7500: 0.95, 8000: 0.98, 8100: 1.00,
-            8200: 1.02, 8300: 1.04, 8400: 1.06, 8500: 1.08,
-            9000: 1.15, 9500: 1.22, 10000: 1.30, 10500: 1.38
-        }
+    def _load_base_frequency(self) -> float:
+        """Load the scheduler frequency used by C++ from the first CPU island."""
+        cpu_islands = self.system_config.get('cpu_islands', [])
+        if cpu_islands:
+            return float(cpu_islands[0].get('base_freq', 8100.0))
+        return 8100.0
     
     def get_frequency_ratio(self, frequency_mhz: float = 8100.0) -> float:
         """获取频率功率比例系数"""
@@ -352,7 +422,7 @@ class EnergyAwareTaskGenerator:
         """
         计算能量消耗（焦耳）- 使用系统配置参数
         
-        公式：能量(J) = [基础功耗(W) + 工作负载功率(W) × 频率比例] × 时间(s)
+        公式：能量(J) = 基础功耗(W) × 工作负载系数 × 频率比例 × 时间(s)
         """
         execution_time_s = execution_time_ms / 1000.0
         
@@ -363,7 +433,7 @@ class EnergyAwareTaskGenerator:
         frequency_ratio = self.get_frequency_ratio(frequency_mhz)
         
         # 计算总功率
-        total_power_watts = self.base_power + workload_power * frequency_ratio
+        total_power_watts = self.base_power * workload_power * frequency_ratio
         
         # 计算能量
         energy_joules = total_power_watts * execution_time_s
@@ -685,14 +755,15 @@ def create_yaml_content(tasks: List[Dict], resources: List[Dict] = None,
                 sys_config = yaml.safe_load(f)
                 energy_config = sys_config.get('energy_management', {})
                 if energy_config:
+                    scheduler_model = _resolve_scheduler_energy_model(energy_config)
                     lines.append("# 能量参数配置:")
-                    lines.append(f"#   基础功耗: {energy_config.get('consumption_model', {}).get('base_power', 0.5)} W")
+                    lines.append(f"#   基础功耗: {scheduler_model.get('base_power', 0.5)} W")
                     
-                    workload_coeffs = energy_config.get('consumption_model', {}).get('workload_coefficients', {})
+                    workload_coeffs = scheduler_model.get('workload_coefficients', {})
                     if workload_coeffs:
                         lines.append("#   工作负载功率系数:")
                         for workload, coeff in workload_coeffs.items():
-                            lines.append(f"#     - {workload}: {coeff} W")
+                            lines.append(f"#     - {workload}: {coeff}")
                     
                     lines.append("")
     except Exception as e:
