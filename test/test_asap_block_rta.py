@@ -186,11 +186,16 @@ class ASAPBlockRTATest(unittest.TestCase):
         legacy = load_system_config(legacy_path)
         self.assertAlmostEqual(legacy.task_energy_per_tick("low"), 0.024)
 
-    def test_workload_bound_includes_carry_in(self):
-        task = RTATask("t0", 10, 3, 10, "low", 0)
-        self.assertEqual(workload_bound(task, 1), 6)
-        self.assertEqual(workload_bound(task, 10), 6)
-        self.assertEqual(workload_bound(task, 11), 9)
+    def test_workload_bound_is_deadline_parameterized(self):
+        task = RTATask("t0", 10, 3, 7, "low", 0)
+        self.assertEqual(workload_bound(task, 1), 3)
+        self.assertEqual(workload_bound(task, 6), 3)
+        self.assertEqual(workload_bound(task, 7), 4)
+        self.assertEqual(workload_bound(task, 8), 5)
+        self.assertEqual(workload_bound(task, 9), 6)
+
+        tight_deadline = RTATask("tight", 10, 3, 3, "low", 0)
+        self.assertEqual(workload_bound(tight_deadline, 0), 0)
 
     def test_processor_delay_single_core(self):
         high = RTATask("high", 5, 2, 5, "low", 0)
@@ -228,10 +233,6 @@ class ASAPBlockRTATest(unittest.TestCase):
                 range(min(workload_bound(task, w), x - z, bars[task.name]) + 1)
                 for task in high
             ]
-            b_ranges = [
-                range(min(workload_bound(task, w), z) + 1)
-                for task in high
-            ]
             c_ranges = [
                 range(min(workload_bound(task, w), z) + 1)
                 for task in low
@@ -239,25 +240,97 @@ class ASAPBlockRTATest(unittest.TestCase):
             for a_values in itertools.product(*a_ranges):
                 if sum(a_values) > cores * (x - z):
                     continue
+                b_ranges = [
+                    range(min(workload_bound(task, w) - a, z) + 1)
+                    for task, a in zip(high, a_values)
+                ]
                 for b_values in itertools.product(*b_ranges):
-                    if any(
-                        a + b > workload_bound(task, w)
+                    u_ranges = [
+                        range(workload_bound(task, w) - a - b + 1)
                         for task, a, b in zip(high, a_values, b_values)
-                    ):
-                        continue
+                    ]
                     for c_values in itertools.product(*c_ranges):
                         if sum(b_values) + sum(c_values) > (cores - 1) * z:
                             continue
-                        energy = z * target.energy_per_tick
-                        energy += sum(
-                            (a + b) * task.energy_per_tick
+                        for u_values in itertools.product(*u_ranges):
+                            energy = z * target.energy_per_tick
+                            energy += sum(
+                                (a + b + u) * task.energy_per_tick
+                                for task, a, b, u in zip(
+                                    high, a_values, b_values, u_values
+                                )
+                            )
+                            energy += sum(
+                                c * task.energy_per_tick
+                                for task, c in zip(low, c_values)
+                            )
+                            best = max(best, energy)
+        return best
+
+    def brute_energy_blocking(self, tasks, target, w, beta, cores):
+        high = hp(tasks, target)
+        ordered = rm_order(tasks)
+        target_pos = ordered.index(target)
+        low = ordered[target_pos + 1 :]
+        delay = processor_delay(target, w, cores, tasks)
+        reference = target.wcet + delay
+        if reference <= 0:
+            return 0
+        bars = {
+            task.name: min(
+                workload_bound(task, w),
+                max(w - target.wcet + 1, 0),
+            )
+            for task in high
+        }
+        best = 0
+        for x in range(1, reference + 1):
+            for z in range(max(0, x - delay), min(target.wcet, x) + 1):
+                a_ranges = [
+                    range(min(workload_bound(task, w), x - z, bars[task.name]) + 1)
+                    for task in high
+                ]
+                c_ranges = [
+                    range(min(workload_bound(task, w), z) + 1)
+                    for task in low
+                ]
+                for a_values in itertools.product(*a_ranges):
+                    if sum(a_values) > cores * (x - z):
+                        continue
+                    b_ranges = [
+                        range(min(workload_bound(task, w) - a, z) + 1)
+                        for task, a in zip(high, a_values)
+                    ]
+                    for b_values in itertools.product(*b_ranges):
+                        u_ranges = [
+                            range(workload_bound(task, w) - a - b + 1)
                             for task, a, b in zip(high, a_values, b_values)
-                        )
-                        energy += sum(
-                            c * task.energy_per_tick
-                            for task, c in zip(low, c_values)
-                        )
-                        best = max(best, energy)
+                        ]
+                        for c_values in itertools.product(*c_ranges):
+                            if sum(b_values) + sum(c_values) > (cores - 1) * z:
+                                continue
+                            for u_values in itertools.product(*u_ranges):
+                                energy = z * target.energy_per_tick
+                                energy += sum(
+                                    (a + b + u) * task.energy_per_tick
+                                    for task, a, b, u in zip(
+                                        high,
+                                        a_values,
+                                        b_values,
+                                        u_values,
+                                    )
+                                )
+                                energy += sum(
+                                    c * task.energy_per_tick
+                                    for task, c in zip(low, c_values)
+                                )
+                                delta = beta_inverse(beta, energy)
+                                if delta is None:
+                                    return None
+                                best = max(
+                                    best,
+                                    max(sum(u_values), max(delta - x, 0)),
+                                )
         return best
 
     def test_prefix_energy_matches_small_brute_force_case(self):
@@ -292,13 +365,35 @@ class ASAPBlockRTATest(unittest.TestCase):
         low = RTATask("low", 20, 5, 20, "very_high", 3, 11.0)
         tasks = self.attach([high1, high2, target, low], 2)
 
-        self.assertEqual(processor_delay(target, 2, 2, tasks), 1)
-        # For x=1, z=0 gives A=2 and B=0. The two high-priority jobs
-        # contribute 20; allowing the low-priority job into A would yield 21.
+        self.assertEqual(processor_delay(target, 2, 1, tasks), 2)
+        # With one core, B has zero capacity for every z. The high-priority
+        # jobs and target may contribute, but the low-priority job cannot
+        # enter the A pool.
         self.assertEqual(
-            prefix_energy_upper_bound(target, 2, 1, tasks, 2),
-            20.0,
+            prefix_energy_upper_bound(target, 2, 1, tasks, 1),
+            41.0,
         )
+
+    def test_energy_blocking_matches_brute_force_when_u_dominates(self):
+        high = RTATask("high", 5, 2, 5, "high", 0, 0.01)
+        target = RTATask("target", 10, 1, 10, "low", 1, 0.01)
+        tasks = self.attach([high, target], 1)
+        beta = build_energy_service_curve([10.0] * 10, 10)
+
+        expected = self.brute_energy_blocking(tasks, target, 1, beta, 1)
+        actual = energy_blocking_bound(target, 1, beta, tasks=tasks, M=1)
+        self.assertEqual(actual, expected)
+        self.assertEqual(actual, 2)
+
+    def test_energy_blocking_matches_brute_force_when_beta_delay_dominates(self):
+        target = RTATask("target", 10, 1, 10, "low", 0, 3.0)
+        tasks = self.attach([target], 1)
+        beta = build_energy_service_curve([1.0] * 10, 10)
+
+        expected = self.brute_energy_blocking(tasks, target, 1, beta, 1)
+        actual = energy_blocking_bound(target, 1, beta, tasks=tasks, M=1)
+        self.assertEqual(actual, expected)
+        self.assertEqual(actual, 2)
 
     def test_constant_zero_and_step_service_curves(self):
         constant = build_energy_service_curve([2.0] * 4, 4)
@@ -329,9 +424,8 @@ class ASAPBlockRTATest(unittest.TestCase):
         self.assertEqual(beta_inverse(plain_beta, just_above_one), 2)
 
     def test_abundant_energy_reduces_to_cpu_only_bound(self):
-        high = RTATask("high", 5, 1, 5, "low", 0, 0.001)
-        target = RTATask("target", 10, 2, 10, "low", 1, 0.001)
-        tasks = self.attach([high, target], 1)
+        target = RTATask("target", 10, 2, 10, "low", 0, 0.001)
+        tasks = self.attach([target], 1)
         beta = build_energy_service_curve([1.0] * 20, 20)
         result = response_time_bound(
             target, tasks, 1, beta, assume_no_overflow=True
@@ -380,23 +474,22 @@ class ASAPBlockRTATest(unittest.TestCase):
         self.assertGreater(result.response_time_bound, target.wcet)
 
     def test_response_bound_cannot_exceed_harvesting_horizon(self):
-        high = RTATask("high", 2, 1, 2, "low", 0, 0.001)
-        target = RTATask("target", 20, 1, 20, "low", 1, 0.001)
-        tasks = self.attach([high, target], 1)
-        long_beta = build_energy_service_curve([100.0] * 20, 20)
+        target = RTATask("target", 20, 1, 20, "low", 0, 3.0)
+        tasks = self.attach([target], 1)
+        long_beta = build_energy_service_curve([1.0] * 20, 20)
         unconstrained_result = response_time_bound(
             target, tasks, 1, long_beta, assume_no_overflow=True
         )
         self.assertTrue(unconstrained_result.proven)
-        self.assertEqual(unconstrained_result.response_time_bound, 4)
+        self.assertEqual(unconstrained_result.response_time_bound, 3)
 
-        beta = build_energy_service_curve([100.0, 100.0], 2)
+        beta = build_energy_service_curve([1.0, 1.0], 2)
 
         result = response_time_bound(
             target, tasks, 1, beta, assume_no_overflow=True
         )
         self.assertFalse(result.proven)
-        self.assertIn("exceeds harvesting horizon", result.failure_reason)
+        self.assertIn("finite energy service", result.failure_reason)
 
         longer_than_horizon = RTATask(
             "long", 20, 3, 20, "low", 0, 0.001
@@ -504,6 +597,7 @@ class ASAPBlockRTATest(unittest.TestCase):
     def test_rejects_deadline_multisegment_resources_and_missing_horizon(self):
         invalid_specs = [
             self.task_spec("deadline", 10, 2, deadline=11),
+            self.task_spec("wcet_deadline", 10, 2, deadline=1),
             self.task_spec(
                 "multi",
                 10,
@@ -513,8 +607,10 @@ class ASAPBlockRTATest(unittest.TestCase):
         ]
         with self.assertRaisesRegex(InputValidationError, "greater than period"):
             load_tasks(self.tasks_file([invalid_specs[0]]))
-        with self.assertRaisesRegex(InputValidationError, "exactly one"):
+        with self.assertRaisesRegex(InputValidationError, "C_i <= D_i <= T_i"):
             load_tasks(self.tasks_file([invalid_specs[1]]))
+        with self.assertRaisesRegex(InputValidationError, "exactly one"):
+            load_tasks(self.tasks_file([invalid_specs[2]]))
         missing_workload = self.task_spec(
             "missing_workload",
             10,

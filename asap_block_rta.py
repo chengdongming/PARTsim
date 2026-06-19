@@ -16,7 +16,6 @@ import os
 import re
 import sys
 import warnings
-from collections import deque
 from dataclasses import asdict, dataclass, field
 from fractions import Fraction
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
@@ -73,6 +72,7 @@ RESOURCE_INSTRUCTION_RE = re.compile(
     r"\b(?:critical_section|get_resource|lock|resource|unlock|wait)\s*\(",
     re.IGNORECASE,
 )
+ENERGY_DP_STATE_LIMIT = 200000
 
 
 class RTAError(Exception):
@@ -175,6 +175,12 @@ class TaskAnalysisResult:
             }
         )
         return result
+
+
+@dataclass(frozen=True)
+class _EnergyBlockingResult:
+    blocking: Optional[int]
+    failure_reason: Optional[str] = None
 
 
 @dataclass
@@ -460,6 +466,13 @@ def load_tasks(tasks_yml: str) -> List[RTATask]:
             raise InputValidationError(
                 "task {} has deadline {} greater than period {}".format(
                     name, deadline, period
+                )
+            )
+        if runtime > deadline:
+            raise InputValidationError(
+                "task {} has wcet {} greater than deadline {}; "
+                "deadline-parameterized RTA requires C_i <= D_i <= T_i".format(
+                    name, runtime, deadline
                 )
             )
 
@@ -782,11 +795,16 @@ def _lp(tasks: Sequence[RTATask], k: Target) -> List[RTATask]:
 
 
 def workload_bound(task: RTATask, w: int) -> int:
-    """W_i^H(w) = ceil(w/T_i) C_i + C_i, including one carry-in job."""
+    """Deadline-parameterized W_i^D(w), not the old carry-in W_i^H(w)."""
 
     if w < 0:
         raise ValueError("response window w must be non-negative")
-    return ((w + task.period - 1) // task.period) * task.wcet + task.wcet
+    window = w + task.deadline - task.wcet
+    if window <= 0:
+        return 0
+    jobs = window // task.period
+    residual = window - jobs * task.period
+    return jobs * task.wcet + min(task.wcet, residual)
 
 
 def _processor_workloads(
@@ -805,7 +823,7 @@ def processor_delay(
     M: int,
     tasks: Optional[Sequence[RTATask]] = None,
 ) -> int:
-    """Compute the document's discrete multicore CPU-only delay D_k^P(w)."""
+    """Compute the deadline-parameterized CPU-only delay D_k^{P,D}(w)."""
 
     if M <= 0:
         raise ValueError("M must be positive")
@@ -869,94 +887,95 @@ def beta_inverse(
     return None
 
 
-@dataclass
-class _FlowEdge:
-    to: int
-    reverse: int
-    capacity: int
-    cost: Fraction
-
-
-def _add_flow_edge(
-    graph: List[List[_FlowEdge]],
-    source: int,
-    target: int,
-    capacity: int,
-    cost: Fraction,
-) -> None:
-    forward = _FlowEdge(target, len(graph[target]), capacity, cost)
-    reverse = _FlowEdge(source, len(graph[source]), 0, -cost)
-    graph[source].append(forward)
-    graph[target].append(reverse)
-
-
-def _minimum_cost_flow(
-    graph: List[List[_FlowEdge]], source: int, sink: int, required_flow: int
-) -> Fraction:
-    """Successive shortest augmenting paths with exact rational costs."""
-
-    total_cost = Fraction(0)
-    delivered = 0
-    node_count = len(graph)
-
-    while delivered < required_flow:
-        distances: List[Optional[Fraction]] = [None] * node_count
-        previous_node = [-1] * node_count
-        previous_edge = [-1] * node_count
-        in_queue = [False] * node_count
-        distances[source] = Fraction(0)
-        queue = deque([source])
-        in_queue[source] = True
-
-        while queue:
-            node = queue.popleft()
-            in_queue[node] = False
-            assert distances[node] is not None
-            for edge_index, edge in enumerate(graph[node]):
-                if edge.capacity <= 0:
-                    continue
-                candidate = distances[node] + edge.cost
-                if distances[edge.to] is None or candidate < distances[edge.to]:
-                    distances[edge.to] = candidate
-                    previous_node[edge.to] = node
-                    previous_edge[edge.to] = edge_index
-                    if not in_queue[edge.to]:
-                        queue.append(edge.to)
-                        in_queue[edge.to] = True
-
-        if distances[sink] is None:
-            raise RuntimeError("internal max-cost flow network is infeasible")
-
-        augment = required_flow - delivered
-        node = sink
-        while node != source:
-            parent = previous_node[node]
-            edge_index = previous_edge[node]
-            if parent < 0:
-                raise RuntimeError("broken augmenting path")
-            augment = min(augment, graph[parent][edge_index].capacity)
-            node = parent
-
-        node = sink
-        while node != source:
-            parent = previous_node[node]
-            edge_index = previous_edge[node]
-            edge = graph[parent][edge_index]
-            edge.capacity -= augment
-            graph[node][edge.reverse].capacity += augment
-            node = parent
-
-        delivered += augment
-        total_cost += distances[sink] * augment
-
-    return total_cost
-
-
 def _energy_fraction(task: RTATask) -> Fraction:
     return Fraction(str(task.energy_per_tick))
 
 
-def _maximum_prefix_energy_for_z(
+_DPState = Tuple[int, int, int, Fraction]
+
+
+class _DPStateLimitExceeded(Exception):
+    pass
+
+
+def _state_dominates(left: _DPState, right: _DPState) -> bool:
+    """Return true if left is no better for capacity and no smaller in U/E."""
+
+    left_a, left_b, left_u, left_e = left
+    right_a, right_b, right_u, right_e = right
+    return (
+        left_a <= right_a
+        and left_b <= right_b
+        and left_u >= right_u
+        and left_e >= right_e
+        and (
+            left_a < right_a
+            or left_b < right_b
+            or left_u > right_u
+            or left_e > right_e
+        )
+    )
+
+
+def _prune_pareto_states(
+    states: Iterable[_DPState],
+    state_limit: int = ENERGY_DP_STATE_LIMIT,
+) -> List[_DPState]:
+    """Keep the Pareto frontier for capacity use and the maximized U/E pair."""
+
+    frontier: List[_DPState] = []
+    for state in states:
+        if any(_state_dominates(existing, state) for existing in frontier):
+            continue
+        frontier = [
+            existing
+            for existing in frontier
+            if not _state_dominates(state, existing)
+        ]
+        frontier.append(state)
+        if len(frontier) > state_limit:
+            raise _DPStateLimitExceeded(
+                "energy DP state limit {} exceeded".format(state_limit)
+            )
+    return frontier
+
+
+def _high_priority_options(
+    task: RTATask,
+    w: int,
+    a_window: int,
+    z: int,
+    processor_workload: int,
+    state_limit: int,
+) -> List[_DPState]:
+    workload = workload_bound(task, w)
+    energy = _energy_fraction(task)
+    _ = (a_window, z, processor_workload, state_limit)
+    # For fixed a_i and b_i, taking all remaining W_i^D(w) as u_i is the
+    # worst-case relaxation used by the RTA upper bound: both U and E are
+    # monotone nondecreasing in u_i. Because a_i and b_i only consume capacity,
+    # (a_i,b_i,u_i)=(0,0,W_i^D) dominates every other high-priority option for
+    # this maximization. This is not intended to reconstruct one exact
+    # simulator trace.
+    return [(0, 0, workload, workload * energy)]
+
+
+def _low_priority_options(
+    task: RTATask,
+    w: int,
+    z: int,
+    state_limit: int,
+) -> List[_DPState]:
+    workload = workload_bound(task, w)
+    energy = _energy_fraction(task)
+    options = [
+        (0, c_value, 0, c_value * energy)
+        for c_value in range(min(workload, z) + 1)
+    ]
+    return _prune_pareto_states(options, state_limit)
+
+
+def _deadline_energy_states_for_z(
     target: RTATask,
     taskset: Sequence[RTATask],
     w: int,
@@ -964,58 +983,51 @@ def _maximum_prefix_energy_for_z(
     z: int,
     M: int,
     processor_workloads: Mapping[str, int],
-) -> Fraction:
+) -> List[Tuple[int, Fraction]]:
     a_capacity = M * (x - z)
     b_capacity = (M - 1) * z
-    total_capacity = a_capacity + b_capacity
     target_energy = z * _energy_fraction(target)
-    if total_capacity == 0:
-        return target_energy
 
-    high_tasks = hp(taskset, target)
-    low_tasks = _lp(taskset, target)
-    source = 0
-    task_start = 1
-    dummy = task_start + len(high_tasks) + len(low_tasks)
-    pool_a = dummy + 1
-    pool_b = dummy + 2
-    sink = dummy + 3
-    graph: List[List[_FlowEdge]] = [[] for _ in range(sink + 1)]
-
-    node = task_start
-    for task in high_tasks:
-        workload = workload_bound(task, w)
-        cost = -_energy_fraction(task)
-        _add_flow_edge(graph, source, node, workload, cost)
-        a_task_capacity = min(
-            workload,
-            x - z,
-            processor_workloads[task.name],
+    states: List[_DPState] = [(0, 0, 0, Fraction(0))]
+    option_sets: List[List[_DPState]] = []
+    for task in hp(taskset, target):
+        option_sets.append(
+            _high_priority_options(
+                task,
+                w,
+                x - z,
+                z,
+                processor_workloads[task.name],
+                ENERGY_DP_STATE_LIMIT,
+            )
         )
-        b_task_capacity = min(workload, z)
-        _add_flow_edge(graph, node, pool_a, a_task_capacity, Fraction(0))
-        _add_flow_edge(graph, node, pool_b, b_task_capacity, Fraction(0))
-        node += 1
+    for task in _lp(taskset, target):
+        option_sets.append(
+            _low_priority_options(task, w, z, ENERGY_DP_STATE_LIMIT)
+        )
 
-    for task in low_tasks:
-        workload = workload_bound(task, w)
-        cost = -_energy_fraction(task)
-        _add_flow_edge(graph, source, node, workload, cost)
-        _add_flow_edge(graph, node, pool_b, min(workload, z), Fraction(0))
-        node += 1
+    for options in option_sets:
+        next_states: List[_DPState] = []
+        for a_used, b_used, u_total, energy_total in states:
+            for a_value, b_value, u_value, energy_value in options:
+                new_a = a_used + a_value
+                new_b = b_used + b_value
+                if new_a > a_capacity or new_b > b_capacity:
+                    continue
+                next_states.append(
+                    (
+                        new_a,
+                        new_b,
+                        u_total + u_value,
+                        energy_total + energy_value,
+                    )
+                )
+        states = _prune_pareto_states(next_states, ENERGY_DP_STATE_LIMIT)
 
-    # Zero-cost dummy work makes the requested fixed flow feasible while
-    # allowing either pool to remain physically idle.
-    _add_flow_edge(graph, source, dummy, total_capacity, Fraction(0))
-    _add_flow_edge(graph, dummy, pool_a, a_capacity, Fraction(0))
-    _add_flow_edge(graph, dummy, pool_b, b_capacity, Fraction(0))
-    _add_flow_edge(graph, pool_a, sink, a_capacity, Fraction(0))
-    _add_flow_edge(graph, pool_b, sink, b_capacity, Fraction(0))
-
-    minimum_cost = _minimum_cost_flow(
-        graph, source, sink, total_capacity
-    )
-    return target_energy - minimum_cost
+    return [
+        (u_total, energy_total + target_energy)
+        for _a_used, _b_used, u_total, energy_total in states
+    ]
 
 
 def _prefix_energy_upper_bound_exact(
@@ -1043,7 +1055,7 @@ def _prefix_energy_upper_bound_exact(
     processor_workloads = _processor_workloads(target, w, taskset)
     best = Fraction(0)
     for z in range(z_min, z_max + 1):
-        energy = _maximum_prefix_energy_for_z(
+        for _u_total, energy in _deadline_energy_states_for_z(
             target,
             taskset,
             w,
@@ -1051,9 +1063,9 @@ def _prefix_energy_upper_bound_exact(
             z,
             processors,
             processor_workloads,
-        )
-        if energy > best:
-            best = energy
+        ):
+            if energy > best:
+                best = energy
     return best
 
 
@@ -1064,12 +1076,12 @@ def prefix_energy_upper_bound(
     tasks: Optional[Sequence[RTATask]] = None,
     M: Optional[int] = None,
 ) -> float:
-    """Compute G_k^U(w,x) by exact integer max-cost flow."""
+    """Return the largest deadline-parameterized E_k^D demand for x."""
 
     return float(_prefix_energy_upper_bound_exact(k, w, x, tasks, M))
 
 
-def energy_blocking_bound(
+def _energy_blocking_bound_result(
     k: Target,
     w: int,
     beta: Sequence[float],
@@ -1084,24 +1096,54 @@ def energy_blocking_bound(
     processors = M if M is not None else target._num_cores
     if processors is None or processors <= 0:
         raise ValueError("M is required for energy blocking analysis")
-    reference_length = target.wcet + processor_delay(
-        target, w, processors, taskset
-    )
+    delay = processor_delay(target, w, processors, taskset)
+    reference_length = target.wcet + delay
+    if reference_length <= 0:
+        return _EnergyBlockingResult(0)
+
     blocking = 0
     exact_e0 = _exact_fraction(E0)
-    for x in range(reference_length + 1):
-        demand = max(
-            _prefix_energy_upper_bound_exact(
-                target, w, x, taskset, processors
-            )
-            - exact_e0,
-            Fraction(0),
-        )
-        delta = beta_inverse(beta, demand)
-        if delta is None:
-            return None
-        blocking = max(blocking, max(delta - x, 0))
-    return blocking
+    processor_workloads = _processor_workloads(target, w, taskset)
+    for x in range(1, reference_length + 1):
+        z_min = max(0, x - delay)
+        z_max = min(target.wcet, x)
+        for z in range(z_min, z_max + 1):
+            try:
+                states = _deadline_energy_states_for_z(
+                    target,
+                    taskset,
+                    w,
+                    x,
+                    z,
+                    processors,
+                    processor_workloads,
+                )
+            except _DPStateLimitExceeded:
+                return _EnergyBlockingResult(
+                    None, "energy DP state limit exceeded"
+                )
+            for u_total, energy in states:
+                demand = max(energy - exact_e0, Fraction(0))
+                delta = beta_inverse(beta, demand)
+                if delta is None:
+                    return _EnergyBlockingResult(
+                        None, "finite energy service is insufficient"
+                    )
+                blocking = max(blocking, max(u_total, max(delta - x, 0)))
+    return _EnergyBlockingResult(blocking)
+
+
+def energy_blocking_bound(
+    k: Target,
+    w: int,
+    beta: Sequence[float],
+    E0: float = 0,
+    tasks: Optional[Sequence[RTATask]] = None,
+    M: Optional[int] = None,
+) -> Optional[int]:
+    """Compute B_k^{E,D}(w); return None when finite service is insufficient."""
+
+    return _energy_blocking_bound_result(k, w, beta, E0, tasks, M).blocking
 
 
 def response_time_bound(
@@ -1144,7 +1186,7 @@ def response_time_bound(
     current = target.wcet
     for iteration in range(1, max_iterations + 1):
         cpu_delay = processor_delay(target, current, processors, taskset)
-        energy_delay = energy_blocking_bound(
+        energy_result = _energy_blocking_bound_result(
             target,
             current,
             beta,
@@ -1152,6 +1194,7 @@ def response_time_bound(
             tasks=taskset,
             M=processors,
         )
+        energy_delay = energy_result.blocking
         if energy_delay is None:
             return TaskAnalysisResult(
                 target.name,
@@ -1162,7 +1205,8 @@ def response_time_bound(
                 target.energy_per_tick,
                 None,
                 False,
-                "energy service is insufficient within the configured horizon",
+                energy_result.failure_reason
+                or "energy service is insufficient within the configured horizon",
                 iteration,
             )
 
