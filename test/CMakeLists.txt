@@ -6,6 +6,7 @@ add_executable(
   scheduler/truefifo.cpp
   scheduler/rm.cpp
   scheduler/asap_block.cpp
+  scheduler/alap_block.cpp
 )
 
 target_link_libraries(

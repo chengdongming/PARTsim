@@ -8,6 +8,7 @@
 #include <rtsim/rttask.hpp>
 #include <rtsim/energy_info_provider.hpp>
 #include <metasim/factory.hpp>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -144,6 +145,15 @@ namespace RTSim {
         double _max_energy;                  // 最大能量容量
         double _dispatching_tasks_total_energy; // 本次dispatch中已调度任务的总能耗
         std::set<AbsRTTask *> _counted_tasks_in_dispatch; // 本次dispatch中已计数的任务，避免重复
+        std::vector<AbsRTTask *> _dispatch_selection_order;
+        MetaSim::Tick _selection_tick;
+        uint64_t _selection_generation;
+        bool _selection_frozen;
+        MetaSim::Tick _energy_commit_tick;
+        bool _energy_commit_valid;
+        std::set<AbsRTTask *> _paid_pending_tasks;
+        std::map<AbsRTTask *, MetaSim::Tick> _pending_payment_ticks;
+        std::set<AbsRTTask *> _paid_execution_credit_tasks;
         MetaSim::Tick _last_tick_time;       // 上次tick时间
         MetaSim::Tick _last_collection_time; // 上次能量收集时间
 
@@ -217,6 +227,8 @@ namespace RTSim {
         // ⭐ ALAP时序门控（阶段一）
         bool checkALAPTimingGate();  // 检查是否需要强制休眠
         MetaSim::Tick calculateSlackForTask(AbsRTTask *task);  // 计算任务的Slack
+        MetaSim::Tick calculateSlackForTask(
+            AbsRTTask *task, MetaSim::Tick current_time);
 
         // ⭐ 过期任务清理
         void cleanupExpiredTasks();  // 清理超过截止期的旧任务实例
@@ -234,6 +246,24 @@ namespace RTSim {
         ALAPBlockTaskModel *getTaskModel(AbsRTTask *task);
         std::string getTaskName(AbsRTTask *task);
         void onTaskArrival(AbsRTTask *task);
+        void clearPersistentTaskState(AbsRTTask *task);
+        void resetTickDispatchState();
+        void clearTaskTickSelection(AbsRTTask *task);
+        std::vector<AbsRTTask *> collectActiveJobs(
+            MetaSim::Tick current_time);
+        std::vector<AbsRTTask *> collectALAPCandidates(
+            const std::vector<AbsRTTask *> &active_tasks,
+            MetaSim::Tick current_time);
+        bool hasHigherRMPriority(
+            AbsRTTask *lhs, AbsRTTask *rhs);
+        void sortByRMPriority(
+            std::vector<AbsRTTask *> &tasks);
+        double getConfiguredUnitEnergyForTask(
+            AbsRTTask *task) const;
+        void commitTickEnergy(
+            MetaSim::Tick tick, double energy);
+        void cancelStaleDispatches(
+            const std::vector<AbsRTTask *> &previous_selection);
 
         // 队列管理
         void addToReadyQueue(AbsRTTask *task);
@@ -337,6 +367,7 @@ namespace RTSim {
 
         // 友元类声明
         friend class ALAPBlockTickEvent;
+        friend class ALAPBlockSchedulerTestPeer;
         // ⭐ V40重构：能量检查事件已删除
         // friend class ALAP-BLOCKEnergyCheckEvent;
     };
