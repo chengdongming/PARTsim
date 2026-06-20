@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 #include <deque>
+#include <cstdint>
 
 namespace RTSim {
 
@@ -161,9 +162,16 @@ namespace RTSim {
 
         // ========== 本次dispatch中已计数的任务（用于稳定选择与统一扣费） ==========
         std::set<AbsRTTask *> _counted_tasks_in_dispatch; // 本次dispatch中已计数的任务，避免重复
-        std::vector<AbsRTTask *> _dispatch_selection_order; // 本次dispatch已选中的稳定顺序
+        std::vector<AbsRTTask *> _dispatch_selection_order; // 当前tick冻结选择的稳定顺序
         std::set<AbsRTTask *> _newly_dispatched_this_tick; // 当前tick新选择的任务
         std::set<AbsRTTask *> _energy_deducted_tasks; // 当前实例是否已完成本轮初始扣费
+        MetaSim::Tick _selection_tick;                 // 当前冻结选择所属tick
+        uint64_t _selection_generation;                // 每次冻结选择递增，防stale dispatch
+        bool _selection_frozen;                        // 当前tick是否已有冻结选择
+        MetaSim::Tick _energy_commit_tick;             // 能量提交所属tick
+        uint64_t _energy_commit_generation;            // 能量提交所属generation
+        bool _energy_commit_valid;                     // 当前tick是否已经提交能量
+        std::set<AbsRTTask *> _paid_pending_tasks;     // 已预付、等待dispatch完成的任务
 
         // ========== 任务管理 ==========
         std::map<AbsRTTask *, ALAPSyncTaskModel *> _task_models;
@@ -226,6 +234,15 @@ namespace RTSim {
         void accountInitialEnergyForSelectedTasks(const std::string &log_prefix);
         void clearPersistentTaskState(AbsRTTask *task);
         void rollbackFailedRunningTasks(const std::vector<AbsRTTask *> &running_task_list);
+        std::vector<AbsRTTask *> collectActiveJobs(MetaSim::Tick current_time);
+        std::vector<AbsRTTask *> collectALAPCandidates(
+            const std::vector<AbsRTTask *> &active_tasks,
+            MetaSim::Tick current_time);
+        bool hasHigherRMPriority(AbsRTTask *lhs, AbsRTTask *rhs);
+        void sortByRMPriority(std::vector<AbsRTTask *> &tasks);
+        double getConfiguredUnitEnergyForTask(AbsRTTask *task) const;
+        void commitTickEnergy(MetaSim::Tick tick, double energy);
+        void cancelStaleDispatches(const std::vector<AbsRTTask *> &previous_selection);
 
         // 核心调度逻辑 - ALAP-Sync批量调度
         void performTickScheduling();
@@ -234,6 +251,8 @@ namespace RTSim {
         bool checkALAPBatchTimingGate(const std::vector<AbsRTTask *> &batch);  // ⭐ 基于批次的ALAP时序门控（原论文正确实现）
         bool checkALAPTimingGate();  // 全局ALAP时序门控（保留兼容性）
         MetaSim::Tick calculateSlackForTask(AbsRTTask *task);  // 计算任务的Slack
+        MetaSim::Tick calculateSlackForTask(
+            AbsRTTask *task, MetaSim::Tick current_time);
 
         // ⭐ 过期任务清理
         void cleanupExpiredTasks();  // 清理超过截止期的旧任务实例

@@ -11,6 +11,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <stdexcept>
 #include <metasim/factory.hpp>
 #include <metasim/simul.hpp>
 #include <rtsim/scheduler/gpfp_alap_sync_scheduler.hpp>
@@ -176,6 +177,12 @@ namespace RTSim {
           _current_batch_size(0),
           _pending_dispatch_tasks(),
           _pending_dispatch_energy(0.0),
+          _selection_tick(-1),
+          _selection_generation(0),
+          _selection_frozen(false),
+          _energy_commit_tick(-1),
+          _energy_commit_generation(0),
+          _energy_commit_valid(false),
           _last_preempted_task(nullptr),
           _last_preempted_tick(0) {
 
@@ -415,6 +422,11 @@ namespace RTSim {
         _dispatch_selection_order.clear();
         _energy_deducted_tasks.clear();
         _dispatching_tasks_total_energy = 0.0;
+        _selection_tick = Tick(-1);
+        _selection_frozen = false;
+        _energy_commit_tick = Tick(-1);
+        _energy_commit_valid = false;
+        _paid_pending_tasks.clear();
     }
 
     void ALAPSyncScheduler::clearTaskTickSelection(AbsRTTask *task) {
@@ -445,7 +457,7 @@ namespace RTSim {
         if (_counted_tasks_in_dispatch.insert(task).second) {
             _dispatch_selection_order.push_back(task);
             _newly_dispatched_this_tick.insert(task);
-            _dispatching_tasks_total_energy += calculateUnitEnergyForTask(task);
+            _dispatching_tasks_total_energy += getConfiguredUnitEnergyForTask(task);
         }
     }
 
@@ -455,7 +467,7 @@ namespace RTSim {
                 continue;
             }
 
-            double unit_energy = calculateUnitEnergyForTask(task);
+            double unit_energy = getConfiguredUnitEnergyForTask(task);
             _current_energy -= unit_energy;
             if (_current_energy < 0.0) {
                 _current_energy = 0.0;
@@ -475,7 +487,7 @@ namespace RTSim {
         }
 
         if (_energy_deducted_tasks.find(task) != _energy_deducted_tasks.end()) {
-            double unit_energy = calculateUnitEnergyForTask(task);
+            double unit_energy = getConfiguredUnitEnergyForTask(task);
             _current_energy += unit_energy;
             if (_current_energy > _max_energy) {
                 _current_energy = _max_energy;
@@ -521,6 +533,126 @@ namespace RTSim {
         _suspend_reasons.erase(task);
     }
 
+    std::vector<AbsRTTask *> ALAPSyncScheduler::collectActiveJobs(Tick current_time) {
+        std::vector<AbsRTTask *> active_tasks;
+        auto add_active = [&active_tasks, current_time](AbsRTTask *task, bool running) {
+            if (!task || task->getArrival() > current_time) {
+                return;
+            }
+            if (!running && !task->isActive()) {
+                return;
+            }
+            if (task->getRemainingWCET() <= 0.0) {
+                return;
+            }
+            if (std::find(active_tasks.begin(), active_tasks.end(), task) == active_tasks.end()) {
+                active_tasks.push_back(task);
+            }
+        };
+
+        if (_kernel) {
+            for (const auto &[cpu, task] : _kernel->getCurrentExecutingTasks()) {
+                (void)cpu;
+                add_active(task, task && task->isExecuting());
+            }
+        }
+        for (AbsRTTask *task : _ready_queue) {
+            add_active(task, false);
+        }
+        return active_tasks;
+    }
+
+    std::vector<AbsRTTask *> ALAPSyncScheduler::collectALAPCandidates(
+        const std::vector<AbsRTTask *> &active_tasks,
+        Tick current_time) {
+        std::vector<AbsRTTask *> candidates;
+        for (AbsRTTask *task : active_tasks) {
+            if (calculateSlackForTask(task, current_time) <= Tick(0)) {
+                candidates.push_back(task);
+            }
+        }
+        return candidates;
+    }
+
+    bool ALAPSyncScheduler::hasHigherRMPriority(AbsRTTask *lhs, AbsRTTask *rhs) {
+        if (lhs == rhs) {
+            return false;
+        }
+        ALAPSyncTaskModel *lhs_model = getTaskModel(lhs);
+        ALAPSyncTaskModel *rhs_model = getTaskModel(rhs);
+        if (lhs_model && rhs_model &&
+            lhs_model->getRMPriority() != rhs_model->getRMPriority()) {
+            return lhs_model->getRMPriority() < rhs_model->getRMPriority();
+        }
+        if (lhs && rhs && lhs->getPeriod() != rhs->getPeriod()) {
+            return lhs->getPeriod() < rhs->getPeriod();
+        }
+        if (lhs && rhs) {
+            return lhs->getTaskNumber() < rhs->getTaskNumber();
+        }
+        return lhs != nullptr;
+    }
+
+    void ALAPSyncScheduler::sortByRMPriority(std::vector<AbsRTTask *> &tasks) {
+        std::stable_sort(tasks.begin(), tasks.end(),
+                         [this](AbsRTTask *lhs, AbsRTTask *rhs) {
+                             return hasHigherRMPriority(lhs, rhs);
+                         });
+    }
+
+    double ALAPSyncScheduler::getConfiguredUnitEnergyForTask(AbsRTTask *task) const {
+        auto it = _task_models.find(task);
+        if (it == _task_models.end() || !it->second) {
+            return 0.0;
+        }
+        return it->second->getUnitEnergy();
+    }
+
+    void ALAPSyncScheduler::commitTickEnergy(Tick tick, double energy) {
+        if (_energy_commit_valid &&
+            _energy_commit_tick == tick &&
+            _energy_commit_generation == _selection_generation) {
+            throw std::logic_error("ALAP-Sync energy committed more than once in one tick");
+        }
+        if (energy < 0.0 || _current_energy + 1e-9 < energy) {
+            throw std::logic_error("ALAP-Sync attempted to commit unaffordable batch energy");
+        }
+
+        _current_energy = std::max(0.0, _current_energy - energy);
+        _stats.total_energy_consumed += energy;
+        _energy_commit_tick = tick;
+        _energy_commit_generation = _selection_generation;
+        _energy_commit_valid = true;
+    }
+
+    void ALAPSyncScheduler::cancelStaleDispatches(
+        const std::vector<AbsRTTask *> &previous_selection) {
+        if (!_kernel) {
+            return;
+        }
+        bool has_stale_dispatch = false;
+        for (AbsRTTask *task : previous_selection) {
+            if (!task || _kernel->getProcessor(task) != nullptr) {
+                continue;
+            }
+            if (std::find(_dispatch_selection_order.begin(),
+                          _dispatch_selection_order.end(),
+                          task) == _dispatch_selection_order.end()) {
+                has_stale_dispatch = true;
+                break;
+            }
+        }
+        if (!has_stale_dispatch) {
+            return;
+        }
+
+        for (const auto &[cpu, running] : _kernel->getCurrentExecutingTasks()) {
+            if (!running && _kernel->isCPUDispatching(cpu)) {
+                _kernel->dispatch(cpu);
+            }
+        }
+    }
+
     void ALAPSyncScheduler::rollbackFailedRunningTasks(const std::vector<AbsRTTask *> &running_task_list) {
         if (!_kernel) {
             _kernel = getKernel();
@@ -558,15 +690,20 @@ namespace RTSim {
     // =====================================================
 
     void ALAPSyncScheduler::performTickScheduling() {
-        SCHEDULER_LOG_DEBUG(std::string("🔄 [ALAP-Sync] performTickScheduling @ ") +
-                           std::to_string(static_cast<int64_t>(SIMUL.getTime())) + "ms" +
-                           " 能量=" + std::to_string(_current_energy) + "J");
+        Tick current_time = SIMUL.getTime();
+        if (_selection_frozen && _selection_tick == current_time) {
+            SCHEDULER_LOG_DEBUG(
+                std::string("🛡️ [ALAP-Sync] 本tick选择已冻结，跳过重复决策 @ ") +
+                std::to_string(static_cast<int64_t>(current_time)) + "ms");
+            return;
+        }
 
+        SCHEDULER_LOG_DEBUG(std::string("🔄 [ALAP-Sync] performTickScheduling @ ") +
+                           std::to_string(static_cast<int64_t>(current_time)) + "ms" +
+                           " 能量=" + std::to_string(_current_energy) + "J");
         _stats.total_tick_count++;
 
-        Tick current_time = SIMUL.getTime();
         Tick elapsed = current_time - _last_tick_time;
-
         if (elapsed > 0) {
             double harvested = collectSolarEnergy(current_time);
             if (harvested > 0.000001) {
@@ -576,27 +713,34 @@ namespace RTSim {
                                    std::to_string(harvested) + "J" +
                                    " 当前能量: " + std::to_string(_current_energy) + "J" +
                                    " 经过时间: " + std::to_string(static_cast<int64_t>(elapsed)) + "ms");
-
-                if (_energy_depleted && _current_energy > 0.000001) {
-                    _energy_depleted = false;
-                    SCHEDULER_LOG_INFO("🔋 [ALAP-Sync] 太阳能充电成功，恢复同步组调度");
-                }
             }
         }
-
         _last_tick_time = current_time;
-
-        if (_energy_depleted) {
-            SCHEDULER_LOG_INFO("⚠️ [ALAP-Sync] 上一拍发生缺电，继续核对续期账本/等待真实deadline");
-        }
-
         if (_current_energy > _max_energy) {
             _current_energy = _max_energy;
         }
 
-        if (!checkALAPTimingGate()) {
+        if (!_kernel) {
+            _kernel = getKernel();
+        }
+        if (!_kernel) {
+            SCHEDULER_LOG_WARNING("⚠️ [ALAP-Sync] _kernel为nullptr，跳过批量调度");
             return;
         }
+
+        const auto &running_tasks_map = _kernel->getCurrentExecutingTasks();
+        std::set<AbsRTTask *> running_tasks;
+        for (const auto &[cpu, task] : running_tasks_map) {
+            (void)cpu;
+            if (task && task->isExecuting()) {
+                running_tasks.insert(task);
+            }
+        }
+
+        std::vector<AbsRTTask *> previous_selection = _dispatch_selection_order;
+        std::vector<AbsRTTask *> active_tasks = collectActiveJobs(current_time);
+        std::vector<AbsRTTask *> urgent_candidates = collectALAPCandidates(active_tasks, current_time);
+        sortByRMPriority(urgent_candidates);
 
         resetTickDispatchState();
         _current_batch_tasks.clear();
@@ -606,189 +750,71 @@ namespace RTSim {
         _pending_dispatch_tasks.clear();
         _pending_dispatch_energy = 0.0;
 
-        if (!_kernel) {
-            _kernel = getKernel();
-            if (!_kernel) {
-                SCHEDULER_LOG_WARNING("⚠️ [ALAP-Sync] _kernel为nullptr，跳过批量调度");
-                return;
-            }
-        }
-
-        const auto &running_tasks = _kernel->getCurrentExecutingTasks();
-        std::vector<AbsRTTask *> running_task_list;
-        for (const auto &map_pair : running_tasks) {
-            AbsRTTask *task = map_pair.second;
-            if (!task || !task->isExecuting() || !task->isActive()) {
-                continue;
-            }
-            if (_tasks_completed_wcet.find(task) != _tasks_completed_wcet.end()) {
-                continue;
-            }
-            running_task_list.push_back(task);
-        }
-
-        auto rm_priority_less = [this](AbsRTTask *a, AbsRTTask *b) {
-            auto *model_a = getTaskModel(a);
-            auto *model_b = getTaskModel(b);
-            if (model_a && model_b) {
-                return model_a->getRMPriority() < model_b->getRMPriority();
-            }
-            return a->getPeriod() < b->getPeriod();
-        };
-
-        std::sort(running_task_list.begin(), running_task_list.end(), rm_priority_less);
-
-        if (_energy_depleted && running_task_list.empty()) {
-            _energy_depleted = false;
-            SCHEDULER_LOG_INFO("🔓 [ALAP-Sync] 缺电续跑任务已全部回滚，本tick允许基于ready_queue干净重建同步组");
-        }
-
-        std::vector<AbsRTTask *> sorted_ready(_ready_queue.begin(), _ready_queue.end());
-        std::sort(sorted_ready.begin(), sorted_ready.end(), rm_priority_less);
-
-        ConfigManager &configMgr_batch = ConfigManager::getInstance();
-        int total_cpus = configMgr_batch.getNumCores();
-        const double EPSILON_V66 = 1e-9;
-
-        std::vector<AbsRTTask *> sync_batch;
+        std::vector<AbsRTTask *> selected_tasks;
         double required_group_energy = 0.0;
-
-        for (AbsRTTask *task : running_task_list) {
-            if (static_cast<int>(sync_batch.size()) >= total_cpus) {
+        const int total_cpus = static_cast<int>(running_tasks_map.size());
+        for (AbsRTTask *task : urgent_candidates) {
+            if (static_cast<int>(selected_tasks.size()) >= total_cpus) {
                 break;
             }
-
-            double unit_energy = calculateUnitEnergyForTask(task);
-            sync_batch.push_back(task);
-            required_group_energy += unit_energy;
+            selected_tasks.push_back(task);
+            required_group_energy += getConfiguredUnitEnergyForTask(task);
         }
 
-        for (AbsRTTask *task : sorted_ready) {
-            if (static_cast<int>(sync_batch.size()) >= total_cpus) {
-                break;
-            }
-
-            if (!task || !task->isActive()) {
-                continue;
-            }
-
-            bool was_running_at_tick_start = false;
-            for (AbsRTTask *running_task : running_task_list) {
-                if (running_task == task) {
-                    was_running_at_tick_start = true;
-                    break;
-                }
-            }
-            if (was_running_at_tick_start) {
-                continue;
-            }
-
-            Tick task_slack = calculateSlackForTask(task);
-            SCHEDULER_LOG_INFO(std::string("🧮 [ALAP-Sync] 候选任务Slack: ") +
-                               getTaskName(task) +
-                               " slack=" + std::to_string(static_cast<int64_t>(task_slack)) + "ms");
-            if (task_slack > 0) {
-                continue;
-            }
-
-            sync_batch.push_back(task);
-            required_group_energy += calculateUnitEnergyForTask(task);
-        }
-
-        if (sync_batch.empty()) {
-            SCHEDULER_LOG_INFO("⏸️ [ALAP-Sync] 本tick没有Slack<=0的同步组候选");
-            _energy_depleted = false;
-            return;
-        }
-
-        if (_current_energy + EPSILON_V66 < required_group_energy) {
+        const double epsilon = 1e-9;
+        if (!selected_tasks.empty() &&
+            _current_energy + epsilon < required_group_energy) {
             _energy_depleted = true;
             _stats.total_batch_skipped++;
-
             SCHEDULER_LOG_WARNING(std::string("⚠️ [ALAP-Sync] 同步组原子验资失败，本tick整组不上机: K=") +
-                                  std::to_string(sync_batch.size()) +
+                                  std::to_string(selected_tasks.size()) +
                                   " 组总需能=" + std::to_string(required_group_energy * 1000.0) + " mJ" +
                                   " 当前=" + std::to_string(_current_energy * 1000.0) + " mJ");
-
-            rollbackFailedRunningTasks(running_task_list);
-            _current_batch_tasks.clear();
-            _current_batch_size = 0;
-            _batch_scheduled_this_tick = false;
-            return;
+            selected_tasks.clear();
+            required_group_energy = 0.0;
+        } else {
+            _energy_depleted = false;
         }
 
-        _energy_depleted = false;
-        _current_batch_tasks = sync_batch;
+        _selection_tick = current_time;
+        _selection_generation++;
+        _selection_frozen = true;
+        _current_batch_tasks = selected_tasks;
         _current_batch_size = static_cast<int>(_current_batch_tasks.size());
-        _batch_scheduled_this_tick = true;
-        _stats.total_batch_schedules++;
+        _batch_scheduled_this_tick = !selected_tasks.empty();
+        _dispatch_selection_order = selected_tasks;
+        _dispatching_tasks_total_energy = required_group_energy;
 
-        for (AbsRTTask *task : _current_batch_tasks) {
-            markTaskSelectedThisTick(task);
+        if (!selected_tasks.empty()) {
+            _stats.total_batch_schedules++;
+            for (AbsRTTask *task : selected_tasks) {
+                markTaskSelectedThisTick(task);
+                _paid_pending_tasks.insert(task);
+            }
+            commitTickEnergy(current_time, required_group_energy);
         }
 
-        SCHEDULER_LOG_INFO(std::string("✅ [ALAP-Sync] 同步组通过原子供能检查: K=") +
-                           std::to_string(_current_batch_size) +
-                           " 组总需能=" + std::to_string(required_group_energy * 1000.0) + " mJ" +
-                           " 当前=" + std::to_string(_current_energy * 1000.0) + " mJ");
+        cancelStaleDispatches(previous_selection);
 
-        SCHEDULER_LOG_INFO("🔔 [ALAP-Sync] performTickScheduling: 开始循环调度填满所有CPU");
-        int dispatch_attempts = 0;
-        const int MAX_DISPATCH_ITERATIONS = 100;
-
-        while (dispatch_attempts < MAX_DISPATCH_ITERATIONS) {
-            bool all_cpus_full = false;
-            if (!_running_tasks.empty()) {
-                all_cpus_full = true;
-                for (auto &map_pair : _running_tasks) {
-                    if (map_pair.second == nullptr) {
-                        all_cpus_full = false;
-                        break;
-                    }
-                }
+        const std::set<AbsRTTask *> selected_set(selected_tasks.begin(), selected_tasks.end());
+        for (AbsRTTask *task : running_tasks) {
+            if (selected_set.find(task) != selected_set.end()) {
+                continue;
             }
+            setSuspendReason(task, _energy_depleted ? "insufficient_energy" : "preemption");
+            _kernel->suspend(task);
+        }
 
-            if (all_cpus_full) {
-                SCHEDULER_LOG_INFO("✅ [ALAP-Sync] 所有CPU已填满，停止调度");
-                break;
-            }
-
-            int running_count_before = 0;
-            for (auto &map_pair : _running_tasks) {
-                if (map_pair.second != nullptr) {
-                    running_count_before++;
-                }
-            }
-
-            SCHEDULER_LOG_INFO(std::string("🚀 [ALAP-Sync] 调用 _kernel->dispatch()"));
+        if (!selected_tasks.empty()) {
             _kernel->dispatch();
-
-            if (!_preempt_batch_tasks.empty()) {
-                SCHEDULER_LOG_INFO(std::string("⚡ [ALAP-Sync] dispatch后清除抢占批量") +
-                                   " size=" + std::to_string(_preempt_batch_tasks.size()));
-                _preempt_batch_tasks.clear();
-            }
-
-            dispatch_attempts++;
-
-            int running_count_after = 0;
-            for (auto &map_pair : _running_tasks) {
-                if (map_pair.second != nullptr) {
-                    running_count_after++;
-                }
-            }
-
-            if (running_count_before == running_count_after) {
-                SCHEDULER_LOG_DEBUG("⏹️ [ALAP-Sync] 无更多任务可调度（运行任务数量未变化），停止dispatch循环");
-                break;
-            }
         }
 
-        if (dispatch_attempts >= MAX_DISPATCH_ITERATIONS) {
-            SCHEDULER_LOG_WARNING("⚠️ [ALAP-Sync] dispatch循环达到最大迭代次数，可能存在bug");
-        }
-
-        commitDispatch();
+        SCHEDULER_LOG_INFO(std::string("📊 [ALAP-Sync] Tick选择: active=") +
+                           std::to_string(active_tasks.size()) +
+                           " candidates=" + std::to_string(urgent_candidates.size()) +
+                           " selected=" + std::to_string(selected_tasks.size()) +
+                           " 扣减=" + std::to_string(required_group_energy * 1000.0) + " mJ" +
+                           " 剩余=" + std::to_string(_current_energy * 1000.0) + " mJ");
     }
 
     void ALAPSyncScheduler::schedule() {
@@ -814,52 +840,29 @@ namespace RTSim {
     // getTaskN - 返回批量中的第n个任务（坚决服从 V66 批次）
     // =====================================================
     AbsRTTask *ALAPSyncScheduler::getTaskN(unsigned int n) {
-        if (!_batch_scheduled_this_tick) {
+        if (!_selection_frozen ||
+            _selection_tick != SIMUL.getTime() ||
+            !_batch_scheduled_this_tick) {
+            return nullptr;
+        }
+        if (n >= _dispatch_selection_order.size()) {
             return nullptr;
         }
 
-        if (n < _dispatch_selection_order.size()) {
-            AbsRTTask *selected_task = _dispatch_selection_order[n];
-            if (selected_task && selected_task->isActive()) {
-                return selected_task;
-            }
+        AbsRTTask *task = _dispatch_selection_order[n];
+        if (!task || !task->isActive()) {
+            return nullptr;
         }
-
-        for (AbsRTTask *task : _current_batch_tasks) {
-            if (!task || !task->isActive()) {
-                continue;
-            }
-
-            if (_counted_tasks_in_dispatch.find(task) != _counted_tasks_in_dispatch.end()) {
-                continue;
-            }
-
-            Tick slack = calculateSlackForTask(task);
-            if (slack > 0) {
-                continue;
-            }
-
-            markTaskSelectedThisTick(task);
-            if (n < _dispatch_selection_order.size() && _dispatch_selection_order[n] == task) {
-                return task;
-            }
-        }
-
-        if (n < _dispatch_selection_order.size()) {
-            AbsRTTask *selected_task = _dispatch_selection_order[n];
-            if (selected_task && selected_task->isActive()) {
-                return selected_task;
-            }
-        }
-
-        return nullptr;
+        return task;
     }
 
     // =====================================================
     // commitDispatch - 确认派发
     // =====================================================
     void ALAPSyncScheduler::commitDispatch() {
-        accountInitialEnergyForSelectedTasks("⚡ [ALAP-Sync] dispatch确认扣费: ");
+        // ALAP-Sync now commits the complete batch atomically when the tick
+        // selection is frozen. EndDispatch only confirms already-paid tasks;
+        // it must not charge energy a second time.
         _pending_dispatch_tasks.clear();
         _pending_dispatch_energy = 0.0;
     }
@@ -1230,14 +1233,27 @@ namespace RTSim {
     // =====================================================
 
     double ALAPSyncScheduler::calculateUnitEnergyForTask(AbsRTTask *task) {
-        ALAPSyncTaskModel *model = getTaskModel(task);
-        if (!model) {
-            SCHEDULER_LOG_WARNING("⚠️ [ALAP-Sync] calculateUnitEnergyForTask: 任务模型不存在");
+        const double unit_energy = getConfiguredUnitEnergyForTask(task);
+        if (!task) {
             return 0.0;
         }
 
-        // 返回预先计算的每ms能耗
-        return model->getUnitEnergy();
+        if (_selection_frozen && _selection_tick == SIMUL.getTime()) {
+            const bool selected =
+                std::find(_dispatch_selection_order.begin(),
+                          _dispatch_selection_order.end(),
+                          task) != _dispatch_selection_order.end();
+            if (!selected) {
+                // A stale EndDispatch from an older generation must not pass
+                // the MRTKernel energy pre-check and enter execution.
+                return _current_energy + unit_energy + 1.0;
+            }
+            if (_paid_pending_tasks.find(task) != _paid_pending_tasks.end()) {
+                return 0.0;
+            }
+        }
+
+        return unit_energy;
     }
 
     // ⭐ EnergyInfoProvider接口实现
@@ -1633,6 +1649,21 @@ namespace RTSim {
         _batch_scheduled_this_tick = false;
         _current_batch_size = 0;
         _current_batch_tasks.clear();
+        _preempt_batch_tasks.clear();
+        _pending_dispatch_tasks.clear();
+        _pending_dispatch_energy = 0.0;
+        _counted_tasks_in_dispatch.clear();
+        _dispatch_selection_order.clear();
+        _newly_dispatched_this_tick.clear();
+        _energy_deducted_tasks.clear();
+        _dispatching_tasks_total_energy = 0.0;
+        _selection_tick = Tick(-1);
+        _selection_generation = 0;
+        _selection_frozen = false;
+        _energy_commit_tick = Tick(-1);
+        _energy_commit_generation = 0;
+        _energy_commit_valid = false;
+        _paid_pending_tasks.clear();
 
         // 启动第一个tick事件
         scheduleNextTick();
@@ -1738,7 +1769,7 @@ namespace RTSim {
                 if (!model) continue;
 
                 Tick arrival = task->getArrival();
-                Tick deadline = arrival + Tick(model->getPeriod());
+                Tick deadline = task->getDeadline();
 
                 if (deadline <= current_time) {
                     to_suspend.push_back(task);
@@ -1763,7 +1794,7 @@ namespace RTSim {
             if (!model) continue;
 
             Tick arrival = task->getArrival();
-            Tick deadline = arrival + Tick(model->getPeriod());
+            Tick deadline = task->getDeadline();
 
             if (deadline <= current_time) {
                 expired.push_back(task);
@@ -1788,7 +1819,7 @@ namespace RTSim {
             if (!model) continue;
 
             Tick arrival = task->getArrival();
-            Tick deadline = arrival + Tick(model->getPeriod());
+            Tick deadline = task->getDeadline();
 
             if (deadline <= current_time) {
                 expired_batch.push_back(task);
@@ -1910,40 +1941,27 @@ namespace RTSim {
 
 
     MetaSim::Tick ALAPSyncScheduler::calculateSlackForTask(AbsRTTask *task) {
-        if (!task) return MetaSim::Tick(0);
+        return calculateSlackForTask(task, SIMUL.getTime());
+    }
 
-        Tick current_time = SIMUL.getTime();
-
-        double remaining_check = task->getRemainingWCET();
-        if (remaining_check <= 0) {
-            SCHEDULER_LOG_DEBUG(std::string("⏸️ [ALAP-Sync] calculateSlack: 任务已完成: ") + getTaskName(task));
-            return MetaSim::Tick(99999);
+    MetaSim::Tick ALAPSyncScheduler::calculateSlackForTask(
+        AbsRTTask *task, Tick current_time) {
+        if (!task) {
+            return MetaSim::Tick(0);
         }
 
-        Tick last_arrival = task->getLastArrival();
-        Tick current_arrival = task->getArrival();
-        Tick arrival = current_arrival;
-        if (current_arrival <= 0 && last_arrival > 0) {
-            arrival = last_arrival;
+        if (task->getArrival() > current_time) {
+            return task->getArrival() - current_time;
         }
 
-        int period_int = task->getPeriod();
-        Tick period = Tick(period_int > 0 ? period_int : 100);
-        Tick absolute_deadline = arrival + period;
-
-        double remaining_double = task->getRemainingWCET();
-        if (remaining_double < 0) {
-            remaining_double = 0;
-        }
-
-        Tick remaining = Tick(remaining_double);
-        Tick slack = absolute_deadline - remaining - current_time;
+        const Tick absolute_deadline = task->getDeadline();
+        const double remaining_double = std::max(0.0, task->getRemainingWCET());
+        const auto remaining_ticks = static_cast<Tick::impl_t>(std::ceil(remaining_double));
+        const Tick remaining(remaining_ticks);
+        const Tick slack = absolute_deadline - remaining - current_time;
 
         SCHEDULER_LOG_INFO(std::string("🧮 [ALAP-Sync] Slack计算: ") +
                            getTaskName(task) +
-                           " arrival=" + std::to_string(static_cast<int64_t>(arrival)) +
-                           " last_arrival=" + std::to_string(static_cast<int64_t>(last_arrival)) +
-                           " period=" + std::to_string(static_cast<int64_t>(period)) +
                            " deadline=" + std::to_string(static_cast<int64_t>(absolute_deadline)) +
                            " remaining=" + std::to_string(static_cast<int64_t>(remaining)) +
                            " current=" + std::to_string(static_cast<int64_t>(current_time)) +
