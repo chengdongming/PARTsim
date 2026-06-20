@@ -11,6 +11,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <stdexcept>
 #include <metasim/factory.hpp>
 #include <metasim/simul.hpp>
 #include <rtsim/scheduler/gpfp_asap_sync_scheduler.hpp>
@@ -183,7 +184,13 @@ namespace RTSim {
           _kernel(nullptr),
           _batch_scheduled_this_tick(false),
           _energy_depleted(false),
-          _current_batch_size(0) {
+          _current_batch_size(0),
+          _selection_tick(-1),
+          _selection_generation(0),
+          _selection_frozen(false),
+          _energy_commit_tick(-1),
+          _energy_commit_generation(0),
+          _energy_commit_valid(false) {
 
         SCHEDULER_LOG_INFO("🚀 [ASAP-Sync] ASAP Sync Scheduler 初始化");
 
@@ -385,27 +392,168 @@ namespace RTSim {
         (void)total_energy;
     }
 
+    std::vector<AbsRTTask *> ASAPSyncScheduler::collectActiveJobs(Tick current_time) {
+        std::vector<AbsRTTask *> active_tasks;
+        auto add_active = [&active_tasks, current_time](AbsRTTask *task, bool running) {
+            if (!task || task->getArrival() > current_time) {
+                return;
+            }
+            if (!running && !task->isActive()) {
+                return;
+            }
+            if (task->getRemainingWCET() <= 0.0) {
+                return;
+            }
+            if (std::find(active_tasks.begin(), active_tasks.end(), task) == active_tasks.end()) {
+                active_tasks.push_back(task);
+            }
+        };
+
+        if (_kernel) {
+            for (const auto &[cpu, task] : _kernel->getCurrentExecutingTasks()) {
+                (void)cpu;
+                add_active(task, task && task->isExecuting());
+            }
+        }
+        for (AbsRTTask *task : _ready_queue) {
+            add_active(task, false);
+        }
+        return active_tasks;
+    }
+
+    bool ASAPSyncScheduler::hasHigherRMPriority(AbsRTTask *lhs, AbsRTTask *rhs) {
+        if (lhs == rhs) {
+            return false;
+        }
+        ASAPSyncTaskModel *lhs_model = getTaskModel(lhs);
+        ASAPSyncTaskModel *rhs_model = getTaskModel(rhs);
+        if (lhs_model && rhs_model &&
+            lhs_model->getRMPriority() != rhs_model->getRMPriority()) {
+            return lhs_model->getRMPriority() < rhs_model->getRMPriority();
+        }
+        if (lhs && rhs && lhs->getPeriod() != rhs->getPeriod()) {
+            return lhs->getPeriod() < rhs->getPeriod();
+        }
+        if (lhs && rhs) {
+            return lhs->getTaskNumber() < rhs->getTaskNumber();
+        }
+        return lhs != nullptr;
+    }
+
+    void ASAPSyncScheduler::sortByRMPriority(std::vector<AbsRTTask *> &tasks) {
+        std::stable_sort(tasks.begin(), tasks.end(),
+                         [this](AbsRTTask *lhs, AbsRTTask *rhs) {
+                             return hasHigherRMPriority(lhs, rhs);
+                         });
+    }
+
+    double ASAPSyncScheduler::getConfiguredUnitEnergyForTask(AbsRTTask *task) const {
+        auto it = _task_models.find(task);
+        if (it == _task_models.end() || !it->second) {
+            return 0.0;
+        }
+        return it->second->getUnitEnergy();
+    }
+
+    void ASAPSyncScheduler::commitTickEnergy(Tick tick, double energy) {
+        if (_energy_commit_valid &&
+            _energy_commit_tick == tick &&
+            _energy_commit_generation == _selection_generation) {
+            throw std::logic_error("ASAP-Sync energy committed more than once in one tick");
+        }
+        if (energy < 0.0 || _current_energy + 1e-9 < energy) {
+            throw std::logic_error("ASAP-Sync attempted to commit unaffordable batch energy");
+        }
+
+        _current_energy = std::max(0.0, _current_energy - energy);
+        _stats.total_energy_consumed += energy;
+        _energy_commit_tick = tick;
+        _energy_commit_generation = _selection_generation;
+        _energy_commit_valid = true;
+    }
+
+    void ASAPSyncScheduler::cancelStaleDispatches(
+        const std::vector<AbsRTTask *> &previous_selection) {
+        if (!_kernel) {
+            return;
+        }
+        bool has_stale_dispatch = false;
+        for (AbsRTTask *task : previous_selection) {
+            if (!task || _kernel->getProcessor(task) != nullptr) {
+                continue;
+            }
+            if (std::find(_current_batch_tasks.begin(),
+                          _current_batch_tasks.end(),
+                          task) == _current_batch_tasks.end()) {
+                has_stale_dispatch = true;
+                break;
+            }
+        }
+        if (!has_stale_dispatch) {
+            return;
+        }
+
+        for (const auto &[cpu, running] : _kernel->getCurrentExecutingTasks()) {
+            if (!running && _kernel->isCPUDispatching(cpu)) {
+                _kernel->dispatch(cpu);
+            }
+        }
+    }
+
+    void ASAPSyncScheduler::cleanupExpiredTasks() {
+        const Tick current_time = SIMUL.getTime();
+
+        std::vector<AbsRTTask *> expired_ready;
+        for (AbsRTTask *task : _ready_queue) {
+            if (!task) {
+                continue;
+            }
+            const Tick deadline = task->getDeadline();
+            if (deadline <= current_time && task->getRemainingWCET() > 0.0) {
+                expired_ready.push_back(task);
+                _stats.total_deadline_misses++;
+                SCHEDULER_LOG_INFO(std::string("🧹 [ASAP-Sync] 清理过期任务: ") +
+                                   getTaskName(task) +
+                                   " deadline=" + std::to_string(static_cast<int64_t>(deadline)) +
+                                   " current=" + std::to_string(static_cast<int64_t>(current_time)));
+            }
+        }
+
+        for (AbsRTTask *task : expired_ready) {
+            removeFromReadyQueue(task);
+            removeFromWaitingQueue(task);
+            _paid_pending_tasks.erase(task);
+        }
+
+        _current_batch_tasks.erase(
+            std::remove_if(_current_batch_tasks.begin(), _current_batch_tasks.end(),
+                           [current_time](AbsRTTask *task) {
+                               return task && task->getDeadline() <= current_time;
+                           }),
+            _current_batch_tasks.end());
+        _current_batch_size = static_cast<int>(_current_batch_tasks.size());
+    }
+
     // =====================================================
     // 核心调度逻辑 - BTIE批量调度算法
     // =====================================================
 
     void ASAPSyncScheduler::performTickScheduling() {
+        Tick current_time = SIMUL.getTime();
+        if (_selection_frozen && _selection_tick == current_time) {
+            SCHEDULER_LOG_DEBUG(
+                std::string("🛡️ [ASAP-Sync] 本tick批次已冻结，跳过重复决策 @ ") +
+                std::to_string(static_cast<int64_t>(current_time)) + "ms");
+            return;
+        }
+
         SCHEDULER_LOG_DEBUG(std::string("🔄 [ASAP-Sync] performTickScheduling @ ") +
-                           std::to_string(static_cast<int64_t>(SIMUL.getTime())) + "ms" +
+                           std::to_string(static_cast<int64_t>(current_time)) + "ms" +
                            " 能量=" + std::to_string(_current_energy) + "J");
 
         _stats.total_tick_count++;
 
-        Tick current_time = SIMUL.getTime();
         Tick elapsed = current_time - _last_tick_time;
-
-        if (_batch_scheduled_this_tick && !_current_batch_tasks.empty()) {
-            SCHEDULER_LOG_DEBUG(std::string("🛡️ [ASAP-Sync] 保留arrival-time已批准批次，跳过tick重算 @ ") +
-                               std::to_string(static_cast<int64_t>(current_time)) + "ms");
-            _last_tick_time = current_time;
-            return;
-        }
-
         if (elapsed > 0) {
             double harvested = collectSolarEnergy(current_time);
             if (harvested > 0.000001) {
@@ -419,186 +567,102 @@ namespace RTSim {
         }
 
         _last_tick_time = current_time;
-
         if (_current_energy > _max_energy) {
             _current_energy = _max_energy;
         }
 
         if (!_kernel) {
             _kernel = getKernel();
-            if (!_kernel) {
-                SCHEDULER_LOG_WARNING("⚠️ [ASAP-Sync] _kernel为nullptr，跳过批量调度");
-                return;
+        }
+        if (!_kernel) {
+            SCHEDULER_LOG_WARNING("⚠️ [ASAP-Sync] _kernel为nullptr，跳过批量调度");
+            return;
+        }
+
+        cleanupExpiredTasks();
+
+        const auto &running_tasks_map = _kernel->getCurrentExecutingTasks();
+        std::set<AbsRTTask *> running_tasks;
+        for (const auto &[cpu, task] : running_tasks_map) {
+            (void)cpu;
+            if (task && task->isExecuting()) {
+                running_tasks.insert(task);
             }
         }
 
-        const double EPSILON = 1e-9;
-        const auto &running_tasks = _kernel->getCurrentExecutingTasks();
-        std::vector<AbsRTTask *> running_task_list;
-        double running_batch_energy = 0.0;
-
-        for (const auto &[cpu, task] : running_tasks) {
-            if (!task || !task->isExecuting()) {
-                continue;
-            }
-            if (_tasks_completed_wcet.find(task) != _tasks_completed_wcet.end()) {
-                continue;
-            }
-            running_task_list.push_back(task);
-            running_batch_energy += calculateUnitEnergyForTask(task);
-        }
-
-        if (!running_task_list.empty()) {
-            if (_current_energy < running_batch_energy - EPSILON) {
-                _batch_scheduled_this_tick = false;
-                _current_batch_tasks.clear();
-                _current_batch_size = 0;
-                _stats.total_batch_skipped++;
-                _energy_depleted = true;
-
-                SCHEDULER_LOG_WARNING(std::string("❌ [ASAP-Sync] 运行批次续期失败，执行同死挂起: ") +
-                                      "批次数=" + std::to_string(running_task_list.size()) +
-                                      " 需要=" + std::to_string(running_batch_energy * 1000) + " mJ" +
-                                      " 当前=" + std::to_string(_current_energy * 1000) + " mJ");
-
-                for (auto *task : running_task_list) {
-                    if (task && task->isExecuting()) {
-                        setSuspendReason(task, "insufficient_energy");
-                        _kernel->suspend(task);
-                    }
-                }
-                return;
-            }
-
-            _current_energy -= running_batch_energy;
-            _stats.total_energy_consumed += running_batch_energy;
-            _energy_depleted = false;
-
-            SCHEDULER_LOG_INFO(std::string("⚡ [ASAP-Sync] 运行批次续期成功: ") +
-                               "批次数=" + std::to_string(running_task_list.size()) +
-                               " 扣减=" + std::to_string(running_batch_energy * 1000) + " mJ" +
-                               " 剩余=" + std::to_string(_current_energy * 1000) + " mJ");
-        } else {
-            _energy_depleted = (_current_energy < EPSILON);
-        }
+        std::vector<AbsRTTask *> previous_selection = _current_batch_tasks;
+        std::vector<AbsRTTask *> active_tasks = collectActiveJobs(current_time);
+        sortByRMPriority(active_tasks);
 
         _current_batch_tasks.clear();
+        _preempt_batch_tasks.clear();
         _current_batch_size = 0;
+        _batch_scheduled_this_tick = false;
+        _dispatching_tasks_total_energy = 0.0;
+        _paid_pending_tasks.clear();
 
-        // ASAP-Sync 保持 1ms tick 边界准入，不在 tick 内做额外抢占，避免破坏批次原子性。
-
-        size_t running_count = running_task_list.size();
-        size_t total_cpus = running_tasks.size();
-        size_t free_cpus = total_cpus > running_count ? total_cpus - running_count : 0;
-
-        std::vector<AbsRTTask *> new_tasks_to_schedule;
-        if (free_cpus > 0 && !_ready_queue.empty()) {
-            _ready_queue.erase(
-                std::remove_if(_ready_queue.begin(), _ready_queue.end(),
-                    [this, current_time](AbsRTTask *task) {
-                        if (!task) return true;
-                        if (!task->isActive()) {
-                            return true;
-                        }
-                        return task->getDeadline() < current_time;
-                    }),
-                _ready_queue.end()
-            );
-
-            std::vector<AbsRTTask *> sorted_ready(_ready_queue.begin(), _ready_queue.end());
-            std::sort(sorted_ready.begin(), sorted_ready.end(),
-                [this](AbsRTTask *a, AbsRTTask *b) {
-                    auto model_a = getTaskModel(a);
-                    auto model_b = getTaskModel(b);
-                    if (model_a && model_b) {
-                        return model_a->getRMPriority() < model_b->getRMPriority();
-                    }
-                    return false;
-                });
-
-            for (auto *task : sorted_ready) {
-                if (!task || !task->isActive()) {
-                    continue;
-                }
-
-                bool is_running = false;
-                for (auto *running_task : running_task_list) {
-                    if (running_task == task) {
-                        is_running = true;
-                        break;
-                    }
-                }
-                if (is_running) {
-                    continue;
-                }
-
-                new_tasks_to_schedule.push_back(task);
-                if (new_tasks_to_schedule.size() >= free_cpus) {
-                    break;
-                }
-            }
-        }
-
-        double new_batch_energy = 0.0;
-        for (auto *task : new_tasks_to_schedule) {
-            new_batch_energy += calculateUnitEnergyForTask(task);
-        }
-
-        SCHEDULER_LOG_INFO(std::string("📊 [ASAP-Sync] Tick批量决策: ") +
-                           "总CPU=" + std::to_string(total_cpus) +
-                           " 运行中=" + std::to_string(running_count) +
-                           " 空闲=" + std::to_string(free_cpus) +
-                           " 新批次数=" + std::to_string(new_tasks_to_schedule.size()) +
-                           " 新批次门票=" + std::to_string(new_batch_energy * 1000) + " mJ" +
-                           " 当前能量=" + std::to_string(_current_energy * 1000) + " mJ");
-
-        if (new_tasks_to_schedule.empty()) {
-            _batch_scheduled_this_tick = false;
-            return;
-        }
-
-        if (_current_energy < new_batch_energy - EPSILON) {
-            _batch_scheduled_this_tick = false;
-            _current_batch_tasks.clear();
-            _current_batch_size = 0;
-            _stats.total_batch_skipped++;
-            _energy_depleted = true;
-
-            SCHEDULER_LOG_WARNING(std::string("❌ [ASAP-Sync] 派发阶段门票不足，拒绝整个新批次: ") +
-                                  "批次数=" + std::to_string(new_tasks_to_schedule.size()) +
-                                  " 需要=" + std::to_string(new_batch_energy * 1000) + " mJ" +
-                                  " 当前=" + std::to_string(_current_energy * 1000) + " mJ");
-            return;
-        }
-
-        _batch_scheduled_this_tick = true;
-        _current_batch_tasks = new_tasks_to_schedule;
-        _current_batch_size = static_cast<int>(new_tasks_to_schedule.size());
-        _stats.total_batch_schedules++;
-        _energy_depleted = false;
-
-        SCHEDULER_LOG_INFO(std::string("✅ [ASAP-Sync] 新批次通过原子门票检查: ") +
-                           "批次数=" + std::to_string(_current_batch_size) +
-                           " 门票=" + std::to_string(new_batch_energy * 1000) + " mJ" +
-                           " 当前能量=" + std::to_string(_current_energy * 1000) + " mJ");
-
-        int dispatch_attempts = 0;
-        const int MAX_DISPATCH_ITERATIONS = 100;
-        while (dispatch_attempts < MAX_DISPATCH_ITERATIONS) {
-            size_t tasks_before = _ready_queue.size();
-            _kernel->dispatch();
-
-            dispatch_attempts++;
-
-            size_t tasks_after = _ready_queue.size();
-            if (tasks_before == tasks_after) {
+        std::vector<AbsRTTask *> selected_tasks;
+        double required_batch_energy = 0.0;
+        const int total_cpus = static_cast<int>(running_tasks_map.size());
+        for (AbsRTTask *task : active_tasks) {
+            if (static_cast<int>(selected_tasks.size()) >= total_cpus) {
                 break;
             }
+            selected_tasks.push_back(task);
+            required_batch_energy += getConfiguredUnitEnergyForTask(task);
         }
 
-        if (dispatch_attempts >= MAX_DISPATCH_ITERATIONS) {
-            SCHEDULER_LOG_WARNING("⚠️ [ASAP-Sync] dispatch循环达到最大迭代次数，可能存在bug");
+        const double epsilon = 1e-9;
+        if (!selected_tasks.empty() &&
+            _current_energy + epsilon < required_batch_energy) {
+            _energy_depleted = true;
+            _stats.total_batch_skipped++;
+            SCHEDULER_LOG_WARNING(std::string("❌ [ASAP-Sync] 同步批次组级验资失败，本tick整组不上机: K=") +
+                                  std::to_string(selected_tasks.size()) +
+                                  " 需要=" + std::to_string(required_batch_energy * 1000.0) + " mJ" +
+                                  " 当前=" + std::to_string(_current_energy * 1000.0) + " mJ");
+            selected_tasks.clear();
+            required_batch_energy = 0.0;
+        } else {
+            _energy_depleted = false;
         }
+
+        _selection_tick = current_time;
+        _selection_generation++;
+        _selection_frozen = true;
+        _current_batch_tasks = selected_tasks;
+        _current_batch_size = static_cast<int>(_current_batch_tasks.size());
+        _batch_scheduled_this_tick = !selected_tasks.empty();
+        _dispatching_tasks_total_energy = required_batch_energy;
+
+        if (!selected_tasks.empty()) {
+            _stats.total_batch_schedules++;
+            for (AbsRTTask *task : selected_tasks) {
+                _paid_pending_tasks.insert(task);
+            }
+            commitTickEnergy(current_time, required_batch_energy);
+        }
+
+        cancelStaleDispatches(previous_selection);
+
+        const std::set<AbsRTTask *> selected_set(selected_tasks.begin(), selected_tasks.end());
+        for (AbsRTTask *task : running_tasks) {
+            if (selected_set.find(task) != selected_set.end()) {
+                continue;
+            }
+            setSuspendReason(task, _energy_depleted ? "insufficient_energy" : "preemption");
+            _kernel->suspend(task);
+        }
+
+        if (!selected_tasks.empty()) {
+            _kernel->dispatch();
+        }
+
+        SCHEDULER_LOG_INFO(std::string("📊 [ASAP-Sync] Tick冻结批次: active=") +
+                           std::to_string(active_tasks.size()) +
+                           " selected=" + std::to_string(selected_tasks.size()) +
+                           " 扣减=" + std::to_string(required_batch_energy * 1000.0) + " mJ" +
+                           " 剩余=" + std::to_string(_current_energy * 1000.0) + " mJ");
     }
 
     void ASAPSyncScheduler::schedule() {
@@ -624,31 +688,19 @@ namespace RTSim {
     // =====================================================
 
     AbsRTTask *ASAPSyncScheduler::getTaskN(unsigned int n) {
-        SCHEDULER_LOG_INFO(std::string("🔍 [ASAP-Sync] getTaskN(") + std::to_string(n) + ") " +
-                           "当前能量: " + std::to_string(_current_energy) + "J" +
-                           " 批量任务数=" + std::to_string(_current_batch_tasks.size()));
-
-        if (_current_batch_tasks.empty()) {
-            SCHEDULER_LOG_INFO("📭 [ASAP-Sync] getTaskN: 当前tick没有可派发批次");
+        if (!_selection_frozen ||
+            _selection_tick != SIMUL.getTime() ||
+            !_batch_scheduled_this_tick) {
             return nullptr;
         }
-
         if (n >= _current_batch_tasks.size()) {
-            SCHEDULER_LOG_DEBUG(std::string("📭 [ASAP-Sync] getTaskN: 索引超出范围") +
-                               " n=" + std::to_string(n) +
-                               " size=" + std::to_string(_current_batch_tasks.size()));
             return nullptr;
         }
 
         AbsRTTask *task = _current_batch_tasks[n];
         if (!task || !task->isActive()) {
-            SCHEDULER_LOG_DEBUG("📭 [ASAP-Sync] getTaskN: 候选任务无效或已失活");
             return nullptr;
         }
-
-        SCHEDULER_LOG_INFO(std::string("📤 [ASAP-Sync] getTaskN(") + std::to_string(n) + ") 返回: " +
-                          getTaskName(task) + " (批量任务[" + std::to_string(n) + "] / " +
-                          std::to_string(_current_batch_tasks.size()) + ")");
         return task;
     }
 
@@ -822,16 +874,9 @@ namespace RTSim {
             addToReadyQueue(task);
         }
 
-        if (!_kernel) {
-            _kernel = getKernel();
-        }
-
-        if (!_kernel) {
-            return;
-        }
-
-        SCHEDULER_LOG_INFO(std::string("⚡ [ASAP-Sync] 到达任务立即参与RM抢占检查: ") + getTaskName(task));
-        checkAndPreempt();
+        // ASAP-Sync is tick-frozen: arrivals join the ready queue and are
+        // considered at the next tick boundary. Mid-tick rebuild would bypass
+        // the atomic batch energy commit and can create stale dispatches.
     }
 
     // =====================================================
@@ -839,8 +884,7 @@ namespace RTSim {
     // =====================================================
 
     void ASAPSyncScheduler::checkAndPreempt() {
-        SCHEDULER_LOG_DEBUG("🔔 [ASAP-Sync] arrival-time RM抢占检查");
-        checkAndPreemptOnAllCPUs();
+        SCHEDULER_LOG_DEBUG("🔔 [ASAP-Sync] tick-frozen scheduler ignores mid-tick preemption request");
     }
 
     std::vector<AbsRTTask *> ASAPSyncScheduler::collectActiveRunningBatchTasks() {
@@ -940,92 +984,8 @@ namespace RTSim {
     }
 
     void ASAPSyncScheduler::checkAndPreemptOnAllCPUs() {
-        if (!_kernel) {
-            _kernel = getKernel();
-        }
-        if (!_kernel) {
-            return;
-        }
-
-        std::vector<CPU *> truly_free_cpus;
-        std::vector<std::pair<CPU *, AbsRTTask *>> running_entries;
-
-        for (const auto &entry : _kernel->getCurrentExecutingTasks()) {
-            CPU *cpu = entry.first;
-            AbsRTTask *running = entry.second;
-            if (running != nullptr) {
-                running_entries.push_back(entry);
-                continue;
-            }
-            if (_kernel->isCPUDispatching(cpu)) {
-                continue;
-            }
-            truly_free_cpus.push_back(cpu);
-        }
-
-        if (!truly_free_cpus.empty()) {
-            rebuildApprovedBatchForImmediateDispatch();
-            SCHEDULER_LOG_INFO(std::string("⏭️ [ASAP-Sync] 有") + std::to_string(truly_free_cpus.size()) +
-                              "个空闲CPU，arrival-time立即重建稳定批次");
-            _kernel->dispatch();
-            return;
-        }
-
-        AbsRTTask *best_candidate = nullptr;
-        for (AbsRTTask *task : _ready_queue) {
-            if (!task || !task->isActive()) {
-                continue;
-            }
-            if (_tasks_completed_wcet.find(task) != _tasks_completed_wcet.end()) {
-                continue;
-            }
-            if (_kernel->getProcessor(task) != nullptr) {
-                continue;
-            }
-            best_candidate = task;
-            break;
-        }
-
-        if (!best_candidate) {
-            return;
-        }
-
-        CPU *worst_cpu = nullptr;
-        AbsRTTask *worst_running = nullptr;
-        ASAPSyncTaskModel *worst_model = nullptr;
-        for (const auto &entry : running_entries) {
-            AbsRTTask *running = entry.second;
-            if (!running || !running->isActive()) {
-                continue;
-            }
-            ASAPSyncTaskModel *running_model = getTaskModel(running);
-            if (!running_model) {
-                continue;
-            }
-            if (!worst_model || running_model->getRMPriority() > worst_model->getRMPriority()) {
-                worst_cpu = entry.first;
-                worst_running = running;
-                worst_model = running_model;
-            }
-        }
-
-        if (!worst_cpu || !worst_running) {
-            return;
-        }
-
-        if (!shouldPreempt(worst_running, best_candidate)) {
-            return;
-        }
-
-        SCHEDULER_LOG_INFO(std::string("⚡ [ASAP-Sync] 触发arrival-time实时抢占: ") +
-                          getTaskName(best_candidate) + " 抢占 " + getTaskName(worst_running) +
-                          " @ " + std::to_string(static_cast<long>(SIMUL.getTime())) + "ms");
-
-        setSuspendReason(worst_running, "preemption");
-        _kernel->suspend(worst_running);
-        clearSuspendReason(worst_running);
-        rebuildApprovedBatchForImmediateDispatch();
-        _kernel->dispatch();
+        // No-op by design. ASAP-Sync batch membership is recomputed only at
+        // tick boundaries and frozen for dispatch/EndDispatch validation.
     }
 
     bool ASAPSyncScheduler::shouldPreempt(AbsRTTask *running_task, AbsRTTask *new_task) {
@@ -1195,17 +1155,29 @@ namespace RTSim {
     // =====================================================
 
     double ASAPSyncScheduler::calculateUnitEnergyForTask(AbsRTTask *task) {
-        ASAPSyncTaskModel *model = getTaskModel(task);
-        if (!model) {
-            SCHEDULER_LOG_WARNING("⚠️ [ASAP-Sync] calculateUnitEnergyForTask: 任务模型不存在");
+        const double unit_energy = getConfiguredUnitEnergyForTask(task);
+        if (!task) {
             return 0.0;
         }
 
-        // 返回预先计算的每ms能耗
-        return model->getUnitEnergy();
+        if (_selection_frozen && _selection_tick == SIMUL.getTime()) {
+            const bool selected =
+                std::find(_current_batch_tasks.begin(),
+                          _current_batch_tasks.end(),
+                          task) != _current_batch_tasks.end();
+            if (!selected) {
+                // Prevent stale EndDispatch from an older generation from
+                // passing any scheduler-layer energy pre-check.
+                return _current_energy + unit_energy + 1.0;
+            }
+            if (_paid_pending_tasks.find(task) != _paid_pending_tasks.end()) {
+                return 0.0;
+            }
+        }
+
+        return unit_energy;
     }
 
-    // ⭐ EnergyInfoProvider接口实现
     double ASAPSyncScheduler::getTaskUnitEnergy(AbsRTTask *task) const {
         auto it = _task_models.find(task);
         if (it == _task_models.end()) {
@@ -1624,6 +1596,15 @@ namespace RTSim {
         _batch_scheduled_this_tick = false;
         _current_batch_size = 0;
         _current_batch_tasks.clear();
+        _preempt_batch_tasks.clear();
+        _dispatching_tasks_total_energy = 0.0;
+        _selection_tick = Tick(-1);
+        _selection_generation = 0;
+        _selection_frozen = false;
+        _energy_commit_tick = Tick(-1);
+        _energy_commit_generation = 0;
+        _energy_commit_valid = false;
+        _paid_pending_tasks.clear();
 
         // 启动第一个tick事件
         scheduleNextTick();

@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 #include <deque>
+#include <cstdint>
 
 namespace RTSim {
 
@@ -136,11 +137,18 @@ namespace RTSim {
         std::set<AbsRTTask *> _tasks_completed_wcet;  // 已达到WCET的任务集合
 
         // ========== BTIE批量调度状态 ==========
-        std::vector<AbsRTTask *> _current_batch_tasks;  // 当前批量任务（tick边界预计算）
-        std::vector<AbsRTTask *> _preempt_batch_tasks;    // 抢占批量任务（mid-tick抢占创建的微型批量）
+        std::vector<AbsRTTask *> _current_batch_tasks;  // 当前tick冻结批量任务
+        std::vector<AbsRTTask *> _preempt_batch_tasks;    // 兼容旧接口，不再用于mid-tick批准批次
         bool _batch_scheduled_this_tick;                // 本tick是否已批量调度
         bool _energy_depleted;                          // 能量是否已耗尽（Bug #5修复）
         int _current_batch_size;                        // 当前批量大小
+        MetaSim::Tick _selection_tick;                  // 当前冻结批次所属tick
+        uint64_t _selection_generation;                 // 每次冻结批次递增，防stale dispatch
+        bool _selection_frozen;                         // 当前tick是否已有冻结批次
+        MetaSim::Tick _energy_commit_tick;              // 能量提交所属tick
+        uint64_t _energy_commit_generation;             // 能量提交所属generation
+        bool _energy_commit_valid;                      // 当前generation是否已提交能量
+        std::set<AbsRTTask *> _paid_pending_tasks;      // 已预付、等待dispatch完成的任务
 
         // ========== 能量记账（每ms累计） ==========
         struct TaskEnergyAccount {
@@ -188,6 +196,13 @@ namespace RTSim {
         ASAPSyncTaskModel *getTaskModel(AbsRTTask *task);
         std::string getTaskName(AbsRTTask *task);
         void onTaskArrival(AbsRTTask *task);
+        std::vector<AbsRTTask *> collectActiveJobs(MetaSim::Tick current_time);
+        bool hasHigherRMPriority(AbsRTTask *lhs, AbsRTTask *rhs);
+        void sortByRMPriority(std::vector<AbsRTTask *> &tasks);
+        double getConfiguredUnitEnergyForTask(AbsRTTask *task) const;
+        void commitTickEnergy(MetaSim::Tick tick, double energy);
+        void cancelStaleDispatches(const std::vector<AbsRTTask *> &previous_selection);
+        void cleanupExpiredTasks();
 
         // 队列管理
         void addToReadyQueue(AbsRTTask *task);

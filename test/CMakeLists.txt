@@ -6,6 +6,7 @@ add_executable(
   scheduler/truefifo.cpp
   scheduler/rm.cpp
   scheduler/asap_block.cpp
+  scheduler/asap_sync.cpp
   scheduler/alap_block.cpp
   scheduler/alap_nonblock.cpp
   scheduler/alap_sync.cpp
