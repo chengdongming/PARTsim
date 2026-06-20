@@ -151,6 +151,14 @@ namespace RTSim {
         std::set<AbsRTTask *> _newly_dispatched_this_tick; // ⭐ V42：当前tick新调度的任务（用于跳过续期扣除）
         bool _in_tick_boundary_dispatch = false;  // ⭐ 标记是否在tick边界调度中（用于能量扣除时机控制）
         MetaSim::Tick _last_prediction_tick = -1;  // ⭐ 上次更新能量预测的tick（防止同一tick内重复预测）
+        MetaSim::Tick _selection_tick;
+        uint64_t _selection_generation;
+        bool _selection_frozen;
+        MetaSim::Tick _energy_commit_tick;
+        bool _energy_commit_valid;
+        std::set<AbsRTTask *> _paid_pending_tasks;
+        std::map<AbsRTTask *, MetaSim::Tick> _pending_payment_ticks;
+        std::set<AbsRTTask *> _paid_execution_credit_tasks;
         MetaSim::Tick _last_tick_time;       // 上次tick时间
         MetaSim::Tick _last_collection_time; // 上次能量收集时间
         ALAPNonBlockWakeEvent* _alap_wake_event = nullptr;
@@ -224,6 +232,8 @@ namespace RTSim {
         // ⭐ ALAP时序门控（阶段一）
         bool checkALAPTimingGate();  // 检查是否需要强制休眠
         MetaSim::Tick calculateSlackForTask(AbsRTTask *task);  // 计算任务的Slack
+        MetaSim::Tick calculateSlackForTask(
+            AbsRTTask *task, MetaSim::Tick current_time);
 
         // ⭐ 过期任务清理
         void cleanupExpiredTasks();  // 清理超过截止期的旧任务实例
@@ -250,6 +260,21 @@ namespace RTSim {
         void clearPersistentTaskState(AbsRTTask *task);
         void resetTickDispatchState();
         void clearTaskTickSelection(AbsRTTask *task);
+        std::vector<AbsRTTask *> collectActiveJobs(
+            MetaSim::Tick current_time);
+        std::vector<AbsRTTask *> collectALAPCandidates(
+            const std::vector<AbsRTTask *> &active_tasks,
+            MetaSim::Tick current_time);
+        bool hasHigherRMPriority(
+            AbsRTTask *lhs, AbsRTTask *rhs);
+        void sortByRMPriority(
+            std::vector<AbsRTTask *> &tasks);
+        double getConfiguredUnitEnergyForTask(
+            AbsRTTask *task) const;
+        void commitTickEnergy(
+            MetaSim::Tick tick, double energy);
+        void cancelStaleDispatches(
+            const std::vector<AbsRTTask *> &previous_selection);
         void markTaskSelectedThisTick(AbsRTTask *task);
         void accountInitialEnergyForSelectedTasks(const std::string &log_prefix);
         void refreshSchedulingAfterQueueMutation(const std::string &reason, bool immediate_dispatch = false);
@@ -352,6 +377,7 @@ namespace RTSim {
         // 友元类声明
         friend class ALAPNonBlockTickEvent;
         friend class ALAPNonBlockEnergyDepletedEvent;  // ⭐ Bug修复：能量耗尽预测事件
+        friend class ALAPNonBlockSchedulerTestPeer;
         // friend class ALAP-NonBlockEnergyCheckEvent;  /* V40重构：能量检查事件已删除 */
     };
 

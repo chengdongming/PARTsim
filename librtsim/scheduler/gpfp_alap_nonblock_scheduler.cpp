@@ -11,6 +11,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <stdexcept>
 #include <metasim/factory.hpp>
 #include <metasim/simul.hpp>
 #include <rtsim/scheduler/gpfp_alap_nonblock_scheduler.hpp>
@@ -269,6 +270,12 @@ namespace RTSim {
           _current_energy(0.0),
           _initial_energy(0.0),
           _max_energy(1000.0),
+          _dispatching_tasks_total_energy(0.0),
+          _selection_tick(-1),
+          _selection_generation(0),
+          _selection_frozen(false),
+          _energy_commit_tick(-1),
+          _energy_commit_valid(false),
           _last_tick_time(0),
           _last_collection_time(0),
           _solar_data_file(""),
@@ -475,232 +482,159 @@ namespace RTSim {
     // =====================================================
 
     void ALAPNonBlockScheduler::performTickScheduling() {
+        Tick current_time = SIMUL.getTime();
+        if (_selection_frozen && _selection_tick == current_time) {
+            SCHEDULER_LOG_DEBUG(
+                std::string("🛡️ [ALAP-NonBlock] 本tick选择已冻结，跳过重复决策 @ ") +
+                std::to_string(static_cast<int64_t>(current_time)) + "ms");
+            return;
+        }
+
         SCHEDULER_LOG_INFO(std::string("🔄 [ALAP-NonBlock] ===== Tick ") +
-                           std::to_string(static_cast<int64_t>(SIMUL.getTime())) + "ms =====");
-        SCHEDULER_LOG_INFO("⚡ 初始能量: " + std::to_string(_current_energy * 1000) + " mJ");
-
-        // ⭐ 每个Tick开始时清除抢占防抖标记
-        // 这样在下一个tick可以正常进行抢占检查
-        _last_preempted_task = nullptr;
-
+                           std::to_string(static_cast<int64_t>(current_time)) + "ms =====");
         _stats.total_tick_count++;
 
-        resetTickDispatchState();
-
-        Tick current_time = SIMUL.getTime();
-
-        // ========== 第1步：收集太阳能 ==========
-        // ⭐ 关键修复：太阳能收集必须在能量耗尽检查之前执行
-        // 否则当初始能量为0时，系统会因为能量耗尽而跳过太阳能收集，形成死锁
         Tick elapsed = current_time - _last_tick_time;
         if (elapsed > 0) {
             double harvested = collectSolarEnergy(current_time);
             if (harvested > 0.000001) {
                 _current_energy += harvested;
                 _stats.total_energy_harvested += harvested;
-                SCHEDULER_LOG_INFO("☀️ 收集太阳能: +" +
-                                   std::to_string(harvested * 1000) + " mJ → " +
-                                   std::to_string(_current_energy * 1000) + " mJ");
             }
         }
         _last_tick_time = current_time;
-
-        // ⭐ NonBlock语义修复：绝不因历史的energy_depleted标志全局锁死调度
-        // 只要当前能量重新大于0，就允许本tick继续尝试调度可运行任务
-        if (_energy_depleted && _current_energy > 0.000001) {
-            _energy_depleted = false;
-            SCHEDULER_LOG_INFO("🔋 [ALAP-NonBlock] 检测到能量恢复，解除历史energy_depleted标志");
-        }
-
-        // ⭐ NonBlock语义修复：energy_depleted只表示“当前这一tick无法续期运行任务”
-        // 不能演变成跨tick的全局充电休眠锁；下一次tick收集到能量后必须允许重新尝试调度
-        if (_energy_depleted && _current_energy < 0.000001) {
-            SCHEDULER_LOG_INFO(std::string("💀 [ALAP-NonBlock] 当前tick能量为0，仅跳过本tick调度"));
-            return;
-        }
-
-        // 确保能量不超过最大容量
         if (_current_energy > _max_energy) {
             _current_energy = _max_energy;
         }
 
-        // ========== 第1.5步：清理过期任务实例 ==========
-        // ⭐ 已改用killOnMiss(true)，框架自动处理过期实例
-        // cleanupExpiredTasks();
-
-        // ========== 阶段一：ALAP全局唤醒门控（定时器漏唤醒修复） ==========
-        // ⭐ 关键修复：必须调用checkALAPTimingGate()来设置唤醒定时器
-        // 否则当所有任务Slack>0时，系统不会设置_alap_wake_event定时器
-        // 导致任务永远无法被唤醒（Timer Miss Bug）
-        if (!checkALAPTimingGate()) {
-            SCHEDULER_LOG_INFO("💤 [ALAP-NonBlock] Slack > 0，系统休眠等待唤醒");
-            return;
-        }
-        SCHEDULER_LOG_INFO("✅ [ALAP-NonBlock] ALAP时序门控通过，允许调度");
-
-        // ========== 第2步：处理运行中任务的续期能量（V57 Greedy Bypass） ==========
-        // ⭐ V57重构：优先级排序 + 贪婪绕行
-        // NonBlock语义：大哥能量不足被挂起，小弟可以绕过大哥，独占剩余能量
-        // 逻辑：按优先级排序，逐个检查能量，阻塞则continue（不break）
         if (!_kernel) {
             _kernel = getKernel();
         }
+        if (!_kernel) {
+            SCHEDULER_LOG_WARNING(
+                "⚠️ [ALAP-NonBlock] _kernel为nullptr，跳过本tick调度");
+            return;
+        }
 
-        if (_kernel) {
-            const auto& running_tasks_map = _kernel->getCurrentExecutingTasks();
-            std::vector<AbsRTTask *> tasks_to_suspend;
-
-            SCHEDULER_LOG_INFO("🏃 检查运行任务: " +
-                               std::to_string(running_tasks_map.size()) + " 个");
-
-            // ⭐ V57 Greedy Bypass: 收集并按优先级排序
-            std::vector<AbsRTTask *> sorted_tasks;
-            for (const auto& [cpu, task] : running_tasks_map) {
-                if (!task || !task->isActive()) continue;
-                // ⭐ V42修复：跳过当前tick中新调度的任务（能量已在getTaskN中扣除）
-                if (_newly_dispatched_this_tick.find(task) != _newly_dispatched_this_tick.end()) {
-                    SCHEDULER_LOG_DEBUG(std::string("⏭️ [ALAP-NonBlock] 跳过新任务的续期扣除: ") + getTaskName(task));
-                    continue;
-                }
-                sorted_tasks.push_back(task);
-            }
-
-            // ⭐ 按优先级排序（周期越小 = 优先级越高，排在前面的先检查）
-            std::sort(sorted_tasks.begin(), sorted_tasks.end(),
-                [this](AbsRTTask* a, AbsRTTask* b) {
-                    return a->getPeriod() < b->getPeriod();
-                });
-
-            const double EPSILON = 1e-9;
-            double available_energy = _current_energy;
-
-            for (AbsRTTask *task : sorted_tasks) {
-                double unit_energy = calculateUnitEnergyForTask(task);
-
-                if (available_energy >= unit_energy - EPSILON) {
-                    // 能量足够，续期成功
-                    double old_energy = _current_energy;
-                    _current_energy -= unit_energy;
-                    available_energy -= unit_energy;
-                    if (_current_energy < 0.0) _current_energy = 0.0;
-                    _stats.total_energy_consumed += unit_energy;
-
-                    SCHEDULER_LOG_INFO("⚡ [ALAP-NonBlock] 续期成功: " + getTaskName(task) +
-                                       " -" + std::to_string(unit_energy * 1000) + " mJ " +
-                                       std::to_string(old_energy * 1000) + " → " +
-                                       std::to_string(_current_energy * 1000) + " mJ");
-                } else {
-                    // ⭐ Greedy Bypass: 大哥能量不足被挂起，小弟继续尝试
-                    SCHEDULER_LOG_WARNING("⚠️ [ALAP-NonBlock] 续期能量不足: " + getTaskName(task) +
-                                         " 需要=" + std::to_string(unit_energy * 1000) + " mJ " +
-                                         " 剩余=" + std::to_string(available_energy * 1000) + " mJ");
-                    tasks_to_suspend.push_back(task);
-                    // ⭐ 关键：不break，continue让低优先级任务继续尝试（贪婪绕行）
-                }
-            }
-
-            // 挂起能量不足的任务
-            for (AbsRTTask *task : tasks_to_suspend) {
-                clearTaskTickSelection(task);
-                setSuspendReason(task, "insufficient_energy");
-                _kernel->suspend(task);
-                SCHEDULER_LOG_INFO("🛑 [ALAP-NonBlock] Greedy Bypass挂起: " + getTaskName(task));
+        const auto &running_tasks_map =
+            _kernel->getCurrentExecutingTasks();
+        std::set<AbsRTTask *> running_tasks;
+        for (const auto &[cpu, task] : running_tasks_map) {
+            (void)cpu;
+            if (task && task->isExecuting()) {
+                running_tasks.insert(task);
             }
         }
 
-        // ========== 第3步：检查抢占 ==========
-        // checkAndPreempt();  // 禁用tick边界抢占，防止suspend-insert循环
+        std::vector<AbsRTTask *> active_tasks =
+            collectActiveJobs(current_time);
+        std::vector<AbsRTTask *> candidates =
+            collectALAPCandidates(active_tasks, current_time);
+        sortByRMPriority(candidates);
 
-        // ========== 第4步：调度新任务 ==========
-        if (_kernel) {
-            SCHEDULER_LOG_INFO("🔔 开始调度新任务");
+        std::vector<AbsRTTask *> previous_selection =
+            _dispatch_selection_order;
+        std::vector<AbsRTTask *> selected_tasks;
+        std::set<AbsRTTask *> newly_paid_pending_tasks;
+        double tick_energy = 0.0;
+        const double epsilon = 1e-9;
+        const size_t processor_count = running_tasks_map.size();
 
-            // 记录调度前的能量
-            double energy_before_scheduling = _current_energy;
-
-            // ⭐ 关键：先扣除已标记但未扣除的任务能量（来自arrival或onTaskEnd的dispatch）
-            accountInitialEnergyForSelectedTasks("✅ [ALAP-NonBlock] 扣除上周期任务初始能量: ");
-
-            // ⭐ 清空本次tick的调度记录
-            _counted_tasks_in_dispatch.clear();
-            _dispatching_tasks_total_energy = 0.0;
-
-            // ⭐ ALAP-NonBlock关键修复：循环调用dispatch()直到所有CPU被填满或无法调度更多任务
-            int dispatch_attempts = 0;
-            const int MAX_DISPATCH_ITERATIONS = 100;  // 防止无限循环
-
-            while (dispatch_attempts < MAX_DISPATCH_ITERATIONS) {
-                // 检查是否所有CPU都已填满
-                // ⭐ 关键修复：_running_tasks为空时不应认为所有CPU已满
-                bool all_cpus_full = false;
-                if (!_running_tasks.empty()) {
-                    all_cpus_full = true;
-                    for (auto &map_pair : _running_tasks) {
-                        if (map_pair.second == nullptr) {
-                            all_cpus_full = false;
-                            break;
-                        }
-                    }
-                }
-
-                if (all_cpus_full) {
-                    SCHEDULER_LOG_DEBUG("✅ [ALAP-NonBlock] 所有CPU已填满，停止调度");
-                    break;
-                }
-
-                // 记录调度前的任务数
-                size_t tasks_before = _ready_queue.size() + _running_tasks.size();
-
-                // 调用dispatch尝试调度更多任务
-                _kernel->dispatch();
-                dispatch_attempts++;
-
-                // 记录调度后的任务数
-                size_t tasks_after = _ready_queue.size() + _running_tasks.size();
-
-                // 如果没有任务被调度（状态没变化），停止调度
-                if (tasks_before == tasks_after) {
-                    SCHEDULER_LOG_DEBUG("⏹️ [ALAP-NonBlock] 无更多任务可调度，停止dispatch循环");
-                    break;
-                }
-
-                SCHEDULER_LOG_DEBUG(std::string("🔄 [ALAP-NonBlock] dispatch循环 #") + std::to_string(dispatch_attempts) +
-                                   " _ready_queue.size()=" + std::to_string(_ready_queue.size()) +
-                                   " _running_tasks.size()=" + std::to_string(_running_tasks.size()));
+        for (AbsRTTask *task : candidates) {
+            if (selected_tasks.size() >= processor_count) {
+                break;
             }
 
-            if (dispatch_attempts >= MAX_DISPATCH_ITERATIONS) {
-                SCHEDULER_LOG_WARNING("⚠️ [ALAP-NonBlock] dispatch循环达到最大迭代次数，可能存在bug");
+            const bool is_running =
+                running_tasks.find(task) != running_tasks.end();
+            const bool has_execution_credit =
+                is_running &&
+                _paid_execution_credit_tasks.find(task) !=
+                    _paid_execution_credit_tasks.end();
+            const bool is_prepaid_pending =
+                !is_running &&
+                _paid_pending_tasks.find(task) !=
+                    _paid_pending_tasks.end();
+            const double task_energy =
+                (has_execution_credit || is_prepaid_pending)
+                    ? 0.0
+                    : getConfiguredUnitEnergyForTask(task);
+
+            if (tick_energy + task_energy >
+                _current_energy + epsilon) {
+                _stats.total_skipped_energy++;
+                continue;  // NonBlock: lower-priority candidates may bypass.
             }
 
-            // ⭐ 关键：在dispatch后，统一扣除所有已标记任务的能量
-            // 只扣除尚未扣除过的任务（检查_energy_deducted_tasks）
-            accountInitialEnergyForSelectedTasks("✅ [ALAP-NonBlock] 新任务扣除初始能量: ");
+            selected_tasks.push_back(task);
+            tick_energy += task_energy;
+            if (!is_running && !is_prepaid_pending) {
+                newly_paid_pending_tasks.insert(task);
+            }
         }
 
-        // ⭐ V57捉鬼：废除全局能量耗尽预测！
-        // NonBlock语义：不需要预测"何时全局耗尽"，每个任务独立判断
-        // Greedy Bypass已通过逐级剥夺逻辑处理所有情况
-        if (_last_prediction_tick == current_time) {
-            SCHEDULER_LOG_DEBUG("⏭️ [ALAP-NonBlock] 跳过重复预测（本tick已更新）");
-        } else {
-            _last_prediction_tick = current_time;
-            cancelEnergyDepletionEvent();
-            // ⭐ V57：不再注册任何全局耗尽事件！
+        _selection_tick = current_time;
+        _selection_generation++;
+        _selection_frozen = true;
+        _dispatch_selection_order = selected_tasks;
+        _dispatching_tasks_total_energy = tick_energy;
+
+        commitTickEnergy(current_time, tick_energy);
+
+        for (AbsRTTask *task : selected_tasks) {
+            if (running_tasks.find(task) != running_tasks.end()) {
+                _paid_execution_credit_tasks.erase(task);
+                _paid_pending_tasks.erase(task);
+                _pending_payment_ticks.erase(task);
+            }
+        }
+        for (AbsRTTask *task : newly_paid_pending_tasks) {
+            _paid_pending_tasks.insert(task);
+            _pending_payment_ticks[task] = current_time;
+        }
+        for (auto it = _paid_pending_tasks.begin();
+             it != _paid_pending_tasks.end();) {
+            if (std::find(selected_tasks.begin(),
+                          selected_tasks.end(),
+                          *it) == selected_tasks.end()) {
+                _pending_payment_ticks.erase(*it);
+                it = _paid_pending_tasks.erase(it);
+            } else {
+                ++it;
+            }
         }
 
-        // ========== 第5步：调度后抢占检查 ==========
-        // ⭐ V44修复：在调度新任务后进行抢占检查
-        // 原因：需要让新任务先调度完成，然后再检查是否需要抢占
-        // 这样可以避免"刚调度就被抢占"的问题
-        // ��时确保在tick边界统一进行抢占决策
-        checkAndPreempt();
+        cancelStaleDispatches(previous_selection);
 
-        SCHEDULER_LOG_INFO("✅ Tick " +
-                           std::to_string(static_cast<int64_t>(current_time)) +
-                           "ms 完成, 剩余能量: " +
-                           std::to_string(_current_energy * 1000) + " mJ");
+        const std::set<AbsRTTask *> selected_set(
+            selected_tasks.begin(), selected_tasks.end());
+        for (AbsRTTask *task : running_tasks) {
+            if (selected_set.find(task) != selected_set.end()) {
+                continue;
+            }
+            setSuspendReason(task, "preemption");
+            _kernel->suspend(task);
+        }
+
+        _energy_depleted = selected_tasks.empty() && !candidates.empty();
+
+        if (!selected_tasks.empty()) {
+            _kernel->dispatch();
+        }
+
+        SCHEDULER_LOG_INFO(
+            std::string("📊 [ALAP-NonBlock] Tick选择: active=") +
+            std::to_string(active_tasks.size()) +
+            " candidates=" +
+            std::to_string(candidates.size()) +
+            " selected=" +
+            std::to_string(selected_tasks.size()) +
+            " 扣减=" +
+            std::to_string(tick_energy * 1000) + " mJ" +
+            " 剩余=" +
+            std::to_string(_current_energy * 1000) + " mJ");
     }
+
 
     void ALAPNonBlockScheduler::schedule() {
         // ALAP-NonBlock依赖MRTKernel::dispatch() -> getTaskN()流程
@@ -712,292 +646,27 @@ namespace RTSim {
     // =====================================================
 
     AbsRTTask *ALAPNonBlockScheduler::getFirst() {
-        SCHEDULER_LOG_DEBUG(std::string("🔍 [ALAP-NonBlock] getFirst() 被调用") +
-                           " 当前能量: " + std::to_string(_current_energy) + "J");
-
-        // ⭐ 核心：不在这里收集能量，能量收集在tick边界完成
-
-        if (_ready_queue.empty()) {
-            SCHEDULER_LOG_DEBUG("📭 [ALAP-NonBlock] getFirst: 就绪队列为空");
-            return nullptr;
-        }
-
-        AbsRTTask *first_task = _ready_queue.front();
-        if (!first_task) {
-            SCHEDULER_LOG_DEBUG("📭 [ALAP-NonBlock] getFirst: 队列首任务为空");
-            return nullptr;
-        }
-
-        // ⭐ 核心：即时能量判断（当前能量 >= 1ms能耗）
-        double unit_energy = calculateUnitEnergyForTask(first_task);
-
-        if (_current_energy < unit_energy) {
-            SCHEDULER_LOG_INFO(std::string("❌ [ALAP-NonBlock] getFirst: 能量不足") +
-                              " 任务: " + getTaskName(first_task) +
-                              " 需要: " + std::to_string(unit_energy) + "J" +
-                              " 当前: " + std::to_string(_current_energy) + "J");
-            return nullptr;
-        }
-
-        // 返回任务（能量在notify时扣减）
-        return first_task;
+        return getTaskN(0);
     }
 
     // =====================================================
-    // getTaskN - 获取第n个要调度的任务（贪婪策略级联调度）
+    // getTaskN - 只返回当前tick冻结选择
     // =====================================================
 
     AbsRTTask *ALAPNonBlockScheduler::getTaskN(unsigned int n) {
-        // ⭐ NonBlock语义修复：不要因历史的energy_depleted标志阻断新的tick调度
-        // 只要当前能量已恢复到可用，就允许继续按ALAP规则挑选任务
-        if (_energy_depleted && _current_energy < 0.000001) {
-            SCHEDULER_LOG_DEBUG(std::string("💀 [ALAP-NonBlock] getTaskN: 当前tick能量为0，拒绝调度") +
-                               " n=" + std::to_string(n) +
-                               " energy=" + std::to_string(_current_energy * 1000) + " mJ");
+        if (!_selection_frozen ||
+            _selection_tick != SIMUL.getTime()) {
+            return nullptr;
+        }
+        if (n >= _dispatch_selection_order.size()) {
             return nullptr;
         }
 
-        SCHEDULER_LOG_DEBUG(std::string("🔍 [ALAP-NonBlock] getTaskN(") + std::to_string(n) + ") 被调用" +
-                           " 当前能量: " + std::to_string(_current_energy) + "J" +
-                           " 已调度能耗=" + std::to_string(_dispatching_tasks_total_energy) + "J");
-
-        if (_ready_queue.empty()) {
-            SCHEDULER_LOG_DEBUG("📭 [ALAP-NonBlock] getTaskN: 就绪队列为空");
+        AbsRTTask *task = _dispatch_selection_order[n];
+        if (!task || !task->isActive()) {
             return nullptr;
         }
-
-        if (n < _dispatch_selection_order.size()) {
-            AbsRTTask *selected_task = _dispatch_selection_order[n];
-            if (selected_task && selected_task->isActive() &&
-                _counted_tasks_in_dispatch.find(selected_task) != _counted_tasks_in_dispatch.end()) {
-                SCHEDULER_LOG_DEBUG(std::string("♻️ [ALAP-NonBlock] 复用本轮dispatch已选任务: ") +
-                                   getTaskName(selected_task) +
-                                   " slot=" + std::to_string(n));
-                return selected_task;
-            }
-        }
-
-        // ⭐ ALAP时序门控：不再在getTaskN中调用全局min_slack检查（性能瓶颈）
-        // 改为在遍历任务时逐个检查个体Slack，只调度Slack≤0的任务
-        // 效果等价：如果所有任务Slack>0，getTaskN返回nullptr
-
-        // ⭐ 级联调度：遍历就绪队列，运行中任务也要检查能量
-        unsigned int ready_index = 0;
-        const double EPSILON = 1e-9;
-
-        auto tryOpportunisticBypass = [&](size_t blocked_index,
-                                          AbsRTTask *blocked_task,
-                                          const std::string &blocked_reason) -> AbsRTTask * {
-            Tick blocked_deadline = Tick(0);
-            bool has_blocked_deadline = false;
-            if (blocked_task) {
-                ALAPNonBlockTaskModel *blocked_model = getTaskModel(blocked_task);
-                if (blocked_model) {
-                    blocked_deadline = blocked_task->getArrival() + Tick(blocked_model->getPeriod());
-                    has_blocked_deadline = true;
-                }
-            }
-
-            for (size_t j = blocked_index + 1; j < _ready_queue.size(); ++j) {
-                AbsRTTask *next_task = _ready_queue[j];
-                if (!next_task || !next_task->isActive()) {
-                    continue;
-                }
-
-                if (_counted_tasks_in_dispatch.find(next_task) != _counted_tasks_in_dispatch.end()) {
-                    SCHEDULER_LOG_DEBUG(std::string("  [ALAP-NonBlock] 贪心搜索：跳过已调度任务: ") + getTaskName(next_task));
-                    continue;
-                }
-
-                bool next_is_running = false;
-                if (_kernel) {
-                    CPU *proc = _kernel->getProcessor(next_task);
-                    next_is_running = (proc != nullptr);
-                }
-
-                if (next_is_running) {
-                    continue;
-                }
-
-                PeriodicTask *pt = dynamic_cast<PeriodicTask *>(next_task);
-                if (pt) {
-                    Tick remaining = pt->getWCET() - pt->getExecTime();
-                    if (remaining > 0 && remaining < pt->getWCET()) {
-                        SCHEDULER_LOG_DEBUG(std::string("  [ALAP-NonBlock] 贪心搜索：跳过被抢占的任务: ") +
-                                          getTaskName(next_task) +
-                                          " 剩余=" + std::to_string(static_cast<int64_t>(remaining)) +
-                                          " WCET=" + std::to_string(static_cast<int64_t>(pt->getWCET())));
-                        continue;
-                    }
-                }
-
-                ALAPNonBlockTaskModel *next_model = getTaskModel(next_task);
-                if (next_model) {
-                    Tick next_arrival = next_task->getArrival();
-                    Tick next_deadline = next_arrival + Tick(next_model->getPeriod());
-                    if (next_deadline <= SIMUL.getTime()) {
-                        continue;
-                    }
-
-                    // 缺电旁路不能让截止期晚于阻塞任务的任务偷走更紧急任务面前的残余能量。
-                    // deadline 相等时允许旁路，与“更早或相等均可”的目标语义保持一致。
-                    if (has_blocked_deadline && next_deadline > blocked_deadline) {
-                        SCHEDULER_LOG_DEBUG(std::string("  [ALAP-NonBlock] 贪心搜索：跳过deadline晚于阻塞任务的旁路任务: ") +
-                                            getTaskName(next_task) +
-                                            " candidate_deadline=" + std::to_string(static_cast<int64_t>(next_deadline)) +
-                                            " blocked_deadline=" + std::to_string(static_cast<int64_t>(blocked_deadline)));
-                        continue;
-                    }
-                }
-
-                Tick next_slack = calculateSlackForTask(next_task);
-                if (next_slack > 0) {
-                    SCHEDULER_LOG_DEBUG(std::string("  [ALAP-NonBlock] 贪心搜索：跳过Slack>0任务: ") +
-                                        getTaskName(next_task) +
-                                        " Slack=" + std::to_string(static_cast<int64_t>(next_slack)) + "ms");
-                    continue;
-                }
-
-                double next_unit_energy = calculateUnitEnergyForTask(next_task);
-                double next_available = _current_energy - _dispatching_tasks_total_energy;
-                if (next_available < next_unit_energy - EPSILON) {
-                    continue;
-                }
-
-                if (_counted_tasks_in_dispatch.find(next_task) == _counted_tasks_in_dispatch.end()) {
-                    markTaskSelectedThisTick(next_task);
-
-                    SCHEDULER_LOG_INFO(std::string("✅ [ALAP-NonBlock] 缺电旁路：调度后续且已到ALAP时刻的任务（已标记，暂不扣能量）") +
-                                      " 原因=" + blocked_reason +
-                                      " 替换=" + getTaskName(blocked_task) +
-                                      " → " + getTaskName(next_task) +
-                                      " Slack=" + std::to_string(static_cast<int64_t>(next_slack)) + "ms" +
-                                      " 1ms能耗=" + std::to_string(next_unit_energy * 1000) + " mJ" +
-                                      " 剩余=" + std::to_string(next_available * 1000) + " mJ");
-                }
-
-                return next_task;
-            }
-
-            return nullptr;
-        };
-
-        for (size_t i = 0; i < _ready_queue.size(); ++i) {
-            AbsRTTask *task = _ready_queue[i];
-
-            if (!task) {
-                continue;
-            }
-
-            // ⭐ killOnMiss安全检查：跳过已被框架终止的任务实例
-            if (!task->isActive()) {
-                continue;
-            }
-
-            // ⭐ 关键修复：不再跳过已调度的任务（与TIE保持一致）
-            // _counted_tasks_in_dispatch只是用于跟踪本次tick中已扣除能量的任务
-            // 避免重复扣除能量
-            // 重复调度的问题由内核的_m_dispatched检查来处理
-            bool is_running_check = false;
-            if (_kernel) {
-                CPU *proc = _kernel->getProcessor(task);
-                is_running_check = (proc != nullptr);
-            }
-
-            // 检查是否已在本tick中扣除过能量
-            // ⭐ V29.1修复：运行中任务的续期由ALAP-NonBlockEnergyCheckEvent处理
-            // getTaskN()只负责新任务，运行中任务直接返回
-            if (is_running_check) {
-                if (ready_index == n) {
-                    return task;
-                }
-                ready_index++;
-                continue;
-            }
-
-            // 这是第ready_index个未dispatch的任务
-            if (ready_index == n) {
-                // ⭐ 关键修复：跳过已过期的任务实例
-                ALAPNonBlockTaskModel *task_model = getTaskModel(task);
-                if (task_model) {
-                    Tick arrival = task->getArrival();
-                    Tick deadline = arrival + Tick(task_model->getPeriod());
-                    Tick current_time = SIMUL.getTime();
-                    if (deadline <= current_time) {
-                        SCHEDULER_LOG_INFO(std::string("🧹 [ALAP-NonBlock] getTaskN: 跳过过期任务 ") +
-                                          getTaskName(task) +
-                                          " deadline=" + std::to_string(static_cast<int64_t>(deadline)) +
-                                          " current=" + std::to_string(static_cast<int64_t>(current_time)));
-                        continue;
-                    }
-                }
-
-                Tick individual_slack = calculateSlackForTask(task);
-                double unit_energy = calculateUnitEnergyForTask(task);
-                double available_energy = _current_energy - _dispatching_tasks_total_energy;
-
-                // 纯 ALAP 约束：如果更高优先级任务虽然还没到 ALAP 时刻，但当前残余能量连它都无法启动，
-                // 那么本轮不能继续向后搜索更低优先级任务，否则就变成了对 Slack>0 主候选的非法绕过。
-                if (individual_slack > 0) {
-                    if (available_energy < unit_energy - EPSILON) {
-                        SCHEDULER_LOG_INFO(std::string("⛔ [ALAP-NonBlock] getTaskN: 更高优先级任务Slack>0且当前能量不足，禁止绕过 ") +
-                                          getTaskName(task) +
-                                          " Slack=" + std::to_string(static_cast<int64_t>(individual_slack)) + "ms" +
-                                          " 需要1ms=" + std::to_string(unit_energy) + "J" +
-                                          " 剩余=" + std::to_string(available_energy) + "J");
-                        return nullptr;
-                    }
-
-                    SCHEDULER_LOG_INFO(std::string("⏸️ [ALAP-NonBlock] getTaskN: 主候选Slack>0，保持纯ALAP空闲 ") +
-                                      getTaskName(task) +
-                                      " Slack=" + std::to_string(static_cast<int64_t>(individual_slack)) + "ms");
-                    continue;
-                }
-
-                // ⭐ 全局ALAP时序门控已在函数开头检查，这里按优先级调度
-                // ⭐ 计算任务的1ms能耗
-
-                // 缺电时不再提前处决，只保留NonBlock的贪心旁路搜索
-                if (available_energy < unit_energy - EPSILON) {
-                    SCHEDULER_LOG_INFO(std::string("⚠️ [ALAP-NonBlock] 任务能量不足，跳过（保留任务等待真实deadline）") +
-                                      " 任务=" + getTaskName(task) +
-                                      " 需要1ms=" + std::to_string(unit_energy) + "J" +
-                                      " 已调度能耗=" + std::to_string(_dispatching_tasks_total_energy) + "J" +
-                                      " 剩余=" + std::to_string(available_energy) + "J");
-
-                    if (AbsRTTask *bypass_task = tryOpportunisticBypass(i, task, "energy_insufficient")) {
-                        return bypass_task;
-                    }
-
-                    // 没有找到能量足够的任务
-                    SCHEDULER_LOG_INFO(std::string("⚠️ [ALAP-NonBlock] 贪心策略：未找到能量足够的任务"));
-                    return nullptr;
-                }
-
-                // ⭐ 能量足够，正常调度
-                // ⭐ V41修复���对于新任务（非运行中），立即扣除初始能量
-                // 这解决了tick边界处理时序问题（任务在tick结束时被调度，但能量在下一tick才扣除）
-                if (!is_running_check) {
-                    // 新任务：检查是否已扣除过初始能量
-                    if (_counted_tasks_in_dispatch.find(task) == _counted_tasks_in_dispatch.end()) {
-                        // 首次调度此任务，标记任务
-                        markTaskSelectedThisTick(task);
-
-                        SCHEDULER_LOG_INFO(std::string("✅ [ALAP-NonBlock] 新任务已标记（暂不扣能量）: ") + getTaskName(task) +
-                                          " 1ms能耗=" + std::to_string(unit_energy * 1000) + " mJ");
-                    }
-                    // 否则已标记过，直接返回任务
-                    return task;
-                }
-                // 运行中任务不需要标记，因为它们已经扣除过初始能量
-                return task;
-            } else {
-                // ⭐ V32关键修复：不是我们要找的第n个任务，继续寻找
-                ready_index++;
-            }
-        }
-
-        return nullptr;
+        return task;
     }
 
     // =====================================================
@@ -1005,14 +674,24 @@ namespace RTSim {
     // =====================================================
 
     void ALAPNonBlockScheduler::notify(AbsRTTask *task) {
+        Scheduler::notify(task);
+
         if (!task) {
             return;
         }
 
-        // 缺电实例也必须进入系统生命周期，等待后续 ALAP 门控 / 旁路逻辑决定是否上机。
-        SCHEDULER_LOG_INFO(std::string("📥 [ALAP-NonBlock] 任务到达并添加到就绪队列（不再做arrival能量门槛）: ") +
-                          getTaskName(task));
-        addToReadyQueue(task);
+        auto payment_it = _pending_payment_ticks.find(task);
+        if (payment_it != _pending_payment_ticks.end()) {
+            if (SIMUL.getTime() > payment_it->second) {
+                _paid_execution_credit_tasks.insert(task);
+            }
+            _pending_payment_ticks.erase(payment_it);
+            _paid_pending_tasks.erase(task);
+        }
+
+        if (!isInReadyQueue(task) && !isInWaitingQueue(task)) {
+            addToReadyQueue(task);
+        }
     }
 
     // =====================================================
@@ -1534,13 +1213,16 @@ namespace RTSim {
     // =====================================================
 
     double ALAPNonBlockScheduler::calculateUnitEnergyForTask(AbsRTTask *task) {
+        if (_paid_pending_tasks.find(task) !=
+            _paid_pending_tasks.end()) {
+            return 0.0;
+        }
         ALAPNonBlockTaskModel *model = getTaskModel(task);
         if (!model) {
             SCHEDULER_LOG_WARNING("⚠️ [ALAP-NonBlock] calculateUnitEnergyForTask: 任务模型不存在");
             return 0.0;
         }
 
-        // 返回预先计算的每ms能耗
         return model->getUnitEnergy();
     }
 
@@ -1859,6 +1541,9 @@ namespace RTSim {
         clearTaskTickSelection(task);
         _energy_deducted_tasks.erase(task);
         _energy_accounts.erase(task);
+        _paid_pending_tasks.erase(task);
+        _pending_payment_ticks.erase(task);
+        _paid_execution_credit_tasks.erase(task);
 
         if (_last_preempted_task == task) {
             _last_preempted_task = nullptr;
@@ -1871,6 +1556,8 @@ namespace RTSim {
         _counted_tasks_in_dispatch.clear();
         _dispatch_selection_order.clear();
         _dispatching_tasks_total_energy = 0.0;
+        _selection_tick = Tick(-1);
+        _selection_frozen = false;
     }
 
     void ALAPNonBlockScheduler::clearTaskTickSelection(AbsRTTask *task) {
@@ -1888,6 +1575,142 @@ namespace RTSim {
             std::remove(_dispatch_selection_order.begin(), _dispatch_selection_order.end(), task),
             _dispatch_selection_order.end());
         _newly_dispatched_this_tick.erase(task);
+    }
+
+    std::vector<AbsRTTask *>
+    ALAPNonBlockScheduler::collectActiveJobs(Tick current_time) {
+        std::vector<AbsRTTask *> active_tasks;
+        auto add_active =
+            [&active_tasks, current_time](
+                AbsRTTask *task, bool running) {
+                if (!task || task->getArrival() > current_time) {
+                    return;
+                }
+                if (!running && !task->isActive()) {
+                    return;
+                }
+                if (task->getRemainingWCET() <= 0.0) {
+                    return;
+                }
+                if (std::find(
+                        active_tasks.begin(),
+                        active_tasks.end(),
+                        task) == active_tasks.end()) {
+                    active_tasks.push_back(task);
+                }
+            };
+
+        if (_kernel) {
+            for (const auto &[cpu, task] :
+                 _kernel->getCurrentExecutingTasks()) {
+                (void)cpu;
+                add_active(
+                    task,
+                    task && task->isExecuting());
+            }
+        }
+        for (AbsRTTask *task : _ready_queue) {
+            add_active(task, false);
+        }
+        return active_tasks;
+    }
+
+    std::vector<AbsRTTask *>
+    ALAPNonBlockScheduler::collectALAPCandidates(
+        const std::vector<AbsRTTask *> &active_tasks,
+        Tick current_time) {
+        std::vector<AbsRTTask *> candidates;
+        for (AbsRTTask *task : active_tasks) {
+            if (calculateSlackForTask(task, current_time) <=
+                Tick(0)) {
+                candidates.push_back(task);
+            }
+        }
+        return candidates;
+    }
+
+    bool ALAPNonBlockScheduler::hasHigherRMPriority(
+        AbsRTTask *lhs, AbsRTTask *rhs) {
+        if (lhs == rhs) {
+            return false;
+        }
+
+        ALAPNonBlockTaskModel *lhs_model = getTaskModel(lhs);
+        ALAPNonBlockTaskModel *rhs_model = getTaskModel(rhs);
+        if (lhs_model && rhs_model &&
+            lhs_model->getRMPriority() !=
+                rhs_model->getRMPriority()) {
+            return lhs_model->getRMPriority() <
+                   rhs_model->getRMPriority();
+        }
+        return lhs->getTaskNumber() < rhs->getTaskNumber();
+    }
+
+    void ALAPNonBlockScheduler::sortByRMPriority(
+        std::vector<AbsRTTask *> &tasks) {
+        std::stable_sort(
+            tasks.begin(),
+            tasks.end(),
+            [this](AbsRTTask *lhs, AbsRTTask *rhs) {
+                return hasHigherRMPriority(lhs, rhs);
+            });
+    }
+
+    double ALAPNonBlockScheduler::getConfiguredUnitEnergyForTask(
+        AbsRTTask *task) const {
+        auto it = _task_models.find(task);
+        if (it == _task_models.end() || !it->second) {
+            return 0.0;
+        }
+        return it->second->getUnitEnergy();
+    }
+
+    void ALAPNonBlockScheduler::commitTickEnergy(
+        Tick tick, double energy) {
+        if (_energy_commit_valid &&
+            _energy_commit_tick == tick) {
+            throw std::logic_error(
+                "ALAP-NonBlock energy committed more than once in one tick");
+        }
+        if (energy < 0.0 ||
+            _current_energy + 1e-9 < energy) {
+            throw std::logic_error(
+                "ALAP-NonBlock attempted to commit unaffordable energy");
+        }
+
+        _current_energy =
+            std::max(0.0, _current_energy - energy);
+        _stats.total_energy_consumed += energy;
+        _energy_commit_tick = tick;
+        _energy_commit_valid = true;
+    }
+
+    void ALAPNonBlockScheduler::cancelStaleDispatches(
+        const std::vector<AbsRTTask *> &previous_selection) {
+        bool has_stale_dispatch = false;
+        for (AbsRTTask *task : previous_selection) {
+            if (!task || _kernel->getProcessor(task) != nullptr) {
+                continue;
+            }
+            if (std::find(
+                    _dispatch_selection_order.begin(),
+                    _dispatch_selection_order.end(),
+                    task) ==
+                _dispatch_selection_order.end()) {
+                has_stale_dispatch = true;
+                break;
+            }
+        }
+        if (!has_stale_dispatch) {
+            return;
+        }
+
+        for (const auto &[cpu, running] :
+             _kernel->getCurrentExecutingTasks()) {
+            if (!running && _kernel->isCPUDispatching(cpu)) {
+                _kernel->dispatch(cpu);
+            }
+        }
     }
 
     void ALAPNonBlockScheduler::markTaskSelectedThisTick(AbsRTTask *task) {
@@ -2037,6 +1860,17 @@ namespace RTSim {
         _waiting_queue.clear();
         _energy_accounts.clear();
         _running_tasks.clear();
+        _counted_tasks_in_dispatch.clear();
+        _dispatch_selection_order.clear();
+        _dispatching_tasks_total_energy = 0.0;
+        _selection_tick = Tick(-1);
+        _selection_generation = 0;
+        _selection_frozen = false;
+        _energy_commit_tick = Tick(-1);
+        _energy_commit_valid = false;
+        _paid_pending_tasks.clear();
+        _pending_payment_ticks.clear();
+        _paid_execution_credit_tasks.clear();
 
         _stats.total_scheduled = 0;
         _stats.total_task_completions = 0;
@@ -2267,36 +2101,28 @@ namespace RTSim {
 
 
     MetaSim::Tick ALAPNonBlockScheduler::calculateSlackForTask(AbsRTTask *task) {
-        if (!task) return MetaSim::Tick(0);
+        return calculateSlackForTask(task, SIMUL.getTime());
+    }
 
-        Tick current_time = SIMUL.getTime();
-        Tick arrival = task->getArrival();
-        int period_int = task->getPeriod();
-        Tick period = Tick(period_int > 0 ? period_int : 100);
-        Tick absolute_deadline = arrival + period;
-
-        double remaining_double = task->getRemainingWCET();
-
-        // ⭐ V76关键修复：处理剩余时间为负的情况
-        // 原因：当任务被suspend时，execdTime可能被累加导致超过WCET
-        // 修复：剩余时间最小为0（任务已完成或超时）
-        if (remaining_double < 0) {
-            remaining_double = 0;
-        }
-
-        Tick remaining = Tick(remaining_double);
-
-        // ⭐ 关键修复：任务必须在到达后才能计算有效的Slack
-        // 如果任务还没到达（arrival > current_time），返回0表示可以立即调度
-        // 这样可以确保唤醒时间计算正确，不会漏掉任何紧迫任务
-        if (arrival > current_time) {
-            // 任务还没到达，其"有效 Slack"应该是从当前到到达的时间
-            // 实际上任务未到达时，其 effective slack = 0（可以立即执行）
-            // 因为 ALAP 的核心是"尽可能晚"，未到达的任务应该被立即调度（如果能量足够）
+    MetaSim::Tick ALAPNonBlockScheduler::calculateSlackForTask(
+        AbsRTTask *task, Tick current_time) {
+        if (!task) {
             return MetaSim::Tick(0);
         }
 
-        Tick slack = absolute_deadline - remaining - current_time;
+        if (task->getArrival() > current_time) {
+            return task->getArrival() - current_time;
+        }
+
+        const Tick absolute_deadline = task->getDeadline();
+        const double remaining_double =
+            std::max(0.0, task->getRemainingWCET());
+        const auto remaining_ticks =
+            static_cast<Tick::impl_t>(
+                std::ceil(remaining_double));
+        const Tick remaining(remaining_ticks);
+        const Tick slack =
+            absolute_deadline - remaining - current_time;
 
         SCHEDULER_LOG_DEBUG("🧮 [ALAP-NonBlock] Slack计算: " +
                            getTaskName(task) +

@@ -7,6 +7,7 @@ add_executable(
   scheduler/rm.cpp
   scheduler/asap_block.cpp
   scheduler/alap_block.cpp
+  scheduler/alap_nonblock.cpp
 )
 
 target_link_libraries(
