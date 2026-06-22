@@ -11,6 +11,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <stdexcept>
 #include <metasim/factory.hpp>
 #include <metasim/simul.hpp>
 #include <rtsim/scheduler/gpfp_st_block_scheduler.hpp>
@@ -144,6 +145,12 @@ namespace RTSim {
           _initial_energy(0.0),
           _max_energy(1000.0),
           _dispatching_tasks_total_energy(0.0),  // ⭐ V130修复：初始化
+          _selection_tick(-1),
+          _selection_generation(0),
+          _selection_frozen(false),
+          _energy_commit_tick(-1),
+          _energy_commit_generation(0),
+          _energy_commit_valid(false),
           _last_tick_time(0),
           _last_collection_time(0),
           _solar_data_file(""),
@@ -376,8 +383,16 @@ namespace RTSim {
     // =====================================================
 
     void STBlockScheduler::performTickScheduling() {
+        Tick current_time = SIMUL.getTime();
+        if (_selection_frozen && _selection_tick == current_time) {
+            SCHEDULER_LOG_DEBUG(
+                std::string("🛡️ [ST-Block] 本tick选择已冻结，跳过重复决策 @ ") +
+                std::to_string(static_cast<int64_t>(current_time)) + "ms");
+            return;
+        }
+
         SCHEDULER_LOG_INFO(std::string("🔄 [ST-Block] ===== Tick ") +
-                           std::to_string(static_cast<int64_t>(SIMUL.getTime())) + "ms =====");
+                           std::to_string(static_cast<int64_t>(current_time)) + "ms =====");
         SCHEDULER_LOG_INFO("⚡ 初始能量: " + std::to_string(_current_energy * 1000) + " mJ");
 
         // ⭐ 每个Tick开始时清除抢占防抖标记
@@ -389,8 +404,6 @@ namespace RTSim {
         // ⭐ 关键修复：每个 Tick 开始时清除 ALAP 阻塞标志
         // 阻塞只在一个 Tick 内有效，下一个 Tick 重新评估
         _alap_blocking = false;
-
-        Tick current_time = SIMUL.getTime();
 
         // ========== 第1步：收集太阳能 ==========
         // ⭐ 关键修复：太阳能收集必须在能量耗尽检查之前执行
@@ -559,123 +572,108 @@ namespace RTSim {
         // ⭐ 已改用killOnMiss(true)，框架自动处理过期实例
         // cleanupExpiredTasks();
 
-        // ========== 阶段一：ALAP个体时序门控 ==========
-        // ⭐ 修复：移除批量级别的S_min门控，改为个体Slack过滤
-        // 原因：每个任务独立计算Slack，Slack<=0的任务才能调度
-        // 个体Slack检查在getTaskN中进行，这里不再做全局门控
-        SCHEDULER_LOG_INFO("✅ [ST-Block] 个体时序门控：跳过全局S_min检查，个体Slack在getTaskN中过滤");
-
-        // ========== 第2步：处理运行中任务的续期能量 ==========
-        // 在 tick 边界统一处理运行组续期能量。
-        // ⭐ V40修复：确保kernel已设置，如果没有则尝试获取
         if (!_kernel) {
             _kernel = getKernel();
         }
-
-        if (_kernel) {
-            const auto& running_tasks_map = _kernel->getCurrentExecutingTasks();
-            std::vector<AbsRTTask *> running_task_list;
-            running_task_list.reserve(running_tasks_map.size());
-
-            SCHEDULER_LOG_INFO("🏃 检查运行任务: " +
-                               std::to_string(running_tasks_map.size()) + " 个");
-
-            for (const auto& [cpu, task] : running_tasks_map) {
-                (void)cpu;
-                if (!task) continue;
-                running_task_list.push_back(task);
-            }
-
-            const double EPSILON = 1e-9;
-            double running_batch_energy = 0.0;
-            for (AbsRTTask *task : running_task_list) {
-                running_batch_energy += calculateUnitEnergyForTask(task);
-            }
-
-            if (!running_task_list.empty() && _current_energy < running_batch_energy - EPSILON) {
-                _energy_depleted = true;
-                _deep_charging = true;
-                _is_charging_sleep = true;
-                _alap_blocking = true;
-                _current_energy = 0.0;
-
-                Tick min_slack = calculateMinSlack();
-                int64_t min_slack_ms = static_cast<int64_t>(min_slack);
-                Tick wake_time = computeSafeWakeTimeFromOffset(std::max<int64_t>(0, min_slack_ms));
-
-                if (_wake_event) {
-                    _wake_event->drop();
-                    delete _wake_event;
-                }
-                _wake_event = new STBlockWakeEvent(this, wake_time);
-                _wake_event->post(wake_time);
-
-                SCHEDULER_LOG_WARNING("💀 [ST-Block] 运行组续期能量不足，进入阻塞充电墙" +
-                                     std::string(" 任务数=") + std::to_string(running_task_list.size()) +
-                                     " 需要=" + std::to_string(running_batch_energy * 1000) + " mJ" +
-                                     " 当前=" + std::to_string(_current_energy * 1000) + " mJ" +
-                                     " Slack=" + std::to_string(min_slack_ms) + "ms");
-
-                for (AbsRTTask *task : running_task_list) {
-                    setSuspendReason(task, "insufficient_energy");
-                    _kernel->suspend(task);
-                    SCHEDULER_LOG_INFO("🛑 挂起任务: " + getTaskName(task));
-                }
-                return;
-            }
-
-            for (AbsRTTask *task : running_task_list) {
-                double unit_energy = calculateUnitEnergyForTask(task);
-                double old_energy = _current_energy;
-                _current_energy -= unit_energy;
-                clampCurrentEnergyNonNegative(std::string("performTickScheduling renewal: ") + getTaskName(task));
-                _stats.total_energy_consumed += unit_energy;
-
-                SCHEDULER_LOG_INFO("⚡ 扣除续期能量: " +
-                                   getTaskName(task) +
-                                   " -" + std::to_string(unit_energy * 1000) + " mJ " +
-                                   std::to_string(old_energy * 1000) + " → " +
-                                   std::to_string(_current_energy * 1000) + " mJ");
-            }
-        }
-
-        // ========== 第3步：检查抢占 ==========
-        // checkAndPreempt();  // 禁用tick边界抢占，防止suspend-insert循环
-
-        // ========== 第4步：��度新任务 ==========
-        // ⭐ V40修复：确保kernel已设置
         if (!_kernel) {
-            _kernel = getKernel();
+            SCHEDULER_LOG_WARNING("⚠️ [ST-Block] _kernel为nullptr，跳过本tick调度");
+            return;
         }
 
-        if (_kernel) {
-            SCHEDULER_LOG_INFO("🔔 开始调度新任务");
+        cleanupExpiredTasks();
 
-            // 记录调度前的能量
-            double energy_before_scheduling = _current_energy;
+        const auto &running_tasks_map = _kernel->getCurrentExecutingTasks();
+        std::set<AbsRTTask *> running_tasks;
+        for (const auto &[cpu, task] : running_tasks_map) {
+            (void)cpu;
+            if (task && task->isExecuting()) {
+                running_tasks.insert(task);
+            }
+        }
 
-            // 保留仍在等待真正BeginDispatch的稳定选择，释放已落地到CPU的旧预留。
-            resetTickDispatchState();
+        std::vector<AbsRTTask *> previous_selection = _dispatch_selection_order;
+        std::vector<AbsRTTask *> active_tasks = collectActiveJobs(current_time);
+        sortByRMPriority(active_tasks);
 
-            // 调度任务（getTaskN只做决策和标记，不扣除能量）
+        resetTickDispatchState();
+        _energy_deducted_tasks.clear();
+
+        double reserved_energy = 0.0;
+        const double epsilon = 1e-9;
+        const size_t processor_count = running_tasks_map.size();
+        AbsRTTask *blocking_task = nullptr;
+
+        for (AbsRTTask *task : active_tasks) {
+            if (_dispatch_selection_order.size() >= processor_count) {
+                break;
+            }
+
+            const double unit_energy = getConfiguredUnitEnergyForTask(task);
+            if (reserved_energy + unit_energy > _current_energy + epsilon) {
+                blocking_task = task;
+                _stats.total_skipped_energy++;
+                break;
+            }
+
+            _dispatch_selection_order.push_back(task);
+            _counted_tasks_in_dispatch.insert(task);
+            reserved_energy += unit_energy;
+        }
+
+        _dispatching_tasks_total_energy = reserved_energy;
+        _selection_tick = current_time;
+        _selection_generation++;
+        _selection_frozen = true;
+
+        _alap_blocking = (blocking_task != nullptr);
+        _energy_depleted = _dispatch_selection_order.empty() && !active_tasks.empty();
+        if (blocking_task) {
+            _deep_charging = true;
+            _is_charging_sleep = true;
+            Tick slack = calculateSlackForTask(blocking_task);
+            int64_t slack_ms = static_cast<int64_t>(slack);
+            Tick wake_time = computeSafeWakeTimeFromOffset(std::max<int64_t>(0, slack_ms));
+            if (_wake_event) {
+                _wake_event->drop();
+                delete _wake_event;
+            }
+            _wake_event = new STBlockWakeEvent(this, wake_time);
+            _wake_event->post(wake_time);
+            SCHEDULER_LOG_INFO(std::string("🔒 [ST-Block] BLOCK墙建立: ") +
+                               getTaskName(blocking_task) +
+                               " slack=" + std::to_string(slack_ms) + "ms");
+        } else {
+            _deep_charging = false;
+            _is_charging_sleep = false;
+            if (_wake_event) {
+                _wake_event->drop();
+                delete _wake_event;
+                _wake_event = nullptr;
+            }
+        }
+
+        if (!_dispatch_selection_order.empty()) {
+            commitTickEnergy(current_time, reserved_energy);
+            for (AbsRTTask *task : _dispatch_selection_order) {
+                _energy_deducted_tasks.insert(task);
+            }
+        }
+
+        cancelStaleDispatches(previous_selection);
+
+        const std::set<AbsRTTask *> selected_set(
+            _dispatch_selection_order.begin(), _dispatch_selection_order.end());
+        for (AbsRTTask *task : running_tasks) {
+            if (selected_set.find(task) != selected_set.end()) {
+                continue;
+            }
+            setSuspendReason(task, blocking_task ? "insufficient_energy" : "preemption");
+            _kernel->suspend(task);
+        }
+
+        if (!_dispatch_selection_order.empty()) {
             _kernel->dispatch();
-
-            // 在dispatch后，统一扣除所有本轮新选中任务的初始能量。
-            accountInitialEnergyForSelectedTasks("✅ [ST-Block] 新任务扣除初始能量: ");
-
-            SCHEDULER_LOG_INFO("📊 调度完成: 新任务=" +
-                               std::to_string(_counted_tasks_in_dispatch.size()) +
-                               " 扣除能量=" + std::to_string((energy_before_scheduling - _current_energy) * 1000) + " mJ " +
-                               std::to_string(energy_before_scheduling * 1000) + " → " +
-                               std::to_string(_current_energy * 1000) + " mJ");
         }
-
-        // ========== 第5步：调度后抢占检查 ==========
-        // ⭐ V44修复：在调度新任务后进行抢占检查
-        // 原因：需要让新任务先调度完成，然后再检查是否需要抢占
-        // 这样可以避免"刚调度就被抢占"的问题
-        // 同时确保在tick边界统一进行抢占决策
-        checkAndPreempt();
 
         SCHEDULER_LOG_INFO("✅ Tick " +
                            std::to_string(static_cast<int64_t>(current_time)) +
@@ -779,223 +777,44 @@ namespace RTSim {
     // =====================================================
 
     AbsRTTask *STBlockScheduler::getTaskN(unsigned int n) {
+        if ((!_selection_frozen || _selection_tick != SIMUL.getTime()) && !_kernel) {
+            // Direct unit-test probes do not have a kernel tick to freeze the
+            // selection. Keep the production path strict, but let the no-kernel
+            // path rebuild a deterministic prefix so stale direct queries see
+            // the newest ready set instead of an old selection.
+            std::vector<AbsRTTask *> active_tasks = collectActiveJobs(SIMUL.getTime());
+            sortByRMPriority(active_tasks);
+            resetTickDispatchState();
 
-        if (n < _dispatch_selection_order.size()) {
-            AbsRTTask *selected_task = _dispatch_selection_order[n];
-            if (selected_task && selected_task->isActive() &&
-                _counted_tasks_in_dispatch.find(selected_task) != _counted_tasks_in_dispatch.end()) {
-                SCHEDULER_LOG_DEBUG(std::string("♻️ [ST-Block] 复用本轮dispatch已选任务: ") +
-                                   getTaskName(selected_task) +
-                                   " slot=" + std::to_string(n));
-                return selected_task;
-            }
-        }
-
-        if (_is_charging_sleep || _deep_charging) {
-            SCHEDULER_LOG_DEBUG(std::string("🔒 [ST-Block] getTaskN: 充电墙激活，拒绝调度") +
-                               " n=" + std::to_string(n) +
-                               " sleep=" + (_is_charging_sleep ? "true" : "false") +
-                               " deep=" + (_deep_charging ? "true" : "false") +
-                               " energy=" + std::to_string(_current_energy * 1000) + " mJ");
-            return nullptr;
-        }
-
-        // ⭐ V43修复：能量耗尽时立即返回，不调度任何任务
-        if (_energy_depleted) {
-            clampCurrentEnergyNonNegative("getTaskN entry");
-            SCHEDULER_LOG_DEBUG(std::string("💀 [ST-Block] getTaskN: 能量已耗尽，拒绝调度") +
-                               " n=" + std::to_string(n) +
-                               " energy=" + std::to_string(_current_energy * 1000) + " mJ");
-            return nullptr;
-        }
-
-        // ⭐ 关键修复：ALAP-Block 严格阻塞机制
-        // 如果本 Tick 已触发阻塞（能量不足），拒绝调度任何次高优先级任务
-        if (_alap_blocking) {
-            SCHEDULER_LOG_DEBUG(std::string("🚫 [ST-Block] getTaskN: ALAP严格阻塞模式，拒绝调度") +
-                               " n=" + std::to_string(n) +
-                               " 原因：高优先级任务能量不足，宁缺毋滥");
-            return nullptr;
-        }
-
-        // ⭐ ALAP时序门控：不再在getTaskN中调用全局checkALAPTimingGate()（性能瓶颈）
-        // 改为在遍历任务时逐个检查个体Slack，只调度Slack≤0的任务
-        // 效果等价：如果所有任务Slack>0，getTaskN返回nullptr
-
-        SCHEDULER_LOG_DEBUG(std::string("🔍 [ST-Block] getTaskN(") + std::to_string(n) + ") " +
-                           "已调度能耗=" + std::to_string(_dispatching_tasks_total_energy) + "J " +
-                           "当前能量=" + std::to_string(_current_energy) + "J " +
-                           "队���大小=" + std::to_string(_ready_queue.size()));
-
-
-        if (_ready_queue.empty()) {
-            SCHEDULER_LOG_INFO("📭 [ST-Block] getTaskN: 就绪队列为空");
-            return nullptr;
-        }
-
-        // ⭐ 暂时注释掉清理逻辑，先观察队列实际状态
-        /*
-        // ⭐ 关键修复：清理_ready_queue中过期的周期性任务实例
-        // 对于周期性任务，使用到达时间来判断实例是否过期
-        Tick current_time = SIMUL.getTime();
-        _ready_queue.erase(
-            std::remove_if(_ready_queue.begin(), _ready_queue.end(),
-                [this, current_time](AbsRTTask *task) {
-                    if (!task) return true;
-                    // 移除不活动的任务
-                    if (!task->isActive()) {
-                        SCHEDULER_LOG_DEBUG(std::string("🧹 [ST-Block] 清理不活动任务: ") + getTaskName(task));
-                        return true;
-                    }
-                    // ⭐ 移除过期的周期性任务实例：到达时间+截止时间 < 当前时间
-                    Tick arrival = task->getArrival();
-                    Tick deadline = arrival + Tick(20);  // 周期性任务的截止时间是到达时间+周期
-                    if (deadline < current_time) {
-                        SCHEDULER_LOG_DEBUG(std::string("🧹 [ST-Block] 清理过期任务实例: ") +
-                                       getTaskName(task) +
-                                       " 到达=" + std::to_string(static_cast<int64_t>(arrival)) +
-                                       " 截止=" + std::to_string(static_cast<int64_t>(deadline)) +
-                                       " 当前=" + std::to_string(static_cast<int64_t>(current_time)));
-                        return true;
-                    }
-                    return false;
-                }),
-            _ready_queue.end()
-        );
-
-        if (_ready_queue.empty()) {
-            SCHEDULER_LOG_DEBUG("📭 [ST-Block] getTaskN: 清理后队列为空");
-            return nullptr;
-        }
-        */
-
-        unsigned int ready_index = 0;
-        for (size_t i = 0; i < _ready_queue.size(); ++i) {
-            AbsRTTask *task = _ready_queue[i];
-
-            if (!task) {
-                continue;
-            }
-
-            // ⭐ killOnMiss安全检查：跳过已被框架终止的任务实例
-            if (!task->isActive()) {
-                continue;
-            }
-            // _counted_tasks_in_dispatch只是用于跟踪本次tick中已扣除能量的任务
-            // 避免重复扣除能量
-            // 重复调度的问题由内核的_m_dispatched检查来处理
-            bool is_running = false;
-            if (_kernel) {
-                CPU *proc = _kernel->getProcessor(task);
-                is_running = (proc != nullptr);
-            }
-
-            if (is_running) {
-                if (ready_index == n) {
-                    return task;
+            double reserved_energy = 0.0;
+            const double epsilon = 1e-9;
+            for (AbsRTTask *task : active_tasks) {
+                const double unit_energy = getConfiguredUnitEnergyForTask(task);
+                if (reserved_energy + unit_energy > _current_energy + epsilon) {
+                    break;
                 }
-
-                ready_index++;
-                continue;
+                _dispatch_selection_order.push_back(task);
+                _counted_tasks_in_dispatch.insert(task);
+                reserved_energy += unit_energy;
             }
-
-
-            // 这是第ready_index个未dispatch的任务
-            if (ready_index == n) {
-                // ⭐ 关键修复：跳过已过期的任务实例
-                STBlockTaskModel *task_model = getTaskModel(task);
-                if (task_model) {
-                    Tick arrival = task->getArrival();
-                    Tick deadline = arrival + Tick(task_model->getPeriod());
-                    Tick current_time = SIMUL.getTime();
-                    if (deadline <= current_time) {
-                        SCHEDULER_LOG_INFO(std::string("🧹 [ST-Block] getTaskN: 跳过过期任务 ") +
-                                          getTaskName(task) +
-                                          " deadline=" + std::to_string(static_cast<int64_t>(deadline)) +
-                                          " current=" + std::to_string(static_cast<int64_t>(current_time)));
-                        continue;
-                    }
-                }
-
-                // ⭐ ST-Block：ASAP调度，不需要等Slack=0
-                // 与ALAP的核心区���：ST是尽可能早执行，移除Slack门控
-
-                double unit_energy = calculateUnitEnergyForTask(task);
-
-                const double EPSILON = 1e-9;
-                // ⭐ 预扣模式：检查当前能量是否足够当前任务的1ms能耗
-                // 同时计入本次dispatch中已预留给更高优先级任务的能量，避免超卖电量
-                double projected_energy_after_dispatch =
-                    _current_energy - _dispatching_tasks_total_energy - unit_energy;
-                if (projected_energy_after_dispatch < -EPSILON) {
-                    if (n > 0 || !_dispatch_selection_order.empty() || !_counted_tasks_in_dispatch.empty()) {
-                        SCHEDULER_LOG_INFO(std::string("⏹️ [ST-Block] 后续槽位能量不足，停止继续填充CPU: ") +
-                                          " slot=" + std::to_string(n) +
-                                          " 任务=" + getTaskName(task) +
-                                          " 需要=" + std::to_string(unit_energy * 1000) + " mJ" +
-                                          " 当前=" + std::to_string(_current_energy * 1000) + " mJ" +
-                                          " 已预留=" + std::to_string(_dispatching_tasks_total_energy * 1000) + " mJ");
-                        return nullptr;
-                    }
-
-                    Tick task_slack = calculateSlackForTask(task);
-                    int64_t slack_ms = static_cast<int64_t>(task_slack);
-
-                    SCHEDULER_LOG_WARNING(std::string("🔒 [ST-Block] 能量不足，进入阻塞充电墙") +
-                                         " 任务=" + getTaskName(task) +
-                                         " Slack=" + std::to_string(slack_ms) + "ms" +
-                                         " 需要=" + std::to_string(unit_energy * 1000) + " mJ" +
-                                         " 当前=" + std::to_string(_current_energy * 1000) + " mJ" +
-                                         " 已预留=" + std::to_string(_dispatching_tasks_total_energy * 1000) + " mJ");
-
-                    _is_charging_sleep = true;
-                    _alap_blocking = true;
-                    _energy_depleted = true;
-                    _deep_charging = true;
-
-                    Tick wake_time;
-                    if (task_slack <= 0) {
-                        wake_time = computeSafeWakeTimeFromOffset(0);
-                    } else {
-                        double energy_needed = std::max(0.0, _max_energy - _current_energy);
-                        double harvest_rate = _base_harvest_rate;
-                        int64_t charge_time_ms = (harvest_rate > EPSILON)
-                            ? static_cast<int64_t>(energy_needed / harvest_rate) + 1
-                            : slack_ms;
-                        int64_t wake_offset_ms = std::min(slack_ms, charge_time_ms);
-                        wake_time = computeSafeWakeTimeFromOffset(wake_offset_ms);
-                    }
-
-                    if (_wake_event) {
-                        _wake_event->drop();
-                        delete _wake_event;
-                    }
-                    _wake_event = new STBlockWakeEvent(this, wake_time);
-                    _wake_event->post(wake_time);
-
-                    return nullptr;
-                }
-
-                // 重用同一dispatch轮中已批准的选择，避免MRTKernel重复询问时顺序漂移。
-                if (_counted_tasks_in_dispatch.find(task) == _counted_tasks_in_dispatch.end()) {
-                    markTaskSelectedThisTick(task);
-
-                    SCHEDULER_LOG_INFO(std::string("✅ [ST-Block] 决定调度任务（已标记，暂不扣能量）: ") + getTaskName(task) +
-                                      " 1ms能耗=" + std::to_string(unit_energy * 1000) + " mJ" +
-                                      " 本轮预留总能耗=" + std::to_string(_dispatching_tasks_total_energy * 1000) + " mJ");
-                } else {
-                    SCHEDULER_LOG_DEBUG(std::string("♻️ [ST-Block] 任务已标记，直接返回: ") + getTaskName(task));
-                }
-
-                return task;
-            } else {
-                // ⭐ V32关键修复：不是我们要找的第n个任务，继续寻找
-                ready_index++;
-            }
-
+            _dispatching_tasks_total_energy = reserved_energy;
+            _selection_tick = SIMUL.getTime();
+            _selection_generation++;
+            _selection_frozen = true;
         }
 
-        return nullptr;
+        if (!_selection_frozen || _selection_tick != SIMUL.getTime()) {
+            return nullptr;
+        }
+        if (n >= _dispatch_selection_order.size()) {
+            return nullptr;
+        }
+        AbsRTTask *task = _dispatch_selection_order[n];
+        if (!task || task->getRemainingWCET() <= 0.0 ||
+            _counted_tasks_in_dispatch.find(task) == _counted_tasks_in_dispatch.end()) {
+            return nullptr;
+        }
+        return task;
     }
 
     // =====================================================
@@ -1003,6 +822,8 @@ namespace RTSim {
     // =====================================================
 
     void STBlockScheduler::notify(AbsRTTask *task) {
+        Scheduler::notify(task);
+
         if (!task) {
             return;
         }
@@ -1145,9 +966,9 @@ namespace RTSim {
             _kernel = getKernel();
         }
 
-        if (_kernel && !_is_charging_sleep && !_deep_charging && !_energy_depleted) {
-            checkAndPreempt();
-        }
+        // Tick-level ST-BLOCK decisions are frozen in performTickScheduling().
+        // Arrival-time dispatch/preemption would bypass generation checks and
+        // can create stale EndDispatch effects, so arrivals only update queues.
     }
 
     // =====================================================
@@ -1155,11 +976,13 @@ namespace RTSim {
     // =====================================================
 
     void STBlockScheduler::checkAndPreempt() {
-        SCHEDULER_LOG_DEBUG("🔔 [ST-Block] Tick级抢占检查");
-        checkAndPreemptOnAllCPUs();
+        SCHEDULER_LOG_DEBUG("🔔 [ST-Block] Tick-frozen语义下跳过即时抢占");
     }
 
     void STBlockScheduler::checkAndPreemptOnAllCPUs() {
+        SCHEDULER_LOG_DEBUG("🔔 [ST-Block] Tick-frozen语义下跳过全CPU即时抢占");
+        return;
+
         if (!_kernel) {
             _kernel = getKernel();
             if (!_kernel) return;
@@ -1458,17 +1281,22 @@ namespace RTSim {
 
         Tick priority = model->getRMPriority();
 
-        // 按RM优先级插入（周期短的优先）
+        // 按稳定RM优先级插入：period/RM priority，再按task number打破平局。
         auto it = _ready_queue.begin();
         while (it != _ready_queue.end()) {
-            STBlockTaskModel *other_model = getTaskModel(*it);
-            if (other_model && other_model->getRMPriority() > priority) {
+            if (hasHigherRMPriority(task, *it)) {
                 break;
             }
             ++it;
         }
 
         _ready_queue.insert(it, task);
+
+        if (!_kernel) {
+            _selection_frozen = false;
+            _selection_tick = Tick(-1);
+            resetTickDispatchState();
+        }
 
         SCHEDULER_LOG_DEBUG(std::string("➕ [ST-Block] 任务加入就绪队列: ") + getTaskName(task) +
                            " 优先级=" + std::to_string(static_cast<int64_t>(priority)));
@@ -1794,6 +1622,116 @@ namespace RTSim {
         return task->toString();
     }
 
+    std::vector<AbsRTTask *> STBlockScheduler::collectActiveJobs(Tick current_time) {
+        std::vector<AbsRTTask *> active_tasks;
+        auto add_active = [&active_tasks, current_time](AbsRTTask *task, bool running) {
+            if (!task || task->getArrival() > current_time) {
+                return;
+            }
+            if (!running && !task->isActive()) {
+                return;
+            }
+            if (task->getRemainingWCET() <= 0.0) {
+                return;
+            }
+            if (std::find(active_tasks.begin(), active_tasks.end(), task) == active_tasks.end()) {
+                active_tasks.push_back(task);
+            }
+        };
+
+        if (_kernel) {
+            for (const auto &[cpu, task] : _kernel->getCurrentExecutingTasks()) {
+                (void)cpu;
+                add_active(task, task && task->isExecuting());
+            }
+        }
+        for (AbsRTTask *task : _ready_queue) {
+            add_active(task, false);
+        }
+        return active_tasks;
+    }
+
+    bool STBlockScheduler::hasHigherRMPriority(AbsRTTask *lhs, AbsRTTask *rhs) {
+        if (lhs == rhs) {
+            return false;
+        }
+        STBlockTaskModel *lhs_model = getTaskModel(lhs);
+        STBlockTaskModel *rhs_model = getTaskModel(rhs);
+        if (lhs_model && rhs_model &&
+            lhs_model->getRMPriority() != rhs_model->getRMPriority()) {
+            return lhs_model->getRMPriority() < rhs_model->getRMPriority();
+        }
+        if (lhs && rhs && lhs->getPeriod() != rhs->getPeriod()) {
+            return lhs->getPeriod() < rhs->getPeriod();
+        }
+        if (lhs && rhs) {
+            return lhs->getTaskNumber() < rhs->getTaskNumber();
+        }
+        return lhs != nullptr;
+    }
+
+    void STBlockScheduler::sortByRMPriority(std::vector<AbsRTTask *> &tasks) {
+        std::stable_sort(tasks.begin(), tasks.end(),
+                         [this](AbsRTTask *lhs, AbsRTTask *rhs) {
+                             return hasHigherRMPriority(lhs, rhs);
+                         });
+    }
+
+    double STBlockScheduler::getConfiguredUnitEnergyForTask(AbsRTTask *task) const {
+        auto it = _task_models.find(task);
+        if (it == _task_models.end() || !it->second) {
+            return 0.0;
+        }
+        return it->second->getUnitEnergy();
+    }
+
+    void STBlockScheduler::commitTickEnergy(Tick tick, double energy) {
+        if (_energy_commit_valid &&
+            _energy_commit_tick == tick &&
+            _energy_commit_generation == _selection_generation) {
+            throw std::logic_error("ST-Block energy committed more than once in one tick");
+        }
+        if (energy < 0.0 || _current_energy + 1e-9 < energy) {
+            throw std::logic_error("ST-Block attempted to commit unaffordable prefix energy");
+        }
+
+        _current_energy = std::max(0.0, _current_energy - energy);
+        _stats.total_energy_consumed += energy;
+        _energy_commit_tick = tick;
+        _energy_commit_generation = _selection_generation;
+        _energy_commit_valid = true;
+        clampCurrentEnergyNonNegative("commitTickEnergy");
+    }
+
+    void STBlockScheduler::cancelStaleDispatches(
+        const std::vector<AbsRTTask *> &previous_selection) {
+        if (!_kernel) {
+            return;
+        }
+
+        bool has_stale_dispatch = false;
+        for (AbsRTTask *task : previous_selection) {
+            if (!task || _kernel->getProcessor(task) != nullptr) {
+                continue;
+            }
+            if (std::find(_dispatch_selection_order.begin(),
+                          _dispatch_selection_order.end(),
+                          task) == _dispatch_selection_order.end()) {
+                has_stale_dispatch = true;
+                break;
+            }
+        }
+        if (!has_stale_dispatch) {
+            return;
+        }
+
+        for (const auto &[cpu, running] : _kernel->getCurrentExecutingTasks()) {
+            if (!running && _kernel->isCPUDispatching(cpu)) {
+                _kernel->dispatch(cpu);
+            }
+        }
+    }
+
     void STBlockScheduler::resetTickDispatchState() {
         _counted_tasks_in_dispatch.clear();
         _dispatch_selection_order.clear();
@@ -1960,6 +1898,12 @@ namespace RTSim {
         _dispatch_selection_order.clear();
         _energy_deducted_tasks.clear();
         _dispatching_tasks_total_energy = 0.0;
+        _selection_tick = Tick(-1);
+        _selection_generation = 0;
+        _selection_frozen = false;
+        _energy_commit_tick = Tick(-1);
+        _energy_commit_generation = 0;
+        _energy_commit_valid = false;
         _suspend_reasons.clear();
 
         // ⭐ V74：重置深度充电状态
@@ -2042,18 +1986,9 @@ namespace RTSim {
 
         SCHEDULER_LOG_INFO(std::string("📊 [ST-Block] 当前能量: ") + std::to_string(_current_energy) + "J");
 
-        // ⭐ 关键修复：任务结束时触发立即调度
-        // 检查是否有空闲CPU和等待的任务
-        if (!_ready_queue.empty() && _kernel) {
-            // ⭐ Bug修复：能量耗尽时不触发立即调度
-            if (_energy_depleted) {
-                SCHEDULER_LOG_INFO(std::string("💀 [ST-Block] 能量已耗尽，跳过任务结束后的立即调度") +
-                                   " 剩余能量=" + std::to_string(_current_energy * 1000) + " mJ");
-                return;
-            }
-            SCHEDULER_LOG_INFO("🔄 [ST-Block] 任务结束，触发立即调度");
-            _kernel->dispatch();
-        }
+        // ST-BLOCK uses tick-frozen selections. Task-end events must not
+        // rebuild dispatch mid-tick, otherwise stale EndDispatch can bypass
+        // the next tick's prefix and energy generation checks.
     }
 
     bool STBlockScheduler::isAdmissible(CPU *c, std::vector<AbsRTTask *> tasks,
@@ -2083,7 +2018,7 @@ namespace RTSim {
                 if (!model) continue;
 
                 Tick arrival = task->getArrival();
-                Tick deadline = arrival + Tick(model->getPeriod());
+                Tick deadline = task->getDeadline();
 
                 if (deadline <= current_time) {
                     to_suspend.push_back(task);
@@ -2108,7 +2043,7 @@ namespace RTSim {
             if (!model) continue;
 
             Tick arrival = task->getArrival();
-            Tick deadline = arrival + Tick(model->getPeriod());
+            Tick deadline = task->getDeadline();
 
             if (deadline <= current_time) {
                 expired.push_back(task);
@@ -2123,6 +2058,7 @@ namespace RTSim {
 
         for (AbsRTTask *task : expired) {
             removeFromReadyQueue(task);
+            clearPersistentTaskState(task);
         }
     }
 
@@ -2208,10 +2144,7 @@ namespace RTSim {
         if (!task) return MetaSim::Tick(0);
 
         Tick current_time = SIMUL.getTime();
-        Tick arrival = task->getArrival();
-        int period_int = task->getPeriod();
-        Tick period = Tick(period_int > 0 ? period_int : 100);
-        Tick absolute_deadline = arrival + period;
+        Tick absolute_deadline = task->getDeadline();
 
         double remaining_double = task->getRemainingWCET();
 
@@ -2222,13 +2155,12 @@ namespace RTSim {
             remaining_double = 0;
         }
 
-        Tick remaining = Tick(remaining_double);
+        Tick remaining = Tick(static_cast<Tick::impl_t>(std::ceil(remaining_double)));
         Tick slack = absolute_deadline - remaining - current_time;
 
         // ⭐ V76调试：使用INFO级别输出详细信息
         SCHEDULER_LOG_INFO("🧮 [ST-Block] Slack计算: " +
                            getTaskName(task) +
-                           " arrival=" + std::to_string(static_cast<int64_t>(arrival)) +
                            " deadline=" + std::to_string(static_cast<int64_t>(absolute_deadline)) +
                            " remaining_double=" + std::to_string(remaining_double) +
                            " remaining_int=" + std::to_string(static_cast<int64_t>(remaining)) +

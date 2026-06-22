@@ -11,6 +11,7 @@ add_executable(
   scheduler/alap_block.cpp
   scheduler/alap_nonblock.cpp
   scheduler/alap_sync.cpp
+  scheduler/st_block.cpp
 )
 
 target_link_libraries(

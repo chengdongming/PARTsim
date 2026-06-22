@@ -8,6 +8,7 @@
 #include <rtsim/rttask.hpp>
 #include <rtsim/energy_info_provider.hpp>
 #include <metasim/factory.hpp>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -128,6 +129,12 @@ namespace RTSim {
         std::set<AbsRTTask *> _counted_tasks_in_dispatch; // 本次dispatch中已计数的任务，避免重复
         std::vector<AbsRTTask *> _dispatch_selection_order; // 本轮dispatch已选中的稳定顺序
         std::set<AbsRTTask *> _energy_deducted_tasks; // 已扣除初始能量的任务（跨tick持久化）
+        MetaSim::Tick _selection_tick;       // 当前冻结选择对应tick
+        uint64_t _selection_generation;      // 每次tick选择递增，防stale EndDispatch
+        bool _selection_frozen;              // 当前tick是否已经冻结选择
+        MetaSim::Tick _energy_commit_tick;   // 最近一次能量提交tick
+        uint64_t _energy_commit_generation;  // 最近一次能量提交generation
+        bool _energy_commit_valid;           // 是否已有能量提交记录
         MetaSim::Tick _last_tick_time;       // 上次tick时间
         MetaSim::Tick _last_collection_time; // 上次能量收集时间
 
@@ -229,6 +236,12 @@ namespace RTSim {
         void markTaskSelectedThisTick(AbsRTTask *task);
         void clearPersistentTaskState(AbsRTTask *task);
         void accountInitialEnergyForSelectedTasks(const std::string &log_prefix);
+        std::vector<AbsRTTask *> collectActiveJobs(MetaSim::Tick current_time);
+        bool hasHigherRMPriority(AbsRTTask *lhs, AbsRTTask *rhs);
+        void sortByRMPriority(std::vector<AbsRTTask *> &tasks);
+        double getConfiguredUnitEnergyForTask(AbsRTTask *task) const;
+        void commitTickEnergy(MetaSim::Tick tick, double energy);
+        void cancelStaleDispatches(const std::vector<AbsRTTask *> &previous_selection);
 
         // 队列管理
         void addToReadyQueue(AbsRTTask *task);
