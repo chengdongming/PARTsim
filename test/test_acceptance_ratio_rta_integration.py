@@ -370,7 +370,7 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
         row = runner.aggregate_results(results).iloc[0]
         self.assertAlmostEqual(row["acceptance_ratio"], 2.0 / 3.0)
         self.assertEqual(row["num_successful"], 2)
-        self.assertEqual(row["rta_num_analyzed"], 2)
+        self.assertEqual(row["rta_num_analyzed"], 3)
         self.assertEqual(row["rta_num_proven"], 1)
         self.assertEqual(row["rta_num_unproven"], 1)
         self.assertEqual(row["rta_num_errors"], 1)
@@ -383,16 +383,15 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
         results[acceptance.ASAP_BLOCK_ALGORITHM][0.5] = [1.0, 0.0]
 
         frame = runner.aggregate_results(results)
-        self.assertEqual(
-            list(frame.columns),
-            [
-                "algorithm",
-                "normalized_utilization",
-                "acceptance_ratio",
-                "num_samples",
-                "num_successful",
-            ],
-        )
+        self.assertIn("algorithm", frame.columns)
+        self.assertIn("normalized_utilization", frame.columns)
+        self.assertIn("acceptance_ratio", frame.columns)
+        self.assertIn("num_samples", frame.columns)
+        self.assertIn("num_successful", frame.columns)
+        self.assertIn("simulation_num_accepted", frame.columns)
+        self.assertIn("simulation_num_rejected", frame.columns)
+        self.assertIn("rta_num_analyzed", frame.columns)
+        self.assertIn("avg_tightness", frame.columns)
         self.assertEqual(frame.iloc[0]["acceptance_ratio"], 0.5)
 
 

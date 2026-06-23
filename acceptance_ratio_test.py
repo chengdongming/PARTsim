@@ -20,6 +20,7 @@ import os
 import sys
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 from multiprocessing import cpu_count
 from pathlib import Path
 import numpy as np
@@ -196,6 +197,58 @@ def validate_rta_cli_args(parser, args):
         parser.error('--rta-timeout must be positive')
 
 
+def classify_simulation_status(result):
+    """Return the aggregate status bucket for a per-run result."""
+    if not isinstance(result, dict):
+        return 'accepted' if float(result) == 1.0 else 'rejected'
+
+    status = str(result.get('simulation_status') or '').strip()
+    if not status:
+        return (
+            'accepted'
+            if float(result.get('acceptance_ratio', 0.0)) == 1.0
+            else 'rejected'
+        )
+
+    if status == 'accepted':
+        return 'accepted'
+    if status in {'rejected', 'deadline_miss', 'simulation_rejected'}:
+        return 'rejected'
+    if status in {'simulation_timeout', 'timeout'}:
+        return 'timeout'
+    return 'error'
+
+
+def _extract_number(value):
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(number):
+        return None
+    return number
+
+
+def tightness_for_result(algorithm, result):
+    """Return RTA/simulation tightness for valid ASAP-BLOCK samples only."""
+    if algorithm != ASAP_BLOCK_ALGORITHM or not isinstance(result, dict):
+        return None
+    if result.get('rta_status') != 'proven_under_assumptions':
+        return None
+
+    rta_bound = _extract_number(result.get('rta_bound'))
+    simulated_response = _extract_number(
+        result.get('simulated_response_time')
+    )
+    if rta_bound is None or simulated_response is None:
+        return None
+    if simulated_response <= 0:
+        return None
+    return rta_bound / simulated_response
+
+
 def run_single_simulation_worker(task):
     """执行单次仿真，并独立记录可选的ASAP-BLOCK RTA结果。"""
     (algorithm, config_file, task_file, task_idx, utilization,
@@ -274,6 +327,13 @@ def run_single_simulation_worker(task):
         'utilization': float(utilization),
         'task_idx': int(task_idx),
         'task_file': str(Path(task_file).resolve()),
+        'taskset_id': rta_options.get(
+            'taskset_id',
+            'u{:.2f}-{:03d}'.format(utilization, task_idx),
+        ),
+        'seed_base': rta_options.get('seed_base'),
+        'taskset_seed': rta_options.get('taskset_seed'),
+        'seed': rta_options.get('taskset_seed'),
         'simulation_acceptance': float(acceptance_ratio),
         'acceptance_ratio': float(acceptance_ratio),
         'simulation_status': simulation_status,
@@ -353,6 +413,88 @@ DEFAULT_INITIAL_ENERGY_RATIO = 1.0  # 100%初始能量（满电）
 DEFAULT_SOLAR_START_TIME_MS = 21975000  # 太阳能起始时间（毫秒）
 DEFAULT_USE_REAL_SOLAR_DATA = False  # 使用分段函数模拟，不使用真实太阳能数据
 DEFAULT_MAX_WORKERS = max(1, min(12, cpu_count() - 2))
+DEFAULT_SEED_BASE = 2000
+
+
+def get_git_short_commit():
+    """Return the current short commit for reproducible output naming."""
+    try:
+        completed = subprocess.run(
+            ['git', 'rev-parse', '--short', 'HEAD'],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return completed.stdout.strip() or 'unknown'
+    except Exception:
+        return 'unknown'
+
+
+def build_default_output_dir():
+    """Build a run-specific output directory to avoid silent overwrites."""
+    timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+    commit = get_git_short_commit()
+    return f'acceptance_ratio_runs/run-{timestamp}-{commit}'
+
+
+def add_experiment_cli_args(parser):
+    """Register experiment CLI flags in one testable place."""
+    # 实验控制
+    parser.add_argument('--run-experiment', action='store_true',
+                       help='运行实验生成新数据')
+    parser.add_argument('--csv', type=str, default=None,
+                       help='从CSV文件加载数据（不运行实验）')
+
+    # 实验参数
+    parser.add_argument('--output-dir', type=str,
+                       default=build_default_output_dir(),
+                       help='输出目录（默认自动生成唯一run目录）')
+    parser.add_argument('--overwrite', action='store_true',
+                       help='允许覆盖已有输出目录中的正式实验结果')
+    parser.add_argument('--seed-base', type=int, default=DEFAULT_SEED_BASE,
+                       help=f'任务集随机种子基数 (默认: {DEFAULT_SEED_BASE})')
+    parser.add_argument('--num-points', type=int, default=10,
+                       help='利用率采样点数 (默认: 10)')
+    parser.add_argument('--num-tasksets', type=int, default=DEFAULT_NUM_TASKSETS,
+                       help=f'每个利用率点的任务集数量 (默认: {DEFAULT_NUM_TASKSETS})')
+    parser.add_argument('--task-n', type=int, default=DEFAULT_TASK_N,
+                       help=f'每个任务集的任务数 (默认: {DEFAULT_TASK_N})')
+    parser.add_argument('--battery', type=float, default=DEFAULT_BATTERY_CAPACITY,
+                       help=f'电池容量 (Joules) (默认: {DEFAULT_BATTERY_CAPACITY})')
+    parser.add_argument('--initial-energy', type=float, default=DEFAULT_INITIAL_ENERGY_RATIO,
+                       help=f'初始能量比例 (0.0-1.0) (默认: {DEFAULT_INITIAL_ENERGY_RATIO})')
+    parser.add_argument('--solar-time-ms', type=int, default=DEFAULT_SOLAR_START_TIME_MS,
+                       help=f'太阳能收集开始时间（毫秒）(默认: {DEFAULT_SOLAR_START_TIME_MS})')
+    parser.add_argument('--max-workers', type=int, default=DEFAULT_MAX_WORKERS,
+                       help=f'并发线程数 (默认: {DEFAULT_MAX_WORKERS})')
+    parser.add_argument('--enable-rta', action='store_true',
+                       help='仅为 ASAP-BLOCK 启用离线RTA观察指标')
+    parser.add_argument('--rta-horizon-ms', type=int, default=None,
+                       help='RTA harvesting服务曲线分析时域（启用RTA时必填）')
+    parser.add_argument('--rta-assume-no-overflow', action='store_true',
+                       help='显式确认RTA的电池不溢出条件假设')
+    parser.add_argument('--rta-timeout', type=int, default=300,
+                       help='单次RTA超时时间（秒，默认: 300）')
+
+    # 图表参数
+    parser.add_argument('--figure-output', type=str, default=None,
+                       help='综合图表输出文件名（可选，默认生成6张分组图表）')
+    parser.add_argument('--x-label', type=str, default=None,
+                       help='自定义X轴标签')
+    parser.add_argument('--no-group-figures', action='store_true',
+                       help='不生成分组图表，只生成综合图表')
+
+
+def validate_output_dir_args(parser, args):
+    """Reject accidental reuse of a populated output directory."""
+    output_dir = Path(args.output_dir)
+    if getattr(args, 'overwrite', False):
+        return
+    if output_dir.exists() and any(output_dir.iterdir()):
+        parser.error(
+            'output directory already exists and is not empty; '
+            'choose a new --output-dir or pass --overwrite'
+        )
 
 # ============================================
 # 追踪文件解析器
@@ -443,7 +585,7 @@ class ExperimentRunner:
                  use_real_solar_data=True, system_cores=None,
                  max_workers=DEFAULT_MAX_WORKERS, enable_rta=False,
                  rta_horizon_ms=None, rta_assume_no_overflow=False,
-                 rta_timeout=300):
+                 rta_timeout=300, seed_base=DEFAULT_SEED_BASE):
         self.output_dir = Path(output_dir)
         self.trace_dir = self.output_dir / 'traces'
         self.task_dir = self.output_dir / 'tasks'
@@ -469,6 +611,7 @@ class ExperimentRunner:
         self.rta_horizon_ms = rta_horizon_ms
         self.rta_assume_no_overflow = bool(rta_assume_no_overflow)
         self.rta_timeout = max(1, int(rta_timeout))
+        self.seed_base = int(seed_base)
         self.rta_results_file = self.output_dir / 'rta_results.jsonl'
 
         print(f"🖥️  系统核心数: {self.system_cores}")
@@ -484,12 +627,31 @@ class ExperimentRunner:
                 )
             )
 
-    def generate_taskset(self, utilization, task_idx, seed,
+    def taskset_seed(self, utilization, task_idx):
+        return (
+            self.seed_base
+            + int(round(utilization * 100)) * 100
+            + int(task_idx)
+        )
+
+    def taskset_id(self, utilization, task_idx):
+        return 'u{:.2f}-{:03d}'.format(utilization, int(task_idx))
+
+    def harvesting_profile(self):
+        return (
+            'real_solar'
+            if self.use_real_solar_data
+            else 'synthetic_piecewise'
+        )
+
+    def generate_taskset(self, utilization, task_idx, seed=None,
                          system_config_file=None):
         """生成指定利用率的任务集"""
         task_file = self.task_dir / f'taskset_u{utilization:.2f}_{task_idx:03d}.yml'
         if system_config_file is None:
             system_config_file = CONFIG_TEMPLATE
+        if seed is None:
+            seed = self.taskset_seed(utilization, task_idx)
 
         # 计算总利用率（归一化利用率 × 核心数）
         total_utilization = utilization * self.system_cores
@@ -661,7 +823,7 @@ class ExperimentRunner:
 
             task_files = []
             for task_idx in range(self.num_tasksets):
-                seed = 2000 + int(round(utilization * 100)) * 100 + task_idx
+                seed = self.taskset_seed(utilization, task_idx)
                 task_file = self.generate_taskset(
                     utilization,
                     task_idx,
@@ -669,13 +831,13 @@ class ExperimentRunner:
                     system_config_file=task_generation_config,
                 )
                 if task_file:
-                    task_files.append((task_idx, task_file))
+                    task_files.append((task_idx, task_file, seed))
 
             if not task_files:
                 print(f"⚠️ 没有成功生成任务集，跳过 U={utilization:.2f}")
                 continue
 
-            for task_idx, task_file in task_files:
+            for task_idx, task_file, seed in task_files:
                 for algo in ALGORITHMS:
                     tasks.append((
                         algo,
@@ -692,6 +854,11 @@ class ExperimentRunner:
                                 self.rta_assume_no_overflow
                             ),
                             'timeout': self.rta_timeout,
+                            'seed_base': self.seed_base,
+                            'taskset_seed': seed,
+                            'taskset_id': self.taskset_id(
+                                utilization, task_idx
+                            ),
                         },
                     ))
 
@@ -762,7 +929,7 @@ class ExperimentRunner:
                 if run_results:
                     acceptance_ratios = [
                         (
-                            result['acceptance_ratio']
+                            result.get('acceptance_ratio', 0.0)
                             if isinstance(result, dict)
                             else result
                         )
@@ -770,58 +937,95 @@ class ExperimentRunner:
                     ]
                     # 计算平均接受率（即可调度任务集的比例）
                     avg_acceptance = np.mean(acceptance_ratios)
+                    status_buckets = [
+                        classify_simulation_status(result)
+                        for result in run_results
+                    ]
                     row = {
                         'algorithm': algo,
+                        'algorithm_display_name': ALGO_DISPLAY_NAMES.get(
+                            algo, algo
+                        ),
                         'normalized_utilization': utilization,
                         'acceptance_ratio': avg_acceptance,
                         'num_samples': len(acceptance_ratios),
-                        'num_successful': int(sum(acceptance_ratios))  # 成功的任务集数量
+                        'num_successful': int(sum(acceptance_ratios)),
+                        'seed_base': self.seed_base,
+                        'taskset_count': self.num_tasksets,
+                        'core_count': self.system_cores,
+                        'battery_capacity': self.battery_capacity,
+                        'harvesting_profile': self.harvesting_profile(),
+                        'simulation_num_accepted': status_buckets.count(
+                            'accepted'
+                        ),
+                        'simulation_num_rejected': status_buckets.count(
+                            'rejected'
+                        ),
+                        'simulation_num_timeout': status_buckets.count(
+                            'timeout'
+                        ),
+                        'simulation_num_error': status_buckets.count(
+                            'error'
+                        ),
                     }
 
-                    if self.enable_rta:
-                        rta_results = [
-                            result for result in run_results
-                            if isinstance(result, dict)
-                            and result.get('rta_enabled', False)
-                        ]
-                        rta_num_proven = sum(
-                            result.get('rta_status')
+                    rta_results = [
+                        result for result in run_results
+                        if isinstance(result, dict)
+                        and result.get('rta_enabled', False)
+                    ]
+                    rta_num_analyzed = len(rta_results)
+                    rta_num_proven = sum(
+                        result.get('rta_status')
+                        == 'proven_under_assumptions'
+                        for result in rta_results
+                    )
+                    rta_num_unproven = sum(
+                        result.get('rta_status') == 'rta_unproven'
+                        for result in rta_results
+                    )
+                    rta_num_errors = sum(
+                        result.get('rta_status') in {
+                            'rta_error',
+                            'rta_timeout',
+                            'timeout',
+                            'failed',
+                        }
+                        for result in rta_results
+                    )
+                    tightness_values = [
+                        value for value in (
+                            tightness_for_result(algo, result)
+                            for result in run_results
+                        )
+                        if value is not None
+                    ]
+                    row.update({
+                        'rta_num_analyzed': rta_num_analyzed,
+                        'rta_num_proven': rta_num_proven,
+                        'rta_num_unproven': rta_num_unproven,
+                        'rta_num_errors': rta_num_errors,
+                        'rta_proven_ratio': (
+                            rta_num_proven / rta_num_analyzed
+                            if rta_num_analyzed else np.nan
+                        ),
+                        'sim_success_rta_proven': sum(
+                            result.get('acceptance_ratio') == 1.0
+                            and result.get('rta_status')
                             == 'proven_under_assumptions'
                             for result in rta_results
-                        )
-                        rta_num_unproven = sum(
-                            result.get('rta_status') == 'rta_unproven'
+                        ),
+                        'sim_success_rta_unproven': sum(
+                            result.get('acceptance_ratio') == 1.0
+                            and result.get('rta_status') == 'rta_unproven'
                             for result in rta_results
-                        )
-                        rta_num_errors = sum(
-                            result.get('rta_status') == 'rta_error'
-                            for result in rta_results
-                        )
-                        rta_num_analyzed = (
-                            rta_num_proven + rta_num_unproven
-                        )
-                        row.update({
-                            'rta_num_analyzed': rta_num_analyzed,
-                            'rta_num_proven': rta_num_proven,
-                            'rta_num_unproven': rta_num_unproven,
-                            'rta_num_errors': rta_num_errors,
-                            'rta_proven_ratio': (
-                                rta_num_proven / rta_num_analyzed
-                                if rta_num_analyzed else np.nan
-                            ),
-                            'sim_success_rta_proven': sum(
-                                result.get('acceptance_ratio') == 1.0
-                                and result.get('rta_status')
-                                == 'proven_under_assumptions'
-                                for result in rta_results
-                            ),
-                            'sim_success_rta_unproven': sum(
-                                result.get('acceptance_ratio') == 1.0
-                                and result.get('rta_status')
-                                == 'rta_unproven'
-                                for result in rta_results
-                            ),
-                        })
+                        ),
+                        'avg_tightness': (
+                            float(np.mean(tightness_values))
+                            if tightness_values else np.nan
+                        ),
+                        'tightness_num_samples': len(tightness_values),
+                    })
                     data.append(row)
 
         return pd.DataFrame(data)
@@ -1059,48 +1263,12 @@ def main():
         """
     )
 
-    # 实验控制
-    parser.add_argument('--run-experiment', action='store_true',
-                       help='运行实验生成新数据')
-    parser.add_argument('--csv', type=str, default=None,
-                       help='从CSV文件加载数据（不运行实验）')
-
-    # 实验参数
-    parser.add_argument('--output-dir', type=str, default='acceptance_ratio_50tasks',
-                       help='输出目录 (默认: acceptance_ratio_50tasks)')
-    parser.add_argument('--num-points', type=int, default=10,
-                       help='利用率采样点数 (默认: 10)')
-    parser.add_argument('--num-tasksets', type=int, default=DEFAULT_NUM_TASKSETS,
-                       help=f'每个利用率点的任务集数量 (默认: {DEFAULT_NUM_TASKSETS})')
-    parser.add_argument('--task-n', type=int, default=DEFAULT_TASK_N,
-                       help=f'每个任务集的任务数 (默认: {DEFAULT_TASK_N})')
-    parser.add_argument('--battery', type=float, default=DEFAULT_BATTERY_CAPACITY,
-                       help=f'电池容量 (Joules) (默认: {DEFAULT_BATTERY_CAPACITY})')
-    parser.add_argument('--initial-energy', type=float, default=DEFAULT_INITIAL_ENERGY_RATIO,
-                       help=f'初始能量比例 (0.0-1.0) (默认: {DEFAULT_INITIAL_ENERGY_RATIO})')
-    parser.add_argument('--solar-time-ms', type=int, default=DEFAULT_SOLAR_START_TIME_MS,
-                       help=f'太阳能收集开始时间（毫秒）(默认: {DEFAULT_SOLAR_START_TIME_MS})')
-    parser.add_argument('--max-workers', type=int, default=DEFAULT_MAX_WORKERS,
-                       help=f'并发线程数 (默认: {DEFAULT_MAX_WORKERS})')
-    parser.add_argument('--enable-rta', action='store_true',
-                       help='仅为 ASAP-BLOCK 启用离线RTA观察指标')
-    parser.add_argument('--rta-horizon-ms', type=int, default=None,
-                       help='RTA harvesting服务曲线分析时域（启用RTA时必填）')
-    parser.add_argument('--rta-assume-no-overflow', action='store_true',
-                       help='显式确认RTA的电池不溢出条件假设')
-    parser.add_argument('--rta-timeout', type=int, default=300,
-                       help='单次RTA超时时间（秒，默认: 300）')
-
-    # 图表参数
-    parser.add_argument('--figure-output', type=str, default=None,
-                       help='综合图表输出文件名（可选，默认生成6张分组图表）')
-    parser.add_argument('--x-label', type=str, default=None,
-                       help='自定义X轴标签')
-    parser.add_argument('--no-group-figures', action='store_true',
-                       help='不生成分组图表，只生成综合图表')
+    add_experiment_cli_args(parser)
 
     args = parser.parse_args()
     validate_rta_cli_args(parser, args)
+    if args.run_experiment:
+        validate_output_dir_args(parser, args)
 
     # 决定数据来源
     if args.run_experiment:
@@ -1126,6 +1294,7 @@ def main():
             rta_horizon_ms=args.rta_horizon_ms,
             rta_assume_no_overflow=args.rta_assume_no_overflow,
             rta_timeout=args.rta_timeout,
+            seed_base=args.seed_base,
         )
 
         results = runner.run_experiments()
