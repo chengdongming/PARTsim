@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 #include <deque>
+#include <cstdint>
 
 namespace RTSim {
 
@@ -167,6 +168,12 @@ namespace RTSim {
         bool _batch_scheduled_this_tick;                // 本tick是否已批量调度
         bool _energy_depleted;                          // 能量是否已耗尽（Bug #5修复）
         int _current_batch_size;                        // 当前批量大小
+        MetaSim::Tick _selection_tick;                  // 当前冻结同步组所属tick
+        uint64_t _selection_generation;                 // 每次冻结同步组递增，防stale dispatch
+        bool _selection_frozen;                         // 当前tick是否已有冻结同步组
+        MetaSim::Tick _energy_commit_tick;              // 能量提交所属tick
+        uint64_t _energy_commit_generation;             // 能量提交所属generation
+        bool _energy_commit_valid;                      // 当前generation是否已提交能量
         bool _v108_batch_energy_checked;                // ⭐ V108: 本tick是否已做过批量能量检查
         bool _v108_batch_energy_sufficient;             // ⭐ V108: 本tick批量能量是否充足
         int _v108_batch_k_approved;                     // ⭐ V108: 已批准扣除能量的任务数
