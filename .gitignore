@@ -4,6 +4,14 @@ build/
 # Experiment and dry-run outputs
 acceptance_ratio_runs/
 
+# Python caches
+__pycache__/
+*.py[cod]
+
+# Runtime logs
+logs/*.log
+logs/*.log.*
+
 CMakeLists.txt.user
 CMakeCache.txt
 CMakeFiles
