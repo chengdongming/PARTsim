@@ -2563,7 +2563,7 @@ AbsRTTask *GPFPCASCADEScheduler::getFirst() {
         SCHEDULER_LOG_INFO("  基础功耗: " + std::to_string(_base_power) + " W");
 
         for (const auto &pair : _power_coefficients) {
-            SCHEDULER_LOG_INFO("  " + pair.first + " 功率系数: " + std::to_string(pair.second) + " W");
+            SCHEDULER_LOG_INFO("  " + pair.first + " 功率系数: " + std::to_string(pair.second));
         }
 
         SCHEDULER_LOG_INFO("  当前频率: " + std::to_string(_current_frequency) + " MHz");
@@ -2582,13 +2582,13 @@ AbsRTTask *GPFPCASCADEScheduler::getFirst() {
         // 检查工作负载类型是否在映射中
         auto it = _power_coefficients.find(workload_type);
         if (it != _power_coefficients.end()) {
-            SCHEDULER_LOG_INFO("getWorkloadPower: 找到工作负载功率系数: " + workload_type + " = " + std::to_string(it->second) + " W");
+            SCHEDULER_LOG_INFO("getWorkloadPower: 找到工作负载功率系数: " + workload_type + " = " + std::to_string(it->second));
             return it->second;
         }
         
         // 如果工作负载类型不在映射中，检查是否包含bzip2
         if (workload_type.find("bzip2") != std::string::npos) {
-            SCHEDULER_LOG_INFO("getWorkloadPower: 检测到bzip2工作负载，使用功率系数: 1.2 W");
+            SCHEDULER_LOG_INFO("getWorkloadPower: 检测到bzip2工作负载，使用功率系数: 1.2");
             return 1.2;
         }
         

@@ -8,6 +8,7 @@
 #include <rtsim/rttask.hpp>
 #include <rtsim/energy_info_provider.hpp>
 #include <metasim/factory.hpp>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -126,6 +127,14 @@ namespace RTSim {
         double _max_energy;                  // 最大能量容量
         double _dispatching_tasks_total_energy; // 本次dispatch中已调度任务的总能耗
         std::set<AbsRTTask *> _counted_tasks_in_dispatch; // 本次dispatch中已计数的任务，避免重复
+        std::vector<AbsRTTask *> _dispatch_selection_order; // 本轮dispatch已选中的稳定顺序
+        std::set<AbsRTTask *> _energy_deducted_tasks; // 已扣除初始能量的任务（跨tick持久化）
+        MetaSim::Tick _selection_tick;       // 当前冻结选择对应tick
+        uint64_t _selection_generation;      // 每次tick选择递增，防stale EndDispatch
+        bool _selection_frozen;              // 当前tick是否已经冻结选择
+        MetaSim::Tick _energy_commit_tick;   // 最近一次能量提交tick
+        uint64_t _energy_commit_generation;  // 最近一次能量提交generation
+        bool _energy_commit_valid;           // 是否已有能量提交记录
         MetaSim::Tick _last_tick_time;       // 上次tick时间
         MetaSim::Tick _last_collection_time; // 上次能量收集时间
 
@@ -222,6 +231,17 @@ namespace RTSim {
         STBlockTaskModel *getTaskModel(AbsRTTask *task);
         std::string getTaskName(AbsRTTask *task);
         void onTaskArrival(AbsRTTask *task);
+        void resetTickDispatchState();
+        void clearTaskTickSelection(AbsRTTask *task);
+        void markTaskSelectedThisTick(AbsRTTask *task);
+        void clearPersistentTaskState(AbsRTTask *task);
+        void accountInitialEnergyForSelectedTasks(const std::string &log_prefix);
+        std::vector<AbsRTTask *> collectActiveJobs(MetaSim::Tick current_time);
+        bool hasHigherRMPriority(AbsRTTask *lhs, AbsRTTask *rhs);
+        void sortByRMPriority(std::vector<AbsRTTask *> &tasks);
+        double getConfiguredUnitEnergyForTask(AbsRTTask *task) const;
+        void commitTickEnergy(MetaSim::Tick tick, double energy);
+        void cancelStaleDispatches(const std::vector<AbsRTTask *> &previous_selection);
 
         // 队列管理
         void addToReadyQueue(AbsRTTask *task);
@@ -279,6 +299,8 @@ namespace RTSim {
         double getCurrentEnergy() const override { return _current_energy; }
         double getInitialEnergy() const { return _initial_energy; }
         double getMaxEnergy() const { return _max_energy; }
+        bool isChargingSleepActive() const { return _is_charging_sleep || _deep_charging; }
+        bool isEnergyDepletedActive() const { return _energy_depleted; }
         double calculateUnitEnergyForTask(AbsRTTask *task);  // MRTKernel需要调用
         double calculateMinTaskEnergyInReadyQueue();  // ⭐ 计算就绪队列中最小任务能耗（修复循环问题）
 
@@ -291,8 +313,7 @@ namespace RTSim {
         std::string getSuspendReason(AbsRTTask *task) const override;
         void clearSuspendReason(AbsRTTask *task) override;
 
-        // ⭐ 运行时能量检查接口（V28.15新增）
-        // ⭐ V40重构：能量检查事件已删除，能量由performTickScheduling处理
+        // 运行期能量在 tick 调度中统一处理。
         // void startEnergyCheckForTask(AbsRTTask *task, CPU *cpu);  // 开始对任务的能量监控
         // void stopEnergyCheckForTask(AbsRTTask *task);  // 停止对任务的能量监控
 
@@ -313,6 +334,7 @@ namespace RTSim {
         std::string getEnergyStatus() const;
 
         // 友元类声明
+        friend class MRTKernel;
         friend class STBlockTickEvent;
         friend class STBlockWakeEvent;  // ⭐ V74：深度充电唤醒事件
         // ⭐ V40重构：能量检查事件已删除

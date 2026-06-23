@@ -230,7 +230,7 @@ namespace RTSim {
                         if (!workload.empty() && PyFloat_Check(coeff_value)) {
                             double coefficient = PyFloat_AsDouble(coeff_value);
                             config.setPowerCoefficient(workload, coefficient);
-                            SCHEDULER_LOG_INFO("  " + workload + " coefficient: " + std::to_string(coefficient) + " W");
+                            SCHEDULER_LOG_INFO("  " + workload + " coefficient: " + std::to_string(coefficient));
                         }
                     }
                 } else if (key_name == "frequency_power_ratios" &&

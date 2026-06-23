@@ -7,6 +7,7 @@
 #include <rtsim/abstask.hpp>
 #include <rtsim/rttask.hpp>
 #include <rtsim/energy_info_provider.hpp>
+#include <rtsim/json_trace.hpp>
 #include <metasim/factory.hpp>
 #include <map>
 #include <memory>
@@ -39,6 +40,19 @@ namespace RTSim {
         void doit() override;
     };
 
+    class ALAPNonBlockScheduler; // 前置声明
+
+    // =====================================================
+    // ALAP专属唤醒闹钟事件
+    // =====================================================
+    class ALAPNonBlockWakeEvent : public MetaSim::Event {
+    private:
+        ALAPNonBlockScheduler *_scheduler;
+    public:
+        ALAPNonBlockWakeEvent(ALAPNonBlockScheduler *scheduler);
+        void doit() override;
+    };
+
     // =====================================================
     // ALAP-NonBlock运行时能量检查事件（每1ms检查运行中任务的能量）
     // ⭐ V40重构：能量检查事件已删除，能量由performTickScheduling处理
@@ -58,6 +72,27 @@ namespace RTSim {
         void setMsExecuted(int ms) { _ms_executed = ms; }
     };
     */
+
+    // =====================================================
+    // ⭐ 能量耗尽预测事件（虚空借电Bug修复）
+    // 当系统预测到电池将在某时刻耗尽时，在事件队列中插入此事件
+    // 确保任务在电池真正耗尽时被正确中断，而不是"惯性"跑完
+    // =====================================================
+    class ALAPNonBlockEnergyDepletedEvent : public MetaSim::Event {
+    private:
+        ALAPNonBlockScheduler *_scheduler;
+
+    public:
+        MetaSim::Tick _scheduled_depletion_time;  // 预测的耗尽时刻
+        double _energy_at_prediction;               // 预测时的能量值
+
+    public:
+        ALAPNonBlockEnergyDepletedEvent(ALAPNonBlockScheduler *scheduler);
+        void doit() override;
+
+        MetaSim::Tick getScheduledDepletionTime() const { return _scheduled_depletion_time; }
+        double getEnergyAtPrediction() const { return _energy_at_prediction; }
+    };
 
     // =====================================================
     // ALAPNonBlockTaskModel 类声明
@@ -111,11 +146,25 @@ namespace RTSim {
         double _max_energy;                  // 最大能量容量
         double _dispatching_tasks_total_energy; // 本次dispatch中已调度任务的总能耗
         std::set<AbsRTTask *> _counted_tasks_in_dispatch; // 本次dispatch中已计数的任务，避免重复
+        std::vector<AbsRTTask *> _dispatch_selection_order; // 本次dispatch已选中的任务顺序，保证kernel重复查询时返回稳定结果
         std::set<AbsRTTask *> _energy_deducted_tasks; // 已扣除初始能量的任务（跨tick持久化）
         std::set<AbsRTTask *> _newly_dispatched_this_tick; // ⭐ V42：当前tick新调度的任务（用于跳过续期扣除）
         bool _in_tick_boundary_dispatch = false;  // ⭐ 标记是否在tick边界调度中（用于能量扣除时机控制）
+        MetaSim::Tick _last_prediction_tick = -1;  // ⭐ 上次更新能量预测的tick（防止同一tick内重复预测）
+        MetaSim::Tick _selection_tick;
+        uint64_t _selection_generation;
+        bool _selection_frozen;
+        MetaSim::Tick _energy_commit_tick;
+        bool _energy_commit_valid;
+        std::set<AbsRTTask *> _paid_pending_tasks;
+        std::map<AbsRTTask *, MetaSim::Tick> _pending_payment_ticks;
+        std::set<AbsRTTask *> _paid_execution_credit_tasks;
         MetaSim::Tick _last_tick_time;       // 上次tick时间
         MetaSim::Tick _last_collection_time; // 上次能量收集时间
+        ALAPNonBlockWakeEvent* _alap_wake_event = nullptr;
+
+        // ⭐ 能量耗尽预测事件（Bug修复：防止虚空借电）
+        ALAPNonBlockEnergyDepletedEvent *_energy_depleted_event = nullptr;
 
         // ========== 太阳能配置 ==========
         std::string _solar_data_file;
@@ -171,6 +220,9 @@ namespace RTSim {
             int total_alap_forced_idle = 0;  // ⭐ ALAP: 强制休眠次数
         } _stats;
 
+        // ⭐ V58新增：JSONTrace指针，用于在Early Abort时注入dline_miss记录
+        JSONTrace *_trace_logger = nullptr;
+
         // ========== 私有方法 ==========
 
         // 核心调度逻辑
@@ -180,6 +232,8 @@ namespace RTSim {
         // ⭐ ALAP时序门控（阶段一）
         bool checkALAPTimingGate();  // 检查是否需要强制休眠
         MetaSim::Tick calculateSlackForTask(AbsRTTask *task);  // 计算任务的Slack
+        MetaSim::Tick calculateSlackForTask(
+            AbsRTTask *task, MetaSim::Tick current_time);
 
         // ⭐ 过期任务清理
         void cleanupExpiredTasks();  // 清理超过截止期的旧任务实例
@@ -193,6 +247,12 @@ namespace RTSim {
         double collectSolarEnergy(MetaSim::Tick current_time);
         double getSolarIrradiance(int64_t time_ms);
 
+        // ⭐ 能量耗尽预测与事件注册（Bug修复）
+        double calculateTotalPowerConsumption();                              // 计算当前总功耗
+        MetaSim::Tick predictTimeToDepletion(double energy, double power);    // 预测能量耗尽时间
+        void scheduleEnergyDepletionEvent(MetaSim::Tick depletion_time);     // 注册能量耗尽事件
+        void cancelEnergyDepletionEvent();                                    // 取消能量耗尽事件
+
         // 任务管理
         ALAPNonBlockTaskModel *getTaskModel(AbsRTTask *task);
         std::string getTaskName(AbsRTTask *task);
@@ -200,10 +260,23 @@ namespace RTSim {
         void clearPersistentTaskState(AbsRTTask *task);
         void resetTickDispatchState();
         void clearTaskTickSelection(AbsRTTask *task);
+        std::vector<AbsRTTask *> collectActiveJobs(
+            MetaSim::Tick current_time);
+        std::vector<AbsRTTask *> collectALAPCandidates(
+            const std::vector<AbsRTTask *> &active_tasks,
+            MetaSim::Tick current_time);
+        bool hasHigherRMPriority(
+            AbsRTTask *lhs, AbsRTTask *rhs);
+        void sortByRMPriority(
+            std::vector<AbsRTTask *> &tasks);
+        double getConfiguredUnitEnergyForTask(
+            AbsRTTask *task) const;
+        void commitTickEnergy(
+            MetaSim::Tick tick, double energy);
+        void cancelStaleDispatches(
+            const std::vector<AbsRTTask *> &previous_selection);
         void markTaskSelectedThisTick(AbsRTTask *task);
         void accountInitialEnergyForSelectedTasks(const std::string &log_prefix);
-        bool shouldDropHopelessTask(AbsRTTask *task, double available_energy);
-        bool dropHopelessTask(AbsRTTask *task, const std::string &reason, bool count_deadline_miss = true);
         void refreshSchedulingAfterQueueMutation(const std::string &reason, bool immediate_dispatch = false);
 
         // 队列管理
@@ -258,6 +331,9 @@ namespace RTSim {
         void endRun() override;
         void onTaskEnd(AbsRTTask *task);
 
+        // ⭐ 能量耗尽处理（public供ALAPNonBlockEnergyDepletedEvent调用）
+        void onEnergyDepleted();
+
         // 能量管理接口
         double getCurrentEnergy() const override { return _current_energy; }
         double getInitialEnergy() const { return _initial_energy; }
@@ -273,6 +349,10 @@ namespace RTSim {
         void setSuspendReason(AbsRTTask *task, const std::string &reason);
         std::string getSuspendReason(AbsRTTask *task) const override;
         void clearSuspendReason(AbsRTTask *task) override;
+
+        void setTraceLogger(void *trace) override {
+            _trace_logger = static_cast<JSONTrace *>(trace);
+        }
 
         // ⭐ 运行时能量检查接口（V28.15新增）
 //         void startEnergyCheckForTask(AbsRTTask *task, CPU *cpu);  // 开始对任务的能量监控
@@ -296,6 +376,8 @@ namespace RTSim {
 
         // 友元类声明
         friend class ALAPNonBlockTickEvent;
+        friend class ALAPNonBlockEnergyDepletedEvent;  // ⭐ Bug修复：能量耗尽预测事件
+        friend class ALAPNonBlockSchedulerTestPeer;
         // friend class ALAP-NonBlockEnergyCheckEvent;  /* V40重构：能量检查事件已删除 */
     };
 

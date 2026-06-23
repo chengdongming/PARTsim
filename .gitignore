@@ -1,6 +1,17 @@
 .idea/
 build/
 
+# Experiment and dry-run outputs
+acceptance_ratio_runs/
+
+# Python caches
+__pycache__/
+*.py[cod]
+
+# Runtime logs
+logs/*.log
+logs/*.log.*
+
 CMakeLists.txt.user
 CMakeCache.txt
 CMakeFiles
@@ -48,4 +59,5 @@ _deps
 
 # Byproducts of the simulator
 /*.txt
+!CMakeLists.txt
 /*.json

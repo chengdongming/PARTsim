@@ -27,7 +27,12 @@
 #include <rtsim/scheduler/gpfp_asap_block_scheduler.hpp>
 #include <rtsim/scheduler/gpfp_asap_sync_scheduler.hpp>
 #include <rtsim/scheduler/gpfp_asap_nonblock_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_st_block_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_st_nonblock_scheduler.hpp>
 #include <rtsim/scheduler/gpfp_st_sync_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_alap_block_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_alap_nonblock_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_alap_sync_scheduler.hpp>
 
 namespace RTSim {
     // =========================================================================
@@ -138,7 +143,7 @@ namespace RTSim {
         std::cout << "[DEBUG] getNextFreeProc() - 开始查找空闲CPU" << std::endl;
         for (auto it = begin; it != end; ++it) {
             bool curr_exe_null = (it->second == nullptr);
-            bool is_disp = isDispatched(it->first);
+            bool is_disp = isCPUDispatching(it->first);
             std::cout << "[DEBUG] getNextFreeProc() - CPU: " << it->first->toString()
                       << " _m_currExe=" << (it->second ? taskname(it->second) : "nullptr")
                       << " is_null:" << curr_exe_null
@@ -202,6 +207,34 @@ namespace RTSim {
         }
 
         _sched->insert(task);
+
+        STBlockScheduler *st_block_sched = dynamic_cast<STBlockScheduler *>(_sched);
+        if (st_block_sched) {
+            st_block_sched->onTaskArrival(task);
+        }
+
+        STNonBlockScheduler *st_nonblock_sched = dynamic_cast<STNonBlockScheduler *>(_sched);
+        if (st_nonblock_sched) {
+            st_nonblock_sched->onTaskArrival(task);
+        }
+
+        STSyncScheduler *st_sync_sched = dynamic_cast<STSyncScheduler *>(_sched);
+        if (st_sync_sched) {
+            st_sync_sched->onTaskArrival(task);
+            std::cout << "[DEBUG] MRTKernel::onArrival() - ST-Sync到达后重新进入通用dispatch" << std::endl;
+        }
+
+        ASAPBlockScheduler *asap_block_sched = dynamic_cast<ASAPBlockScheduler *>(_sched);
+        if (asap_block_sched) {
+            asap_block_sched->onTaskArrival(task);
+        }
+
+        ASAPSyncScheduler *asap_sync_sched = dynamic_cast<ASAPSyncScheduler *>(_sched);
+        if (asap_sync_sched) {
+            asap_sync_sched->onTaskArrival(task);
+            std::cout << "[DEBUG] MRTKernel::onArrival() - ASAP-Sync到达后立即参与实时batch重建" << std::endl;
+        }
+
         dispatch();
 
         std::cout << "[DEBUG] MRTKernel::onArrival() - 完成: " << taskname(task) << std::endl;
@@ -209,6 +242,42 @@ namespace RTSim {
 
     void MRTKernel::suspend(AbsRTTask *task) {
         DBGENTER(_MRTKERNEL_DBG_LEV);
+
+        STSyncScheduler *st_sync_sched = dynamic_cast<STSyncScheduler *>(_sched);
+        std::string st_sync_suspend_reason;
+        if (st_sync_sched) {
+            st_sync_suspend_reason = st_sync_sched->getSuspendReason(task);
+        }
+
+        STNonBlockScheduler *st_nonblock_sched = dynamic_cast<STNonBlockScheduler *>(_sched);
+        std::string st_nonblock_suspend_reason;
+        if (st_nonblock_sched) {
+            st_nonblock_suspend_reason = st_nonblock_sched->getSuspendReason(task);
+        }
+
+        ASAPBlockScheduler *asap_block_sched = dynamic_cast<ASAPBlockScheduler *>(_sched);
+        std::string asap_block_suspend_reason;
+        if (asap_block_sched) {
+            asap_block_suspend_reason = asap_block_sched->getSuspendReason(task);
+        }
+
+        ASAPNonBlockScheduler *asap_nonblock_sched = dynamic_cast<ASAPNonBlockScheduler *>(_sched);
+        std::string asap_nonblock_suspend_reason;
+        if (asap_nonblock_sched) {
+            asap_nonblock_suspend_reason = asap_nonblock_sched->getSuspendReason(task);
+        }
+
+        ASAPSyncScheduler *asap_sync_sched = dynamic_cast<ASAPSyncScheduler *>(_sched);
+        std::string asap_sync_suspend_reason;
+        if (asap_sync_sched) {
+            asap_sync_suspend_reason = asap_sync_sched->getSuspendReason(task);
+        }
+
+        ALAPSyncScheduler *alap_sync_sched = dynamic_cast<ALAPSyncScheduler *>(_sched);
+        std::string alap_sync_suspend_reason;
+        if (alap_sync_sched) {
+            alap_sync_suspend_reason = alap_sync_sched->getSuspendReason(task);
+        }
 
         _sched->extract(task);
         CPU *p = getProcessor(task);
@@ -225,6 +294,24 @@ namespace RTSim {
             // 正确做法：将任务重新插入到就绪队列，而不是终止它
             // _sched->onTaskEnd(task);  // ❌ 错误：这会终止任务实例
 
+            if (st_sync_sched) {
+                if (st_sync_suspend_reason == "preemption") {
+                    _sched->insert(task);
+                    std::cout << "[DEBUG] MRTKernel::suspend() - ST-Sync抢占挂起后重新插入ready，等待新的dispatch" << std::endl;
+                } else {
+                    std::cout << "[DEBUG] MRTKernel::suspend() - ST-Sync缺电挂起后保留waiting态，不做kernel reinsert" << std::endl;
+                }
+                return;
+            }
+
+            if (alap_sync_sched) {
+                if (alap_sync_suspend_reason == "insufficient_energy") {
+                    _sched->insert(task);
+                    std::cout << "[DEBUG] MRTKernel::suspend() - ALAP-Sync缺电挂起后重新插入ready，等待下一个tick/wake重建批次" << std::endl;
+                    return;
+                }
+            }
+
             // ✅ 修复：将任务重新插入到就绪队列
             // 这样任务会保留剩余执行时间，等待能量恢复后继续执行
             _sched->insert(task);
@@ -232,9 +319,33 @@ namespace RTSim {
             std::cout << "[DEBUG] MRTKernel::suspend() - 任务已重新插入队列: "
                       << taskname(task) << " (剩余执行时间保留)" << std::endl;
 
-            ASAPSyncScheduler *asap_sync_sched = dynamic_cast<ASAPSyncScheduler *>(_sched);
-            if (asap_sync_sched && !asap_sync_sched->shouldDispatchAtTickBoundary()) {
-                std::cout << "[DEBUG] MRTKernel::suspend() - ASAP-Sync等待下一个tick再调度" << std::endl;
+            if (asap_sync_sched) {
+                if (asap_sync_suspend_reason == "preemption") {
+                    std::cout << "[DEBUG] MRTKernel::suspend() - ASAP-Sync抢占挂起后立即参与重建批次" << std::endl;
+                } else if (!asap_sync_sched->shouldDispatchAtTickBoundary()) {
+                    std::cout << "[DEBUG] MRTKernel::suspend() - ASAP-Sync等待下一个tick再调度" << std::endl;
+                    return;
+                }
+            }
+
+            if (st_nonblock_sched && st_nonblock_suspend_reason == "insufficient_energy") {
+                std::cout << "[DEBUG] MRTKernel::suspend() - ST-NonBlock缺电挂起，跳过立即dispatch，等待正常tick/wake" << std::endl;
+                return;
+            }
+
+            if (asap_nonblock_sched && asap_nonblock_suspend_reason == "insufficient_energy") {
+                std::cout << "[DEBUG] MRTKernel::suspend() - ASAP-NonBlock缺电挂起，跳过立即dispatch，等待下个tick重新旁路评估" << std::endl;
+                return;
+            }
+
+            if (asap_block_sched && asap_block_suspend_reason == "insufficient_energy") {
+                std::cout << "[DEBUG] MRTKernel::suspend() - ASAP-Block缺电挂起，维持阻塞墙，等待充电后再开放调度" << std::endl;
+                return;
+            }
+
+            STBlockScheduler *st_block_sched = dynamic_cast<STBlockScheduler *>(_sched);
+            if (st_block_sched && st_block_sched->isChargingSleepActive()) {
+                std::cout << "[DEBUG] MRTKernel::suspend() - ST-Block处于充电休眠，跳过立即dispatch" << std::endl;
                 return;
             }
 
@@ -261,6 +372,14 @@ namespace RTSim {
 
         ASAPSyncScheduler *asap_sync_sched = dynamic_cast<ASAPSyncScheduler *>(_sched);
         if (asap_sync_sched && !asap_sync_sched->shouldDispatchAtTickBoundary()) {
+            if (asap_sync_sched->getSuspendReason(task) != "preemption") {
+                return;
+            }
+        }
+
+        STSyncScheduler *st_sync_sched = dynamic_cast<STSyncScheduler *>(_sched);
+        if (st_sync_sched) {
+            std::cout << "[DEBUG] MRTKernel::onEnd() - ST-Sync等待下一个tick再重建同步组" << std::endl;
             return;
         }
 
@@ -469,6 +588,13 @@ namespace RTSim {
         Tick current_time = SIMUL.getTime();
         Tick base_time = (current_time > _dispatch_start_time) ? current_time : _dispatch_start_time;
         Tick post_time = base_time + overhead;
+
+        // ⭐ 修复：确保 _endEvt[p] 不在队列中，避免重复 post 导致 "already posted" 异常
+        // 这种情况发生在 _isContextSwitching[p] 为 true 时，dispatch(CPU*) 方法
+        // 延迟了 _beginEvt[p] 但没有正确处理 _endEvt[p] 的状态
+        // drop() 是幂等的：如果事件不在队列中，只是设置 _isInQueue=false，不会报错
+        _endEvt[p]->drop();
+
         _endEvt[p]->post(post_time);
         std::cout << "[DEBUG] onBeginDispatchMulti - 设置事件: task=" << taskname(st)
                   << " CPU=" << p->toString()
@@ -481,6 +607,21 @@ namespace RTSim {
 
         AbsRTTask *st = e->getTask();
         CPU *p = e->getCPU();
+
+        ASAPBlockScheduler *asap_block_sched =
+            dynamic_cast<ASAPBlockScheduler *>(_sched);
+        if (st && asap_block_sched &&
+            !asap_block_sched->acceptsDispatchCompletion(st)) {
+            _m_dispatched[st] = nullptr;
+            _m_currExe[p] = nullptr;
+            _isContextSwitching[p] = false;
+            e->setTask(nullptr);
+
+            // The rejected task remains ready. Re-dispatch can only see the
+            // current tick's frozen ASAP-Block selection through getTaskN().
+            dispatch(p);
+            return;
+        }
 
         _m_currExe[p] = st;
 
@@ -502,11 +643,17 @@ namespace RTSim {
             // ⭐ V28.11修复：EPP/EFPP/CBPP调度器已在getTaskN中预扣能量，kernel不再重复检查
             GPFPCASCADEScheduler *cascade_sched = dynamic_cast<GPFPCASCADEScheduler*>(_sched);
             GPFPASAPScheduler *asap_sched = dynamic_cast<GPFPASAPScheduler*>(_sched);
+            ALAPBlockScheduler *alap_block_sched = dynamic_cast<ALAPBlockScheduler*>(_sched);
+            ALAPNonBlockScheduler *alap_nonblock_sched = dynamic_cast<ALAPNonBlockScheduler*>(_sched);
+            ALAPSyncScheduler *alap_sync_sched = dynamic_cast<ALAPSyncScheduler*>(_sched);
             EPPScheduler *epp_sched = dynamic_cast<EPPScheduler*>(_sched);
             EFPFPScheduler *efpp_sched = dynamic_cast<EFPFPScheduler*>(_sched);
             CBPPScheduler *cbpp_sched = dynamic_cast<CBPPScheduler*>(_sched);
             std::cout << "[DEBUG] _sched类型: " << typeid(*_sched).name() << std::endl;
             std::cout << "[DEBUG] cascade_sched指针: " << cascade_sched << " asap_sched指针: " << asap_sched
+                      << " alap_block_sched指针: " << alap_block_sched
+                      << " alap_nonblock_sched指针: " << alap_nonblock_sched
+                      << " alap_sync_sched指针: " << alap_sync_sched
                       << " epp_sched指针: " << epp_sched << " efpp_sched指针: " << efpp_sched
                       << " cbpp_sched指针: " << cbpp_sched << std::endl;
 
@@ -556,6 +703,18 @@ namespace RTSim {
                         return;
                     }
                 }
+            } else if (alap_block_sched && task) {
+                unit_energy = alap_block_sched->calculateUnitEnergyForTask(st);
+                current_energy = alap_block_sched->getCurrentEnergy();
+                check_energy = true;
+            } else if (alap_nonblock_sched && task) {
+                unit_energy = alap_nonblock_sched->calculateUnitEnergyForTask(st);
+                current_energy = alap_nonblock_sched->getCurrentEnergy();
+                check_energy = true;
+            } else if (alap_sync_sched && task) {
+                unit_energy = alap_sync_sched->calculateUnitEnergyForTask(st);
+                current_energy = alap_sync_sched->getCurrentEnergy();
+                check_energy = true;
             }
 
             if (check_energy) {
@@ -569,8 +728,16 @@ namespace RTSim {
                               << " current_energy(" << current_energy << ") < unit_energy(" << unit_energy << ")" << std::endl;
                     std::cout << "[DEBUG] MRTKernel::onEndDispatchMulti() - 能量不足，跳过schedule(): " << task->getName() << std::endl;
                     DBGPRINT("Energy insufficient, skipping schedule(): ", taskname(st));
+                    if (alap_sync_sched) {
+                        alap_sync_sched->rejectDispatchedTask(st);
+                    }
+                    if (alap_block_sched || alap_nonblock_sched) {
+                        _m_dispatched[st] = nullptr;
+                    }
                     // 从队列中移除任务
                     _sched->extract(st);
+                    // 清理dispatch占位，避免下一个tick误判为仍在派发中
+                    _m_dispatched[st] = nullptr;
                     // 将_m_currExe[p]设置为null，避免后续问题
                     _m_currExe[p] = nullptr;
                     _isContextSwitching[p] = false;

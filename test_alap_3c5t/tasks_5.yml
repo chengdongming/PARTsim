@@ -1,0 +1,40 @@
+taskset:
+  - name: task_high
+    iat: 500
+    runtime: 250
+    deadline: 500
+    params: "period=500,wcet=250,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(250, bzip2)
+
+  - name: task_mid1
+    iat: 1000
+    runtime: 400
+    deadline: 1000
+    params: "period=1000,wcet=400,arrival_offset=0,workload=bzip2"
+    code:
+      - fixed(400, bzip2)
+
+  - name: task_mid2
+    iat: 1000
+    runtime: 300
+    deadline: 1000
+    params: "period=1000,wcet=300,arrival_offset=0,workload=hash"
+    code:
+      - fixed(300, hash)
+
+  - name: task_low
+    iat: 2000
+    runtime: 600
+    deadline: 2000
+    params: "period=2000,wcet=600,arrival_offset=0,workload=hash"
+    code:
+      - fixed(600, hash)
+
+  - name: task_idle
+    iat: 3000
+    runtime: 500
+    deadline: 3000
+    params: "period=3000,wcet=500,arrival_offset=0,workload=idle"
+    code:
+      - fixed(500, idle)

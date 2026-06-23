@@ -27,6 +27,96 @@ from utils.unified_logger import get_energy_logger, LogLevel
 # 获取能量管理器的日志记录器
 logger = get_energy_logger()
 
+DEFAULT_POWER_COEFFICIENTS = {
+    "bzip2": 1.2,
+    "hash": 0.8,
+    "encrypt": 1.5,
+    "decrypt": 1.5,
+    "control": 0.1,
+    "idle": 0.1,
+}
+
+DEFAULT_FREQUENCY_POWER_RATIOS = {
+    7000: 0.85,
+    7500: 0.88,
+    8000: 0.92,
+    8100: 0.93,
+    8200: 0.94,
+    8300: 0.95,
+    8400: 0.96,
+    8500: 0.97,
+    9000: 1.00,
+    9500: 1.05,
+    10000: 1.10,
+    10500: 1.15,
+}
+
+
+def _normalise_energy_model(model: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalise canonical and legacy models for conflict detection."""
+    if not isinstance(model, dict):
+        return {}
+
+    frequencies = model.get(
+        "frequency_power_ratios",
+        model.get("frequency_scaling", {}),
+    )
+    return {
+        "base_power": (
+            float(model["base_power"]) if "base_power" in model else None
+        ),
+        "workload_coefficients": {
+            str(key): float(value)
+            for key, value in model.get("workload_coefficients", {}).items()
+        },
+        "frequency_power_ratios": {
+            int(key): float(value) for key, value in frequencies.items()
+        },
+    }
+
+
+def _resolve_scheduler_energy_model(energy_config: Dict[str, Any]) -> Dict[str, Any]:
+    """Prefer scheduler_energy_model and retain consumption_model fallback."""
+    canonical = energy_config.get("scheduler_energy_model", {})
+    legacy = energy_config.get("consumption_model", {})
+
+    if canonical and legacy:
+        if _normalise_energy_model(canonical) != _normalise_energy_model(legacy):
+            logger.warning(
+                "scheduler_energy_model与consumption_model配置不同；"
+                "使用scheduler_energy_model"
+            )
+        return canonical
+    return canonical or legacy or {}
+
+
+def _resolve_frequency_ratios(model: Dict[str, Any]) -> Dict[int, float]:
+    """Prefer frequency_power_ratios and retain frequency_scaling fallback."""
+    canonical = model.get("frequency_power_ratios")
+    legacy = model.get("frequency_scaling")
+
+    if canonical is not None:
+        canonical_values = {
+            int(key): float(value) for key, value in canonical.items()
+        }
+        if legacy is not None:
+            legacy_values = {
+                int(key): float(value) for key, value in legacy.items()
+            }
+            if canonical_values != legacy_values:
+                logger.warning(
+                    "frequency_power_ratios与frequency_scaling配置不同；"
+                    "使用frequency_power_ratios"
+                )
+        return canonical_values
+
+    if legacy is not None:
+        return {
+            int(key): float(value) for key, value in legacy.items()
+        }
+    return {}
+
+
 class EnergyConfig:
     """能量配置管理器 - 从系统配置文件读取所有参数"""
     
@@ -123,34 +213,8 @@ class EnergyConfig:
         }
 
         # 功率模型参数
-        self.base_power = 0.5  # 基础功耗（W）
-        
-        # 工作负载功率系数（W）
-        self.power_coefficients = {
-            "bzip2": 1.2,
-            "hash": 0.8,
-            "encrypt": 1.5,
-            "decrypt": 1.5,
-            "control": 0.1
-        }
-        
-        # 频率-功率比例系数（MHz）
-        # ⭐ 修复：使用 MHz 单位，匹配配置文件中的频率范围（7000-10500 MHz）
-        # 以 8100 MHz 为基准频率（比率=1.0），其他频率按线性比例调整
-        self.frequency_power_ratios = {
-            7000: 0.90,   # 7.0 GHz
-            7500: 0.95,   # 7.5 GHz
-            8000: 0.98,   # 8.0 GHz
-            8100: 1.00,   # 8.1 GHz (基准频率)
-            8200: 1.02,   # 8.2 GHz
-            8300: 1.04,   # 8.3 GHz
-            8400: 1.06,   # 8.4 GHz
-            8500: 1.08,   # 8.5 GHz
-            9000: 1.15,   # 9.0 GHz
-            9500: 1.22,   # 9.5 GHz
-            10000: 1.30,  # 10.0 GHz
-            10500: 1.38   # 10.5 GHz
-        }
+        self.base_frequency = 8100.0
+        self._set_power_model_defaults()
         
         # 调试配置
         self.debug_mode = False
@@ -167,6 +231,12 @@ class EnergyConfig:
         self.pv_efficiency = 0.18      # 18% 光伏效率
         self.pv_area_m2 = 1.0          # 1平方米光伏板
         self.start_offset_minutes = 0  # 时间偏移（分钟）
+
+    def _set_power_model_defaults(self):
+        """Reset the scheduler power model to the C++ ConfigManager defaults."""
+        self.base_power = 0.5
+        self.power_coefficients = dict(DEFAULT_POWER_COEFFICIENTS)
+        self.frequency_power_ratios = dict(DEFAULT_FREQUENCY_POWER_RATIOS)
     
     def load_from_file(self, config_file: str) -> bool:
         """从YAML配置文件加载能量参数"""
@@ -184,6 +254,12 @@ class EnergyConfig:
             
             # 提取能量管理配置
             energy_config = self.system_config.get('energy_management', {})
+
+            cpu_islands = self.system_config.get('cpu_islands', [])
+            if cpu_islands:
+                self.base_frequency = float(
+                    cpu_islands[0].get('base_freq', self.base_frequency)
+                )
             
             # 基本能量参数
             self.initial_energy = float(energy_config.get('initial_energy', self.initial_energy))
@@ -286,20 +362,24 @@ class EnergyConfig:
                 self.harvesting_sources = {'solar': {'enabled': True}, 'wind': {'enabled': True}}
                 logger.info(f"[EnergyConfig] 使用默认能量收集源配置")
 
-            # 消耗模型
-            consumption_model = energy_config.get('consumption_model', {})
-            if consumption_model:
-                self.base_power = float(consumption_model.get('base_power', self.base_power))
+            # 调度器能耗模型。新键优先，旧键仅用于兼容。
+            self._set_power_model_defaults()
+            scheduler_model = _resolve_scheduler_energy_model(energy_config)
+            if scheduler_model:
+                self.base_power = float(
+                    scheduler_model.get('base_power', self.base_power)
+                )
                 
-                workload_coeffs = consumption_model.get('workload_coefficients', {})
+                workload_coeffs = scheduler_model.get(
+                    'workload_coefficients',
+                    {},
+                )
                 if workload_coeffs:
                     for key, value in workload_coeffs.items():
                         self.power_coefficients[key] = float(value)
                 
-                freq_scaling = consumption_model.get('frequency_scaling', {})
-                if freq_scaling:
-                    for key, value in freq_scaling.items():
-                        self.frequency_power_ratios[int(key)] = float(value)
+                frequency_ratios = _resolve_frequency_ratios(scheduler_model)
+                self.frequency_power_ratios.update(frequency_ratios)
             
             # 调试配置
             self.debug_mode = os.environ.get('RTSIM_ENERGY_DEBUG', '0') == '1'
@@ -362,18 +442,23 @@ class EnergyConfig:
                           key=lambda f: abs(f - frequency_mhz))
         return self.frequency_power_ratios.get(closest_freq, 1.0)
     
-    def get_unit_time_energy(self, workload_type: str, frequency_mhz: float = 1400.0) -> float:
+    def get_unit_time_energy(
+            self,
+            workload_type: str,
+            frequency_mhz: Optional[float] = None) -> float:
         """计算单位时间的能量消耗"""
         return self.calculate_task_energy(workload_type, self.unit_time, frequency_mhz)
     
     def calculate_task_energy(self, workload_type: str, execution_time_ms: float, 
-                            frequency_mhz: float = 1400.0) -> float:
+                            frequency_mhz: Optional[float] = None) -> float:
         """计算任务能量消耗"""
+        if frequency_mhz is None:
+            frequency_mhz = self.base_frequency
         workload_power = self.get_workload_power(workload_type)
         frequency_ratio = self.get_frequency_ratio(frequency_mhz)
         
-        # 总功率 (W) = 基础功率 + 工作负载功率 × 频率比例
-        total_power_watts = self.base_power + workload_power * frequency_ratio
+        # 总功率 (W) = 基础功率 × 工作负载系数 × 频率比例
+        total_power_watts = self.base_power * workload_power * frequency_ratio
         
         # 能量 (J) = 功率 (W) × 时间 (s)
         execution_time_s = execution_time_ms / 1000.0
@@ -942,14 +1027,19 @@ class EnergyManager:
             logger.error(traceback.format_exc())
             return False
 
-    def calculate_task_energy_debug(self, workload_type: str, execution_time_ms: float, 
-                              frequency_mhz: float = 1400.0) -> Dict[str, Any]:
+    def calculate_task_energy_debug(
+            self,
+            workload_type: str,
+            execution_time_ms: float,
+            frequency_mhz: Optional[float] = None) -> Dict[str, Any]:
         """详细的任务能量计算（用于调试）"""
+        if frequency_mhz is None:
+            frequency_mhz = self.config.base_frequency
         workload_power = self.config.get_workload_power(workload_type)
         frequency_ratio = self.config.get_frequency_ratio(frequency_mhz)
         
         # 总功率计算
-        total_power = self.config.base_power + workload_power * frequency_ratio
+        total_power = self.config.base_power * workload_power * frequency_ratio
         
         # 能量计算
         execution_time_s = execution_time_ms / 1000.0
@@ -964,7 +1054,7 @@ class EnergyManager:
             "total_power": total_power,
             "execution_time_ms": execution_time_ms,
             "energy_joules": energy_joules,
-            "formula": f"{self.config.base_power} + {workload_power} * {frequency_ratio} = {total_power}W"
+            "formula": f"{self.config.base_power} * {workload_power} * {frequency_ratio} = {total_power}W"
         }
         
         return result
@@ -974,7 +1064,7 @@ class EnergyManager:
         with self._lock:
             # 从系统配置中读取核心数
             num_cores = 4  # 默认值
-            base_frequency = 1400.0  # 默认值
+            base_frequency = self.config.base_frequency
             
             if hasattr(self.config, 'system_config') and self.config.system_config:
                 # 尝试从cpu_islands配置中读取核心数
@@ -1169,14 +1259,19 @@ class EnergyManager:
         
         for workload_type, expected_power, description in test_workloads:
             # 使用配置函数计算
-            unit_energy = self.config.get_unit_time_energy(workload_type, 1400.0)
+            unit_energy = self.config.get_unit_time_energy(
+                workload_type,
+                self.config.base_frequency,
+            )
             
             # 手动计算验证
             base_power = self.config.base_power
             workload_power = self.config.get_workload_power(workload_type)
-            freq_ratio = self.config.get_frequency_ratio(1400.0)
+            freq_ratio = self.config.get_frequency_ratio(
+                self.config.base_frequency
+            )
             
-            total_power = base_power + workload_power * freq_ratio
+            total_power = base_power * workload_power * freq_ratio
             manual_energy = total_power * (self.config.unit_time / 1000.0)
             
             logger.info(f"{description}: {unit_energy:.6f}J (函数) / {manual_energy:.6f}J (手动)")
@@ -1617,13 +1712,13 @@ ASAP Recovery: {'IN PROGRESS' if status['asap_recovery_in_progress'] else 'IDLE'
         return self.wait_for_energy_recovery_asap(required_energy, current_time_ms, max_wait_time_ms)
     
     def calculate_task_energy(self, workload_type: str, execution_time_ms: float, 
-                            frequency_mhz: float = 1400.0) -> float:
+                            frequency_mhz: Optional[float] = None) -> float:
         """计算任务能量消耗"""
         return self.config.calculate_task_energy(workload_type, execution_time_ms, frequency_mhz)
     
     def has_sufficient_energy_for_batch(self, task_workloads: List[str], 
                                        execution_time_ms: float, 
-                                       frequency_mhz: float = 1400.0) -> bool:
+                                       frequency_mhz: Optional[float] = None) -> bool:
         """检查是否有足够能量执行批量任务"""
         total_energy_required = 0.0
         
@@ -2114,7 +2209,7 @@ def get_detailed_energy_status() -> str:
     return str(manager.get_detailed_energy_status())
 
 def calculate_task_energy_cpp(workload_type: str, execution_time_ms: float, 
-                            frequency_mhz: float = 1400.0) -> float:
+                            frequency_mhz: Optional[float] = None) -> float:
     manager = get_energy_manager()
     return float(manager.calculate_task_energy(workload_type, execution_time_ms, frequency_mhz))
 

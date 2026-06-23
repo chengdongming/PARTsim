@@ -8,6 +8,7 @@
 #include <rtsim/rttask.hpp>
 #include <rtsim/energy_info_provider.hpp>
 #include <metasim/factory.hpp>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -38,6 +39,18 @@ namespace RTSim {
         ALAPBlockTickEvent(ALAPBlockScheduler *scheduler);
         void doit() override;
     };
+    class ALAPBlockScheduler; // 前置声明
+
+    // =====================================================
+    // ALAP专属唤醒闹钟事件
+    // =====================================================
+    class ALAPWakeEvent : public MetaSim::Event {
+    private:
+        ALAPBlockScheduler *_scheduler;
+    public:
+        ALAPWakeEvent(ALAPBlockScheduler *scheduler);
+        void doit() override;
+    };
 
     // =====================================================
     // ALAP-Block运行时能量检查事件（每1ms检查运行中任务的能量）
@@ -52,12 +65,33 @@ namespace RTSim {
         int _ms_executed;  // 已执行的ms数
 
     public:
-        ALAP-BLOCKEnergyCheckEvent(ALAPBlockScheduler *scheduler, AbsRTTask *task, CPU *cpu);
+        ALAP-BlockEnergyCheckEvent(ALAPBlockScheduler *scheduler, AbsRTTask *task, CPU *cpu);
         void doit() override;
         int getMsExecuted() const { return _ms_executed; }
         void setMsExecuted(int ms) { _ms_executed = ms; }
     };
     */
+
+    // =====================================================
+    // ⭐ 能量耗尽预测事件（虚空借电Bug修复）
+    // 当系统预测到电池将在某时刻耗尽时，在事件队列中插入此事件
+    // 确保任务在电池真正耗尽时被正确中断，而不是"惯性"跑完
+    // =====================================================
+    class ALAPBlockEnergyDepletedEvent : public MetaSim::Event {
+    private:
+        ALAPBlockScheduler *_scheduler;
+
+    public:
+        MetaSim::Tick _scheduled_depletion_time;  // 预测的耗尽时刻
+        double _energy_at_prediction;               // 预测时的能量值
+
+    public:
+        ALAPBlockEnergyDepletedEvent(ALAPBlockScheduler *scheduler);
+        void doit() override;
+
+        MetaSim::Tick getScheduledDepletionTime() const { return _scheduled_depletion_time; }
+        double getEnergyAtPrediction() const { return _energy_at_prediction; }
+    };
 
     // =====================================================
     // ALAPBlockTaskModel 类声明
@@ -111,6 +145,15 @@ namespace RTSim {
         double _max_energy;                  // 最大能量容量
         double _dispatching_tasks_total_energy; // 本次dispatch中已调度任务的总能耗
         std::set<AbsRTTask *> _counted_tasks_in_dispatch; // 本次dispatch中已计数的任务，避免重复
+        std::vector<AbsRTTask *> _dispatch_selection_order;
+        MetaSim::Tick _selection_tick;
+        uint64_t _selection_generation;
+        bool _selection_frozen;
+        MetaSim::Tick _energy_commit_tick;
+        bool _energy_commit_valid;
+        std::set<AbsRTTask *> _paid_pending_tasks;
+        std::map<AbsRTTask *, MetaSim::Tick> _pending_payment_ticks;
+        std::set<AbsRTTask *> _paid_execution_credit_tasks;
         MetaSim::Tick _last_tick_time;       // 上次tick时间
         MetaSim::Tick _last_collection_time; // 上次能量收集时间
 
@@ -125,6 +168,11 @@ namespace RTSim {
         // ========== Tick事件 ==========
         ALAPBlockTickEvent *_tick_event;
         bool _first_tick_scheduled;  // 标记第一个tick是否已调度
+        MetaSim::Tick _last_prediction_tick = -1;  // ⭐ 上次更新能量预测的tick（防止同一tick内重复预测）
+        // ALAP 专属唤醒闹钟
+        ALAPWakeEvent* _alap_wake_event;
+        // ⭐ 能量耗尽预测事件（Bug修复：防止虚空借电）
+        ALAPBlockEnergyDepletedEvent *_energy_depleted_event;
 
         // ========== 任务管理 ==========
         std::map<AbsRTTask *, ALAPBlockTaskModel *> _task_models;
@@ -179,6 +227,8 @@ namespace RTSim {
         // ⭐ ALAP时序门控（阶段一）
         bool checkALAPTimingGate();  // 检查是否需要强制休眠
         MetaSim::Tick calculateSlackForTask(AbsRTTask *task);  // 计算任务的Slack
+        MetaSim::Tick calculateSlackForTask(
+            AbsRTTask *task, MetaSim::Tick current_time);
 
         // ⭐ 过期任务清理
         void cleanupExpiredTasks();  // 清理超过截止期的旧任务实例
@@ -196,6 +246,24 @@ namespace RTSim {
         ALAPBlockTaskModel *getTaskModel(AbsRTTask *task);
         std::string getTaskName(AbsRTTask *task);
         void onTaskArrival(AbsRTTask *task);
+        void clearPersistentTaskState(AbsRTTask *task);
+        void resetTickDispatchState();
+        void clearTaskTickSelection(AbsRTTask *task);
+        std::vector<AbsRTTask *> collectActiveJobs(
+            MetaSim::Tick current_time);
+        std::vector<AbsRTTask *> collectALAPCandidates(
+            const std::vector<AbsRTTask *> &active_tasks,
+            MetaSim::Tick current_time);
+        bool hasHigherRMPriority(
+            AbsRTTask *lhs, AbsRTTask *rhs);
+        void sortByRMPriority(
+            std::vector<AbsRTTask *> &tasks);
+        double getConfiguredUnitEnergyForTask(
+            AbsRTTask *task) const;
+        void commitTickEnergy(
+            MetaSim::Tick tick, double energy);
+        void cancelStaleDispatches(
+            const std::vector<AbsRTTask *> &previous_selection);
 
         // 队列管理
         void addToReadyQueue(AbsRTTask *task);
@@ -214,6 +282,12 @@ namespace RTSim {
 
         void scheduleNextTick();
 
+        // ⭐ 能量耗尽预测与事件注册（Bug修复）
+        double calculateTotalPowerConsumption();                              // 计算当前总功耗
+        MetaSim::Tick predictTimeToDepletion(double energy, double power);    // 预测能量耗尽时间
+        void scheduleEnergyDepletionEvent(MetaSim::Tick depletion_time);     // 注册能量耗尽事件
+        void cancelEnergyDepletionEvent();                                    // 取消能量耗尽事件
+
         // 阻塞状态管理
         void clearBlockingStateIfOwner(AbsRTTask *task, const char *reason);
         void tryImmediateRedispatch(const char *reason);
@@ -224,6 +298,8 @@ namespace RTSim {
         void dispatchTask(AbsRTTask *task, CPU *cpu);
 
     public:
+        // ⭐ 能量耗尽处理（public供ALAPBlockEnergyDepletedEvent调用）
+        void onEnergyDepleted();
         // 构造函数/析构函数
         ALAPBlockScheduler();
         ALAPBlockScheduler(const std::vector<std::string> &params);
@@ -291,6 +367,7 @@ namespace RTSim {
 
         // 友元类声明
         friend class ALAPBlockTickEvent;
+        friend class ALAPBlockSchedulerTestPeer;
         // ⭐ V40重构：能量检查事件已删除
         // friend class ALAP-BLOCKEnergyCheckEvent;
     };

@@ -530,7 +530,14 @@ namespace RTSim {
         /// ⭐ V45新增：检查CPU是否有任务正在dispatch到它（上下文切换中）
         /// @return true如果有任务正在dispatch到这个CPU
         bool isCPUDispatching(CPU *p) const {
-            return isDispatched(p);
+            return isDispatched(p) || hasPendingBeginDispatch(p);
+        }
+
+        /// 检查CPU是否存在尚未执行的BeginDispatch事件。
+        /// 这比isCPUDispatching更窄，只用于识别“已选中但尚未进入onBeginDispatchMulti”的窗口。
+        bool hasPendingBeginDispatch(CPU *p) const {
+            auto it = _beginEvt.find(p);
+            return it != _beginEvt.end() && it->second != nullptr && it->second->isInQueue();
         }
     };
 } // namespace RTSim

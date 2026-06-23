@@ -250,6 +250,8 @@ int main(int argc, char *argv[]) {
                     dynamic_cast<RTSim::EnergyInfoProvider*>(sched);
                 if (energy_provider) {
                     tracer.jtrace->setEnergyProvider(energy_provider);
+                    // ⭐ V58新增：反向连接JSONTrace到调度器，用于Early Abort时注入dline_miss记录
+                    energy_provider->setTraceLogger(tracer.jtrace.get());
                 }
             }
         }

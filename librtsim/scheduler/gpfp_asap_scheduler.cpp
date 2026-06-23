@@ -30,6 +30,23 @@
 
 namespace RTSim {
 
+    double calculateGPFPASAPEnergyForDuration(
+        double base_power,
+        double workload_coefficient,
+        double frequency_ratio,
+        double duration_ms) {
+        const double total_power =
+            base_power * workload_coefficient * frequency_ratio;
+        return total_power * (duration_ms / 1000.0);
+    }
+
+    double resolveGPFPASAPWorkloadCoefficient(
+        const std::map<std::string, double> &power_coefficients,
+        const std::string &workload_type) {
+        auto it = power_coefficients.find(workload_type);
+        return it != power_coefficients.end() ? it->second : 1.0;
+    }
+
     // =====================================================
     // TaskActivationSimEvent 实现
     // =====================================================
@@ -1817,12 +1834,17 @@ bool GPFPASAPScheduler::isTaskReady(AbsRTTask *task) const {
         // 重新计算能量
         double workload_power = getWorkloadPower(workload_type);
         double frequency_ratio = getFrequencyPowerRatio(_current_frequency);
-        double total_power = _base_power + workload_power * frequency_ratio;
+        double total_power =
+            _base_power * workload_power * frequency_ratio;
         
         // 修复：单位时间能量计算
         // 功率(W) × 时间(s) = 能量(J)
         // _unit_time是毫秒，需要转换为秒
-        double unit_energy = total_power * (_unit_time / 1000.0);
+        double unit_energy = calculateGPFPASAPEnergyForDuration(
+            _base_power,
+            workload_power,
+            frequency_ratio,
+            _unit_time);
         
         // 添加详细日志 - 使用INFO级别确保输出
         SCHEDULER_LOG_INFO("🔋 单位时间能量计算: " + workload_type + 
@@ -2970,38 +2992,24 @@ AbsRTTask *GPFPASAPScheduler::getFirst() {
         SCHEDULER_LOG_INFO("  基础功耗: " + std::to_string(_base_power) + " W");
 
         for (const auto &pair : _power_coefficients) {
-            SCHEDULER_LOG_INFO("  " + pair.first + " 功率系数: " + std::to_string(pair.second) + " W");
+            SCHEDULER_LOG_INFO("  " + pair.first + " 功率系数: " + std::to_string(pair.second));
         }
 
         SCHEDULER_LOG_INFO("  当前频率: " + std::to_string(_current_frequency) + " MHz");
     }
 
     double GPFPASAPScheduler::getWorkloadPower(const std::string &workload_type) const {
-        // 简化版本：直接检查工作负载类型
         SCHEDULER_LOG_INFO("getWorkloadPower: 输入工作负载类型: '" + workload_type + "'");
         
-        // 如果工作负载是control，但可能是bzip2任务，返回bzip2功率系数
-        if (workload_type == "control") {
-            SCHEDULER_LOG_INFO("getWorkloadPower: 工作负载是control，假设是bzip2工作负载，返回1.2 W");
-            return 1.2;
-        }
-        
-        // 检查工作负载类型是否在映射中
         auto it = _power_coefficients.find(workload_type);
         if (it != _power_coefficients.end()) {
-            SCHEDULER_LOG_INFO("getWorkloadPower: 找到工作负载功率系数: " + workload_type + " = " + std::to_string(it->second) + " W");
-            return it->second;
+            SCHEDULER_LOG_INFO("getWorkloadPower: 找到工作负载功率系数: " + workload_type + " = " + std::to_string(it->second));
+        } else {
+            SCHEDULER_LOG_WARNING("getWorkloadPower: 未知工作负载类型: " + workload_type + "，使用默认功率系数 1.0");
         }
-        
-        // 如果工作负载类型不在映射中，检查是否包含bzip2
-        if (workload_type.find("bzip2") != std::string::npos) {
-            SCHEDULER_LOG_INFO("getWorkloadPower: 检测到bzip2工作负载，使用功率系数: 1.2 W");
-            return 1.2;
-        }
-        
-        // 默认值
-        SCHEDULER_LOG_WARNING("getWorkloadPower: 未知工作负载类型: " + workload_type + "，使用默认功率 0.1 W");
-        return 0.1;
+        return resolveGPFPASAPWorkloadCoefficient(
+            _power_coefficients,
+            workload_type);
     }
 
     double GPFPASAPScheduler::getFrequencyPowerRatio(double frequency) const {
@@ -3256,8 +3264,7 @@ AbsRTTask *GPFPASAPScheduler::getFirst() {
         // 验证功率系数
         SCHEDULER_LOG_INFO("工作负载功率系数:");
         for (const auto &pair : _power_coefficients) {
-            SCHEDULER_LOG_INFO("  " + pair.first + ": " + std::to_string(pair.second) +
-                     " W");
+            SCHEDULER_LOG_INFO("  " + pair.first + ": " + std::to_string(pair.second));
         }
 
         // 验证任务能量计算
@@ -3390,12 +3397,15 @@ AbsRTTask *GPFPASAPScheduler::getFirst() {
         std::vector<std::string> workloads = {"control", "encrypt", "decrypt", "hash", "bzip2"};
         
         for (const auto &workload : workloads) {
-            // 创建一个虚拟任务来测试
-            double unit_energy = _base_power * (_unit_time / 1000.0);
             double workload_power = getWorkloadPower(workload);
             double frequency_ratio = getFrequencyPowerRatio(_current_frequency);
-            double total_power = _base_power + workload_power * frequency_ratio;
-            double calculated_energy = total_power * (_unit_time / 1000.0);
+            double total_power =
+                _base_power * workload_power * frequency_ratio;
+            double calculated_energy = calculateGPFPASAPEnergyForDuration(
+                _base_power,
+                workload_power,
+                frequency_ratio,
+                _unit_time);
             
             SCHEDULER_LOG_INFO("工作负载: " + workload + 
                      " 基础功率: " + std::to_string(_base_power) + "W" +

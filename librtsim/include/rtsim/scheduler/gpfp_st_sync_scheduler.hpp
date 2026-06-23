@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 #include <deque>
+#include <cstdint>
 
 namespace RTSim {
 
@@ -151,10 +152,11 @@ namespace RTSim {
         std::map<AbsRTTask *, STSyncTaskModel *> _task_models;
         std::deque<AbsRTTask *> _ready_queue;
         std::vector<AbsRTTask *> _waiting_queue;
+        std::vector<AbsRTTask *> _deferred_arrivals;
         std::map<CPU *, AbsRTTask *> _running_tasks;
         MRTKernel *_kernel;
 
-        // ========== 运行时能量检查事件（每任务一个） ==========
+        // 空壳映射，仅用于兼容旧清理路径；ST-Sync 不再依赖按任务运行时能量事件。
         std::map<AbsRTTask *, STSyncEnergyCheckEvent *> _energy_check_events;
 
         // ========== WCET完成追踪（用于批量调度判断任务是否已完成） ==========
@@ -166,6 +168,12 @@ namespace RTSim {
         bool _batch_scheduled_this_tick;                // 本tick是否已批量调度
         bool _energy_depleted;                          // 能量是否已耗尽（Bug #5修复）
         int _current_batch_size;                        // 当前批量大小
+        MetaSim::Tick _selection_tick;                  // 当前冻结同步组所属tick
+        uint64_t _selection_generation;                 // 每次冻结同步组递增，防stale dispatch
+        bool _selection_frozen;                         // 当前tick是否已有冻结同步组
+        MetaSim::Tick _energy_commit_tick;              // 能量提交所属tick
+        uint64_t _energy_commit_generation;             // 能量提交所属generation
+        bool _energy_commit_valid;                      // 当前generation是否已提交能量
         bool _v108_batch_energy_checked;                // ⭐ V108: 本tick是否已做过批量能量检查
         bool _v108_batch_energy_sufficient;             // ⭐ V108: 本tick批量能量是否充足
         int _v108_batch_k_approved;                     // ⭐ V108: 已批准扣除能量的任务数
@@ -192,6 +200,7 @@ namespace RTSim {
         void setSuspendReason(AbsRTTask *task, const std::string &reason);
         std::string getSuspendReason(AbsRTTask *task) const override;  // 实现EnergyInfoProvider接口
         void clearSuspendReason(AbsRTTask *task) override;  // 实现EnergyInfoProvider接口
+        void clearPersistentTaskState(AbsRTTask *task);
 
         // ========== 能量记账（每ms累计） ==========
         struct TaskEnergyAccount {
@@ -244,6 +253,7 @@ namespace RTSim {
         void suspendBatchForInsufficientEnergy(const std::vector<AbsRTTask *> &tasks,
                                               double required_energy,
                                               const std::string &context);
+        void rebuildApprovedBatchForImmediateDispatch();
 
         // ST-Sync批量计算
         int calculateBatchSize();                              // 计算批量大小 k
@@ -266,6 +276,7 @@ namespace RTSim {
         void removeFromReadyQueue(AbsRTTask *task);
         void addToWaitingQueue(AbsRTTask *task);
         void removeFromWaitingQueue(AbsRTTask *task);
+        void promoteWaitingTasksToReadyQueue(const std::string &context);
         bool isInReadyQueue(AbsRTTask *task) const;
         bool isInWaitingQueue(AbsRTTask *task) const;
         AbsRTTask *getHighestPriorityTaskFromReadyQueue();
@@ -317,6 +328,8 @@ namespace RTSim {
         double getCurrentEnergy() const override { return _current_energy; }
         double getInitialEnergy() const { return _initial_energy; }
         double getMaxEnergy() const { return _max_energy; }
+        bool isChargingSleepActive() const { return _is_charging_sleep || _deep_charging; }
+        bool isEnergyDepletedActive() const { return _energy_depleted; }
         double calculateUnitEnergyForTask(AbsRTTask *task);  // MRTKernel需要调用
 
         // ⭐ EnergyInfoProvider接口实现
@@ -325,9 +338,9 @@ namespace RTSim {
         double getTaskUnitEnergy(AbsRTTask *task) const override;
         double getTaskTotalEnergy(AbsRTTask *task) const override;
 
-        // ⭐ 运行时能量检查接口（V28.15新增）
-        void startEnergyCheckForTask(AbsRTTask *task, CPU *cpu);  // 开始对任务的能量监控
-        void stopEnergyCheckForTask(AbsRTTask *task);  // 停止对任务的能量监控
+        // 兼容旧调用点；当前实现不启动按任务运行时能量事件。
+        void startEnergyCheckForTask(AbsRTTask *task, CPU *cpu);
+        void stopEnergyCheckForTask(AbsRTTask *task);
 
         // 队列访问接口
         const std::deque<AbsRTTask *> &getReadyQueue() const { return _ready_queue; }
@@ -351,6 +364,7 @@ namespace RTSim {
         std::string getEnergyStatus() const;
 
         // 友元类声明
+        friend class MRTKernel;
         friend class STSyncTickEvent;
         friend class STSyncEnergyCheckEvent;
         friend class STSyncGroupWakeEvent;  // ⭐ V116：组唤醒事件需要访问私有成员

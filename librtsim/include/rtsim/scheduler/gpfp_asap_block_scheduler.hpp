@@ -10,7 +10,6 @@
 #include <metasim/factory.hpp>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <set>
 #include <string>
 #include <vector>
@@ -38,26 +37,6 @@ namespace RTSim {
         ASAPBlockTickEvent(ASAPBlockScheduler *scheduler);
         void doit() override;
     };
-
-    // =====================================================
-    // TIE运行时能量检查事件（每1ms检查运行中任务的能量）
-    // ⭐ V40重构：能量检查事件已删除，能量由performTickScheduling处理
-    // =====================================================
-    /*
-    class ASAPBlockEnergyCheckEvent : public MetaSim::Event {
-    private:
-        ASAPBlockScheduler *_scheduler;
-        AbsRTTask *_task;
-        CPU *_cpu;
-        int _ms_executed;  // 已执行的ms数
-
-    public:
-        ASAPBlockEnergyCheckEvent(ASAPBlockScheduler *scheduler, AbsRTTask *task, CPU *cpu);
-        void doit() override;
-        int getMsExecuted() const { return _ms_executed; }
-        void setMsExecuted(int ms) { _ms_executed = ms; }
-    };
-    */
 
     // =====================================================
     // ASAPBlockTaskModel 类声明
@@ -109,8 +88,13 @@ namespace RTSim {
         double _current_energy;              // 当前可用能量
         double _initial_energy;              // 初始能量
         double _max_energy;                  // 最大能量容量
-        double _dispatching_tasks_total_energy; // 本次dispatch中已调度任务的总能耗
-        std::set<AbsRTTask *> _counted_tasks_in_dispatch; // 本次dispatch中已计数的任务，避免重复
+        double _selected_energy;             // 当前tick冻结前缀的总能耗
+        std::vector<AbsRTTask *> _dispatch_selection_order;
+        MetaSim::Tick _selection_tick;
+        MetaSim::Tick _last_energy_commit_tick;
+        bool _selection_frozen;
+        bool _has_energy_commit;
+        bool _selection_stopped_by_energy;
         MetaSim::Tick _last_tick_time;       // 上次tick时间
         MetaSim::Tick _last_collection_time; // 上次能量收集时间
 
@@ -130,22 +114,9 @@ namespace RTSim {
         std::map<AbsRTTask *, ASAPBlockTaskModel *> _task_models;
         std::deque<AbsRTTask *> _ready_queue;
         std::vector<AbsRTTask *> _waiting_queue;
-        std::map<CPU *, AbsRTTask *> _running_tasks;
+        std::map<AbsRTTask *, MetaSim::Tick> _pending_arrivals;
         MRTKernel *_kernel;
 
-        // ========== 运行时能量检查事件（每任务一个） ==========
-        // ⭐ V40重构：能量检查事件已删除，能量由performTickScheduling处理
-        // std::map<AbsRTTask *, ASAPBlockEnergyCheckEvent *> _energy_check_events;
-
-        // ========== 能量记账（每ms累计） ==========
-        struct TaskEnergyAccount {
-            double total_consumed;      // 累计消耗能量（每ms累加）
-            MetaSim::Tick start_time;
-            MetaSim::Tick last_unit_time;
-
-            TaskEnergyAccount() : total_consumed(0.0), start_time(0), last_unit_time(0) {}
-        };
-        std::map<AbsRTTask *, TaskEnergyAccount> _energy_accounts;
         std::map<AbsRTTask *, std::string> _suspend_reasons;
 
         // ========== 统计信息 ==========
@@ -159,17 +130,30 @@ namespace RTSim {
             int total_tick_count = 0;
         } _stats;
 
-        // ========== 能量耗尽管理 ==========
-        bool _energy_depleted;  // ⭐ 能量是否已耗尽（Bug修复）
-
         // ========== 私有方法 ==========
 
         // 核心调度逻辑
         void performTickScheduling();
-        void collectEnergyAtTickBoundary();
-
-        // ⭐ 运行时能量检查和任务中断（V28.15新增）
-        void checkAndInterruptRunningTasks();  // 检查所有运行中的任务，能量不足时中断
+        double collectEnergyAtTickBoundary();
+        std::vector<AbsRTTask *> collectActiveJobs(MetaSim::Tick current_time);
+        bool isSchedulableActiveJob(AbsRTTask *task,
+                                    MetaSim::Tick current_time) const;
+        void sortByRMPriority(std::vector<AbsRTTask *> &tasks) const;
+        std::vector<AbsRTTask *>
+            selectASAPBlockPrefix(const std::vector<AbsRTTask *> &active_jobs,
+                                  std::size_t processor_count,
+                                  double available_energy,
+                                  double &reserved_energy,
+                                  bool &stopped_by_energy) const;
+        void freezeTickSelection(MetaSim::Tick tick,
+                                 std::vector<AbsRTTask *> selected,
+                                 double reserved_energy,
+                                 bool stopped_by_energy);
+        void suspendUnselectedRunningJobs();
+        void commitTickEnergy(MetaSim::Tick tick,
+                              double available_energy);
+        bool isSelectedThisTick(AbsRTTask *task) const;
+        bool acceptsDispatchCompletion(AbsRTTask *task) const;
 
         // 能量计算
         double calculateTotalEnergyForTask(AbsRTTask *task); // 计算任务总能耗
@@ -181,6 +165,8 @@ namespace RTSim {
         ASAPBlockTaskModel *getTaskModel(AbsRTTask *task);
         std::string getTaskName(AbsRTTask *task);
         void onTaskArrival(AbsRTTask *task);
+        void resetTickDispatchState();
+        void clearTaskTickSelection(AbsRTTask *task);
 
         // 队列管理
         void addToReadyQueue(AbsRTTask *task);
@@ -189,21 +175,9 @@ namespace RTSim {
         void removeFromWaitingQueue(AbsRTTask *task);
         bool isInReadyQueue(AbsRTTask *task) const;
         bool isInWaitingQueue(AbsRTTask *task) const;
-        AbsRTTask *getHighestPriorityTaskFromReadyQueue();
-
-        // 抢占管理
-        void checkAndPreempt();
-        void checkAndPreemptOnAllCPUs();
-        bool shouldPreempt(CPU *cpu, AbsRTTask *new_task);
-        AbsRTTask *getRunningTaskOnCPU(CPU *cpu);
 
         // Tick事件调度
         void scheduleNextTick();
-
-        // CPU管理
-        int getFreeCPUCount();
-        CPU *getFreeCPU();
-        void dispatchTask(AbsRTTask *task, CPU *cpu);
 
     public:
         // 构造函数/析构函数
@@ -250,11 +224,6 @@ namespace RTSim {
         std::string getSuspendReason(AbsRTTask *task) const override;
         void clearSuspendReason(AbsRTTask *task) override;
 
-        // ⭐ 运行时能量检查接口（V28.15新增）
-        // ⭐ V40重构：能量检查事件已删除，能量由performTickScheduling处理
-        // void startEnergyCheckForTask(AbsRTTask *task, CPU *cpu);  // 开始对任务的能量监控
-        // void stopEnergyCheckForTask(AbsRTTask *task);  // 停止对任务的能量监控
-
         // 队列访问接口
         const std::deque<AbsRTTask *> &getReadyQueue() const { return _ready_queue; }
         const std::map<AbsRTTask *, std::string> getTaskWorkloads() const;
@@ -272,9 +241,9 @@ namespace RTSim {
         std::string getEnergyStatus() const;
 
         // 友元类声明
+        friend class MRTKernel;
         friend class ASAPBlockTickEvent;
-        // ⭐ V40重构：能量检查事件已删除
-        // friend class ASAPBlockEnergyCheckEvent;
+        friend class ASAPBlockSchedulerTestPeer;
     };
 
 } // namespace RTSim

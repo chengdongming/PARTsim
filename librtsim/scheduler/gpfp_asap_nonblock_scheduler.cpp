@@ -11,6 +11,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <stdexcept>
 #include <metasim/factory.hpp>
 #include <metasim/simul.hpp>
 #include <rtsim/scheduler/gpfp_asap_nonblock_scheduler.hpp>
@@ -231,6 +232,7 @@ namespace RTSim {
           _current_energy(0.0),
           _initial_energy(0.0),
           _max_energy(1000.0),
+          _dispatching_tasks_total_energy(0.0),
           _last_tick_time(0),
           _last_collection_time(0),
           _solar_data_file(""),
@@ -241,7 +243,14 @@ namespace RTSim {
           _base_harvest_rate(0.054),  // ⭐ V93修复：默认值 54 mW
           _tick_event(nullptr),
           _first_tick_scheduled(false),
-          _kernel(nullptr) {
+          _kernel(nullptr),
+          _selection_tick(-1),
+          _selection_generation(0),
+          _selection_frozen(false),
+          _energy_commit_tick(-1),
+          _energy_commit_generation(0),
+          _energy_commit_valid(false),
+          _energy_depleted(false) {
 
         SCHEDULER_LOG_INFO("🚀 [ASAP-NonBlock] ASAP NonBlock Scheduler 初始化");
 
@@ -418,18 +427,164 @@ namespace RTSim {
         _task_models.clear();
     }
 
+    std::vector<AbsRTTask *> ASAPNonBlockScheduler::collectActiveJobs(Tick current_time) {
+        std::vector<AbsRTTask *> active_tasks;
+        auto add_active = [this, &active_tasks, current_time](AbsRTTask *task, bool running) {
+            if (!task || task->getArrival() > current_time) {
+                return;
+            }
+            if (!running && !task->isActive()) {
+                return;
+            }
+            if (task->getRemainingWCET() <= 0.0) {
+                return;
+            }
+            if (_energy_blocked_tasks.find(task) != _energy_blocked_tasks.end()) {
+                return;
+            }
+            if (std::find(active_tasks.begin(), active_tasks.end(), task) == active_tasks.end()) {
+                active_tasks.push_back(task);
+            }
+        };
+
+        if (_kernel) {
+            for (const auto &[cpu, task] : _kernel->getCurrentExecutingTasks()) {
+                (void)cpu;
+                add_active(task, task && task->isExecuting());
+            }
+        }
+        for (AbsRTTask *task : _ready_queue) {
+            add_active(task, false);
+        }
+        return active_tasks;
+    }
+
+    bool ASAPNonBlockScheduler::hasHigherRMPriority(AbsRTTask *lhs, AbsRTTask *rhs) {
+        if (lhs == rhs) {
+            return false;
+        }
+        ASAPNonBlockTaskModel *lhs_model = getTaskModel(lhs);
+        ASAPNonBlockTaskModel *rhs_model = getTaskModel(rhs);
+        if (lhs_model && rhs_model &&
+            lhs_model->getRMPriority() != rhs_model->getRMPriority()) {
+            return lhs_model->getRMPriority() < rhs_model->getRMPriority();
+        }
+        if (lhs && rhs && lhs->getPeriod() != rhs->getPeriod()) {
+            return lhs->getPeriod() < rhs->getPeriod();
+        }
+        if (lhs && rhs) {
+            return lhs->getTaskNumber() < rhs->getTaskNumber();
+        }
+        return lhs != nullptr;
+    }
+
+    void ASAPNonBlockScheduler::sortByRMPriority(std::vector<AbsRTTask *> &tasks) {
+        std::stable_sort(tasks.begin(), tasks.end(),
+                         [this](AbsRTTask *lhs, AbsRTTask *rhs) {
+                             return hasHigherRMPriority(lhs, rhs);
+                         });
+    }
+
+    double ASAPNonBlockScheduler::getConfiguredUnitEnergyForTask(AbsRTTask *task) const {
+        auto it = _task_models.find(task);
+        if (it == _task_models.end() || !it->second) {
+            return 0.0;
+        }
+        return it->second->getUnitEnergy();
+    }
+
+    void ASAPNonBlockScheduler::commitTickEnergy(Tick tick, double energy) {
+        if (_energy_commit_valid &&
+            _energy_commit_tick == tick &&
+            _energy_commit_generation == _selection_generation) {
+            throw std::logic_error("ASAP-NonBlock energy committed more than once in one tick");
+        }
+        if (energy < 0.0 || _current_energy + 1e-9 < energy) {
+            throw std::logic_error("ASAP-NonBlock attempted to commit unaffordable selected energy");
+        }
+
+        _current_energy = std::max(0.0, _current_energy - energy);
+        _stats.total_energy_consumed += energy;
+        _energy_commit_tick = tick;
+        _energy_commit_generation = _selection_generation;
+        _energy_commit_valid = true;
+    }
+
+    void ASAPNonBlockScheduler::cancelStaleDispatches(
+        const std::vector<AbsRTTask *> &previous_selection) {
+        if (!_kernel) {
+            return;
+        }
+
+        bool has_stale_dispatch = false;
+        for (AbsRTTask *task : previous_selection) {
+            if (!task || _kernel->getProcessor(task) != nullptr) {
+                continue;
+            }
+            if (std::find(_dispatch_selection_order.begin(),
+                          _dispatch_selection_order.end(),
+                          task) == _dispatch_selection_order.end()) {
+                has_stale_dispatch = true;
+                break;
+            }
+        }
+        if (!has_stale_dispatch) {
+            return;
+        }
+
+        for (const auto &[cpu, running] : _kernel->getCurrentExecutingTasks()) {
+            if (!running && _kernel->isCPUDispatching(cpu)) {
+                _kernel->dispatch(cpu);
+            }
+        }
+    }
+
+    void ASAPNonBlockScheduler::cleanupExpiredTasks() {
+        const Tick current_time = SIMUL.getTime();
+
+        std::vector<AbsRTTask *> expired_ready;
+        for (AbsRTTask *task : _ready_queue) {
+            if (!task) {
+                continue;
+            }
+            const Tick deadline = task->getDeadline();
+            if (deadline <= current_time && task->getRemainingWCET() > 0.0) {
+                expired_ready.push_back(task);
+                _stats.total_deadline_misses++;
+                SCHEDULER_LOG_INFO(std::string("🧹 [ASAP-NonBlock] 清理过期任务: ") +
+                                   getTaskName(task) +
+                                   " deadline=" + std::to_string(static_cast<int64_t>(deadline)) +
+                                   " current=" + std::to_string(static_cast<int64_t>(current_time)));
+            }
+        }
+
+        for (AbsRTTask *task : expired_ready) {
+            removeFromReadyQueue(task);
+            removeFromWaitingQueue(task);
+            clearTaskTickSelection(task);
+            _energy_deducted_tasks.erase(task);
+            clearPersistentTaskState(task);
+        }
+    }
+
     // =====================================================
     // 核心调度逻辑 - TGF算法的核心
     // =====================================================
 
     void ASAPNonBlockScheduler::performTickScheduling() {
+        Tick current_time = SIMUL.getTime();
+        if (_selection_frozen && _selection_tick == current_time) {
+            SCHEDULER_LOG_DEBUG(
+                std::string("🛡️ [ASAP-NonBlock] 本tick选择已冻结，跳过重复决策 @ ") +
+                std::to_string(static_cast<int64_t>(current_time)) + "ms");
+            return;
+        }
+
         SCHEDULER_LOG_INFO(std::string("🔄 [ASAP-NonBlock] ===== Tick ") +
-                           std::to_string(static_cast<int64_t>(SIMUL.getTime())) + "ms =====");
+                           std::to_string(static_cast<int64_t>(current_time)) + "ms =====");
         SCHEDULER_LOG_INFO("⚡ 初始能量: " + std::to_string(_current_energy * 1000) + " mJ");
 
         _stats.total_tick_count++;
-
-        Tick current_time = SIMUL.getTime();
 
         // ========== 第1步：收集太阳能 ==========
         Tick elapsed = current_time - _last_tick_time;
@@ -454,104 +609,80 @@ namespace RTSim {
         if (!_kernel) {
             _kernel = getKernel();
         }
-
-        // ========== 第2步：处理tick开始时已在运行的任务 ==========
-        if (_kernel) {
-            const auto& running_tasks_map = _kernel->getCurrentExecutingTasks();
-            std::vector<AbsRTTask *> tasks_to_suspend;
-            const double EPSILON = 1e-9;
-
-            SCHEDULER_LOG_INFO("🏃 检查运行任务: " +
-                               std::to_string(running_tasks_map.size()) + " 个");
-
-            for (const auto& [cpu, task] : running_tasks_map) {
-                if (!task || !task->isActive()) {
-                    continue;
-                }
-
-                double unit_energy = calculateUnitEnergyForTask(task);
-                if (_current_energy < unit_energy - EPSILON) {
-                    tasks_to_suspend.push_back(task);
-                    SCHEDULER_LOG_WARNING("⚠️ 续期能量不足，将挂起: " +
-                                         getTaskName(task) +
-                                         " 需要=" + std::to_string(unit_energy * 1000) + " mJ" +
-                                         " 剩余=" + std::to_string(_current_energy * 1000) + " mJ");
-                    continue;
-                }
-
-                double old_energy = _current_energy;
-                _current_energy -= unit_energy;
-                _stats.total_energy_consumed += unit_energy;
-                _energy_depleted = false;
-
-                SCHEDULER_LOG_INFO("⚡ 扣除续期能量: " +
-                                   getTaskName(task) +
-                                   " -" + std::to_string(unit_energy * 1000) + " mJ " +
-                                   std::to_string(old_energy * 1000) + " → " +
-                                   std::to_string(_current_energy * 1000) + " mJ");
-            }
-
-            for (AbsRTTask *task : tasks_to_suspend) {
-                setSuspendReason(task, "insufficient_energy");
-                _energy_blocked_tasks.insert(task);
-                _kernel->suspend(task);
-                SCHEDULER_LOG_INFO("🛑 挂起任务并加入blocked: " + getTaskName(task));
-            }
-        }
-
-        _energy_depleted = (_current_energy < 0.000001);
-
-        if (_energy_depleted) {
-            SCHEDULER_LOG_INFO(std::string("💀 [ASAP-NonBlock] 当前无可用能量，跳过本tick调度"));
+        if (!_kernel) {
+            SCHEDULER_LOG_WARNING("⚠️ [ASAP-NonBlock] _kernel为nullptr，跳过调度");
             return;
         }
 
-        // ========== 第3步：检查抢占 ==========
-        checkAndPreempt();
+        cleanupExpiredTasks();
 
-        // ========== 第4步：调度新任务 ==========
-        if (_kernel) {
-            SCHEDULER_LOG_INFO("🔔 开始调度新任务");
+        const auto &running_tasks_map = _kernel->getCurrentExecutingTasks();
+        std::set<AbsRTTask *> running_tasks;
+        for (const auto &[cpu, task] : running_tasks_map) {
+            (void)cpu;
+            if (task && task->isExecuting()) {
+                running_tasks.insert(task);
+            }
+        }
 
-            int dispatch_attempts = 0;
-            const int MAX_DISPATCH_ITERATIONS = 100;
+        std::vector<AbsRTTask *> previous_selection = _dispatch_selection_order;
+        std::vector<AbsRTTask *> active_tasks = collectActiveJobs(current_time);
+        sortByRMPriority(active_tasks);
 
-            while (dispatch_attempts < MAX_DISPATCH_ITERATIONS) {
-                bool all_cpus_full = true;
-                for (auto &map_pair : _running_tasks) {
-                    if (map_pair.second == nullptr) {
-                        all_cpus_full = false;
-                        break;
-                    }
-                }
+        resetTickDispatchState();
+        _energy_deducted_tasks.clear();
 
-                if (all_cpus_full) {
-                    SCHEDULER_LOG_DEBUG("✅ [ASAP-NonBlock] 所有CPU已填满，停止调度");
-                    break;
-                }
-
-                size_t ready_before = _ready_queue.size();
-                size_t running_before = _kernel->getCurrentExecutingTasks().size();
-
-                _kernel->dispatch();
-                dispatch_attempts++;
-
-                size_t ready_after = _ready_queue.size();
-                size_t running_after = _kernel->getCurrentExecutingTasks().size();
-
-                if (ready_before == ready_after && running_before == running_after) {
-                    SCHEDULER_LOG_DEBUG("⏹️ [ASAP-NonBlock] 无更多任务可调度，停止dispatch循环");
-                    break;
-                }
-
-                SCHEDULER_LOG_DEBUG(std::string("🔄 [ASAP-NonBlock] dispatch循环 #") + std::to_string(dispatch_attempts) +
-                                   " ready=" + std::to_string(_ready_queue.size()) +
-                                   " running=" + std::to_string(_kernel->getCurrentExecutingTasks().size()));
+        double reserved_energy = 0.0;
+        const int total_cpus = static_cast<int>(running_tasks_map.size());
+        const double epsilon = 1e-9;
+        for (AbsRTTask *task : active_tasks) {
+            if (static_cast<int>(_dispatch_selection_order.size()) >= total_cpus) {
+                break;
             }
 
-            if (dispatch_attempts >= MAX_DISPATCH_ITERATIONS) {
-                SCHEDULER_LOG_WARNING("⚠️ [ASAP-NonBlock] dispatch循环达到最大迭代次数，可能存在bug");
+            const double unit_energy = getConfiguredUnitEnergyForTask(task);
+            if (reserved_energy + unit_energy > _current_energy + epsilon) {
+                _stats.total_skipped_energy++;
+                SCHEDULER_LOG_INFO(std::string("⚠️ [ASAP-NonBlock] 跳过当前不可负担任务: ") +
+                                  getTaskName(task) +
+                                  " 需要1ms=" + std::to_string(unit_energy) + "J" +
+                                  " 当前=" + std::to_string(_current_energy) + "J" +
+                                  " 已预留=" + std::to_string(reserved_energy) + "J");
+                continue;
             }
+
+            _dispatch_selection_order.push_back(task);
+            _counted_tasks_in_dispatch.insert(task);
+            reserved_energy += unit_energy;
+        }
+
+        _dispatching_tasks_total_energy = reserved_energy;
+        _selection_tick = current_time;
+        _selection_generation++;
+        _selection_frozen = true;
+        _energy_depleted = _dispatch_selection_order.empty() && !active_tasks.empty();
+
+        if (!_dispatch_selection_order.empty()) {
+            commitTickEnergy(current_time, reserved_energy);
+            for (AbsRTTask *task : _dispatch_selection_order) {
+                _energy_deducted_tasks.insert(task);
+            }
+        }
+
+        cancelStaleDispatches(previous_selection);
+
+        const std::set<AbsRTTask *> selected_set(
+            _dispatch_selection_order.begin(), _dispatch_selection_order.end());
+        for (AbsRTTask *task : running_tasks) {
+            if (selected_set.find(task) != selected_set.end()) {
+                continue;
+            }
+            setSuspendReason(task, _energy_depleted ? "insufficient_energy" : "preemption");
+            _kernel->suspend(task);
+        }
+
+        if (!_dispatch_selection_order.empty()) {
+            _kernel->dispatch();
         }
 
         SCHEDULER_LOG_INFO("✅ Tick " +
@@ -583,83 +714,37 @@ namespace RTSim {
         SCHEDULER_LOG_DEBUG(std::string("🔍 [ASAP-NonBlock] getTaskN(") + std::to_string(n) + ") 被调用" +
                            " 当前能量: " + std::to_string(_current_energy) + "J");
 
-        if (_ready_queue.empty()) {
-            SCHEDULER_LOG_DEBUG("📭 [ASAP-NonBlock] getTaskN: 就绪队列为空");
+        if (!_selection_frozen || _selection_tick != SIMUL.getTime()) {
             return nullptr;
         }
 
-        const double EPSILON = 1e-9;
-        unsigned int dispatchable_index = 0;
-
-        for (size_t i = 0; i < _ready_queue.size(); ++i) {
-            AbsRTTask *task = _ready_queue[i];
-            if (!task || !task->isActive()) {
-                continue;
+        if (n < _dispatch_selection_order.size()) {
+            AbsRTTask *selected_task = _dispatch_selection_order[n];
+            if (selected_task && selected_task->getRemainingWCET() > 0.0 &&
+                _counted_tasks_in_dispatch.find(selected_task) != _counted_tasks_in_dispatch.end()) {
+                return selected_task;
             }
-
-            if (_energy_blocked_tasks.find(task) != _energy_blocked_tasks.end()) {
-                SCHEDULER_LOG_DEBUG(std::string("⏭️ [ASAP-NonBlock] 跳过blocked任务: ") + getTaskName(task));
-                continue;
-            }
-
-            bool is_running = false;
-            if (_kernel) {
-                CPU *proc = _kernel->getProcessor(task);
-                is_running = (proc != nullptr);
-            }
-
-            if (is_running) {
-                if (dispatchable_index == n) {
-                    return task;
-                }
-                dispatchable_index++;
-                continue;
-            }
-
-            double unit_energy = calculateUnitEnergyForTask(task);
-            if (_current_energy < unit_energy - EPSILON) {
-                SCHEDULER_LOG_INFO(std::string("⚠️ [ASAP-NonBlock] 跳过当前不可负担任务: ") +
-                                  getTaskName(task) +
-                                  " 需要1ms=" + std::to_string(unit_energy) + "J" +
-                                  " 当前=" + std::to_string(_current_energy) + "J");
-                continue;
-            }
-
-            if (dispatchable_index == n) {
-                return task;
-            }
-            dispatchable_index++;
         }
-
         return nullptr;
     }
 
     // =====================================================
-    // notify - 每ms逐次扣减能耗（TGF核心逻辑）
+    // notify - dispatch完成后仅同步执行态，不再做二次能量门槛
     // =====================================================
 
     void ASAPNonBlockScheduler::notify(AbsRTTask *task) {
+        Scheduler::notify(task);
+
         if (!task) {
             return;
         }
 
-        // ⭐ 修复：任务到达时只检查能量，不扣减能耗
-        // 能耗在任务调度时通过getTaskN()方法扣减
-        double unit_energy = calculateUnitEnergyForTask(task);
+        SCHEDULER_LOG_INFO(std::string("🔔 [ASAP-NonBlock] notify: 任务进入执行态（不再做二次能量门槛）: ") +
+                          getTaskName(task));
 
-        // 检查能量是否足够
-        const double EPSILON = 1e-9;
-        if (_current_energy < unit_energy - EPSILON) {
-            SCHEDULER_LOG_WARNING(std::string("⚠️ [ASAP-NonBlock] notify: 能量不足") +
-                                 " 任务=" + getTaskName(task) +
-                                 " 需要=" + std::to_string(unit_energy) + "J" +
-                                 " 当前=" + std::to_string(_current_energy) + "J");
-            return;
+        if (!isInReadyQueue(task) && !isInWaitingQueue(task)) {
+            addToReadyQueue(task);
         }
-
-        // 任务到达，添加到就绪队列
-        SCHEDULER_LOG_INFO(std::string("📥 [ASAP-NonBlock] 任务到达并添加到就绪队列: ") + getTaskName(task));
-        addToReadyQueue(task);
     }
 
     // =====================================================
@@ -757,6 +842,8 @@ namespace RTSim {
 
         removeFromReadyQueue(task);
         removeFromWaitingQueue(task);
+        clearTaskTickSelection(task);
+        _energy_deducted_tasks.erase(task);
         clearPersistentTaskState(task);
 
         for (auto &map_pair : _running_tasks) {
@@ -786,8 +873,11 @@ namespace RTSim {
 
         if (!isInReadyQueue(task) && !isInWaitingQueue(task)) {
             addToReadyQueue(task);
-            checkAndPreempt();
         }
+
+        // ASAP-NonBlock is tick-frozen: arrivals enter the ready queue and
+        // are considered at the next tick boundary. Mid-tick preemption would
+        // bypass the frozen selected set and can revive stale EndDispatch.
     }
 
     // =====================================================
@@ -795,40 +885,12 @@ namespace RTSim {
     // =====================================================
 
     void ASAPNonBlockScheduler::checkAndPreempt() {
-        SCHEDULER_LOG_DEBUG("🔔 [ASAP-NonBlock] Tick级抢占检查");
-        checkAndPreemptOnAllCPUs();
+        SCHEDULER_LOG_DEBUG("🔔 [ASAP-NonBlock] tick-frozen scheduler ignores mid-tick preemption request");
     }
 
     void ASAPNonBlockScheduler::checkAndPreemptOnAllCPUs() {
-        for (auto &map_pair : _running_tasks) {
-            CPU *cpu = map_pair.first;
-            AbsRTTask *running_task = map_pair.second;
-
-            if (!running_task) {
-                continue;
-            }
-
-            AbsRTTask *highest = getHighestPriorityTaskFromReadyQueue();
-            if (!highest) {
-                continue;
-            }
-
-            if (shouldPreempt(cpu, highest)) {
-                SCHEDULER_LOG_INFO(std::string("🔄 [ASAP-NonBlock] 抢占CPU: ") +
-                                  " 挂起低优先级任务=" + getTaskName(running_task) +
-                                  " 调度高优先级任务=" + getTaskName(highest));
-
-                // ⭐ 实际抢占逻辑：挂起当前运行的任务
-                // suspend会自动调用deschedule()并将任务重新放回调度队列
-                if (_kernel) {
-                    setSuspendReason(running_task, "preemption");
-                    _kernel->suspend(running_task);
-                    SCHEDULER_LOG_DEBUG(std::string("⏸️ [ASAP-NonBlock] 已挂起任务: ") + getTaskName(running_task));
-                } else {
-                    SCHEDULER_LOG_WARNING("⚠️ [ASAP-NonBlock] 抢占失败：_kernel为nullptr");
-                }
-            }
-        }
+        // No-op by design. ASAP-NonBlock recomputes and freezes its selected
+        // set only at tick boundaries.
     }
 
     bool ASAPNonBlockScheduler::shouldPreempt(CPU *cpu, AbsRTTask *new_task) {
@@ -882,10 +944,18 @@ namespace RTSim {
         SCHEDULER_LOG_INFO(std::string("➖ [ASAP-NonBlock] extract: ") + getTaskName(task) +
                           " _ready_queue.size()=" + std::to_string(_ready_queue.size()));
 
+        std::string suspend_reason = getSuspendReason(task);
+        bool preserve_blocked_state = (suspend_reason == "insufficient_energy");
+
         Scheduler::extract(task);
         removeFromReadyQueue(task);
         removeFromWaitingQueue(task);
-        clearPersistentTaskState(task);
+        clearTaskTickSelection(task);
+        _energy_deducted_tasks.erase(task);
+
+        if (!preserve_blocked_state) {
+            clearPersistentTaskState(task);
+        }
     }
 
     void ASAPNonBlockScheduler::addToReadyQueue(AbsRTTask *task) {
@@ -960,7 +1030,24 @@ namespace RTSim {
     }
 
     AbsRTTask *ASAPNonBlockScheduler::getHighestPriorityTaskFromReadyQueue() {
-        return getTaskN(0);
+        if (_ready_queue.empty()) {
+            return nullptr;
+        }
+
+        for (AbsRTTask *task : _ready_queue) {
+            if (!task || !task->isActive()) {
+                continue;
+            }
+            if (_energy_blocked_tasks.find(task) != _energy_blocked_tasks.end()) {
+                continue;
+            }
+            if (_kernel && _kernel->getProcessor(task) != nullptr) {
+                continue;
+            }
+            return task;
+        }
+
+        return nullptr;
     }
 
     // =====================================================
@@ -1295,6 +1382,66 @@ namespace RTSim {
         _suspend_reasons.erase(task);
     }
 
+    void ASAPNonBlockScheduler::resetTickDispatchState() {
+        _counted_tasks_in_dispatch.clear();
+        _dispatch_selection_order.clear();
+        _dispatching_tasks_total_energy = 0.0;
+    }
+
+    void ASAPNonBlockScheduler::clearTaskTickSelection(AbsRTTask *task) {
+        if (!task) {
+            return;
+        }
+
+        if (_counted_tasks_in_dispatch.erase(task) > 0) {
+            _dispatching_tasks_total_energy -= calculateUnitEnergyForTask(task);
+            if (_dispatching_tasks_total_energy < 0.0) {
+                _dispatching_tasks_total_energy = 0.0;
+            }
+        }
+
+        _dispatch_selection_order.erase(
+            std::remove(_dispatch_selection_order.begin(), _dispatch_selection_order.end(), task),
+            _dispatch_selection_order.end());
+    }
+
+    void ASAPNonBlockScheduler::markTaskSelectedThisTick(AbsRTTask *task) {
+        if (!task) {
+            return;
+        }
+
+        if (_counted_tasks_in_dispatch.insert(task).second) {
+            _dispatch_selection_order.push_back(task);
+            _dispatching_tasks_total_energy += calculateUnitEnergyForTask(task);
+        }
+    }
+
+    void ASAPNonBlockScheduler::accountInitialEnergyForSelectedTasks(const std::string &log_prefix) {
+        for (AbsRTTask *task : _dispatch_selection_order) {
+            if (!task) {
+                continue;
+            }
+            if (_counted_tasks_in_dispatch.find(task) == _counted_tasks_in_dispatch.end()) {
+                continue;
+            }
+            if (_energy_deducted_tasks.find(task) != _energy_deducted_tasks.end()) {
+                continue;
+            }
+
+            double unit_energy = calculateUnitEnergyForTask(task);
+            _current_energy -= unit_energy;
+            if (_current_energy < 0.0) {
+                _current_energy = 0.0;
+            }
+            _stats.total_energy_consumed += unit_energy;
+            _energy_deducted_tasks.insert(task);
+
+            SCHEDULER_LOG_INFO(log_prefix + getTaskName(task) +
+                               " -" + std::to_string(unit_energy * 1000) + " mJ → " +
+                               std::to_string(_current_energy * 1000) + " mJ");
+        }
+    }
+
     void ASAPNonBlockScheduler::restoreEnergyBlockedTasks() {
         std::vector<AbsRTTask *> tasks_to_restore;
         std::vector<AbsRTTask *> tasks_to_clear;
@@ -1418,8 +1565,18 @@ namespace RTSim {
         _waiting_queue.clear();
         _energy_accounts.clear();
         _energy_blocked_tasks.clear();
+        _energy_deducted_tasks.clear();
+        _counted_tasks_in_dispatch.clear();
+        _dispatch_selection_order.clear();
         _suspend_reasons.clear();
         _running_tasks.clear();
+        _dispatching_tasks_total_energy = 0.0;
+        _selection_tick = Tick(-1);
+        _selection_generation = 0;
+        _selection_frozen = false;
+        _energy_commit_tick = Tick(-1);
+        _energy_commit_generation = 0;
+        _energy_commit_valid = false;
 
         _stats.total_scheduled = 0;
         _stats.total_task_completions = 0;
@@ -1437,6 +1594,9 @@ namespace RTSim {
 
     void ASAPNonBlockScheduler::endRun() {
         SCHEDULER_LOG_INFO("🏁 [ASAP-NonBlock] endRun - 仿真结束");
+
+        resetTickDispatchState();
+        _energy_deducted_tasks.clear();
 
         // 仿真结束前，收集最后一次能量
         Tick current_time = SIMUL.getTime();
@@ -1467,6 +1627,8 @@ namespace RTSim {
 
         removeFromReadyQueue(task);
         removeFromWaitingQueue(task);
+        clearTaskTickSelection(task);
+        _energy_deducted_tasks.erase(task);
         clearPersistentTaskState(task);
 
         for (auto &pair : _running_tasks) {
