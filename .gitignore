@@ -1,6 +1,9 @@
 .idea/
 build/
 
+# Experiment and dry-run outputs
+acceptance_ratio_runs/
+
 CMakeLists.txt.user
 CMakeCache.txt
 CMakeFiles
