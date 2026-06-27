@@ -206,10 +206,11 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
         self.assertEqual(defaults.rta_initial_energy, 0.0)
         self.assertFalse(defaults.profile_rta)
         help_text = parser.format_help()
+        normalized_help = " ".join(help_text.split())
         self.assertIn("单位J", help_text)
         self.assertIn("不是电池比例", help_text)
-        self.assertIn("--initial-energy 1.0", help_text)
-        self.assertIn("--rta-initial-energy 1.0", help_text)
+        self.assertIn("--initial-energy 1.0", normalized_help)
+        self.assertIn("--rta-initial-energy 1.0", normalized_help)
 
         explicit = parser.parse_args(
             ["--initial-energy", "1.0", "--rta-initial-energy", "2.5"]
