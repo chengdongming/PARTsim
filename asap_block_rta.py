@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Offline sufficient response-time analysis for ASAP-BLOCK.
 
-The implementation follows docs/asap_block_rta_final_discrete_coupled.md.
+The implementation follows
+docs/asap_block_rta_fixedpoint_v20_1_proof_polished_final.md.
 It intentionally supports only the restricted task model documented by the
 CLI help and uses a one millisecond discrete tick.
 """
@@ -9,16 +10,18 @@ CLI help and uses a one millisecond discrete tick.
 from __future__ import annotations
 
 import argparse
+from bisect import bisect_left
 import csv
 import json
 import math
 import os
 import re
 import sys
+import time
 import warnings
 from dataclasses import asdict, dataclass, field
 from fractions import Fraction
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 import yaml
 
@@ -72,9 +75,6 @@ RESOURCE_INSTRUCTION_RE = re.compile(
     r"\b(?:critical_section|get_resource|lock|resource|unlock|wait)\s*\(",
     re.IGNORECASE,
 )
-ENERGY_DP_STATE_LIMIT = 200000
-
-
 class RTAError(Exception):
     """Base error for the offline analyzer."""
 
@@ -164,9 +164,12 @@ class TaskAnalysisResult:
     proven: bool
     failure_reason: Optional[str]
     iterations: int = 0
+    rta_profile: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         result = asdict(self)
+        if self.rta_profile is None:
+            result.pop("rta_profile")
         result.update(
             {
                 "conditional": True,
@@ -181,6 +184,28 @@ class TaskAnalysisResult:
 class _EnergyBlockingResult:
     blocking: Optional[int]
     failure_reason: Optional[str] = None
+
+
+@dataclass
+class _RTAProfile:
+    task_id: str
+    total_time_sec: float = 0.0
+    fixed_point_iterations: int = 0
+    processor_delay_time_sec: float = 0.0
+    energy_blocking_time_sec: float = 0.0
+    energy_state_dp_time_sec: float = 0.0
+    beta_inverse_time_sec: float = 0.0
+    beta_inverse_calls: int = 0
+    beta_inverse_cache_hits: int = 0
+    beta_inverse_cache_misses: int = 0
+    max_frontier_size: int = 0
+    total_states_generated: int = 0
+    x_values_checked: int = 0
+    z_values_checked: int = 0
+    deadline_energy_state_calls: int = 0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
 
 
 @dataclass
@@ -203,7 +228,7 @@ class TasksetAnalysis:
             "harvesting service curve is valid only within the {} ms horizon".format(
                 self.horizon_ms
             ),
-            "E0 is 0 J at each analyzed job release",
+            "E0 is {} J at each analyzed job release".format(self.e0),
             "scheduler tick duration is 1 ms",
             "tasks use the restricted periodic single-segment fixed model",
         ]
@@ -243,6 +268,7 @@ class EnergyServiceCurve(Sequence[float]):
             Tuple[Fraction, Optional[int]], Optional[int]
         ] = {}
         self._constant_rate = self._detect_constant_rate()
+        self._monotone_prefix = self._build_monotone_prefix()
 
     def _detect_constant_rate(self) -> Optional[Fraction]:
         if not self._exact_trace:
@@ -250,6 +276,22 @@ class EnergyServiceCurve(Sequence[float]):
         first = self._exact_trace[0]
         if all(value == first for value in self._exact_trace):
             return first
+        return None
+
+    def _build_monotone_prefix(self) -> Optional[List[Fraction]]:
+        """Return beta values when the earliest window is always minimal.
+
+        For a nondecreasing non-negative trace, every later window has at
+        least the energy of the same-length prefix. Therefore beta(delta) is
+        exactly the cumulative prefix and inverse queries can use bisection.
+        Arbitrary traces retain the general linear inverse below.
+        """
+
+        if all(
+            left <= right
+            for left, right in zip(self._exact_trace, self._exact_trace[1:])
+        ):
+            return list(self._exact_prefix)
         return None
 
     def __len__(self) -> int:
@@ -298,6 +340,18 @@ class EnergyServiceCurve(Sequence[float]):
                 result = -(-ratio.numerator // ratio.denominator)
                 if result > limit:
                     result = None
+            self._inverse_cache[key] = result
+            return result
+
+        if self._monotone_prefix is not None:
+            result = bisect_left(
+                self._monotone_prefix,
+                exact_energy,
+                0,
+                limit + 1,
+            )
+            if result > limit or self._monotone_prefix[result] < exact_energy:
+                result = None
             self._inverse_cache[key] = result
             return result
 
@@ -872,107 +926,46 @@ def build_energy_service_curve(
 
 
 def beta_inverse(
-    beta_values: Sequence[float], energy: Union[int, float, Fraction]
+    beta_values: Sequence[float],
+    energy: Union[int, float, Fraction],
+    profile: Optional[_RTAProfile] = None,
 ) -> Optional[int]:
     """Return min integer delta with beta(delta) >= energy, or None."""
 
+    started = time.perf_counter()
     exact_energy = _exact_fraction(energy)
+    if profile is not None:
+        profile.beta_inverse_calls += 1
     if exact_energy <= 0:
+        if profile is not None:
+            profile.beta_inverse_cache_hits += 1
+            profile.beta_inverse_time_sec += time.perf_counter() - started
         return 0
     if isinstance(beta_values, EnergyServiceCurve):
-        return beta_values.inverse(energy)
+        key = (exact_energy, beta_values.horizon_ms)
+        if profile is not None:
+            if key in beta_values._inverse_cache:
+                profile.beta_inverse_cache_hits += 1
+            else:
+                profile.beta_inverse_cache_misses += 1
+        result = beta_values.inverse(energy)
+        if profile is not None:
+            profile.beta_inverse_time_sec += time.perf_counter() - started
+        return result
+    if profile is not None:
+        profile.beta_inverse_cache_misses += 1
     for delta, value in enumerate(beta_values):
         if _exact_fraction(value) >= exact_energy:
+            if profile is not None:
+                profile.beta_inverse_time_sec += time.perf_counter() - started
             return delta
+    if profile is not None:
+        profile.beta_inverse_time_sec += time.perf_counter() - started
     return None
 
 
 def _energy_fraction(task: RTATask) -> Fraction:
     return Fraction(str(task.energy_per_tick))
-
-
-_DPState = Tuple[int, int, int, Fraction]
-
-
-class _DPStateLimitExceeded(Exception):
-    pass
-
-
-def _state_dominates(left: _DPState, right: _DPState) -> bool:
-    """Return true if left is no better for capacity and no smaller in U/E."""
-
-    left_a, left_b, left_u, left_e = left
-    right_a, right_b, right_u, right_e = right
-    return (
-        left_a <= right_a
-        and left_b <= right_b
-        and left_u >= right_u
-        and left_e >= right_e
-        and (
-            left_a < right_a
-            or left_b < right_b
-            or left_u > right_u
-            or left_e > right_e
-        )
-    )
-
-
-def _prune_pareto_states(
-    states: Iterable[_DPState],
-    state_limit: int = ENERGY_DP_STATE_LIMIT,
-) -> List[_DPState]:
-    """Keep the Pareto frontier for capacity use and the maximized U/E pair."""
-
-    frontier: List[_DPState] = []
-    for state in states:
-        if any(_state_dominates(existing, state) for existing in frontier):
-            continue
-        frontier = [
-            existing
-            for existing in frontier
-            if not _state_dominates(state, existing)
-        ]
-        frontier.append(state)
-        if len(frontier) > state_limit:
-            raise _DPStateLimitExceeded(
-                "energy DP state limit {} exceeded".format(state_limit)
-            )
-    return frontier
-
-
-def _high_priority_options(
-    task: RTATask,
-    w: int,
-    a_window: int,
-    z: int,
-    processor_workload: int,
-    state_limit: int,
-) -> List[_DPState]:
-    workload = workload_bound(task, w)
-    energy = _energy_fraction(task)
-    _ = (a_window, z, processor_workload, state_limit)
-    # For fixed a_i and b_i, taking all remaining W_i^D(w) as u_i is the
-    # worst-case relaxation used by the RTA upper bound: both U and E are
-    # monotone nondecreasing in u_i. Because a_i and b_i only consume capacity,
-    # (a_i,b_i,u_i)=(0,0,W_i^D) dominates every other high-priority option for
-    # this maximization. This is not intended to reconstruct one exact
-    # simulator trace.
-    return [(0, 0, workload, workload * energy)]
-
-
-def _low_priority_options(
-    task: RTATask,
-    w: int,
-    z: int,
-    state_limit: int,
-) -> List[_DPState]:
-    workload = workload_bound(task, w)
-    energy = _energy_fraction(task)
-    options = [
-        (0, c_value, 0, c_value * energy)
-        for c_value in range(min(workload, z) + 1)
-    ]
-    return _prune_pareto_states(options, state_limit)
 
 
 def _deadline_energy_states_for_z(
@@ -983,51 +976,84 @@ def _deadline_energy_states_for_z(
     z: int,
     M: int,
     processor_workloads: Mapping[str, int],
+    profile: Optional[_RTAProfile] = None,
 ) -> List[Tuple[int, Fraction]]:
+    """Return the exact v20.1 Omega maximum for fixed ``(w, x, z)``.
+
+    The complete integer Omega set admits an exact reduction. For fixed
+    ``a_i``, moving any ``b_i`` unit to ``u_i`` preserves ``a_i+b_i+u_i`` and
+    therefore cannot lower high-priority energy. It increases (or preserves)
+    the serial quantity ``U=sum(u_i)`` and frees concurrent B-capacity; that
+    freed capacity can only preserve or increase the selectable low-priority
+    energy. Hence a maximizer has ``b_i=0`` and saturates each task workload
+    with ``a_i+u_i=W_i^D(w)``. This does not parallelize or compress U: it is
+    still the literal sum of all per-task ``u_i`` values.
+
+    With the required equality ``sum(a_i)=M(x-z)``, the closed form is
+    ``U=sum(W_i^D(w))-M(x-z)`` and high-priority energy is
+    ``sum(W_i^D(w) P_i)``, independent of the feasible a-allocation.
+    Low-priority ``c_j`` values then fill at most ``(M-1)z`` concurrent slots;
+    sorting by per-tick energy and filling highest first gives their exact
+    maximum contribution.
+
+    Tiny exhaustive tests compare this reduction with the full
+    ``(z,a_i,b_i,u_i,c_j)`` enumeration.
+    """
+
+    started = time.perf_counter()
+    if profile is not None:
+        profile.deadline_energy_state_calls += 1
+    if x == 0:
+        result = [(0, Fraction(0))] if z == 0 else []
+        if profile is not None:
+            profile.energy_state_dp_time_sec += time.perf_counter() - started
+        return result
+
     a_capacity = M * (x - z)
-    b_capacity = (M - 1) * z
-    target_energy = z * _energy_fraction(target)
-
-    states: List[_DPState] = [(0, 0, 0, Fraction(0))]
-    option_sets: List[List[_DPState]] = []
-    for task in hp(taskset, target):
-        option_sets.append(
-            _high_priority_options(
-                task,
-                w,
-                x - z,
-                z,
-                processor_workloads[task.name],
-                ENERGY_DP_STATE_LIMIT,
-            )
+    high = hp(taskset, target)
+    high_workloads = {
+        task.name: workload_bound(task, w) for task in high
+    }
+    a_caps = {
+        task.name: min(
+            high_workloads[task.name],
+            x - z,
+            processor_workloads[task.name],
         )
-    for task in _lp(taskset, target):
-        option_sets.append(
-            _low_priority_options(task, w, z, ENERGY_DP_STATE_LIMIT)
-        )
+        for task in high
+    }
+    if sum(a_caps.values()) < a_capacity:
+        if profile is not None:
+            profile.energy_state_dp_time_sec += time.perf_counter() - started
+        return []
 
-    for options in option_sets:
-        next_states: List[_DPState] = []
-        for a_used, b_used, u_total, energy_total in states:
-            for a_value, b_value, u_value, energy_value in options:
-                new_a = a_used + a_value
-                new_b = b_used + b_value
-                if new_a > a_capacity or new_b > b_capacity:
-                    continue
-                next_states.append(
-                    (
-                        new_a,
-                        new_b,
-                        u_total + u_value,
-                        energy_total + energy_value,
-                    )
-                )
-        states = _prune_pareto_states(next_states, ENERGY_DP_STATE_LIMIT)
+    u_total = sum(high_workloads.values()) - a_capacity
+    energy_total = z * _energy_fraction(target)
+    energy_total += sum(
+        high_workloads[task.name] * _energy_fraction(task) for task in high
+    )
 
-    return [
-        (u_total, energy_total + target_energy)
-        for _a_used, _b_used, u_total, energy_total in states
-    ]
+    remaining_b_capacity = (M - 1) * z
+    low_options = sorted(
+        (
+            (_energy_fraction(task), min(workload_bound(task, w), z))
+            for task in _lp(taskset, target)
+        ),
+        reverse=True,
+    )
+    for energy_per_tick, capacity in low_options:
+        selected = min(capacity, remaining_b_capacity)
+        energy_total += selected * energy_per_tick
+        remaining_b_capacity -= selected
+        if remaining_b_capacity == 0:
+            break
+
+    result = [(u_total, energy_total)]
+    if profile is not None:
+        profile.total_states_generated += 1
+        profile.max_frontier_size = max(profile.max_frontier_size, 1)
+        profile.energy_state_dp_time_sec += time.perf_counter() - started
+    return result
 
 
 def _prefix_energy_upper_bound_exact(
@@ -1088,7 +1114,8 @@ def _energy_blocking_bound_result(
     E0: float = 0,
     tasks: Optional[Sequence[RTATask]] = None,
     M: Optional[int] = None,
-) -> Optional[int]:
+    profile: Optional[_RTAProfile] = None,
+) -> _EnergyBlockingResult:
     """Compute B_k^E(w); return None if the finite service is insufficient."""
 
     taskset = _taskset_for(k, tasks)
@@ -1096,7 +1123,12 @@ def _energy_blocking_bound_result(
     processors = M if M is not None else target._num_cores
     if processors is None or processors <= 0:
         raise ValueError("M is required for energy blocking analysis")
+    processor_started = time.perf_counter()
     delay = processor_delay(target, w, processors, taskset)
+    if profile is not None:
+        profile.processor_delay_time_sec += (
+            time.perf_counter() - processor_started
+        )
     reference_length = target.wcet + delay
     if reference_length <= 0:
         return _EnergyBlockingResult(0)
@@ -1105,26 +1137,26 @@ def _energy_blocking_bound_result(
     exact_e0 = _exact_fraction(E0)
     processor_workloads = _processor_workloads(target, w, taskset)
     for x in range(1, reference_length + 1):
+        if profile is not None:
+            profile.x_values_checked += 1
         z_min = max(0, x - delay)
         z_max = min(target.wcet, x)
         for z in range(z_min, z_max + 1):
-            try:
-                states = _deadline_energy_states_for_z(
-                    target,
-                    taskset,
-                    w,
-                    x,
-                    z,
-                    processors,
-                    processor_workloads,
-                )
-            except _DPStateLimitExceeded:
-                return _EnergyBlockingResult(
-                    None, "energy DP state limit exceeded"
-                )
+            if profile is not None:
+                profile.z_values_checked += 1
+            states = _deadline_energy_states_for_z(
+                target,
+                taskset,
+                w,
+                x,
+                z,
+                processors,
+                processor_workloads,
+                profile,
+            )
             for u_total, energy in states:
                 demand = max(energy - exact_e0, Fraction(0))
-                delta = beta_inverse(beta, demand)
+                delta = beta_inverse(beta, demand, profile)
                 if delta is None:
                     return _EnergyBlockingResult(
                         None, "finite energy service is insufficient"
@@ -1154,11 +1186,38 @@ def response_time_bound(
     E0: float = 0,
     max_iterations: int = 1000,
     assume_no_overflow: bool = False,
+    profile_rta: bool = False,
 ) -> TaskAnalysisResult:
     """Iterate the sufficient ASAP-BLOCK response-time upper bound."""
 
+    analysis_started = time.perf_counter()
     taskset = _taskset_for(k, tasks)
     target = _resolve_target(taskset, k)
+    profile = _RTAProfile(target.name) if profile_rta else None
+
+    def make_result(
+        bound: Optional[int],
+        proven: bool,
+        reason: Optional[str],
+        iterations: int,
+    ) -> TaskAnalysisResult:
+        if profile is not None:
+            profile.fixed_point_iterations = iterations
+            profile.total_time_sec = time.perf_counter() - analysis_started
+        return TaskAnalysisResult(
+            target.name,
+            target.period,
+            target.wcet,
+            target.deadline,
+            target.workload,
+            target.energy_per_tick,
+            bound,
+            proven,
+            reason,
+            iterations,
+            profile.to_dict() if profile is not None else None,
+        )
+
     processors = M if M is not None else target._num_cores
     if processors is None or processors <= 0:
         raise ValueError("M is required for response-time analysis")
@@ -1170,13 +1229,7 @@ def response_time_bound(
     if harvesting_horizon < 0:
         raise ValueError("beta must include at least beta(0)")
     if target.wcet > harvesting_horizon:
-        return TaskAnalysisResult(
-            target.name,
-            target.period,
-            target.wcet,
-            target.deadline,
-            target.workload,
-            target.energy_per_tick,
+        return make_result(
             target.wcet,
             False,
             "response bound exceeds harvesting horizon",
@@ -1185,7 +1238,13 @@ def response_time_bound(
 
     current = target.wcet
     for iteration in range(1, max_iterations + 1):
+        processor_started = time.perf_counter()
         cpu_delay = processor_delay(target, current, processors, taskset)
+        if profile is not None:
+            profile.processor_delay_time_sec += (
+                time.perf_counter() - processor_started
+            )
+        energy_started = time.perf_counter()
         energy_result = _energy_blocking_bound_result(
             target,
             current,
@@ -1193,16 +1252,15 @@ def response_time_bound(
             E0=E0,
             tasks=taskset,
             M=processors,
+            profile=profile,
         )
+        if profile is not None:
+            profile.energy_blocking_time_sec += (
+                time.perf_counter() - energy_started
+            )
         energy_delay = energy_result.blocking
         if energy_delay is None:
-            return TaskAnalysisResult(
-                target.name,
-                target.period,
-                target.wcet,
-                target.deadline,
-                target.workload,
-                target.energy_per_tick,
+            return make_result(
                 None,
                 False,
                 energy_result.failure_reason
@@ -1212,26 +1270,14 @@ def response_time_bound(
 
         next_value = target.wcet + cpu_delay + energy_delay
         if next_value > harvesting_horizon:
-            return TaskAnalysisResult(
-                target.name,
-                target.period,
-                target.wcet,
-                target.deadline,
-                target.workload,
-                target.energy_per_tick,
+            return make_result(
                 next_value,
                 False,
                 "response bound exceeds harvesting horizon",
                 iteration,
             )
         if next_value > target.deadline:
-            return TaskAnalysisResult(
-                target.name,
-                target.period,
-                target.wcet,
-                target.deadline,
-                target.workload,
-                target.energy_per_tick,
+            return make_result(
                 next_value,
                 False,
                 "response-time bound exceeds the task deadline",
@@ -1239,38 +1285,20 @@ def response_time_bound(
             )
         if next_value == current:
             if not assume_no_overflow:
-                return TaskAnalysisResult(
-                    target.name,
-                    target.period,
-                    target.wcet,
-                    target.deadline,
-                    target.workload,
-                    target.energy_per_tick,
+                return make_result(
                     next_value,
                     False,
                     "no-overflow assumption was not acknowledged",
                     iteration,
                 )
-            return TaskAnalysisResult(
-                target.name,
-                target.period,
-                target.wcet,
-                target.deadline,
-                target.workload,
-                target.energy_per_tick,
+            return make_result(
                 next_value,
                 True,
                 None,
                 iteration,
             )
         if next_value < current:
-            return TaskAnalysisResult(
-                target.name,
-                target.period,
-                target.wcet,
-                target.deadline,
-                target.workload,
-                target.energy_per_tick,
+            return make_result(
                 next_value,
                 False,
                 "fixed-point iteration became non-monotonic",
@@ -1278,13 +1306,7 @@ def response_time_bound(
             )
         current = next_value
 
-    return TaskAnalysisResult(
-        target.name,
-        target.period,
-        target.wcet,
-        target.deadline,
-        target.workload,
-        target.energy_per_tick,
+    return make_result(
         current,
         False,
         "fixed-point iteration limit {} exceeded".format(max_iterations),
@@ -1395,6 +1417,8 @@ def analyze_taskset(
     assume_no_overflow: bool = False,
     harvest_trace: Optional[Sequence[float]] = None,
     max_iterations: int = 1000,
+    initial_energy: float = 0.0,
+    profile_rta: bool = False,
 ) -> TasksetAnalysis:
     """Analyze every task and return a serializable report."""
 
@@ -1404,6 +1428,16 @@ def analyze_taskset(
         raise InputValidationError("--horizon-ms must be positive")
 
     config = load_system_config(system_yml)
+    if not math.isfinite(initial_energy) or initial_energy < 0:
+        raise InputValidationError(
+            "--rta-initial-energy must be finite and non-negative"
+        )
+    if initial_energy > config.max_energy:
+        raise InputValidationError(
+            "--rta-initial-energy cannot exceed max_energy={} J".format(
+                config.max_energy
+            )
+        )
     tasks = load_tasks(tasks_yml)
     taskset = tuple(tasks)
     for task in tasks:
@@ -1425,9 +1459,10 @@ def analyze_taskset(
             tasks=tasks,
             M=config.num_cores,
             beta=beta,
-            E0=0,
+            E0=initial_energy,
             max_iterations=max_iterations,
             assume_no_overflow=assume_no_overflow,
+            profile_rta=profile_rta,
         )
         for task in rm_order(tasks)
     ]
@@ -1436,7 +1471,7 @@ def analyze_taskset(
         tasks_file=os.path.abspath(tasks_yml),
         horizon_ms=horizon_ms,
         assume_no_overflow=assume_no_overflow,
-        e0=0.0,
+        e0=float(initial_energy),
         tasks=results,
     )
 
@@ -1445,8 +1480,10 @@ def _format_report(report: TasksetAnalysis) -> str:
     lines = [
         "ASAP-BLOCK offline response-time upper-bound analysis",
         "CONDITIONAL ANALYSIS ONLY: no absolute schedulability claim is made.",
-        "horizon_ms={}  E0=0  assume_no_overflow={}".format(
-            report.horizon_ms, str(report.assume_no_overflow).lower()
+        "horizon_ms={}  E0={}  assume_no_overflow={}".format(
+            report.horizon_ms,
+            report.e0,
+            str(report.assume_no_overflow).lower(),
         ),
         "Assumptions:",
     ]
@@ -1501,6 +1538,26 @@ def _build_argument_parser() -> argparse.ArgumentParser:
         help="acknowledge the theorem's no-battery-overflow assumption",
     )
     parser.add_argument(
+        "--rta-initial-energy",
+        type=float,
+        default=0.0,
+        help=(
+            "absolute energy lower bound E0 in joules at the start of every "
+            "analysis window (the target-job release), default 0.0; this is "
+            "not a battery ratio and does not inherit the simulator's "
+            "--initial-energy value. For example, 1.0 means 1 J, whereas "
+            "simulator --initial-energy 1.0 means a full-battery ratio. A "
+            "nonzero value supports a formal guarantee only when that energy "
+            "can be proved available at every target-job release; otherwise "
+            "it is a diagnostic or experiment-specific assumption"
+        ),
+    )
+    parser.add_argument(
+        "--profile-rta",
+        action="store_true",
+        help="include per-task RTA profiling counters in JSON output",
+    )
+    parser.add_argument(
         "--json", action="store_true", help="write the report as JSON"
     )
     return parser
@@ -1514,6 +1571,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             args.tasks,
             args.horizon_ms,
             assume_no_overflow=args.assume_no_overflow,
+            initial_energy=args.rta_initial_energy,
+            profile_rta=args.profile_rta,
         )
     except RTAError as exc:
         if args.json:
