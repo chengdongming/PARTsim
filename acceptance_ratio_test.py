@@ -244,11 +244,64 @@ def _extract_number(value):
     return number
 
 
+def _is_rta_proven(result):
+    if not isinstance(result, dict):
+        return False
+    return result.get('rta_status') in {
+        'proven_under_assumptions',
+        'rta_proven',
+    }
+
+
+def extract_rta_bounds_by_task(rta_result):
+    """Return valid proven per-task response-time bounds from an RTA result."""
+    if not _is_rta_proven(rta_result):
+        return {}
+
+    report = rta_result.get('rta_report')
+    if not isinstance(report, dict):
+        return {}
+    tasks = report.get('tasks')
+    if not isinstance(tasks, list):
+        return {}
+
+    bounds = {}
+    for task in tasks:
+        if not isinstance(task, dict):
+            continue
+        task_proven = task.get(
+            'proven', task.get('proven_under_assumptions', False)
+        )
+        task_name = task.get('task_name')
+        bound = _extract_number(task.get('response_time_bound'))
+        if not task_proven or not task_name or bound is None or bound <= 0:
+            continue
+        bounds[str(task_name)] = bound
+    return bounds
+
+
+def compute_task_tightness_samples(algorithm, rta_result,
+                                   max_response_by_task):
+    """Pair proven per-task RTA bounds with observed maximum responses."""
+    if algorithm != ASAP_BLOCK_ALGORITHM or not _is_rta_proven(rta_result):
+        return []
+    if not isinstance(max_response_by_task, dict):
+        return []
+
+    samples = []
+    for task_name, bound in extract_rta_bounds_by_task(rta_result).items():
+        response = _extract_number(max_response_by_task.get(task_name))
+        if response is None or response <= 0:
+            continue
+        samples.append(bound / response)
+    return samples
+
+
 def tightness_for_result(algorithm, result):
-    """Return RTA/simulation tightness for valid ASAP-BLOCK samples only."""
+    """Return legacy scalar tightness for valid ASAP-BLOCK samples only."""
     if algorithm != ASAP_BLOCK_ALGORITHM or not isinstance(result, dict):
         return None
-    if result.get('rta_status') != 'proven_under_assumptions':
+    if not _is_rta_proven(result):
         return None
 
     rta_bound = _extract_number(result.get('rta_bound'))
@@ -260,6 +313,34 @@ def tightness_for_result(algorithm, result):
     if simulated_response <= 0:
         return None
     return rta_bound / simulated_response
+
+
+def tightness_values_for_result(algorithm, result):
+    """Return task-level tightness samples, with legacy scalar fallback."""
+    if algorithm != ASAP_BLOCK_ALGORITHM or not isinstance(result, dict):
+        return []
+    if not _is_rta_proven(result):
+        return []
+
+    stored_values = result.get('tightness_values')
+    if isinstance(stored_values, list):
+        values = []
+        for value in stored_values:
+            number = _extract_number(value)
+            if number is not None:
+                values.append(number)
+        return values
+
+    values = compute_task_tightness_samples(
+        algorithm,
+        result,
+        result.get('max_observed_response_times'),
+    )
+    if values:
+        return values
+
+    legacy_value = tightness_for_result(algorithm, result)
+    return [] if legacy_value is None else [legacy_value]
 
 
 def run_single_simulation_worker(task):
@@ -289,10 +370,23 @@ def run_single_simulation_worker(task):
     acceptance_ratio = 0.0
     simulation_status = 'simulation_error'
     simulation_error = None
+    max_response_by_task = {}
 
     try:
         subprocess.run(cmd, check=True, capture_output=True, env=env, text=True, timeout=120)
-        acceptance_ratio = TraceParser(str(trace_file)).get_acceptance_ratio()
+        trace_parser = TraceParser(str(trace_file))
+        acceptance_ratio = trace_parser.get_acceptance_ratio()
+        if (
+            algorithm == ASAP_BLOCK_ALGORITHM
+            and rta_options.get('enable_rta', False)
+            and trace_file.exists()
+        ):
+            try:
+                max_response_by_task = (
+                    trace_parser.get_max_response_times_by_task()
+                )
+            except Exception:
+                max_response_by_task = {}
         simulation_status = (
             'accepted' if acceptance_ratio == 1.0 else 'rejected'
         )
@@ -355,6 +449,17 @@ def run_single_simulation_worker(task):
         'simulation_error': simulation_error,
     }
     run_result.update(rta_result)
+    tightness_values = compute_task_tightness_samples(
+        algorithm, run_result, max_response_by_task
+    )
+    run_result.update({
+        'max_observed_response_times': max_response_by_task,
+        'tightness_values': tightness_values,
+        'tightness_num_samples': len(tightness_values),
+        'avg_tightness': (
+            float(np.mean(tightness_values)) if tightness_values else None
+        ),
+    })
     return run_result
 
 # 算法配置 - 9种调度器
@@ -602,6 +707,32 @@ class TraceParser:
             # 任何异常（文件损坏、解析错误等）都当作失败
             print(f"⚠️ 解析追踪文件异常 {self.trace_file}: {e}")
             return 0.0
+
+    def get_max_response_times_by_task(self):
+        """Return the maximum completed-job response time for each task."""
+        max_response_by_task = {}
+        for event in self.events:
+            if not isinstance(event, dict):
+                continue
+            if event.get('event_type') not in {
+                'end_instance', 'completion'
+            }:
+                continue
+
+            task_name = event.get('task_name')
+            finish_time = _extract_number(event.get('time'))
+            arrival_time = _extract_number(event.get('arrival_time'))
+            if not task_name or finish_time is None or arrival_time is None:
+                continue
+
+            response_time = finish_time - arrival_time
+            if response_time < 0:
+                continue
+            task_name = str(task_name)
+            previous = max_response_by_task.get(task_name)
+            if previous is None or response_time > previous:
+                max_response_by_task[task_name] = response_time
+        return max_response_by_task
 
 # ============================================
 # 实验执行器
@@ -1030,13 +1161,11 @@ class ExperimentRunner:
                         }
                         for result in rta_results
                     )
-                    tightness_values = [
-                        value for value in (
-                            tightness_for_result(algo, result)
-                            for result in run_results
+                    tightness_values = []
+                    for result in run_results:
+                        tightness_values.extend(
+                            tightness_values_for_result(algo, result)
                         )
-                        if value is not None
-                    ]
                     row.update({
                         'rta_num_analyzed': rta_num_analyzed,
                         'rta_num_proven': rta_num_proven,
