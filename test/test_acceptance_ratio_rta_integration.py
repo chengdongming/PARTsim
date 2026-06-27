@@ -87,6 +87,7 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
             enable_rta=True,
             rta_horizon_ms=None,
             rta_timeout=10,
+            rta_initial_energy=0.0,
         )
         with self.assertRaises(SystemExit):
             acceptance.validate_rta_cli_args(parser, args)
@@ -167,6 +168,8 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
                 horizon_ms=100,
                 assume_no_overflow=True,
                 timeout=7,
+                initial_energy=1.25,
+                profile_rta=True,
             )
 
         command = run_mock.call_args.args[0]
@@ -177,7 +180,11 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
             command[command.index("--tasks") + 1], str(self.tasks)
         )
         self.assertEqual(command[command.index("--horizon-ms") + 1], "100")
+        self.assertEqual(
+            command[command.index("--rta-initial-energy") + 1], "1.25"
+        )
         self.assertIn("--assume-no-overflow", command)
+        self.assertIn("--profile-rta", command)
         self.assertIn("--json", command)
         self.assertEqual(run_mock.call_args.kwargs["timeout"], 7)
         self.assertEqual(result["rta_status"], "proven_under_assumptions")
@@ -189,6 +196,30 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
             result["rta_system_config_hash"],
             acceptance.hash_file(self.config),
         )
+        self.assertEqual(result["rta_initial_energy"], 1.25)
+        self.assertTrue(result["rta_profile_enabled"])
+
+    def test_experiment_cli_keeps_rta_initial_energy_independent(self):
+        parser = argparse.ArgumentParser(add_help=False)
+        acceptance.add_experiment_cli_args(parser)
+        defaults = parser.parse_args([])
+        self.assertEqual(defaults.rta_initial_energy, 0.0)
+        self.assertFalse(defaults.profile_rta)
+        help_text = parser.format_help()
+        self.assertIn("单位J", help_text)
+        self.assertIn("不是电池比例", help_text)
+        self.assertIn("--initial-energy 1.0", help_text)
+        self.assertIn("--rta-initial-energy 1.0", help_text)
+
+        explicit = parser.parse_args(
+            ["--initial-energy", "1.0", "--rta-initial-energy", "2.5"]
+        )
+        self.assertEqual(explicit.initial_energy, 1.0)
+        self.assertEqual(explicit.rta_initial_energy, 2.5)
+
+        invalid = parser.parse_args(["--rta-initial-energy", "nan"])
+        with self.assertRaises(SystemExit):
+            acceptance.validate_rta_cli_args(parser, invalid)
 
     def test_worker_passes_same_config_to_simulator_and_rta(self):
         simulation = subprocess.CompletedProcess([], 0, stdout="", stderr="")

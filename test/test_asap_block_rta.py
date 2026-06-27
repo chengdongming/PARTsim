@@ -12,7 +12,10 @@ sys.path.insert(0, PROJECT_ROOT)
 from asap_block_rta import (
     InputValidationError,
     RTATask,
+    _build_argument_parser,
+    _deadline_energy_states_for_z,
     _format_report,
+    _processor_workloads,
     analyze_taskset,
     beta_inverse,
     build_energy_service_curve,
@@ -214,7 +217,26 @@ class ASAPBlockRTATest(unittest.TestCase):
             0,
         )
 
+    def test_processor_workload_uses_discrete_completion_boundary(self):
+        high = RTATask("high", 10, 3, 10, "low", 0)
+        target = RTATask("target", 20, 3, 20, "low", 1)
+        tasks = self.attach([high, target], 1)
+
+        self.assertEqual(_processor_workloads(target, 2, tasks)["high"], 0)
+        self.assertEqual(_processor_workloads(target, 3, tasks)["high"], 1)
+
+    def test_processor_delay_is_not_total_workload_divided_by_cores(self):
+        high = RTATask("high", 10, 4, 10, "low", 0)
+        target = RTATask("target", 20, 1, 20, "low", 1)
+        tasks = self.attach([high, target], 2)
+        bars = _processor_workloads(target, 4, tasks)
+
+        self.assertEqual(sum(bars.values()) // 2, 2)
+        self.assertEqual(processor_delay(target, 4, 2, tasks), 0)
+
     def brute_prefix_energy(self, tasks, target, w, x, cores):
+        if x == 0:
+            return 0.0
         high = hp(tasks, target)
         ordered = rm_order(tasks)
         target_pos = ordered.index(target)
@@ -238,7 +260,7 @@ class ASAPBlockRTATest(unittest.TestCase):
                 for task in low
             ]
             for a_values in itertools.product(*a_ranges):
-                if sum(a_values) > cores * (x - z):
+                if sum(a_values) != cores * (x - z):
                     continue
                 b_ranges = [
                     range(min(workload_bound(task, w) - a, z) + 1)
@@ -267,7 +289,7 @@ class ASAPBlockRTATest(unittest.TestCase):
                             best = max(best, energy)
         return best
 
-    def brute_energy_blocking(self, tasks, target, w, beta, cores):
+    def brute_energy_blocking(self, tasks, target, w, beta, cores, e0=0.0):
         high = hp(tasks, target)
         ordered = rm_order(tasks)
         target_pos = ordered.index(target)
@@ -295,7 +317,7 @@ class ASAPBlockRTATest(unittest.TestCase):
                     for task in low
                 ]
                 for a_values in itertools.product(*a_ranges):
-                    if sum(a_values) > cores * (x - z):
+                    if sum(a_values) != cores * (x - z):
                         continue
                     b_ranges = [
                         range(min(workload_bound(task, w) - a, z) + 1)
@@ -324,7 +346,9 @@ class ASAPBlockRTATest(unittest.TestCase):
                                     c * task.energy_per_tick
                                     for task, c in zip(low, c_values)
                                 )
-                                delta = beta_inverse(beta, energy)
+                                delta = beta_inverse(
+                                    beta, max(energy - e0, 0.0)
+                                )
                                 if delta is None:
                                     return None
                                 best = max(
@@ -395,6 +419,150 @@ class ASAPBlockRTATest(unittest.TestCase):
         self.assertEqual(actual, expected)
         self.assertEqual(actual, 2)
 
+    def test_v20_1_omega_reduction_matches_complete_tiny_brute_force(self):
+        high1 = RTATask("high1", 5, 2, 5, "high", 0, 2.0)
+        high2 = RTATask("high2", 6, 1, 6, "low", 1, 1.0)
+        target = RTATask("target", 10, 2, 10, "low", 2, 1.5)
+        low = RTATask("low", 20, 2, 20, "very_high", 3, 3.0)
+        tasks = self.attach([high1, high2, target, low], 2)
+        beta = build_energy_service_curve([2.0] * 40, 40)
+
+        expected = self.brute_energy_blocking(
+            tasks, target, 3, beta, 2, e0=1.0
+        )
+        actual = energy_blocking_bound(
+            target, 3, beta, E0=1.0, tasks=tasks, M=2
+        )
+        self.assertEqual(actual, expected)
+
+    def test_v20_1_exact_reduction_matches_brute_force_grid(self):
+        scenarios = [
+            (
+                1,
+                [
+                    RTATask("h1", 4, 1, 4, "high", 0, 1.5),
+                    RTATask("target", 8, 1, 8, "low", 1, 1.0),
+                    RTATask("low", 12, 1, 12, "very_high", 2, 2.0),
+                ],
+            ),
+            (
+                2,
+                [
+                    RTATask("h1", 4, 1, 4, "high", 0, 2.0),
+                    RTATask("h2", 5, 1, 5, "low", 1, 1.0),
+                    RTATask("target", 8, 2, 8, "low", 2, 1.5),
+                    RTATask("low", 12, 2, 12, "very_high", 3, 3.0),
+                ],
+            ),
+        ]
+        beta = build_energy_service_curve([2.0] * 40, 40)
+
+        for cores, scenario in scenarios:
+            tasks = self.attach(scenario, cores)
+            target = next(task for task in tasks if task.name == "target")
+            for w in range(1, 4):
+                for e0 in (0.0, 0.5, 2.0):
+                    with self.subTest(cores=cores, w=w, e0=e0):
+                        self.assertEqual(
+                            energy_blocking_bound(
+                                target,
+                                w,
+                                beta,
+                                E0=e0,
+                                tasks=tasks,
+                                M=cores,
+                            ),
+                            self.brute_energy_blocking(
+                                tasks, target, w, beta, cores, e0=e0
+                            ),
+                        )
+
+    def test_omega_reduction_with_two_hp_two_lp_and_feasible_positive_b(self):
+        high1 = RTATask("high1", 4, 1, 4, "high", 0, 2.0)
+        high2 = RTATask("high2", 5, 1, 5, "low", 1, 1.0)
+        target = RTATask("target", 8, 1, 8, "low", 2, 1.5)
+        low1 = RTATask("low1", 12, 1, 12, "very_high", 3, 5.0)
+        low2 = RTATask("low2", 13, 1, 13, "high", 4, 4.0)
+        tasks = self.attach([high1, high2, target, low1, low2], 2)
+        beta = build_energy_service_curve([3.0] * 40, 40)
+
+        # At x=z=1, b_high1=1 is a feasible full-Omega state because the
+        # concurrent capacity is one. The closed form instead moves that unit
+        # to u_high1 and may use the released slot for either low task.
+        self.assertGreaterEqual(workload_bound(high1, 1), 1)
+        self.assertEqual((2 - 1) * 1, 1)
+        for e0 in (0.0, 1.0):
+            with self.subTest(e0=e0):
+                self.assertEqual(
+                    energy_blocking_bound(
+                        target, 2, beta, E0=e0, tasks=tasks, M=2
+                    ),
+                    self.brute_energy_blocking(
+                        tasks, target, 2, beta, 2, e0=e0
+                    ),
+                )
+
+    def test_v20_1_omega_requires_exact_a_capacity_and_unique_x_zero(self):
+        high = RTATask("high", 5, 2, 5, "high", 0, 2.0)
+        target = RTATask("target", 10, 1, 10, "low", 1, 1.0)
+        tasks = self.attach([high, target], 2)
+        bars = _processor_workloads(target, 2, tasks)
+
+        self.assertEqual(
+            _deadline_energy_states_for_z(
+                target, tasks, 2, 0, 0, 2, bars
+            ),
+            [(0, 0)],
+        )
+        # One sequential high-priority task cannot fill two cores for one
+        # complete processor-wait unit, so this Omega slice is infeasible.
+        self.assertEqual(
+            _deadline_energy_states_for_z(
+                target, tasks, 2, 1, 0, 2, bars
+            ),
+            [],
+        )
+
+    def test_u_is_serial_sum_and_is_not_parallel_compressed(self):
+        high1 = RTATask("high1", 5, 1, 5, "high", 0, 0.01)
+        high2 = RTATask("high2", 6, 1, 6, "high", 1, 0.01)
+        target = RTATask("target", 10, 1, 10, "low", 2, 0.01)
+        tasks = self.attach([high1, high2, target], 2)
+        beta = build_energy_service_curve([10.0] * 20, 20)
+
+        self.assertEqual(
+            energy_blocking_bound(target, 1, beta, tasks=tasks, M=2),
+            2,
+        )
+
+    def test_energy_blocking_max_form_honors_initial_energy(self):
+        target = RTATask("target", 10, 1, 10, "low", 0, 3.0)
+        tasks = self.attach([target], 1)
+        beta = build_energy_service_curve([1.0] * 10, 10)
+
+        self.assertEqual(
+            energy_blocking_bound(
+                target, 1, beta, E0=1.0, tasks=tasks, M=1
+            ),
+            1,
+        )
+        self.assertEqual(
+            energy_blocking_bound(
+                target, 1, beta, E0=3.0, tasks=tasks, M=1
+            ),
+            0,
+        )
+
+        high = RTATask("high", 5, 2, 5, "high", 0, 0.01)
+        target = RTATask("target", 10, 1, 10, "low", 1, 0.01)
+        tasks = self.attach([high, target], 1)
+        self.assertEqual(
+            energy_blocking_bound(
+                target, 1, beta, E0=100.0, tasks=tasks, M=1
+            ),
+            2,
+        )
+
     def test_constant_zero_and_step_service_curves(self):
         constant = build_energy_service_curve([2.0] * 4, 4)
         self.assertEqual(list(constant), [0.0, 2.0, 4.0, 6.0, 8.0])
@@ -422,6 +590,21 @@ class ASAPBlockRTATest(unittest.TestCase):
         plain_beta = [0.0, 1.0, 2.0]
         self.assertEqual(beta_inverse(plain_beta, 1.0), 1)
         self.assertEqual(beta_inverse(plain_beta, just_above_one), 2)
+
+    def test_beta_inverse_fast_path_and_general_path_match_linear_scan(self):
+        for trace in ([0.0, 1.0, 2.0, 3.0], [3.0, 0.0, 2.0, 1.0]):
+            beta = build_energy_service_curve(trace, len(trace))
+            for demand in (0.0, 0.5, 1.0, 2.0, 3.0, 7.0):
+                expected = next(
+                    (
+                        delta
+                        for delta in range(len(beta))
+                        if beta[delta] >= demand
+                    ),
+                    None,
+                )
+                self.assertEqual(beta_inverse(beta, demand), expected)
+                self.assertEqual(beta_inverse(beta, demand), expected)
 
     def test_abundant_energy_reduces_to_cpu_only_bound(self):
         target = RTATask("target", 10, 2, 10, "low", 0, 0.001)
@@ -519,6 +702,92 @@ class ASAPBlockRTATest(unittest.TestCase):
         )
         self.assertEqual(report.e0, 0.0)
         self.assertFalse(report.tasks[0].proven)
+
+    def test_explicit_rta_initial_energy_is_independent_and_used(self):
+        system = self.system_file()
+        tasks = self.tasks_file([self.task_spec("t0", 10, 1)])
+        report = analyze_taskset(
+            system,
+            tasks,
+            horizon_ms=10,
+            assume_no_overflow=True,
+            harvest_trace=[0.0] * 10,
+            initial_energy=0.001,
+        )
+
+        self.assertEqual(report.e0, 0.001)
+        self.assertTrue(report.tasks[0].proven)
+        self.assertIn("E0 is 0.001 J", report.assumptions[2])
+
+    def test_rta_initial_energy_must_be_a_physical_lower_bound(self):
+        system = self.system_file(max_energy=2.0)
+        tasks = self.tasks_file([self.task_spec("t0", 10, 1)])
+
+        for value in (-1.0, float("inf"), 2.1):
+            with self.subTest(value=value):
+                with self.assertRaises(InputValidationError):
+                    analyze_taskset(
+                        system,
+                        tasks,
+                        horizon_ms=10,
+                        assume_no_overflow=True,
+                        harvest_trace=[1.0] * 10,
+                        initial_energy=value,
+                    )
+
+    def test_rta_cli_defaults_and_optional_profile_output(self):
+        parser = _build_argument_parser()
+        defaults = parser.parse_args(
+            ["--system", "system.yml", "--tasks", "tasks.yml",
+             "--horizon-ms", "10"]
+        )
+        self.assertEqual(defaults.rta_initial_energy, 0.0)
+        self.assertFalse(defaults.profile_rta)
+        help_text = parser.format_help()
+        self.assertIn("absolute energy lower bound E0 in joules", help_text)
+        self.assertIn("not a battery ratio", help_text)
+        self.assertIn("every target-job release", help_text)
+        self.assertIn("inherit the simulator's --initial-energy value", help_text)
+        self.assertIn("example, 1.0 means 1 J", help_text)
+        self.assertIn("full-battery ratio", help_text)
+
+        target = RTATask("target", 10, 1, 10, "low", 0, 0.01)
+        tasks = self.attach([target], 1)
+        beta = build_energy_service_curve([1.0] * 10, 10)
+        plain = response_time_bound(
+            target, tasks, 1, beta, assume_no_overflow=True
+        ).to_dict()
+        profiled = response_time_bound(
+            target,
+            tasks,
+            1,
+            beta,
+            assume_no_overflow=True,
+            profile_rta=True,
+        ).to_dict()
+
+        self.assertNotIn("rta_profile", plain)
+        profile = profiled["rta_profile"]
+        for key in (
+            "task_id",
+            "total_time_sec",
+            "fixed_point_iterations",
+            "processor_delay_time_sec",
+            "energy_blocking_time_sec",
+            "energy_state_dp_time_sec",
+            "beta_inverse_time_sec",
+            "beta_inverse_calls",
+            "beta_inverse_cache_hits",
+            "beta_inverse_cache_misses",
+            "max_frontier_size",
+            "total_states_generated",
+            "x_values_checked",
+            "z_values_checked",
+            "deadline_energy_state_calls",
+        ):
+            self.assertIn(key, profile)
+        self.assertEqual(profile["task_id"], "target")
+        self.assertGreater(profile["beta_inverse_calls"], 0)
 
     def test_no_overflow_acknowledgement_is_required_for_success(self):
         system = self.system_file()

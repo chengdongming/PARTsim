@@ -14,6 +14,7 @@
 
 import json
 import hashlib
+import math
 import subprocess
 import yaml
 import os
@@ -75,6 +76,8 @@ def _base_rta_result(status='disabled'):
         'rta_conditional': True,
         'rta_assumptions': [],
         'rta_horizon_ms': None,
+        'rta_initial_energy': None,
+        'rta_profile_enabled': False,
         'rta_unproven_tasks': [],
         'rta_failure_reasons': {},
         'rta_error': None,
@@ -134,7 +137,8 @@ def parse_rta_json(payload, assume_no_overflow):
 
 
 def run_asap_block_rta(algorithm, system_config, task_file, horizon_ms,
-                       assume_no_overflow=False, timeout=300):
+                       assume_no_overflow=False, timeout=300,
+                       initial_energy=0.0, profile_rta=False):
     """Run the offline checker only for ASAP-BLOCK."""
     if algorithm != ASAP_BLOCK_ALGORITHM:
         return _base_rta_result(status='not_applicable')
@@ -143,6 +147,8 @@ def run_asap_block_rta(algorithm, system_config, task_file, horizon_ms,
     result.update({
         'rta_enabled': True,
         'rta_horizon_ms': horizon_ms,
+        'rta_initial_energy': float(initial_energy),
+        'rta_profile_enabled': bool(profile_rta),
         'rta_system_config': str(Path(system_config).resolve()),
     })
 
@@ -157,9 +163,12 @@ def run_asap_block_rta(algorithm, system_config, task_file, horizon_ms,
             '--system', str(system_config),
             '--tasks', str(task_file),
             '--horizon-ms', str(horizon_ms),
+            '--rta-initial-energy', str(initial_energy),
         ]
         if assume_no_overflow:
             cmd.append('--assume-no-overflow')
+        if profile_rta:
+            cmd.append('--profile-rta')
         cmd.append('--json')
 
         completed = subprocess.run(
@@ -195,6 +204,10 @@ def validate_rta_cli_args(parser, args):
         parser.error('--rta-horizon-ms must be positive')
     if args.rta_timeout <= 0:
         parser.error('--rta-timeout must be positive')
+    if not math.isfinite(args.rta_initial_energy):
+        parser.error('--rta-initial-energy must be finite')
+    if args.rta_initial_energy < 0:
+        parser.error('--rta-initial-energy must be non-negative')
 
 
 def classify_simulation_status(result):
@@ -316,6 +329,8 @@ def run_single_simulation_worker(task):
                 'assume_no_overflow', False
             ),
             timeout=rta_options.get('timeout', 300),
+            initial_energy=rta_options.get('initial_energy', 0.0),
+            profile_rta=rta_options.get('profile_rta', False),
         )
     elif rta_options.get('enable_rta', False):
         rta_result = _base_rta_result(status='not_applicable')
@@ -475,6 +490,21 @@ def add_experiment_cli_args(parser):
                        help='显式确认RTA的电池不溢出条件假设')
     parser.add_argument('--rta-timeout', type=int, default=300,
                        help='单次RTA超时时间（秒，默认: 300）')
+    parser.add_argument(
+        '--rta-initial-energy', type=float, default=0.0,
+        help=(
+            '每个RTA分析窗口起点（目标作业释放时刻）可保证的绝对能量'
+            '下界E0，单位J，默认0.0；不是电池比例，也不继承仿真的'
+            '--initial-energy。仿真--initial-energy 1.0表示满电比例，'
+            'RTA --rta-initial-energy 1.0表示1J。只有能证明每次目标作业'
+            '释放时均有该能量时，非零E0才支持正式理论保证；否则仅是'
+            '诊断或特定实验假设'
+        ),
+    )
+    parser.add_argument(
+        '--profile-rta', action='store_true',
+        help='在ASAP-BLOCK RTA JSON中记录性能计数（默认关闭）',
+    )
 
     # 图表参数
     parser.add_argument('--figure-output', type=str, default=None,
@@ -585,7 +615,8 @@ class ExperimentRunner:
                  use_real_solar_data=True, system_cores=None,
                  max_workers=DEFAULT_MAX_WORKERS, enable_rta=False,
                  rta_horizon_ms=None, rta_assume_no_overflow=False,
-                 rta_timeout=300, seed_base=DEFAULT_SEED_BASE):
+                 rta_timeout=300, seed_base=DEFAULT_SEED_BASE,
+                 rta_initial_energy=0.0, profile_rta=False):
         self.output_dir = Path(output_dir)
         self.trace_dir = self.output_dir / 'traces'
         self.task_dir = self.output_dir / 'tasks'
@@ -611,6 +642,8 @@ class ExperimentRunner:
         self.rta_horizon_ms = rta_horizon_ms
         self.rta_assume_no_overflow = bool(rta_assume_no_overflow)
         self.rta_timeout = max(1, int(rta_timeout))
+        self.rta_initial_energy = float(rta_initial_energy)
+        self.profile_rta = bool(profile_rta)
         self.seed_base = int(seed_base)
         self.rta_results_file = self.output_dir / 'rta_results.jsonl'
 
@@ -620,10 +653,12 @@ class ExperimentRunner:
         if self.enable_rta:
             print(
                 "🔎 ASAP-BLOCK RTA: enabled, horizon={}ms, "
-                "assume_no_overflow={}, timeout={}s".format(
+                "assume_no_overflow={}, timeout={}s, E0={}J, profile={}".format(
                     self.rta_horizon_ms,
                     self.rta_assume_no_overflow,
                     self.rta_timeout,
+                    self.rta_initial_energy,
+                    self.profile_rta,
                 )
             )
 
@@ -854,6 +889,8 @@ class ExperimentRunner:
                                 self.rta_assume_no_overflow
                             ),
                             'timeout': self.rta_timeout,
+                            'initial_energy': self.rta_initial_energy,
+                            'profile_rta': self.profile_rta,
                             'seed_base': self.seed_base,
                             'taskset_seed': seed,
                             'taskset_id': self.taskset_id(
@@ -1295,6 +1332,8 @@ def main():
             rta_assume_no_overflow=args.rta_assume_no_overflow,
             rta_timeout=args.rta_timeout,
             seed_base=args.seed_base,
+            rta_initial_energy=args.rta_initial_energy,
+            profile_rta=args.profile_rta,
         )
 
         results = runner.run_experiments()
