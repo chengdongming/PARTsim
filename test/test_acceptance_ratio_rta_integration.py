@@ -250,6 +250,70 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
         )
         self.assertEqual(result["rta_status"], "proven_under_assumptions")
 
+    def test_worker_extracts_tightness_before_cleaning_trace(self):
+        trace_path = (
+            self.root / "trace_gpfp_asap_block_u0.50_000.json"
+        )
+
+        def write_trace(*args, **kwargs):
+            command = args[0]
+            output_path = Path(command[command.index("-t") + 1])
+            output_path.write_text(
+                json.dumps({
+                    "events": [
+                        {
+                            "event_type": "arrival",
+                            "task_name": "task_0",
+                            "arrival_time": "0",
+                            "time": "0",
+                        },
+                        {
+                            "event_type": "end_instance",
+                            "task_name": "task_0",
+                            "arrival_time": "0",
+                            "time": "8",
+                        },
+                        {"event_type": "idle", "time": "30000"},
+                    ]
+                }),
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        rta_result = acceptance._base_rta_result(
+            status="proven_under_assumptions"
+        )
+        rta_result.update({
+            "rta_enabled": True,
+            "rta_proven_under_assumptions": True,
+            "rta_report": {
+                "tasks": [
+                    {
+                        "task_name": "task_0",
+                        "proven": True,
+                        "response_time_bound": 10,
+                    }
+                ]
+            },
+        })
+
+        with mock.patch.object(
+            acceptance.subprocess, "run", side_effect=write_trace
+        ), mock.patch.object(
+            acceptance,
+            "run_asap_block_rta",
+            return_value=rta_result,
+        ):
+            result = acceptance.run_single_simulation_worker(
+                self.worker_task(acceptance.ASAP_BLOCK_ALGORITHM)
+            )
+
+        self.assertEqual(result["simulation_status"], "accepted")
+        self.assertEqual(result["tightness_values"], [1.25])
+        self.assertEqual(result["tightness_num_samples"], 1)
+        self.assertAlmostEqual(result["avg_tightness"], 1.25)
+        self.assertFalse(trace_path.exists())
+
     def test_missing_no_overflow_assumption_forces_unproven(self):
         completed = subprocess.CompletedProcess(
             [],

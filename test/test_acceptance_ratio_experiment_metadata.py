@@ -227,8 +227,24 @@ class AcceptanceRatioExperimentMetadataTest(unittest.TestCase):
                 "simulation_status": "accepted",
                 "rta_enabled": True,
                 "rta_status": "proven_under_assumptions",
-                "rta_bound": 12.0,
-                "simulated_response_time": 10.0,
+                "rta_report": {
+                    "tasks": [
+                        {
+                            "task_name": "task_1",
+                            "proven": True,
+                            "response_time_bound": 10.0,
+                        },
+                        {
+                            "task_name": "task_2",
+                            "proven": True,
+                            "response_time_bound": 6.0,
+                        },
+                    ]
+                },
+                "max_observed_response_times": {
+                    "task_1": 8.0,
+                    "task_2": 4.0,
+                },
             },
             {
                 "acceptance_ratio": 1.0,
@@ -241,8 +257,8 @@ class AcceptanceRatioExperimentMetadataTest(unittest.TestCase):
         ]
 
         row = runner.aggregate_results(results).iloc[0]
-        self.assertEqual(row["tightness_num_samples"], 1)
-        self.assertAlmostEqual(row["avg_tightness"], 1.2)
+        self.assertEqual(row["tightness_num_samples"], 2)
+        self.assertAlmostEqual(row["avg_tightness"], 1.375)
 
     def test_non_asap_block_tightness_is_na(self):
         runner = self.make_runner(enable_rta=True)
