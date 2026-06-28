@@ -744,12 +744,18 @@ class ASAPBlockRTATest(unittest.TestCase):
         self.assertEqual(defaults.rta_initial_energy, 0.0)
         self.assertFalse(defaults.profile_rta)
         help_text = parser.format_help()
-        self.assertIn("absolute energy lower bound E0 in joules", help_text)
-        self.assertIn("not a battery ratio", help_text)
-        self.assertIn("every target-job release", help_text)
-        self.assertIn("inherit the simulator's --initial-energy value", help_text)
-        self.assertIn("example, 1.0 means 1 J", help_text)
-        self.assertIn("full-battery ratio", help_text)
+        normalized_help = " ".join(help_text.split())
+        self.assertIn(
+            "absolute energy lower bound E0 in joules", normalized_help
+        )
+        self.assertIn("not a battery ratio", normalized_help)
+        self.assertIn("every target-job release", normalized_help)
+        self.assertIn(
+            "inherit the simulator's --initial-energy value",
+            normalized_help,
+        )
+        self.assertIn("example, 1.0 means 1 J", normalized_help)
+        self.assertIn("full-battery ratio", normalized_help)
 
         target = RTATask("target", 10, 1, 10, "low", 0, 0.01)
         tasks = self.attach([target], 1)
