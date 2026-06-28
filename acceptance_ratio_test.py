@@ -51,6 +51,42 @@ SIMULATOR = './build/rtsim/rtsim'
 RTA_TOOL = str(Path(__file__).resolve().parent / 'asap_block_rta.py')
 ASAP_BLOCK_ALGORITHM = 'gpfp_asap_block'
 
+PER_TASKSET_RESULT_FIELDS = [
+    'experiment_id',
+    'run_id',
+    'output_dir',
+    'seed_base',
+    'taskset_seed',
+    'normalized_utilization',
+    'task_idx',
+    'taskset_id',
+    'algorithm',
+    'algorithm_display_name',
+    'num_tasks',
+    'num_cores',
+    'battery',
+    'initial_energy',
+    'initial_energy_ratio',
+    'solar_time_ms',
+    'harvesting_profile',
+    'simulation_horizon_ms',
+    'accepted',
+    'rejected',
+    'timeout',
+    'error',
+    'status',
+    'reason',
+    'trace_path',
+    'rta_enabled',
+    'rta_status',
+    'rta_proven',
+    'rta_error',
+    'rta_reason',
+    'rta_response_time_bound',
+    'simulated_response_time',
+    'tightness',
+]
+
 
 def get_system_cores(config_path):
     """从配置文件中读取系统核心数"""
@@ -777,6 +813,10 @@ class ExperimentRunner:
         self.profile_rta = bool(profile_rta)
         self.seed_base = int(seed_base)
         self.rta_results_file = self.output_dir / 'rta_results.jsonl'
+        self.per_taskset_results_file = (
+            self.output_dir / 'per_taskset_results.csv'
+        )
+        self.experiment_id = self.output_dir.name
 
         print(f"🖥️  系统核心数: {self.system_cores}")
         print(f"📁 输出目录: {self.output_dir}")
@@ -998,6 +1038,38 @@ class ExperimentRunner:
                 )
                 if task_file:
                     task_files.append((task_idx, task_file, seed))
+                else:
+                    for algo in ALGORITHMS:
+                        rta_enabled = (
+                            self.enable_rta
+                            and algo == ASAP_BLOCK_ALGORITHM
+                        )
+                        results[algo][utilization].append({
+                            'algorithm': algo,
+                            'utilization': float(utilization),
+                            'task_idx': int(task_idx),
+                            'task_file': '',
+                            'taskset_id': self.taskset_id(
+                                utilization, task_idx
+                            ),
+                            'seed_base': self.seed_base,
+                            'taskset_seed': seed,
+                            'seed': seed,
+                            'simulation_acceptance': 0.0,
+                            'acceptance_ratio': 0.0,
+                            'simulation_status': 'yaml_generation_failed',
+                            'simulation_error': 'taskset generation failed',
+                            'rta_enabled': rta_enabled,
+                            'rta_status': (
+                                'rta_error' if rta_enabled
+                                else 'not_applicable' if self.enable_rta
+                                else 'disabled'
+                            ),
+                            'rta_error': (
+                                'taskset generation failed'
+                                if rta_enabled else None
+                            ),
+                        })
 
             if not task_files:
                 print(f"⚠️ 没有成功生成任务集，跳过 U={utilization:.2f}")
@@ -1081,7 +1153,100 @@ class ExperimentRunner:
             if os.path.exists(config_file):
                 os.remove(config_file)
 
+        self.write_per_taskset_results(results)
         return results
+
+    def _per_taskset_result_row(self, algorithm, utilization, result):
+        """Normalize one scheduler/taskset outcome for paired analysis."""
+        result = result if isinstance(result, dict) else {
+            'acceptance_ratio': float(result),
+        }
+        status = classify_simulation_status(result)
+        rta_failure_reasons = result.get('rta_failure_reasons') or {}
+        if isinstance(rta_failure_reasons, dict):
+            rta_reason = json.dumps(
+                rta_failure_reasons, ensure_ascii=False, sort_keys=True
+            ) if rta_failure_reasons else ''
+        else:
+            rta_reason = str(rta_failure_reasons)
+        if result.get('rta_error'):
+            rta_reason = str(result['rta_error'])
+
+        tightness_values = tightness_values_for_result(algorithm, result)
+        tightness = (
+            float(np.mean(tightness_values)) if tightness_values else ''
+        )
+        simulation_reason = result.get('simulation_error') or ''
+        if status == 'rejected' and not simulation_reason:
+            simulation_reason = 'rejected by simulation trace checks'
+
+        return {
+            'experiment_id': self.experiment_id,
+            'run_id': self.experiment_id,
+            'output_dir': str(self.output_dir),
+            'seed_base': result.get('seed_base', self.seed_base),
+            'taskset_seed': result.get(
+                'taskset_seed', result.get('seed', '')
+            ),
+            'normalized_utilization': float(utilization),
+            'task_idx': result.get('task_idx', ''),
+            'taskset_id': result.get('taskset_id', ''),
+            'algorithm': algorithm,
+            'algorithm_display_name': ALGO_DISPLAY_NAMES.get(
+                algorithm, algorithm
+            ),
+            'num_tasks': self.task_n,
+            'num_cores': self.system_cores,
+            'battery': self.battery_capacity,
+            'initial_energy': (
+                self.battery_capacity * self.initial_energy_ratio
+            ),
+            'initial_energy_ratio': self.initial_energy_ratio,
+            'solar_time_ms': self.solar_start_time_ms,
+            'harvesting_profile': self.harvesting_profile(),
+            'simulation_horizon_ms': self.simulation_time,
+            'accepted': int(status == 'accepted'),
+            'rejected': int(status == 'rejected'),
+            'timeout': int(status == 'timeout'),
+            'error': int(status == 'error'),
+            'status': status,
+            'reason': simulation_reason,
+            # Worker traces are intentionally removed after parsing.
+            'trace_path': '',
+            'rta_enabled': bool(result.get('rta_enabled', False)),
+            'rta_status': result.get('rta_status', 'disabled'),
+            'rta_proven': bool(_is_rta_proven(result)),
+            'rta_error': result.get('rta_error') or '',
+            'rta_reason': rta_reason,
+            'rta_response_time_bound': result.get('rta_bound', ''),
+            'simulated_response_time': result.get(
+                'simulated_response_time', ''
+            ),
+            'tightness': tightness,
+        }
+
+    def per_taskset_result_rows(self, results):
+        """Flatten nested experiment results into deterministic raw rows."""
+        rows = []
+        for algorithm in ALGORITHMS:
+            for utilization in self.utilization_points:
+                for result in results[algorithm][utilization]:
+                    rows.append(self._per_taskset_result_row(
+                        algorithm, utilization, result
+                    ))
+        return rows
+
+    def write_per_taskset_results(self, results):
+        """Write one row per scheduler/taskset simulation outcome."""
+        rows = self.per_taskset_result_rows(results)
+        frame = pd.DataFrame(rows, columns=PER_TASKSET_RESULT_FIELDS)
+        frame.to_csv(self.per_taskset_results_file, index=False)
+        print(
+            'Per-taskset results saved: {} ({} rows)'.format(
+                self.per_taskset_results_file, len(frame)
+            )
+        )
+        return frame
 
     def aggregate_results(self, results):
         """
