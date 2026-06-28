@@ -140,7 +140,7 @@ def execute_specs(specs, manifest_path, fieldnames, dry_run=False,
     return rows
 
 
-def add_common_arguments(parser, include_battery=True):
+def add_common_arguments(parser, include_battery=True, include_solar_time=True):
     parser.add_argument('--output-root', default='acceptance_ratio_runs')
     parser.add_argument('--experiment-name', required=True)
     parser.add_argument('--num-points', type=int, default=10)
@@ -149,7 +149,8 @@ def add_common_arguments(parser, include_battery=True):
     if include_battery:
         parser.add_argument('--battery', type=float, default=20.0)
     parser.add_argument('--initial-energy', type=float, default=1.0)
-    parser.add_argument('--solar-time-ms', type=int, default=21975000)
+    if include_solar_time:
+        parser.add_argument('--solar-time-ms', type=int, default=21975000)
     parser.add_argument('--max-workers', type=int, default=4)
     parser.add_argument('--no-group-figures', action='store_true')
     parser.add_argument(
