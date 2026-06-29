@@ -173,6 +173,9 @@ def build_case_config(output_dir, case_id, scheduler, metadata):
     initial_energy_ratio = metadata.get('initial_energy_ratio')
     if initial_energy_ratio in ('', None):
         initial_energy_ratio = 1.0
+    harvesting_scale = metadata.get('harvesting_scale')
+    if harvesting_scale in ('', None):
+        harvesting_scale = 1.0
     experiment = acceptance.ExperimentRunner(
         output_dir=config_dir,
         utilization_points=[float(metadata['normalized_utilization'])],
@@ -192,6 +195,7 @@ def build_case_config(output_dir, case_id, scheduler, metadata):
         ),
         system_cores=int(float(metadata.get('num_cores') or 4)),
         max_workers=1,
+        harvesting_scale=float(harvesting_scale),
     )
     return Path(experiment.modify_config(scheduler)).resolve()
 

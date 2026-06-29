@@ -224,6 +224,7 @@ class EnergyConfig:
         self.base_harvest_rate_per_ms = 0.00002  # 基础收集率 (J/ms) = 0.02 J/s
         self.solar_multiplier = 10.0  # 太阳能收集倍率
         self.wind_multiplier = 2.0    # 风能收集倍率
+        self.harvesting_scale = 1.0   # 仅缩放 synthetic_piecewise 收集率
         
         # 真实太阳能数据配置 - 新增
         self.use_real_solar_data = False
@@ -264,6 +265,15 @@ class EnergyConfig:
             # 基本能量参数
             self.initial_energy = float(energy_config.get('initial_energy', self.initial_energy))
             self.max_energy = float(energy_config.get('max_energy', self.max_energy))
+            harvesting_scale = float(energy_config.get(
+                'harvesting_scale', self.harvesting_scale
+            ))
+            if not math.isfinite(harvesting_scale) or harvesting_scale < 0:
+                raise ValueError(
+                    'energy_management.harvesting_scale must be finite and '
+                    'non-negative'
+                )
+            self.harvesting_scale = harvesting_scale
 
             # 添加调试输出
             logger.info(f"[EnergyConfig] 加载配置文件: {config_file}")
@@ -643,6 +653,9 @@ class EnergyHarvester:
             if self.solar_loader is None:
                 # 只在不使用真实数据时应用最小收集率
                 total_rate = max(total_rate, 0.000001)
+                # 实验强度因子只作用于 synthetic_piecewise 供能。
+                # 真实 NASA 数据分支保持原始物理量，不受此参数影响。
+                total_rate *= self.config.harvesting_scale
             # 使用真实NASA数据时，保持total_rate不变（可能为0）
 
             # 缓存结果

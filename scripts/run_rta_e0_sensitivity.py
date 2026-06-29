@@ -13,7 +13,7 @@ from scripts import experiment_runner as runner
 MANIFEST_FIELDS = [
     'experiment_name', 'run_dir', 'E0', 'seed_base', 'num_points',
     'num_tasksets', 'task_n', 'battery', 'initial_energy',
-    'solar_time_ms', 'rta_horizon_ms', 'rta_timeout', 'max_workers',
+    'solar_time_ms', 'harvesting_scale', 'rta_horizon_ms', 'rta_timeout', 'max_workers',
     'status', 'return_code',
 ]
 
@@ -51,6 +51,7 @@ def build_specs(args):
             'battery': args.battery,
             'initial_energy': args.initial_energy,
             'solar_time_ms': args.solar_time_ms,
+            'harvesting_scale': args.harvesting_scale,
             'rta_horizon_ms': args.rta_horizon_ms,
             'rta_timeout': args.rta_timeout,
             'max_workers': args.max_workers,
@@ -59,6 +60,7 @@ def build_specs(args):
                 args.num_tasksets, args.task_n, args.battery,
                 args.initial_energy, args.solar_time_ms, args.max_workers,
                 args.no_group_figures,
+                harvesting_scale=args.harvesting_scale,
                 rta_initial_energy=e0,
                 rta_horizon_ms=args.rta_horizon_ms,
                 rta_timeout=args.rta_timeout,

@@ -3,6 +3,7 @@
 
 import argparse
 import csv
+import math
 import re
 import shlex
 import shutil
@@ -40,7 +41,8 @@ def run_dir_complete(run_dir):
 
 def build_command(run_dir, seed_base, num_points, num_tasksets, task_n,
                   battery, initial_energy, solar_time_ms, max_workers,
-                  no_group_figures=False, rta_initial_energy=None,
+                  no_group_figures=False, harvesting_scale=1.0,
+                  rta_initial_energy=None,
                   rta_horizon_ms=None, rta_timeout=None):
     """Build one acceptance_ratio_test.py invocation without a shell."""
     command = [
@@ -54,6 +56,7 @@ def build_command(run_dir, seed_base, num_points, num_tasksets, task_n,
         '--battery', str(float(battery)),
         '--initial-energy', str(float(initial_energy)),
         '--solar-time-ms', str(int(solar_time_ms)),
+        '--harvesting-scale', str(float(harvesting_scale)),
         '--max-workers', str(int(max_workers)),
     ]
     if rta_initial_energy is not None:
@@ -140,7 +143,8 @@ def execute_specs(specs, manifest_path, fieldnames, dry_run=False,
     return rows
 
 
-def add_common_arguments(parser, include_battery=True, include_solar_time=True):
+def add_common_arguments(parser, include_battery=True, include_solar_time=True,
+                         include_harvesting_scale=True):
     parser.add_argument('--output-root', default='acceptance_ratio_runs')
     parser.add_argument('--experiment-name', required=True)
     parser.add_argument('--num-points', type=int, default=10)
@@ -151,6 +155,8 @@ def add_common_arguments(parser, include_battery=True, include_solar_time=True):
     parser.add_argument('--initial-energy', type=float, default=1.0)
     if include_solar_time:
         parser.add_argument('--solar-time-ms', type=int, default=21975000)
+    if include_harvesting_scale:
+        parser.add_argument('--harvesting-scale', type=float, default=1.0)
     parser.add_argument('--max-workers', type=int, default=4)
     parser.add_argument('--no-group-figures', action='store_true')
     parser.add_argument(
@@ -178,6 +184,9 @@ def validate_common_args(parser, args):
             parser.error('--{} must be positive'.format(name.replace('_', '-')))
     if args.initial_energy < 0:
         parser.error('--initial-energy must be non-negative')
+    harvesting_scale = getattr(args, 'harvesting_scale', 1.0)
+    if not math.isfinite(harvesting_scale) or harvesting_scale < 0:
+        parser.error('--harvesting-scale must be finite and non-negative')
     try:
         safe_experiment_name(args.experiment_name)
     except ValueError as exc:
