@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Run solar-time sensitivity under the existing synthetic profile."""
+"""Run synthetic harvesting-strength sensitivity experiments."""
 
 import argparse
+import math
 import shlex
 import sys
 from pathlib import Path
@@ -11,25 +12,25 @@ from scripts import experiment_runner as runner
 
 
 LIMITATION = (
-    'This is a harvesting time/intensity sensitivity experiment under the '
-    'existing synthetic_piecewise profile. It is not yet a full '
-    'profile-shape comparison.'
+    'This experiment scales only the existing synthetic_piecewise harvesting '
+    'supply. It does not change battery capacity, initial energy, task costs, '
+    'task timing, or scheduler semantics.'
 )
 MANIFEST_FIELDS = [
-    'experiment_name', 'run_dir', 'solar_time_ms', 'seed_base',
+    'experiment_name', 'run_dir', 'harvesting_scale', 'seed_base',
     'num_points', 'num_tasksets', 'task_n', 'battery', 'initial_energy',
-    'harvesting_scale', 'max_workers', 'harvesting_profile', 'status', 'return_code',
+    'solar_time_ms', 'max_workers', 'harvesting_profile', 'status', 'return_code',
 ]
 
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        description='Run harvesting solar-time sensitivity. ' + LIMITATION
+        description='Run harvesting-strength sensitivity. ' + LIMITATION
     )
-    runner.add_common_arguments(parser, include_solar_time=False)
+    runner.add_common_arguments(parser, include_harvesting_scale=False)
     parser.add_argument(
-        '--solar-times-ms', nargs='+', required=True, type=int,
-        help='synthetic_piecewise time-of-day values in milliseconds',
+        '--harvesting-scales', nargs='+', required=True, type=float,
+        help='non-negative synthetic_piecewise supply multipliers',
     )
     parser.add_argument('--seeds', nargs='+', required=True, type=int)
     return parser
@@ -38,29 +39,29 @@ def build_parser():
 def build_specs(args):
     output_root, name, manifest = runner.output_paths(args)
     specs = []
-    for solar_time in args.solar_times_ms:
+    for scale in args.harvesting_scales:
         for seed in args.seeds:
-            run_dir = output_root / '{}-solar{}-seed{}'.format(
-                name, solar_time, seed
+            run_dir = output_root / '{}-hscale{}-seed{}'.format(
+                name, runner.safe_run_dir_name(scale), seed
             )
             specs.append({
                 'experiment_name': args.experiment_name,
                 'run_dir': str(run_dir),
-                'solar_time_ms': solar_time,
+                'harvesting_scale': scale,
                 'seed_base': seed,
                 'num_points': args.num_points,
                 'num_tasksets': args.num_tasksets,
                 'task_n': args.task_n,
                 'battery': args.battery,
                 'initial_energy': args.initial_energy,
-                'harvesting_scale': args.harvesting_scale,
+                'solar_time_ms': args.solar_time_ms,
                 'max_workers': args.max_workers,
                 'harvesting_profile': 'synthetic_piecewise',
                 'command': runner.build_command(
                     run_dir, seed, args.num_points, args.num_tasksets,
                     args.task_n, args.battery, args.initial_energy,
-                    solar_time, args.max_workers, args.no_group_figures,
-                    harvesting_scale=args.harvesting_scale,
+                    args.solar_time_ms, args.max_workers,
+                    args.no_group_figures, harvesting_scale=scale,
                 ),
             })
     return specs, manifest
@@ -72,8 +73,9 @@ def main(argv=None):
     runner.validate_common_args(parser, args)
     if args.battery <= 0:
         parser.error('--battery must be positive')
-    if any(value < 0 for value in args.solar_times_ms):
-        parser.error('--solar-times-ms values must be non-negative')
+    if any(not math.isfinite(value) or value < 0
+           for value in args.harvesting_scales):
+        parser.error('--harvesting-scales values must be finite and non-negative')
     specs, manifest = build_specs(args)
     rows = runner.execute_specs(
         specs, manifest, MANIFEST_FIELDS,
@@ -83,9 +85,9 @@ def main(argv=None):
         stop_on_failure=args.stop_on_failure,
     )
     command = [
-        'python3', 'scripts/analyze_harvesting_sensitivity.py',
+        'python3', 'scripts/analyze_harvesting_strength_sensitivity.py',
         '--manifest', str(manifest),
-        '--output-dir', 'analysis_outputs/harvesting_sensitivity',
+        '--output-dir', 'analysis_outputs/harvesting_strength_sensitivity',
     ]
     print('\n{}\nAnalyze with:\n$ {}'.format(LIMITATION, shlex.join(command)))
     print('Manifest: {}'.format(manifest))

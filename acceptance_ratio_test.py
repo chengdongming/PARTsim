@@ -69,6 +69,7 @@ PER_TASKSET_RESULT_FIELDS = [
     'initial_energy_ratio',
     'solar_time_ms',
     'harvesting_profile',
+    'harvesting_scale',
     'simulation_horizon_ms',
     'accepted',
     'rejected',
@@ -244,6 +245,9 @@ def validate_rta_cli_args(parser, args):
         parser.error('--rta-initial-energy must be finite')
     if args.rta_initial_energy < 0:
         parser.error('--rta-initial-energy must be non-negative')
+    harvesting_scale = getattr(args, 'harvesting_scale', 1.0)
+    if not math.isfinite(harvesting_scale) or harvesting_scale < 0:
+        parser.error('--harvesting-scale must be finite and non-negative')
 
 
 def classify_simulation_status(result):
@@ -568,6 +572,7 @@ DEFAULT_BATTERY_CAPACITY = 20.0  # 20J电池
 DEFAULT_INITIAL_ENERGY_RATIO = 1.0  # 100%初始能量（满电）
 DEFAULT_SOLAR_START_TIME_MS = 21975000  # 太阳能起始时间（毫秒）
 DEFAULT_USE_REAL_SOLAR_DATA = False  # 使用分段函数模拟，不使用真实太阳能数据
+DEFAULT_HARVESTING_SCALE = 1.0  # synthetic_piecewise 供能强度倍率
 DEFAULT_MAX_WORKERS = max(1, min(12, cpu_count() - 2))
 DEFAULT_SEED_BASE = 2000
 
@@ -621,6 +626,13 @@ def add_experiment_cli_args(parser):
                        help=f'初始能量比例 (0.0-1.0) (默认: {DEFAULT_INITIAL_ENERGY_RATIO})')
     parser.add_argument('--solar-time-ms', type=int, default=DEFAULT_SOLAR_START_TIME_MS,
                        help=f'太阳能收集开始时间（毫秒）(默认: {DEFAULT_SOLAR_START_TIME_MS})')
+    parser.add_argument(
+        '--harvesting-scale', type=float, default=DEFAULT_HARVESTING_SCALE,
+        help=(
+            'synthetic_piecewise 收集率/供能倍率，默认1.0；不改变电池容量、'
+            '初始能量、任务能耗、任务时序或调度语义'
+        ),
+    )
     parser.add_argument('--max-workers', type=int, default=DEFAULT_MAX_WORKERS,
                        help=f'并发线程数 (默认: {DEFAULT_MAX_WORKERS})')
     parser.add_argument('--enable-rta', action='store_true',
@@ -783,7 +795,8 @@ class ExperimentRunner:
                  max_workers=DEFAULT_MAX_WORKERS, enable_rta=False,
                  rta_horizon_ms=None, rta_assume_no_overflow=False,
                  rta_timeout=300, seed_base=DEFAULT_SEED_BASE,
-                 rta_initial_energy=0.0, profile_rta=False):
+                 rta_initial_energy=0.0, profile_rta=False,
+                 harvesting_scale=DEFAULT_HARVESTING_SCALE):
         self.output_dir = Path(output_dir)
         self.trace_dir = self.output_dir / 'traces'
         self.task_dir = self.output_dir / 'tasks'
@@ -803,6 +816,12 @@ class ExperimentRunner:
         self.initial_energy_ratio = initial_energy_ratio
         self.solar_start_time_ms = solar_start_time_ms
         self.use_real_solar_data = use_real_solar_data
+        self.harvesting_scale = float(harvesting_scale)
+        if (
+            not math.isfinite(self.harvesting_scale)
+            or self.harvesting_scale < 0
+        ):
+            raise ValueError('harvesting_scale must be finite and non-negative')
         self.system_cores = system_cores if system_cores is not None else get_system_cores(CONFIG_TEMPLATE)
         self.max_workers = max(1, max_workers)
         self.enable_rta = bool(enable_rta)
@@ -954,6 +973,13 @@ class ExperimentRunner:
                 if '#' in line:
                     comment = '  #' + line.split('#', 1)[1].rstrip('\n')
                 updated_lines.append(f'{indent}time_of_day_ms: {self.solar_start_time_ms}{comment}\n')
+                continue
+
+            if in_energy_management and stripped.startswith('harvesting_scale:'):
+                indent = line[:len(line) - len(line.lstrip())]
+                updated_lines.append(
+                    f'{indent}harvesting_scale: {self.harvesting_scale}\n'
+                )
                 continue
 
             if in_energy_management and stripped.startswith('day_of_year:'):
@@ -1204,6 +1230,7 @@ class ExperimentRunner:
             'initial_energy_ratio': self.initial_energy_ratio,
             'solar_time_ms': self.solar_start_time_ms,
             'harvesting_profile': self.harvesting_profile(),
+            'harvesting_scale': self.harvesting_scale,
             'simulation_horizon_ms': self.simulation_time,
             'accepted': int(status == 'accepted'),
             'rejected': int(status == 'rejected'),
@@ -1288,6 +1315,7 @@ class ExperimentRunner:
                         'core_count': self.system_cores,
                         'battery_capacity': self.battery_capacity,
                         'harvesting_profile': self.harvesting_profile(),
+                        'harvesting_scale': self.harvesting_scale,
                         'simulation_num_accepted': status_buckets.count(
                             'accepted'
                         ),
@@ -1628,6 +1656,7 @@ def main():
             seed_base=args.seed_base,
             rta_initial_energy=args.rta_initial_energy,
             profile_rta=args.profile_rta,
+            harvesting_scale=args.harvesting_scale,
         )
 
         results = runner.run_experiments()

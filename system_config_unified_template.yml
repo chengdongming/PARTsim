@@ -26,6 +26,7 @@ energy_management:
 
   day_of_year: 187
   time_of_day_ms: 21900000  # 6:05 AM = 6 * 3600 * 1000 + 5 * 60 * 1000 ms
+  harvesting_scale: 1.0     # 仅缩放 synthetic_piecewise 收集率
 
   # === NASA真实太阳能数据配置 ===
   use_real_solar_data: true            # 启用NASA真实太阳能数据
