@@ -975,6 +975,27 @@ class ExperimentRunner:
                 updated_lines.append(f'{indent}time_of_day_ms: {self.solar_start_time_ms}{comment}\n')
                 continue
 
+            if (
+                in_energy_management
+                and stripped.startswith('base_harvesting_rate:')
+            ):
+                if self.use_real_solar_data:
+                    updated_lines.append(line)
+                    continue
+                indent = line[:len(line) - len(line.lstrip())]
+                base_rate = float(
+                    line.split(':', 1)[1].split('#', 1)[0].strip()
+                )
+                comment = ''
+                if '#' in line:
+                    comment = '  #' + line.split('#', 1)[1].rstrip('\n')
+                effective_rate = base_rate * self.harvesting_scale
+                updated_lines.append(
+                    f'{indent}base_harvesting_rate: '
+                    f'{effective_rate}{comment}\n'
+                )
+                continue
+
             if in_energy_management and stripped.startswith('harvesting_scale:'):
                 indent = line[:len(line) - len(line.lstrip())]
                 updated_lines.append(

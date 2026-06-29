@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 import pandas as pd
+import yaml
 
 
 os.environ.setdefault('MPLBACKEND', 'Agg')
@@ -104,6 +105,8 @@ def test_runner_writes_scale_to_config_and_result_metadata(tmp_path):
     config_path = experiment.modify_config('gpfp_asap_block')
     config_text = Path(config_path).read_text(encoding='utf-8')
     assert 'harvesting_scale: 0.25' in config_text
+    config = yaml.safe_load(config_text)
+    assert config['energy_management']['base_harvesting_rate'] == 0.0135
 
     result = {'acceptance_ratio': 1.0, 'simulation_status': 'accepted'}
     raw_row = experiment._per_taskset_result_row(
@@ -115,6 +118,36 @@ def test_runner_writes_scale_to_config_and_result_metadata(tmp_path):
     results['gpfp_asap_block'][0.5].append(result)
     aggregate = experiment.aggregate_results(results)
     assert aggregate.iloc[0]['harvesting_scale'] == 0.25
+
+
+def test_generated_cpp_synthetic_rate_changes_with_scale(tmp_path):
+    def generated_energy_config(scale, use_real_solar_data=False):
+        experiment = acceptance.ExperimentRunner(
+            output_dir=tmp_path / 'scale-{}'.format(scale),
+            utilization_points=[0.5], num_tasksets=1, task_n=2,
+            task_p_min=10, task_p_max=20, simulation_time=100,
+            battery_capacity=10.0, initial_energy_ratio=0.25,
+            solar_start_time_ms=21975000,
+            use_real_solar_data=use_real_solar_data,
+            system_cores=2, max_workers=1, harvesting_scale=scale,
+        )
+        config_path = experiment.modify_config('gpfp_asap_block')
+        return yaml.safe_load(Path(config_path).read_text(encoding='utf-8'))[
+            'energy_management'
+        ]
+
+    scale_zero = generated_energy_config(0.0)
+    scale_four = generated_energy_config(4.0)
+    real_scale_four = generated_energy_config(4.0, use_real_solar_data=True)
+
+    assert scale_zero['base_harvesting_rate'] == 0.0
+    assert scale_four['base_harvesting_rate'] == 0.216
+    assert scale_zero['base_harvesting_rate'] != scale_four[
+        'base_harvesting_rate'
+    ]
+    assert real_scale_four['base_harvesting_rate'] == 0.054
+    for field in ('initial_energy', 'max_energy', 'time_of_day_ms'):
+        assert scale_zero[field] == scale_four[field]
 
 
 def test_strength_runner_dry_run_writes_scale_seed_product(tmp_path):
