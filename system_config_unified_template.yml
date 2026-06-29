@@ -26,6 +26,7 @@ energy_management:
 
   day_of_year: 187
   time_of_day_ms: 21900000  # 6:05 AM = 6 * 3600 * 1000 + 5 * 60 * 1000 ms
+  base_harvesting_rate: 0.054  # synthetic_piecewise peak power baseline (W)
   harvesting_scale: 1.0     # 仅缩放 synthetic_piecewise 收集率
 
   # === NASA真实太阳能数据配置 ===
