@@ -83,13 +83,28 @@ def test_tightness_is_empty_for_unproven_analysis():
 
 
 def test_soundness_rejects_proven_but_simulation_rejected():
-    with pytest.raises(RuntimeError, match="soundness violation"):
+    with pytest.raises(RuntimeError, match="soundness violation") as error:
         runner._comparison_row(
             base_row(), simulation(accepted=False),
             report(runner.V20_VERSION, proven=False),
             report(runner.V21_VERSION, proven=True),
             0.25,
         )
+    message = str(error.value)
+    for field in (
+        "seed_base", "taskset_seed", "normalized_utilization",
+        "task_idx", "taskset_id", "E0", "taskset_path", "accepted",
+        "simulation_status", "simulated_response_time",
+        "deadline_miss_time", "first_missed_task", "v21_status",
+        "v21_proven", "v21_bound", "v21_error", "v20p4_status",
+        "v20p4_proven", "v20p4_bound", "v20p4_error",
+    ):
+        assert "{}=".format(field) in message
+    assert "normalized_utilization=0.1" in message
+    assert "task_idx=0" in message
+    assert "E0=0.25" in message
+    assert "taskset_path='/tmp/tasks.yml'" in message
+    assert "v21_bound=10" in message
 
 
 def test_soundness_rejects_observed_response_above_v21_bound():

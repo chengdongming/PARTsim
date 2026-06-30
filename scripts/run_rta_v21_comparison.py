@@ -322,6 +322,7 @@ def _tightness(analysis: Mapping[str, Any], responses: Mapping[str, float]) -> O
 def _soundness(
     analysis: Mapping[str, Any], accepted: bool,
     responses: Mapping[str, float], label: str,
+    context: Mapping[str, Any],
 ) -> tuple:
     rejected = bool(analysis["proven"] and not accepted)
     observed = False
@@ -331,9 +332,23 @@ def _soundness(
                 observed = True
                 break
     if rejected or observed:
+        context_text = ", ".join(
+            "{}={!r}".format(field, context.get(field))
+            for field in (
+                "seed_base", "taskset_seed", "normalized_utilization",
+                "task_idx", "taskset_id", "E0", "taskset_path",
+                "accepted", "simulation_status",
+                "simulated_response_time", "deadline_miss_time",
+                "first_missed_task", "v21_status", "v21_proven",
+                "v21_bound", "v21_error", "v20p4_status",
+                "v20p4_proven", "v20p4_bound", "v20p4_error",
+            )
+        )
         raise RuntimeError(
             "SEVERE {} soundness violation: proven_but_rejected={}, "
-            "observed_exceeds_bound={}".format(label, rejected, observed)
+            "observed_exceeds_bound={}; {}".format(
+                label, rejected, observed, context_text
+            )
         )
     return rejected, observed
 
@@ -343,11 +358,43 @@ def _comparison_row(
     v20_result: Mapping[str, Any], v21_result: Mapping[str, Any], e0: float,
 ) -> Dict[str, Any]:
     responses = simulation["max_response_by_task"]
+    soundness_context = {
+        "seed_base": base.get("seed_base"),
+        "taskset_seed": base.get("taskset_seed"),
+        "normalized_utilization": base.get("normalized_utilization"),
+        "task_idx": base.get("task_idx"),
+        "taskset_id": base.get("taskset_id"),
+        "E0": e0,
+        "taskset_path": base.get("taskset_path"),
+        "accepted": simulation.get("accepted"),
+        "simulation_status": simulation.get("simulation_status"),
+        "simulated_response_time": simulation.get(
+            "simulated_response_time"
+        ),
+        "deadline_miss_time": simulation.get("deadline_miss_time"),
+        "first_missed_task": simulation.get("first_missed_task"),
+        "v21_status": v21_result.get("status"),
+        "v21_proven": v21_result.get("proven"),
+        "v21_bound": v21_result.get("bound"),
+        "v21_error": v21_result.get("error"),
+        "v20p4_status": v20_result.get("status"),
+        "v20p4_proven": v20_result.get("proven"),
+        "v20p4_bound": v20_result.get("bound"),
+        "v20p4_error": v20_result.get("error"),
+    }
     v20_bad_rejected, v20_bad_bound = _soundness(
-        v20_result, simulation["accepted"], responses, V20_VERSION
+        v20_result,
+        simulation["accepted"],
+        responses,
+        V20_VERSION,
+        soundness_context,
     )
     v21_bad_rejected, v21_bad_bound = _soundness(
-        v21_result, simulation["accepted"], responses, V21_VERSION
+        v21_result,
+        simulation["accepted"],
+        responses,
+        V21_VERSION,
+        soundness_context,
     )
     both_proven = bool(v20_result["proven"] and v21_result["proven"])
     delta = (
