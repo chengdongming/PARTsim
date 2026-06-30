@@ -49,6 +49,7 @@ def write_acceptance_run(path, seed, ratios, samples=10):
             'num_samples': samples,
             'num_successful': successful,
             'seed_base': seed,
+            'rta_version': 'v20.4',
             'rta_num_analyzed': 0,
             'rta_num_proven': 0,
             'rta_num_unproven': 0,
@@ -237,8 +238,8 @@ def test_rta_e0_manifest_aggregates_fake_runs(tmp_path):
     frame1.to_csv(run1 / 'acceptance_ratio_data.csv', index=False)
     manifest = tmp_path / 'manifest.csv'
     pd.DataFrame([
-        {'run_dir': str(run0), 'E0': 0.0},
-        {'run_dir': str(run1), 'E0': 1.0},
+        {'run_dir': str(run0), 'E0': 0.0, 'rta_version': 'v20.4'},
+        {'run_dir': str(run1), 'E0': 1.0, 'rta_version': 'v20.4'},
     ]).to_csv(manifest, index=False)
 
     summary, by_util = analysis.summarize_rta_e0(manifest)
@@ -249,3 +250,18 @@ def test_rta_e0_manifest_aggregates_fake_runs(tmp_path):
     assert e1['rta_proven_ratio_total'] == 0.6
     assert e1['tightness_num_samples_total'] == 3
     assert e1['avg_tightness_over_reported_rows'] == 1.5
+
+
+def test_rta_e0_manifest_rejects_mixed_rta_versions(tmp_path):
+    manifest = tmp_path / 'manifest.csv'
+    pd.DataFrame([
+        {'run_dir': 'old', 'E0': 0.0, 'rta_version': 'v20.1'},
+        {'run_dir': 'new', 'E0': 0.0, 'rta_version': 'v20.4'},
+    ]).to_csv(manifest, index=False)
+
+    try:
+        analysis.summarize_rta_e0(manifest)
+    except ValueError as exc:
+        assert 'only v20.4' in str(exc)
+    else:
+        raise AssertionError('mixed RTA versions must be rejected')

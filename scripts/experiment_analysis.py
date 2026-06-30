@@ -427,8 +427,16 @@ def weighted_tightness(group):
 def summarize_rta_e0(manifest_path):
     manifest_path = Path(manifest_path)
     manifest = read_csv(manifest_path)
-    if not {'run_dir', 'E0'}.issubset(manifest.columns):
-        raise ValueError('manifest must contain run_dir,E0')
+    required = {'run_dir', 'E0', 'rta_version'}
+    if not required.issubset(manifest.columns):
+        raise ValueError('manifest must contain run_dir,E0,rta_version')
+    versions = set(manifest['rta_version'].dropna().astype(str))
+    if versions != {'v20.4'}:
+        raise ValueError(
+            'RTA E0 analysis requires only v20.4 runs, got {}'.format(
+                sorted(versions)
+            )
+        )
     rows = []
     for _, entry in manifest.iterrows():
         run_dir = Path(str(entry['run_dir']))
@@ -436,8 +444,22 @@ def summarize_rta_e0(manifest_path):
             run_dir = manifest_path.parent / run_dir
         frame = read_csv(run_dir / 'acceptance_ratio_data.csv')
         frame = frame[frame['algorithm'] == 'gpfp_asap_block']
+        if 'rta_version' not in frame.columns:
+            raise ValueError(
+                '{} is missing rta_version'.format(
+                    run_dir / 'acceptance_ratio_data.csv'
+                )
+            )
+        run_versions = set(frame['rta_version'].dropna().astype(str))
+        if run_versions != {str(entry['rta_version'])}:
+            raise ValueError(
+                '{} RTA versions {} do not match manifest {}'.format(
+                    run_dir, sorted(run_versions), entry['rta_version']
+                )
+            )
         for _, row in frame.iterrows():
             rows.append({
+                'rta_version': str(entry['rta_version']),
                 'E0': float(entry['E0']),
                 'normalized_utilization': number(
                     row.get('normalized_utilization')
@@ -463,11 +485,14 @@ def summarize_rta_e0(manifest_path):
         ), axis=1,
     )
     summaries = []
-    for e0, group in by_util.groupby('E0', sort=True):
+    for (version, e0), group in by_util.groupby(
+        ['rta_version', 'E0'], sort=True
+    ):
         analyzed = int(group['rta_num_analyzed'].sum())
         tightness, tight_count = weighted_tightness(group)
         proven = int(group['rta_num_proven'].sum())
         summaries.append({
+            'rta_version': version,
             'E0': e0,
             'rta_num_analyzed_total': analyzed,
             'rta_num_proven_total': proven,

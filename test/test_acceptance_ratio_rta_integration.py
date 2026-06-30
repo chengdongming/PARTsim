@@ -53,6 +53,7 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
     @staticmethod
     def proven_payload():
         return {
+            "rta_version": acceptance.RTA_VERSION,
             "conditional": True,
             "assumptions": ["battery does not overflow"],
             "proven_under_assumptions": True,
@@ -60,6 +61,7 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
                 {
                     "task_name": "task_0",
                     "proven_under_assumptions": True,
+                    "response_time_bound": 10,
                     "failure_reason": None,
                 }
             ],
@@ -190,6 +192,8 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
         self.assertEqual(run_mock.call_args.kwargs["timeout"], 7)
         self.assertEqual(result["rta_status"], "proven_under_assumptions")
         self.assertTrue(result["rta_proven_under_assumptions"])
+        self.assertEqual(result["rta_version"], "v20.4")
+        self.assertEqual(result["rta_bound"], 10.0)
         self.assertEqual(
             result["rta_system_config"], str(self.config.resolve())
         )
@@ -370,6 +374,12 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
         self.assertEqual(result["acceptance_ratio"], 1.0)
         self.assertEqual(result["simulation_status"], "accepted")
         self.assertEqual(result["rta_status"], "rta_error")
+
+    def test_rta_json_rejects_non_v20_4_reports(self):
+        payload = self.proven_payload()
+        payload["rta_version"] = "v20.1"
+        with self.assertRaisesRegex(ValueError, "v20.4"):
+            acceptance.parse_rta_json(payload, assume_no_overflow=True)
 
     def test_rta_unproven_does_not_change_simulation_acceptance(self):
         unproven = acceptance._base_rta_result(status="rta_unproven")

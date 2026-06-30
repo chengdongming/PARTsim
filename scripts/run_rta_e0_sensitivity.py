@@ -9,9 +9,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts import experiment_runner as runner
 
+RTA_VERSION = 'v20.4'
 
 MANIFEST_FIELDS = [
-    'experiment_name', 'run_dir', 'E0', 'seed_base', 'num_points',
+    'experiment_name', 'run_dir', 'rta_version', 'E0', 'seed_base', 'num_points',
     'num_tasksets', 'task_n', 'battery', 'initial_energy',
     'solar_time_ms', 'harvesting_scale', 'rta_horizon_ms', 'rta_timeout', 'max_workers',
     'status', 'return_code',
@@ -43,6 +44,7 @@ def build_specs(args):
         specs.append({
             'experiment_name': args.experiment_name,
             'run_dir': str(run_dir),
+            'rta_version': RTA_VERSION,
             'E0': e0,
             'seed_base': args.seed_base,
             'num_points': args.num_points,

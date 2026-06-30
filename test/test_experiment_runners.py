@@ -107,6 +107,7 @@ def test_rta_e0_runner_adds_required_rta_options(tmp_path):
     assert commands[0][commands[0].index('--initial-energy') + 1] == '1.0'
     manifest_rows = read_manifest(output_root / 'rta-e0_manifest.csv')
     assert {row['E0'] for row in manifest_rows} == {'0.0', '0.25'}
+    assert {row['rta_version'] for row in manifest_rows} == {'v20.4'}
 
 
 def test_dry_run_writes_manifest_without_subprocess(tmp_path):
