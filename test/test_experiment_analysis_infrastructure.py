@@ -1,9 +1,11 @@
 import os
 import sys
+import math
 from collections import defaultdict
 from pathlib import Path
 
 import pandas as pd
+import pytest
 from unittest import mock
 
 
@@ -224,32 +226,118 @@ def test_mechanism_case_selection_finds_baseline_win(tmp_path):
     assert 'asap_block_accept__asap_nonblock_reject' in set(cases['case_type'])
 
 
-def test_rta_e0_manifest_aggregates_fake_runs(tmp_path):
-    run0 = tmp_path / 'e0'
-    run1 = tmp_path / 'e1'
-    write_acceptance_run(run0, 1, {'gpfp_asap_block': 1.0})
-    write_acceptance_run(run1, 1, {'gpfp_asap_block': 1.0})
-    frame0 = pd.read_csv(run0 / 'acceptance_ratio_data.csv')
-    frame1 = pd.read_csv(run1 / 'acceptance_ratio_data.csv')
-    frame0.loc[0, ['rta_num_analyzed', 'rta_num_proven', 'rta_num_unproven']] = [10, 2, 8]
-    frame1.loc[0, ['rta_num_analyzed', 'rta_num_proven', 'rta_num_unproven']] = [10, 6, 4]
-    frame1.loc[0, ['avg_tightness', 'tightness_num_samples']] = [1.5, 3]
-    frame0.to_csv(run0 / 'acceptance_ratio_data.csv', index=False)
-    frame1.to_csv(run1 / 'acceptance_ratio_data.csv', index=False)
+def write_rta_raw_run(
+    path, total=500, proven=50, timeouts=9, version='v20.4'
+):
+    path.mkdir(parents=True)
+    tightness = [1.0 + index / 10.0 for index in range(proven)]
+    true_values = [True, 'True', 'true', '1', 1]
+    rows = []
+    for index in range(total):
+        is_proven = index < proven
+        is_timeout = index >= total - timeouts
+        rows.append({
+            'normalized_utilization': 0.1 if index < total // 2 else 0.2,
+            'rta_enabled': true_values[index % len(true_values)],
+            'rta_version': version,
+            'rta_status': (
+                'proven_under_assumptions' if is_proven
+                else 'rta_error' if is_timeout else 'rta_unproven'
+            ),
+            'rta_proven': (
+                true_values[index % len(true_values)] if is_proven else False
+            ),
+            'rta_error': (
+                'RTA timed out after 300 seconds' if is_timeout else ''
+            ),
+            'tightness': tightness[index] if is_proven else '',
+            'accepted': 1,
+            'rta_response_time_bound': 20 if is_proven else '',
+            'simulated_response_time': 10 if is_proven else '',
+        })
+    pd.DataFrame(rows).to_csv(
+        path / 'per_taskset_results.csv', index=False
+    )
+    # Deliberately wrong aggregate values: the raw analyzer must ignore them.
+    pd.DataFrame([{
+        'algorithm': 'gpfp_asap_block',
+        'normalized_utilization': 0.1,
+        'rta_version': version,
+        'avg_tightness': 999,
+        'tightness_num_samples': total,
+    }]).to_csv(path / 'acceptance_ratio_data.csv', index=False)
+    return tightness
+
+
+def test_rta_e0_manifest_aggregates_proven_raw_rows(tmp_path):
+    run = tmp_path / 'e025'
+    tightness = write_rta_raw_run(run)
     manifest = tmp_path / 'manifest.csv'
     pd.DataFrame([
-        {'run_dir': str(run0), 'E0': 0.0, 'rta_version': 'v20.4'},
-        {'run_dir': str(run1), 'E0': 1.0, 'rta_version': 'v20.4'},
+        {'run_dir': str(run), 'E0': 0.25, 'rta_version': 'v20.4'},
     ]).to_csv(manifest, index=False)
 
     summary, by_util = analysis.summarize_rta_e0(manifest)
     assert len(by_util) == 2
-    e0 = summary[summary['E0'] == 0.0].iloc[0]
-    e1 = summary[summary['E0'] == 1.0].iloc[0]
-    assert e0['rta_proven_ratio_total'] == 0.2
-    assert e1['rta_proven_ratio_total'] == 0.6
-    assert e1['tightness_num_samples_total'] == 3
-    assert e1['avg_tightness_over_reported_rows'] == 1.5
+    row = summary.iloc[0]
+    assert row['rta_num_analyzed_total'] == 500
+    assert row['rta_num_proven_total'] == 50
+    assert row['rta_num_unproven_total'] == 441
+    assert row['rta_num_errors_total'] == 9
+    assert row['rta_num_timeouts_total'] == 9
+    assert row['tightness_num_samples_total'] == 50
+    assert row['tightness_num_proven_samples'] == 50
+    assert row['avg_tightness'] == pytest.approx(pd.Series(tightness).mean())
+    assert row['median_tightness'] == pytest.approx(
+        pd.Series(tightness).median()
+    )
+    assert row['max_tightness'] == max(tightness)
+    assert row['avg_tightness_over_reported_rows'] != 999
+    assert by_util['rta_num_analyzed'].sum() == 500
+    assert by_util['tightness_num_samples'].sum() == 50
+
+    output = tmp_path / 'analysis'
+    analysis.write_rta_e0(manifest, output)
+    assert (output / 'rta_e0_sensitivity_summary.csv').is_file()
+    assert (output / 'rta_e0_sensitivity_by_utilization.csv').is_file()
+    assert (output / 'rta_e0_tightness.png').is_file()
+
+
+def test_rta_e0_without_proven_rows_keeps_tightness_nan(tmp_path):
+    run = tmp_path / 'e0'
+    write_rta_raw_run(run, total=10, proven=0, timeouts=0)
+    manifest = tmp_path / 'manifest.csv'
+    pd.DataFrame([{
+        'run_dir': str(run), 'E0': 0.0, 'rta_version': 'v20.4',
+    }]).to_csv(manifest, index=False)
+
+    summary, by_util = analysis.summarize_rta_e0(manifest)
+    row = summary.iloc[0]
+    assert row['tightness_num_samples_total'] == 0
+    assert math.isnan(row['avg_tightness'])
+    assert math.isnan(row['median_tightness'])
+    assert math.isnan(row['max_tightness'])
+    assert by_util['tightness_num_samples'].sum() == 0
+
+
+@pytest.mark.parametrize('violation', ['rejected', 'bound'])
+def test_rta_e0_rejects_soundness_violations(tmp_path, violation):
+    run = tmp_path / violation
+    write_rta_raw_run(run, total=1, proven=1, timeouts=0)
+    raw_path = run / 'per_taskset_results.csv'
+    raw = pd.read_csv(raw_path)
+    if violation == 'rejected':
+        raw.loc[0, 'accepted'] = 0
+    else:
+        raw.loc[0, 'simulated_response_time'] = 21
+    raw.to_csv(raw_path, index=False)
+    manifest = tmp_path / 'manifest.csv'
+    pd.DataFrame([{
+        'run_dir': str(run), 'E0': 1.0, 'rta_version': 'v20.4',
+    }]).to_csv(manifest, index=False)
+
+    with pytest.raises(ValueError, match='RTA soundness violation'):
+        analysis.summarize_rta_e0(manifest)
 
 
 def test_rta_e0_manifest_rejects_mixed_rta_versions(tmp_path):
@@ -259,9 +347,21 @@ def test_rta_e0_manifest_rejects_mixed_rta_versions(tmp_path):
         {'run_dir': 'new', 'E0': 0.0, 'rta_version': 'v20.4'},
     ]).to_csv(manifest, index=False)
 
-    try:
+    with pytest.raises(ValueError, match='only v20.4'):
         analysis.summarize_rta_e0(manifest)
-    except ValueError as exc:
-        assert 'only v20.4' in str(exc)
-    else:
-        raise AssertionError('mixed RTA versions must be rejected')
+
+
+def test_rta_e0_rejects_non_v20_4_raw_rows(tmp_path):
+    run = tmp_path / 'mixed'
+    write_rta_raw_run(run, total=2, proven=1, timeouts=0)
+    raw_path = run / 'per_taskset_results.csv'
+    raw = pd.read_csv(raw_path)
+    raw.loc[1, 'rta_version'] = 'v20.1'
+    raw.to_csv(raw_path, index=False)
+    manifest = tmp_path / 'manifest.csv'
+    pd.DataFrame([{
+        'run_dir': str(run), 'E0': 1.0, 'rta_version': 'v20.4',
+    }]).to_csv(manifest, index=False)
+
+    with pytest.raises(ValueError, match='RTA versions'):
+        analysis.summarize_rta_e0(manifest)
