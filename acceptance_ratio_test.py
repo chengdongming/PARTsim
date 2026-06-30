@@ -50,6 +50,7 @@ TASK_GENERATOR = './global_task_generator.py'
 SIMULATOR = './build/rtsim/rtsim'
 RTA_TOOL = str(Path(__file__).resolve().parent / 'asap_block_rta.py')
 ASAP_BLOCK_ALGORITHM = 'gpfp_asap_block'
+RTA_VERSION = 'v20.4'
 
 PER_TASKSET_RESULT_FIELDS = [
     'experiment_id',
@@ -79,6 +80,7 @@ PER_TASKSET_RESULT_FIELDS = [
     'reason',
     'trace_path',
     'rta_enabled',
+    'rta_version',
     'rta_status',
     'rta_proven',
     'rta_error',
@@ -108,6 +110,7 @@ def hash_file(path):
 def _base_rta_result(status='disabled'):
     return {
         'rta_enabled': False,
+        'rta_version': RTA_VERSION,
         'rta_status': status,
         'rta_proven_under_assumptions': False,
         'rta_conditional': True,
@@ -132,6 +135,12 @@ def parse_rta_json(payload, assume_no_overflow):
         raise ValueError('RTA output must be a JSON object')
     if 'proven_under_assumptions' not in payload:
         raise ValueError('RTA JSON is missing proven_under_assumptions')
+    if payload.get('rta_version') != RTA_VERSION:
+        raise ValueError(
+            'RTA JSON version must be {}, got {!r}'.format(
+                RTA_VERSION, payload.get('rta_version')
+            )
+        )
 
     tasks = payload.get('tasks', [])
     if not isinstance(tasks, list):
@@ -159,7 +168,16 @@ def parse_rta_json(payload, assume_no_overflow):
             'no-overflow assumption was not explicitly acknowledged',
         )
 
+    finite_bounds = [
+        _extract_number(task.get('response_time_bound'))
+        for task in tasks
+        if isinstance(task, dict)
+        and bool(task.get('proven_under_assumptions', False))
+    ]
+    finite_bounds = [bound for bound in finite_bounds if bound is not None]
+
     return {
+        'rta_version': RTA_VERSION,
         'rta_status': (
             'proven_under_assumptions' if proven else 'rta_unproven'
         ),
@@ -170,6 +188,7 @@ def parse_rta_json(payload, assume_no_overflow):
         'rta_failure_reasons': failure_reasons,
         'rta_error': None,
         'rta_report': payload,
+        'rta_bound': max(finite_bounds) if finite_bounds else None,
     }
 
 
@@ -337,6 +356,29 @@ def compute_task_tightness_samples(algorithm, rta_result,
     return samples
 
 
+def validate_rta_soundness(algorithm, rta_result, simulation_status,
+                           max_response_by_task):
+    """Fail fast when a v20.4 sufficient bound contradicts simulation."""
+    if algorithm != ASAP_BLOCK_ALGORITHM or not _is_rta_proven(rta_result):
+        return
+    if simulation_status == 'rejected':
+        raise RuntimeError(
+            'SEVERE RTA SOUNDNESS ERROR: {} proved a taskset rejected by '
+            'ASAP-BLOCK simulation'.format(RTA_VERSION)
+        )
+    if not isinstance(max_response_by_task, dict):
+        return
+    for task_name, bound in extract_rta_bounds_by_task(rta_result).items():
+        observed = _extract_number(max_response_by_task.get(task_name))
+        if observed is not None and observed > bound:
+            raise RuntimeError(
+                'SEVERE RTA SOUNDNESS ERROR: task {} observed response {} '
+                'exceeds {} bound {}'.format(
+                    task_name, observed, RTA_VERSION, bound
+                )
+            )
+
+
 def tightness_for_result(algorithm, result):
     """Return legacy scalar tightness for valid ASAP-BLOCK samples only."""
     if algorithm != ASAP_BLOCK_ALGORITHM or not isinstance(result, dict):
@@ -489,6 +531,12 @@ def run_single_simulation_worker(task):
         'simulation_error': simulation_error,
     }
     run_result.update(rta_result)
+    run_result['simulated_response_time'] = (
+        max(max_response_by_task.values()) if max_response_by_task else None
+    )
+    validate_rta_soundness(
+        algorithm, run_result, simulation_status, max_response_by_task
+    )
     tightness_values = compute_task_tightness_samples(
         algorithm, run_result, max_response_by_task
     )
@@ -1219,10 +1267,12 @@ class ExperimentRunner:
         if result.get('rta_error'):
             rta_reason = str(result['rta_error'])
 
-        tightness_values = tightness_values_for_result(algorithm, result)
-        tightness = (
-            float(np.mean(tightness_values)) if tightness_values else ''
-        )
+        # The raw taskset row keeps its scalar contract explicit:
+        # tightness = rta_response_time_bound / simulated_response_time.
+        # Aggregate CSV tightness remains the mean of correctly paired
+        # per-task samples collected by tightness_values_for_result().
+        scalar_tightness = tightness_for_result(algorithm, result)
+        tightness = scalar_tightness if scalar_tightness is not None else ''
         simulation_reason = result.get('simulation_error') or ''
         if status == 'rejected' and not simulation_reason:
             simulation_reason = 'rejected by simulation trace checks'
@@ -1262,6 +1312,7 @@ class ExperimentRunner:
             # Worker traces are intentionally removed after parsing.
             'trace_path': '',
             'rta_enabled': bool(result.get('rta_enabled', False)),
+            'rta_version': result.get('rta_version', RTA_VERSION),
             'rta_status': result.get('rta_status', 'disabled'),
             'rta_proven': bool(_is_rta_proven(result)),
             'rta_error': result.get('rta_error') or '',
@@ -1337,6 +1388,7 @@ class ExperimentRunner:
                         'battery_capacity': self.battery_capacity,
                         'harvesting_profile': self.harvesting_profile(),
                         'harvesting_scale': self.harvesting_scale,
+                        'rta_version': RTA_VERSION,
                         'simulation_num_accepted': status_buckets.count(
                             'accepted'
                         ),

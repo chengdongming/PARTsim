@@ -2,7 +2,7 @@
 """Offline sufficient response-time analysis for ASAP-BLOCK.
 
 The implementation follows
-docs/asap_block_rta_fixedpoint_v20_1_proof_polished_final.md.
+docs/asap_block_rta_fixedpoint_v20_4_final_capacity_certified_window_proofstrengthened.md.
 It intentionally supports only the restricted task model documented by the
 CLI help and uses a one millisecond discrete tick.
 """
@@ -27,6 +27,7 @@ import yaml
 
 
 TICK_SECONDS = 0.001
+RTA_VERSION = "v20.4"
 
 DEFAULT_WORKLOAD_COEFFICIENTS = {
     "bzip2": 1.2,
@@ -235,6 +236,7 @@ class TasksetAnalysis:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
+            "rta_version": RTA_VERSION,
             "system_file": self.system_file,
             "tasks_file": self.tasks_file,
             "horizon_ms": self.horizon_ms,
@@ -848,25 +850,47 @@ def _lp(tasks: Sequence[RTATask], k: Target) -> List[RTATask]:
     return ordered[position + 1 :]
 
 
-def workload_bound(task: RTATask, w: int) -> int:
-    """Deadline-parameterized W_i^D(w), not the old carry-in W_i^H(w)."""
+def workload_bound(task: RTATask, w: int, theta: Optional[int] = None) -> int:
+    """Return v20.4 ``W_i^theta(w)`` in integer time units.
+
+    Omitting ``theta`` retains the deadline-parameterized ``W_i^D(w)`` used
+    for lower-priority energy demand. Certified higher-priority analysis
+    passes the already-proven response-time bound explicitly.
+    """
 
     if w < 0:
         raise ValueError("response window w must be non-negative")
-    window = w + task.deadline - task.wcet
+    carry_in = task.deadline if theta is None else int(theta)
+    if carry_in < task.wcet or carry_in > task.deadline:
+        raise ValueError(
+            "carry-in theta for {} must satisfy C <= theta <= D".format(
+                task.name
+            )
+        )
+    window = w + carry_in - task.wcet
     if window <= 0:
         return 0
     jobs = window // task.period
     residual = window - jobs * task.period
-    return jobs * task.wcet + min(task.wcet, residual)
+    return max(0, jobs * task.wcet + min(task.wcet, residual))
 
 
 def _processor_workloads(
-    target: RTATask, w: int, tasks: Sequence[RTATask]
+    target: RTATask,
+    w: int,
+    tasks: Sequence[RTATask],
+    certified_bounds: Optional[Mapping[str, int]] = None,
 ) -> Dict[str, int]:
     interference_cap = max(w - target.wcet + 1, 0)
     return {
-        task.name: min(workload_bound(task, w), interference_cap)
+        task.name: min(
+            workload_bound(
+                task,
+                w,
+                None if certified_bounds is None else certified_bounds[task.name],
+            ),
+            interference_cap,
+        )
         for task in hp(tasks, target)
     }
 
@@ -876,14 +900,19 @@ def processor_delay(
     w: int,
     M: int,
     tasks: Optional[Sequence[RTATask]] = None,
+    certified_bounds: Optional[Mapping[str, int]] = None,
 ) -> int:
-    """Compute the deadline-parameterized CPU-only delay D_k^{P,D}(w)."""
+    """Compute v20.4 CPU-only delay ``D_k^{P,Theta}(w)``."""
 
     if M <= 0:
         raise ValueError("M must be positive")
     taskset = _taskset_for(k, tasks)
     target = _resolve_target(taskset, k)
-    bars = list(_processor_workloads(target, w, taskset).values())
+    bars = list(
+        _processor_workloads(
+            target, w, taskset, certified_bounds=certified_bounds
+        ).values()
+    )
     if not bars:
         return 0
     maximum_candidate = sum(bars) // M
@@ -968,6 +997,92 @@ def _energy_fraction(task: RTATask) -> Fraction:
     return Fraction(str(task.energy_per_tick))
 
 
+@dataclass
+class _FlowEdge:
+    to: int
+    reverse: int
+    capacity: int
+    cost: Fraction
+
+
+def _add_flow_edge(
+    graph: List[List[_FlowEdge]],
+    source: int,
+    target: int,
+    capacity: int,
+    cost: Fraction,
+) -> int:
+    forward_index = len(graph[source])
+    reverse_index = len(graph[target])
+    graph[source].append(
+        _FlowEdge(target, reverse_index, int(capacity), cost)
+    )
+    graph[target].append(
+        _FlowEdge(source, forward_index, 0, -cost)
+    )
+    return forward_index
+
+
+def _min_cost_max_flow(
+    graph: List[List[_FlowEdge]], source: int, sink: int
+) -> Tuple[int, Fraction, int]:
+    """Return exact integral min-cost max-flow for the tiny Omega network."""
+
+    total_flow = 0
+    total_cost = Fraction(0)
+    augmentations = 0
+    node_count = len(graph)
+    while True:
+        distance: List[Optional[Fraction]] = [None] * node_count
+        previous: List[Optional[Tuple[int, int]]] = [None] * node_count
+        distance[source] = Fraction(0)
+        for _ in range(node_count - 1):
+            changed = False
+            for node, edges in enumerate(graph):
+                if distance[node] is None:
+                    continue
+                for edge_index, edge in enumerate(edges):
+                    if edge.capacity <= 0:
+                        continue
+                    candidate = distance[node] + edge.cost
+                    if (
+                        distance[edge.to] is None
+                        or candidate < distance[edge.to]
+                    ):
+                        distance[edge.to] = candidate
+                        previous[edge.to] = (node, edge_index)
+                        changed = True
+            if not changed:
+                break
+        if distance[sink] is None:
+            break
+
+        amount = None
+        node = sink
+        while node != source:
+            step = previous[node]
+            if step is None:
+                raise RuntimeError("incomplete min-cost flow predecessor chain")
+            parent, edge_index = step
+            capacity = graph[parent][edge_index].capacity
+            amount = capacity if amount is None else min(amount, capacity)
+            node = parent
+        if amount is None or amount <= 0:
+            break
+
+        node = sink
+        while node != source:
+            parent, edge_index = previous[node]  # type: ignore[misc]
+            edge = graph[parent][edge_index]
+            edge.capacity -= amount
+            graph[node][edge.reverse].capacity += amount
+            node = parent
+        total_flow += amount
+        total_cost += amount * distance[sink]
+        augmentations += 1
+    return total_flow, total_cost, augmentations
+
+
 def _deadline_energy_states_for_z(
     target: RTATask,
     taskset: Sequence[RTATask],
@@ -976,28 +1091,17 @@ def _deadline_energy_states_for_z(
     z: int,
     M: int,
     processor_workloads: Mapping[str, int],
+    certified_bounds: Optional[Mapping[str, int]] = None,
     profile: Optional[_RTAProfile] = None,
 ) -> List[Tuple[int, Fraction]]:
-    """Return the exact v20.1 Omega maximum for fixed ``(w, x, z)``.
+    """Return exact v20.4 maxima ``(max U, max E)`` for fixed ``(w,x,z)``.
 
-    The complete integer Omega set admits an exact reduction. For fixed
-    ``a_i``, moving any ``b_i`` unit to ``u_i`` preserves ``a_i+b_i+u_i`` and
-    therefore cannot lower high-priority energy. It increases (or preserves)
-    the serial quantity ``U=sum(u_i)`` and frees concurrent B-capacity; that
-    freed capacity can only preserve or increase the selectable low-priority
-    energy. Hence a maximizer has ``b_i=0`` and saturates each task workload
-    with ``a_i+u_i=W_i^D(w)``. This does not parallelize or compress U: it is
-    still the literal sum of all per-task ``u_i`` values.
-
-    With the required equality ``sum(a_i)=M(x-z)``, the closed form is
-    ``U=sum(W_i^D(w))-M(x-z)`` and high-priority energy is
-    ``sum(W_i^D(w) P_i)``, independent of the feasible a-allocation.
-    Low-priority ``c_j`` values then fill at most ``(M-1)z`` concurrent slots;
-    sorting by per-tick energy and filling highest first gives their exact
-    maximum contribution.
-
-    Tiny exhaustive tests compare this reduction with the full
-    ``(z,a_i,b_i,u_i,c_j)`` enumeration.
+    ``max U`` and ``max E`` need not come from the same Omega tuple. This is
+    exact because ``max_omega max(U(omega), charge(E(omega)))`` equals the
+    maximum of the independent maxima. Energy maximization is a small integral
+    max-cost flow over the mandatory ``a`` bin, capped ``u`` bin, and shared
+    ``b/c`` bin. It enforces every v20.4 capacity constraint without enumerating
+    the Cartesian product of ``a_i,b_i,u_i,c_j``.
     """
 
     started = time.perf_counter()
@@ -1012,7 +1116,15 @@ def _deadline_energy_states_for_z(
     a_capacity = M * (x - z)
     high = hp(taskset, target)
     high_workloads = {
-        task.name: workload_bound(task, w) for task in high
+        task.name: min(
+            workload_bound(
+                task,
+                w,
+                None if certified_bounds is None else certified_bounds[task.name],
+            ),
+            w,
+        )
+        for task in high
     }
     a_caps = {
         task.name: min(
@@ -1027,30 +1139,78 @@ def _deadline_energy_states_for_z(
             profile.energy_state_dp_time_sec += time.perf_counter() - started
         return []
 
-    u_total = sum(high_workloads.values()) - a_capacity
-    energy_total = z * _energy_fraction(target)
-    energy_total += sum(
+    u_capacity = M * max(0, w - x)
+    u_total = min(
+        u_capacity, sum(high_workloads.values()) - a_capacity
+    )
+    b_capacity = (M - 1) * z
+    low_caps = {
+        task.name: min(workload_bound(task, w), z)
+        for task in _lp(taskset, target)
+    }
+
+    # The mandatory-a bonus is larger than all physical energy in this
+    # network. Therefore an optimal maximum flow fills the exact a capacity
+    # whenever the v20.4 equality is feasible, without changing physical E.
+    physical_energy_limit = z * _energy_fraction(target)
+    physical_energy_limit += sum(
         high_workloads[task.name] * _energy_fraction(task) for task in high
     )
-
-    remaining_b_capacity = (M - 1) * z
-    low_options = sorted(
-        (
-            (_energy_fraction(task), min(workload_bound(task, w), z))
-            for task in _lp(taskset, target)
-        ),
-        reverse=True,
+    physical_energy_limit += sum(
+        low_caps[task.name] * _energy_fraction(task)
+        for task in _lp(taskset, target)
     )
-    for energy_per_tick, capacity in low_options:
-        selected = min(capacity, remaining_b_capacity)
-        energy_total += selected * energy_per_tick
-        remaining_b_capacity -= selected
-        if remaining_b_capacity == 0:
-            break
+    mandatory_bonus = physical_energy_limit + 1
 
+    high_count = len(high)
+    low = _lp(taskset, target)
+    low_count = len(low)
+    source = 0
+    first_high = 1
+    first_low = first_high + high_count
+    a_bin = first_low + low_count
+    u_bin = a_bin + 1
+    b_bin = u_bin + 1
+    sink = b_bin + 1
+    graph: List[List[_FlowEdge]] = [[] for _ in range(sink + 1)]
+
+    for index, task in enumerate(high):
+        node = first_high + index
+        capacity = high_workloads[task.name]
+        energy = _energy_fraction(task)
+        _add_flow_edge(graph, source, node, capacity, Fraction(0))
+        _add_flow_edge(
+            graph, node, a_bin, a_caps[task.name], -(energy + mandatory_bonus)
+        )
+        _add_flow_edge(graph, node, u_bin, capacity, -energy)
+        _add_flow_edge(graph, node, b_bin, min(z, capacity), -energy)
+    for index, task in enumerate(low):
+        node = first_low + index
+        capacity = low_caps[task.name]
+        energy = _energy_fraction(task)
+        _add_flow_edge(graph, source, node, capacity, Fraction(0))
+        _add_flow_edge(graph, node, b_bin, capacity, -energy)
+
+    a_edge_index = _add_flow_edge(
+        graph, a_bin, sink, a_capacity, Fraction(0)
+    )
+    _add_flow_edge(graph, u_bin, sink, u_capacity, Fraction(0))
+    _add_flow_edge(graph, b_bin, sink, b_capacity, Fraction(0))
+    _flow, flow_cost, augmentations = _min_cost_max_flow(graph, source, sink)
+    a_flow = a_capacity - graph[a_bin][a_edge_index].capacity
+    if a_flow != a_capacity:
+        if profile is not None:
+            profile.energy_state_dp_time_sec += time.perf_counter() - started
+        return []
+
+    energy_total = (
+        z * _energy_fraction(target)
+        - flow_cost
+        - a_capacity * mandatory_bonus
+    )
     result = [(u_total, energy_total)]
     if profile is not None:
-        profile.total_states_generated += 1
+        profile.total_states_generated += max(1, augmentations)
         profile.max_frontier_size = max(profile.max_frontier_size, 1)
         profile.energy_state_dp_time_sec += time.perf_counter() - started
     return result
@@ -1062,13 +1222,20 @@ def _prefix_energy_upper_bound_exact(
     x: int,
     tasks: Optional[Sequence[RTATask]] = None,
     M: Optional[int] = None,
+    certified_bounds: Optional[Mapping[str, int]] = None,
 ) -> Fraction:
     taskset = _taskset_for(k, tasks)
     target = _resolve_target(taskset, k)
     processors = M if M is not None else target._num_cores
     if processors is None or processors <= 0:
         raise ValueError("M is required for prefix energy analysis")
-    delay = processor_delay(target, w, processors, taskset)
+    delay = processor_delay(
+        target,
+        w,
+        processors,
+        taskset,
+        certified_bounds=certified_bounds,
+    )
     reference_length = target.wcet + delay
     if x < 0 or x > reference_length:
         raise ValueError(
@@ -1078,7 +1245,9 @@ def _prefix_energy_upper_bound_exact(
         )
     z_min = max(0, x - delay)
     z_max = min(target.wcet, x)
-    processor_workloads = _processor_workloads(target, w, taskset)
+    processor_workloads = _processor_workloads(
+        target, w, taskset, certified_bounds=certified_bounds
+    )
     best = Fraction(0)
     for z in range(z_min, z_max + 1):
         for _u_total, energy in _deadline_energy_states_for_z(
@@ -1089,6 +1258,7 @@ def _prefix_energy_upper_bound_exact(
             z,
             processors,
             processor_workloads,
+            certified_bounds,
         ):
             if energy > best:
                 best = energy
@@ -1101,10 +1271,15 @@ def prefix_energy_upper_bound(
     x: int,
     tasks: Optional[Sequence[RTATask]] = None,
     M: Optional[int] = None,
+    certified_bounds: Optional[Mapping[str, int]] = None,
 ) -> float:
-    """Return the largest deadline-parameterized E_k^D demand for x."""
+    """Return the largest v20.4 ``E_k^Theta`` demand for prefix ``x``."""
 
-    return float(_prefix_energy_upper_bound_exact(k, w, x, tasks, M))
+    return float(
+        _prefix_energy_upper_bound_exact(
+            k, w, x, tasks, M, certified_bounds=certified_bounds
+        )
+    )
 
 
 def _energy_blocking_bound_result(
@@ -1114,6 +1289,7 @@ def _energy_blocking_bound_result(
     E0: float = 0,
     tasks: Optional[Sequence[RTATask]] = None,
     M: Optional[int] = None,
+    certified_bounds: Optional[Mapping[str, int]] = None,
     profile: Optional[_RTAProfile] = None,
 ) -> _EnergyBlockingResult:
     """Compute B_k^E(w); return None if the finite service is insufficient."""
@@ -1124,7 +1300,13 @@ def _energy_blocking_bound_result(
     if processors is None or processors <= 0:
         raise ValueError("M is required for energy blocking analysis")
     processor_started = time.perf_counter()
-    delay = processor_delay(target, w, processors, taskset)
+    delay = processor_delay(
+        target,
+        w,
+        processors,
+        taskset,
+        certified_bounds=certified_bounds,
+    )
     if profile is not None:
         profile.processor_delay_time_sec += (
             time.perf_counter() - processor_started
@@ -1135,7 +1317,9 @@ def _energy_blocking_bound_result(
 
     blocking = 0
     exact_e0 = _exact_fraction(E0)
-    processor_workloads = _processor_workloads(target, w, taskset)
+    processor_workloads = _processor_workloads(
+        target, w, taskset, certified_bounds=certified_bounds
+    )
     for x in range(1, reference_length + 1):
         if profile is not None:
             profile.x_values_checked += 1
@@ -1152,6 +1336,7 @@ def _energy_blocking_bound_result(
                 z,
                 processors,
                 processor_workloads,
+                certified_bounds,
                 profile,
             )
             for u_total, energy in states:
@@ -1172,10 +1357,19 @@ def energy_blocking_bound(
     E0: float = 0,
     tasks: Optional[Sequence[RTATask]] = None,
     M: Optional[int] = None,
+    certified_bounds: Optional[Mapping[str, int]] = None,
 ) -> Optional[int]:
-    """Compute B_k^{E,D}(w); return None when finite service is insufficient."""
+    """Compute v20.4 ``B_k^{E,Theta}(w)``."""
 
-    return _energy_blocking_bound_result(k, w, beta, E0, tasks, M).blocking
+    return _energy_blocking_bound_result(
+        k,
+        w,
+        beta,
+        E0,
+        tasks,
+        M,
+        certified_bounds=certified_bounds,
+    ).blocking
 
 
 def response_time_bound(
@@ -1187,8 +1381,9 @@ def response_time_bound(
     max_iterations: int = 1000,
     assume_no_overflow: bool = False,
     profile_rta: bool = False,
+    certified_bounds: Optional[Mapping[str, int]] = None,
 ) -> TaskAnalysisResult:
-    """Iterate the sufficient ASAP-BLOCK response-time upper bound."""
+    """Iterate the v20.4 certified-carry-in response-time upper bound."""
 
     analysis_started = time.perf_counter()
     taskset = _taskset_for(k, tasks)
@@ -1236,10 +1431,40 @@ def response_time_bound(
             0,
         )
 
+    certified = dict(certified_bounds or {})
+    higher_priority = hp(taskset, target)
+    missing = [task.name for task in higher_priority if task.name not in certified]
+    if missing:
+        return make_result(
+            None,
+            False,
+            "higher-priority tasks are not certified under {}: {}".format(
+                RTA_VERSION, ", ".join(missing)
+            ),
+            0,
+        )
+    for task in higher_priority:
+        theta = int(certified[task.name])
+        if theta < task.wcet or theta > task.deadline:
+            return make_result(
+                None,
+                False,
+                "invalid certified carry-in for {}: {}".format(
+                    task.name, theta
+                ),
+                0,
+            )
+
     current = target.wcet
     for iteration in range(1, max_iterations + 1):
         processor_started = time.perf_counter()
-        cpu_delay = processor_delay(target, current, processors, taskset)
+        cpu_delay = processor_delay(
+            target,
+            current,
+            processors,
+            taskset,
+            certified_bounds=certified,
+        )
         if profile is not None:
             profile.processor_delay_time_sec += (
                 time.perf_counter() - processor_started
@@ -1252,6 +1477,7 @@ def response_time_bound(
             E0=E0,
             tasks=taskset,
             M=processors,
+            certified_bounds=certified,
             profile=profile,
         )
         if profile is not None:
@@ -1453,8 +1679,10 @@ def analyze_taskset(
     )
     beta = build_energy_service_curve(trace, horizon_ms)
 
-    results = [
-        response_time_bound(
+    results = []
+    certified_bounds: Dict[str, int] = {}
+    for task in rm_order(tasks):
+        result = response_time_bound(
             task,
             tasks=tasks,
             M=config.num_cores,
@@ -1463,9 +1691,11 @@ def analyze_taskset(
             max_iterations=max_iterations,
             assume_no_overflow=assume_no_overflow,
             profile_rta=profile_rta,
+            certified_bounds=certified_bounds,
         )
-        for task in rm_order(tasks)
-    ]
+        results.append(result)
+        if result.proven and result.response_time_bound is not None:
+            certified_bounds[task.name] = result.response_time_bound
     return TasksetAnalysis(
         system_file=os.path.abspath(system_yml),
         tasks_file=os.path.abspath(tasks_yml),
@@ -1478,7 +1708,9 @@ def analyze_taskset(
 
 def _format_report(report: TasksetAnalysis) -> str:
     lines = [
-        "ASAP-BLOCK offline response-time upper-bound analysis",
+        "ASAP-BLOCK offline response-time upper-bound analysis ({})".format(
+            RTA_VERSION
+        ),
         "CONDITIONAL ANALYSIS ONLY: no absolute schedulability claim is made.",
         "horizon_ms={}  E0={}  assume_no_overflow={}".format(
             report.horizon_ms,

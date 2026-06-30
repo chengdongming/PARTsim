@@ -179,10 +179,35 @@ class AcceptanceRatioExperimentMetadataTest(unittest.TestCase):
             "rta_num_unproven",
             "rta_num_errors",
             "rta_proven_ratio",
+            "rta_version",
             "avg_tightness",
             "tightness_num_samples",
         }
         self.assertTrue(required_columns.issubset(set(frame.columns)))
+
+    def test_v20_4_raw_row_records_bound_response_and_tightness(self):
+        runner = self.make_runner(enable_rta=True)
+        row = runner._per_taskset_result_row(
+            acceptance.ASAP_BLOCK_ALGORITHM,
+            0.5,
+            {
+                "acceptance_ratio": 1.0,
+                "simulation_status": "accepted",
+                "rta_enabled": True,
+                "rta_version": "v20.4",
+                "rta_status": "proven_under_assumptions",
+                "rta_proven_under_assumptions": True,
+                "rta_bound": 10.0,
+                "simulated_response_time": 8.0,
+                "tightness_values": [2.0, 3.0],
+            },
+        )
+
+        self.assertEqual(row["rta_version"], "v20.4")
+        self.assertTrue(row["rta_proven"])
+        self.assertEqual(row["rta_response_time_bound"], 10.0)
+        self.assertEqual(row["simulated_response_time"], 8.0)
+        self.assertEqual(row["tightness"], 1.25)
 
     def test_failure_categories_are_aggregated_separately(self):
         runner = self.make_runner(enable_rta=False)

@@ -3,6 +3,8 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 
 os.environ.setdefault("MPLBACKEND", "Agg")
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -62,6 +64,7 @@ def test_trace_parser_extracts_max_completed_response_by_task(tmp_path):
 
 def _proven_rta_result():
     return {
+        "rta_version": acceptance.RTA_VERSION,
         "rta_status": "proven_under_assumptions",
         "rta_report": {
             "tasks": [
@@ -144,3 +147,29 @@ def test_rta_proven_status_alias_is_supported():
         result,
         {"task_1": 8, "task_2": 4},
     ) == [1.25, 1.5]
+
+
+def test_v20_4_soundness_rejects_simulation_or_observed_bound_conflicts():
+    result = _proven_rta_result()
+    with pytest.raises(RuntimeError, match="rejected by ASAP-BLOCK"):
+        acceptance.validate_rta_soundness(
+            acceptance.ASAP_BLOCK_ALGORITHM,
+            result,
+            "rejected",
+            {"task_1": 8, "task_2": 4},
+        )
+
+    with pytest.raises(RuntimeError, match="observed response"):
+        acceptance.validate_rta_soundness(
+            acceptance.ASAP_BLOCK_ALGORITHM,
+            result,
+            "accepted",
+            {"task_1": 11, "task_2": 4},
+        )
+
+    acceptance.validate_rta_soundness(
+        acceptance.ASAP_BLOCK_ALGORITHM,
+        result,
+        "accepted",
+        {"task_1": 10, "task_2": 6},
+    )
