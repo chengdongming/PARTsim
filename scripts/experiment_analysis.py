@@ -410,18 +410,104 @@ def write_cases(run_dirs, output_dir):
     return result
 
 
-def weighted_tightness(group):
-    if 'tightness_num_samples' not in group or 'avg_tightness' not in group:
-        return float('nan'), 0
-    counts = pd.to_numeric(
-        group['tightness_num_samples'], errors='coerce'
-    ).fillna(0)
-    values = pd.to_numeric(group['avg_tightness'], errors='coerce')
-    valid = (counts > 0) & values.notna()
-    total = int(counts[valid].sum())
-    if not total:
-        return float('nan'), 0
-    return float((values[valid] * counts[valid]).sum() / total), total
+def truthy(value):
+    """Interpret bool-like CSV values without relying on Python truthiness."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return math.isfinite(float(value)) and float(value) == 1.0
+    return str(value).strip().lower() in {'true', '1', 'yes', 'y', 't'}
+
+
+def nonempty(value):
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return math.isfinite(float(value)) and float(value) != 0.0
+    return str(value).strip().lower() not in {'', 'none', 'nan', 'null'}
+
+
+def finite_values(series):
+    values = pd.to_numeric(series, errors='coerce')
+    valid = values.map(
+        lambda value: pd.notna(value) and math.isfinite(value)
+    )
+    return values[valid]
+
+
+def _resolve_manifest_run_dir(manifest_path, value):
+    run_dir = Path(str(value))
+    if run_dir.is_absolute():
+        return run_dir
+    candidates = [run_dir, manifest_path.parent / run_dir]
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+    return candidates[-1]
+
+
+def _tightness_statistics(values):
+    if values.empty:
+        return {
+            'tightness_num_samples': 0,
+            'avg_tightness': float('nan'),
+            'median_tightness': float('nan'),
+            'max_tightness': float('nan'),
+        }
+    return {
+        'tightness_num_samples': int(len(values)),
+        'avg_tightness': float(values.mean()),
+        'median_tightness': float(values.median()),
+        'max_tightness': float(values.max()),
+    }
+
+
+def _summarize_rta_raw_group(group, total_suffix=False):
+    analyzed = int(len(group))
+    proven = int(group['_rta_proven'].sum())
+    errors = int(group['_rta_error'].sum())
+    timeouts = int(group['_rta_timeout'].sum())
+    unproven = analyzed - proven - errors
+    tightness = finite_values(
+        group.loc[group['_rta_proven'], '_tightness']
+    )
+    stats = _tightness_statistics(tightness)
+    suffix = '_total' if total_suffix else ''
+    result = {
+        'rta_num_analyzed{}'.format(suffix): analyzed,
+        'rta_num_proven{}'.format(suffix): proven,
+        'rta_num_unproven{}'.format(suffix): unproven,
+        'rta_num_errors{}'.format(suffix): errors,
+        'rta_num_timeouts{}'.format(suffix): timeouts,
+        'rta_proven_ratio{}'.format(suffix): (
+            proven / analyzed if analyzed else float('nan')
+        ),
+        'soundness_proven_but_rejected': int(
+            group['_soundness_rejected'].sum()
+        ),
+        'soundness_observed_exceeds_bound': int(
+            group['_soundness_bound'].sum()
+        ),
+    }
+    if total_suffix:
+        result.update({
+            'tightness_num_samples_total': stats['tightness_num_samples'],
+            'avg_tightness': stats['avg_tightness'],
+            'median_tightness': stats['median_tightness'],
+            'max_tightness': stats['max_tightness'],
+            # Explicit names for downstream paper scripts.
+            'tightness_num_proven_samples': stats['tightness_num_samples'],
+            'avg_tightness_proven': stats['avg_tightness'],
+            'median_tightness_proven': stats['median_tightness'],
+            'max_tightness_proven': stats['max_tightness'],
+            # Compatibility alias; it now has the correct raw-row value.
+            'avg_tightness_over_reported_rows': stats['avg_tightness'],
+        })
+    else:
+        result.update(stats)
+    return result
 
 
 def summarize_rta_e0(manifest_path):
@@ -437,73 +523,116 @@ def summarize_rta_e0(manifest_path):
                 sorted(versions)
             )
         )
-    rows = []
+    raw_frames = []
     for _, entry in manifest.iterrows():
-        run_dir = Path(str(entry['run_dir']))
-        if not run_dir.is_absolute():
-            run_dir = manifest_path.parent / run_dir
-        frame = read_csv(run_dir / 'acceptance_ratio_data.csv')
-        frame = frame[frame['algorithm'] == 'gpfp_asap_block']
-        if 'rta_version' not in frame.columns:
+        run_dir = _resolve_manifest_run_dir(manifest_path, entry['run_dir'])
+        raw_path = run_dir / 'per_taskset_results.csv'
+        frame = read_csv(raw_path)
+        required_raw = {
+            'normalized_utilization', 'rta_enabled', 'rta_version',
+            'rta_status', 'rta_proven', 'rta_error', 'tightness',
+            'accepted', 'rta_response_time_bound',
+            'simulated_response_time',
+        }
+        missing = required_raw - set(frame.columns)
+        if missing:
             raise ValueError(
-                '{} is missing rta_version'.format(
-                    run_dir / 'acceptance_ratio_data.csv'
+                '{} is missing raw RTA columns: {}'.format(
+                    raw_path, ', '.join(sorted(missing))
                 )
             )
-        run_versions = set(frame['rta_version'].dropna().astype(str))
+        run_versions = set(frame['rta_version'].astype(str).str.strip())
         if run_versions != {str(entry['rta_version'])}:
             raise ValueError(
                 '{} RTA versions {} do not match manifest {}'.format(
                     run_dir, sorted(run_versions), entry['rta_version']
                 )
             )
-        for _, row in frame.iterrows():
-            rows.append({
-                'rta_version': str(entry['rta_version']),
-                'E0': float(entry['E0']),
-                'normalized_utilization': number(
-                    row.get('normalized_utilization')
-                ),
-                'rta_num_analyzed': integer(row.get('rta_num_analyzed')),
-                'rta_num_proven': integer(row.get('rta_num_proven')),
-                'rta_num_unproven': integer(row.get('rta_num_unproven')),
-                'rta_num_errors': integer(row.get('rta_num_errors')),
-                'avg_tightness': number(
-                    row.get('avg_tightness'), float('nan')
-                ),
-                'tightness_num_samples': integer(
-                    row.get('tightness_num_samples')
-                ),
+        enabled = frame['rta_enabled'].map(truthy)
+        selected = frame.loc[enabled].copy()
+        selected['rta_version'] = str(entry['rta_version'])
+        selected['E0'] = float(entry['E0'])
+        selected['normalized_utilization'] = pd.to_numeric(
+            selected['normalized_utilization'], errors='coerce'
+        )
+        if selected['normalized_utilization'].isna().any():
+            raise ValueError('{} contains invalid utilization'.format(raw_path))
+        selected['_rta_proven'] = selected['rta_proven'].map(truthy)
+        status = selected['rta_status'].astype(str).str.strip().str.lower()
+        error_text = selected['rta_error'].astype(str)
+        selected['_rta_error'] = (
+            error_text.map(nonempty)
+            | status.isin({
+                'rta_error', 'error', 'failed', 'rta_timeout', 'timeout',
             })
-    by_util = pd.DataFrame(rows)
-    if by_util.empty:
-        return pd.DataFrame(), by_util
-    by_util['rta_proven_ratio'] = by_util.apply(
-        lambda row: (
-            row['rta_num_proven'] / row['rta_num_analyzed']
-            if row['rta_num_analyzed'] else float('nan')
-        ), axis=1,
-    )
+        )
+        if (selected['_rta_proven'] & selected['_rta_error']).any():
+            raise ValueError(
+                '{} has rows that are both proven and errors'.format(
+                    raw_path
+                )
+            )
+        selected['_rta_timeout'] = (
+            error_text.str.contains('timed out', case=False, na=False)
+            | status.isin({'rta_timeout', 'timeout'})
+        )
+        selected['_tightness'] = pd.to_numeric(
+            selected['tightness'], errors='coerce'
+        )
+        selected['_accepted'] = selected['accepted'].map(truthy)
+        bound = pd.to_numeric(
+            selected['rta_response_time_bound'], errors='coerce'
+        )
+        observed = pd.to_numeric(
+            selected['simulated_response_time'], errors='coerce'
+        )
+        finite_pair = bound.map(
+            lambda value: pd.notna(value) and math.isfinite(value)
+        ) & observed.map(
+            lambda value: pd.notna(value) and math.isfinite(value)
+        )
+        selected['_soundness_rejected'] = (
+            selected['_rta_proven'] & ~selected['_accepted']
+        )
+        selected['_soundness_bound'] = (
+            selected['_rta_proven'] & finite_pair & (observed > bound)
+        )
+        raw_frames.append(selected)
+
+    if not raw_frames:
+        return pd.DataFrame(), pd.DataFrame()
+    raw = pd.concat(raw_frames, ignore_index=True)
+    rejected_count = int(raw['_soundness_rejected'].sum())
+    bound_count = int(raw['_soundness_bound'].sum())
+    if rejected_count or bound_count:
+        raise ValueError(
+            'RTA soundness violation: proven_but_rejected={}, '
+            'observed_exceeds_bound={}'.format(rejected_count, bound_count)
+        )
+
+    by_util_rows = []
+    for keys, group in raw.groupby(
+        ['rta_version', 'E0', 'normalized_utilization'], sort=True
+    ):
+        row = {
+            'rta_version': keys[0],
+            'E0': float(keys[1]),
+            'normalized_utilization': float(keys[2]),
+        }
+        row.update(_summarize_rta_raw_group(group))
+        by_util_rows.append(row)
+    by_util = pd.DataFrame(by_util_rows)
+
     summaries = []
-    for (version, e0), group in by_util.groupby(
+    for (version, e0), group in raw.groupby(
         ['rta_version', 'E0'], sort=True
     ):
-        analyzed = int(group['rta_num_analyzed'].sum())
-        tightness, tight_count = weighted_tightness(group)
-        proven = int(group['rta_num_proven'].sum())
-        summaries.append({
+        row = {
             'rta_version': version,
-            'E0': e0,
-            'rta_num_analyzed_total': analyzed,
-            'rta_num_proven_total': proven,
-            'rta_num_unproven_total': int(group['rta_num_unproven'].sum()),
-            'rta_num_errors_total': int(group['rta_num_errors'].sum()),
-            'rta_proven_ratio_total': (
-                proven / analyzed if analyzed else float('nan')
-            ),
-            'tightness_num_samples_total': tight_count,
-            'avg_tightness_over_reported_rows': tightness,
-        })
+            'E0': float(e0),
+        }
+        row.update(_summarize_rta_raw_group(group, total_suffix=True))
+        summaries.append(row)
     return pd.DataFrame(summaries), by_util
 
 
@@ -515,23 +644,41 @@ def write_rta_e0(manifest_path, output_dir):
     by_util.to_csv(
         output_dir / 'rta_e0_sensitivity_by_utilization.csv', index=False
     )
-    plots = [
-        ('rta_proven_ratio', 'rta_e0_proven_ratio.png', 'RTA Proven Ratio'),
-        ('avg_tightness', 'rta_e0_tightness.png', 'Average Tightness'),
-    ]
-    for field, filename, ylabel in plots:
-        fig, ax = plt.subplots(figsize=(8, 6))
-        for e0, group in by_util.groupby('E0', sort=True):
-            group = group.sort_values('normalized_utilization')
-            ax.plot(
-                group['normalized_utilization'], group[field],
-                marker='o', label='E0={}'.format(e0),
-            )
-        ax.set_xlabel('Normalized Processor Utilization')
-        ax.set_ylabel(ylabel)
-        ax.grid(True, linestyle='--', alpha=0.4)
+    fig, ax = plt.subplots(figsize=(8, 6))
+    for e0, group in by_util.groupby('E0', sort=True):
+        group = group.sort_values('normalized_utilization')
+        ax.plot(
+            group['normalized_utilization'], group['rta_proven_ratio'],
+            marker='o', label='E0={}'.format(e0),
+        )
+    ax.set_xlabel('Normalized Processor Utilization')
+    ax.set_ylabel('RTA Proven Ratio')
+    ax.grid(True, linestyle='--', alpha=0.4)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(output_dir / 'rta_e0_proven_ratio.png', dpi=200)
+    plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+    for e0, group in by_util.groupby('E0', sort=True):
+        group = group.sort_values('normalized_utilization')
+        for field, statistic, linestyle in (
+            ('avg_tightness', 'mean', '-'),
+            ('median_tightness', 'median', '--'),
+        ):
+            values = pd.to_numeric(group[field], errors='coerce')
+            if values.notna().any():
+                ax.plot(
+                    group['normalized_utilization'], values,
+                    marker='o', linestyle=linestyle,
+                    label='E0={} {}'.format(e0, statistic),
+                )
+    ax.set_xlabel('Normalized Processor Utilization')
+    ax.set_ylabel('Tightness for RTA-Proven Raw Rows')
+    ax.grid(True, linestyle='--', alpha=0.4)
+    if ax.lines:
         ax.legend()
-        fig.tight_layout()
-        fig.savefig(output_dir / filename, dpi=200)
-        plt.close(fig)
+    fig.tight_layout()
+    fig.savefig(output_dir / 'rta_e0_tightness.png', dpi=200)
+    plt.close(fig)
     return summary, by_util
