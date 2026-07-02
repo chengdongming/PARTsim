@@ -983,7 +983,7 @@ namespace RTSim {
             if (!model) continue;
 
             Tick task_slack = calculateSlackForTask(task);
-            Tick task_deadline = task->getArrival() + Tick(model->getPeriod());
+            Tick task_deadline = task->getDeadline();
 
             if (!worst_running) {
                 worst_running = task;
@@ -1964,7 +1964,7 @@ namespace RTSim {
                 if (!model) continue;
 
                 Tick arrival = task->getArrival();
-                Tick deadline = arrival + Tick(model->getPeriod());
+                Tick deadline = task->getDeadline();
 
                 if (deadline <= current_time) {
                     to_suspend.push_back(task);
@@ -1989,7 +1989,7 @@ namespace RTSim {
             if (!model) continue;
 
             Tick arrival = task->getArrival();
-            Tick deadline = arrival + Tick(model->getPeriod());
+            Tick deadline = task->getDeadline();
 
             if (deadline <= current_time) {
                 expired.push_back(task);

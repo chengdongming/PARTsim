@@ -66,8 +66,16 @@ private:
     int _schedule_count;
 
 public:
-    DispatchTestTask(int period, const std::string &name)
-        : Task(nullptr, Tick(period), Tick(0), name, 1000, Tick(1)),
+    DispatchTestTask(int period,
+                     const std::string &name,
+                     int relative_deadline = -1,
+                     int max_execution = 1)
+        : Task(nullptr,
+               Tick(relative_deadline >= 0 ? relative_deadline : period),
+               Tick(0),
+               name,
+               1000,
+               Tick(max_execution)),
           _period(period),
           _schedule_count(0) {
         insertCode("fixed(1,control);");
@@ -219,6 +227,37 @@ TEST(ASAPBlockScheduler, EnergyWallPreventsLowerPriorityBypass) {
     EXPECT_TRUE(stopped);
 }
 
+TEST(ASAPBlockScheduler, UsesAbsoluteDeadlineWhenDNotEqualT) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    ASAPBlockScheduler scheduler;
+    CPU cpu("asap-block-absolute-deadline-cpu", nullptr);
+    MRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    DispatchTestTask task(100, "asap-block-deadline-task", 10, 20);
+
+    kernel.addTask(task, "period=100,wcet=20,workload=control");
+
+    simulation.initSingleRun();
+    ASAPBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    task.activate(Tick(3));
+
+    simulation.run_to(Tick(3));
+    EXPECT_EQ(task.getArrival(), Tick(3));
+    EXPECT_EQ(task.getRelDline(), Tick(10));
+    EXPECT_EQ(task.getDeadline(), Tick(13));
+    EXPECT_TRUE(task.isActive());
+
+    simulation.run_to(Tick(12));
+    EXPECT_TRUE(task.isActive());
+
+    simulation.run_to(Tick(13));
+    EXPECT_FALSE(task.isActive());
+    const auto active = ASAPBlockSchedulerTestPeer::collect(
+        scheduler, Tick(13));
+    EXPECT_EQ(std::find(active.begin(), active.end(), &task), active.end());
+
+    simulation.endSingleRun();
+}
+
 TEST(ASAPBlockScheduler, UnaffordableHighestPrioritySelectsNothing) {
     ASAPBlockScheduler scheduler;
     FakeASAPBlockTask high(1, 5);
@@ -350,6 +389,92 @@ TEST(ASAPBlockScheduler, CurrentTickReleaseDisplacesLowerPriorityJob) {
     EXPECT_EQ(selected.front(), &high);
     EXPECT_EQ(std::find(selected.begin(), selected.end(), &low),
               selected.end());
+}
+
+TEST(ASAPBlockScheduler, NoSameTickBackfillAfterCompletion) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    ASAPBlockScheduler scheduler;
+    CPU cpu("asap-block-no-backfill-cpu", nullptr);
+    MRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    DispatchTestTask first(5, "asap-block-first");
+    DispatchTestTask second(10, "asap-block-second");
+
+    kernel.addTask(first, "period=5,wcet=1,workload=control");
+    kernel.addTask(second, "period=10,wcet=1,workload=control");
+
+    simulation.initSingleRun();
+    ASAPBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    first.releaseAt(Tick(0));
+    second.releaseAt(Tick(0));
+    kernel.onArrival(&first);
+    kernel.onArrival(&second);
+    ASAPBlockSchedulerTestPeer::freeze(
+        scheduler, Tick(0), {&first}, 0.0, false);
+    kernel.dispatch();
+    simulation.run_to(Tick(0));
+
+    ASSERT_EQ(first.getScheduleCount(), 1);
+    ASSERT_EQ(kernel.getTask(&cpu), &first);
+
+    kernel.onEnd(&first);
+
+    EXPECT_EQ(kernel.getTask(&cpu), nullptr);
+    EXPECT_EQ(second.getScheduleCount(), 0);
+    EXPECT_EQ(scheduler.getTaskN(0), nullptr);
+
+    TestActionEvent next_tick([&]() {
+        ASAPBlockSchedulerTestPeer::freeze(
+            scheduler, Tick(1), {&second}, 0.0, false);
+        kernel.dispatch();
+    });
+    next_tick.post(Tick(1));
+    simulation.run_to(Tick(1));
+
+    EXPECT_EQ(second.getScheduleCount(), 1);
+    EXPECT_EQ(kernel.getTask(&cpu), &second);
+
+    simulation.endSingleRun();
+}
+
+TEST(ASAPBlockScheduler, MultiCorePrefixFrozen) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    ASAPBlockScheduler scheduler;
+    CPU cpu0("asap-block-prefix-cpu0", nullptr);
+    CPU cpu1("asap-block-prefix-cpu1", nullptr);
+    MRTKernel kernel(&scheduler, std::set<CPU *>{&cpu0, &cpu1});
+    DispatchTestTask first(5, "asap-block-prefix-first");
+    DispatchTestTask second(10, "asap-block-prefix-second");
+    DispatchTestTask third(20, "asap-block-prefix-third");
+
+    kernel.addTask(first, "period=5,wcet=1,workload=control");
+    kernel.addTask(second, "period=10,wcet=1,workload=control");
+    kernel.addTask(third, "period=20,wcet=1,workload=control");
+
+    simulation.initSingleRun();
+    ASAPBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    first.releaseAt(Tick(0));
+    second.releaseAt(Tick(0));
+    third.releaseAt(Tick(0));
+    kernel.onArrival(&first);
+    kernel.onArrival(&second);
+    kernel.onArrival(&third);
+    ASAPBlockSchedulerTestPeer::freeze(
+        scheduler, Tick(0), {&first, &second}, 0.0, false);
+    kernel.dispatch();
+    simulation.run_to(Tick(0));
+
+    EXPECT_EQ(first.getScheduleCount(), 1);
+    EXPECT_EQ(second.getScheduleCount(), 1);
+    EXPECT_EQ(third.getScheduleCount(), 0);
+    ASSERT_NE(kernel.getProcessor(&first), nullptr);
+    ASSERT_NE(kernel.getProcessor(&second), nullptr);
+    EXPECT_NE(kernel.getProcessor(&first), kernel.getProcessor(&second));
+    EXPECT_EQ(kernel.getProcessor(&third), nullptr);
+    EXPECT_EQ(scheduler.getTaskN(0), &first);
+    EXPECT_EQ(scheduler.getTaskN(1), &second);
+    EXPECT_EQ(scheduler.getTaskN(2), nullptr);
+
+    simulation.endSingleRun();
 }
 
 TEST(ASAPBlockScheduler,

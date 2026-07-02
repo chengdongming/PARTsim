@@ -859,16 +859,10 @@ namespace RTSim {
             addToReadyQueue(task);
         }
 
-        if (!_kernel) {
-            _kernel = getKernel();
-        }
-
-        // ST-NonBlock 保留 arrival-time RM 抢占。
-        // 不再让遗留的 charging_sleep/deep_charging 标记把 arrival path 全局锁死；
-        // 只有在真正无能量时才跳过立即抢占检查。
-        if (_kernel && !(_energy_depleted && _current_energy < 1e-9)) {
-            checkAndPreempt();
-        }
+        // A task arriving after this tick's selection was frozen must wait for
+        // the next performTickScheduling() decision. Immediate preemption here
+        // would desynchronize the running set from the energy already committed
+        // for the current frozen selection.
     }
 
     // =====================================================
