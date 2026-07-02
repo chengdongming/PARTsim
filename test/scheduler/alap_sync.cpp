@@ -158,6 +158,10 @@ public:
                                AbsRTTask *task) {
         return scheduler.isInReadyQueue(task);
     }
+
+    static int batchSize(ALAPSyncScheduler &scheduler) {
+        return scheduler.calculateBatchSize();
+    }
 };
 
 static bool ContainsTask(const std::vector<AbsRTTask *> &tasks,
@@ -275,6 +279,45 @@ TEST(ALAPSyncScheduler, PositiveSlackRunningTaskDoesNotBypassGate) {
 
     EXPECT_FALSE(ContainsTask(scheduler.getCurrentBatchTasks(), &running));
     EXPECT_EQ(urgent.getScheduleCount(), 1);
+
+    simulation.endSingleRun();
+}
+
+TEST(ALAPSyncScheduler, BatchSizeUsesIdleCoresNotTotalCores) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestALAPSyncScheduler scheduler;
+    CPU cpu0("alap-sync-idle-size-cpu0", nullptr);
+    CPU cpu1("alap-sync-idle-size-cpu1", nullptr);
+    TestMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu0, &cpu1});
+    FakeALAPSyncTask running(1, 5, 1, 1.0);
+    FakeALAPSyncTask next(2, 10, 1, 1.0);
+    FakeALAPSyncTask waiting(3, 20, 1, 1.0);
+
+    ALAPSyncSchedulerTestPeer::addTaskModel(scheduler, &running, 5, 1, 1.0);
+    ALAPSyncSchedulerTestPeer::addTaskModel(scheduler, &next, 10, 1, 1.0);
+    ALAPSyncSchedulerTestPeer::addTaskModel(scheduler, &waiting, 20, 1, 1.0);
+
+    simulation.initSingleRun();
+    ALAPSyncSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    ALAPSyncSchedulerTestPeer::setEnergy(scheduler, 2.0);
+    running.releaseAt(Tick(0));
+    next.releaseAt(Tick(0));
+    waiting.releaseAt(Tick(0));
+    running.schedule();
+    kernel.setRunning(&cpu0, &running);
+    ALAPSyncSchedulerTestPeer::enqueue(scheduler, &next);
+    ALAPSyncSchedulerTestPeer::enqueue(scheduler, &waiting);
+
+    EXPECT_EQ(ALAPSyncSchedulerTestPeer::batchSize(scheduler), 1);
+    ALAPSyncSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+
+    EXPECT_TRUE(running.isExecuting());
+    EXPECT_EQ(next.getScheduleCount(), 1);
+    EXPECT_EQ(waiting.getScheduleCount(), 0);
+    EXPECT_EQ(scheduler.getCurrentBatchSize(), 2);
+    EXPECT_TRUE(ContainsTask(scheduler.getCurrentBatchTasks(), &running));
+    EXPECT_TRUE(ContainsTask(scheduler.getCurrentBatchTasks(), &next));
 
     simulation.endSingleRun();
 }

@@ -1905,6 +1905,7 @@ namespace RTSim {
         _energy_commit_generation = 0;
         _energy_commit_valid = false;
         _suspend_reasons.clear();
+        _deadline_miss_arrivals.clear();
 
         // ⭐ V74：重置深度充电状态
         _deep_charging = false;
@@ -2001,64 +2002,32 @@ namespace RTSim {
     // =====================================================
 
     void STBlockScheduler::cleanupExpiredTasks() {
-        Tick current_time = SIMUL.getTime();
-
-        if (!_kernel) {
-            _kernel = getKernel();
-        }
-
-        // 1. 检查运行中的任务，挂起已过期的
+        const Tick current_time = SIMUL.getTime();
+        std::set<AbsRTTask *> jobs(_ready_queue.begin(), _ready_queue.end());
+        jobs.insert(_waiting_queue.begin(), _waiting_queue.end());
         if (_kernel) {
-            const auto& running = _kernel->getCurrentExecutingTasks();
-            std::vector<AbsRTTask *> to_suspend;
-
-            for (const auto& [cpu, task] : running) {
-                if (!task || !task->isExecuting()) continue;
-                STBlockTaskModel *model = getTaskModel(task);
-                if (!model) continue;
-
-                Tick arrival = task->getArrival();
-                Tick deadline = task->getDeadline();
-
-                if (deadline <= current_time) {
-                    to_suspend.push_back(task);
-                    SCHEDULER_LOG_INFO("💀 [ST-Block] 过期任务运行中，将挂起: " +
-                        getTaskName(task) +
-                        " arrival=" + std::to_string(static_cast<int64_t>(arrival)) +
-                        " deadline=" + std::to_string(static_cast<int64_t>(deadline)) +
-                        " current=" + std::to_string(static_cast<int64_t>(current_time)));
-                }
-            }
-
-            for (AbsRTTask *task : to_suspend) {
-                _kernel->suspend(task);
+            for (const auto &[cpu, task] :
+                 _kernel->getCurrentExecutingTasks()) {
+                (void) cpu;
+                if (task) jobs.insert(task);
             }
         }
 
-        // 2. 清理就绪队列中已过期的任务实例
-        std::vector<AbsRTTask *> expired;
-        for (AbsRTTask *task : _ready_queue) {
-            if (!task) continue;
-            STBlockTaskModel *model = getTaskModel(task);
-            if (!model) continue;
-
-            Tick arrival = task->getArrival();
-            Tick deadline = task->getDeadline();
-
-            if (deadline <= current_time) {
-                expired.push_back(task);
-                SCHEDULER_LOG_INFO("🧹 [ST-Block] 清理过期任务: " +
-                    getTaskName(task) +
-                    " arrival=" + std::to_string(static_cast<int64_t>(arrival)) +
-                    " deadline=" + std::to_string(static_cast<int64_t>(deadline)) +
-                    " current=" + std::to_string(static_cast<int64_t>(current_time)));
-                _stats.total_deadline_misses++;
+        for (AbsRTTask *task : jobs) {
+            if (!task || task->getRemainingWCET() <= 0.0 ||
+                task->getDeadline() > current_time) {
+                continue;
             }
-        }
-
-        for (AbsRTTask *task : expired) {
-            removeFromReadyQueue(task);
-            clearPersistentTaskState(task);
+            const Tick arrival = task->getArrival();
+            auto recorded = _deadline_miss_arrivals.find(task);
+            if (recorded != _deadline_miss_arrivals.end() &&
+                recorded->second == arrival) {
+                continue;
+            }
+            _deadline_miss_arrivals[task] = arrival;
+            _stats.total_deadline_misses++;
+            SCHEDULER_LOG_WARNING("⏰ [ST-Block] deadline miss recorded; job remains eligible/waiting: " +
+                                  getTaskName(task));
         }
     }
 

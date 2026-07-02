@@ -378,14 +378,25 @@ namespace RTSim {
     // =====================================================
 
     int STSyncScheduler::calculateBatchSize() {
-        // k = min(CPU核心总数, 就绪队列任务数)
-        ConfigManager &configMgr = ConfigManager::getInstance();
-        int total_cpus = configMgr.getNumCores();
+        int total_cpus = _kernel
+            ? static_cast<int>(_kernel->getCurrentExecutingTasks().size())
+            : ConfigManager::getInstance().getNumCores();
+        int occupied_cpus = 0;
+        if (_kernel) {
+            for (const auto &[cpu, task] :
+                 _kernel->getCurrentExecutingTasks()) {
+                if ((task && task->isExecuting()) ||
+                    _kernel->isCPUDispatching(cpu)) {
+                    ++occupied_cpus;
+                }
+            }
+        }
+        const int idle_cpus = std::max(0, total_cpus - occupied_cpus);
         int ready_tasks = static_cast<int>(_ready_queue.size());
-        int batch_size = std::min(total_cpus, ready_tasks);
+        int batch_size = std::min(idle_cpus, ready_tasks);
 
         SCHEDULER_LOG_DEBUG(std::string("📊 [ST-Sync] calculateBatchSize: ") +
-                           "CPU核心数=" + std::to_string(total_cpus) +
+                           "空闲CPU=" + std::to_string(idle_cpus) +
                            " 就绪任务=" + std::to_string(ready_tasks) +
                            " 批量k=" + std::to_string(batch_size));
 
@@ -468,28 +479,24 @@ namespace RTSim {
                 }
             }
 
+            bool charging_wait_active = false;
             if ((_is_charging_sleep || _deep_charging) && !_waiting_queue.empty()) {
                 Tick wait_slack = calculateMinSlack();
                 if (wait_slack > Tick(0) && _current_energy < _max_energy - 1e-9) {
-                    _selection_tick = current_time;
-                    _selection_generation++;
-                    _selection_frozen = true;
-                    _energy_commit_valid = false;
-                    _current_batch_tasks.clear();
-                    _preempt_batch_tasks.clear();
-                    _current_batch_size = 0;
-                    _batch_scheduled_this_tick = false;
-                    SCHEDULER_LOG_INFO(std::string("🔋 [ST-Sync] 同步组充电等待中，group_slack=") +
+                    // The waiting batch remains asleep, but running continuations
+                    // still need a fresh frozen selection and energy charge on
+                    // every tick.  Keep evaluating the global top-M below.
+                    charging_wait_active = true;
+                    SCHEDULER_LOG_INFO(std::string("🔋 [ST-Sync] 同步组充电等待中，继续重建本 tick top-M，group_slack=") +
                                        std::to_string(static_cast<int64_t>(wait_slack)) + "ms");
-                    return;
-                }
-
-                promoteWaitingTasksToReadyQueue("charging window ended");
-                _is_charging_sleep = false;
-                _deep_charging = false;
-                _energy_depleted = false;
-                if (_group_wake_event) {
-                    _group_wake_event->invalidate();
+                } else {
+                    promoteWaitingTasksToReadyQueue("charging window ended");
+                    _is_charging_sleep = false;
+                    _deep_charging = false;
+                    _energy_depleted = false;
+                    if (_group_wake_event) {
+                        _group_wake_event->invalidate();
+                    }
                 }
             }
 
@@ -540,6 +547,14 @@ namespace RTSim {
             for (AbsRTTask *task : _ready_queue) {
                 add_active(task, false);
             }
+            if (charging_wait_active) {
+                // Waiting jobs must still participate in global top-M ordering.
+                // Otherwise a lower-priority continuation or new job could bypass
+                // the blocked synchronization group while it charges.
+                for (AbsRTTask *task : _waiting_queue) {
+                    add_active(task, false);
+                }
+            }
 
             std::stable_sort(active_tasks.begin(), active_tasks.end(),
                              has_higher_rm_priority);
@@ -557,24 +572,25 @@ namespace RTSim {
                 total_cpus = ConfigManager::getInstance().getNumCores();
             }
 
-            std::vector<AbsRTTask *> selected_tasks;
-            double required_batch_energy = 0.0;
+            std::vector<AbsRTTask *> desired_tasks;
             for (AbsRTTask *task : active_tasks) {
-                if (static_cast<int>(selected_tasks.size()) >= total_cpus) {
+                if (static_cast<int>(desired_tasks.size()) >= total_cpus) {
                     break;
                 }
-                selected_tasks.push_back(task);
-                required_batch_energy += calculateUnitEnergyForTask(task);
+                desired_tasks.push_back(task);
             }
 
-            Tick group_slack = Tick(0);
-            if (!selected_tasks.empty()) {
-                group_slack = std::numeric_limits<Tick::impl_t>::max();
-                for (AbsRTTask *task : selected_tasks) {
-                    Tick task_slack = calculateSlackForTask(task);
-                    if (task_slack < group_slack) {
-                        group_slack = task_slack;
-                    }
+            std::vector<AbsRTTask *> continuation_tasks;
+            std::vector<AbsRTTask *> idle_core_batch;
+            double continuation_energy = 0.0;
+            double idle_core_batch_energy = 0.0;
+            for (AbsRTTask *task : desired_tasks) {
+                if (running_tasks.find(task) != running_tasks.end()) {
+                    continuation_tasks.push_back(task);
+                    continuation_energy += calculateUnitEnergyForTask(task);
+                } else {
+                    idle_core_batch.push_back(task);
+                    idle_core_batch_energy += calculateUnitEnergyForTask(task);
                 }
             }
 
@@ -586,33 +602,77 @@ namespace RTSim {
             _deep_charging = false;
             _is_charging_sleep = false;
 
+            std::vector<AbsRTTask *> selected_tasks = continuation_tasks;
+            std::vector<AbsRTTask *> blocked_batch;
+            double required_batch_energy = continuation_energy;
             const double epsilon = 1e-9;
-            if (!selected_tasks.empty() &&
-                _current_energy + epsilon < required_batch_energy) {
-                std::vector<AbsRTTask *> blocked_batch = selected_tasks;
+            const bool continuation_affordable =
+                _current_energy + epsilon >= continuation_energy;
+            const bool idle_core_batch_affordable =
+                !charging_wait_active && continuation_affordable &&
+                _current_energy + epsilon >=
+                    continuation_energy + idle_core_batch_energy;
+            if (!continuation_affordable) {
+                // Once a continuation in global top-M cannot be paid, the whole
+                // desired synchronization group is blocked atomically.
+                blocked_batch = desired_tasks;
                 selected_tasks.clear();
                 required_batch_energy = 0.0;
                 _stats.total_batch_skipped++;
+                _energy_depleted = true;
+            } else if (!idle_core_batch.empty() &&
+                       !idle_core_batch_affordable) {
+                blocked_batch = idle_core_batch;
+                _stats.total_batch_skipped++;
+                _energy_depleted = true;
+            } else {
+                selected_tasks = desired_tasks;
+                required_batch_energy += idle_core_batch_energy;
+            }
 
+            Tick group_slack = Tick(0);
+            if (!blocked_batch.empty()) {
+                // Always derive min slack from the actual blocked group.  In
+                // particular, an unpaid continuation can make this group differ
+                // from the provisional idle-core batch.
+                group_slack = std::numeric_limits<Tick::impl_t>::max();
+                for (AbsRTTask *task : blocked_batch) {
+                    group_slack = std::min(
+                        group_slack, calculateSlackForTask(task));
+                }
                 if (group_slack > Tick(0)) {
                     _deep_charging = true;
-                    _energy_depleted = true;
                     _is_charging_sleep = true;
                     for (AbsRTTask *task : blocked_batch) {
                         addToWaitingQueue(task);
                     }
-                    Tick wake_time = calculateGroupWakeTime(group_slack,
-                                                            calculateBatchUnitEnergy(blocked_batch));
+                    Tick wake_time = calculateGroupWakeTime(
+                        group_slack,
+                        calculateBatchUnitEnergy(blocked_batch));
                     if (wake_time > current_time) {
                         scheduleGroupWakeEvent(wake_time);
                     }
+                } else {
+                    // Slack has expired, so no old charging window may keep jobs
+                    // hidden from the next tick's normal eligibility pass.
+                    promoteWaitingTasksToReadyQueue("blocked group slack exhausted");
+                    if (_group_wake_event) {
+                        _group_wake_event->invalidate();
+                    }
                 }
 
-                SCHEDULER_LOG_WARNING(std::string("⚠️ [ST-Sync] 同步组原子验资失败，本tick整组不上机: K=") +
+                SCHEDULER_LOG_WARNING(std::string("⚠️ [ST-Sync] 实际同步组原子验资失败: K=") +
                                       std::to_string(blocked_batch.size()) +
                                       " group_slack=" + std::to_string(static_cast<int64_t>(group_slack)) +
                                       " 需要=" + std::to_string(calculateBatchUnitEnergy(blocked_batch) * 1000.0) + " mJ" +
                                       " 当前=" + std::to_string(_current_energy * 1000.0) + " mJ");
+            } else if (charging_wait_active && !_waiting_queue.empty()) {
+                // A lower-priority waiting group can remain outside this tick's
+                // global top-M.  Preserve its charging window without skipping
+                // accounting for the selected continuations above.
+                _deep_charging = true;
+                _is_charging_sleep = true;
+                _energy_depleted = true;
             }
 
             _current_batch_tasks = selected_tasks;
@@ -2007,6 +2067,7 @@ namespace RTSim {
         _deferred_arrivals.clear();
         _energy_accounts.clear();
         _running_tasks.clear();
+        _deadline_miss_arrivals.clear();
 
         _stats.total_scheduled = 0;
         _stats.total_task_completions = 0;
@@ -2124,72 +2185,33 @@ namespace RTSim {
     // =====================================================
 
     void STSyncScheduler::cleanupExpiredTasks() {
-        Tick current_time = SIMUL.getTime();
-
-        if (!_kernel) {
-            _kernel = getKernel();
-        }
-
-        // 1. 检查运行中的任务，挂起已过期的
+        const Tick current_time = SIMUL.getTime();
+        std::set<AbsRTTask *> jobs(_ready_queue.begin(), _ready_queue.end());
+        jobs.insert(_waiting_queue.begin(), _waiting_queue.end());
+        jobs.insert(_current_batch_tasks.begin(), _current_batch_tasks.end());
         if (_kernel) {
-            const auto& running = _kernel->getCurrentExecutingTasks();
-            std::vector<AbsRTTask *> to_suspend;
-
-            for (const auto& [cpu, task] : running) {
-                if (!task || !task->isExecuting()) continue;
-                Tick deadline = task->getDeadline();
-
-                if (deadline <= current_time) {
-                    to_suspend.push_back(task);
-                    SCHEDULER_LOG_INFO("💀 [ST-Sync] 过期任务运行中，将挂起: " +
-                        getTaskName(task) +
-                        " deadline=" + std::to_string(static_cast<int64_t>(deadline)) +
-                        " current=" + std::to_string(static_cast<int64_t>(current_time)));
-                }
-            }
-
-            for (AbsRTTask *task : to_suspend) {
-                _kernel->suspend(task);
+            for (const auto &[cpu, task] :
+                 _kernel->getCurrentExecutingTasks()) {
+                (void) cpu;
+                if (task) jobs.insert(task);
             }
         }
 
-        // 2. 清理就绪队列中已过期的任务实例
-        std::vector<AbsRTTask *> expired;
-        for (AbsRTTask *task : _ready_queue) {
-            if (!task) continue;
-            Tick deadline = task->getDeadline();
-
-            if (deadline <= current_time) {
-                expired.push_back(task);
-                SCHEDULER_LOG_INFO("🧹 [ST-Sync] 清理过期任务: " +
-                    getTaskName(task) +
-                    " deadline=" + std::to_string(static_cast<int64_t>(deadline)) +
-                    " current=" + std::to_string(static_cast<int64_t>(current_time)));
-                _stats.total_deadline_misses++;
+        for (AbsRTTask *task : jobs) {
+            if (!task || task->getRemainingWCET() <= 0.0 ||
+                task->getDeadline() > current_time) {
+                continue;
             }
-        }
-
-        for (AbsRTTask *task : expired) {
-            removeFromReadyQueue(task);
-        }
-
-        // 3. 清理批量任务中已过期的
-        std::vector<AbsRTTask *> expired_batch;
-        for (AbsRTTask *task : _current_batch_tasks) {
-            if (!task) continue;
-            Tick deadline = task->getDeadline();
-
-            if (deadline <= current_time) {
-                expired_batch.push_back(task);
+            const Tick arrival = task->getArrival();
+            auto recorded = _deadline_miss_arrivals.find(task);
+            if (recorded != _deadline_miss_arrivals.end() &&
+                recorded->second == arrival) {
+                continue;
             }
-        }
-
-        for (AbsRTTask *task : expired_batch) {
-            auto it = std::find(_current_batch_tasks.begin(), _current_batch_tasks.end(), task);
-            if (it != _current_batch_tasks.end()) {
-                _current_batch_tasks.erase(it);
-                SCHEDULER_LOG_INFO("🧹 [ST-Sync] 从批量任务清理过期任务: " + getTaskName(task));
-            }
+            _deadline_miss_arrivals[task] = arrival;
+            _stats.total_deadline_misses++;
+            SCHEDULER_LOG_WARNING("⏰ [ST-Sync] deadline miss recorded; job remains eligible/waiting: " +
+                                  getTaskName(task));
         }
     }
 

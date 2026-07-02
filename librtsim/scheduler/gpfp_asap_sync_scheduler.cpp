@@ -372,14 +372,25 @@ namespace RTSim {
     // =====================================================
 
     int ASAPSyncScheduler::calculateBatchSize() {
-        // k = min(CPU核心总数, 就绪队列任务数)
-        ConfigManager &configMgr = ConfigManager::getInstance();
-        int total_cpus = configMgr.getNumCores();
+        int total_cpus = _kernel
+            ? static_cast<int>(_kernel->getCurrentExecutingTasks().size())
+            : ConfigManager::getInstance().getNumCores();
+        int occupied_cpus = 0;
+        if (_kernel) {
+            for (const auto &[cpu, task] :
+                 _kernel->getCurrentExecutingTasks()) {
+                if ((task && task->isExecuting()) ||
+                    _kernel->isCPUDispatching(cpu)) {
+                    ++occupied_cpus;
+                }
+            }
+        }
+        const int idle_cpus = std::max(0, total_cpus - occupied_cpus);
         int ready_tasks = static_cast<int>(_ready_queue.size());
-        int batch_size = std::min(total_cpus, ready_tasks);
+        int batch_size = std::min(idle_cpus, ready_tasks);
 
         SCHEDULER_LOG_DEBUG(std::string("📊 [ASAP-Sync] calculateBatchSize: ") +
-                           "CPU核心数=" + std::to_string(total_cpus) +
+                           "空闲CPU=" + std::to_string(idle_cpus) +
                            " 就绪任务=" + std::to_string(ready_tasks) +
                            " 批量k=" + std::to_string(batch_size));
 
@@ -601,30 +612,61 @@ namespace RTSim {
         _dispatching_tasks_total_energy = 0.0;
         _paid_pending_tasks.clear();
 
-        std::vector<AbsRTTask *> selected_tasks;
-        double required_batch_energy = 0.0;
+        std::vector<AbsRTTask *> desired_tasks;
         const int total_cpus = static_cast<int>(running_tasks_map.size());
         for (AbsRTTask *task : active_tasks) {
-            if (static_cast<int>(selected_tasks.size()) >= total_cpus) {
+            if (static_cast<int>(desired_tasks.size()) >= total_cpus) {
                 break;
             }
-            selected_tasks.push_back(task);
-            required_batch_energy += getConfiguredUnitEnergyForTask(task);
+            desired_tasks.push_back(task);
         }
 
+        std::vector<AbsRTTask *> continuation_tasks;
+        std::vector<AbsRTTask *> idle_core_batch;
+        double continuation_energy = 0.0;
+        double idle_core_batch_energy = 0.0;
+        for (AbsRTTask *task : desired_tasks) {
+            if (running_tasks.find(task) != running_tasks.end()) {
+                continuation_tasks.push_back(task);
+                continuation_energy += getConfiguredUnitEnergyForTask(task);
+            } else {
+                idle_core_batch.push_back(task);
+                idle_core_batch_energy += getConfiguredUnitEnergyForTask(task);
+            }
+        }
+
+        std::vector<AbsRTTask *> selected_tasks = continuation_tasks;
+        double required_batch_energy = continuation_energy;
         const double epsilon = 1e-9;
-        if (!selected_tasks.empty() &&
-            _current_energy + epsilon < required_batch_energy) {
+        const bool continuation_affordable =
+            _current_energy + epsilon >= continuation_energy;
+        const bool idle_core_batch_affordable =
+            continuation_affordable &&
+            _current_energy + epsilon >=
+                continuation_energy + idle_core_batch_energy;
+
+        if (!continuation_affordable) {
             _energy_depleted = true;
             _stats.total_batch_skipped++;
-            SCHEDULER_LOG_WARNING(std::string("❌ [ASAP-Sync] 同步批次组级验资失败，本tick整组不上机: K=") +
-                                  std::to_string(selected_tasks.size()) +
+            SCHEDULER_LOG_WARNING(std::string("❌ [ASAP-Sync] 运行 continuation 整组验资失败: K=") +
+                                  std::to_string(continuation_tasks.size()) +
                                   " 需要=" + std::to_string(required_batch_energy * 1000.0) + " mJ" +
                                   " 当前=" + std::to_string(_current_energy * 1000.0) + " mJ");
             selected_tasks.clear();
             required_batch_energy = 0.0;
+        } else if (!idle_core_batch.empty() &&
+                   !idle_core_batch_affordable) {
+            _energy_depleted = true;
+            _stats.total_batch_skipped++;
+            SCHEDULER_LOG_WARNING(std::string("❌ [ASAP-Sync] 空闲核批次组级验资失败，continuation保持运行: K=") +
+                                  std::to_string(idle_core_batch.size()) +
+                                  " 批次需要=" + std::to_string(idle_core_batch_energy * 1000.0) + " mJ" +
+                                  " continuation需要=" + std::to_string(continuation_energy * 1000.0) + " mJ" +
+                                  " 当前=" + std::to_string(_current_energy * 1000.0) + " mJ");
         } else {
             _energy_depleted = false;
+            selected_tasks = desired_tasks;
+            required_batch_energy += idle_core_batch_energy;
         }
 
         _selection_tick = current_time;

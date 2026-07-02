@@ -115,6 +115,7 @@ namespace RTSim {
         std::vector<AbsRTTask *> _dispatch_selection_order; // 本轮dispatch已选中的稳定顺序
         std::set<AbsRTTask *> _energy_deducted_tasks; // 已扣除初始能量的任务（跨dispatch持久化）
         std::set<AbsRTTask *> _energy_blocked_tasks; // 因缺电被挂起的任务黑名单
+        AbsRTTask *_highest_priority_energy_blocked_task; // 本 tick 首个缺能 job（主动充能目标）
         MetaSim::Tick _selection_tick;       // 当前冻结选择对应tick
         uint64_t _selection_generation;      // 每次tick选择递增，防stale EndDispatch
         bool _selection_frozen;              // 当前tick是否已经冻结选择

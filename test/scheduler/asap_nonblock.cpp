@@ -159,6 +159,14 @@ public:
                                AbsRTTask *task) {
         return scheduler.isInReadyQueue(task);
     }
+
+    static AbsRTTask *chargeTarget(ASAPNonBlockScheduler &scheduler) {
+        return scheduler._highest_priority_energy_blocked_task;
+    }
+
+    static void recharge(ASAPNonBlockScheduler &scheduler, double energy) {
+        scheduler._current_energy = energy;
+    }
 };
 
 static bool ContainsTask(const std::vector<AbsRTTask *> &tasks,
@@ -256,6 +264,52 @@ TEST(ASAPNonBlockScheduler, HighestAffordableLowerPrioritySelected) {
     EXPECT_EQ(second.getScheduleCount(), 0);
     EXPECT_EQ(third.getScheduleCount(), 1);
     EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 0.0);
+
+    simulation.endSingleRun();
+}
+
+TEST(ASAPNonBlockScheduler,
+     ChargeTargetAfterFullScanIsHighestPriorityEnergyBlockedJob) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestASAPNonBlockScheduler scheduler;
+    CPU cpu("asap-nonblock-charge-target-cpu", nullptr);
+    TestASAPNonBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeASAPNonBlockTask high(1, 5, 10, 1.0);
+    FakeASAPNonBlockTask low(2, 20, 20, 1.0);
+
+    ASAPNonBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &high, 5, 1, 2.0);
+    ASAPNonBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &low, 20, 1, 1.0);
+
+    simulation.initSingleRun();
+    ASAPNonBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    ASAPNonBlockSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    high.releaseAt(Tick(0));
+    low.releaseAt(Tick(0));
+    ASAPNonBlockSchedulerTestPeer::enqueue(scheduler, &high);
+    ASAPNonBlockSchedulerTestPeer::enqueue(scheduler, &low);
+
+    ASAPNonBlockSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+
+    ASSERT_EQ(low.getScheduleCount(), 1);
+    ASSERT_EQ(high.getScheduleCount(), 0);
+    EXPECT_EQ(ASAPNonBlockSchedulerTestPeer::chargeTarget(scheduler),
+              &high);
+    EXPECT_TRUE(ASAPNonBlockSchedulerTestPeer::isInReadyQueue(
+        scheduler, &high));
+
+    ASAPNonBlockTestActionEvent next_tick([&]() {
+        ASAPNonBlockSchedulerTestPeer::recharge(scheduler, 2.0);
+        ASAPNonBlockSchedulerTestPeer::tick(scheduler);
+    });
+    next_tick.post(Tick(1));
+    simulation.run_to(Tick(1));
+
+    EXPECT_EQ(high.getScheduleCount(), 1);
+    EXPECT_TRUE(high.isExecuting());
+    EXPECT_FALSE(low.isExecuting());
 
     simulation.endSingleRun();
 }
@@ -445,6 +499,51 @@ TEST(ASAPNonBlockScheduler, NoStaleEndDispatch) {
     EXPECT_EQ(high.getScheduleCount(), 1);
     EXPECT_TRUE(high.isExecuting());
     EXPECT_EQ(kernel.getTask(&cpu), &high);
+
+    simulation.endSingleRun();
+}
+
+TEST(ASAPNonBlockScheduler,
+     PreemptedJobRequeuesAndResumesWhenEnergySufficient) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestASAPNonBlockScheduler scheduler;
+    CPU cpu("asap-nonblock-resume-cpu", nullptr);
+    TestASAPNonBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeASAPNonBlockTask low(2, 20, 20, 5.0);
+    FakeASAPNonBlockTask high(1, 5, 5, 1.0, 1);
+
+    ASAPNonBlockSchedulerTestPeer::addTaskModel(scheduler, &low, 20, 5, 1.0);
+    ASAPNonBlockSchedulerTestPeer::addTaskModel(scheduler, &high, 5, 1, 1.0);
+
+    simulation.initSingleRun();
+    ASAPNonBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    ASAPNonBlockSchedulerTestPeer::setEnergy(scheduler, 10.0);
+    low.releaseAt(Tick(0));
+    ASAPNonBlockSchedulerTestPeer::enqueue(scheduler, &low);
+    ASAPNonBlockSchedulerTestPeer::tick(scheduler);
+
+    ASAPNonBlockTestActionEvent preempt([&]() {
+        low.setRemaining(4.0);
+        high.releaseAt(Tick(1));
+        ASAPNonBlockSchedulerTestPeer::arrive(scheduler, &high);
+        ASAPNonBlockSchedulerTestPeer::tick(scheduler);
+    });
+    preempt.post(Tick(1));
+    ASAPNonBlockTestActionEvent resume([&]() {
+        high.setRemaining(0.0);
+        kernel.suspend(&high);
+        ASAPNonBlockSchedulerTestPeer::tick(scheduler);
+    });
+    resume.post(Tick(2));
+
+    simulation.run_to(Tick(2));
+
+    EXPECT_EQ(low.getScheduleCount(), 2);
+    EXPECT_TRUE(low.isExecuting());
+    EXPECT_EQ(kernel.getTask(&cpu), &low);
+    EXPECT_DOUBLE_EQ(low.getRemainingWCET(), 4.0);
+    EXPECT_EQ(low.getDeadline(), Tick(20));
+    EXPECT_EQ(low.getArrival(), Tick(0));
 
     simulation.endSingleRun();
 }

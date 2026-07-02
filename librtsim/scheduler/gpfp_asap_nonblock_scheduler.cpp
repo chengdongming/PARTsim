@@ -233,6 +233,7 @@ namespace RTSim {
           _initial_energy(0.0),
           _max_energy(1000.0),
           _dispatching_tasks_total_energy(0.0),
+          _highest_priority_energy_blocked_task(nullptr),
           _last_tick_time(0),
           _last_collection_time(0),
           _solar_data_file(""),
@@ -633,6 +634,7 @@ namespace RTSim {
         _energy_deducted_tasks.clear();
 
         double reserved_energy = 0.0;
+        AbsRTTask *highest_priority_energy_blocked_task = nullptr;
         const int total_cpus = static_cast<int>(running_tasks_map.size());
         const double epsilon = 1e-9;
         for (AbsRTTask *task : active_tasks) {
@@ -642,6 +644,9 @@ namespace RTSim {
 
             const double unit_energy = getConfiguredUnitEnergyForTask(task);
             if (reserved_energy + unit_energy > _current_energy + epsilon) {
+                if (!highest_priority_energy_blocked_task) {
+                    highest_priority_energy_blocked_task = task;
+                }
                 _stats.total_skipped_energy++;
                 SCHEDULER_LOG_INFO(std::string("⚠️ [ASAP-NonBlock] 跳过当前不可负担任务: ") +
                                   getTaskName(task) +
@@ -657,6 +662,8 @@ namespace RTSim {
         }
 
         _dispatching_tasks_total_energy = reserved_energy;
+        _highest_priority_energy_blocked_task =
+            highest_priority_energy_blocked_task;
         _selection_tick = current_time;
         _selection_generation++;
         _selection_frozen = true;
@@ -1565,6 +1572,7 @@ namespace RTSim {
         _waiting_queue.clear();
         _energy_accounts.clear();
         _energy_blocked_tasks.clear();
+        _highest_priority_energy_blocked_task = nullptr;
         _energy_deducted_tasks.clear();
         _counted_tasks_in_dispatch.clear();
         _dispatch_selection_order.clear();

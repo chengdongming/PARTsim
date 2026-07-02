@@ -177,6 +177,10 @@ public:
         scheduler.cleanupExpiredTasks();
     }
 
+    static int deadlineMisses(STSyncScheduler &scheduler) {
+        return scheduler._stats.total_deadline_misses;
+    }
+
     static AbsRTTask *selectSlot(STSyncScheduler &scheduler,
                                  unsigned int slot) {
         return scheduler.getTaskN(slot);
@@ -187,12 +191,27 @@ public:
         return scheduler.isInReadyQueue(task);
     }
 
+    static bool isInWaitingQueue(STSyncScheduler &scheduler,
+                                 AbsRTTask *task) {
+        return scheduler.isInWaitingQueue(task);
+    }
+
     static void cancelAutomaticTick(STSyncScheduler &scheduler) {
         scheduler._tick_event->drop();
         scheduler._first_tick_scheduled = false;
         if (scheduler._group_wake_event) {
             scheduler._group_wake_event->drop();
         }
+    }
+
+    static int batchSize(STSyncScheduler &scheduler) {
+        return scheduler.calculateBatchSize();
+    }
+
+    static Tick groupWakeTime(STSyncScheduler &scheduler) {
+        return scheduler._group_wake_event
+            ? scheduler._group_wake_event->getWakeTime()
+            : Tick(-1);
     }
 };
 
@@ -322,6 +341,41 @@ TEST(STSyncScheduler, GroupSlackUsesMinimumSlack) {
     EXPECT_EQ(positive_slack.getScheduleCount(), 0);
     EXPECT_EQ(urgent.getScheduleCount(), 0);
     EXPECT_FALSE(scheduler.isChargingSleepActive());
+
+    simulation.endSingleRun();
+}
+
+TEST(STSyncScheduler, EnergyInsufficientBatchWaitsByMinimumSlack) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTSyncScheduler scheduler;
+    CPU cpu0("st-sync-min-wake-cpu0", nullptr);
+    CPU cpu1("st-sync-min-wake-cpu1", nullptr);
+    TestSTSyncMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu0, &cpu1});
+    FakeSTSyncTask min_slack(1, 5, 5, 1.0);
+    FakeSTSyncTask larger_slack(2, 20, 10, 1.0);
+
+    STSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &min_slack, 5, 1, 1.0);
+    STSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &larger_slack, 20, 1, 1.0);
+
+    simulation.initSingleRun();
+    STSyncSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STSyncSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    min_slack.releaseAt(Tick(0));
+    larger_slack.releaseAt(Tick(0));
+    STSyncSchedulerTestPeer::enqueue(scheduler, &min_slack);
+    STSyncSchedulerTestPeer::enqueue(scheduler, &larger_slack);
+
+    STSyncSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+
+    EXPECT_EQ(min_slack.getScheduleCount(), 0);
+    EXPECT_EQ(larger_slack.getScheduleCount(), 0);
+    EXPECT_TRUE(scheduler.getCurrentBatchTasks().empty());
+    EXPECT_TRUE(scheduler.isChargingSleepActive());
+    EXPECT_EQ(STSyncSchedulerTestPeer::groupWakeTime(scheduler), Tick(4));
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.0);
 
     simulation.endSingleRun();
 }
@@ -482,7 +536,8 @@ TEST(STSyncScheduler, RunningTaskMustBeInFrozenBatch) {
     simulation.endSingleRun();
 }
 
-TEST(STSyncScheduler, RunningPreservationDoesNotBypassUnifiedBatch) {
+TEST(STSyncScheduler,
+     InsufficientIdleCoreBatchPreservesAffordableContinuation) {
     auto &simulation = MetaSim::Simulation::getInstance();
     TestSTSyncScheduler scheduler;
     CPU cpu0("st-sync-running-partial-cpu0", nullptr);
@@ -506,10 +561,140 @@ TEST(STSyncScheduler, RunningPreservationDoesNotBypassUnifiedBatch) {
     STSyncSchedulerTestPeer::tick(scheduler);
     simulation.run_to(Tick(0));
 
-    EXPECT_FALSE(running.isExecuting());
+    EXPECT_TRUE(running.isExecuting());
     EXPECT_EQ(ready.getScheduleCount(), 0);
-    EXPECT_TRUE(scheduler.getCurrentBatchTasks().empty());
+    EXPECT_EQ(scheduler.getCurrentBatchTasks(),
+              (std::vector<AbsRTTask *>{&running}));
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 0.5);
+
+    simulation.endSingleRun();
+}
+
+TEST(STSyncScheduler,
+     ChargingSleepDoesNotLetContinuationRunForFreeAcrossTicks) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTSyncScheduler scheduler;
+    CPU cpu0("st-sync-charging-continuation-cpu0", nullptr);
+    CPU cpu1("st-sync-charging-continuation-cpu1", nullptr);
+    TestSTSyncMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu0, &cpu1});
+    FakeSTSyncTask continuation(1, 5, 10, 2.0);
+    FakeSTSyncTask blocked_new_job(2, 20, 20, 1.0);
+
+    STSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &continuation, 5, 2, 1.0);
+    STSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &blocked_new_job, 20, 1, 2.0);
+
+    simulation.initSingleRun();
+    STSyncSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STSyncSchedulerTestPeer::setEnergy(scheduler, 2.5);
+    continuation.releaseAt(Tick(0));
+    blocked_new_job.releaseAt(Tick(0));
+    continuation.markRunningWithoutScheduleCount();
+    kernel.setRunning(&cpu0, &continuation);
+    STSyncSchedulerTestPeer::enqueue(scheduler, &blocked_new_job);
+
+    STSyncSchedulerTestPeer::tick(scheduler);
+    EXPECT_TRUE(continuation.isExecuting());
+    EXPECT_TRUE(ContainsTask(scheduler.getCurrentBatchTasks(), &continuation));
+    EXPECT_TRUE(STSyncSchedulerTestPeer::isInWaitingQueue(
+        scheduler, &blocked_new_job));
     EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.5);
+
+    STSyncTestActionEvent next_tick([&]() {
+        STSyncSchedulerTestPeer::tick(scheduler);
+    });
+    next_tick.post(Tick(1));
+    simulation.run_to(Tick(1));
+
+    EXPECT_TRUE(continuation.isExecuting());
+    EXPECT_TRUE(ContainsTask(scheduler.getCurrentBatchTasks(), &continuation));
+    EXPECT_EQ(kernel.getProcessor(&continuation), &cpu0);
+    EXPECT_EQ(std::count_if(
+                  kernel.getCurrentExecutingTasks().begin(),
+                  kernel.getCurrentExecutingTasks().end(),
+                  [&](const auto &entry) { return entry.second == &continuation; }),
+              1);
+    EXPECT_EQ(blocked_new_job.getScheduleCount(), 0);
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 0.5);
+
+    simulation.endSingleRun();
+}
+
+TEST(STSyncScheduler, BlockedBatchMinSlackUsesActualBlockedGroup) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTSyncScheduler scheduler;
+    CPU cpu0("st-sync-blocked-slack-cpu0", nullptr);
+    CPU cpu1("st-sync-blocked-slack-cpu1", nullptr);
+    TestSTSyncMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu0, &cpu1});
+    FakeSTSyncTask blocked_continuation(1, 5, 6, 1.0);
+    FakeSTSyncTask blocked_new_job(2, 20, 10, 1.0);
+
+    STSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &blocked_continuation, 5, 1, 2.0);
+    STSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &blocked_new_job, 20, 1, 1.0);
+
+    simulation.initSingleRun();
+    STSyncSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STSyncSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    blocked_continuation.releaseAt(Tick(0));
+    blocked_new_job.releaseAt(Tick(0));
+    blocked_continuation.markRunningWithoutScheduleCount();
+    kernel.setRunning(&cpu0, &blocked_continuation);
+    STSyncSchedulerTestPeer::enqueue(scheduler, &blocked_new_job);
+
+    STSyncSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+
+    EXPECT_FALSE(blocked_continuation.isExecuting());
+    EXPECT_EQ(blocked_new_job.getScheduleCount(), 0);
+    EXPECT_TRUE(STSyncSchedulerTestPeer::isInWaitingQueue(
+        scheduler, &blocked_continuation));
+    EXPECT_TRUE(STSyncSchedulerTestPeer::isInWaitingQueue(
+        scheduler, &blocked_new_job));
+    EXPECT_TRUE(scheduler.getCurrentBatchTasks().empty());
+    EXPECT_EQ(STSyncSchedulerTestPeer::groupWakeTime(scheduler), Tick(5));
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.0);
+
+    simulation.endSingleRun();
+}
+
+TEST(STSyncScheduler, BatchSizeUsesIdleCoresNotTotalCores) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTSyncScheduler scheduler;
+    CPU cpu0("st-sync-idle-size-cpu0", nullptr);
+    CPU cpu1("st-sync-idle-size-cpu1", nullptr);
+    TestSTSyncMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu0, &cpu1});
+    FakeSTSyncTask running(1, 5, 10, 2.0);
+    FakeSTSyncTask next(2, 10, 10, 1.0);
+    FakeSTSyncTask waiting(3, 20, 20, 1.0);
+
+    STSyncSchedulerTestPeer::addTaskModel(scheduler, &running, 5, 2, 1.0);
+    STSyncSchedulerTestPeer::addTaskModel(scheduler, &next, 10, 1, 1.0);
+    STSyncSchedulerTestPeer::addTaskModel(scheduler, &waiting, 20, 1, 1.0);
+
+    simulation.initSingleRun();
+    STSyncSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STSyncSchedulerTestPeer::setEnergy(scheduler, 2.0);
+    running.releaseAt(Tick(0));
+    next.releaseAt(Tick(0));
+    waiting.releaseAt(Tick(0));
+    running.markRunningWithoutScheduleCount();
+    kernel.setRunning(&cpu0, &running);
+    STSyncSchedulerTestPeer::enqueue(scheduler, &next);
+    STSyncSchedulerTestPeer::enqueue(scheduler, &waiting);
+
+    EXPECT_EQ(STSyncSchedulerTestPeer::batchSize(scheduler), 1);
+    STSyncSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+
+    EXPECT_TRUE(running.isExecuting());
+    EXPECT_EQ(next.getScheduleCount(), 1);
+    EXPECT_EQ(waiting.getScheduleCount(), 0);
+    EXPECT_EQ(scheduler.getCurrentBatchSize(), 2);
+    EXPECT_TRUE(ContainsTask(scheduler.getCurrentBatchTasks(), &running));
+    EXPECT_TRUE(ContainsTask(scheduler.getCurrentBatchTasks(), &next));
 
     simulation.endSingleRun();
 }
@@ -553,7 +738,7 @@ TEST(STSyncScheduler, UsesCeilRemainingExecution) {
     simulation.endSingleRun();
 }
 
-TEST(STSyncScheduler, CleanupUsesRelativeDeadline) {
+TEST(STSyncScheduler, DeadlineMissKeepsJobAndUsesRelativeDeadline) {
     auto &simulation = MetaSim::Simulation::getInstance();
     TestSTSyncScheduler scheduler;
     FakeSTSyncTask task(1, 20, 5, 10.0);
@@ -567,8 +752,12 @@ TEST(STSyncScheduler, CleanupUsesRelativeDeadline) {
     simulation.run_to(Tick(6));
 
     STSyncSchedulerTestPeer::cleanup(scheduler);
+    STSyncSchedulerTestPeer::cleanup(scheduler);
 
-    EXPECT_FALSE(STSyncSchedulerTestPeer::isInReadyQueue(scheduler, &task));
+    EXPECT_TRUE(STSyncSchedulerTestPeer::isInReadyQueue(scheduler, &task));
+    EXPECT_EQ(STSyncSchedulerTestPeer::deadlineMisses(scheduler), 1);
+    EXPECT_DOUBLE_EQ(task.getRemainingWCET(), 10.0);
+    EXPECT_EQ(task.getDeadline(), Tick(5));
 
     simulation.endSingleRun();
 }
@@ -606,6 +795,51 @@ TEST(STSyncScheduler, NoStaleEndDispatch) {
     EXPECT_EQ(high.getScheduleCount(), 1);
     EXPECT_TRUE(high.isExecuting());
     EXPECT_EQ(kernel.getTask(&cpu), &high);
+
+    simulation.endSingleRun();
+}
+
+TEST(STSyncScheduler,
+     PreemptedJobRequeuesAndResumesWhenEnergySufficient) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTSyncScheduler scheduler;
+    CPU cpu("st-sync-resume-cpu", nullptr);
+    TestSTSyncMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeSTSyncTask low(2, 20, 20, 5.0);
+    FakeSTSyncTask high(1, 5, 5, 1.0, 1);
+
+    STSyncSchedulerTestPeer::addTaskModel(scheduler, &low, 20, 5, 1.0);
+    STSyncSchedulerTestPeer::addTaskModel(scheduler, &high, 5, 1, 1.0);
+
+    simulation.initSingleRun();
+    STSyncSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STSyncSchedulerTestPeer::setEnergy(scheduler, 10.0);
+    low.releaseAt(Tick(0));
+    STSyncSchedulerTestPeer::enqueue(scheduler, &low);
+    STSyncSchedulerTestPeer::tick(scheduler);
+
+    STSyncTestActionEvent preempt([&]() {
+        low.setRemaining(4.0);
+        high.releaseAt(Tick(1));
+        STSyncSchedulerTestPeer::arrive(scheduler, &high);
+        STSyncSchedulerTestPeer::tick(scheduler);
+    });
+    preempt.post(Tick(1));
+    STSyncTestActionEvent resume([&]() {
+        high.setRemaining(0.0);
+        kernel.suspend(&high);
+        STSyncSchedulerTestPeer::tick(scheduler);
+    });
+    resume.post(Tick(2));
+
+    simulation.run_to(Tick(2));
+
+    EXPECT_EQ(low.getScheduleCount(), 2);
+    EXPECT_TRUE(low.isExecuting());
+    EXPECT_EQ(kernel.getTask(&cpu), &low);
+    EXPECT_DOUBLE_EQ(low.getRemainingWCET(), 4.0);
+    EXPECT_EQ(low.getDeadline(), Tick(20));
+    EXPECT_EQ(low.getArrival(), Tick(0));
 
     simulation.endSingleRun();
 }

@@ -160,6 +160,10 @@ public:
         scheduler.cleanupExpiredTasks();
     }
 
+    static int deadlineMisses(STBlockScheduler &scheduler) {
+        return scheduler._stats.total_deadline_misses;
+    }
+
     static AbsRTTask *selectSlot(STBlockScheduler &scheduler,
                                  unsigned int slot) {
         return scheduler.getTaskN(slot);
@@ -492,6 +496,51 @@ TEST(STBlockScheduler, NoStaleEndDispatch) {
     simulation.endSingleRun();
 }
 
+TEST(STBlockScheduler,
+     PreemptedJobRequeuesAndResumesWhenEnergySufficient) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTBlockScheduler scheduler;
+    CPU cpu("st-block-resume-cpu", nullptr);
+    TestSTBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeSTBlockTask low(2, 20, 20, 5.0);
+    FakeSTBlockTask high(1, 5, 5, 1.0, 1);
+
+    STBlockSchedulerTestPeer::addTaskModel(scheduler, &low, 20, 5, 1.0);
+    STBlockSchedulerTestPeer::addTaskModel(scheduler, &high, 5, 1, 1.0);
+
+    simulation.initSingleRun();
+    STBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STBlockSchedulerTestPeer::setEnergy(scheduler, 10.0);
+    low.releaseAt(Tick(0));
+    STBlockSchedulerTestPeer::enqueue(scheduler, &low);
+    STBlockSchedulerTestPeer::tick(scheduler);
+
+    STBlockTestActionEvent preempt([&]() {
+        low.setRemaining(4.0);
+        high.releaseAt(Tick(1));
+        STBlockSchedulerTestPeer::enqueue(scheduler, &high);
+        STBlockSchedulerTestPeer::tick(scheduler);
+    });
+    preempt.post(Tick(1));
+    STBlockTestActionEvent resume([&]() {
+        high.setRemaining(0.0);
+        kernel.suspend(&high);
+        STBlockSchedulerTestPeer::tick(scheduler);
+    });
+    resume.post(Tick(2));
+
+    simulation.run_to(Tick(2));
+
+    EXPECT_EQ(low.getScheduleCount(), 2);
+    EXPECT_TRUE(low.isExecuting());
+    EXPECT_EQ(kernel.getTask(&cpu), &low);
+    EXPECT_DOUBLE_EQ(low.getRemainingWCET(), 4.0);
+    EXPECT_EQ(low.getDeadline(), Tick(20));
+    EXPECT_EQ(low.getArrival(), Tick(0));
+
+    simulation.endSingleRun();
+}
+
 TEST(STBlockScheduler, StableRmTieBreak) {
     auto &simulation = MetaSim::Simulation::getInstance();
     TestSTBlockScheduler scheduler;
@@ -520,7 +569,7 @@ TEST(STBlockScheduler, StableRmTieBreak) {
     simulation.endSingleRun();
 }
 
-TEST(STBlockScheduler, CleanupUsesRelativeDeadline) {
+TEST(STBlockScheduler, DeadlineMissKeepsJobAndUsesRelativeDeadline) {
     auto &simulation = MetaSim::Simulation::getInstance();
     TestSTBlockScheduler scheduler;
     FakeSTBlockTask task(1, 20, 5, 10.0);
@@ -534,8 +583,12 @@ TEST(STBlockScheduler, CleanupUsesRelativeDeadline) {
     simulation.run_to(Tick(6));
 
     STBlockSchedulerTestPeer::cleanup(scheduler);
+    STBlockSchedulerTestPeer::cleanup(scheduler);
 
-    EXPECT_FALSE(STBlockSchedulerTestPeer::isInReadyQueue(scheduler, &task));
+    EXPECT_TRUE(STBlockSchedulerTestPeer::isInReadyQueue(scheduler, &task));
+    EXPECT_EQ(STBlockSchedulerTestPeer::deadlineMisses(scheduler), 1);
+    EXPECT_DOUBLE_EQ(task.getRemainingWCET(), 10.0);
+    EXPECT_EQ(task.getDeadline(), Tick(5));
 
     simulation.endSingleRun();
 }

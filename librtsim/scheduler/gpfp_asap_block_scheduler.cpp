@@ -413,7 +413,8 @@ namespace RTSim {
 
     bool ASAPBlockScheduler::isSchedulableActiveJob(
         AbsRTTask *task, Tick current_time) const {
-        if (!task || task->getArrival() > current_time) {
+        if (!task || task->getArrival() > current_time ||
+            task->getRemainingWCET() <= 0.0) {
             return false;
         }
 
