@@ -609,7 +609,7 @@ namespace RTSim {
             const bool continuation_affordable =
                 _current_energy + epsilon >= continuation_energy;
             const bool idle_core_batch_affordable =
-                !charging_wait_active && continuation_affordable &&
+                continuation_affordable &&
                 _current_energy + epsilon >=
                     continuation_energy + idle_core_batch_energy;
             if (!continuation_affordable) {
@@ -628,6 +628,19 @@ namespace RTSim {
             } else {
                 selected_tasks = desired_tasks;
                 required_batch_energy += idle_core_batch_energy;
+
+                // A charging window is only a wait while the actual top-M
+                // group remains unaffordable.  As soon as harvested energy can
+                // pay the group, admit its waiting members immediately so ST
+                // remains ASAP-like when energy is sufficient.
+                for (AbsRTTask *task : selected_tasks) {
+                    if (isInWaitingQueue(task)) {
+                        addToReadyQueue(task);
+                    }
+                }
+                if (_waiting_queue.empty() && _group_wake_event) {
+                    _group_wake_event->invalidate();
+                }
             }
 
             Tick group_slack = Tick(0);

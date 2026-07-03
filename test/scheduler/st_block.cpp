@@ -366,6 +366,49 @@ TEST(STBlockScheduler, CumulativePrefixEnergyReservation) {
     simulation.endSingleRun();
 }
 
+TEST(STBlockScheduler,
+     ChargingSleepDoesNotLetAffordablePrefixRunForFreeAcrossTicks) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTBlockScheduler scheduler;
+    CPU cpu0("st-block-charging-prefix-cpu0", nullptr);
+    CPU cpu1("st-block-charging-prefix-cpu1", nullptr);
+    TestSTBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu0, &cpu1});
+    FakeSTBlockTask affordable(1, 5, 10, 2.0);
+    FakeSTBlockTask blocked(2, 10, 10, 2.0);
+
+    STBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &affordable, 5, 2, 1.0);
+    STBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &blocked, 10, 2, 1.0);
+
+    simulation.initSingleRun();
+    STBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STBlockSchedulerTestPeer::setEnergy(scheduler, 1.5);
+    affordable.releaseAt(Tick(0));
+    blocked.releaseAt(Tick(0));
+    STBlockSchedulerTestPeer::enqueue(scheduler, &affordable);
+    STBlockSchedulerTestPeer::enqueue(scheduler, &blocked);
+
+    STBlockSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+    ASSERT_TRUE(affordable.isExecuting());
+    ASSERT_DOUBLE_EQ(scheduler.getTotalEnergyConsumed(), 1.0);
+
+    STBlockTestActionEvent next_tick([&]() {
+        scheduler._current_energy = 1.5;
+        STBlockSchedulerTestPeer::tick(scheduler);
+    });
+    next_tick.post(Tick(1));
+    simulation.run_to(Tick(1));
+
+    EXPECT_TRUE(affordable.isExecuting());
+    EXPECT_EQ(blocked.getScheduleCount(), 0);
+    EXPECT_DOUBLE_EQ(scheduler.getTotalEnergyConsumed(), 2.0);
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 0.5);
+
+    simulation.endSingleRun();
+}
+
 TEST(STBlockScheduler, ExactEnergyChargedOnce) {
     auto &simulation = MetaSim::Simulation::getInstance();
     TestSTBlockScheduler scheduler;

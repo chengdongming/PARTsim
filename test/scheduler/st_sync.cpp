@@ -282,6 +282,47 @@ TEST(STSyncScheduler, BatchInsufficientEnergyWithSlackWaits) {
     simulation.endSingleRun();
 }
 
+TEST(STSyncScheduler, ChargingBatchRunsAsSoonAsEnergyBecomesSufficient) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTSyncScheduler scheduler;
+    CPU cpu0("st-sync-recharge-cpu0", nullptr);
+    CPU cpu1("st-sync-recharge-cpu1", nullptr);
+    TestSTSyncMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu0, &cpu1});
+    FakeSTSyncTask first(1, 20, 20, 1.0);
+    FakeSTSyncTask second(2, 30, 30, 1.0);
+
+    STSyncSchedulerTestPeer::addTaskModel(scheduler, &first, 20, 1, 1.0);
+    STSyncSchedulerTestPeer::addTaskModel(scheduler, &second, 30, 1, 1.0);
+
+    simulation.initSingleRun();
+    STSyncSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STSyncSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    first.releaseAt(Tick(0));
+    second.releaseAt(Tick(0));
+    STSyncSchedulerTestPeer::enqueue(scheduler, &first);
+    STSyncSchedulerTestPeer::enqueue(scheduler, &second);
+
+    STSyncSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+    ASSERT_TRUE(scheduler.isChargingSleepActive());
+    ASSERT_EQ(first.getScheduleCount(), 0);
+    ASSERT_EQ(second.getScheduleCount(), 0);
+
+    STSyncTestActionEvent recharge([&]() {
+        scheduler._current_energy = 2.0;
+        STSyncSchedulerTestPeer::tick(scheduler);
+    });
+    recharge.post(Tick(1));
+    simulation.run_to(Tick(1));
+
+    EXPECT_EQ(first.getScheduleCount(), 1);
+    EXPECT_EQ(second.getScheduleCount(), 1);
+    EXPECT_FALSE(scheduler.isChargingSleepActive());
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 0.0);
+
+    simulation.endSingleRun();
+}
+
 TEST(STSyncScheduler, BatchInsufficientEnergyNoSlackStillNoPartialExecution) {
     auto &simulation = MetaSim::Simulation::getInstance();
     TestSTSyncScheduler scheduler;

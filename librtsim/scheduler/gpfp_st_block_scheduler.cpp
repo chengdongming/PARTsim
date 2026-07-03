@@ -471,7 +471,11 @@ namespace RTSim {
                 SCHEDULER_LOG_INFO(std::string("😴 [ST-Block V130] 深度休眠中...") +
                                   " 能量=" + std::to_string(_current_energy * 1000) + "mJ" +
                                   " Slack=" + std::to_string(min_slack_ms) + "ms");
-                return;  // 继续死睡，不执行任何调度
+                // Charging sleep is advisory only.  A higher-priority
+                // affordable prefix may still be running, so every tick must
+                // rebuild the frozen selection and either pay for that prefix
+                // or suspend it below.  Returning here would let it run for
+                // free outside the current tick's selected set.
             }
         }
 
@@ -558,8 +562,9 @@ namespace RTSim {
                 _alap_blocking = true;
                 _energy_depleted = true;
 
-                // 继续充电，跳过本tick的任务调度（但仍收集能量）
-                return;
+                // Keep the wake hint, but continue into the normal RM scan.
+                // The scan preserves the BLOCK wall while renewing or
+                // suspending any already-running affordable prefix.
             }
         }
 
