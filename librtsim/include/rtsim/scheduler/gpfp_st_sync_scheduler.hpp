@@ -197,6 +197,7 @@ namespace RTSim {
 
         // ========== V115：挂起原因追踪（消灭幽灵抢占） ==========
         std::map<AbsRTTask *, std::string> _suspend_reasons;  // 任务被挂起的真正原因
+        std::map<AbsRTTask *, MetaSim::Tick> _deadline_miss_arrivals;
         void setSuspendReason(AbsRTTask *task, const std::string &reason);
         std::string getSuspendReason(AbsRTTask *task) const override;  // 实现EnergyInfoProvider接口
         void clearSuspendReason(AbsRTTask *task) override;  // 实现EnergyInfoProvider接口

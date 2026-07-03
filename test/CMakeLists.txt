@@ -14,6 +14,7 @@ add_executable(
   scheduler/st_block.cpp
   scheduler/st_nonblock.cpp
   scheduler/st_sync.cpp
+  scheduler/semantics_families.cpp
 )
 
 target_link_libraries(

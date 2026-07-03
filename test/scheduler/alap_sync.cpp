@@ -122,6 +122,10 @@ public:
         scheduler.addToReadyQueue(task);
     }
 
+    static void arrive(ALAPSyncScheduler &scheduler, AbsRTTask *task) {
+        scheduler.onTaskArrival(task);
+    }
+
     static void setEnergy(ALAPSyncScheduler &scheduler,
                           double current_energy) {
         scheduler._initial_energy = current_energy;
@@ -153,6 +157,10 @@ public:
     static bool isInReadyQueue(ALAPSyncScheduler &scheduler,
                                AbsRTTask *task) {
         return scheduler.isInReadyQueue(task);
+    }
+
+    static int batchSize(ALAPSyncScheduler &scheduler) {
+        return scheduler.calculateBatchSize();
     }
 };
 
@@ -271,6 +279,45 @@ TEST(ALAPSyncScheduler, PositiveSlackRunningTaskDoesNotBypassGate) {
 
     EXPECT_FALSE(ContainsTask(scheduler.getCurrentBatchTasks(), &running));
     EXPECT_EQ(urgent.getScheduleCount(), 1);
+
+    simulation.endSingleRun();
+}
+
+TEST(ALAPSyncScheduler, BatchSizeUsesIdleCoresNotTotalCores) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestALAPSyncScheduler scheduler;
+    CPU cpu0("alap-sync-idle-size-cpu0", nullptr);
+    CPU cpu1("alap-sync-idle-size-cpu1", nullptr);
+    TestMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu0, &cpu1});
+    FakeALAPSyncTask running(1, 5, 1, 1.0);
+    FakeALAPSyncTask next(2, 10, 1, 1.0);
+    FakeALAPSyncTask waiting(3, 20, 1, 1.0);
+
+    ALAPSyncSchedulerTestPeer::addTaskModel(scheduler, &running, 5, 1, 1.0);
+    ALAPSyncSchedulerTestPeer::addTaskModel(scheduler, &next, 10, 1, 1.0);
+    ALAPSyncSchedulerTestPeer::addTaskModel(scheduler, &waiting, 20, 1, 1.0);
+
+    simulation.initSingleRun();
+    ALAPSyncSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    ALAPSyncSchedulerTestPeer::setEnergy(scheduler, 2.0);
+    running.releaseAt(Tick(0));
+    next.releaseAt(Tick(0));
+    waiting.releaseAt(Tick(0));
+    running.schedule();
+    kernel.setRunning(&cpu0, &running);
+    ALAPSyncSchedulerTestPeer::enqueue(scheduler, &next);
+    ALAPSyncSchedulerTestPeer::enqueue(scheduler, &waiting);
+
+    EXPECT_EQ(ALAPSyncSchedulerTestPeer::batchSize(scheduler), 1);
+    ALAPSyncSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+
+    EXPECT_TRUE(running.isExecuting());
+    EXPECT_EQ(next.getScheduleCount(), 1);
+    EXPECT_EQ(waiting.getScheduleCount(), 0);
+    EXPECT_EQ(scheduler.getCurrentBatchSize(), 2);
+    EXPECT_TRUE(ContainsTask(scheduler.getCurrentBatchTasks(), &running));
+    EXPECT_TRUE(ContainsTask(scheduler.getCurrentBatchTasks(), &next));
 
     simulation.endSingleRun();
 }
@@ -395,6 +442,84 @@ TEST(ALAPSyncScheduler, NoPartialBatchExecution) {
     const bool second_ran = second.getScheduleCount() > 0;
     EXPECT_EQ(first_ran, second_ran);
     EXPECT_TRUE(first_ran);
+
+    simulation.endSingleRun();
+}
+
+TEST(ALAPSyncScheduler, StableRmTieBreakForEqualPeriod) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestALAPSyncScheduler scheduler;
+    CPU cpu0("alap-sync-stable-tie-cpu0", nullptr);
+    CPU cpu1("alap-sync-stable-tie-cpu1", nullptr);
+    TestMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu0, &cpu1});
+    FakeALAPSyncTask task3(3, 10, 1, 1.0);
+    FakeALAPSyncTask task1(1, 10, 1, 1.0);
+    FakeALAPSyncTask task2(2, 10, 1, 1.0);
+
+    ALAPSyncSchedulerTestPeer::addTaskModel(scheduler, &task3, 10, 1, 1.0);
+    ALAPSyncSchedulerTestPeer::addTaskModel(scheduler, &task1, 10, 1, 1.0);
+    ALAPSyncSchedulerTestPeer::addTaskModel(scheduler, &task2, 10, 1, 1.0);
+
+    simulation.initSingleRun();
+    ALAPSyncSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    ALAPSyncSchedulerTestPeer::setEnergy(scheduler, 2.0);
+    task3.releaseAt(Tick(0));
+    task1.releaseAt(Tick(0));
+    task2.releaseAt(Tick(0));
+    ALAPSyncSchedulerTestPeer::enqueue(scheduler, &task3);
+    ALAPSyncSchedulerTestPeer::enqueue(scheduler, &task1);
+    ALAPSyncSchedulerTestPeer::enqueue(scheduler, &task2);
+
+    ALAPSyncSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+
+    EXPECT_EQ(task1.getScheduleCount(), 1);
+    EXPECT_EQ(task2.getScheduleCount(), 1);
+    EXPECT_EQ(task3.getScheduleCount(), 0);
+    EXPECT_TRUE(ContainsTask(scheduler.getCurrentBatchTasks(), &task1));
+    EXPECT_TRUE(ContainsTask(scheduler.getCurrentBatchTasks(), &task2));
+    EXPECT_FALSE(ContainsTask(scheduler.getCurrentBatchTasks(), &task3));
+    EXPECT_EQ(scheduler.getCurrentBatchSize(), 2);
+    EXPECT_DOUBLE_EQ(scheduler.getTotalEnergyConsumed(), 2.0);
+
+    simulation.endSingleRun();
+}
+
+TEST(ALAPSyncScheduler, RealStaleEndDispatchIgnored) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestALAPSyncScheduler scheduler;
+    CPU cpu("alap-sync-real-stale-dispatch-cpu", nullptr);
+    TestMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeALAPSyncTask low(2, 20, 20, 20.0);
+    FakeALAPSyncTask high(1, 5, 1, 1.0, 1);
+
+    kernel.setContextSwitchDelay(Tick(1));
+    ALAPSyncSchedulerTestPeer::addTaskModel(scheduler, &low, 20, 20, 1.0);
+    ALAPSyncSchedulerTestPeer::addTaskModel(scheduler, &high, 5, 1, 1.0);
+
+    simulation.initSingleRun();
+    ALAPSyncSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    ALAPSyncSchedulerTestPeer::setEnergy(scheduler, 3.0);
+    low.releaseAt(Tick(0));
+    ALAPSyncSchedulerTestPeer::enqueue(scheduler, &low);
+    ALAPSyncSchedulerTestPeer::tick(scheduler);
+
+    ALAPSyncTestActionEvent release_high([&]() {
+        high.releaseAt(Tick(1));
+        ALAPSyncSchedulerTestPeer::arrive(scheduler, &high);
+        ALAPSyncSchedulerTestPeer::tick(scheduler);
+    });
+    release_high.post(Tick(1));
+
+    simulation.run_to(Tick(2));
+
+    EXPECT_EQ(low.getScheduleCount(), 0);
+    EXPECT_FALSE(low.isExecuting());
+    EXPECT_EQ(high.getScheduleCount(), 1);
+    EXPECT_TRUE(high.isExecuting());
+    EXPECT_EQ(kernel.getTask(&cpu), &high);
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.0);
+    EXPECT_DOUBLE_EQ(scheduler.getTotalEnergyConsumed(), 2.0);
 
     simulation.endSingleRun();
 }

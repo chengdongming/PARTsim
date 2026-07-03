@@ -172,6 +172,10 @@ public:
         scheduler.cleanupExpiredTasks();
     }
 
+    static int deadlineMisses(STNonBlockScheduler &scheduler) {
+        return scheduler._stats.total_deadline_misses;
+    }
+
     static AbsRTTask *selectSlot(STNonBlockScheduler &scheduler,
                                  unsigned int slot) {
         return scheduler.getTaskN(slot);
@@ -219,7 +223,8 @@ TEST(STNonBlockScheduler, EnergyAvailableRunsBeforeSlackZero) {
     simulation.endSingleRun();
 }
 
-TEST(STNonBlockScheduler, HighPriorityShortageWithSlackWaitsNoBypass) {
+TEST(STNonBlockScheduler,
+     HighPriorityShortageWithSlackAllowsBypassAndKeepsHighReady) {
     auto &simulation = MetaSim::Simulation::getInstance();
     TestSTNonBlockScheduler scheduler;
     CPU cpu("st-nonblock-slack-wait-cpu", nullptr);
@@ -244,8 +249,11 @@ TEST(STNonBlockScheduler, HighPriorityShortageWithSlackWaitsNoBypass) {
     simulation.run_to(Tick(0));
 
     EXPECT_EQ(high.getScheduleCount(), 0);
-    EXPECT_EQ(low.getScheduleCount(), 0);
-    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.0);
+    EXPECT_EQ(low.getScheduleCount(), 1);
+    EXPECT_TRUE(low.isExecuting());
+    EXPECT_TRUE(STNonBlockSchedulerTestPeer::isInReadyQueue(
+        scheduler, &high));
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 0.0);
 
     simulation.endSingleRun();
 }
@@ -322,7 +330,7 @@ TEST(STNonBlockScheduler, UsesCeilRemainingExecution) {
     simulation.endSingleRun();
 }
 
-TEST(STNonBlockScheduler, CleanupUsesRelativeDeadline) {
+TEST(STNonBlockScheduler, DeadlineMissKeepsJobAndUsesRelativeDeadline) {
     auto &simulation = MetaSim::Simulation::getInstance();
     TestSTNonBlockScheduler scheduler;
     FakeSTNonBlockTask task(1, 20, 5, 10.0);
@@ -337,9 +345,13 @@ TEST(STNonBlockScheduler, CleanupUsesRelativeDeadline) {
     simulation.run_to(Tick(6));
 
     STNonBlockSchedulerTestPeer::cleanup(scheduler);
+    STNonBlockSchedulerTestPeer::cleanup(scheduler);
 
-    EXPECT_FALSE(STNonBlockSchedulerTestPeer::isInReadyQueue(
+    EXPECT_TRUE(STNonBlockSchedulerTestPeer::isInReadyQueue(
         scheduler, &task));
+    EXPECT_EQ(STNonBlockSchedulerTestPeer::deadlineMisses(scheduler), 1);
+    EXPECT_DOUBLE_EQ(task.getRemainingWCET(), 10.0);
+    EXPECT_EQ(task.getDeadline(), Tick(5));
 
     simulation.endSingleRun();
 }
@@ -490,6 +502,134 @@ TEST(STNonBlockScheduler, RunningTaskMustBeInFrozenSelected) {
     EXPECT_EQ(ready_high.getScheduleCount(), 1);
     EXPECT_FALSE(running_low.isExecuting());
     EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.0);
+
+    simulation.endSingleRun();
+}
+
+TEST(STNonBlockScheduler, NoMidTickArrivalPreemptsFrozenSelection) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTNonBlockScheduler scheduler;
+    CPU cpu("st-nonblock-mid-tick-arrival-cpu", nullptr);
+    TestSTNonBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeSTNonBlockTask low(2, 20, 20, 2.0);
+    FakeSTNonBlockTask high(1, 5, 5, 1.0);
+
+    STNonBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &low, 20, 2, 1.0);
+    STNonBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &high, 5, 1, 1.0);
+
+    simulation.initSingleRun();
+    STNonBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STNonBlockSchedulerTestPeer::setEnergy(scheduler, 2.0);
+    low.releaseAt(Tick(0));
+    STNonBlockSchedulerTestPeer::enqueue(scheduler, &low);
+
+    STNonBlockSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+
+    ASSERT_TRUE(low.isExecuting());
+    ASSERT_EQ(kernel.getTask(&cpu), &low);
+    ASSERT_EQ(STNonBlockSchedulerTestPeer::selectSlot(scheduler, 0), &low);
+    ASSERT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.0);
+    ASSERT_DOUBLE_EQ(scheduler.getTotalEnergyConsumed(), 1.0);
+
+    high.releaseAt(Tick(0));
+    STNonBlockSchedulerTestPeer::arrive(scheduler, &high);
+
+    EXPECT_TRUE(low.isExecuting());
+    EXPECT_EQ(kernel.getTask(&cpu), &low);
+    EXPECT_EQ(high.getScheduleCount(), 0);
+    EXPECT_TRUE(STNonBlockSchedulerTestPeer::isInReadyQueue(scheduler, &high));
+    EXPECT_EQ(STNonBlockSchedulerTestPeer::selectSlot(scheduler, 0), &low);
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.0);
+    EXPECT_DOUBLE_EQ(scheduler.getTotalEnergyConsumed(), 1.0);
+
+    simulation.endSingleRun();
+}
+
+TEST(STNonBlockScheduler, RealStaleEndDispatchIgnored) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTNonBlockScheduler scheduler;
+    CPU cpu("st-nonblock-real-stale-dispatch-cpu", nullptr);
+    TestSTNonBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeSTNonBlockTask low(2, 20, 20, 1.0);
+    FakeSTNonBlockTask high(1, 5, 5, 1.0, 1);
+
+    kernel.setContextSwitchDelay(Tick(1));
+    STNonBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &low, 20, 1, 1.0);
+    STNonBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &high, 5, 1, 1.0);
+
+    simulation.initSingleRun();
+    STNonBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STNonBlockSchedulerTestPeer::setEnergy(scheduler, 3.0);
+    low.releaseAt(Tick(0));
+    STNonBlockSchedulerTestPeer::enqueue(scheduler, &low);
+    STNonBlockSchedulerTestPeer::tick(scheduler);
+
+    STNonBlockTestActionEvent release_high([&]() {
+        high.releaseAt(Tick(1));
+        STNonBlockSchedulerTestPeer::arrive(scheduler, &high);
+        STNonBlockSchedulerTestPeer::tick(scheduler);
+    });
+    release_high.post(Tick(1));
+
+    simulation.run_to(Tick(2));
+
+    EXPECT_EQ(low.getScheduleCount(), 0);
+    EXPECT_FALSE(low.isExecuting());
+    EXPECT_EQ(high.getScheduleCount(), 1);
+    EXPECT_TRUE(high.isExecuting());
+    EXPECT_EQ(kernel.getTask(&cpu), &high);
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.0);
+    EXPECT_DOUBLE_EQ(scheduler.getTotalEnergyConsumed(), 2.0);
+
+    simulation.endSingleRun();
+}
+
+TEST(STNonBlockScheduler,
+     PreemptedJobRequeuesAndResumesWhenEnergySufficient) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTNonBlockScheduler scheduler;
+    CPU cpu("st-nonblock-resume-cpu", nullptr);
+    TestSTNonBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeSTNonBlockTask low(2, 20, 20, 5.0);
+    FakeSTNonBlockTask high(1, 5, 5, 1.0, 1);
+
+    STNonBlockSchedulerTestPeer::addTaskModel(scheduler, &low, 20, 5, 1.0);
+    STNonBlockSchedulerTestPeer::addTaskModel(scheduler, &high, 5, 1, 1.0);
+
+    simulation.initSingleRun();
+    STNonBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STNonBlockSchedulerTestPeer::setEnergy(scheduler, 10.0);
+    low.releaseAt(Tick(0));
+    STNonBlockSchedulerTestPeer::enqueue(scheduler, &low);
+    STNonBlockSchedulerTestPeer::tick(scheduler);
+
+    STNonBlockTestActionEvent preempt([&]() {
+        low.setRemaining(4.0);
+        high.releaseAt(Tick(1));
+        STNonBlockSchedulerTestPeer::arrive(scheduler, &high);
+        STNonBlockSchedulerTestPeer::tick(scheduler);
+    });
+    preempt.post(Tick(1));
+    STNonBlockTestActionEvent resume([&]() {
+        high.setRemaining(0.0);
+        kernel.suspend(&high);
+        STNonBlockSchedulerTestPeer::tick(scheduler);
+    });
+    resume.post(Tick(2));
+
+    simulation.run_to(Tick(2));
+
+    EXPECT_EQ(low.getScheduleCount(), 2);
+    EXPECT_TRUE(low.isExecuting());
+    EXPECT_EQ(kernel.getTask(&cpu), &low);
+    EXPECT_DOUBLE_EQ(low.getRemainingWCET(), 4.0);
+    EXPECT_EQ(low.getDeadline(), Tick(20));
+    EXPECT_EQ(low.getArrival(), Tick(0));
 
     simulation.endSingleRun();
 }

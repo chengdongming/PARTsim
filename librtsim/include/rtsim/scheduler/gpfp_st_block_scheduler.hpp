@@ -171,6 +171,7 @@ namespace RTSim {
         };
         std::map<AbsRTTask *, TaskEnergyAccount> _energy_accounts;
         std::map<AbsRTTask *, std::string> _suspend_reasons;
+        std::map<AbsRTTask *, MetaSim::Tick> _deadline_miss_arrivals;
 
         // ========== 统计信息 ==========
         struct {

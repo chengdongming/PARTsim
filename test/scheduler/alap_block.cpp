@@ -123,6 +123,15 @@ public:
         scheduler.performTickScheduling();
     }
 
+    static void cleanup(ALAPBlockScheduler &scheduler) {
+        scheduler.cleanupExpiredTasks();
+    }
+
+    static bool isInReadyQueue(ALAPBlockScheduler &scheduler,
+                               AbsRTTask *task) {
+        return scheduler.isInReadyQueue(task);
+    }
+
     static void cancelAutomaticTick(ALAPBlockScheduler &scheduler) {
         scheduler._tick_event->drop();
         scheduler._first_tick_scheduled = false;
@@ -166,6 +175,34 @@ TEST(ALAPBlockScheduler, UsesRelativeDeadlineNotPeriod) {
     simulation.run_to(Tick(9));
     EXPECT_DOUBLE_EQ(scheduler.getTotalEnergyConsumed(), 3.0);
     EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 7.0);
+
+    simulation.endSingleRun();
+}
+
+TEST(ALAPBlockScheduler, UsesAbsoluteDeadlineInAllDeadlineComparisons) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    ALAPBlockScheduler scheduler;
+    CPU cpu("alap-block-cleanup-deadline-cpu", nullptr);
+    MRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeALAPBlockTask task(1, 100, 10, 1.0);
+
+    ALAPBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &task, 100, 1, 1.0);
+
+    simulation.initSingleRun();
+    ALAPBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    ALAPBlockSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    task.releaseAt(Tick(0));
+    ALAPBlockSchedulerTestPeer::enqueue(scheduler, &task);
+
+    ALAPBlockTestActionEvent cleanup_at_deadline([&]() {
+        ALAPBlockSchedulerTestPeer::cleanup(scheduler);
+    });
+    cleanup_at_deadline.post(Tick(10));
+    simulation.run_to(Tick(10));
+
+    EXPECT_FALSE(ALAPBlockSchedulerTestPeer::isInReadyQueue(
+        scheduler, &task));
 
     simulation.endSingleRun();
 }

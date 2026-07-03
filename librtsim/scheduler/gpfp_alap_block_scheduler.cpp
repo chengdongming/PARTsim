@@ -1011,7 +1011,7 @@ namespace RTSim {
             if (!model) continue;
 
             Tick task_slack = calculateSlackForTask(task);
-            Tick task_deadline = task->getArrival() + Tick(model->getPeriod());
+            Tick task_deadline = task->getDeadline();
 
             if (!worst_running) {
                 worst_running = task;

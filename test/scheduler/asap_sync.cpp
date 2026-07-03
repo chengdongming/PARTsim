@@ -153,6 +153,10 @@ public:
                                AbsRTTask *task) {
         return scheduler.isInReadyQueue(task);
     }
+
+    static int batchSize(ASAPSyncScheduler &scheduler) {
+        return scheduler.calculateBatchSize();
+    }
 };
 
 static bool ContainsTask(const std::vector<AbsRTTask *> &tasks,
@@ -283,7 +287,8 @@ TEST(ASAPSyncScheduler, RunningTaskMustBeInFrozenBatch) {
     simulation.endSingleRun();
 }
 
-TEST(ASAPSyncScheduler, RunningPreservationDoesNotCreatePartialBatch) {
+TEST(ASAPSyncScheduler,
+     InsufficientIdleCoreBatchPreservesAffordableContinuation) {
     auto &simulation = MetaSim::Simulation::getInstance();
     TestASAPSyncScheduler scheduler;
     CPU cpu0("asap-sync-running-partial-cpu0", nullptr);
@@ -307,10 +312,50 @@ TEST(ASAPSyncScheduler, RunningPreservationDoesNotCreatePartialBatch) {
     ASAPSyncSchedulerTestPeer::tick(scheduler);
     simulation.run_to(Tick(0));
 
-    EXPECT_FALSE(running.isExecuting());
+    EXPECT_TRUE(running.isExecuting());
     EXPECT_EQ(ready.getScheduleCount(), 0);
-    EXPECT_TRUE(scheduler.getCurrentBatchTasks().empty());
-    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.5);
+    EXPECT_EQ(scheduler.getCurrentBatchTasks(),
+              (std::vector<AbsRTTask *>{&running}));
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 0.5);
+
+    simulation.endSingleRun();
+}
+
+TEST(ASAPSyncScheduler, BatchSizeUsesIdleCoresNotTotalCores) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestASAPSyncScheduler scheduler;
+    CPU cpu0("asap-sync-idle-size-cpu0", nullptr);
+    CPU cpu1("asap-sync-idle-size-cpu1", nullptr);
+    TestASAPSyncMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu0, &cpu1});
+    FakeASAPSyncTask running(1, 5, 10, 2.0);
+    FakeASAPSyncTask next(2, 10, 10, 1.0);
+    FakeASAPSyncTask waiting(3, 20, 20, 1.0);
+
+    ASAPSyncSchedulerTestPeer::addTaskModel(scheduler, &running, 5, 2, 1.0);
+    ASAPSyncSchedulerTestPeer::addTaskModel(scheduler, &next, 10, 1, 1.0);
+    ASAPSyncSchedulerTestPeer::addTaskModel(scheduler, &waiting, 20, 1, 1.0);
+
+    simulation.initSingleRun();
+    ASAPSyncSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    ASAPSyncSchedulerTestPeer::setEnergy(scheduler, 2.0);
+    running.releaseAt(Tick(0));
+    next.releaseAt(Tick(0));
+    waiting.releaseAt(Tick(0));
+    running.schedule();
+    kernel.setRunning(&cpu0, &running);
+    ASAPSyncSchedulerTestPeer::enqueue(scheduler, &next);
+    ASAPSyncSchedulerTestPeer::enqueue(scheduler, &waiting);
+
+    EXPECT_EQ(ASAPSyncSchedulerTestPeer::batchSize(scheduler), 1);
+    ASAPSyncSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+
+    EXPECT_TRUE(running.isExecuting());
+    EXPECT_EQ(next.getScheduleCount(), 1);
+    EXPECT_EQ(waiting.getScheduleCount(), 0);
+    EXPECT_EQ(scheduler.getCurrentBatchSize(), 2);
+    EXPECT_TRUE(ContainsTask(scheduler.getCurrentBatchTasks(), &running));
+    EXPECT_TRUE(ContainsTask(scheduler.getCurrentBatchTasks(), &next));
 
     simulation.endSingleRun();
 }
@@ -373,6 +418,51 @@ TEST(ASAPSyncScheduler, NoStaleEndDispatch) {
     EXPECT_EQ(high.getScheduleCount(), 1);
     EXPECT_TRUE(high.isExecuting());
     EXPECT_EQ(kernel.getTask(&cpu), &high);
+
+    simulation.endSingleRun();
+}
+
+TEST(ASAPSyncScheduler,
+     PreemptedJobRequeuesAndResumesWhenEnergySufficient) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestASAPSyncScheduler scheduler;
+    CPU cpu("asap-sync-resume-cpu", nullptr);
+    TestASAPSyncMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeASAPSyncTask low(2, 20, 20, 5.0);
+    FakeASAPSyncTask high(1, 5, 5, 1.0, 1);
+
+    ASAPSyncSchedulerTestPeer::addTaskModel(scheduler, &low, 20, 5, 1.0);
+    ASAPSyncSchedulerTestPeer::addTaskModel(scheduler, &high, 5, 1, 1.0);
+
+    simulation.initSingleRun();
+    ASAPSyncSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    ASAPSyncSchedulerTestPeer::setEnergy(scheduler, 10.0);
+    low.releaseAt(Tick(0));
+    ASAPSyncSchedulerTestPeer::enqueue(scheduler, &low);
+    ASAPSyncSchedulerTestPeer::tick(scheduler);
+
+    ASAPSyncTestActionEvent preempt([&]() {
+        low.setRemaining(4.0);
+        high.releaseAt(Tick(1));
+        ASAPSyncSchedulerTestPeer::arrive(scheduler, &high);
+        ASAPSyncSchedulerTestPeer::tick(scheduler);
+    });
+    preempt.post(Tick(1));
+    ASAPSyncTestActionEvent resume([&]() {
+        high.setRemaining(0.0);
+        kernel.suspend(&high);
+        ASAPSyncSchedulerTestPeer::tick(scheduler);
+    });
+    resume.post(Tick(2));
+
+    simulation.run_to(Tick(2));
+
+    EXPECT_EQ(low.getScheduleCount(), 2);
+    EXPECT_TRUE(low.isExecuting());
+    EXPECT_EQ(kernel.getTask(&cpu), &low);
+    EXPECT_DOUBLE_EQ(low.getRemainingWCET(), 4.0);
+    EXPECT_EQ(low.getDeadline(), Tick(20));
+    EXPECT_EQ(low.getArrival(), Tick(0));
 
     simulation.endSingleRun();
 }

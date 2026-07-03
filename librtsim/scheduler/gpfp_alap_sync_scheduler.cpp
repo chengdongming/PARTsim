@@ -378,14 +378,26 @@ namespace RTSim {
     // =====================================================
 
     int ALAPSyncScheduler::calculateBatchSize() {
-        ConfigManager &configMgr = ConfigManager::getInstance();
-        int total_cpus = configMgr.getNumCores();
-        int sync_group_size = static_cast<int>(_current_batch_tasks.size());
-        int batch_size = std::min(total_cpus, sync_group_size);
+        int total_cpus = _kernel
+            ? static_cast<int>(_kernel->getCurrentExecutingTasks().size())
+            : ConfigManager::getInstance().getNumCores();
+        int occupied_cpus = 0;
+        if (_kernel) {
+            for (const auto &[cpu, task] :
+                 _kernel->getCurrentExecutingTasks()) {
+                if ((task && task->isExecuting()) ||
+                    _kernel->isCPUDispatching(cpu)) {
+                    ++occupied_cpus;
+                }
+            }
+        }
+        const int idle_cpus = std::max(0, total_cpus - occupied_cpus);
+        int eligible_jobs = static_cast<int>(_ready_queue.size());
+        int batch_size = std::min(idle_cpus, eligible_jobs);
 
         SCHEDULER_LOG_DEBUG(std::string("📊 [ALAP-Sync] calculateBatchSize: ") +
-                           "CPU核心数=" + std::to_string(total_cpus) +
-                           " 当前同步组=" + std::to_string(sync_group_size) +
+                           "空闲CPU=" + std::to_string(idle_cpus) +
+                           " 候选任务=" + std::to_string(eligible_jobs) +
                            " K=" + std::to_string(batch_size));
 
         return batch_size;
@@ -750,30 +762,60 @@ namespace RTSim {
         _pending_dispatch_tasks.clear();
         _pending_dispatch_energy = 0.0;
 
-        std::vector<AbsRTTask *> selected_tasks;
-        double required_group_energy = 0.0;
+        std::vector<AbsRTTask *> desired_tasks;
         const int total_cpus = static_cast<int>(running_tasks_map.size());
         for (AbsRTTask *task : urgent_candidates) {
-            if (static_cast<int>(selected_tasks.size()) >= total_cpus) {
+            if (static_cast<int>(desired_tasks.size()) >= total_cpus) {
                 break;
             }
-            selected_tasks.push_back(task);
-            required_group_energy += getConfiguredUnitEnergyForTask(task);
+            desired_tasks.push_back(task);
         }
 
+        std::vector<AbsRTTask *> continuation_tasks;
+        std::vector<AbsRTTask *> idle_core_batch;
+        double continuation_energy = 0.0;
+        double idle_core_batch_energy = 0.0;
+        for (AbsRTTask *task : desired_tasks) {
+            if (running_tasks.find(task) != running_tasks.end()) {
+                continuation_tasks.push_back(task);
+                continuation_energy += getConfiguredUnitEnergyForTask(task);
+            } else {
+                idle_core_batch.push_back(task);
+                idle_core_batch_energy += getConfiguredUnitEnergyForTask(task);
+            }
+        }
+
+        std::vector<AbsRTTask *> selected_tasks = continuation_tasks;
+        double required_group_energy = continuation_energy;
         const double epsilon = 1e-9;
-        if (!selected_tasks.empty() &&
-            _current_energy + epsilon < required_group_energy) {
+        const bool continuation_affordable =
+            _current_energy + epsilon >= continuation_energy;
+        const bool idle_core_batch_affordable =
+            continuation_affordable &&
+            _current_energy + epsilon >=
+                continuation_energy + idle_core_batch_energy;
+        if (!continuation_affordable) {
             _energy_depleted = true;
             _stats.total_batch_skipped++;
-            SCHEDULER_LOG_WARNING(std::string("⚠️ [ALAP-Sync] 同步组原子验资失败，本tick整组不上机: K=") +
-                                  std::to_string(selected_tasks.size()) +
+            SCHEDULER_LOG_WARNING(std::string("⚠️ [ALAP-Sync] urgent continuation 整组验资失败: K=") +
+                                  std::to_string(continuation_tasks.size()) +
                                   " 组总需能=" + std::to_string(required_group_energy * 1000.0) + " mJ" +
                                   " 当前=" + std::to_string(_current_energy * 1000.0) + " mJ");
             selected_tasks.clear();
             required_group_energy = 0.0;
+        } else if (!idle_core_batch.empty() &&
+                   !idle_core_batch_affordable) {
+            _energy_depleted = true;
+            _stats.total_batch_skipped++;
+            SCHEDULER_LOG_WARNING(std::string("⚠️ [ALAP-Sync] 空闲核 urgent batch 验资失败，continuation保持运行: K=") +
+                                  std::to_string(idle_core_batch.size()) +
+                                  " 批次需能=" + std::to_string(idle_core_batch_energy * 1000.0) + " mJ" +
+                                  " continuation需能=" + std::to_string(continuation_energy * 1000.0) + " mJ" +
+                                  " 当前=" + std::to_string(_current_energy * 1000.0) + " mJ");
         } else {
             _energy_depleted = false;
+            selected_tasks = desired_tasks;
+            required_group_energy += idle_core_batch_energy;
         }
 
         _selection_tick = current_time;
@@ -782,14 +824,17 @@ namespace RTSim {
         _current_batch_tasks = selected_tasks;
         _current_batch_size = static_cast<int>(_current_batch_tasks.size());
         _batch_scheduled_this_tick = !selected_tasks.empty();
-        _dispatch_selection_order = selected_tasks;
-        _dispatching_tasks_total_energy = required_group_energy;
 
         if (!selected_tasks.empty()) {
             _stats.total_batch_schedules++;
             for (AbsRTTask *task : selected_tasks) {
                 markTaskSelectedThisTick(task);
                 _paid_pending_tasks.insert(task);
+            }
+            if (std::abs(_dispatching_tasks_total_energy -
+                         required_group_energy) > epsilon) {
+                throw std::logic_error(
+                    "ALAP-Sync selected energy accounting mismatch");
             }
             commitTickEnergy(current_time, required_group_energy);
         }

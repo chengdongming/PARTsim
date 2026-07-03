@@ -519,8 +519,15 @@ namespace RTSim {
         int i = 0;
         std::cout << "[DEBUG] onBeginDispatchMulti - 开始调用getTaskN查找任务" << std::endl;
         while ((st = _sched->getTaskN(i)) != nullptr) {
-            std::cout << "[DEBUG] onBeginDispatchMulti - getTaskN(" << i << ") = " << taskname(st) << " _m_dispatched=" << _m_dispatched[st] << std::endl;
-            if (_m_dispatched[st] == nullptr)
+            CPU *running_cpu = getProcessor(st);
+            std::cout << "[DEBUG] onBeginDispatchMulti - getTaskN(" << i << ") = " << taskname(st)
+                      << " _m_dispatched=" << _m_dispatched[st]
+                      << " running_cpu=" << running_cpu << std::endl;
+            // A frozen selected set may contain running continuations before
+            // newly admitted jobs.  Never dispatch a continuation again on a
+            // second CPU; advance to the first task that is neither running
+            // nor already in a context switch.
+            if (_m_dispatched[st] == nullptr && running_cpu == nullptr)
                 break;
             else
                 i++;
