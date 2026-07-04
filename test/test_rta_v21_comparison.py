@@ -68,6 +68,11 @@ def test_comparison_row_contains_both_versions_and_valid_tightness():
     assert row["v21_rta_version"] == "v21-local-window"
     assert row["v20p4_tightness"] == pytest.approx(2.4)
     assert row["v21_tightness"] == pytest.approx(2.0)
+    assert row["pessimism_v20"] == pytest.approx(2.4)
+    assert row["pessimism_v21"] == pytest.approx(2.0)
+    assert row["intersection_pessimism_v20"] == pytest.approx(2.4)
+    assert row["intersection_pessimism_v21"] == pytest.approx(2.0)
+    assert row["intersection_pessimism_improvement"] == pytest.approx(0.4)
     assert row["v21_minus_v20p4_bound"] == -2
     assert row["v21_bound_lt_v20p4"] == 1
     assert row["v20_soundness_violation"] == 0
@@ -100,8 +105,27 @@ def test_tightness_is_empty_for_unproven_analysis():
     )
     assert row["v20p4_tightness"] == ""
     assert row["v21_tightness"] == ""
+    assert row["pessimism_v20"] == ""
+    assert row["pessimism_v21"] == ""
+    assert row["intersection_pessimism_v20"] == ""
+    assert row["intersection_pessimism_v21"] == ""
+    assert row["intersection_pessimism_improvement"] == ""
     assert row["both_unproven"] == 1
     assert row["both_rejected"] == 1
+
+
+def test_pessimism_is_empty_when_observed_response_is_not_positive():
+    row = runner._comparison_row(
+        base_row(), simulation(response=0),
+        report(runner.V20_VERSION, bound=12),
+        report(runner.V21_VERSION, bound=10),
+        1.0,
+    )
+    assert row["pessimism_v20"] == ""
+    assert row["pessimism_v21"] == ""
+    assert row["intersection_pessimism_v20"] == ""
+    assert row["intersection_pessimism_v21"] == ""
+    assert row["intersection_pessimism_improvement"] == ""
 
 
 def test_soundness_rejects_proven_but_simulation_rejected():
@@ -204,18 +228,65 @@ def _write_result(path: Path, **updates):
 def test_analyzer_writes_summary_and_figures(tmp_path):
     source = tmp_path / "comparison.csv"
     output = tmp_path / "analysis_outputs_v21"
-    _write_result(source)
+    _write_result(
+        source,
+        runtime_v20_sec=0.5,
+        runtime_v21_sec=1.5,
+        runtime_slowdown_v21_over_v20=3.0,
+    )
     summary, by_util = analyzer.analyze(source, output)
     assert summary.iloc[0]["v21_bound_lt_v20p4_count"] == 1
+    assert summary.iloc[0]["median_pessimism_v20"] == pytest.approx(2.4)
+    assert summary.iloc[0]["p95_pessimism_v21"] == pytest.approx(2.0)
+    assert summary.iloc[0][
+        "median_intersection_pessimism_improvement"
+    ] == pytest.approx(0.4)
+    assert summary.iloc[0]["runtime_p95_v20_sec"] == pytest.approx(0.5)
+    assert summary.iloc[0]["runtime_p95_v21_sec"] == pytest.approx(1.5)
+    assert summary.iloc[0][
+        "runtime_p95_slowdown_v21_over_v20"
+    ] == pytest.approx(3.0)
     assert by_util.iloc[0]["v21_proven_count"] == 1
+    assert by_util.iloc[0]["median_pessimism_v20"] == pytest.approx(2.4)
+    assert by_util.iloc[0][
+        "median_intersection_pessimism_v21"
+    ] == pytest.approx(2.0)
+    assert by_util.iloc[0]["runtime_p95_v20_sec"] == pytest.approx(0.5)
+    assert by_util.iloc[0]["runtime_p95_v21_sec"] == pytest.approx(1.5)
     for filename in (
         analyzer.SUMMARY_FILENAME,
         analyzer.BY_UTIL_FILENAME,
         "rta_v21_bound_delta.png",
         "rta_v21_tightness_comparison.png",
         "rta_v21_proven_ratio.png",
+        "plots/pessimism_cdf.png",
+        "plots/intersection_pessimism_boxplot.png",
+        "plots/runtime_slowdown.png",
     ):
         assert (output / filename).is_file()
+
+
+def test_analyzer_plots_do_not_fail_without_metric_data(tmp_path):
+    source = tmp_path / "comparison.csv"
+    output = tmp_path / "analysis_outputs_v21"
+    row = runner._comparison_row(
+        base_row(), simulation(),
+        report(runner.V20_VERSION, proven=False),
+        report(runner.V21_VERSION, proven=False),
+        0.25,
+    )
+    pd.DataFrame([row], columns=runner.RESULT_FIELDS).to_csv(
+        source, index=False
+    )
+
+    analyzer.analyze(source, output)
+
+    for filename in (
+        analyzer.PESSIMISM_CDF_PLOT,
+        analyzer.INTERSECTION_PESSIMISM_BOXPLOT,
+        analyzer.RUNTIME_SLOWDOWN_PLOT,
+    ):
+        assert (output / "plots" / filename).is_file()
 
 
 def test_analyzer_accepts_comparison_manifest(tmp_path):
@@ -291,6 +362,8 @@ def test_runner_default_root_is_v21_specific():
     )
     assert args.output_root == "acceptance_ratio_runs_v21"
     assert args.soundness_mode == "fail_fast"
+    assert runner.acceptance.RTA_VERSION == "v20.4"
+    assert Path(runner.acceptance.RTA_TOOL).name == "asap_block_rta.py"
 
 
 def test_runner_dry_run_creates_only_v21_plan_files(tmp_path):

@@ -18,6 +18,9 @@ V21_VERSION = "v21-local-window"
 RESULT_FILENAME = "rta_v21_comparison_results.csv"
 SUMMARY_FILENAME = "rta_v21_comparison_summary.csv"
 BY_UTIL_FILENAME = "rta_v21_comparison_by_utilization.csv"
+PESSIMISM_CDF_PLOT = "pessimism_cdf.png"
+INTERSECTION_PESSIMISM_BOXPLOT = "intersection_pessimism_boxplot.png"
+RUNTIME_SLOWDOWN_PLOT = "runtime_slowdown.png"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -55,6 +58,27 @@ def _soundness_failure_mask(frame: pd.DataFrame, accepted: pd.Series) -> pd.Seri
     if "simulation_status" not in frame.columns:
         return ~accepted
     return frame["simulation_status"].map(_is_schedulability_failure_status)
+
+
+def _pessimism_series(
+    frame: pd.DataFrame,
+    bound_column: str,
+    proven: pd.Series,
+    accepted: pd.Series,
+) -> pd.Series:
+    observed = pd.to_numeric(frame["simulated_response_time"], errors="coerce")
+    bound = pd.to_numeric(frame[bound_column], errors="coerce")
+    valid = (
+        proven
+        & accepted
+        & observed.notna()
+        & bound.notna()
+        & observed.map(lambda value: math.isfinite(value) and value > 0)
+        & bound.map(math.isfinite)
+    )
+    result = pd.Series(math.nan, index=frame.index, dtype=float)
+    result.loc[valid] = bound.loc[valid] / observed.loc[valid]
+    return result
 
 
 def load_results(input_path) -> pd.DataFrame:
@@ -144,12 +168,42 @@ def load_results(input_path) -> pd.DataFrame:
         "E0", "normalized_utilization", "v21_minus_v20p4_bound",
         "simulated_response_time", "v20p4_bound", "v21_bound",
         "v20p4_tightness", "v21_tightness",
+        "pessimism_v20", "pessimism_v21",
+        "intersection_pessimism_v20", "intersection_pessimism_v21",
+        "intersection_pessimism_improvement",
         "runtime_v20_sec", "runtime_v21_sec",
         "runtime_slowdown_v21_over_v20",
     ):
+        if column not in frame.columns:
+            frame[column] = math.nan
         frame[column] = pd.to_numeric(frame[column], errors="coerce")
 
     accepted = _as_bool(frame["accepted"])
+    frame["pessimism_v20"] = _pessimism_series(
+        frame, "v20p4_bound", frame["v20p4_proven"], accepted
+    )
+    frame["pessimism_v21"] = _pessimism_series(
+        frame, "v21_bound", frame["v21_proven"], accepted
+    )
+    intersection = (
+        frame["both_proven"]
+        & accepted
+        & frame["pessimism_v20"].notna()
+        & frame["pessimism_v21"].notna()
+    )
+    frame["intersection_pessimism_v20"] = math.nan
+    frame["intersection_pessimism_v21"] = math.nan
+    frame["intersection_pessimism_improvement"] = math.nan
+    frame.loc[intersection, "intersection_pessimism_v20"] = frame.loc[
+        intersection, "pessimism_v20"
+    ]
+    frame.loc[intersection, "intersection_pessimism_v21"] = frame.loc[
+        intersection, "pessimism_v21"
+    ]
+    frame.loc[intersection, "intersection_pessimism_improvement"] = (
+        frame.loc[intersection, "pessimism_v20"]
+        - frame.loc[intersection, "pessimism_v21"]
+    )
     schedulability_failure = _soundness_failure_mask(frame, accepted)
     frame["v21_soundness_proven_but_rejected"] |= (
         frame["v21_proven"] & schedulability_failure
@@ -197,12 +251,19 @@ def load_results(input_path) -> pd.DataFrame:
     return frame
 
 
-def _finite_stats(series: pd.Series, prefix: str) -> dict:
+def _finite_values(series: pd.Series) -> pd.Series:
     values = pd.to_numeric(series, errors="coerce").dropna()
+    return values.loc[values.map(math.isfinite)]
+
+
+def _finite_stats(series: pd.Series, prefix: str) -> dict:
+    values = _finite_values(series)
     return {
         "mean_{}".format(prefix): values.mean() if len(values) else math.nan,
         "median_{}".format(prefix): values.median() if len(values) else math.nan,
+        "p75_{}".format(prefix): values.quantile(0.75) if len(values) else math.nan,
         "p90_{}".format(prefix): values.quantile(0.9) if len(values) else math.nan,
+        "p95_{}".format(prefix): values.quantile(0.95) if len(values) else math.nan,
         "max_{}".format(prefix): values.max() if len(values) else math.nan,
     }
 
@@ -244,12 +305,31 @@ def summarize_group(group: pd.DataFrame) -> dict:
     })
     result.update(_finite_stats(v20_proven["v20p4_tightness"], "v20p4_tightness"))
     result.update(_finite_stats(v21_proven["v21_tightness"], "v21_tightness"))
+    result.update(_finite_stats(group["pessimism_v20"], "pessimism_v20"))
+    result.update(_finite_stats(group["pessimism_v21"], "pessimism_v21"))
+    result.update(_finite_stats(
+        group["intersection_pessimism_v20"],
+        "intersection_pessimism_v20",
+    ))
+    result.update(_finite_stats(
+        group["intersection_pessimism_v21"],
+        "intersection_pessimism_v21",
+    ))
+    result.update(_finite_stats(
+        group["intersection_pessimism_improvement"],
+        "intersection_pessimism_improvement",
+    ))
     result.update(_finite_stats(group["runtime_v20_sec"], "runtime_v20_sec"))
     result.update(_finite_stats(group["runtime_v21_sec"], "runtime_v21_sec"))
     result.update(_finite_stats(
         group["runtime_slowdown_v21_over_v20"],
         "runtime_slowdown_v21_over_v20",
     ))
+    result["runtime_p95_v20_sec"] = result["p95_runtime_v20_sec"]
+    result["runtime_p95_v21_sec"] = result["p95_runtime_v21_sec"]
+    result["runtime_p95_slowdown_v21_over_v20"] = result[
+        "p95_runtime_slowdown_v21_over_v20"
+    ]
     return result
 
 
@@ -297,6 +377,7 @@ def _plot_proven(by_util: pd.DataFrame, output: Path) -> None:
 
 
 def _plot_tightness(frame: pd.DataFrame, output: Path) -> None:
+    """Plot legacy pessimism-ratio aliases retained for compatibility."""
     figure, axis = plt.subplots(figsize=(7, 4.5))
     values = []
     labels = []
@@ -307,7 +388,7 @@ def _plot_tightness(frame: pd.DataFrame, output: Path) -> None:
             labels.append(version)
     if values:
         axis.boxplot(values, labels=labels, showfliers=False)
-    axis.set_ylabel("Task-level mean tightness")
+    axis.set_ylabel("Legacy pessimism ratio (bound / observed)")
     figure.tight_layout()
     figure.savefig(output, dpi=160)
     plt.close(figure)
@@ -327,12 +408,98 @@ def _plot_delta(frame: pd.DataFrame, output: Path) -> None:
     plt.close(figure)
 
 
+def _plot_pessimism_cdf(frame: pd.DataFrame, output: Path) -> None:
+    figure, axis = plt.subplots(figsize=(7, 4.5))
+    plotted = False
+    for label, column in (
+        ("v20.4", "pessimism_v20"),
+        ("v21 experimental", "pessimism_v21"),
+    ):
+        values = _finite_values(frame[column]).sort_values()
+        if len(values):
+            cumulative = [
+                float(index) / len(values)
+                for index in range(1, len(values) + 1)
+            ]
+            axis.step(values, cumulative, where="post", label=label)
+            plotted = True
+    if plotted:
+        axis.legend()
+    else:
+        axis.text(
+            0.5, 0.5, "No own-proven pessimism data",
+            ha="center", va="center", transform=axis.transAxes,
+        )
+    axis.set_xlabel("Pessimism ratio (RTA bound / observed max response)")
+    axis.set_ylabel("Empirical CDF")
+    axis.set_ylim(0, 1.02)
+    axis.grid(True, linestyle="--", alpha=0.35)
+    figure.tight_layout()
+    figure.savefig(output, dpi=160)
+    plt.close(figure)
+
+
+def _plot_intersection_pessimism(frame: pd.DataFrame, output: Path) -> None:
+    figure, axis = plt.subplots(figsize=(7, 4.5))
+    both = frame.loc[frame["both_proven"]]
+    values = []
+    labels = []
+    for label, column in (
+        ("v20.4", "intersection_pessimism_v20"),
+        ("v21 experimental", "intersection_pessimism_v21"),
+    ):
+        data = _finite_values(both[column])
+        if len(data):
+            values.append(data)
+            labels.append(label)
+    if values:
+        axis.boxplot(values, labels=labels, showfliers=False)
+    else:
+        axis.text(
+            0.5, 0.5, "No both-proven intersection data",
+            ha="center", va="center", transform=axis.transAxes,
+        )
+    axis.set_ylabel("Pessimism ratio (RTA bound / observed max response)")
+    axis.set_title("Both-proven taskset intersection")
+    figure.tight_layout()
+    figure.savefig(output, dpi=160)
+    plt.close(figure)
+
+
+def _plot_runtime_slowdown(frame: pd.DataFrame, output: Path) -> None:
+    figure, axis = plt.subplots(figsize=(7, 4.5))
+    values = _finite_values(
+        frame["runtime_slowdown_v21_over_v20"]
+    ).sort_values()
+    if len(values):
+        cumulative = [
+            float(index) / len(values)
+            for index in range(1, len(values) + 1)
+        ]
+        axis.step(values, cumulative, where="post")
+    else:
+        axis.text(
+            0.5, 0.5, "No runtime slowdown data",
+            ha="center", va="center", transform=axis.transAxes,
+        )
+    axis.axvline(1.0, color="black", linewidth=1)
+    axis.set_xlabel("Runtime slowdown (v21 / v20.4)")
+    axis.set_ylabel("Empirical CDF")
+    axis.set_ylim(0, 1.02)
+    axis.grid(True, linestyle="--", alpha=0.35)
+    figure.tight_layout()
+    figure.savefig(output, dpi=160)
+    plt.close(figure)
+
+
 def analyze(input_path, output_dir) -> tuple:
     frame = load_results(input_path)
     output = Path(output_dir)
     if "rta-e0-sensitivity-v20p4" in str(output).lower():
         raise ValueError("v21 analysis cannot overwrite frozen v20.4 analysis")
     output.mkdir(parents=True, exist_ok=True)
+    plots = output / "plots"
+    plots.mkdir(parents=True, exist_ok=True)
     summary = build_summary(frame)
     by_util = build_by_utilization(frame)
     summary.to_csv(output / SUMMARY_FILENAME, index=False)
@@ -340,6 +507,11 @@ def analyze(input_path, output_dir) -> tuple:
     _plot_delta(frame, output / "rta_v21_bound_delta.png")
     _plot_tightness(frame, output / "rta_v21_tightness_comparison.png")
     _plot_proven(by_util, output / "rta_v21_proven_ratio.png")
+    _plot_pessimism_cdf(frame, plots / PESSIMISM_CDF_PLOT)
+    _plot_intersection_pessimism(
+        frame, plots / INTERSECTION_PESSIMISM_BOXPLOT
+    )
+    _plot_runtime_slowdown(frame, plots / RUNTIME_SLOWDOWN_PLOT)
     return summary, by_util
 
 

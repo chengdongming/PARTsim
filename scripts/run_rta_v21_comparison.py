@@ -12,7 +12,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
-from statistics import mean
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -34,9 +33,11 @@ RESULT_FIELDS = [
     "deadline_miss_time", "first_missed_task", "taskset_path",
     "trace_path", "v20p4_rta_version", "v20p4_status",
     "v20p4_proven", "v20p4_error", "v20p4_reason", "v20p4_bound",
-    "v20p4_tightness", "v21_rta_version", "v21_status",
+    "v20p4_tightness", "pessimism_v20", "v21_rta_version", "v21_status",
     "v21_proven", "v21_error", "v21_reason", "v21_bound",
-    "v21_tightness", "v21_minus_v20p4_bound",
+    "v21_tightness", "pessimism_v21",
+    "intersection_pessimism_v20", "intersection_pessimism_v21",
+    "intersection_pessimism_improvement", "v21_minus_v20p4_bound",
     "runtime_v20_sec", "runtime_v21_sec",
     "runtime_slowdown_v21_over_v20",
     "v21_bound_lt_v20p4", "v21_bound_eq_v20p4",
@@ -339,15 +340,24 @@ def _bounds_by_task(report: Optional[Mapping[str, Any]]) -> Dict[str, float]:
     return result
 
 
-def _tightness(analysis: Mapping[str, Any], responses: Mapping[str, float]) -> Optional[float]:
-    if not analysis["proven"]:
+def _pessimism(
+    analysis: Mapping[str, Any], simulation: Mapping[str, Any]
+) -> Optional[float]:
+    if not analysis["proven"] or not simulation.get("accepted"):
         return None
-    values = [
-        bound / responses[name]
-        for name, bound in _bounds_by_task(analysis.get("report")).items()
-        if name in responses and responses[name] > 0
-    ]
-    return mean(values) if values else None
+    bound = acceptance._extract_number(analysis.get("bound"))
+    observed = acceptance._extract_number(
+        simulation.get("simulated_response_time")
+    )
+    if (
+        bound is None
+        or observed is None
+        or not math.isfinite(bound)
+        or not math.isfinite(observed)
+        or observed <= 0
+    ):
+        return None
+    return bound / observed
 
 
 def _soundness(
@@ -442,6 +452,21 @@ def _comparison_row(
         v20_result["status"] == "rta_unproven"
         and v21_result["status"] == "rta_unproven"
     )
+    pessimism_v20 = _pessimism(v20_result, simulation)
+    pessimism_v21 = _pessimism(v21_result, simulation)
+    intersection_pessimism_v20 = None
+    intersection_pessimism_v21 = None
+    intersection_pessimism_improvement = None
+    if (
+        both_proven
+        and pessimism_v20 is not None
+        and pessimism_v21 is not None
+    ):
+        intersection_pessimism_v20 = pessimism_v20
+        intersection_pessimism_v21 = pessimism_v21
+        intersection_pessimism_improvement = (
+            pessimism_v20 - pessimism_v21
+        )
     runtime_v20 = v20_result.get("runtime_sec")
     runtime_v21 = v21_result.get("runtime_sec")
     slowdown = ""
@@ -479,14 +504,35 @@ def _comparison_row(
         "v20p4_error": v20_result["error"],
         "v20p4_reason": v20_result["reason"],
         "v20p4_bound": "" if v20_result["bound"] is None else v20_result["bound"],
-        "v20p4_tightness": _tightness(v20_result, responses) or "",
+        # Legacy tightness fields are pessimism-ratio aliases retained for
+        # backward compatibility. Their direction is bound / observed.
+        "v20p4_tightness": (
+            "" if pessimism_v20 is None else pessimism_v20
+        ),
+        "pessimism_v20": "" if pessimism_v20 is None else pessimism_v20,
         "v21_rta_version": V21_VERSION,
         "v21_status": v21_result["status"],
         "v21_proven": int(v21_result["proven"]),
         "v21_error": v21_result["error"],
         "v21_reason": v21_result["reason"],
         "v21_bound": "" if v21_result["bound"] is None else v21_result["bound"],
-        "v21_tightness": _tightness(v21_result, responses) or "",
+        "v21_tightness": "" if pessimism_v21 is None else pessimism_v21,
+        "pessimism_v21": "" if pessimism_v21 is None else pessimism_v21,
+        "intersection_pessimism_v20": (
+            ""
+            if intersection_pessimism_v20 is None
+            else intersection_pessimism_v20
+        ),
+        "intersection_pessimism_v21": (
+            ""
+            if intersection_pessimism_v21 is None
+            else intersection_pessimism_v21
+        ),
+        "intersection_pessimism_improvement": (
+            ""
+            if intersection_pessimism_improvement is None
+            else intersection_pessimism_improvement
+        ),
         "v21_minus_v20p4_bound": "" if delta is None else delta,
         "runtime_v20_sec": "" if runtime_v20 is None else runtime_v20,
         "runtime_v21_sec": "" if runtime_v21 is None else runtime_v21,
