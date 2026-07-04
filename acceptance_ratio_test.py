@@ -16,6 +16,7 @@ import json
 import hashlib
 import math
 import subprocess
+import time
 import yaml
 import os
 import sys
@@ -82,6 +83,14 @@ PER_TASKSET_RESULT_FIELDS = [
     'rta_enabled',
     'rta_version',
     'rta_status',
+    'rta_attempted',
+    'rta_runtime_sec',
+    'rta_runtime_source',
+    'rta_timed_out',
+    'rta_timeout_sec',
+    'rta_profile_enabled',
+    'rta_profile_task_time_sum_sec',
+    'rta_profile_task_count',
     'rta_proven',
     'rta_schedulable',
     'sim_schedulable',
@@ -127,7 +136,14 @@ def _base_rta_result(status='disabled'):
         'rta_assumptions': [],
         'rta_horizon_ms': None,
         'rta_initial_energy': None,
+        'rta_attempted': False,
+        'rta_runtime_sec': None,
+        'rta_runtime_source': '',
+        'rta_timed_out': False,
+        'rta_timeout_sec': None,
         'rta_profile_enabled': False,
+        'rta_profile_task_time_sum_sec': None,
+        'rta_profile_task_count': 0,
         'rta_unproven_tasks': [],
         'rta_failure_reasons': {},
         'rta_error': None,
@@ -135,6 +151,32 @@ def _base_rta_result(status='disabled'):
         'rta_system_config_hash': None,
         'rta_report': None,
     }
+
+
+def aggregate_rta_profile_task_times(report):
+    """Return the sum and count of valid internal per-task profile times."""
+    if not isinstance(report, dict):
+        return None, 0
+    tasks = report.get('tasks')
+    if not isinstance(tasks, list):
+        return None, 0
+
+    values = []
+    for task in tasks:
+        if not isinstance(task, dict):
+            continue
+        profile = task.get('rta_profile')
+        if not isinstance(profile, dict):
+            continue
+        value = profile.get('total_time_sec')
+        if (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(value)
+            and value >= 0
+        ):
+            values.append(float(value))
+    return (sum(values), len(values)) if values else (None, 0)
 
 
 def parse_rta_json(payload, assume_no_overflow):
@@ -214,7 +256,6 @@ def run_asap_block_rta(algorithm, system_config, task_file, horizon_ms,
         'rta_enabled': True,
         'rta_horizon_ms': horizon_ms,
         'rta_initial_energy': float(initial_energy),
-        'rta_profile_enabled': bool(profile_rta),
         'rta_system_config': str(Path(system_config).resolve()),
     })
 
@@ -237,13 +278,25 @@ def run_asap_block_rta(algorithm, system_config, task_file, horizon_ms,
             cmd.append('--profile-rta')
         cmd.append('--json')
 
-        completed = subprocess.run(
-            cmd,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
+        result.update({
+            'rta_attempted': True,
+            'rta_runtime_source': 'subprocess_wall_clock_perf_counter',
+            'rta_timeout_sec': timeout,
+            'rta_profile_enabled': bool(profile_rta),
+        })
+        started = time.perf_counter()
+        try:
+            completed = subprocess.run(
+                cmd,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+        finally:
+            # End-to-end child-process wall time. Internal per-task profile
+            # time is recorded separately and is not equivalent to this value.
+            result['rta_runtime_sec'] = time.perf_counter() - started
         if completed.returncode != 0:
             error_output = (completed.stderr or completed.stdout or '').strip()
             raise RuntimeError(
@@ -254,8 +307,15 @@ def run_asap_block_rta(algorithm, system_config, task_file, horizon_ms,
             )
 
         result.update(parse_rta_json(completed.stdout, assume_no_overflow))
+        if result['rta_profile_enabled']:
+            profile_sum, profile_count = aggregate_rta_profile_task_times(
+                result.get('rta_report')
+            )
+            result['rta_profile_task_time_sum_sec'] = profile_sum
+            result['rta_profile_task_count'] = profile_count
         return result
     except subprocess.TimeoutExpired:
+        result['rta_timed_out'] = True
         result['rta_error'] = 'RTA timed out after {} seconds'.format(timeout)
     except (OSError, ValueError, RuntimeError) as exc:
         result['rta_error'] = str(exc)
@@ -1569,6 +1629,30 @@ class ExperimentRunner:
             'rta_enabled': bool(result.get('rta_enabled', False)),
             'rta_version': result.get('rta_version', RTA_VERSION),
             'rta_status': result.get('rta_status', 'disabled'),
+            'rta_attempted': bool(result.get('rta_attempted', False)),
+            'rta_runtime_sec': (
+                ''
+                if result.get('rta_runtime_sec') is None
+                else result.get('rta_runtime_sec')
+            ),
+            'rta_runtime_source': result.get('rta_runtime_source', ''),
+            'rta_timed_out': bool(result.get('rta_timed_out', False)),
+            'rta_timeout_sec': (
+                ''
+                if result.get('rta_timeout_sec') is None
+                else result.get('rta_timeout_sec')
+            ),
+            'rta_profile_enabled': bool(
+                result.get('rta_profile_enabled', False)
+            ),
+            'rta_profile_task_time_sum_sec': (
+                ''
+                if result.get('rta_profile_task_time_sum_sec') is None
+                else result.get('rta_profile_task_time_sum_sec')
+            ),
+            'rta_profile_task_count': int(
+                result.get('rta_profile_task_count', 0)
+            ),
             'rta_proven': rta_proven,
             'rta_schedulable': rta_schedulable,
             'sim_schedulable': sim_schedulable,

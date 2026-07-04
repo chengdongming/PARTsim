@@ -131,6 +131,10 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
         self.assertEqual(result["acceptance_ratio"], 1.0)
         self.assertEqual(result["rta_status"], "not_applicable")
         self.assertFalse(result["rta_enabled"])
+        self.assertFalse(result["rta_attempted"])
+        self.assertIsNone(result["rta_runtime_sec"])
+        self.assertEqual(result["rta_runtime_source"], "")
+        self.assertFalse(result["rta_timed_out"])
 
     def test_rta_disabled_asap_block_worker_preserves_legacy_acceptance(self):
         worker_task = list(self.worker_task(acceptance.ASAP_BLOCK_ALGORITHM))
@@ -153,6 +157,10 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
         self.assertEqual(result["simulation_status"], "accepted")
         self.assertEqual(result["rta_status"], "disabled")
         self.assertFalse(result["rta_enabled"])
+        self.assertFalse(result["rta_attempted"])
+        self.assertIsNone(result["rta_runtime_sec"])
+        self.assertEqual(result["rta_runtime_source"], "")
+        self.assertFalse(result["rta_timed_out"])
 
     def test_asap_block_proven_uses_same_config_and_records_hash(self):
         completed = subprocess.CompletedProcess(
@@ -163,7 +171,9 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
         )
         with mock.patch.object(
             acceptance.subprocess, "run", return_value=completed
-        ) as run_mock:
+        ) as run_mock, mock.patch.object(
+            acceptance.time, "perf_counter", side_effect=[10.0, 10.25]
+        ):
             result = acceptance.run_asap_block_rta(
                 acceptance.ASAP_BLOCK_ALGORITHM,
                 str(self.config),
@@ -202,7 +212,66 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
             acceptance.hash_file(self.config),
         )
         self.assertEqual(result["rta_initial_energy"], 1.25)
+        self.assertTrue(result["rta_attempted"])
+        self.assertEqual(result["rta_runtime_sec"], 0.25)
+        self.assertEqual(
+            result["rta_runtime_source"],
+            "subprocess_wall_clock_perf_counter",
+        )
+        self.assertFalse(result["rta_timed_out"])
+        self.assertEqual(result["rta_timeout_sec"], 7)
         self.assertTrue(result["rta_profile_enabled"])
+        self.assertIsNone(result["rta_profile_task_time_sum_sec"])
+        self.assertEqual(result["rta_profile_task_count"], 0)
+
+    def test_profile_task_times_are_aggregated_only_when_enabled(self):
+        payload = self.proven_payload()
+        payload["tasks"][0]["rta_profile"] = {"total_time_sec": 0.125}
+        payload["tasks"].append({
+            "task_name": "task_1",
+            "proven_under_assumptions": True,
+            "response_time_bound": 12,
+            "failure_reason": None,
+            "rta_profile": {"total_time_sec": 0.375},
+        })
+        payload["tasks"].append({
+            "task_name": "task_2",
+            "proven_under_assumptions": True,
+            "response_time_bound": 8,
+            "failure_reason": None,
+            "rta_profile": {"total_time_sec": "0.5"},
+        })
+        completed = subprocess.CompletedProcess(
+            [], 0, stdout=json.dumps(payload), stderr=""
+        )
+        with mock.patch.object(
+            acceptance.subprocess, "run", return_value=completed
+        ):
+            profiled = acceptance.run_asap_block_rta(
+                acceptance.ASAP_BLOCK_ALGORITHM,
+                str(self.config),
+                str(self.tasks),
+                horizon_ms=100,
+                assume_no_overflow=True,
+                timeout=7,
+                profile_rta=True,
+            )
+            plain = acceptance.run_asap_block_rta(
+                acceptance.ASAP_BLOCK_ALGORITHM,
+                str(self.config),
+                str(self.tasks),
+                horizon_ms=100,
+                assume_no_overflow=True,
+                timeout=7,
+                profile_rta=False,
+            )
+
+        self.assertTrue(profiled["rta_profile_enabled"])
+        self.assertEqual(profiled["rta_profile_task_time_sum_sec"], 0.5)
+        self.assertEqual(profiled["rta_profile_task_count"], 2)
+        self.assertFalse(plain["rta_profile_enabled"])
+        self.assertIsNone(plain["rta_profile_task_time_sum_sec"])
+        self.assertEqual(plain["rta_profile_task_count"], 0)
 
     def test_experiment_cli_keeps_rta_initial_energy_independent(self):
         parser = argparse.ArgumentParser(add_help=False)
@@ -474,6 +543,8 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
             acceptance.subprocess,
             "run",
             side_effect=subprocess.TimeoutExpired(["python3"], 7),
+        ), mock.patch.object(
+            acceptance.time, "perf_counter", side_effect=[20.0, 27.0]
         ):
             timeout_result = acceptance.run_asap_block_rta(
                 acceptance.ASAP_BLOCK_ALGORITHM,
@@ -485,12 +556,23 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
             )
         self.assertEqual(timeout_result["rta_status"], "rta_error")
         self.assertIn("timed out", timeout_result["rta_error"])
+        self.assertTrue(timeout_result["rta_attempted"])
+        self.assertEqual(timeout_result["rta_runtime_sec"], 7.0)
+        self.assertEqual(
+            timeout_result["rta_runtime_source"],
+            "subprocess_wall_clock_perf_counter",
+        )
+        self.assertTrue(timeout_result["rta_timed_out"])
+        self.assertEqual(timeout_result["rta_timeout_sec"], 7)
+        self.assertFalse(timeout_result["rta_proven_under_assumptions"])
 
         failed = subprocess.CompletedProcess(
             [], 3, stdout="", stderr="analysis failed"
         )
         with mock.patch.object(
             acceptance.subprocess, "run", return_value=failed
+        ), mock.patch.object(
+            acceptance.time, "perf_counter", side_effect=[30.0, 30.5]
         ):
             failed_result = acceptance.run_asap_block_rta(
                 acceptance.ASAP_BLOCK_ALGORITHM,
@@ -502,12 +584,17 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
             )
         self.assertEqual(failed_result["rta_status"], "rta_error")
         self.assertIn("code 3", failed_result["rta_error"])
+        self.assertTrue(failed_result["rta_attempted"])
+        self.assertEqual(failed_result["rta_runtime_sec"], 0.5)
+        self.assertFalse(failed_result["rta_timed_out"])
 
         invalid = subprocess.CompletedProcess(
             [], 0, stdout="{not-json", stderr=""
         )
         with mock.patch.object(
             acceptance.subprocess, "run", return_value=invalid
+        ), mock.patch.object(
+            acceptance.time, "perf_counter", side_effect=[40.0, 40.25]
         ):
             invalid_result = acceptance.run_asap_block_rta(
                 acceptance.ASAP_BLOCK_ALGORITHM,
@@ -519,6 +606,9 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
             )
         self.assertEqual(invalid_result["rta_status"], "rta_error")
         self.assertTrue(invalid_result["rta_error"])
+        self.assertTrue(invalid_result["rta_attempted"])
+        self.assertEqual(invalid_result["rta_runtime_sec"], 0.25)
+        self.assertFalse(invalid_result["rta_timed_out"])
 
     def test_aggregate_adds_rta_metrics_without_changing_acceptance(self):
         runner = self.make_runner(enable_rta=True)

@@ -198,6 +198,14 @@ class AcceptanceRatioExperimentMetadataTest(unittest.TestCase):
                 "rta_status": "proven_under_assumptions",
                 "rta_proven_under_assumptions": True,
                 "rta_bound": 10.0,
+                "rta_attempted": True,
+                "rta_runtime_sec": 0.25,
+                "rta_runtime_source": "subprocess_wall_clock_perf_counter",
+                "rta_timed_out": False,
+                "rta_timeout_sec": 7,
+                "rta_profile_enabled": True,
+                "rta_profile_task_time_sum_sec": 0.2,
+                "rta_profile_task_count": 3,
                 "simulated_response_time": 8.0,
                 "tightness_values": [2.0, 3.0],
             },
@@ -212,10 +220,34 @@ class AcceptanceRatioExperimentMetadataTest(unittest.TestCase):
         self.assertEqual(row["soundness_excluded_reason"], "")
         self.assertEqual(row["rta_response_time_bound"], 10.0)
         self.assertEqual(row["rta_response_bound"], 10.0)
+        self.assertTrue(row["rta_attempted"])
+        self.assertEqual(row["rta_runtime_sec"], 0.25)
+        self.assertEqual(
+            row["rta_runtime_source"],
+            "subprocess_wall_clock_perf_counter",
+        )
+        self.assertFalse(row["rta_timed_out"])
+        self.assertEqual(row["rta_timeout_sec"], 7)
+        self.assertTrue(row["rta_profile_enabled"])
+        self.assertEqual(row["rta_profile_task_time_sum_sec"], 0.2)
+        self.assertEqual(row["rta_profile_task_count"], 3)
         self.assertEqual(row["simulated_response_time"], 8.0)
         self.assertEqual(row["observed_max_response_time"], 8.0)
         self.assertIn("|M=2|n=3|util=0.50|", row["config_id"])
         self.assertEqual(row["tightness"], 1.25)
+        runtime_fields = {
+            "rta_attempted",
+            "rta_runtime_sec",
+            "rta_runtime_source",
+            "rta_timed_out",
+            "rta_timeout_sec",
+            "rta_profile_enabled",
+            "rta_profile_task_time_sum_sec",
+            "rta_profile_task_count",
+        }
+        self.assertTrue(
+            runtime_fields.issubset(acceptance.PER_TASKSET_RESULT_FIELDS)
+        )
 
     def test_failure_categories_are_aggregated_separately(self):
         runner = self.make_runner(enable_rta=False)
