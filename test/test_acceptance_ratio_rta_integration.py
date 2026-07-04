@@ -210,6 +210,7 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
         defaults = parser.parse_args([])
         self.assertEqual(defaults.rta_initial_energy, 0.0)
         self.assertFalse(defaults.profile_rta)
+        self.assertEqual(defaults.rta_soundness_mode, "fail_fast")
         help_text = parser.format_help()
         normalized_help = " ".join(help_text.split())
         hyphen_normalized_help = re.sub(
@@ -223,10 +224,15 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
         )
 
         explicit = parser.parse_args(
-            ["--initial-energy", "1.0", "--rta-initial-energy", "2.5"]
+            [
+                "--initial-energy", "1.0",
+                "--rta-initial-energy", "2.5",
+                "--rta-soundness-mode", "audit",
+            ]
         )
         self.assertEqual(explicit.initial_energy, 1.0)
         self.assertEqual(explicit.rta_initial_energy, 2.5)
+        self.assertEqual(explicit.rta_soundness_mode, "audit")
 
         invalid = parser.parse_args(["--rta-initial-energy", "nan"])
         with self.assertRaises(SystemExit):
@@ -324,6 +330,62 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
         self.assertEqual(result["tightness_num_samples"], 1)
         self.assertAlmostEqual(result["avg_tightness"], 1.25)
         self.assertFalse(trace_path.exists())
+
+    def test_rta_audit_mode_records_violation_and_first_miss_fields(self):
+        def write_trace(*args, **kwargs):
+            command = args[0]
+            output_path = Path(command[command.index("-t") + 1])
+            output_path.write_text(
+                json.dumps({
+                    "events": [
+                        {
+                            "event_type": "arrival",
+                            "task_name": "task_0",
+                            "arrival_time": "0",
+                            "time": "0",
+                        },
+                        {
+                            "event_type": "dline_miss",
+                            "task_name": "task_0",
+                            "arrival_time": "0",
+                            "deadline": "10",
+                            "time": "12",
+                        },
+                        {"event_type": "idle", "time": "30000"},
+                    ]
+                }),
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        rta_result = acceptance._base_rta_result(
+            status="proven_under_assumptions"
+        )
+        rta_result.update({
+            "rta_enabled": True,
+            "rta_proven_under_assumptions": True,
+            "rta_report": {"tasks": []},
+        })
+        worker_task = list(self.worker_task(acceptance.ASAP_BLOCK_ALGORITHM))
+        worker_task[-1]["soundness_mode"] = "audit"
+
+        with mock.patch.object(
+            acceptance.subprocess, "run", side_effect=write_trace
+        ), mock.patch.object(
+            acceptance,
+            "run_asap_block_rta",
+            return_value=rta_result,
+        ):
+            result = acceptance.run_single_simulation_worker(tuple(worker_task))
+
+        self.assertEqual(result["simulation_status"], "rejected")
+        self.assertTrue(result["rta_schedulable"])
+        self.assertFalse(result["sim_schedulable"])
+        self.assertTrue(result["soundness_violation"])
+        self.assertTrue(result["soundness_valid"])
+        self.assertEqual(result["soundness_excluded_reason"], "")
+        self.assertEqual(result["first_missed_job_release"], "0")
+        self.assertEqual(result["first_missed_deadline"], "10")
 
     def test_missing_no_overflow_assumption_forces_unproven(self):
         completed = subprocess.CompletedProcess(

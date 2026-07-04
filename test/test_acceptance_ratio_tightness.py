@@ -173,3 +173,49 @@ def test_v20_4_soundness_rejects_simulation_or_observed_bound_conflicts():
         "accepted",
         {"task_1": 10, "task_2": 6},
     )
+    acceptance.validate_rta_soundness(
+        acceptance.ASAP_BLOCK_ALGORITHM,
+        result,
+        "simulation_timeout",
+        {"task_1": 11},
+    )
+    acceptance.validate_rta_soundness(
+        acceptance.ASAP_BLOCK_ALGORITHM,
+        result,
+        "simulation_error",
+        {"task_1": 11},
+    )
+    acceptance.validate_rta_soundness(
+        acceptance.ASAP_BLOCK_ALGORITHM,
+        result,
+        "config_error",
+        {"task_1": 11},
+    )
+
+
+@pytest.mark.parametrize(
+    "rta_schedulable,sim_schedulable,status,expected",
+    [
+        (True, True, "accepted", (False, True, "")),
+        (True, False, "rejected", (True, True, "")),
+        (True, False, "deadline_miss", (True, True, "")),
+        (True, False, "dline_miss", (True, True, "")),
+        (True, False, "simulation_timeout", (False, False, "timeout")),
+        (True, False, "simulation_error", (False, False, "simulation_error")),
+        (True, False, "config_error", (False, False, "config_error")),
+        (False, False, "rejected", (False, True, "")),
+    ],
+)
+def test_e1_soundness_classification_excludes_invalid_observations(
+    rta_schedulable, sim_schedulable, status, expected
+):
+    classification = acceptance.classify_soundness_observation(
+        rta_schedulable, sim_schedulable, status
+    )
+    violation, valid, reason = expected
+    assert classification["soundness_violation"] is violation
+    assert classification["soundness_valid"] is valid
+    assert classification["soundness_excluded_reason"] == reason
+    assert acceptance.compute_e1_soundness_violation(
+        rta_schedulable, sim_schedulable, status
+    ) is violation

@@ -490,6 +490,21 @@ def _summarize_rta_raw_group(group, total_suffix=False):
         'soundness_observed_exceeds_bound': int(
             group['_soundness_bound'].sum()
         ),
+        'e1_rta_pass_sim_pass': int(
+            (group['_rta_proven'] & group['_accepted']).sum()
+        ),
+        'e1_rta_fail_sim_pass': int(
+            (~group['_rta_proven'] & group['_accepted']).sum()
+        ),
+        'e1_rta_fail_sim_fail': int(
+            (~group['_rta_proven'] & ~group['_accepted']).sum()
+        ),
+        'e1_rta_pass_sim_fail': int(
+            (group['_rta_proven'] & ~group['_accepted']).sum()
+        ),
+        'e1_soundness_violation_count': int(
+            group['_e1_soundness_violation'].sum()
+        ),
     }
     if total_suffix:
         result.update({
@@ -580,6 +595,15 @@ def summarize_rta_e0(manifest_path):
             selected['tightness'], errors='coerce'
         )
         selected['_accepted'] = selected['accepted'].map(truthy)
+        if 'timeout' in selected.columns:
+            selected['_sim_timeout'] = selected['timeout'].map(truthy)
+        elif 'status' in selected.columns:
+            selected['_sim_timeout'] = (
+                selected['status'].astype(str).str.strip().str.lower()
+                .isin({'timeout', 'simulation_timeout'})
+            )
+        else:
+            selected['_sim_timeout'] = False
         bound = pd.to_numeric(
             selected['rta_response_time_bound'], errors='coerce'
         )
@@ -591,9 +615,19 @@ def summarize_rta_e0(manifest_path):
         ) & observed.map(
             lambda value: pd.notna(value) and math.isfinite(value)
         )
-        selected['_soundness_rejected'] = (
-            selected['_rta_proven'] & ~selected['_accepted']
-        )
+        if 'soundness_violation' in selected.columns:
+            selected['_e1_soundness_violation'] = (
+                selected['soundness_violation'].map(truthy)
+            )
+        else:
+            selected['_e1_soundness_violation'] = (
+                selected['_rta_proven']
+                & ~selected['_accepted']
+                & ~selected['_sim_timeout']
+            )
+        selected['_soundness_rejected'] = selected[
+            '_e1_soundness_violation'
+        ]
         selected['_soundness_bound'] = (
             selected['_rta_proven'] & finite_pair & (observed > bound)
         )

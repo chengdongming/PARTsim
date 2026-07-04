@@ -205,8 +205,16 @@ class AcceptanceRatioExperimentMetadataTest(unittest.TestCase):
 
         self.assertEqual(row["rta_version"], "v20.4")
         self.assertTrue(row["rta_proven"])
+        self.assertTrue(row["rta_schedulable"])
+        self.assertTrue(row["sim_schedulable"])
+        self.assertFalse(row["soundness_violation"])
+        self.assertTrue(row["soundness_valid"])
+        self.assertEqual(row["soundness_excluded_reason"], "")
         self.assertEqual(row["rta_response_time_bound"], 10.0)
+        self.assertEqual(row["rta_response_bound"], 10.0)
         self.assertEqual(row["simulated_response_time"], 8.0)
+        self.assertEqual(row["observed_max_response_time"], 8.0)
+        self.assertIn("|M=2|n=3|util=0.50|", row["config_id"])
         self.assertEqual(row["tightness"], 1.25)
 
     def test_failure_categories_are_aggregated_separately(self):

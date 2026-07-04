@@ -8,7 +8,7 @@ from scripts import analyze_rta_v21_comparison as analyzer
 from scripts import run_rta_v21_comparison as runner
 
 
-def report(version, proven=True, bound=10):
+def report(version, proven=True, bound=10, runtime_sec=None):
     return {
         "version": version,
         "status": "proven_under_assumptions" if proven else "rta_unproven",
@@ -16,6 +16,7 @@ def report(version, proven=True, bound=10):
         "error": "",
         "reason": "" if proven else "not closed",
         "bound": bound if proven else None,
+        "runtime_sec": runtime_sec,
         "report": {
             "rta_version": version,
             "proven_under_assumptions": proven,
@@ -42,14 +43,15 @@ def base_row():
     }
 
 
-def simulation(accepted=True, response=5):
+def simulation(accepted=True, response=5, status=None):
+    status = status or ("accepted" if accepted else "rejected")
     return {
         "accepted": accepted,
-        "simulation_status": "accepted" if accepted else "rejected",
-        "simulated_response_time": response,
+        "simulation_status": status,
+        "simulated_response_time": response if status != "simulation_error" else "",
         "deadline_miss_time": "" if accepted else 8,
         "first_missed_task": "" if accepted else "t1",
-        "max_response_by_task": {"t1": response},
+        "max_response_by_task": {} if status == "simulation_error" else {"t1": response},
         "trace_path": "",
     }
 
@@ -68,6 +70,25 @@ def test_comparison_row_contains_both_versions_and_valid_tightness():
     assert row["v21_tightness"] == pytest.approx(2.0)
     assert row["v21_minus_v20p4_bound"] == -2
     assert row["v21_bound_lt_v20p4"] == 1
+    assert row["v20_soundness_violation"] == 0
+    assert row["v21_soundness_violation"] == 0
+    assert row["soundness_valid"] == 1
+    assert row["soundness_excluded_reason"] == ""
+
+
+def test_comparison_row_contains_runtime_and_clear_aliases():
+    row = runner._comparison_row(
+        base_row(), simulation(),
+        report(runner.V20_VERSION, bound=12, runtime_sec=0.5),
+        report(runner.V21_VERSION, bound=10, runtime_sec=1.5),
+        0.25,
+    )
+    assert row["runtime_v20_sec"] == pytest.approx(0.5)
+    assert row["runtime_v21_sec"] == pytest.approx(1.5)
+    assert row["runtime_slowdown_v21_over_v20"] == pytest.approx(3.0)
+    assert row["v20_only_proven"] == 0
+    assert row["v21_only_proven"] == 0
+    assert row["both_rejected"] == 0
 
 
 def test_tightness_is_empty_for_unproven_analysis():
@@ -80,6 +101,7 @@ def test_tightness_is_empty_for_unproven_analysis():
     assert row["v20p4_tightness"] == ""
     assert row["v21_tightness"] == ""
     assert row["both_unproven"] == 1
+    assert row["both_rejected"] == 1
 
 
 def test_soundness_rejects_proven_but_simulation_rejected():
@@ -115,6 +137,57 @@ def test_soundness_rejects_observed_response_above_v21_bound():
             report(runner.V21_VERSION, proven=True, bound=10),
             0.25,
         )
+
+
+def test_soundness_audit_records_violation_without_raising():
+    row = runner._comparison_row(
+        base_row(), simulation(accepted=False),
+        report(runner.V20_VERSION, proven=False),
+        report(runner.V21_VERSION, proven=True),
+        0.25,
+        soundness_mode="audit",
+    )
+    assert row["v21_soundness_proven_but_rejected"] == 1
+    assert row["v20p4_soundness_proven_but_rejected"] == 0
+    assert row["v21_soundness_violation"] == 1
+    assert row["v20_soundness_violation"] == 0
+    assert row["soundness_valid"] == 1
+    assert row["soundness_excluded_reason"] == ""
+
+
+@pytest.mark.parametrize(
+    "status,reason",
+    [
+        ("simulation_timeout", "timeout"),
+        ("simulation_error", "simulation_error"),
+        ("config_error", "config_error"),
+    ],
+)
+def test_soundness_audit_excludes_timeout_and_infrastructure_failures(
+    status, reason
+):
+    row = runner._comparison_row(
+        base_row(), simulation(accepted=False, status=status),
+        report(runner.V20_VERSION, proven=False),
+        report(runner.V21_VERSION, proven=True),
+        0.25,
+        soundness_mode="audit",
+    )
+    assert row["v21_soundness_proven_but_rejected"] == 0
+    assert row["v21_soundness_violation"] == 0
+    assert row["soundness_valid"] == 0
+    assert row["soundness_excluded_reason"] == reason
+
+
+def test_soundness_fail_fast_does_not_raise_soundness_for_infrastructure():
+    row = runner._comparison_row(
+        base_row(), simulation(accepted=False, status="simulation_error"),
+        report(runner.V20_VERSION, proven=False),
+        report(runner.V21_VERSION, proven=True),
+        0.25,
+    )
+    assert row["v21_soundness_violation"] == 0
+    assert row["soundness_valid"] == 0
 
 
 def _write_result(path: Path, **updates):
@@ -162,6 +235,7 @@ def test_analyzer_accepts_comparison_manifest(tmp_path):
 @pytest.mark.parametrize(
     "field",
     [
+        "v21_soundness_violation",
         "v21_soundness_proven_but_rejected",
         "v21_soundness_observed_exceeds_bound",
     ],
@@ -187,6 +261,20 @@ def test_analyzer_recomputes_v21_soundness_from_raw_values(tmp_path, updates):
         analyzer.load_results(source)
 
 
+def test_analyzer_does_not_recompute_infrastructure_failure_as_violation(tmp_path):
+    source = tmp_path / "comparison.csv"
+    _write_result(
+        source,
+        accepted=0,
+        simulation_status="simulation_error",
+        soundness_valid=0,
+        soundness_excluded_reason="simulation_error",
+    )
+    loaded = analyzer.load_results(source)
+    assert not loaded.iloc[0]["v21_soundness_violation"]
+    assert not loaded.iloc[0]["v21_soundness_proven_but_rejected"]
+
+
 def test_analyzer_refuses_frozen_v20p4_paths(tmp_path):
     frozen = tmp_path / "rta-e0-sensitivity-v20p4-formal"
     frozen.mkdir()
@@ -202,6 +290,7 @@ def test_runner_default_root_is_v21_specific():
         ["--experiment-name", "v21-smoke", "--e0-values", "0.25"]
     )
     assert args.output_root == "acceptance_ratio_runs_v21"
+    assert args.soundness_mode == "fail_fast"
 
 
 def test_runner_dry_run_creates_only_v21_plan_files(tmp_path):

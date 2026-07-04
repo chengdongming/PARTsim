@@ -83,10 +83,20 @@ PER_TASKSET_RESULT_FIELDS = [
     'rta_version',
     'rta_status',
     'rta_proven',
+    'rta_schedulable',
+    'sim_schedulable',
+    'soundness_violation',
+    'soundness_valid',
+    'soundness_excluded_reason',
     'rta_error',
     'rta_reason',
     'rta_response_time_bound',
+    'rta_response_bound',
     'simulated_response_time',
+    'observed_max_response_time',
+    'first_missed_job_release',
+    'first_missed_deadline',
+    'config_id',
     'tightness',
 ]
 
@@ -267,6 +277,110 @@ def validate_rta_cli_args(parser, args):
     harvesting_scale = getattr(args, 'harvesting_scale', 1.0)
     if not math.isfinite(harvesting_scale) or harvesting_scale < 0:
         parser.error('--harvesting-scale must be finite and non-negative')
+    soundness_mode = getattr(args, 'rta_soundness_mode', 'fail_fast')
+    if soundness_mode not in {'fail_fast', 'audit'}:
+        parser.error('--rta-soundness-mode must be fail_fast or audit')
+
+
+SIMULATION_TIMEOUT_STATUSES = {
+    'simulation_timeout',
+    'timeout',
+}
+
+SCHEDULABILITY_FAILURE_STATUSES = {
+    'rejected',
+    'simulation_rejected',
+    'deadline_miss',
+    'deadline_missed',
+    'dline_miss',
+}
+
+INFRASTRUCTURE_FAILURE_STATUSES = {
+    'simulation_error',
+    'build_error',
+    'config_error',
+    'trace_parse_error',
+    'missing_binary',
+    'unknown_error',
+    'exception',
+    'yaml_generation_failed',
+    'rta_error',
+}
+
+
+def _normalise_simulation_status(status):
+    return str(status or '').strip().lower()
+
+
+def _is_simulation_timeout_status(status):
+    return _normalise_simulation_status(status) in SIMULATION_TIMEOUT_STATUSES
+
+
+def _is_infrastructure_failure_status(status):
+    status = _normalise_simulation_status(status)
+    if not status:
+        return False
+    if status in INFRASTRUCTURE_FAILURE_STATUSES:
+        return True
+    normalized = status.replace('-', '_').replace(' ', '_')
+    return (
+        normalized.endswith('_error')
+        or 'error' in normalized
+        or 'exception' in normalized
+        or normalized in {'failed', 'failure', 'simulation_failed'}
+    )
+
+
+def _is_schedulability_failure_status(status):
+    status = _normalise_simulation_status(status)
+    if not status:
+        return False
+    normalized = status.replace('-', '_').replace(' ', '_')
+    return (
+        normalized in SCHEDULABILITY_FAILURE_STATUSES
+        or 'dline_miss' in normalized
+        or ('deadline' in normalized and 'miss' in normalized)
+    )
+
+
+def classify_soundness_observation(rta_schedulable, sim_schedulable,
+                                   simulation_status):
+    """Classify whether a simulation result is valid for RTA soundness.
+
+    Only completed schedulability observations can produce a soundness
+    violation. Timeouts and infrastructure failures are retained in CSV rows
+    but explicitly excluded from the E1 violation predicate.
+    """
+    status = _normalise_simulation_status(simulation_status)
+    if bool(sim_schedulable) or status == 'accepted':
+        return {
+            'soundness_valid': True,
+            'soundness_excluded_reason': '',
+            'soundness_violation': False,
+        }
+    if _is_simulation_timeout_status(status):
+        return {
+            'soundness_valid': False,
+            'soundness_excluded_reason': 'timeout',
+            'soundness_violation': False,
+        }
+    if _is_infrastructure_failure_status(status):
+        return {
+            'soundness_valid': False,
+            'soundness_excluded_reason': status,
+            'soundness_violation': False,
+        }
+    if _is_schedulability_failure_status(status):
+        return {
+            'soundness_valid': True,
+            'soundness_excluded_reason': '',
+            'soundness_violation': bool(rta_schedulable),
+        }
+    return {
+        'soundness_valid': False,
+        'soundness_excluded_reason': status or 'unknown_status',
+        'soundness_violation': False,
+    }
 
 
 def classify_simulation_status(result):
@@ -274,7 +388,7 @@ def classify_simulation_status(result):
     if not isinstance(result, dict):
         return 'accepted' if float(result) == 1.0 else 'rejected'
 
-    status = str(result.get('simulation_status') or '').strip()
+    status = _normalise_simulation_status(result.get('simulation_status'))
     if not status:
         return (
             'accepted'
@@ -284,10 +398,12 @@ def classify_simulation_status(result):
 
     if status == 'accepted':
         return 'accepted'
-    if status in {'rejected', 'deadline_miss', 'simulation_rejected'}:
-        return 'rejected'
-    if status in {'simulation_timeout', 'timeout'}:
+    if _is_simulation_timeout_status(status):
         return 'timeout'
+    if _is_infrastructure_failure_status(status):
+        return 'error'
+    if _is_schedulability_failure_status(status):
+        return 'rejected'
     return 'error'
 
 
@@ -310,6 +426,41 @@ def _is_rta_proven(result):
         'proven_under_assumptions',
         'rta_proven',
     }
+
+
+def _first_deadline_miss_details(events):
+    """Return first dline_miss metadata without assuming all trace fields exist."""
+    first = None
+    first_time = None
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        if event.get('event_type') != 'dline_miss':
+            continue
+        time_value = _extract_number(event.get('time'))
+        sort_time = time_value if time_value is not None else math.inf
+        if first is None or sort_time < first_time:
+            first = event
+            first_time = sort_time
+    if first is None:
+        return {
+            'first_missed_job_release': '',
+            'first_missed_deadline': '',
+        }
+    return {
+        'first_missed_job_release': first.get('arrival_time', ''),
+        'first_missed_deadline': first.get('deadline', ''),
+    }
+
+
+def compute_e1_soundness_violation(rta_schedulable, sim_schedulable,
+                                   simulation_status):
+    """E1 violation for a valid completed schedulability failure only."""
+    return bool(
+        classify_soundness_observation(
+            rta_schedulable, sim_schedulable, simulation_status
+        )['soundness_violation']
+    )
 
 
 def extract_rta_bounds_by_task(rta_result):
@@ -361,11 +512,26 @@ def validate_rta_soundness(algorithm, rta_result, simulation_status,
     """Fail fast when a v20.4 sufficient bound contradicts simulation."""
     if algorithm != ASAP_BLOCK_ALGORITHM or not _is_rta_proven(rta_result):
         return
-    if simulation_status == 'rejected':
+    classification = classify_soundness_observation(
+        True,
+        _normalise_simulation_status(simulation_status) == 'accepted',
+        simulation_status,
+    )
+    if classification['soundness_violation']:
+        status = _normalise_simulation_status(simulation_status)
+        if status == 'rejected':
+            raise RuntimeError(
+                'SEVERE RTA SOUNDNESS ERROR: {} proved a taskset rejected by '
+                'ASAP-BLOCK simulation'.format(RTA_VERSION)
+            )
         raise RuntimeError(
-            'SEVERE RTA SOUNDNESS ERROR: {} proved a taskset rejected by '
-            'ASAP-BLOCK simulation'.format(RTA_VERSION)
+            'SEVERE RTA SOUNDNESS ERROR: {} proved a taskset with '
+            'ASAP-BLOCK simulation status {}'.format(
+                RTA_VERSION, simulation_status
+            )
         )
+    if not classification['soundness_valid']:
+        return
     if not isinstance(max_response_by_task, dict):
         return
     for task_name, bound in extract_rta_bounds_by_task(rta_result).items():
@@ -453,11 +619,16 @@ def run_single_simulation_worker(task):
     simulation_status = 'simulation_error'
     simulation_error = None
     max_response_by_task = {}
+    first_miss = {
+        'first_missed_job_release': '',
+        'first_missed_deadline': '',
+    }
 
     try:
         subprocess.run(cmd, check=True, capture_output=True, env=env, text=True, timeout=120)
         trace_parser = TraceParser(str(trace_file))
         acceptance_ratio = trace_parser.get_acceptance_ratio()
+        first_miss = _first_deadline_miss_details(trace_parser.events)
         if (
             algorithm == ASAP_BLOCK_ALGORITHM
             and rta_options.get('enable_rta', False)
@@ -534,9 +705,31 @@ def run_single_simulation_worker(task):
     run_result['simulated_response_time'] = (
         max(max_response_by_task.values()) if max_response_by_task else None
     )
-    validate_rta_soundness(
-        algorithm, run_result, simulation_status, max_response_by_task
+    run_result.update(first_miss)
+    rta_schedulable = (
+        algorithm == ASAP_BLOCK_ALGORITHM and _is_rta_proven(run_result)
     )
+    sim_schedulable = simulation_status == 'accepted'
+    soundness = classify_soundness_observation(
+        rta_schedulable,
+        sim_schedulable,
+        simulation_status,
+    )
+    run_result.update(
+        {
+            'rta_schedulable': rta_schedulable,
+            'sim_schedulable': sim_schedulable,
+            'soundness_violation': soundness['soundness_violation'],
+            'soundness_valid': soundness['soundness_valid'],
+            'soundness_excluded_reason': (
+                soundness['soundness_excluded_reason']
+            ),
+        }
+    )
+    if rta_options.get('soundness_mode', 'fail_fast') == 'fail_fast':
+        validate_rta_soundness(
+            algorithm, run_result, simulation_status, max_response_by_task
+        )
     tightness_values = compute_task_tightness_samples(
         algorithm, run_result, max_response_by_task
     )
@@ -706,6 +899,15 @@ def add_experiment_cli_args(parser):
         '--profile-rta', action='store_true',
         help='在ASAP-BLOCK RTA JSON中记录性能计数（默认关闭）',
     )
+    parser.add_argument(
+        '--rta-soundness-mode',
+        choices=('fail_fast', 'audit'),
+        default='fail_fast',
+        help=(
+            'RTA soundness冲突处理：fail_fast保持默认立即失败；'
+            'audit保留CSV行并记录soundness_violation'
+        ),
+    )
 
     # 图表参数
     parser.add_argument('--figure-output', type=str, default=None,
@@ -844,7 +1046,8 @@ class ExperimentRunner:
                  rta_horizon_ms=None, rta_assume_no_overflow=False,
                  rta_timeout=300, seed_base=DEFAULT_SEED_BASE,
                  rta_initial_energy=0.0, profile_rta=False,
-                 harvesting_scale=DEFAULT_HARVESTING_SCALE):
+                 harvesting_scale=DEFAULT_HARVESTING_SCALE,
+                 rta_soundness_mode='fail_fast'):
         self.output_dir = Path(output_dir)
         self.trace_dir = self.output_dir / 'traces'
         self.task_dir = self.output_dir / 'tasks'
@@ -878,6 +1081,9 @@ class ExperimentRunner:
         self.rta_timeout = max(1, int(rta_timeout))
         self.rta_initial_energy = float(rta_initial_energy)
         self.profile_rta = bool(profile_rta)
+        if rta_soundness_mode not in {'fail_fast', 'audit'}:
+            raise ValueError('rta_soundness_mode must be fail_fast or audit')
+        self.rta_soundness_mode = rta_soundness_mode
         self.seed_base = int(seed_base)
         self.rta_results_file = self.output_dir / 'rta_results.jsonl'
         self.per_taskset_results_file = (
@@ -891,12 +1097,14 @@ class ExperimentRunner:
         if self.enable_rta:
             print(
                 "🔎 ASAP-BLOCK RTA: enabled, horizon={}ms, "
-                "assume_no_overflow={}, timeout={}s, E0={}J, profile={}".format(
+                "assume_no_overflow={}, timeout={}s, E0={}J, "
+                "profile={}, soundness_mode={}".format(
                     self.rta_horizon_ms,
                     self.rta_assume_no_overflow,
                     self.rta_timeout,
                     self.rta_initial_energy,
                     self.profile_rta,
+                    self.rta_soundness_mode,
                 )
             )
 
@@ -1189,6 +1397,7 @@ class ExperimentRunner:
                             'timeout': self.rta_timeout,
                             'initial_energy': self.rta_initial_energy,
                             'profile_rta': self.profile_rta,
+                            'soundness_mode': self.rta_soundness_mode,
                             'seed_base': self.seed_base,
                             'taskset_seed': seed,
                             'taskset_id': self.taskset_id(
@@ -1248,6 +1457,21 @@ class ExperimentRunner:
             if os.path.exists(config_file):
                 os.remove(config_file)
 
+        if self.enable_rta:
+            violation_count = sum(
+                1
+                for algorithm_results in results.values()
+                for run_results in algorithm_results.values()
+                for result in run_results
+                if isinstance(result, dict)
+                and result.get('soundness_violation', False)
+            )
+            print(
+                'RTA soundness violations recorded: {}'.format(
+                    violation_count
+                )
+            )
+
         self.write_per_taskset_results(results)
         return results
 
@@ -1276,15 +1500,46 @@ class ExperimentRunner:
         simulation_reason = result.get('simulation_error') or ''
         if status == 'rejected' and not simulation_reason:
             simulation_reason = 'rejected by simulation trace checks'
+        rta_proven = bool(_is_rta_proven(result))
+        rta_schedulable = bool(
+            result.get(
+                'rta_schedulable',
+                algorithm == ASAP_BLOCK_ALGORITHM and rta_proven,
+            )
+        )
+        sim_schedulable = bool(
+            result.get('sim_schedulable', status == 'accepted')
+        )
+        soundness_status = result.get('simulation_status') or status
+        soundness = classify_soundness_observation(
+            rta_schedulable, sim_schedulable, soundness_status
+        )
+        soundness_violation = bool(soundness['soundness_violation'])
+        soundness_valid = bool(
+            result.get('soundness_valid', soundness['soundness_valid'])
+        )
+        soundness_excluded_reason = result.get(
+            'soundness_excluded_reason',
+            soundness['soundness_excluded_reason'],
+        )
+        rta_bound = result.get('rta_bound', '')
+        observed_response = result.get('simulated_response_time', '')
+        taskset_seed = result.get('taskset_seed', result.get('seed', ''))
+        config_id = '{}|M={}|n={}|util={:.2f}|E0={}|seed={}'.format(
+            self.experiment_id,
+            self.system_cores,
+            self.task_n,
+            float(utilization),
+            result.get('rta_initial_energy', self.rta_initial_energy),
+            taskset_seed,
+        )
 
         return {
             'experiment_id': self.experiment_id,
             'run_id': self.experiment_id,
             'output_dir': str(self.output_dir),
             'seed_base': result.get('seed_base', self.seed_base),
-            'taskset_seed': result.get(
-                'taskset_seed', result.get('seed', '')
-            ),
+            'taskset_seed': taskset_seed,
             'normalized_utilization': float(utilization),
             'task_idx': result.get('task_idx', ''),
             'taskset_id': result.get('taskset_id', ''),
@@ -1314,13 +1569,25 @@ class ExperimentRunner:
             'rta_enabled': bool(result.get('rta_enabled', False)),
             'rta_version': result.get('rta_version', RTA_VERSION),
             'rta_status': result.get('rta_status', 'disabled'),
-            'rta_proven': bool(_is_rta_proven(result)),
+            'rta_proven': rta_proven,
+            'rta_schedulable': rta_schedulable,
+            'sim_schedulable': sim_schedulable,
+            'soundness_violation': soundness_violation,
+            'soundness_valid': soundness_valid,
+            'soundness_excluded_reason': soundness_excluded_reason,
             'rta_error': result.get('rta_error') or '',
             'rta_reason': rta_reason,
-            'rta_response_time_bound': result.get('rta_bound', ''),
-            'simulated_response_time': result.get(
-                'simulated_response_time', ''
+            'rta_response_time_bound': rta_bound,
+            'rta_response_bound': rta_bound,
+            'simulated_response_time': observed_response,
+            'observed_max_response_time': observed_response,
+            'first_missed_job_release': result.get(
+                'first_missed_job_release', ''
             ),
+            'first_missed_deadline': result.get(
+                'first_missed_deadline', ''
+            ),
+            'config_id': config_id,
             'tightness': tightness,
         }
 
@@ -1427,6 +1694,10 @@ class ExperimentRunner:
                         }
                         for result in rta_results
                     )
+                    rta_soundness_violations = sum(
+                        bool(result.get('soundness_violation', False))
+                        for result in rta_results
+                    )
                     tightness_values = []
                     for result in run_results:
                         tightness_values.extend(
@@ -1437,6 +1708,9 @@ class ExperimentRunner:
                         'rta_num_proven': rta_num_proven,
                         'rta_num_unproven': rta_num_unproven,
                         'rta_num_errors': rta_num_errors,
+                        'rta_soundness_violations': (
+                            rta_soundness_violations
+                        ),
                         'rta_proven_ratio': (
                             rta_num_proven / rta_num_analyzed
                             if rta_num_analyzed else np.nan
@@ -1730,6 +2004,7 @@ def main():
             rta_initial_energy=args.rta_initial_energy,
             profile_rta=args.profile_rta,
             harvesting_scale=args.harvesting_scale,
+            rta_soundness_mode=args.rta_soundness_mode,
         )
 
         results = runner.run_experiments()

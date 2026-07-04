@@ -35,6 +35,28 @@ def _as_bool(series: pd.Series) -> pd.Series:
     )
 
 
+def _is_schedulability_failure_status(status: str) -> bool:
+    normalized = str(status or "").strip().lower().replace("-", "_")
+    normalized = normalized.replace(" ", "_")
+    return (
+        normalized in {
+            "rejected",
+            "simulation_rejected",
+            "deadline_miss",
+            "deadline_missed",
+            "dline_miss",
+        }
+        or "dline_miss" in normalized
+        or ("deadline" in normalized and "miss" in normalized)
+    )
+
+
+def _soundness_failure_mask(frame: pd.DataFrame, accepted: pd.Series) -> pd.Series:
+    if "simulation_status" not in frame.columns:
+        return ~accepted
+    return frame["simulation_status"].map(_is_schedulability_failure_status)
+
+
 def load_results(input_path) -> pd.DataFrame:
     path = Path(input_path)
     if "rta-e0-sensitivity-v20p4" in str(path).lower():
@@ -74,14 +96,46 @@ def load_results(input_path) -> pd.DataFrame:
     if set(frame["v21_rta_version"].dropna().astype(str)) != {V21_VERSION}:
         raise ValueError("comparison CSV mixes or mislabels v21 results")
 
+    if "v20_only_proven" not in frame.columns:
+        frame["v20_only_proven"] = frame["v20p4_proven_v21_unproven"]
+    if "v21_only_proven" not in frame.columns:
+        frame["v21_only_proven"] = frame["v21_proven_v20p4_unproven"]
+    if "both_rejected" not in frame.columns:
+        frame["both_rejected"] = (
+            (frame["v20p4_status"].astype(str) == "rta_unproven")
+            & (frame["v21_status"].astype(str) == "rta_unproven")
+        )
+    for column in (
+        "runtime_v20_sec", "runtime_v21_sec",
+        "runtime_slowdown_v21_over_v20",
+    ):
+        if column not in frame.columns:
+            frame[column] = math.nan
+    if "v20_soundness_violation" not in frame.columns:
+        frame["v20_soundness_violation"] = (
+            frame["v20p4_soundness_proven_but_rejected"]
+        )
+    if "v21_soundness_violation" not in frame.columns:
+        frame["v21_soundness_violation"] = (
+            frame["v21_soundness_proven_but_rejected"]
+        )
+    if "soundness_valid" not in frame.columns:
+        frame["soundness_valid"] = True
+    if "soundness_excluded_reason" not in frame.columns:
+        frame["soundness_excluded_reason"] = ""
+
     boolean_columns = [
         "v20p4_proven", "v21_proven", "both_proven",
         "v21_proven_v20p4_unproven", "v20p4_proven_v21_unproven",
+        "v20_only_proven", "v21_only_proven", "both_rejected",
         "v21_bound_lt_v20p4", "v21_bound_gt_v20p4",
         "v21_soundness_proven_but_rejected",
         "v21_soundness_observed_exceeds_bound",
         "v20p4_soundness_proven_but_rejected",
         "v20p4_soundness_observed_exceeds_bound",
+        "v20_soundness_violation",
+        "v21_soundness_violation",
+        "soundness_valid",
     ]
     for column in boolean_columns:
         if column in frame:
@@ -90,15 +144,24 @@ def load_results(input_path) -> pd.DataFrame:
         "E0", "normalized_utilization", "v21_minus_v20p4_bound",
         "simulated_response_time", "v20p4_bound", "v21_bound",
         "v20p4_tightness", "v21_tightness",
+        "runtime_v20_sec", "runtime_v21_sec",
+        "runtime_slowdown_v21_over_v20",
     ):
         frame[column] = pd.to_numeric(frame[column], errors="coerce")
 
     accepted = _as_bool(frame["accepted"])
+    schedulability_failure = _soundness_failure_mask(frame, accepted)
     frame["v21_soundness_proven_but_rejected"] |= (
-        frame["v21_proven"] & ~accepted
+        frame["v21_proven"] & schedulability_failure
     )
     frame["v20p4_soundness_proven_but_rejected"] |= (
-        frame["v20p4_proven"] & ~accepted
+        frame["v20p4_proven"] & schedulability_failure
+    )
+    frame["v21_soundness_violation"] |= (
+        frame["v21_proven"] & schedulability_failure
+    )
+    frame["v20_soundness_violation"] |= (
+        frame["v20p4_proven"] & schedulability_failure
     )
     frame["v21_soundness_observed_exceeds_bound"] |= (
         frame["v21_proven"]
@@ -120,8 +183,10 @@ def load_results(input_path) -> pd.DataFrame:
                 "v21_soundness_observed_exceeds_bound",
                 "v20p4_soundness_proven_but_rejected",
                 "v20p4_soundness_observed_exceeds_bound",
+                "v20_soundness_violation",
+                "v21_soundness_violation",
             ]
-        ].sum().sum()
+        ].any(axis=1).sum()
     )
     if violations:
         raise ValueError(
@@ -137,6 +202,7 @@ def _finite_stats(series: pd.Series, prefix: str) -> dict:
     return {
         "mean_{}".format(prefix): values.mean() if len(values) else math.nan,
         "median_{}".format(prefix): values.median() if len(values) else math.nan,
+        "p90_{}".format(prefix): values.quantile(0.9) if len(values) else math.nan,
         "max_{}".format(prefix): values.max() if len(values) else math.nan,
     }
 
@@ -150,6 +216,9 @@ def summarize_group(group: pd.DataFrame) -> dict:
         "v20p4_proven_count": int(group["v20p4_proven"].sum()),
         "v21_proven_count": int(group["v21_proven"].sum()),
         "both_proven_count": int(group["both_proven"].sum()),
+        "v20_only_proven_count": int(group["v20_only_proven"].sum()),
+        "v21_only_proven_count": int(group["v21_only_proven"].sum()),
+        "both_rejected_count": int(group["both_rejected"].sum()),
         "v21_proven_v20p4_unproven_count": int(
             group["v21_proven_v20p4_unproven"].sum()
         ),
@@ -175,6 +244,12 @@ def summarize_group(group: pd.DataFrame) -> dict:
     })
     result.update(_finite_stats(v20_proven["v20p4_tightness"], "v20p4_tightness"))
     result.update(_finite_stats(v21_proven["v21_tightness"], "v21_tightness"))
+    result.update(_finite_stats(group["runtime_v20_sec"], "runtime_v20_sec"))
+    result.update(_finite_stats(group["runtime_v21_sec"], "runtime_v21_sec"))
+    result.update(_finite_stats(
+        group["runtime_slowdown_v21_over_v20"],
+        "runtime_slowdown_v21_over_v20",
+    ))
     return result
 
 

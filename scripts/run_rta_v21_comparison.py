@@ -8,6 +8,7 @@ import math
 import os
 import subprocess
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
@@ -36,13 +37,20 @@ RESULT_FIELDS = [
     "v20p4_tightness", "v21_rta_version", "v21_status",
     "v21_proven", "v21_error", "v21_reason", "v21_bound",
     "v21_tightness", "v21_minus_v20p4_bound",
+    "runtime_v20_sec", "runtime_v21_sec",
+    "runtime_slowdown_v21_over_v20",
     "v21_bound_lt_v20p4", "v21_bound_eq_v20p4",
     "v21_bound_gt_v20p4", "v21_proven_v20p4_unproven",
     "v20p4_proven_v21_unproven", "both_proven", "both_unproven",
+    "v20_only_proven", "v21_only_proven", "both_rejected",
     "v21_soundness_proven_but_rejected",
     "v21_soundness_observed_exceeds_bound",
     "v20p4_soundness_proven_but_rejected",
     "v20p4_soundness_observed_exceeds_bound",
+    "v20_soundness_violation",
+    "v21_soundness_violation",
+    "soundness_valid",
+    "soundness_excluded_reason",
 ]
 
 MANIFEST_FIELDS = [
@@ -79,6 +87,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--rta-v20p4-timeout", type=int, default=60)
     parser.add_argument("--rta-v21-timeout", type=int, default=60)
     parser.add_argument("--max-workers", type=int, default=12)
+    parser.add_argument(
+        "--soundness-mode",
+        choices=("fail_fast", "audit"),
+        default="fail_fast",
+        help=(
+            "soundness violation handling: fail_fast raises immediately; "
+            "audit records violation fields in the CSV"
+        ),
+    )
     parser.add_argument("--skip-existing", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     return parser
@@ -236,6 +253,7 @@ def _parse_report(
 
 
 def _run_v20(config_path: str, taskset_path: str, args, e0: float) -> Dict[str, Any]:
+    started = time.perf_counter()
     raw = acceptance.run_asap_block_rta(
         acceptance.ASAP_BLOCK_ALGORITHM,
         config_path,
@@ -247,16 +265,21 @@ def _run_v20(config_path: str, taskset_path: str, args, e0: float) -> Dict[str, 
     )
     if raw.get("rta_error"):
         error = str(raw["rta_error"])
-        return _parse_report(
+        result = _parse_report(
             V20_VERSION,
             None,
             error,
             timed_out="timed out" in error.lower(),
         )
-    return _parse_report(V20_VERSION, raw.get("rta_report"))
+        result["runtime_sec"] = time.perf_counter() - started
+        return result
+    result = _parse_report(V20_VERSION, raw.get("rta_report"))
+    result["runtime_sec"] = time.perf_counter() - started
+    return result
 
 
 def _run_v21(config_path: str, taskset_path: str, args, e0: float) -> Dict[str, Any]:
+    started = time.perf_counter()
     command = [
         sys.executable,
         str(V21_TOOL),
@@ -277,20 +300,28 @@ def _run_v21(config_path: str, taskset_path: str, args, e0: float) -> Dict[str, 
             timeout=args.rta_v21_timeout,
         )
     except subprocess.TimeoutExpired:
-        return _parse_report(
+        result = _parse_report(
             V21_VERSION,
             None,
             "RTA timed out after {} seconds".format(args.rta_v21_timeout),
             timed_out=True,
         )
+        result["runtime_sec"] = time.perf_counter() - started
+        return result
     if completed.returncode != 0:
         error = (completed.stderr or completed.stdout or "v21 RTA failed").strip()
-        return _parse_report(V21_VERSION, None, error)
+        result = _parse_report(V21_VERSION, None, error)
+        result["runtime_sec"] = time.perf_counter() - started
+        return result
     try:
         payload = json.loads(completed.stdout)
     except json.JSONDecodeError as exc:
-        return _parse_report(V21_VERSION, None, "invalid v21 JSON: {}".format(exc))
-    return _parse_report(V21_VERSION, payload)
+        result = _parse_report(V21_VERSION, None, "invalid v21 JSON: {}".format(exc))
+        result["runtime_sec"] = time.perf_counter() - started
+        return result
+    result = _parse_report(V21_VERSION, payload)
+    result["runtime_sec"] = time.perf_counter() - started
+    return result
 
 
 def _bounds_by_task(report: Optional[Mapping[str, Any]]) -> Dict[str, float]:
@@ -322,16 +353,21 @@ def _tightness(analysis: Mapping[str, Any], responses: Mapping[str, float]) -> O
 def _soundness(
     analysis: Mapping[str, Any], accepted: bool,
     responses: Mapping[str, float], label: str,
-    context: Mapping[str, Any],
+    context: Mapping[str, Any], mode: str = "fail_fast",
 ) -> tuple:
-    rejected = bool(analysis["proven"] and not accepted)
+    classification = acceptance.classify_soundness_observation(
+        analysis["proven"],
+        accepted,
+        context.get("simulation_status"),
+    )
+    rejected = bool(classification["soundness_violation"])
     observed = False
-    if analysis["proven"]:
+    if analysis["proven"] and classification["soundness_valid"]:
         for name, bound in _bounds_by_task(analysis.get("report")).items():
             if name in responses and responses[name] > bound:
                 observed = True
                 break
-    if rejected or observed:
+    if (rejected or observed) and mode == "fail_fast":
         context_text = ", ".join(
             "{}={!r}".format(field, context.get(field))
             for field in (
@@ -350,12 +386,13 @@ def _soundness(
                 label, rejected, observed, context_text
             )
         )
-    return rejected, observed
+    return rejected, observed, classification
 
 
 def _comparison_row(
     base: Mapping[str, Any], simulation: Mapping[str, Any],
     v20_result: Mapping[str, Any], v21_result: Mapping[str, Any], e0: float,
+    soundness_mode: str = "fail_fast",
 ) -> Dict[str, Any]:
     responses = simulation["max_response_by_task"]
     soundness_context = {
@@ -382,21 +419,37 @@ def _comparison_row(
         "v20p4_bound": v20_result.get("bound"),
         "v20p4_error": v20_result.get("error"),
     }
-    v20_bad_rejected, v20_bad_bound = _soundness(
+    v20_bad_rejected, v20_bad_bound, v20_soundness = _soundness(
         v20_result,
         simulation["accepted"],
         responses,
         V20_VERSION,
         soundness_context,
+        soundness_mode,
     )
-    v21_bad_rejected, v21_bad_bound = _soundness(
+    v21_bad_rejected, v21_bad_bound, v21_soundness = _soundness(
         v21_result,
         simulation["accepted"],
         responses,
         V21_VERSION,
         soundness_context,
+        soundness_mode,
     )
     both_proven = bool(v20_result["proven"] and v21_result["proven"])
+    v20_only_proven = bool(v20_result["proven"] and not v21_result["proven"])
+    v21_only_proven = bool(v21_result["proven"] and not v20_result["proven"])
+    both_rejected = bool(
+        v20_result["status"] == "rta_unproven"
+        and v21_result["status"] == "rta_unproven"
+    )
+    runtime_v20 = v20_result.get("runtime_sec")
+    runtime_v21 = v21_result.get("runtime_sec")
+    slowdown = ""
+    if runtime_v20 is not None and runtime_v21 is not None:
+        if runtime_v20 > 0:
+            slowdown = runtime_v21 / runtime_v20
+        else:
+            slowdown = math.inf
     delta = (
         v21_result["bound"] - v20_result["bound"]
         if both_proven
@@ -435,6 +488,9 @@ def _comparison_row(
         "v21_bound": "" if v21_result["bound"] is None else v21_result["bound"],
         "v21_tightness": _tightness(v21_result, responses) or "",
         "v21_minus_v20p4_bound": "" if delta is None else delta,
+        "runtime_v20_sec": "" if runtime_v20 is None else runtime_v20,
+        "runtime_v21_sec": "" if runtime_v21 is None else runtime_v21,
+        "runtime_slowdown_v21_over_v20": slowdown,
         "v21_bound_lt_v20p4": int(delta is not None and delta < 0),
         "v21_bound_eq_v20p4": int(delta is not None and delta == 0),
         "v21_bound_gt_v20p4": int(delta is not None and delta > 0),
@@ -442,17 +498,33 @@ def _comparison_row(
         "v20p4_proven_v21_unproven": int(v20_result["proven"] and not v21_result["proven"]),
         "both_proven": int(both_proven),
         "both_unproven": int(not v20_result["proven"] and not v21_result["proven"]),
+        "v20_only_proven": int(v20_only_proven),
+        "v21_only_proven": int(v21_only_proven),
+        "both_rejected": int(both_rejected),
         "v21_soundness_proven_but_rejected": int(v21_bad_rejected),
         "v21_soundness_observed_exceeds_bound": int(v21_bad_bound),
         "v20p4_soundness_proven_but_rejected": int(v20_bad_rejected),
         "v20p4_soundness_observed_exceeds_bound": int(v20_bad_bound),
+        "v20_soundness_violation": int(v20_bad_rejected),
+        "v21_soundness_violation": int(v21_bad_rejected),
+        "soundness_valid": int(v20_soundness["soundness_valid"]),
+        "soundness_excluded_reason": (
+            v20_soundness["soundness_excluded_reason"]
+            or v21_soundness["soundness_excluded_reason"]
+        ),
     })
     return row
 
 
 def _run_taskset(job: Mapping[str, Any], args) -> List[Dict[str, Any]]:
     simulation = _run_simulation(job)
-    if simulation["simulation_status"] in {"simulation_error", "simulation_timeout"}:
+    if (
+        simulation["simulation_status"] in {
+            "simulation_error",
+            "simulation_timeout",
+        }
+        and args.soundness_mode != "audit"
+    ):
         raise RuntimeError(
             "simulation failed for {}: {}".format(
                 job["taskset_id"], simulation["simulation_error"]
@@ -462,7 +534,16 @@ def _run_taskset(job: Mapping[str, Any], args) -> List[Dict[str, Any]]:
     for e0 in args.e0_values:
         v20_result = _run_v20(job["config_path"], job["taskset_path"], args, e0)
         v21_result = _run_v21(job["config_path"], job["taskset_path"], args, e0)
-        rows.append(_comparison_row(job, simulation, v20_result, v21_result, e0))
+        rows.append(
+            _comparison_row(
+                job,
+                simulation,
+                v20_result,
+                v21_result,
+                e0,
+                soundness_mode=args.soundness_mode,
+            )
+        )
     return rows
 
 
@@ -566,6 +647,18 @@ def run(args) -> Path:
                     int(row["task_idx"]),
                 ))
                 _write_csv(results_path, RESULT_FIELDS, rows)
+        violation_count = sum(
+            int(row["v21_soundness_proven_but_rejected"])
+            + int(row["v21_soundness_observed_exceeds_bound"])
+            + int(row["v20p4_soundness_proven_but_rejected"])
+            + int(row["v20p4_soundness_observed_exceeds_bound"])
+            for row in rows
+        )
+        print(
+            "RTA comparison soundness violations recorded: {}".format(
+                violation_count
+            )
+        )
     except Exception:
         _write_csv(manifest_path, MANIFEST_FIELDS, [_manifest_row(args, run_dir, "failed", 1)])
         raise
