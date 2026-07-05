@@ -1316,6 +1316,7 @@ def _energy_blocking_bound_result(
         return _EnergyBlockingResult(0)
 
     blocking = 0
+    saw_any_state = False
     exact_e0 = _exact_fraction(E0)
     processor_workloads = _processor_workloads(
         target, w, taskset, certified_bounds=certified_bounds
@@ -1339,6 +1340,8 @@ def _energy_blocking_bound_result(
                 certified_bounds,
                 profile,
             )
+            if states:
+                saw_any_state = True
             for u_total, energy in states:
                 demand = max(energy - exact_e0, Fraction(0))
                 delta = beta_inverse(beta, demand, profile)
@@ -1347,6 +1350,10 @@ def _energy_blocking_bound_result(
                         None, "finite energy service is insufficient"
                     )
                 blocking = max(blocking, max(u_total, max(delta - x, 0)))
+    if not saw_any_state:
+        return _EnergyBlockingResult(
+            None, "no feasible energy state for the candidate response window"
+        )
     return _EnergyBlockingResult(blocking)
 
 

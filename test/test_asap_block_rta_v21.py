@@ -2,6 +2,7 @@ import itertools
 from fractions import Fraction
 
 import pytest
+import yaml
 
 import asap_block_rta as v20
 import asap_block_rta_v21_local_window as v21
@@ -244,6 +245,129 @@ def test_close_delta_jumps_without_optimistic_timeout_result():
     assert calls == [0, 3]
 
 
+def test_close_delta_preserves_legacy_g_signature_without_profile():
+    task = make_task("k", 10, 2, 0.1, 0)
+
+    def legacy_g(
+        target,
+        w,
+        x,
+        delta,
+        beta,
+        e0,
+        tasks,
+        processors,
+        certified_bounds,
+        processor_delay_value=None,
+        workload_cache=None,
+    ):
+        return v21.LocalGResult(True, 0)
+
+    result = v21.close_delta(
+        task,
+        4,
+        1,
+        2,
+        [0.0, 1.0, 2.0],
+        0.0,
+        [task],
+        1,
+        {},
+        g_function=legacy_g,
+    )
+
+    assert result.closed
+    assert result.delta == 0
+    assert result.g_value == 0
+
+
+def test_close_delta_preserves_legacy_g_signature_with_profile():
+    task = make_task("k", 10, 2, 0.1, 0)
+    profile = v21.V21ClosureProfile(task.name)
+
+    def legacy_g(
+        target,
+        w,
+        x,
+        delta,
+        beta,
+        e0,
+        tasks,
+        processors,
+        certified_bounds,
+        processor_delay_value=None,
+        workload_cache=None,
+    ):
+        return v21.LocalGResult(True, 0)
+
+    result = v21.close_delta(
+        task,
+        4,
+        1,
+        2,
+        [0.0, 1.0, 2.0],
+        0.0,
+        [task],
+        1,
+        {},
+        g_function=legacy_g,
+        closure_profile=profile,
+    )
+
+    assert result.closed
+    assert result.delta == 0
+    assert profile.delta_iterations == 1
+    assert profile.closed_prefix_count == 1
+    assert all(
+        isinstance(value, int) and value >= 0
+        for field, value in profile.to_dict().items()
+        if field != "task_id"
+    )
+
+
+def test_close_delta_passes_profile_to_supported_g_function():
+    task = make_task("k", 10, 2, 0.1, 0)
+    profile = v21.V21ClosureProfile(task.name)
+    received = []
+
+    def profiled_g(
+        target,
+        w,
+        x,
+        delta,
+        beta,
+        e0,
+        tasks,
+        processors,
+        certified_bounds,
+        processor_delay_value=None,
+        workload_cache=None,
+        closure_profile=None,
+    ):
+        received.append(closure_profile)
+        closure_profile.g_loc_calls += 1
+        return v21.LocalGResult(True, 0)
+
+    result = v21.close_delta(
+        task,
+        4,
+        1,
+        2,
+        [0.0, 1.0, 2.0],
+        0.0,
+        [task],
+        1,
+        {},
+        g_function=profiled_g,
+        closure_profile=profile,
+    )
+
+    assert result.closed
+    assert result.delta == 0
+    assert received == [profile]
+    assert profile.g_loc_calls == 1
+
+
 def test_a_greater_than_w_skips_inner_search(monkeypatch):
     task = make_task("k", 5, 2, 0.1, 0)
     monkeypatch.setattr(
@@ -279,4 +403,110 @@ def test_cli_version_and_defaults_are_independent():
         ["--system", "system.yml", "--tasks", "tasks.yml", "--horizon-ms", "10"]
     )
     assert args.rta_initial_energy == 0.0
+    assert not args.profile
     assert v21.RTA_VERSION == "v21-local-window"
+
+
+def test_v21_profile_schema_and_counters_do_not_change_result(tmp_path):
+    system_path = tmp_path / "system.yml"
+    system_path.write_text(
+        yaml.safe_dump(
+            {
+                "cpu_islands": [
+                    {
+                        "name": "island0",
+                        "numcpus": 1,
+                        "base_freq": 8100,
+                    }
+                ],
+                "energy_management": {
+                    "initial_energy": 100.0,
+                    "max_energy": 100.0,
+                    "use_real_solar_data": False,
+                    "base_harvesting_rate": 0.0,
+                    "scheduler_energy_model": {
+                        "base_power": 1.0,
+                        "workload_coefficients": {"fixed": 1.0},
+                        "frequency_power_ratios": {8100: 1.0},
+                    },
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    tasks_path = tmp_path / "tasks.yml"
+    tasks_path.write_text(
+        yaml.safe_dump(
+            {
+                "taskset": [
+                    {
+                        "name": "only",
+                        "iat": 10,
+                        "runtime": 1,
+                        "deadline": 10,
+                        "params": (
+                            "period=10,wcet=1,arrival_offset=0,workload=fixed"
+                        ),
+                        "code": ["fixed(1, fixed)"],
+                    }
+                ]
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    common = {
+        "system_yml": str(system_path),
+        "tasks_yml": str(tasks_path),
+        "horizon_ms": 20,
+        "assume_no_overflow": True,
+        "harvest_trace": [0.0] * 20,
+        "initial_energy": 100.0,
+    }
+
+    plain = v21.analyze_taskset_v21(**common, profile_rta=False)
+    profiled = v21.analyze_taskset_v21(**common, profile_rta=True)
+    plain_payload = plain.to_dict()
+    profiled_payload = profiled.to_dict()
+
+    assert profiled.tasks[0].proven == plain.tasks[0].proven
+    assert (
+        profiled.tasks[0].response_time_bound
+        == plain.tasks[0].response_time_bound
+    )
+    assert profiled.tasks[0].failure_reason == plain.tasks[0].failure_reason
+    assert "rta_profile" not in plain_payload["tasks"][0]
+
+    expected_metadata = {
+        "theory_family": "local_window_closure",
+        "closure_method": "delta_closure",
+        "empty_set_guard": True,
+        "fallback_guard": True,
+        "consistency_guard": True,
+        "certified_carry_in_source": "v21_recursive_certification",
+        "uses_local_window": True,
+        "uses_delta_closure": True,
+        "uses_parallel_u_compression": False,
+    }
+    for field, expected in expected_metadata.items():
+        assert profiled_payload[field] == expected
+
+    closure_profile = profiled_payload["tasks"][0]["rta_profile"]
+    for field in (
+        "delta_iterations",
+        "g_loc_calls",
+        "omega_feasibility_calls",
+        "empty_omega_count",
+        "no_closure_count",
+        "closed_prefix_count",
+        "delta_cap_exceeded_count",
+        "max_delta_cap",
+        "max_delta_seen",
+        "delta_jump_count",
+    ):
+        assert isinstance(closure_profile[field], int)
+        assert closure_profile[field] >= 0
+    assert closure_profile["delta_iterations"] > 0
+    assert closure_profile["g_loc_calls"] > 0
+    assert closure_profile["omega_feasibility_calls"] > 0

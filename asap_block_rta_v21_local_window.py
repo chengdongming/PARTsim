@@ -8,6 +8,7 @@ local-window Omega set and inner closure search here.
 """
 
 import argparse
+import inspect
 import json
 import math
 import os
@@ -20,6 +21,17 @@ import asap_block_rta as v20
 
 
 RTA_VERSION = "v21-local-window"
+THEORY_METADATA = {
+    "theory_family": "local_window_closure",
+    "closure_method": "delta_closure",
+    "empty_set_guard": True,
+    "fallback_guard": True,
+    "consistency_guard": True,
+    "certified_carry_in_source": "v21_recursive_certification",
+    "uses_local_window": True,
+    "uses_delta_closure": True,
+    "uses_parallel_u_compression": False,
+}
 
 
 @dataclass(frozen=True)
@@ -42,6 +54,24 @@ class LocalClosureResult:
     delta: Optional[int] = None
     g_value: Optional[int] = None
     failure_reason: Optional[str] = None
+
+
+@dataclass
+class V21ClosureProfile:
+    task_id: str
+    delta_iterations: int = 0
+    g_loc_calls: int = 0
+    omega_feasibility_calls: int = 0
+    empty_omega_count: int = 0
+    no_closure_count: int = 0
+    closed_prefix_count: int = 0
+    delta_cap_exceeded_count: int = 0
+    max_delta_cap: int = 0
+    max_delta_seen: int = 0
+    delta_jump_count: int = 0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
 
 
 @dataclass
@@ -71,7 +101,7 @@ class V21TasksetAnalysis:
         ]
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        result = {
             "rta_version": RTA_VERSION,
             "system_file": self.system_file,
             "tasks_file": self.tasks_file,
@@ -85,6 +115,8 @@ class V21TasksetAnalysis:
             "absolute_schedulability_claim": False,
             "tasks": [result.to_dict() for result in self.tasks],
         }
+        result.update(THEORY_METADATA)
+        return result
 
 
 def local_workload_bound(
@@ -138,6 +170,7 @@ def local_omega_extrema_for_z(
     workload_cache: Optional[
         Dict[Tuple[str, int, Optional[int]], int]
     ] = None,
+    closure_profile: Optional[V21ClosureProfile] = None,
 ) -> LocalOmegaExtrema:
     """Return exact independent ``max U`` and ``max E`` for local Omega.
 
@@ -148,6 +181,8 @@ def local_omega_extrema_for_z(
     distributes over the two monotone objectives.
     """
 
+    if closure_profile is not None:
+        closure_profile.omega_feasibility_calls += 1
     del w  # w affects z through D^P outside this local Omega subproblem.
     if processors <= 0 or x < 0 or delta < 0 or z < 0:
         raise ValueError("invalid local Omega dimensions")
@@ -273,9 +308,12 @@ def local_g(
     workload_cache: Optional[
         Dict[Tuple[str, int, Optional[int]], int]
     ] = None,
+    closure_profile: Optional[V21ClosureProfile] = None,
 ) -> LocalGResult:
     """Compute ``G_k^{Theta,loc}(w,x,delta)`` exactly."""
 
+    if closure_profile is not None:
+        closure_profile.g_loc_calls += 1
     delay = (
         processor_delay_value
         if processor_delay_value is not None
@@ -290,6 +328,8 @@ def local_g(
     z_min = max(0, x - delay)
     z_max = min(target.wcet, x)
     if z_min > z_max:
+        if closure_profile is not None:
+            closure_profile.empty_omega_count += 1
         return LocalGResult(False, failure_reason="empty local Omega")
 
     feasible = False
@@ -307,6 +347,7 @@ def local_g(
             processors,
             certified_bounds,
             workload_cache=cache,
+            closure_profile=closure_profile,
         )
         if not extrema.feasible:
             continue
@@ -314,6 +355,8 @@ def local_g(
         max_u = max(max_u, extrema.max_u)
         max_energy = max(max_energy, extrema.max_energy)
     if not feasible:
+        if closure_profile is not None:
+            closure_profile.empty_omega_count += 1
         return LocalGResult(False, failure_reason="empty local Omega")
 
     demand = max(max_energy - v20._exact_fraction(e0), Fraction(0))
@@ -331,6 +374,23 @@ def local_g(
 GFunction = Callable[..., LocalGResult]
 
 
+def _accepts_closure_profile(function: GFunction) -> bool:
+    try:
+        signature = inspect.signature(function)
+    except (TypeError, ValueError):
+        return False
+    if any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    ):
+        return True
+    parameter = signature.parameters.get("closure_profile")
+    return (
+        parameter is not None
+        and parameter.kind != inspect.Parameter.POSITIONAL_ONLY
+    )
+
+
 def close_delta(
     target: v20.RTATask,
     w: int,
@@ -346,13 +406,36 @@ def close_delta(
         Dict[Tuple[str, int, Optional[int]], int]
     ] = None,
     g_function: GFunction = local_g,
+    closure_profile: Optional[V21ClosureProfile] = None,
 ) -> LocalClosureResult:
     """Find the minimum certified local offset within ``delta_cap``."""
 
     if delta_cap < 0:
+        if closure_profile is not None:
+            closure_profile.no_closure_count += 1
+            closure_profile.delta_cap_exceeded_count += 1
         return LocalClosureResult(False, failure_reason="A_k^Theta(w) > w")
+    if closure_profile is not None:
+        closure_profile.max_delta_cap = max(
+            closure_profile.max_delta_cap, delta_cap
+        )
+    pass_closure_profile = (
+        closure_profile is not None
+        and _accepts_closure_profile(g_function)
+    )
     delta = 0
     while delta <= delta_cap:
+        if closure_profile is not None:
+            closure_profile.delta_iterations += 1
+            closure_profile.max_delta_seen = max(
+                closure_profile.max_delta_seen, delta
+            )
+        g_kwargs = {
+            "processor_delay_value": processor_delay_value,
+            "workload_cache": workload_cache,
+        }
+        if pass_closure_profile:
+            g_kwargs["closure_profile"] = closure_profile
         result = g_function(
             target,
             w,
@@ -363,19 +446,28 @@ def close_delta(
             tasks,
             processors,
             certified_bounds,
-            processor_delay_value=processor_delay_value,
-            workload_cache=workload_cache,
+            **g_kwargs,
         )
         if not result.feasible:
             delta += 1
             continue
         if result.value is None:
+            if closure_profile is not None:
+                closure_profile.no_closure_count += 1
             return LocalClosureResult(
                 False, failure_reason=result.failure_reason
             )
         if result.value <= delta:
+            if closure_profile is not None:
+                closure_profile.closed_prefix_count += 1
             return LocalClosureResult(True, delta, result.value)
-        delta = max(delta + 1, result.value)
+        next_delta = max(delta + 1, result.value)
+        if closure_profile is not None and next_delta > delta + 1:
+            closure_profile.delta_jump_count += 1
+        delta = next_delta
+    if closure_profile is not None:
+        closure_profile.no_closure_count += 1
+        closure_profile.delta_cap_exceeded_count += 1
     return LocalClosureResult(
         False,
         failure_reason="no local closure within candidate window",
@@ -390,6 +482,7 @@ def local_energy_blocking_bound(
     tasks: Sequence[v20.RTATask],
     processors: int,
     certified_bounds: Mapping[str, int],
+    closure_profile: Optional[V21ClosureProfile] = None,
 ) -> LocalClosureResult:
     """Return ``B_k^{E,Theta,loc}(w)`` when every prefix closes."""
 
@@ -397,6 +490,9 @@ def local_energy_blocking_bound(
         target, w, processors, tasks, certified_bounds
     )
     if reference_length > w:
+        if closure_profile is not None:
+            closure_profile.no_closure_count += 1
+            closure_profile.delta_cap_exceeded_count += 1
         return LocalClosureResult(False, failure_reason="A_k^Theta(w) > w")
     delta_cap = w - reference_length
     blocking = 0
@@ -414,6 +510,7 @@ def local_energy_blocking_bound(
             certified_bounds,
             processor_delay_value=delay,
             workload_cache=cache,
+            closure_profile=closure_profile,
         )
         if not closure.closed:
             return closure
@@ -429,13 +526,19 @@ def response_time_bound_v21(
     e0: float = 0.0,
     assume_no_overflow: bool = False,
     certified_bounds: Optional[Mapping[str, int]] = None,
+    profile_rta: bool = False,
 ) -> v20.TaskAnalysisResult:
     """Scan candidate windows and return the first v21 local closure."""
 
     certified = dict(certified_bounds or {})
-    higher = v20.hp(tasks, target)
-    missing = [task.name for task in higher if task.name not in certified]
-    if missing:
+    closure_profile = V21ClosureProfile(target.name) if profile_rta else None
+
+    def make_result(
+        bound: Optional[int],
+        proven: bool,
+        reason: Optional[str],
+        iterations: int,
+    ) -> v20.TaskAnalysisResult:
         return v20.TaskAnalysisResult(
             target.name,
             target.period,
@@ -443,6 +546,17 @@ def response_time_bound_v21(
             target.deadline,
             target.workload,
             target.energy_per_tick,
+            bound,
+            proven,
+            reason,
+            iterations,
+            closure_profile.to_dict() if closure_profile is not None else None,
+        )
+
+    higher = v20.hp(tasks, target)
+    missing = [task.name for task in higher if task.name not in certified]
+    if missing:
+        return make_result(
             None,
             False,
             "higher-priority tasks are not certified under {}: {}".format(
@@ -453,13 +567,7 @@ def response_time_bound_v21(
     for task in higher:
         theta = int(certified[task.name])
         if theta < task.wcet or theta > task.deadline:
-            return v20.TaskAnalysisResult(
-                target.name,
-                target.period,
-                target.wcet,
-                target.deadline,
-                target.workload,
-                target.energy_per_tick,
+            return make_result(
                 None,
                 False,
                 "invalid v21 certified carry-in for {}: {}".format(
@@ -480,6 +588,9 @@ def response_time_bound_v21(
             target, w, processors, tasks, certified
         )
         if reference_length > w:
+            if closure_profile is not None:
+                closure_profile.no_closure_count += 1
+                closure_profile.delta_cap_exceeded_count += 1
             last_reason = "A_k^Theta(w) > w"
             continue
         closure = local_energy_blocking_bound(
@@ -490,47 +601,32 @@ def response_time_bound_v21(
             tasks,
             processors,
             certified,
+            closure_profile=closure_profile,
         )
         if not closure.closed:
             last_reason = closure.failure_reason or last_reason
             continue
         bound = reference_length + int(closure.delta)
         if bound > w:
+            if closure_profile is not None:
+                closure_profile.no_closure_count += 1
             last_reason = "local-window outer closure exceeds candidate w"
             continue
         if not assume_no_overflow:
-            return v20.TaskAnalysisResult(
-                target.name,
-                target.period,
-                target.wcet,
-                target.deadline,
-                target.workload,
-                target.energy_per_tick,
+            return make_result(
                 w,
                 False,
                 "no-overflow assumption was not acknowledged",
                 candidates_checked,
             )
-        return v20.TaskAnalysisResult(
-            target.name,
-            target.period,
-            target.wcet,
-            target.deadline,
-            target.workload,
-            target.energy_per_tick,
+        return make_result(
             w,
             True,
             None,
             candidates_checked,
         )
 
-    return v20.TaskAnalysisResult(
-        target.name,
-        target.period,
-        target.wcet,
-        target.deadline,
-        target.workload,
-        target.energy_per_tick,
+    return make_result(
         None,
         False,
         last_reason,
@@ -545,6 +641,7 @@ def analyze_taskset_v21(
     assume_no_overflow: bool = False,
     harvest_trace: Optional[Sequence[float]] = None,
     initial_energy: float = 0.0,
+    profile_rta: bool = False,
 ) -> V21TasksetAnalysis:
     """Run strict priority-ordered v21 taskset certification."""
 
@@ -586,6 +683,7 @@ def analyze_taskset_v21(
             e0=initial_energy,
             assume_no_overflow=assume_no_overflow,
             certified_bounds=certified,
+            profile_rta=profile_rta,
         )
         results.append(result)
         if result.proven and result.response_time_bound is not None:
@@ -620,6 +718,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
             "release; independent of simulator --initial-energy"
         ),
     )
+    parser.add_argument("--profile", "--profile-rta", action="store_true")
     parser.add_argument("--json", action="store_true")
     return parser
 
@@ -633,13 +732,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             args.horizon_ms,
             assume_no_overflow=args.assume_no_overflow,
             initial_energy=args.rta_initial_energy,
+            profile_rta=args.profile,
         )
     except v20.RTAError as exc:
         if args.json:
-            print(json.dumps({
+            payload = {
                 "rta_version": RTA_VERSION,
                 "error": str(exc),
-            }, ensure_ascii=False))
+            }
+            payload.update(THEORY_METADATA)
+            print(json.dumps(payload, ensure_ascii=False))
         else:
             print("error: {}".format(exc), file=sys.stderr)
         return 2
