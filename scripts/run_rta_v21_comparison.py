@@ -26,28 +26,78 @@ V21_TOOL = PROJECT_ROOT / "asap_block_rta_v21_local_window.py"
 RESULT_FILENAME = "rta_v21_comparison_results.csv"
 MANIFEST_FILENAME = "rta_v21_comparison_manifest.csv"
 
+V20_THEORY_METADATA = {
+    "v20_theory_family": "complete_window",
+    "v20_closure_method": "fixed_point_complete_window",
+    "v20_uses_local_window": False,
+    "v20_uses_delta_closure": False,
+    "v20_empty_state_guard": True,
+}
+
+V21_THEORY_DEFAULTS = {
+    "v21_theory_family": "local_window_closure",
+    "v21_closure_method": "delta_closure",
+    "v21_empty_set_guard": True,
+    "v21_fallback_guard": True,
+    "v21_consistency_guard": True,
+    "v21_certified_carry_in_source": "v21_recursive_certification",
+    "v21_uses_local_window": True,
+    "v21_uses_delta_closure": True,
+    "v21_uses_parallel_u_compression": False,
+}
+
+V21_PROFILE_SUM_COUNTERS = (
+    "delta_iterations",
+    "g_loc_calls",
+    "omega_feasibility_calls",
+    "empty_omega_count",
+    "no_closure_count",
+    "closed_prefix_count",
+    "delta_cap_exceeded_count",
+    "delta_jump_count",
+)
+V21_PROFILE_MAX_COUNTERS = ("max_delta_cap", "max_delta_seen")
+
 RESULT_FIELDS = [
     "experiment_name", "seed_base", "taskset_seed",
     "normalized_utilization", "task_idx", "taskset_id", "E0",
     "accepted", "simulation_status", "simulated_response_time",
     "deadline_miss_time", "first_missed_task", "taskset_path",
-    "trace_path", "v20p4_rta_version", "v20p4_status",
+    "trace_path", "v20p4_rta_version", "v20_rta_version",
+    "v20_theory_family", "v20_closure_method",
+    "v20_uses_local_window", "v20_uses_delta_closure",
+    "v20_empty_state_guard", "v20p4_status",
     "v20p4_proven", "v20p4_error", "v20p4_reason", "v20p4_bound",
     "v20p4_tightness", "pessimism_v20", "v21_rta_version", "v21_status",
     "v21_proven", "v21_error", "v21_reason", "v21_bound",
+    "v21_theory_family", "v21_closure_method", "v21_empty_set_guard",
+    "v21_fallback_guard", "v21_consistency_guard",
+    "v21_certified_carry_in_source", "v21_uses_local_window",
+    "v21_uses_delta_closure", "v21_uses_parallel_u_compression",
+    "v21_delta_iterations", "v21_g_loc_calls",
+    "v21_omega_feasibility_calls", "v21_empty_omega_count",
+    "v21_no_closure_count", "v21_closed_prefix_count",
+    "v21_delta_cap_exceeded_count", "v21_max_delta_cap",
+    "v21_max_delta_seen", "v21_delta_jump_count",
+    "v21_no_closure_observed", "v21_timeout_or_horizon_failure",
+    "v21_fallback_used", "v21_fallback_reason", "v21_failure_reason",
+    "v21_certificate_status",
     "v21_tightness", "pessimism_v21",
     "intersection_pessimism_v20", "intersection_pessimism_v21",
     "intersection_pessimism_improvement", "v21_minus_v20p4_bound",
     "runtime_v20_sec", "runtime_v21_sec",
     "runtime_slowdown_v21_over_v20",
     "v21_bound_lt_v20p4", "v21_bound_eq_v20p4",
-    "v21_bound_gt_v20p4", "v21_proven_v20p4_unproven",
+    "v21_bound_gt_v20p4", "v21_bound_gt_v20",
+    "v21_bound_gt_v20_reason", "v21_proven_v20p4_unproven",
     "v20p4_proven_v21_unproven", "both_proven", "both_unproven",
     "v20_only_proven", "v21_only_proven", "both_rejected",
     "v21_soundness_proven_but_rejected",
     "v21_soundness_observed_exceeds_bound",
     "v20p4_soundness_proven_but_rejected",
     "v20p4_soundness_observed_exceeds_bound",
+    "v20_sim_rejected_violation", "v20_observed_bound_violation",
+    "v21_sim_rejected_violation", "v21_observed_bound_violation",
     "v20_soundness_violation",
     "v21_soundness_violation",
     "soundness_valid",
@@ -253,6 +303,122 @@ def _parse_report(
     }
 
 
+def _finite_number(value: Any) -> Optional[float]:
+    number = acceptance._extract_number(value)
+    if number is None or not math.isfinite(number):
+        return None
+    return float(number)
+
+
+def _metadata_bool(value: Any, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes"}:
+        return True
+    if normalized in {"0", "false", "no"}:
+        return False
+    return default
+
+
+def _v21_metadata(analysis: Mapping[str, Any]) -> Dict[str, Any]:
+    report = analysis.get("report")
+    if not isinstance(report, Mapping):
+        report = {}
+    metadata = {}
+    for field, default in V21_THEORY_DEFAULTS.items():
+        source = field[4:] if field.startswith("v21_") else field
+        value = report.get(source, default)
+        metadata[field] = (
+            _metadata_bool(value, default)
+            if isinstance(default, bool)
+            else str(value or default)
+        )
+    return metadata
+
+
+def _aggregate_v21_profile(analysis: Mapping[str, Any]) -> Dict[str, Any]:
+    counters: Dict[str, Any] = {}
+    for name in V21_PROFILE_SUM_COUNTERS:
+        counters["v21_{}".format(name)] = 0
+    for name in V21_PROFILE_MAX_COUNTERS:
+        counters["v21_{}".format(name)] = 0
+
+    report = analysis.get("report")
+    if not isinstance(report, Mapping):
+        return counters
+    tasks = report.get("tasks")
+    if not isinstance(tasks, list):
+        return counters
+    for task in tasks:
+        if not isinstance(task, Mapping):
+            continue
+        profile = task.get("rta_profile")
+        if not isinstance(profile, Mapping):
+            continue
+        for name in V21_PROFILE_SUM_COUNTERS:
+            value = _finite_number(profile.get(name))
+            if value is not None and value >= 0:
+                counters["v21_{}".format(name)] += int(value)
+        for name in V21_PROFILE_MAX_COUNTERS:
+            value = _finite_number(profile.get(name))
+            if value is not None and value >= 0:
+                counters["v21_{}".format(name)] = max(
+                    counters["v21_{}".format(name)],
+                    int(value),
+                )
+    return counters
+
+
+def _v21_audit_fields(
+    analysis: Mapping[str, Any], counters: Mapping[str, Any]
+) -> Dict[str, Any]:
+    reason = str(
+        analysis.get("reason")
+        or analysis.get("error")
+        or ""
+    )
+    normalized = reason.lower()
+    no_closure_terms = (
+        "no closure",
+        "not closed",
+        "service insufficient",
+        "empty omega",
+        "empty local omega",
+        "a_k^theta",
+        "exceeds candidate",
+    )
+    no_closure = (
+        not bool(analysis.get("proven"))
+        and (
+            any(term in normalized for term in no_closure_terms)
+            or int(counters.get("v21_no_closure_count", 0)) > 0
+        )
+    )
+    timeout_or_horizon = (
+        analysis.get("status") == "rta_timeout"
+        or "timeout" in normalized
+        or "timed out" in normalized
+        or "horizon" in normalized
+    )
+    if analysis.get("proven"):
+        certificate_status = "certified"
+    elif "certif" in normalized or "higher-priority" in normalized:
+        certificate_status = "missing_or_invalid_certificate"
+    else:
+        certificate_status = "unproven_or_not_available"
+    return {
+        "v21_no_closure_observed": int(no_closure),
+        "v21_timeout_or_horizon_failure": int(timeout_or_horizon),
+        "v21_fallback_used": 0,
+        "v21_fallback_reason": "",
+        "v21_failure_reason": reason,
+        "v21_certificate_status": certificate_status,
+    }
+
+
 def _run_v20(config_path: str, taskset_path: str, args, e0: float) -> Dict[str, Any]:
     started = time.perf_counter()
     raw = acceptance.run_asap_block_rta(
@@ -289,6 +455,7 @@ def _run_v21(config_path: str, taskset_path: str, args, e0: float) -> Dict[str, 
         "--horizon-ms", str(args.rta_horizon_ms),
         "--rta-initial-energy", str(e0),
         "--assume-no-overflow",
+        "--profile-rta",
         "--json",
     ]
     try:
@@ -482,6 +649,17 @@ def _comparison_row(
         and v20_result["bound"] is not None
         else None
     )
+    v21_bound_gt_v20 = bool(delta is not None and delta > 0)
+    if v21_bound_gt_v20:
+        v21_bound_gt_v20_reason = "both_proven_v21_bound_larger"
+    elif v20_result["proven"] and not v21_result["proven"]:
+        v21_bound_gt_v20_reason = "v21_unproven_v20_proven"
+    elif v21_result["proven"] and not v20_result["proven"]:
+        v21_bound_gt_v20_reason = "v21_proven_v20_unproven"
+    else:
+        v21_bound_gt_v20_reason = ""
+    v21_profile_counters = _aggregate_v21_profile(v21_result)
+    v21_audit = _v21_audit_fields(v21_result, v21_profile_counters)
     row = {
         key: base[key]
         for key in (
@@ -498,7 +676,12 @@ def _comparison_row(
         "deadline_miss_time": simulation["deadline_miss_time"],
         "first_missed_task": simulation["first_missed_task"],
         "trace_path": simulation["trace_path"],
-        "v20p4_rta_version": V20_VERSION,
+        "v20p4_rta_version": v20_result.get("version", V20_VERSION),
+        "v20_rta_version": v20_result.get("version", V20_VERSION),
+        **{
+            field: int(value) if isinstance(value, bool) else value
+            for field, value in V20_THEORY_METADATA.items()
+        },
         "v20p4_status": v20_result["status"],
         "v20p4_proven": int(v20_result["proven"]),
         "v20p4_error": v20_result["error"],
@@ -510,12 +693,18 @@ def _comparison_row(
             "" if pessimism_v20 is None else pessimism_v20
         ),
         "pessimism_v20": "" if pessimism_v20 is None else pessimism_v20,
-        "v21_rta_version": V21_VERSION,
+        "v21_rta_version": v21_result.get("version", V21_VERSION),
         "v21_status": v21_result["status"],
         "v21_proven": int(v21_result["proven"]),
         "v21_error": v21_result["error"],
         "v21_reason": v21_result["reason"],
         "v21_bound": "" if v21_result["bound"] is None else v21_result["bound"],
+        **{
+            field: int(value) if isinstance(value, bool) else value
+            for field, value in _v21_metadata(v21_result).items()
+        },
+        **v21_profile_counters,
+        **v21_audit,
         "v21_tightness": "" if pessimism_v21 is None else pessimism_v21,
         "pessimism_v21": "" if pessimism_v21 is None else pessimism_v21,
         "intersection_pessimism_v20": (
@@ -540,6 +729,8 @@ def _comparison_row(
         "v21_bound_lt_v20p4": int(delta is not None and delta < 0),
         "v21_bound_eq_v20p4": int(delta is not None and delta == 0),
         "v21_bound_gt_v20p4": int(delta is not None and delta > 0),
+        "v21_bound_gt_v20": int(v21_bound_gt_v20),
+        "v21_bound_gt_v20_reason": v21_bound_gt_v20_reason,
         "v21_proven_v20p4_unproven": int(v21_result["proven"] and not v20_result["proven"]),
         "v20p4_proven_v21_unproven": int(v20_result["proven"] and not v21_result["proven"]),
         "both_proven": int(both_proven),
@@ -551,8 +742,12 @@ def _comparison_row(
         "v21_soundness_observed_exceeds_bound": int(v21_bad_bound),
         "v20p4_soundness_proven_but_rejected": int(v20_bad_rejected),
         "v20p4_soundness_observed_exceeds_bound": int(v20_bad_bound),
-        "v20_soundness_violation": int(v20_bad_rejected),
-        "v21_soundness_violation": int(v21_bad_rejected),
+        "v20_sim_rejected_violation": int(v20_bad_rejected),
+        "v20_observed_bound_violation": int(v20_bad_bound),
+        "v21_sim_rejected_violation": int(v21_bad_rejected),
+        "v21_observed_bound_violation": int(v21_bad_bound),
+        "v20_soundness_violation": int(v20_bad_rejected or v20_bad_bound),
+        "v21_soundness_violation": int(v21_bad_rejected or v21_bad_bound),
         "soundness_valid": int(v20_soundness["soundness_valid"]),
         "soundness_excluded_reason": (
             v20_soundness["soundness_excluded_reason"]

@@ -2,8 +2,10 @@
 """Analyze isolated v20.4 versus v21-local-window comparison results."""
 
 import argparse
+import json
 import math
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -21,6 +23,39 @@ BY_UTIL_FILENAME = "rta_v21_comparison_by_utilization.csv"
 PESSIMISM_CDF_PLOT = "pessimism_cdf.png"
 INTERSECTION_PESSIMISM_BOXPLOT = "intersection_pessimism_boxplot.png"
 RUNTIME_SLOWDOWN_PLOT = "runtime_slowdown.png"
+
+V20_METADATA_DEFAULTS = {
+    "v20_rta_version": V20_VERSION,
+    "v20_theory_family": "complete_window",
+    "v20_closure_method": "fixed_point_complete_window",
+    "v20_uses_local_window": False,
+    "v20_uses_delta_closure": False,
+    "v20_empty_state_guard": True,
+}
+
+V21_METADATA_DEFAULTS = {
+    "v21_theory_family": "local_window_closure",
+    "v21_closure_method": "delta_closure",
+    "v21_empty_set_guard": True,
+    "v21_fallback_guard": True,
+    "v21_consistency_guard": True,
+    "v21_certified_carry_in_source": "v21_recursive_certification",
+    "v21_uses_local_window": True,
+    "v21_uses_delta_closure": True,
+    "v21_uses_parallel_u_compression": False,
+}
+
+V21_PROFILE_SUM_COUNTERS = (
+    "v21_delta_iterations",
+    "v21_g_loc_calls",
+    "v21_omega_feasibility_calls",
+    "v21_empty_omega_count",
+    "v21_no_closure_count",
+    "v21_closed_prefix_count",
+    "v21_delta_cap_exceeded_count",
+    "v21_delta_jump_count",
+)
+V21_PROFILE_MAX_COUNTERS = ("v21_max_delta_cap", "v21_max_delta_seen")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -81,6 +116,11 @@ def _pessimism_series(
     return result
 
 
+def _ensure_column(frame: pd.DataFrame, column: str, default) -> None:
+    if column not in frame.columns:
+        frame[column] = default
+
+
 def load_results(input_path) -> pd.DataFrame:
     path = Path(input_path)
     if "rta-e0-sensitivity-v20p4" in str(path).lower():
@@ -120,6 +160,27 @@ def load_results(input_path) -> pd.DataFrame:
     if set(frame["v21_rta_version"].dropna().astype(str)) != {V21_VERSION}:
         raise ValueError("comparison CSV mixes or mislabels v21 results")
 
+    for column, default in V20_METADATA_DEFAULTS.items():
+        _ensure_column(frame, column, default)
+    for column, default in V21_METADATA_DEFAULTS.items():
+        _ensure_column(frame, column, default)
+    for column in V21_PROFILE_SUM_COUNTERS + V21_PROFILE_MAX_COUNTERS:
+        _ensure_column(frame, column, 0)
+    for column, default in (
+        ("v21_no_closure_observed", False),
+        ("v21_timeout_or_horizon_failure", False),
+        ("v21_fallback_used", False),
+        ("v21_fallback_reason", ""),
+        ("v21_failure_reason", ""),
+        ("v21_certificate_status", ""),
+        ("v21_bound_gt_v20", False),
+        ("v21_bound_gt_v20_reason", ""),
+        ("v20_sim_rejected_violation", False),
+        ("v20_observed_bound_violation", False),
+        ("v21_sim_rejected_violation", False),
+        ("v21_observed_bound_violation", False),
+    ):
+        _ensure_column(frame, column, default)
     if "v20_only_proven" not in frame.columns:
         frame["v20_only_proven"] = frame["v20p4_proven_v21_unproven"]
     if "v21_only_proven" not in frame.columns:
@@ -157,9 +218,26 @@ def load_results(input_path) -> pd.DataFrame:
         "v21_soundness_observed_exceeds_bound",
         "v20p4_soundness_proven_but_rejected",
         "v20p4_soundness_observed_exceeds_bound",
+        "v20_sim_rejected_violation",
+        "v20_observed_bound_violation",
+        "v21_sim_rejected_violation",
+        "v21_observed_bound_violation",
         "v20_soundness_violation",
         "v21_soundness_violation",
         "soundness_valid",
+        "v20_uses_local_window",
+        "v20_uses_delta_closure",
+        "v20_empty_state_guard",
+        "v21_empty_set_guard",
+        "v21_fallback_guard",
+        "v21_consistency_guard",
+        "v21_uses_local_window",
+        "v21_uses_delta_closure",
+        "v21_uses_parallel_u_compression",
+        "v21_no_closure_observed",
+        "v21_timeout_or_horizon_failure",
+        "v21_fallback_used",
+        "v21_bound_gt_v20",
     ]
     for column in boolean_columns:
         if column in frame:
@@ -173,12 +251,17 @@ def load_results(input_path) -> pd.DataFrame:
         "intersection_pessimism_improvement",
         "runtime_v20_sec", "runtime_v21_sec",
         "runtime_slowdown_v21_over_v20",
+        *V21_PROFILE_SUM_COUNTERS,
+        *V21_PROFILE_MAX_COUNTERS,
     ):
         if column not in frame.columns:
             frame[column] = math.nan
         frame[column] = pd.to_numeric(frame[column], errors="coerce")
 
     accepted = _as_bool(frame["accepted"])
+    valid_soundness = _as_bool(frame["soundness_valid"])
+    raw_v20_soundness = frame["v20_soundness_violation"].copy()
+    raw_v21_soundness = frame["v21_soundness_violation"].copy()
     frame["pessimism_v20"] = _pessimism_series(
         frame, "v20p4_bound", frame["v20p4_proven"], accepted
     )
@@ -204,50 +287,80 @@ def load_results(input_path) -> pd.DataFrame:
         frame.loc[intersection, "pessimism_v20"]
         - frame.loc[intersection, "pessimism_v21"]
     )
-    schedulability_failure = _soundness_failure_mask(frame, accepted)
-    frame["v21_soundness_proven_but_rejected"] |= (
-        frame["v21_proven"] & schedulability_failure
+    schedulability_failure = (
+        valid_soundness & _soundness_failure_mask(frame, accepted)
     )
-    frame["v20p4_soundness_proven_but_rejected"] |= (
-        frame["v20p4_proven"] & schedulability_failure
+    v21_rejected = frame["v21_proven"] & schedulability_failure
+    v20_rejected = frame["v20p4_proven"] & schedulability_failure
+    frame["v21_soundness_proven_but_rejected"] |= v21_rejected
+    frame["v20p4_soundness_proven_but_rejected"] |= v20_rejected
+    frame["v21_sim_rejected_violation"] |= (
+        frame["v21_soundness_proven_but_rejected"]
     )
-    frame["v21_soundness_violation"] |= (
-        frame["v21_proven"] & schedulability_failure
+    frame["v20_sim_rejected_violation"] |= (
+        frame["v20p4_soundness_proven_but_rejected"]
     )
-    frame["v20_soundness_violation"] |= (
-        frame["v20p4_proven"] & schedulability_failure
+    frame["v21_sim_rejected_violation"] |= v21_rejected
+    frame["v20_sim_rejected_violation"] |= v20_rejected
+    finite_observed = (
+        frame["simulated_response_time"].notna()
+        & frame["simulated_response_time"].map(math.isfinite)
     )
-    frame["v21_soundness_observed_exceeds_bound"] |= (
-        frame["v21_proven"]
-        & frame["simulated_response_time"].notna()
+    v21_observed = (
+        valid_soundness
+        & frame["v21_proven"]
+        & finite_observed
         & frame["v21_bound"].notna()
+        & frame["v21_bound"].map(math.isfinite)
         & (frame["simulated_response_time"] > frame["v21_bound"])
     )
-    frame["v20p4_soundness_observed_exceeds_bound"] |= (
-        frame["v20p4_proven"]
-        & frame["simulated_response_time"].notna()
+    v20_observed = (
+        valid_soundness
+        & frame["v20p4_proven"]
+        & finite_observed
         & frame["v20p4_bound"].notna()
+        & frame["v20p4_bound"].map(math.isfinite)
         & (frame["simulated_response_time"] > frame["v20p4_bound"])
     )
-
-    violations = int(
-        frame[
-            [
-                "v21_soundness_proven_but_rejected",
-                "v21_soundness_observed_exceeds_bound",
-                "v20p4_soundness_proven_but_rejected",
-                "v20p4_soundness_observed_exceeds_bound",
-                "v20_soundness_violation",
-                "v21_soundness_violation",
-            ]
-        ].any(axis=1).sum()
+    frame["v21_soundness_observed_exceeds_bound"] |= v21_observed
+    frame["v20p4_soundness_observed_exceeds_bound"] |= v20_observed
+    frame["v21_observed_bound_violation"] |= (
+        frame["v21_soundness_observed_exceeds_bound"]
     )
-    if violations:
-        raise ValueError(
-            "RTA soundness violation present in comparison rows: {}".format(
-                violations
-            )
-        )
+    frame["v20_observed_bound_violation"] |= (
+        frame["v20p4_soundness_observed_exceeds_bound"]
+    )
+    frame["v21_observed_bound_violation"] |= v21_observed
+    frame["v20_observed_bound_violation"] |= v20_observed
+    frame["v21_soundness_violation"] = (
+        raw_v21_soundness
+        | frame["v21_sim_rejected_violation"]
+        | frame["v21_observed_bound_violation"]
+    )
+    frame["v20_soundness_violation"] = (
+        raw_v20_soundness
+        | frame["v20_sim_rejected_violation"]
+        | frame["v20_observed_bound_violation"]
+    )
+    both_bounds = (
+        frame["both_proven"]
+        & frame["v20p4_bound"].notna()
+        & frame["v21_bound"].notna()
+        & frame["v20p4_bound"].map(math.isfinite)
+        & frame["v21_bound"].map(math.isfinite)
+    )
+    frame["v21_bound_gt_v20"] |= (
+        both_bounds & (frame["v21_bound"] > frame["v20p4_bound"])
+    )
+    missing_reason = frame["v21_bound_gt_v20_reason"].fillna("").astype(str) == ""
+    frame.loc[
+        frame["v21_bound_gt_v20"] & missing_reason,
+        "v21_bound_gt_v20_reason",
+    ] = "both_proven_v21_bound_larger"
+    frame.loc[
+        frame["v20_only_proven"] & missing_reason,
+        "v21_bound_gt_v20_reason",
+    ] = "v21_unproven_v20_proven"
     return frame
 
 
@@ -268,24 +381,42 @@ def _finite_stats(series: pd.Series, prefix: str) -> dict:
     }
 
 
+def _reason_counts(series: pd.Series) -> str:
+    values = []
+    for value in series.dropna():
+        text = str(value).strip()
+        if text and text.lower() != "nan":
+            values.append(text)
+    return json.dumps(dict(sorted(Counter(values).items())), sort_keys=True)
+
+
 def summarize_group(group: pd.DataFrame) -> dict:
     both = group[group["both_proven"]]
     v20_proven = group[group["v20p4_proven"]]
     v21_proven = group[group["v21_proven"]]
+    both_count = int(group["both_proven"].sum())
+    v21_looser_count = int(both["v21_bound_gt_v20"].sum())
     result = {
+        "total_rows": len(group),
         "num_tasksets": len(group),
         "v20p4_proven_count": int(group["v20p4_proven"].sum()),
+        "v20_proven_count": int(group["v20p4_proven"].sum()),
         "v21_proven_count": int(group["v21_proven"].sum()),
-        "both_proven_count": int(group["both_proven"].sum()),
+        "both_proven_count": both_count,
         "v20_only_proven_count": int(group["v20_only_proven"].sum()),
         "v21_only_proven_count": int(group["v21_only_proven"].sum()),
         "both_rejected_count": int(group["both_rejected"].sum()),
+        "neither_proven_count": int(
+            (~group["v20p4_proven"] & ~group["v21_proven"]).sum()
+        ),
         "v21_proven_v20p4_unproven_count": int(
             group["v21_proven_v20p4_unproven"].sum()
         ),
         "v20p4_proven_v21_unproven_count": int(
             group["v20p4_proven_v21_unproven"].sum()
         ),
+        "v21_unproven_v20_proven_count": int(group["v20_only_proven"].sum()),
+        "v21_proven_v20_unproven_count": int(group["v21_only_proven"].sum()),
         "v21_timeout_count": int((group["v21_status"] == "rta_timeout").sum()),
         "v20p4_timeout_count": int(
             (group["v20p4_status"] == "rta_timeout").sum()
@@ -296,8 +427,60 @@ def summarize_group(group: pd.DataFrame) -> dict:
         ),
         "v21_bound_gt_v20p4_count": int(both["v21_bound_gt_v20p4"].sum()),
         "v21_bound_lt_v20p4_count": int(both["v21_bound_lt_v20p4"].sum()),
-        "soundness_violations": 0,
+        "v21_bound_gt_v20_count": v21_looser_count,
+        "v21_bound_gt_v20_rate": (
+            v21_looser_count / both_count if both_count else math.nan
+        ),
+        "v21_bound_gt_v20_reason_counts": _reason_counts(
+            group["v21_bound_gt_v20_reason"]
+        ),
+        "both_proven_v21_tighter_count": int(
+            (both["v21_minus_v20p4_bound"] < 0).sum()
+        ),
+        "both_proven_equal_count": int(
+            (both["v21_minus_v20p4_bound"] == 0).sum()
+        ),
+        "both_proven_v21_looser_count": v21_looser_count,
+        "v20_sim_rejected_violation_count": int(
+            group["v20_sim_rejected_violation"].sum()
+        ),
+        "v20_observed_bound_violation_count": int(
+            group["v20_observed_bound_violation"].sum()
+        ),
+        "v20_soundness_violation_count": int(
+            group["v20_soundness_violation"].sum()
+        ),
+        "v21_sim_rejected_violation_count": int(
+            group["v21_sim_rejected_violation"].sum()
+        ),
+        "v21_observed_bound_violation_count": int(
+            group["v21_observed_bound_violation"].sum()
+        ),
+        "v21_soundness_violation_count": int(
+            group["v21_soundness_violation"].sum()
+        ),
+        "soundness_violations": int(
+            (group["v20_soundness_violation"] | group["v21_soundness_violation"]).sum()
+        ),
+        "v21_fallback_used_count": int(group["v21_fallback_used"].sum()),
+        "v21_fallback_reason_counts": _reason_counts(
+            group["v21_fallback_reason"]
+        ),
+        "v21_failure_reason_counts": _reason_counts(
+            group["v21_failure_reason"]
+        ),
+        "v21_no_closure_observed_count": int(
+            group["v21_no_closure_observed"].sum()
+        ),
+        "v21_timeout_or_horizon_failure_count": int(
+            group["v21_timeout_or_horizon_failure"].sum()
+        ),
     }
+    for column in V21_PROFILE_SUM_COUNTERS:
+        result["{}_total".format(column)] = int(_finite_values(group[column]).sum())
+    for column in V21_PROFILE_MAX_COUNTERS:
+        values = _finite_values(group[column])
+        result["{}_max".format(column)] = values.max() if len(values) else math.nan
     deltas = both["v21_minus_v20p4_bound"].dropna()
     result.update({
         "mean_bound_delta": deltas.mean() if len(deltas) else math.nan,

@@ -1,4 +1,6 @@
 import csv
+import json
+import subprocess
 from pathlib import Path
 
 import pandas as pd
@@ -8,26 +10,38 @@ from scripts import analyze_rta_v21_comparison as analyzer
 from scripts import run_rta_v21_comparison as runner
 
 
-def report(version, proven=True, bound=10, runtime_sec=None):
+def report(
+    version,
+    proven=True,
+    bound=10,
+    runtime_sec=None,
+    profile=None,
+    top_level=None,
+    reason=None,
+):
+    task = {
+        "task_name": "t1",
+        "proven_under_assumptions": proven,
+        "response_time_bound": bound if proven else None,
+    }
+    if profile is not None:
+        task["rta_profile"] = profile
+    payload = {
+        "rta_version": version,
+        "proven_under_assumptions": proven,
+        "tasks": [task],
+    }
+    if top_level:
+        payload.update(top_level)
     return {
         "version": version,
         "status": "proven_under_assumptions" if proven else "rta_unproven",
         "proven": proven,
         "error": "",
-        "reason": "" if proven else "not closed",
+        "reason": "" if proven else (reason or "not closed"),
         "bound": bound if proven else None,
         "runtime_sec": runtime_sec,
-        "report": {
-            "rta_version": version,
-            "proven_under_assumptions": proven,
-            "tasks": [
-                {
-                    "task_name": "t1",
-                    "proven_under_assumptions": proven,
-                    "response_time_bound": bound if proven else None,
-                }
-            ],
-        },
+        "report": payload,
     }
 
 
@@ -57,15 +71,51 @@ def simulation(accepted=True, response=5, status=None):
 
 
 def test_comparison_row_contains_both_versions_and_valid_tightness():
+    profile = {
+        "delta_iterations": 2,
+        "g_loc_calls": 3,
+        "omega_feasibility_calls": 4,
+        "empty_omega_count": 1,
+        "no_closure_count": 0,
+        "closed_prefix_count": 2,
+        "delta_cap_exceeded_count": 0,
+        "max_delta_cap": 7,
+        "max_delta_seen": 5,
+        "delta_jump_count": 1,
+    }
     row = runner._comparison_row(
         base_row(), simulation(),
         report(runner.V20_VERSION, bound=12),
-        report(runner.V21_VERSION, bound=10),
+        report(runner.V21_VERSION, bound=10, profile=profile),
         0.25,
     )
     assert set(runner.RESULT_FIELDS) == set(row)
+    assert len(runner.RESULT_FIELDS) == len(set(runner.RESULT_FIELDS))
     assert row["v20p4_rta_version"] == "v20.4"
+    assert row["v20_rta_version"] == "v20.4"
+    assert row["v20_theory_family"] == "complete_window"
+    assert row["v20_uses_local_window"] == 0
+    assert row["v20_empty_state_guard"] == 1
     assert row["v21_rta_version"] == "v21-local-window"
+    assert row["v21_theory_family"] == "local_window_closure"
+    assert row["v21_closure_method"] == "delta_closure"
+    assert row["v21_empty_set_guard"] == 1
+    assert row["v21_fallback_guard"] == 1
+    assert row["v21_consistency_guard"] == 1
+    assert row["v21_certified_carry_in_source"] == "v21_recursive_certification"
+    assert row["v21_uses_local_window"] == 1
+    assert row["v21_uses_delta_closure"] == 1
+    assert row["v21_uses_parallel_u_compression"] == 0
+    assert row["v21_delta_iterations"] == 2
+    assert row["v21_g_loc_calls"] == 3
+    assert row["v21_omega_feasibility_calls"] == 4
+    assert row["v21_empty_omega_count"] == 1
+    assert row["v21_no_closure_count"] == 0
+    assert row["v21_closed_prefix_count"] == 2
+    assert row["v21_delta_cap_exceeded_count"] == 0
+    assert row["v21_max_delta_cap"] == 7
+    assert row["v21_max_delta_seen"] == 5
+    assert row["v21_delta_jump_count"] == 1
     assert row["v20p4_tightness"] == pytest.approx(2.4)
     assert row["v21_tightness"] == pytest.approx(2.0)
     assert row["pessimism_v20"] == pytest.approx(2.4)
@@ -75,6 +125,8 @@ def test_comparison_row_contains_both_versions_and_valid_tightness():
     assert row["intersection_pessimism_improvement"] == pytest.approx(0.4)
     assert row["v21_minus_v20p4_bound"] == -2
     assert row["v21_bound_lt_v20p4"] == 1
+    assert row["v21_bound_gt_v20"] == 0
+    assert row["v21_bound_gt_v20_reason"] == ""
     assert row["v20_soundness_violation"] == 0
     assert row["v21_soundness_violation"] == 0
     assert row["soundness_valid"] == 1
@@ -94,6 +146,20 @@ def test_comparison_row_contains_runtime_and_clear_aliases():
     assert row["v20_only_proven"] == 0
     assert row["v21_only_proven"] == 0
     assert row["both_rejected"] == 0
+
+
+def test_v21_bound_gt_v20_is_consistency_audit_not_soundness():
+    row = runner._comparison_row(
+        base_row(), simulation(response=9),
+        report(runner.V20_VERSION, bound=10),
+        report(runner.V21_VERSION, bound=12),
+        0.25,
+        soundness_mode="audit",
+    )
+    assert row["v21_bound_gt_v20"] == 1
+    assert row["v21_bound_gt_v20_reason"] == "both_proven_v21_bound_larger"
+    assert row["v21_soundness_violation"] == 0
+    assert row["v20_soundness_violation"] == 0
 
 
 def test_tightness_is_empty_for_unproven_analysis():
@@ -172,11 +238,28 @@ def test_soundness_audit_records_violation_without_raising():
         soundness_mode="audit",
     )
     assert row["v21_soundness_proven_but_rejected"] == 1
+    assert row["v21_sim_rejected_violation"] == 1
+    assert row["v21_observed_bound_violation"] == 0
     assert row["v20p4_soundness_proven_but_rejected"] == 0
     assert row["v21_soundness_violation"] == 1
     assert row["v20_soundness_violation"] == 0
     assert row["soundness_valid"] == 1
     assert row["soundness_excluded_reason"] == ""
+
+
+def test_soundness_audit_or_includes_observed_bound_violation():
+    row = runner._comparison_row(
+        base_row(), simulation(response=11),
+        report(runner.V20_VERSION, proven=False),
+        report(runner.V21_VERSION, proven=True, bound=10),
+        0.25,
+        soundness_mode="audit",
+    )
+    assert row["v21_soundness_proven_but_rejected"] == 0
+    assert row["v21_sim_rejected_violation"] == 0
+    assert row["v21_soundness_observed_exceeds_bound"] == 1
+    assert row["v21_observed_bound_violation"] == 1
+    assert row["v21_soundness_violation"] == 1
 
 
 @pytest.mark.parametrize(
@@ -198,6 +281,8 @@ def test_soundness_audit_excludes_timeout_and_infrastructure_failures(
         soundness_mode="audit",
     )
     assert row["v21_soundness_proven_but_rejected"] == 0
+    assert row["v21_sim_rejected_violation"] == 0
+    assert row["v21_observed_bound_violation"] == 0
     assert row["v21_soundness_violation"] == 0
     assert row["soundness_valid"] == 0
     assert row["soundness_excluded_reason"] == reason
@@ -311,11 +396,12 @@ def test_analyzer_accepts_comparison_manifest(tmp_path):
         "v21_soundness_observed_exceeds_bound",
     ],
 )
-def test_analyzer_raises_on_v21_soundness_violation(tmp_path, field):
+def test_analyzer_summarizes_v21_soundness_violation(tmp_path, field):
     source = tmp_path / "comparison.csv"
     _write_result(source, **{field: 1})
-    with pytest.raises(ValueError, match="soundness violation"):
-        analyzer.analyze(source, tmp_path / "out")
+    summary, _ = analyzer.analyze(source, tmp_path / "out")
+    assert summary.iloc[0]["v21_soundness_violation_count"] == 1
+    assert summary.iloc[0]["soundness_violations"] == 1
 
 
 @pytest.mark.parametrize(
@@ -328,8 +414,8 @@ def test_analyzer_raises_on_v21_soundness_violation(tmp_path, field):
 def test_analyzer_recomputes_v21_soundness_from_raw_values(tmp_path, updates):
     source = tmp_path / "comparison.csv"
     _write_result(source, **updates)
-    with pytest.raises(ValueError, match="soundness violation"):
-        analyzer.load_results(source)
+    loaded = analyzer.load_results(source)
+    assert loaded.iloc[0]["v21_soundness_violation"]
 
 
 def test_analyzer_does_not_recompute_infrastructure_failure_as_violation(tmp_path):
@@ -344,6 +430,134 @@ def test_analyzer_does_not_recompute_infrastructure_failure_as_violation(tmp_pat
     loaded = analyzer.load_results(source)
     assert not loaded.iloc[0]["v21_soundness_violation"]
     assert not loaded.iloc[0]["v21_soundness_proven_but_rejected"]
+
+
+def test_analyzer_treats_v21_bound_gt_v20_as_consistency_not_soundness(tmp_path):
+    source = tmp_path / "comparison.csv"
+    row = runner._comparison_row(
+        base_row(), simulation(response=9),
+        report(runner.V20_VERSION, bound=10),
+        report(runner.V21_VERSION, bound=12),
+        0.25,
+        soundness_mode="audit",
+    )
+    pd.DataFrame([row], columns=runner.RESULT_FIELDS).to_csv(source, index=False)
+    summary, _ = analyzer.analyze(source, tmp_path / "out")
+    assert summary.iloc[0]["v21_bound_gt_v20_count"] == 1
+    assert summary.iloc[0]["both_proven_v21_looser_count"] == 1
+    assert summary.iloc[0]["v21_soundness_violation_count"] == 0
+    assert summary.iloc[0]["soundness_violations"] == 0
+
+
+def test_analyzer_aggregates_v21_closure_counters(tmp_path):
+    source = tmp_path / "comparison.csv"
+    first = runner._comparison_row(
+        base_row(), simulation(),
+        report(runner.V20_VERSION, bound=12),
+        report(
+            runner.V21_VERSION,
+            bound=10,
+            profile={
+                "delta_iterations": 2,
+                "g_loc_calls": 4,
+                "omega_feasibility_calls": 6,
+                "empty_omega_count": 1,
+                "no_closure_count": 0,
+                "closed_prefix_count": 2,
+                "delta_cap_exceeded_count": 1,
+                "max_delta_cap": 8,
+                "max_delta_seen": 5,
+                "delta_jump_count": 1,
+            },
+        ),
+        0.25,
+    )
+    second = dict(first)
+    second.update({
+        "task_idx": 1,
+        "taskset_id": "u0.10-001",
+        "v21_delta_iterations": 3,
+        "v21_g_loc_calls": 5,
+        "v21_omega_feasibility_calls": 7,
+        "v21_empty_omega_count": 2,
+        "v21_no_closure_count": 1,
+        "v21_closed_prefix_count": 4,
+        "v21_delta_cap_exceeded_count": 0,
+        "v21_max_delta_cap": 9,
+        "v21_max_delta_seen": 6,
+        "v21_delta_jump_count": 2,
+        "v21_no_closure_observed": 1,
+        "v21_timeout_or_horizon_failure": 1,
+        "v21_failure_reason": "no closure by horizon",
+    })
+    pd.DataFrame([first, second], columns=runner.RESULT_FIELDS).to_csv(
+        source, index=False
+    )
+    summary, _ = analyzer.analyze(source, tmp_path / "out")
+    row = summary.iloc[0]
+    assert row["v21_delta_iterations_total"] == 5
+    assert row["v21_g_loc_calls_total"] == 9
+    assert row["v21_omega_feasibility_calls_total"] == 13
+    assert row["v21_empty_omega_count_total"] == 3
+    assert row["v21_no_closure_count_total"] == 1
+    assert row["v21_closed_prefix_count_total"] == 6
+    assert row["v21_delta_cap_exceeded_count_total"] == 1
+    assert row["v21_delta_jump_count_total"] == 3
+    assert row["v21_max_delta_cap_max"] == 9
+    assert row["v21_max_delta_seen_max"] == 6
+    assert row["v21_no_closure_observed_count"] == 1
+    assert row["v21_timeout_or_horizon_failure_count"] == 1
+
+
+def test_analyzer_accepts_old_csv_without_new_audit_fields(tmp_path):
+    source = tmp_path / "comparison.csv"
+    row = runner._comparison_row(
+        base_row(), simulation(),
+        report(runner.V20_VERSION, bound=12),
+        report(runner.V21_VERSION, bound=10),
+        0.25,
+    )
+    old_fields = [
+        field for field in runner.RESULT_FIELDS
+        if not (
+            field.startswith("v20_")
+            or field.startswith("v21_delta_")
+            or field.startswith("v21_g_loc")
+            or field.startswith("v21_omega")
+            or field.startswith("v21_empty_omega")
+            or field.startswith("v21_no_closure")
+            or field.startswith("v21_closed_prefix")
+            or field.startswith("v21_max_delta")
+            or field
+            in {
+                "v21_theory_family",
+                "v21_closure_method",
+                "v21_empty_set_guard",
+                "v21_fallback_guard",
+                "v21_consistency_guard",
+                "v21_certified_carry_in_source",
+                "v21_uses_local_window",
+                "v21_uses_delta_closure",
+                "v21_uses_parallel_u_compression",
+                "v21_timeout_or_horizon_failure",
+                "v21_fallback_used",
+                "v21_fallback_reason",
+                "v21_failure_reason",
+                "v21_certificate_status",
+                "v21_bound_gt_v20",
+                "v21_bound_gt_v20_reason",
+                "v21_sim_rejected_violation",
+                "v21_observed_bound_violation",
+            }
+        )
+    ]
+    pd.DataFrame([{field: row[field] for field in old_fields}]).to_csv(
+        source, index=False
+    )
+    loaded = analyzer.load_results(source)
+    assert loaded.iloc[0]["v21_delta_iterations"] == 0
+    assert not loaded.iloc[0]["v21_bound_gt_v20"]
+    assert loaded.iloc[0]["v21_theory_family"] == "local_window_closure"
 
 
 def test_analyzer_refuses_frozen_v20p4_paths(tmp_path):
@@ -364,6 +578,39 @@ def test_runner_default_root_is_v21_specific():
     assert args.soundness_mode == "fail_fast"
     assert runner.acceptance.RTA_VERSION == "v20.4"
     assert Path(runner.acceptance.RTA_TOOL).name == "asap_block_rta.py"
+
+
+def test_run_v21_enables_profile_flag(monkeypatch):
+    captured = {}
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        payload = {
+            "rta_version": runner.V21_VERSION,
+            "proven_under_assumptions": True,
+            "tasks": [
+                {
+                    "task_name": "t1",
+                    "proven_under_assumptions": True,
+                    "response_time_bound": 10,
+                    "rta_profile": {"delta_iterations": 1},
+                }
+            ],
+        }
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=json.dumps(payload),
+            stderr="",
+        )
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    args = runner.build_parser().parse_args(
+        ["--experiment-name", "v21-smoke", "--e0-values", "0.25"]
+    )
+    result = runner._run_v21("/tmp/system.yml", "/tmp/tasks.yml", args, 0.25)
+    assert "--profile-rta" in captured["command"]
+    assert result["proven"] is True
 
 
 def test_runner_dry_run_creates_only_v21_plan_files(tmp_path):
