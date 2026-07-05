@@ -149,9 +149,15 @@ def test_official_v20p4_and_existing_endpoint_runner_are_unchanged():
     assert Path(acceptance.RTA_TOOL).name == "asap_block_rta.py"
     assert v20.RTA_VERSION == "v20.4"
     assert set(run_rta_ablation.VARIANT_REGISTRY) == {
+        "baseline_safe",
+        "carry_in_certified",
+        "capacity_coupled",
         "v20p4_full",
-        "v21_experimental",
+        "v21_local_window_closure",
     }
+    assert run_rta_ablation.VARIANT_ALIASES["v21_experimental"] == (
+        "v21_local_window_closure"
+    )
 
 
 def test_a0_does_not_require_higher_priority_certificates():

@@ -2,8 +2,10 @@
 """Analyze E3 RTA ablation/refinement endpoint result rows."""
 
 import argparse
+import json
 import math
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -26,16 +28,59 @@ RUNTIME_VARIANT_PLOT = "runtime_by_variant.png"
 TIMEOUT_VARIANT_PLOT = "timeout_rate_by_variant.png"
 BOUND_VARIANT_PLOT = "bound_by_variant.png"
 
+SAFE_CHAIN_STAGES = ("A0", "A1", "A2", "A3")
+FORMAL_STAGES = ("A0", "A1", "A2", "A3", "A4")
+CANONICAL_BY_NAME = {
+    "baseline_safe": ("baseline_safe", "A0", "safe_chain"),
+    "a0": ("baseline_safe", "A0", "safe_chain"),
+    "carry_in_certified": ("carry_in_certified", "A1", "safe_chain"),
+    "a1": ("carry_in_certified", "A1", "safe_chain"),
+    "capacity_coupled": ("capacity_coupled", "A2", "safe_chain"),
+    "a2": ("capacity_coupled", "A2", "safe_chain"),
+    "v20p4_full": ("v20p4_full", "A3", "safe_chain"),
+    "a3": ("v20p4_full", "A3", "safe_chain"),
+    "v21_local_window_closure": (
+        "v21_local_window_closure",
+        "A4",
+        "local_window_refinement",
+    ),
+    "v21_experimental": (
+        "v21_local_window_closure",
+        "A4",
+        "local_window_refinement",
+    ),
+    "a4": ("v21_local_window_closure", "A4", "local_window_refinement"),
+}
+V21_COUNTER_SUM_COLUMNS = (
+    "v21_delta_iterations",
+    "v21_g_loc_calls",
+    "v21_omega_feasibility_calls",
+    "v21_empty_omega_count",
+    "v21_no_closure_count",
+    "v21_closed_prefix_count",
+    "v21_delta_cap_exceeded_count",
+    "v21_delta_jump_count",
+)
+V21_COUNTER_MAX_COLUMNS = ("v21_max_delta_cap", "v21_max_delta_seen")
+
 SUMMARY_COLUMNS = [
     "group_key",
     "group_value",
     "variant_name",
+    "variant_canonical",
+    "variant_stage",
+    "variant_group",
     "variant_label",
     "variant_safety_label",
+    "formal_variant",
     "variant_is_default",
     "variant_is_experimental",
     "proof_claim_eligible",
     "diagnostic_only",
+    "theory_family",
+    "closure_method",
+    "certificate_policy",
+    "certificate_status",
     "normalized_utilization",
     "config_id",
     "total_rows",
@@ -49,8 +94,48 @@ SUMMARY_COLUMNS = [
     "rta_pass_ratio",
     "rta_pass_yield",
     "proof_claim_eligible_completed_count",
+    "proof_claim_eligible_count",
+    "proof_claim_allowed_count",
+    "proof_claim_succeeded_count",
+    "proof_claim_blocked_by_certificate_count",
+    "proof_claim_blocked_by_failure_count",
     "proof_claim_pass_count",
     "proof_claim_pass_ratio",
+    "formal_variants",
+    "formal_variant_row_count",
+    "formal_proven_count_by_variant",
+    "formal_proven_rate_by_variant",
+    "formal_failure_reason_counts_by_variant",
+    "formal_certificate_status_counts_by_variant",
+    "formal_proof_claim_succeeded_count_by_variant",
+    "safe_chain_variants",
+    "safe_chain_row_count",
+    "safe_chain_proven_count_by_variant",
+    "safe_chain_proven_rate_by_variant",
+    "A0_to_A1_delta",
+    "A1_to_A2_delta",
+    "A2_to_A3_delta",
+    "A0_to_A3_delta",
+    "A3_proven_count",
+    "A4_proven_count",
+    "both_A3_A4_proven_count",
+    "A4_only_proven_count",
+    "A3_only_proven_count",
+    "both_proven_A4_tighter_count",
+    "both_proven_equal_count",
+    "both_proven_A4_looser_count",
+    "A4_looser_reason_counts",
+    "proof_claim_counts_by_assumption_group",
+    "A4_delta_iterations_total",
+    "A4_g_loc_calls_total",
+    "A4_omega_feasibility_calls_total",
+    "A4_empty_omega_count_total",
+    "A4_no_closure_count_total",
+    "A4_closed_prefix_count_total",
+    "A4_delta_cap_exceeded_count_total",
+    "A4_delta_jump_count_total",
+    "A4_max_delta_cap_max",
+    "A4_max_delta_seen_max",
     "timeout_rate",
     "error_rate",
     "runtime_sample_count",
@@ -77,12 +162,6 @@ SUMMARY_COLUMNS = [
 
 REQUIRED_COLUMNS = {
     "variant_name",
-    "variant_label",
-    "variant_safety_label",
-    "variant_is_default",
-    "variant_is_experimental",
-    "proof_claim_eligible",
-    "diagnostic_only",
     "normalized_utilization",
     "config_id",
     "rta_status",
@@ -188,6 +267,79 @@ def _ratio(numerator: int, denominator: int):
     return numerator / denominator if denominator else math.nan
 
 
+def _json_counts(values) -> str:
+    counter = Counter()
+    for value in values:
+        if _nonempty(value):
+            counter[str(value).strip()] += 1
+    return json.dumps(dict(sorted(counter.items())), sort_keys=True)
+
+
+def _canonical_info(value):
+    normalized = _normalized(value)
+    return CANONICAL_BY_NAME.get(normalized, (str(value), "", ""))
+
+
+def _ensure_column(frame: pd.DataFrame, column: str, default) -> None:
+    if column not in frame.columns:
+        frame[column] = default
+
+
+def _normalize_variant_metadata(frame: pd.DataFrame) -> None:
+    canonical = frame["variant_name"].map(lambda value: _canonical_info(value)[0])
+    stage = frame["variant_name"].map(lambda value: _canonical_info(value)[1])
+    group = frame["variant_name"].map(lambda value: _canonical_info(value)[2])
+    _ensure_column(frame, "variant_canonical", canonical)
+    _ensure_column(frame, "variant_stage", stage)
+    _ensure_column(frame, "variant_group", group)
+    frame["variant_canonical"] = frame["variant_canonical"].where(
+        frame["variant_canonical"].map(_nonempty).astype(bool),
+        canonical,
+    )
+    frame["variant_stage"] = frame["variant_stage"].where(
+        frame["variant_stage"].map(_nonempty).astype(bool),
+        stage,
+    )
+    frame["variant_group"] = frame["variant_group"].where(
+        frame["variant_group"].map(_nonempty).astype(bool),
+        group,
+    )
+    frame["variant_name"] = frame["variant_canonical"]
+
+    _ensure_column(frame, "variant_label", frame["variant_stage"])
+    _ensure_column(frame, "variant_safety_label", "")
+    _ensure_column(frame, "formal_variant", True)
+    _ensure_column(frame, "variant_is_default", False)
+    _ensure_column(frame, "variant_is_experimental", False)
+    _ensure_column(frame, "proof_claim_eligible", True)
+    _ensure_column(frame, "diagnostic_only", False)
+    _ensure_column(frame, "theory_family", "")
+    _ensure_column(frame, "closure_method", "")
+    _ensure_column(frame, "certificate_policy", "")
+    _ensure_column(frame, "certificate_status", "")
+    _ensure_column(frame, "proof_claim_allowed", frame["proof_claim_eligible"])
+    _ensure_column(frame, "proof_claim_succeeded", False)
+    _ensure_column(frame, "failure_reason", "")
+    _ensure_column(frame, "fallback_used", False)
+    _ensure_column(frame, "fallback_reason", "")
+    for column in V21_COUNTER_SUM_COLUMNS + V21_COUNTER_MAX_COLUMNS:
+        _ensure_column(frame, column, 0)
+
+    is_a4 = frame["variant_stage"] == "A4"
+    is_safe = frame["variant_stage"].isin(SAFE_CHAIN_STAGES)
+    frame.loc[is_a4, "variant_safety_label"] = frame.loc[
+        is_a4, "variant_safety_label"
+    ].map(lambda _value: "safe_under_v21_local_window_assumptions")
+    frame.loc[is_safe, "variant_safety_label"] = frame.loc[
+        is_safe, "variant_safety_label"
+    ].replace("", "safe_under_v20p4_assumptions")
+    frame.loc[is_a4, "variant_is_experimental"] = False
+    frame.loc[is_a4, "proof_claim_eligible"] = True
+    frame.loc[is_a4, "diagnostic_only"] = False
+    frame.loc[is_a4, "formal_variant"] = True
+    frame.loc[is_safe, "formal_variant"] = True
+
+
 def _stats(values: pd.Series, prefix: str, suffix: str = "_sec") -> dict:
     finite = _finite_nonnegative(values).dropna()
     names = {
@@ -229,6 +381,144 @@ def _profile_stats(values: pd.Series) -> dict:
     }
 
 
+def _count_by_variant(group: pd.DataFrame, mask: pd.Series) -> str:
+    data = group.loc[mask]
+    counts = data.groupby("variant_canonical").size().to_dict()
+    return json.dumps(
+        {str(key): int(value) for key, value in sorted(counts.items())},
+        sort_keys=True,
+    )
+
+
+def _proven_count_by_variant(group: pd.DataFrame, mask: pd.Series) -> str:
+    data = group.loc[mask & group["_rta_pass"]]
+    counts = data.groupby("variant_canonical").size().to_dict()
+    return json.dumps(
+        {str(key): int(value) for key, value in sorted(counts.items())},
+        sort_keys=True,
+    )
+
+
+def _proven_rate_by_variant(group: pd.DataFrame, mask: pd.Series) -> str:
+    rows = group.loc[mask]
+    result = {}
+    for variant, variant_rows in rows.groupby("variant_canonical"):
+        denominator = len(variant_rows)
+        result[str(variant)] = (
+            float(variant_rows["_rta_pass"].sum()) / denominator
+            if denominator
+            else math.nan
+        )
+    return json.dumps(dict(sorted(result.items())), sort_keys=True)
+
+
+def _counts_by_variant_value(group: pd.DataFrame, mask: pd.Series, column: str) -> str:
+    result = {}
+    for variant, variant_rows in group.loc[mask].groupby("variant_canonical"):
+        result[str(variant)] = json.loads(_json_counts(variant_rows[column]))
+    return json.dumps(dict(sorted(result.items())), sort_keys=True)
+
+
+def _safe_chain_delta(group: pd.DataFrame, later: str, earlier: str):
+    by_stage = {
+        stage: int(rows["_rta_pass"].sum())
+        for stage, rows in group.loc[
+            group["variant_stage"].isin(SAFE_CHAIN_STAGES)
+        ].groupby("variant_stage")
+    }
+    if later not in by_stage or earlier not in by_stage:
+        return math.nan
+    return by_stage[later] - by_stage[earlier]
+
+
+def _local_window_refinement_metrics(group: pd.DataFrame) -> dict:
+    a3 = group.loc[group["variant_stage"] == "A3"].copy()
+    a4 = group.loc[group["variant_stage"] == "A4"].copy()
+    result = {
+        "A3_proven_count": int(a3["_rta_pass"].sum()),
+        "A4_proven_count": int(a4["_rta_pass"].sum()),
+        "both_A3_A4_proven_count": 0,
+        "A4_only_proven_count": 0,
+        "A3_only_proven_count": 0,
+        "both_proven_A4_tighter_count": 0,
+        "both_proven_equal_count": 0,
+        "both_proven_A4_looser_count": 0,
+        "A4_looser_reason_counts": "{}",
+    }
+    if a3.empty or a4.empty:
+        return result
+    keys = [
+        key for key in (
+            "config_id",
+            "taskset_family_id",
+            "taskset_id",
+            "normalized_utilization",
+            "rta_initial_energy",
+        )
+        if key in group.columns
+    ]
+    if not keys:
+        return result
+    merged = a3.merge(a4, on=keys, suffixes=("_a3", "_a4"))
+    if merged.empty:
+        return result
+    a3_pass = merged["_rta_pass_a3"].astype(bool)
+    a4_pass = merged["_rta_pass_a4"].astype(bool)
+    both = a3_pass & a4_pass
+    result["both_A3_A4_proven_count"] = int(both.sum())
+    result["A4_only_proven_count"] = int((~a3_pass & a4_pass).sum())
+    result["A3_only_proven_count"] = int((a3_pass & ~a4_pass).sum())
+    a3_bound = pd.to_numeric(merged["_bound_a3"], errors="coerce")
+    a4_bound = pd.to_numeric(merged["_bound_a4"], errors="coerce")
+    comparable = both & a3_bound.notna() & a4_bound.notna()
+    result["both_proven_A4_tighter_count"] = int(
+        (comparable & (a4_bound < a3_bound)).sum()
+    )
+    result["both_proven_equal_count"] = int(
+        (comparable & (a4_bound == a3_bound)).sum()
+    )
+    looser = comparable & (a4_bound > a3_bound)
+    result["both_proven_A4_looser_count"] = int(looser.sum())
+    if looser.any():
+        result["A4_looser_reason_counts"] = _json_counts(
+            merged.loc[looser, "failure_reason_a4"]
+            if "failure_reason_a4" in merged.columns
+            else pd.Series(["both_proven_A4_bound_larger"] * int(looser.sum()))
+        )
+    return result
+
+
+def _proof_claim_assumption_counts(group: pd.DataFrame) -> str:
+    result = {}
+    for label, rows in group.groupby("variant_safety_label"):
+        if not _nonempty(label):
+            continue
+        eligible = int(rows["_proof_claim_eligible"].sum())
+        allowed = int((rows["_proof_claim_eligible"] & rows["_proof_claim_allowed"]).sum())
+        succeeded = int(
+            (rows["_proof_claim_eligible"] & rows["_proof_claim_succeeded"]).sum()
+        )
+        result[str(label)] = {
+            "eligible": eligible,
+            "allowed": allowed,
+            "succeeded": succeeded,
+        }
+    return json.dumps(dict(sorted(result.items())), sort_keys=True)
+
+
+def _a4_counter_metrics(group: pd.DataFrame) -> dict:
+    a4 = group.loc[group["variant_stage"] == "A4"]
+    result = {}
+    for column in V21_COUNTER_SUM_COLUMNS:
+        key = "A4_{}_total".format(column[4:])
+        result[key] = int(_finite_nonnegative(a4[column]).sum())
+    for column in V21_COUNTER_MAX_COLUMNS:
+        key = "A4_{}_max".format(column[4:])
+        values = _finite_nonnegative(a4[column]).dropna()
+        result[key] = float(values.max()) if len(values) else math.nan
+    return result
+
+
 def load_results(input_path) -> pd.DataFrame:
     path = Path(input_path)
     frame = pd.read_csv(path, keep_default_na=False)
@@ -241,6 +531,7 @@ def load_results(input_path) -> pd.DataFrame:
                 ", ".join(missing)
             )
         )
+    _normalize_variant_metadata(frame)
 
     utilization = pd.to_numeric(
         frame["normalized_utilization"], errors="coerce"
@@ -277,6 +568,9 @@ def load_results(input_path) -> pd.DataFrame:
     )
     frame["_rta_pass"] = frame[pass_column].map(_truthy)
     frame["_proof_claim_eligible"] = frame["proof_claim_eligible"].map(_truthy)
+    frame["_formal_variant"] = frame["formal_variant"].map(_truthy)
+    frame["_proof_claim_allowed"] = frame["proof_claim_allowed"].map(_truthy)
+    frame["_proof_claim_succeeded"] = frame["proof_claim_succeeded"].map(_truthy)
     frame["_runtime"] = _finite_nonnegative(frame["rta_runtime_sec"])
     frame["_runtime_sample"] = frame["_completed"] & frame["_runtime"].notna()
 
@@ -289,6 +583,8 @@ def load_results(input_path) -> pd.DataFrame:
         frame["rta_profile_task_time_sum_sec"]
     )
     frame["_profile_runtime_sample"] = frame["_profile_runtime"].notna()
+    for column in V21_COUNTER_SUM_COLUMNS + V21_COUNTER_MAX_COLUMNS:
+        frame[column] = _finite_nonnegative(frame[column]).fillna(0)
     return frame
 
 
@@ -308,15 +604,46 @@ def summarize_group(
     eligible_completed_mask = group["_completed"] & group["_proof_claim_eligible"]
     eligible_completed = int(eligible_completed_mask.sum())
     proof_pass = int((eligible_completed_mask & group["_rta_pass"]).sum())
+    eligible = int(group["_proof_claim_eligible"].sum())
+    allowed = int((group["_proof_claim_eligible"] & group["_proof_claim_allowed"]).sum())
+    succeeded = int(
+        (group["_proof_claim_eligible"] & group["_proof_claim_succeeded"]).sum()
+    )
+    blocked_certificate = int(
+        (
+            group["_proof_claim_eligible"]
+            & ~group["_proof_claim_allowed"]
+            & group["certificate_status"].astype(str).str.contains(
+                "certificate", case=False, na=False
+            )
+        ).sum()
+    )
+    blocked_failure = int(
+        (
+            group["_proof_claim_eligible"]
+            & group["_proof_claim_allowed"]
+            & ~group["_proof_claim_succeeded"]
+        ).sum()
+    )
+    formal_mask = group["_formal_variant"]
+    safe_mask = group["variant_stage"].isin(SAFE_CHAIN_STAGES)
 
     values = {
         "variant_name": _single_value(group, "variant_name"),
+        "variant_canonical": _single_value(group, "variant_canonical"),
+        "variant_stage": _single_value(group, "variant_stage"),
+        "variant_group": _single_value(group, "variant_group"),
         "variant_label": _single_value(group, "variant_label"),
         "variant_safety_label": _single_value(group, "variant_safety_label"),
+        "formal_variant": _single_value(group, "formal_variant"),
         "variant_is_default": _single_value(group, "variant_is_default"),
         "variant_is_experimental": _single_value(group, "variant_is_experimental"),
         "proof_claim_eligible": _single_value(group, "proof_claim_eligible"),
         "diagnostic_only": _single_value(group, "diagnostic_only"),
+        "theory_family": _single_value(group, "theory_family"),
+        "closure_method": _single_value(group, "closure_method"),
+        "certificate_policy": _single_value(group, "certificate_policy"),
+        "certificate_status": _single_value(group, "certificate_status"),
         "normalized_utilization": _single_value(group, "normalized_utilization"),
         "config_id": _single_value(group, "config_id"),
     }
@@ -337,8 +664,45 @@ def summarize_group(
         "rta_pass_ratio": _ratio(passes, completed),
         "rta_pass_yield": _ratio(passes, attempted),
         "proof_claim_eligible_completed_count": eligible_completed,
+        "proof_claim_eligible_count": eligible,
+        "proof_claim_allowed_count": allowed,
+        "proof_claim_succeeded_count": succeeded,
+        "proof_claim_blocked_by_certificate_count": blocked_certificate,
+        "proof_claim_blocked_by_failure_count": blocked_failure,
         "proof_claim_pass_count": proof_pass,
         "proof_claim_pass_ratio": _ratio(proof_pass, eligible_completed),
+        "formal_variants": ",".join(FORMAL_STAGES),
+        "formal_variant_row_count": int(formal_mask.sum()),
+        "formal_proven_count_by_variant": _proven_count_by_variant(
+            group, formal_mask
+        ),
+        "formal_proven_rate_by_variant": _proven_rate_by_variant(
+            group, formal_mask
+        ),
+        "formal_failure_reason_counts_by_variant": _counts_by_variant_value(
+            group, formal_mask, "failure_reason"
+        ),
+        "formal_certificate_status_counts_by_variant": _counts_by_variant_value(
+            group, formal_mask, "certificate_status"
+        ),
+        "formal_proof_claim_succeeded_count_by_variant": _count_by_variant(
+            group, formal_mask & group["_proof_claim_succeeded"]
+        ),
+        "safe_chain_variants": ",".join(SAFE_CHAIN_STAGES),
+        "safe_chain_row_count": int(safe_mask.sum()),
+        "safe_chain_proven_count_by_variant": _proven_count_by_variant(
+            group, safe_mask
+        ),
+        "safe_chain_proven_rate_by_variant": _proven_rate_by_variant(
+            group, safe_mask
+        ),
+        "A0_to_A1_delta": _safe_chain_delta(group, "A1", "A0"),
+        "A1_to_A2_delta": _safe_chain_delta(group, "A2", "A1"),
+        "A2_to_A3_delta": _safe_chain_delta(group, "A3", "A2"),
+        "A0_to_A3_delta": _safe_chain_delta(group, "A3", "A0"),
+        **_local_window_refinement_metrics(group),
+        "proof_claim_counts_by_assumption_group": _proof_claim_assumption_counts(group),
+        **_a4_counter_metrics(group),
         "timeout_rate": _ratio(timeout, attempted),
         "error_rate": _ratio(errors, attempted),
         "input_file": str(input_path),
@@ -359,12 +723,20 @@ def build_overall(frame: pd.DataFrame, input_path: Path) -> pd.DataFrame:
         input_path,
         {
             "variant_name": "all",
+            "variant_canonical": "all",
+            "variant_stage": "all",
+            "variant_group": "all",
             "variant_label": "all",
             "variant_safety_label": "all",
+            "formal_variant": "all",
             "variant_is_default": "all",
             "variant_is_experimental": "all",
             "proof_claim_eligible": "all",
             "diagnostic_only": "all",
+            "theory_family": "all",
+            "closure_method": "all",
+            "certificate_policy": "all",
+            "certificate_status": "all",
             "normalized_utilization": "all",
             "config_id": "all",
         },
@@ -381,6 +753,7 @@ def build_by_variant(frame: pd.DataFrame, input_path: Path) -> pd.DataFrame:
             input_path,
             {
                 "variant_name": variant,
+                "variant_canonical": variant,
                 "normalized_utilization": "all",
                 "config_id": "all",
             },
@@ -399,12 +772,20 @@ def build_by_utilization(frame: pd.DataFrame, input_path: Path) -> pd.DataFrame:
             input_path,
             {
                 "variant_name": "all",
+                "variant_canonical": "all",
+                "variant_stage": "all",
+                "variant_group": "all",
                 "variant_label": "all",
                 "variant_safety_label": "all",
+                "formal_variant": "all",
                 "variant_is_default": "all",
                 "variant_is_experimental": "all",
                 "proof_claim_eligible": "all",
                 "diagnostic_only": "all",
+                "theory_family": "all",
+                "closure_method": "all",
+                "certificate_policy": "all",
+                "certificate_status": "all",
                 "normalized_utilization": utilization,
                 "config_id": "all",
             },
