@@ -803,7 +803,8 @@ def test_runner_exposes_m_and_generator_options():
         "--M", "6",
         "--min-task-util", "0.02",
         "--max-task-util", "0.9",
-        "--wcet-rounding", "ceil",
+        "--wcet-rounding", "compensated",
+        "--actual-utilization-tolerance-total", "0.01",
         "--constrained-deadlines",
     ])
     runner._validate_args(parser, args)
@@ -811,7 +812,8 @@ def test_runner_exposes_m_and_generator_options():
     assert args.M == 6
     assert args.min_task_util == 0.02
     assert args.max_task_util == 0.9
-    assert args.wcet_rounding == "ceil"
+    assert args.wcet_rounding == "compensated"
+    assert args.actual_utilization_tolerance_total == 0.01
     assert args.constrained_deadlines is True
 
 
@@ -880,4 +882,8 @@ def test_runner_dry_run_creates_only_v21_plan_files(tmp_path):
         assert next(csv.reader(handle)) == runner.RESULT_FIELDS
     manifest = results.parent / runner.MANIFEST_FILENAME
     assert manifest.is_file()
+    with manifest.open(newline="", encoding="utf-8") as handle:
+        manifest_rows = list(csv.DictReader(handle))
+    assert manifest_rows[0]["actual_utilization_tolerance_total"] == ""
+    assert "actual_utilization_tolerance_total" in runner.RESULT_FIELDS
     assert "rta-e0-sensitivity-v20p4" not in str(results)

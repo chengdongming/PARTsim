@@ -45,6 +45,7 @@ MANIFEST_FIELDS = [
     "task_util_max",
     "wcet_rounding",
     "deadline_mode",
+    "actual_utilization_tolerance_total",
     "task_p_min",
     "task_p_max",
     "rta_horizon_ms",
@@ -77,6 +78,7 @@ RESULT_FIELDS = [
     "task_util_max",
     "wcet_rounding",
     "deadline_mode",
+    "actual_utilization_tolerance_total",
     "task_p_min",
     "task_p_max",
     "rta_horizon_ms",
@@ -158,8 +160,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-task-util", type=float, default=0.8)
     parser.add_argument(
         "--wcet-rounding",
-        choices=("floor", "round", "ceil"),
+        choices=("floor", "round", "ceil", "compensated"),
         default="floor",
+    )
+    parser.add_argument(
+        "--actual-utilization-tolerance-total",
+        type=float,
+        default=None,
+        help=(
+            "absolute total-utilization error tolerance after integer WCET "
+            "rounding; when set, tasksets outside the tolerance are discarded "
+            "and regenerated"
+        ),
     )
     parser.add_argument(
         "--constrained-deadlines",
@@ -234,6 +246,13 @@ def validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> 
         parser.error("--min-task-util must be <= --max-task-util")
     if args.max_task_util > 1.0:
         parser.error("--max-task-util must be <= 1.0 for sequential tasks")
+    if args.actual_utilization_tolerance_total is not None and (
+        not math.isfinite(args.actual_utilization_tolerance_total)
+        or args.actual_utilization_tolerance_total < 0
+    ):
+        parser.error(
+            "--actual-utilization-tolerance-total must be finite and non-negative"
+        )
     for utilization in args.utilizations:
         if not math.isfinite(utilization) or utilization <= 0:
             parser.error("--utilizations values must be finite and positive")
@@ -351,6 +370,11 @@ def build_specs(args: argparse.Namespace, run_dir: Path) -> List[Dict[str, Any]]
                             "constrained"
                             if args.constrained_deadlines else "implicit"
                         ),
+                        "actual_utilization_tolerance_total": (
+                            ""
+                            if args.actual_utilization_tolerance_total is None
+                            else args.actual_utilization_tolerance_total
+                        ),
                         "task_p_min": args.task_p_min,
                         "task_p_max": args.task_p_max,
                         "rta_horizon_ms": args.rta_horizon_ms,
@@ -403,6 +427,11 @@ def _generate_taskset(spec: Mapping[str, Any]) -> str:
         "--max-task-util", str(spec["task_util_max"]),
         "--wcet-rounding", str(spec["wcet_rounding"]),
     ]
+    if spec.get("actual_utilization_tolerance_total") not in (None, ""):
+        command.extend([
+            "--actual-utilization-tolerance-total",
+            str(spec["actual_utilization_tolerance_total"]),
+        ])
     if str(spec.get("deadline_mode")) == "constrained":
         command.append("--constrained-deadlines")
     try:
@@ -471,6 +500,9 @@ def _result_row(
         "task_util_max": spec["task_util_max"],
         "wcet_rounding": spec["wcet_rounding"],
         "deadline_mode": spec["deadline_mode"],
+        "actual_utilization_tolerance_total": spec.get(
+            "actual_utilization_tolerance_total", ""
+        ),
         "task_p_min": spec["task_p_min"],
         "task_p_max": spec["task_p_max"],
         "rta_horizon_ms": spec["rta_horizon_ms"],
@@ -527,6 +559,9 @@ def _run_spec(spec: Mapping[str, Any]) -> Dict[str, Any]:
         task_util_max=spec["task_util_max"],
         wcet_rounding=spec["wcet_rounding"],
         deadline_mode=spec["deadline_mode"],
+        actual_utilization_tolerance_total=spec.get(
+            "actual_utilization_tolerance_total", ""
+        ),
     )
     if isinstance(spec, dict):
         spec.update(utilization_metadata)

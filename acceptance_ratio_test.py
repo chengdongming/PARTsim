@@ -72,6 +72,7 @@ PER_TASKSET_RESULT_FIELDS = [
     'task_util_max',
     'wcet_rounding',
     'deadline_mode',
+    'actual_utilization_tolerance_total',
     'task_idx',
     'taskset_id',
     'algorithm',
@@ -146,6 +147,7 @@ def load_taskset_utilization_metadata(
     task_util_max=0.8,
     wcet_rounding='floor',
     deadline_mode='implicit',
+    actual_utilization_tolerance_total='',
 ):
     """Read generator utilization metadata with a taskset-based fallback."""
     metadata = {}
@@ -214,6 +216,10 @@ def load_taskset_utilization_metadata(
         'task_util_max': metadata.get('task_util_max', task_util_max),
         'wcet_rounding': metadata.get('wcet_rounding', wcet_rounding),
         'deadline_mode': metadata.get('deadline_mode', deadline_mode),
+        'actual_utilization_tolerance_total': metadata.get(
+            'actual_utilization_tolerance_total',
+            actual_utilization_tolerance_total,
+        ),
     }
 
 
@@ -450,6 +456,15 @@ def validate_rta_cli_args(parser, args):
         parser.error('--min-task-util must be <= --max-task-util')
     if max_task_util > 1.0:
         parser.error('--max-task-util must be <= 1.0 for sequential tasks')
+    actual_tolerance = getattr(
+        args, 'actual_utilization_tolerance_total', None
+    )
+    if actual_tolerance is not None and (
+        not math.isfinite(actual_tolerance) or actual_tolerance < 0
+    ):
+        parser.error(
+            '--actual-utilization-tolerance-total must be finite and non-negative'
+        )
 
 
 SIMULATION_TIMEOUT_STATUSES = {
@@ -1045,9 +1060,18 @@ def add_experiment_cli_args(parser):
                        help='UUniFast-Discard单任务最大利用率')
     parser.add_argument(
         '--wcet-rounding',
-        choices=('floor', 'round', 'ceil'),
+        choices=('floor', 'round', 'ceil', 'compensated'),
         default='floor',
         help='由u_i*T_i整数化生成runtime时使用的取整方式',
+    )
+    parser.add_argument(
+        '--actual-utilization-tolerance-total',
+        type=float,
+        default=None,
+        help=(
+            '生成后允许的总利用率绝对误差；显式设置时超出门限则丢弃'
+            '整组任务并重试'
+        ),
     )
     parser.add_argument(
         '--constrained-deadlines',
@@ -1242,7 +1266,8 @@ class ExperimentRunner:
                  harvesting_scale=DEFAULT_HARVESTING_SCALE,
                  rta_soundness_mode='fail_fast',
                  task_util_min=0.01, task_util_max=0.8,
-                 wcet_rounding='floor', constrained_deadlines=False):
+                 wcet_rounding='floor', constrained_deadlines=False,
+                 actual_utilization_tolerance_total=None):
         self.output_dir = Path(output_dir)
         self.trace_dir = self.output_dir / 'traces'
         self.task_dir = self.output_dir / 'tasks'
@@ -1278,10 +1303,23 @@ class ExperimentRunner:
         self.profile_rta = bool(profile_rta)
         self.task_util_min = float(task_util_min)
         self.task_util_max = float(task_util_max)
-        if wcet_rounding not in {'floor', 'round', 'ceil'}:
-            raise ValueError('wcet_rounding must be floor, round, or ceil')
+        if wcet_rounding not in {'floor', 'round', 'ceil', 'compensated'}:
+            raise ValueError('wcet_rounding must be floor, round, ceil, or compensated')
         self.wcet_rounding = wcet_rounding
         self.constrained_deadlines = bool(constrained_deadlines)
+        if actual_utilization_tolerance_total is None:
+            self.actual_utilization_tolerance_total = None
+        else:
+            self.actual_utilization_tolerance_total = float(
+                actual_utilization_tolerance_total
+            )
+            if (
+                not math.isfinite(self.actual_utilization_tolerance_total)
+                or self.actual_utilization_tolerance_total < 0
+            ):
+                raise ValueError(
+                    'actual_utilization_tolerance_total must be finite and non-negative'
+                )
         if rta_soundness_mode not in {'fail_fast', 'audit'}:
             raise ValueError('rta_soundness_mode must be fail_fast or audit')
         self.rta_soundness_mode = rta_soundness_mode
@@ -1295,11 +1333,16 @@ class ExperimentRunner:
         print(f"🖥️  系统核心数: {self.system_cores}")
         print(
             "🎲 任务生成: min_u={}, max_u={}, wcet_rounding={}, "
-            "deadline_mode={}".format(
+            "deadline_mode={}, actual_utilization_tolerance_total={}".format(
                 self.task_util_min,
                 self.task_util_max,
                 self.wcet_rounding,
                 'constrained' if self.constrained_deadlines else 'implicit',
+                (
+                    ''
+                    if self.actual_utilization_tolerance_total is None
+                    else self.actual_utilization_tolerance_total
+                ),
             )
         )
         print(f"📁 输出目录: {self.output_dir}")
@@ -1364,6 +1407,11 @@ class ExperimentRunner:
             '--max-task-util', str(self.task_util_max),
             '--wcet-rounding', self.wcet_rounding,
         ]
+        if self.actual_utilization_tolerance_total is not None:
+            cmd.extend([
+                '--actual-utilization-tolerance-total',
+                str(self.actual_utilization_tolerance_total),
+            ])
         if self.constrained_deadlines:
             cmd.append('--constrained-deadlines')
 
@@ -1576,6 +1624,11 @@ class ExperimentRunner:
                         'constrained'
                         if self.constrained_deadlines else 'implicit'
                     ),
+                    'actual_utilization_tolerance_total': (
+                        ''
+                        if self.actual_utilization_tolerance_total is None
+                        else self.actual_utilization_tolerance_total
+                    ),
                 }
                 if task_file:
                     taskset_metadata = load_taskset_utilization_metadata(
@@ -1587,6 +1640,11 @@ class ExperimentRunner:
                         task_util_max=self.task_util_max,
                         wcet_rounding=self.wcet_rounding,
                         deadline_mode=planned_metadata['deadline_mode'],
+                        actual_utilization_tolerance_total=(
+                            planned_metadata[
+                                'actual_utilization_tolerance_total'
+                            ]
+                        ),
                     )
                     task_files.append(
                         (task_idx, task_file, seed, taskset_metadata)
@@ -1832,6 +1890,14 @@ class ExperimentRunner:
             'deadline_mode': result.get(
                 'deadline_mode',
                 'constrained' if self.constrained_deadlines else 'implicit',
+            ),
+            'actual_utilization_tolerance_total': result.get(
+                'actual_utilization_tolerance_total',
+                (
+                    ''
+                    if self.actual_utilization_tolerance_total is None
+                    else self.actual_utilization_tolerance_total
+                ),
             ),
             'task_idx': result.get('task_idx', ''),
             'taskset_id': result.get('taskset_id', ''),
@@ -2368,6 +2434,9 @@ def main():
             task_util_max=args.max_task_util,
             wcet_rounding=args.wcet_rounding,
             constrained_deadlines=args.constrained_deadlines,
+            actual_utilization_tolerance_total=(
+                args.actual_utilization_tolerance_total
+            ),
         )
 
         results = runner.run_experiments()

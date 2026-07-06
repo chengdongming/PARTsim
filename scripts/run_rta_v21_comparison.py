@@ -67,6 +67,7 @@ RESULT_FIELDS = [
     "target_total_utilization", "actual_total_utilization",
     "actual_normalized_utilization", "utilization_error_total",
     "task_util_min", "task_util_max", "wcet_rounding", "deadline_mode",
+    "actual_utilization_tolerance_total",
     "M", "task_idx", "taskset_id", "E0",
     "e0_assumption_scope", "release_energy_assumption_verified",
     "accepted", "simulation_status", "simulated_response_time",
@@ -122,6 +123,7 @@ MANIFEST_FIELDS = [
     "target_total_utilization", "M", "num_tasksets", "task_n", "battery",
     "initial_energy", "solar_time_ms", "E0_values",
     "task_util_min", "task_util_max", "wcet_rounding", "deadline_mode",
+    "actual_utilization_tolerance_total",
     "rta_v20p4_timeout", "rta_v21_timeout", "status", "return_code",
 ]
 
@@ -176,8 +178,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-task-util", type=float, default=0.8)
     parser.add_argument(
         "--wcet-rounding",
-        choices=("floor", "round", "ceil"),
+        choices=("floor", "round", "ceil", "compensated"),
         default="floor",
+    )
+    parser.add_argument(
+        "--actual-utilization-tolerance-total",
+        type=float,
+        default=None,
+        help=(
+            "absolute total-utilization error tolerance after integer WCET "
+            "rounding; when set, tasksets outside the tolerance are discarded "
+            "and regenerated"
+        ),
     )
     parser.add_argument(
         "--constrained-deadlines",
@@ -222,6 +234,13 @@ def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
         parser.error("--min-task-util must be <= --max-task-util")
     if args.max_task_util > 1.0:
         parser.error("--max-task-util must be <= 1.0 for sequential tasks")
+    if args.actual_utilization_tolerance_total is not None and (
+        not math.isfinite(args.actual_utilization_tolerance_total)
+        or args.actual_utilization_tolerance_total < 0
+    ):
+        parser.error(
+            "--actual-utilization-tolerance-total must be finite and non-negative"
+        )
     forbidden = "rta-e0-sensitivity-v20p4"
     if forbidden in str(Path(args.output_root)).lower():
         parser.error("v21 comparisons cannot use the frozen v20.4 output root")
@@ -785,6 +804,9 @@ def _comparison_row(
         "task_util_max": base.get("task_util_max", 0.8),
         "wcet_rounding": base.get("wcet_rounding", "floor"),
         "deadline_mode": base.get("deadline_mode", "implicit"),
+        "actual_utilization_tolerance_total": base.get(
+            "actual_utilization_tolerance_total", ""
+        ),
         "M": processors,
         "task_idx": base.get("task_idx", ""),
         "taskset_id": base.get("taskset_id", ""),
@@ -950,6 +972,11 @@ def _manifest_row(args, run_dir: Path, status: str, return_code: int = 0) -> Dic
         "deadline_mode": (
             "constrained" if args.constrained_deadlines else "implicit"
         ),
+        "actual_utilization_tolerance_total": (
+            ""
+            if args.actual_utilization_tolerance_total is None
+            else args.actual_utilization_tolerance_total
+        ),
         "rta_v20p4_timeout": args.rta_v20p4_timeout,
         "rta_v21_timeout": args.rta_v21_timeout,
         "status": status,
@@ -995,6 +1022,9 @@ def run(args) -> Path:
         task_util_max=args.max_task_util,
         wcet_rounding=args.wcet_rounding,
         constrained_deadlines=args.constrained_deadlines,
+        actual_utilization_tolerance_total=(
+            args.actual_utilization_tolerance_total
+        ),
     )
     config_path = runner.modify_config(acceptance.ASAP_BLOCK_ALGORITHM)
     jobs = []
@@ -1029,6 +1059,11 @@ def run(args) -> Path:
                         "constrained"
                         if args.constrained_deadlines else "implicit"
                     ),
+                    actual_utilization_tolerance_total=(
+                        ""
+                        if args.actual_utilization_tolerance_total is None
+                        else args.actual_utilization_tolerance_total
+                    ),
                 )
                 jobs.append({
                     "experiment_name": args.experiment_name,
@@ -1054,6 +1089,9 @@ def run(args) -> Path:
                     "task_util_max": taskset_metadata["task_util_max"],
                     "wcet_rounding": taskset_metadata["wcet_rounding"],
                     "deadline_mode": taskset_metadata["deadline_mode"],
+                    "actual_utilization_tolerance_total": taskset_metadata[
+                        "actual_utilization_tolerance_total"
+                    ],
                     "M": args.M,
                     "task_idx": task_idx,
                     "taskset_id": runner.taskset_id(utilization, task_idx),

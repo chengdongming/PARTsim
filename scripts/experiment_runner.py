@@ -43,7 +43,11 @@ def build_command(run_dir, seed_base, num_points, num_tasksets, task_n,
                   battery, initial_energy, solar_time_ms, max_workers,
                   no_group_figures=False, harvesting_scale=1.0,
                   rta_initial_energy=None,
-                  rta_horizon_ms=None, rta_timeout=None):
+                  rta_horizon_ms=None, rta_timeout=None,
+                  min_task_util=0.01, max_task_util=0.8,
+                  wcet_rounding='floor',
+                  actual_utilization_tolerance_total=None,
+                  constrained_deadlines=False):
     """Build one acceptance_ratio_test.py invocation without a shell."""
     command = [
         'python3', str(EXPERIMENT_SCRIPT),
@@ -58,7 +62,17 @@ def build_command(run_dir, seed_base, num_points, num_tasksets, task_n,
         '--solar-time-ms', str(int(solar_time_ms)),
         '--harvesting-scale', str(float(harvesting_scale)),
         '--max-workers', str(int(max_workers)),
+        '--min-task-util', str(float(min_task_util)),
+        '--max-task-util', str(float(max_task_util)),
+        '--wcet-rounding', str(wcet_rounding),
     ]
+    if actual_utilization_tolerance_total is not None:
+        command.extend([
+            '--actual-utilization-tolerance-total',
+            str(float(actual_utilization_tolerance_total)),
+        ])
+    if constrained_deadlines:
+        command.append('--constrained-deadlines')
     if rta_initial_energy is not None:
         command.extend([
             '--enable-rta',
@@ -158,6 +172,28 @@ def add_common_arguments(parser, include_battery=True, include_solar_time=True,
     if include_harvesting_scale:
         parser.add_argument('--harvesting-scale', type=float, default=1.0)
     parser.add_argument('--max-workers', type=int, default=4)
+    parser.add_argument('--min-task-util', type=float, default=0.01)
+    parser.add_argument('--max-task-util', type=float, default=0.8)
+    parser.add_argument(
+        '--wcet-rounding',
+        choices=('floor', 'round', 'ceil', 'compensated'),
+        default='floor',
+    )
+    parser.add_argument(
+        '--actual-utilization-tolerance-total',
+        type=float,
+        default=None,
+        help=(
+            'absolute total-utilization error tolerance after integer WCET '
+            'rounding; when set, tasksets outside the tolerance are discarded '
+            'and regenerated'
+        ),
+    )
+    parser.add_argument(
+        '--constrained-deadlines',
+        action='store_true',
+        help='generate constrained deadlines C_i<=D_i<=T_i',
+    )
     parser.add_argument('--no-group-figures', action='store_true')
     parser.add_argument(
         '--dry-run', action='store_true',
@@ -187,6 +223,23 @@ def validate_common_args(parser, args):
     harvesting_scale = getattr(args, 'harvesting_scale', 1.0)
     if not math.isfinite(harvesting_scale) or harvesting_scale < 0:
         parser.error('--harvesting-scale must be finite and non-negative')
+    min_task_util = getattr(args, 'min_task_util', 0.01)
+    max_task_util = getattr(args, 'max_task_util', 0.8)
+    if min_task_util < 0 or max_task_util <= 0:
+        parser.error('--min-task-util/--max-task-util must be positive bounds')
+    if min_task_util > max_task_util:
+        parser.error('--min-task-util must be <= --max-task-util')
+    if max_task_util > 1.0:
+        parser.error('--max-task-util must be <= 1.0 for sequential tasks')
+    actual_tolerance = getattr(
+        args, 'actual_utilization_tolerance_total', None
+    )
+    if actual_tolerance is not None and (
+        not math.isfinite(actual_tolerance) or actual_tolerance < 0
+    ):
+        parser.error(
+            '--actual-utilization-tolerance-total must be finite and non-negative'
+        )
     try:
         safe_experiment_name(args.experiment_name)
     except ValueError as exc:

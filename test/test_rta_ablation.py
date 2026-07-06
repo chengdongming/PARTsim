@@ -59,6 +59,8 @@ def test_normalized_utilization_metadata_targets_total_utilization(tmp_path):
             "--variants", "A0",
             "--utilizations", "0.5",
             "--M", "4",
+            "--wcet-rounding", "compensated",
+            "--actual-utilization-tolerance-total", "0.01",
         ]
     )
     spec = runner.build_specs(args, tmp_path / "planned")[0]
@@ -69,8 +71,9 @@ def test_normalized_utilization_metadata_targets_total_utilization(tmp_path):
     assert spec["target_total_utilization"] == 2.0
     assert spec["task_util_min"] == 0.01
     assert spec["task_util_max"] == 0.8
-    assert spec["wcet_rounding"] == "floor"
+    assert spec["wcet_rounding"] == "compensated"
     assert spec["deadline_mode"] == "implicit"
+    assert spec["actual_utilization_tolerance_total"] == 0.01
 
 
 def successful_v20_result(profile=False):
@@ -451,6 +454,7 @@ def test_dry_run_writes_manifest_and_empty_results_without_calls(tmp_path):
     manifest_rows = read_rows(run_dir / runner.MANIFEST_FILENAME)
     assert len(manifest_rows) == 2 * 2 * 2
     assert {row["status"] for row in manifest_rows} == {"dry_run"}
+    assert {row["actual_utilization_tolerance_total"] for row in manifest_rows} == {""}
     assert read_rows(results_path) == []
     assert read_header(results_path) == runner.RESULT_FIELDS
     assert not (run_dir / "configs").exists()

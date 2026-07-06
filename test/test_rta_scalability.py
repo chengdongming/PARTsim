@@ -112,6 +112,7 @@ def test_dry_run_writes_full_manifest_and_header_only_results(tmp_path):
     assert {row["task_util_max"] for row in rows} == {"0.8"}
     assert {row["wcet_rounding"] for row in rows} == {"floor"}
     assert {row["deadline_mode"] for row in rows} == {"implicit"}
+    assert {row["actual_utilization_tolerance_total"] for row in rows} == {""}
     assert read_rows(results_path) == []
     assert read_header(results_path) == runner.RESULT_FIELDS
     assert not (run_dir / "configs").exists()
@@ -149,6 +150,8 @@ def test_default_utilization_mode_is_normalized(tmp_path):
             "--task-n-values", "2",
             "--m-values", "4",
             "--utilizations", "0.5",
+            "--wcet-rounding", "compensated",
+            "--actual-utilization-tolerance-total", "0.01",
         ]
     )
     spec = runner.build_specs(args, tmp_path / "run")[0]
@@ -157,6 +160,8 @@ def test_default_utilization_mode_is_normalized(tmp_path):
     assert spec["utilization"] == 0.5
     assert spec["target_normalized_utilization"] == 0.5
     assert spec["target_total_utilization"] == 2.0
+    assert spec["wcet_rounding"] == "compensated"
+    assert spec["actual_utilization_tolerance_total"] == 0.01
 
 
 def test_total_utilization_mode_preserves_legacy_semantics(tmp_path):
@@ -196,6 +201,8 @@ def test_task_generator_receives_real_m_utilization_and_seed(tmp_path):
             "--m-values", "3",
             "--utilizations", "1.5",
             "--utilization-mode", "total",
+            "--wcet-rounding", "compensated",
+            "--actual-utilization-tolerance-total", "0.01",
         ]
     )
     spec = runner.build_specs(args, tmp_path / "run")[0]
@@ -217,7 +224,11 @@ def test_task_generator_receives_real_m_utilization_and_seed(tmp_path):
     assert command[command.index("--seed") + 1] == str(spec["seed"])
     assert command[command.index("--min-task-util") + 1] == "0.01"
     assert command[command.index("--max-task-util") + 1] == "0.8"
-    assert command[command.index("--wcet-rounding") + 1] == "floor"
+    assert command[command.index("--wcet-rounding") + 1] == "compensated"
+    assert (
+        command[command.index("--actual-utilization-tolerance-total") + 1]
+        == "0.01"
+    )
 
 
 def test_mocked_run_propagates_success_timeout_profile_and_skips_simulation(

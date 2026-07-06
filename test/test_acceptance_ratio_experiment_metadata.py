@@ -67,6 +67,35 @@ class AcceptanceRatioExperimentMetadataTest(unittest.TestCase):
         self.assertEqual(command[command.index("--max-task-util") + 1], "0.8")
         self.assertEqual(command[command.index("--wcet-rounding") + 1], "floor")
 
+    def test_generator_options_include_compensated_tolerance(self):
+        runner = self.make_runner(
+            wcet_rounding="compensated",
+            actual_utilization_tolerance_total=0.01,
+        )
+
+        with mock.patch.object(
+            acceptance.subprocess,
+            "run",
+            return_value=subprocess.CompletedProcess([], 0),
+        ) as run_mock:
+            runner.generate_taskset(
+                utilization=0.5,
+                task_idx=0,
+                system_config_file="config.yml",
+            )
+
+        command = run_mock.call_args.args[0]
+        self.assertEqual(
+            command[command.index("--wcet-rounding") + 1],
+            "compensated",
+        )
+        self.assertEqual(
+            command[
+                command.index("--actual-utilization-tolerance-total") + 1
+            ],
+            "0.01",
+        )
+
     def test_m_override_updates_system_config_numcpus(self):
         runner = self.make_runner(system_cores=5)
         config_path = Path(runner.modify_config(acceptance.ASAP_BLOCK_ALGORITHM))
@@ -256,6 +285,11 @@ class AcceptanceRatioExperimentMetadataTest(unittest.TestCase):
         self.assertEqual(row["task_util_max"], 0.8)
         self.assertEqual(row["wcet_rounding"], "floor")
         self.assertEqual(row["deadline_mode"], "implicit")
+        self.assertEqual(row["actual_utilization_tolerance_total"], "")
+        self.assertIn(
+            "actual_utilization_tolerance_total",
+            acceptance.PER_TASKSET_RESULT_FIELDS,
+        )
         runtime_fields = {
             "rta_attempted",
             "rta_runtime_sec",

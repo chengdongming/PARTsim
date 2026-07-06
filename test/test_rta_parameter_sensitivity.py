@@ -55,6 +55,8 @@ def test_utilization_sweep_records_normalized_and_total_targets(tmp_path):
         base_args(tmp_path, "e4-target-util", "utilization") + [
             "--utilizations", "0.5",
             "--M", "4",
+            "--wcet-rounding", "compensated",
+            "--actual-utilization-tolerance-total", "0.01",
         ]
     )
     spec = runner.build_specs(args, tmp_path / "planned")[0]
@@ -65,8 +67,9 @@ def test_utilization_sweep_records_normalized_and_total_targets(tmp_path):
     assert spec["target_total_utilization"] == 2.0
     assert spec["task_util_min"] == 0.01
     assert spec["task_util_max"] == 0.8
-    assert spec["wcet_rounding"] == "floor"
+    assert spec["wcet_rounding"] == "compensated"
     assert spec["deadline_mode"] == "implicit"
+    assert spec["actual_utilization_tolerance_total"] == 0.01
 
 
 def successful_rta_result(profile=False):
@@ -194,6 +197,7 @@ def test_utilization_dry_run_writes_manifest_and_empty_results(tmp_path):
     }
     assert {row["use_real_solar_data"] for row in manifest_rows} == {"False"}
     assert {row["harvesting_scale"] for row in manifest_rows} == {"1.0"}
+    assert {row["actual_utilization_tolerance_total"] for row in manifest_rows} == {""}
     assert {
         row["rta_initial_energy_semantics"] for row in manifest_rows
     } == {runner.E0_SEMANTICS}

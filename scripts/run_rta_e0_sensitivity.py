@@ -15,6 +15,8 @@ MANIFEST_FIELDS = [
     'experiment_name', 'run_dir', 'rta_version', 'E0', 'seed_base', 'num_points',
     'num_tasksets', 'task_n', 'battery', 'initial_energy',
     'solar_time_ms', 'harvesting_scale', 'rta_horizon_ms', 'rta_timeout', 'max_workers',
+    'task_util_min', 'task_util_max', 'wcet_rounding', 'deadline_mode',
+    'actual_utilization_tolerance_total',
     'status', 'return_code',
 ]
 
@@ -59,6 +61,17 @@ def build_specs(args):
             'rta_horizon_ms': args.rta_horizon_ms,
             'rta_timeout': args.rta_timeout,
             'max_workers': args.max_workers,
+            'task_util_min': args.min_task_util,
+            'task_util_max': args.max_task_util,
+            'wcet_rounding': args.wcet_rounding,
+            'deadline_mode': (
+                'constrained' if args.constrained_deadlines else 'implicit'
+            ),
+            'actual_utilization_tolerance_total': (
+                ''
+                if args.actual_utilization_tolerance_total is None
+                else args.actual_utilization_tolerance_total
+            ),
             'command': runner.build_command(
                 run_dir, args.seed_base, args.num_points,
                 args.num_tasksets, args.task_n, args.battery,
@@ -68,6 +81,13 @@ def build_specs(args):
                 rta_initial_energy=e0,
                 rta_horizon_ms=args.rta_horizon_ms,
                 rta_timeout=args.rta_timeout,
+                min_task_util=args.min_task_util,
+                max_task_util=args.max_task_util,
+                wcet_rounding=args.wcet_rounding,
+                actual_utilization_tolerance_total=(
+                    args.actual_utilization_tolerance_total
+                ),
+                constrained_deadlines=args.constrained_deadlines,
             ),
         })
     return specs, manifest

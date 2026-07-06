@@ -54,6 +54,13 @@ def build_specs(args):
                     args.solar_time_ms, args.max_workers,
                     args.no_group_figures,
                     harvesting_scale=args.harvesting_scale,
+                    min_task_util=args.min_task_util,
+                    max_task_util=args.max_task_util,
+                    wcet_rounding=args.wcet_rounding,
+                    actual_utilization_tolerance_total=(
+                        args.actual_utilization_tolerance_total
+                    ),
+                    constrained_deadlines=args.constrained_deadlines,
                 ),
             })
     return specs, manifest

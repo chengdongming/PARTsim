@@ -224,6 +224,16 @@ class UUniFastDiscard:
                 f"Sequential task utilization bound must be <= 1.0, "
                 f"got {max_task_util}"
             )
+        if U > n * max_task_util:
+            raise ValueError(
+                "Infeasible utilization: total utilization {} exceeds "
+                "n * max_task_util = {}".format(U, n * max_task_util)
+            )
+        if U < n * min_task_util:
+            raise ValueError(
+                "Infeasible utilization: total utilization {} is below "
+                "n * min_task_util = {}".format(U, n * min_task_util)
+            )
         
         for trial in range(max_trials):
             utilizations = []
@@ -469,6 +479,80 @@ class EnergyAwareTaskGenerator:
                          f"功率={total_power_watts:.3f}W, 能量={energy_joules:.6f}J")
         
         return energy_joules
+
+    @staticmethod
+    def _round_execution_time(raw_execution_time: float, wcet_rounding: str) -> int:
+        if wcet_rounding == "ceil":
+            return math.ceil(raw_execution_time)
+        if wcet_rounding == "round":
+            return round(raw_execution_time)
+        return math.floor(raw_execution_time)
+
+    @staticmethod
+    def _execution_time_cap(period: int, max_task_util: float) -> int:
+        return max(1, min(int(period), int(math.floor(float(period) * max_task_util))))
+
+    @classmethod
+    def _compensated_execution_times(
+        cls,
+        utilizations: List[float],
+        periods: List[int],
+        max_task_util: float,
+        target_total_utilization: float,
+    ) -> List[int]:
+        execution_times = []
+        fractional_remainders = []
+        for util, period in zip(utilizations, periods):
+            raw_execution_time = float(util) * int(period)
+            floor_time = math.floor(raw_execution_time)
+            cap = cls._execution_time_cap(period, max_task_util)
+            execution_time = min(max(1, int(floor_time)), cap)
+            execution_times.append(execution_time)
+            fractional_remainders.append(raw_execution_time - floor_time)
+
+        actual_total = sum(
+            execution_time / period
+            for execution_time, period in zip(execution_times, periods)
+        )
+        if actual_total >= target_total_utilization:
+            return execution_times
+
+        ordered_indices = sorted(
+            range(len(execution_times)),
+            key=lambda index: (
+                fractional_remainders[index],
+                1.0 / periods[index],
+                -index,
+            ),
+            reverse=True,
+        )
+
+        while actual_total < target_total_utilization:
+            current_error = abs(actual_total - target_total_utilization)
+            best_index = None
+            best_error = current_error
+            best_actual = actual_total
+
+            for index in ordered_indices:
+                period = periods[index]
+                cap = cls._execution_time_cap(period, max_task_util)
+                if execution_times[index] >= cap:
+                    continue
+                candidate_actual = actual_total + (1.0 / period)
+                candidate_error = abs(
+                    candidate_actual - target_total_utilization
+                )
+                if candidate_error + 1e-15 < best_error:
+                    best_index = index
+                    best_error = candidate_error
+                    best_actual = candidate_actual
+
+            if best_index is None:
+                break
+            execution_times[best_index] += 1
+            actual_total = best_actual
+
+        return execution_times
     
     def generate_taskset(self, n: int, total_utilization: float, 
                         min_period: int = 1000, max_period: int = 5000,
@@ -479,7 +563,9 @@ class EnergyAwareTaskGenerator:
                         max_arrival_offset: int = None,
                         min_task_util: float = 0.01,
                         max_task_util: float = 0.8,
-                        wcet_rounding: str = "floor") -> Tuple[List[Dict], List[Dict], Dict, Dict]:
+                        wcet_rounding: str = "floor",
+                        actual_utilization_tolerance_total: float = None
+                        ) -> Tuple[List[Dict], List[Dict], Dict, Dict]:
         """
         生成能量感知任务集 - 增强版
         
@@ -488,187 +574,262 @@ class EnergyAwareTaskGenerator:
         2. runtime参数作为仿真中的执行时间，不需要再次计算
         3. 计算每个任务的精确能耗
         """
-        if wcet_rounding not in {"floor", "round", "ceil"}:
+        if wcet_rounding not in {"floor", "round", "ceil", "compensated"}:
             raise ValueError(f"Unsupported wcet_rounding: {wcet_rounding}")
+        if actual_utilization_tolerance_total is not None:
+            actual_utilization_tolerance_total = float(
+                actual_utilization_tolerance_total
+            )
+            if (
+                not math.isfinite(actual_utilization_tolerance_total)
+                or actual_utilization_tolerance_total < 0
+            ):
+                raise ValueError(
+                    "actual_utilization_tolerance_total must be finite and non-negative"
+                )
+        if min_period <= 0 or max_period <= 0 or min_period > max_period:
+            raise ValueError(
+                f"Invalid period range: min_period={min_period}, max_period={max_period}"
+            )
+        if math.floor(float(min_period) * max_task_util) < 1:
+            raise ValueError(
+                "Infeasible integer taskset: max_task_util={} is too small "
+                "for runtime>=1 with min_period={}".format(
+                    max_task_util, min_period
+                )
+            )
+        integer_min_total = n / float(max_period)
+        if total_utilization < integer_min_total:
+            raise ValueError(
+                "Infeasible integer taskset: target total utilization {} is below "
+                "minimum realized utilization {} from runtime>=1 and max_period={}".format(
+                    total_utilization, integer_min_total, max_period
+                )
+            )
+        integer_max_total = n * max_task_util
+        if total_utilization > integer_max_total:
+            raise ValueError(
+                "Infeasible integer taskset: target total utilization {} exceeds "
+                "n * max_task_util = {}".format(total_utilization, integer_max_total)
+            )
 
-        # 生成利用率
-        utilizations = self.uunifast.generate(
-            n,
-            total_utilization,
-            min_task_util=min_task_util,
-            max_task_util=max_task_util,
-        )
-        
-        # 生成DAG结构（如果需要）
-        dag = {}
-        predecessors = {}
-        if dag_enabled:
-            dag = self.dag_generator.generate_layered_dag(n, edge_prob)
-            predecessors = self.dag_generator.get_predecessors(dag)
-        
-        # 生成任务
-        tasks = []
-        total_energy = 0.0
-        energy_constrained = False
-        
-        for i, util in enumerate(utilizations):
-            # 生成周期
-            period = random.randint(min_period, max_period)
-            
-            # 计算执行时间（runtime）
-            # 确保执行时间至少为1ms，且不超过周期的95%（留出调度开销空间）
-            raw_execution_time = util * period
-            if wcet_rounding == "ceil":
-                rounded_execution_time = math.ceil(raw_execution_time)
-            elif wcet_rounding == "round":
-                rounded_execution_time = round(raw_execution_time)
+        max_generation_trials = 1000 if actual_utilization_tolerance_total is not None else 1
+        last_error = None
+
+        for _generation_trial in range(max_generation_trials):
+            # 生成利用率
+            utilizations = self.uunifast.generate(
+                n,
+                total_utilization,
+                min_task_util=min_task_util,
+                max_task_util=max_task_util,
+            )
+
+            # 生成DAG结构（如果需要）
+            dag = {}
+            predecessors = {}
+            if dag_enabled:
+                dag = self.dag_generator.generate_layered_dag(n, edge_prob)
+                predecessors = self.dag_generator.get_predecessors(dag)
+
+            periods = [random.randint(min_period, max_period) for _ in range(n)]
+            if wcet_rounding == "compensated":
+                execution_times = self._compensated_execution_times(
+                    utilizations,
+                    periods,
+                    max_task_util,
+                    total_utilization,
+                )
             else:
-                rounded_execution_time = int(raw_execution_time)
-            execution_time = max(1, int(rounded_execution_time))
-            max_runtime = max(1, int(period * 0.95))
-            execution_time = min(execution_time, max_runtime)
-            
-            # 生成截止时间
-            if implicit_deadline:
-                deadline = period
-            else:
-                # 约束截止时间：execution_time <= deadline < period
-                # 在 [execution_time, period-1] 范围内随机生成
-                if execution_time >= period:
+                execution_times = []
+                for util, period in zip(utilizations, periods):
+                    raw_execution_time = util * period
+                    rounded_execution_time = self._round_execution_time(
+                        raw_execution_time,
+                        wcet_rounding,
+                    )
+                    execution_time = max(1, int(rounded_execution_time))
+                    execution_time = min(
+                        execution_time,
+                        self._execution_time_cap(period, max_task_util),
+                    )
+                    execution_times.append(execution_time)
+
+            # 生成任务
+            tasks = []
+            total_energy = 0.0
+            energy_constrained = False
+
+            for i, util in enumerate(utilizations):
+                period = periods[i]
+                execution_time = execution_times[i]
+
+                # 生成截止时间
+                if implicit_deadline:
                     deadline = period
                 else:
-                    deadline = random.randint(execution_time, period - 1)
-            
-            # 生成到达时间偏移
-            arrival_offset_value = 0
-            if arrival_offset:
-                if max_arrival_offset is None:
-                    max_arrival_offset_value = int(period * 0.3)
-                else:
-                    max_arrival_offset_value = max_arrival_offset
-                
-                if max_arrival_offset_value > 0:
-                    arrival_offset_value = random.randint(0, max_arrival_offset_value)
-            
-            # 选择工作负载类型 - 均匀分布（所有类型概率相同）
-            # 每种类型: 16.67% (6种工作负载)
-            workload_types = ["idle", "control", "bzip2", "hash", "encrypt", "decrypt"]
-            workload = random.choice(workload_types)
-            
-            # 计算能耗 - 使用系统配置参数
-            energy = self.calculate_energy(execution_time, workload, self.base_frequency)
-            
-            # 能量感知检查
-            if energy_aware and self.energy_manager:
-                # 检查能量是否足够执行这个任务
-                required_energy_with_margin = energy * 1.1  # 10%安全余量
-                
-                # 检查能量管理器是否有足够能量
-                has_sufficient = False
-                if hasattr(self.energy_manager, 'has_sufficient_energy'):
-                    has_sufficient = self.energy_manager.has_sufficient_energy(required_energy_with_margin)
-                elif hasattr(self.energy_manager, 'current_energy'):
-                    has_sufficient = self.energy_manager.current_energy >= required_energy_with_margin
-                
-                if not has_sufficient:
-                    # 能量不足，调整执行时间
-                    energy_constrained = True
-                    if hasattr(self.energy_manager, 'current_energy'):
-                        max_energy = self.energy_manager.current_energy
-                        # 按比例缩减执行时间，保留10%余量
-                        scale_factor = max_energy / (energy * 1.1)
-                        execution_time = max(50, int(execution_time * scale_factor))
-                        energy = self.calculate_energy(execution_time, workload, self.base_frequency)
-                        logger.warning(f"任务 {i} 因能量限制调整执行时间: {execution_time}ms")
-            
-            total_energy += energy
-            
-            # 构建任务代码
-            code = []
-            
-            # 如果有前驱，添加lock操作
-            if dag_enabled and i in predecessors:
-                for pred in sorted(predecessors[i]):
-                    code.append(f"lock(res_{pred}_{i})")
-            
-            # 添加执行代码 - runtime作为固定执行时间
-            code.append(f"fixed({execution_time}, {workload})")
-            
-            # 如果有后继，添加unlock操作
-            if dag_enabled and i in dag and dag[i]:
-                for succ in sorted(dag[i]):
-                    code.append(f"unlock(res_{i}_{succ})")
-            
-            # 构建params字符串 - 完整格式：period=X,wcet=Y,arrival_offset=Z,workload=W
-            params_parts = [
-                f"period={period}",
-                f"wcet={execution_time}",
-                f"arrival_offset={arrival_offset_value}",
-                f"workload={workload}"
-            ]
-            params_str = ",".join(params_parts)
-            
-            task = {
-                'name': f'task_{i}',  # 任务名：task_0, task_1, task_2...
-                'iat': period,
-                'runtime': execution_time,  # 关键：runtime作为仿真中的执行时间
-                'deadline': deadline,
-                'code': code,
-                'params': params_str,
-                'utilization': util,
-                'execution_time': execution_time,
-                'workload': workload,
-                'energy': energy,
-                'arrival_offset': arrival_offset_value,
-                'frequency_mhz': self.base_frequency  # 添加频率信息
-            }
-            tasks.append(task)
-        
-        # 构建完整的任务集和资源
-        if dag_enabled:
-            all_tasks, resources, dag = self._build_dag_configuration(
-                tasks, dag, n, arrival_offset, max_arrival_offset
+                    # 约束截止时间：execution_time <= deadline < period
+                    # 在 [execution_time, period-1] 范围内随机生成
+                    if execution_time >= period:
+                        deadline = period
+                    else:
+                        deadline = random.randint(execution_time, period - 1)
+
+                # 生成到达时间偏移
+                arrival_offset_value = 0
+                if arrival_offset:
+                    if max_arrival_offset is None:
+                        max_arrival_offset_value = int(period * 0.3)
+                    else:
+                        max_arrival_offset_value = max_arrival_offset
+
+                    if max_arrival_offset_value > 0:
+                        arrival_offset_value = random.randint(0, max_arrival_offset_value)
+
+                # 选择工作负载类型 - 均匀分布（所有类型概率相同）
+                # 每种类型: 16.67% (6种工作负载)
+                workload_types = ["idle", "control", "bzip2", "hash", "encrypt", "decrypt"]
+                workload = random.choice(workload_types)
+
+                # 计算能耗 - 使用系统配置参数
+                energy = self.calculate_energy(execution_time, workload, self.base_frequency)
+
+                # 能量感知检查
+                if energy_aware and self.energy_manager:
+                    # 检查能量是否足够执行这个任务
+                    required_energy_with_margin = energy * 1.1  # 10%安全余量
+
+                    # 检查能量管理器是否有足够能量
+                    has_sufficient = False
+                    if hasattr(self.energy_manager, 'has_sufficient_energy'):
+                        has_sufficient = self.energy_manager.has_sufficient_energy(required_energy_with_margin)
+                    elif hasattr(self.energy_manager, 'current_energy'):
+                        has_sufficient = self.energy_manager.current_energy >= required_energy_with_margin
+
+                    if not has_sufficient:
+                        # 能量不足，调整执行时间
+                        energy_constrained = True
+                        if hasattr(self.energy_manager, 'current_energy'):
+                            max_energy = self.energy_manager.current_energy
+                            # 按比例缩减执行时间，保留10%余量
+                            scale_factor = max_energy / (energy * 1.1)
+                            execution_time = max(50, int(execution_time * scale_factor))
+                            execution_time = min(
+                                execution_time,
+                                self._execution_time_cap(period, max_task_util),
+                            )
+                            deadline = max(deadline, execution_time)
+                            deadline = min(deadline, period)
+                            energy = self.calculate_energy(execution_time, workload, self.base_frequency)
+                            logger.warning(f"任务 {i} 因能量限制调整执行时间: {execution_time}ms")
+
+                total_energy += energy
+
+                # 构建任务代码
+                code = []
+
+                # 如果有前驱，添加lock操作
+                if dag_enabled and i in predecessors:
+                    for pred in sorted(predecessors[i]):
+                        code.append(f"lock(res_{pred}_{i})")
+
+                # 添加执行代码 - runtime作为固定执行时间
+                code.append(f"fixed({execution_time}, {workload})")
+
+                # 如果有后继，添加unlock操作
+                if dag_enabled and i in dag and dag[i]:
+                    for succ in sorted(dag[i]):
+                        code.append(f"unlock(res_{i}_{succ})")
+
+                # 构建params字符串 - 完整格式：period=X,wcet=Y,arrival_offset=Z,workload=W
+                params_parts = [
+                    f"period={period}",
+                    f"wcet={execution_time}",
+                    f"arrival_offset={arrival_offset_value}",
+                    f"workload={workload}"
+                ]
+                params_str = ",".join(params_parts)
+
+                task = {
+                    'name': f'task_{i}',  # 任务名：task_0, task_1, task_2...
+                    'iat': period,
+                    'runtime': execution_time,  # 关键：runtime作为仿真中的执行时间
+                    'deadline': deadline,
+                    'code': code,
+                    'params': params_str,
+                    'utilization': util,
+                    'execution_time': execution_time,
+                    'workload': workload,
+                    'energy': energy,
+                    'arrival_offset': arrival_offset_value,
+                    'frequency_mhz': self.base_frequency  # 添加频率信息
+                }
+                tasks.append(task)
+
+            actual_total_utilization = sum(
+                task['runtime'] / task['iat'] for task in tasks if task.get('iat', 0) > 0
             )
-            # 为DAG任务添加能耗信息
-            for task in all_tasks:
-                if 'energy' not in task:
-                    task['energy'] = self.calculate_energy(task.get('execution_time', 10), 'control')
-                if arrival_offset and 'arrival_offset' not in task:
-                    task['arrival_offset'] = 0  # DAG开始/结束任务的到达偏移为0
-        else:
-            all_tasks = tasks
-            resources = []
-        
-        # 能量信息 - 修复：使用正确的方式获取初始能量
-        energy_info = {
-            'total_energy': total_energy,
-            'energy_constrained': energy_constrained,
-            'initial_energy': 0.0,
-            'remaining_energy': 0.0,
-            'energy_utilization': 0.0
-        }
-        
-        if self.energy_manager:
-            # 获取初始能量 - 检查不同的属性名
-            initial_energy = 0.0
-            if hasattr(self.energy_manager, 'initial_energy'):
-                initial_energy = self.energy_manager.initial_energy
-            elif hasattr(self.energy_manager, 'config') and hasattr(self.energy_manager.config, 'initial_energy'):
-                initial_energy = self.energy_manager.config.initial_energy
-            
-            # 获取当前能量
-            current_energy = 0.0
-            if hasattr(self.energy_manager, 'current_energy'):
-                current_energy = self.energy_manager.current_energy
-            
-            energy_info['initial_energy'] = initial_energy
-            energy_info['remaining_energy'] = current_energy
-            
-            # 计算能量利用率
-            if initial_energy > 0:
-                energy_info['energy_utilization'] = total_energy / initial_energy
-        
-        return all_tasks, resources, dag, energy_info
+            last_error = actual_total_utilization - float(total_utilization)
+            if (
+                actual_utilization_tolerance_total is not None
+                and abs(last_error) > actual_utilization_tolerance_total
+            ):
+                continue
+
+            # 构建完整的任务集和资源
+            if dag_enabled:
+                all_tasks, resources, dag = self._build_dag_configuration(
+                    tasks, dag, n, arrival_offset, max_arrival_offset
+                )
+                # 为DAG任务添加能耗信息
+                for task in all_tasks:
+                    if 'energy' not in task:
+                        task['energy'] = self.calculate_energy(task.get('execution_time', 10), 'control')
+                    if arrival_offset and 'arrival_offset' not in task:
+                        task['arrival_offset'] = 0  # DAG开始/结束任务的到达偏移为0
+            else:
+                all_tasks = tasks
+                resources = []
+
+            # 能量信息 - 修复：使用正确的方式获取初始能量
+            energy_info = {
+                'total_energy': total_energy,
+                'energy_constrained': energy_constrained,
+                'initial_energy': 0.0,
+                'remaining_energy': 0.0,
+                'energy_utilization': 0.0
+            }
+
+            if self.energy_manager:
+                # 获取初始能量 - 检查不同的属性名
+                initial_energy = 0.0
+                if hasattr(self.energy_manager, 'initial_energy'):
+                    initial_energy = self.energy_manager.initial_energy
+                elif hasattr(self.energy_manager, 'config') and hasattr(self.energy_manager.config, 'initial_energy'):
+                    initial_energy = self.energy_manager.config.initial_energy
+
+                # 获取当前能量
+                current_energy = 0.0
+                if hasattr(self.energy_manager, 'current_energy'):
+                    current_energy = self.energy_manager.current_energy
+
+                energy_info['initial_energy'] = initial_energy
+                energy_info['remaining_energy'] = current_energy
+
+                # 计算能量利用率
+                if initial_energy > 0:
+                    energy_info['energy_utilization'] = total_energy / initial_energy
+
+            return all_tasks, resources, dag, energy_info
+
+        raise RuntimeError(
+            "Failed to generate taskset within actual utilization tolerance "
+            "{} after {} trials; last error was {}".format(
+                actual_utilization_tolerance_total,
+                max_generation_trials,
+                last_error,
+            )
+        )
     
     def _build_dag_configuration(self, tasks: List[Dict], dag: Dict[int, Set[int]], n: int,
                                arrival_offset: bool = True, max_arrival_offset: int = None) -> Tuple[List[Dict], List[Dict], Dict]:
@@ -925,9 +1086,19 @@ def main():
                        help="UUniFast-Discard单任务最小利用率")
     parser.add_argument("--max-task-util", type=float, default=0.8,
                        help="UUniFast-Discard单任务最大利用率；顺序任务应不超过1.0")
-    parser.add_argument("--wcet-rounding", choices=("floor", "round", "ceil"),
+    parser.add_argument("--wcet-rounding", choices=("floor", "round", "ceil", "compensated"),
                        default="floor",
                        help="由u_i*T_i整数化得到runtime时使用的取整方式")
+    parser.add_argument(
+        "--actual-utilization-tolerance-total",
+        type=float,
+        default=None,
+        help=(
+            "生成后允许的总利用率绝对误差；显式设置时若"
+            "|actual_total_utilization-target_total_utilization|超过该值，"
+            "丢弃整组任务并重新生成"
+        ),
+    )
     
     args = parser.parse_args()
     
@@ -1013,7 +1184,10 @@ def main():
             max_arrival_offset=args.max_arrival_offset,
             min_task_util=args.min_task_util,
             max_task_util=args.max_task_util,
-            wcet_rounding=args.wcet_rounding
+            wcet_rounding=args.wcet_rounding,
+            actual_utilization_tolerance_total=(
+                args.actual_utilization_tolerance_total
+            ),
         )
         
         # 计算总利用率
@@ -1035,11 +1209,22 @@ def main():
             "target_normalized_utilization": target_normalized_utilization,
             "actual_total_utilization": actual_total_utilization,
             "actual_normalized_utilization": actual_normalized_utilization,
+            "utilization_error_total": (
+                actual_total_utilization - target_total_utilization
+            ),
+            "utilization_error_normalized": (
+                actual_normalized_utilization - target_normalized_utilization
+            ),
             "task_util_min": args.min_task_util,
             "task_util_max": args.max_task_util,
             "wcet_rounding": args.wcet_rounding,
             "deadline_mode": (
                 "constrained" if args.constrained_deadlines else "implicit"
+            ),
+            "actual_utilization_tolerance_total": (
+                ""
+                if args.actual_utilization_tolerance_total is None
+                else args.actual_utilization_tolerance_total
             ),
             "period_min": args.min_period,
             "period_max": args.max_period,

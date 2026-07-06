@@ -54,6 +54,7 @@ PARAMETER_FIELDS = [
     "task_util_max",
     "wcet_rounding",
     "deadline_mode",
+    "actual_utilization_tolerance_total",
     "rta_initial_energy",
     "rta_initial_energy_semantics",
     "task_p_min",
@@ -159,8 +160,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-task-util", type=float, default=0.8)
     parser.add_argument(
         "--wcet-rounding",
-        choices=("floor", "round", "ceil"),
+        choices=("floor", "round", "ceil", "compensated"),
         default="floor",
+    )
+    parser.add_argument(
+        "--actual-utilization-tolerance-total",
+        type=float,
+        default=None,
+        help=(
+            "absolute total-utilization error tolerance after integer WCET "
+            "rounding; when set, tasksets outside the tolerance are discarded "
+            "and regenerated"
+        ),
     )
     parser.add_argument(
         "--constrained-deadlines",
@@ -241,6 +252,13 @@ def validate_args(
         parser.error("--min-task-util must be <= --max-task-util")
     if args.max_task_util > 1.0:
         parser.error("--max-task-util must be <= 1.0 for sequential tasks")
+    if args.actual_utilization_tolerance_total is not None and (
+        not math.isfinite(args.actual_utilization_tolerance_total)
+        or args.actual_utilization_tolerance_total < 0
+    ):
+        parser.error(
+            "--actual-utilization-tolerance-total must be finite and non-negative"
+        )
 
     if args.sweep == "utilization":
         if not args.utilizations:
@@ -402,6 +420,11 @@ def build_specs(
                 "deadline_mode": (
                     "constrained" if args.constrained_deadlines else "implicit"
                 ),
+                "actual_utilization_tolerance_total": (
+                    ""
+                    if args.actual_utilization_tolerance_total is None
+                    else args.actual_utilization_tolerance_total
+                ),
                 "rta_initial_energy": initial_energy,
                 "rta_initial_energy_semantics": E0_SEMANTICS,
                 "task_p_min": args.task_p_min,
@@ -476,6 +499,11 @@ def _generate_taskset(spec: Mapping[str, Any]) -> str:
         "--max-task-util", str(spec["task_util_max"]),
         "--wcet-rounding", str(spec["wcet_rounding"]),
     ]
+    if spec.get("actual_utilization_tolerance_total") not in (None, ""):
+        command.extend([
+            "--actual-utilization-tolerance-total",
+            str(spec["actual_utilization_tolerance_total"]),
+        ])
     if str(spec.get("deadline_mode")) == "constrained":
         command.append("--constrained-deadlines")
     try:
@@ -708,6 +736,9 @@ def run(args: argparse.Namespace) -> Path:
             task_util_max=representative["task_util_max"],
             wcet_rounding=representative["wcet_rounding"],
             deadline_mode=representative["deadline_mode"],
+            actual_utilization_tolerance_total=representative.get(
+                "actual_utilization_tolerance_total", ""
+            ),
         )
         manifest_utilization_metadata = {
             field: value
