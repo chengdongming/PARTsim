@@ -53,6 +53,26 @@ def assert_no_duplicates(fields):
     assert duplicates == []
 
 
+def test_normalized_utilization_metadata_targets_total_utilization(tmp_path):
+    args = parse_and_validate(
+        base_args(tmp_path, "e3-target-util") + [
+            "--variants", "A0",
+            "--utilizations", "0.5",
+            "--M", "4",
+        ]
+    )
+    spec = runner.build_specs(args, tmp_path / "planned")[0]
+
+    assert spec["normalized_utilization"] == 0.5
+    assert spec["total_utilization"] == 2.0
+    assert spec["target_normalized_utilization"] == 0.5
+    assert spec["target_total_utilization"] == 2.0
+    assert spec["task_util_min"] == 0.01
+    assert spec["task_util_max"] == 0.8
+    assert spec["wcet_rounding"] == "floor"
+    assert spec["deadline_mode"] == "implicit"
+
+
 def successful_v20_result(profile=False):
     return {
         "rta_version": "v20.4",

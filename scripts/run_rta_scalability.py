@@ -35,6 +35,16 @@ MANIFEST_FIELDS = [
     "task_n",
     "M",
     "utilization",
+    "utilization_mode",
+    "target_normalized_utilization",
+    "target_total_utilization",
+    "actual_total_utilization",
+    "actual_normalized_utilization",
+    "utilization_error_total",
+    "task_util_min",
+    "task_util_max",
+    "wcet_rounding",
+    "deadline_mode",
     "task_p_min",
     "task_p_max",
     "rta_horizon_ms",
@@ -57,6 +67,16 @@ RESULT_FIELDS = [
     "task_n",
     "M",
     "utilization",
+    "utilization_mode",
+    "target_normalized_utilization",
+    "target_total_utilization",
+    "actual_total_utilization",
+    "actual_normalized_utilization",
+    "utilization_error_total",
+    "task_util_min",
+    "task_util_max",
+    "wcet_rounding",
+    "deadline_mode",
     "task_p_min",
     "task_p_max",
     "rta_horizon_ms",
@@ -122,9 +142,30 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--utilizations", type=_comma_floats, default=[0.2, 0.4]
     )
+    parser.add_argument(
+        "--utilization-mode",
+        choices=("normalized", "total"),
+        default="normalized",
+        help=(
+            "interpret --utilizations as normalized load U/M by default; "
+            "use total to preserve the legacy absolute total-utilization mode"
+        ),
+    )
     parser.add_argument("--num-tasksets", type=int, default=3)
     parser.add_argument("--task-p-min", type=int, default=40)
     parser.add_argument("--task-p-max", type=int, default=200)
+    parser.add_argument("--min-task-util", type=float, default=0.01)
+    parser.add_argument("--max-task-util", type=float, default=0.8)
+    parser.add_argument(
+        "--wcet-rounding",
+        choices=("floor", "round", "ceil"),
+        default="floor",
+    )
+    parser.add_argument(
+        "--constrained-deadlines",
+        action="store_true",
+        help="generate constrained deadlines C_i<=D_i<=T_i; default is implicit D_i=T_i",
+    )
     parser.add_argument("--rta-horizon-ms", type=int, required=True)
     parser.add_argument("--rta-timeout", type=float, default=30.0)
     parser.add_argument(
@@ -187,12 +228,29 @@ def validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> 
         or args.rta_initial_energy < 0
     ):
         parser.error("--rta-initial-energy must be finite and non-negative")
+    if args.min_task_util < 0 or args.max_task_util <= 0:
+        parser.error("--min-task-util/--max-task-util must be positive bounds")
+    if args.min_task_util > args.max_task_util:
+        parser.error("--min-task-util must be <= --max-task-util")
+    if args.max_task_util > 1.0:
+        parser.error("--max-task-util must be <= 1.0 for sequential tasks")
     for utilization in args.utilizations:
+        if not math.isfinite(utilization) or utilization <= 0:
+            parser.error("--utilizations values must be finite and positive")
+        if args.utilization_mode == "normalized" and utilization > 1:
+            parser.error(
+                "--utilizations must be in (0, 1] in normalized mode"
+            )
         for processors in args.m_values:
-            if utilization > processors:
+            total_utilization = (
+                utilization * processors
+                if args.utilization_mode == "normalized"
+                else utilization
+            )
+            if total_utilization > processors:
                 parser.error(
                     "total utilization {} exceeds M={}".format(
-                        utilization, processors
+                        total_utilization, processors
                     )
                 )
 
@@ -241,6 +299,16 @@ def build_specs(args: argparse.Namespace, run_dir: Path) -> List[Dict[str, Any]]
     for task_n in args.task_n_values:
         for processors in args.m_values:
             for utilization in args.utilizations:
+                if args.utilization_mode == "normalized":
+                    target_normalized_utilization = float(utilization)
+                    target_total_utilization = float(
+                        format(float(utilization) * processors, ".15g")
+                    )
+                else:
+                    target_total_utilization = float(utilization)
+                    target_normalized_utilization = float(
+                        format(float(utilization) / processors, ".15g")
+                    )
                 config_id = config_id_for(
                     task_n,
                     processors,
@@ -268,6 +336,21 @@ def build_specs(args: argparse.Namespace, run_dir: Path) -> List[Dict[str, Any]]
                         "task_n": task_n,
                         "M": processors,
                         "utilization": utilization,
+                        "utilization_mode": args.utilization_mode,
+                        "target_normalized_utilization": (
+                            target_normalized_utilization
+                        ),
+                        "target_total_utilization": target_total_utilization,
+                        "actual_total_utilization": "",
+                        "actual_normalized_utilization": "",
+                        "utilization_error_total": "",
+                        "task_util_min": args.min_task_util,
+                        "task_util_max": args.max_task_util,
+                        "wcet_rounding": args.wcet_rounding,
+                        "deadline_mode": (
+                            "constrained"
+                            if args.constrained_deadlines else "implicit"
+                        ),
                         "task_p_min": args.task_p_min,
                         "task_p_max": args.task_p_max,
                         "rta_horizon_ms": args.rta_horizon_ms,
@@ -309,14 +392,19 @@ def _generate_taskset(spec: Mapping[str, Any]) -> str:
         sys.executable,
         str((PROJECT_ROOT / acceptance.TASK_GENERATOR).resolve()),
         "-n", str(spec["task_n"]),
-        "-u", format(float(spec["utilization"]), ".15g"),
+        "-u", format(float(spec["target_total_utilization"]), ".15g"),
         "-p", str(spec["task_p_min"]),
         "-P", str(spec["task_p_max"]),
         "-c", str(spec["M"]),
         "--seed", str(spec["seed"]),
         "-s", str(spec["config_file"]),
         "-o", str(task_file),
+        "--min-task-util", str(spec["task_util_min"]),
+        "--max-task-util", str(spec["task_util_max"]),
+        "--wcet-rounding", str(spec["wcet_rounding"]),
     ]
+    if str(spec.get("deadline_mode")) == "constrained":
+        command.append("--constrained-deadlines")
     try:
         completed = subprocess.run(
             command,
@@ -369,6 +457,20 @@ def _result_row(
         "task_n": spec["task_n"],
         "M": spec["M"],
         "utilization": spec["utilization"],
+        "utilization_mode": spec["utilization_mode"],
+        "target_normalized_utilization": spec[
+            "target_normalized_utilization"
+        ],
+        "target_total_utilization": spec["target_total_utilization"],
+        "actual_total_utilization": spec.get("actual_total_utilization", ""),
+        "actual_normalized_utilization": spec.get(
+            "actual_normalized_utilization", ""
+        ),
+        "utilization_error_total": spec.get("utilization_error_total", ""),
+        "task_util_min": spec["task_util_min"],
+        "task_util_max": spec["task_util_max"],
+        "wcet_rounding": spec["wcet_rounding"],
+        "deadline_mode": spec["deadline_mode"],
         "task_p_min": spec["task_p_min"],
         "task_p_max": spec["task_p_max"],
         "rta_horizon_ms": spec["rta_horizon_ms"],
@@ -416,6 +518,18 @@ def _run_spec(spec: Mapping[str, Any]) -> Dict[str, Any]:
             "status": "task_generation_error",
             "error": generation_error,
         }
+    utilization_metadata = acceptance.load_taskset_utilization_metadata(
+        spec["task_file"],
+        target_normalized_utilization=spec["target_normalized_utilization"],
+        target_total_utilization=spec["target_total_utilization"],
+        num_cores=spec["M"],
+        task_util_min=spec["task_util_min"],
+        task_util_max=spec["task_util_max"],
+        wcet_rounding=spec["wcet_rounding"],
+        deadline_mode=spec["deadline_mode"],
+    )
+    if isinstance(spec, dict):
+        spec.update(utilization_metadata)
     rta_result = acceptance.run_asap_block_rta(
         algorithm=acceptance.ASAP_BLOCK_ALGORITHM,
         system_config=spec["config_file"],
@@ -479,6 +593,12 @@ def run(args: argparse.Namespace) -> Path:
             outcome = future.result()
             results.append((spec["_index"], outcome["result"]))
             manifest_row = manifest_by_id[spec["taskset_id"]]
+            for field in (
+                "actual_total_utilization",
+                "actual_normalized_utilization",
+                "utilization_error_total",
+            ):
+                manifest_row[field] = spec.get(field, manifest_row.get(field, ""))
             manifest_row["status"] = outcome["status"]
             manifest_row["error"] = outcome["error"]
             ordered_results = [

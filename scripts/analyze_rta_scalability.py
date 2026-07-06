@@ -27,6 +27,7 @@ TIMEOUT_RATE_PLOT = "timeout_rate.png"
 SUMMARY_COLUMNS = [
     "group_key",
     "group_value",
+    "utilization_mode",
     "total_rows",
     "rta_attempted_count",
     "rta_completed_count",
@@ -156,6 +157,11 @@ def load_results(input_path) -> pd.DataFrame:
         if len(frame) and values.isna().any():
             raise ValueError("{} contains non-numeric values".format(column))
         frame[column] = values
+    if "utilization_mode" not in frame.columns:
+        frame["utilization_mode"] = "total"
+    frame["utilization_mode"] = frame["utilization_mode"].map(
+        lambda value: str(value).strip().lower() or "total"
+    )
     if len(frame) and frame["config_id"].map(_nonempty).eq(False).any():
         raise ValueError("config_id must be non-empty")
 
@@ -228,6 +234,7 @@ def summarize_group(
     group_key: str,
     group_value,
     input_path: Path,
+    utilization_mode: str = "",
 ) -> dict:
     attempted = int(group["_attempted"].sum())
     completed = int(group["_completed"].sum())
@@ -242,6 +249,7 @@ def summarize_group(
     row = {
         "group_key": group_key,
         "group_value": group_value,
+        "utilization_mode": utilization_mode,
         "total_rows": int(len(group)),
         "rta_attempted_count": attempted,
         "rta_completed_count": completed,
@@ -278,6 +286,22 @@ def build_grouped(
     return pd.DataFrame(rows, columns=SUMMARY_COLUMNS)
 
 
+def build_by_utilization(frame: pd.DataFrame, input_path: Path) -> pd.DataFrame:
+    rows = []
+    group_columns = ["utilization_mode", "utilization"]
+    for (mode, value), group in frame.groupby(group_columns, sort=True):
+        rows.append(
+            summarize_group(
+                group,
+                "utilization",
+                value,
+                input_path,
+                utilization_mode=mode,
+            )
+        )
+    return pd.DataFrame(rows, columns=SUMMARY_COLUMNS)
+
+
 def _finite_plot_values(frame: pd.DataFrame, column: str) -> pd.Series:
     if column not in frame.columns:
         return pd.Series(dtype=float)
@@ -291,24 +315,36 @@ def _plot_runtime(
     title: str,
 ) -> None:
     figure, axis = plt.subplots(figsize=(7, 4.5))
-    x = pd.to_numeric(grouped.get("group_value"), errors="coerce")
-    median = pd.to_numeric(grouped.get("runtime_median_sec"), errors="coerce")
-    p95 = pd.to_numeric(grouped.get("runtime_p95_sec"), errors="coerce")
-    median_mask = x.notna() & median.notna()
-    p95_mask = x.notna() & p95.notna()
     plotted = False
-    if median_mask.any():
-        axis.plot(
-            x[median_mask], median[median_mask],
-            marker="o", label="median",
+    if (
+        "utilization_mode" in grouped.columns
+        and grouped["utilization_mode"].map(_nonempty).any()
+    ):
+        groups = grouped.groupby("utilization_mode", sort=True)
+    else:
+        groups = [("", grouped)]
+    for mode, subset in groups:
+        x = pd.to_numeric(subset.get("group_value"), errors="coerce")
+        median = pd.to_numeric(
+            subset.get("runtime_median_sec"), errors="coerce"
         )
-        plotted = True
-    if p95_mask.any():
-        axis.plot(
-            x[p95_mask], p95[p95_mask],
-            marker="s", linestyle="--", label="p95",
-        )
-        plotted = True
+        p95 = pd.to_numeric(subset.get("runtime_p95_sec"), errors="coerce")
+        median_mask = x.notna() & median.notna()
+        p95_mask = x.notna() & p95.notna()
+        prefix = "{} ".format(mode) if mode else ""
+        if median_mask.any():
+            axis.plot(
+                x[median_mask], median[median_mask],
+                marker="o", label="{}median".format(prefix),
+            )
+            plotted = True
+        if p95_mask.any():
+            axis.plot(
+                x[p95_mask], p95[p95_mask],
+                marker="s", linestyle="--",
+                label="{}p95".format(prefix),
+            )
+            plotted = True
     if plotted:
         axis.legend()
     else:
@@ -360,9 +396,7 @@ def analyze(input_path, output_dir, manifest_path=None):
     overall = build_overall(frame, input_path)
     by_n = build_grouped(frame, "task_n", "task_n", input_path)
     by_m = build_grouped(frame, "M", "M", input_path)
-    by_utilization = build_grouped(
-        frame, "utilization", "utilization", input_path
-    )
+    by_utilization = build_by_utilization(frame, input_path)
     by_config = build_grouped(
         frame, "config_id", "config_id", input_path
     )
@@ -383,7 +417,7 @@ def analyze(input_path, output_dir, manifest_path=None):
     )
     _plot_runtime(
         by_utilization, plots / RUNTIME_UTILIZATION_PLOT,
-        "Total utilization", "RTA runtime by utilization",
+        "Utilization input value", "RTA runtime by utilization mode",
     )
     _plot_timeout_rate(by_n, plots / TIMEOUT_RATE_PLOT)
     return overall, by_n, by_m, by_utilization, by_config

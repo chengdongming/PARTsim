@@ -28,6 +28,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from collections import defaultdict
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
 
@@ -60,6 +62,16 @@ PER_TASKSET_RESULT_FIELDS = [
     'seed_base',
     'taskset_seed',
     'normalized_utilization',
+    'target_normalized_utilization',
+    'target_total_utilization',
+    'actual_total_utilization',
+    'actual_normalized_utilization',
+    'utilization_error_total',
+    'utilization_error_normalized',
+    'task_util_min',
+    'task_util_max',
+    'wcet_rounding',
+    'deadline_mode',
     'task_idx',
     'taskset_id',
     'algorithm',
@@ -115,6 +127,94 @@ def get_system_cores(config_path):
     with open(config_path, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f.read())
         return int(config['cpu_islands'][0]['numcpus'])
+
+
+def _finite_float_or_blank(value):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return ''
+    return number if math.isfinite(number) else ''
+
+
+def load_taskset_utilization_metadata(
+    task_file,
+    target_normalized_utilization=None,
+    target_total_utilization=None,
+    num_cores=None,
+    task_util_min=0.01,
+    task_util_max=0.8,
+    wcet_rounding='floor',
+    deadline_mode='implicit',
+):
+    """Read generator utilization metadata with a taskset-based fallback."""
+    metadata = {}
+    tasks = []
+    try:
+        with open(task_file, 'r', encoding='utf-8') as handle:
+            document = yaml.safe_load(handle) or {}
+        if isinstance(document, dict):
+            metadata = document.get('metadata') or {}
+            tasks = document.get('taskset') or []
+    except Exception:
+        metadata = {}
+        tasks = []
+
+    actual_total = metadata.get('actual_total_utilization')
+    if actual_total is None:
+        actual_total = sum(
+            float(task.get('runtime', 0)) / float(task.get('iat', 1))
+            for task in tasks
+            if isinstance(task, dict)
+            and str(task.get('name', '')).startswith('task_')
+            and float(task.get('iat', 0) or 0) > 0
+        )
+    actual_total = _finite_float_or_blank(actual_total)
+
+    cores = metadata.get('M', metadata.get('num_cores', num_cores))
+    try:
+        cores_float = float(cores)
+    except (TypeError, ValueError):
+        cores_float = float(num_cores or 0)
+
+    actual_normalized = metadata.get('actual_normalized_utilization')
+    if actual_normalized is None and actual_total != '' and cores_float > 0:
+        actual_normalized = float(actual_total) / cores_float
+    actual_normalized = _finite_float_or_blank(actual_normalized)
+
+    target_total = metadata.get(
+        'target_total_utilization',
+        target_total_utilization,
+    )
+    target_normalized = metadata.get(
+        'target_normalized_utilization',
+        target_normalized_utilization,
+    )
+    target_total = _finite_float_or_blank(target_total)
+    target_normalized = _finite_float_or_blank(target_normalized)
+
+    utilization_error_total = ''
+    if actual_total != '' and target_total != '':
+        utilization_error_total = float(actual_total) - float(target_total)
+
+    utilization_error_normalized = ''
+    if actual_normalized != '' and target_normalized != '':
+        utilization_error_normalized = (
+            float(actual_normalized) - float(target_normalized)
+        )
+
+    return {
+        'target_normalized_utilization': target_normalized,
+        'target_total_utilization': target_total,
+        'actual_total_utilization': actual_total,
+        'actual_normalized_utilization': actual_normalized,
+        'utilization_error_total': utilization_error_total,
+        'utilization_error_normalized': utilization_error_normalized,
+        'task_util_min': metadata.get('task_util_min', task_util_min),
+        'task_util_max': metadata.get('task_util_max', task_util_max),
+        'wcet_rounding': metadata.get('wcet_rounding', wcet_rounding),
+        'deadline_mode': metadata.get('deadline_mode', deadline_mode),
+    }
 
 
 def hash_file(path):
@@ -340,6 +440,16 @@ def validate_rta_cli_args(parser, args):
     soundness_mode = getattr(args, 'rta_soundness_mode', 'fail_fast')
     if soundness_mode not in {'fail_fast', 'audit'}:
         parser.error('--rta-soundness-mode must be fail_fast or audit')
+    if getattr(args, 'M', None) is not None and args.M <= 0:
+        parser.error('--M must be positive')
+    min_task_util = getattr(args, 'min_task_util', 0.01)
+    max_task_util = getattr(args, 'max_task_util', 0.8)
+    if min_task_util < 0 or max_task_util <= 0:
+        parser.error('--min-task-util/--max-task-util must be positive bounds')
+    if min_task_util > max_task_util:
+        parser.error('--min-task-util must be <= --max-task-util')
+    if max_task_util > 1.0:
+        parser.error('--max-task-util must be <= 1.0 for sequential tasks')
 
 
 SIMULATION_TIMEOUT_STATUSES = {
@@ -761,6 +871,7 @@ def run_single_simulation_worker(task):
         'simulation_status': simulation_status,
         'simulation_error': simulation_error,
     }
+    run_result.update(rta_options.get('taskset_metadata', {}))
     run_result.update(rta_result)
     run_result['simulated_response_time'] = (
         max(max_response_by_task.values()) if max_response_by_task else None
@@ -921,6 +1032,28 @@ def add_experiment_cli_args(parser):
                        help=f'每个利用率点的任务集数量 (默认: {DEFAULT_NUM_TASKSETS})')
     parser.add_argument('--task-n', type=int, default=DEFAULT_TASK_N,
                        help=f'每个任务集的任务数 (默认: {DEFAULT_TASK_N})')
+    parser.add_argument(
+        '--M', type=int, default=None,
+        help=(
+            '处理器核心数；默认读取 system_config_unified_template.yml，'
+            '显式传入时同时覆盖生成器-c和临时系统配置numcpus'
+        ),
+    )
+    parser.add_argument('--min-task-util', type=float, default=0.01,
+                       help='UUniFast-Discard单任务最小利用率')
+    parser.add_argument('--max-task-util', type=float, default=0.8,
+                       help='UUniFast-Discard单任务最大利用率')
+    parser.add_argument(
+        '--wcet-rounding',
+        choices=('floor', 'round', 'ceil'),
+        default='floor',
+        help='由u_i*T_i整数化生成runtime时使用的取整方式',
+    )
+    parser.add_argument(
+        '--constrained-deadlines',
+        action='store_true',
+        help='生成约束截止时间 C_i<=D_i<=T_i；默认隐式截止时间 D_i=T_i',
+    )
     parser.add_argument('--battery', type=float, default=DEFAULT_BATTERY_CAPACITY,
                        help=f'电池容量 (Joules) (默认: {DEFAULT_BATTERY_CAPACITY})')
     parser.add_argument('--initial-energy', type=float, default=DEFAULT_INITIAL_ENERGY_RATIO,
@@ -1107,7 +1240,9 @@ class ExperimentRunner:
                  rta_timeout=300, seed_base=DEFAULT_SEED_BASE,
                  rta_initial_energy=0.0, profile_rta=False,
                  harvesting_scale=DEFAULT_HARVESTING_SCALE,
-                 rta_soundness_mode='fail_fast'):
+                 rta_soundness_mode='fail_fast',
+                 task_util_min=0.01, task_util_max=0.8,
+                 wcet_rounding='floor', constrained_deadlines=False):
         self.output_dir = Path(output_dir)
         self.trace_dir = self.output_dir / 'traces'
         self.task_dir = self.output_dir / 'tasks'
@@ -1141,6 +1276,12 @@ class ExperimentRunner:
         self.rta_timeout = max(1, int(rta_timeout))
         self.rta_initial_energy = float(rta_initial_energy)
         self.profile_rta = bool(profile_rta)
+        self.task_util_min = float(task_util_min)
+        self.task_util_max = float(task_util_max)
+        if wcet_rounding not in {'floor', 'round', 'ceil'}:
+            raise ValueError('wcet_rounding must be floor, round, or ceil')
+        self.wcet_rounding = wcet_rounding
+        self.constrained_deadlines = bool(constrained_deadlines)
         if rta_soundness_mode not in {'fail_fast', 'audit'}:
             raise ValueError('rta_soundness_mode must be fail_fast or audit')
         self.rta_soundness_mode = rta_soundness_mode
@@ -1152,6 +1293,15 @@ class ExperimentRunner:
         self.experiment_id = self.output_dir.name
 
         print(f"🖥️  系统核心数: {self.system_cores}")
+        print(
+            "🎲 任务生成: min_u={}, max_u={}, wcet_rounding={}, "
+            "deadline_mode={}".format(
+                self.task_util_min,
+                self.task_util_max,
+                self.wcet_rounding,
+                'constrained' if self.constrained_deadlines else 'implicit',
+            )
+        )
         print(f"📁 输出目录: {self.output_dir}")
         print(f"⚙️  并发进程数: {self.max_workers}")
         if self.enable_rta:
@@ -1209,8 +1359,13 @@ class ExperimentRunner:
             '-c', str(self.system_cores),
             '--seed', str(seed),
             '-s', str(system_config_file),
-            '-o', str(task_file)
+            '-o', str(task_file),
+            '--min-task-util', str(self.task_util_min),
+            '--max-task-util', str(self.task_util_max),
+            '--wcet-rounding', self.wcet_rounding,
         ]
+        if self.constrained_deadlines:
+            cmd.append('--constrained-deadlines')
 
         try:
             subprocess.run(cmd, check=True, capture_output=True, timeout=30, text=True)
@@ -1260,6 +1415,13 @@ class ExperimentRunner:
             if in_cpu_islands and in_kernel and stripped.startswith('scheduler:'):
                 indent = line[:len(line) - len(line.lstrip())]
                 updated_lines.append(f'{indent}scheduler: {algorithm}\n')
+                continue
+
+            if in_cpu_islands and stripped.startswith('numcpus:'):
+                indent = line[:len(line) - len(line.lstrip())]
+                updated_lines.append(
+                    f'{indent}numcpus: {int(self.system_cores)}\n'
+                )
                 continue
 
             if in_energy_management and stripped.startswith('initial_energy_ratio:'):
@@ -1399,8 +1561,36 @@ class ExperimentRunner:
                     seed,
                     system_config_file=task_generation_config,
                 )
+                target_total_utilization = utilization * self.system_cores
+                planned_metadata = {
+                    'target_normalized_utilization': float(utilization),
+                    'target_total_utilization': target_total_utilization,
+                    'actual_total_utilization': '',
+                    'actual_normalized_utilization': '',
+                    'utilization_error_total': '',
+                    'utilization_error_normalized': '',
+                    'task_util_min': self.task_util_min,
+                    'task_util_max': self.task_util_max,
+                    'wcet_rounding': self.wcet_rounding,
+                    'deadline_mode': (
+                        'constrained'
+                        if self.constrained_deadlines else 'implicit'
+                    ),
+                }
                 if task_file:
-                    task_files.append((task_idx, task_file, seed))
+                    taskset_metadata = load_taskset_utilization_metadata(
+                        task_file,
+                        target_normalized_utilization=float(utilization),
+                        target_total_utilization=target_total_utilization,
+                        num_cores=self.system_cores,
+                        task_util_min=self.task_util_min,
+                        task_util_max=self.task_util_max,
+                        wcet_rounding=self.wcet_rounding,
+                        deadline_mode=planned_metadata['deadline_mode'],
+                    )
+                    task_files.append(
+                        (task_idx, task_file, seed, taskset_metadata)
+                    )
                 else:
                     for algo in ALGORITHMS:
                         rta_enabled = (
@@ -1418,6 +1608,7 @@ class ExperimentRunner:
                             'seed_base': self.seed_base,
                             'taskset_seed': seed,
                             'seed': seed,
+                            **planned_metadata,
                             'simulation_acceptance': 0.0,
                             'acceptance_ratio': 0.0,
                             'simulation_status': 'yaml_generation_failed',
@@ -1438,7 +1629,7 @@ class ExperimentRunner:
                 print(f"⚠️ 没有成功生成任务集，跳过 U={utilization:.2f}")
                 continue
 
-            for task_idx, task_file, seed in task_files:
+            for task_idx, task_file, seed, taskset_metadata in task_files:
                 for algo in ALGORITHMS:
                     tasks.append((
                         algo,
@@ -1463,6 +1654,7 @@ class ExperimentRunner:
                             'taskset_id': self.taskset_id(
                                 utilization, task_idx
                             ),
+                            'taskset_metadata': taskset_metadata,
                         },
                     ))
 
@@ -1601,6 +1793,46 @@ class ExperimentRunner:
             'seed_base': result.get('seed_base', self.seed_base),
             'taskset_seed': taskset_seed,
             'normalized_utilization': float(utilization),
+            'target_normalized_utilization': result.get(
+                'target_normalized_utilization',
+                float(utilization),
+            ),
+            'target_total_utilization': result.get(
+                'target_total_utilization',
+                float(utilization) * self.system_cores,
+            ),
+            'actual_total_utilization': result.get(
+                'actual_total_utilization',
+                '',
+            ),
+            'actual_normalized_utilization': result.get(
+                'actual_normalized_utilization',
+                '',
+            ),
+            'utilization_error_total': result.get(
+                'utilization_error_total',
+                '',
+            ),
+            'utilization_error_normalized': result.get(
+                'utilization_error_normalized',
+                '',
+            ),
+            'task_util_min': result.get(
+                'task_util_min',
+                self.task_util_min,
+            ),
+            'task_util_max': result.get(
+                'task_util_max',
+                self.task_util_max,
+            ),
+            'wcet_rounding': result.get(
+                'wcet_rounding',
+                self.wcet_rounding,
+            ),
+            'deadline_mode': result.get(
+                'deadline_mode',
+                'constrained' if self.constrained_deadlines else 'implicit',
+            ),
             'task_idx': result.get('task_idx', ''),
             'taskset_id': result.get('taskset_id', ''),
             'algorithm': algorithm,
@@ -1724,6 +1956,33 @@ class ExperimentRunner:
                         classify_simulation_status(result)
                         for result in run_results
                     ]
+                    actual_total_values = [
+                        float(result['actual_total_utilization'])
+                        for result in run_results
+                        if isinstance(result, dict)
+                        and result.get('actual_total_utilization') not in {
+                            None,
+                            '',
+                        }
+                    ]
+                    actual_norm_values = [
+                        float(result['actual_normalized_utilization'])
+                        for result in run_results
+                        if isinstance(result, dict)
+                        and result.get('actual_normalized_utilization') not in {
+                            None,
+                            '',
+                        }
+                    ]
+                    util_error_values = [
+                        float(result['utilization_error_total'])
+                        for result in run_results
+                        if isinstance(result, dict)
+                        and result.get('utilization_error_total') not in {
+                            None,
+                            '',
+                        }
+                    ]
                     row = {
                         'algorithm': algo,
                         'algorithm_display_name': ALGO_DISPLAY_NAMES.get(
@@ -1736,6 +1995,18 @@ class ExperimentRunner:
                         'seed_base': self.seed_base,
                         'taskset_count': self.num_tasksets,
                         'core_count': self.system_cores,
+                        'avg_actual_total_utilization': (
+                            float(np.mean(actual_total_values))
+                            if actual_total_values else np.nan
+                        ),
+                        'avg_actual_normalized_utilization': (
+                            float(np.mean(actual_norm_values))
+                            if actual_norm_values else np.nan
+                        ),
+                        'avg_utilization_error_total': (
+                            float(np.mean(util_error_values))
+                            if util_error_values else np.nan
+                        ),
                         'battery_capacity': self.battery_capacity,
                         'harvesting_profile': self.harvesting_profile(),
                         'harvesting_scale': self.harvesting_scale,
@@ -2064,7 +2335,11 @@ def main():
     if args.run_experiment:
         # 运行实验
         utilization_points = np.around(np.linspace(0.1, 1.0, args.num_points), 2)
-        system_cores = get_system_cores(CONFIG_TEMPLATE)
+        system_cores = (
+            int(args.M)
+            if args.M is not None
+            else get_system_cores(CONFIG_TEMPLATE)
+        )
 
         runner = ExperimentRunner(
             output_dir=args.output_dir,
@@ -2089,6 +2364,10 @@ def main():
             profile_rta=args.profile_rta,
             harvesting_scale=args.harvesting_scale,
             rta_soundness_mode=args.rta_soundness_mode,
+            task_util_min=args.min_task_util,
+            task_util_max=args.max_task_util,
+            wcet_rounding=args.wcet_rounding,
+            constrained_deadlines=args.constrained_deadlines,
         )
 
         results = runner.run_experiments()

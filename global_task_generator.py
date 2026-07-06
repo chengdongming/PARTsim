@@ -199,9 +199,31 @@ class UUniFastDiscard:
         if seed is not None:
             random.seed(seed)
     
-    def generate(self, n: int, U: float, max_trials: int = 1000) -> List[float]:
+    def generate(
+        self,
+        n: int,
+        U: float,
+        min_task_util: float = 0.01,
+        max_task_util: float = 0.8,
+        max_trials: int = 1000,
+    ) -> List[float]:
         if n <= 0 or U <= 0 or U > n:
             raise ValueError(f"Invalid parameters: n={n}, U={U}")
+        if min_task_util < 0 or max_task_util <= 0:
+            raise ValueError(
+                f"Invalid utilization bounds: min={min_task_util}, "
+                f"max={max_task_util}"
+            )
+        if min_task_util > max_task_util:
+            raise ValueError(
+                f"Invalid utilization bounds: min={min_task_util}, "
+                f"max={max_task_util}"
+            )
+        if max_task_util > 1.0:
+            raise ValueError(
+                f"Sequential task utilization bound must be <= 1.0, "
+                f"got {max_task_util}"
+            )
         
         for trial in range(max_trials):
             utilizations = []
@@ -214,13 +236,16 @@ class UUniFastDiscard:
                 utilizations.append(util_i)
                 sumU = nextSumU
                 
-                if util_i < 0.01 or util_i > 0.8:
+                if util_i < min_task_util or util_i > max_task_util:
                     valid = False
                     break
             
             utilizations.append(sumU)
             
-            if valid and 0.01 <= utilizations[-1] <= 0.8:
+            if (
+                valid
+                and min_task_util <= utilizations[-1] <= max_task_util
+            ):
                 return utilizations
         
         raise RuntimeError(f"Failed after {max_trials} trials")
@@ -451,7 +476,10 @@ class EnergyAwareTaskGenerator:
                         dag_enabled: bool = True, edge_prob: float = 0.4,
                         energy_aware: bool = True,
                         arrival_offset: bool = True, 
-                        max_arrival_offset: int = None) -> Tuple[List[Dict], List[Dict], Dict, Dict]:
+                        max_arrival_offset: int = None,
+                        min_task_util: float = 0.01,
+                        max_task_util: float = 0.8,
+                        wcet_rounding: str = "floor") -> Tuple[List[Dict], List[Dict], Dict, Dict]:
         """
         生成能量感知任务集 - 增强版
         
@@ -460,8 +488,16 @@ class EnergyAwareTaskGenerator:
         2. runtime参数作为仿真中的执行时间，不需要再次计算
         3. 计算每个任务的精确能耗
         """
+        if wcet_rounding not in {"floor", "round", "ceil"}:
+            raise ValueError(f"Unsupported wcet_rounding: {wcet_rounding}")
+
         # 生成利用率
-        utilizations = self.uunifast.generate(n, total_utilization)
+        utilizations = self.uunifast.generate(
+            n,
+            total_utilization,
+            min_task_util=min_task_util,
+            max_task_util=max_task_util,
+        )
         
         # 生成DAG结构（如果需要）
         dag = {}
@@ -481,8 +517,16 @@ class EnergyAwareTaskGenerator:
             
             # 计算执行时间（runtime）
             # 确保执行时间至少为1ms，且不超过周期的95%（留出调度开销空间）
-            execution_time = max(1, int(util * period))
-            execution_time = min(execution_time, int(period * 0.95))
+            raw_execution_time = util * period
+            if wcet_rounding == "ceil":
+                rounded_execution_time = math.ceil(raw_execution_time)
+            elif wcet_rounding == "round":
+                rounded_execution_time = round(raw_execution_time)
+            else:
+                rounded_execution_time = int(raw_execution_time)
+            execution_time = max(1, int(rounded_execution_time))
+            max_runtime = max(1, int(period * 0.95))
+            execution_time = min(execution_time, max_runtime)
             
             # 生成截止时间
             if implicit_deadline:
@@ -490,7 +534,10 @@ class EnergyAwareTaskGenerator:
             else:
                 # 约束截止时间：execution_time <= deadline < period
                 # 在 [execution_time, period-1] 范围内随机生成
-                deadline = random.randint(execution_time, period - 1)
+                if execution_time >= period:
+                    deadline = period
+                else:
+                    deadline = random.randint(execution_time, period - 1)
             
             # 生成到达时间偏移
             arrival_offset_value = 0
@@ -713,7 +760,8 @@ class EnergyAwareTaskGenerator:
 def create_yaml_content(tasks: List[Dict], resources: List[Dict] = None, 
                        system_config: str = "global_scheduler", total_utilization: float = 0.0,
                        dag_enabled: bool = True, energy_info: Dict = None,
-                       arrival_offset_enabled: bool = False) -> str:
+                       arrival_offset_enabled: bool = False,
+                       generation_metadata: Dict[str, Any] = None) -> str:
     """
     创建YAML内容 - 增强能量感知版本
     
@@ -747,6 +795,18 @@ def create_yaml_content(tasks: List[Dict], resources: List[Dict] = None,
     lines.append(f"# 调度策略: 能量感知全局EDF")
     lines.append(f"# 注意: runtime参数作为仿真中的直接执行时间，已考虑能量参数")
     lines.append("")
+
+    if generation_metadata:
+        lines.append("metadata:")
+        for key, value in generation_metadata.items():
+            if isinstance(value, bool):
+                rendered = "true" if value else "false"
+            elif isinstance(value, str):
+                rendered = f'"{value}"'
+            else:
+                rendered = value
+            lines.append(f"  {key}: {rendered}")
+        lines.append("")
     
     # 添加能量参数说明（从系统配置中提取）
     try:
@@ -844,7 +904,7 @@ def main():
     parser.add_argument("-c", "--cpus", type=int, default=4,
                        help="CPU数量")
     parser.add_argument("-cd", "--constrained-deadlines", action="store_true",
-                       help="使用约束截止时间")
+                       help="使用约束截止时间，保证 runtime <= deadline <= period；默认使用隐式截止时间 D=T")
     parser.add_argument("--dag", action="store_true", default=False,
                        help="启用前驱约束")
     parser.add_argument("--edge-prob", type=float, default=0.4,
@@ -856,11 +916,18 @@ def main():
     parser.add_argument("--arrival-offset", action="store_true", default=True,
                        help="启用到达时间偏移")
     parser.add_argument("--max-arrival-offset", type=int, default=None,
-                       help="最大到达时间偏移(ms)，默认为任务周期的30%")
+                       help="最大到达时间偏移(ms)，默认为任务周期的30%%")
     parser.add_argument("-o", "--output", default="energy_aware_tasks.yml",
                        help="输出文件")
     parser.add_argument("--seed", type=int, default=None,
                        help="随机种子")
+    parser.add_argument("--min-task-util", type=float, default=0.01,
+                       help="UUniFast-Discard单任务最小利用率")
+    parser.add_argument("--max-task-util", type=float, default=0.8,
+                       help="UUniFast-Discard单任务最大利用率；顺序任务应不超过1.0")
+    parser.add_argument("--wcet-rounding", choices=("floor", "round", "ceil"),
+                       default="floor",
+                       help="由u_i*T_i整数化得到runtime时使用的取整方式")
     
     args = parser.parse_args()
     
@@ -943,12 +1010,43 @@ def main():
             edge_prob=args.edge_prob,
             energy_aware=args.energy_aware,
             arrival_offset=args.arrival_offset,
-            max_arrival_offset=args.max_arrival_offset
+            max_arrival_offset=args.max_arrival_offset,
+            min_task_util=args.min_task_util,
+            max_task_util=args.max_task_util,
+            wcet_rounding=args.wcet_rounding
         )
         
         # 计算总利用率
         regular_tasks = [t for t in tasks if t['name'].startswith('task_')]
-        total_utilization = sum(t.get('utilization', 0) for t in regular_tasks)
+        target_total_utilization = float(args.utilization)
+        target_normalized_utilization = (
+            target_total_utilization / args.cpus if args.cpus else 0.0
+        )
+        actual_total_utilization = sum(
+            (t.get('runtime', 0) / t.get('iat', 1))
+            for t in regular_tasks
+            if t.get('iat', 0) > 0
+        )
+        actual_normalized_utilization = (
+            actual_total_utilization / args.cpus if args.cpus else 0.0
+        )
+        generation_metadata = {
+            "target_total_utilization": target_total_utilization,
+            "target_normalized_utilization": target_normalized_utilization,
+            "actual_total_utilization": actual_total_utilization,
+            "actual_normalized_utilization": actual_normalized_utilization,
+            "task_util_min": args.min_task_util,
+            "task_util_max": args.max_task_util,
+            "wcet_rounding": args.wcet_rounding,
+            "deadline_mode": (
+                "constrained" if args.constrained_deadlines else "implicit"
+            ),
+            "period_min": args.min_period,
+            "period_max": args.max_period,
+            "num_tasks": args.num_tasks,
+            "num_cores": args.cpus,
+            "M": args.cpus,
+        }
         
         # 计算每个工作负载类型的总能耗
         from collections import defaultdict
@@ -967,10 +1065,11 @@ def main():
             tasks=tasks,
             resources=resources,
             system_config=args.system_config,
-            total_utilization=total_utilization,
+            total_utilization=actual_total_utilization,
             dag_enabled=args.dag,
             energy_info=energy_info,
-            arrival_offset_enabled=args.arrival_offset
+            arrival_offset_enabled=args.arrival_offset,
+            generation_metadata=generation_metadata
         )
         
         # 保存文件
@@ -982,7 +1081,8 @@ def main():
         # 显示详细信息
         logger.info("\n📊 任务集统计:")
         logger.info(f"  任务数量: {len(regular_tasks)}")
-        logger.info(f"  总利用率: {total_utilization:.3f}")
+        logger.info(f"  目标总利用率: {target_total_utilization:.3f}")
+        logger.info(f"  实际总利用率: {actual_total_utilization:.3f}")
         logger.info(f"  总估算能耗: {energy_info['total_energy']:.3f} J")
         
         logger.info(f"  各工作负载能耗分布:")

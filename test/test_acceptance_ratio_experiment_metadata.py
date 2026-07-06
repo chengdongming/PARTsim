@@ -62,6 +62,18 @@ class AcceptanceRatioExperimentMetadataTest(unittest.TestCase):
         command = run_mock.call_args.args[0]
         self.assertIn("--seed", command)
         self.assertEqual(command[command.index("--seed") + 1], "14001")
+        self.assertEqual(command[command.index("-c") + 1], "2")
+        self.assertEqual(command[command.index("--min-task-util") + 1], "0.01")
+        self.assertEqual(command[command.index("--max-task-util") + 1], "0.8")
+        self.assertEqual(command[command.index("--wcet-rounding") + 1], "floor")
+
+    def test_m_override_updates_system_config_numcpus(self):
+        runner = self.make_runner(system_cores=5)
+        config_path = Path(runner.modify_config(acceptance.ASAP_BLOCK_ALGORITHM))
+
+        with config_path.open("r", encoding="utf-8") as handle:
+            config = acceptance.yaml.safe_load(handle)
+        self.assertEqual(config["cpu_islands"][0]["numcpus"], 5)
 
     def test_same_taskset_reused_across_all_9_schedulers(self):
         runner = self.make_runner(num_tasksets=1)
@@ -168,6 +180,9 @@ class AcceptanceRatioExperimentMetadataTest(unittest.TestCase):
             "seed_base",
             "taskset_count",
             "core_count",
+            "avg_actual_total_utilization",
+            "avg_actual_normalized_utilization",
+            "avg_utilization_error_total",
             "battery_capacity",
             "harvesting_profile",
             "simulation_num_accepted",
@@ -235,6 +250,12 @@ class AcceptanceRatioExperimentMetadataTest(unittest.TestCase):
         self.assertEqual(row["observed_max_response_time"], 8.0)
         self.assertIn("|M=2|n=3|util=0.50|", row["config_id"])
         self.assertEqual(row["tightness"], 1.25)
+        self.assertEqual(row["target_normalized_utilization"], 0.5)
+        self.assertEqual(row["target_total_utilization"], 1.0)
+        self.assertEqual(row["task_util_min"], 0.01)
+        self.assertEqual(row["task_util_max"], 0.8)
+        self.assertEqual(row["wcet_rounding"], "floor")
+        self.assertEqual(row["deadline_mode"], "implicit")
         runtime_fields = {
             "rta_attempted",
             "rta_runtime_sec",

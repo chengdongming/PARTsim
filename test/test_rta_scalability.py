@@ -52,11 +52,13 @@ def test_parser_accepts_comma_lists_and_rejects_invalid_values(tmp_path):
         "--task-n-values", "4,8,16",
         "--m-values", "2,4",
         "--utilizations", "0.2,0.4,1.5",
+        "--utilization-mode", "total",
         "--rta-horizon-ms", "100",
     ])
     assert args.task_n_values == [4, 8, 16]
     assert args.m_values == [2, 4]
     assert args.utilizations == [0.2, 0.4, 1.5]
+    assert args.utilization_mode == "total"
     assert args.max_workers == 1
     assert not args.profile_rta
 
@@ -105,6 +107,11 @@ def test_dry_run_writes_full_manifest_and_header_only_results(tmp_path):
     assert len(rows) == 2 * 2 * 2 * 2
     assert {row["status"] for row in rows} == {"dry_run"}
     assert {row["dry_run"] for row in rows} == {"True"}
+    assert {row["utilization_mode"] for row in rows} == {"normalized"}
+    assert {row["task_util_min"] for row in rows} == {"0.01"}
+    assert {row["task_util_max"] for row in rows} == {"0.8"}
+    assert {row["wcet_rounding"] for row in rows} == {"floor"}
+    assert {row["deadline_mode"] for row in rows} == {"implicit"}
     assert read_rows(results_path) == []
     assert read_header(results_path) == runner.RESULT_FIELDS
     assert not (run_dir / "configs").exists()
@@ -136,6 +143,39 @@ def test_config_ids_and_seeds_are_deterministic_and_distinguishable(tmp_path):
     assert len({row["seed"] for row in first}) == len(first)
 
 
+def test_default_utilization_mode_is_normalized(tmp_path):
+    args = parse_and_validate(
+        cli_args(tmp_path) + [
+            "--task-n-values", "2",
+            "--m-values", "4",
+            "--utilizations", "0.5",
+        ]
+    )
+    spec = runner.build_specs(args, tmp_path / "run")[0]
+
+    assert spec["utilization_mode"] == "normalized"
+    assert spec["utilization"] == 0.5
+    assert spec["target_normalized_utilization"] == 0.5
+    assert spec["target_total_utilization"] == 2.0
+
+
+def test_total_utilization_mode_preserves_legacy_semantics(tmp_path):
+    args = parse_and_validate(
+        cli_args(tmp_path) + [
+            "--task-n-values", "2",
+            "--m-values", "4",
+            "--utilizations", "2.0",
+            "--utilization-mode", "total",
+        ]
+    )
+    spec = runner.build_specs(args, tmp_path / "run")[0]
+
+    assert spec["utilization_mode"] == "total"
+    assert spec["utilization"] == 2.0
+    assert spec["target_total_utilization"] == 2.0
+    assert spec["target_normalized_utilization"] == 0.5
+
+
 def test_write_system_config_sets_real_numcpus_and_asap_block(tmp_path):
     output = tmp_path / "system_m3.yml"
     runner.write_system_config(runner.DEFAULT_SYSTEM_TEMPLATE, output, 3)
@@ -155,6 +195,7 @@ def test_task_generator_receives_real_m_utilization_and_seed(tmp_path):
             "--task-n-values", "4",
             "--m-values", "3",
             "--utilizations", "1.5",
+            "--utilization-mode", "total",
         ]
     )
     spec = runner.build_specs(args, tmp_path / "run")[0]
@@ -174,6 +215,9 @@ def test_task_generator_receives_real_m_utilization_and_seed(tmp_path):
     assert command[command.index("-c") + 1] == "3"
     assert command[command.index("-u") + 1] == "1.5"
     assert command[command.index("--seed") + 1] == str(spec["seed"])
+    assert command[command.index("--min-task-util") + 1] == "0.01"
+    assert command[command.index("--max-task-util") + 1] == "0.8"
+    assert command[command.index("--wcet-rounding") + 1] == "floor"
 
 
 def test_mocked_run_propagates_success_timeout_profile_and_skips_simulation(

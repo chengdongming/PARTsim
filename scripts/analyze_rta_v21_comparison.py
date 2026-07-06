@@ -2,6 +2,7 @@
 """Analyze isolated v20.4 versus v21-local-window comparison results."""
 
 import argparse
+import inspect
 import json
 import math
 import sys
@@ -31,6 +32,16 @@ CONDITIONAL_ASSUMPTION_NOTE = (
     "unconditional simulation soundness validation unless "
     "release_energy_assumption_verified=1"
 )
+
+
+def _boxplot_with_compatible_labels(axis, values, labels, **kwargs):
+    """Use tick_labels on newer Matplotlib and labels on older releases."""
+    try:
+        parameters = inspect.signature(axis.boxplot).parameters
+    except (TypeError, ValueError):
+        parameters = {}
+    label_keyword = "tick_labels" if "tick_labels" in parameters else "labels"
+    axis.boxplot(values, **{label_keyword: labels}, **kwargs)
 
 V20_METADATA_DEFAULTS = {
     "v20_rta_version": V20_VERSION,
@@ -703,7 +714,9 @@ def _plot_tightness(frame: pd.DataFrame, output: Path) -> None:
             values.append(data)
             labels.append(version)
     if values:
-        axis.boxplot(values, labels=labels, showfliers=False)
+        _boxplot_with_compatible_labels(
+            axis, values, labels, showfliers=False
+        )
     axis.set_ylabel("Legacy pessimism ratio (bound / observed)")
     figure.tight_layout()
     figure.savefig(output, dpi=160)
@@ -769,7 +782,9 @@ def _plot_intersection_pessimism(frame: pd.DataFrame, output: Path) -> None:
             values.append(data)
             labels.append(label)
     if values:
-        axis.boxplot(values, labels=labels, showfliers=False)
+        _boxplot_with_compatible_labels(
+            axis, values, labels, showfliers=False
+        )
     else:
         axis.text(
             0.5, 0.5, "No both-proven intersection data",

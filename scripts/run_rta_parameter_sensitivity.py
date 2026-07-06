@@ -45,6 +45,15 @@ PARAMETER_FIELDS = [
     "M",
     "normalized_utilization",
     "total_utilization",
+    "target_normalized_utilization",
+    "target_total_utilization",
+    "actual_total_utilization",
+    "actual_normalized_utilization",
+    "utilization_error_total",
+    "task_util_min",
+    "task_util_max",
+    "wcet_rounding",
+    "deadline_mode",
     "rta_initial_energy",
     "rta_initial_energy_semantics",
     "task_p_min",
@@ -146,6 +155,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--num-tasksets", type=int, default=20)
     parser.add_argument("--task-p-min", type=int, default=40)
     parser.add_argument("--task-p-max", type=int, default=200)
+    parser.add_argument("--min-task-util", type=float, default=0.01)
+    parser.add_argument("--max-task-util", type=float, default=0.8)
+    parser.add_argument(
+        "--wcet-rounding",
+        choices=("floor", "round", "ceil"),
+        default="floor",
+    )
+    parser.add_argument(
+        "--constrained-deadlines",
+        action="store_true",
+        help="generate constrained deadlines C_i<=D_i<=T_i; default is implicit D_i=T_i",
+    )
     parser.add_argument("--rta-horizon-ms", type=int, required=True)
     parser.add_argument("--rta-timeout", type=float, default=30.0)
     parser.add_argument("--seed", type=int, default=12345)
@@ -214,6 +235,12 @@ def validate_args(
         parser.error("--task-p-min cannot exceed --task-p-max")
     if not math.isfinite(args.rta_timeout) or args.rta_timeout <= 0:
         parser.error("--rta-timeout must be finite and positive")
+    if args.min_task_util < 0 or args.max_task_util <= 0:
+        parser.error("--min-task-util/--max-task-util must be positive bounds")
+    if args.min_task_util > args.max_task_util:
+        parser.error("--min-task-util must be <= --max-task-util")
+    if args.max_task_util > 1.0:
+        parser.error("--max-task-util must be <= 1.0 for sequential tasks")
 
     if args.sweep == "utilization":
         if not args.utilizations:
@@ -364,6 +391,17 @@ def build_specs(
                 "M": args.M,
                 "normalized_utilization": normalized_utilization,
                 "total_utilization": total_utilization,
+                "target_normalized_utilization": normalized_utilization,
+                "target_total_utilization": total_utilization,
+                "actual_total_utilization": "",
+                "actual_normalized_utilization": "",
+                "utilization_error_total": "",
+                "task_util_min": args.min_task_util,
+                "task_util_max": args.max_task_util,
+                "wcet_rounding": args.wcet_rounding,
+                "deadline_mode": (
+                    "constrained" if args.constrained_deadlines else "implicit"
+                ),
                 "rta_initial_energy": initial_energy,
                 "rta_initial_energy_semantics": E0_SEMANTICS,
                 "task_p_min": args.task_p_min,
@@ -434,7 +472,12 @@ def _generate_taskset(spec: Mapping[str, Any]) -> str:
         "--seed", str(spec["seed"]),
         "-s", str(spec["config_file"]),
         "-o", str(task_file),
+        "--min-task-util", str(spec["task_util_min"]),
+        "--max-task-util", str(spec["task_util_max"]),
+        "--wcet-rounding", str(spec["wcet_rounding"]),
     ]
+    if str(spec.get("deadline_mode")) == "constrained":
+        command.append("--constrained-deadlines")
     try:
         completed = subprocess.run(
             command,
@@ -652,10 +695,31 @@ def run(args: argparse.Namespace) -> Path:
                 )
             continue
         task_hash = _sha256(Path(representative["task_file"]))
+        utilization_metadata = acceptance.load_taskset_utilization_metadata(
+            representative["task_file"],
+            target_normalized_utilization=representative[
+                "target_normalized_utilization"
+            ],
+            target_total_utilization=representative[
+                "target_total_utilization"
+            ],
+            num_cores=representative["M"],
+            task_util_min=representative["task_util_min"],
+            task_util_max=representative["task_util_max"],
+            wcet_rounding=representative["wcet_rounding"],
+            deadline_mode=representative["deadline_mode"],
+        )
+        manifest_utilization_metadata = {
+            field: value
+            for field, value in utilization_metadata.items()
+            if field in MANIFEST_FIELDS
+        }
         for spec in family_specs:
+            spec.update(utilization_metadata)
             spec["task_file_sha256"] = task_hash
             spec["status"] = "task_ready"
             manifest_rows[spec["_index"]].update(
+                **manifest_utilization_metadata,
                 task_file_sha256=task_hash,
                 status="task_ready",
                 error="",

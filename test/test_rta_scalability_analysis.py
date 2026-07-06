@@ -181,6 +181,27 @@ def test_counts_rates_groups_profile_and_plots(tmp_path):
         assert (output / relative).is_file()
 
 
+def test_by_utilization_keeps_normalized_and_total_modes_separate(tmp_path):
+    source = tmp_path / "mixed-modes.csv"
+    output = tmp_path / "analysis"
+    rows = [
+        row(taskset_id="norm", utilization=0.5, rta_runtime_sec=1.0),
+        row(taskset_id="total", utilization=0.5, rta_runtime_sec=2.0),
+    ]
+    frame = pd.DataFrame(rows)
+    frame.loc[0, "utilization_mode"] = "normalized"
+    frame.loc[1, "utilization_mode"] = "total"
+    frame.to_csv(source, index=False)
+
+    _overall, _by_n, _by_m, by_utilization, _by_config = analyzer.analyze(
+        source, output
+    )
+
+    assert len(by_utilization) == 2
+    assert set(by_utilization["group_value"]) == {0.5}
+    assert set(by_utilization["utilization_mode"]) == {"normalized", "total"}
+
+
 def test_runtime_quantiles_ignore_blank_nan_inf_negative_and_errors(tmp_path):
     source = tmp_path / "quantiles.csv"
     valid_rows = [

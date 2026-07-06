@@ -63,7 +63,11 @@ V21_PROFILE_MAX_COUNTERS = ("max_delta_cap", "max_delta_seen")
 
 RESULT_FIELDS = [
     "experiment_name", "seed_base", "taskset_seed",
-    "normalized_utilization", "task_idx", "taskset_id", "E0",
+    "normalized_utilization", "target_normalized_utilization",
+    "target_total_utilization", "actual_total_utilization",
+    "actual_normalized_utilization", "utilization_error_total",
+    "task_util_min", "task_util_max", "wcet_rounding", "deadline_mode",
+    "M", "task_idx", "taskset_id", "E0",
     "e0_assumption_scope", "release_energy_assumption_verified",
     "accepted", "simulation_status", "simulated_response_time",
     "deadline_miss_time", "first_missed_task", "taskset_path",
@@ -114,8 +118,10 @@ RESULT_FIELDS = [
 
 MANIFEST_FIELDS = [
     "experiment_name", "run_dir", "results_file", "seed_base",
-    "utilizations", "num_tasksets", "task_n", "battery",
+    "utilizations", "target_normalized_utilization",
+    "target_total_utilization", "M", "num_tasksets", "task_n", "battery",
     "initial_energy", "solar_time_ms", "E0_values",
+    "task_util_min", "task_util_max", "wcet_rounding", "deadline_mode",
     "rta_v20p4_timeout", "rta_v21_timeout", "status", "return_code",
 ]
 
@@ -134,6 +140,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--num-tasksets", type=int, default=50)
     parser.add_argument("--task-n", type=int, default=10)
+    parser.add_argument("--M", type=int, default=4)
     parser.add_argument("--task-p-min", type=int, default=40)
     parser.add_argument("--task-p-max", type=int, default=400)
     parser.add_argument("--simulation-time", type=int, default=30000)
@@ -165,6 +172,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--rta-v20p4-timeout", type=int, default=60)
     parser.add_argument("--rta-v21-timeout", type=int, default=60)
     parser.add_argument("--max-workers", type=int, default=12)
+    parser.add_argument("--min-task-util", type=float, default=0.01)
+    parser.add_argument("--max-task-util", type=float, default=0.8)
+    parser.add_argument(
+        "--wcet-rounding",
+        choices=("floor", "round", "ceil"),
+        default="floor",
+    )
+    parser.add_argument(
+        "--constrained-deadlines",
+        action="store_true",
+        help="generate constrained deadlines C_i<=D_i<=T_i; default is implicit D_i=T_i",
+    )
     parser.add_argument(
         "--soundness-mode",
         choices=("fail_fast", "audit"),
@@ -180,10 +199,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
-    if "v21" not in args.experiment_name.lower():
-        parser.error("--experiment-name must identify this as a v21 experiment")
     for name in (
-        "num_tasksets", "task_n", "task_p_min", "task_p_max",
+        "num_tasksets", "task_n", "M", "task_p_min", "task_p_max",
         "simulation_time", "rta_horizon_ms", "rta_v20p4_timeout",
         "rta_v21_timeout", "max_workers",
     ):
@@ -199,6 +216,12 @@ def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
         parser.error("--utilizations must be in (0, 1]")
     if any(not math.isfinite(value) or value < 0 for value in args.e0_values):
         parser.error("--e0-values must be finite and non-negative")
+    if args.min_task_util < 0 or args.max_task_util <= 0:
+        parser.error("--min-task-util/--max-task-util must be positive bounds")
+    if args.min_task_util > args.max_task_util:
+        parser.error("--min-task-util must be <= --max-task-util")
+    if args.max_task_util > 1.0:
+        parser.error("--max-task-util must be <= 1.0 for sequential tasks")
     forbidden = "rta-e0-sensitivity-v20p4"
     if forbidden in str(Path(args.output_root)).lower():
         parser.error("v21 comparisons cannot use the frozen v20.4 output root")
@@ -738,13 +761,34 @@ def _comparison_row(
         v21_bound_gt_v20_reason = ""
     v21_profile_counters = _aggregate_v21_profile(v21_result)
     v21_audit = _v21_audit_fields(v21_result, v21_profile_counters)
+    normalized_utilization = float(base.get("normalized_utilization", 0.0))
+    processors = int(base.get("M", 4))
     row = {
-        key: base[key]
-        for key in (
-            "experiment_name", "seed_base", "taskset_seed",
-            "normalized_utilization", "task_idx", "taskset_id",
-            "taskset_path",
-        )
+        "experiment_name": base.get("experiment_name", ""),
+        "seed_base": base.get("seed_base", ""),
+        "taskset_seed": base.get("taskset_seed", ""),
+        "normalized_utilization": normalized_utilization,
+        "target_normalized_utilization": base.get(
+            "target_normalized_utilization",
+            normalized_utilization,
+        ),
+        "target_total_utilization": base.get(
+            "target_total_utilization",
+            normalized_utilization * processors,
+        ),
+        "actual_total_utilization": base.get("actual_total_utilization", ""),
+        "actual_normalized_utilization": base.get(
+            "actual_normalized_utilization", ""
+        ),
+        "utilization_error_total": base.get("utilization_error_total", ""),
+        "task_util_min": base.get("task_util_min", 0.01),
+        "task_util_max": base.get("task_util_max", 0.8),
+        "wcet_rounding": base.get("wcet_rounding", "floor"),
+        "deadline_mode": base.get("deadline_mode", "implicit"),
+        "M": processors,
+        "task_idx": base.get("task_idx", ""),
+        "taskset_id": base.get("taskset_id", ""),
+        "taskset_path": base.get("taskset_path", ""),
     }
     row.update({
         "E0": e0,
@@ -881,18 +925,31 @@ def _run_taskset(job: Mapping[str, Any], args) -> List[Dict[str, Any]]:
 
 
 def _manifest_row(args, run_dir: Path, status: str, return_code: int = 0) -> Dict[str, Any]:
+    target_totals = [
+        float(format(float(value) * args.M, ".15g"))
+        for value in args.utilizations
+    ]
     return {
         "experiment_name": args.experiment_name,
         "run_dir": str(run_dir),
         "results_file": str(run_dir / RESULT_FILENAME),
         "seed_base": args.seed_base,
         "utilizations": " ".join(map(str, args.utilizations)),
+        "target_normalized_utilization": " ".join(map(str, args.utilizations)),
+        "target_total_utilization": " ".join(map(str, target_totals)),
+        "M": args.M,
         "num_tasksets": args.num_tasksets,
         "task_n": args.task_n,
         "battery": args.battery,
         "initial_energy": args.initial_energy,
         "solar_time_ms": args.solar_time_ms,
         "E0_values": " ".join(map(str, args.e0_values)),
+        "task_util_min": args.min_task_util,
+        "task_util_max": args.max_task_util,
+        "wcet_rounding": args.wcet_rounding,
+        "deadline_mode": (
+            "constrained" if args.constrained_deadlines else "implicit"
+        ),
         "rta_v20p4_timeout": args.rta_v20p4_timeout,
         "rta_v21_timeout": args.rta_v21_timeout,
         "status": status,
@@ -931,8 +988,13 @@ def run(args) -> Path:
         initial_energy_ratio=args.initial_energy,
         solar_start_time_ms=args.solar_time_ms,
         use_real_solar_data=False,
+        system_cores=args.M,
         max_workers=args.max_workers,
         seed_base=args.seed_base,
+        task_util_min=args.min_task_util,
+        task_util_max=args.max_task_util,
+        wcet_rounding=args.wcet_rounding,
+        constrained_deadlines=args.constrained_deadlines,
     )
     config_path = runner.modify_config(acceptance.ASAP_BLOCK_ALGORITHM)
     jobs = []
@@ -952,11 +1014,47 @@ def run(args) -> Path:
                             utilization, task_idx
                         )
                     )
+                target_total_utilization = float(
+                    format(float(utilization) * args.M, ".15g")
+                )
+                taskset_metadata = acceptance.load_taskset_utilization_metadata(
+                    taskset_path,
+                    target_normalized_utilization=float(utilization),
+                    target_total_utilization=target_total_utilization,
+                    num_cores=args.M,
+                    task_util_min=args.min_task_util,
+                    task_util_max=args.max_task_util,
+                    wcet_rounding=args.wcet_rounding,
+                    deadline_mode=(
+                        "constrained"
+                        if args.constrained_deadlines else "implicit"
+                    ),
+                )
                 jobs.append({
                     "experiment_name": args.experiment_name,
                     "seed_base": args.seed_base,
                     "taskset_seed": seed,
                     "normalized_utilization": utilization,
+                    "target_normalized_utilization": taskset_metadata[
+                        "target_normalized_utilization"
+                    ],
+                    "target_total_utilization": taskset_metadata[
+                        "target_total_utilization"
+                    ],
+                    "actual_total_utilization": taskset_metadata[
+                        "actual_total_utilization"
+                    ],
+                    "actual_normalized_utilization": taskset_metadata[
+                        "actual_normalized_utilization"
+                    ],
+                    "utilization_error_total": taskset_metadata[
+                        "utilization_error_total"
+                    ],
+                    "task_util_min": taskset_metadata["task_util_min"],
+                    "task_util_max": taskset_metadata["task_util_max"],
+                    "wcet_rounding": taskset_metadata["wcet_rounding"],
+                    "deadline_mode": taskset_metadata["deadline_mode"],
+                    "M": args.M,
                     "task_idx": task_idx,
                     "taskset_id": runner.taskset_id(utilization, task_idx),
                     "taskset_path": str(Path(taskset_path).resolve()),

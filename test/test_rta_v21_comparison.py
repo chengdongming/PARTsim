@@ -789,9 +789,30 @@ def test_runner_default_root_is_v21_specific():
         ["--experiment-name", "v21-smoke", "--e0-values", "0.25"]
     )
     assert args.output_root == "acceptance_ratio_runs_v21"
+    assert args.M == 4
     assert args.soundness_mode == "fail_fast"
     assert runner.acceptance.RTA_VERSION == "v20.4"
     assert Path(runner.acceptance.RTA_TOOL).name == "asap_block_rta.py"
+
+
+def test_runner_exposes_m_and_generator_options():
+    parser = runner.build_parser()
+    args = parser.parse_args([
+        "--experiment-name", "e2-smoke",
+        "--e0-values", "0",
+        "--M", "6",
+        "--min-task-util", "0.02",
+        "--max-task-util", "0.9",
+        "--wcet-rounding", "ceil",
+        "--constrained-deadlines",
+    ])
+    runner._validate_args(parser, args)
+
+    assert args.M == 6
+    assert args.min_task_util == 0.02
+    assert args.max_task_util == 0.9
+    assert args.wcet_rounding == "ceil"
+    assert args.constrained_deadlines is True
 
 
 def test_runner_help_distinguishes_release_time_e0_from_simulation_energy():
