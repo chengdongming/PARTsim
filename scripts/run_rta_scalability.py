@@ -6,6 +6,7 @@ import hashlib
 import math
 import subprocess
 import sys
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Sequence
@@ -55,6 +56,14 @@ MANIFEST_FIELDS = [
     "profile_rta",
     "max_workers",
     "dry_run",
+    "expected_rows",
+    "actual_rows",
+    "strict_fail_on_error",
+    "rta_error_count",
+    "result_error_count",
+    "rta_timeout_count",
+    "bad_config_counts",
+    "failure_reason",
     "config_file",
     "task_file",
     "status",
@@ -101,6 +110,8 @@ RESULT_FIELDS = [
     "rta_profile_enabled",
     "rta_profile_task_time_sum_sec",
     "rta_profile_task_count",
+    "result_status",
+    "result_error",
     "task_file",
     "config_file",
 ]
@@ -208,6 +219,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "write the full manifest and a header-only results CSV without "
             "generating configs/tasksets or invoking RTA"
+        ),
+    )
+    parser.add_argument(
+        "--fail-on-error",
+        action="store_true",
+        help=(
+            "after writing results and manifest, exit nonzero if rows are "
+            "missing, any RTA/result error occurred, any RTA timed out, or any "
+            "configuration has the wrong number of tasksets"
         ),
     )
     return parser
@@ -384,6 +404,14 @@ def build_specs(args: argparse.Namespace, run_dir: Path) -> List[Dict[str, Any]]
                         "profile_rta": args.profile_rta,
                         "max_workers": args.max_workers,
                         "dry_run": args.dry_run,
+                        "expected_rows": "",
+                        "actual_rows": "",
+                        "strict_fail_on_error": args.fail_on_error,
+                        "rta_error_count": "",
+                        "result_error_count": "",
+                        "rta_timeout_count": "",
+                        "bad_config_counts": "",
+                        "failure_reason": "",
                         "config_file": str(config_file),
                         "task_file": str(task_file),
                         "status": "dry_run" if args.dry_run else "planned",
@@ -470,7 +498,10 @@ def _blank_rta_result(error: str) -> Dict[str, Any]:
 
 
 def _result_row(
-    spec: Mapping[str, Any], rta_result: Mapping[str, Any]
+    spec: Mapping[str, Any],
+    rta_result: Mapping[str, Any],
+    result_status: str = "",
+    result_error: str = "",
 ) -> Dict[str, Any]:
     status = str(rta_result.get("rta_status", "rta_error"))
     proven = bool(
@@ -537,6 +568,8 @@ def _result_row(
         "rta_profile_task_count": int(
             rta_result.get("rta_profile_task_count", 0)
         ),
+        "result_status": result_status,
+        "result_error": result_error,
         "task_file": spec["task_file"],
         "config_file": spec["config_file"],
     }
@@ -546,7 +579,12 @@ def _run_spec(spec: Mapping[str, Any]) -> Dict[str, Any]:
     generation_error = _generate_taskset(spec)
     if generation_error:
         return {
-            "result": _result_row(spec, _blank_rta_result(generation_error)),
+            "result": _result_row(
+                spec,
+                _blank_rta_result(generation_error),
+                result_status="task_generation_error",
+                result_error=generation_error,
+            ),
             "status": "task_generation_error",
             "error": generation_error,
         }
@@ -577,10 +615,22 @@ def _run_spec(spec: Mapping[str, Any]) -> Dict[str, Any]:
     )
     if not isinstance(rta_result, dict):
         raise TypeError("run_asap_block_rta must return a dictionary")
+    result_error = rta_result.get("rta_error") or ""
+    if rta_result.get("rta_timed_out", False):
+        result_status = "rta_timeout"
+    elif result_error:
+        result_status = "rta_error"
+    else:
+        result_status = "completed"
     return {
-        "result": _result_row(spec, rta_result),
-        "status": "completed",
-        "error": rta_result.get("rta_error") or "",
+        "result": _result_row(
+            spec,
+            rta_result,
+            result_status=result_status,
+            result_error=result_error,
+        ),
+        "status": result_status,
+        "error": result_error,
     }
 
 
@@ -588,6 +638,108 @@ def _write_csv(
     path: Path, fields: Sequence[str], rows: Iterable[Mapping[str, Any]]
 ) -> None:
     experiment_runner.write_manifest(path, fields, rows)
+
+
+def _nonempty(value: Any) -> bool:
+    return value is not None and str(value).strip() != ""
+
+
+def _is_true(value: Any) -> bool:
+    return str(value).strip().lower() in {"1", "true", "yes", "y"}
+
+
+def _format_bad_config_counts(counts: Mapping[str, int]) -> str:
+    return ";".join(
+        "{}={}".format(config_id, counts[config_id])
+        for config_id in sorted(counts)
+    )
+
+
+def validate_scalability_results_strict(
+    rows: Sequence[Mapping[str, Any]],
+    expected_config_ids: Sequence[str],
+    num_tasksets: int,
+    expected_rows: int,
+) -> Dict[str, Any]:
+    """Return run-level consistency/error counts for E5 scalability results."""
+    actual_rows = len(rows)
+    rta_error_count = sum(
+        1 for row in rows if _nonempty(row.get("rta_error", ""))
+    )
+    result_error_count = sum(
+        1 for row in rows if _nonempty(row.get("result_error", ""))
+    )
+    rta_timeout_count = sum(
+        1 for row in rows if _is_true(row.get("rta_timed_out", False))
+    )
+
+    expected_config_set = set(expected_config_ids)
+    observed_counts = Counter(str(row.get("config_id", "")) for row in rows)
+    bad_config_counts: Dict[str, int] = {}
+    for config_id in expected_config_ids:
+        count = int(observed_counts.get(config_id, 0))
+        if count != num_tasksets:
+            bad_config_counts[config_id] = count
+    for config_id, count in observed_counts.items():
+        if config_id not in expected_config_set:
+            bad_config_counts[config_id] = int(count)
+
+    reasons = []
+    if actual_rows != expected_rows:
+        reasons.append("actual_rows != expected_rows")
+    if rta_error_count > 0:
+        reasons.append("rta_error_count > 0")
+    if result_error_count > 0:
+        reasons.append("result_error_count > 0")
+    if rta_timeout_count > 0:
+        reasons.append("rta_timeout_count > 0")
+    if bad_config_counts:
+        reasons.append("bad_config_counts")
+
+    return {
+        "expected_rows": expected_rows,
+        "actual_rows": actual_rows,
+        "rta_error_count": rta_error_count,
+        "result_error_count": result_error_count,
+        "rta_timeout_count": rta_timeout_count,
+        "bad_config_counts": _format_bad_config_counts(bad_config_counts),
+        "failure_reason": "; ".join(reasons),
+        "failed": bool(reasons),
+    }
+
+
+def _apply_run_summary_to_manifest(
+    manifest_rows: Sequence[Dict[str, Any]],
+    summary: Mapping[str, Any],
+    fail_on_error: bool,
+) -> None:
+    run_status = "failed" if fail_on_error and summary.get("failed") else "completed"
+    for row in manifest_rows:
+        row["expected_rows"] = summary.get("expected_rows", "")
+        row["actual_rows"] = summary.get("actual_rows", "")
+        row["strict_fail_on_error"] = fail_on_error
+        row["rta_error_count"] = summary.get("rta_error_count", "")
+        row["result_error_count"] = summary.get("result_error_count", "")
+        row["rta_timeout_count"] = summary.get("rta_timeout_count", "")
+        row["bad_config_counts"] = summary.get("bad_config_counts", "")
+        row["failure_reason"] = summary.get("failure_reason", "")
+        if row.get("status") != "dry_run":
+            row["status"] = run_status
+
+
+def _print_strict_failure(summary: Mapping[str, Any], results_path: Path) -> None:
+    print("ERROR: strict scalability experiment failed", file=sys.stderr)
+    print("results_path = {}".format(results_path), file=sys.stderr)
+    for key in (
+        "expected_rows",
+        "actual_rows",
+        "rta_error_count",
+        "result_error_count",
+        "rta_timeout_count",
+        "bad_config_counts",
+        "failure_reason",
+    ):
+        print("{} = {}".format(key, summary.get(key, "")), file=sys.stderr)
 
 
 def run(args: argparse.Namespace) -> Path:
@@ -601,10 +753,25 @@ def run(args: argparse.Namespace) -> Path:
     manifest_path = run_dir / MANIFEST_FILENAME
     results_path = run_dir / RESULTS_FILENAME
     specs = build_specs(args, run_dir)
+    expected_rows = len(specs)
+    expected_config_ids = sorted({str(spec["config_id"]) for spec in specs})
     manifest_rows = [
         {field: spec.get(field, "") for field in MANIFEST_FIELDS}
         for spec in specs
     ]
+    initial_summary = {
+        "expected_rows": expected_rows,
+        "actual_rows": 0,
+        "rta_error_count": 0,
+        "result_error_count": 0,
+        "rta_timeout_count": 0,
+        "bad_config_counts": "",
+        "failure_reason": "",
+        "failed": False,
+    }
+    _apply_run_summary_to_manifest(
+        manifest_rows, initial_summary, args.fail_on_error
+    )
     _write_csv(manifest_path, MANIFEST_FIELDS, manifest_rows)
     _write_csv(results_path, RESULT_FIELDS, [])
     if args.dry_run:
@@ -641,6 +808,24 @@ def run(args: argparse.Namespace) -> Path:
             ]
             _write_csv(results_path, RESULT_FIELDS, ordered_results)
             _write_csv(manifest_path, MANIFEST_FIELDS, manifest_rows)
+
+    ordered_results = [
+        row for _, row in sorted(results, key=lambda item: item[0])
+    ]
+    summary = validate_scalability_results_strict(
+        ordered_results,
+        expected_config_ids=expected_config_ids,
+        num_tasksets=args.num_tasksets,
+        expected_rows=expected_rows,
+    )
+    _apply_run_summary_to_manifest(
+        manifest_rows, summary, args.fail_on_error
+    )
+    _write_csv(results_path, RESULT_FIELDS, ordered_results)
+    _write_csv(manifest_path, MANIFEST_FIELDS, manifest_rows)
+    if args.fail_on_error and summary["failed"]:
+        _print_strict_failure(summary, results_path)
+        raise SystemExit(1)
 
     return results_path
 

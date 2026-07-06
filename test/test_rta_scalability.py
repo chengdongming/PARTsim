@@ -61,6 +61,7 @@ def test_parser_accepts_comma_lists_and_rejects_invalid_values(tmp_path):
     assert args.utilization_mode == "total"
     assert args.max_workers == 1
     assert not args.profile_rta
+    assert not args.fail_on_error
 
     parser = runner.build_parser()
     with pytest.raises(SystemExit):
@@ -113,6 +114,9 @@ def test_dry_run_writes_full_manifest_and_header_only_results(tmp_path):
     assert {row["wcet_rounding"] for row in rows} == {"floor"}
     assert {row["deadline_mode"] for row in rows} == {"implicit"}
     assert {row["actual_utilization_tolerance_total"] for row in rows} == {""}
+    assert {row["expected_rows"] for row in rows} == {str(2 * 2 * 2 * 2)}
+    assert {row["actual_rows"] for row in rows} == {"0"}
+    assert {row["strict_fail_on_error"] for row in rows} == {"False"}
     assert read_rows(results_path) == []
     assert read_header(results_path) == runner.RESULT_FIELDS
     assert not (run_dir / "configs").exists()
@@ -301,11 +305,146 @@ def test_mocked_run_propagates_success_timeout_profile_and_skips_simulation(
     assert float(rows[0]["rta_profile_task_time_sum_sec"]) == 0.2
     assert int(rows[0]["rta_profile_task_count"]) == 2
     assert rows[1]["rta_status"] == "rta_error"
+    assert rows[1]["result_status"] == "rta_timeout"
+    assert "timed out" in rows[1]["result_error"]
     assert rows[1]["rta_proven"] == "False"
     assert rows[1]["rta_timed_out"] == "True"
     assert float(rows[1]["rta_runtime_sec"]) == 7.01
     assert rows[1]["rta_profile_task_time_sum_sec"] == ""
     assert int(rows[1]["rta_profile_task_count"]) == 0
+
+    manifest_rows = read_rows(
+        tmp_path / "e5-mocked" / runner.MANIFEST_FILENAME
+    )
+    assert {row["status"] for row in manifest_rows} == {"completed"}
+    assert {row["strict_fail_on_error"] for row in manifest_rows} == {"False"}
+    assert {row["expected_rows"] for row in manifest_rows} == {"2"}
+    assert {row["actual_rows"] for row in manifest_rows} == {"2"}
+    assert {row["rta_timeout_count"] for row in manifest_rows} == {"1"}
+
+
+def test_strict_validator_counts_errors_timeouts_and_bad_config_counts():
+    rows = [
+        {
+            "config_id": "cfg-a",
+            "rta_error": "generator failed",
+            "result_error": "generator failed",
+            "rta_timed_out": "False",
+        },
+        {
+            "config_id": "cfg-a",
+            "rta_error": "",
+            "result_error": "",
+            "rta_timed_out": "True",
+        },
+    ]
+
+    summary = runner.validate_scalability_results_strict(
+        rows,
+        expected_config_ids=["cfg-a", "cfg-b"],
+        num_tasksets=1,
+        expected_rows=2,
+    )
+
+    assert summary["failed"] is True
+    assert summary["expected_rows"] == 2
+    assert summary["actual_rows"] == 2
+    assert summary["rta_error_count"] == 1
+    assert summary["result_error_count"] == 1
+    assert summary["rta_timeout_count"] == 1
+    assert summary["bad_config_counts"] == "cfg-a=2;cfg-b=0"
+    assert "bad_config_counts" in summary["failure_reason"]
+
+
+def test_strict_validator_detects_actual_row_mismatch():
+    summary = runner.validate_scalability_results_strict(
+        rows=[],
+        expected_config_ids=["cfg-a"],
+        num_tasksets=1,
+        expected_rows=1,
+    )
+
+    assert summary["failed"] is True
+    assert summary["actual_rows"] == 0
+    assert "actual_rows != expected_rows" in summary["failure_reason"]
+    assert summary["bad_config_counts"] == "cfg-a=0"
+
+
+def test_fail_on_error_exits_nonzero_after_writing_audit_files(tmp_path):
+    arguments = cli_args(tmp_path, "e5-strict-error") + [
+        "--fail-on-error",
+    ]
+    with mock.patch.object(
+        runner, "_generate_taskset", return_value="synthetic generator error"
+    ):
+        with pytest.raises(SystemExit) as exc_info:
+            runner.main(arguments)
+
+    assert exc_info.value.code == 1
+    run_dir = tmp_path / "e5-strict-error"
+    rows = read_rows(run_dir / runner.RESULTS_FILENAME)
+    assert len(rows) == 1
+    assert rows[0]["rta_status"] == "rta_error"
+    assert rows[0]["result_status"] == "task_generation_error"
+    assert rows[0]["rta_error"] == "synthetic generator error"
+
+    manifest_rows = read_rows(run_dir / runner.MANIFEST_FILENAME)
+    assert len(manifest_rows) == 1
+    assert manifest_rows[0]["status"] == "failed"
+    assert manifest_rows[0]["strict_fail_on_error"] == "True"
+    assert manifest_rows[0]["expected_rows"] == "1"
+    assert manifest_rows[0]["actual_rows"] == "1"
+    assert manifest_rows[0]["rta_error_count"] == "1"
+    assert manifest_rows[0]["result_error_count"] == "1"
+    assert "rta_error_count > 0" in manifest_rows[0]["failure_reason"]
+
+
+def test_fail_on_error_succeeds_when_rows_are_complete_and_clean(tmp_path):
+    success = {
+        "rta_version": "v20.4",
+        "rta_status": "proven_under_assumptions",
+        "rta_error": None,
+        "rta_proven_under_assumptions": True,
+        "rta_bound": 9.0,
+        "rta_attempted": True,
+        "rta_runtime_sec": 0.25,
+        "rta_runtime_source": "subprocess_wall_clock_perf_counter",
+        "rta_timed_out": False,
+        "rta_timeout_sec": 7.0,
+        "rta_profile_enabled": False,
+        "rta_profile_task_time_sum_sec": None,
+        "rta_profile_task_count": 0,
+    }
+    arguments = cli_args(tmp_path, "e5-strict-clean") + [
+        "--fail-on-error",
+    ]
+
+    with mock.patch.object(
+        runner, "_generate_taskset", return_value=""
+    ), mock.patch.object(
+        runner.acceptance,
+        "run_asap_block_rta",
+        return_value=success,
+    ):
+        results_path = runner.main(arguments)
+
+    rows = read_rows(results_path)
+    assert len(rows) == 1
+    assert rows[0]["result_status"] == "completed"
+    assert rows[0]["result_error"] == ""
+
+    manifest_rows = read_rows(
+        tmp_path / "e5-strict-clean" / runner.MANIFEST_FILENAME
+    )
+    assert manifest_rows[0]["status"] == "completed"
+    assert manifest_rows[0]["strict_fail_on_error"] == "True"
+    assert manifest_rows[0]["expected_rows"] == "1"
+    assert manifest_rows[0]["actual_rows"] == "1"
+    assert manifest_rows[0]["rta_error_count"] == "0"
+    assert manifest_rows[0]["result_error_count"] == "0"
+    assert manifest_rows[0]["rta_timeout_count"] == "0"
+    assert manifest_rows[0]["bad_config_counts"] == ""
+    assert manifest_rows[0]["failure_reason"] == ""
 
 
 def test_runner_is_pinned_to_default_v20p4_without_v21_tool_reference():
