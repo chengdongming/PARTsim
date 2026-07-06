@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Analyze v20.4 RTA-only utilization and E0 sensitivity results."""
+"""Analyze v20.4 utilization/release-time-E0 sensitivity results."""
 
 import argparse
 import math
@@ -82,8 +82,9 @@ VALID_SWEEPS = {"utilization", "e0"}
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Analyze v20.4 RTA-only utilization and E0 sensitivity results. "
-            "No scheduler simulation metrics are computed."
+            "Analyze v20.4 RTA-only utilization and release-time energy "
+            "lower-bound E0 sensitivity results. No scheduler simulation "
+            "metrics are computed."
         )
     )
     parser.add_argument("--input", required=True)

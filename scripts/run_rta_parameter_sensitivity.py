@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate v20.4 ASAP-BLOCK RTA-only parameter-sensitivity samples."""
+"""Generate v20.4 RTA-only utilization/release-time-E0 sensitivity samples."""
 
 import argparse
 import hashlib
@@ -109,9 +109,9 @@ def _comma_floats(value: str) -> List[float]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Run one OFAT utilization or E0 sensitivity sweep using only the "
-            "default v20.4 ASAP-BLOCK RTA. No simulation or v21 analysis is "
-            "executed."
+            "Run one OFAT utilization or release-time energy lower-bound E0 "
+            "sensitivity sweep using only the default v20.4 ASAP-BLOCK RTA. "
+            "No simulation or v21 analysis is executed."
         )
     )
     parser.add_argument(
@@ -122,8 +122,24 @@ def build_parser() -> argparse.ArgumentParser:
         "--sweep", required=True, choices=("utilization", "e0")
     )
     parser.add_argument("--utilizations", type=_comma_floats)
-    parser.add_argument("--fixed-e0", type=float)
-    parser.add_argument("--e0-values", type=_comma_floats)
+    parser.add_argument(
+        "--fixed-e0",
+        type=float,
+        help=(
+            "fixed RTA analysis-window/job-release energy lower bound E0 in "
+            "joules for a utilization sweep. E0 is not the simulation "
+            "initial battery energy at t=0"
+        ),
+    )
+    parser.add_argument(
+        "--e0-values",
+        type=_comma_floats,
+        help=(
+            "comma-separated RTA analysis-window/job-release energy lower "
+            "bounds in joules. E0 is not the simulation initial battery "
+            "energy at t=0; E0>0 is a conditional assumption"
+        ),
+    )
     parser.add_argument("--fixed-utilization", type=float)
     parser.add_argument("--task-n", type=int, default=8)
     parser.add_argument("--M", type=int, default=4)

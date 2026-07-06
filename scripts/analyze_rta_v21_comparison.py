@@ -23,6 +23,14 @@ BY_UTIL_FILENAME = "rta_v21_comparison_by_utilization.csv"
 PESSIMISM_CDF_PLOT = "pessimism_cdf.png"
 INTERSECTION_PESSIMISM_BOXPLOT = "intersection_pessimism_boxplot.png"
 RUNTIME_SLOWDOWN_PLOT = "runtime_slowdown.png"
+E0_UNCONDITIONAL_SCOPE = "unconditional_zero_lower_bound"
+E0_CONDITIONAL_SCOPE = "conditional_release_time_lower_bound"
+E0_UNVERIFIED_REASON = "e0_release_energy_assumption_not_verified"
+CONDITIONAL_ASSUMPTION_NOTE = (
+    "conditional release-time energy lower-bound assumption; not an "
+    "unconditional simulation soundness validation unless "
+    "release_energy_assumption_verified=1"
+)
 
 V20_METADATA_DEFAULTS = {
     "v20_rta_version": V20_VERSION,
@@ -60,7 +68,11 @@ V21_PROFILE_MAX_COUNTERS = ("v21_max_delta_cap", "v21_max_delta_seen")
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Analyze v20.4 versus v21-local-window RTA comparisons"
+        description=(
+            "Analyze v20.4 versus v21-local-window RTA comparisons, "
+            "separating unconditional E0=0 soundness rows from conditional "
+            "positive-E0 release-time energy assumptions"
+        )
     )
     parser.add_argument("--input", required=True)
     parser.add_argument("--output-dir", required=True)
@@ -160,6 +172,9 @@ def load_results(input_path) -> pd.DataFrame:
     if set(frame["v21_rta_version"].dropna().astype(str)) != {V21_VERSION}:
         raise ValueError("comparison CSV mixes or mislabels v21 results")
 
+    had_release_energy_field = (
+        "release_energy_assumption_verified" in frame.columns
+    )
     for column, default in V20_METADATA_DEFAULTS.items():
         _ensure_column(frame, column, default)
     for column, default in V21_METADATA_DEFAULTS.items():
@@ -179,6 +194,12 @@ def load_results(input_path) -> pd.DataFrame:
         ("v20_observed_bound_violation", False),
         ("v21_sim_rejected_violation", False),
         ("v21_observed_bound_violation", False),
+        ("e0_assumption_scope", ""),
+        ("release_energy_assumption_verified", False),
+        ("v20_conditional_proven_but_sim_rejected", False),
+        ("v21_conditional_proven_but_sim_rejected", False),
+        ("v20_conditional_observed_exceeds_bound", False),
+        ("v21_conditional_observed_exceeds_bound", False),
     ):
         _ensure_column(frame, column, default)
     if "v20_only_proven" not in frame.columns:
@@ -225,6 +246,11 @@ def load_results(input_path) -> pd.DataFrame:
         "v20_soundness_violation",
         "v21_soundness_violation",
         "soundness_valid",
+        "release_energy_assumption_verified",
+        "v20_conditional_proven_but_sim_rejected",
+        "v21_conditional_proven_but_sim_rejected",
+        "v20_conditional_observed_exceeds_bound",
+        "v21_conditional_observed_exceeds_bound",
         "v20_uses_local_window",
         "v20_uses_delta_closure",
         "v20_empty_state_guard",
@@ -258,6 +284,34 @@ def load_results(input_path) -> pd.DataFrame:
             frame[column] = math.nan
         frame[column] = pd.to_numeric(frame[column], errors="coerce")
 
+    positive_e0 = frame["E0"].fillna(0).gt(0)
+    frame["e0_assumption_scope"] = pd.Series(
+        E0_UNCONDITIONAL_SCOPE, index=frame.index, dtype=object
+    )
+    frame.loc[positive_e0, "e0_assumption_scope"] = E0_CONDITIONAL_SCOPE
+    if had_release_energy_field:
+        release_energy_verified = _as_bool(
+            frame["release_energy_assumption_verified"]
+        )
+    else:
+        release_energy_verified = ~positive_e0
+    release_energy_verified = release_energy_verified | ~positive_e0
+    frame["release_energy_assumption_verified"] = release_energy_verified
+    frame["soundness_valid"] = (
+        _as_bool(frame["soundness_valid"]) & release_energy_verified
+    )
+    frame["soundness_excluded_reason"] = (
+        frame["soundness_excluded_reason"].fillna("").astype(object)
+    )
+    conditional_unverified = positive_e0 & ~release_energy_verified
+    frame.loc[
+        conditional_unverified,
+        "soundness_excluded_reason",
+    ] = E0_UNVERIFIED_REASON
+    frame["v21_bound_gt_v20_reason"] = (
+        frame["v21_bound_gt_v20_reason"].fillna("").astype(object)
+    )
+
     accepted = _as_bool(frame["accepted"])
     valid_soundness = _as_bool(frame["soundness_valid"])
     raw_v20_soundness = frame["v20_soundness_violation"].copy()
@@ -287,57 +341,109 @@ def load_results(input_path) -> pd.DataFrame:
         frame.loc[intersection, "pessimism_v20"]
         - frame.loc[intersection, "pessimism_v21"]
     )
-    schedulability_failure = (
-        valid_soundness & _soundness_failure_mask(frame, accepted)
+    schedulability_failure = _soundness_failure_mask(frame, accepted)
+    v21_rejected = (
+        valid_soundness & frame["v21_proven"] & schedulability_failure
     )
-    v21_rejected = frame["v21_proven"] & schedulability_failure
-    v20_rejected = frame["v20p4_proven"] & schedulability_failure
-    frame["v21_soundness_proven_but_rejected"] |= v21_rejected
-    frame["v20p4_soundness_proven_but_rejected"] |= v20_rejected
-    frame["v21_sim_rejected_violation"] |= (
-        frame["v21_soundness_proven_but_rejected"]
+    v20_rejected = (
+        valid_soundness & frame["v20p4_proven"] & schedulability_failure
     )
-    frame["v20_sim_rejected_violation"] |= (
-        frame["v20p4_soundness_proven_but_rejected"]
+    v21_conditional_rejected = (
+        conditional_unverified
+        & frame["v21_proven"]
+        & schedulability_failure
     )
-    frame["v21_sim_rejected_violation"] |= v21_rejected
-    frame["v20_sim_rejected_violation"] |= v20_rejected
+    v20_conditional_rejected = (
+        conditional_unverified
+        & frame["v20p4_proven"]
+        & schedulability_failure
+    )
+    frame["v21_soundness_proven_but_rejected"] = valid_soundness & (
+        frame["v21_soundness_proven_but_rejected"] | v21_rejected
+    )
+    frame["v20p4_soundness_proven_but_rejected"] = valid_soundness & (
+        frame["v20p4_soundness_proven_but_rejected"] | v20_rejected
+    )
+    frame["v21_sim_rejected_violation"] = valid_soundness & (
+        frame["v21_sim_rejected_violation"]
+        | frame["v21_soundness_proven_but_rejected"]
+        | v21_rejected
+    )
+    frame["v20_sim_rejected_violation"] = valid_soundness & (
+        frame["v20_sim_rejected_violation"]
+        | frame["v20p4_soundness_proven_but_rejected"]
+        | v20_rejected
+    )
+    frame["v21_conditional_proven_but_sim_rejected"] = (
+        conditional_unverified
+        & (
+            frame["v21_conditional_proven_but_sim_rejected"]
+            | v21_conditional_rejected
+        )
+    )
+    frame["v20_conditional_proven_but_sim_rejected"] = (
+        conditional_unverified
+        & (
+            frame["v20_conditional_proven_but_sim_rejected"]
+            | v20_conditional_rejected
+        )
+    )
     finite_observed = (
         frame["simulated_response_time"].notna()
         & frame["simulated_response_time"].map(math.isfinite)
     )
-    v21_observed = (
-        valid_soundness
-        & frame["v21_proven"]
+    v21_observed_candidate = (
+        frame["v21_proven"]
         & finite_observed
         & frame["v21_bound"].notna()
         & frame["v21_bound"].map(math.isfinite)
         & (frame["simulated_response_time"] > frame["v21_bound"])
     )
-    v20_observed = (
-        valid_soundness
-        & frame["v20p4_proven"]
+    v20_observed_candidate = (
+        frame["v20p4_proven"]
         & finite_observed
         & frame["v20p4_bound"].notna()
         & frame["v20p4_bound"].map(math.isfinite)
         & (frame["simulated_response_time"] > frame["v20p4_bound"])
     )
-    frame["v21_soundness_observed_exceeds_bound"] |= v21_observed
-    frame["v20p4_soundness_observed_exceeds_bound"] |= v20_observed
-    frame["v21_observed_bound_violation"] |= (
-        frame["v21_soundness_observed_exceeds_bound"]
+    v21_observed = valid_soundness & v21_observed_candidate
+    v20_observed = valid_soundness & v20_observed_candidate
+    frame["v21_soundness_observed_exceeds_bound"] = valid_soundness & (
+        frame["v21_soundness_observed_exceeds_bound"] | v21_observed
     )
-    frame["v20_observed_bound_violation"] |= (
-        frame["v20p4_soundness_observed_exceeds_bound"]
+    frame["v20p4_soundness_observed_exceeds_bound"] = valid_soundness & (
+        frame["v20p4_soundness_observed_exceeds_bound"] | v20_observed
     )
-    frame["v21_observed_bound_violation"] |= v21_observed
-    frame["v20_observed_bound_violation"] |= v20_observed
-    frame["v21_soundness_violation"] = (
+    frame["v21_observed_bound_violation"] = valid_soundness & (
+        frame["v21_observed_bound_violation"]
+        | frame["v21_soundness_observed_exceeds_bound"]
+        | v21_observed
+    )
+    frame["v20_observed_bound_violation"] = valid_soundness & (
+        frame["v20_observed_bound_violation"]
+        | frame["v20p4_soundness_observed_exceeds_bound"]
+        | v20_observed
+    )
+    frame["v21_conditional_observed_exceeds_bound"] = (
+        conditional_unverified
+        & (
+            frame["v21_conditional_observed_exceeds_bound"]
+            | v21_observed_candidate
+        )
+    )
+    frame["v20_conditional_observed_exceeds_bound"] = (
+        conditional_unverified
+        & (
+            frame["v20_conditional_observed_exceeds_bound"]
+            | v20_observed_candidate
+        )
+    )
+    frame["v21_soundness_violation"] = valid_soundness & (
         raw_v21_soundness
         | frame["v21_sim_rejected_violation"]
         | frame["v21_observed_bound_violation"]
     )
-    frame["v20_soundness_violation"] = (
+    frame["v20_soundness_violation"] = valid_soundness & (
         raw_v20_soundness
         | frame["v20_sim_rejected_violation"]
         | frame["v20_observed_bound_violation"]
@@ -441,6 +547,33 @@ def summarize_group(group: pd.DataFrame) -> dict:
             (both["v21_minus_v20p4_bound"] == 0).sum()
         ),
         "both_proven_v21_looser_count": v21_looser_count,
+        "unconditional_soundness_rows": int(group["soundness_valid"].sum()),
+        "conditional_assumption_rows": int(
+            (
+                group["e0_assumption_scope"]
+                == E0_CONDITIONAL_SCOPE
+            ).sum()
+        ),
+        "soundness_excluded_rows": int((~group["soundness_valid"]).sum()),
+        "release_energy_assumption_verified_rows": int(
+            group["release_energy_assumption_verified"].sum()
+        ),
+        "soundness_excluded_reason_counts": _reason_counts(
+            group["soundness_excluded_reason"]
+        ),
+        "soundness_assumption_note": CONDITIONAL_ASSUMPTION_NOTE,
+        "v20_conditional_proven_but_sim_rejected_count": int(
+            group["v20_conditional_proven_but_sim_rejected"].sum()
+        ),
+        "v21_conditional_proven_but_sim_rejected_count": int(
+            group["v21_conditional_proven_but_sim_rejected"].sum()
+        ),
+        "v20_conditional_observed_exceeds_bound_count": int(
+            group["v20_conditional_observed_exceeds_bound"].sum()
+        ),
+        "v21_conditional_observed_exceeds_bound_count": int(
+            group["v21_conditional_observed_exceeds_bound"].sum()
+        ),
         "v20_sim_rejected_violation_count": int(
             group["v20_sim_rejected_violation"].sum()
         ),

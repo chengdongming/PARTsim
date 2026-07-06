@@ -1,6 +1,8 @@
 import csv
 import json
 import subprocess
+import sys
+import warnings
 from pathlib import Path
 
 import pandas as pd
@@ -87,7 +89,7 @@ def test_comparison_row_contains_both_versions_and_valid_tightness():
         base_row(), simulation(),
         report(runner.V20_VERSION, bound=12),
         report(runner.V21_VERSION, bound=10, profile=profile),
-        0.25,
+        0.0,
     )
     assert set(runner.RESULT_FIELDS) == set(row)
     assert len(runner.RESULT_FIELDS) == len(set(runner.RESULT_FIELDS))
@@ -131,6 +133,8 @@ def test_comparison_row_contains_both_versions_and_valid_tightness():
     assert row["v21_soundness_violation"] == 0
     assert row["soundness_valid"] == 1
     assert row["soundness_excluded_reason"] == ""
+    assert row["e0_assumption_scope"] == "unconditional_zero_lower_bound"
+    assert row["release_energy_assumption_verified"] == 1
 
 
 def test_comparison_row_contains_runtime_and_clear_aliases():
@@ -200,7 +204,7 @@ def test_soundness_rejects_proven_but_simulation_rejected():
             base_row(), simulation(accepted=False),
             report(runner.V20_VERSION, proven=False),
             report(runner.V21_VERSION, proven=True),
-            0.25,
+            0.0,
         )
     message = str(error.value)
     for field in (
@@ -214,7 +218,7 @@ def test_soundness_rejects_proven_but_simulation_rejected():
         assert "{}=".format(field) in message
     assert "normalized_utilization=0.1" in message
     assert "task_idx=0" in message
-    assert "E0=0.25" in message
+    assert "E0=0.0" in message
     assert "taskset_path='/tmp/tasks.yml'" in message
     assert "v21_bound=10" in message
 
@@ -225,7 +229,7 @@ def test_soundness_rejects_observed_response_above_v21_bound():
             base_row(), simulation(response=11),
             report(runner.V20_VERSION, proven=False),
             report(runner.V21_VERSION, proven=True, bound=10),
-            0.25,
+            0.0,
         )
 
 
@@ -234,7 +238,7 @@ def test_soundness_audit_records_violation_without_raising():
         base_row(), simulation(accepted=False),
         report(runner.V20_VERSION, proven=False),
         report(runner.V21_VERSION, proven=True),
-        0.25,
+        0.0,
         soundness_mode="audit",
     )
     assert row["v21_soundness_proven_but_rejected"] == 1
@@ -252,7 +256,7 @@ def test_soundness_audit_or_includes_observed_bound_violation():
         base_row(), simulation(response=11),
         report(runner.V20_VERSION, proven=False),
         report(runner.V21_VERSION, proven=True, bound=10),
-        0.25,
+        0.0,
         soundness_mode="audit",
     )
     assert row["v21_soundness_proven_but_rejected"] == 0
@@ -277,7 +281,7 @@ def test_soundness_audit_excludes_timeout_and_infrastructure_failures(
         base_row(), simulation(accepted=False, status=status),
         report(runner.V20_VERSION, proven=False),
         report(runner.V21_VERSION, proven=True),
-        0.25,
+        0.0,
         soundness_mode="audit",
     )
     assert row["v21_soundness_proven_but_rejected"] == 0
@@ -293,10 +297,112 @@ def test_soundness_fail_fast_does_not_raise_soundness_for_infrastructure():
         base_row(), simulation(accepted=False, status="simulation_error"),
         report(runner.V20_VERSION, proven=False),
         report(runner.V21_VERSION, proven=True),
-        0.25,
+        0.0,
     )
     assert row["v21_soundness_violation"] == 0
     assert row["soundness_valid"] == 0
+
+
+def test_e0_zero_proven_and_rejected_is_unconditional_violation():
+    row = runner._comparison_row(
+        base_row(),
+        simulation(accepted=False),
+        report(runner.V20_VERSION, proven=True),
+        report(runner.V21_VERSION, proven=True),
+        0.0,
+        soundness_mode="audit",
+    )
+    assert row["e0_assumption_scope"] == "unconditional_zero_lower_bound"
+    assert row["release_energy_assumption_verified"] == 1
+    assert row["soundness_valid"] == 1
+    assert row["soundness_excluded_reason"] == ""
+    assert row["v20_soundness_violation"] == 1
+    assert row["v21_soundness_violation"] == 1
+
+
+def test_positive_e0_proven_and_rejected_is_conditional_diagnostic():
+    row = runner._comparison_row(
+        base_row(),
+        simulation(accepted=False),
+        report(runner.V20_VERSION, proven=True),
+        report(runner.V21_VERSION, proven=True),
+        1.0,
+        soundness_mode="audit",
+    )
+    assert (
+        row["e0_assumption_scope"]
+        == "conditional_release_time_lower_bound"
+    )
+    assert row["release_energy_assumption_verified"] == 0
+    assert row["soundness_valid"] == 0
+    assert (
+        row["soundness_excluded_reason"]
+        == "e0_release_energy_assumption_not_verified"
+    )
+    assert row["v20_soundness_violation"] == 0
+    assert row["v21_soundness_violation"] == 0
+    assert row["v20_sim_rejected_violation"] == 0
+    assert row["v21_sim_rejected_violation"] == 0
+    assert row["v20_conditional_proven_but_sim_rejected"] == 1
+    assert row["v21_conditional_proven_but_sim_rejected"] == 1
+
+
+def test_positive_e0_unproven_and_rejected_is_excluded_not_violation():
+    row = runner._comparison_row(
+        base_row(),
+        simulation(accepted=False),
+        report(runner.V20_VERSION, proven=False),
+        report(runner.V21_VERSION, proven=False),
+        1.0,
+        soundness_mode="audit",
+    )
+    assert row["soundness_valid"] == 0
+    assert (
+        row["soundness_excluded_reason"]
+        == "e0_release_energy_assumption_not_verified"
+    )
+    assert row["v20_soundness_violation"] == 0
+    assert row["v21_soundness_violation"] == 0
+    assert row["v20_conditional_proven_but_sim_rejected"] == 0
+    assert row["v21_conditional_proven_but_sim_rejected"] == 0
+
+
+def test_positive_e0_observed_bound_conflict_is_conditional_diagnostic():
+    row = runner._comparison_row(
+        base_row(),
+        simulation(response=11),
+        report(runner.V20_VERSION, proven=True, bound=10),
+        report(runner.V21_VERSION, proven=True, bound=10),
+        1.0,
+        soundness_mode="audit",
+    )
+    assert row["soundness_valid"] == 0
+    assert row["v20_observed_bound_violation"] == 0
+    assert row["v21_observed_bound_violation"] == 0
+    assert row["v20_soundness_violation"] == 0
+    assert row["v21_soundness_violation"] == 0
+    assert row["v20_conditional_observed_exceeds_bound"] == 1
+    assert row["v21_conditional_observed_exceeds_bound"] == 1
+
+
+def test_positive_e0_with_release_energy_certificate_is_soundness_valid():
+    row = runner._comparison_row(
+        base_row(),
+        simulation(accepted=False),
+        report(runner.V20_VERSION, proven=True),
+        report(runner.V21_VERSION, proven=True),
+        1.0,
+        soundness_mode="audit",
+        release_energy_assumption_verified=True,
+    )
+    assert row["e0_assumption_scope"] == "conditional_release_time_lower_bound"
+    assert row["release_energy_assumption_verified"] == 1
+    assert row["soundness_valid"] == 1
+    assert row["soundness_excluded_reason"] == ""
+    assert row["v20_soundness_violation"] == 1
+    assert row["v21_soundness_violation"] == 1
+    assert row["v20_conditional_proven_but_sim_rejected"] == 0
+    assert row["v21_conditional_proven_but_sim_rejected"] == 0
 
 
 def _write_result(path: Path, **updates):
@@ -304,7 +410,7 @@ def _write_result(path: Path, **updates):
         base_row(), simulation(),
         report(runner.V20_VERSION, bound=12),
         report(runner.V21_VERSION, bound=10),
-        0.25,
+        0.0,
     )
     row.update(updates)
     pd.DataFrame([row], columns=runner.RESULT_FIELDS).to_csv(path, index=False)
@@ -430,6 +536,114 @@ def test_analyzer_does_not_recompute_infrastructure_failure_as_violation(tmp_pat
     loaded = analyzer.load_results(source)
     assert not loaded.iloc[0]["v21_soundness_violation"]
     assert not loaded.iloc[0]["v21_soundness_proven_but_rejected"]
+
+
+def test_analyzer_excludes_positive_e0_from_unconditional_soundness(tmp_path):
+    source = tmp_path / "comparison.csv"
+    zero = runner._comparison_row(
+        base_row(),
+        simulation(accepted=False),
+        report(runner.V20_VERSION, proven=True),
+        report(runner.V21_VERSION, proven=True),
+        0.0,
+        soundness_mode="audit",
+    )
+    positive = runner._comparison_row(
+        {**base_row(), "task_idx": 1, "taskset_id": "u0.10-001"},
+        simulation(accepted=False),
+        report(runner.V20_VERSION, proven=True),
+        report(runner.V21_VERSION, proven=True),
+        1.0,
+        soundness_mode="audit",
+    )
+    pd.DataFrame(
+        [zero, positive], columns=runner.RESULT_FIELDS
+    ).to_csv(source, index=False)
+    summary, _ = analyzer.analyze(source, tmp_path / "out")
+    overall = summary.iloc[0]
+    assert overall["unconditional_soundness_rows"] == 1
+    assert overall["conditional_assumption_rows"] == 1
+    assert overall["soundness_excluded_rows"] == 1
+    assert overall["v20_soundness_violation_count"] == 1
+    assert overall["v21_soundness_violation_count"] == 1
+    assert overall["soundness_violations"] == 1
+    assert (
+        json.loads(overall["soundness_excluded_reason_counts"])
+        == {"e0_release_energy_assumption_not_verified": 1}
+    )
+    assert (
+        overall["v20_conditional_proven_but_sim_rejected_count"] == 1
+    )
+    assert (
+        overall["v21_conditional_proven_but_sim_rejected_count"] == 1
+    )
+    assert "conditional release-time energy lower-bound assumption" in (
+        overall["soundness_assumption_note"]
+    )
+
+
+def test_analyzer_corrects_old_positive_e0_violation_rows(tmp_path):
+    source = tmp_path / "comparison.csv"
+    row = runner._comparison_row(
+        base_row(),
+        simulation(accepted=False),
+        report(runner.V20_VERSION, proven=True),
+        report(runner.V21_VERSION, proven=True),
+        1.0,
+        soundness_mode="audit",
+    )
+    for field in (
+        "e0_assumption_scope",
+        "release_energy_assumption_verified",
+        "v20_conditional_proven_but_sim_rejected",
+        "v21_conditional_proven_but_sim_rejected",
+        "v20_conditional_observed_exceeds_bound",
+        "v21_conditional_observed_exceeds_bound",
+    ):
+        row.pop(field)
+    row.update({
+        "soundness_valid": 1,
+        "soundness_excluded_reason": "",
+        "v20p4_soundness_proven_but_rejected": 1,
+        "v21_soundness_proven_but_rejected": 1,
+        "v20_sim_rejected_violation": 1,
+        "v21_sim_rejected_violation": 1,
+        "v20_soundness_violation": 1,
+        "v21_soundness_violation": 1,
+    })
+    pd.DataFrame([row]).to_csv(source, index=False)
+    loaded = analyzer.load_results(source)
+    result = loaded.iloc[0]
+    assert result["e0_assumption_scope"] == (
+        "conditional_release_time_lower_bound"
+    )
+    assert not result["release_energy_assumption_verified"]
+    assert not result["soundness_valid"]
+    assert result["soundness_excluded_reason"] == (
+        "e0_release_energy_assumption_not_verified"
+    )
+    assert not result["v20_soundness_violation"]
+    assert not result["v21_soundness_violation"]
+    assert result["v20_conditional_proven_but_sim_rejected"]
+    assert result["v21_conditional_proven_but_sim_rejected"]
+
+
+def test_analyzer_string_assignments_emit_no_future_warning(tmp_path):
+    source = tmp_path / "comparison.csv"
+    _write_result(
+        source,
+        v21_bound=13,
+        v21_minus_v20p4_bound=1,
+        v21_bound_gt_v20=1,
+        v21_bound_gt_v20_reason="",
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        loaded = analyzer.load_results(source)
+    assert (
+        loaded.iloc[0]["v21_bound_gt_v20_reason"]
+        == "both_proven_v21_bound_larger"
+    )
 
 
 def test_analyzer_treats_v21_bound_gt_v20_as_consistency_not_soundness(tmp_path):
@@ -578,6 +792,23 @@ def test_runner_default_root_is_v21_specific():
     assert args.soundness_mode == "fail_fast"
     assert runner.acceptance.RTA_VERSION == "v20.4"
     assert Path(runner.acceptance.RTA_TOOL).name == "asap_block_rta.py"
+
+
+def test_runner_help_distinguishes_release_time_e0_from_simulation_energy():
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(Path(runner.__file__).resolve()),
+            "--help",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    help_text = " ".join(completed.stdout.lower().split())
+    assert "rta analysis-window/job-release energy lower bound" in help_text
+    assert "not the simulation initial battery energy at t=0" in help_text
+    assert "simulation initial battery-energy ratio at t=0" in help_text
 
 
 def test_run_v21_enables_profile_flag(monkeypatch):

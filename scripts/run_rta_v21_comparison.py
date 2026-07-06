@@ -25,6 +25,9 @@ V21_VERSION = "v21-local-window"
 V21_TOOL = PROJECT_ROOT / "asap_block_rta_v21_local_window.py"
 RESULT_FILENAME = "rta_v21_comparison_results.csv"
 MANIFEST_FILENAME = "rta_v21_comparison_manifest.csv"
+E0_UNCONDITIONAL_SCOPE = "unconditional_zero_lower_bound"
+E0_CONDITIONAL_SCOPE = "conditional_release_time_lower_bound"
+E0_UNVERIFIED_REASON = "e0_release_energy_assumption_not_verified"
 
 V20_THEORY_METADATA = {
     "v20_theory_family": "complete_window",
@@ -61,6 +64,7 @@ V21_PROFILE_MAX_COUNTERS = ("max_delta_cap", "max_delta_seen")
 RESULT_FIELDS = [
     "experiment_name", "seed_base", "taskset_seed",
     "normalized_utilization", "task_idx", "taskset_id", "E0",
+    "e0_assumption_scope", "release_energy_assumption_verified",
     "accepted", "simulation_status", "simulated_response_time",
     "deadline_miss_time", "first_missed_task", "taskset_path",
     "trace_path", "v20p4_rta_version", "v20_rta_version",
@@ -98,6 +102,10 @@ RESULT_FIELDS = [
     "v20p4_soundness_observed_exceeds_bound",
     "v20_sim_rejected_violation", "v20_observed_bound_violation",
     "v21_sim_rejected_violation", "v21_observed_bound_violation",
+    "v20_conditional_proven_but_sim_rejected",
+    "v21_conditional_proven_but_sim_rejected",
+    "v20_conditional_observed_exceeds_bound",
+    "v21_conditional_observed_exceeds_bound",
     "v20_soundness_violation",
     "v21_soundness_violation",
     "soundness_valid",
@@ -130,9 +138,28 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--task-p-max", type=int, default=400)
     parser.add_argument("--simulation-time", type=int, default=30000)
     parser.add_argument("--battery", type=float, default=20.0)
-    parser.add_argument("--initial-energy", type=float, default=1.0)
+    parser.add_argument(
+        "--initial-energy",
+        type=float,
+        default=1.0,
+        help=(
+            "simulation initial battery-energy ratio at t=0 in [0, 1]; "
+            "this does not certify energy available at later job releases"
+        ),
+    )
     parser.add_argument("--solar-time-ms", type=int, default=21975000)
-    parser.add_argument("--e0-values", nargs="+", type=float, required=True)
+    parser.add_argument(
+        "--e0-values",
+        nargs="+",
+        type=float,
+        required=True,
+        help=(
+            "RTA analysis-window/job-release energy lower bound E0 in joules. "
+            "E0 is not the simulation initial battery energy at t=0. E0>0 "
+            "produces conditional RTA results unless release-time energy is "
+            "certified"
+        ),
+    )
     parser.add_argument("--seed-base", type=int, default=424242)
     parser.add_argument("--rta-horizon-ms", type=int, default=30000)
     parser.add_argument("--rta-v20p4-timeout", type=int, default=60)
@@ -527,23 +554,47 @@ def _pessimism(
     return bound / observed
 
 
+def _release_energy_assumption(
+    e0: float, verified: Optional[bool] = None
+) -> tuple:
+    """Return the E0 scope and whether it is valid for soundness comparison."""
+    if e0 <= 0:
+        return E0_UNCONDITIONAL_SCOPE, True
+    return E0_CONDITIONAL_SCOPE, bool(verified)
+
+
 def _soundness(
     analysis: Mapping[str, Any], accepted: bool,
     responses: Mapping[str, float], label: str,
     context: Mapping[str, Any], mode: str = "fail_fast",
+    release_energy_assumption_verified: bool = True,
 ) -> tuple:
-    classification = acceptance.classify_soundness_observation(
+    simulation_classification = acceptance.classify_soundness_observation(
         analysis["proven"],
         accepted,
         context.get("simulation_status"),
     )
-    rejected = bool(classification["soundness_violation"])
-    observed = False
-    if analysis["proven"] and classification["soundness_valid"]:
+    diagnostic_rejected = bool(
+        simulation_classification["soundness_violation"]
+    )
+    diagnostic_observed = False
+    if analysis["proven"] and simulation_classification["soundness_valid"]:
         for name, bound in _bounds_by_task(analysis.get("report")).items():
             if name in responses and responses[name] > bound:
-                observed = True
+                diagnostic_observed = True
                 break
+    if release_energy_assumption_verified:
+        classification = dict(simulation_classification)
+        rejected = diagnostic_rejected
+        observed = diagnostic_observed
+    else:
+        classification = {
+            "soundness_valid": False,
+            "soundness_excluded_reason": E0_UNVERIFIED_REASON,
+            "soundness_violation": False,
+        }
+        rejected = False
+        observed = False
     if (rejected or observed) and mode == "fail_fast":
         context_text = ", ".join(
             "{}={!r}".format(field, context.get(field))
@@ -563,15 +614,25 @@ def _soundness(
                 label, rejected, observed, context_text
             )
         )
-    return rejected, observed, classification
+    return (
+        rejected,
+        observed,
+        classification,
+        diagnostic_rejected,
+        diagnostic_observed,
+    )
 
 
 def _comparison_row(
     base: Mapping[str, Any], simulation: Mapping[str, Any],
     v20_result: Mapping[str, Any], v21_result: Mapping[str, Any], e0: float,
     soundness_mode: str = "fail_fast",
+    release_energy_assumption_verified: Optional[bool] = None,
 ) -> Dict[str, Any]:
     responses = simulation["max_response_by_task"]
+    e0_scope, release_energy_verified = _release_energy_assumption(
+        e0, release_energy_assumption_verified
+    )
     soundness_context = {
         "seed_base": base.get("seed_base"),
         "taskset_seed": base.get("taskset_seed"),
@@ -596,21 +657,38 @@ def _comparison_row(
         "v20p4_bound": v20_result.get("bound"),
         "v20p4_error": v20_result.get("error"),
     }
-    v20_bad_rejected, v20_bad_bound, v20_soundness = _soundness(
+    (
+        v20_bad_rejected,
+        v20_bad_bound,
+        v20_soundness,
+        v20_conditional_rejected,
+        v20_conditional_bound,
+    ) = _soundness(
         v20_result,
         simulation["accepted"],
         responses,
         V20_VERSION,
         soundness_context,
         soundness_mode,
+        release_energy_verified,
     )
-    v21_bad_rejected, v21_bad_bound, v21_soundness = _soundness(
+    (
+        v21_bad_rejected,
+        v21_bad_bound,
+        v21_soundness,
+        v21_conditional_rejected,
+        v21_conditional_bound,
+    ) = _soundness(
         v21_result,
         simulation["accepted"],
         responses,
         V21_VERSION,
         soundness_context,
         soundness_mode,
+        release_energy_verified,
+    )
+    conditional_unverified = (
+        e0_scope == E0_CONDITIONAL_SCOPE and not release_energy_verified
     )
     both_proven = bool(v20_result["proven"] and v21_result["proven"])
     v20_only_proven = bool(v20_result["proven"] and not v21_result["proven"])
@@ -670,6 +748,8 @@ def _comparison_row(
     }
     row.update({
         "E0": e0,
+        "e0_assumption_scope": e0_scope,
+        "release_energy_assumption_verified": int(release_energy_verified),
         "accepted": int(simulation["accepted"]),
         "simulation_status": simulation["simulation_status"],
         "simulated_response_time": simulation["simulated_response_time"],
@@ -746,6 +826,18 @@ def _comparison_row(
         "v20_observed_bound_violation": int(v20_bad_bound),
         "v21_sim_rejected_violation": int(v21_bad_rejected),
         "v21_observed_bound_violation": int(v21_bad_bound),
+        "v20_conditional_proven_but_sim_rejected": int(
+            conditional_unverified and v20_conditional_rejected
+        ),
+        "v21_conditional_proven_but_sim_rejected": int(
+            conditional_unverified and v21_conditional_rejected
+        ),
+        "v20_conditional_observed_exceeds_bound": int(
+            conditional_unverified and v20_conditional_bound
+        ),
+        "v21_conditional_observed_exceeds_bound": int(
+            conditional_unverified and v21_conditional_bound
+        ),
         "v20_soundness_violation": int(v20_bad_rejected or v20_bad_bound),
         "v21_soundness_violation": int(v21_bad_rejected or v21_bad_bound),
         "soundness_valid": int(v20_soundness["soundness_valid"]),

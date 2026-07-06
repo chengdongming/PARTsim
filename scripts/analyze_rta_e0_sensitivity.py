@@ -8,7 +8,11 @@ from scripts.experiment_analysis import write_rta_e0
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Aggregate RTA E0 sensitivity runs')
+    parser = argparse.ArgumentParser(
+        description=(
+            'Aggregate RTA release-time energy lower-bound E0 sensitivity runs'
+        )
+    )
     parser.add_argument('--manifest', required=True)
     parser.add_argument('--output-dir', required=True)
     args = parser.parse_args()

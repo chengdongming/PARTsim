@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run RTA-enabled experiments across conservative initial-energy bounds."""
+"""Run RTA experiments across release-time energy lower-bound assumptions."""
 
 import argparse
 import shlex
@@ -22,8 +22,10 @@ MANIFEST_FIELDS = [
 def build_parser():
     parser = argparse.ArgumentParser(
         description=(
-            'Run RTA E0 sensitivity experiments. E0 is an absolute energy '
-            'lower bound in joules, not the simulation initial-energy ratio.'
+            'Run RTA release-time energy lower-bound E0 sensitivity '
+            'experiments. E0 is an absolute guaranteed lower bound in joules '
+            'at each analyzed job release, not the simulation initial-energy '
+            'ratio.'
         )
     )
     runner.add_common_arguments(parser)

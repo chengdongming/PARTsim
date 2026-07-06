@@ -127,7 +127,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--task-p-max", type=int, default=200)
     parser.add_argument("--rta-horizon-ms", type=int, required=True)
     parser.add_argument("--rta-timeout", type=float, default=30.0)
-    parser.add_argument("--rta-initial-energy", type=float, default=0.0)
+    parser.add_argument(
+        "--rta-initial-energy",
+        type=float,
+        default=0.0,
+        help=(
+            "RTA analysis-window/job-release energy lower bound E0 in joules. "
+            "E0 is not the simulation initial battery energy at t=0"
+        ),
+    )
     parser.add_argument("--seed", type=int, default=12345)
     parser.add_argument(
         "--max-workers",
