@@ -448,6 +448,13 @@ def validate_rta_cli_args(parser, args):
         parser.error('--rta-soundness-mode must be fail_fast or audit')
     if getattr(args, 'M', None) is not None and args.M <= 0:
         parser.error('--M must be positive')
+    fixed_utilization = getattr(args, 'fixed_utilization', None)
+    if fixed_utilization is not None and (
+        not math.isfinite(fixed_utilization)
+        or fixed_utilization <= 0
+        or fixed_utilization > 1
+    ):
+        parser.error('--fixed-utilization must satisfy 0 < U <= 1')
     min_task_util = getattr(args, 'min_task_util', 0.01)
     max_task_util = getattr(args, 'max_task_util', 0.8)
     if min_task_util < 0 or max_task_util <= 0:
@@ -1043,6 +1050,12 @@ def add_experiment_cli_args(parser):
                        help=f'任务集随机种子基数 (默认: {DEFAULT_SEED_BASE})')
     parser.add_argument('--num-points', type=int, default=10,
                        help='利用率采样点数 (默认: 10)')
+    parser.add_argument(
+        '--fixed-utilization',
+        type=float,
+        default=None,
+        help='只运行一个指定的normalized utilization点，范围为0 < U <= 1',
+    )
     parser.add_argument('--num-tasksets', type=int, default=DEFAULT_NUM_TASKSETS,
                        help=f'每个利用率点的任务集数量 (默认: {DEFAULT_NUM_TASKSETS})')
     parser.add_argument('--task-n', type=int, default=DEFAULT_TASK_N,
@@ -2400,7 +2413,12 @@ def main():
     # 决定数据来源
     if args.run_experiment:
         # 运行实验
-        utilization_points = np.around(np.linspace(0.1, 1.0, args.num_points), 2)
+        if args.fixed_utilization is not None:
+            utilization_points = np.array([float(args.fixed_utilization)])
+        else:
+            utilization_points = np.around(
+                np.linspace(0.1, 1.0, args.num_points), 2
+            )
         system_cores = (
             int(args.M)
             if args.M is not None
