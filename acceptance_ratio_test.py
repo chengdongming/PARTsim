@@ -788,6 +788,7 @@ def run_single_simulation_worker(task):
     (algorithm, config_file, task_file, task_idx, utilization,
      simulation_time, trace_dir) = task[:7]
     rta_options = task[7] if len(task) > 7 else {}
+    keep_traces = bool(rta_options.get('keep_traces', False))
     trace_file = Path(trace_dir) / f'trace_{algorithm}_u{utilization:.2f}_{task_idx:03d}.json'
 
     env = os.environ.copy()
@@ -801,6 +802,8 @@ def run_single_simulation_worker(task):
 
     def cleanup_trace():
         """清理追踪文件"""
+        if keep_traces:
+            return
         try:
             if trace_file.exists():
                 os.remove(str(trace_file))
@@ -892,6 +895,11 @@ def run_single_simulation_worker(task):
         'acceptance_ratio': float(acceptance_ratio),
         'simulation_status': simulation_status,
         'simulation_error': simulation_error,
+        'trace_path': (
+            str(trace_file.resolve())
+            if keep_traces and trace_file.exists()
+            else ''
+        ),
     }
     run_result.update(rta_options.get('taskset_metadata', {}))
     run_result.update(rta_result)
@@ -1106,6 +1114,12 @@ def add_experiment_cli_args(parser):
     )
     parser.add_argument('--max-workers', type=int, default=DEFAULT_MAX_WORKERS,
                        help=f'并发线程数 (默认: {DEFAULT_MAX_WORKERS})')
+    parser.add_argument(
+        '--keep-traces',
+        action='store_true',
+        default=False,
+        help='保留每次仿真生成的JSON trace文件；默认解析后删除worker trace',
+    )
     parser.add_argument('--enable-rta', action='store_true',
                        help='仅为 ASAP-BLOCK 启用离线RTA观察指标')
     parser.add_argument('--rta-horizon-ms', type=int, default=None,
@@ -1280,7 +1294,8 @@ class ExperimentRunner:
                  rta_soundness_mode='fail_fast',
                  task_util_min=0.01, task_util_max=0.8,
                  wcet_rounding='floor', constrained_deadlines=False,
-                 actual_utilization_tolerance_total=None):
+                 actual_utilization_tolerance_total=None,
+                 keep_traces=False):
         self.output_dir = Path(output_dir)
         self.trace_dir = self.output_dir / 'traces'
         self.task_dir = self.output_dir / 'tasks'
@@ -1314,6 +1329,7 @@ class ExperimentRunner:
         self.rta_timeout = max(1, int(rta_timeout))
         self.rta_initial_energy = float(rta_initial_energy)
         self.profile_rta = bool(profile_rta)
+        self.keep_traces = bool(keep_traces)
         self.task_util_min = float(task_util_min)
         self.task_util_max = float(task_util_max)
         if wcet_rounding not in {'floor', 'round', 'ceil', 'compensated'}:
@@ -1726,6 +1742,7 @@ class ExperimentRunner:
                                 utilization, task_idx
                             ),
                             'taskset_metadata': taskset_metadata,
+                            'keep_traces': self.keep_traces,
                         },
                     ))
 
@@ -1935,8 +1952,7 @@ class ExperimentRunner:
             'error': int(status == 'error'),
             'status': status,
             'reason': simulation_reason,
-            # Worker traces are intentionally removed after parsing.
-            'trace_path': '',
+            'trace_path': result.get('trace_path', ''),
             'rta_enabled': bool(result.get('rta_enabled', False)),
             'rta_version': result.get('rta_version', RTA_VERSION),
             'rta_status': result.get('rta_status', 'disabled'),
@@ -2455,6 +2471,7 @@ def main():
             actual_utilization_tolerance_total=(
                 args.actual_utilization_tolerance_total
             ),
+            keep_traces=args.keep_traces,
         )
 
         results = runner.run_experiments()
