@@ -737,12 +737,20 @@ namespace RTSim {
             if (sync_batch_blocked &&
                 selected_tasks.empty() &&
                 !desired_tasks.empty()) {
+                bool feasible_subset_exists = false;
+                for (AbsRTTask *task : desired_tasks) {
+                    if (getConfiguredUnitEnergyForTask(task) <=
+                        _current_energy + epsilon) {
+                        feasible_subset_exists = true;
+                        break;
+                    }
+                }
                 _trace_logger->logSyncBatchBlock(
                     "ASAP-Sync",
                     makeASAPSyncTraceJobs(desired_tasks, _task_models),
                     (continuation_energy + idle_core_batch_energy) * 1000.0,
                     _current_energy * 1000.0,
-                    !selected_tasks.empty());
+                    feasible_subset_exists);
             }
         }
 
