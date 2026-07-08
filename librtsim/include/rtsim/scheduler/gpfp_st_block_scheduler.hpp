@@ -24,6 +24,7 @@ namespace RTSim {
     class AbsRTTask;
     class STBlockScheduler;
     class MRTKernel;
+    class JSONTrace;
 
     // 时间类型别名
     using TimeMs = int64_t;
@@ -156,6 +157,8 @@ namespace RTSim {
         std::vector<AbsRTTask *> _waiting_queue;
         std::map<CPU *, AbsRTTask *> _running_tasks;
         MRTKernel *_kernel;
+        JSONTrace *_trace_logger;
+        bool _semantic_trace_enabled;
 
         // ========== 运行时能量检查事件（每任务一个） ==========
         // ⭐ V40重构：能量检查事件已删除，能量由performTickScheduling处理
@@ -194,6 +197,9 @@ namespace RTSim {
         MetaSim::Tick _charge_start_time;  // 充电开始时间
         MetaSim::Tick _charge_until_slack_zero;  // 充电直到Slack=0的时间
         STBlockWakeEvent *_wake_event;  // ⭐ V74：深度充电唤醒定时器
+        AbsRTTask *_st_charge_blocked_task;
+        double _st_charge_required_energy;
+        MetaSim::Tick _st_charge_slack_at_begin;
 
         // ========== V130: 深度休眠锁（消灭1ms碎片化抖动） ==========
         bool _is_charging_sleep;       // ⭐ 全局深度休眠锁：能量不足时锁住，充满电或Slack=0时解锁
@@ -243,6 +249,17 @@ namespace RTSim {
         double getConfiguredUnitEnergyForTask(AbsRTTask *task) const;
         void commitTickEnergy(MetaSim::Tick tick, double energy);
         void cancelStaleDispatches(const std::vector<AbsRTTask *> &previous_selection);
+        void logSTChargeEvent(const std::string &event_type,
+                              AbsRTTask *blocked_task,
+                              double required_energy,
+                              MetaSim::Tick slack_at_begin,
+                              const std::string &release_reason = "");
+        void logSTChargeEvent(const std::string &event_type,
+                              AbsRTTask *blocked_task,
+                              double required_energy,
+                              MetaSim::Tick slack_at_begin,
+                              double available_energy,
+                              const std::string &release_reason = "");
 
         // 队列管理
         void addToReadyQueue(AbsRTTask *task);
@@ -313,6 +330,8 @@ namespace RTSim {
         void setSuspendReason(AbsRTTask *task, const std::string &reason);
         std::string getSuspendReason(AbsRTTask *task) const override;
         void clearSuspendReason(AbsRTTask *task) override;
+        void setTraceLogger(void *trace) override;
+        void setSemanticTraceEnabled(bool enabled) override;
 
         // 运行期能量在 tick 调度中统一处理。
         // void startEnergyCheckForTask(AbsRTTask *task, CPU *cpu);  // 开始对任务的能量监控

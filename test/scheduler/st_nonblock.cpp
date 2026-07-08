@@ -258,6 +258,97 @@ TEST(STNonBlockScheduler,
     simulation.endSingleRun();
 }
 
+TEST(STNonBlockScheduler,
+     SkippedHighPriorityHoldsUntilBatteryFullOrSlackExhausted) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTNonBlockScheduler scheduler;
+    CPU cpu("st-nonblock-hold-high-cpu", nullptr);
+    TestSTNonBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeSTNonBlockTask high(1, 5, 10, 1.0);
+    FakeSTNonBlockTask low(2, 20, 20, 3.0);
+
+    STNonBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &high, 5, 1, 2.0);
+    STNonBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &low, 20, 3, 1.0);
+
+    simulation.initSingleRun();
+    STNonBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STNonBlockSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    high.releaseAt(Tick(0));
+    low.releaseAt(Tick(0));
+    STNonBlockSchedulerTestPeer::enqueue(scheduler, &high);
+    STNonBlockSchedulerTestPeer::enqueue(scheduler, &low);
+
+    STNonBlockSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+    ASSERT_EQ(high.getScheduleCount(), 0);
+    ASSERT_EQ(low.getScheduleCount(), 1);
+    ASSERT_EQ(scheduler._skipped_tasks.count(&high), 1u);
+
+    STNonBlockTestActionEvent enough_but_not_full([&]() {
+        scheduler._current_energy = 2.0;
+        STNonBlockSchedulerTestPeer::tick(scheduler);
+    });
+    enough_but_not_full.post(Tick(1));
+    simulation.run_to(Tick(1));
+
+    EXPECT_EQ(high.getScheduleCount(), 0);
+    EXPECT_EQ(scheduler._skipped_tasks.count(&high), 1u);
+
+    STNonBlockTestActionEvent full([&]() {
+        scheduler._current_energy = 100.0;
+        STNonBlockSchedulerTestPeer::tick(scheduler);
+    });
+    full.post(Tick(2));
+    simulation.run_to(Tick(2));
+
+    EXPECT_EQ(high.getScheduleCount(), 1);
+    EXPECT_EQ(scheduler._skipped_tasks.count(&high), 0u);
+
+    simulation.endSingleRun();
+}
+
+TEST(STNonBlockScheduler, SkippedHighPriorityReleasesWhenSlackExhausted) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTNonBlockScheduler scheduler;
+    CPU cpu("st-nonblock-slack-release-cpu", nullptr);
+    TestSTNonBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeSTNonBlockTask high(1, 5, 2, 1.0);
+    FakeSTNonBlockTask low(2, 20, 20, 3.0);
+
+    STNonBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &high, 5, 1, 2.0);
+    STNonBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &low, 20, 3, 1.0);
+
+    simulation.initSingleRun();
+    STNonBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STNonBlockSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    high.releaseAt(Tick(0));
+    low.releaseAt(Tick(0));
+    STNonBlockSchedulerTestPeer::enqueue(scheduler, &high);
+    STNonBlockSchedulerTestPeer::enqueue(scheduler, &low);
+
+    STNonBlockSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+    ASSERT_EQ(high.getScheduleCount(), 0);
+    ASSERT_EQ(low.getScheduleCount(), 1);
+    ASSERT_EQ(scheduler._skipped_tasks.count(&high), 1u);
+
+    STNonBlockTestActionEvent slack_exhausted([&]() {
+        scheduler._current_energy = 1.0;
+        STNonBlockSchedulerTestPeer::tick(scheduler);
+    });
+    slack_exhausted.post(Tick(1));
+    simulation.run_to(Tick(1));
+
+    EXPECT_EQ(scheduler._skipped_tasks.count(&high), 0u);
+    EXPECT_EQ(high.getScheduleCount(), 0);
+
+    simulation.endSingleRun();
+}
+
 TEST(STNonBlockScheduler, HighPriorityShortageNoSlackAllowsBypass) {
     auto &simulation = MetaSim::Simulation::getInstance();
     TestSTNonBlockScheduler scheduler;

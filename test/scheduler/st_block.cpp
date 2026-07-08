@@ -359,9 +359,10 @@ TEST(STBlockScheduler, CumulativePrefixEnergyReservation) {
     STBlockSchedulerTestPeer::tick(scheduler);
     simulation.run_to(Tick(0));
 
-    EXPECT_EQ(first.getScheduleCount(), 1);
+    EXPECT_EQ(first.getScheduleCount(), 0);
     EXPECT_EQ(second.getScheduleCount(), 0);
-    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 0.5);
+    EXPECT_TRUE(scheduler.isChargingSleepActive());
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.5);
 
     simulation.endSingleRun();
 }
@@ -391,8 +392,9 @@ TEST(STBlockScheduler,
 
     STBlockSchedulerTestPeer::tick(scheduler);
     simulation.run_to(Tick(0));
-    ASSERT_TRUE(affordable.isExecuting());
-    ASSERT_DOUBLE_EQ(scheduler.getTotalEnergyConsumed(), 1.0);
+    ASSERT_FALSE(affordable.isExecuting());
+    ASSERT_DOUBLE_EQ(scheduler.getTotalEnergyConsumed(), 0.0);
+    ASSERT_TRUE(scheduler.isChargingSleepActive());
 
     STBlockTestActionEvent next_tick([&]() {
         scheduler._current_energy = 1.5;
@@ -401,10 +403,81 @@ TEST(STBlockScheduler,
     next_tick.post(Tick(1));
     simulation.run_to(Tick(1));
 
-    EXPECT_TRUE(affordable.isExecuting());
+    EXPECT_FALSE(affordable.isExecuting());
     EXPECT_EQ(blocked.getScheduleCount(), 0);
-    EXPECT_DOUBLE_EQ(scheduler.getTotalEnergyConsumed(), 2.0);
-    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 0.5);
+    EXPECT_TRUE(scheduler.isChargingSleepActive());
+    EXPECT_DOUBLE_EQ(scheduler.getTotalEnergyConsumed(), 0.0);
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.5);
+
+    simulation.endSingleRun();
+}
+
+TEST(STBlockScheduler, ChargingSleepReleasesWhenBatteryFull) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTBlockScheduler scheduler;
+    CPU cpu("st-block-full-release-cpu", nullptr);
+    TestSTBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeSTBlockTask task(1, 5, 10, 1.0);
+
+    STBlockSchedulerTestPeer::addTaskModel(scheduler, &task, 5, 1, 2.0);
+
+    simulation.initSingleRun();
+    STBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STBlockSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    scheduler._max_energy = 2.0;
+    task.releaseAt(Tick(0));
+    STBlockSchedulerTestPeer::enqueue(scheduler, &task);
+
+    STBlockSchedulerTestPeer::tick(scheduler);
+    ASSERT_TRUE(scheduler.isChargingSleepActive());
+    ASSERT_EQ(task.getScheduleCount(), 0);
+
+    STBlockTestActionEvent full([&]() {
+        scheduler._current_energy = 2.0;
+        STBlockSchedulerTestPeer::tick(scheduler);
+    });
+    full.post(Tick(1));
+    simulation.run_to(Tick(1));
+
+    EXPECT_FALSE(scheduler.isChargingSleepActive());
+    EXPECT_EQ(task.getScheduleCount(), 1);
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 0.0);
+
+    simulation.endSingleRun();
+}
+
+TEST(STBlockScheduler, ChargingSleepReleasesWhenSlackExhausted) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTBlockScheduler scheduler;
+    CPU cpu("st-block-slack-release-cpu", nullptr);
+    TestSTBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeSTBlockTask high(1, 5, 2, 1.0);
+    FakeSTBlockTask low(2, 20, 20, 1.0);
+
+    STBlockSchedulerTestPeer::addTaskModel(scheduler, &high, 5, 1, 2.0);
+    STBlockSchedulerTestPeer::addTaskModel(scheduler, &low, 20, 1, 1.0);
+
+    simulation.initSingleRun();
+    STBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STBlockSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    high.releaseAt(Tick(0));
+    low.releaseAt(Tick(0));
+    STBlockSchedulerTestPeer::enqueue(scheduler, &high);
+    STBlockSchedulerTestPeer::enqueue(scheduler, &low);
+
+    STBlockSchedulerTestPeer::tick(scheduler);
+    ASSERT_TRUE(scheduler.isChargingSleepActive());
+
+    STBlockTestActionEvent slack_exhausted([&]() {
+        STBlockSchedulerTestPeer::tick(scheduler);
+    });
+    slack_exhausted.post(Tick(1));
+    simulation.run_to(Tick(1));
+
+    EXPECT_FALSE(scheduler.isChargingSleepActive());
+    EXPECT_EQ(high.getScheduleCount(), 0);
+    EXPECT_EQ(low.getScheduleCount(), 0);
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.0);
 
     simulation.endSingleRun();
 }

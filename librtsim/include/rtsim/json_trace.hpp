@@ -117,6 +117,15 @@ namespace RTSim {
             double available_energy_mJ,
             bool feasible_subset_exists);
 
+        void logSTChargeEvent(
+            const std::string &event_type,
+            const std::string &scheduler,
+            const std::vector<SchedulerTraceJob> &blocked_jobs,
+            double available_energy_mJ,
+            double required_energy_mJ,
+            double slack_at_begin,
+            const std::string &release_reason = "");
+
         void probe(ArrEvt &e);
 
         void probe(EndEvt &e);

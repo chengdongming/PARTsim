@@ -255,6 +255,41 @@ namespace RTSim {
         fd << "}";
     }
 
+    void JSONTrace::logSTChargeEvent(
+        const std::string &event_type,
+        const std::string &scheduler,
+        const std::vector<SchedulerTraceJob> &blocked_jobs,
+        double available_energy_mJ,
+        double required_energy_mJ,
+        double slack_at_begin,
+        const std::string &release_reason) {
+        if (!_semantic_trace_enabled ||
+            (max_time >= 0 && SIMUL.getTime() >= max_time)) {
+            return;
+        }
+
+        beginEvent();
+        fd << "\"time\": \"" << SIMUL.getTime() << "\", ";
+        fd << "\"event_type\": \"" << escapeJson(event_type) << "\", ";
+        fd << "\"scheduler\": \"" << escapeJson(scheduler) << "\", ";
+        if (blocked_jobs.size() == 1) {
+            fd << "\"blocked_task\": \""
+               << escapeJson(blocked_jobs.front().task_name) << "\", ";
+        } else {
+            fd << "\"blocked_group\": ";
+            writeSchedulerJobArray(blocked_jobs);
+            fd << ", ";
+        }
+        fd << "\"available_energy_mJ\": " << available_energy_mJ << ", ";
+        fd << "\"required_energy_mJ\": " << required_energy_mJ << ", ";
+        fd << "\"slack_at_begin\": " << slack_at_begin;
+        if (!release_reason.empty()) {
+            fd << ", \"release_reason\": \""
+               << escapeJson(release_reason) << "\"";
+        }
+        fd << "}";
+    }
+
     void JSONTrace::writeTaskEvent(const Task &tt,
                                    const std::string &evt_name) {
         // 检查当前时间是否超过最大时间

@@ -19,6 +19,7 @@
 #include <rtsim/rttask.hpp>
 #include <rtsim/exeinstr.hpp>
 #include <rtsim/cpu.hpp>
+#include <rtsim/json_trace.hpp>
 #include <rtsim/scheduler/energy_bridge.hpp>
 #include <rtsim/mrtkernel.hpp>
 
@@ -28,6 +29,32 @@
 namespace RTSim {
 
     using namespace MetaSim;
+
+    static SchedulerTraceJob makeSTBlockTraceJob(
+        AbsRTTask *task,
+        const std::map<AbsRTTask *, STBlockTaskModel *> &models,
+        int ready_order) {
+        SchedulerTraceJob job{};
+        Task *concrete_task = dynamic_cast<Task *>(task);
+        job.task_name = concrete_task
+            ? concrete_task->getName()
+            : std::string("task_") + std::to_string(task ? task->getTaskNumber() : -1);
+        job.arrival_time = concrete_task
+            ? static_cast<double>(concrete_task->getLastArrival())
+            : (task ? static_cast<double>(task->getArrival()) : 0.0);
+        job.priority = 0.0;
+        job.ready_order = ready_order;
+        job.task_unit_energy_mJ = 0.0;
+        job.remaining_time_ms = task ? task->getRemainingWCET() : 0.0;
+        job.absolute_deadline = task ? static_cast<double>(task->getDeadline()) : 0.0;
+
+        auto model_it = models.find(task);
+        if (model_it != models.end() && model_it->second) {
+            job.priority = static_cast<double>(model_it->second->getRMPriority());
+            job.task_unit_energy_mJ = model_it->second->getUnitEnergy() * 1000.0;
+        }
+        return job;
+    }
 
     // =====================================================
     // STBlockTickEvent 实现
@@ -82,16 +109,9 @@ namespace RTSim {
         SCHEDULER_LOG_WARNING(std::string("🔔 [ST-Block V130] ===== 唤醒定时器触发 @ ") +
                            std::to_string(current_ms) + "ms =====");
 
-        // ⭐⭐⭐ V130修复：清除深度休眠锁（关键！）⭐⭐⭐
-        _scheduler->_is_charging_sleep = false;
-        _scheduler->_deep_charging = false;
-        _scheduler->_energy_depleted = false;
-        _scheduler->_alap_blocking = false;
-
-        // 这里只解锁，不直接调用 performTickScheduling()。
-        // 否则会与同一时间戳的 STBlockTickEvent 重入，导致同一个ms被重复做调度决策，
-        // 在 BeginDispatch 真正落地前重复审批运行组，造成 wake/tick 双通道控制偏差。
-        SCHEDULER_LOG_INFO(std::string("🔓 [ST-Block V130] 深度休眠锁已解除，等待同tick调度"));
+        // Wake 只对齐重新评估时刻。PFPST 的释放条件必须在
+        // performTickScheduling() 中基于当前能量和 slack 统一判断。
+        SCHEDULER_LOG_INFO(std::string("🔔 [ST-Block] ST charge wake reached, waiting for tick reevaluation"));
 
         // 注意：不需要调度下一个tick，因为tick事件仍在正常运行
     }
@@ -162,12 +182,17 @@ namespace RTSim {
           _tick_event(nullptr),
           _first_tick_scheduled(false),
           _kernel(nullptr),
+          _trace_logger(nullptr),
+          _semantic_trace_enabled(false),
           _energy_depleted(false),
           _alap_blocking(false),
           _deep_charging(false),
           _charge_start_time(0),
           _charge_until_slack_zero(0),
           _wake_event(nullptr),  // ⭐ V74：初始化唤醒定时器
+          _st_charge_blocked_task(nullptr),
+          _st_charge_required_energy(0.0),
+          _st_charge_slack_at_begin(0),
           _is_charging_sleep(false),  // ⭐ V130: 深度休眠锁初始化
           _last_preempted_task(nullptr),
           _last_preempted_tick(0) {
@@ -431,51 +456,70 @@ namespace RTSim {
         }
         _last_tick_time = current_time;
 
-        // ========== V130: 深度休眠锁检查（消灭1ms碎片化抖动） ==========
-        // ⭐ ST-Block核心逻辑：高优先级任务能量不足时锁住整个系统
-        if (_is_charging_sleep) {
-            // 计算高优先级任务的Slack
-            Tick min_slack = calculateMinSlack();
-            int64_t min_slack_ms = static_cast<int64_t>(min_slack);
-
-            // 唤醒条件1：电池充满
+        // ========== PFPST charging gate ==========
+        if (_is_charging_sleep || _deep_charging) {
+            Tick blocked_slack = _st_charge_blocked_task
+                ? calculateSlackForTask(_st_charge_blocked_task)
+                : calculateMinSlack();
+            int64_t blocked_slack_ms = static_cast<int64_t>(blocked_slack);
+            std::string release_reason;
             if (_current_energy >= _max_energy - 0.000001) {
+                release_reason = "battery_full";
+            } else if (blocked_slack_ms <= 0) {
+                release_reason = "slack_exhausted";
+            }
+
+            if (!release_reason.empty()) {
+                logSTChargeEvent("st_charge_release",
+                                 _st_charge_blocked_task,
+                                 _st_charge_required_energy,
+                                 _st_charge_slack_at_begin,
+                                 release_reason);
                 _is_charging_sleep = false;
                 _deep_charging = false;
                 _energy_depleted = false;
                 _alap_blocking = false;
+                _st_charge_blocked_task = nullptr;
+                _st_charge_required_energy = 0.0;
+                _st_charge_slack_at_begin = 0;
                 if (_wake_event) {
                     _wake_event->drop();
                     delete _wake_event;
                     _wake_event = nullptr;
                 }
-                SCHEDULER_LOG_INFO(std::string("🔋 [ST-Block V130] 深度休眠解锁：电池充满") +
-                                  " 能量=" + std::to_string(_current_energy * 1000) + "mJ");
-            }
-            // 唤醒条件2：Slack=0（死线已至，必须执行）
-            else if (min_slack_ms <= 0) {
-                _is_charging_sleep = false;
-                _deep_charging = false;
-                _energy_depleted = false;
-                _alap_blocking = false;
-                if (_wake_event) {
-                    _wake_event->drop();
-                    delete _wake_event;
-                    _wake_event = nullptr;
+                SCHEDULER_LOG_INFO(std::string("🔓 [ST-Block] PFPST charge release: ") +
+                                  release_reason);
+            } else {
+                logSTChargeEvent("st_charge_hold",
+                                 _st_charge_blocked_task,
+                                 _st_charge_required_energy,
+                                 _st_charge_slack_at_begin);
+                SCHEDULER_LOG_INFO(std::string("😴 [ST-Block] PFPST charge hold: ") +
+                                  " energy=" + std::to_string(_current_energy * 1000) +
+                                  "mJ slack=" + std::to_string(blocked_slack_ms) + "ms");
+
+                if (!_kernel) {
+                    _kernel = getKernel();
                 }
-                SCHEDULER_LOG_WARNING(std::string("🚨 [ST-Block V130] 深度休眠解锁：Slack=0强制唤醒") +
-                                     " Slack=" + std::to_string(min_slack_ms) + "ms");
-            }
-            // 继续休眠
-            else {
-                SCHEDULER_LOG_INFO(std::string("😴 [ST-Block V130] 深度休眠中...") +
-                                  " 能量=" + std::to_string(_current_energy * 1000) + "mJ" +
-                                  " Slack=" + std::to_string(min_slack_ms) + "ms");
-                // Charging sleep is advisory only.  A higher-priority
-                // affordable prefix may still be running, so every tick must
-                // rebuild the frozen selection and either pay for that prefix
-                // or suspend it below.  Returning here would let it run for
-                // free outside the current tick's selected set.
+                if (_kernel) {
+                    const auto &running_tasks_map =
+                        _kernel->getCurrentExecutingTasks();
+                    for (const auto &[cpu, task] : running_tasks_map) {
+                        (void)cpu;
+                        if (task && task->isExecuting()) {
+                            setSuspendReason(task, "st_charging_hold");
+                            _kernel->suspend(task);
+                        }
+                    }
+                }
+                resetTickDispatchState();
+                _dispatching_tasks_total_energy = 0.0;
+                _selection_tick = current_time;
+                _selection_generation++;
+                _selection_frozen = true;
+                _alap_blocking = true;
+                _energy_depleted = true;
+                return;
             }
         }
 
@@ -483,89 +527,6 @@ namespace RTSim {
         if (_energy_depleted && _current_energy < 0.000001) {
             SCHEDULER_LOG_INFO(std::string("💀 [ST-Block] 能量已耗尽，跳过任务调度"));
             return;
-        }
-
-        // ========== ST深度充电检查 ==========
-        // ⭐ V74重构：使用唤醒定时器代替轮询检查
-        if (_deep_charging) {
-            // 计算所有就绪任务的最小Slack
-            Tick min_slack = calculateMinSlack();
-            int64_t min_slack_ms = static_cast<int64_t>(min_slack);
-
-            SCHEDULER_LOG_INFO(std::string("🔋 [ST-Block] 深度充电中... Slack=") +
-                              std::to_string(min_slack_ms) + "ms " +
-                              "能量=" + std::to_string(_current_energy * 1000) + "mJ");
-
-            // 唤醒条件：Slack<=0 或 电池充满
-            if (min_slack_ms <= 0) {
-                SCHEDULER_LOG_INFO("🔋 [ST-Block] 深度充电结束：Slack<=0，唤醒调度");
-                _deep_charging = false;
-                _energy_depleted = false;
-                // 取消唤醒定时器
-                if (_wake_event) {
-                    _wake_event->drop();
-                    delete _wake_event;
-                    _wake_event = nullptr;
-                }
-            } else if (_current_energy >= _max_energy - 0.000001) {
-                SCHEDULER_LOG_INFO("🔋 [ST-Block] 深度充电结束：电池充满，唤醒调度");
-                _deep_charging = false;
-                _energy_depleted = false;
-                // 取消唤醒定时器
-                if (_wake_event) {
-                    _wake_event->drop();
-                    delete _wake_event;
-                    _wake_event = nullptr;
-                }
-            } else {
-                // ⭐ V77修复：设置唤醒定时器（只在更早唤醒时才更新）
-                // 原因：V75在能量耗尽时设置了正确的唤醒时间，但后续tick的深度充电检查
-                //       会因为getRemainingWCET()返回错误值而计算出更大的唤醒时间
-                //       例如：Time 6设置wake_time=96，但Time 7计算出wake_time=100（覆盖了96！）
-                // 修复：只有当新的唤醒时间比现有唤醒时间更早时，才更新
-                Tick current_time = SIMUL.getTime();
-                Tick wake_time = computeSafeWakeTimeFromOffset(min_slack_ms);
-
-                bool should_update = false;
-                if (!_wake_event) {
-                    // 没有唤醒定时器，需要设置
-                    should_update = true;
-                } else {
-                    // 已有唤醒定时器，只有新唤醒时间更早时才更新
-                    int64_t existing_wake_time = static_cast<int64_t>(_wake_event->getWakeTime());
-                    int64_t new_wake_time = static_cast<int64_t>(wake_time);
-                    if (new_wake_time < existing_wake_time) {
-                        should_update = true;
-                        SCHEDULER_LOG_INFO(std::string("⏰ [ST-Block] V77修复：发现更早的唤醒时间: ") +
-                                          "现有=" + std::to_string(existing_wake_time) + "ms " +
-                                          "新=" + std::to_string(new_wake_time) + "ms，更新");
-                    }
-                }
-
-                if (should_update) {
-                    // 取消旧的定时器
-                    if (_wake_event) {
-                        _wake_event->drop();
-                        delete _wake_event;
-                    }
-
-                    // 创建新的唤醒定时器
-                    _wake_event = new STBlockWakeEvent(this, wake_time);
-                    _wake_event->post(wake_time);
-
-                    SCHEDULER_LOG_INFO(std::string("⏰ [ST-Block] 设置唤醒定时器: 当前时间=") +
-                                      std::to_string(static_cast<int64_t>(current_time)) + "ms " +
-                                      "Slack=" + std::to_string(min_slack_ms) + "ms " +
-                                      "唤醒时间=" + std::to_string(static_cast<int64_t>(wake_time)) + "ms");
-                }
-
-                _alap_blocking = true;
-                _energy_depleted = true;
-
-                // Keep the wake hint, but continue into the normal RM scan.
-                // The scan preserves the BLOCK wall while renewing or
-                // suspending any already-running affordable prefix.
-            }
         }
 
         // 确保能量不超过最大容量
@@ -633,23 +594,50 @@ namespace RTSim {
         _alap_blocking = (blocking_task != nullptr);
         _energy_depleted = _dispatch_selection_order.empty() && !active_tasks.empty();
         if (blocking_task) {
-            _deep_charging = true;
-            _is_charging_sleep = true;
             Tick slack = calculateSlackForTask(blocking_task);
             int64_t slack_ms = static_cast<int64_t>(slack);
-            Tick wake_time = computeSafeWakeTimeFromOffset(std::max<int64_t>(0, slack_ms));
-            if (_wake_event) {
-                _wake_event->drop();
-                delete _wake_event;
+            if (slack_ms > 0) {
+                _deep_charging = true;
+                _is_charging_sleep = true;
+                _energy_depleted = true;
+                _st_charge_blocked_task = blocking_task;
+                _st_charge_required_energy =
+                    getConfiguredUnitEnergyForTask(blocking_task);
+                _st_charge_slack_at_begin = slack;
+                const double decision_available_energy =
+                    std::max(0.0, _current_energy - reserved_energy);
+                logSTChargeEvent("st_charge_begin",
+                                 blocking_task,
+                                 _st_charge_required_energy,
+                                 _st_charge_slack_at_begin,
+                                 decision_available_energy);
+
+                _dispatch_selection_order.clear();
+                _counted_tasks_in_dispatch.clear();
+                reserved_energy = 0.0;
+                _dispatching_tasks_total_energy = 0.0;
+
+                Tick wake_time =
+                    computeSafeWakeTimeFromOffset(std::max<int64_t>(0, slack_ms));
+                if (_wake_event) {
+                    _wake_event->drop();
+                    delete _wake_event;
+                }
+                _wake_event = new STBlockWakeEvent(this, wake_time);
+                _wake_event->post(wake_time);
+                SCHEDULER_LOG_INFO(std::string("🔒 [ST-Block] PFPST charge begin: ") +
+                                   getTaskName(blocking_task) +
+                                   " slack=" + std::to_string(slack_ms) + "ms");
+            } else {
+                _deep_charging = false;
+                _is_charging_sleep = false;
             }
-            _wake_event = new STBlockWakeEvent(this, wake_time);
-            _wake_event->post(wake_time);
-            SCHEDULER_LOG_INFO(std::string("🔒 [ST-Block] BLOCK墙建立: ") +
-                               getTaskName(blocking_task) +
-                               " slack=" + std::to_string(slack_ms) + "ms");
         } else {
             _deep_charging = false;
             _is_charging_sleep = false;
+            _st_charge_blocked_task = nullptr;
+            _st_charge_required_energy = 0.0;
+            _st_charge_slack_at_begin = 0;
             if (_wake_event) {
                 _wake_event->drop();
                 delete _wake_event;
@@ -702,6 +690,20 @@ namespace RTSim {
 
         // ⭐ 核心：不在这里收集能量，能量收集在tick边界完成
 
+        if (_is_charging_sleep || _deep_charging) {
+            Tick min_slack = _st_charge_blocked_task
+                ? calculateSlackForTask(_st_charge_blocked_task)
+                : calculateMinSlack();
+            if (_current_energy < _max_energy - 0.000001 &&
+                static_cast<int64_t>(min_slack) > 0) {
+                logSTChargeEvent("st_charge_hold",
+                                 _st_charge_blocked_task,
+                                 _st_charge_required_energy,
+                                 _st_charge_slack_at_begin);
+                return nullptr;
+            }
+        }
+
         if (_ready_queue.empty()) {
             SCHEDULER_LOG_DEBUG("📭 [ST-Block] getFirst: 就绪队列为空");
             return nullptr;
@@ -724,8 +726,6 @@ namespace RTSim {
             Tick slack = calculateSlackForTask(first_task);
             int64_t slack_ms = static_cast<int64_t>(slack);
 
-            // 设置深度休眠锁和阻塞标志
-            _is_charging_sleep = true;
             _alap_blocking = true;
             _energy_depleted = true;
 
@@ -735,29 +735,37 @@ namespace RTSim {
                                  " 当前=" + std::to_string(_current_energy * 1000) + "mJ" +
                                  " Slack=" + std::to_string(slack_ms) + "ms");
 
+            if (slack_ms <= 0) {
+                return nullptr;
+            }
+
+            _is_charging_sleep = true;
+            _deep_charging = true;
+            _st_charge_blocked_task = first_task;
+            _st_charge_required_energy = unit_energy;
+            _st_charge_slack_at_begin = slack;
+            logSTChargeEvent("st_charge_begin",
+                             first_task,
+                             unit_energy,
+                             slack);
+
             // 设置唤醒定时器（Slack归零或充满电时唤醒）
             Tick current_time = SIMUL.getTime();
-            Tick wake_time;
-
-            if (slack_ms <= 0) {
-                // Slack已为0，立即唤醒（绝境冲锋）
-                wake_time = computeSafeWakeTimeFromOffset(0);
-                SCHEDULER_LOG_WARNING(std::string("🚨 [ST-Block V130] Slack=0，立即唤醒！"));
-            } else {
-                // 计算充满电需要的时间
-                double energy_needed = _max_energy - _current_energy;
-                double harvest_rate = _base_harvest_rate;  // J/ms
-                int64_t charge_time_ms = static_cast<int64_t>(energy_needed / harvest_rate) + 1;
-                int64_t wake_offset_ms = std::min(slack_ms, charge_time_ms);
-
-                // 唤醒时间 = min(Slack归零时间, 充满电时间)
-                wake_time = computeSafeWakeTimeFromOffset(wake_offset_ms);
-
-                SCHEDULER_LOG_INFO(std::string("⏰ [ST-Block V130] 设置唤醒定时器:") +
-                                  " Slack=" + std::to_string(slack_ms) + "ms" +
-                                  " 充电时间=" + std::to_string(charge_time_ms) + "ms" +
-                                  " 唤醒时间=" + std::to_string(static_cast<int64_t>(wake_time)) + "ms");
+            double energy_needed = std::max(0.0, _max_energy - _current_energy);
+            int64_t charge_time_ms =
+                (_base_harvest_rate > 1e-12)
+                    ? static_cast<int64_t>(std::ceil(energy_needed / _base_harvest_rate))
+                    : slack_ms;
+            int64_t wake_offset_ms = std::min(slack_ms, charge_time_ms);
+            if (wake_offset_ms < 1) {
+                wake_offset_ms = 1;
             }
+            Tick wake_time = computeSafeWakeTimeFromOffset(wake_offset_ms);
+
+            SCHEDULER_LOG_INFO(std::string("⏰ [ST-Block] PFPST charge wake:") +
+                              " Slack=" + std::to_string(slack_ms) + "ms" +
+                              " full_charge_time=" + std::to_string(charge_time_ms) + "ms" +
+                              " wake_time=" + std::to_string(static_cast<int64_t>(wake_time)) + "ms");
 
             // 注册唤醒事件
             if (_wake_event) {
@@ -1400,6 +1408,48 @@ namespace RTSim {
         if (task) {
             _suspend_reasons.erase(task);
         }
+    }
+
+    void STBlockScheduler::setTraceLogger(void *trace) {
+        _trace_logger = static_cast<JSONTrace *>(trace);
+    }
+
+    void STBlockScheduler::setSemanticTraceEnabled(bool enabled) {
+        _semantic_trace_enabled = enabled;
+    }
+
+    void STBlockScheduler::logSTChargeEvent(const std::string &event_type,
+                                            AbsRTTask *blocked_task,
+                                            double required_energy,
+                                            Tick slack_at_begin,
+                                            const std::string &release_reason) {
+        logSTChargeEvent(event_type,
+                         blocked_task,
+                         required_energy,
+                         slack_at_begin,
+                         _current_energy,
+                         release_reason);
+    }
+
+    void STBlockScheduler::logSTChargeEvent(const std::string &event_type,
+                                            AbsRTTask *blocked_task,
+                                            double required_energy,
+                                            Tick slack_at_begin,
+                                            double available_energy,
+                                            const std::string &release_reason) {
+        if (!_trace_logger || !_semantic_trace_enabled || !blocked_task) {
+            return;
+        }
+        std::vector<SchedulerTraceJob> blocked_jobs{
+            makeSTBlockTraceJob(blocked_task, _task_models, 0)};
+        _trace_logger->logSTChargeEvent(
+            event_type,
+            "ST-Block",
+            blocked_jobs,
+            available_energy * 1000.0,
+            required_energy * 1000.0,
+            static_cast<double>(slack_at_begin),
+            release_reason);
     }
 
     double STBlockScheduler::calculateTotalEnergyForTask(AbsRTTask *task) {

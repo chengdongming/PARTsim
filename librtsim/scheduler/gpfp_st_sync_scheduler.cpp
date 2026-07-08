@@ -18,6 +18,7 @@
 #include <rtsim/rttask.hpp>
 #include <rtsim/exeinstr.hpp>
 #include <rtsim/cpu.hpp>
+#include <rtsim/json_trace.hpp>
 #include <rtsim/scheduler/energy_bridge.hpp>
 #include <rtsim/mrtkernel.hpp>
 
@@ -27,6 +28,32 @@
 namespace RTSim {
 
     using namespace MetaSim;
+
+    static SchedulerTraceJob makeSTSyncTraceJob(
+        AbsRTTask *task,
+        const std::map<AbsRTTask *, STSyncTaskModel *> &models,
+        int ready_order) {
+        SchedulerTraceJob job{};
+        Task *concrete_task = dynamic_cast<Task *>(task);
+        job.task_name = concrete_task
+            ? concrete_task->getName()
+            : std::string("task_") + std::to_string(task ? task->getTaskNumber() : -1);
+        job.arrival_time = concrete_task
+            ? static_cast<double>(concrete_task->getLastArrival())
+            : (task ? static_cast<double>(task->getArrival()) : 0.0);
+        job.priority = 0.0;
+        job.ready_order = ready_order;
+        job.task_unit_energy_mJ = 0.0;
+        job.remaining_time_ms = task ? task->getRemainingWCET() : 0.0;
+        job.absolute_deadline = task ? static_cast<double>(task->getDeadline()) : 0.0;
+
+        auto model_it = models.find(task);
+        if (model_it != models.end() && model_it->second) {
+            job.priority = static_cast<double>(model_it->second->getRMPriority());
+            job.task_unit_energy_mJ = model_it->second->getUnitEnergy() * 1000.0;
+        }
+        return job;
+    }
 
     // =====================================================
     // STSyncTickEvent 实现
@@ -175,6 +202,8 @@ namespace RTSim {
           _group_wake_event(nullptr),  // ⭐ V131修复：初始化为nullptr
           _first_tick_scheduled(false),
           _kernel(nullptr),
+          _trace_logger(nullptr),
+          _semantic_trace_enabled(false),
           _batch_scheduled_this_tick(false),
           _energy_depleted(false),
           _selection_tick(-1),
@@ -194,6 +223,8 @@ namespace RTSim {
           _current_batch_size(0),
           _deep_charging(false),
           _charge_start_time(0),
+          _st_group_required_energy(0.0),
+          _st_group_slack_at_begin(0),
           _is_charging_sleep(false),  // ⭐ V130: 深度休眠锁初始化
           _last_preempted_task(nullptr),
           _last_preempted_tick(0),
@@ -481,22 +512,58 @@ namespace RTSim {
 
             bool charging_wait_active = false;
             if ((_is_charging_sleep || _deep_charging) && !_waiting_queue.empty()) {
-                Tick wait_slack = calculateMinSlack();
-                if (wait_slack > Tick(0) && _current_energy < _max_energy - 1e-9) {
-                    // The waiting batch remains asleep, but running continuations
-                    // still need a fresh frozen selection and energy charge on
-                    // every tick.  Keep evaluating the global top-M below.
-                    charging_wait_active = true;
-                    SCHEDULER_LOG_INFO(std::string("🔋 [ST-Sync] 同步组充电等待中，继续重建本 tick top-M，group_slack=") +
-                                       std::to_string(static_cast<int64_t>(wait_slack)) + "ms");
-                } else {
-                    promoteWaitingTasksToReadyQueue("charging window ended");
+                Tick wait_slack = std::numeric_limits<Tick::impl_t>::max();
+                for (AbsRTTask *task : _waiting_queue) {
+                    if (!task) {
+                        continue;
+                    }
+                    wait_slack = std::min(wait_slack, calculateSlackForTask(task));
+                }
+                if (wait_slack == std::numeric_limits<Tick::impl_t>::max()) {
+                    wait_slack = 0;
+                }
+                std::string release_reason;
+                if (_current_energy >= _max_energy - 1e-9) {
+                    release_reason = "battery_full";
+                } else if (wait_slack <= Tick(0)) {
+                    release_reason = "slack_exhausted";
+                }
+
+                if (!release_reason.empty()) {
+                    std::vector<AbsRTTask *> waiting_group(
+                        _waiting_queue.begin(), _waiting_queue.end());
+                    logSTChargeEvent("st_charge_release",
+                                     waiting_group,
+                                     _st_group_required_energy > 0.0
+                                         ? _st_group_required_energy
+                                         : calculateBatchUnitEnergy(waiting_group),
+                                     _st_group_slack_at_begin,
+                                     release_reason);
+                    promoteWaitingTasksToReadyQueue("charging window ended: " + release_reason);
                     _is_charging_sleep = false;
                     _deep_charging = false;
                     _energy_depleted = false;
+                    _st_group_required_energy = 0.0;
+                    _st_group_slack_at_begin = 0;
                     if (_group_wake_event) {
                         _group_wake_event->invalidate();
                     }
+                } else {
+                    // Waiting jobs stay in the global top-M candidate set so
+                    // lower-priority jobs cannot bypass the synchronized group,
+                    // but the group itself is not admitted until full battery
+                    // or slack exhaustion.
+                    charging_wait_active = true;
+                    std::vector<AbsRTTask *> waiting_group(
+                        _waiting_queue.begin(), _waiting_queue.end());
+                    logSTChargeEvent("st_charge_hold",
+                                     waiting_group,
+                                     _st_group_required_energy > 0.0
+                                         ? _st_group_required_energy
+                                         : calculateBatchUnitEnergy(waiting_group),
+                                     _st_group_slack_at_begin);
+                    SCHEDULER_LOG_INFO(std::string("🔋 [ST-Sync] 同步组PFPST充电保持中，继续重建本 tick top-M，group_slack=") +
+                                       std::to_string(static_cast<int64_t>(wait_slack)) + "ms");
                 }
             }
 
@@ -579,6 +646,15 @@ namespace RTSim {
                 }
                 desired_tasks.push_back(task);
             }
+            bool desired_contains_waiting = false;
+            if (charging_wait_active) {
+                for (AbsRTTask *task : desired_tasks) {
+                    if (isInWaitingQueue(task)) {
+                        desired_contains_waiting = true;
+                        break;
+                    }
+                }
+            }
 
             std::vector<AbsRTTask *> continuation_tasks;
             std::vector<AbsRTTask *> idle_core_batch;
@@ -599,8 +675,10 @@ namespace RTSim {
             _selection_frozen = true;
             _energy_commit_valid = false;
             _energy_depleted = false;
-            _deep_charging = false;
-            _is_charging_sleep = false;
+            if (!charging_wait_active) {
+                _deep_charging = false;
+                _is_charging_sleep = false;
+            }
 
             std::vector<AbsRTTask *> selected_tasks = continuation_tasks;
             std::vector<AbsRTTask *> blocked_batch;
@@ -612,7 +690,13 @@ namespace RTSim {
                 continuation_affordable &&
                 _current_energy + epsilon >=
                     continuation_energy + idle_core_batch_energy;
-            if (!continuation_affordable) {
+            if (desired_contains_waiting) {
+                blocked_batch = desired_tasks;
+                selected_tasks.clear();
+                required_batch_energy = 0.0;
+                _stats.total_batch_skipped++;
+                _energy_depleted = true;
+            } else if (!continuation_affordable) {
                 // Once a continuation in global top-M cannot be paid, the whole
                 // desired synchronization group is blocked atomically.
                 blocked_batch = desired_tasks;
@@ -622,25 +706,14 @@ namespace RTSim {
                 _energy_depleted = true;
             } else if (!idle_core_batch.empty() &&
                        !idle_core_batch_affordable) {
-                blocked_batch = idle_core_batch;
+                blocked_batch = desired_tasks;
+                selected_tasks.clear();
+                required_batch_energy = 0.0;
                 _stats.total_batch_skipped++;
                 _energy_depleted = true;
             } else {
                 selected_tasks = desired_tasks;
                 required_batch_energy += idle_core_batch_energy;
-
-                // A charging window is only a wait while the actual top-M
-                // group remains unaffordable.  As soon as harvested energy can
-                // pay the group, admit its waiting members immediately so ST
-                // remains ASAP-like when energy is sufficient.
-                for (AbsRTTask *task : selected_tasks) {
-                    if (isInWaitingQueue(task)) {
-                        addToReadyQueue(task);
-                    }
-                }
-                if (_waiting_queue.empty() && _group_wake_event) {
-                    _group_wake_event->invalidate();
-                }
             }
 
             Tick group_slack = Tick(0);
@@ -656,19 +729,29 @@ namespace RTSim {
                 if (group_slack > Tick(0)) {
                     _deep_charging = true;
                     _is_charging_sleep = true;
-                    for (AbsRTTask *task : blocked_batch) {
-                        addToWaitingQueue(task);
-                    }
-                    Tick wake_time = calculateGroupWakeTime(
-                        group_slack,
-                        calculateBatchUnitEnergy(blocked_batch));
-                    if (wake_time > current_time) {
-                        scheduleGroupWakeEvent(wake_time);
+                    if (!charging_wait_active) {
+                        _st_group_required_energy = calculateBatchUnitEnergy(blocked_batch);
+                        _st_group_slack_at_begin = group_slack;
+                        logSTChargeEvent("st_charge_begin",
+                                         blocked_batch,
+                                         _st_group_required_energy,
+                                         _st_group_slack_at_begin);
+                        for (AbsRTTask *task : blocked_batch) {
+                            addToWaitingQueue(task);
+                        }
+                        Tick wake_time = calculateGroupWakeTime(
+                            group_slack,
+                            _st_group_required_energy);
+                        if (wake_time > current_time) {
+                            scheduleGroupWakeEvent(wake_time);
+                        }
                     }
                 } else {
                     // Slack has expired, so no old charging window may keep jobs
                     // hidden from the next tick's normal eligibility pass.
                     promoteWaitingTasksToReadyQueue("blocked group slack exhausted");
+                    _st_group_required_energy = 0.0;
+                    _st_group_slack_at_begin = 0;
                     if (_group_wake_event) {
                         _group_wake_event->invalidate();
                     }
@@ -1541,6 +1624,46 @@ namespace RTSim {
         return it->second->getTotalEnergy();
     }
 
+    void STSyncScheduler::setTraceLogger(void *trace) {
+        _trace_logger = static_cast<JSONTrace *>(trace);
+    }
+
+    void STSyncScheduler::setSemanticTraceEnabled(bool enabled) {
+        _semantic_trace_enabled = enabled;
+    }
+
+    void STSyncScheduler::logSTChargeEvent(
+        const std::string &event_type,
+        const std::vector<AbsRTTask *> &blocked_group,
+        double required_energy,
+        Tick slack_at_begin,
+        const std::string &release_reason) {
+        if (!_trace_logger || !_semantic_trace_enabled || blocked_group.empty()) {
+            return;
+        }
+        std::vector<SchedulerTraceJob> blocked_jobs;
+        blocked_jobs.reserve(blocked_group.size());
+        int ready_order = 0;
+        for (AbsRTTask *task : blocked_group) {
+            if (!task) {
+                continue;
+            }
+            blocked_jobs.push_back(
+                makeSTSyncTraceJob(task, _task_models, ready_order++));
+        }
+        if (blocked_jobs.empty()) {
+            return;
+        }
+        _trace_logger->logSTChargeEvent(
+            event_type,
+            "ST-Sync",
+            blocked_jobs,
+            _current_energy * 1000.0,
+            required_energy * 1000.0,
+            static_cast<double>(slack_at_begin),
+            release_reason);
+    }
+
     double STSyncScheduler::calculateTotalEnergyForTask(AbsRTTask *task) {
         if (!task) {
             return 0.0;
@@ -1747,6 +1870,12 @@ namespace RTSim {
         _deep_charging = true;
         _energy_depleted = true;
         _is_charging_sleep = true;
+        _st_group_required_energy = required_energy;
+        _st_group_slack_at_begin = min_slack;
+        logSTChargeEvent("st_charge_begin",
+                         tasks,
+                         _st_group_required_energy,
+                         _st_group_slack_at_begin);
         clampCurrentEnergyNonNegative("suspendBatchForInsufficientEnergy");
 
         Tick wake_time = calculateGroupWakeTime(min_slack, required_energy);

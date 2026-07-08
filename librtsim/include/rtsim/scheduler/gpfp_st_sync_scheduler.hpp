@@ -24,6 +24,7 @@ namespace RTSim {
     class AbsRTTask;
     class STSyncScheduler;
     class MRTKernel;
+    class JSONTrace;
 
     // 时间类型别名
     using TimeMs = int64_t;
@@ -155,6 +156,8 @@ namespace RTSim {
         std::vector<AbsRTTask *> _deferred_arrivals;
         std::map<CPU *, AbsRTTask *> _running_tasks;
         MRTKernel *_kernel;
+        JSONTrace *_trace_logger;
+        bool _semantic_trace_enabled;
 
         // 空壳映射，仅用于兼容旧清理路径；ST-Sync 不再依赖按任务运行时能量事件。
         std::map<AbsRTTask *, STSyncEnergyCheckEvent *> _energy_check_events;
@@ -186,6 +189,8 @@ namespace RTSim {
         // ========== ST深度充电管理 ==========
         bool _deep_charging;           // ⭐ ST特有：是否处于深度充电模式
         MetaSim::Tick _charge_start_time;  // 充电开始时间
+        double _st_group_required_energy;
+        MetaSim::Tick _st_group_slack_at_begin;
 
         // ========== V130: 深度休眠锁（消灭1ms碎片化抖动） ==========
         bool _is_charging_sleep;       // ⭐ 全局深度休眠锁：能量不足时锁住，充满电或Slack=0时解锁
@@ -255,6 +260,11 @@ namespace RTSim {
                                               double required_energy,
                                               const std::string &context);
         void rebuildApprovedBatchForImmediateDispatch();
+        void logSTChargeEvent(const std::string &event_type,
+                              const std::vector<AbsRTTask *> &blocked_group,
+                              double required_energy,
+                              MetaSim::Tick slack_at_begin,
+                              const std::string &release_reason = "");
 
         // ST-Sync批量计算
         int calculateBatchSize();                              // 计算批量大小 k
@@ -338,6 +348,8 @@ namespace RTSim {
         double getTotalEnergyHarvested() const override { return _stats.total_energy_harvested; }
         double getTaskUnitEnergy(AbsRTTask *task) const override;
         double getTaskTotalEnergy(AbsRTTask *task) const override;
+        void setTraceLogger(void *trace) override;
+        void setSemanticTraceEnabled(bool enabled) override;
 
         // 兼容旧调用点；当前实现不启动按任务运行时能量事件。
         void startEnergyCheckForTask(AbsRTTask *task, CPU *cpu);

@@ -24,6 +24,7 @@ namespace RTSim {
     class AbsRTTask;
     class STNonBlockScheduler;
     class MRTKernel;
+    class JSONTrace;
 
     // 时间类型别名
     using TimeMs = int64_t;
@@ -160,6 +161,8 @@ namespace RTSim {
         std::vector<AbsRTTask *> _waiting_queue;
         std::map<CPU *, AbsRTTask *> _running_tasks;
         MRTKernel *_kernel;
+        JSONTrace *_trace_logger;
+        bool _semantic_trace_enabled;
 
         // ========== 运行时能量检查事件（每任务一个） ==========
         // ⭐ V40��构：能量检查事件已删除，能量由performTickScheduling处理
@@ -184,6 +187,8 @@ namespace RTSim {
         // ⭐ 策略2核心：高优缺电时设置专属定时器，Slack=0或满电时唤醒抢占
         std::map<AbsRTTask *, STNonBlockWakeEvent *> _skip_wake_events;  // 被跳过任务的唤醒定时器
         std::set<AbsRTTask *> _skipped_tasks;  // 当前被跳过（因能量不足）的任务集合
+        std::map<AbsRTTask *, MetaSim::Tick> _skipped_slack_at_begin;
+        std::map<AbsRTTask *, double> _skipped_required_energy;
 
         // ========== 抢占防抖 ==========
         // ⭐ 防止频繁抢占：在同一个tick内，同一个任务不应该被反复抢占
@@ -258,6 +263,12 @@ namespace RTSim {
         void handleWakeTrigger(AbsRTTask *task);
         void scheduleWakeForSkippedTask(AbsRTTask *task, MetaSim::Tick current_time);
         void clearPendingWakeIfMatches(AbsRTTask *task);
+        bool isSkippedTaskHeld(AbsRTTask *task) const;
+        void logSTChargeEvent(const std::string &event_type,
+                              AbsRTTask *blocked_task,
+                              double required_energy,
+                              MetaSim::Tick slack_at_begin,
+                              const std::string &release_reason = "");
 
         // Allow wake event to access scheduler internals
         friend class STNonBlockWakeEvent;
@@ -329,6 +340,8 @@ namespace RTSim {
         void setSuspendReason(AbsRTTask *task, const std::string &reason);
         std::string getSuspendReason(AbsRTTask *task) const override;
         void clearSuspendReason(AbsRTTask *task) override;
+        void setTraceLogger(void *trace) override;
+        void setSemanticTraceEnabled(bool enabled) override;
 
         // ⭐ 运行时能量检查接口（V28.15新增）
 //         void startEnergyCheckForTask(AbsRTTask *task, CPU *cpu);  // 开始对任务的能量监控

@@ -20,6 +20,7 @@
 #include <rtsim/rttask.hpp>
 #include <rtsim/exeinstr.hpp>
 #include <rtsim/cpu.hpp>
+#include <rtsim/json_trace.hpp>
 #include <rtsim/scheduler/energy_bridge.hpp>
 #include <rtsim/mrtkernel.hpp>
 
@@ -29,6 +30,32 @@
 namespace RTSim {
 
     using namespace MetaSim;
+
+    static SchedulerTraceJob makeSTNonBlockTraceJob(
+        AbsRTTask *task,
+        const std::map<AbsRTTask *, STNonBlockTaskModel *> &models,
+        int ready_order) {
+        SchedulerTraceJob job{};
+        Task *concrete_task = dynamic_cast<Task *>(task);
+        job.task_name = concrete_task
+            ? concrete_task->getName()
+            : std::string("task_") + std::to_string(task ? task->getTaskNumber() : -1);
+        job.arrival_time = concrete_task
+            ? static_cast<double>(concrete_task->getLastArrival())
+            : (task ? static_cast<double>(task->getArrival()) : 0.0);
+        job.priority = 0.0;
+        job.ready_order = ready_order;
+        job.task_unit_energy_mJ = 0.0;
+        job.remaining_time_ms = task ? task->getRemainingWCET() : 0.0;
+        job.absolute_deadline = task ? static_cast<double>(task->getDeadline()) : 0.0;
+
+        auto model_it = models.find(task);
+        if (model_it != models.end() && model_it->second) {
+            job.priority = static_cast<double>(model_it->second->getRMPriority());
+            job.task_unit_energy_mJ = model_it->second->getUnitEnergy() * 1000.0;
+        }
+        return job;
+    }
 
     // =====================================================
     // STNonBlockTickEvent 实现
@@ -290,6 +317,8 @@ namespace RTSim {
           _tick_event(nullptr),
           _first_tick_scheduled(false),
           _kernel(nullptr),
+          _trace_logger(nullptr),
+          _semantic_trace_enabled(false),
           _energy_depleted(false),
           _deep_charging(false),
           _pending_wake_task(nullptr),
@@ -584,6 +613,42 @@ namespace RTSim {
             }
 
             const double unit_energy = getConfiguredUnitEnergyForTask(task);
+            if (_skipped_tasks.find(task) != _skipped_tasks.end() &&
+                !isSkippedTaskHeld(task)) {
+                const bool battery_full = (_current_energy >= _max_energy - epsilon);
+                Tick slack = calculateSlackForTask(task);
+                const std::string reason =
+                    battery_full ? "battery_full" : "slack_exhausted";
+                auto required_it = _skipped_required_energy.find(task);
+                auto slack_it = _skipped_slack_at_begin.find(task);
+                logSTChargeEvent("st_charge_release",
+                                 task,
+                                 required_it == _skipped_required_energy.end()
+                                     ? unit_energy
+                                     : required_it->second,
+                                 slack_it == _skipped_slack_at_begin.end()
+                                     ? slack
+                                     : slack_it->second,
+                                 reason);
+                clearSkippedWakeState(task);
+                if (battery_full) {
+                    _pending_wake_task = task;
+                    _pending_wake_energy = unit_energy;
+                } else {
+                    clearPendingWakeIfMatches(task);
+                }
+            }
+            if (isSkippedTaskHeld(task)) {
+                auto slack_it = _skipped_slack_at_begin.find(task);
+                logSTChargeEvent("st_charge_hold",
+                                 task,
+                                 unit_energy,
+                                 slack_it == _skipped_slack_at_begin.end()
+                                     ? calculateSlackForTask(task)
+                                     : slack_it->second);
+                _stats.total_skipped_energy++;
+                continue;
+            }
             if (reserved_energy + unit_energy <= _current_energy + epsilon) {
                 _dispatch_selection_order.push_back(task);
                 _counted_tasks_in_dispatch.insert(task);
@@ -1217,6 +1282,34 @@ namespace RTSim {
         }
     }
 
+    void STNonBlockScheduler::setTraceLogger(void *trace) {
+        _trace_logger = static_cast<JSONTrace *>(trace);
+    }
+
+    void STNonBlockScheduler::setSemanticTraceEnabled(bool enabled) {
+        _semantic_trace_enabled = enabled;
+    }
+
+    void STNonBlockScheduler::logSTChargeEvent(const std::string &event_type,
+                                               AbsRTTask *blocked_task,
+                                               double required_energy,
+                                               Tick slack_at_begin,
+                                               const std::string &release_reason) {
+        if (!_trace_logger || !_semantic_trace_enabled || !blocked_task) {
+            return;
+        }
+        std::vector<SchedulerTraceJob> blocked_jobs{
+            makeSTNonBlockTraceJob(blocked_task, _task_models, 0)};
+        _trace_logger->logSTChargeEvent(
+            event_type,
+            "ST-NonBlock",
+            blocked_jobs,
+            _current_energy * 1000.0,
+            required_energy * 1000.0,
+            static_cast<double>(slack_at_begin),
+            release_reason);
+    }
+
     double STNonBlockScheduler::calculateTotalEnergyForTask(AbsRTTask *task) {
         if (!task) {
             return 0.0;
@@ -1599,6 +1692,8 @@ namespace RTSim {
         }
 
         _skipped_tasks.erase(task);
+        _skipped_slack_at_begin.erase(task);
+        _skipped_required_energy.erase(task);
         auto wake_it = _skip_wake_events.find(task);
         if (wake_it != _skip_wake_events.end()) {
             if (wake_it->second) {
@@ -1618,6 +1713,18 @@ namespace RTSim {
             _pending_wake_task = nullptr;
             _pending_wake_energy = 0.0;
         }
+    }
+
+    bool STNonBlockScheduler::isSkippedTaskHeld(AbsRTTask *task) const {
+        if (!task || _skipped_tasks.find(task) == _skipped_tasks.end()) {
+            return false;
+        }
+        const double epsilon = 1e-9;
+        if (_current_energy >= _max_energy - epsilon) {
+            return false;
+        }
+        Tick slack = const_cast<STNonBlockScheduler *>(this)->calculateSlackForTask(task);
+        return static_cast<int64_t>(slack) > 0;
     }
 
     void STNonBlockScheduler::handleWakeTrigger(AbsRTTask *task) {
@@ -1642,40 +1749,51 @@ namespace RTSim {
 
         double unit_energy = calculateUnitEnergyForTask(task);
         Tick slack = calculateSlackForTask(task);
-        bool energy_sufficient = (_current_energy >= unit_energy - 1e-9);
-        bool force_execute = (slack <= 0);
+        bool battery_full = (_current_energy >= _max_energy - 1e-9);
+        bool slack_exhausted = (slack <= 0);
 
-        if (energy_sufficient) {
-            _skipped_tasks.erase(task);
-            _pending_wake_task = task;
-            _pending_wake_energy = unit_energy;
+        if (battery_full || slack_exhausted) {
+            std::string reason = battery_full ? "battery_full" : "slack_exhausted";
+            auto required_it = _skipped_required_energy.find(task);
+            auto slack_it = _skipped_slack_at_begin.find(task);
+            logSTChargeEvent("st_charge_release",
+                             task,
+                             required_it == _skipped_required_energy.end()
+                                 ? unit_energy
+                                 : required_it->second,
+                             slack_it == _skipped_slack_at_begin.end()
+                                 ? slack
+                                 : slack_it->second,
+                             reason);
+            clearSkippedWakeState(task);
+            if (battery_full) {
+                _pending_wake_task = task;
+                _pending_wake_energy = unit_energy;
+            } else {
+                clearPendingWakeIfMatches(task);
+            }
 
             if (_energy_depleted && _current_energy > 1e-9) {
                 _energy_depleted = false;
             }
 
-            SCHEDULER_LOG_INFO(std::string("✅ [ST-NonBlock] 唤醒恢复资格，等待正常调度路径: ") +
+            SCHEDULER_LOG_INFO(std::string("✅ [ST-NonBlock] PFPST charge release: ") +
                                task_name +
-                               " 预留能量=" + std::to_string(unit_energy * 1000) + "mJ");
+                               " reason=" + reason);
             return;
         }
 
-        if (force_execute) {
-            _skipped_tasks.erase(task);
-            clearPendingWakeIfMatches(task);
-
-            if (_energy_depleted && _current_energy > 1e-9) {
-                _energy_depleted = false;
-            }
-
-            SCHEDULER_LOG_WARNING(std::string("🚨 [ST-NonBlock] Slack=0，恢复资格但不预留能量，等待正常调度路径: ") +
-                                  task_name +
-                                  " 需要=" + std::to_string(unit_energy * 1000) + "mJ" +
-                                  " 当前=" + std::to_string(_current_energy * 1000) + "mJ");
-            return;
-        }
-
-        SCHEDULER_LOG_INFO(std::string("⚠️ [ST-NonBlock] 唤醒时能量仍不足，重新安排等待: ") +
+        auto required_it = _skipped_required_energy.find(task);
+        auto slack_it = _skipped_slack_at_begin.find(task);
+        logSTChargeEvent("st_charge_hold",
+                         task,
+                         required_it == _skipped_required_energy.end()
+                             ? unit_energy
+                             : required_it->second,
+                         slack_it == _skipped_slack_at_begin.end()
+                             ? slack
+                             : slack_it->second);
+        SCHEDULER_LOG_INFO(std::string("⚠️ [ST-NonBlock] PFPST hold until full battery or slack exhaustion: ") +
                            task_name +
                            " 需要=" + std::to_string(unit_energy * 1000) + "mJ" +
                            " 当前=" + std::to_string(_current_energy * 1000) + "mJ");
@@ -1691,7 +1809,7 @@ namespace RTSim {
         double unit_energy = calculateUnitEnergyForTask(task);
         Tick slack = calculateSlackForTask(task);
         double available_energy = std::max(0.0, _current_energy);
-        double energy_needed = std::max(0.0, unit_energy - available_energy);
+        double energy_needed = std::max(0.0, _max_energy - available_energy);
 
         // 唤醒估算必须和 collectSolarEnergy() 的实际收集语义保持一致：
         // - 非真实太阳能路径下，_base_harvest_rate 在 tick 收集里按 W(J/s) 使用；
@@ -1745,8 +1863,24 @@ namespace RTSim {
 
         Tick wake_time = current_time + wake_offset_ms;
 
+        bool new_charge = (_skipped_tasks.find(task) == _skipped_tasks.end());
+        Tick slack_at_begin = slack;
+        double required_at_begin = unit_energy;
+        auto old_slack_it = _skipped_slack_at_begin.find(task);
+        if (old_slack_it != _skipped_slack_at_begin.end()) {
+            slack_at_begin = old_slack_it->second;
+        }
+        auto old_required_it = _skipped_required_energy.find(task);
+        if (old_required_it != _skipped_required_energy.end()) {
+            required_at_begin = old_required_it->second;
+        }
         clearSkippedWakeState(task);
         _skipped_tasks.insert(task);
+        _skipped_slack_at_begin[task] = slack_at_begin;
+        _skipped_required_energy[task] = required_at_begin;
+        if (new_charge) {
+            logSTChargeEvent("st_charge_begin", task, unit_energy, slack);
+        }
 
         STNonBlockWakeEvent *wake_event = new STNonBlockWakeEvent(this, task, wake_time);
         _skip_wake_events[task] = wake_event;

@@ -140,6 +140,8 @@ public:
         scheduler._energy_depleted = false;
         scheduler._deep_charging = false;
         scheduler._is_charging_sleep = false;
+        scheduler._st_group_required_energy = 0.0;
+        scheduler._st_group_slack_at_begin = 0;
         scheduler._dispatching_tasks_total_energy = 0.0;
         scheduler._counted_tasks_in_dispatch.clear();
         scheduler._current_batch_tasks.clear();
@@ -282,7 +284,7 @@ TEST(STSyncScheduler, BatchInsufficientEnergyWithSlackWaits) {
     simulation.endSingleRun();
 }
 
-TEST(STSyncScheduler, ChargingBatchRunsAsSoonAsEnergyBecomesSufficient) {
+TEST(STSyncScheduler, ChargingBatchHoldsUntilBatteryFullOrSlackExhausted) {
     auto &simulation = MetaSim::Simulation::getInstance();
     TestSTSyncScheduler scheduler;
     CPU cpu0("st-sync-recharge-cpu0", nullptr);
@@ -315,10 +317,22 @@ TEST(STSyncScheduler, ChargingBatchRunsAsSoonAsEnergyBecomesSufficient) {
     recharge.post(Tick(1));
     simulation.run_to(Tick(1));
 
+    EXPECT_EQ(first.getScheduleCount(), 0);
+    EXPECT_EQ(second.getScheduleCount(), 0);
+    EXPECT_TRUE(scheduler.isChargingSleepActive());
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 2.0);
+
+    STSyncTestActionEvent full([&]() {
+        scheduler._current_energy = 100.0;
+        STSyncSchedulerTestPeer::tick(scheduler);
+    });
+    full.post(Tick(2));
+    simulation.run_to(Tick(2));
+
     EXPECT_EQ(first.getScheduleCount(), 1);
     EXPECT_EQ(second.getScheduleCount(), 1);
     EXPECT_FALSE(scheduler.isChargingSleepActive());
-    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 0.0);
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 98.0);
 
     simulation.endSingleRun();
 }
@@ -452,6 +466,45 @@ TEST(STSyncScheduler, ExactBatchEnergyChargedOnce) {
     simulation.endSingleRun();
 }
 
+TEST(STSyncScheduler, ChargingBatchReleasesWhenGroupSlackExhausted) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTSyncScheduler scheduler;
+    CPU cpu0("st-sync-slack-release-cpu0", nullptr);
+    CPU cpu1("st-sync-slack-release-cpu1", nullptr);
+    TestSTSyncMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu0, &cpu1});
+    FakeSTSyncTask first(1, 5, 2, 1.0);
+    FakeSTSyncTask second(2, 10, 2, 1.0);
+
+    STSyncSchedulerTestPeer::addTaskModel(scheduler, &first, 5, 1, 1.0);
+    STSyncSchedulerTestPeer::addTaskModel(scheduler, &second, 10, 1, 1.0);
+
+    simulation.initSingleRun();
+    STSyncSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STSyncSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    first.releaseAt(Tick(0));
+    second.releaseAt(Tick(0));
+    STSyncSchedulerTestPeer::enqueue(scheduler, &first);
+    STSyncSchedulerTestPeer::enqueue(scheduler, &second);
+
+    STSyncSchedulerTestPeer::tick(scheduler);
+    ASSERT_TRUE(scheduler.isChargingSleepActive());
+    ASSERT_TRUE(scheduler.getCurrentBatchTasks().empty());
+
+    STSyncTestActionEvent slack_exhausted([&]() {
+        STSyncSchedulerTestPeer::tick(scheduler);
+    });
+    slack_exhausted.post(Tick(1));
+    simulation.run_to(Tick(1));
+
+    EXPECT_FALSE(scheduler.isChargingSleepActive());
+    EXPECT_EQ(first.getScheduleCount(), 0);
+    EXPECT_EQ(second.getScheduleCount(), 0);
+    EXPECT_TRUE(scheduler.getCurrentBatchTasks().empty());
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.0);
+
+    simulation.endSingleRun();
+}
+
 TEST(STSyncScheduler, NoFreeFirstTick) {
     auto &simulation = MetaSim::Simulation::getInstance();
     TestSTSyncScheduler scheduler;
@@ -578,7 +631,7 @@ TEST(STSyncScheduler, RunningTaskMustBeInFrozenBatch) {
 }
 
 TEST(STSyncScheduler,
-     InsufficientIdleCoreBatchPreservesAffordableContinuation) {
+     InsufficientIdleCoreBatchDoesNotRunPartialContinuationDuringCharge) {
     auto &simulation = MetaSim::Simulation::getInstance();
     TestSTSyncScheduler scheduler;
     CPU cpu0("st-sync-running-partial-cpu0", nullptr);
@@ -602,11 +655,12 @@ TEST(STSyncScheduler,
     STSyncSchedulerTestPeer::tick(scheduler);
     simulation.run_to(Tick(0));
 
-    EXPECT_TRUE(running.isExecuting());
+    EXPECT_FALSE(running.isExecuting());
     EXPECT_EQ(ready.getScheduleCount(), 0);
-    EXPECT_EQ(scheduler.getCurrentBatchTasks(),
-              (std::vector<AbsRTTask *>{&running}));
-    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 0.5);
+    EXPECT_TRUE(scheduler.getCurrentBatchTasks().empty());
+    EXPECT_TRUE(STSyncSchedulerTestPeer::isInWaitingQueue(scheduler, &running));
+    EXPECT_TRUE(STSyncSchedulerTestPeer::isInWaitingQueue(scheduler, &ready));
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.5);
 
     simulation.endSingleRun();
 }
@@ -636,11 +690,13 @@ TEST(STSyncScheduler,
     STSyncSchedulerTestPeer::enqueue(scheduler, &blocked_new_job);
 
     STSyncSchedulerTestPeer::tick(scheduler);
-    EXPECT_TRUE(continuation.isExecuting());
-    EXPECT_TRUE(ContainsTask(scheduler.getCurrentBatchTasks(), &continuation));
+    EXPECT_FALSE(continuation.isExecuting());
+    EXPECT_TRUE(scheduler.getCurrentBatchTasks().empty());
     EXPECT_TRUE(STSyncSchedulerTestPeer::isInWaitingQueue(
         scheduler, &blocked_new_job));
-    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.5);
+    EXPECT_TRUE(STSyncSchedulerTestPeer::isInWaitingQueue(
+        scheduler, &continuation));
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 2.5);
 
     STSyncTestActionEvent next_tick([&]() {
         STSyncSchedulerTestPeer::tick(scheduler);
@@ -648,16 +704,11 @@ TEST(STSyncScheduler,
     next_tick.post(Tick(1));
     simulation.run_to(Tick(1));
 
-    EXPECT_TRUE(continuation.isExecuting());
-    EXPECT_TRUE(ContainsTask(scheduler.getCurrentBatchTasks(), &continuation));
-    EXPECT_EQ(kernel.getProcessor(&continuation), &cpu0);
-    EXPECT_EQ(std::count_if(
-                  kernel.getCurrentExecutingTasks().begin(),
-                  kernel.getCurrentExecutingTasks().end(),
-                  [&](const auto &entry) { return entry.second == &continuation; }),
-              1);
+    EXPECT_FALSE(continuation.isExecuting());
+    EXPECT_TRUE(scheduler.getCurrentBatchTasks().empty());
+    EXPECT_TRUE(scheduler.isChargingSleepActive());
     EXPECT_EQ(blocked_new_job.getScheduleCount(), 0);
-    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 0.5);
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 2.5);
 
     simulation.endSingleRun();
 }
