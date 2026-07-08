@@ -675,6 +675,7 @@ namespace RTSim {
 
         double reserved_energy = 0.0;
         AbsRTTask *highest_priority_energy_blocked_task = nullptr;
+        double first_blocked_residual_energy = 0.0;
         const int total_cpus = static_cast<int>(running_tasks_map.size());
         const double epsilon = 1e-9;
         for (AbsRTTask *task : active_tasks) {
@@ -686,6 +687,8 @@ namespace RTSim {
             if (reserved_energy + unit_energy > _current_energy + epsilon) {
                 if (!highest_priority_energy_blocked_task) {
                     highest_priority_energy_blocked_task = task;
+                    first_blocked_residual_energy =
+                        std::max(0.0, _current_energy - reserved_energy);
                 }
                 _stats.total_skipped_energy++;
                 SCHEDULER_LOG_INFO(std::string("⚠️ [ASAP-NonBlock] 跳过当前不可负担任务: ") +
@@ -752,7 +755,7 @@ namespace RTSim {
                                              _task_models,
                                              0),
                     makeASAPNonBlockTraceJob(bypassed_task, _task_models, 0),
-                    _current_energy * 1000.0);
+                    first_blocked_residual_energy * 1000.0);
             }
         }
 

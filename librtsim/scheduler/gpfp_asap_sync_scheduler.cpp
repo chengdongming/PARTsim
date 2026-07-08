@@ -734,7 +734,9 @@ namespace RTSim {
                 makeASAPSyncTraceJobs(active_tasks, _task_models),
                 makeASAPSyncTraceJobs(selected_tasks, _task_models),
                 decision_reason);
-            if (sync_batch_blocked && !desired_tasks.empty()) {
+            if (sync_batch_blocked &&
+                selected_tasks.empty() &&
+                !desired_tasks.empty()) {
                 _trace_logger->logSyncBatchBlock(
                     "ASAP-Sync",
                     makeASAPSyncTraceJobs(desired_tasks, _task_models),

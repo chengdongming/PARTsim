@@ -378,8 +378,10 @@ namespace RTSim {
 
         if (_trace_logger && _semantic_trace_enabled && !active_jobs.empty()) {
             std::string decision_reason = "selected_prefix";
-            if (stopped_by_energy) {
+            if (stopped_by_energy && selected.empty()) {
                 decision_reason = "highest_priority_energy_insufficient";
+            } else if (stopped_by_energy) {
+                decision_reason = "prefix_energy_insufficient";
             } else if (selected.size() >= processor_count &&
                        selected.size() < active_jobs.size()) {
                 decision_reason = "processor_capacity_reached";
@@ -390,12 +392,12 @@ namespace RTSim {
                 makeASAPBlockTraceJobs(active_jobs, _task_models),
                 makeASAPBlockTraceJobs(selected, _task_models),
                 decision_reason);
-            if (stopped_by_energy && selected.size() < active_jobs.size()) {
+            if (stopped_by_energy && selected.empty()) {
                 _trace_logger->logEnergyBlock(
                     "ASAP-Block",
-                    makeASAPBlockTraceJob(active_jobs[selected.size()],
+                    makeASAPBlockTraceJob(active_jobs.front(),
                                           _task_models,
-                                          static_cast<int>(selected.size())),
+                                          0),
                     available_energy * 1000.0);
             }
         }
