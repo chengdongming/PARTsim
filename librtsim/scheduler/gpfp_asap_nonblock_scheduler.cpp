@@ -14,6 +14,7 @@
 #include <stdexcept>
 #include <metasim/factory.hpp>
 #include <metasim/simul.hpp>
+#include <rtsim/json_trace.hpp>
 #include <rtsim/scheduler/gpfp_asap_nonblock_scheduler.hpp>
 #include <rtsim/task.hpp>
 #include <rtsim/rttask.hpp>
@@ -28,6 +29,43 @@
 namespace RTSim {
 
     using namespace MetaSim;
+
+    static SchedulerTraceJob makeASAPNonBlockTraceJob(
+        AbsRTTask *task,
+        const std::map<AbsRTTask *, ASAPNonBlockTaskModel *> &models,
+        int ready_order) {
+        SchedulerTraceJob job{};
+        Task *concrete_task = dynamic_cast<Task *>(task);
+        job.task_name = concrete_task
+            ? concrete_task->getName()
+            : std::string("task_") + std::to_string(task ? task->getTaskNumber() : -1);
+        job.arrival_time = concrete_task
+            ? static_cast<double>(concrete_task->getLastArrival())
+            : (task ? static_cast<double>(task->getArrival()) : 0.0);
+        job.priority = 0.0;
+        job.ready_order = ready_order;
+        job.task_unit_energy_mJ = 0.0;
+        job.remaining_time_ms = task ? task->getRemainingWCET() : 0.0;
+        job.absolute_deadline = task ? static_cast<double>(task->getDeadline()) : 0.0;
+
+        auto model_it = models.find(task);
+        if (model_it != models.end() && model_it->second) {
+            job.priority = static_cast<double>(model_it->second->getRMPriority());
+            job.task_unit_energy_mJ = model_it->second->getUnitEnergy() * 1000.0;
+        }
+        return job;
+    }
+
+    static std::vector<SchedulerTraceJob> makeASAPNonBlockTraceJobs(
+        const std::vector<AbsRTTask *> &tasks,
+        const std::map<AbsRTTask *, ASAPNonBlockTaskModel *> &models) {
+        std::vector<SchedulerTraceJob> jobs;
+        jobs.reserve(tasks.size());
+        for (std::size_t i = 0; i < tasks.size(); ++i) {
+            jobs.push_back(makeASAPNonBlockTraceJob(tasks[i], models, static_cast<int>(i)));
+        }
+        return jobs;
+    }
 
     // =====================================================
     // ASAPNonBlockTickEvent 实现
@@ -245,6 +283,8 @@ namespace RTSim {
           _tick_event(nullptr),
           _first_tick_scheduled(false),
           _kernel(nullptr),
+          _trace_logger(nullptr),
+          _semantic_trace_enabled(false),
           _selection_tick(-1),
           _selection_generation(0),
           _selection_frozen(false),
@@ -668,6 +708,53 @@ namespace RTSim {
         _selection_generation++;
         _selection_frozen = true;
         _energy_depleted = _dispatch_selection_order.empty() && !active_tasks.empty();
+
+        if (_trace_logger && _semantic_trace_enabled && !active_tasks.empty()) {
+            AbsRTTask *bypassed_task = nullptr;
+            if (highest_priority_energy_blocked_task) {
+                const std::set<AbsRTTask *> selected_set(
+                    _dispatch_selection_order.begin(),
+                    _dispatch_selection_order.end());
+                bool seen_blocked_task = false;
+                for (AbsRTTask *task : active_tasks) {
+                    if (task == highest_priority_energy_blocked_task) {
+                        seen_blocked_task = true;
+                        continue;
+                    }
+                    if (seen_blocked_task &&
+                        selected_set.find(task) != selected_set.end()) {
+                        bypassed_task = task;
+                        break;
+                    }
+                }
+            }
+
+            std::string decision_reason = "energy_filtered_selection";
+            if (bypassed_task) {
+                decision_reason = "lower_priority_bypass_due_to_energy";
+            } else if (highest_priority_energy_blocked_task) {
+                decision_reason = "ready_job_energy_insufficient";
+            } else if (static_cast<int>(_dispatch_selection_order.size()) >=
+                       total_cpus &&
+                       _dispatch_selection_order.size() < active_tasks.size()) {
+                decision_reason = "processor_capacity_reached";
+            }
+            _trace_logger->logSchedulerDecision(
+                "ASAP-NonBlock",
+                _current_energy * 1000.0,
+                makeASAPNonBlockTraceJobs(active_tasks, _task_models),
+                makeASAPNonBlockTraceJobs(_dispatch_selection_order, _task_models),
+                decision_reason);
+            if (bypassed_task) {
+                _trace_logger->logNonBlockBypass(
+                    "ASAP-NonBlock",
+                    makeASAPNonBlockTraceJob(highest_priority_energy_blocked_task,
+                                             _task_models,
+                                             0),
+                    makeASAPNonBlockTraceJob(bypassed_task, _task_models, 0),
+                    _current_energy * 1000.0);
+            }
+        }
 
         if (!_dispatch_selection_order.empty()) {
             commitTickEnergy(current_time, reserved_energy);
@@ -1110,6 +1197,14 @@ namespace RTSim {
         if (task) {
             _suspend_reasons.erase(task);
         }
+    }
+
+    void ASAPNonBlockScheduler::setTraceLogger(void *trace) {
+        _trace_logger = static_cast<JSONTrace *>(trace);
+    }
+
+    void ASAPNonBlockScheduler::setSemanticTraceEnabled(bool enabled) {
+        _semantic_trace_enabled = enabled;
     }
 
     double ASAPNonBlockScheduler::calculateTotalEnergyForTask(AbsRTTask *task) {

@@ -14,6 +14,7 @@
 #include <stdexcept>
 #include <metasim/factory.hpp>
 #include <metasim/simul.hpp>
+#include <rtsim/json_trace.hpp>
 #include <rtsim/scheduler/gpfp_asap_block_scheduler.hpp>
 #include <rtsim/task.hpp>
 #include <rtsim/rttask.hpp>
@@ -28,6 +29,43 @@
 namespace RTSim {
 
     using namespace MetaSim;
+
+    static SchedulerTraceJob makeASAPBlockTraceJob(
+        AbsRTTask *task,
+        const std::map<AbsRTTask *, ASAPBlockTaskModel *> &models,
+        int ready_order) {
+        SchedulerTraceJob job{};
+        Task *concrete_task = dynamic_cast<Task *>(task);
+        job.task_name = concrete_task
+            ? concrete_task->getName()
+            : std::string("task_") + std::to_string(task ? task->getTaskNumber() : -1);
+        job.arrival_time = concrete_task
+            ? static_cast<double>(concrete_task->getLastArrival())
+            : (task ? static_cast<double>(task->getArrival()) : 0.0);
+        job.priority = 0.0;
+        job.ready_order = ready_order;
+        job.task_unit_energy_mJ = 0.0;
+        job.remaining_time_ms = task ? task->getRemainingWCET() : 0.0;
+        job.absolute_deadline = task ? static_cast<double>(task->getDeadline()) : 0.0;
+
+        auto model_it = models.find(task);
+        if (model_it != models.end() && model_it->second) {
+            job.priority = static_cast<double>(model_it->second->getRMPriority());
+            job.task_unit_energy_mJ = model_it->second->getUnitEnergy() * 1000.0;
+        }
+        return job;
+    }
+
+    static std::vector<SchedulerTraceJob> makeASAPBlockTraceJobs(
+        const std::vector<AbsRTTask *> &tasks,
+        const std::map<AbsRTTask *, ASAPBlockTaskModel *> &models) {
+        std::vector<SchedulerTraceJob> jobs;
+        jobs.reserve(tasks.size());
+        for (std::size_t i = 0; i < tasks.size(); ++i) {
+            jobs.push_back(makeASAPBlockTraceJob(tasks[i], models, static_cast<int>(i)));
+        }
+        return jobs;
+    }
 
     // =====================================================
     // ASAPBlockTickEvent 实现
@@ -118,7 +156,9 @@ namespace RTSim {
           _base_harvest_rate(0.054),  // ⭐ V93修复：默认值 54 mW
           _tick_event(nullptr),
           _first_tick_scheduled(false),
-          _kernel(nullptr) {
+          _kernel(nullptr),
+          _trace_logger(nullptr),
+          _semantic_trace_enabled(false) {
 
         SCHEDULER_LOG_INFO("🚀 [ASAP-Block] ASAP Block Scheduler 初始化");
 
@@ -335,6 +375,30 @@ namespace RTSim {
                                   available_energy,
                                   reserved_energy,
                                   stopped_by_energy);
+
+        if (_trace_logger && _semantic_trace_enabled && !active_jobs.empty()) {
+            std::string decision_reason = "selected_prefix";
+            if (stopped_by_energy) {
+                decision_reason = "highest_priority_energy_insufficient";
+            } else if (selected.size() >= processor_count &&
+                       selected.size() < active_jobs.size()) {
+                decision_reason = "processor_capacity_reached";
+            }
+            _trace_logger->logSchedulerDecision(
+                "ASAP-Block",
+                available_energy * 1000.0,
+                makeASAPBlockTraceJobs(active_jobs, _task_models),
+                makeASAPBlockTraceJobs(selected, _task_models),
+                decision_reason);
+            if (stopped_by_energy && selected.size() < active_jobs.size()) {
+                _trace_logger->logEnergyBlock(
+                    "ASAP-Block",
+                    makeASAPBlockTraceJob(active_jobs[selected.size()],
+                                          _task_models,
+                                          static_cast<int>(selected.size())),
+                    available_energy * 1000.0);
+            }
+        }
 
         freezeTickSelection(current_time,
                             std::move(selected),
@@ -889,6 +953,14 @@ namespace RTSim {
         if (task) {
             _suspend_reasons.erase(task);
         }
+    }
+
+    void ASAPBlockScheduler::setTraceLogger(void *trace) {
+        _trace_logger = static_cast<JSONTrace *>(trace);
+    }
+
+    void ASAPBlockScheduler::setSemanticTraceEnabled(bool enabled) {
+        _semantic_trace_enabled = enabled;
     }
 
     double ASAPBlockScheduler::calculateTotalEnergyForTask(AbsRTTask *task) {

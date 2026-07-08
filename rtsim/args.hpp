@@ -123,6 +123,14 @@ static inline cmdarg::Options parse_arguments(int argc, char *argv[]) {
         .default_value = "debug.txt",
         .action = store_txt,
     });
+    parser.addArgument({
+        .long_opt = "semantic-traces",
+        .required = false,
+        .parameter_required = cmdarg::Argument::ParameterRequired::NO,
+        .help = "Enable scheduler semantic decision events in JSON traces",
+        .default_value = "false",
+        .action = cmdarg::actions::store_true,
+    });
 
     return parser.parse(argc, argv);
 }

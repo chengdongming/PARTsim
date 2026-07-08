@@ -44,6 +44,11 @@ namespace RTSim {
         virtual void setTraceLogger(void *trace) {
             (void)trace;  // 默认实现：什么都不做
         }
+
+        // 可选语义调度决策 trace；默认关闭，且默认实现不影响调度器。
+        virtual void setSemanticTraceEnabled(bool enabled) {
+            (void)enabled;
+        }
     };
 } // namespace RTSim
 

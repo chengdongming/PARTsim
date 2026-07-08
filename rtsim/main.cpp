@@ -223,6 +223,7 @@ int main(int argc, char *argv[]) {
 
     // 获取duration参数
     MetaSim::Tick duration = MetaSim::Tick(std::stoi(opts["duration"]));
+    const bool semantic_traces = opts["semantic-traces"] == "true";
 
     std::vector<Tracer> tracers;
     for (auto fname : list_split(opts["trace"])) {
@@ -242,6 +243,7 @@ int main(int argc, char *argv[]) {
     // ⭐ 设置JSONTrace的能量提供者
     for (auto &tracer : tracers) {
         if (tracer.jtrace) {
+            tracer.jtrace->setSemanticTraceEnabled(semantic_traces);
             // 获取第一个kernel的调度器作为能量提供者
             if (!sys.kernels.empty()) {
                 RTSim::Scheduler *sched = sys.kernels[0]->getScheduler();
@@ -252,6 +254,7 @@ int main(int argc, char *argv[]) {
                     tracer.jtrace->setEnergyProvider(energy_provider);
                     // ⭐ V58新增：反向连接JSONTrace到调度器，用于Early Abort时注入dline_miss记录
                     energy_provider->setTraceLogger(tracer.jtrace.get());
+                    energy_provider->setSemanticTraceEnabled(semantic_traces);
                 }
             }
         }

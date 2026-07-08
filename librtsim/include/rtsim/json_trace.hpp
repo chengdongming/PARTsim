@@ -17,6 +17,7 @@
 #include <fstream>
 #include <iosfwd>
 #include <string>
+#include <vector>
 
 #include <metasim/baseexc.hpp>
 #include <metasim/basetype.hpp>
@@ -31,6 +32,16 @@
 #include <set>
 
 namespace RTSim {
+    struct SchedulerTraceJob {
+        std::string task_name;
+        double arrival_time;
+        double priority;
+        int ready_order;
+        double task_unit_energy_mJ;
+        double remaining_time_ms;
+        double absolute_deadline;
+    };
+
     class JSONTrace {
     protected:
         // V98修复：成员变量按析构需要顺序排列
@@ -38,6 +49,7 @@ namespace RTSim {
         bool first_event;
         MetaSim::Tick max_time; // 最大时间，用于过滤事件
         EnergyInfoProvider *_energy_provider; // 能量信息提供者
+        bool _semantic_trace_enabled;
 
         // 追踪任务执行信息
         std::map<AbsRTTask*, MetaSim::Tick> _task_start_times; // 任务开始执行时间
@@ -56,6 +68,10 @@ namespace RTSim {
         void writeEnergyInfo(); // 写入能量信息
         void writeTaskEnergyInfo(AbsRTTask *task); // 写入任务能量信息
         void writeForcedDlineMissNow(AbsRTTask *task, const std::string &reason);
+        void beginEvent();
+        static std::string escapeJson(const std::string &value);
+        void writeSchedulerJob(const SchedulerTraceJob &job);
+        void writeSchedulerJobArray(const std::vector<SchedulerTraceJob> &jobs);
 
     public:
         JSONTrace(const std::string &name);
@@ -67,6 +83,39 @@ namespace RTSim {
         void setEnergyProvider(EnergyInfoProvider *provider) {
             _energy_provider = provider;
         }
+
+        void setSemanticTraceEnabled(bool enabled) {
+            _semantic_trace_enabled = enabled;
+        }
+
+        bool semanticTraceEnabled() const {
+            return _semantic_trace_enabled;
+        }
+
+        void logSchedulerDecision(
+            const std::string &scheduler,
+            double available_energy_mJ,
+            const std::vector<SchedulerTraceJob> &ready_jobs,
+            const std::vector<SchedulerTraceJob> &selected_jobs,
+            const std::string &decision_reason);
+
+        void logEnergyBlock(
+            const std::string &scheduler,
+            const SchedulerTraceJob &blocked_task,
+            double available_energy_mJ);
+
+        void logNonBlockBypass(
+            const std::string &scheduler,
+            const SchedulerTraceJob &blocked_higher_priority_task,
+            const SchedulerTraceJob &bypassed_task,
+            double available_energy_mJ);
+
+        void logSyncBatchBlock(
+            const std::string &scheduler,
+            const std::vector<SchedulerTraceJob> &batch_tasks,
+            double batch_required_energy_mJ,
+            double available_energy_mJ,
+            bool feasible_subset_exists);
 
         void probe(ArrEvt &e);
 

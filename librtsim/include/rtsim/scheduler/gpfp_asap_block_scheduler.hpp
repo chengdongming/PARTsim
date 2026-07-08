@@ -22,6 +22,7 @@ namespace RTSim {
     class AbsRTTask;
     class ASAPBlockScheduler;
     class MRTKernel;
+    class JSONTrace;
 
     // 时间类型别名
     using TimeMs = int64_t;
@@ -116,6 +117,8 @@ namespace RTSim {
         std::vector<AbsRTTask *> _waiting_queue;
         std::map<AbsRTTask *, MetaSim::Tick> _pending_arrivals;
         MRTKernel *_kernel;
+        JSONTrace *_trace_logger;
+        bool _semantic_trace_enabled;
 
         std::map<AbsRTTask *, std::string> _suspend_reasons;
 
@@ -223,6 +226,8 @@ namespace RTSim {
         void setSuspendReason(AbsRTTask *task, const std::string &reason);
         std::string getSuspendReason(AbsRTTask *task) const override;
         void clearSuspendReason(AbsRTTask *task) override;
+        void setTraceLogger(void *trace) override;
+        void setSemanticTraceEnabled(bool enabled) override;
 
         // 队列访问接口
         const std::deque<AbsRTTask *> &getReadyQueue() const { return _ready_queue; }

@@ -24,6 +24,7 @@ namespace RTSim {
     class AbsRTTask;
     class ASAPSyncScheduler;
     class MRTKernel;
+    class JSONTrace;
 
     // 时间类型别名
     using TimeMs = int64_t;
@@ -129,6 +130,8 @@ namespace RTSim {
         std::vector<AbsRTTask *> _waiting_queue;
         std::map<CPU *, AbsRTTask *> _running_tasks;
         MRTKernel *_kernel;
+        JSONTrace *_trace_logger;
+        bool _semantic_trace_enabled;
 
         // ========== 运行时能量检查事件（每任务一个） ==========
         std::map<AbsRTTask *, ASAPSyncEnergyCheckEvent *> _energy_check_events;
@@ -272,6 +275,8 @@ namespace RTSim {
         void setSuspendReason(AbsRTTask *task, const std::string &reason);
         std::string getSuspendReason(AbsRTTask *task) const override;
         void clearSuspendReason(AbsRTTask *task) override;
+        void setTraceLogger(void *trace) override;
+        void setSemanticTraceEnabled(bool enabled) override;
 
         // ⭐ 运行时能量检查接口（V28.15新增）
         void startEnergyCheckForTask(AbsRTTask *task, CPU *cpu);  // 开始对任务的能量监控

@@ -1,4 +1,5 @@
 #include <rtsim/json_trace.hpp>
+#include <sstream>
 
 namespace RTSim {
 
@@ -11,6 +12,7 @@ namespace RTSim {
         first_event = true;
         max_time = MetaSim::Tick(-1);
         _energy_provider = nullptr;
+        _semantic_trace_enabled = false;
     }
 
     JSONTrace::JSONTrace(const string &name, MetaSim::Tick max) {
@@ -20,6 +22,7 @@ namespace RTSim {
         first_event = true;
         max_time = max;
         _energy_provider = nullptr;
+        _semantic_trace_enabled = false;
     }
 
     // V98修复：显式清空容器，避免析构顺序问题
@@ -89,6 +92,166 @@ namespace RTSim {
 
         writeEnergyInfo();
         fd << ", \"reason\": \"" << reason << "\"";
+        fd << "}";
+    }
+
+    void JSONTrace::beginEvent() {
+        if (!first_event)
+            fd << "," << std::endl;
+        else
+            first_event = false;
+        fd << "{ ";
+    }
+
+    std::string JSONTrace::escapeJson(const std::string &value) {
+        std::ostringstream out;
+        for (char c : value) {
+            switch (c) {
+                case '"':
+                    out << "\\\"";
+                    break;
+                case '\\':
+                    out << "\\\\";
+                    break;
+                case '\b':
+                    out << "\\b";
+                    break;
+                case '\f':
+                    out << "\\f";
+                    break;
+                case '\n':
+                    out << "\\n";
+                    break;
+                case '\r':
+                    out << "\\r";
+                    break;
+                case '\t':
+                    out << "\\t";
+                    break;
+                default:
+                    out << c;
+                    break;
+            }
+        }
+        return out.str();
+    }
+
+    void JSONTrace::writeSchedulerJob(const SchedulerTraceJob &job) {
+        fd << "{";
+        fd << "\"task_name\": \"" << escapeJson(job.task_name) << "\"";
+        fd << ", \"arrival_time\": " << job.arrival_time;
+        fd << ", \"priority\": " << job.priority;
+        fd << ", \"ready_order\": " << job.ready_order;
+        fd << ", \"task_unit_energy_mJ\": " << job.task_unit_energy_mJ;
+        fd << ", \"remaining_time_ms\": " << job.remaining_time_ms;
+        fd << ", \"absolute_deadline\": " << job.absolute_deadline;
+        fd << "}";
+    }
+
+    void JSONTrace::writeSchedulerJobArray(const std::vector<SchedulerTraceJob> &jobs) {
+        fd << "[";
+        for (std::size_t i = 0; i < jobs.size(); ++i) {
+            if (i > 0) {
+                fd << ", ";
+            }
+            writeSchedulerJob(jobs[i]);
+        }
+        fd << "]";
+    }
+
+    void JSONTrace::logSchedulerDecision(
+        const std::string &scheduler,
+        double available_energy_mJ,
+        const std::vector<SchedulerTraceJob> &ready_jobs,
+        const std::vector<SchedulerTraceJob> &selected_jobs,
+        const std::string &decision_reason) {
+        if (!_semantic_trace_enabled ||
+            (max_time >= 0 && SIMUL.getTime() >= max_time)) {
+            return;
+        }
+
+        beginEvent();
+        fd << "\"time\": \"" << SIMUL.getTime() << "\", ";
+        fd << "\"event_type\": \"scheduler_decision\", ";
+        fd << "\"scheduler\": \"" << escapeJson(scheduler) << "\", ";
+        fd << "\"available_energy_mJ\": " << available_energy_mJ << ", ";
+        fd << "\"ready_jobs\": ";
+        writeSchedulerJobArray(ready_jobs);
+        fd << ", \"selected_jobs\": ";
+        writeSchedulerJobArray(selected_jobs);
+        fd << ", \"decision_reason\": \"" << escapeJson(decision_reason) << "\"";
+        fd << "}";
+    }
+
+    void JSONTrace::logEnergyBlock(
+        const std::string &scheduler,
+        const SchedulerTraceJob &blocked_task,
+        double available_energy_mJ) {
+        if (!_semantic_trace_enabled ||
+            (max_time >= 0 && SIMUL.getTime() >= max_time)) {
+            return;
+        }
+
+        beginEvent();
+        fd << "\"time\": \"" << SIMUL.getTime() << "\", ";
+        fd << "\"event_type\": \"energy_block\", ";
+        fd << "\"scheduler\": \"" << escapeJson(scheduler) << "\", ";
+        fd << "\"blocked_task\": \"" << escapeJson(blocked_task.task_name) << "\", ";
+        fd << "\"blocked_task_unit_energy_mJ\": "
+           << blocked_task.task_unit_energy_mJ << ", ";
+        fd << "\"available_energy_mJ\": " << available_energy_mJ << ", ";
+        fd << "\"reason\": \"highest_priority_energy_insufficient\"";
+        fd << "}";
+    }
+
+    void JSONTrace::logNonBlockBypass(
+        const std::string &scheduler,
+        const SchedulerTraceJob &blocked_higher_priority_task,
+        const SchedulerTraceJob &bypassed_task,
+        double available_energy_mJ) {
+        if (!_semantic_trace_enabled ||
+            (max_time >= 0 && SIMUL.getTime() >= max_time)) {
+            return;
+        }
+
+        beginEvent();
+        fd << "\"time\": \"" << SIMUL.getTime() << "\", ";
+        fd << "\"event_type\": \"nonblock_bypass\", ";
+        fd << "\"scheduler\": \"" << escapeJson(scheduler) << "\", ";
+        fd << "\"blocked_higher_priority_task\": \""
+           << escapeJson(blocked_higher_priority_task.task_name) << "\", ";
+        fd << "\"bypassed_task\": \"" << escapeJson(bypassed_task.task_name) << "\", ";
+        fd << "\"blocked_task_unit_energy_mJ\": "
+           << blocked_higher_priority_task.task_unit_energy_mJ << ", ";
+        fd << "\"bypassed_task_unit_energy_mJ\": "
+           << bypassed_task.task_unit_energy_mJ << ", ";
+        fd << "\"available_energy_mJ\": " << available_energy_mJ << ", ";
+        fd << "\"reason\": \"lower_priority_bypass_due_to_energy\"";
+        fd << "}";
+    }
+
+    void JSONTrace::logSyncBatchBlock(
+        const std::string &scheduler,
+        const std::vector<SchedulerTraceJob> &batch_tasks,
+        double batch_required_energy_mJ,
+        double available_energy_mJ,
+        bool feasible_subset_exists) {
+        if (!_semantic_trace_enabled ||
+            (max_time >= 0 && SIMUL.getTime() >= max_time)) {
+            return;
+        }
+
+        beginEvent();
+        fd << "\"time\": \"" << SIMUL.getTime() << "\", ";
+        fd << "\"event_type\": \"sync_batch_block\", ";
+        fd << "\"scheduler\": \"" << escapeJson(scheduler) << "\", ";
+        fd << "\"batch_tasks\": ";
+        writeSchedulerJobArray(batch_tasks);
+        fd << ", \"batch_required_energy_mJ\": " << batch_required_energy_mJ;
+        fd << ", \"available_energy_mJ\": " << available_energy_mJ;
+        fd << ", \"feasible_subset_exists\": "
+           << (feasible_subset_exists ? "true" : "false");
+        fd << ", \"reason\": \"sync_batch_energy_insufficient\"";
         fd << "}";
     }
 

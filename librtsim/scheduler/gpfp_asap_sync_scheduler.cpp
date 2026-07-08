@@ -14,6 +14,7 @@
 #include <stdexcept>
 #include <metasim/factory.hpp>
 #include <metasim/simul.hpp>
+#include <rtsim/json_trace.hpp>
 #include <rtsim/scheduler/gpfp_asap_sync_scheduler.hpp>
 #include <rtsim/task.hpp>
 #include <rtsim/rttask.hpp>
@@ -28,6 +29,43 @@
 namespace RTSim {
 
     using namespace MetaSim;
+
+    static SchedulerTraceJob makeASAPSyncTraceJob(
+        AbsRTTask *task,
+        const std::map<AbsRTTask *, ASAPSyncTaskModel *> &models,
+        int ready_order) {
+        SchedulerTraceJob job{};
+        Task *concrete_task = dynamic_cast<Task *>(task);
+        job.task_name = concrete_task
+            ? concrete_task->getName()
+            : std::string("task_") + std::to_string(task ? task->getTaskNumber() : -1);
+        job.arrival_time = concrete_task
+            ? static_cast<double>(concrete_task->getLastArrival())
+            : (task ? static_cast<double>(task->getArrival()) : 0.0);
+        job.priority = 0.0;
+        job.ready_order = ready_order;
+        job.task_unit_energy_mJ = 0.0;
+        job.remaining_time_ms = task ? task->getRemainingWCET() : 0.0;
+        job.absolute_deadline = task ? static_cast<double>(task->getDeadline()) : 0.0;
+
+        auto model_it = models.find(task);
+        if (model_it != models.end() && model_it->second) {
+            job.priority = static_cast<double>(model_it->second->getRMPriority());
+            job.task_unit_energy_mJ = model_it->second->getUnitEnergy() * 1000.0;
+        }
+        return job;
+    }
+
+    static std::vector<SchedulerTraceJob> makeASAPSyncTraceJobs(
+        const std::vector<AbsRTTask *> &tasks,
+        const std::map<AbsRTTask *, ASAPSyncTaskModel *> &models) {
+        std::vector<SchedulerTraceJob> jobs;
+        jobs.reserve(tasks.size());
+        for (std::size_t i = 0; i < tasks.size(); ++i) {
+            jobs.push_back(makeASAPSyncTraceJob(tasks[i], models, static_cast<int>(i)));
+        }
+        return jobs;
+    }
 
     // =====================================================
     // ASAPSyncTickEvent 实现
@@ -182,6 +220,8 @@ namespace RTSim {
           _tick_event(nullptr),
           _first_tick_scheduled(false),
           _kernel(nullptr),
+          _trace_logger(nullptr),
+          _semantic_trace_enabled(false),
           _batch_scheduled_this_tick(false),
           _energy_depleted(false),
           _current_batch_size(0),
@@ -676,6 +716,33 @@ namespace RTSim {
         _current_batch_size = static_cast<int>(_current_batch_tasks.size());
         _batch_scheduled_this_tick = !selected_tasks.empty();
         _dispatching_tasks_total_energy = required_batch_energy;
+
+        if (_trace_logger && _semantic_trace_enabled && !active_tasks.empty()) {
+            const bool sync_batch_blocked =
+                !continuation_affordable ||
+                (!idle_core_batch.empty() && !idle_core_batch_affordable);
+            std::string decision_reason = "sync_batch_selected";
+            if (sync_batch_blocked) {
+                decision_reason = "sync_batch_energy_insufficient";
+            } else if (static_cast<int>(desired_tasks.size()) >= total_cpus &&
+                       desired_tasks.size() < active_tasks.size()) {
+                decision_reason = "processor_capacity_reached";
+            }
+            _trace_logger->logSchedulerDecision(
+                "ASAP-Sync",
+                _current_energy * 1000.0,
+                makeASAPSyncTraceJobs(active_tasks, _task_models),
+                makeASAPSyncTraceJobs(selected_tasks, _task_models),
+                decision_reason);
+            if (sync_batch_blocked && !desired_tasks.empty()) {
+                _trace_logger->logSyncBatchBlock(
+                    "ASAP-Sync",
+                    makeASAPSyncTraceJobs(desired_tasks, _task_models),
+                    (continuation_energy + idle_core_batch_energy) * 1000.0,
+                    _current_energy * 1000.0,
+                    !selected_tasks.empty());
+            }
+        }
 
         if (!selected_tasks.empty()) {
             _stats.total_batch_schedules++;
@@ -1257,6 +1324,14 @@ namespace RTSim {
         if (task) {
             _suspend_reasons.erase(task);
         }
+    }
+
+    void ASAPSyncScheduler::setTraceLogger(void *trace) {
+        _trace_logger = static_cast<JSONTrace *>(trace);
+    }
+
+    void ASAPSyncScheduler::setSemanticTraceEnabled(bool enabled) {
+        _semantic_trace_enabled = enabled;
     }
 
     double ASAPSyncScheduler::calculateTotalEnergyForTask(AbsRTTask *task) {

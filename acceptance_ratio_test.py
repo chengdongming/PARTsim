@@ -799,6 +799,8 @@ def run_single_simulation_worker(task):
         SIMULATOR, config_file, task_file,
         str(simulation_time), '-t', str(trace_file)
     ]
+    if rta_options.get('semantic_traces', False):
+        cmd.append('--semantic-traces')
 
     def cleanup_trace():
         """清理追踪文件"""
@@ -1120,6 +1122,15 @@ def add_experiment_cli_args(parser):
         default=False,
         help='保留每次仿真生成的JSON trace文件；默认解析后删除worker trace',
     )
+    parser.add_argument(
+        '--semantic-traces',
+        action='store_true',
+        default=False,
+        help=(
+            '在JSON trace中记录只读scheduler decision语义事件；默认关闭，'
+            '不改变调度选择'
+        ),
+    )
     parser.add_argument('--enable-rta', action='store_true',
                        help='仅为 ASAP-BLOCK 启用离线RTA观察指标')
     parser.add_argument('--rta-horizon-ms', type=int, default=None,
@@ -1295,7 +1306,7 @@ class ExperimentRunner:
                  task_util_min=0.01, task_util_max=0.8,
                  wcet_rounding='floor', constrained_deadlines=False,
                  actual_utilization_tolerance_total=None,
-                 keep_traces=False):
+                 keep_traces=False, semantic_traces=False):
         self.output_dir = Path(output_dir)
         self.trace_dir = self.output_dir / 'traces'
         self.task_dir = self.output_dir / 'tasks'
@@ -1330,6 +1341,7 @@ class ExperimentRunner:
         self.rta_initial_energy = float(rta_initial_energy)
         self.profile_rta = bool(profile_rta)
         self.keep_traces = bool(keep_traces)
+        self.semantic_traces = bool(semantic_traces)
         self.task_util_min = float(task_util_min)
         self.task_util_max = float(task_util_max)
         if wcet_rounding not in {'floor', 'round', 'ceil', 'compensated'}:
@@ -1590,6 +1602,8 @@ class ExperimentRunner:
             SIMULATOR, config_file, task_file,
             str(self.simulation_time), '-t', str(trace_file)
         ]
+        if self.semantic_traces:
+            cmd.append('--semantic-traces')
 
         try:
             subprocess.run(cmd, check=True, capture_output=True, env=env, text=True, timeout=120)
@@ -1743,6 +1757,7 @@ class ExperimentRunner:
                             ),
                             'taskset_metadata': taskset_metadata,
                             'keep_traces': self.keep_traces,
+                            'semantic_traces': self.semantic_traces,
                         },
                     ))
 
@@ -2472,6 +2487,7 @@ def main():
                 args.actual_utilization_tolerance_total
             ),
             keep_traces=args.keep_traces,
+            semantic_traces=args.semantic_traces,
         )
 
         results = runner.run_experiments()
