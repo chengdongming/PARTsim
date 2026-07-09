@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Deterministic E1.1 ST charging micro-case.
+"""Deterministic E1.1 BLOCK timing-policy micro-case.
 
-This script uses real rtsim and semantic JSON traces to audit the repaired
-PFPST charging semantics. It does not use the random task generator, does not
-run RTA, and does not report acceptance ratios.
+This script uses real rtsim and semantic JSON traces to compare ASAP-BLOCK,
+ALAP-BLOCK, and ST-BLOCK on a fixed taskset. It also audits the repaired PFPST
+charging release semantics. It does not use the random task generator, does
+not run RTA, and does not report acceptance ratios.
 """
 
 import argparse
@@ -19,7 +20,11 @@ DEFAULT_OUTPUT_DIR = Path(
 )
 
 EPS_MJ = 1e-9
+EPS_TIME = 1e-9
 H_TASK = "H"
+H_RELEASE_TIME = 0.0
+H_RUNTIME_MS = 5.0
+H_RELATIVE_DEADLINE_MS = 50.0
 
 
 TASKSET_YML = """\
@@ -114,6 +119,10 @@ CASES = {
             "asap": {
                 "scheduler": "gpfp_asap_block",
                 "trace": "trace_asap_block.json",
+            },
+            "alap": {
+                "scheduler": "gpfp_alap_block",
+                "trace": "trace_alap_block.json",
             },
             "st": {
                 "scheduler": "gpfp_st_block",
@@ -257,6 +266,30 @@ def any_release_reason(events, reason):
     )
 
 
+def h_slack_if_not_started(time):
+    return H_RELEASE_TIME + H_RELATIVE_DEADLINE_MS - time - H_RUNTIME_MS
+
+
+def alap_positive_slack_diagnostic(hold_enough_time, alap_h_times):
+    if hold_enough_time is None:
+        return {}
+    slack = h_slack_if_not_started(hold_enough_time)
+    latest_start = H_RELEASE_TIME + H_RELATIVE_DEADLINE_MS - H_RUNTIME_MS
+    scheduled_before_slack_zero = [
+        time for time in alap_h_times if time < latest_start - EPS_TIME
+    ]
+    return {
+        "task": H_TASK,
+        "time_energy_became_tick_sufficient": hold_enough_time,
+        "absolute_deadline": H_RELEASE_TIME + H_RELATIVE_DEADLINE_MS,
+        "remaining_time_ms_assuming_not_started": H_RUNTIME_MS,
+        "slack_ms_if_not_started": slack,
+        "latest_start_time_if_run_contiguously": latest_start,
+        "scheduled_times_before_slack_zero": scheduled_before_slack_zero,
+        "evidence": "same case-a energy trajectory as ST hold-energy-enough event",
+    }
+
+
 def field_consistency(events):
     bad = []
     for event in events:
@@ -348,6 +381,7 @@ def main():
             traces[(case_name, run_name)] = trace_path
 
     case_a_asap = read_events(traces[("case_a_energy_enough_not_full", "asap")])
+    case_a_alap = read_events(traces[("case_a_energy_enough_not_full", "alap")])
     case_a_st = read_events(traces[("case_a_energy_enough_not_full", "st")])
     case_b_st = read_events(traces[("case_b_battery_full", "st")])
     case_c_st = read_events(traces[("case_c_slack_exhausted", "st")])
@@ -355,11 +389,20 @@ def main():
     hold_enough = charge_hold_energy_enough_event(case_a_st)
     hold_enough_time = event_time(hold_enough) if hold_enough else None
     asap_h_times = scheduled_times(case_a_asap, H_TASK)
+    alap_h_times = scheduled_times(case_a_alap, H_TASK)
     st_case_a_h_times = scheduled_times(case_a_st, H_TASK)
+    alap_positive_slack_event = alap_positive_slack_diagnostic(
+        hold_enough_time, alap_h_times
+    )
 
     asap_resumes_when_energy_enough = (
         hold_enough_time is not None
         and any(time >= hold_enough_time - EPS_MJ for time in asap_h_times)
+    )
+    alap_blocks_before_slack_zero = (
+        bool(alap_positive_slack_event)
+        and alap_positive_slack_event["slack_ms_if_not_started"] > EPS_TIME
+        and not alap_positive_slack_event["scheduled_times_before_slack_zero"]
     )
     st_holds_after_energy_enough = (
         hold_enough_time is not None
@@ -370,6 +413,11 @@ def main():
     st_release_slack_exhausted_found = (
         first_release_reason(case_c_st, "slack_exhausted") is not None
     )
+    energy_sufficient_release_absent = not (
+        any_release_reason(case_a_st, "energy_sufficient")
+        or any_release_reason(case_b_st, "energy_sufficient")
+        or any_release_reason(case_c_st, "energy_sufficient")
+    )
 
     field_errors = (
         field_consistency(case_a_st)
@@ -377,21 +425,38 @@ def main():
         + field_consistency(case_c_st)
     )
     field_consistency_pass = len(field_errors) == 0
+    block_timing_policy_distinguished = (
+        asap_resumes_when_energy_enough
+        and alap_blocks_before_slack_zero
+        and st_holds_after_energy_enough
+    )
 
     row = {
-        "case_name": "e1_st_charging_microcase",
+        "case_name": "e1_block_timing_policy_microcase",
         "asap_resumes_when_energy_enough": str(asap_resumes_when_energy_enough).lower(),
+        "alap_blocks_before_slack_zero": str(alap_blocks_before_slack_zero).lower(),
         "st_holds_after_energy_enough": str(st_holds_after_energy_enough).lower(),
         "st_release_battery_full_found": str(st_release_battery_full_found).lower(),
         "st_release_slack_exhausted_found": str(st_release_slack_exhausted_found).lower(),
+        "block_timing_policy_distinguished": str(
+            block_timing_policy_distinguished
+        ).lower(),
         "field_consistency_pass": str(field_consistency_pass).lower(),
+        "energy_sufficient_release_absent": str(
+            energy_sufficient_release_absent
+        ).lower(),
         "case_a_asap_h_scheduled_times": json.dumps(asap_h_times),
+        "case_a_alap_h_scheduled_times": json.dumps(alap_h_times),
         "case_a_st_h_scheduled_times": json.dumps(st_case_a_h_times),
+        "case_a_alap_positive_slack_event": json.dumps(
+            alap_positive_slack_event, sort_keys=True
+        ),
         "case_a_hold_energy_enough_event": json.dumps(
             hold_enough or {}, sort_keys=True
         ),
         "field_errors": json.dumps(field_errors, sort_keys=True),
         "trace_asap_block": str(traces[("case_a_energy_enough_not_full", "asap")]),
+        "trace_alap_block": str(traces[("case_a_energy_enough_not_full", "alap")]),
         "trace_st_block": str(traces[("case_a_energy_enough_not_full", "st")]),
         "trace_st_block_battery_full": str(traces[("case_b_battery_full", "st")]),
         "trace_st_block_slack_exhausted": str(
@@ -409,10 +474,13 @@ def main():
     summary_txt.write_text(
         "\n".join(
             [
-                "E1.1 deterministic ST charging micro-case",
+                "E1.1 deterministic BLOCK timing-policy micro-case",
                 "output_dir = {}".format(output_dir),
                 "asap_resumes_when_energy_enough = {}".format(
                     asap_resumes_when_energy_enough
+                ),
+                "alap_blocks_before_slack_zero = {}".format(
+                    alap_blocks_before_slack_zero
                 ),
                 "st_holds_after_energy_enough = {}".format(
                     st_holds_after_energy_enough
@@ -423,9 +491,19 @@ def main():
                 "st_release_slack_exhausted_found = {}".format(
                     st_release_slack_exhausted_found
                 ),
+                "block_timing_policy_distinguished = {}".format(
+                    block_timing_policy_distinguished
+                ),
                 "field_consistency_pass = {}".format(field_consistency_pass),
+                "energy_sufficient_release_absent = {}".format(
+                    energy_sufficient_release_absent
+                ),
                 "case_a_asap_h_scheduled_times = {}".format(asap_h_times),
+                "case_a_alap_h_scheduled_times = {}".format(alap_h_times),
                 "case_a_st_h_scheduled_times = {}".format(st_case_a_h_times),
+                "case_a_alap_positive_slack_event = {}".format(
+                    json.dumps(alap_positive_slack_event, sort_keys=True)
+                ),
                 "case_a_hold_energy_enough_event = {}".format(
                     json.dumps(hold_enough or {}, sort_keys=True)
                 ),
@@ -441,10 +519,13 @@ def main():
 
     required_flags = [
         asap_resumes_when_energy_enough,
+        alap_blocks_before_slack_zero,
         st_holds_after_energy_enough,
         st_release_battery_full_found,
         st_release_slack_exhausted_found,
+        block_timing_policy_distinguished,
         field_consistency_pass,
+        energy_sufficient_release_absent,
     ]
     if not all(required_flags):
         raise SystemExit(1)
