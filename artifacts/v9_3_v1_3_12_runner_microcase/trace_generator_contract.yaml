@@ -1,0 +1,28 @@
+contract_metadata:
+  name: ASAP_BLOCK_trace_generator_contract
+  version: 1.3.12
+  trace_generator_contract_hash: 1fe32b3b0d166fcebe366066f1b2aceeb93c7ae2591ddf1528bc02f83f8e28e9
+  canonical_serialization_file: ASAP_BLOCK_canonical_serialization_v1_3_12.yaml
+release_trace_generator:
+  offset_distribution: FROZEN_ZERO
+  sporadic_gap_distribution: FROZEN_PERIODIC
+  trace_count_per_scenario: 1
+  generator_version: MICROCASE_TRACE_V1
+harvest_trace_generator:
+  method: FROZEN_ZERO
+  trace_count_per_scenario: 1
+  generator_version: MICROCASE_TRACE_V1
+  service_curve_validation_domain: EXACT_INTEGER_TICKS
+adversarial_search:
+  algorithm: DISABLED_FOR_MICROCASE
+  objective: ACTUAL_RESPONSE_OR_DEADLINE_STRESS_NOT_METHOD_SPECIFIC_BOUND
+  budget: 1
+  stop_condition: SINGLE_FIXED_CASE
+rng_substreams:
+- TASK_UTILIZATION
+- PERIODS
+- POWER_LATENT
+- RELEASE_TRACE
+- HARVEST_TRACE
+- ADVERSARIAL_SEARCH
+hash_preimage_rule: canonical preimage trace_generator_contract_hash; self field null

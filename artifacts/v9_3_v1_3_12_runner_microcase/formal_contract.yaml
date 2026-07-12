@@ -1,0 +1,484 @@
+contract_metadata:
+  name: ASAP_BLOCK_formal_contract
+  version: 1.3.12
+  status: FROZEN
+  formal_contract_version: MICROCASE_V1
+  formal_contract_hash: aa680d6c4c777e6787619536b9e1b958b1cef8987f8e48c99f5532a1c7d61abf
+  canonical_serialization_file: ASAP_BLOCK_canonical_serialization_v1_3_12.yaml
+artifact_bindings:
+  markdown:
+    file: ASAP_BLOCK_实验配置与验收规范_v1_3_12_最终机器合同与验证闭合版.md
+    sha256: e87c69b0d0ecdae87bb056496b6af91d52b816f1d99ee9737181529e1e2f6871
+  schema:
+    file: ASAP_BLOCK_experiment_schema_v1_3_12.yaml
+    sha256: 1e1fe7548bf4a1d298edabb7437080c24bd858f47e855c84dd12d64b05650128
+  dictionary:
+    file: ASAP_BLOCK_data_dictionary_v1_3_12.yaml
+    sha256: 266decd25d8a25a06447841044119edd779b9465e909b1064d4e11ac6a8060a9
+  canonical:
+    file: ASAP_BLOCK_canonical_serialization_v1_3_12.yaml
+    sha256: 2445fd9d46f26982aab8b2f1c7633d867332cd1b7af6b2c5bbda5defabded3a4
+  interface_manifest:
+    file: ASAP_BLOCK_machine_interface_manifest_v1_3_12.yaml
+    sha256: 26423a18282652d559e1d842fd834666f59f88ca2fca3382f2fb3e06f9213764
+  generator:
+    file: ASAP_BLOCK_generator_contract_template_v1_3_12.yaml
+    sha256: 98d281626006e460c20326471f3fc405095dacb512d83f15222c25aca8057ad1
+  simulation:
+    file: ASAP_BLOCK_simulation_contract_template_v1_3_12.yaml
+    sha256: 84966a769066f1a881452fafaf3e56c728f03492d618eda9098c179872691df2
+  trace:
+    file: ASAP_BLOCK_trace_generator_contract_template_v1_3_12.yaml
+    sha256: e02a6d2683eda5d78d3f4dc62ecdbac7141274c77a8c94328458018696dd9a9c
+  acceptance:
+    file: ASAP_BLOCK_acceptance_report_template_v1_3_12.yaml
+    sha256: 65fe414be6153d424517edab18c01085257b9bb3b1244f8c8576272ac7fecb0f
+  common:
+    file: ASAP_BLOCK_validation_common_v1_3_12.py
+    sha256: 72821a7915b2448eb0d6aab38062831193ec5f8ebecbe3764af788227c40278a
+  artifact_validator:
+    file: ASAP_BLOCK_artifact_validator_v1_3_12.py
+    sha256: be186a5076773b51b1097307cce3a32f5624f6a8363144800eafe2987b13ce5d
+  result_validator:
+    file: ASAP_BLOCK_result_validator_v1_3_12.py
+    sha256: 6348c894c55d7add42c0eafdb00c61fee6d352416bbd24ea1781984bcdeda059
+  acceptance_validator:
+    file: ASAP_BLOCK_acceptance_report_validator_v1_3_12.py
+    sha256: db18ab741d5166aa4bcd173db7ea03c29175a338e9a1d8ef927af361ed0470f2
+  plan_template:
+    file: ASAP_BLOCK_run_plan_definition_template_v1_3_12.csv
+    sha256: 282ba7f9c8c10c343cbcd20b9a190e13d3510ff4e44e340c6e8bbebe8a946712
+  plan_dependencies_template:
+    file: ASAP_BLOCK_run_plan_dependencies_template_v1_3_12.csv
+    sha256: a8f933b94fce424ab9a588e8b917e3c021fecc92f2a29f0ea329d2fcf751c31c
+  execution_log_template:
+    file: ASAP_BLOCK_run_execution_log_template_v1_3_12.csv
+    sha256: d1036383ba1eb7acfbd2dabd7beb7605a4d7231e5b9418fde02c23f24f86c620
+  per_task_results_template:
+    file: ASAP_BLOCK_per_task_results_template_v1_3_12.csv
+    sha256: cb729c592cb04d4008ab1b2b4e71f165a0d9eef48415c2b97e1dabd20f731d94
+theory_contract:
+  rta_formula_version: v9.3
+  theory_document_sha256: 524d4f84b04185609735a2be3ff54984149be1478a111044494ec1f8ff65098e
+  fixed_carry_in_corollary_version: V9_3_SECTION_9_5_FIXED_CARRY_IN_INTERFACE
+  fixed_carry_in_corollary_sha256: 524d4f84b04185609735a2be3ff54984149be1478a111044494ec1f8ff65098e
+plan_context_contract:
+  plan_context_hash: 7a69bba177d934af53a5471af1db90f43c89c1f75c44d3911dfe50d32a530978
+  preimage_spec_id: plan_context_hash
+  must_be_frozen_before_CORE0A: true
+pre_core0a_commitments:
+  energy_numeric_mode: EXACT_RATIONAL
+  fixed_point_integerization_mode: POINTWISE_FLOOR
+  formal_master_seed_source: PUBLIC_CONSTANT
+  formal_master_seed_source_commitment_hash: 2ac84eea0ec15b61329fe7dc6b2e4254a8cde2dd10486eeb64c2229d51e07bae
+  seed_derivation_algorithm: SHA256_DOMAIN_SEPARATED_CANONICAL_V1_3_12
+  public_random_beacon_name: null
+  public_random_beacon_round_or_timestamp: null
+  public_random_beacon_extraction_rule: null
+  public_random_beacon_selection_deadline: before CORE0A
+  candidate_build_identity_requirement_hash: b2bcf050e2a6cf459275ae61852204e8af412803bf43b0f18405f9cd5e99d960
+child_contracts:
+  generator_contract_file: generator_contract.yaml
+  generator_contract_hash: 0bd291456f142511eb8f225163ecf6498a07b17ea85c494d675c867420fb9bd6
+  generator_template_sha256: 98d281626006e460c20326471f3fc405095dacb512d83f15222c25aca8057ad1
+  simulation_contract_file: simulation_contract.yaml
+  simulation_contract_hash: 08847e9a30dfbafd705938856a5b762199b8af36ff3feba6b53913e7e2f58495
+  simulation_template_sha256: 84966a769066f1a881452fafaf3e56c728f03492d618eda9098c179872691df2
+  trace_generator_contract_file: trace_generator_contract.yaml
+  trace_generator_contract_hash: 1fe32b3b0d166fcebe366066f1b2aceeb93c7ae2591ddf1528bc02f83f8e28e9
+  trace_template_sha256: e02a6d2683eda5d78d3f4dc62ecdbac7141274c77a8c94328458018696dd9a9c
+numeric_contract:
+  energy_numeric_mode: EXACT_RATIONAL
+  service_curve_integerization_mode: EXACT
+  energy_numeric_scale: null
+  numeric_integer_type: ARBITRARY_PRECISION_INTEGER
+  checked_arithmetic: true
+  demand_rounding: EXACT
+  supply_rounding: EXACT
+  rho_e_tolerance: '0'
+  e0_rounding_tolerance: '0'
+  numeric_range_proof_id: MICROCASE_EXACT_RATIONAL
+analysis_contract:
+  variants:
+  - CW-D
+  - LOC-D
+  - CW-Theta^cw
+  - LOC-Theta^cw
+  - LOC-Theta^loc
+  main_methods:
+  - CW-Theta^cw
+  - LOC-Theta^loc
+  closure_search:
+    w_scan: C_k..D_k inclusive pointwise
+    h_scan: 0..w-A_k^Theta(w) inclusive
+    q_scan: 1..A_k^Theta(w) inclusive
+    forbid_jump_or_binary_search_without_theorem: true
+  fixed_carry_in_corollary_required_for:
+  - CW-D
+  - LOC-D
+  - LOC-Theta^cw
+  certification_semantics:
+    method_roles:
+      CW-Theta^cw: MAIN_METHOD
+      LOC-Theta^loc: MAIN_METHOD
+      CW-D: AUXILIARY_ABLATION
+      LOC-D: AUXILIARY_ABLATION
+      LOC-Theta^cw: AUXILIARY_ABLATION
+    taskset_proven_equivalence: analysis_certification_status == CERTIFIED_TASKSET
+    pre_joint_success_task_status: PROVISIONAL_NOT_CERTIFIED
+    loc_theta_cw:
+      source_variant: CW-Theta^cw
+      source_solver_status: COMPLETED
+      source_certification_status: CERTIFIED_TASKSET
+      fixed_carry_in_corollary_status: ACTIVE
+      dependency_vector_check_status: VALID
+      complete_compatible_vector_status: CERTIFIED_TASKSET
+      invalid_dependency_formal_status: NOT_APPLICABLE
+      valid_domain_no_candidate_status: INTERNAL_CONFORMANCE_FAILURE
+      valid_domain_no_candidate_dominance_status: DOMINANCE_INVARIANT_VIOLATION
+  task_failure_provenance:
+    code_field: task_failure_reason_code
+    detail_field: task_failure_detail
+    raw_failure_reason_is_formal: false
+    consumer_must_not_infer_status_from_detail: true
+    unknown_raw_or_origin_policy: FAIL_CLOSED
+    task_result_hash_binds_code_and_detail: true
+    semantic_request_identity_excludes_code_and_detail: true
+    exact_detail_by_code:
+      NONE: null
+      NO_CANDIDATE: closure exhausted through task deadline
+      SOLVER_TIMEOUT: null
+      NUMERIC_ERROR: numeric guard rejected analysis
+      UPSTREAM_PREFIX_FAILURE: null
+      DEPENDENCY_NOT_APPLICABLE: null
+      DOMINANCE_INVARIANT_VIOLATION: local result violated frozen carry-in dominance
+      UNKNOWN_CORE_STATUS: unrecognized core solver status
+      INTERNAL_CONFORMANCE_FAILURE: internal analyzer conformance failure
+    status_code_matrix:
+      CANDIDATE_FOUND:
+      - NONE
+      - DOMINANCE_INVARIANT_VIOLATION
+      NO_CANDIDATE:
+      - NO_CANDIDATE
+      - DOMINANCE_INVARIANT_VIOLATION
+      TIMEOUT:
+      - SOLVER_TIMEOUT
+      NUMERIC_ERROR:
+      - NUMERIC_ERROR
+      NOT_EVALUATED_AFTER_PREFIX_FAILURE:
+      - UPSTREAM_PREFIX_FAILURE
+      NOT_APPLICABLE_DEPENDENCY:
+      - DEPENDENCY_NOT_APPLICABLE
+      INTERNAL_CONFORMANCE_FAILURE:
+      - UNKNOWN_CORE_STATUS
+      - INTERNAL_CONFORMANCE_FAILURE
+formal_grid_contract:
+  formal_grid:
+    cells:
+    - parameter_cell_id: 3ebd5ed9ab9e35096df560f3b2a8e4e1f102885e705a7ba38007ecbef174d901
+      parameters:
+        microcase: D
+        E0: 0
+        task_count: 0
+        M: 1
+    - parameter_cell_id: b19a7d04378971f2f950b7dd574a03d92137ccb0dae6eb00473c72f38729fcb9
+      parameters:
+        microcase: B
+        E0: 1
+        task_count: 2
+        M: 1
+    - parameter_cell_id: b6d350f35afb78dc2de864c1862948fc6af1c7d2b6fb1756b3bf4edecf3b0ef5
+      parameters:
+        microcase: C
+        E0: 1
+        task_count: 3
+        M: 1
+    - parameter_cell_id: eb41f71e708725f7157f6e98a665fbfdaa9b52b092c96e116590f4e1a1cff2ad
+      parameters:
+        microcase: A
+        E0: 100
+        task_count: 2
+        M: 1
+  formal_grid_hash: fc6493601c436ec0bcf0cc6f46b73b13864f79785270b457eb752b635b0bfce2
+  preimage_spec_id: formal_grid_hash
+pairing_contract:
+  paired_family_definition: NONE_FOR_DIAGNOSTIC_MICROCASE
+  base_generation_cell_definition: FROZEN_MICROCASE_CONSTANTS
+  transformation_contract_hash: 11d826a02fd4ac96541beb57f9c4b3d29e7accf60c99c4eb1a4306ec8a0fefe1
+sample_request_contract:
+  pilot_generation_requests_per_cell: 1
+  formal_generation_requests_per_cell: 1
+  sample_size_is_request_count: true
+  replacement_seeds_forbidden: true
+seed_contract:
+  seed_derivation_algorithm: SHA256_DOMAIN_SEPARATED_CANONICAL_V1_3_12
+  formal_master_seed: 931312
+  formal_master_seed_source: PUBLIC_CONSTANT
+  formal_master_seed_source_commitment_hash: 2ac84eea0ec15b61329fe7dc6b2e4254a8cde2dd10486eeb64c2229d51e07bae
+  seed_derivation_context_hash: ebf23f4b42af6ddb2b5863082c2205bac388a632f4cf488ff13f021157a762fc
+  formal_seed_set_hash: e14739f7732faad632c1b8e736773bad7c4b8abe3134b6be24576b8a41240274
+  substream_labels:
+  - TASK_UTILIZATION
+  - PERIODS
+  - POWER_LATENT
+  - RELEASE_TRACE
+  - HARVEST_TRACE
+  - ADVERSARIAL_SEARCH
+  public_random_beacon_commitment_rule: commit source, exact round/time and extraction
+    rule before CORE0A; reveal value later; never choose among rounds after pilot
+statistics_contract:
+  operational_comparison: NOT_RUN_DIAGNOSTIC
+  analytical_comparison: EXACT_MICROCASE_STATES
+  tightness_weighting: NOT_APPLICABLE_DIAGNOSTIC
+  bootstrap_cluster_unit: taskset_or_paired_family
+  multiple_testing_policy: NOT_APPLICABLE_DIAGNOSTIC
+  sample_size_power_target: NOT_APPLICABLE_DIAGNOSTIC
+runtime_environment_contract:
+  thread_count: 1
+  cpu_affinity: UNPINNED_DIAGNOSTIC
+  cpu_governor: NOT_RECORDED_DIAGNOSTIC
+  turbo_policy: NOT_RECORDED_DIAGNOSTIC
+  warmup_runs: 0
+  measurement_repetitions: 1
+  run_order_randomization: DISABLED
+  cache_policy: UNCONTROLLED_DIAGNOSTIC
+  rss_measurement_method: NOT_MEASURED
+approved_builds:
+  approved_generator_build_identity_hash: 15690c3f92fe035f317e7b2d086c10060ab7a34a8489af2295e39da7839a33b3
+  approved_trace_generator_build_identity_hash: 5f0fa1ea6ff61eb580c55a45cdd144e18101928ed0f04b6713661a9e758ff6e3
+  approved_rta_build_identity_hash: 03d433e2d19b4988185336ae0635bca248191b85333ba95091dab3f40912d531
+  approved_simulator_build_identity_hash: 7cee191a615676cde1c6ed75989de3c52a946d37d3d2ec49c641bd94762bda62
+  approved_scheduler_build_identity_hash: 8d484787b55a450b93724447e3f86b90ddf723d8d69315d4016e0bf9f63849a7
+  approved_audit_build_identity_hash: fcf8bef54c6e7df263fb946bb93043614cb1086554dbe808784dd0e52c518dd4
+  approved_artifact_validator_sha256: be186a5076773b51b1097307cce3a32f5624f6a8363144800eafe2987b13ce5d
+  approved_result_validator_sha256: 6348c894c55d7add42c0eafdb00c61fee6d352416bbd24ea1781984bcdeda059
+  approved_acceptance_validator_sha256: db18ab741d5166aa4bcd173db7ea03c29175a338e9a1d8ef927af361ed0470f2
+  approved_validation_common_sha256: 72821a7915b2448eb0d6aab38062831193ec5f8ebecbe3764af788227c40278a
+run_plan_contract:
+  definition_file: run_plan_definition.csv
+  dependencies_file: run_plan_dependencies.csv
+  execution_log_file: run_execution_log.csv
+  request_outputs_file: request_outputs.csv
+  run_plan_hash_field: run_plan_bundle_hash
+  run_plan_bundle_hash: 84ef7a9560ffc570e9a447c4a18d687d3e46af5a89a13e65802ff44e67b75d49
+  preimage_spec_id: run_plan_bundle_hash
+  dependency_DAG_required: true
+  retry_policy:
+    max_attempts_per_request: 1
+    retryable_terminal_events:
+    - OUT_OF_MEMORY
+    - INTERRUPTED
+    - INFRASTRUCTURE_FAILURE
+    seed_and_payload_must_remain_identical_on_retry: true
+validator_contract:
+  artifact_validator_file: ASAP_BLOCK_artifact_validator_v1_3_12.py
+  result_validator_file: ASAP_BLOCK_result_validator_v1_3_12.py
+  acceptance_validator_file: ASAP_BLOCK_acceptance_report_validator_v1_3_12.py
+  validation_common_file: ASAP_BLOCK_validation_common_v1_3_12.py
+  machine_interface_manifest_file: ASAP_BLOCK_machine_interface_manifest_v1_3_12.yaml
+  full_natural_language_semantic_equivalence_claimed: false
+acceptance_gate_definitions:
+  CORE0A:
+  - full_w_q_h_scan
+  - exact_exhaustive_domain_zero_mismatch
+  - exact_random_boundary_instances_at_least_10000
+  - processor_term_direct_scan_zero_mismatch
+  - finite_state_counterexample_search
+  - event_order_and_scheduler_semantics_microcases
+  - joint_certification_state_machine
+  - loc_theta_cw_dominance_invariant
+  - service_curve_contract_checks
+  - schema_lineage_and_request_state_machine
+  - non_vacuity_coverage
+  CORE0B:
+  - formal_contract_hash_match
+  - approved_build_identity_match
+  - final_numeric_contract_identity
+  - repeat_parameter_sensitive_exact_checks
+  - numeric_range_valid
+  - rho_e_parameterization_valid
+  - e0_parameterization_valid
+  - service_curve_integerization_and_trace_validation
+  - deterministic_repeatability
+  - generation_coverage_gate
+  - run_plan_accounting_gate
+  - foreign_key_lineage_gate
+  - formal_soundness_observation_gate
+  - formal_non_vacuity_gate
+output_contract:
+  required_files:
+  - ASAP_BLOCK_实验配置与验收规范_v1_3_12_最终机器合同与验证闭合版.md
+  - ASAP_BLOCK_experiment_schema_v1_3_12.yaml
+  - ASAP_BLOCK_data_dictionary_v1_3_12.yaml
+  - ASAP_BLOCK_canonical_serialization_v1_3_12.yaml
+  - ASAP_BLOCK_machine_interface_manifest_v1_3_12.yaml
+  - ASAP_BLOCK_formal_contract_template_v1_3_12.yaml
+  - ASAP_BLOCK_generator_contract_template_v1_3_12.yaml
+  - ASAP_BLOCK_simulation_contract_template_v1_3_12.yaml
+  - ASAP_BLOCK_trace_generator_contract_template_v1_3_12.yaml
+  - ASAP_BLOCK_acceptance_report_template_v1_3_12.yaml
+  - ASAP_BLOCK_validation_common_v1_3_12.py
+  - ASAP_BLOCK_artifact_validator_v1_3_12.py
+  - ASAP_BLOCK_result_validator_v1_3_12.py
+  - ASAP_BLOCK_acceptance_report_validator_v1_3_12.py
+  - ASAP_BLOCK_run_plan_definition_template_v1_3_12.csv
+  - ASAP_BLOCK_run_plan_dependencies_template_v1_3_12.csv
+  - ASAP_BLOCK_run_execution_log_template_v1_3_12.csv
+  - ASAP_BLOCK_per_task_results_template_v1_3_12.csv
+  - config.yaml
+  - generator_contract.yaml
+  - simulation_contract.yaml
+  - trace_generator_contract.yaml
+  - formal_contract.yaml
+  - acceptance_report.yaml
+  - manifest.json
+  - git_commit.txt
+  - git_status.txt
+  - sha256sum.txt
+  - run_plan_definition.csv
+  - run_plan_dependencies.csv
+  - run_execution_log.csv
+  - generation_requests.csv
+  - paired_transformations.csv
+  - tasksets.csv
+  - task_definitions.csv
+  - release_trace_sets.csv
+  - release_traces.csv
+  - harvest_trace_sets.csv
+  - harvest_traces.csv
+  - per_taskset_results.csv
+  - per_task_results.csv
+  - rta_dependency_records.csv
+  - simulation_taskset_summary.csv
+  - simulation_job_results.csv
+  - service_trace_checks.csv
+  - e0_trace_certificate_checks.csv
+  - e0_job_certificate_checks.csv
+  - analysis_simulation_compatibility_checks.csv
+  - simulation_bound_checks.csv
+  - request_outputs.csv
+  - bound_audit_runs.csv
+  unexpected_files_policy: reject unless required or referenced as acceptance evidence
+  all_files_must_be_sha256_manifested: true
+  additional_evidence_files_allowed_only_if_referenced_by_acceptance_report: true
+  runtime_manifest_version: 1.3.12
+  gate_evidence_protocol: ASAP_BLOCK_GATE_REPLAY_V1
+  gate_evidence_bundle_domain: ASAP_BLOCK:GATE_EVIDENCE_BUNDLE:v1.3.12
+  gate_evidence_files_must_be_root_basenames: true
+formal_contract_hash_contract:
+  preimage_spec_id: formal_contract_hash
+  include: entire immutable filled contract object
+  self_field: contract_metadata.formal_contract_hash
+  excluded_runtime_objects:
+  - acceptance_report.yaml
+  - run_execution_log.csv
+  - request_outputs.csv
+  - runtime result files
+  - manifest.json
+  - git_status.txt
+  acceptance_results_excluded: true
+gate_validator_bindings:
+  replay_interface: ASAP_BLOCK_GATE_REPLAY_V1
+  replay_timeout_seconds: 120
+  CORE0A_gates:
+    full_w_q_h_scan:
+      validator_file: ASAP_BLOCK_acceptance_report_validator_v1_3_12.py
+      validator_version: 1.3.12
+      validator_sha256: db18ab741d5166aa4bcd173db7ea03c29175a338e9a1d8ef927af361ed0470f2
+    exact_exhaustive_domain_zero_mismatch:
+      validator_file: ASAP_BLOCK_acceptance_report_validator_v1_3_12.py
+      validator_version: 1.3.12
+      validator_sha256: db18ab741d5166aa4bcd173db7ea03c29175a338e9a1d8ef927af361ed0470f2
+    exact_random_boundary_instances_at_least_10000:
+      validator_file: ASAP_BLOCK_acceptance_report_validator_v1_3_12.py
+      validator_version: 1.3.12
+      validator_sha256: db18ab741d5166aa4bcd173db7ea03c29175a338e9a1d8ef927af361ed0470f2
+    processor_term_direct_scan_zero_mismatch:
+      validator_file: ASAP_BLOCK_acceptance_report_validator_v1_3_12.py
+      validator_version: 1.3.12
+      validator_sha256: db18ab741d5166aa4bcd173db7ea03c29175a338e9a1d8ef927af361ed0470f2
+    finite_state_counterexample_search:
+      validator_file: ASAP_BLOCK_acceptance_report_validator_v1_3_12.py
+      validator_version: 1.3.12
+      validator_sha256: db18ab741d5166aa4bcd173db7ea03c29175a338e9a1d8ef927af361ed0470f2
+    event_order_and_scheduler_semantics_microcases:
+      validator_file: ASAP_BLOCK_acceptance_report_validator_v1_3_12.py
+      validator_version: 1.3.12
+      validator_sha256: db18ab741d5166aa4bcd173db7ea03c29175a338e9a1d8ef927af361ed0470f2
+    joint_certification_state_machine:
+      validator_file: ASAP_BLOCK_acceptance_report_validator_v1_3_12.py
+      validator_version: 1.3.12
+      validator_sha256: db18ab741d5166aa4bcd173db7ea03c29175a338e9a1d8ef927af361ed0470f2
+    loc_theta_cw_dominance_invariant:
+      validator_file: ASAP_BLOCK_acceptance_report_validator_v1_3_12.py
+      validator_version: 1.3.12
+      validator_sha256: db18ab741d5166aa4bcd173db7ea03c29175a338e9a1d8ef927af361ed0470f2
+    service_curve_contract_checks:
+      validator_file: ASAP_BLOCK_acceptance_report_validator_v1_3_12.py
+      validator_version: 1.3.12
+      validator_sha256: db18ab741d5166aa4bcd173db7ea03c29175a338e9a1d8ef927af361ed0470f2
+    schema_lineage_and_request_state_machine:
+      validator_file: ASAP_BLOCK_acceptance_report_validator_v1_3_12.py
+      validator_version: 1.3.12
+      validator_sha256: db18ab741d5166aa4bcd173db7ea03c29175a338e9a1d8ef927af361ed0470f2
+    non_vacuity_coverage:
+      validator_file: ASAP_BLOCK_acceptance_report_validator_v1_3_12.py
+      validator_version: 1.3.12
+      validator_sha256: db18ab741d5166aa4bcd173db7ea03c29175a338e9a1d8ef927af361ed0470f2
+  CORE0B_gates:
+    formal_contract_hash_match:
+      validator_file: ASAP_BLOCK_acceptance_report_validator_v1_3_12.py
+      validator_version: 1.3.12
+      validator_sha256: db18ab741d5166aa4bcd173db7ea03c29175a338e9a1d8ef927af361ed0470f2
+    approved_build_identity_match:
+      validator_file: ASAP_BLOCK_acceptance_report_validator_v1_3_12.py
+      validator_version: 1.3.12
+      validator_sha256: db18ab741d5166aa4bcd173db7ea03c29175a338e9a1d8ef927af361ed0470f2
+    final_numeric_contract_identity:
+      validator_file: ASAP_BLOCK_acceptance_report_validator_v1_3_12.py
+      validator_version: 1.3.12
+      validator_sha256: db18ab741d5166aa4bcd173db7ea03c29175a338e9a1d8ef927af361ed0470f2
+    repeat_parameter_sensitive_exact_checks:
+      validator_file: ASAP_BLOCK_acceptance_report_validator_v1_3_12.py
+      validator_version: 1.3.12
+      validator_sha256: db18ab741d5166aa4bcd173db7ea03c29175a338e9a1d8ef927af361ed0470f2
+    numeric_range_valid:
+      validator_file: ASAP_BLOCK_acceptance_report_validator_v1_3_12.py
+      validator_version: 1.3.12
+      validator_sha256: db18ab741d5166aa4bcd173db7ea03c29175a338e9a1d8ef927af361ed0470f2
+    rho_e_parameterization_valid:
+      validator_file: ASAP_BLOCK_acceptance_report_validator_v1_3_12.py
+      validator_version: 1.3.12
+      validator_sha256: db18ab741d5166aa4bcd173db7ea03c29175a338e9a1d8ef927af361ed0470f2
+    e0_parameterization_valid:
+      validator_file: ASAP_BLOCK_acceptance_report_validator_v1_3_12.py
+      validator_version: 1.3.12
+      validator_sha256: db18ab741d5166aa4bcd173db7ea03c29175a338e9a1d8ef927af361ed0470f2
+    service_curve_integerization_and_trace_validation:
+      validator_file: ASAP_BLOCK_acceptance_report_validator_v1_3_12.py
+      validator_version: 1.3.12
+      validator_sha256: db18ab741d5166aa4bcd173db7ea03c29175a338e9a1d8ef927af361ed0470f2
+    deterministic_repeatability:
+      validator_file: ASAP_BLOCK_acceptance_report_validator_v1_3_12.py
+      validator_version: 1.3.12
+      validator_sha256: db18ab741d5166aa4bcd173db7ea03c29175a338e9a1d8ef927af361ed0470f2
+    generation_coverage_gate:
+      validator_file: ASAP_BLOCK_acceptance_report_validator_v1_3_12.py
+      validator_version: 1.3.12
+      validator_sha256: db18ab741d5166aa4bcd173db7ea03c29175a338e9a1d8ef927af361ed0470f2
+    run_plan_accounting_gate:
+      validator_file: ASAP_BLOCK_acceptance_report_validator_v1_3_12.py
+      validator_version: 1.3.12
+      validator_sha256: db18ab741d5166aa4bcd173db7ea03c29175a338e9a1d8ef927af361ed0470f2
+    foreign_key_lineage_gate:
+      validator_file: ASAP_BLOCK_acceptance_report_validator_v1_3_12.py
+      validator_version: 1.3.12
+      validator_sha256: db18ab741d5166aa4bcd173db7ea03c29175a338e9a1d8ef927af361ed0470f2
+    formal_soundness_observation_gate:
+      validator_file: ASAP_BLOCK_acceptance_report_validator_v1_3_12.py
+      validator_version: 1.3.12
+      validator_sha256: db18ab741d5166aa4bcd173db7ea03c29175a338e9a1d8ef927af361ed0470f2
+    formal_non_vacuity_gate:
+      validator_file: ASAP_BLOCK_acceptance_report_validator_v1_3_12.py
+      validator_version: 1.3.12
+      validator_sha256: db18ab741d5166aa4bcd173db7ea03c29175a338e9a1d8ef927af361ed0470f2

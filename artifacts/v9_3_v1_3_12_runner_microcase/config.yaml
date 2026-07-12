@@ -1,0 +1,7 @@
+profile: DIAGNOSTIC
+rta_version: v9.3
+microcases:
+- A
+- B
+- C
+- D_GENERATION_FAILURE

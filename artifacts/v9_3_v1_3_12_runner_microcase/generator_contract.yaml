@@ -1,0 +1,33 @@
+contract_metadata:
+  name: ASAP_BLOCK_generator_contract
+  version: 1.3.12
+  generator_contract_hash: 0bd291456f142511eb8f225163ecf6498a07b17ea85c494d675c867420fb9bd6
+  canonical_serialization_file: ASAP_BLOCK_canonical_serialization_v1_3_12.yaml
+generator_parameters:
+  task_util_min: 1/100
+  task_util_max: '1'
+  utilization_tolerance: '0'
+  period_distribution: UNIFORM_INTEGER
+  period_min: 1
+  period_max: 100
+  deadline_generation_rule: FROZEN_MICROCASE_CONSTANTS
+  deadline_delta_main: '1'
+  power_latent_distribution: FROZEN_MICROCASE_CONSTANTS
+  power_latent_mapping_version: MICROCASE_POWER_V1
+  max_resampling_attempts: 1
+  generation_failure_threshold: '1'
+  priority_policy: DM
+  priority_tiebreak:
+  - D_i
+  - T_i
+  - task_id
+  rho_e_parameterization_rule: EXACT_MICROCASE_INPUT
+  parameter_cell_canonicalization_version: PARAMETER_CELL_CANONICAL_V1_3_12
+rng_contract:
+  seed_algorithm: SHA256_DOMAIN_SEPARATED_CANONICAL_V1_3_12
+  stream_labels:
+  - TASK_UTILIZATION
+  - PERIODS
+  - POWER_LATENT
+  seed_derivation_algorithm: SHA256_DOMAIN_SEPARATED_CANONICAL_V1_3_12
+hash_preimage_rule: canonical preimage generator_contract_hash; self field null
