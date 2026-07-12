@@ -1,0 +1,47 @@
+{
+  "domain_id": "CORE0A-FINITE-STATE-V2",
+  "energy_event_order": [
+    "complete_previous_tick_jobs",
+    "credit_previous_tick_harvest",
+    "release_current_tick_jobs",
+    "read_boundary_energy",
+    "scan_ASAP_BLOCK_prefix",
+    "execute_one_tick",
+    "credit_current_tick_harvest_for_next_boundary"
+  ],
+  "generation_horizon": 12,
+  "job_completion_boundary": "a unit executed in tick t completes at boundary t+1",
+  "observation_horizon": 24,
+  "overflow_model": "Python arbitrary-precision integer timing and Fraction energy",
+  "pruning": [],
+  "release_pattern": "synchronous periodic releases at t mod T_i == 0 while t < generation_horizon",
+  "service_curve_domain": [
+    "beta(L)=0",
+    "beta(L)=L for the energy witness"
+  ],
+  "structural_domain": {
+    "E0": [4],
+    "M": [1, 2],
+    "P_i": [1, 2],
+    "task_count": [1, 2],
+    "task_rank_0": {"C": 1, "D": 2, "T": 3},
+    "task_rank_1": {"C": 1, "D": 3, "T": 4}
+  },
+  "witnesses": [
+    {
+      "E0": 1,
+      "M": 1,
+      "harvest_per_tick": 1,
+      "tasks": [{"C": 1, "D": 3, "P": 2, "T": 4, "task_id": "energy"}]
+    },
+    {
+      "E0": 4,
+      "M": 1,
+      "harvest_per_tick": 0,
+      "tasks": [
+        {"C": 1, "D": 2, "P": 1, "T": 3, "task_id": "hp"},
+        {"C": 1, "D": 3, "P": 1, "T": 4, "task_id": "lp"}
+      ]
+    }
+  ]
+}

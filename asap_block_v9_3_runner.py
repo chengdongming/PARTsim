@@ -3,12 +3,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Tuple
 
 import asap_block_rta as v20
 import asap_block_rta_v21_local_window as v21
+import asap_block_rta_v9_3 as v93_core
 import asap_block_rta_v9_3_taskset as v93
 from asap_block_v1_3_12_schema_binding import (
     ContractBindingError,
@@ -120,14 +121,27 @@ def dispatch_rta_version(
     if selected == V93_DISPATCH_VERSION:
         if v93_request is None:
             raise RunnerConformanceError("v9.3 dispatch requires V93DispatchRequest")
+        validated_beta = v93_core.validate_service_curve_v9_3(
+            v93_request.analysis_input.beta,
+            max(
+                task.deadline
+                for task in v93_request.analysis_input.tasks
+            ) - 1,
+        )
+        validated_request = replace(
+            v93_request,
+            analysis_input=replace(
+                v93_request.analysis_input, beta=validated_beta
+            ),
+        )
         # No exception handler here: a v9.3 failure must not invoke an older RTA.
         return v93.analyze_taskset_v9_3(
-            v93_request.analysis_id,
-            v93_request.variant,
-            v93_request.analysis_input,
-            source=v93_request.source,
-            dependency_check_status=v93_request.dependency_check_status,
-            diagnostic_mode=v93_request.diagnostic_mode,
+            validated_request.analysis_id,
+            validated_request.variant,
+            validated_request.analysis_input,
+            source=validated_request.source,
+            dependency_check_status=validated_request.dependency_check_status,
+            diagnostic_mode=validated_request.diagnostic_mode,
         )
     raise RunnerConformanceError("unknown RTA version: {!r}".format(selected))
 

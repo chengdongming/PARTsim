@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import math
 import time
+from collections.abc import Sequence as SequenceABC
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
@@ -444,19 +445,71 @@ EnvelopeFunction = Callable[..., ExactInput]
 ServiceCurve = Union[Callable[[int], ExactInput], Sequence[ExactInput]]
 
 
-def _service_at(beta: ServiceCurve, length: int) -> Fraction:
-    try:
-        value = beta(length) if callable(beta) else beta[length]
-    except (IndexError, KeyError) as exc:
+def validate_service_curve_v9_3(
+    beta: ServiceCurve, required_horizon: int
+) -> Tuple[Fraction, ...]:
+    """Validate and freeze a theorem-backed service curve prefix.
+
+    ``required_horizon`` is the largest service index that the caller may
+    inspect.  Every value is read twice, converted through the approved exact
+    numeric domain, and compared across the two passes.  Returning the frozen
+    tuple prevents a stateful callback from changing after validation.
+    """
+
+    required_horizon = _require_int(
+        required_horizon, "service-curve required horizon", 0
+    )
+    is_callback = callable(beta)
+    if not is_callback and (
+        isinstance(beta, (str, bytes, bytearray))
+        or not isinstance(beta, SequenceABC)
+    ):
         raise V93NumericError(
-            "service curve is undefined at length {}".format(length)
-        ) from exc
-    service = exact_fraction_v9_3(value, "beta({})".format(length))
-    if service < 0:
-        raise V93NumericError(
-            "beta({}) must be non-negative".format(length)
+            "service curve must be a callback or a finite exact sequence"
         )
-    return service
+    if not is_callback and len(beta) <= required_horizon:
+        raise V93NumericError(
+            "service curve is undefined through required index {}".format(
+                required_horizon
+            )
+        )
+
+    def read_pass() -> Tuple[Fraction, ...]:
+        values = []
+        for length in range(required_horizon + 1):
+            try:
+                raw = beta(length) if is_callback else beta[length]
+            except Exception as exc:
+                raise V93NumericError(
+                    "service curve callback/access failed at index {}".format(
+                        length
+                    )
+                ) from exc
+            values.append(
+                exact_fraction_v9_3(raw, "beta({})".format(length))
+            )
+        return tuple(values)
+
+    first = read_pass()
+    second = read_pass()
+    if first != second:
+        raise V93NumericError(
+            "service curve callback is non-deterministic on the required prefix"
+        )
+    if first[0] != 0:
+        raise V93NumericError("service curve must satisfy beta(0) == 0")
+    previous = first[0]
+    for length, value in enumerate(first):
+        if value < 0:
+            raise V93NumericError(
+                "beta({}) must be non-negative".format(length)
+            )
+        if length and value < previous:
+            raise V93NumericError(
+                "service curve must be monotone non-decreasing"
+            )
+        previous = value
+    return first
 
 
 def _clock_at(clock: Callable[[], float]) -> float:
@@ -504,6 +557,7 @@ def canonical_closure_search_v9_3(
     envelope_function: EnvelopeFunction = exact_energy_envelope_v9_3,
     timeout_seconds: Optional[float] = None,
     clock: Callable[[], float] = time.monotonic,
+    trace_observer: Optional[Callable[[Mapping[str, object]], None]] = None,
 ) -> V93SearchResult:
     """Run the canonical v9.3 pointwise ``w``, ``h``, then ``q`` scan.
 
@@ -517,10 +571,10 @@ def canonical_closure_search_v9_3(
         raise V93InputError("kind must be an EnvelopeKind")
     if not callable(envelope_function):
         raise V93InputError("envelope_function must be callable")
-    if not callable(beta) and not hasattr(beta, "__getitem__"):
-        raise V93InputError("beta must be callable or indexable")
     if not callable(clock):
         raise V93InputError("clock must be callable")
+    if trace_observer is not None and not callable(trace_observer):
+        raise V93InputError("trace_observer must be callable")
     _validate_task_partition(target, hp_tasks, lp_tasks)
     processors = _require_int(processors, "M", 1)
     _validated_theta(hp_tasks, theta_by_name)
@@ -562,6 +616,9 @@ def canonical_closure_search_v9_3(
         return elapsed >= timeout_seconds
 
     try:
+        validated_beta = validate_service_curve_v9_3(
+            beta, target.deadline - 1
+        )
         if timeout_seconds is not None:
             started = _clock_at(clock)
         for w in range(target.wcet, target.deadline + 1):
@@ -572,6 +629,23 @@ def canonical_closure_search_v9_3(
                 target, hp_tasks, w, processors, theta_by_name
             )
             if a_value > w:
+                if trace_observer is not None:
+                    trace_observer(
+                        {
+                            "w": w,
+                            "A": a_value,
+                            "h": None,
+                            "q": None,
+                            "event_type": "W_SKIPPED_A_GT_W",
+                            "envelope_value": None,
+                            "service_value": None,
+                            "service_index": None,
+                            "coverage_index": None,
+                            "q_result": "NOT_APPLICABLE",
+                            "h_result": "NOT_APPLICABLE",
+                            "w_result": "CONTINUE",
+                        }
+                    )
                 continue
             for h in range(0, w - a_value + 1):
                 if is_timed_out():
@@ -603,12 +677,59 @@ def canonical_closure_search_v9_3(
                         raise V93NumericError(
                             "energy envelope must be non-negative"
                         )
-                    service = exact_e0 + _service_at(beta, h + q - 1)
+                    service = exact_e0 + validated_beta[h + q - 1]
                     if is_timed_out():
                         return timeout_result()
                     if envelope > service:
+                        if trace_observer is not None:
+                            trace_observer(
+                                {
+                                    "w": w,
+                                    "A": a_value,
+                                    "h": h,
+                                    "q": q,
+                                    "event_type": "Q_CHECK",
+                                    "envelope_value": envelope,
+                                    "service_value": service,
+                                    "service_index": h + q - 1,
+                                    "coverage_index": (
+                                        w
+                                        if kind is EnvelopeKind.COMPLETE
+                                        else q + h
+                                    ),
+                                    "q_result": "FAIL",
+                                    "h_result": "FAIL",
+                                    "w_result": "CONTINUE",
+                                }
+                            )
                         h_is_valid = False
                         break
+                    if trace_observer is not None:
+                        closes_h = q == a_value
+                        trace_observer(
+                            {
+                                "w": w,
+                                "A": a_value,
+                                "h": h,
+                                "q": q,
+                                "event_type": "Q_CHECK",
+                                "envelope_value": envelope,
+                                "service_value": service,
+                                "service_index": h + q - 1,
+                                "coverage_index": (
+                                    w
+                                    if kind is EnvelopeKind.COMPLETE
+                                    else q + h
+                                ),
+                                "q_result": "PASS",
+                                "h_result": (
+                                    "CLOSED" if closes_h else "CONTINUE"
+                                ),
+                                "w_result": (
+                                    "CANDIDATE" if closes_h else "CONTINUE"
+                                ),
+                            }
+                        )
                 if h_is_valid:
                     return _result(
                         V93SolverStatus.CANDIDATE,

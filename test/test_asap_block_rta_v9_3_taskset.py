@@ -48,7 +48,7 @@ def analysis_input(items=None, ctx=None):
         tasks=tuple(items),
         processors=max(1, len(items)),
         e0=1000,
-        beta=lambda _length: 1000,
+        beta=lambda length: 0 if length == 0 else 1000,
         dependency_context=ctx or context(),
     )
 
@@ -687,3 +687,21 @@ def test_seeded_real_core_random_consistency_nonvacuous():
             total, source_certified, local_certified, dominance_violations
         )
     )
+
+
+def test_taskset_entry_rejects_illegal_curve_before_injected_solver_runs():
+    inp = replace(analysis_input(), beta=[1] * 8)
+    called = []
+
+    def forbidden_solver(**_kwargs):
+        called.append(True)
+        return candidate(1)
+
+    with pytest.raises(ts.CertificationError, match="service curve"):
+        ts.analyze_taskset_v9_3(
+            "invalid-curve",
+            ts.AnalysisVariant.LOC_THETA_LOC,
+            inp,
+            single_task_solver=forbidden_solver,
+        )
+    assert called == []

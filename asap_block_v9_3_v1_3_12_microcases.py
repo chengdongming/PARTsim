@@ -8,6 +8,7 @@ import csv
 import hashlib
 import json
 import shutil
+import subprocess
 import sys
 import zipfile
 from collections import Counter
@@ -37,6 +38,12 @@ MICROCASE_TASKS = (
     ("1", 1, 7, 12, Fraction(1)),
 )
 MICROCASE_C_TASKS = MICROCASE_TASKS + (("2", 1, 9, 15, Fraction(1)),)
+CORE0A_VALIDATOR_FILES = (
+    "core0a_v9_3_independent_aggregator.py",
+    "core0a_v9_3_evidence_schema.py",
+    "core0a_v9_3_oracles.py",
+    "core0a_v9_3_package_validator.py",
+)
 
 
 def _dump_yaml(path: Path, value: Any) -> None:
@@ -138,6 +145,7 @@ def _fill_formal_contract(
     root: Path,
     binding: V1312SchemaBinding,
     child_hashes: Mapping[str, str],
+    core0a_build_identity: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     common = binding.common
     formal = common.load_yaml_strict(
@@ -249,6 +257,12 @@ def _fill_formal_contract(
         builds["approved_{}_build_identity_hash".format(name)] = _hash(
             common, "ASAP_BLOCK:MICROCASE_BUILD:{}:v1.3.12".format(name), PACKAGE_VERSION
         )
+    if core0a_build_identity is not None:
+        build_hash = core0a_build_identity["build_identity_hash"]
+        for name in (
+            "generator", "trace_generator", "rta", "simulator", "scheduler", "audit"
+        ):
+            builds["approved_{}_build_identity_hash".format(name)] = build_hash
     builds.update(
         approved_artifact_validator_sha256=common.sha256_file(
             root / "ASAP_BLOCK_artifact_validator_v1_3_12.py"
@@ -272,6 +286,19 @@ def _fill_formal_contract(
     for section in ("CORE0A_gates", "CORE0B_gates"):
         for gate in formal["gate_validator_bindings"][section].values():
             gate.update(gate_validator)
+    if core0a_build_identity is not None:
+        independent_validator = {
+            "validator_file": "core0a_v9_3_independent_aggregator.py",
+            "validator_version": "CORE0A-INDEPENDENT-2.0",
+            "validator_sha256": common.sha256_file(
+                root / "core0a_v9_3_independent_aggregator.py"
+            ),
+        }
+        for gate in formal["gate_validator_bindings"]["CORE0A_gates"].values():
+            gate.update(independent_validator)
+        for filename in CORE0A_VALIDATOR_FILES:
+            if filename not in formal["output_contract"]["required_files"]:
+                formal["output_contract"]["required_files"].append(filename)
     plan_preimage = {
         "theory_contract": formal["theory_contract"],
         "pre_core0a_commitments": formal["pre_core0a_commitments"],
@@ -616,7 +643,13 @@ def _analysis_base(
     return row
 
 
-def _make_acceptance(root: Path, binding: V1312SchemaBinding, formal: Mapping[str, Any]) -> None:
+def _make_acceptance(
+    root: Path,
+    binding: V1312SchemaBinding,
+    formal: Mapping[str, Any],
+    core0a_result: Optional[Mapping[str, Any]] = None,
+    core0a_inputs: Sequence[str] = (),
+) -> None:
     common = binding.common
     report = common.load_yaml_strict(
         root / "ASAP_BLOCK_acceptance_report_template_v1_3_12.yaml"
@@ -641,9 +674,65 @@ def _make_acceptance(root: Path, binding: V1312SchemaBinding, formal: Mapping[st
         observed[prefix + "_build_identity_hash"] = formal["approved_builds"][
             "approved_{}_build_identity_hash".format(prefix)
         ]
+    if core0a_result is not None:
+        if core0a_result.get("status") != "PASSED":
+            raise ValueError("independent CORE0A aggregation is not PASSED")
+        binding_record = formal["gate_validator_bindings"]["CORE0A_gates"]
+        input_hashes = [common.sha256_file(root / name) for name in core0a_inputs]
+        for gate_id, result_gate in core0a_result["gates"].items():
+            record = report["CORE0A_gates"][gate_id]
+            validator = binding_record[gate_id]
+            bundle_name = "core0a_gate_{}.json".format(gate_id)
+            bundle = {
+                "evidence_bundle_metadata": {
+                    "version": "1.3.12",
+                    "gate_section": "CORE0A_gates",
+                    "gate_id": gate_id,
+                    "plan_context_hash": formal["plan_context_contract"]["plan_context_hash"],
+                    "formal_contract_hash": formal["contract_metadata"]["formal_contract_hash"],
+                    "validator_file": validator["validator_file"],
+                    "validator_version": validator["validator_version"],
+                    "validator_sha256": validator["validator_sha256"],
+                    "replay_interface": "ASAP_BLOCK_GATE_REPLAY_V1",
+                    "evidence_bundle_hash": None,
+                },
+                "predicate": record["predicate"],
+                "counts": result_gate["counts"],
+                "input_files": list(core0a_inputs),
+                "input_sha256": input_hashes,
+                "status": result_gate["status"],
+            }
+            bundle["evidence_bundle_metadata"]["evidence_bundle_hash"] = (
+                common.canonical_object_self_hash(
+                    bundle,
+                    "evidence_bundle_metadata.evidence_bundle_hash",
+                    "ASAP_BLOCK:GATE_EVIDENCE_BUNDLE:v1.3.12",
+                )
+            )
+            (root / bundle_name).write_text(
+                json.dumps(bundle, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            bundle_hash = common.sha256_file(root / bundle_name)
+            record.update(
+                status=result_gate["status"],
+                counts=result_gate["counts"],
+                evidence_bundle_file=bundle_name,
+                evidence_bundle_sha256=bundle_hash,
+                evidence_files=[bundle_name] + list(core0a_inputs),
+                evidence_sha256=[bundle_hash] + input_hashes,
+                validator_name=validator["validator_file"],
+                validator_version=validator["validator_version"],
+                validator_sha256=validator["validator_sha256"],
+                notes="independently aggregated from row-level CORE0A evidence",
+            )
     failed = []
     for section in ("CORE0A_gates", "CORE0B_gates"):
-        failed.extend(report[section])
+        failed.extend(
+            gate_id
+            for gate_id, gate in report[section].items()
+            if gate.get("required", True) and gate.get("status") != "PASSED"
+        )
     report["overall_release_gate"] = {
         "status": "FAILED",
         "failed_gate_ids": sorted(failed),
@@ -657,6 +746,71 @@ def _make_acceptance(root: Path, binding: V1312SchemaBinding, formal: Mapping[st
         )
     )
     _dump_yaml(root / "acceptance_report.yaml", report)
+
+
+def _install_core0a_evidence(
+    root: Path,
+    evidence_root: Path,
+    build_identity: Mapping[str, Any],
+) -> Tuple[Dict[str, Any], Tuple[str, ...]]:
+    """Copy bound raw evidence and independently recompute all gate counts."""
+
+    evidence_root = Path(evidence_root)
+    raw_manifest = json.loads(
+        (evidence_root / "raw_evidence_manifest.json").read_text(encoding="utf-8")
+    )
+    if raw_manifest.get("build_identity_hash") != build_identity["build_identity_hash"]:
+        raise ValueError("raw evidence build identity differs from package identity")
+    raw_names = tuple(sorted(raw_manifest["files"]))
+    support_names = (
+        raw_manifest["build_identity_file"],
+        raw_manifest["finite_state_domain_file"],
+        "raw_evidence_manifest.json",
+    )
+    for name in raw_names + support_names:
+        if Path(name).name != name:
+            raise ValueError("CORE0A evidence requires root basenames")
+        shutil.copyfile(evidence_root / name, root / name)
+    copied_identity = json.loads((root / "build_identity.json").read_text(encoding="utf-8"))
+    if copied_identity != build_identity:
+        raise ValueError("copied build identity is not byte-semantic equal")
+    replay_name = "gate_replay_counts.json"
+    process = subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            "core0a_v9_3_independent_aggregator.py",
+            "--evidence-root",
+            ".",
+            "--template",
+            "ASAP_BLOCK_acceptance_report_template_v1_3_12.yaml",
+            "--output",
+            replay_name,
+        ],
+        cwd=root,
+        env={
+            "PATH": __import__("os").environ.get("PATH", ""),
+            "PYTHONHASHSEED": "0",
+            "PYTHONIOENCODING": "utf-8",
+            "PYTHONDONTWRITEBYTECODE": "1",
+        },
+        capture_output=True,
+        text=True,
+        timeout=300,
+        check=False,
+    )
+    if process.returncode:
+        raise ValueError(
+            "independent CORE0A aggregation failed: {}".format(process.stdout[-1000:])
+        )
+    result = json.loads((root / replay_name).read_text(encoding="utf-8"))
+    inputs = tuple(
+        sorted(
+            set(raw_names + support_names + (replay_name,))
+            | {"core0a_v9_3_evidence_schema.py", "core0a_v9_3_oracles.py"}
+        )
+    )
+    return result, inputs
 
 
 def _output_bundle(
@@ -695,7 +849,15 @@ def _output_bundle(
 def _write_manifest(root: Path, binding: V1312SchemaBinding, formal: Mapping[str, Any]) -> None:
     common = binding.common
     required = set(formal["output_contract"]["required_files"])
-    manifest_files = sorted(required - {"manifest.json", "sha256sum.txt"})
+    report = common.load_yaml_strict(root / "acceptance_report.yaml")
+    evidence = {
+        name
+        for section in ("CORE0A_gates", "CORE0B_gates")
+        for gate in report[section].values()
+        for name in gate.get("evidence_files", [])
+    }
+    allowed = required | evidence
+    manifest_files = sorted(allowed - {"manifest.json", "sha256sum.txt"})
     manifest = {
         "manifest_version": "1.3.12",
         "plan_context_hash": formal["plan_context_contract"]["plan_context_hash"],
@@ -714,12 +876,17 @@ def _write_manifest(root: Path, binding: V1312SchemaBinding, formal: Mapping[str
         encoding="utf-8",
     )
     sums = []
-    for name in sorted(required - {"sha256sum.txt"}):
+    for name in sorted(allowed - {"sha256sum.txt"}):
         sums.append("{}  {}".format(common.sha256_file(root / name), name))
     (root / "sha256sum.txt").write_text("\n".join(sums) + "\n", encoding="utf-8")
 
 
-def build_microcase_package(output_root: Path, zip_path: Optional[Path] = None) -> Dict[str, Any]:
+def build_microcase_package(
+    output_root: Path,
+    zip_path: Optional[Path] = None,
+    core0a_evidence_root: Optional[Path] = None,
+    build_identity_path: Optional[Path] = None,
+) -> Dict[str, Any]:
     """Create the complete package and return a deterministic summary."""
 
     output_root = Path(output_root)
@@ -728,6 +895,15 @@ def build_microcase_package(output_root: Path, zip_path: Optional[Path] = None) 
     output_root.mkdir(parents=True)
     binding = V1312SchemaBinding()
     common = binding.common
+    core0a_build_identity = None
+    if (core0a_evidence_root is None) != (build_identity_path is None):
+        raise ValueError("CORE0A evidence root and build identity must be provided together")
+    if build_identity_path is not None:
+        core0a_build_identity = json.loads(
+            Path(build_identity_path).read_text(encoding="utf-8")
+        )
+        if core0a_build_identity.get("git_status_clean") is not True:
+            raise ValueError("formal CORE0A build identity must record a clean worktree")
     formal_template = common.load_yaml_strict(
         DEFAULT_CONTRACT_ROOT / "ASAP_BLOCK_formal_contract_template_v1_3_12.yaml"
     )
@@ -735,8 +911,14 @@ def build_microcase_package(output_root: Path, zip_path: Optional[Path] = None) 
         source = DEFAULT_CONTRACT_ROOT / name
         if source.exists():
             shutil.copyfile(source, output_root / name)
+    if core0a_build_identity is not None:
+        project_root = Path(__file__).resolve().parent
+        for name in CORE0A_VALIDATOR_FILES:
+            shutil.copyfile(project_root / name, output_root / name)
     child_hashes = _make_child_contracts(output_root, binding)
-    formal = _fill_formal_contract(output_root, binding, child_hashes)
+    formal = _fill_formal_contract(
+        output_root, binding, child_hashes, core0a_build_identity
+    )
     cells_by_name = {
         cell["parameters"]["microcase"]: cell["parameter_cell_id"]
         for cell in formal["formal_grid_contract"]["formal_grid"]["cells"]
@@ -959,9 +1141,21 @@ def build_microcase_package(output_root: Path, zip_path: Optional[Path] = None) 
         yaml.safe_dump({"profile": PHASE, "rta_version": "v9.3", "microcases": ["A", "B", "C", "D_GENERATION_FAILURE"]}, sort_keys=False),
         encoding="utf-8",
     )
-    (output_root / "git_commit.txt").write_text("MICROCASE_GENERATOR_INPUT\n", encoding="utf-8")
-    (output_root / "git_status.txt").write_text("DETERMINISTIC_DIAGNOSTIC_PACKAGE\n", encoding="utf-8")
-    _make_acceptance(output_root, binding, formal)
+    commit_text = "MICROCASE_GENERATOR_INPUT"
+    status_text = "DETERMINISTIC_DIAGNOSTIC_PACKAGE"
+    core0a_result = None
+    core0a_inputs: Tuple[str, ...] = ()
+    if core0a_build_identity is not None:
+        commit_text = core0a_build_identity["implementation_commit_sha"]
+        status_text = "CLEAN"
+        core0a_result, core0a_inputs = _install_core0a_evidence(
+            output_root, Path(core0a_evidence_root), core0a_build_identity
+        )
+    (output_root / "git_commit.txt").write_text(commit_text + "\n", encoding="utf-8")
+    (output_root / "git_status.txt").write_text(status_text + "\n", encoding="utf-8")
+    _make_acceptance(
+        output_root, binding, formal, core0a_result, core0a_inputs
+    )
     _write_manifest(output_root, binding, formal)
 
     if zip_path is not None:
@@ -993,9 +1187,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output_root", type=Path)
     parser.add_argument("--zip", dest="zip_path", type=Path)
+    parser.add_argument("--core0a-evidence-root", type=Path)
+    parser.add_argument("--build-identity", type=Path)
     args = parser.parse_args(argv)
     try:
-        summary = build_microcase_package(args.output_root, args.zip_path)
+        summary = build_microcase_package(
+            args.output_root,
+            args.zip_path,
+            args.core0a_evidence_root,
+            args.build_identity,
+        )
     except Exception as exc:
         print("microcase package generation failed: {}".format(exc), file=sys.stderr)
         return 1

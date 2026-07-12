@@ -1,0 +1,915 @@
+{
+  "core0b_all_not_checked": true,
+  "csv_inventory": {
+    "ASAP_BLOCK_per_task_results_template_v1_3_12.csv": {
+      "columns": 41,
+      "data_rows": 0
+    },
+    "ASAP_BLOCK_run_execution_log_template_v1_3_12.csv": {
+      "columns": 18,
+      "data_rows": 0
+    },
+    "ASAP_BLOCK_run_plan_definition_template_v1_3_12.csv": {
+      "columns": 45,
+      "data_rows": 0
+    },
+    "ASAP_BLOCK_run_plan_dependencies_template_v1_3_12.csv": {
+      "columns": 3,
+      "data_rows": 0
+    },
+    "analysis_simulation_compatibility_checks.csv": {
+      "columns": 28,
+      "data_rows": 0
+    },
+    "bound_audit_runs.csv": {
+      "columns": 14,
+      "data_rows": 0
+    },
+    "e0_job_certificate_checks.csv": {
+      "columns": 9,
+      "data_rows": 0
+    },
+    "e0_trace_certificate_checks.csv": {
+      "columns": 24,
+      "data_rows": 0
+    },
+    "generation_requests.csv": {
+      "columns": 33,
+      "data_rows": 4
+    },
+    "harvest_trace_sets.csv": {
+      "columns": 13,
+      "data_rows": 0
+    },
+    "harvest_traces.csv": {
+      "columns": 8,
+      "data_rows": 0
+    },
+    "paired_transformations.csv": {
+      "columns": 14,
+      "data_rows": 0
+    },
+    "per_task_results.csv": {
+      "columns": 41,
+      "data_rows": 17
+    },
+    "per_taskset_results.csv": {
+      "columns": 93,
+      "data_rows": 8
+    },
+    "release_trace_sets.csv": {
+      "columns": 13,
+      "data_rows": 0
+    },
+    "release_traces.csv": {
+      "columns": 10,
+      "data_rows": 0
+    },
+    "request_outputs.csv": {
+      "columns": 12,
+      "data_rows": 12
+    },
+    "rta_dependency_records.csv": {
+      "columns": 48,
+      "data_rows": 2
+    },
+    "run_execution_log.csv": {
+      "columns": 18,
+      "data_rows": 26
+    },
+    "run_plan_definition.csv": {
+      "columns": 45,
+      "data_rows": 13
+    },
+    "run_plan_dependencies.csv": {
+      "columns": 3,
+      "data_rows": 9
+    },
+    "service_trace_checks.csv": {
+      "columns": 26,
+      "data_rows": 0
+    },
+    "simulation_bound_checks.csv": {
+      "columns": 34,
+      "data_rows": 0
+    },
+    "simulation_job_results.csv": {
+      "columns": 18,
+      "data_rows": 0
+    },
+    "simulation_taskset_summary.csv": {
+      "columns": 40,
+      "data_rows": 0
+    },
+    "task_definitions.csv": {
+      "columns": 11,
+      "data_rows": 7
+    },
+    "tasksets.csv": {
+      "columns": 22,
+      "data_rows": 3
+    }
+  },
+  "frozen_gate_count": 11,
+  "gates": [
+    {
+      "count_keys_match_frozen": true,
+      "evidence_files": [
+        "gate_full_w_q_h_scan_evidence.json",
+        "core0a_audit.json",
+        "search_trace_audit.json",
+        "mutation_audit.json"
+      ],
+      "gate_id": "full_w_q_h_scan",
+      "independently_recomputed_status_from_package_raw_records": "UNVERIFIABLE",
+      "json_shapes": [
+        {
+          "file": "gate_full_w_q_h_scan_evidence.json",
+          "top_level_keys": [
+            "counts",
+            "evidence_bundle_metadata",
+            "input_files",
+            "input_sha256",
+            "predicate",
+            "status"
+          ]
+        },
+        {
+          "file": "core0a_audit.json",
+          "top_level_keys": [
+            "audit_metadata",
+            "gate_counts",
+            "metrics",
+            "status"
+          ]
+        },
+        {
+          "file": "search_trace_audit.json",
+          "top_level_keys": [
+            "N_scan_violations",
+            "N_tasks_checked",
+            "N_trace_events",
+            "injected_trace_count",
+            "real_solver_task_count",
+            "visit_trace_sha256"
+          ]
+        },
+        {
+          "file": "mutation_audit.json",
+          "top_level_keys": [
+            "N_mutations",
+            "N_mutations_detected",
+            "N_mutations_survived"
+          ]
+        }
+      ],
+      "predicate_hash": "63897fda506af77cffa3b9205ed01909348770a909e941547979fa4e0db710ff",
+      "predicate_matches_frozen": true,
+      "reported_counts": {
+        "N_scan_violations": 0,
+        "N_tasks_checked": 102
+      },
+      "reported_status": "PASSED",
+      "required_matches_frozen": true,
+      "row_level_gate_records_present": false
+    },
+    {
+      "count_keys_match_frozen": true,
+      "evidence_files": [
+        "gate_exact_exhaustive_domain_zero_mismatch_evidence.json",
+        "core0a_audit.json",
+        "workload_audit.json",
+        "envelope_audit.json"
+      ],
+      "gate_id": "exact_exhaustive_domain_zero_mismatch",
+      "independently_recomputed_status_from_package_raw_records": "UNVERIFIABLE",
+      "json_shapes": [
+        {
+          "file": "gate_exact_exhaustive_domain_zero_mismatch_evidence.json",
+          "top_level_keys": [
+            "counts",
+            "evidence_bundle_metadata",
+            "input_files",
+            "input_sha256",
+            "predicate",
+            "status"
+          ]
+        },
+        {
+          "file": "core0a_audit.json",
+          "top_level_keys": [
+            "audit_metadata",
+            "gate_counts",
+            "metrics",
+            "status"
+          ]
+        },
+        {
+          "file": "workload_audit.json",
+          "top_level_keys": [
+            "N_invalid_inputs_rejected",
+            "N_monotonicity_checks",
+            "N_monotonicity_violations",
+            "N_workload_cases",
+            "N_workload_mismatches",
+            "case_stream_sha256",
+            "domain"
+          ]
+        },
+        {
+          "file": "envelope_audit.json",
+          "top_level_keys": [
+            "N_capacity_saturated",
+            "N_complete_envelope_cases",
+            "N_exhaustive_instances",
+            "N_fast_bruteforce_mismatches",
+            "N_hp_present",
+            "N_local_envelope_cases",
+            "N_lp_capacity_saturated",
+            "N_lp_present",
+            "N_random_boundary_instances",
+            "N_yk_positive_optimal",
+            "N_yk_zero_optimal",
+            "case_stream_sha256",
+            "coverage",
+            "seed"
+          ]
+        }
+      ],
+      "predicate_hash": "58fe168cd7c7016bea347b214e8f8dee7db736a82b6434b2e3b4f9eb6cf6ab56",
+      "predicate_matches_frozen": true,
+      "reported_counts": {
+        "N_exhaustive_instances": 160,
+        "N_mismatches": 0
+      },
+      "reported_status": "PASSED",
+      "required_matches_frozen": true,
+      "row_level_gate_records_present": false
+    },
+    {
+      "count_keys_match_frozen": true,
+      "evidence_files": [
+        "gate_exact_random_boundary_instances_at_least_10000_evidence.json",
+        "core0a_audit.json",
+        "envelope_audit.json"
+      ],
+      "gate_id": "exact_random_boundary_instances_at_least_10000",
+      "independently_recomputed_status_from_package_raw_records": "UNVERIFIABLE",
+      "json_shapes": [
+        {
+          "file": "gate_exact_random_boundary_instances_at_least_10000_evidence.json",
+          "top_level_keys": [
+            "counts",
+            "evidence_bundle_metadata",
+            "input_files",
+            "input_sha256",
+            "predicate",
+            "status"
+          ]
+        },
+        {
+          "file": "core0a_audit.json",
+          "top_level_keys": [
+            "audit_metadata",
+            "gate_counts",
+            "metrics",
+            "status"
+          ]
+        },
+        {
+          "file": "envelope_audit.json",
+          "top_level_keys": [
+            "N_capacity_saturated",
+            "N_complete_envelope_cases",
+            "N_exhaustive_instances",
+            "N_fast_bruteforce_mismatches",
+            "N_hp_present",
+            "N_local_envelope_cases",
+            "N_lp_capacity_saturated",
+            "N_lp_present",
+            "N_random_boundary_instances",
+            "N_yk_positive_optimal",
+            "N_yk_zero_optimal",
+            "case_stream_sha256",
+            "coverage",
+            "seed"
+          ]
+        }
+      ],
+      "predicate_hash": "d1a2d7e7a47120d755774b32416deace05a566cc3118cefb2e19fd5077000671",
+      "predicate_matches_frozen": true,
+      "reported_counts": {
+        "N_mismatches": 0,
+        "N_random_boundary_instances": 50000
+      },
+      "reported_status": "PASSED",
+      "required_matches_frozen": true,
+      "row_level_gate_records_present": false
+    },
+    {
+      "count_keys_match_frozen": true,
+      "evidence_files": [
+        "gate_processor_term_direct_scan_zero_mismatch_evidence.json",
+        "core0a_audit.json",
+        "processor_audit.json"
+      ],
+      "gate_id": "processor_term_direct_scan_zero_mismatch",
+      "independently_recomputed_status_from_package_raw_records": "UNVERIFIABLE",
+      "json_shapes": [
+        {
+          "file": "gate_processor_term_direct_scan_zero_mismatch_evidence.json",
+          "top_level_keys": [
+            "counts",
+            "evidence_bundle_metadata",
+            "input_files",
+            "input_sha256",
+            "predicate",
+            "status"
+          ]
+        },
+        {
+          "file": "core0a_audit.json",
+          "top_level_keys": [
+            "audit_metadata",
+            "gate_counts",
+            "metrics",
+            "status"
+          ]
+        },
+        {
+          "file": "processor_audit.json",
+          "top_level_keys": [
+            "N_processor_cases",
+            "N_processor_exhaustive_cases",
+            "N_processor_fast_scan_mismatches",
+            "N_processor_random_cases",
+            "case_stream_sha256",
+            "coverage",
+            "seed"
+          ]
+        }
+      ],
+      "predicate_hash": "756e27eca6ca77db9b8fdb84cdf50d765e0511c075c01f9d6726e6bf0d853817",
+      "predicate_matches_frozen": true,
+      "reported_counts": {
+        "N_instances": 10105,
+        "N_mismatches": 0
+      },
+      "reported_status": "PASSED",
+      "required_matches_frozen": true,
+      "row_level_gate_records_present": false
+    },
+    {
+      "count_keys_match_frozen": true,
+      "evidence_files": [
+        "gate_finite_state_counterexample_search_evidence.json",
+        "core0a_audit.json",
+        "finite_state_soundness_audit.json"
+      ],
+      "gate_id": "finite_state_counterexample_search",
+      "independently_recomputed_status_from_package_raw_records": "UNVERIFIABLE",
+      "json_shapes": [
+        {
+          "file": "gate_finite_state_counterexample_search_evidence.json",
+          "top_level_keys": [
+            "counts",
+            "evidence_bundle_metadata",
+            "input_files",
+            "input_sha256",
+            "predicate",
+            "status"
+          ]
+        },
+        {
+          "file": "core0a_audit.json",
+          "top_level_keys": [
+            "audit_metadata",
+            "gate_counts",
+            "metrics",
+            "status"
+          ]
+        },
+        {
+          "file": "finite_state_soundness_audit.json",
+          "top_level_keys": [
+            "N_certified_bound_violations",
+            "N_certified_tasksets",
+            "N_checked_jobs",
+            "N_complete",
+            "N_energy_blocking_jobs",
+            "N_enumerated_tasksets",
+            "N_inconclusive",
+            "N_instances",
+            "N_internal_error",
+            "N_positive_E0_certified_jobs",
+            "N_processor_blocking_jobs",
+            "domain",
+            "event_order",
+            "generation_horizon",
+            "observation_horizon",
+            "pruning"
+          ]
+        }
+      ],
+      "predicate_hash": "cd20de9155b8c7837cb829544f343902f7b90801384912be2552980de2933f39",
+      "predicate_matches_frozen": true,
+      "reported_counts": {
+        "N_certified_bound_violations": 0,
+        "N_complete": 14,
+        "N_inconclusive": 0,
+        "N_instances": 14,
+        "N_internal_error": 0
+      },
+      "reported_status": "PASSED",
+      "required_matches_frozen": true,
+      "row_level_gate_records_present": false
+    },
+    {
+      "count_keys_match_frozen": true,
+      "evidence_files": [
+        "gate_event_order_and_scheduler_semantics_microcases_evidence.json",
+        "core0a_audit.json",
+        "event_order_audit.json"
+      ],
+      "gate_id": "event_order_and_scheduler_semantics_microcases",
+      "independently_recomputed_status_from_package_raw_records": "UNVERIFIABLE",
+      "json_shapes": [
+        {
+          "file": "gate_event_order_and_scheduler_semantics_microcases_evidence.json",
+          "top_level_keys": [
+            "counts",
+            "evidence_bundle_metadata",
+            "input_files",
+            "input_sha256",
+            "predicate",
+            "status"
+          ]
+        },
+        {
+          "file": "core0a_audit.json",
+          "top_level_keys": [
+            "audit_metadata",
+            "gate_counts",
+            "metrics",
+            "status"
+          ]
+        },
+        {
+          "file": "event_order_audit.json",
+          "top_level_keys": [
+            "N_failures",
+            "N_microcases"
+          ]
+        }
+      ],
+      "predicate_hash": "786c0d290b5ca4bcd75365754612d65de28bd801bf2fa58ced49b331d9f265c5",
+      "predicate_matches_frozen": true,
+      "reported_counts": {
+        "N_failures": 0,
+        "N_microcases": 6
+      },
+      "reported_status": "PASSED",
+      "required_matches_frozen": true,
+      "row_level_gate_records_present": false
+    },
+    {
+      "count_keys_match_frozen": true,
+      "evidence_files": [
+        "gate_joint_certification_state_machine_evidence.json",
+        "core0a_audit.json",
+        "certification_state_audit.json",
+        "failure_provenance_audit.json"
+      ],
+      "gate_id": "joint_certification_state_machine",
+      "independently_recomputed_status_from_package_raw_records": "UNVERIFIABLE",
+      "json_shapes": [
+        {
+          "file": "gate_joint_certification_state_machine_evidence.json",
+          "top_level_keys": [
+            "counts",
+            "evidence_bundle_metadata",
+            "input_files",
+            "input_sha256",
+            "predicate",
+            "status"
+          ]
+        },
+        {
+          "file": "core0a_audit.json",
+          "top_level_keys": [
+            "audit_metadata",
+            "gate_counts",
+            "metrics",
+            "status"
+          ]
+        },
+        {
+          "file": "certification_state_audit.json",
+          "top_level_keys": [
+            "N_LOC_Theta_cw_joint_certified_cases",
+            "N_failures",
+            "N_mutable_alias_changes",
+            "N_source_CW_certified_cases",
+            "N_state_cases"
+          ]
+        },
+        {
+          "file": "failure_provenance_audit.json",
+          "top_level_keys": [
+            "N_codes",
+            "N_failures",
+            "N_negative_cases",
+            "N_positive_cases"
+          ]
+        }
+      ],
+      "predicate_hash": "4a11e3939bc6b1486da95627a3fc7fdcde8dfb903c5f5f3d41aa9ae20769b737",
+      "predicate_matches_frozen": true,
+      "reported_counts": {
+        "N_failures": 0,
+        "N_state_cases": 17
+      },
+      "reported_status": "PASSED",
+      "required_matches_frozen": true,
+      "row_level_gate_records_present": false
+    },
+    {
+      "count_keys_match_frozen": true,
+      "evidence_files": [
+        "gate_loc_theta_cw_dominance_invariant_evidence.json",
+        "core0a_audit.json",
+        "dominance_audit.json"
+      ],
+      "gate_id": "loc_theta_cw_dominance_invariant",
+      "independently_recomputed_status_from_package_raw_records": "UNVERIFIABLE",
+      "json_shapes": [
+        {
+          "file": "gate_loc_theta_cw_dominance_invariant_evidence.json",
+          "top_level_keys": [
+            "counts",
+            "evidence_bundle_metadata",
+            "input_files",
+            "input_sha256",
+            "predicate",
+            "status"
+          ]
+        },
+        {
+          "file": "core0a_audit.json",
+          "top_level_keys": [
+            "audit_metadata",
+            "gate_counts",
+            "metrics",
+            "status"
+          ]
+        },
+        {
+          "file": "dominance_audit.json",
+          "top_level_keys": [
+            "N_cw_closed_cases",
+            "N_deadline_common_proven",
+            "N_dominance_violations",
+            "N_fixed_cw_common_proven",
+            "N_pointwise_dominance_cases",
+            "N_recursive_common_proven",
+            "seed"
+          ]
+        }
+      ],
+      "predicate_hash": "863c410ea2f9eea36d6310199944e580745b94ea4d25409a236ead2c5dedbf83",
+      "predicate_matches_frozen": true,
+      "reported_counts": {
+        "N_common_cases": 200,
+        "N_violations": 0
+      },
+      "reported_status": "PASSED",
+      "required_matches_frozen": true,
+      "row_level_gate_records_present": false
+    },
+    {
+      "count_keys_match_frozen": true,
+      "evidence_files": [
+        "gate_service_curve_contract_checks_evidence.json",
+        "core0a_audit.json",
+        "service_curve_audit.json"
+      ],
+      "gate_id": "service_curve_contract_checks",
+      "independently_recomputed_status_from_package_raw_records": "UNVERIFIABLE",
+      "json_shapes": [
+        {
+          "file": "gate_service_curve_contract_checks_evidence.json",
+          "top_level_keys": [
+            "counts",
+            "evidence_bundle_metadata",
+            "input_files",
+            "input_sha256",
+            "predicate",
+            "status"
+          ]
+        },
+        {
+          "file": "core0a_audit.json",
+          "top_level_keys": [
+            "audit_metadata",
+            "gate_counts",
+            "metrics",
+            "status"
+          ]
+        },
+        {
+          "file": "service_curve_audit.json",
+          "top_level_keys": [
+            "N_curves",
+            "N_invalid",
+            "N_invalid_fixtures_rejected"
+          ]
+        }
+      ],
+      "predicate_hash": "6dc9f2f92199b7d6f1b26d952203198f7d4f15bdd378156a26fbcaf97123044c",
+      "predicate_matches_frozen": true,
+      "reported_counts": {
+        "N_curves": 8,
+        "N_invalid": 0
+      },
+      "reported_status": "PASSED",
+      "required_matches_frozen": true,
+      "row_level_gate_records_present": false
+    },
+    {
+      "count_keys_match_frozen": true,
+      "evidence_files": [
+        "gate_schema_lineage_and_request_state_machine_evidence.json",
+        "core0a_audit.json",
+        "schema_lineage_audit.json",
+        "build_identity.json",
+        "canonical_determinism_audit.json",
+        "core0a_validation_report.json",
+        "environment_identity.json",
+        "test_execution_log.json"
+      ],
+      "gate_id": "schema_lineage_and_request_state_machine",
+      "independently_recomputed_status_from_package_raw_records": "UNVERIFIABLE",
+      "json_shapes": [
+        {
+          "file": "gate_schema_lineage_and_request_state_machine_evidence.json",
+          "top_level_keys": [
+            "counts",
+            "evidence_bundle_metadata",
+            "input_files",
+            "input_sha256",
+            "predicate",
+            "status"
+          ]
+        },
+        {
+          "file": "core0a_audit.json",
+          "top_level_keys": [
+            "audit_metadata",
+            "gate_counts",
+            "metrics",
+            "status"
+          ]
+        },
+        {
+          "file": "schema_lineage_audit.json",
+          "top_level_keys": [
+            "N_cycle_violations",
+            "N_fk_violations",
+            "N_rows",
+            "N_state_transition_violations"
+          ]
+        },
+        {
+          "file": "build_identity.json",
+          "top_level_keys": [
+            "asap_block_rta_v9_3_sha256",
+            "asap_block_rta_v9_3_taskset_sha256",
+            "audit_validator_sha256",
+            "dirty_state",
+            "runner_sha256",
+            "schema_binding_sha256",
+            "source_commit"
+          ]
+        },
+        {
+          "file": "canonical_determinism_audit.json",
+          "top_level_keys": [
+            "N_compared_files",
+            "N_determinism_differences",
+            "N_repetitions",
+            "analysis_ids_match",
+            "canonical_csv_match",
+            "dependency_hashes_match",
+            "manifest_semantics_match",
+            "semantic_ids_match",
+            "task_result_hashes_match",
+            "taskset_semantic_hashes_match",
+            "zip_bytes_match",
+            "zip_members_match"
+          ]
+        },
+        {
+          "file": "core0a_validation_report.json",
+          "top_level_keys": [
+            "acceptance_validator",
+            "artifact_validator",
+            "authority_reference",
+            "embedded_binding",
+            "fresh_read_only_extraction",
+            "result_validator",
+            "schema_binding",
+            "sidecar",
+            "zip_integrity"
+          ]
+        },
+        {
+          "file": "environment_identity.json",
+          "top_level_keys": [
+            "PyYAML",
+            "architecture",
+            "os",
+            "pytest",
+            "python",
+            "timezone"
+          ]
+        },
+        {
+          "file": "test_execution_log.json",
+          "top_level_keys": [
+            "core0a_conformance",
+            "directed_py_compile",
+            "mutation_catalog",
+            "repository_regression",
+            "rta_regression",
+            "v9_3_baseline"
+          ]
+        }
+      ],
+      "predicate_hash": "45b2bf58fb992a4a6d9eb5c9e6ff486969e4799687707df9bc0c03adf4aaaa13",
+      "predicate_matches_frozen": true,
+      "reported_counts": {
+        "N_cycle_violations": 0,
+        "N_fk_violations": 0,
+        "N_rows": 1,
+        "N_state_transition_violations": 0
+      },
+      "reported_status": "PASSED",
+      "required_matches_frozen": true,
+      "row_level_gate_records_present": false
+    },
+    {
+      "count_keys_match_frozen": true,
+      "evidence_files": [
+        "gate_non_vacuity_coverage_evidence.json",
+        "core0a_audit.json",
+        "finite_state_soundness_audit.json",
+        "dominance_audit.json"
+      ],
+      "gate_id": "non_vacuity_coverage",
+      "independently_recomputed_status_from_package_raw_records": "UNVERIFIABLE",
+      "json_shapes": [
+        {
+          "file": "gate_non_vacuity_coverage_evidence.json",
+          "top_level_keys": [
+            "counts",
+            "evidence_bundle_metadata",
+            "input_files",
+            "input_sha256",
+            "predicate",
+            "status"
+          ]
+        },
+        {
+          "file": "core0a_audit.json",
+          "top_level_keys": [
+            "audit_metadata",
+            "gate_counts",
+            "metrics",
+            "status"
+          ]
+        },
+        {
+          "file": "finite_state_soundness_audit.json",
+          "top_level_keys": [
+            "N_certified_bound_violations",
+            "N_certified_tasksets",
+            "N_checked_jobs",
+            "N_complete",
+            "N_energy_blocking_jobs",
+            "N_enumerated_tasksets",
+            "N_inconclusive",
+            "N_instances",
+            "N_internal_error",
+            "N_positive_E0_certified_jobs",
+            "N_processor_blocking_jobs",
+            "domain",
+            "event_order",
+            "generation_horizon",
+            "observation_horizon",
+            "pruning"
+          ]
+        },
+        {
+          "file": "dominance_audit.json",
+          "top_level_keys": [
+            "N_cw_closed_cases",
+            "N_deadline_common_proven",
+            "N_dominance_violations",
+            "N_fixed_cw_common_proven",
+            "N_pointwise_dominance_cases",
+            "N_recursive_common_proven",
+            "seed"
+          ]
+        }
+      ],
+      "predicate_hash": "01610f91e0211c4d4c092f77b5ef537c2255874a9bbf03d9c0f5416f07bf08f3",
+      "predicate_matches_frozen": true,
+      "reported_counts": {
+        "N_certified_tasksets": 14,
+        "N_complete_local_common_cases": 200,
+        "N_energy_blocking_cases": 379,
+        "N_positive_E0_satisfied_traces": 25,
+        "N_processor_interference_cases": 5
+      },
+      "reported_status": "PASSED",
+      "required_matches_frozen": true,
+      "row_level_gate_records_present": false
+    }
+  ],
+  "hashes": {
+    "contract_zip": {
+      "actual": "b67882290d4d4688a0e81fd98f95e9d998537facfb9f5945d1ec125143959895",
+      "expected": "b67882290d4d4688a0e81fd98f95e9d998537facfb9f5945d1ec125143959895",
+      "match": true
+    },
+    "embedded_manifest": {
+      "actual": "ab7bebc79f9797537902f17971e164c1b10d342c36b0332b8a5b27eb1172ad17",
+      "expected": "ab7bebc79f9797537902f17971e164c1b10d342c36b0332b8a5b27eb1172ad17",
+      "match": true
+    },
+    "evidence_zip": {
+      "actual": "d56c2f671b8ea201e6e53a4199cba333f3dcc6eb1e09ff06a1bfa8b76db8dd50",
+      "expected": "d56c2f671b8ea201e6e53a4199cba333f3dcc6eb1e09ff06a1bfa8b76db8dd50",
+      "match": true
+    },
+    "theory": {
+      "actual": "524d4f84b04185609735a2be3ff54984149be1478a111044494ec1f8ff65098e",
+      "expected": "524d4f84b04185609735a2be3ff54984149be1478a111044494ec1f8ff65098e",
+      "match": true
+    },
+    "zip_manifest": {
+      "actual": "149bbf2412b8b45c826eac33ed1025b21a61f5ba30e4c169bc76898547ea86a0",
+      "expected": "149bbf2412b8b45c826eac33ed1025b21a61f5ba30e4c169bc76898547ea86a0",
+      "match": true
+    }
+  },
+  "overall_release_gate": {
+    "failed_gate_ids": [
+      "approved_build_identity_match",
+      "deterministic_repeatability",
+      "e0_parameterization_valid",
+      "final_numeric_contract_identity",
+      "foreign_key_lineage_gate",
+      "formal_contract_hash_match",
+      "formal_non_vacuity_gate",
+      "formal_soundness_observation_gate",
+      "generation_coverage_gate",
+      "numeric_range_valid",
+      "repeat_parameter_sensitive_exact_checks",
+      "rho_e_parameterization_valid",
+      "run_plan_accounting_gate",
+      "service_curve_integerization_and_trace_validation"
+    ],
+    "release_authorized": false,
+    "status": "FAILED"
+  },
+  "reason": "No required gate can be rebuilt from package row-level raw records; reported PASS values are summary-derived.",
+  "reported_gate_count": 11,
+  "source_identity": {
+    "build_identity": {
+      "asap_block_rta_v9_3_sha256": "0d8119ed7af95190036afb1887e2146cd2f4858cf2ebbda82e1ab93cdebfaa31",
+      "asap_block_rta_v9_3_taskset_sha256": "af02089ec6eea12f84dfeb997f76cd20433ba033735b924f9e71580b312a014e",
+      "audit_validator_sha256": "26c918b90e4539aa988e73a35b1e8858afe78f07d5c1c4469155f3711c9783da",
+      "dirty_state": "CORE0A evidence generated from committed suite; pre-existing untracked paths excluded",
+      "runner_sha256": "e25bc9fc232af718e33be9f503ca25fdd051229bb23d16c8ccfb8b331bbd3d8a",
+      "schema_binding_sha256": "69c0582bd40bd23923ed8ea01e6b53e2de0fdd47aea084ec204874aac0e2a751",
+      "source_commit": "6de2015e0fc3404e2c0610e648e763018d1877a6"
+    },
+    "package_git_commit": "6de2015e0fc3404e2c0610e648e763018d1877a6"
+  },
+  "status": "FAILED",
+  "zip_audit": {
+    "absolute_members": [],
+    "bad_crc_member": null,
+    "case_collisions": [],
+    "duplicate_members": [],
+    "manifest_extra_members": [],
+    "manifest_hash_mismatches": [],
+    "manifest_malformed_lines": [],
+    "manifest_missing_members": [],
+    "member_count": 83,
+    "nonregular_members": [],
+    "traversal_members": [],
+    "unique_member_count": 83
+  }
+}

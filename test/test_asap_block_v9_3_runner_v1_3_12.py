@@ -54,6 +54,32 @@ def analysis_ids(prefix="analysis"):
     return {variant: "{}-{}".format(prefix, variant.name) for variant in taskset.AnalysisVariant}
 
 
+def test_runner_rejects_illegal_service_curve_before_dispatch(monkeypatch):
+    inp = taskset.TasksetAnalysisInput(
+        analysis_input().tasks,
+        1,
+        Fraction(100),
+        [1] * 9,
+        dependency_context(),
+    )
+    called = []
+
+    def forbidden(*_args, **_kwargs):
+        called.append(True)
+
+    monkeypatch.setattr(taskset, "analyze_taskset_v9_3", forbidden)
+    with pytest.raises(core.V93NumericError, match=r"beta\(0\)"):
+        runner.dispatch_rta_version(
+            "v9.3",
+            v93_request=runner.V93DispatchRequest(
+                "invalid-curve",
+                taskset.AnalysisVariant.LOC_THETA_LOC,
+                inp,
+            ),
+        )
+    assert called == []
+
+
 def task_definitions(inp):
     return {
         task.name: {

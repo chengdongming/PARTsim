@@ -631,6 +631,14 @@ def analyze_taskset_v9_3(
 
     if not isinstance(variant, AnalysisVariant):
         raise CertificationError("variant must be an AnalysisVariant")
+    try:
+        validated_beta = core.validate_service_curve_v9_3(
+            analysis_input.beta,
+            max(task.deadline for task in analysis_input.tasks) - 1,
+        )
+    except core.V93NumericError as exc:
+        raise CertificationError("invalid theorem-backed service curve: {}".format(exc))
+    analysis_input = replace(analysis_input, beta=validated_beta)
     tasks = analysis_input.tasks
     recursive = variant in {
         AnalysisVariant.CW_THETA_CW,

@@ -504,7 +504,7 @@ class CanonicalSearchV93Test(unittest.TestCase):
             1,
             {"h": 2},
             0,
-            lambda _length: 100,
+            lambda length: 0 if length == 0 else 100,
             envelope_function=lambda **kwargs: calls.append(kwargs) or 0,
         )
         self.assertEqual(result.solver_status, v93.V93SolverStatus.NO_CANDIDATE)
@@ -578,7 +578,9 @@ class CanonicalSearchV93Test(unittest.TestCase):
         )
         self.assertEqual(success.candidate_response_time, 2)
         self.assertEqual(success.checked_q_count, 2)
-        self.assertEqual(service_indices, [0, 1])
+        # The formal validator reads the complete required prefix twice to
+        # reject stateful callbacks before the frozen values enter the scan.
+        self.assertEqual(service_indices, [0, 1, 0, 1])
 
     def test_q_failure_breaks_only_current_h_and_next_h_restarts_at_q1(self):
         target = task("k", 3, 5, 6)
@@ -639,7 +641,7 @@ class CanonicalSearchV93Test(unittest.TestCase):
             1,
             {},
             0,
-            lambda _length: 100,
+            lambda length: 0 if length == 0 else 100,
         )
         timeout = v93.canonical_closure_search_v9_3(
             *common, timeout_seconds=0
@@ -728,6 +730,72 @@ class CanonicalSearchV93Test(unittest.TestCase):
                     v93.V93SolverStatus.UNPROVEN_NUMERIC,
                 )
                 self.assertIsNone(invalid_clock.candidate_response_time)
+
+    def test_service_curve_validation_rejects_every_frozen_p0_case(self):
+        target = task("k", 1, 3, 4)
+        invalid_curves = (
+            [1, 1, 1],
+            [0, 2, 1],
+            [0, -1, 0],
+            [0, 1.0, 2],
+            [0, True, 2],
+            [0, Decimal("NaN"), 2],
+            [0, Decimal("Infinity"), 2],
+            [0, 1],
+        )
+        for beta in invalid_curves:
+            with self.subTest(beta=beta):
+                result = v93.canonical_closure_search_v9_3(
+                    v93.EnvelopeKind.COMPLETE,
+                    target,
+                    [],
+                    [],
+                    1,
+                    {},
+                    0,
+                    beta,
+                    envelope_function=lambda **_kwargs: 0,
+                )
+                self.assertEqual(
+                    result.solver_status,
+                    v93.V93SolverStatus.UNPROVEN_NUMERIC,
+                )
+                self.assertIsNone(result.candidate_response_time)
+
+    def test_service_curve_validation_freezes_exact_deterministic_prefix(self):
+        valid_curves = (
+            ([0], 0),
+            ([0, 0, 0], 2),
+            ([0, 1, 1], 2),
+            ([0, 1, 2, 4], 3),
+            ([Fraction(0), Fraction(1, 3), Fraction(2, 3)], 2),
+        )
+        for beta, horizon in valid_curves:
+            with self.subTest(beta=beta):
+                frozen = v93.validate_service_curve_v9_3(beta, horizon)
+                self.assertEqual(frozen[0], 0)
+                self.assertTrue(
+                    all(a <= b for a, b in zip(frozen, frozen[1:]))
+                )
+
+        calls = {0: 0, 1: 0, 2: 0}
+
+        def nondeterministic(length):
+            calls[length] += 1
+            return length + (
+                1 if length == 2 and calls[length] > 1 else 0
+            )
+
+        with self.assertRaises(v93.V93NumericError):
+            v93.validate_service_curve_v9_3(nondeterministic, 2)
+
+        def failing(length):
+            if length == 1:
+                raise RuntimeError("callback failure")
+            return 0
+
+        with self.assertRaises(v93.V93NumericError):
+            v93.validate_service_curve_v9_3(failing, 2)
 
     def test_first_closing_w_is_returned_with_exact_counts(self):
         target = task("k", 1, 3, 4, 2)
