@@ -1,0 +1,19 @@
+{
+  "checks": {
+    "canonical_preimage_and_request_coverage": "PASSED",
+    "embedded_hash_binding": "PASSED",
+    "exact_artifact_file_set": "PASSED",
+    "formal_and_template_structure": "PASSED",
+    "key_and_lineage_structure": "PASSED",
+    "machine_interface_manifest_and_markdown_structure": "PASSED",
+    "schema_authority_references": "PASSED",
+    "schema_dictionary_and_conditions": "PASSED",
+    "sidecar_and_text_integrity": "PASSED",
+    "strict_yaml": "PASSED",
+    "validator_self_tests_schema_and_template": "PASSED"
+  },
+  "errors": [],
+  "scope": "artifact file set/sidecars; strict YAML; embedded bindings; schema/dictionary/conditions/keys; canonical preimages; machine-interface manifest; Markdown structure; templates. Runtime theorem correctness is not claimed.",
+  "status": "PASSED",
+  "validator_version": "1.3.12"
+}

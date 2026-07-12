@@ -1,0 +1,476 @@
+canonical_serialization_metadata:
+  name: ASAP_BLOCK_canonical_serialization
+  version: 1.3.12
+  authority: normative
+  hash_algorithm: SHA-256
+  object_encoding: CANONICAL_JSON_UTF8_NFC_V1_3_12
+  csv_encoding: CANONICAL_CSV_UTF8_NFC_V1_3_12
+  id_algorithm: SHA256_DOMAIN_SEPARATED_CANONICAL_V1_3_12
+unicode:
+  encoding: UTF-8
+  bom_forbidden: true
+  normalization: NFC
+  line_ending: LF
+  final_newline_required: true
+  invalid_unicode: reject
+  mapping_keys: strings_only
+  map_key_order: ascending canonical UTF-8 byte sequence
+scalars:
+  "null": JSON null; CSV empty field only when schema permits null
+  boolean:
+  - false
+  - true
+  integer:
+    regex: (?:0|-[1-9][0-9]*|[1-9][0-9]*)
+    negative_zero_forbidden: true
+    plus_forbidden: true
+    leading_zero_forbidden: true
+  rational:
+    csv_regex: (?:0|-[1-9][0-9]*|[1-9][0-9]*)/[1-9][0-9]*
+    denominator_positive: true
+    gcd_required: 1
+    zero_form: integer 0
+    integer_values_must_use_integer_form: true
+  floating_point: forbidden in all normative YAML, JSON objects and CSV values
+  timestamp:
+    format: RFC3339 UTC Z
+    regex: '[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z'
+    calendar_validation: true
+  hash_sha256: 64 lowercase hexadecimal characters
+  string: NFC; no implicit trim
+  canonical_task_failure_detail:
+    encoding: UTF-8
+    normalization: NFC
+    line_ending: LF
+    nullable: true
+    nonnull_length: 1..256 Unicode scalar values
+    empty_string: forbidden; CSV empty denotes null only
+    forbidden:
+    - NUL or CR
+    - absolute POSIX or Windows path
+    - memory address form
+    - timestamp form
+    - raw traceback marker
+    - non-finite floating-point token
+    - unordered dict or set repr
+collections:
+  mapping: string keys sorted by canonical UTF-8 bytes
+  ordered_list: preserve order
+  set: sort by canonical bytes and reject duplicates
+  failure_mask: sorted unique enum members joined by '|'
+yaml_loading:
+  duplicate_keys: reject
+  anchors: reject
+  aliases: reject
+  merge_keys: reject
+  implicit_floats: reject
+  implicit_dates: reject
+  non_json_scalar_types: reject
+csv:
+  dialect: RFC4180 quoting with LF only
+  encoding: UTF-8 NFC no BOM
+  header_order: exact schema canonical_column_order
+  row_order: ascending canonical primary-key tuple bytes
+  final_newline_required: true
+  blank_lines: reject
+  control_characters_except_tab_and_lf: reject
+  nan_inf: reject
+  duplicate_header: reject
+  duplicate_primary_key: reject
+task_failure_normalization:
+  function: normalize_task_failure_reason(solver_status, certification_status, raw_failure_reason, structured_context)
+  output:
+  - task_failure_reason_code
+  - task_failure_detail
+  raw_text_copy_to_output: forbidden
+  unknown_raw_or_structured_origin: reject
+  approved_structured_origins:
+  - CORE_CANDIDATE
+  - CORE_NO_CANDIDATE
+  - CORE_DEADLINE_TIMEOUT
+  - CAUGHT_TIMEOUT_EXCEPTION
+  - CAUGHT_OVERFLOW_EXCEPTION
+  - CAUGHT_NUMERIC_EXCEPTION
+  - TASKSET_PREFIX_SYNTHETIC
+  - TASKSET_DEPENDENCY_SYNTHETIC
+  - TASKSET_DOMINANCE_COUNTEREXAMPLE
+  - ADAPTER_UNKNOWN_CORE_STATUS
+  - ANALYZER_INTERNAL_CONFORMANCE
+  equivalence_rule: distinct raw debug strings with the same approved structured origin and status normalize to identical formal code and detail
+  producer_rule: only approved code/detail pairs may be serialized
+  consumer_rule: use code and structured status fields; never derive solver state from detail
+hash_function:
+  construction: SHA256(domain_utf8 || 0x00 || canonical_json(preimage))
+  domain_separator_byte_hex: '00'
+  output: lowercase hex
+self_hash_rule:
+  rule: set exactly the object's own hash field to JSON null before serialization
+  objects:
+    formal_contract_hash: contract_metadata.formal_contract_hash
+    generator_contract_hash: contract_metadata.generator_contract_hash
+    simulation_contract_hash: contract_metadata.simulation_contract_hash
+    trace_generator_contract_hash: contract_metadata.trace_generator_contract_hash
+    acceptance_report_hash: acceptance_report_metadata.acceptance_report_hash
+preimages:
+  plan_context_hash:
+    domain: ASAP_BLOCK:PLAN_CONTEXT:v1.3.12
+    source_object: formal_contract.yaml
+    include_paths:
+    - theory_contract
+    - pre_core0a_commitments
+    - artifact_bindings
+    self_field: plan_context_contract.plan_context_hash
+    exclude_downstream:
+    - child_contracts
+    - numeric_contract
+    - analysis_contract
+    - formal_grid_contract
+    - pairing_contract
+    - sample_request_contract
+    - seed_contract
+    - statistics_contract
+    - runtime_environment_contract
+    - approved_builds
+    - run_plan_contract
+    - acceptance results
+    - runtime outputs
+  formal_grid_hash:
+    domain: ASAP_BLOCK:FORMAL_GRID:v1.3.12
+    source_path: formal_grid_contract.formal_grid
+    self_field: formal_grid_contract.formal_grid_hash
+    required_shape:
+      cells: ordered list sorted by parameter_cell_id
+      each_cell: '{parameter_cell_id, parameters}'
+  seed_derivation_context_hash:
+    domain: ASAP_BLOCK:SEED_CONTEXT:v1.3.12
+    source_object: formal_contract.yaml
+    include_paths:
+    - plan_context_contract.plan_context_hash
+    - formal_grid_contract.formal_grid_hash
+    - sample_request_contract
+    - pre_core0a_commitments.formal_master_seed_source
+    - pre_core0a_commitments.formal_master_seed_source_commitment_hash
+    - seed_contract.seed_derivation_algorithm
+    self_field: seed_contract.seed_derivation_context_hash
+  formal_seed_set_hash:
+    domain: ASAP_BLOCK:SEED_SET:v1.3.12
+    source: run_plan_definition.csv
+    include: sorted seeded request rows as '{seed_scope_id, replicate_index, derived_seed}'
+    seeded_request_types:
+    - GENERATION
+    - RELEASE_TRACE_GENERATION
+    - HARVEST_TRACE_GENERATION
+    self_field: seed_contract.formal_seed_set_hash
+  run_plan_bundle_hash:
+    domain: ASAP_BLOCK:RUN_PLAN_BUNDLE:v1.3.12
+    include:
+    - sha256 of canonical bytes of run_plan_definition.csv
+    - sha256 of canonical bytes of run_plan_dependencies.csv
+    exclude:
+    - formal_contract_hash
+    - execution logs
+    - timestamps
+    - actual outputs
+    - generated taskset contents
+    self_field: run_plan_contract.run_plan_bundle_hash
+  formal_contract_hash:
+    domain: ASAP_BLOCK:FORMAL_CONTRACT:v1.3.12
+    source_object: entire immutable filled formal contract object
+    self_field: contract_metadata.formal_contract_hash
+    exclude_runtime_objects:
+    - acceptance_report.yaml
+    - run_execution_log.csv
+    - request_outputs.csv
+    - result tables
+    - manifest.json
+    - git_status.txt
+  request_payload_hash:
+    domain_template: ASAP_BLOCK:REQUEST_PAYLOAD:<REQUEST_TYPE>:v1.3.12
+    include: exact field list in request_type_payload_fields
+    excluded_fields:
+    - request_payload_hash
+    - request_id
+    - expected_output_id
+    - execution state
+    - actual output
+  request_id:
+    domain: ASAP_BLOCK:REQUEST:v1.3.12
+    include:
+    - plan_context_hash
+    - request_type
+    - run_phase
+    - parameter_cell_id
+    - replicate_index
+    - request_payload_hash
+  expected_output_id:
+    domain: ASAP_BLOCK:EXPECTED_OUTPUT:v1.3.12
+    include:
+    - request_id
+    - expected_output_type
+    - output_cardinality
+  request_output_bundle_hash:
+    domain_template: ASAP_BLOCK:OUTPUT_BUNDLE:<REQUEST_TYPE>:v1.3.12
+    include:
+    - request_id
+    - expected_output_id
+    - output_type
+    - table map defined in output_bundle_composition; every row is serialized as a canonical object in primary-key order
+  parameter_cell_id:
+    domain: ASAP_BLOCK:PARAMETER_CELL:v1.3.12
+    include: canonical sorted parameter mapping
+  base_generation_cell_id:
+    domain: ASAP_BLOCK:BASE_GENERATION_CELL:v1.3.12
+    include: parameter mapping excluding the paired transformation parameter
+  seed_scope_id:
+    domain: ASAP_BLOCK:SEED_SCOPE:v1.3.12
+    include:
+    - request_type
+    - parameter_cell_id
+    - scenario_id_or_null
+    - stream_label_or_null
+    - stream_index_or_null
+  carry_in_vector_hash:
+    domain: ASAP_BLOCK:CARRY_IN_VECTOR:v1.3.12
+    include:
+    - analysis_run_id
+    - target_task_id
+    - priority-sorted list of '{hp_task_id, theta_value, source_analysis_run_id, source_task_id, source_task_certification_status}'
+  dependency_record_hash:
+    domain: ASAP_BLOCK:DEPENDENCY_RECORD:v1.3.12
+    include: all immutable dependency row fields except dependency_record_hash
+  task_result_hash:
+    domain: ASAP_BLOCK:TASK_RESULT:v1.3.12
+    include: all per_task_results row fields except task_result_hash, including task_failure_reason_code and canonical task_failure_detail
+    null_rule: task_failure_detail null is JSON null and is distinct from every non-null string; empty string is forbidden
+    raw_failure_reason: forbidden
+  formal_primary_selector:
+    domain_template: ASAP_BLOCK:FORMAL_PRIMARY:<CHECK_TYPE>:v1.3.12
+    include:
+    - simulation_run_id
+    - analysis_run_id
+    - check_type
+    - formal_contract_hash
+  build_identity_hash:
+    domain_template: ASAP_BLOCK:BUILD_IDENTITY:<BUILD_ROLE>:v1.3.12
+    include:
+    - source_commit
+    - dirty_state
+    - compiler
+    - flags
+    - dependency_lock_hash
+    - binary_sha256
+    - platform_abi
+  taskset_semantic_hash:
+    domain: ASAP_BLOCK:TASKSET_SEMANTIC:v1.3.12
+    include:
+    - M
+    - n
+    - task definitions sorted by task_id with '{task_id,C_i,T_i,D_i,P_raw,P_analysis,priority_rank}'
+  priority_rank_hash:
+    domain: ASAP_BLOCK:PRIORITY_RANK:v1.3.12
+    include: task definitions sorted by task_id with '{task_id,priority_rank}'
+  power_vector_raw_hash:
+    domain: ASAP_BLOCK:POWER_VECTOR_RAW:v1.3.12
+    include: task definitions sorted by task_id with '{task_id,P_raw}'
+  power_vector_analysis_hash:
+    domain: ASAP_BLOCK:POWER_VECTOR_ANALYSIS:v1.3.12
+    include: task definitions sorted by task_id with '{task_id,P_analysis,P_analysis_scaled,P_rounding_mode}'
+  release_trace_hash:
+    domain: ASAP_BLOCK:RELEASE_TRACE:v1.3.12
+    include: release trace rows sorted by '{job_id}' excluding release_trace_hash
+  harvest_trace_raw_hash:
+    domain: ASAP_BLOCK:HARVEST_TRACE_RAW:v1.3.12
+    include: harvest trace rows sorted by tick with '{tick,H_raw}'
+  harvest_trace_analysis_hash:
+    domain: ASAP_BLOCK:HARVEST_TRACE_ANALYSIS:v1.3.12
+    include: harvest trace rows sorted by tick with '{tick,H_analysis}'
+request_type_payload_fields:
+  GENERATION:
+  - base_generation_cell_id
+  - seed_scope_id
+  - derived_seed
+  - generator_contract_hash
+  TRANSFORMATION:
+  - base_generation_request_id
+  - taskset_request_id
+  - paired_family_id
+  - transformation_id
+  - transformation_type
+  - transformation_parameter_canonical
+  RELEASE_TRACE_GENERATION:
+  - taskset_request_id
+  - scenario_id
+  - seed_scope_id
+  - derived_seed
+  - stream_label
+  - stream_index
+  - trace_generator_contract_hash
+  HARVEST_TRACE_GENERATION:
+  - scenario_id
+  - seed_scope_id
+  - derived_seed
+  - stream_label
+  - stream_index
+  - trace_generator_contract_hash
+  ANALYSIS:
+  - taskset_request_id
+  - analysis_variant_or_scenario
+  - analysis_config_hash
+  - approved_rta_build_identity_hash
+  SIMULATION:
+  - taskset_request_id
+  - release_trace_request_id
+  - harvest_trace_request_id
+  - analysis_variant_or_scenario
+  - simulation_contract_hash
+  - approved_simulator_build_identity_hash
+  - approved_scheduler_build_identity_hash
+  SERVICE_CHECK:
+  - simulation_request_id
+  - analysis_request_id
+  - service_curve_check_config_hash
+  - approved_audit_build_identity_hash
+  E0_CHECK:
+  - simulation_request_id
+  - analysis_request_id
+  - e0_check_config_hash
+  - approved_audit_build_identity_hash
+  COMPATIBILITY_CHECK:
+  - simulation_request_id
+  - analysis_request_id
+  - compatibility_contract_hash
+  - approved_audit_build_identity_hash
+  BOUND_AUDIT:
+  - simulation_request_id
+  - analysis_request_id
+  - service_check_request_id
+  - e0_check_request_id
+  - compatibility_check_request_id
+  - approved_audit_build_identity_hash
+request_dependency_contract:
+  GENERATION: []
+  TRANSFORMATION:
+  - field: taskset_request_id
+    role: TASKSET_SOURCE
+  RELEASE_TRACE_GENERATION:
+  - field: taskset_request_id
+    role: TASKSET_SOURCE
+  HARVEST_TRACE_GENERATION: []
+  ANALYSIS:
+  - field: taskset_request_id
+    role: TASKSET_SOURCE
+  SIMULATION:
+  - field: taskset_request_id
+    role: TASKSET_SOURCE
+  - field: release_trace_request_id
+    role: RELEASE_TRACE_SOURCE
+  - field: harvest_trace_request_id
+    role: HARVEST_TRACE_SOURCE
+  SERVICE_CHECK:
+  - field: simulation_request_id
+    role: SIMULATION_SOURCE
+  - field: analysis_request_id
+    role: ANALYSIS_SOURCE
+  E0_CHECK:
+  - field: simulation_request_id
+    role: SIMULATION_SOURCE
+  - field: analysis_request_id
+    role: ANALYSIS_SOURCE
+  COMPATIBILITY_CHECK:
+  - field: simulation_request_id
+    role: SIMULATION_SOURCE
+  - field: analysis_request_id
+    role: ANALYSIS_SOURCE
+  BOUND_AUDIT:
+  - field: simulation_request_id
+    role: SIMULATION_SOURCE
+  - field: analysis_request_id
+    role: ANALYSIS_SOURCE
+  - field: service_check_request_id
+    role: SERVICE_CHECK_SOURCE
+  - field: e0_check_request_id
+    role: E0_CHECK_SOURCE
+  - field: compatibility_check_request_id
+    role: COMPATIBILITY_CHECK_SOURCE
+output_identity:
+  mapping:
+    GENERATION:
+      output_type: GENERATION_RESULT
+      top_table: generation_requests.csv
+    TRANSFORMATION:
+      output_type: TRANSFORMATION_RESULT
+      top_table: paired_transformations.csv
+    RELEASE_TRACE_GENERATION:
+      output_type: RELEASE_TRACE_RESULT
+      top_table: release_trace_sets.csv
+    HARVEST_TRACE_GENERATION:
+      output_type: HARVEST_TRACE_RESULT
+      top_table: harvest_trace_sets.csv
+    ANALYSIS:
+      output_type: ANALYSIS_RESULT
+      top_table: per_taskset_results.csv
+    SIMULATION:
+      output_type: SIMULATION_RESULT
+      top_table: simulation_taskset_summary.csv
+    SERVICE_CHECK:
+      output_type: SERVICE_CHECK_RESULT
+      top_table: service_trace_checks.csv
+    E0_CHECK:
+      output_type: E0_CHECK_RESULT
+      top_table: e0_trace_certificate_checks.csv
+    COMPATIBILITY_CHECK:
+      output_type: COMPATIBILITY_CHECK_RESULT
+      top_table: analysis_simulation_compatibility_checks.csv
+    BOUND_AUDIT:
+      output_type: BOUND_AUDIT_RESULT
+      top_table: bound_audit_runs.csv
+  cardinality: every request has exactly one immutable output bundle and one request_outputs.csv row with output_index 0
+output_bundle_composition:
+  GENERATION:
+  - generation_requests.csv by request_id
+  - tasksets.csv by materialization_request_id when generation succeeds
+  - task_definitions.csv by materialized taskset_id
+  TRANSFORMATION:
+  - paired_transformations.csv by request_id
+  - tasksets.csv by materialization_request_id
+  - task_definitions.csv by transformed taskset_id
+  RELEASE_TRACE_GENERATION:
+  - release_trace_sets.csv by request_id
+  - release_traces.csv by release_trace_id
+  HARVEST_TRACE_GENERATION:
+  - harvest_trace_sets.csv by request_id
+  - harvest_traces.csv by harvest_trace_id
+  ANALYSIS:
+  - per_taskset_results.csv by request_id
+  - per_task_results.csv by analysis_run_id
+  - rta_dependency_records.csv by analysis_run_id
+  SIMULATION:
+  - simulation_taskset_summary.csv by request_id
+  - simulation_job_results.csv by simulation_run_id
+  SERVICE_CHECK:
+  - service_trace_checks.csv by request_id
+  E0_CHECK:
+  - e0_trace_certificate_checks.csv by request_id
+  - e0_job_certificate_checks.csv by e0_certificate_check_id
+  COMPATIBILITY_CHECK:
+  - analysis_simulation_compatibility_checks.csv by request_id
+  BOUND_AUDIT:
+  - bound_audit_runs.csv by request_id
+  - simulation_bound_checks.csv by bound_audit_run_id
+seed_derivation:
+  algorithm: SHA256_DOMAIN_SEPARATED_CANONICAL_V1_3_12
+  domain: ASAP_BLOCK:DERIVED_SEED:v1.3.12
+  preimage:
+  - seed_derivation_context_hash
+  - seed_scope_id
+  - replicate_index
+  - formal_master_seed_or_revealed_beacon_value
+  integer_extraction: UInt64BE(first 8 digest bytes)
+  range: 0..18446744073709551615
+  substream_labels:
+  - TASK_UTILIZATION
+  - PERIODS
+  - POWER_LATENT
+  - RELEASE_TRACE
+  - HARVEST_TRACE
+  - ADVERSARIAL_SEARCH
