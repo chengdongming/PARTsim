@@ -1,0 +1,24 @@
+ASAP-BLOCK v1.3.11 机器合同闭合修复包验证摘要
+
+本包仅冻结实验规范、机器接口和验证器结构，不表示实验代码、CORE-0A、pilot、CORE-0B 或正式实验已经完成。
+
+本次闭合内容：
+1. acceptance gate 的 predicate、count schema 与 required 标志冻结；
+2. PASSED gate 必须使用 formal-contract 绑定的 validator 对自哈希结构化证据执行 ASAP_BLOCK_GATE_REPLAY_V1 重放；
+3. 拒绝任意证据、伪造 counts、未绑定 validator、路径穿越、符号链接、replay 修改包和 replay 输出不一致；
+4. formal/generator/simulation/trace contracts 执行强类型、范围、条件 null、hash 和占位符检查；
+5. result validator 绑定 artifact validator 及全部规范构件；
+6. 运行包拒绝未声明文件、目录和符号链接；
+7. enum-set 空集合统一编码为 EMPTY，主失败原因空值统一编码为 NONE；
+8. BOUND_AUDIT 强制覆盖引用仿真的完整作业集合，聚合计数由作业事实重新计算；
+9. ID、状态、模式、数值类型和舍入方向执行语义强类型冻结，拒绝以 canonical number 冒充枚举或稳定 ID；
+10. E0=0、空证书域和未决证书的 satisfaction rate 强制为 null，避免把“不适用”编码为 0%。
+11. 理论基线升级为 v9.3，并绑定包含第 9.5 节的理论文档 SHA-256 `524d4f84b04185609735a2be3ff54984149be1478a111044494ec1f8ff65098e`。
+12. LOC-Theta^cw 在完整认证 CW 源、有效依赖和逐任务支配性全部成立时联合升级为 `CERTIFIED_TASKSET`；成功前缀保持 `PROVISIONAL_NOT_CERTIFIED`。
+13. LOC-Theta^cw 在有效依赖域出现 `NO_CANDIDATE` 时必须报告 `INTERNAL_CONFORMANCE_FAILURE + DOMINANCE_INVARIANT_VIOLATION`，不得作为普通未证明。
+14. CW-D、LOC-D 与 LOC-Theta^cw 均保持 `AUXILIARY_ABLATION`；论文主方法仍只有 CW-Theta^cw 和 LOC-Theta^loc。
+15. `carry_in_source_certification_status` 冻结为分析级 `analysis_certification_status`；正式 LOC-Theta^cw 成功值必须为 `CERTIFIED_TASKSET`，任务级 `CERTIFIED` 被类型层拒绝。
+
+验证方法包括真实正向路径、逐类破坏性反例、全新目录解压复验、只读性复验以及 SHA-256/manifest/嵌入绑定复验。
+
+冻结边界：实验方案与机器合同静态结构可冻结；实验实现与结果必须在后续实际执行并通过 CORE-0A/CORE-0B 后另行冻结。

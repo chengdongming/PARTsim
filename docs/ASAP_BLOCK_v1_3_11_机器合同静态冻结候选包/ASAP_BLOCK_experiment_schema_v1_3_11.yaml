@@ -1,0 +1,2915 @@
+schema_metadata:
+  name: ASAP_BLOCK_experiment_schema
+  version: 1.3.11
+  authority: machine_readable_normative_index
+  markdown_companion: ASAP_BLOCK_实验配置与验收规范_v1_3_11_最终机器合同与验证闭合版.md
+  data_dictionary_file: ASAP_BLOCK_data_dictionary_v1_3_11.yaml
+  canonical_serialization_file: ASAP_BLOCK_canonical_serialization_v1_3_11.yaml
+  artifact_validator_file: ASAP_BLOCK_artifact_validator_v1_3_11.py
+  result_validator_file: ASAP_BLOCK_result_validator_v1_3_11.py
+  rule: This schema defines table fields, classifications, keys, structured conditional rules and lineage. The data dictionary
+    defines types/units. Artifact, acceptance-report, and result validators are the normative executors for their respective
+    scopes.
+  field_classes:
+  - required
+  - conditionally_required
+  - optional_diagnostic
+  machine_interface_manifest_file: ASAP_BLOCK_machine_interface_manifest_v1_3_11.yaml
+  validator_contract: all executable runtime hard rules are implemented by ASAP_BLOCK_result_validator_v1_3_11.py; CORE-0 gate
+    evidence is replayed by ASAP_BLOCK_acceptance_report_validator_v1_3_11.py; string constraints are labels only unless listed
+    in executable_rule_ids
+  description: Normative executable schema for ASAP-BLOCK experiment contracts and result lineage; v1.3.11 closes request payload,
+    trace planning, transformed-taskset lineage, output bundles, and soundness derivation.
+  acceptance_validator_file: ASAP_BLOCK_acceptance_report_validator_v1_3_11.py
+enums:
+  run_phase:
+  - CORE0A
+  - PILOT
+  - CORE0B
+  - FORMAL
+  - DIAGNOSTIC
+  request_type:
+  - GENERATION
+  - TRANSFORMATION
+  - RELEASE_TRACE_GENERATION
+  - HARVEST_TRACE_GENERATION
+  - ANALYSIS
+  - SIMULATION
+  - SERVICE_CHECK
+  - E0_CHECK
+  - COMPATIBILITY_CHECK
+  - BOUND_AUDIT
+  request_execution_status:
+  - STARTED
+  - HEARTBEAT
+  - FINISHED
+  - TIMEOUT
+  - OUT_OF_MEMORY
+  - INTERRUPTED
+  - INFRASTRUCTURE_FAILURE
+  - NOT_RUN_DEPENDENCY
+  - CANCELLED
+  generation_status:
+  - SUCCESS
+  - GENERATION_FAILURE
+  analysis_method_role:
+  - MAIN_METHOD
+  - AUXILIARY_ABLATION
+  - DIAGNOSTIC
+  analysis_solver_status:
+  - COMPLETED
+  - NO_CANDIDATE
+  - TIMEOUT
+  - NUMERIC_ERROR
+  - NOT_APPLICABLE_DEPENDENCY
+  - INTERNAL_CONFORMANCE_FAILURE
+  - UNSUPPORTED_EXPERIMENT_VARIANT
+  analysis_certification_status:
+  - CERTIFIED_TASKSET
+  - DIAGNOSTIC_ONLY_NOT_CERTIFIED
+  - NOT_CERTIFIED
+  - NOT_APPLICABLE
+  task_solver_status:
+  - CANDIDATE_FOUND
+  - NO_CANDIDATE
+  - TIMEOUT
+  - NUMERIC_ERROR
+  - NOT_EVALUATED_AFTER_PREFIX_FAILURE
+  - NOT_APPLICABLE_DEPENDENCY
+  - INTERNAL_CONFORMANCE_FAILURE
+  task_certification_status:
+  - CERTIFIED
+  - PROVISIONAL_NOT_CERTIFIED
+  - DIAGNOSTIC_ONLY_NOT_CERTIFIED
+  - NOT_CERTIFIED
+  - NOT_APPLICABLE
+  fixed_carry_in_corollary_status:
+  - ACTIVE
+  - HASH_MISMATCH
+  - NOT_APPLICABLE
+  check_role:
+  - FORMAL_PRIMARY
+  - DIAGNOSTIC_SECONDARY
+  dependency_vector_check_status:
+  - VALID
+  - INVALID
+  - NOT_CHECKED
+  dominance_invariant_status:
+  - NOT_CHECKED
+  - SATISFIED
+  - DOMINANCE_INVARIANT_VIOLATION
+  - NOT_APPLICABLE
+  numeric_coverage_status:
+  - VALID
+  - INVALID_NUMERIC_COVERAGE
+  - NOT_CHECKED
+  numeric_range_check_status:
+  - VALID
+  - OVERFLOW_RISK
+  - INVALID
+  - NOT_CHECKED
+  enum_status:
+  - COMPLETE
+  - INCONCLUSIVE_DRAIN_CAP
+  - INTERNAL_ERROR
+  simulation_observation_status:
+  - COMPLETE
+  - PARTIALLY_CENSORED
+  - INVALID_TRACE
+  completion_censoring_status:
+  - NONE
+  - COMPLETION_NOT_OBSERVED
+  completion_observation_status:
+  - COMPLETED
+  - CENSORED_HORIZON
+  deadline_check_status:
+  - MET_DEADLINE
+  - DEADLINE_MISS
+  - DEADLINE_NOT_REACHED
+  bound_observation_status:
+  - BOUNDARY_REACHED
+  - BOUNDARY_NOT_REACHED
+  - NO_NUMERIC_CANDIDATE
+  service_curve_contract_status:
+  - VALID
+  - INVALID
+  - NOT_CHECKED
+  service_trace_status:
+  - VALID
+  - INVALID_SERVICE_TRACE
+  - NOT_CHECKED
+  service_verification_equivalence_status:
+  - PROVED_EQUIVALENT
+  - CROSS_CHECKED_EQUIVALENT
+  - NOT_EQUIVALENT
+  - NOT_CHECKED
+  job_e0_certificate_status:
+  - NOT_REQUIRED
+  - SATISFIED
+  - NOT_SATISFIED
+  - NOT_CHECKED
+  trace_e0_certificate_status:
+  - NOT_REQUIRED
+  - SATISFIED_ALL
+  - NOT_SATISFIED
+  - EMPTY_CERTIFICATE_SCOPE
+  - NOT_CHECKED
+  certificate_scope_mode:
+  - FULL_RELEASE_SET
+  - DIAGNOSTIC_PARTIAL_CERTIFICATE_SCOPE
+  match_status:
+  - MATCHES
+  - MISMATCH
+  - NOT_CHECKED
+  validity_status:
+  - VALID
+  - INVALID
+  - NOT_CHECKED
+  bound_theorem_applicability:
+  - APPLICABLE
+  - OUT_OF_THEOREM_SCOPE
+  - NOT_CHECKED
+  raw_bound_comparison:
+  - WITHIN_CANDIDATE
+  - EXCEEDS_CANDIDATE
+  - NOT_OBSERVED
+  - NO_NUMERIC_CANDIDATE
+  soundness_check_status:
+  - WITHIN_CERTIFIED_BOUND
+  - CERTIFIED_BOUND_VIOLATION
+  - OUT_OF_THEOREM_SCOPE
+  - INCONCLUSIVE
+  energy_numeric_mode:
+  - EXACT_RATIONAL
+  - FIXED_POINT_DIRECTED
+  service_curve_integerization_mode:
+  - EXACT
+  - POINTWISE_FLOOR
+  simulation_energy_account_mode:
+  - ANALYSIS_CONSISTENT_ACCOUNT
+  - PHYSICAL_WITH_CONSERVATIVE_SHADOW
+  - EMPIRICAL_PHYSICAL_ONLY
+  shadow_dominance_check_status:
+  - SATISFIED
+  - VIOLATED
+  - NOT_APPLICABLE
+  - NOT_CHECKED
+  theorem_conditioning_mode:
+  - UNCONDITIONAL_E0_ZERO
+  - CONDITIONAL_E0_POSITIVE
+  e0_parameterization_policy:
+  - EXACT_GRID
+  - EFFECTIVE_VALUE_REPORTED
+  e0_parameterization_status:
+  - ACCEPTED
+  - ROUNDED_TO_ZERO
+  - OUT_OF_TOLERANCE
+  - NUMERIC_ERROR
+  rho_e_parameterization_status:
+  - ACCEPTED
+  - OUT_OF_TOLERANCE
+  - NUMERIC_ERROR
+  coverage_gate_status:
+  - SATISFIED
+  - FAILED
+  - NOT_APPLICABLE_WITH_JUSTIFICATION
+  - NOT_CHECKED
+  foreign_key_lineage_status:
+  - VALID
+  - BROKEN
+  - AMBIGUOUS
+  - NOT_CHECKED
+  seed_derivation_check_status:
+  - VALID
+  - INVALID
+  - NOT_CHECKED
+  run_plan_accounting_status:
+  - COMPLETE
+  - INCOMPLETE
+  - NOT_CHECKED
+  acceptance_gate_status:
+  - PASSED
+  - FAILED
+  - NOT_CHECKED
+  - NOT_APPLICABLE_WITH_JUSTIFICATION
+  artifact_validation_status:
+  - PASSED
+  - FAILED
+  - NOT_CHECKED
+  infrastructure_failure_class:
+  - NONE
+  - OUT_OF_MEMORY
+  - INTERRUPTED
+  - HOST_FAILURE
+  - FILESYSTEM_FAILURE
+  - PROCESS_CRASH
+  - USER_CANCELLED
+  - DEPENDENCY_NOT_RUN
+  transformation_type:
+  - E0
+  - SERVICE_LATENCY
+  - DEADLINE
+  - POWER_HETEROGENEITY
+  - NONE
+  formal_master_seed_source:
+  - PRECOMMITTED_CONFIG
+  - PUBLIC_CONSTANT
+  - PUBLIC_RANDOM_BEACON
+  contract_context_kind:
+  - PLAN_CONTEXT
+  - FORMAL_CONTRACT
+  request_dependency_role:
+  - TASKSET_SOURCE
+  - RELEASE_TRACE_SOURCE
+  - HARVEST_TRACE_SOURCE
+  - ANALYSIS_SOURCE
+  - SIMULATION_SOURCE
+  - SERVICE_CHECK_SOURCE
+  - E0_CHECK_SOURCE
+  - COMPATIBILITY_CHECK_SOURCE
+  - AUDIT_SUBJECT
+  - OTHER_FROZEN
+  expected_output_type:
+  - GENERATION_RESULT
+  - TRANSFORMATION_RESULT
+  - RELEASE_TRACE_RESULT
+  - HARVEST_TRACE_RESULT
+  - ANALYSIS_RESULT
+  - SIMULATION_RESULT
+  - SERVICE_CHECK_RESULT
+  - E0_CHECK_RESULT
+  - COMPATIBILITY_CHECK_RESULT
+  - BOUND_AUDIT_RESULT
+  output_cardinality:
+  - EXACTLY_ONE
+  window_mode:
+  - complete
+  - local
+  carry_in_mode:
+  - deadline
+  - cw_candidate
+  - loc_candidate
+  analysis_variant:
+  - CW-D
+  - LOC-D
+  - CW-Theta^cw
+  - LOC-Theta^cw
+  - LOC-Theta^loc
+  request_output_status:
+  - MATERIALIZED
+  - MISSING
+  - HASH_MISMATCH
+  validation_profile:
+  - SCHEMA_ONLY
+  - CORE0A
+  - PILOT
+  - CORE0B
+  - FORMAL_RELEASE
+  - DIAGNOSTIC
+  primary_applicability_failure_reason:
+  - NONE
+  - NO_CERTIFIED_CANDIDATE
+  - E0_TRACE_CERTIFICATE_FAILED
+  - EMPTY_E0_CERTIFICATE_SCOPE
+  - INVALID_SERVICE_TRACE
+  - SERVICE_CURVE_CONTRACT_INVALID
+  - BATTERY_MODEL_MISMATCH
+  - SCHEDULER_SEMANTICS_MISMATCH
+  - EVENT_ORDER_MISMATCH
+  - NUMERIC_CONTRACT_INVALID
+  - ANALYSIS_MODEL_MISMATCH
+  - ENERGY_ACCOUNT_MISMATCH
+  - DEPENDENCY_CERTIFICATION_MISMATCH
+  - INITIAL_PENDING_JOBS_MISMATCH
+  - NON_INTEGER_EVENT_MISMATCH
+  - SELF_SUSPENSION_MISMATCH
+  - TASK_SERIALITY_MISMATCH
+  - EXECUTION_DEMAND_MISMATCH
+  - POWER_UPPER_BOUND_MISMATCH
+  - UNACCOUNTED_OVERHEAD
+  - HARVEST_CAUSALITY_MISMATCH
+  rho_e_tolerance_mode:
+  - EXACT
+  - ABSOLUTE
+  - RELATIVE
+  rounding_direction:
+  - UP
+  - DOWN
+  - EXACT
+  numeric_integer_type:
+  - CHECKED_INT64
+  - CHECKED_UINT64
+  - CHECKED_INT128
+  - CHECKED_UINT128
+  - ARBITRARY_PRECISION_INTEGER
+  battery_mode:
+  - UNBOUNDED
+  - FINITE_CAPACITY
+  theta_source_mode:
+  - DEADLINE
+  - CW_CANDIDATE
+  - LOC_CANDIDATE
+state_machines:
+  run_execution_attempt:
+    initial_event: STARTED
+    nonterminal_events:
+    - HEARTBEAT
+    terminal_events:
+    - FINISHED
+    - TIMEOUT
+    - OUT_OF_MEMORY
+    - INTERRUPTED
+    - INFRASTRUCTURE_FAILURE
+    - NOT_RUN_DEPENDENCY
+    - CANCELLED
+    retryable_terminal_events:
+    - OUT_OF_MEMORY
+    - INTERRUPTED
+    - INFRASTRUCTURE_FAILURE
+    nonretryable_terminal_events:
+    - FINISHED
+    - TIMEOUT
+    - NOT_RUN_DEPENDENCY
+    - CANCELLED
+    allowed_transitions:
+      __BEGIN__:
+      - STARTED
+      STARTED:
+      - HEARTBEAT
+      - FINISHED
+      - TIMEOUT
+      - OUT_OF_MEMORY
+      - INTERRUPTED
+      - INFRASTRUCTURE_FAILURE
+      - NOT_RUN_DEPENDENCY
+      - CANCELLED
+      HEARTBEAT:
+      - HEARTBEAT
+      - FINISHED
+      - TIMEOUT
+      - OUT_OF_MEMORY
+      - INTERRUPTED
+      - INFRASTRUCTURE_FAILURE
+      - NOT_RUN_DEPENDENCY
+      - CANCELLED
+      FINISHED: []
+      TIMEOUT: []
+      OUT_OF_MEMORY: []
+      INTERRUPTED: []
+      INFRASTRUCTURE_FAILURE: []
+      NOT_RUN_DEPENDENCY: []
+      CANCELLED: []
+    rules:
+    - attempt_index_contiguous_from_zero
+    - execution_event_index_contiguous_from_zero
+    - event_time_monotone
+    - terminal_is_last
+    - no_events_after_terminal
+    - retry_only_after_retryable_terminal
+    - retry_points_to_immediately_previous_attempt
+    - attempt_count_le_frozen_max_attempts
+    - NOT_RUN_DEPENDENCY_requires_failed_dependency
+    - FINISHED_output_matches_plan_and_request_outputs
+failure_masks:
+  applicability_failure_mask:
+  - EMPTY
+  - NO_CERTIFIED_CANDIDATE
+  - E0_TRACE_CERTIFICATE_FAILED
+  - EMPTY_E0_CERTIFICATE_SCOPE
+  - INVALID_SERVICE_TRACE
+  - SERVICE_CURVE_CONTRACT_INVALID
+  - BATTERY_MODEL_MISMATCH
+  - SCHEDULER_SEMANTICS_MISMATCH
+  - EVENT_ORDER_MISMATCH
+  - NUMERIC_CONTRACT_INVALID
+  - ANALYSIS_MODEL_MISMATCH
+  - ENERGY_ACCOUNT_MISMATCH
+  - DEPENDENCY_CERTIFICATION_MISMATCH
+  - INITIAL_PENDING_JOBS_MISMATCH
+  - NON_INTEGER_EVENT_MISMATCH
+  - SELF_SUSPENSION_MISMATCH
+  - TASK_SERIALITY_MISMATCH
+  - EXECUTION_DEMAND_MISMATCH
+  - POWER_UPPER_BOUND_MISMATCH
+  - UNACCOUNTED_OVERHEAD
+  - HARVEST_CAUSALITY_MISMATCH
+  applicability_pending_mask:
+  - EMPTY
+  - SERVICE_TRACE_NOT_CHECKED
+  - E0_CERTIFICATE_NOT_CHECKED
+  - COMPATIBILITY_NOT_CHECKED
+  - DEPENDENCY_NOT_CHECKED
+  dependency_input_failure_mask:
+  - EMPTY
+  - TASKSET_HASH_MISMATCH
+  - PRIORITY_HASH_MISMATCH
+  - E0_HASH_MISMATCH
+  - SERVICE_CURVE_HASH_MISMATCH
+  - POWER_VECTOR_HASH_MISMATCH
+  - ENERGY_UNIT_HASH_MISMATCH
+  - NUMERIC_MODE_MISMATCH
+  - NUMERIC_SCALE_MISMATCH
+  - THEORY_HASH_MISMATCH
+  - FIXED_CARRY_IN_INTERFACE_HASH_MISMATCH
+  - FORMAL_CONTRACT_HASH_MISMATCH
+  - COROLLARY_INACTIVE
+  - DEPENDENCY_CERTIFICATION_MISMATCH
+  compatibility_failure_mask:
+  - EMPTY
+  - ANALYSIS_MODEL_MISMATCH
+  - BATTERY_MODEL_MISMATCH
+  - DEPENDENCY_CERTIFICATION_MISMATCH
+  - ENERGY_ACCOUNT_MISMATCH
+  - EVENT_ORDER_MISMATCH
+  - EXECUTION_DEMAND_MISMATCH
+  - HARVEST_CAUSALITY_MISMATCH
+  - INITIAL_PENDING_JOBS_MISMATCH
+  - NON_INTEGER_EVENT_MISMATCH
+  - NUMERIC_CONTRACT_INVALID
+  - OVERHEAD_ACCOUNTING_MISMATCH
+  - POWER_UPPER_BOUND_MISMATCH
+  - SCHEDULER_SEMANTICS_MISMATCH
+  - SELF_SUSPENSION_MISMATCH
+  - SERVICE_CURVE_CONTRACT_INVALID
+  - TASK_SERIALITY_MISMATCH
+tables:
+  run_plan_definition.csv:
+    primary_key:
+    - request_id
+    required:
+    - request_id
+    - request_type
+    - run_phase
+    - plan_context_hash
+    - parameter_cell_id
+    - replicate_index
+    - request_payload_hash
+    - expected_output_id
+    - expected_output_type
+    - request_payload_schema_version
+    - output_cardinality
+    conditionally_required:
+    - base_generation_cell_id
+    - seed_scope_id
+    - derived_seed
+    - generator_contract_hash
+    - base_generation_request_id
+    - taskset_request_id
+    - paired_family_id
+    - transformation_id
+    - transformation_type
+    - transformation_parameter_canonical
+    - scenario_id
+    - stream_label
+    - stream_index
+    - trace_generator_contract_hash
+    - analysis_variant_or_scenario
+    - analysis_config_hash
+    - approved_rta_build_identity_hash
+    - release_trace_request_id
+    - harvest_trace_request_id
+    - simulation_contract_hash
+    - approved_simulator_build_identity_hash
+    - approved_scheduler_build_identity_hash
+    - simulation_request_id
+    - analysis_request_id
+    - service_curve_check_config_hash
+    - e0_check_config_hash
+    - compatibility_contract_hash
+    - service_check_request_id
+    - e0_check_request_id
+    - compatibility_check_request_id
+    - approved_audit_build_identity_hash
+    optional_diagnostic:
+    - human_label
+    - parent_request_id
+    - audit_subject_request_id
+    canonical_column_order:
+    - request_id
+    - request_type
+    - run_phase
+    - plan_context_hash
+    - parameter_cell_id
+    - replicate_index
+    - request_payload_hash
+    - expected_output_id
+    - expected_output_type
+    - request_payload_schema_version
+    - output_cardinality
+    - base_generation_cell_id
+    - seed_scope_id
+    - derived_seed
+    - generator_contract_hash
+    - base_generation_request_id
+    - taskset_request_id
+    - paired_family_id
+    - transformation_id
+    - transformation_type
+    - transformation_parameter_canonical
+    - scenario_id
+    - stream_label
+    - stream_index
+    - trace_generator_contract_hash
+    - analysis_variant_or_scenario
+    - analysis_config_hash
+    - approved_rta_build_identity_hash
+    - release_trace_request_id
+    - harvest_trace_request_id
+    - simulation_contract_hash
+    - approved_simulator_build_identity_hash
+    - approved_scheduler_build_identity_hash
+    - simulation_request_id
+    - analysis_request_id
+    - service_curve_check_config_hash
+    - e0_check_config_hash
+    - compatibility_contract_hash
+    - service_check_request_id
+    - e0_check_request_id
+    - compatibility_check_request_id
+    - approved_audit_build_identity_hash
+    - human_label
+    - parent_request_id
+    - audit_subject_request_id
+    conditional_rules:
+    - rule_id: GENERATION_PAYLOAD_FIELDS
+      if:
+        field: request_type
+        equals: GENERATION
+      then_required:
+      - base_generation_cell_id
+      - seed_scope_id
+      - derived_seed
+      - generator_contract_hash
+    - rule_id: TRANSFORMATION_PAYLOAD_FIELDS
+      if:
+        field: request_type
+        equals: TRANSFORMATION
+      then_required:
+      - base_generation_request_id
+      - taskset_request_id
+      - paired_family_id
+      - transformation_id
+      - transformation_type
+      - transformation_parameter_canonical
+    - rule_id: RELEASE_TRACE_GENERATION_PAYLOAD_FIELDS
+      if:
+        field: request_type
+        equals: RELEASE_TRACE_GENERATION
+      then_required:
+      - taskset_request_id
+      - scenario_id
+      - seed_scope_id
+      - derived_seed
+      - stream_label
+      - stream_index
+      - trace_generator_contract_hash
+    - rule_id: HARVEST_TRACE_GENERATION_PAYLOAD_FIELDS
+      if:
+        field: request_type
+        equals: HARVEST_TRACE_GENERATION
+      then_required:
+      - scenario_id
+      - seed_scope_id
+      - derived_seed
+      - stream_label
+      - stream_index
+      - trace_generator_contract_hash
+    - rule_id: ANALYSIS_PAYLOAD_FIELDS
+      if:
+        field: request_type
+        equals: ANALYSIS
+      then_required:
+      - taskset_request_id
+      - analysis_variant_or_scenario
+      - analysis_config_hash
+      - approved_rta_build_identity_hash
+    - rule_id: SIMULATION_PAYLOAD_FIELDS
+      if:
+        field: request_type
+        equals: SIMULATION
+      then_required:
+      - taskset_request_id
+      - release_trace_request_id
+      - harvest_trace_request_id
+      - analysis_variant_or_scenario
+      - simulation_contract_hash
+      - approved_simulator_build_identity_hash
+      - approved_scheduler_build_identity_hash
+    - rule_id: SERVICE_CHECK_PAYLOAD_FIELDS
+      if:
+        field: request_type
+        equals: SERVICE_CHECK
+      then_required:
+      - simulation_request_id
+      - analysis_request_id
+      - service_curve_check_config_hash
+      - approved_audit_build_identity_hash
+    - rule_id: E0_CHECK_PAYLOAD_FIELDS
+      if:
+        field: request_type
+        equals: E0_CHECK
+      then_required:
+      - simulation_request_id
+      - analysis_request_id
+      - e0_check_config_hash
+      - approved_audit_build_identity_hash
+    - rule_id: COMPATIBILITY_CHECK_PAYLOAD_FIELDS
+      if:
+        field: request_type
+        equals: COMPATIBILITY_CHECK
+      then_required:
+      - simulation_request_id
+      - analysis_request_id
+      - compatibility_contract_hash
+      - approved_audit_build_identity_hash
+    - rule_id: BOUND_AUDIT_PAYLOAD_FIELDS
+      if:
+        field: request_type
+        equals: BOUND_AUDIT
+      then_required:
+      - simulation_request_id
+      - analysis_request_id
+      - service_check_request_id
+      - e0_check_request_id
+      - compatibility_check_request_id
+      - approved_audit_build_identity_hash
+  run_plan_dependencies.csv:
+    primary_key:
+    - request_id
+    - dependency_request_id
+    - dependency_role
+    canonical_column_order:
+    - request_id
+    - dependency_request_id
+    - dependency_role
+    required:
+    - request_id
+    - dependency_request_id
+    - dependency_role
+    conditionally_required: []
+    optional_diagnostic: []
+    foreign_keys:
+      request_id: run_plan_definition.csv.request_id
+      dependency_request_id: run_plan_definition.csv.request_id
+    constraints:
+    - acyclic_dependency_DAG
+    - generation_and_parent_dependencies_preplanned_by_request_id
+  run_execution_log.csv:
+    primary_key:
+    - request_id
+    - attempt_index
+    - execution_event_index
+    canonical_column_order:
+    - request_id
+    - attempt_index
+    - execution_event_index
+    - build_identity_hash
+    - execution_status
+    - event_time_utc
+    - run_phase
+    - plan_context_hash
+    - max_attempts
+    - actual_output_id
+    - actual_output_hash
+    - infrastructure_failure_class
+    - infrastructure_failure_code
+    - formal_contract_hash
+    - actual_output_type
+    - retry_of_attempt_index
+    - host_id
+    - execution_message
+    required:
+    - request_id
+    - attempt_index
+    - execution_event_index
+    - build_identity_hash
+    - execution_status
+    - event_time_utc
+    - run_phase
+    - plan_context_hash
+    - max_attempts
+    conditionally_required:
+    - actual_output_id
+    - actual_output_hash
+    - infrastructure_failure_class
+    - infrastructure_failure_code
+    - formal_contract_hash
+    - actual_output_type
+    optional_diagnostic:
+    - retry_of_attempt_index
+    - host_id
+    - execution_message
+    foreign_keys:
+      request_id: run_plan_definition.csv.request_id
+    conditional_rules:
+    - if:
+        field: execution_status
+        equals: FINISHED
+      then_required:
+      - actual_output_id
+      - actual_output_hash
+    - if:
+        field: execution_status
+        equals: INFRASTRUCTURE_FAILURE
+      then_required:
+      - infrastructure_failure_class
+      - infrastructure_failure_code
+    - if:
+        field: run_phase
+        in:
+        - CORE0B
+        - FORMAL
+      then_required:
+      - formal_contract_hash
+      rule_id: FORMAL_PHASE_REQUIRES_FINAL_CONTRACT
+    - if:
+        field: run_phase
+        in:
+        - CORE0A
+        - PILOT
+      then_null:
+      - formal_contract_hash
+      rule_id: PREFORMAL_PHASE_FORBIDS_RETROACTIVE_FINAL_CONTRACT
+    - if:
+        field: execution_status
+        equals: FINISHED
+      then_required:
+      - actual_output_id
+      - actual_output_hash
+      - actual_output_type
+      rule_id: FINISHED_REQUIRES_OUTPUT
+    constraints:
+    - append_only
+    - one_STARTED_per_attempt
+    - at_most_one_terminal_event_per_attempt
+    - retry_only_after_retryable_terminal
+    - one_final_accounting_outcome_per_request
+    - N_planned_equals_N_accounted
+  generation_requests.csv:
+    primary_key:
+    - generation_request_id
+    canonical_column_order:
+    - run_phase
+    - generation_request_id
+    - request_id
+    - generator_contract_hash
+    - parameter_cell_id
+    - base_generation_cell_id
+    - replicate_index
+    - requested_seed
+    - seed_derivation_check_status
+    - generation_status
+    - generation_attempts
+    - max_resampling_reached
+    - target_total_utilization
+    - target_rho_p
+    - target_rho_e
+    - plan_context_hash
+    - generation_failure_reason
+    - actual_total_utilization
+    - actual_rho_p
+    - actual_rho_e_analysis
+    - taskset_id
+    - taskset_semantic_hash
+    - formal_contract_hash
+    - paired_family_id
+    - transformation_id
+    - formal_master_seed
+    - formal_master_seed_source
+    - formal_master_seed_commitment_hash
+    - formal_seed_derivation_algorithm
+    - seed_derivation_context_hash
+    - formal_seed_set_hash
+    - actual_rho_e_raw
+    - rho_e_parameterization_status
+    required:
+    - run_phase
+    - generation_request_id
+    - request_id
+    - generator_contract_hash
+    - parameter_cell_id
+    - base_generation_cell_id
+    - replicate_index
+    - requested_seed
+    - seed_derivation_check_status
+    - generation_status
+    - generation_attempts
+    - max_resampling_reached
+    - target_total_utilization
+    - target_rho_p
+    - target_rho_e
+    - plan_context_hash
+    conditionally_required:
+    - generation_failure_reason
+    - actual_total_utilization
+    - actual_rho_p
+    - actual_rho_e_analysis
+    - taskset_id
+    - taskset_semantic_hash
+    - formal_contract_hash
+    optional_diagnostic:
+    - paired_family_id
+    - transformation_id
+    - formal_master_seed
+    - formal_master_seed_source
+    - formal_master_seed_commitment_hash
+    - formal_seed_derivation_algorithm
+    - seed_derivation_context_hash
+    - formal_seed_set_hash
+    - actual_rho_e_raw
+    - rho_e_parameterization_status
+    foreign_keys:
+      request_id: run_plan_definition.csv.request_id
+    conditional_rules:
+    - if:
+        field: generation_status
+        equals: SUCCESS
+      then_required:
+      - taskset_id
+      - taskset_semantic_hash
+      - actual_total_utilization
+      - actual_rho_p
+      - actual_rho_e_analysis
+      then_null:
+      - generation_failure_reason
+    - if:
+        field: generation_status
+        equals: GENERATION_FAILURE
+      then_required:
+      - generation_failure_reason
+      then_null:
+      - taskset_id
+      - taskset_semantic_hash
+    - if:
+        field: run_phase
+        in:
+        - CORE0B
+        - FORMAL
+      then_required:
+      - formal_contract_hash
+      rule_id: FORMAL_PHASE_REQUIRES_FINAL_CONTRACT
+    - if:
+        field: run_phase
+        in:
+        - CORE0A
+        - PILOT
+      then_null:
+      - formal_contract_hash
+      rule_id: PREFORMAL_PHASE_FORBIDS_RETROACTIVE_FINAL_CONTRACT
+    constraints:
+    - no_seed_replacement
+    - sample_size_is_requested_count
+    unique_constraints:
+    - - taskset_id
+    - - generation_request_id
+      - taskset_id
+    - - run_phase
+      - parameter_cell_id
+      - replicate_index
+    - - run_phase
+      - requested_seed
+    composite_foreign_keys:
+    - local:
+      - request_id
+      - taskset_id
+      references:
+        table: tasksets.csv
+        columns:
+        - materialization_request_id
+        - taskset_id
+  paired_transformations.csv:
+    primary_key:
+    - transformation_id
+    required:
+    - run_phase
+    - transformation_id
+    - request_id
+    - paired_family_id
+    - base_generation_cell_id
+    - base_taskset_id
+    - parent_taskset_id
+    - transformed_taskset_id
+    - transformation_type
+    - transformation_parameter_canonical
+    - transformation_version
+    - transformation_hash
+    - plan_context_hash
+    conditionally_required:
+    - formal_contract_hash
+    optional_diagnostic: []
+    canonical_column_order:
+    - run_phase
+    - transformation_id
+    - request_id
+    - paired_family_id
+    - base_generation_cell_id
+    - base_taskset_id
+    - parent_taskset_id
+    - transformed_taskset_id
+    - transformation_type
+    - transformation_parameter_canonical
+    - transformation_version
+    - transformation_hash
+    - plan_context_hash
+    - formal_contract_hash
+    unique_constraints:
+    - - request_id
+    foreign_keys:
+      request_id: run_plan_definition.csv.request_id
+      base_taskset_id: tasksets.csv.taskset_id
+      parent_taskset_id: tasksets.csv.taskset_id
+      transformed_taskset_id: tasksets.csv.taskset_id
+    composite_foreign_keys:
+    - local:
+      - request_id
+      - transformed_taskset_id
+      references:
+        table: tasksets.csv
+        columns:
+        - materialization_request_id
+        - taskset_id
+    conditional_rules:
+    - rule_id: FORMAL_PHASE_REQUIRES_FINAL_CONTRACT
+      if:
+        field: run_phase
+        in:
+        - CORE0B
+        - FORMAL
+      then_required:
+      - formal_contract_hash
+    - rule_id: PREFORMAL_PHASE_FORBIDS_RETROACTIVE_FINAL_CONTRACT
+      if:
+        field: run_phase
+        in:
+        - CORE0A
+        - PILOT
+      then_null:
+      - formal_contract_hash
+  tasksets.csv:
+    primary_key:
+    - taskset_id
+    required:
+    - run_phase
+    - taskset_id
+    - materialization_request_id
+    - source_generation_request_id
+    - parameter_cell_id
+    - M
+    - n
+    - taskset_semantic_hash
+    - priority_rank_hash
+    - power_vector_raw_hash
+    - power_vector_analysis_hash
+    - build_input_hash
+    - plan_context_hash
+    conditionally_required:
+    - formal_contract_hash
+    optional_diagnostic:
+    - base_taskset_id
+    - parent_taskset_id
+    - paired_family_id
+    - transformation_id
+    - actual_total_utilization
+    - actual_rho_p
+    - actual_rho_e_raw
+    - actual_rho_e_analysis
+    canonical_column_order:
+    - run_phase
+    - taskset_id
+    - materialization_request_id
+    - source_generation_request_id
+    - parameter_cell_id
+    - M
+    - n
+    - taskset_semantic_hash
+    - priority_rank_hash
+    - power_vector_raw_hash
+    - power_vector_analysis_hash
+    - build_input_hash
+    - plan_context_hash
+    - formal_contract_hash
+    - base_taskset_id
+    - parent_taskset_id
+    - paired_family_id
+    - transformation_id
+    - actual_total_utilization
+    - actual_rho_p
+    - actual_rho_e_raw
+    - actual_rho_e_analysis
+    unique_constraints:
+    - - materialization_request_id
+    - - materialization_request_id
+      - taskset_id
+    foreign_keys:
+      materialization_request_id: run_plan_definition.csv.request_id
+      source_generation_request_id: generation_requests.csv.generation_request_id
+    conditional_rules:
+    - rule_id: FORMAL_PHASE_REQUIRES_FINAL_CONTRACT
+      if:
+        field: run_phase
+        in:
+        - CORE0B
+        - FORMAL
+      then_required:
+      - formal_contract_hash
+    - rule_id: PREFORMAL_PHASE_FORBIDS_RETROACTIVE_FINAL_CONTRACT
+      if:
+        field: run_phase
+        in:
+        - CORE0A
+        - PILOT
+      then_null:
+      - formal_contract_hash
+  task_definitions.csv:
+    primary_key:
+    - taskset_id
+    - task_id
+    canonical_column_order:
+    - taskset_id
+    - task_id
+    - C_i
+    - T_i
+    - D_i
+    - P_raw
+    - P_analysis
+    - priority_rank
+    - power_latent_value
+    - P_analysis_scaled
+    - P_rounding_mode
+    required:
+    - taskset_id
+    - task_id
+    - C_i
+    - T_i
+    - D_i
+    - P_raw
+    - P_analysis
+    - priority_rank
+    - power_latent_value
+    conditionally_required: []
+    optional_diagnostic:
+    - P_analysis_scaled
+    - P_rounding_mode
+    foreign_keys:
+      taskset_id: tasksets.csv.taskset_id
+    constraints:
+    - 1<=C_i<=D_i<=T_i
+    - P_raw>0
+    - P_analysis>0
+  release_trace_sets.csv:
+    primary_key:
+    - release_trace_id
+    canonical_column_order:
+    - run_phase
+    - release_trace_id
+    - request_id
+    - taskset_id
+    - scenario_id
+    - trace_generator_contract_hash
+    - release_trace_hash
+    - stream_label
+    - stream_index
+    - derived_seed
+    - trace_generator_version
+    - plan_context_hash
+    - formal_contract_hash
+    required:
+    - run_phase
+    - release_trace_id
+    - request_id
+    - taskset_id
+    - scenario_id
+    - trace_generator_contract_hash
+    - release_trace_hash
+    - stream_label
+    - stream_index
+    - derived_seed
+    - trace_generator_version
+    - plan_context_hash
+    conditionally_required:
+    - formal_contract_hash
+    optional_diagnostic: []
+    foreign_keys:
+      request_id: run_plan_definition.csv.request_id
+      taskset_id: tasksets.csv.taskset_id
+    conditional_rules:
+    - if:
+        field: run_phase
+        in:
+        - CORE0B
+        - FORMAL
+      then_required:
+      - formal_contract_hash
+      rule_id: FORMAL_PHASE_REQUIRES_FINAL_CONTRACT
+    - if:
+        field: run_phase
+        in:
+        - CORE0A
+        - PILOT
+      then_null:
+      - formal_contract_hash
+      rule_id: PREFORMAL_PHASE_FORBIDS_RETROACTIVE_FINAL_CONTRACT
+    unique_constraints:
+    - - release_trace_id
+      - taskset_id
+  release_traces.csv:
+    primary_key:
+    - release_trace_id
+    - job_id
+    canonical_column_order:
+    - release_trace_id
+    - job_id
+    - task_id
+    - release_time
+    - execution_demand
+    - stream_label
+    - stream_index
+    - derived_seed
+    - trace_generator_version
+    - absolute_deadline
+    required:
+    - release_trace_id
+    - job_id
+    - task_id
+    - release_time
+    - execution_demand
+    - stream_label
+    - stream_index
+    - derived_seed
+    - trace_generator_version
+    conditionally_required: []
+    optional_diagnostic:
+    - absolute_deadline
+    foreign_keys:
+      release_trace_id: release_trace_sets.csv.release_trace_id
+    unique_constraints:
+    - - release_trace_id
+      - job_id
+      - task_id
+  harvest_trace_sets.csv:
+    primary_key:
+    - harvest_trace_id
+    canonical_column_order:
+    - run_phase
+    - harvest_trace_id
+    - request_id
+    - scenario_id
+    - trace_generator_contract_hash
+    - harvest_trace_raw_hash
+    - harvest_trace_analysis_hash
+    - stream_label
+    - stream_index
+    - derived_seed
+    - trace_generator_version
+    - plan_context_hash
+    - formal_contract_hash
+    required:
+    - run_phase
+    - harvest_trace_id
+    - request_id
+    - scenario_id
+    - trace_generator_contract_hash
+    - harvest_trace_raw_hash
+    - harvest_trace_analysis_hash
+    - stream_label
+    - stream_index
+    - derived_seed
+    - trace_generator_version
+    - plan_context_hash
+    conditionally_required:
+    - formal_contract_hash
+    optional_diagnostic: []
+    foreign_keys:
+      request_id: run_plan_definition.csv.request_id
+    conditional_rules:
+    - if:
+        field: run_phase
+        in:
+        - CORE0B
+        - FORMAL
+      then_required:
+      - formal_contract_hash
+      rule_id: FORMAL_PHASE_REQUIRES_FINAL_CONTRACT
+    - if:
+        field: run_phase
+        in:
+        - CORE0A
+        - PILOT
+      then_null:
+      - formal_contract_hash
+      rule_id: PREFORMAL_PHASE_FORBIDS_RETROACTIVE_FINAL_CONTRACT
+    unique_constraints:
+    - - harvest_trace_id
+      - scenario_id
+  harvest_traces.csv:
+    primary_key:
+    - harvest_trace_id
+    - tick
+    canonical_column_order:
+    - harvest_trace_id
+    - tick
+    - H_raw
+    - H_analysis
+    - stream_label
+    - stream_index
+    - derived_seed
+    - trace_generator_version
+    required:
+    - harvest_trace_id
+    - tick
+    - H_raw
+    - H_analysis
+    - stream_label
+    - stream_index
+    - derived_seed
+    - trace_generator_version
+    conditionally_required: []
+    optional_diagnostic: []
+    foreign_keys:
+      harvest_trace_id: harvest_trace_sets.csv.harvest_trace_id
+  per_taskset_results.csv:
+    primary_key:
+    - analysis_run_id
+    canonical_column_order:
+    - run_phase
+    - analysis_run_id
+    - request_id
+    - build_identity_hash
+    - rta_implementation_hash
+    - generation_request_id
+    - taskset_id
+    - taskset_materialization_request_id
+    - generator_contract_hash
+    - experiment_config_version
+    - experiment_config_hash
+    - analysis_method_role
+    - variant
+    - window_mode
+    - carry_in_mode
+    - M
+    - n
+    - n_tasks_total
+    - n_tasks_evaluated
+    - n_tasks_candidate_found
+    - n_tasks_certified
+    - target_total_utilization
+    - actual_total_utilization
+    - target_rho_p
+    - actual_rho_p
+    - target_rho_e
+    - actual_rho_e_raw
+    - actual_rho_e_analysis
+    - rho_e_tolerance
+    - rho_e_tolerance_mode
+    - rho_e_parameterization_status
+    - numeric_coverage_status
+    - service_rate_reference
+    - service_rate_r_raw
+    - service_curve_integerization_mode
+    - power_scale_alpha
+    - target_power_demand
+    - actual_power_demand_raw
+    - actual_power_demand_analysis
+    - target_service_latency_ratio
+    - realized_service_latency_L
+    - realized_service_latency_ratio
+    - power_latent_seed
+    - power_latent_vector_hash
+    - power_latent_mapping_version
+    - priority_reference_delta
+    - priority_rank_reference_hash
+    - E0_target_raw
+    - E0_analysis_effective
+    - E0_rounding_error
+    - target_epsilon_0
+    - realized_epsilon_0_analysis
+    - e0_parameterization_policy
+    - e0_parameterization_status
+    - theorem_conditioning_mode
+    - service_latency_L
+    - service_curve_raw_spec
+    - analysis_solver_status
+    - analysis_certification_status
+    - fixed_carry_in_corollary_status
+    - taskset_proven
+    - runtime_wall
+    - runtime_cpu
+    - rta_formula_version
+    - theory_document_sha256
+    - fixed_carry_in_corollary_hash
+    - taskset_semantic_hash
+    - priority_rank_hash
+    - power_vector_raw_hash
+    - analysis_E0_canonical_hash
+    - analysis_power_vector_canonical_hash
+    - analysis_service_curve_canonical_hash
+    - energy_numeric_mode
+    - energy_demand_rounding
+    - energy_supply_rounding
+    - numeric_integer_type
+    - numeric_range_check_status
+    - service_curve_raw_hash
+    - plan_context_hash
+    - dominance_invariant_status
+    - dominance_violation_count
+    - analysis_energy_unit_hash
+    - formal_contract_hash
+    - formal_contract_version
+    - service_rate_r_scaled_exact
+    - service_curve_scaled_spec
+    - E0_analysis_scaled
+    - power_vector_scaled_hash
+    - energy_numeric_scale
+    - service_curve_scaled_hash
+    - peak_rss
+    - envelope_call_count_total
+    - first_non_candidate_priority
+    required:
+    - run_phase
+    - analysis_run_id
+    - request_id
+    - build_identity_hash
+    - rta_implementation_hash
+    - generation_request_id
+    - taskset_id
+    - taskset_materialization_request_id
+    - generator_contract_hash
+    - experiment_config_version
+    - experiment_config_hash
+    - analysis_method_role
+    - variant
+    - window_mode
+    - carry_in_mode
+    - M
+    - n
+    - n_tasks_total
+    - n_tasks_evaluated
+    - n_tasks_candidate_found
+    - n_tasks_certified
+    - target_total_utilization
+    - actual_total_utilization
+    - target_rho_p
+    - actual_rho_p
+    - target_rho_e
+    - actual_rho_e_raw
+    - actual_rho_e_analysis
+    - rho_e_tolerance
+    - rho_e_tolerance_mode
+    - rho_e_parameterization_status
+    - numeric_coverage_status
+    - service_rate_reference
+    - service_rate_r_raw
+    - service_curve_integerization_mode
+    - power_scale_alpha
+    - target_power_demand
+    - actual_power_demand_raw
+    - actual_power_demand_analysis
+    - target_service_latency_ratio
+    - realized_service_latency_L
+    - realized_service_latency_ratio
+    - power_latent_seed
+    - power_latent_vector_hash
+    - power_latent_mapping_version
+    - priority_reference_delta
+    - priority_rank_reference_hash
+    - E0_target_raw
+    - E0_analysis_effective
+    - E0_rounding_error
+    - target_epsilon_0
+    - realized_epsilon_0_analysis
+    - e0_parameterization_policy
+    - e0_parameterization_status
+    - theorem_conditioning_mode
+    - service_latency_L
+    - service_curve_raw_spec
+    - analysis_solver_status
+    - analysis_certification_status
+    - fixed_carry_in_corollary_status
+    - taskset_proven
+    - runtime_wall
+    - runtime_cpu
+    - rta_formula_version
+    - theory_document_sha256
+    - fixed_carry_in_corollary_hash
+    - taskset_semantic_hash
+    - priority_rank_hash
+    - power_vector_raw_hash
+    - analysis_E0_canonical_hash
+    - analysis_power_vector_canonical_hash
+    - analysis_service_curve_canonical_hash
+    - energy_numeric_mode
+    - energy_demand_rounding
+    - energy_supply_rounding
+    - numeric_integer_type
+    - numeric_range_check_status
+    - service_curve_raw_hash
+    - plan_context_hash
+    - dominance_invariant_status
+    - dominance_violation_count
+    - analysis_energy_unit_hash
+    conditionally_required:
+    - formal_contract_hash
+    - formal_contract_version
+    - service_rate_r_scaled_exact
+    - service_curve_scaled_spec
+    - E0_analysis_scaled
+    - power_vector_scaled_hash
+    - energy_numeric_scale
+    - service_curve_scaled_hash
+    optional_diagnostic:
+    - peak_rss
+    - envelope_call_count_total
+    - first_non_candidate_priority
+    foreign_keys:
+      request_id: run_plan_definition.csv.request_id
+      generation_request_id: generation_requests.csv.generation_request_id
+      taskset_id: tasksets.csv.taskset_id
+      taskset_materialization_request_id: run_plan_definition.csv.request_id
+    conditional_rules:
+    - if:
+        field: energy_numeric_mode
+        equals: FIXED_POINT_DIRECTED
+      then_required:
+      - service_rate_r_scaled_exact
+      - service_curve_scaled_spec
+      - E0_analysis_scaled
+      - power_vector_scaled_hash
+      - energy_numeric_scale
+      - service_curve_scaled_hash
+    - if:
+        field: energy_numeric_mode
+        equals: EXACT_RATIONAL
+      then_null:
+      - service_rate_r_scaled_exact
+      - service_curve_scaled_spec
+      - E0_analysis_scaled
+      - power_vector_scaled_hash
+      - energy_numeric_scale
+      - service_curve_scaled_hash
+    - if:
+        field: run_phase
+        in:
+        - CORE0B
+        - FORMAL
+      then_required:
+      - formal_contract_hash
+      rule_id: FORMAL_PHASE_REQUIRES_FINAL_CONTRACT
+    - if:
+        field: run_phase
+        in:
+        - CORE0A
+        - PILOT
+      then_null:
+      - formal_contract_hash
+      rule_id: PREFORMAL_PHASE_FORBIDS_RETROACTIVE_FINAL_CONTRACT
+    - if:
+        field: run_phase
+        in:
+        - CORE0B
+        - FORMAL
+      then_required:
+      - formal_contract_version
+      rule_id: FORMAL_PHASE_REQUIRES_CONTRACT_VERSION
+    - if:
+        field: run_phase
+        in:
+        - CORE0A
+        - PILOT
+      then_null:
+      - formal_contract_version
+      rule_id: PREFORMAL_PHASE_FORBIDS_CONTRACT_VERSION
+    - rule_id: FIXED_POINT_ANALYSIS_FIELDS
+      if:
+        field: energy_numeric_mode
+        equals: FIXED_POINT_DIRECTED
+      then_required:
+      - service_rate_r_scaled_exact
+      - service_curve_scaled_spec
+      - E0_analysis_scaled
+      - power_vector_scaled_hash
+      - energy_numeric_scale
+      - service_curve_scaled_hash
+    constraints:
+    - taskset_proven==(analysis_certification_status==CERTIFIED_TASKSET)
+    - CERTIFIED_TASKSET_requires_solver_COMPLETED
+    - METHOD_ROLE_BY_VARIANT
+    - DEADLINE_CARRY_IN_COMPLETE_VECTOR_REQUIRES_JOINT_CERTIFICATION
+    - LOC_THETA_CW_COMPLETE_VECTOR_REQUIRES_JOINT_CERTIFICATION
+    - LOC_THETA_CW_INVALID_DEPENDENCY_REQUIRES_NOT_APPLICABLE_OR_EXPLICIT_DIAGNOSTIC
+    - LOC_THETA_CW_PREFIX_CANDIDATES_ARE_PROVISIONAL
+    - LOC_THETA_CW_NO_CANDIDATE_IN_VALID_DOMAIN_IS_CONFORMANCE_FAILURE
+    - FORMAL_CORE1_CORE2_NUMERIC_ERROR_count_zero
+    unique_constraints:
+    - - analysis_run_id
+      - taskset_id
+    composite_foreign_keys:
+    - local:
+      - taskset_materialization_request_id
+      - taskset_id
+      references:
+        table: tasksets.csv
+        columns:
+        - materialization_request_id
+        - taskset_id
+  per_task_results.csv:
+    primary_key:
+    - analysis_run_id
+    - task_id
+    canonical_column_order:
+    - analysis_run_id
+    - taskset_id
+    - task_id
+    - analysis_method_role
+    - variant
+    - window_mode
+    - carry_in_mode
+    - priority_rank
+    - C_i
+    - T_i
+    - D_i
+    - P_hat_i_raw
+    - task_solver_status
+    - task_certification_status
+    - w_values_checked
+    - h_values_checked
+    - q_values_checked
+    - full_w_scan_conformance
+    - full_h_scan_conformance
+    - full_q_scan_conformance
+    - envelope_call_count
+    - energy_numeric_mode
+    - dominance_invariant_status
+    - task_result_hash
+    - P_hat_i_scaled
+    - P_hat_i_rounding
+    - candidate_response_time
+    - source_analysis_run_id
+    - carry_in_vector_hash
+    - carry_in_source_variant
+    - carry_in_source_certification_status
+    - fixed_carry_in_corollary_status
+    - dependency_vector_check_status
+    - dependency_input_failure_mask
+    - closing_w
+    - witness_h
+    - critical_q
+    - minimum_energy_slack
+    - processor_delay_Dp
+    required:
+    - analysis_run_id
+    - taskset_id
+    - task_id
+    - analysis_method_role
+    - variant
+    - window_mode
+    - carry_in_mode
+    - priority_rank
+    - C_i
+    - T_i
+    - D_i
+    - P_hat_i_raw
+    - task_solver_status
+    - task_certification_status
+    - w_values_checked
+    - h_values_checked
+    - q_values_checked
+    - full_w_scan_conformance
+    - full_h_scan_conformance
+    - full_q_scan_conformance
+    - envelope_call_count
+    - energy_numeric_mode
+    - dominance_invariant_status
+    - task_result_hash
+    conditionally_required:
+    - P_hat_i_scaled
+    - P_hat_i_rounding
+    - candidate_response_time
+    - source_analysis_run_id
+    - carry_in_vector_hash
+    - carry_in_source_variant
+    - carry_in_source_certification_status
+    - fixed_carry_in_corollary_status
+    - dependency_vector_check_status
+    - dependency_input_failure_mask
+    - closing_w
+    optional_diagnostic:
+    - witness_h
+    - critical_q
+    - minimum_energy_slack
+    - processor_delay_Dp
+    foreign_keys:
+      analysis_run_id: per_taskset_results.csv.analysis_run_id
+      taskset_id: tasksets.csv.taskset_id
+    conditional_rules:
+    - if:
+        field: task_solver_status
+        equals: CANDIDATE_FOUND
+      then_required:
+      - candidate_response_time
+      - closing_w
+      else_null:
+      - candidate_response_time
+      - closing_w
+      - witness_h
+      - critical_q
+    - if:
+        field: energy_numeric_mode
+        equals: FIXED_POINT_DIRECTED
+      then_required:
+      - P_hat_i_scaled
+      - P_hat_i_rounding
+      rule_id: FIXED_POINT_TASK_POWER_FIELDS
+    - if:
+        field: energy_numeric_mode
+        equals: EXACT_RATIONAL
+      then_null:
+      - P_hat_i_scaled
+      - P_hat_i_rounding
+      rule_id: EXACT_TASK_POWER_FIELDS_NULL
+    - if:
+        field: variant
+        equals: LOC-Theta^cw
+      then_required:
+      - source_analysis_run_id
+      - carry_in_vector_hash
+      - carry_in_source_variant
+      - carry_in_source_certification_status
+      - fixed_carry_in_corollary_status
+      - dependency_vector_check_status
+      - dependency_input_failure_mask
+      rule_id: LOC_THETA_CW_REQUIRES_FROZEN_SOURCE
+    constraints:
+    - CERTIFIED_requires_CANDIDATE_FOUND
+    unique_constraints:
+    - - analysis_run_id
+      - taskset_id
+      - task_id
+    composite_foreign_keys:
+    - local:
+      - analysis_run_id
+      - taskset_id
+      references:
+        table: per_taskset_results.csv
+        columns:
+        - analysis_run_id
+        - taskset_id
+    - local:
+      - taskset_id
+      - task_id
+      references:
+        table: task_definitions.csv
+        columns:
+        - taskset_id
+        - task_id
+  rta_dependency_records.csv:
+    primary_key:
+    - analysis_run_id
+    - target_task_id
+    - hp_task_id
+    canonical_column_order:
+    - analysis_run_id
+    - taskset_id
+    - target_task_id
+    - hp_task_id
+    - theta_value
+    - theta_source_mode
+    - source_analysis_run_id
+    - source_task_id
+    - source_task_solver_status
+    - source_task_certification_status
+    - source_analysis_solver_status
+    - source_analysis_certification_status
+    - source_variant
+    - source_theory_document_sha256
+    - target_theory_document_sha256
+    - source_taskset_semantic_hash
+    - target_taskset_semantic_hash
+    - source_priority_rank_hash
+    - target_priority_rank_hash
+    - source_analysis_E0_canonical_hash
+    - target_analysis_E0_canonical_hash
+    - source_analysis_service_curve_canonical_hash
+    - target_analysis_service_curve_canonical_hash
+    - source_analysis_power_vector_canonical_hash
+    - target_analysis_power_vector_canonical_hash
+    - source_analysis_energy_unit_hash
+    - target_analysis_energy_unit_hash
+    - source_energy_numeric_mode
+    - target_energy_numeric_mode
+    - fixed_carry_in_corollary_status
+    - carry_in_vector_hash
+    - dependency_vector_check_status
+    - dependency_input_failure_mask
+    - dependency_record_hash
+    - source_plan_context_hash
+    - target_plan_context_hash
+    - source_fixed_carry_in_corollary_hash
+    - target_fixed_carry_in_corollary_hash
+    - source_E0_scaled
+    - target_E0_scaled
+    - source_service_curve_hash
+    - target_service_curve_hash
+    - source_power_vector_hash
+    - target_power_vector_hash
+    - source_energy_numeric_scale
+    - target_energy_numeric_scale
+    - source_formal_contract_hash
+    - target_formal_contract_hash
+    required:
+    - analysis_run_id
+    - taskset_id
+    - target_task_id
+    - hp_task_id
+    - theta_value
+    - theta_source_mode
+    - source_analysis_run_id
+    - source_task_id
+    - source_task_solver_status
+    - source_task_certification_status
+    - source_analysis_solver_status
+    - source_analysis_certification_status
+    - source_variant
+    - source_theory_document_sha256
+    - target_theory_document_sha256
+    - source_taskset_semantic_hash
+    - target_taskset_semantic_hash
+    - source_priority_rank_hash
+    - target_priority_rank_hash
+    - source_analysis_E0_canonical_hash
+    - target_analysis_E0_canonical_hash
+    - source_analysis_service_curve_canonical_hash
+    - target_analysis_service_curve_canonical_hash
+    - source_analysis_power_vector_canonical_hash
+    - target_analysis_power_vector_canonical_hash
+    - source_analysis_energy_unit_hash
+    - target_analysis_energy_unit_hash
+    - source_energy_numeric_mode
+    - target_energy_numeric_mode
+    - fixed_carry_in_corollary_status
+    - carry_in_vector_hash
+    - dependency_vector_check_status
+    - dependency_input_failure_mask
+    - dependency_record_hash
+    - source_plan_context_hash
+    - target_plan_context_hash
+    - source_fixed_carry_in_corollary_hash
+    - target_fixed_carry_in_corollary_hash
+    conditionally_required:
+    - source_E0_scaled
+    - target_E0_scaled
+    - source_service_curve_hash
+    - target_service_curve_hash
+    - source_power_vector_hash
+    - target_power_vector_hash
+    - source_energy_numeric_scale
+    - target_energy_numeric_scale
+    optional_diagnostic:
+    - source_formal_contract_hash
+    - target_formal_contract_hash
+    foreign_keys:
+      analysis_run_id: per_taskset_results.csv.analysis_run_id
+      source_analysis_run_id: per_taskset_results.csv.analysis_run_id
+    composite_foreign_keys:
+    - local:
+      - source_analysis_run_id
+      - source_task_id
+      references:
+        table: per_task_results.csv
+        columns:
+        - analysis_run_id
+        - task_id
+    - local:
+      - analysis_run_id
+      - target_task_id
+      references:
+        table: per_task_results.csv
+        columns:
+        - analysis_run_id
+        - task_id
+    conditional_rules:
+    - if:
+        field: source_energy_numeric_mode
+        equals: FIXED_POINT_DIRECTED
+      then_required:
+      - source_E0_scaled
+      - source_service_curve_hash
+      - source_power_vector_hash
+      - source_energy_numeric_scale
+    - if:
+        field: source_energy_numeric_mode
+        equals: EXACT_RATIONAL
+      then_null:
+      - source_E0_scaled
+      - source_energy_numeric_scale
+    - if:
+        field: target_energy_numeric_mode
+        equals: FIXED_POINT_DIRECTED
+      then_required:
+      - target_E0_scaled
+      - target_service_curve_hash
+      - target_power_vector_hash
+      - target_energy_numeric_scale
+    - if:
+        field: target_energy_numeric_mode
+        equals: EXACT_RATIONAL
+      then_null:
+      - target_E0_scaled
+      - target_energy_numeric_scale
+    constraints:
+    - canonical_hashes_are_authoritative_across_numeric_modes
+    - VALID_requires_all_source_target_inputs_equal
+  simulation_taskset_summary.csv:
+    primary_key:
+    - simulation_run_id
+    canonical_column_order:
+    - run_phase
+    - simulation_run_id
+    - request_id
+    - taskset_id
+    - scenario_id
+    - scheduler_variant
+    - scheduler_semantics_version
+    - priority_policy
+    - priority_rank_hash
+    - event_order_version
+    - simulation_energy_account_mode
+    - energy_account_semantics_version
+    - dispatch_energy_account
+    - energy_numeric_mode
+    - simulation_initial_energy_raw
+    - battery_mode
+    - overflow_count
+    - release_trace_id
+    - harvest_trace_id
+    - release_trace_hash
+    - harvest_trace_raw_hash
+    - power_vector_raw_hash
+    - generation_horizon
+    - observation_horizon
+    - simulation_observation_status
+    - completion_censoring_status
+    - plan_context_hash
+    - simulator_build_identity_hash
+    - scheduler_build_identity_hash
+    - formal_contract_hash
+    - energy_numeric_scale
+    - simulation_initial_energy_scaled
+    - harvest_trace_scaled_hash
+    - power_vector_scaled_hash
+    - simulator_binary_hash
+    - scheduler_binary_hash
+    - build_identity_hash
+    - battery_capacity_raw
+    - battery_capacity_scaled
+    - shadow_dominance_check_status
+    required:
+    - run_phase
+    - simulation_run_id
+    - request_id
+    - taskset_id
+    - scenario_id
+    - scheduler_variant
+    - scheduler_semantics_version
+    - priority_policy
+    - priority_rank_hash
+    - event_order_version
+    - simulation_energy_account_mode
+    - energy_account_semantics_version
+    - dispatch_energy_account
+    - energy_numeric_mode
+    - simulation_initial_energy_raw
+    - battery_mode
+    - overflow_count
+    - release_trace_id
+    - harvest_trace_id
+    - release_trace_hash
+    - harvest_trace_raw_hash
+    - power_vector_raw_hash
+    - generation_horizon
+    - observation_horizon
+    - simulation_observation_status
+    - completion_censoring_status
+    - plan_context_hash
+    - simulator_build_identity_hash
+    - scheduler_build_identity_hash
+    conditionally_required:
+    - formal_contract_hash
+    - energy_numeric_scale
+    - simulation_initial_energy_scaled
+    - harvest_trace_scaled_hash
+    - power_vector_scaled_hash
+    optional_diagnostic:
+    - simulator_binary_hash
+    - scheduler_binary_hash
+    - build_identity_hash
+    - battery_capacity_raw
+    - battery_capacity_scaled
+    - shadow_dominance_check_status
+    foreign_keys:
+      request_id: run_plan_definition.csv.request_id
+      taskset_id: tasksets.csv.taskset_id
+      release_trace_id: release_trace_sets.csv.release_trace_id
+      harvest_trace_id: harvest_trace_sets.csv.harvest_trace_id
+    conditional_rules:
+    - if:
+        field: energy_numeric_mode
+        equals: FIXED_POINT_DIRECTED
+      then_required:
+      - energy_numeric_scale
+      - simulation_initial_energy_scaled
+      - harvest_trace_scaled_hash
+      - power_vector_scaled_hash
+    - if:
+        field: run_phase
+        in:
+        - CORE0B
+        - FORMAL
+      then_required:
+      - formal_contract_hash
+      rule_id: FORMAL_PHASE_REQUIRES_FINAL_CONTRACT
+    - if:
+        field: run_phase
+        in:
+        - CORE0A
+        - PILOT
+      then_null:
+      - formal_contract_hash
+      rule_id: PREFORMAL_PHASE_FORBIDS_RETROACTIVE_FINAL_CONTRACT
+    - rule_id: FIXED_POINT_SIMULATION_FIELDS
+      if:
+        field: energy_numeric_mode
+        equals: FIXED_POINT_DIRECTED
+      then_required:
+      - energy_numeric_scale
+      - simulation_initial_energy_scaled
+      - harvest_trace_scaled_hash
+      - power_vector_scaled_hash
+    unique_constraints:
+    - - simulation_run_id
+      - taskset_id
+    composite_foreign_keys:
+    - local:
+      - release_trace_id
+      - taskset_id
+      references:
+        table: release_trace_sets.csv
+        columns:
+        - release_trace_id
+        - taskset_id
+  simulation_job_results.csv:
+    primary_key:
+    - simulation_run_id
+    - job_id
+    canonical_column_order:
+    - simulation_run_id
+    - taskset_id
+    - scenario_id
+    - job_id
+    - task_id
+    - release_time
+    - absolute_deadline
+    - execution_demand
+    - release_trace_hash
+    - harvest_trace_raw_hash
+    - release_time_energy_raw
+    - release_time_energy_analysis
+    - completion_observation_status
+    - deadline_check_status
+    - release_trace_id
+    - harvest_trace_scaled_hash
+    - completion_time
+    - observed_response_time
+    required:
+    - simulation_run_id
+    - taskset_id
+    - scenario_id
+    - job_id
+    - task_id
+    - release_time
+    - absolute_deadline
+    - execution_demand
+    - release_trace_hash
+    - harvest_trace_raw_hash
+    - release_time_energy_raw
+    - release_time_energy_analysis
+    - completion_observation_status
+    - deadline_check_status
+    - release_trace_id
+    conditionally_required: []
+    optional_diagnostic:
+    - harvest_trace_scaled_hash
+    - completion_time
+    - observed_response_time
+    foreign_keys:
+      simulation_run_id: simulation_taskset_summary.csv.simulation_run_id
+    composite_foreign_keys:
+    - local:
+      - taskset_id
+      - task_id
+      references:
+        table: task_definitions.csv
+        columns:
+        - taskset_id
+        - task_id
+    - local:
+      - simulation_run_id
+      - taskset_id
+      references:
+        table: simulation_taskset_summary.csv
+        columns:
+        - simulation_run_id
+        - taskset_id
+    - local:
+      - release_trace_id
+      - job_id
+      - task_id
+      references:
+        table: release_traces.csv
+        columns:
+        - release_trace_id
+        - job_id
+        - task_id
+    unique_constraints:
+    - - simulation_run_id
+      - job_id
+      - task_id
+  service_trace_checks.csv:
+    primary_key:
+    - service_trace_check_id
+    canonical_column_order:
+    - run_phase
+    - service_trace_check_id
+    - request_id
+    - simulation_run_id
+    - analysis_run_id
+    - check_role
+    - service_curve_contract_status
+    - service_trace_status
+    - service_verification_domain
+    - service_verification_algorithm
+    - service_verification_equivalence_status
+    - harvest_trace_raw_hash
+    - harvest_trace_analysis_hash
+    - service_curve_raw_hash
+    - service_curve_analysis_hash
+    - analysis_energy_unit_hash
+    - energy_numeric_mode
+    - service_curve_integerization_mode
+    - plan_context_hash
+    - audit_build_identity_hash
+    - formal_primary_selector_status
+    - formal_primary_selector
+    - formal_contract_hash
+    - harvest_trace_scaled_hash
+    - service_curve_scaled_hash
+    - energy_numeric_scale
+    required:
+    - run_phase
+    - service_trace_check_id
+    - request_id
+    - simulation_run_id
+    - analysis_run_id
+    - check_role
+    - service_curve_contract_status
+    - service_trace_status
+    - service_verification_domain
+    - service_verification_algorithm
+    - service_verification_equivalence_status
+    - harvest_trace_raw_hash
+    - harvest_trace_analysis_hash
+    - service_curve_raw_hash
+    - service_curve_analysis_hash
+    - analysis_energy_unit_hash
+    - energy_numeric_mode
+    - service_curve_integerization_mode
+    - plan_context_hash
+    - audit_build_identity_hash
+    - formal_primary_selector_status
+    conditionally_required:
+    - formal_primary_selector
+    - formal_contract_hash
+    - harvest_trace_scaled_hash
+    - service_curve_scaled_hash
+    - energy_numeric_scale
+    optional_diagnostic: []
+    unique_constraints:
+    - - simulation_run_id
+      - analysis_run_id
+      - service_curve_analysis_hash
+      - analysis_energy_unit_hash
+    - - service_trace_check_id
+      - simulation_run_id
+      - analysis_run_id
+    - - formal_primary_selector
+    foreign_keys:
+      request_id: run_plan_definition.csv.request_id
+      simulation_run_id: simulation_taskset_summary.csv.simulation_run_id
+      analysis_run_id: per_taskset_results.csv.analysis_run_id
+    conditional_rules:
+    - if:
+        field: check_role
+        equals: FORMAL_PRIMARY
+      then_required:
+      - formal_primary_selector
+    - if:
+        field: energy_numeric_mode
+        equals: FIXED_POINT_DIRECTED
+      then_required:
+      - harvest_trace_scaled_hash
+      - service_curve_scaled_hash
+      - energy_numeric_scale
+    - if:
+        field: run_phase
+        in:
+        - CORE0B
+        - FORMAL
+      then_required:
+      - formal_contract_hash
+      rule_id: FORMAL_PHASE_REQUIRES_FINAL_CONTRACT
+    - if:
+        field: run_phase
+        in:
+        - CORE0A
+        - PILOT
+      then_null:
+      - formal_contract_hash
+      rule_id: PREFORMAL_PHASE_FORBIDS_RETROACTIVE_FINAL_CONTRACT
+    - if:
+        field: check_role
+        equals: DIAGNOSTIC_SECONDARY
+      then_null:
+      - formal_primary_selector
+      rule_id: DIAGNOSTIC_SECONDARY_SELECTOR_NULL
+    - rule_id: FIXED_POINT_SERVICE_CHECK_FIELDS
+      if:
+        field: energy_numeric_mode
+        equals: FIXED_POINT_DIRECTED
+      then_required:
+      - harvest_trace_scaled_hash
+      - service_curve_scaled_hash
+      - energy_numeric_scale
+    constraints:
+    - exactly_one_FORMAL_PRIMARY_per_planned_pair
+  e0_trace_certificate_checks.csv:
+    primary_key:
+    - e0_certificate_check_id
+    canonical_column_order:
+    - run_phase
+    - e0_certificate_check_id
+    - request_id
+    - simulation_run_id
+    - analysis_run_id
+    - check_role
+    - E0_target_raw
+    - E0_analysis_effective
+    - e0_parameterization_status
+    - theorem_conditioning_mode
+    - certificate_set_id
+    - certificate_set_definition_hash
+    - certificate_scope_mode
+    - certificate_set_size
+    - trace_e0_certificate_status
+    - analysis_E0_canonical_hash
+    - energy_numeric_mode
+    - plan_context_hash
+    - audit_build_identity_hash
+    - formal_primary_selector_status
+    - formal_primary_selector
+    - formal_contract_hash
+    - E0_analysis_scaled
+    - job_certificate_satisfaction_rate
+    required:
+    - run_phase
+    - e0_certificate_check_id
+    - request_id
+    - simulation_run_id
+    - analysis_run_id
+    - check_role
+    - E0_target_raw
+    - E0_analysis_effective
+    - e0_parameterization_status
+    - theorem_conditioning_mode
+    - certificate_set_id
+    - certificate_set_definition_hash
+    - certificate_scope_mode
+    - certificate_set_size
+    - trace_e0_certificate_status
+    - analysis_E0_canonical_hash
+    - energy_numeric_mode
+    - plan_context_hash
+    - audit_build_identity_hash
+    - formal_primary_selector_status
+    conditionally_required:
+    - formal_primary_selector
+    - formal_contract_hash
+    - E0_analysis_scaled
+    - job_certificate_satisfaction_rate
+    optional_diagnostic: []
+    unique_constraints:
+    - - simulation_run_id
+      - analysis_run_id
+      - analysis_E0_canonical_hash
+      - certificate_set_id
+    - - e0_certificate_check_id
+      - simulation_run_id
+      - analysis_run_id
+    - - formal_primary_selector
+    foreign_keys:
+      request_id: run_plan_definition.csv.request_id
+      simulation_run_id: simulation_taskset_summary.csv.simulation_run_id
+      analysis_run_id: per_taskset_results.csv.analysis_run_id
+    conditional_rules:
+    - if:
+        field: check_role
+        equals: FORMAL_PRIMARY
+      then_required:
+      - formal_primary_selector
+    - if:
+        field: energy_numeric_mode
+        equals: FIXED_POINT_DIRECTED
+      then_required:
+      - E0_analysis_scaled
+    - if:
+        field: energy_numeric_mode
+        equals: EXACT_RATIONAL
+      then_null:
+      - E0_analysis_scaled
+    - if:
+        field: run_phase
+        in:
+        - CORE0B
+        - FORMAL
+      then_required:
+      - formal_contract_hash
+      rule_id: FORMAL_PHASE_REQUIRES_FINAL_CONTRACT
+    - if:
+        field: run_phase
+        in:
+        - CORE0A
+        - PILOT
+      then_null:
+      - formal_contract_hash
+      rule_id: PREFORMAL_PHASE_FORBIDS_RETROACTIVE_FINAL_CONTRACT
+    - if:
+        field: check_role
+        equals: DIAGNOSTIC_SECONDARY
+      then_null:
+      - formal_primary_selector
+      rule_id: DIAGNOSTIC_SECONDARY_SELECTOR_NULL
+    - rule_id: FIXED_POINT_E0_CHECK_FIELDS
+      if:
+        field: energy_numeric_mode
+        equals: FIXED_POINT_DIRECTED
+      then_required:
+      - E0_analysis_scaled
+    - rule_id: E0_RATE_REQUIRED_WHEN_RESOLVED
+      if:
+        field: trace_e0_certificate_status
+        in:
+        - SATISFIED_ALL
+        - NOT_SATISFIED
+      then_required:
+      - job_certificate_satisfaction_rate
+    - rule_id: E0_RATE_NULL_WHEN_NOT_APPLICABLE
+      if:
+        field: trace_e0_certificate_status
+        in:
+        - NOT_REQUIRED
+        - EMPTY_CERTIFICATE_SCOPE
+        - NOT_CHECKED
+      then_null:
+      - job_certificate_satisfaction_rate
+    constraints:
+    - FORMAL_positive_E0_requires_FULL_RELEASE_SET
+    - positive_E0_empty_set_is_EMPTY_CERTIFICATE_SCOPE
+  e0_job_certificate_checks.csv:
+    primary_key:
+    - e0_certificate_check_id
+    - simulation_run_id
+    - analysis_run_id
+    - job_id
+    canonical_column_order:
+    - e0_certificate_check_id
+    - simulation_run_id
+    - analysis_run_id
+    - job_id
+    - task_id
+    - release_time_energy_raw
+    - release_time_energy_analysis
+    - job_e0_certificate_status
+    - release_trace_id
+    required:
+    - e0_certificate_check_id
+    - simulation_run_id
+    - analysis_run_id
+    - job_id
+    - task_id
+    - release_time_energy_raw
+    - release_time_energy_analysis
+    - job_e0_certificate_status
+    - release_trace_id
+    conditionally_required: []
+    optional_diagnostic: []
+    foreign_keys:
+      e0_certificate_check_id: e0_trace_certificate_checks.csv.e0_certificate_check_id
+      analysis_run_id: per_taskset_results.csv.analysis_run_id
+    composite_foreign_keys:
+    - local:
+      - simulation_run_id
+      - job_id
+      references:
+        table: simulation_job_results.csv
+        columns:
+        - simulation_run_id
+        - job_id
+    - local:
+      - e0_certificate_check_id
+      - simulation_run_id
+      - analysis_run_id
+      references:
+        table: e0_trace_certificate_checks.csv
+        columns:
+        - e0_certificate_check_id
+        - simulation_run_id
+        - analysis_run_id
+    - local:
+      - simulation_run_id
+      - job_id
+      - task_id
+      references:
+        table: simulation_job_results.csv
+        columns:
+        - simulation_run_id
+        - job_id
+        - task_id
+    - local:
+      - release_trace_id
+      - job_id
+      - task_id
+      references:
+        table: release_traces.csv
+        columns:
+        - release_trace_id
+        - job_id
+        - task_id
+  analysis_simulation_compatibility_checks.csv:
+    primary_key:
+    - compatibility_check_id
+    canonical_column_order:
+    - run_phase
+    - compatibility_check_id
+    - request_id
+    - simulation_run_id
+    - analysis_run_id
+    - check_role
+    - battery_model_theorem_status
+    - scheduler_semantics_match_status
+    - event_order_match_status
+    - numeric_contract_status
+    - analysis_model_match_status
+    - energy_account_match_status
+    - dependency_certification_match_status
+    - initial_pending_jobs_status
+    - integer_event_model_status
+    - self_suspension_status
+    - task_seriality_status
+    - execution_demand_status
+    - power_upper_bound_status
+    - overhead_accounting_status
+    - harvest_causality_status
+    - service_curve_contract_match_status
+    - compatibility_failure_mask
+    - plan_context_hash
+    - audit_build_identity_hash
+    - formal_primary_selector_status
+    - formal_primary_selector
+    - formal_contract_hash
+    required:
+    - run_phase
+    - compatibility_check_id
+    - request_id
+    - simulation_run_id
+    - analysis_run_id
+    - check_role
+    - battery_model_theorem_status
+    - scheduler_semantics_match_status
+    - event_order_match_status
+    - numeric_contract_status
+    - analysis_model_match_status
+    - energy_account_match_status
+    - dependency_certification_match_status
+    - initial_pending_jobs_status
+    - integer_event_model_status
+    - self_suspension_status
+    - task_seriality_status
+    - execution_demand_status
+    - power_upper_bound_status
+    - overhead_accounting_status
+    - harvest_causality_status
+    - service_curve_contract_match_status
+    - compatibility_failure_mask
+    - plan_context_hash
+    - audit_build_identity_hash
+    - formal_primary_selector_status
+    conditionally_required:
+    - formal_primary_selector
+    - formal_contract_hash
+    optional_diagnostic: []
+    unique_constraints:
+    - - simulation_run_id
+      - analysis_run_id
+    - - compatibility_check_id
+      - simulation_run_id
+      - analysis_run_id
+    - - formal_primary_selector
+    foreign_keys:
+      request_id: run_plan_definition.csv.request_id
+      simulation_run_id: simulation_taskset_summary.csv.simulation_run_id
+      analysis_run_id: per_taskset_results.csv.analysis_run_id
+    conditional_rules:
+    - if:
+        field: check_role
+        equals: FORMAL_PRIMARY
+      then_required:
+      - formal_primary_selector
+    - if:
+        field: run_phase
+        in:
+        - CORE0B
+        - FORMAL
+      then_required:
+      - formal_contract_hash
+      rule_id: FORMAL_PHASE_REQUIRES_FINAL_CONTRACT
+    - if:
+        field: run_phase
+        in:
+        - CORE0A
+        - PILOT
+      then_null:
+      - formal_contract_hash
+      rule_id: PREFORMAL_PHASE_FORBIDS_RETROACTIVE_FINAL_CONTRACT
+    - if:
+        field: check_role
+        equals: DIAGNOSTIC_SECONDARY
+      then_null:
+      - formal_primary_selector
+      rule_id: DIAGNOSTIC_SECONDARY_SELECTOR_NULL
+    constraints:
+    - exactly_one_FORMAL_PRIMARY_per_planned_pair
+  simulation_bound_checks.csv:
+    primary_key:
+    - simulation_run_id
+    - job_id
+    - analysis_run_id
+    canonical_column_order:
+    - request_id
+    - bound_audit_run_id
+    - run_phase
+    - simulation_run_id
+    - job_id
+    - analysis_run_id
+    - taskset_id
+    - task_id
+    - analysis_variant
+    - window_mode
+    - carry_in_mode
+    - analysis_solver_status
+    - analysis_certification_status
+    - task_solver_status
+    - task_certification_status
+    - deadline_boundary
+    - service_trace_check_id
+    - e0_certificate_check_id
+    - compatibility_check_id
+    - bound_observation_status
+    - bound_theorem_applicability
+    - applicability_pending_mask
+    - applicability_failure_mask
+    - primary_applicability_failure_reason
+    - raw_bound_comparison
+    - soundness_check_status
+    - plan_context_hash
+    - audit_build_identity_hash
+    - candidate_response_time
+    - candidate_boundary
+    - formal_contract_hash
+    - candidate_source_task_result_hash
+    - source_analysis_run_id
+    - carry_in_vector_hash
+    required:
+    - request_id
+    - bound_audit_run_id
+    - run_phase
+    - simulation_run_id
+    - job_id
+    - analysis_run_id
+    - taskset_id
+    - task_id
+    - analysis_variant
+    - window_mode
+    - carry_in_mode
+    - analysis_solver_status
+    - analysis_certification_status
+    - task_solver_status
+    - task_certification_status
+    - deadline_boundary
+    - service_trace_check_id
+    - e0_certificate_check_id
+    - compatibility_check_id
+    - bound_observation_status
+    - bound_theorem_applicability
+    - applicability_pending_mask
+    - applicability_failure_mask
+    - primary_applicability_failure_reason
+    - raw_bound_comparison
+    - soundness_check_status
+    - plan_context_hash
+    - audit_build_identity_hash
+    conditionally_required:
+    - candidate_response_time
+    - candidate_boundary
+    - formal_contract_hash
+    - candidate_source_task_result_hash
+    optional_diagnostic:
+    - source_analysis_run_id
+    - carry_in_vector_hash
+    foreign_keys:
+      simulation_run_id: simulation_taskset_summary.csv.simulation_run_id
+      analysis_run_id: per_taskset_results.csv.analysis_run_id
+      request_id: run_plan_definition.csv.request_id
+      bound_audit_run_id: bound_audit_runs.csv.bound_audit_run_id
+    composite_foreign_keys:
+    - local:
+      - simulation_run_id
+      - job_id
+      references:
+        table: simulation_job_results.csv
+        columns:
+        - simulation_run_id
+        - job_id
+    - local:
+      - analysis_run_id
+      - task_id
+      references:
+        table: per_task_results.csv
+        columns:
+        - analysis_run_id
+        - task_id
+    - local:
+      - service_trace_check_id
+      - simulation_run_id
+      - analysis_run_id
+      references:
+        table: service_trace_checks.csv
+        columns:
+        - service_trace_check_id
+        - simulation_run_id
+        - analysis_run_id
+    - local:
+      - e0_certificate_check_id
+      - simulation_run_id
+      - analysis_run_id
+      references:
+        table: e0_trace_certificate_checks.csv
+        columns:
+        - e0_certificate_check_id
+        - simulation_run_id
+        - analysis_run_id
+    - local:
+      - e0_certificate_check_id
+      - simulation_run_id
+      - analysis_run_id
+      - job_id
+      references:
+        table: e0_job_certificate_checks.csv
+        columns:
+        - e0_certificate_check_id
+        - simulation_run_id
+        - analysis_run_id
+        - job_id
+    - local:
+      - compatibility_check_id
+      - simulation_run_id
+      - analysis_run_id
+      references:
+        table: analysis_simulation_compatibility_checks.csv
+        columns:
+        - compatibility_check_id
+        - simulation_run_id
+        - analysis_run_id
+    - local:
+      - simulation_run_id
+      - taskset_id
+      references:
+        table: simulation_taskset_summary.csv
+        columns:
+        - simulation_run_id
+        - taskset_id
+    - local:
+      - simulation_run_id
+      - job_id
+      - task_id
+      references:
+        table: simulation_job_results.csv
+        columns:
+        - simulation_run_id
+        - job_id
+        - task_id
+    - local:
+      - analysis_run_id
+      - taskset_id
+      references:
+        table: per_taskset_results.csv
+        columns:
+        - analysis_run_id
+        - taskset_id
+    - local:
+      - analysis_run_id
+      - taskset_id
+      - task_id
+      references:
+        table: per_task_results.csv
+        columns:
+        - analysis_run_id
+        - taskset_id
+        - task_id
+    - local:
+      - bound_audit_run_id
+      - request_id
+      - simulation_run_id
+      - analysis_run_id
+      references:
+        table: bound_audit_runs.csv
+        columns:
+        - bound_audit_run_id
+        - request_id
+        - simulation_run_id
+        - analysis_run_id
+    conditional_rules:
+    - if:
+        field: task_solver_status
+        equals: CANDIDATE_FOUND
+      then_required:
+      - candidate_response_time
+      - candidate_boundary
+      else_null:
+      - candidate_response_time
+      - candidate_boundary
+    - if:
+        field: run_phase
+        in:
+        - CORE0B
+        - FORMAL
+      then_required:
+      - formal_contract_hash
+      rule_id: FORMAL_PHASE_REQUIRES_FINAL_CONTRACT
+    - if:
+        field: run_phase
+        in:
+        - CORE0A
+        - PILOT
+      then_null:
+      - formal_contract_hash
+      rule_id: PREFORMAL_PHASE_FORBIDS_RETROACTIVE_FINAL_CONTRACT
+    - if:
+        field: task_solver_status
+        equals: CANDIDATE_FOUND
+      then_required:
+      - candidate_source_task_result_hash
+      else_null:
+      - candidate_source_task_result_hash
+      rule_id: BOUND_CANDIDATE_SOURCE_HASH
+    constraints:
+    - candidate_boundary=release_time+candidate_response_time
+    - APPLICABLE+EXCEEDS_CANDIDATE=>CERTIFIED_BOUND_VIOLATION
+    - referenced_checks_must_match_same_simulation_analysis_pair
+    - FORMAL_APPLICABLE_NOT_OBSERVED_count_zero
+    - FORMAL_DEADLINE_NOT_REACHED_count_zero
+    unique_constraints:
+    - - simulation_run_id
+      - job_id
+      - analysis_run_id
+  request_outputs.csv:
+    primary_key:
+    - request_id
+    - output_index
+    unique_constraints:
+    - - actual_output_id
+    - - expected_output_id
+    required:
+    - request_id
+    - output_index
+    - run_phase
+    - plan_context_hash
+    - expected_output_id
+    - actual_output_id
+    - output_type
+    - result_table
+    - result_primary_key_canonical
+    - output_hash
+    - request_output_status
+    conditionally_required:
+    - formal_contract_hash
+    optional_diagnostic: []
+    foreign_keys:
+      request_id: run_plan_definition.csv.request_id
+    conditional_rules:
+    - rule_id: FORMAL_PHASE_REQUIRES_FINAL_CONTRACT
+      if:
+        field: run_phase
+        in:
+        - CORE0B
+        - FORMAL
+      then_required:
+      - formal_contract_hash
+    - rule_id: PREFORMAL_PHASE_FORBIDS_RETROACTIVE_FINAL_CONTRACT
+      if:
+        field: run_phase
+        in:
+        - CORE0A
+        - PILOT
+      then_null:
+      - formal_contract_hash
+    constraints:
+    - one_materialized_output_per_finished_request
+    - actual_output_id_equals_plan_expected_output_id
+    - result_primary_key_resolves_to_declared_table
+    canonical_column_order:
+    - request_id
+    - output_index
+    - run_phase
+    - plan_context_hash
+    - expected_output_id
+    - actual_output_id
+    - output_type
+    - result_table
+    - result_primary_key_canonical
+    - output_hash
+    - request_output_status
+    - formal_contract_hash
+  bound_audit_runs.csv:
+    primary_key:
+    - bound_audit_run_id
+    required:
+    - run_phase
+    - bound_audit_run_id
+    - request_id
+    - simulation_run_id
+    - analysis_run_id
+    - n_jobs_audited
+    - n_applicable
+    - n_within_certified_bound
+    - n_certified_bound_violations
+    - n_out_of_scope
+    - n_inconclusive
+    - plan_context_hash
+    - audit_build_identity_hash
+    conditionally_required:
+    - formal_contract_hash
+    optional_diagnostic: []
+    canonical_column_order:
+    - run_phase
+    - bound_audit_run_id
+    - request_id
+    - simulation_run_id
+    - analysis_run_id
+    - n_jobs_audited
+    - n_applicable
+    - n_within_certified_bound
+    - n_certified_bound_violations
+    - n_out_of_scope
+    - n_inconclusive
+    - plan_context_hash
+    - audit_build_identity_hash
+    - formal_contract_hash
+    unique_constraints:
+    - - request_id
+    - - simulation_run_id
+      - analysis_run_id
+    - - bound_audit_run_id
+      - request_id
+      - simulation_run_id
+      - analysis_run_id
+    foreign_keys:
+      request_id: run_plan_definition.csv.request_id
+      simulation_run_id: simulation_taskset_summary.csv.simulation_run_id
+      analysis_run_id: per_taskset_results.csv.analysis_run_id
+    conditional_rules:
+    - rule_id: FORMAL_PHASE_REQUIRES_FINAL_CONTRACT
+      if:
+        field: run_phase
+        in:
+        - CORE0B
+        - FORMAL
+      then_required:
+      - formal_contract_hash
+    - rule_id: PREFORMAL_PHASE_FORBIDS_RETROACTIVE_FINAL_CONTRACT
+      if:
+        field: run_phase
+        in:
+        - CORE0A
+        - PILOT
+      then_null:
+      - formal_contract_hash
+global_constraints:
+- all_fields_in_exactly_one_class
+- all_conditionally_required_fields_have_executable_condition
+- all_enum_and_mask_fields_reference_defined_sets
+- all_top_level_rows_use_plan_context_and_phase_appropriate_formal_contract
+- all_result_rows_accounted_by_request_output_and_execution_log
+- all_hash_and_ID_preimages_follow_canonical_serialization_v1_3_11
+- formal_release_requires_nonempty_CORE0B_accepted_results
+executable_rule_ids:
+- NONEMPTY_PLANNED_AND_ACCOUNTED
+- RUN_PLAN_DAG_ACYCLIC
+- RUN_EXECUTION_STATE_MACHINE
+- REQUEST_PAYLOAD_HASH_VALID
+- REQUEST_ID_VALID
+- EXPECTED_OUTPUT_ID_VALID
+- PHASE_CONTRACT_LINEAGE
+- APPROVED_BUILD_IDENTITY
+- OUTPUT_IDENTITY_AND_CARDINALITY
+- GENERATION_SUCCESS_ONE_TASKSET
+- ANALYSIS_TASKSET_GENERATION_PAIR
+- TASK_RESULT_PARENT_AND_DEFINITION
+- SIMULATION_TRACE_TASKSET_PAIR
+- SIMULATION_JOB_RELEASE_TRACE_PAIR
+- BOUND_JOB_TASK_CANDIDATE_PAIR
+- TASKSET_PROVEN_EQ_CERTIFIED
+- CERTIFIED_TASKSET_REQUIRES_COMPLETED
+- CERTIFIED_TASK_REQUIRES_CANDIDATE
+- METHOD_ROLE_BY_VARIANT
+- DEADLINE_CARRY_IN_JOINT_CERTIFICATION
+- LOC_THETA_CW_JOINT_CERTIFICATION
+- LOC_THETA_CW_PROVISIONAL_PREFIX
+- LOC_THETA_CW_DEPENDENCY_DOMAIN
+- LOC_THETA_CW_DOMINANCE_FAILURE
+- FIXED_CARRY_IN_INTERFACE_BINDING
+- TASK_MODEL_BOUNDS
+- DEPENDENCY_VALID_REQUIRES_EQUAL_INPUTS
+- POSITIVE_E0_REQUIRES_FULL_RELEASE_SET
+- CANDIDATE_BOUNDARY_ARITHMETIC
+- SOUNDNESS_DERIVATION
+- NO_SEED_REPLACEMENT
+- FORMAL_NUMERIC_ERROR_ZERO
+- FORMAL_NONVACUITY
+- FORMAL_PRIMARY_UNIQUENESS
+- CONDITIONAL_FIELDS_COMPLETE
+- CANONICAL_SCALAR_VALIDITY
+- ACCEPTANCE_REPORT_PASSED
+- CORE0B_BUILD_MATCH
+- FORMAL_INTERNAL_HASH_DAG
+- CHILD_CONTRACT_HASH_BINDING
+- RUNTIME_MANIFEST_AND_SHA256SUM
+- REQUEST_TYPE_PAYLOAD_COMPLETE
+- REQUEST_DEPENDENCY_ROLES_EXACT
+- SEEDED_REQUEST_DERIVATION
+- OUTPUT_BUNDLE_HASH_VALID
+- ALL_FORMAL_REQUESTS_FINISHED
+- TASKSET_TASK_COUNT_AND_HASHES
+- TASK_RESULT_COUNT_AND_HASH
+- DEPENDENCY_HASH_AND_MASK_DERIVATION
+- E0_AGGREGATION_AND_FULL_SCOPE
+- COMPATIBILITY_MASK_DERIVATION
+- BOUND_RAW_AND_APPLICABILITY_DERIVATION
+- BOUND_AUDIT_SUMMARY_COUNTS

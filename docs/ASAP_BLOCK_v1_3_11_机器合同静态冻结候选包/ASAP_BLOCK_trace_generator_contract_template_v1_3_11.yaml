@@ -1,0 +1,28 @@
+contract_metadata:
+  name: ASAP_BLOCK_trace_generator_contract
+  version: 1.3.11
+  trace_generator_contract_hash: null
+  canonical_serialization_file: ASAP_BLOCK_canonical_serialization_v1_3_11.yaml
+release_trace_generator:
+  offset_distribution: null
+  sporadic_gap_distribution: null
+  trace_count_per_scenario: null
+  generator_version: null
+harvest_trace_generator:
+  method: null
+  trace_count_per_scenario: null
+  generator_version: null
+  service_curve_validation_domain: null
+adversarial_search:
+  algorithm: null
+  objective: ACTUAL_RESPONSE_OR_DEADLINE_STRESS_NOT_METHOD_SPECIFIC_BOUND
+  budget: null
+  stop_condition: null
+rng_substreams:
+- TASK_UTILIZATION
+- PERIODS
+- POWER_LATENT
+- RELEASE_TRACE
+- HARVEST_TRACE
+- ADVERSARIAL_SEARCH
+hash_preimage_rule: canonical preimage trace_generator_contract_hash; self field null

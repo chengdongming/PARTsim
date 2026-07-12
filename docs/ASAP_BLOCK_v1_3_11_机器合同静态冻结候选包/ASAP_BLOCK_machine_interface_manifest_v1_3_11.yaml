@@ -1,0 +1,147 @@
+machine_interface_manifest_metadata:
+  name: ASAP_BLOCK_machine_interface_manifest
+  version: 1.3.11
+  authority: normative_machine_interface_projection
+projection:
+  version: 1.3.11
+  canonical_algorithm: SHA256_DOMAIN_SEPARATED_CANONICAL_V1_3_11
+  run_plan_hash_name: run_plan_bundle_hash
+  formal_grid_hash_name: formal_grid_hash
+  analysis_energy_unit_field: analysis_energy_unit_hash
+  table_names:
+  - run_plan_definition.csv
+  - run_plan_dependencies.csv
+  - run_execution_log.csv
+  - generation_requests.csv
+  - paired_transformations.csv
+  - tasksets.csv
+  - task_definitions.csv
+  - release_trace_sets.csv
+  - release_traces.csv
+  - harvest_trace_sets.csv
+  - harvest_traces.csv
+  - per_taskset_results.csv
+  - per_task_results.csv
+  - rta_dependency_records.csv
+  - simulation_taskset_summary.csv
+  - simulation_job_results.csv
+  - service_trace_checks.csv
+  - e0_trace_certificate_checks.csv
+  - e0_job_certificate_checks.csv
+  - analysis_simulation_compatibility_checks.csv
+  - simulation_bound_checks.csv
+  - request_outputs.csv
+  - bound_audit_runs.csv
+  enum_names:
+  - acceptance_gate_status
+  - analysis_certification_status
+  - analysis_method_role
+  - analysis_solver_status
+  - analysis_variant
+  - artifact_validation_status
+  - battery_mode
+  - bound_observation_status
+  - bound_theorem_applicability
+  - carry_in_mode
+  - certificate_scope_mode
+  - check_role
+  - completion_censoring_status
+  - completion_observation_status
+  - contract_context_kind
+  - coverage_gate_status
+  - deadline_check_status
+  - dependency_vector_check_status
+  - dominance_invariant_status
+  - e0_parameterization_policy
+  - e0_parameterization_status
+  - energy_numeric_mode
+  - enum_status
+  - expected_output_type
+  - fixed_carry_in_corollary_status
+  - foreign_key_lineage_status
+  - formal_master_seed_source
+  - generation_status
+  - infrastructure_failure_class
+  - job_e0_certificate_status
+  - match_status
+  - numeric_coverage_status
+  - numeric_integer_type
+  - numeric_range_check_status
+  - output_cardinality
+  - primary_applicability_failure_reason
+  - raw_bound_comparison
+  - request_dependency_role
+  - request_execution_status
+  - request_output_status
+  - request_type
+  - rho_e_parameterization_status
+  - rho_e_tolerance_mode
+  - rounding_direction
+  - run_phase
+  - run_plan_accounting_status
+  - seed_derivation_check_status
+  - service_curve_contract_status
+  - service_curve_integerization_mode
+  - service_trace_status
+  - service_verification_equivalence_status
+  - shadow_dominance_check_status
+  - simulation_energy_account_mode
+  - simulation_observation_status
+  - soundness_check_status
+  - task_certification_status
+  - task_solver_status
+  - theorem_conditioning_mode
+  - theta_source_mode
+  - trace_e0_certificate_status
+  - transformation_type
+  - validation_profile
+  - validity_status
+  - window_mode
+  failure_mask_names:
+  - applicability_failure_mask
+  - applicability_pending_mask
+  - compatibility_failure_mask
+  - dependency_input_failure_mask
+  table_interface_digest: 9ddf21602a518c3c787bc8dd9693b45961cbb4a1a7bf6464f5af857cdfd9593c
+  enum_digest: 41a08d8a36ba32800b5ed632155c960b80c65c1abb8ccc0fa6006ca3cd90c856
+  failure_mask_digest: 9de77cdd858a84dd06cdf4996b026ba76714f8ce349738524fa460641dd8f55f
+  required_markdown_headings:
+  - '# 0. 最终审计结论'
+  - '# 4. CORE-0A、pilot、CORE-0B 两级验收'
+  - '# 16. 结果文件、机器接口与复现契约'
+  - '# 23. v1.3.11 机器合同闭合修订'
+  critical_fields:
+    run_plan_definition.csv:
+    - request_id
+    - request_payload_hash
+    - expected_output_id
+    - plan_context_hash
+    run_execution_log.csv:
+    - request_id
+    - run_phase
+    - plan_context_hash
+    - formal_contract_hash
+    - execution_status
+    - actual_output_id
+    per_taskset_results.csv:
+    - analysis_run_id
+    - run_phase
+    - plan_context_hash
+    - formal_contract_hash
+    - analysis_energy_unit_hash
+    - analysis_certification_status
+    - dominance_invariant_status
+    - dominance_violation_count
+    simulation_bound_checks.csv:
+    - request_id
+    - bound_audit_run_id
+    - simulation_run_id
+    - analysis_run_id
+    - task_id
+    - task_solver_status
+    - task_certification_status
+    - applicability_failure_mask
+    - applicability_pending_mask
+    - soundness_check_status
+  validation_claim: machine-interface manifest conformance only; full natural-language
+    semantic equivalence is not mechanically claimed
