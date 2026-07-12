@@ -130,3 +130,122 @@ modified.
 - CTest: 163 of 166 passed. The three failures are the existing, unrelated
   `Scheduler.FIFO`, `Scheduler.TrueFIFO`, and `Scheduler.RM` C++ tests. No C++
   source, scheduler, or test was changed in this phase.
+
+## Independent adversarial audit of commit ce7ea484
+
+This section records findings from a fresh parent-to-commit audit.  It does not
+rely on the implementation summary above.  Before any repair, the following
+minimal counterexamples were reproduced against `ce7ea484`:
+
+1. **P0 -- a negative injected envelope could produce a candidate.**  For
+   `k=(C,D,T,P)=(1,1,1,1)`, `M=1`, no hp/lp tasks, `E0=0`, and zero service, an
+   envelope callback returning the exact value `Fraction(-1)` produced
+   `CANDIDATE(w=1,h=0)`.  A negative energy envelope is outside the mathematical
+   codomain and must cause a conservative numeric failure, never a candidate.
+2. **P0 -- non-finite timeout clock readings could produce a candidate.**  On
+   the same instance with a one-second timeout, clocks returning either `NaN`
+   or `+Inf` produced `CANDIDATE(w=1,h=0)`, because the elapsed-time comparison
+   was false for `NaN`.  Operational numeric failure must be conservative.
+3. **P1 -- invalid public inputs were not rejected consistently.**  The public
+   processor-progress path accepted `w=0` and `w=2` for the same `C=D=1` target,
+   and a beta callback returning `Fraction(-1)` was accepted and merely led to
+   `NO_CANDIDATE`.  Candidate windows must satisfy `C_k <= w <= D_k`, and beta
+   values must be non-negative exact numbers.
+4. **P1 -- required adversarial coverage was incomplete.**  The committed tests
+   did not exercise the two mutation checks, non-finite clocks, negative exact
+   envelope/beta values, deterministic repeatability, or a complete `q` break
+   and next-`h` restart trace.  The closure-dominance test rejected a vacuous
+   run but did not report its actual `N_cw_closed` value.
+
+Regression tests for these counterexamples are added before the corresponding
+minimal implementation repair.  Final post-repair commands, counts, mutation
+results, and disposition are recorded below after verification.
+
+### Formula-by-formula disposition after repair
+
+- `W_i^theta(L)` is the Section 3 integer formula.  Its shifted numerator is
+  non-negative under `L >= 0` and `C <= theta`; it uses only `//`, integer
+  multiplication, subtraction, and `min`.  A frozen exhaustive parameter domain
+  now checks monotonicity in both `L` and `theta` across multiple period edges.
+- `bar W`, the definition scan and optimized `D_k^P`, and `A_k` match Section 4.
+  The definition upper bound is `floor(sum(bar_W)/M)`, which covers every
+  feasible positive `d`; the optimized discrete-concave predicate matched the
+  definition scan on 2,000 seeded instances.  No-hp returns zero.  Candidate
+  windows outside `C_k..D_k` are now rejected by both public progress paths.
+- The complete and local envelopes share all constraints and differ only in the
+  workload coverage (`w` versus `q+h`).  Every `y_k` and `z`, including both
+  endpoints, is enumerated; lp capacities are rebuilt for every `y_k`; target,
+  lp, hp, BLOCK, and total-capacity terms match Section 12.1.  Powers are exact
+  positive `Fraction` values, and prefix sorting uses exact comparisons only.
+- The canonical search scans `w=C_k..D_k`, skips only a current `w` when `A>w`,
+  scans every legal `h`, scans `q=1..A`, uses service index `h+q-1`, stops only
+  the current `q` loop on failure, and returns the first closing `w`.  Trace tests
+  cover a failed `q2` with no `q3`, restart at `q1` for the next `h`, a failed
+  middle `h`, later success, multiple failed `w`, `A>w`, `D=C`, and the service
+  off-by-one.  Since `A=C+D^P` and `C>=1`, `A=0` is impossible and is asserted
+  through the lower bound `A>=C`.
+- No cache, mutable default, approximate comparison, binary/jump search over
+  `w/h/q`, old fixed point, v20.4/v21 import, or shared mutable state exists.
+  Repeating the same complete input produces an equal result including the
+  candidate, witness, and all four counters.
+
+### Oracle independence and adversarial tests
+
+`test/v9_3_bruteforce_oracle.py` directly enumerates every target, hp, and lp
+integer component and independently checks the lp BLOCK and total-capacity
+constraints.  It shares only `EnvelopeKind`, task records, and a separately
+written workload formula; it does not call the fast capacity builder, sort,
+prefix helper, or selection loop.  Two direct hand cases yield 14 (target only)
+and 22 (lp saturation), and a patched-fast-path guard confirms that the oracle
+still runs when the fast envelope and prefix helper are made unusable.
+
+The temporary mutations were process-local and left no worktree changes:
+
+- deleting `y_k * P_k` made the named fast/brute test fail (`0 != 14`, pytest
+  exit 1);
+- changing local coverage from `q+h` to `w` made the local index test fail
+  (`{5} != {3}`, pytest exit 1).
+
+Thus both required mutations are detected; neither test is a false negative.
+
+### Final verification record
+
+- `python3 -m pytest -q -s test/test_asap_block_rta_v9_3.py`: exit 0, 22 passed,
+  0 failed, 0 skipped in 4.72 seconds (4.87 seconds wall).
+- `python3 -m pytest -q test/test_*rta*.py`: exit 0, 225 passed, 0 failed,
+  0 skipped in 20.34 seconds (20.63 seconds wall).
+- `python3 -m pytest -q`: exit 0, 600 passed, 0 failed, 62 skipped, 32 unrelated
+  legacy-provenance warnings in 62.92 seconds (63.25 seconds wall).
+- `python3 -m compileall -q asap_block_rta_v9_3.py
+  test/test_asap_block_rta_v9_3.py test/v9_3_bruteforce_oracle.py`: exit 0.
+- Random seed `0x93A5B10C`: exactly 10,000 legal inputs completed, producing
+  10,000 complete and 10,000 local fast/direct-vector comparisons; mismatches
+  0.  Assertions require single/multicore, absent/present hp and lp, both hp/lp,
+  tied/heterogeneous powers, `q+h=w`, and `q+h<w` to occur.  Named cases cover
+  target-only, `y_k=0` optimum, `y_k>0` optimum, and capacity saturation.
+- Frozen domain: exactly 160 inputs and 320 complete/local comparisons;
+  mismatches 0.
+- Pointwise local/complete checks: 10,000, dominance violations 0.  Closure
+  implication checks: 1,000, `N_cw_closed=185`, violations 0; zero closures is a
+  hard test failure.
+
+The module implements optional conservative timeout handling and maps a raised
+`OverflowError` to `UNPROVEN_OVERFLOW`.  Python integers are arbitrary precision,
+so there is no internal fixed-width integer overflow mechanism to claim.  The
+future runner remains responsible for orchestration and any outer operational
+limits; no runner, schema, five-configuration logic, joint certification, or
+formal experiment support is implemented here.
+
+### Final classification and disposition
+
+- Confirmed and repaired: two P0 conservative-failure defects and two P1 groups
+  listed above.
+- Remaining P0/P1/P2 defects in the audited mathematical core: none reproduced.
+- Modified files are limited to `asap_block_rta_v9_3.py`,
+  `test/test_asap_block_rta_v9_3.py`, and this audit document.  The independent
+  oracle required no repair.
+- After these repairs, the isolated v9.3 exact mathematical core is independently
+  confirmed against the authoritative formulas and may be used as the basis for
+  the separately scoped five-configuration and joint-certification phase.  A
+  solver `CANDIDATE` remains only a per-task closure candidate and is not named or
+  represented as a task-set `CERTIFIED` outcome.

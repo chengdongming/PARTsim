@@ -50,6 +50,25 @@ class WorkloadV93Test(unittest.TestCase):
                 for length in range(50)
             ]
             self.assertEqual(values, sorted(values))
+
+        # Frozen parameter domain: exercise every legal C/D/T, theta, and a
+        # range spanning multiple period boundaries rather than only examples.
+        for c_i in range(1, 5):
+            for d_i in range(c_i, 7):
+                for t_i in range(d_i, 9):
+                    item = task("domain", c_i, d_i, t_i)
+                    for theta in range(c_i, d_i + 1):
+                        values = [
+                            v93.workload_bound_v9_3(item, length, theta)
+                            for length in range(3 * t_i + 1)
+                        ]
+                        self.assertEqual(values, sorted(values))
+                    for length in range(3 * t_i + 1):
+                        values = [
+                            v93.workload_bound_v9_3(item, length, theta)
+                            for theta in range(c_i, d_i + 1)
+                        ]
+                        self.assertEqual(values, sorted(values))
         for length in range(50):
             values = [
                 v93.workload_bound_v9_3(self.task, length, theta)
@@ -71,6 +90,12 @@ class WorkloadV93Test(unittest.TestCase):
             v93.workload_bound_v9_3(self.task, 1, 2)
         with self.assertRaises(v93.V93InputError):
             v93.V93Task("bad", 3, 2, 4, 1)
+        with self.assertRaises(v93.V93InputError):
+            v93.V93Task("zero-c", 0, 1, 1, 1)
+        for invalid_power in (0, -1, True, float("inf")):
+            with self.subTest(power=invalid_power):
+                with self.assertRaises(v93.V93InputError):
+                    v93.V93Task("bad-power", 1, 1, 1, invalid_power)
 
 
 class ProcessorProgressV93Test(unittest.TestCase):
@@ -139,6 +164,15 @@ class ProcessorProgressV93Test(unittest.TestCase):
                         target, highs, w, processors, theta
                     ),
                 )
+
+    def test_rejects_candidate_windows_outside_c_through_d(self):
+        target = task("k", 2, 4, 5)
+        for invalid_w in (0, 1, 5):
+            with self.subTest(w=invalid_w):
+                with self.assertRaises(v93.V93InputError):
+                    v93.processor_progress_v9_3(
+                        target, [], invalid_w, 1, {}
+                    )
 
 
 class EnvelopeExactnessV93Test(unittest.TestCase):
@@ -230,6 +264,37 @@ class EnvelopeExactnessV93Test(unittest.TestCase):
             v93.complete_window_envelope_v9_3(*cases[3]), Fraction(46)
         )
 
+    def test_direct_vector_oracle_has_independent_hand_cases(self):
+        target_only = (task("k", 2, 3, 4, 7), [], [], 2, 2, 0, 2, {})
+        lp_saturation = (
+            task("k", 2, 4, 5, 2),
+            [],
+            [task("l", 2, 4, 5, 9)],
+            3,
+            2,
+            0,
+            2,
+            {},
+        )
+        self.assertEqual(
+            brute_force_complete_envelope(*target_only), Fraction(14)
+        )
+        self.assertEqual(
+            brute_force_complete_envelope(*lp_saturation), Fraction(22)
+        )
+        with mock.patch.object(
+            v93,
+            "exact_energy_envelope_v9_3",
+            side_effect=AssertionError("fast path must not be called"),
+        ), mock.patch.object(
+            v93,
+            "_bounded_prefix_value",
+            side_effect=AssertionError("prefix helper must not be called"),
+        ):
+            self.assertEqual(
+                brute_force_local_envelope(*target_only), Fraction(14)
+            )
+
     def test_frozen_small_domain_exhaustive(self):
         checked = 0
         for processors in (1, 2):
@@ -262,6 +327,8 @@ class EnvelopeExactnessV93Test(unittest.TestCase):
 
     def test_ten_thousand_seeded_random_instances(self):
         rng = random.Random(RANDOM_SEED)
+        completed = 0
+        covered = set()
         for instance in range(RANDOM_ENVELOPE_INSTANCES):
             c_k = rng.randint(1, 2)
             d_k = rng.randint(c_k, 4)
@@ -290,10 +357,51 @@ class EnvelopeExactnessV93Test(unittest.TestCase):
             q = rng.randint(1, w)
             h = rng.randint(0, w - q)
             processors = rng.randint(1, 3)
-            with self.subTest(instance=instance, seed=RANDOM_SEED):
+            covered.add("single_core" if processors == 1 else "multicore")
+            covered.add("no_hp" if not highs else "has_hp")
+            covered.add("no_lp" if not lows else "has_lp")
+            if highs and lows:
+                covered.add("hp_and_lp")
+            covered.add("full_coverage" if q + h == w else "local_prefix")
+            powers = [target.power]
+            powers.extend(item.power for item in highs)
+            powers.extend(item.power for item in lows)
+            if len(set(powers)) < len(powers):
+                covered.add("tied_power")
+            if len(set(powers)) > 1:
+                covered.add("heterogeneous_power")
+            with self.subTest(
+                instance=instance,
+                seed=RANDOM_SEED,
+                target=target,
+                highs=highs,
+                lows=lows,
+                w=w,
+                q=q,
+                h=h,
+                processors=processors,
+                theta=theta,
+            ):
                 self.assertBothOraclesEqual(
                     target, highs, lows, w, q, h, processors, theta
                 )
+            completed += 1
+        self.assertEqual(completed, RANDOM_ENVELOPE_INSTANCES)
+        self.assertTrue(
+            {
+                "single_core",
+                "multicore",
+                "no_hp",
+                "has_hp",
+                "no_lp",
+                "has_lp",
+                "hp_and_lp",
+                "full_coverage",
+                "local_prefix",
+                "tied_power",
+                "heterogeneous_power",
+            }.issubset(covered)
+        )
 
     def test_local_uses_q_plus_h_workload_index(self):
         target = task("k", 1, 5, 6)
@@ -322,6 +430,10 @@ class EnvelopeExactnessV93Test(unittest.TestCase):
         with self.assertRaises(v93.V93InputError):
             v93.complete_window_envelope_v9_3(
                 target, [], [], 2, 2, 1, 1, {}
+            )
+        with self.assertRaises(v93.V93InputError):
+            v93.complete_window_envelope_v9_3(
+                target, [], [], 2, 1, 0, 0, {}
             )
 
 
@@ -376,9 +488,31 @@ class DominanceV93Test(unittest.TestCase):
                 self.assertFalse(complete_closed and not local_closed)
         self.assertEqual(checked, 1_000)
         self.assertGreater(complete_closures, 0)
+        print("N_cw_closed={}".format(complete_closures))
 
 
 class CanonicalSearchV93Test(unittest.TestCase):
+    def test_a_greater_than_w_skips_only_that_w_without_envelope_calls(self):
+        target = task("k", 1, 2, 3)
+        high = task("h", 2, 2, 2)
+        calls = []
+        result = v93.canonical_closure_search_v9_3(
+            v93.EnvelopeKind.COMPLETE,
+            target,
+            [high],
+            [],
+            1,
+            {"h": 2},
+            0,
+            lambda _length: 100,
+            envelope_function=lambda **kwargs: calls.append(kwargs) or 0,
+        )
+        self.assertEqual(result.solver_status, v93.V93SolverStatus.NO_CANDIDATE)
+        self.assertEqual(result.checked_w_count, 2)
+        self.assertEqual(result.checked_h_count, 0)
+        self.assertEqual(result.checked_q_count, 0)
+        self.assertEqual(calls, [])
+
     def test_smaller_h_failure_does_not_skip_larger_h(self):
         target = task("k", 1, 3, 4)
         calls = []
@@ -446,6 +580,55 @@ class CanonicalSearchV93Test(unittest.TestCase):
         self.assertEqual(success.checked_q_count, 2)
         self.assertEqual(service_indices, [0, 1])
 
+    def test_q_failure_breaks_only_current_h_and_next_h_restarts_at_q1(self):
+        target = task("k", 3, 5, 6)
+        calls = []
+
+        def envelope(**kwargs):
+            visit = (kwargs["w"], kwargs["h"], kwargs["q"])
+            calls.append(visit)
+            if (kwargs["w"], kwargs["h"]) != (5, 2) and kwargs["q"] == 2:
+                return 1
+            return 0
+
+        result = v93.canonical_closure_search_v9_3(
+            v93.EnvelopeKind.LOCAL,
+            target,
+            [],
+            [],
+            1,
+            {},
+            0,
+            lambda _length: 0,
+            envelope_function=envelope,
+        )
+        self.assertEqual((result.closing_w, result.witness_h), (5, 2))
+        self.assertEqual(
+            calls,
+            [
+                (3, 0, 1),
+                (3, 0, 2),
+                (4, 0, 1),
+                (4, 0, 2),
+                (4, 1, 1),
+                (4, 1, 2),
+                (5, 0, 1),
+                (5, 0, 2),
+                (5, 1, 1),
+                (5, 1, 2),
+                (5, 2, 1),
+                (5, 2, 2),
+                (5, 2, 3),
+            ],
+        )
+        self.assertNotIn((3, 0, 3), calls)
+        self.assertNotIn((4, 0, 3), calls)
+        self.assertNotIn((5, 1, 3), calls)
+        self.assertGreaterEqual(
+            v93.processor_progress_v9_3(target, [], 3, 1, {}),
+            target.wcet,
+        )
+
     def test_timeout_numeric_and_overflow_never_return_candidate(self):
         target = task("k", 1, 2, 3)
         common = (
@@ -509,6 +692,43 @@ class CanonicalSearchV93Test(unittest.TestCase):
             v93.V93SolverStatus.UNPROVEN_NUMERIC,
         )
 
+        for invalid_envelope in (Fraction(-1),):
+            with self.subTest(envelope=invalid_envelope):
+                result = v93.canonical_closure_search_v9_3(
+                    *common,
+                    envelope_function=lambda **_kwargs: invalid_envelope,
+                )
+                self.assertEqual(
+                    result.solver_status,
+                    v93.V93SolverStatus.UNPROVEN_NUMERIC,
+                )
+                self.assertIsNone(result.candidate_response_time)
+
+        negative_beta = v93.canonical_closure_search_v9_3(
+            *common[:-1],
+            lambda _length: Fraction(-1),
+            envelope_function=lambda **_kwargs: 0,
+        )
+        self.assertEqual(
+            negative_beta.solver_status,
+            v93.V93SolverStatus.UNPROVEN_NUMERIC,
+        )
+        self.assertIsNone(negative_beta.candidate_response_time)
+
+        for reading in (float("nan"), float("inf"), float("-inf")):
+            with self.subTest(clock_reading=reading):
+                invalid_clock = v93.canonical_closure_search_v9_3(
+                    *common,
+                    envelope_function=lambda **_kwargs: 0,
+                    timeout_seconds=1,
+                    clock=lambda: reading,
+                )
+                self.assertEqual(
+                    invalid_clock.solver_status,
+                    v93.V93SolverStatus.UNPROVEN_NUMERIC,
+                )
+                self.assertIsNone(invalid_clock.candidate_response_time)
+
     def test_first_closing_w_is_returned_with_exact_counts(self):
         target = task("k", 1, 3, 4, 2)
         result = v93.canonical_closure_search_v9_3(
@@ -524,6 +744,22 @@ class CanonicalSearchV93Test(unittest.TestCase):
         self.assertEqual(result.candidate_response_time, 2)
         self.assertEqual(result.closing_w, 2)
         self.assertEqual(result.witness_h, 1)
+
+    def test_repeatability_includes_result_and_all_counters(self):
+        target = task("k", 2, 4, 5, 3)
+        arguments = (
+            v93.EnvelopeKind.LOCAL,
+            target,
+            [task("h", 1, 3, 4, 5)],
+            [task("l", 1, 4, 5, 2)],
+            2,
+            {"h": 2},
+            1,
+            [0, 1, 2, 3, 4, 5, 6, 7],
+        )
+        first = v93.canonical_closure_search_v9_3(*arguments)
+        second = v93.canonical_closure_search_v9_3(*arguments)
+        self.assertEqual(first, second)
 
 
 if __name__ == "__main__":

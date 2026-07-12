@@ -85,6 +85,15 @@ def _require_int(value: int, label: str, minimum: Optional[int] = None) -> int:
     return value
 
 
+def _candidate_window(target: "V93Task", w: int) -> int:
+    """Validate a canonical candidate window ``C_k <= w <= D_k``."""
+
+    w = _require_int(w, "w", target.wcet)
+    if w > target.deadline:
+        raise V93InputError("w must satisfy C_k <= w <= D_k")
+    return w
+
+
 @dataclass(frozen=True)
 class V93Task:
     """Restricted-deadline sequential sporadic task used by the v9.3 core."""
@@ -217,7 +226,7 @@ def effective_hp_workloads_v9_3(
 ) -> Tuple[int, ...]:
     """Return every ``bar W_i,k^{P,Theta}(w)`` in hp input order."""
 
-    w = _require_int(w, "w", 0)
+    w = _candidate_window(target, w)
     theta_values = _validated_theta(hp_tasks, theta_by_name)
     interference_cap = max(0, w - target.wcet + 1)
     return tuple(
@@ -341,9 +350,7 @@ def exact_energy_envelope_v9_3(
         raise V93InputError("kind must be an EnvelopeKind")
     _validate_task_partition(target, hp_tasks, lp_tasks)
     processors = _require_int(processors, "M", 1)
-    w = _require_int(w, "w", target.wcet)
-    if w > target.deadline:
-        raise V93InputError("w must satisfy C_k <= w <= D_k")
+    w = _candidate_window(target, w)
     q = _require_int(q, "q", 1)
     h = _require_int(h, "h", 0)
     if q + h > w:
@@ -444,7 +451,25 @@ def _service_at(beta: ServiceCurve, length: int) -> Fraction:
         raise V93NumericError(
             "service curve is undefined at length {}".format(length)
         ) from exc
-    return exact_fraction_v9_3(value, "beta({})".format(length))
+    service = exact_fraction_v9_3(value, "beta({})".format(length))
+    if service < 0:
+        raise V93NumericError(
+            "beta({}) must be non-negative".format(length)
+        )
+    return service
+
+
+def _clock_at(clock: Callable[[], float]) -> float:
+    """Return one finite operational clock reading or fail conservatively."""
+
+    reading = clock()
+    if (
+        isinstance(reading, bool)
+        or not isinstance(reading, (int, float))
+        or not math.isfinite(reading)
+    ):
+        raise V93NumericError("clock must return a finite int or float")
+    return float(reading)
 
 
 def _result(
@@ -516,8 +541,8 @@ def canonical_closure_search_v9_3(
                 "timeout_seconds must be finite and non-negative"
             )
 
-    started = clock()
     checked = [0, 0, 0, 0]
+    started: Optional[float] = None
 
     def timeout_result() -> V93SearchResult:
         return _result(
@@ -527,12 +552,18 @@ def canonical_closure_search_v9_3(
         )
 
     def is_timed_out() -> bool:
-        return (
-            timeout_seconds is not None
-            and clock() - started >= timeout_seconds
-        )
+        if timeout_seconds is None:
+            return False
+        if started is None:
+            raise V93NumericError("timeout clock was not initialized")
+        elapsed = _clock_at(clock) - started
+        if elapsed < 0:
+            raise V93NumericError("clock must be monotonic")
+        return elapsed >= timeout_seconds
 
     try:
+        if timeout_seconds is not None:
+            started = _clock_at(clock)
         for w in range(target.wcet, target.deadline + 1):
             if is_timed_out():
                 return timeout_result()
@@ -568,6 +599,10 @@ def canonical_closure_search_v9_3(
                     envelope = exact_fraction_v9_3(
                         envelope_raw, "energy envelope"
                     )
+                    if envelope < 0:
+                        raise V93NumericError(
+                            "energy envelope must be non-negative"
+                        )
                     service = exact_e0 + _service_at(beta, h + q - 1)
                     if is_timed_out():
                         return timeout_result()
