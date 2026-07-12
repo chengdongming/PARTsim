@@ -18,6 +18,12 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts.experiment_analysis import (
+    diagnostic_output_directory, finalize_diagnostic_outputs,
+    validate_attested_analyzer_input,
+)
+
 
 SUMMARY_FILENAME = "e1_summary.csv"
 SUMMARY_BY_CONFIG_FILENAME = "e1_summary_by_config.csv"
@@ -98,6 +104,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--input", required=True)
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument(
+        "--allow-unattested-diagnostic-input", action="store_true"
+    )
     parser.add_argument(
         "--strict",
         action="store_true",
@@ -445,7 +454,14 @@ def analyze(input_path, output_dir):
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_parser().parse_args(argv)
-    summary, _, _, _ = analyze(args.input, args.output_dir)
+    output_dir = Path(args.output_dir)
+    if args.allow_unattested_diagnostic_input:
+        output_dir = diagnostic_output_directory(output_dir)
+    else:
+        validate_attested_analyzer_input(args.input)
+    summary, _, _, _ = analyze(args.input, output_dir)
+    if args.allow_unattested_diagnostic_input:
+        finalize_diagnostic_outputs(output_dir)
     if args.strict and len(summary):
         row = summary.iloc[0]
         if (

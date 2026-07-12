@@ -1515,6 +1515,11 @@ def run(args: argparse.Namespace) -> Path:
             )
             _write_csv(manifest_path, MANIFEST_FIELDS, manifest_rows)
 
+    experiment_runner.write_primary_analysis_artifact_attestation(
+        results_path,
+        companion_paths=[manifest_path],
+        config_ids=sorted({str(spec['config_id']) for spec in specs}),
+    )
     return results_path
 
 

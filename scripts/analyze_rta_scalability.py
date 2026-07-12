@@ -12,6 +12,12 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts.experiment_analysis import (
+    diagnostic_output_directory, finalize_diagnostic_outputs,
+    validate_attested_analyzer_input,
+)
+
 
 SUMMARY_FILENAME = "rta_scalability_summary.csv"
 BY_N_FILENAME = "rta_scalability_by_n.csv"
@@ -80,6 +86,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--input", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--manifest")
+    parser.add_argument(
+        "--allow-unattested-diagnostic-input", action="store_true"
+    )
     parser.add_argument(
         "--strict",
         action="store_true",
@@ -426,7 +435,14 @@ def analyze(input_path, output_dir, manifest_path=None):
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        analyze(args.input, args.output_dir, args.manifest)
+        output_dir = Path(args.output_dir)
+        if args.allow_unattested_diagnostic_input:
+            output_dir = diagnostic_output_directory(output_dir)
+        else:
+            validate_attested_analyzer_input(args.input)
+        analyze(args.input, output_dir, args.manifest)
+        if args.allow_unattested_diagnostic_input:
+            finalize_diagnostic_outputs(output_dir)
     except (OSError, ValueError) as exc:
         print("error: {}".format(exc), file=sys.stderr)
         return 2

@@ -18,6 +18,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 import acceptance_ratio_test as acceptance
+from scripts import experiment_runner
 
 
 V20_VERSION = "v20.4"
@@ -278,6 +279,9 @@ def _run_simulation(job: Mapping[str, Any]) -> Dict[str, Any]:
         str(job["taskset_path"]),
         str(job["simulation_time"]),
         "-t", str(trace_path),
+        "--run-id", "v21-{}".format(job["taskset_id"]),
+        "--taskset-semantic-hash",
+        acceptance.taskset_semantic_hash(job["taskset_path"]),
     ]
     result = {
         "accepted": False,
@@ -1138,6 +1142,10 @@ def run(args) -> Path:
             pass
 
     _write_csv(manifest_path, MANIFEST_FIELDS, [_manifest_row(args, run_dir, "completed")])
+    experiment_runner.write_primary_analysis_artifact_attestation(
+        results_path,
+        companion_paths=[manifest_path],
+    )
     return results_path
 
 

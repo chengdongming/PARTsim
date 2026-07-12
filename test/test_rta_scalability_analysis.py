@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from scripts import analyze_rta_scalability as analyzer
+from scripts import experiment_runner
 
 
 INPUT_COLUMNS = [
@@ -293,6 +294,9 @@ def test_strict_rejects_missing_input_or_schema_but_accepts_failures(tmp_path):
     ])
     manifest = tmp_path / "manifest.csv"
     manifest.write_text("status\ncompleted\n", encoding="utf-8")
+    experiment_runner.write_primary_analysis_artifact_attestation(
+        failures, companion_paths=[manifest]
+    )
     output = tmp_path / "failure-output"
     assert analyzer.main([
         "--input", str(failures),

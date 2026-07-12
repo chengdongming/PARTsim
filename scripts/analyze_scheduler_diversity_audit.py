@@ -9,6 +9,12 @@ from pathlib import Path
 
 import pandas as pd
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts.experiment_analysis import (
+    diagnostic_output_directory, finalize_diagnostic_outputs,
+    validate_attested_analyzer_input,
+)
+
 
 PAIR_GROUPS = [
     ('gpfp_asap_nonblock', 'gpfp_asap_sync'),
@@ -310,9 +316,20 @@ def main(argv=None):
     )
     parser.add_argument('--audit-runs', required=True)
     parser.add_argument('--output-dir', required=True)
+    parser.add_argument(
+        '--allow-unattested-diagnostic-input', action='store_true'
+    )
     args = parser.parse_args(argv)
     try:
-        return write_audit_analysis(args.audit_runs, args.output_dir)
+        output_dir = Path(args.output_dir)
+        if args.allow_unattested_diagnostic_input:
+            output_dir = diagnostic_output_directory(output_dir)
+        else:
+            validate_attested_analyzer_input(args.audit_runs)
+        result = write_audit_analysis(args.audit_runs, output_dir)
+        if args.allow_unattested_diagnostic_input:
+            finalize_diagnostic_outputs(output_dir)
+        return result
     except ValueError as exc:
         parser.error(str(exc))
 

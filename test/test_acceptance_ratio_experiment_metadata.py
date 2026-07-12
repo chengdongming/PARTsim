@@ -107,6 +107,7 @@ class AcceptanceRatioExperimentMetadataTest(unittest.TestCase):
     def test_same_taskset_reused_across_all_9_schedulers(self):
         runner = self.make_runner(num_tasksets=1)
         generated = self.root / "taskset_u0.50_000.yml"
+        generated.write_text("taskset: []\n", encoding="utf-8")
 
         with mock.patch.object(
             runner,
@@ -122,16 +123,25 @@ class AcceptanceRatioExperimentMetadataTest(unittest.TestCase):
             submitted = []
 
             class FakeFuture:
+                def __init__(self, task):
+                    self.task = task
+
                 def result(self):
+                    options = self.task[7]
                     return {
-                        "algorithm": submitted[-1][0],
+                        "algorithm": self.task[0],
                         "utilization": 0.5,
                         "task_idx": 0,
                         "task_file": str(generated),
                         "acceptance_ratio": 1.0,
+                        "simulation_status": "accepted",
                         "simulation_error": None,
                         "rta_enabled": False,
                         "rta_error": None,
+                        "taskset_id": options["taskset_id"],
+                        "taskset_hash": options["taskset_hash"],
+                        "config_id": options["config_id"],
+                        "config_group_id": options["config_group_id"],
                     }
 
             class FakeExecutor:
@@ -143,7 +153,7 @@ class AcceptanceRatioExperimentMetadataTest(unittest.TestCase):
 
                 def submit(self, _fn, task):
                     submitted.append(task)
-                    return FakeFuture()
+                    return FakeFuture(task)
 
             executor_cls.return_value = FakeExecutor()
             with mock.patch.object(
@@ -167,6 +177,150 @@ class AcceptanceRatioExperimentMetadataTest(unittest.TestCase):
         self.assertTrue(
             any(token in args.output_dir for token in ["checkpoint", "run", "20"])
         )
+
+    def test_taskset_semantic_hash_ignores_comments_but_preserves_task_order(self):
+        first = self.root / 'first.yml'
+        second = self.root / 'second.yml'
+        first.write_text(
+            '# generated: now\n# system: /tmp/a.yml\n'
+            'resources: []\n'
+            'taskset:\n'
+            '  - name: task_b\n    iat: 20\n    runtime: 2\n'
+            '    deadline: 20\n    code: [\"fixed(2, bzip2)\"]\n'
+            '  - name: task_a\n    iat: 10\n    runtime: 1\n'
+            '    code: [\"fixed(1, control)\"]\n',
+            encoding='utf-8',
+        )
+        second.write_text(
+            '# generated: later\n# system: /different/output/config.yml\n'
+            'taskset:\n'
+            '  - code: [\"fixed(1, control);\"]\n    runtime: 1\n'
+            '    iat: 10\n    deadline: 10\n    name: task_a\n'
+            '  - code: [\"fixed(2, bzip2);\"]\n    deadline: 20\n'
+            '    name: task_b\n    runtime: 2\n    iat: 20\n'
+            'resources: []\n',
+            encoding='utf-8',
+        )
+        self.assertNotEqual(
+            acceptance.taskset_file_hash(first),
+            acceptance.taskset_file_hash(second),
+        )
+        self.assertNotEqual(
+            acceptance.taskset_semantic_hash(first),
+            acceptance.taskset_semantic_hash(second),
+        )
+
+        same_order = self.root / 'same-order.yml'
+        same_order.write_text(
+            '# different non-semantic comments and formatting\n'
+            'taskset:\n'
+            '  - code: ["fixed(2, bzip2);"]\n    runtime: 2\n'
+            '    deadline: 20\n    iat: 20\n    name: task_b\n'
+            '  - name: task_a\n    deadline: 10\n    iat: 10\n'
+            '    runtime: 1\n    code: ["fixed(1, control);"]\n'
+            'resources: []\n',
+            encoding='utf-8',
+        )
+        self.assertEqual(
+            acceptance.taskset_semantic_hash(first),
+            acceptance.taskset_semantic_hash(same_order),
+        )
+
+    def test_taskset_semantic_hash_rejects_unknown_task_fields(self):
+        source = self.root / 'unknown-task-field.yml'
+        source.write_text(
+            'resources: []\ntaskset:\n'
+            '  - name: task_0\n    iat: 10\n    runtime: 1\n'
+            '    deadline: 10\n    output_path: /tmp/not-semantic\n'
+            '    code: ["fixed(1, control)"]\n',
+            encoding='utf-8',
+        )
+        with self.assertRaisesRegex(ValueError, 'unknown_task_field'):
+            acceptance.taskset_semantic_hash(source)
+
+    def test_resource_declaration_order_changes_semantic_hash(self):
+        first = self.root / 'resources-first.yml'
+        second = self.root / 'resources-second.yml'
+        body = (
+            'taskset:\n  - name: task_0\n    iat: 10\n'
+            '    runtime: 1\n    deadline: 10\n'
+            '    code: ["fixed(1, control)"]\n'
+        )
+        first.write_text(
+            'resources:\n  - {name: A, initial_state: unlocked}\n'
+            '  - {name: B, initial_state: unlocked}\n' + body,
+            encoding='utf-8',
+        )
+        second.write_text(
+            'resources:\n  - {name: B, initial_state: unlocked}\n'
+            '  - {name: A, initial_state: unlocked}\n' + body,
+            encoding='utf-8',
+        )
+        self.assertNotEqual(
+            acceptance.taskset_semantic_hash(first),
+            acceptance.taskset_semantic_hash(second),
+        )
+
+    def test_taskset_semantic_hash_changes_for_behavior_fields(self):
+        base = self.root / 'semantic-base.yml'
+        changed = self.root / 'semantic-changed.yml'
+        base.write_text(
+            'resources: []\ntaskset:\n'
+            '  - name: task_0\n    iat: 10\n    runtime: 1\n'
+            '    deadline: 8\n    ph: 1\n'
+            '    code: [\"fixed(1, control)\"]\n',
+            encoding='utf-8',
+        )
+        changed.write_text(
+            base.read_text(encoding='utf-8').replace('deadline: 8', 'deadline: 9'),
+            encoding='utf-8',
+        )
+        self.assertNotEqual(
+            acceptance.taskset_semantic_hash(base),
+            acceptance.taskset_semantic_hash(changed),
+        )
+
+    def test_rta_entrypoint_bytes_change_config_and_group_identity(self):
+        tool = self.root / 'rta_tool.py'
+        tool.write_text('print(\"a\")\n', encoding='utf-8')
+        with mock.patch.object(acceptance, 'RTA_TOOL', str(tool)):
+            first = self.make_runner(output_dir=self.root / 'rta-first')
+            first_ids = (first.config_id(0.5), first.config_group_id(0.5))
+            tool.write_text('print(\"b\")\n', encoding='utf-8')
+            second = self.make_runner(output_dir=self.root / 'rta-second')
+            second_ids = (second.config_id(0.5), second.config_group_id(0.5))
+        self.assertNotEqual(first_ids[0], second_ids[0])
+        self.assertNotEqual(first_ids[1], second_ids[1])
+
+    def test_real_solar_config_uses_immutable_run_snapshot(self):
+        solar = self.root / 'source.csv'
+        solar.write_text('0,1\n', encoding='utf-8')
+        template = self.root / 'system.yml'
+        template.write_text(
+            'cpu_islands:\n'
+            '  - name: cpus\n    numcpus: 2\n    kernel:\n'
+            '      scheduler: gpfp_asap_block\n'
+            'energy_management:\n'
+            '  initial_energy_ratio: 1\n  initial_energy: 1\n'
+            '  max_energy: 1\n  time_of_day_ms: 0\n'
+            '  base_harvesting_rate: 0\n  harvesting_scale: 1\n'
+            '  day_of_year: 1\n  use_real_solar_data: true\n'
+            '  solar_data_file: {}\n'.format(solar),
+            encoding='utf-8',
+        )
+        with mock.patch.object(acceptance, 'CONFIG_TEMPLATE', str(template)):
+            runner = self.make_runner(
+                output_dir=self.root / 'solar-run',
+                use_real_solar_data=True,
+                enable_rta=False,
+            )
+            snapshot = Path(runner.solar_snapshot['snapshot_path'])
+            self.assertEqual(snapshot.read_text(encoding='utf-8'), '0,1\n')
+            solar.write_text('0,2\n', encoding='utf-8')
+            config = Path(runner.modify_config(acceptance.ASAP_BLOCK_ALGORITHM))
+            config_text = config.read_text(encoding='utf-8')
+        self.assertIn(str(snapshot.resolve()), config_text)
+        self.assertEqual(snapshot.read_text(encoding='utf-8'), '0,1\n')
 
     def test_existing_output_dir_requires_overwrite_flag(self):
         output_dir = self.root / "existing-output"
@@ -277,7 +431,8 @@ class AcceptanceRatioExperimentMetadataTest(unittest.TestCase):
         self.assertEqual(row["rta_profile_task_count"], 3)
         self.assertEqual(row["simulated_response_time"], 8.0)
         self.assertEqual(row["observed_max_response_time"], 8.0)
-        self.assertIn("|M=2|n=3|util=0.50|", row["config_id"])
+        self.assertEqual(len(row["config_id"]), 64)
+        int(row["config_id"], 16)
         self.assertEqual(row["tightness"], 1.25)
         self.assertEqual(row["target_normalized_utilization"], 0.5)
         self.assertEqual(row["target_total_utilization"], 1.0)

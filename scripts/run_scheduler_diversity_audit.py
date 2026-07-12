@@ -13,7 +13,10 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import acceptance_ratio_test as acceptance
-from scripts.experiment_analysis import accepted, load_raw_runs
+from scripts.experiment_analysis import (
+    accepted, load_raw_runs, validate_attested_run_directory,
+)
+from scripts.experiment_runner import write_analysis_artifact_attestation
 from scripts.run_mechanism_case_study import (
     build_case_config,
     find_run_and_taskset,
@@ -64,23 +67,30 @@ def category_matches(category, by_scheduler):
     raise ValueError('unknown category {}'.format(category))
 
 
-def select_tasksets(run_dirs, categories=None, max_tasksets=30):
+def select_tasksets(run_dirs, categories=None, max_tasksets=30,
+                    allow_legacy=False):
     """Select deterministic, category-balanced tasksets from raw outcomes."""
     categories = list(categories or CATEGORIES)
-    frame = load_raw_runs(run_dirs)
-    keys = ['seed_base', 'normalized_utilization', 'task_idx']
+    frame = load_raw_runs(run_dirs, allow_legacy=allow_legacy)
+    keys = ['config_id', 'taskset_hash']
     buckets = defaultdict(list)
     for key, group in frame.groupby(keys, sort=True):
-        group = group.drop_duplicates('algorithm', keep='first')
         by_scheduler = {
             row['algorithm']: row for _, row in group.iterrows()
         }
+        representative = group.iloc[0]
         for category in categories:
             if category_matches(category, by_scheduler):
                 buckets[category].append({
-                    'seed_base': key[0],
-                    'normalized_utilization': key[1],
-                    'task_idx': key[2],
+                    'config_id': key[0],
+                    'taskset_hash': key[1],
+                    'seed_base': representative['seed_base'],
+                    'normalized_utilization': representative[
+                        'normalized_utilization'
+                    ],
+                    'task_idx': representative.get(
+                        'task_index', representative.get('task_idx')
+                    ),
                     'category': category,
                 })
 
@@ -95,9 +105,8 @@ def select_tasksets(run_dirs, categories=None, max_tasksets=30):
                 candidate = candidates[offsets[category]]
                 offsets[category] += 1
                 key = (
-                    candidate['seed_base'],
-                    candidate['normalized_utilization'],
-                    candidate['task_idx'],
+                    candidate['config_id'],
+                    candidate['taskset_hash'],
                 )
                 if key in used:
                     continue
@@ -133,6 +142,10 @@ def build_parser():
     )
     parser.add_argument('--simulation-timeout', type=int, default=120)
     parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument(
+        '--allow-unattested-diagnostic-input', action='store_true',
+        help='read unattested fixtures into a diagnostic-only subdirectory',
+    )
     return parser
 
 
@@ -171,6 +184,9 @@ def run_scheduler(args, output_dir, trace_dir, candidate, case_id,
     command = [
         acceptance.SIMULATOR, str(config_path), str(taskset_path),
         str(simulation_time), '-t', str(trace_path),
+        '--run-id', '{}-{}'.format(case_id, scheduler),
+        '--taskset-semantic-hash',
+        acceptance.taskset_semantic_hash(taskset_path),
     ]
     print('$ {}'.format(shlex.join(command)))
     row = {
@@ -226,14 +242,20 @@ def run_scheduler(args, output_dir, trace_dir, candidate, case_id,
 
 def run_audit(args):
     output_dir = Path(args.output_dir).resolve()
+    if args.allow_unattested_diagnostic_input:
+        output_dir = output_dir / 'diagnostic_unattested'
     if output_dir.exists() and any(output_dir.iterdir()):
         raise ValueError('output directory already exists and is not empty')
     output_dir.mkdir(parents=True, exist_ok=True)
     trace_dir = output_dir / 'traces'
     trace_dir.mkdir()
-    audit_path = output_dir / 'audit_runs.csv'
+    audit_path = output_dir / (
+        'diagnostic_audit_runs.csv'
+        if args.allow_unattested_diagnostic_input else 'audit_runs.csv'
+    )
     selected = select_tasksets(
-        args.runs, args.categories, args.max_tasksets
+        args.runs, args.categories, args.max_tasksets,
+        allow_legacy=args.allow_unattested_diagnostic_input,
     )
     rows = []
     for index, candidate in enumerate(selected, start=1):
@@ -264,6 +286,34 @@ def run_audit(args):
             ))
             write_audit_rows(audit_path, rows)
     write_audit_rows(audit_path, rows)
+    if not args.allow_unattested_diagnostic_input:
+        attestations = [
+            validate_attested_run_directory(run_dir)
+            for run_dir in args.runs
+        ]
+        write_analysis_artifact_attestation(
+            audit_path,
+            companion_paths=[
+                Path(str(row['trace_path'])).resolve()
+                for row in rows if str(row.get('trace_path', '')).strip()
+            ],
+            producer_id='scheduler_diversity_audit_v1',
+            output_role='scheduler_diversity_audit',
+            producer_config={
+                'categories': list(args.categories or CATEGORIES),
+                'max_tasksets': int(args.max_tasksets),
+                'schedulers': list(args.schedulers),
+            },
+            config_ids=[
+                value for payload in attestations
+                for value in payload.get('config_id', [])
+            ],
+            source_artifacts=[
+                (Path(run_dir).resolve() / 'per_taskset_results.csv',
+                 'source_per_taskset_results')
+                for run_dir in args.runs
+            ],
+        )
     print('Audit rows: {}'.format(audit_path))
     return pd.DataFrame(rows, columns=AUDIT_FIELDS)
 

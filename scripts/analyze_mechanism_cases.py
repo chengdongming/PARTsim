@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -11,6 +12,10 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.run_mechanism_case_study import TRACE_LIMITATION
+from scripts.experiment_analysis import (
+    diagnostic_output_directory, finalize_diagnostic_outputs,
+    validate_attested_analyzer_input,
+)
 
 
 SUMMARY_FIELDS = [
@@ -21,11 +26,21 @@ SUMMARY_FIELDS = [
 
 
 def summarize_cases(frame):
+    duplicate = frame[frame.duplicated(
+        ['case_id', 'scheduler'], keep=False
+    )] if {'case_id', 'scheduler'} <= set(frame.columns) else pd.DataFrame()
+    if not duplicate.empty:
+        raise ValueError(
+            'duplicate_identical_or_conflicting_result: mechanism case '
+            'contains repeated case_id/scheduler rows'
+        )
     rows = []
     valid = frame[frame['scheduler'].astype(str) != '']
     for keys, group in valid.groupby(['case_type', 'scheduler'], sort=True):
-        statuses = group['simulation_status'].astype(str)
-        accepted = pd.to_numeric(group['accepted'], errors='coerce').fillna(0)
+        statuses = group['simulation_status'].astype(str).str.strip().str.lower()
+        num_accepted = int((statuses == 'accepted').sum())
+        num_rejected = int((statuses == 'rejected').sum())
+        num_valid = num_accepted + num_rejected
         battery_min = pd.to_numeric(group['battery_min'], errors='coerce')
         battery_final = pd.to_numeric(group['battery_final'], errors='coerce')
         executed = pd.to_numeric(group['executed_ticks'], errors='coerce')
@@ -33,13 +48,16 @@ def summarize_cases(frame):
             'case_type': keys[0],
             'scheduler': keys[1],
             'num_cases': len(group),
-            'num_accepted': int(accepted.sum()),
-            'num_rejected': int((statuses == 'rejected').sum()),
+            'num_accepted': num_accepted,
+            'num_rejected': num_rejected,
             'num_timeout': int((statuses == 'timeout').sum()),
             'num_error': int(statuses.isin([
-                'error', 'taskset_not_found'
+                'error', 'simulation_error', 'generation_error',
+                'taskset_not_found',
             ]).sum()),
-            'acceptance_ratio': float(accepted.mean()),
+            'acceptance_ratio': (
+                float(num_accepted / num_valid) if num_valid else math.nan
+            ),
             'battery_min_min': (
                 float(battery_min.min()) if battery_min.notna().any() else ''
             ),
@@ -142,8 +160,18 @@ def main(argv=None):
     )
     parser.add_argument('--case-summary', required=True)
     parser.add_argument('--output-dir', required=True)
+    parser.add_argument(
+        '--allow-unattested-diagnostic-input', action='store_true'
+    )
     args = parser.parse_args(argv)
-    write_mechanism_analysis(args.case_summary, args.output_dir)
+    output_dir = Path(args.output_dir)
+    if args.allow_unattested_diagnostic_input:
+        output_dir = diagnostic_output_directory(output_dir)
+    else:
+        validate_attested_analyzer_input(args.case_summary)
+    write_mechanism_analysis(args.case_summary, output_dir)
+    if args.allow_unattested_diagnostic_input:
+        finalize_diagnostic_outputs(output_dir)
 
 
 if __name__ == '__main__':

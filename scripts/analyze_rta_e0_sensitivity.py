@@ -5,6 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.experiment_analysis import write_rta_e0
+from scripts.experiment_runner import validate_execution_manifest
 
 
 def main():
@@ -16,6 +17,7 @@ def main():
     parser.add_argument('--manifest', required=True)
     parser.add_argument('--output-dir', required=True)
     args = parser.parse_args()
+    validate_execution_manifest(args.manifest)
     write_rta_e0(args.manifest, args.output_dir)
 
 

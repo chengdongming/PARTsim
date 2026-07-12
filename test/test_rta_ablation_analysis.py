@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from scripts import analyze_rta_ablation as analyzer
+from scripts import experiment_runner
 
 
 INPUT_COLUMNS = [
@@ -690,6 +691,7 @@ def test_strict_validates_input_schema_but_accepts_empty_and_failures(tmp_path):
 
     empty = tmp_path / "empty.csv"
     write_rows(empty, [])
+    experiment_runner.write_primary_analysis_artifact_attestation(empty)
     assert analyzer.main([
         "--input", str(empty),
         "--output-dir", str(tmp_path / "empty-output"),
@@ -721,6 +723,9 @@ def test_strict_validates_input_schema_but_accepts_empty_and_failures(tmp_path):
     ])
     manifest = tmp_path / "manifest.csv"
     manifest.write_text("status\ncompleted\n", encoding="utf-8")
+    experiment_runner.write_primary_analysis_artifact_attestation(
+        failures, companion_paths=[manifest]
+    )
     assert analyzer.main([
         "--input", str(failures),
         "--manifest", str(manifest),

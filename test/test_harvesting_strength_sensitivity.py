@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 import pandas as pd
+import pytest
 import yaml
 
 
@@ -18,12 +19,19 @@ import acceptance_ratio_test as acceptance
 from energy_manager import EnergyConfig, EnergyHarvester
 from scripts import analyze_harvesting_strength_sensitivity as analyzer
 from scripts import experiment_runner
+from scripts import experiment_analysis as analysis
 from scripts import run_harvesting_strength_sensitivity as runner
 
 
-def write_fake_run(run_dir, seed, accepted):
+def write_fake_run(run_dir, seed, accepted, scale=1.0):
     run_dir.mkdir(parents=True)
     pd.DataFrame([{
+        'result_schema_version': 3,
+        'source_run_id': run_dir.name,
+        'config_id': 'config-{}-{}'.format(scale, seed),
+        'config_group_id': 'harvesting-scale-{}'.format(scale),
+        'taskset_id': 'taskset-0',
+        'taskset_hash': 'hash-{}'.format(seed),
         'seed_base': seed,
         'normalized_utilization': 0.5,
         'algorithm': 'gpfp_asap_block',
@@ -31,12 +39,23 @@ def write_fake_run(run_dir, seed, accepted):
         'status': 'accepted' if accepted else 'rejected',
     }]).to_csv(run_dir / 'per_taskset_results.csv', index=False)
     pd.DataFrame([{
+        'result_schema_version': 3,
+        'source_run_id': run_dir.name,
+        'config_id': 'config-{}-{}'.format(scale, seed),
+        'config_group_id': 'harvesting-scale-{}'.format(scale),
         'algorithm': 'gpfp_asap_block',
         'algorithm_display_name': 'ASAP-Block',
         'normalized_utilization': 0.5,
         'acceptance_ratio': float(accepted),
         'num_samples': 1,
         'num_successful': accepted,
+        'simulation_num_accepted': accepted,
+        'simulation_num_rejected': 1 - accepted,
+        'simulation_num_valid': 1,
+        'simulation_num_requested': 1,
+        'simulation_num_error': 0,
+        'simulation_num_timeout': 0,
+        'simulation_num_generation_error': 0,
         'seed_base': seed,
     }]).to_csv(run_dir / 'acceptance_ratio_data.csv', index=False)
 
@@ -108,7 +127,16 @@ def test_runner_writes_scale_to_config_and_result_metadata(tmp_path):
     config = yaml.safe_load(config_text)
     assert config['energy_management']['base_harvesting_rate'] == 0.0135
 
-    result = {'acceptance_ratio': 1.0, 'simulation_status': 'accepted'}
+    result = {
+        'algorithm': 'gpfp_asap_block',
+        'acceptance_ratio': 1.0,
+        'simulation_status': 'accepted',
+        'config_id': experiment.config_id(0.5),
+        'config_group_id': experiment.config_group_id(0.5),
+        'taskset_id': 'taskset-0',
+        'taskset_hash': 'taskset-hash-0',
+        'task_idx': 0,
+    }
     raw_row = experiment._per_taskset_result_row(
         'gpfp_asap_block', 0.5, result
     )
@@ -184,7 +212,7 @@ def test_strength_analyzer_groups_by_harvesting_scale(tmp_path):
         (0.5, 11, 0), (0.5, 22, 1), (1.0, 11, 1), (1.0, 22, 1),
     ]:
         run_dir = tmp_path / 'run-{}-{}'.format(scale, seed)
-        write_fake_run(run_dir, seed, accepted)
+        write_fake_run(run_dir, seed, accepted, scale=scale)
         runs.append(run_dir)
         manifest_rows.append({
             'run_dir': str(run_dir),
@@ -198,11 +226,12 @@ def test_strength_analyzer_groups_by_harvesting_scale(tmp_path):
 
     output = tmp_path / 'analysis'
     by_seed, summary = analyzer.write_harvesting_strength_outputs(
-        manifest, output
+        manifest, output, allow_legacy=True
     )
 
     assert len(by_seed) == 4
     assert len(summary) == 2
+    assert set(summary['num_valid_seeds']) == {2}
     means = {
         row.harvesting_scale: row.mean_acceptance_ratio
         for row in summary.itertuples()
@@ -211,3 +240,89 @@ def test_strength_analyzer_groups_by_harvesting_scale(tmp_path):
     assert (output / 'harvesting_strength_sensitivity_by_seed.csv').is_file()
     assert (output / 'harvesting_strength_sensitivity_summary.csv').is_file()
     assert (output / 'harvesting_strength_sensitivity_plot.png').is_file()
+
+
+def test_strength_analyzer_pools_accepted_and_valid_counts(tmp_path):
+    accepted_run = tmp_path / 'strength-accepted'
+    rejected_run = tmp_path / 'strength-rejected'
+    write_fake_run(accepted_run, seed=11, accepted=1, scale=0.5)
+    write_fake_run(rejected_run, seed=22, accepted=0, scale=0.5)
+
+    raw = pd.read_csv(rejected_run / 'per_taskset_results.csv')
+    rows = []
+    for index in range(9):
+        row = raw.iloc[0].to_dict()
+        row['taskset_id'] = 'taskset-{}'.format(index)
+        row['taskset_hash'] = 'hash-22-{}'.format(index)
+        row['task_idx'] = index
+        rows.append(row)
+    pd.DataFrame(rows).to_csv(
+        rejected_run / 'per_taskset_results.csv', index=False
+    )
+    aggregate = pd.read_csv(
+        rejected_run / 'acceptance_ratio_data.csv'
+    )
+    aggregate.loc[0, 'num_samples'] = 9
+    aggregate.loc[0, 'num_successful'] = 0
+    aggregate.loc[0, 'simulation_num_rejected'] = 9
+    aggregate.loc[0, 'simulation_num_valid'] = 9
+    aggregate.loc[0, 'simulation_num_requested'] = 9
+    aggregate.to_csv(
+        rejected_run / 'acceptance_ratio_data.csv', index=False
+    )
+    manifest = tmp_path / 'pooled-manifest.csv'
+    pd.DataFrame([
+        {'run_dir': str(accepted_run), 'harvesting_scale': 0.5,
+         'seed_base': 11, 'harvesting_profile': 'synthetic_piecewise'},
+        {'run_dir': str(rejected_run), 'harvesting_scale': 0.5,
+         'seed_base': 22, 'harvesting_profile': 'synthetic_piecewise'},
+    ]).to_csv(manifest, index=False)
+
+    _, summary = analyzer.summarize_harvesting_strength(
+        manifest, allow_legacy=True
+    )
+    row = summary.iloc[0]
+    assert row['total_accepted'] == 1
+    assert row['total_valid'] == 10
+    assert row['mean_acceptance_ratio'] == 0.1
+    assert row['ci95_low'] == pytest.approx(
+        analysis.wilson_interval(1, 10)[0]
+    )
+
+
+def test_strength_analyzer_preserves_no_valid_as_nan(tmp_path):
+    run_dir = tmp_path / 'no-valid-run'
+    write_fake_run(run_dir, seed=33, accepted=0)
+    aggregate_path = run_dir / 'acceptance_ratio_data.csv'
+    aggregate = pd.read_csv(aggregate_path)
+    aggregate.loc[0, 'simulation_num_accepted'] = 0
+    aggregate.loc[0, 'simulation_num_rejected'] = 0
+    aggregate.loc[0, 'simulation_num_valid'] = 0
+    aggregate.loc[0, 'simulation_num_requested'] = 1
+    aggregate.loc[0, 'simulation_num_error'] = 1
+    aggregate.loc[0, 'simulation_num_timeout'] = 0
+    aggregate.to_csv(aggregate_path, index=False)
+    raw_path = run_dir / 'per_taskset_results.csv'
+    raw = pd.read_csv(raw_path)
+    raw.loc[0, 'status'] = 'error'
+    raw.loc[0, 'accepted'] = 0
+    raw.to_csv(raw_path, index=False)
+    manifest = tmp_path / 'manifest.csv'
+    pd.DataFrame([{
+        'run_dir': str(run_dir),
+        'harvesting_scale': 1.0,
+        'seed_base': 33,
+        'harvesting_profile': 'synthetic_piecewise',
+        'status': 'completed',
+    }]).to_csv(manifest, index=False)
+
+    _, summary = analyzer.summarize_harvesting_strength(
+        manifest, allow_legacy=True
+    )
+
+    row = summary.iloc[0]
+    assert row['num_seeds'] == 1
+    assert row['num_valid_seeds'] == 0
+    assert pd.isna(row['mean_acceptance_ratio'])
+    assert pd.isna(row['ci95_low'])
+    assert pd.isna(row['ci95_high'])

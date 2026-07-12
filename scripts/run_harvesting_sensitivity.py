@@ -19,7 +19,7 @@ MANIFEST_FIELDS = [
     'experiment_name', 'run_dir', 'solar_time_ms', 'seed_base',
     'num_points', 'num_tasksets', 'task_n', 'battery', 'initial_energy',
     'harvesting_scale', 'max_workers', 'harvesting_profile', 'status', 'return_code',
-]
+] + runner.EXECUTION_MANIFEST_FIELDS
 
 
 def build_parser():
@@ -68,6 +68,7 @@ def build_specs(args):
                         args.actual_utilization_tolerance_total
                     ),
                     constrained_deadlines=args.constrained_deadlines,
+                    require_common_complete=args.require_common_complete,
                 ),
             })
     return specs, manifest
@@ -89,15 +90,20 @@ def main(argv=None):
         force=args.force,
         stop_on_failure=args.stop_on_failure,
     )
-    command = [
-        'python3', 'scripts/analyze_harvesting_sensitivity.py',
-        '--manifest', str(manifest),
-        '--output-dir', 'analysis_outputs/harvesting_sensitivity',
-    ]
-    print('\n{}\nAnalyze with:\n$ {}'.format(LIMITATION, shlex.join(command)))
+    if runner.wrapper_exit_code(rows) == 0:
+        command = [
+            'python3', 'scripts/analyze_harvesting_sensitivity.py',
+            '--manifest', str(manifest),
+            '--output-dir', 'analysis_outputs/harvesting_sensitivity',
+        ]
+        print('\n{}\nAnalyze with:\n$ {}'.format(
+            LIMITATION, shlex.join(command)
+        ))
+    else:
+        print('\nFormal analysis blocked because at least one child failed.')
     print('Manifest: {}'.format(manifest))
     return rows
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(runner.wrapper_exit_code(main()))

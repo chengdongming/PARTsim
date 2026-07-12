@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -13,6 +14,9 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import acceptance_ratio_test as acceptance
+from scripts.experiment_analysis import validate_attested_run_directory
+from scripts.experiment_analysis import validate_attested_analyzer_input
+from scripts.experiment_runner import write_analysis_artifact_attestation
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -214,8 +218,20 @@ def scheduler_list(candidate, override=None):
 
 
 def run_cases(args):
+    source_attestations = []
+    if not args.allow_unattested_diagnostic_input:
+        validate_attested_analyzer_input(args.candidates)
+        for run_dir in args.runs:
+            source_attestations.append(
+                validate_attested_run_directory(run_dir)
+            )
     output_dir = Path(args.output_dir).resolve()
-    summary_path = output_dir / 'case_summary.csv'
+    if args.allow_unattested_diagnostic_input:
+        output_dir = output_dir / 'diagnostic_unattested'
+    summary_path = output_dir / (
+        'diagnostic_case_summary.csv'
+        if args.allow_unattested_diagnostic_input else 'case_summary.csv'
+    )
     if output_dir.exists() and any(output_dir.iterdir()):
         raise ValueError('output directory already exists and is not empty')
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -273,6 +289,9 @@ def run_cases(args):
             command = [
                 acceptance.SIMULATOR, str(config_path), str(taskset_path),
                 str(simulation_time), '-t', str(trace_path),
+                '--run-id', '{}-{}'.format(case_id, scheduler),
+                '--taskset-semantic-hash',
+                acceptance.taskset_semantic_hash(taskset_path),
             ]
             print('$ {}'.format(shlex.join(command)))
             base = {
@@ -333,6 +352,34 @@ def run_cases(args):
             rows.append(base)
     frame = pd.DataFrame(rows, columns=SUMMARY_FIELDS)
     frame.to_csv(summary_path, index=False)
+    if not args.allow_unattested_diagnostic_input:
+        candidate_snapshot = output_dir / 'candidate_snapshot.csv'
+        shutil.copyfile(Path(args.candidates).resolve(), candidate_snapshot)
+        write_analysis_artifact_attestation(
+            summary_path,
+            companion_paths=[candidate_snapshot] + [
+                Path(str(row['trace_path'])).resolve()
+                for row in rows if str(row.get('trace_path', '')).strip()
+            ],
+            producer_id='mechanism_case_study_v1',
+            output_role='mechanism_case_summary',
+            producer_config={
+                'case_types': list(args.case_types or []),
+                'max_cases_per_type': int(args.max_cases_per_type),
+                'schedulers': list(args.schedulers or []),
+            },
+            config_ids=[
+                value for payload in source_attestations
+                for value in payload.get('config_id', [])
+            ],
+            source_artifacts=[
+                (Path(args.candidates).resolve(), 'mechanism_candidates')
+            ] + [
+                (Path(run_dir).resolve() / 'per_taskset_results.csv',
+                 'source_per_taskset_results')
+                for run_dir in args.runs
+            ],
+        )
     print(TRACE_LIMITATION)
     print('Case summary: {}'.format(summary_path))
     return frame
@@ -351,6 +398,10 @@ def build_parser():
     parser.add_argument('--schedulers', nargs='+')
     parser.add_argument('--simulation-timeout', type=int, default=120)
     parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument(
+        '--allow-unattested-diagnostic-input', action='store_true',
+        help='read unattested fixtures into a diagnostic-only subdirectory',
+    )
     return parser
 
 

@@ -22,8 +22,23 @@ def write_fake_run(run_dir, seed=424242, accepted=1):
     tasks = run_dir / 'tasks'
     tasks.mkdir(parents=True)
     taskset = tasks / 'taskset_u0.50_000.yml'
-    taskset.write_text('tasks: []\n', encoding='utf-8')
+    taskset.write_text(
+        'resources: []\n'
+        'taskset:\n'
+        '  - name: task_0\n'
+        '    iat: 10\n'
+        '    runtime: 1\n'
+        '    code:\n'
+        '      - fixed(1, bzip2)\n',
+        encoding='utf-8',
+    )
     raw = pd.DataFrame([{
+        'result_schema_version': 3,
+        'source_run_id': run_dir.name,
+        'config_id': 'config-{}'.format(seed),
+        'config_group_id': 'solar-compatible-group',
+        'taskset_id': 'taskset-0',
+        'taskset_hash': 'hash-{}'.format(seed),
         'seed_base': seed,
         'taskset_seed': seed + 5000,
         'normalized_utilization': 0.5,
@@ -41,12 +56,23 @@ def write_fake_run(run_dir, seed=424242, accepted=1):
     }])
     raw.to_csv(run_dir / 'per_taskset_results.csv', index=False)
     aggregate = pd.DataFrame([{
+        'result_schema_version': 3,
+        'source_run_id': run_dir.name,
+        'config_id': 'config-{}'.format(seed),
+        'config_group_id': 'solar-compatible-group',
         'algorithm': 'gpfp_asap_block',
         'algorithm_display_name': 'ASAP-Block',
         'normalized_utilization': 0.5,
         'acceptance_ratio': float(accepted),
         'num_samples': 1,
         'num_successful': accepted,
+        'simulation_num_accepted': accepted,
+        'simulation_num_rejected': 1 - accepted,
+        'simulation_num_valid': 1,
+        'simulation_num_requested': 1,
+        'simulation_num_error': 0,
+        'simulation_num_timeout': 0,
+        'simulation_num_generation_error': 0,
         'seed_base': seed,
     }])
     aggregate.to_csv(run_dir / 'acceptance_ratio_data.csv', index=False)
@@ -76,6 +102,7 @@ def test_mechanism_runner_dry_run_locates_taskset_and_writes_summary(tmp_path):
             '--case-types',
             'asap_block_accepts_asap_nonblock_rejects',
             '--dry-run',
+            '--allow-unattested-diagnostic-input',
         ])
 
     run_mock.assert_not_called()
@@ -85,7 +112,8 @@ def test_mechanism_runner_dry_run_locates_taskset_and_writes_summary(tmp_path):
     }
     assert set(frame['simulation_status']) == {'dry_run'}
     assert set(frame['taskset_path']) == {str(taskset.resolve())}
-    assert (output / 'case_summary.csv').is_file()
+    assert (output / 'diagnostic_unattested' /
+            'diagnostic_case_summary.csv').is_file()
 
 
 def test_trace_metrics_extract_supported_fields_and_leave_unsupported_na(tmp_path):
@@ -140,6 +168,61 @@ def test_mechanism_analysis_writes_summary_without_trace(tmp_path):
     assert len(summary) == 1
     assert summary.iloc[0]['acceptance_ratio'] == 1.0
     assert (output / 'mechanism_case_summary.csv').is_file()
+
+
+def test_mechanism_analysis_excludes_error_and_timeout_from_acceptance(
+        tmp_path):
+    case_summary = tmp_path / 'case_summary.csv'
+    rows = []
+    for index, status in enumerate([
+            'accepted', 'rejected', 'error', 'timeout']):
+        rows.append({
+            'case_id': f'case-{index}',
+            'case_type': 'mixed_outcomes',
+            'scheduler': 'gpfp_asap_block',
+            'accepted': '' if status in {'error', 'timeout'} else int(
+                status == 'accepted'
+            ),
+            'simulation_status': status,
+            'battery_min': '',
+            'battery_final': '',
+            'executed_ticks': '',
+            'trace_path': '',
+        })
+    pd.DataFrame(rows).to_csv(case_summary, index=False)
+
+    summary = analyze_mechanism_cases.write_mechanism_analysis(
+        case_summary, tmp_path / 'analysis'
+    )
+
+    row = summary.iloc[0]
+    assert row['num_cases'] == 4
+    assert row['num_accepted'] == 1
+    assert row['num_rejected'] == 1
+    assert row['num_error'] == 1
+    assert row['num_timeout'] == 1
+    assert row['acceptance_ratio'] == 0.5
+
+
+def test_mechanism_analysis_no_valid_outcome_is_nan(tmp_path):
+    case_summary = tmp_path / 'case_summary.csv'
+    pd.DataFrame([{
+        'case_id': 'case-error',
+        'case_type': 'no_valid_outcome',
+        'scheduler': 'gpfp_asap_block',
+        'accepted': '',
+        'simulation_status': 'error',
+        'battery_min': '',
+        'battery_final': '',
+        'executed_ticks': '',
+        'trace_path': '',
+    }]).to_csv(case_summary, index=False)
+
+    summary = analyze_mechanism_cases.write_mechanism_analysis(
+        case_summary, tmp_path / 'analysis'
+    )
+
+    assert pd.isna(summary.iloc[0]['acceptance_ratio'])
 
 
 def test_harvesting_runner_dry_run_writes_manifest_and_solar_commands(tmp_path):
@@ -201,15 +284,51 @@ def test_harvesting_analysis_outputs_summary_and_plot(tmp_path):
 
     output = tmp_path / 'harvesting-analysis'
     by_seed, summary = (
-        analyze_harvesting_sensitivity.write_harvesting_outputs(
-            manifest, output
+            analyze_harvesting_sensitivity.write_harvesting_outputs(
+                manifest, output, allow_legacy=True
         )
     )
     assert len(by_seed) == 2
     assert len(summary) == 1
     assert summary.iloc[0]['scheduler'] == 'gpfp_asap_block'
     assert summary.iloc[0]['num_seeds'] == 2
+    assert summary.iloc[0]['num_valid_seeds'] == 2
     assert summary.iloc[0]['mean_acceptance_ratio'] == 0.5
     assert (output / 'harvesting_sensitivity_summary.csv').is_file()
     assert (output / 'harvesting_sensitivity_by_seed.csv').is_file()
     assert (output / 'harvesting_sensitivity_plot.png').is_file()
+
+
+def test_harvesting_analysis_preserves_no_valid_as_nan(tmp_path):
+    run = tmp_path / 'no-valid-run'
+    write_fake_run(run, seed=33, accepted=0)
+    aggregate_path = run / 'acceptance_ratio_data.csv'
+    aggregate = pd.read_csv(aggregate_path)
+    aggregate.loc[0, 'simulation_num_accepted'] = 0
+    aggregate.loc[0, 'simulation_num_rejected'] = 0
+    aggregate.loc[0, 'simulation_num_valid'] = 0
+    aggregate.loc[0, 'simulation_num_requested'] = 1
+    aggregate.loc[0, 'simulation_num_error'] = 1
+    aggregate.loc[0, 'simulation_num_timeout'] = 0
+    aggregate.to_csv(aggregate_path, index=False)
+    raw_path = run / 'per_taskset_results.csv'
+    raw = pd.read_csv(raw_path)
+    raw.loc[0, 'status'] = 'error'
+    raw.loc[0, 'accepted'] = 0
+    raw.to_csv(raw_path, index=False)
+    manifest = tmp_path / 'manifest.csv'
+    pd.DataFrame([{
+        'run_dir': str(run), 'solar_time_ms': 0, 'seed_base': 33,
+        'harvesting_profile': 'synthetic_piecewise',
+    }]).to_csv(manifest, index=False)
+
+    _, summary = analyze_harvesting_sensitivity.summarize_harvesting(
+        manifest, allow_legacy=True
+    )
+
+    row = summary.iloc[0]
+    assert row['num_seeds'] == 1
+    assert row['num_valid_seeds'] == 0
+    assert pd.isna(row['mean_acceptance_ratio'])
+    assert pd.isna(row['ci95_low'])
+    assert pd.isna(row['ci95_high'])

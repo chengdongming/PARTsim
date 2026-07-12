@@ -15,6 +15,12 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts.experiment_analysis import (
+    diagnostic_output_directory, finalize_diagnostic_outputs,
+    validate_attested_analyzer_input,
+)
+
 
 V20_VERSION = "v20.4"
 V21_VERSION = "v21-local-window"
@@ -87,6 +93,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--input", required=True)
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument(
+        "--allow-unattested-diagnostic-input", action="store_true"
+    )
     return parser
 
 
@@ -848,7 +857,14 @@ def analyze(input_path, output_dir) -> tuple:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_parser().parse_args(argv)
-    analyze(args.input, args.output_dir)
+    output_dir = Path(args.output_dir)
+    if args.allow_unattested_diagnostic_input:
+        output_dir = diagnostic_output_directory(output_dir)
+    else:
+        validate_attested_analyzer_input(args.input)
+    analyze(args.input, output_dir)
+    if args.allow_unattested_diagnostic_input:
+        finalize_diagnostic_outputs(output_dir)
     return 0
 
 

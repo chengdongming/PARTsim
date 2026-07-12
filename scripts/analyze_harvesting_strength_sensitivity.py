@@ -10,23 +10,37 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scripts.experiment_analysis import acceptance_by_seed, read_csv
+from scripts.experiment_analysis import (
+    acceptance_by_seed, diagnostic_output_directory,
+    finalize_diagnostic_outputs, read_csv, wilson_interval,
+)
+from scripts.experiment_runner import validate_execution_manifest
 from scripts.run_harvesting_strength_sensitivity import LIMITATION
 
 
 BY_SEED_FIELDS = [
-    'scheduler', 'algorithm_display_name', 'normalized_utilization',
+    'config_group_id', 'config_id', 'scheduler', 'algorithm_display_name',
+    'normalized_utilization',
     'harvesting_scale', 'harvesting_profile', 'seed_base', 'num_tasksets',
-    'acceptance_ratio', 'run_dir',
+    'num_accepted', 'num_rejected', 'num_valid', 'num_requested',
+    'simulation_num_accepted',
+    'num_error', 'num_timeout', 'num_generation_error',
+    'seed_conditional_acceptance', 'acceptance_ratio', 'run_dir',
 ]
 SUMMARY_FIELDS = [
-    'scheduler', 'algorithm_display_name', 'normalized_utilization',
+    'config_group_id', 'scheduler', 'algorithm_display_name',
+    'normalized_utilization',
     'harvesting_scale', 'harvesting_profile', 'mean_acceptance_ratio',
-    'ci95_low', 'ci95_high', 'num_seeds', 'total_tasksets',
+    'ci95_low', 'ci95_high', 'num_seeds', 'num_valid_seeds',
+    'num_seeds_without_valid_simulations', 'total_tasksets',
+    'total_accepted', 'total_rejected', 'total_valid', 'total_requested',
+    'simulation_total_accepted',
+    'total_error', 'total_timeout', 'total_generation_error',
+    'unconditional_success_rate', 'no_valid_simulations', 'ci95_method',
 ]
 
 
-def summarize_harvesting_strength(manifest_path):
+def summarize_harvesting_strength(manifest_path, allow_legacy=False):
     manifest_path = Path(manifest_path)
     manifest = read_csv(manifest_path)
     required = {'run_dir', 'harvesting_scale', 'seed_base'}
@@ -43,9 +57,13 @@ def summarize_harvesting_strength(manifest_path):
         if not (run_dir / 'acceptance_ratio_data.csv').is_file():
             print('warning: missing completed run {}'.format(run_dir), file=sys.stderr)
             continue
-        observations = acceptance_by_seed([run_dir])
+        observations = acceptance_by_seed(
+            [run_dir], allow_legacy=allow_legacy
+        )
         for _, observation in observations.iterrows():
             rows.append({
+                'config_group_id': observation['config_group_id'],
+                'config_id': observation['config_id'],
                 'scheduler': observation['algorithm'],
                 'algorithm_display_name': observation['algorithm_display_name'],
                 'normalized_utilization': observation['normalized_utilization'],
@@ -55,40 +73,89 @@ def summarize_harvesting_strength(manifest_path):
                 ),
                 'seed_base': observation['seed_base'],
                 'num_tasksets': observation['num_tasksets'],
+                'num_accepted': observation['acceptance_num_accepted'],
+                'num_rejected': observation['acceptance_num_rejected'],
+                'num_valid': observation['acceptance_num_valid'],
+                'num_requested': observation['num_requested_samples'],
+                'simulation_num_accepted': observation['num_accepted'],
+                'num_error': observation['num_error'],
+                'num_timeout': observation['num_timeout'],
+                'num_generation_error': observation[
+                    'num_generation_error'
+                ],
+                'seed_conditional_acceptance': observation[
+                    'seed_conditional_acceptance'
+                ],
                 'acceptance_ratio': observation['acceptance_ratio'],
                 'run_dir': str(run_dir),
             })
     by_seed = pd.DataFrame(rows, columns=BY_SEED_FIELDS)
+    duplicate = by_seed[by_seed.duplicated(
+        ['config_id', 'scheduler'], keep=False
+    )]
+    if not duplicate.empty:
+        raise ValueError(
+            'duplicate_aggregate_result: harvesting-strength inputs '
+            'contain repeated config_id/scheduler rows'
+        )
     summaries = []
     group_fields = [
-        'scheduler', 'algorithm_display_name', 'normalized_utilization',
+        'config_group_id', 'scheduler', 'algorithm_display_name',
+        'normalized_utilization',
         'harvesting_scale', 'harvesting_profile',
     ]
     for keys, group in by_seed.groupby(group_fields, sort=True):
-        values = group['acceptance_ratio'].astype(float)
-        count = len(values)
-        mean = float(values.mean())
-        std = float(values.std(ddof=1)) if count > 1 else 0.0
-        margin = 1.96 * std / math.sqrt(count) if count > 1 else 0.0
+        total_accepted = int(group['num_accepted'].sum())
+        total_rejected = int(group['num_rejected'].sum())
+        total_valid = total_accepted + total_rejected
+        total_requested = int(group['num_requested'].sum())
+        simulation_total_accepted = int(
+            group['simulation_num_accepted'].sum()
+        )
+        mean = total_accepted / total_valid if total_valid else math.nan
+        low, high = wilson_interval(total_accepted, total_valid)
+        count = int((group['num_valid'] > 0).sum())
         summaries.append({
-            'scheduler': keys[0],
-            'algorithm_display_name': keys[1],
-            'normalized_utilization': keys[2],
-            'harvesting_scale': keys[3],
-            'harvesting_profile': keys[4],
+            'config_group_id': keys[0],
+            'scheduler': keys[1],
+            'algorithm_display_name': keys[2],
+            'normalized_utilization': keys[3],
+            'harvesting_scale': keys[4],
+            'harvesting_profile': keys[5],
             'mean_acceptance_ratio': mean,
-            'ci95_low': max(0.0, mean - margin),
-            'ci95_high': min(1.0, mean + margin),
-            'num_seeds': count,
-            'total_tasksets': int(group['num_tasksets'].sum()),
+            'ci95_low': low,
+            'ci95_high': high,
+            'num_seeds': len(group),
+            'num_valid_seeds': count,
+            'num_seeds_without_valid_simulations': len(group) - count,
+            'total_tasksets': total_valid,
+            'total_accepted': total_accepted,
+            'total_rejected': total_rejected,
+            'total_valid': total_valid,
+            'total_requested': total_requested,
+            'simulation_total_accepted': simulation_total_accepted,
+            'total_error': int(group['num_error'].sum()),
+            'total_timeout': int(group['num_timeout'].sum()),
+            'total_generation_error': int(
+                group['num_generation_error'].sum()
+            ),
+            'unconditional_success_rate': (
+                simulation_total_accepted / total_requested
+                if total_requested else math.nan
+            ),
+            'no_valid_simulations': total_valid == 0,
+            'ci95_method': 'wilson_accepted_over_valid',
         })
     return by_seed, pd.DataFrame(summaries, columns=SUMMARY_FIELDS)
 
 
-def write_harvesting_strength_outputs(manifest_path, output_dir):
+def write_harvesting_strength_outputs(
+        manifest_path, output_dir, allow_legacy=False):
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    by_seed, summary = summarize_harvesting_strength(manifest_path)
+    by_seed, summary = summarize_harvesting_strength(
+        manifest_path, allow_legacy=allow_legacy
+    )
     by_seed.to_csv(
         output_dir / 'harvesting_strength_sensitivity_by_seed.csv', index=False
     )
@@ -125,8 +192,17 @@ def main(argv=None):
     )
     parser.add_argument('--manifest', required=True)
     parser.add_argument('--output-dir', required=True)
+    parser.add_argument('--allow-legacy', action='store_true')
     args = parser.parse_args(argv)
-    write_harvesting_strength_outputs(args.manifest, args.output_dir)
+    if not args.allow_legacy:
+        validate_execution_manifest(args.manifest)
+    output = (diagnostic_output_directory(args.output_dir)
+              if args.allow_legacy else args.output_dir)
+    write_harvesting_strength_outputs(
+        args.manifest, output, allow_legacy=args.allow_legacy
+    )
+    if args.allow_legacy:
+        finalize_diagnostic_outputs(output)
     print(LIMITATION)
 
 

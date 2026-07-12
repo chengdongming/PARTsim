@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from scripts import analyze_rta_e1_soundness as analyzer
+from scripts import experiment_runner
 
 
 def row(**updates):
@@ -252,6 +253,7 @@ def test_consistency_warning_records_valid_pass_fail_without_violation(tmp_path)
     assert summary.iloc[0]["soundness_violation_count"] == 0
     assert summary.iloc[0]["consistency_warning_count"] == 1
     assert violations.empty
+    experiment_runner.write_primary_analysis_artifact_attestation(source)
     assert analyzer.main([
         "--input", str(source),
         "--output-dir", str(output / "strict"),
@@ -271,6 +273,8 @@ def test_strict_mode_returns_nonzero_for_soundness_violation(tmp_path):
             soundness_violation=True,
         )
     ])
+
+    experiment_runner.write_primary_analysis_artifact_attestation(source)
 
     assert analyzer.main([
         "--input", str(source),

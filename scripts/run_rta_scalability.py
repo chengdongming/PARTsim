@@ -827,6 +827,12 @@ def run(args: argparse.Namespace) -> Path:
         _print_strict_failure(summary, results_path)
         raise SystemExit(1)
 
+    experiment_runner.write_primary_analysis_artifact_attestation(
+        results_path,
+        companion_paths=[manifest_path],
+        config_ids=expected_config_ids,
+    )
+
     return results_path
 
 

@@ -18,7 +18,7 @@ MANIFEST_FIELDS = [
     'task_util_min', 'task_util_max', 'wcet_rounding', 'deadline_mode',
     'actual_utilization_tolerance_total',
     'status', 'return_code',
-]
+] + runner.EXECUTION_MANIFEST_FIELDS
 
 
 def build_parser():
@@ -88,6 +88,7 @@ def build_specs(args):
                     args.actual_utilization_tolerance_total
                 ),
                 constrained_deadlines=args.constrained_deadlines,
+                require_common_complete=args.require_common_complete,
             ),
         })
     return specs, manifest
@@ -111,15 +112,18 @@ def main(argv=None):
         force=args.force,
         stop_on_failure=args.stop_on_failure,
     )
-    command = [
-        'python3', 'scripts/analyze_rta_e0_sensitivity.py',
-        '--manifest', str(manifest),
-        '--output-dir', 'analysis_outputs/rta_e0_sensitivity',
-    ]
-    print('\nAnalyze with:\n$ {}'.format(shlex.join(command)))
+    if runner.wrapper_exit_code(rows) == 0:
+        command = [
+            'python3', 'scripts/analyze_rta_e0_sensitivity.py',
+            '--manifest', str(manifest),
+            '--output-dir', 'analysis_outputs/rta_e0_sensitivity',
+        ]
+        print('\nAnalyze with:\n$ {}'.format(shlex.join(command)))
+    else:
+        print('\nFormal analysis blocked because at least one child failed.')
     print('Manifest: {}'.format(manifest))
     return rows
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(runner.wrapper_exit_code(main()))

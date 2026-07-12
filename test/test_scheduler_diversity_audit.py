@@ -20,11 +20,26 @@ def write_raw_run(run_dir, outcomes):
     tasks = run_dir / 'tasks'
     tasks.mkdir(parents=True)
     taskset = tasks / 'taskset_u0.50_000.yml'
-    taskset.write_text('tasks: []\n', encoding='utf-8')
+    taskset.write_text(
+        'resources: []\n'
+        'taskset:\n'
+        '  - name: task_0\n'
+        '    iat: 10\n'
+        '    runtime: 1\n'
+        '    code:\n'
+        '      - fixed(1, bzip2)\n',
+        encoding='utf-8',
+    )
     rows = []
     for scheduler in acceptance.ALGORITHMS:
         is_accepted = outcomes[scheduler]
         rows.append({
+            'result_schema_version': 3,
+            'source_run_id': run_dir.name,
+            'config_id': 'diversity-config',
+            'config_group_id': 'diversity-config-group',
+            'taskset_id': 'taskset-0',
+            'taskset_hash': 'diversity-taskset-hash',
             'seed_base': 424242,
             'taskset_seed': 429242,
             'normalized_utilization': 0.5,
@@ -53,7 +68,7 @@ def test_category_selection_detects_asap_block_only_acceptance(tmp_path):
     write_raw_run(run_dir, outcomes)
 
     selected = audit.select_tasksets(
-        [run_dir], ['asap_block_only_accepted'], 30
+        [run_dir], ['asap_block_only_accepted'], 30, allow_legacy=True
     )
     assert len(selected) == 1
     assert selected[0]['category'] == 'asap_block_only_accepted'
@@ -72,6 +87,7 @@ def test_audit_runner_dry_run_writes_nine_scheduler_rows(tmp_path):
             '--max-tasksets', '1',
             '--categories', 'all_accepted',
             '--dry-run',
+            '--allow-unattested-diagnostic-input',
         ])
 
     run_mock.assert_not_called()
@@ -79,7 +95,8 @@ def test_audit_runner_dry_run_writes_nine_scheduler_rows(tmp_path):
     assert set(frame['scheduler']) == set(acceptance.ALGORITHMS)
     assert set(frame['simulation_status']) == {'dry_run'}
     assert set(frame['taskset_path']) == {str(taskset.resolve())}
-    assert (output / 'audit_runs.csv').is_file()
+    assert (output / 'diagnostic_unattested' /
+            'diagnostic_audit_runs.csv').is_file()
 
 
 def write_trace(path, task_name='task_0', energy=1000):

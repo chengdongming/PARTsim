@@ -19,6 +19,24 @@ sys.path.insert(0, str(PROJECT_ROOT))
 import acceptance_ratio_test as acceptance
 
 
+def configure_accepted_trace_parser(parser_mock, algorithm, horizon=100):
+    parser_mock.return_value.evaluate.return_value = (
+        acceptance.TraceEvaluation(
+            "accepted", "accepted", 1.0, horizon, horizon
+        )
+    )
+    parser_mock.return_value.metadata = {
+        "run_id": "integration-run",
+        "taskset_semantic_hash": "a" * 64,
+        "configured_scheduler": algorithm,
+        "scheduler_display_name": acceptance.ALGO_DISPLAY_NAMES[algorithm],
+        "scheduler_implementation": (
+            acceptance.SCHEDULER_IMPLEMENTATIONS[algorithm]
+        ),
+    }
+    parser_mock.return_value.events = []
+
+
 class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
     def setUp(self):
         self.tempdir = tempfile.TemporaryDirectory()
@@ -77,6 +95,8 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
             100,
             str(self.root),
             {
+                "run_id": "integration-run",
+                "taskset_semantic_hash": "a" * 64,
                 "enable_rta": True,
                 "horizon_ms": 100,
                 "assume_no_overflow": True,
@@ -122,7 +142,9 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
                 mock.patch.object(
                     acceptance, "run_asap_block_rta"
                 ) as rta_mock:
-            parser_mock.return_value.get_acceptance_ratio.return_value = 1.0
+            configure_accepted_trace_parser(
+                parser_mock, "gpfp_asap_nonblock"
+            )
             result = acceptance.run_single_simulation_worker(
                 self.worker_task("gpfp_asap_nonblock")
             )
@@ -138,7 +160,7 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
 
     def test_rta_disabled_asap_block_worker_preserves_legacy_acceptance(self):
         worker_task = list(self.worker_task(acceptance.ASAP_BLOCK_ALGORITHM))
-        worker_task[-1] = {"enable_rta": False}
+        worker_task[-1] = {**worker_task[-1], "enable_rta": False}
         with mock.patch.object(
             acceptance.subprocess,
             "run",
@@ -147,7 +169,9 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
                 mock.patch.object(
                     acceptance, "run_asap_block_rta"
                 ) as rta_mock:
-            parser_mock.return_value.get_acceptance_ratio.return_value = 1.0
+            configure_accepted_trace_parser(
+                parser_mock, acceptance.ASAP_BLOCK_ALGORITHM
+            )
             result = acceptance.run_single_simulation_worker(
                 tuple(worker_task)
             )
@@ -322,7 +346,9 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
         ) as run_mock, mock.patch.object(
             acceptance, "TraceParser"
         ) as parser_mock:
-            parser_mock.return_value.get_acceptance_ratio.return_value = 1.0
+            configure_accepted_trace_parser(
+                parser_mock, acceptance.ASAP_BLOCK_ALGORITHM
+            )
             result = acceptance.run_single_simulation_worker(
                 self.worker_task(acceptance.ASAP_BLOCK_ALGORITHM)
             )
@@ -346,20 +372,38 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
             output_path = Path(command[command.index("-t") + 1])
             output_path.write_text(
                 json.dumps({
+                    **{
+                        "configured_scheduler": acceptance.ASAP_BLOCK_ALGORITHM,
+                        "scheduler_display_name": "ASAP-Block",
+                        "scheduler_implementation": "GPFPASAPBlockScheduler",
+                        "trace_schema_version": acceptance.TRACE_SCHEMA_VERSION,
+                        "taskset_semantic_hash": "a" * 64,
+                        "run_id": command[command.index("--run-id") + 1],
+                        "run_count": 1,
+                        "run_generation": 1,
+                        "target_run_generation": 1,
+                        "expected_simulation_horizon_ms": 100,
+                        "observed_simulation_end_ms": 100,
+                        "simulation_completed": True,
+                        "simulation_completion_reason": "reached_horizon",
+                    },
                     "events": [
                         {
+                            "run_generation": 1,
                             "event_type": "arrival",
                             "task_name": "task_0",
                             "arrival_time": "0",
                             "time": "0",
                         },
                         {
+                            "run_generation": 1,
                             "event_type": "end_instance",
                             "task_name": "task_0",
                             "arrival_time": "0",
                             "time": "8",
                         },
-                        {"event_type": "idle", "time": "30000"},
+                        {"run_generation": 1, "event_type": "idle",
+                         "time": "100"},
                     ]
                 }),
                 encoding="utf-8",
@@ -406,21 +450,41 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
             output_path = Path(command[command.index("-t") + 1])
             output_path.write_text(
                 json.dumps({
+                    **{
+                        "configured_scheduler": acceptance.ASAP_BLOCK_ALGORITHM,
+                        "scheduler_display_name": "ASAP-Block",
+                        "scheduler_implementation": "GPFPASAPBlockScheduler",
+                        "trace_schema_version": acceptance.TRACE_SCHEMA_VERSION,
+                        "taskset_semantic_hash": "a" * 64,
+                        "run_id": command[command.index("--run-id") + 1],
+                        "run_count": 1,
+                        "run_generation": 1,
+                        "target_run_generation": 1,
+                        "expected_simulation_horizon_ms": 100,
+                        "observed_simulation_end_ms": 100,
+                        "simulation_completed": True,
+                        "simulation_completion_reason": "reached_horizon",
+                    },
                     "events": [
                         {
+                            "run_generation": 1,
                             "event_type": "arrival",
                             "task_name": "task_0",
                             "arrival_time": "0",
                             "time": "0",
                         },
                         {
+                            "run_generation": 1,
                             "event_type": "dline_miss",
                             "task_name": "task_0",
+                            "job_id": "task_0@0",
                             "arrival_time": "0",
                             "deadline": "10",
                             "time": "12",
+                            "remaining_execution_ms": 1,
                         },
-                        {"event_type": "idle", "time": "30000"},
+                        {"run_generation": 1, "event_type": "idle",
+                         "time": "100"},
                     ]
                 }),
                 encoding="utf-8",
@@ -497,7 +561,9 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
                     "run_asap_block_rta",
                     return_value=rta_error,
                 ):
-            parser_mock.return_value.get_acceptance_ratio.return_value = 1.0
+            configure_accepted_trace_parser(
+                parser_mock, acceptance.ASAP_BLOCK_ALGORITHM
+            )
             result = acceptance.run_single_simulation_worker(
                 self.worker_task(acceptance.ASAP_BLOCK_ALGORITHM)
             )
@@ -529,7 +595,9 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
                     "run_asap_block_rta",
                     return_value=unproven,
                 ):
-            parser_mock.return_value.get_acceptance_ratio.return_value = 1.0
+            configure_accepted_trace_parser(
+                parser_mock, acceptance.ASAP_BLOCK_ALGORITHM
+            )
             result = acceptance.run_single_simulation_worker(
                 self.worker_task(acceptance.ASAP_BLOCK_ALGORITHM)
             )
