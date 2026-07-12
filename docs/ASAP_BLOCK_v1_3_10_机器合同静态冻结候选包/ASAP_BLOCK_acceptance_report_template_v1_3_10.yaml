@@ -1,0 +1,445 @@
+acceptance_report_metadata:
+  name: ASAP_BLOCK_acceptance_report
+  version: 1.3.10
+  status: TEMPLATE_NOT_EXECUTED
+  acceptance_report_hash: null
+  plan_context_hash: null
+  formal_contract_hash: null
+  report_phase: TEMPLATE
+  canonical_serialization_file: ASAP_BLOCK_canonical_serialization_v1_3_10.yaml
+validator_identity:
+  acceptance_validator_file: ASAP_BLOCK_acceptance_report_validator_v1_3_10.py
+  acceptance_validator_sha256: null
+  validator_build_identity_hash: null
+approved_builds_observed:
+  generator_build_identity_hash: null
+  trace_generator_build_identity_hash: null
+  rta_build_identity_hash: null
+  simulator_build_identity_hash: null
+  scheduler_build_identity_hash: null
+  audit_build_identity_hash: null
+CORE0A_gates:
+  full_w_q_h_scan:
+    status: NOT_CHECKED
+    predicate: N_scan_violations == 0 and N_tasks_checked > 0
+    replay_interface: ASAP_BLOCK_GATE_REPLAY_V1
+    evidence_bundle_file: null
+    evidence_bundle_sha256: null
+    evidence_files: []
+    evidence_sha256: []
+    counts:
+      N_tasks_checked: null
+      N_scan_violations: null
+    validator_name: null
+    validator_version: null
+    validator_sha256: null
+    notes: null
+    required: true
+  exact_exhaustive_domain_zero_mismatch:
+    status: NOT_CHECKED
+    predicate: N_exhaustive_instances > 0 and N_mismatches == 0
+    replay_interface: ASAP_BLOCK_GATE_REPLAY_V1
+    evidence_bundle_file: null
+    evidence_bundle_sha256: null
+    evidence_files: []
+    evidence_sha256: []
+    counts:
+      N_exhaustive_instances: null
+      N_mismatches: null
+    validator_name: null
+    validator_version: null
+    validator_sha256: null
+    notes: null
+    required: true
+  exact_random_boundary_instances_at_least_10000:
+    status: NOT_CHECKED
+    predicate: N_random_boundary_instances >= 10000 and N_mismatches == 0
+    replay_interface: ASAP_BLOCK_GATE_REPLAY_V1
+    evidence_bundle_file: null
+    evidence_bundle_sha256: null
+    evidence_files: []
+    evidence_sha256: []
+    counts:
+      N_random_boundary_instances: null
+      N_mismatches: null
+    validator_name: null
+    validator_version: null
+    validator_sha256: null
+    notes: null
+    required: true
+  processor_term_direct_scan_zero_mismatch:
+    status: NOT_CHECKED
+    predicate: N_instances > 0 and N_mismatches == 0
+    replay_interface: ASAP_BLOCK_GATE_REPLAY_V1
+    evidence_bundle_file: null
+    evidence_bundle_sha256: null
+    evidence_files: []
+    evidence_sha256: []
+    counts:
+      N_instances: null
+      N_mismatches: null
+    validator_name: null
+    validator_version: null
+    validator_sha256: null
+    notes: null
+    required: true
+  finite_state_counterexample_search:
+    status: NOT_CHECKED
+    predicate: N_complete > 0 and N_inconclusive == 0 and N_internal_error == 0 and N_certified_bound_violations == 0
+    replay_interface: ASAP_BLOCK_GATE_REPLAY_V1
+    evidence_bundle_file: null
+    evidence_bundle_sha256: null
+    evidence_files: []
+    evidence_sha256: []
+    counts:
+      N_instances: null
+      N_complete: null
+      N_inconclusive: null
+      N_internal_error: null
+      N_certified_bound_violations: null
+    validator_name: null
+    validator_version: null
+    validator_sha256: null
+    notes: null
+    required: true
+  event_order_and_scheduler_semantics_microcases:
+    status: NOT_CHECKED
+    predicate: N_microcases > 0 and N_failures == 0
+    replay_interface: ASAP_BLOCK_GATE_REPLAY_V1
+    evidence_bundle_file: null
+    evidence_bundle_sha256: null
+    evidence_files: []
+    evidence_sha256: []
+    counts:
+      N_microcases: null
+      N_failures: null
+    validator_name: null
+    validator_version: null
+    validator_sha256: null
+    notes: null
+    required: true
+  joint_certification_state_machine:
+    status: NOT_CHECKED
+    predicate: N_state_cases > 0 and N_failures == 0
+    replay_interface: ASAP_BLOCK_GATE_REPLAY_V1
+    evidence_bundle_file: null
+    evidence_bundle_sha256: null
+    evidence_files: []
+    evidence_sha256: []
+    counts:
+      N_state_cases: null
+      N_failures: null
+    validator_name: null
+    validator_version: null
+    validator_sha256: null
+    notes: null
+    required: true
+  loc_theta_cw_dominance_invariant:
+    status: NOT_CHECKED
+    predicate: N_common_cases > 0 and N_violations == 0
+    replay_interface: ASAP_BLOCK_GATE_REPLAY_V1
+    evidence_bundle_file: null
+    evidence_bundle_sha256: null
+    evidence_files: []
+    evidence_sha256: []
+    counts:
+      N_common_cases: null
+      N_violations: null
+    validator_name: null
+    validator_version: null
+    validator_sha256: null
+    notes: null
+    required: true
+  service_curve_contract_checks:
+    status: NOT_CHECKED
+    predicate: N_curves > 0 and N_invalid == 0
+    replay_interface: ASAP_BLOCK_GATE_REPLAY_V1
+    evidence_bundle_file: null
+    evidence_bundle_sha256: null
+    evidence_files: []
+    evidence_sha256: []
+    counts:
+      N_curves: null
+      N_invalid: null
+    validator_name: null
+    validator_version: null
+    validator_sha256: null
+    notes: null
+    required: true
+  schema_lineage_and_request_state_machine:
+    status: NOT_CHECKED
+    predicate: N_rows > 0 and N_fk_violations == 0 and N_state_transition_violations == 0 and N_cycle_violations == 0
+    replay_interface: ASAP_BLOCK_GATE_REPLAY_V1
+    evidence_bundle_file: null
+    evidence_bundle_sha256: null
+    evidence_files: []
+    evidence_sha256: []
+    counts:
+      N_rows: null
+      N_fk_violations: null
+      N_state_transition_violations: null
+      N_cycle_violations: null
+    validator_name: null
+    validator_version: null
+    validator_sha256: null
+    notes: null
+    required: true
+  non_vacuity_coverage:
+    status: NOT_CHECKED
+    predicate: N_certified_tasksets > 0 and N_energy_blocking_cases > 0 and N_processor_interference_cases > 0 and N_complete_local_common_cases
+      > 0
+    replay_interface: ASAP_BLOCK_GATE_REPLAY_V1
+    evidence_bundle_file: null
+    evidence_bundle_sha256: null
+    evidence_files: []
+    evidence_sha256: []
+    counts:
+      N_certified_tasksets: null
+      N_energy_blocking_cases: null
+      N_processor_interference_cases: null
+      N_complete_local_common_cases: null
+      N_positive_E0_satisfied_traces: null
+    validator_name: null
+    validator_version: null
+    validator_sha256: null
+    notes: null
+    required: true
+CORE0B_gates:
+  formal_contract_hash_match:
+    status: NOT_CHECKED
+    predicate: N_mismatch == 0
+    replay_interface: ASAP_BLOCK_GATE_REPLAY_V1
+    evidence_bundle_file: null
+    evidence_bundle_sha256: null
+    evidence_files: []
+    evidence_sha256: []
+    counts:
+      N_mismatch: null
+    validator_name: null
+    validator_version: null
+    validator_sha256: null
+    notes: null
+    required: true
+  approved_build_identity_match:
+    status: NOT_CHECKED
+    predicate: N_unapproved_build_rows == 0
+    replay_interface: ASAP_BLOCK_GATE_REPLAY_V1
+    evidence_bundle_file: null
+    evidence_bundle_sha256: null
+    evidence_files: []
+    evidence_sha256: []
+    counts:
+      N_unapproved_build_rows: null
+    validator_name: null
+    validator_version: null
+    validator_sha256: null
+    notes: null
+    required: true
+  final_numeric_contract_identity:
+    status: NOT_CHECKED
+    predicate: N_mismatch == 0
+    replay_interface: ASAP_BLOCK_GATE_REPLAY_V1
+    evidence_bundle_file: null
+    evidence_bundle_sha256: null
+    evidence_files: []
+    evidence_sha256: []
+    counts:
+      N_mismatch: null
+    validator_name: null
+    validator_version: null
+    validator_sha256: null
+    notes: null
+    required: true
+  repeat_parameter_sensitive_exact_checks:
+    status: NOT_CHECKED
+    predicate: N_instances > 0 and N_mismatches == 0
+    replay_interface: ASAP_BLOCK_GATE_REPLAY_V1
+    evidence_bundle_file: null
+    evidence_bundle_sha256: null
+    evidence_files: []
+    evidence_sha256: []
+    counts:
+      N_instances: null
+      N_mismatches: null
+    validator_name: null
+    validator_version: null
+    validator_sha256: null
+    notes: null
+    required: true
+  numeric_range_valid:
+    status: NOT_CHECKED
+    predicate: N_overflow_risk == 0 and N_numeric_error == 0
+    replay_interface: ASAP_BLOCK_GATE_REPLAY_V1
+    evidence_bundle_file: null
+    evidence_bundle_sha256: null
+    evidence_files: []
+    evidence_sha256: []
+    counts:
+      N_overflow_risk: null
+      N_numeric_error: null
+    validator_name: null
+    validator_version: null
+    validator_sha256: null
+    notes: null
+    required: true
+  rho_e_parameterization_valid:
+    status: NOT_CHECKED
+    predicate: N_out_of_tolerance == 0
+    replay_interface: ASAP_BLOCK_GATE_REPLAY_V1
+    evidence_bundle_file: null
+    evidence_bundle_sha256: null
+    evidence_files: []
+    evidence_sha256: []
+    counts:
+      N_out_of_tolerance: null
+    validator_name: null
+    validator_version: null
+    validator_sha256: null
+    notes: null
+    required: true
+  e0_parameterization_valid:
+    status: NOT_CHECKED
+    predicate: N_invalid_positive_cells == 0 and N_out_of_tolerance == 0
+    replay_interface: ASAP_BLOCK_GATE_REPLAY_V1
+    evidence_bundle_file: null
+    evidence_bundle_sha256: null
+    evidence_files: []
+    evidence_sha256: []
+    counts:
+      N_invalid_positive_cells: null
+      N_out_of_tolerance: null
+    validator_name: null
+    validator_version: null
+    validator_sha256: null
+    notes: null
+    required: true
+  service_curve_integerization_and_trace_validation:
+    status: NOT_CHECKED
+    predicate: N_invalid_curve == 0 and N_invalid_trace == 0
+    replay_interface: ASAP_BLOCK_GATE_REPLAY_V1
+    evidence_bundle_file: null
+    evidence_bundle_sha256: null
+    evidence_files: []
+    evidence_sha256: []
+    counts:
+      N_invalid_curve: null
+      N_invalid_trace: null
+    validator_name: null
+    validator_version: null
+    validator_sha256: null
+    notes: null
+    required: true
+  deterministic_repeatability:
+    status: NOT_CHECKED
+    predicate: N_repeated > 0 and N_mismatches == 0
+    replay_interface: ASAP_BLOCK_GATE_REPLAY_V1
+    evidence_bundle_file: null
+    evidence_bundle_sha256: null
+    evidence_files: []
+    evidence_sha256: []
+    counts:
+      N_repeated: null
+      N_mismatches: null
+    validator_name: null
+    validator_version: null
+    validator_sha256: null
+    notes: null
+    required: true
+  generation_coverage_gate:
+    status: NOT_CHECKED
+    predicate: N_requested > 0 and N_failure <= N_allowed_failure and N_cells_over_threshold == 0
+    replay_interface: ASAP_BLOCK_GATE_REPLAY_V1
+    evidence_bundle_file: null
+    evidence_bundle_sha256: null
+    evidence_files: []
+    evidence_sha256: []
+    counts:
+      N_requested: null
+      N_success: null
+      N_failure: null
+      N_allowed_failure: null
+      N_cells_over_threshold: null
+    validator_name: null
+    validator_version: null
+    validator_sha256: null
+    notes: null
+    required: true
+  run_plan_accounting_gate:
+    status: NOT_CHECKED
+    predicate: N_planned > 0 and N_planned == N_accounted and N_unaccounted == 0 and N_illegal_transitions == 0
+    replay_interface: ASAP_BLOCK_GATE_REPLAY_V1
+    evidence_bundle_file: null
+    evidence_bundle_sha256: null
+    evidence_files: []
+    evidence_sha256: []
+    counts:
+      N_planned: null
+      N_accounted: null
+      N_unaccounted: null
+      N_illegal_transitions: null
+    validator_name: null
+    validator_version: null
+    validator_sha256: null
+    notes: null
+    required: true
+  foreign_key_lineage_gate:
+    status: NOT_CHECKED
+    predicate: N_rows > 0 and N_broken == 0 and N_ambiguous == 0
+    replay_interface: ASAP_BLOCK_GATE_REPLAY_V1
+    evidence_bundle_file: null
+    evidence_bundle_sha256: null
+    evidence_files: []
+    evidence_sha256: []
+    counts:
+      N_rows: null
+      N_broken: null
+      N_ambiguous: null
+    validator_name: null
+    validator_version: null
+    validator_sha256: null
+    notes: null
+    required: true
+  formal_soundness_observation_gate:
+    status: NOT_CHECKED
+    predicate: N_audited > 0 and N_certified_bound_violations == 0 and N_applicable_not_observed == 0 and N_deadline_not_reached
+      == 0
+    replay_interface: ASAP_BLOCK_GATE_REPLAY_V1
+    evidence_bundle_file: null
+    evidence_bundle_sha256: null
+    evidence_files: []
+    evidence_sha256: []
+    counts:
+      N_audited: null
+      N_certified_bound_violations: null
+      N_applicable_not_observed: null
+      N_deadline_not_reached: null
+    validator_name: null
+    validator_version: null
+    validator_sha256: null
+    notes: null
+    required: true
+  formal_non_vacuity_gate:
+    status: NOT_CHECKED
+    predicate: N_formal_generation_requests > 0 and N_formal_analysis_runs > 0 and N_formal_bound_audits > 0 and (N_positive_E0_planned_tracks
+      == 0 or N_positive_E0_satisfied_traces > 0)
+    replay_interface: ASAP_BLOCK_GATE_REPLAY_V1
+    evidence_bundle_file: null
+    evidence_bundle_sha256: null
+    evidence_files: []
+    evidence_sha256: []
+    counts:
+      N_formal_generation_requests: null
+      N_formal_analysis_runs: null
+      N_formal_bound_audits: null
+      N_positive_E0_planned_tracks: null
+      N_positive_E0_satisfied_traces: null
+    validator_name: null
+    validator_version: null
+    validator_sha256: null
+    notes: null
+    required: true
+overall_release_gate:
+  status: NOT_CHECKED
+  derivation: PASSED iff all required CORE0A and CORE0B gates are PASSED and observed builds equal formal approved builds
+  failed_gate_ids: []
+hash_preimage_rule: set acceptance_report_metadata.acceptance_report_hash to null; canonicalize full report with v1.3.10 rules
