@@ -20,6 +20,7 @@
 #include <rtsim/cpu.hpp>
 #include <rtsim/json_trace.hpp>
 #include <rtsim/scheduler/energy_bridge.hpp>
+#include <rtsim/scheduler/st_energy_utils.hpp>
 #include <rtsim/mrtkernel.hpp>
 
 // 统一日志系统
@@ -392,6 +393,7 @@ namespace RTSim {
     }
 
     STSyncScheduler::~STSyncScheduler() {
+        resetPersistentState();
         if (_tick_event) {
             delete _tick_event;
             _tick_event = nullptr;
@@ -402,6 +404,65 @@ namespace RTSim {
             delete pair.second;
         }
         _task_models.clear();
+    }
+
+    void STSyncScheduler::resetPersistentState() {
+        if (_tick_event) {
+            _tick_event->drop();
+        }
+        _first_tick_scheduled = false;
+        if (_group_wake_event) {
+            _group_wake_event->drop();
+            delete _group_wake_event;
+            _group_wake_event = nullptr;
+        }
+        for (auto &entry : _energy_check_events) {
+            if (entry.second) {
+                entry.second->drop();
+                delete entry.second;
+            }
+        }
+        _energy_check_events.clear();
+
+        _ready_queue.clear();
+        _waiting_queue.clear();
+        _deferred_arrivals.clear();
+        _running_tasks.clear();
+        _energy_accounts.clear();
+        _suspend_reasons.clear();
+        _deadline_miss_arrivals.clear();
+        _tasks_completed_wcet.clear();
+        _counted_tasks_in_dispatch.clear();
+        _current_batch_tasks.clear();
+        _preempt_batch_tasks.clear();
+        _dispatching_tasks_total_energy = 0.0;
+        _batch_scheduled_this_tick = false;
+        _current_batch_size = 0;
+        _selection_tick = Tick(-1);
+        _selection_generation = 0;
+        _selection_frozen = false;
+        _energy_commit_tick = Tick(-1);
+        _energy_commit_generation = 0;
+        _energy_commit_valid = false;
+
+        _v108_batch_energy_checked = false;
+        _v108_batch_energy_sufficient = true;
+        _v108_batch_k_approved = 0;
+        _v108_batch_start_energy = 0.0;
+        _v108_batch_total_energy = 0.0;
+        _last_v108_insert_time = Tick(0);
+        _v108_last_ready_queue_size = 0;
+        _last_v108_check_time = Tick(0);
+        _last_ready_queue_size = 0;
+
+        _energy_depleted = false;
+        _deep_charging = false;
+        _is_charging_sleep = false;
+        _charge_start_time = Tick(0);
+        _st_group_required_energy = 0.0;
+        _st_group_slack_at_begin = Tick(0);
+        _last_preempted_task = nullptr;
+        _last_preempted_tick = Tick(0);
     }
 
     // =====================================================
@@ -522,12 +583,10 @@ namespace RTSim {
                 if (wait_slack == std::numeric_limits<Tick::impl_t>::max()) {
                     wait_slack = 0;
                 }
-                std::string release_reason;
-                if (_current_energy >= _max_energy - 1e-9) {
-                    release_reason = "battery_full";
-                } else if (wait_slack <= Tick(0)) {
-                    release_reason = "slack_exhausted";
-                }
+                const std::string release_reason =
+                    STEnergy::chargingReleaseReason(
+                        _current_energy, _max_energy,
+                        wait_slack <= Tick(0));
 
                 if (!release_reason.empty()) {
                     std::vector<AbsRTTask *> waiting_group(
@@ -2189,6 +2248,9 @@ namespace RTSim {
     void STSyncScheduler::newRun() {
         SCHEDULER_LOG_INFO("🏁 [ST-Sync] newRun - 仿真开始");
 
+        Scheduler::newRun();
+        resetPersistentState();
+
         // ⭐ 关键修复：在任务到达之前初始化_kernel
         // 这样performTickScheduling才能正确执行批量调度
         if (!_kernel) {
@@ -2204,13 +2266,6 @@ namespace RTSim {
         _last_tick_time = SIMUL.getTime();
         _last_collection_time = SIMUL.getTime();
 
-        _ready_queue.clear();
-        _waiting_queue.clear();
-        _deferred_arrivals.clear();
-        _energy_accounts.clear();
-        _running_tasks.clear();
-        _deadline_miss_arrivals.clear();
-
         _stats.total_scheduled = 0;
         _stats.total_task_completions = 0;
         _stats.total_skipped_energy = 0;
@@ -2220,20 +2275,6 @@ namespace RTSim {
         _stats.total_tick_count = 0;
         _stats.total_batch_schedules = 0;
         _stats.total_batch_skipped = 0;
-
-        // ST-Sync批量调度状态初始化
-        _batch_scheduled_this_tick = false;
-        _current_batch_size = 0;
-        _current_batch_tasks.clear();
-        _preempt_batch_tasks.clear();
-        _selection_tick = Tick(-1);
-        _selection_generation = 0;
-        _selection_frozen = false;
-        _energy_commit_tick = Tick(-1);
-        _energy_commit_generation = 0;
-        _energy_commit_valid = false;
-        _dispatching_tasks_total_energy = 0.0;
-        _counted_tasks_in_dispatch.clear();
 
         // 启动第一个tick事件
         scheduleNextTick();
@@ -2496,10 +2537,8 @@ namespace RTSim {
         double energy_needed = _max_energy - _current_energy;
         if (energy_needed < 0) energy_needed = 0;
 
-        double harvest_rate = _base_harvest_rate;
-        int64_t charge_time_ms = (harvest_rate > 1e-12)
-            ? static_cast<int64_t>(std::ceil(energy_needed / harvest_rate))
-            : static_cast<int64_t>(group_slack);
+        const int64_t charge_time_ms = STEnergy::estimateChargeTimeMs(
+            energy_needed, _base_harvest_rate);
 
         // 计算Slack归零时刻
         int64_t slack_deadline = static_cast<int64_t>(group_slack);
@@ -2543,7 +2582,9 @@ namespace RTSim {
         }
 
         if (_group_wake_event) {
-            _group_wake_event->invalidate();
+            _group_wake_event->drop();
+            delete _group_wake_event;
+            _group_wake_event = nullptr;
         }
 
         _group_wake_event = new STSyncGroupWakeEvent(this);

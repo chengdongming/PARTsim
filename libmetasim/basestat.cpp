@@ -78,6 +78,23 @@ namespace MetaSim {
     void BaseStat::init() {
         _exper.clear();
         _expNum = 0;
+        _runInitialized = false;
+    }
+
+    void BaseStat::captureRunState() {
+        _valueBeforeRun = _val;
+        _experimentsSizeBeforeRun = _exper.size();
+        _hadExperimentSlotBeforeRun = _exper.size() > _expNum;
+        if (_hadExperimentSlotBeforeRun)
+            _experimentSlotBeforeRun = _exper[_expNum];
+    }
+
+    void BaseStat::rollbackRun() {
+        _val = _valueBeforeRun;
+        if (_exper.size() > _experimentsSizeBeforeRun)
+            _exper.resize(_experimentsSizeBeforeRun);
+        if (_hadExperimentSlotBeforeRun && _exper.size() > _expNum)
+            _exper[_expNum] = _experimentSlotBeforeRun;
     }
 
     void BaseStat::setTransitory(Tick t) {
@@ -110,10 +127,36 @@ namespace MetaSim {
     // Collect all the results
     //
     void BaseStat::endRun() {
-        for_each(_statList.begin(), _statList.end(),
-                 std::mem_fn(&BaseStat::collect));
-        if (++_expNum >= MAX_RUN)
+        if (_expNum + 1 >= MAX_RUN) {
+            try {
+                cancelRun();
+            } catch (...) {
+            }
             throw Exc(TOO_MUCH_RUNS);
+        }
+        try {
+            for (auto *stat : _statList) {
+                if (!stat->_runInitialized)
+                    continue;
+                stat->collect();
+            }
+        } catch (...) {
+            const std::exception_ptr primary = std::current_exception();
+            for (auto it = _statList.rbegin(); it != _statList.rend(); ++it) {
+                BaseStat *stat = *it;
+                if (!stat->_runInitialized)
+                    continue;
+                try {
+                    stat->rollbackRun();
+                } catch (...) {
+                }
+                stat->_runInitialized = false;
+            }
+            std::rethrow_exception(primary);
+        }
+        ++_expNum;
+        for (auto *stat : _statList)
+            stat->_runInitialized = false;
     }
 
     void BaseStat::endSim() {
@@ -124,8 +167,44 @@ namespace MetaSim {
     // Initialize all the stat objs and increment expnum
     //
     void BaseStat::newRun() {
-        for_each(_statList.begin(), _statList.end(),
-                 std::mem_fn(&BaseStat::initValue));
+        std::vector<BaseStat *> initialized;
+        try {
+            for (auto *stat : _statList) {
+                stat->captureRunState();
+                stat->_runInitialized = true;
+                initialized.push_back(stat);
+                stat->initValue();
+            }
+        } catch (...) {
+            const std::exception_ptr primary = std::current_exception();
+            for (auto it = initialized.rbegin(); it != initialized.rend();
+                 ++it) {
+                try {
+                    (*it)->rollbackRun();
+                } catch (...) {
+                }
+                (*it)->_runInitialized = false;
+            }
+            std::rethrow_exception(primary);
+        }
+    }
+
+    void BaseStat::cancelRun() {
+        std::exception_ptr first_error;
+        for (auto it = _statList.rbegin(); it != _statList.rend(); ++it) {
+            BaseStat *stat = *it;
+            if (!stat->_runInitialized)
+                continue;
+            try {
+                stat->rollbackRun();
+            } catch (...) {
+                if (!first_error)
+                    first_error = std::current_exception();
+            }
+            stat->_runInitialized = false;
+        }
+        if (first_error)
+            std::rethrow_exception(first_error);
     }
 
     //

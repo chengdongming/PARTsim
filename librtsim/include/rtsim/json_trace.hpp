@@ -16,6 +16,7 @@
 
 #include <fstream>
 #include <iosfwd>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -43,13 +44,27 @@ namespace RTSim {
     };
 
     class JSONTrace {
+    public:
+        static constexpr int TRACE_SCHEMA_VERSION = 2;
+
     protected:
         // V98修复：成员变量按析构需要顺序排列
         // 成员变量按声明顺序的逆序销毁，所以 fd 放在最后，确保先销毁
         bool first_event;
         MetaSim::Tick max_time; // 最大时间，用于过滤事件
+        MetaSim::Tick _observed_simulation_end;
+        bool _simulation_completed;
+        std::string _simulation_completion_reason;
         EnergyInfoProvider *_energy_provider; // 能量信息提供者
         bool _semantic_trace_enabled;
+        std::string _configured_scheduler;
+        std::string _scheduler_display_name;
+        std::string _scheduler_implementation;
+        std::string _scheduler_rtti_name;
+        std::string _run_id;
+        std::string _taskset_semantic_hash;
+        std::uint64_t _run_generation;
+        std::set<std::uint64_t> _run_generations_seen;
 
         // 追踪任务执行信息
         std::map<AbsRTTask*, MetaSim::Tick> _task_start_times; // 任务开始执行时间
@@ -57,6 +72,8 @@ namespace RTSim {
 
         // V83修复：跟踪已deadline miss的任务，避免重复记录descheduled事件
         std::set<AbsRTTask*> _deadline_missed_tasks;
+        std::set<std::pair<AbsRTTask*, MetaSim::Tick::impl_t>>
+            _logged_deadline_misses;
 
         // Early Abort专用：等待在descheduled之后补记的dline_miss
         std::map<AbsRTTask*, std::string> _pending_forced_dline_miss;
@@ -68,7 +85,12 @@ namespace RTSim {
         void writeEnergyInfo(); // 写入能量信息
         void writeTaskEnergyInfo(AbsRTTask *task); // 写入任务能量信息
         void writeForcedDlineMissNow(AbsRTTask *task, const std::string &reason);
+        void writeDeadlineMissNow(Task &task,
+                                  MetaSim::Tick release_time,
+                                  MetaSim::Tick absolute_deadline,
+                                  const std::string &reason);
         void beginEvent();
+        void ensureCurrentRun();
         static std::string escapeJson(const std::string &value);
         void writeSchedulerJob(const SchedulerTraceJob &job);
         void writeSchedulerJobArray(const std::vector<SchedulerTraceJob> &jobs);
@@ -78,6 +100,8 @@ namespace RTSim {
         JSONTrace(const std::string &name, MetaSim::Tick max);
 
         ~JSONTrace();
+
+        void beginRun(std::uint64_t generation);
 
         // 设置能量信息提供者
         void setEnergyProvider(EnergyInfoProvider *provider) {
@@ -90,6 +114,30 @@ namespace RTSim {
 
         bool semanticTraceEnabled() const {
             return _semantic_trace_enabled;
+        }
+
+        void setObservedSimulationEnd(MetaSim::Tick end_time) {
+            ensureCurrentRun();
+            _observed_simulation_end = end_time;
+        }
+
+        void setSimulationOutcome(MetaSim::Tick end_time,
+                                  bool completed,
+                                  const std::string &reason);
+
+        void setSchedulerIdentity(const std::string &configured_scheduler,
+                                  const std::string &display_name,
+                                  const std::string &implementation,
+                                  const std::string &rtti_name = "") {
+            _configured_scheduler = configured_scheduler;
+            _scheduler_display_name = display_name;
+            _scheduler_implementation = implementation;
+            _scheduler_rtti_name = rtti_name;
+        }
+
+        void setRunId(const std::string &run_id) { _run_id = run_id; }
+        void setTasksetSemanticHash(const std::string &value) {
+            _taskset_semantic_hash = value;
         }
 
         void logSchedulerDecision(
@@ -150,7 +198,11 @@ namespace RTSim {
 
         template <class X>
         void probe(GEvent<X> &e) {
-            fd << "{ event: " << e.toString() << " }";
+            beginEvent();
+            fd << "\"time\": \"" << MetaSim::SIMUL.getTime() << "\", ";
+            fd << "\"event_type\": \"generic_event\", ";
+            fd << "\"description\": \"" << escapeJson(e.toString())
+               << "\"}";
         }
     };
 } // namespace RTSim

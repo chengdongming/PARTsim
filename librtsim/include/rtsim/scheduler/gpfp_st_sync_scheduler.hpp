@@ -207,6 +207,7 @@ namespace RTSim {
         std::string getSuspendReason(AbsRTTask *task) const override;  // 实现EnergyInfoProvider接口
         void clearSuspendReason(AbsRTTask *task) override;  // 实现EnergyInfoProvider接口
         void clearPersistentTaskState(AbsRTTask *task);
+        void resetPersistentState();
 
         // ========== 能量记账（每ms累计） ==========
         struct TaskEnergyAccount {

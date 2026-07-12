@@ -18,10 +18,33 @@
 #include <metasim/debugstream.hpp>
 #include <metasim/entity.hpp>
 #include <metasim/event.hpp>
+#include <cstdint>
 
 namespace MetaSim {
 
 #define _SIMUL_DBG_LEV "Simul"
+
+    enum class SimulationCompletionReason {
+        NotStarted,
+        Initializing,
+        Running,
+        Finalizing,
+        ReachedHorizon,
+        EventQueueExhausted,
+        RuntimeError,
+    };
+
+    struct SimulationRunOutcome {
+        Tick requested_end_time{0};
+        Tick actual_end_time{0};
+        bool reached_requested_horizon{false};
+        bool completed{false};
+        SimulationCompletionReason reason{
+            SimulationCompletionReason::NotStarted};
+    };
+
+    const char *simulationCompletionReasonName(
+        SimulationCompletionReason reason);
 
     /**
         \ingroup metasim_ee
@@ -111,6 +134,12 @@ namespace MetaSim {
         */
         const Tick getTime();
 
+        const SimulationRunOutcome &getLastRunOutcome() const {
+            return lastRunOutcome;
+        }
+
+        std::uint64_t getRunGeneration() const { return runGeneration; }
+
         /**
            Drops and eventually deletes all events in the queue. To be
            called after an exception!
@@ -170,7 +199,7 @@ namespace MetaSim {
         /**
            Function to help testing and debugging.
         */
-        void endSingleRun();
+        void endSingleRun(bool commit_statistics = true);
 
         /**
            Function to help testing and debugging.
@@ -198,6 +227,8 @@ namespace MetaSim {
         size_t actRuns;
         Tick globTime;
         bool end;
+        std::uint64_t runGeneration;
+        SimulationRunOutcome lastRunOutcome;
     };
 
     class DbgObj {

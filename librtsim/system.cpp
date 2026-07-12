@@ -7,10 +7,78 @@
 #include <rtsim/scheduler/fifosched.hpp>
 #include <rtsim/scheduler/rmsched.hpp>
 #include <rtsim/scheduler/rrsched.hpp>
+#include <rtsim/scheduler/gpfp_asap_block_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_asap_nonblock_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_asap_sync_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_alap_block_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_alap_nonblock_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_alap_sync_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_st_block_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_st_nonblock_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_st_sync_scheduler.hpp>
 
 #include <metasim/factory.hpp>
+#include <typeinfo>
 
 namespace RTSim {
+    namespace {
+        template <typename Expected>
+        SchedulerIdentity checked_identity(const std::string &configured,
+                                           const std::string &display,
+                                           const std::string &implementation,
+                                           const Scheduler &scheduler) {
+            if (dynamic_cast<const Expected *>(&scheduler) == nullptr) {
+                throw BaseExc("Scheduler factory identity mismatch for " +
+                              configured);
+            }
+            return {configured, display, implementation,
+                    typeid(scheduler).name()};
+        }
+    }
+
+    SchedulerIdentity scheduler_identity_for(const std::string &name,
+                                             const Scheduler &scheduler) {
+        if (name == "gpfp_asap_block") {
+            return checked_identity<ASAPBlockScheduler>(
+                name, "ASAP-Block", "GPFPASAPBlockScheduler", scheduler);
+        }
+        if (name == "gpfp_asap_nonblock") {
+            return checked_identity<ASAPNonBlockScheduler>(
+                name, "ASAP-NonBlock", "GPFPASAPNonBlockScheduler", scheduler);
+        }
+        if (name == "gpfp_asap_sync") {
+            return checked_identity<ASAPSyncScheduler>(
+                name, "ASAP-Sync", "GPFPASAPSyncScheduler", scheduler);
+        }
+        if (name == "gpfp_alap_block") {
+            return checked_identity<ALAPBlockScheduler>(
+                name, "ALAP-Block", "GPFPALAPBlockScheduler", scheduler);
+        }
+        if (name == "gpfp_alap_nonblock") {
+            return checked_identity<ALAPNonBlockScheduler>(
+                name, "ALAP-NonBlock", "GPFPALAPNonBlockScheduler", scheduler);
+        }
+        if (name == "gpfp_alap_sync") {
+            return checked_identity<ALAPSyncScheduler>(
+                name, "ALAP-Sync", "GPFPALAPSyncScheduler", scheduler);
+        }
+        if (name == "gpfp_st_block") {
+            return checked_identity<STBlockScheduler>(
+                name, "ST-Block", "GPFPSTBlockScheduler", scheduler);
+        }
+        if (name == "gpfp_st_nonblock") {
+            return checked_identity<STNonBlockScheduler>(
+                name, "ST-NonBlock", "GPFPSTNonBlockScheduler", scheduler);
+        }
+        if (name == "gpfp_st_sync") {
+            return checked_identity<STSyncScheduler>(
+                name, "ST-Sync", "GPFPSTSyncScheduler", scheduler);
+        }
+
+        // Preserve compatibility for schedulers outside the audited family.
+        return {name, name, name, typeid(scheduler).name()};
+    }
+
     uptr<Scheduler> make_scheduler(const std::string &name) {
         // TODO: support scheduler parameters
         auto params = std::vector<std::string>{};
@@ -102,6 +170,9 @@ namespace RTSim {
             // Scheduler
             if (island_des.kernel.placement == "global") {
                 scheduler = make_scheduler(island_des.kernel.scheduler);
+                this->scheduler_identities.emplace_back(
+                    scheduler_identity_for(island_des.kernel.scheduler,
+                                           *scheduler));
                 kernel = make_kernel_global(scheduler.get(), basename_kernel);
                 this->schedulers.emplace_back(scheduler);
                 this->kernels.emplace_back(kernel);
@@ -118,6 +189,9 @@ namespace RTSim {
                 if (island_des.kernel.placement == "partitioned") {
                     // One RTKernel for each CPU, with its own scheduler
                     scheduler = make_scheduler(island_des.kernel.scheduler);
+                    this->scheduler_identities.emplace_back(
+                        scheduler_identity_for(island_des.kernel.scheduler,
+                                               *scheduler));
                     kernel = make_kernel_partitioned(
                         scheduler.get(),
                         basename_kernel + std::to_string(cnt_cpus), cpu.get());

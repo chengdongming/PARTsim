@@ -6,6 +6,7 @@
 
 // STL
 #include <metasim/memory.hpp>
+#include <string>
 #include <vector>
 
 // Static system information
@@ -37,6 +38,16 @@ namespace RTSim {
     template <class T>
     using uptr = std::unique_ptr<T>;
 
+    struct SchedulerIdentity {
+        std::string configured_scheduler;
+        std::string display_name;
+        std::string implementation_id;
+        std::string rtti_name;
+    };
+
+    SchedulerIdentity scheduler_identity_for(const std::string &name,
+                                             const Scheduler &scheduler);
+
     // TODO: all private, immutable and yadda yadda
     // TODO: the system has no notion of islands, should add that!
     class System {
@@ -47,6 +58,7 @@ namespace RTSim {
         std::vector<sptr<CPU>> cpus;
         std::vector<sptr<TracePowerConsumption>> ptraces;
         std::vector<sptr<Scheduler>> schedulers;
+        std::vector<SchedulerIdentity> scheduler_identities;
         std::vector<sptr<RTKernel>> kernels;
 
     public:

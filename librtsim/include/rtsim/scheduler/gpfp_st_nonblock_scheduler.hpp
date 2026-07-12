@@ -249,6 +249,7 @@ namespace RTSim {
         void clearSkippedWakeState(AbsRTTask *task);
         void clearPersistentTaskState(AbsRTTask *task);
         void resetTickDispatchState();
+        void resetPersistentState();
         void clearTaskTickSelection(AbsRTTask *task);
         void markTaskSelectedThisTick(AbsRTTask *task);
         void accountInitialEnergyForSelectedTasks(const std::string &log_prefix);

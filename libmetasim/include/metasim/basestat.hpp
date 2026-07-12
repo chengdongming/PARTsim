@@ -95,6 +95,11 @@ namespace MetaSim {
         static size_t _expNum;
         static bool _endOfSim;
         static List _statList;
+        bool _runInitialized{false};
+        double _valueBeforeRun{0.0};
+        std::size_t _experimentsSizeBeforeRun{0};
+        double _experimentSlotBeforeRun{0.0};
+        bool _hadExperimentSlotBeforeRun{false};
 
     protected:
         /**
@@ -123,7 +128,7 @@ namespace MetaSim {
 
         /** called at the end of the run, puts the current
             value in the array of experiments. */
-        inline void collect() {
+        virtual void collect() {
             if (_exper.size() <= _expNum)
                 _exper.push_back(_val);
             else
@@ -166,6 +171,18 @@ namespace MetaSim {
         */
         virtual void record(double) = 0;
         virtual void initValue() = 0;
+
+        /**
+         * Capture and restore run-local state without collecting a sample.
+         * Derived statistics with additional mutable accumulators override
+         * these hooks and call the base implementation.  The pure-virtual
+         * contract deliberately forces every externally defined statistic to
+         * acknowledge transactional rollback.  collect() must not perform
+         * irreversible external I/O: it is part of the transaction and may
+         * be followed by rollbackRun() when a later statistic fails.
+         */
+        virtual void captureRunState() = 0;
+        virtual void rollbackRun() = 0;
 
         /**
             level 2 function: called by the event action() method.
@@ -260,6 +277,9 @@ namespace MetaSim {
         /// prepare the int values
         static void newRun();
 
+        /// Abort the active run without collect() or incrementing _expNum.
+        static void cancelRun();
+
         /// automatically called at the end of the sim,
         /// write the files.
         static void endSim();
@@ -323,6 +343,8 @@ namespace MetaSim {
         void initValue() override {
             _val = _ini;
         }
+        void captureRunState() override { BaseStat::captureRunState(); }
+        void rollbackRun() override { BaseStat::rollbackRun(); }
     };
 
     /// Computes the min value
@@ -343,6 +365,8 @@ namespace MetaSim {
         void initValue() override {
             _val = _ini;
         }
+        void captureRunState() override { BaseStat::captureRunState(); }
+        void rollbackRun() override { BaseStat::rollbackRun(); }
     };
 
     /// Computes a mean value X_m = (Sigma{X_i}i=1,N)/N
@@ -350,6 +374,7 @@ namespace MetaSim {
     protected:
         double _ini;
         double _count;
+        double _countBeforeRun{0};
 
     public:
         StatMean(std::string name = "", double i = 0) :
@@ -367,6 +392,14 @@ namespace MetaSim {
             _val = _ini;
             _count = 0;
         };
+        void captureRunState() override {
+            BaseStat::captureRunState();
+            _countBeforeRun = _count;
+        }
+        void rollbackRun() override {
+            BaseStat::rollbackRun();
+            _count = _countBeforeRun;
+        }
     };
 
     /// Computes the quadratic mean value
@@ -375,6 +408,7 @@ namespace MetaSim {
     protected:
         double _ini;
         double _count;
+        double _countBeforeRun{0};
 
     public:
         StatSqrMean(std::string name = "", double i = 0) :
@@ -386,6 +420,14 @@ namespace MetaSim {
             _val = _ini;
             _count = 0;
         };
+        void captureRunState() override {
+            BaseStat::captureRunState();
+            _countBeforeRun = _count;
+        }
+        void rollbackRun() override {
+            BaseStat::rollbackRun();
+            _count = _countBeforeRun;
+        }
     };
 
     /// Counts the number of occurrences of an event.
@@ -411,6 +453,8 @@ namespace MetaSim {
         void initValue() override {
             _val = _ini;
         }
+        void captureRunState() override { BaseStat::captureRunState(); }
+        void rollbackRun() override { BaseStat::rollbackRun(); }
     };
 
     /// Computes the percentage of occurrences of an event
@@ -423,6 +467,7 @@ namespace MetaSim {
     protected:
         double _ini;
         double _num, _den;
+        double _numBeforeRun{0}, _denBeforeRun{1};
 
     public:
         StatPercent(std::string name = "", double i = 0) :
@@ -443,6 +488,16 @@ namespace MetaSim {
             _val = _ini;
             _num = _ini;
             _den = std::max(1.0, _ini);
+        }
+        void captureRunState() override {
+            BaseStat::captureRunState();
+            _numBeforeRun = _num;
+            _denBeforeRun = _den;
+        }
+        void rollbackRun() override {
+            BaseStat::rollbackRun();
+            _num = _numBeforeRun;
+            _den = _denBeforeRun;
         }
         int getNumSamples() {
             return _den;

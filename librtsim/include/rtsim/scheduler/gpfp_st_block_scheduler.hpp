@@ -239,6 +239,7 @@ namespace RTSim {
         std::string getTaskName(AbsRTTask *task);
         void onTaskArrival(AbsRTTask *task);
         void resetTickDispatchState();
+        void resetPersistentState();
         void clearTaskTickSelection(AbsRTTask *task);
         void markTaskSelectedThisTick(AbsRTTask *task);
         void clearPersistentTaskState(AbsRTTask *task);

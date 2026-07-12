@@ -27,6 +27,8 @@ namespace RTSim {
 class TestSTNonBlockScheduler : public STNonBlockScheduler {
 public:
     using Scheduler::enqueueModel;
+    std::size_t baseQueueSize() const { return _queue.size(); }
+    TaskModel *baseModel(AbsRTTask *task) const { return find(task); }
 };
 
 class FakeSTNonBlockTask : public Task {
@@ -779,6 +781,78 @@ TEST(STNonBlockScheduler, StableRmTieBreak) {
     EXPECT_EQ(task1.getScheduleCount(), 1);
     EXPECT_EQ(task2.getScheduleCount(), 0);
     EXPECT_EQ(kernel.getTask(&cpu), &task1);
+
+    simulation.endSingleRun();
+}
+
+TEST(STNonBlockScheduler, NewRunClearsSkippedWakeAndCommittedState) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTNonBlockScheduler scheduler;
+    CPU cpu("st-nonblock-new-run-cpu", nullptr);
+    TestSTNonBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeSTNonBlockTask task(1, 100, 100, 1.0);
+
+    STNonBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &task, 100, 1, 1.0);
+    simulation.initSingleRun();
+    STNonBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+
+    STNonBlockSchedulerTestPeer::setEnergy(scheduler, 0.5);
+    task.releaseAt(Tick(0));
+    scheduler.insert(&task);
+    ASSERT_EQ(scheduler.baseQueueSize(), 1u);
+    ASSERT_TRUE(scheduler.baseModel(&task)->isActive());
+    STNonBlockSchedulerTestPeer::tick(scheduler);
+    ASSERT_EQ(scheduler._skipped_tasks.count(&task), 1u);
+    ASSERT_EQ(scheduler._skip_wake_events.count(&task), 1u);
+    ASSERT_TRUE(scheduler._deep_charging);
+
+    scheduler._pending_wake_task = &task;
+    scheduler._pending_wake_energy = 1.0;
+    scheduler._selection_frozen = true;
+    scheduler._energy_commit_valid = true;
+    scheduler._suspend_reasons[&task] = "st_charging_hold";
+    scheduler.newRun();
+    STNonBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+
+    EXPECT_TRUE(scheduler._skipped_tasks.empty());
+    EXPECT_TRUE(scheduler._skip_wake_events.empty());
+    EXPECT_TRUE(scheduler._skipped_slack_at_begin.empty());
+    EXPECT_TRUE(scheduler._skipped_required_energy.empty());
+    EXPECT_EQ(scheduler._pending_wake_task, nullptr);
+    EXPECT_DOUBLE_EQ(scheduler._pending_wake_energy, 0.0);
+    EXPECT_FALSE(scheduler._deep_charging);
+    EXPECT_FALSE(scheduler._selection_frozen);
+    EXPECT_FALSE(scheduler._energy_commit_valid);
+    EXPECT_TRUE(scheduler._suspend_reasons.empty());
+    EXPECT_EQ(scheduler.baseQueueSize(), 0u);
+    ASSERT_NE(scheduler.baseModel(&task), nullptr);
+    EXPECT_FALSE(scheduler.baseModel(&task)->isActive());
+
+    TestSTNonBlockScheduler fresh;
+    CPU fresh_cpu("st-nonblock-fresh-run-cpu", nullptr);
+    TestSTNonBlockMRTKernel fresh_kernel(
+        &fresh, std::set<CPU *>{&fresh_cpu});
+    FakeSTNonBlockTask fresh_task(2, 100, 100, 1.0);
+    STNonBlockSchedulerTestPeer::addTaskModel(
+        fresh, &fresh_task, 100, 1, 1.0);
+    fresh.newRun();
+    STNonBlockSchedulerTestPeer::cancelAutomaticTick(fresh);
+
+    STNonBlockSchedulerTestPeer::setEnergy(scheduler, 5.0);
+    STNonBlockSchedulerTestPeer::setEnergy(fresh, 5.0);
+    task.releaseAt(Tick(0));
+    fresh_task.releaseAt(Tick(0));
+    scheduler.insert(&task);
+    fresh.insert(&fresh_task);
+    STNonBlockSchedulerTestPeer::tick(scheduler);
+    STNonBlockSchedulerTestPeer::tick(fresh);
+    simulation.run_to(Tick(0));
+    EXPECT_EQ(task.getScheduleCount(), 1);
+    EXPECT_EQ(fresh_task.getScheduleCount(), 1);
+    EXPECT_DOUBLE_EQ(
+        scheduler.getCurrentEnergy(), fresh.getCurrentEnergy());
+    EXPECT_EQ(scheduler.baseQueueSize(), fresh.baseQueueSize());
 
     simulation.endSingleRun();
 }

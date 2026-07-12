@@ -22,6 +22,7 @@
 #include <rtsim/cpu.hpp>
 #include <rtsim/json_trace.hpp>
 #include <rtsim/scheduler/energy_bridge.hpp>
+#include <rtsim/scheduler/st_energy_utils.hpp>
 #include <rtsim/mrtkernel.hpp>
 
 // 统一日志系统
@@ -91,11 +92,13 @@ namespace RTSim {
     // =====================================================
 
     STNonBlockWakeEvent::STNonBlockWakeEvent(STNonBlockScheduler *scheduler, AbsRTTask *task, Tick wake_time)
-        : MetaSim::Event("STNonBlockWakeEvent", MetaSim::Event::_DEFAULT_PRIORITY - 10),
+        : MetaSim::Event("STNonBlockWakeEvent", MetaSim::Event::_DEFAULT_PRIORITY + 15),
           _scheduler(scheduler),
           _task(task),
           _wake_time(wake_time) {
-        // 更高优先级，确保唤醒事件及时触发
+        // Run after the normal tick at the same timestamp. The tick first
+        // applies harvesting, so a simultaneous full/slack-zero boundary is
+        // classified from the same physical state in all ST variants.
     }
 
     void STNonBlockWakeEvent::doit() {
@@ -491,6 +494,7 @@ namespace RTSim {
     }
 
     STNonBlockScheduler::~STNonBlockScheduler() {
+        resetPersistentState();
         if (_tick_event) {
             delete _tick_event;
             _tick_event = nullptr;
@@ -501,6 +505,51 @@ namespace RTSim {
             delete pair.second;
         }
         _task_models.clear();
+    }
+
+    void STNonBlockScheduler::resetPersistentState() {
+        if (_tick_event) {
+            _tick_event->drop();
+        }
+        _first_tick_scheduled = false;
+        for (auto &entry : _skip_wake_events) {
+            if (entry.second) {
+                entry.second->drop();
+                delete entry.second;
+            }
+        }
+        _skip_wake_events.clear();
+
+        _ready_queue.clear();
+        _waiting_queue.clear();
+        _running_tasks.clear();
+        _energy_accounts.clear();
+        _suspend_reasons.clear();
+        _deadline_miss_arrivals.clear();
+        _counted_tasks_in_dispatch.clear();
+        _dispatch_selection_order.clear();
+        _energy_deducted_tasks.clear();
+        _newly_dispatched_this_tick.clear();
+        _skipped_tasks.clear();
+        _skipped_slack_at_begin.clear();
+        _skipped_required_energy.clear();
+        _dispatching_tasks_total_energy = 0.0;
+        _in_tick_boundary_dispatch = false;
+        _selection_tick = Tick(-1);
+        _selection_generation = 0;
+        _selection_frozen = false;
+        _energy_commit_tick = Tick(-1);
+        _energy_commit_generation = 0;
+        _energy_commit_valid = false;
+
+        _energy_depleted = false;
+        _deep_charging = false;
+        _is_charging_sleep = false;
+        _charge_start_time = Tick(0);
+        _pending_wake_task = nullptr;
+        _pending_wake_energy = 0.0;
+        _last_preempted_task = nullptr;
+        _last_preempted_tick = Tick(0);
     }
 
     // =====================================================
@@ -615,10 +664,11 @@ namespace RTSim {
             const double unit_energy = getConfiguredUnitEnergyForTask(task);
             if (_skipped_tasks.find(task) != _skipped_tasks.end() &&
                 !isSkippedTaskHeld(task)) {
-                const bool battery_full = (_current_energy >= _max_energy - epsilon);
                 Tick slack = calculateSlackForTask(task);
-                const std::string reason =
-                    battery_full ? "battery_full" : "slack_exhausted";
+                const bool battery_full = STEnergy::isBatteryFull(
+                    _current_energy, _max_energy);
+                const std::string reason = STEnergy::chargingReleaseReason(
+                    _current_energy, _max_energy, slack <= Tick(0));
                 auto required_it = _skipped_required_energy.find(task);
                 auto slack_it = _skipped_slack_at_begin.find(task);
                 logSTChargeEvent("st_charge_release",
@@ -1719,8 +1769,7 @@ namespace RTSim {
         if (!task || _skipped_tasks.find(task) == _skipped_tasks.end()) {
             return false;
         }
-        const double epsilon = 1e-9;
-        if (_current_energy >= _max_energy - epsilon) {
+        if (STEnergy::isBatteryFull(_current_energy, _max_energy)) {
             return false;
         }
         Tick slack = const_cast<STNonBlockScheduler *>(this)->calculateSlackForTask(task);
@@ -1749,11 +1798,13 @@ namespace RTSim {
 
         double unit_energy = calculateUnitEnergyForTask(task);
         Tick slack = calculateSlackForTask(task);
-        bool battery_full = (_current_energy >= _max_energy - 1e-9);
+        bool battery_full = STEnergy::isBatteryFull(
+            _current_energy, _max_energy);
         bool slack_exhausted = (slack <= 0);
 
         if (battery_full || slack_exhausted) {
-            std::string reason = battery_full ? "battery_full" : "slack_exhausted";
+            std::string reason = STEnergy::chargingReleaseReason(
+                _current_energy, _max_energy, slack_exhausted);
             auto required_it = _skipped_required_energy.find(task);
             auto slack_it = _skipped_slack_at_begin.find(task);
             logSTChargeEvent("st_charge_release",
@@ -1884,7 +1935,7 @@ namespace RTSim {
 
         STNonBlockWakeEvent *wake_event = new STNonBlockWakeEvent(this, task, wake_time);
         _skip_wake_events[task] = wake_event;
-        wake_event->post(wake_time);
+        wake_event->post(wake_time, true);
 
         SCHEDULER_LOG_INFO(std::string("⏰ [ST-NonBlock] 设置/更新唤醒定时器: ") +
                            "任务=" + getTaskName(task) +
@@ -2055,16 +2106,12 @@ namespace RTSim {
     void STNonBlockScheduler::newRun() {
         SCHEDULER_LOG_INFO("🏁 [ST-NonBlock] newRun - 仿真开始");
 
+        Scheduler::newRun();
+        resetPersistentState();
+
         _current_energy = _initial_energy;
         _last_tick_time = SIMUL.getTime();
         _last_collection_time = SIMUL.getTime();
-        _energy_depleted = false;  // ⭐ 重置能量耗尽标志
-
-        _ready_queue.clear();
-        _waiting_queue.clear();
-        _energy_accounts.clear();
-        _running_tasks.clear();
-        _deadline_miss_arrivals.clear();
 
         _stats.total_scheduled = 0;
         _stats.total_task_completions = 0;
@@ -2101,6 +2148,11 @@ namespace RTSim {
         SCHEDULER_LOG_INFO(std::string("  总收集能量: ") + std::to_string(_stats.total_energy_harvested) + "J");
         SCHEDULER_LOG_INFO(std::string("  剩余能量: ") + std::to_string(_current_energy) + "J");
         SCHEDULER_LOG_INFO("=================================");
+
+        // Pending per-task wake events are disposable. Remove them before the
+        // simulation clears its event queue so the scheduler never retains a
+        // pointer to an event deleted by the queue owner.
+        resetPersistentState();
     }
 
     void STNonBlockScheduler::onTaskEnd(AbsRTTask *task) {

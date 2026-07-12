@@ -19,6 +19,11 @@ namespace yaml {
         return contains(str, '\t');
     }
 
+    static inline bool is_sequence_marker(const string &content) noexcept {
+        return !content.empty() && content[0] == '-' &&
+               (content.size() == 1 || content[1] == ' ');
+    }
+
     static inline string trim(const string &str) {
         const auto strBegin = first_non_whitespace(str);
         if (strBegin == std::string::npos)
@@ -99,7 +104,7 @@ namespace yaml {
             // If I don't know what kind of object is this one, let's check
             // now
             if (!(*root)) {
-                if (content[0] == '-') {
+                if (is_sequence_marker(content)) {
                     root->setType(ObjType::Sequence);
                     if (is_vector_traditional)
                         throw ParseException(
@@ -177,7 +182,7 @@ namespace yaml {
                     skip = 1;
                 } else {
                     // Expect a -, otherwise return
-                    if (content[0] != '-')
+                    if (!is_sequence_marker(content))
                         return root;
                 }
 

@@ -27,6 +27,8 @@ namespace RTSim {
 class TestSTSyncScheduler : public STSyncScheduler {
 public:
     using Scheduler::enqueueModel;
+    std::size_t baseQueueSize() const { return _queue.size(); }
+    TaskModel *baseModel(AbsRTTask *task) const { return find(task); }
 };
 
 class FakeSTSyncTask : public Task {
@@ -215,7 +217,46 @@ public:
             ? scheduler._group_wake_event->getWakeTime()
             : Tick(-1);
     }
+
+    static Tick estimateGroupWakeTime(STSyncScheduler &scheduler,
+                                      Tick slack) {
+        return scheduler.calculateGroupWakeTime(slack, 0.0);
+    }
 };
+
+TEST(STSyncScheduler, GroupWakeEstimateUsesPhysicalPowerUnits) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTSyncScheduler scheduler;
+
+    simulation.initSingleRun();
+    STSyncSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    scheduler._use_real_solar_data = false;
+    scheduler._start_time_offset = Tick(43200000);
+
+    scheduler._current_energy = 0.0;
+    scheduler._max_energy = 0.1;
+    scheduler._base_harvest_rate = 0.1;
+    EXPECT_EQ(STSyncSchedulerTestPeer::estimateGroupWakeTime(
+                  scheduler, Tick(5000)),
+              Tick(1000));
+
+    scheduler._max_energy = 1.0;
+    EXPECT_EQ(STSyncSchedulerTestPeer::estimateGroupWakeTime(
+                  scheduler, Tick(20000)),
+              Tick(10000));
+
+    scheduler._base_harvest_rate = 1.0;
+    EXPECT_EQ(STSyncSchedulerTestPeer::estimateGroupWakeTime(
+                  scheduler, Tick(5000)),
+              Tick(1000));
+
+    scheduler._base_harvest_rate = 0.1;
+    EXPECT_EQ(STSyncSchedulerTestPeer::estimateGroupWakeTime(
+                  scheduler, Tick(5000)),
+              Tick(5000));
+
+    simulation.endSingleRun();
+}
 
 static bool ContainsTask(const std::vector<AbsRTTask *> &tasks,
                          AbsRTTask *task) {
@@ -991,6 +1032,95 @@ TEST(STSyncScheduler, NoMidTickArrivalRebuildBypassesFrozenBatch) {
     EXPECT_EQ(high.getScheduleCount(), 0);
     EXPECT_TRUE(ContainsTask(scheduler.getCurrentBatchTasks(), &low));
     EXPECT_FALSE(ContainsTask(scheduler.getCurrentBatchTasks(), &high));
+
+    simulation.endSingleRun();
+}
+
+TEST(STSyncScheduler, NewRunClearsWaitingGroupWakeAndCommittedState) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTSyncScheduler scheduler;
+    CPU cpu0("st-sync-new-run-cpu0", nullptr);
+    CPU cpu1("st-sync-new-run-cpu1", nullptr);
+    TestSTSyncMRTKernel kernel(
+        &scheduler, std::set<CPU *>{&cpu0, &cpu1});
+    FakeSTSyncTask first(1, 100, 100, 1.0);
+    FakeSTSyncTask second(2, 120, 120, 1.0);
+
+    STSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &first, 100, 1, 1.0);
+    STSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &second, 120, 1, 1.0);
+    simulation.initSingleRun();
+    STSyncSchedulerTestPeer::cancelAutomaticTick(scheduler);
+
+    STSyncSchedulerTestPeer::setEnergy(scheduler, 1.5);
+    first.releaseAt(Tick(0));
+    second.releaseAt(Tick(0));
+    scheduler.insert(&first);
+    scheduler.insert(&second);
+    ASSERT_EQ(scheduler.baseQueueSize(), 2u);
+    ASSERT_TRUE(scheduler.baseModel(&first)->isActive());
+    ASSERT_TRUE(scheduler.baseModel(&second)->isActive());
+    STSyncSchedulerTestPeer::tick(scheduler);
+    ASSERT_TRUE(scheduler._is_charging_sleep);
+    ASSERT_FALSE(scheduler._waiting_queue.empty());
+    ASSERT_NE(scheduler._group_wake_event, nullptr);
+
+    scheduler._selection_frozen = true;
+    scheduler._energy_commit_valid = true;
+    scheduler.newRun();
+    STSyncSchedulerTestPeer::cancelAutomaticTick(scheduler);
+
+    EXPECT_FALSE(scheduler._is_charging_sleep);
+    EXPECT_FALSE(scheduler._deep_charging);
+    EXPECT_FALSE(scheduler._energy_depleted);
+    EXPECT_TRUE(scheduler._waiting_queue.empty());
+    EXPECT_TRUE(scheduler._current_batch_tasks.empty());
+    EXPECT_EQ(scheduler._group_wake_event, nullptr);
+    EXPECT_DOUBLE_EQ(scheduler._st_group_required_energy, 0.0);
+    EXPECT_EQ(scheduler._st_group_slack_at_begin, Tick(0));
+    EXPECT_FALSE(scheduler._selection_frozen);
+    EXPECT_FALSE(scheduler._energy_commit_valid);
+    EXPECT_EQ(scheduler.baseQueueSize(), 0u);
+    ASSERT_NE(scheduler.baseModel(&first), nullptr);
+    ASSERT_NE(scheduler.baseModel(&second), nullptr);
+    EXPECT_FALSE(scheduler.baseModel(&first)->isActive());
+    EXPECT_FALSE(scheduler.baseModel(&second)->isActive());
+
+    TestSTSyncScheduler fresh;
+    CPU fresh_cpu0("st-sync-fresh-run-cpu0", nullptr);
+    CPU fresh_cpu1("st-sync-fresh-run-cpu1", nullptr);
+    TestSTSyncMRTKernel fresh_kernel(
+        &fresh, std::set<CPU *>{&fresh_cpu0, &fresh_cpu1});
+    FakeSTSyncTask fresh_first(3, 100, 100, 1.0);
+    FakeSTSyncTask fresh_second(4, 120, 120, 1.0);
+    STSyncSchedulerTestPeer::addTaskModel(
+        fresh, &fresh_first, 100, 1, 1.0);
+    STSyncSchedulerTestPeer::addTaskModel(
+        fresh, &fresh_second, 120, 1, 1.0);
+    fresh.newRun();
+    STSyncSchedulerTestPeer::cancelAutomaticTick(fresh);
+
+    STSyncSchedulerTestPeer::setEnergy(scheduler, 5.0);
+    STSyncSchedulerTestPeer::setEnergy(fresh, 5.0);
+    first.releaseAt(Tick(0));
+    second.releaseAt(Tick(0));
+    fresh_first.releaseAt(Tick(0));
+    fresh_second.releaseAt(Tick(0));
+    scheduler.insert(&first);
+    scheduler.insert(&second);
+    fresh.insert(&fresh_first);
+    fresh.insert(&fresh_second);
+    STSyncSchedulerTestPeer::tick(scheduler);
+    STSyncSchedulerTestPeer::tick(fresh);
+    simulation.run_to(Tick(0));
+    EXPECT_EQ(first.getScheduleCount(), 1);
+    EXPECT_EQ(second.getScheduleCount(), 1);
+    EXPECT_EQ(fresh_first.getScheduleCount(), 1);
+    EXPECT_EQ(fresh_second.getScheduleCount(), 1);
+    EXPECT_DOUBLE_EQ(
+        scheduler.getCurrentEnergy(), fresh.getCurrentEnergy());
+    EXPECT_EQ(scheduler.baseQueueSize(), fresh.baseQueueSize());
 
     simulation.endSingleRun();
 }

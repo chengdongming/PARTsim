@@ -21,6 +21,7 @@
 #include <rtsim/cpu.hpp>
 #include <rtsim/json_trace.hpp>
 #include <rtsim/scheduler/energy_bridge.hpp>
+#include <rtsim/scheduler/st_energy_utils.hpp>
 #include <rtsim/mrtkernel.hpp>
 
 // 统一日志系统
@@ -360,16 +361,10 @@ namespace RTSim {
     }
 
     STBlockScheduler::~STBlockScheduler() {
+        resetPersistentState();
         if (_tick_event) {
             delete _tick_event;
             _tick_event = nullptr;
-        }
-
-        // ⭐ V74：清理唤醒定时器
-        if (_wake_event) {
-            _wake_event->drop();
-            delete _wake_event;
-            _wake_event = nullptr;
         }
 
         // 清理任务模型
@@ -377,6 +372,47 @@ namespace RTSim {
             delete pair.second;
         }
         _task_models.clear();
+    }
+
+    void STBlockScheduler::resetPersistentState() {
+        if (_tick_event) {
+            _tick_event->drop();
+        }
+        _first_tick_scheduled = false;
+        if (_wake_event) {
+            _wake_event->drop();
+            delete _wake_event;
+            _wake_event = nullptr;
+        }
+
+        _ready_queue.clear();
+        _waiting_queue.clear();
+        _running_tasks.clear();
+        _energy_accounts.clear();
+        _suspend_reasons.clear();
+        _deadline_miss_arrivals.clear();
+        _counted_tasks_in_dispatch.clear();
+        _dispatch_selection_order.clear();
+        _energy_deducted_tasks.clear();
+        _dispatching_tasks_total_energy = 0.0;
+        _selection_tick = Tick(-1);
+        _selection_generation = 0;
+        _selection_frozen = false;
+        _energy_commit_tick = Tick(-1);
+        _energy_commit_generation = 0;
+        _energy_commit_valid = false;
+
+        _energy_depleted = false;
+        _alap_blocking = false;
+        _deep_charging = false;
+        _is_charging_sleep = false;
+        _charge_start_time = Tick(0);
+        _charge_until_slack_zero = Tick(0);
+        _st_charge_blocked_task = nullptr;
+        _st_charge_required_energy = 0.0;
+        _st_charge_slack_at_begin = Tick(0);
+        _last_preempted_task = nullptr;
+        _last_preempted_tick = Tick(0);
     }
 
     void STBlockScheduler::clampCurrentEnergyNonNegative(const std::string &context) {
@@ -462,12 +498,8 @@ namespace RTSim {
                 ? calculateSlackForTask(_st_charge_blocked_task)
                 : calculateMinSlack();
             int64_t blocked_slack_ms = static_cast<int64_t>(blocked_slack);
-            std::string release_reason;
-            if (_current_energy >= _max_energy - 0.000001) {
-                release_reason = "battery_full";
-            } else if (blocked_slack_ms <= 0) {
-                release_reason = "slack_exhausted";
-            }
+            const std::string release_reason = STEnergy::chargingReleaseReason(
+                _current_energy, _max_energy, blocked_slack_ms <= 0);
 
             if (!release_reason.empty()) {
                 logSTChargeEvent("st_charge_release",
@@ -694,7 +726,7 @@ namespace RTSim {
             Tick min_slack = _st_charge_blocked_task
                 ? calculateSlackForTask(_st_charge_blocked_task)
                 : calculateMinSlack();
-            if (_current_energy < _max_energy - 0.000001 &&
+            if (!STEnergy::isBatteryFull(_current_energy, _max_energy) &&
                 static_cast<int64_t>(min_slack) > 0) {
                 logSTChargeEvent("st_charge_hold",
                                  _st_charge_blocked_task,
@@ -1941,35 +1973,12 @@ namespace RTSim {
     void STBlockScheduler::newRun() {
         SCHEDULER_LOG_INFO("🏁 [ST-Block] newRun - 仿真开始");
 
+        Scheduler::newRun();
+        resetPersistentState();
+
         _current_energy = _initial_energy;
         _last_tick_time = SIMUL.getTime();
         _last_collection_time = SIMUL.getTime();
-
-        _ready_queue.clear();
-        _waiting_queue.clear();
-        _energy_accounts.clear();
-        _running_tasks.clear();
-        _counted_tasks_in_dispatch.clear();
-        _dispatch_selection_order.clear();
-        _energy_deducted_tasks.clear();
-        _dispatching_tasks_total_energy = 0.0;
-        _selection_tick = Tick(-1);
-        _selection_generation = 0;
-        _selection_frozen = false;
-        _energy_commit_tick = Tick(-1);
-        _energy_commit_generation = 0;
-        _energy_commit_valid = false;
-        _suspend_reasons.clear();
-        _deadline_miss_arrivals.clear();
-
-        // ⭐ V74：重置深度充电状态
-        _deep_charging = false;
-        _energy_depleted = false;
-        if (_wake_event) {
-            _wake_event->drop();
-            delete _wake_event;
-            _wake_event = nullptr;
-        }
 
         _stats.total_scheduled = 0;
         _stats.total_task_completions = 0;

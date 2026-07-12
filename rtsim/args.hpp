@@ -131,6 +131,20 @@ static inline cmdarg::Options parse_arguments(int argc, char *argv[]) {
         .default_value = "false",
         .action = cmdarg::actions::store_true,
     });
+    parser.addArgument({
+        .long_opt = "run-id",
+        .required = false,
+        .parameter_required = cmdarg::Argument::ParameterRequired::REQUIRED,
+        .help = "Immutable formal run identity embedded in JSON traces",
+        .default_value = "",
+    });
+    parser.addArgument({
+        .long_opt = "taskset-semantic-hash",
+        .required = false,
+        .parameter_required = cmdarg::Argument::ParameterRequired::REQUIRED,
+        .help = "SHA-256 semantic identity of the formal taskset",
+        .default_value = "",
+    });
 
     return parser.parse(argc, argv);
 }

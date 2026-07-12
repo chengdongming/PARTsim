@@ -1,4 +1,5 @@
 #include <rtsim/json_trace.hpp>
+#include <limits>
 #include <sstream>
 
 namespace RTSim {
@@ -11,6 +12,10 @@ namespace RTSim {
         fd << "    \"events\" : [" << std::endl;
         first_event = true;
         max_time = MetaSim::Tick(-1);
+        _observed_simulation_end = MetaSim::Tick(-1);
+        _simulation_completed = false;
+        _simulation_completion_reason = "not_completed";
+        _run_generation = std::numeric_limits<std::uint64_t>::max();
         _energy_provider = nullptr;
         _semantic_trace_enabled = false;
     }
@@ -21,18 +26,53 @@ namespace RTSim {
         fd << "    \"events\" : [" << std::endl;
         first_event = true;
         max_time = max;
+        _observed_simulation_end = MetaSim::Tick(-1);
+        _simulation_completed = false;
+        _simulation_completion_reason = "not_completed";
+        _run_generation = std::numeric_limits<std::uint64_t>::max();
         _energy_provider = nullptr;
         _semantic_trace_enabled = false;
     }
 
     // V98修复：显式清空容器，避免析构顺序问题
     JSONTrace::~JSONTrace() {
-        fd << "] }" << std::endl;
+        fd << "]," << std::endl;
+        fd << "    \"trace_schema_version\": " << TRACE_SCHEMA_VERSION
+           << "," << std::endl;
+        fd << "    \"run_count\": " << _run_generations_seen.size()
+           << "," << std::endl;
+        fd << "    \"target_run_generation\": " << _run_generation
+           << "," << std::endl;
+        fd << "    \"run_generation\": " << _run_generation << ","
+           << std::endl;
+        fd << "    \"run_id\": \"" << escapeJson(_run_id) << "\","
+           << std::endl;
+        fd << "    \"taskset_semantic_hash\": \""
+           << escapeJson(_taskset_semantic_hash) << "\"," << std::endl;
+        fd << "    \"configured_scheduler\": \""
+           << escapeJson(_configured_scheduler) << "\"," << std::endl;
+        fd << "    \"scheduler_display_name\": \""
+           << escapeJson(_scheduler_display_name) << "\"," << std::endl;
+        fd << "    \"scheduler_implementation\": \""
+           << escapeJson(_scheduler_implementation) << "\"," << std::endl;
+        fd << "    \"scheduler_rtti_name\": \""
+           << escapeJson(_scheduler_rtti_name) << "\"," << std::endl;
+        fd << "    \"expected_simulation_horizon_ms\": "
+           << max_time << "," << std::endl;
+        fd << "    \"observed_simulation_end_ms\": "
+           << _observed_simulation_end << "," << std::endl;
+        fd << "    \"simulation_completed\": "
+           << (_simulation_completed ? "true" : "false") << ","
+           << std::endl;
+        fd << "    \"simulation_completion_reason\": \""
+           << escapeJson(_simulation_completion_reason) << "\"" << std::endl;
+        fd << "}" << std::endl;
 
         // 先清空所有容器
         _task_start_times.clear();
         _task_start_consumed.clear();
         _deadline_missed_tasks.clear();
+        _logged_deadline_misses.clear();
         _pending_forced_dline_miss.clear();
 
         fd.close();
@@ -55,52 +95,98 @@ namespace RTSim {
         }
     }
 
+    void JSONTrace::writeDeadlineMissNow(Task &tt,
+                                         MetaSim::Tick release_time,
+                                         MetaSim::Tick absolute_deadline,
+                                         const std::string &reason) {
+        ensureCurrentRun();
+        AbsRTTask *task = dynamic_cast<AbsRTTask *>(&tt);
+        if (!task) return;
+        if (max_time >= 0 && SIMUL.getTime() > max_time) return;
+
+        const double remaining_execution =
+            std::max(0.0, tt.getRemainingWCET());
+        // A same-tick completion/deadline ordering may invoke the deadline
+        // callback after the job has reached zero remaining work.  Such a job
+        // is not a miss and would violate the formal miss-payload contract.
+        if (remaining_execution <= 0.0) return;
+
+        const auto job_key = std::make_pair(
+            task,
+            static_cast<MetaSim::Tick::impl_t>(release_time));
+        if (!_logged_deadline_misses.insert(job_key).second) return;
+
+        _deadline_missed_tasks.insert(task);
+        _task_start_times.erase(task);
+        _task_start_consumed.erase(task);
+
+        beginEvent();
+        fd << "\"time\": \"" << SIMUL.getTime() << "\", ";
+        fd << "\"event_type\": \"dline_miss\", ";
+        fd << "\"task_name\": \"" << escapeJson(tt.getName()) << "\", ";
+        fd << "\"job_id\": \"" << escapeJson(tt.getName()) << "@"
+           << release_time << "\", ";
+        fd << "\"arrival_time\": \"" << release_time << "\", ";
+        fd << "\"deadline\": \"" << absolute_deadline << "\", ";
+        fd << "\"remaining_execution_ms\": " << remaining_execution << ", ";
+        fd << "\"miss_amount\": \""
+           << (SIMUL.getTime() - absolute_deadline) << "\"";
+        writeEnergyInfo();
+        fd << ", \"reason\": \"" << escapeJson(reason) << "\"";
+        fd << "}";
+    }
+
     // ⭐ 写入Early Abort强制注入的dline_miss事件
     void JSONTrace::writeForcedDlineMissNow(AbsRTTask *task, const std::string &reason) {
         if (!task) return;
 
-        // 检查当前时间是否超过最大时间
-        if (max_time >= 0 && SIMUL.getTime() >= max_time) {
-            return;
-        }
-
         Task *tt = dynamic_cast<Task*>(task);
         if (!tt) return;
-
-        // 将任务添加到deadline miss集合（防止后续重复记录descheduled）
-        _deadline_missed_tasks.insert(task);
-
-        // 清除任务开始时间记录
-        _task_start_times.erase(task);
-        _task_start_consumed.erase(task);
-
-        if (!first_event)
-            fd << "," << std::endl;
-        else
-            first_event = false;
-
-        fd << "{ ";
-        fd << "\"time\": \"" << SIMUL.getTime() << "\", ";
-        fd << "\"event_type\": \"dline_miss\", ";
-        fd << "\"task_name\": \"" << tt->getName() << "\", ";
-        fd << "\"arrival_time\": \"" << tt->getLastArrival() << "\"";
-        MetaSim::Tick arrival_time = tt->getLastArrival();
-        MetaSim::Tick relative_deadline = tt->getRelDline();
-        MetaSim::Tick absolute_deadline = arrival_time + relative_deadline;
-        fd << ", \"deadline\": \"" << absolute_deadline << "\"";
-        fd << ", \"miss_amount\": \"" << (MetaSim::SIMUL.getTime() - absolute_deadline) << "\"";
-
-        writeEnergyInfo();
-        fd << ", \"reason\": \"" << reason << "\"";
-        fd << "}";
+        writeDeadlineMissNow(
+            *tt, tt->getLastArrival(), tt->getDeadline(), reason);
     }
 
     void JSONTrace::beginEvent() {
+        ensureCurrentRun();
         if (!first_event)
             fd << "," << std::endl;
         else
             first_event = false;
-        fd << "{ ";
+        fd << "{ \"run_generation\": " << _run_generation << ", ";
+    }
+
+    void JSONTrace::beginRun(std::uint64_t generation) {
+        _run_generations_seen.insert(generation);
+        if (_run_generation == generation) return;
+        _run_generation = generation;
+        _task_start_times.clear();
+        _task_start_consumed.clear();
+        _deadline_missed_tasks.clear();
+        _logged_deadline_misses.clear();
+        _pending_forced_dline_miss.clear();
+        _observed_simulation_end = MetaSim::Tick(-1);
+        _simulation_completed = false;
+        _simulation_completion_reason = "not_completed";
+    }
+
+    void JSONTrace::ensureCurrentRun() {
+        beginRun(SIMUL.getRunGeneration());
+    }
+
+    void JSONTrace::setSimulationOutcome(MetaSim::Tick end_time,
+                                         bool completed,
+                                         const std::string &reason) {
+        ensureCurrentRun();
+        _observed_simulation_end = end_time;
+        _simulation_completed = completed;
+        _simulation_completion_reason = reason;
+        beginEvent();
+        fd << "\"time\": \"" << end_time << "\", ";
+        fd << "\"event_type\": \"simulation_run_outcome\", ";
+        fd << "\"simulation_completed\": "
+           << (completed ? "true" : "false") << ", ";
+        fd << "\"simulation_completion_reason\": \""
+           << escapeJson(reason) << "\"}";
     }
 
     std::string JSONTrace::escapeJson(const std::string &value) {
@@ -297,11 +383,7 @@ namespace RTSim {
             return; // 超过最大时间，不记录此事件
         }
 
-        if (!first_event)
-            fd << "," << std::endl;
-        else
-            first_event = false;
-        fd << "{ ";
+        beginEvent();
         fd << "\"time\": \"" << SIMUL.getTime() << "\", ";
         fd << "\"event_type\": \"" << evt_name << "\", ";
         fd << "\"task_name\": \"" << tt.getName() << "\", ";
@@ -329,11 +411,7 @@ namespace RTSim {
             return;
         }
 
-        if (!first_event)
-            fd << "," << std::endl;
-        else
-            first_event = false;
-        fd << "{ ";
+        beginEvent();
         fd << "\"time\": \"" << SIMUL.getTime() << "\", ";
         fd << "\"event_type\": \"arrival\", ";
         fd << "\"task_name\": \"" << tt.getName() << "\", ";
@@ -354,12 +432,7 @@ namespace RTSim {
             return;
         }
 
-        if (!first_event)
-            fd << "," << std::endl;
-        else
-            first_event = false;
-
-        fd << "{ ";
+        beginEvent();
         fd << "\"time\": \"" << SIMUL.getTime() << "\", ";
         fd << "\"event_type\": \"end_instance\", ";
         fd << "\"task_name\": \"" << tt.getName() << "\", ";
@@ -404,12 +477,7 @@ namespace RTSim {
             return;
         }
 
-        if (!first_event)
-            fd << "," << std::endl;
-        else
-            first_event = false;
-
-        fd << "{ ";
+        beginEvent();
         fd << "\"time\": \"" << SIMUL.getTime() << "\", ";
         fd << "\"event_type\": \"scheduled\", ";
         fd << "\"task_name\": \"" << tt.getName() << "\", ";
@@ -462,12 +530,7 @@ namespace RTSim {
             return;
         }
 
-        if (!first_event)
-            fd << "," << std::endl;
-        else
-            first_event = false;
-
-        fd << "{ ";
+        beginEvent();
         fd << "\"time\": \"" << SIMUL.getTime() << "\", ";
         fd << "\"event_type\": \"descheduled\", ";
         fd << "\"task_name\": \"" << tt.getName() << "\", ";
@@ -537,65 +600,23 @@ namespace RTSim {
     }
 
     void JSONTrace::probe(DeadEvt &e) {
+        ensureCurrentRun();
         Task &tt = *(e.getTask());
-        AbsRTTask *task = dynamic_cast<AbsRTTask*>(&tt);
+        const MetaSim::Tick absolute_deadline = tt.getDeadline();
+        if (!tt.isActive() || SIMUL.getTime() < absolute_deadline) return;
 
-        // 修复假阳性deadline miss：只有当前时间 >= 绝对截止时间才记录为deadline miss
-        // 这是RTSim框架的一个已知问题，在Buffered模式下会调用deadEvt.process()
-        // 但这并不一定意味着真的有deadline miss
-        MetaSim::Tick current_time = SIMUL.getTime();
-        MetaSim::Tick arrival_time = tt.getArrival();
-        // ⭐ 修复：使用getRelDline()获取相对截止时间，而不是getDeadline()（返回绝对截止时间）
-        MetaSim::Tick relative_deadline = tt.getRelDline();
-        MetaSim::Tick absolute_deadline = arrival_time + relative_deadline;
-
-        // 只有当前时间真的超过截止时间时才记录
-        if (current_time >= absolute_deadline) {
-            // ⭐ 修复：使用当前时间作为arrival_time
-            // 因为对于周期性任务，getLastArrival()可能返回第一次实例的到达时间
-            if (max_time >= 0 && SIMUL.getTime() >= max_time) {
-                return;
-            }
-
-            // ⭐ V83修复：将任务添加到deadline miss集合
-            // 这样后续的descheduled事件会被跳过
-            if (task) {
-                _deadline_missed_tasks.insert(task);
-            }
-
-            if (!first_event)
-                fd << "," << std::endl;
-            else
-                first_event = false;
-            fd << "{ ";
-            fd << "\"time\": \"" << SIMUL.getTime() << "\", ";
-            fd << "\"event_type\": \"dline_miss\", ";
-            fd << "\"task_name\": \"" << tt.getName() << "\", ";
-            fd << "\"arrival_time\": \"" << current_time - relative_deadline << "\", ";  // 反推到达时间
-            fd << "\"deadline\": \"" << absolute_deadline << "\", ";
-            fd << "\"miss_amount\": \"" << (current_time - absolute_deadline) << "\"";
-
-            // ⭐ 添加能量信息
-            writeEnergyInfo();
-
-            // ⭐ 添加deadline miss原因
-            if (_energy_provider) {
-                double current_energy = _energy_provider->getCurrentEnergy();
-                if (current_energy < 0.001) {  // 能量接近0
-                    fd << ", \"reason\": \"energy_depleted\"";
-                } else {
-                    fd << ", \"reason\": \"insufficient_time\"";
-                }
-            } else {
-                fd << ", \"reason\": \"unknown\"";
-            }
-
-            fd << "}";
+        std::string reason = "unknown";
+        if (_energy_provider) {
+            reason = _energy_provider->getCurrentEnergy() < 0.001
+                ? "energy_depleted"
+                : "insufficient_time";
         }
-        // 否则忽略这个假阳性事件
+        writeDeadlineMissNow(
+            tt, tt.getArrival(), absolute_deadline, reason);
     }
 
     void JSONTrace::probe(KillEvt &e) {
+        ensureCurrentRun();
         Task &tt = *(e.getTask());
         AbsRTTask *task = dynamic_cast<AbsRTTask*>(&tt);
 

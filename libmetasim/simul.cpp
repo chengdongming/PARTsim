@@ -12,8 +12,10 @@
  *                                                                         *
  ***************************************************************************/
 #include <deque>
+#include <exception>
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
 
 #include <metasim/entity.hpp>
 #include <metasim/simul.hpp>
@@ -42,7 +44,30 @@ namespace MetaSim {
         numRuns(0),
         actRuns(0),
         globTime(0),
-        end(false) {}
+        end(false),
+        runGeneration(0),
+        lastRunOutcome() {}
+
+    const char *simulationCompletionReasonName(
+        SimulationCompletionReason reason) {
+        switch (reason) {
+        case SimulationCompletionReason::ReachedHorizon:
+            return "reached_horizon";
+        case SimulationCompletionReason::EventQueueExhausted:
+            return "event_queue_exhausted";
+        case SimulationCompletionReason::RuntimeError:
+            return "runtime_error";
+        case SimulationCompletionReason::Initializing:
+            return "initializing";
+        case SimulationCompletionReason::Running:
+            return "running";
+        case SimulationCompletionReason::Finalizing:
+            return "finalizing";
+        case SimulationCompletionReason::NotStarted:
+        default:
+            return "not_started";
+        }
+    }
 
     Simulation &Simulation::getInstance() {
         if (instance_ == 0)
@@ -82,9 +107,18 @@ namespace MetaSim {
 
         setTime(mytime);
 
-        temp->action(); // do what it is supposed to do...
-        if (temp->isDisposable()) // if it has to be deleted...
-            delete temp; // delete it!
+        // Ownership transfers to the engine when a queued event is marked
+        // disposable. Preserve that guarantee even when doit/probe throws.
+        const bool disposable = temp->isDisposable();
+        try {
+            temp->action(); // do what it is supposed to do...
+        } catch (...) {
+            if (disposable)
+                delete temp;
+            throw;
+        }
+        if (disposable)
+            delete temp;
 
         return mytime;
     }
@@ -128,26 +162,90 @@ namespace MetaSim {
 
     void Simulation::initSingleRun() {
         globTime = 0;
+        ++runGeneration;
 
         // Run Initialization:
         // Before each run, call the newRun() of every entity
         // and setup statistics
-        Entity::callNewRun();
+        try {
+            Entity::callNewRun();
+        } catch (...) {
+            const std::exception_ptr initialization_error =
+                std::current_exception();
+            try {
+                clearEventQueue();
+            } catch (...) {
+            }
+            std::rethrow_exception(initialization_error);
+        }
 
-        BaseStat::newRun();
+        try {
+            BaseStat::newRun();
+        } catch (...) {
+            const std::exception_ptr initialization_error =
+                std::current_exception();
+            try {
+                Entity::callEndRun();
+            } catch (...) {
+            }
+            try {
+                clearEventQueue();
+            } catch (...) {
+            }
+            std::rethrow_exception(initialization_error);
+        }
     }
 
-    void Simulation::endSingleRun() {
-        Entity::callEndRun();
-        BaseStat::endRun();
-
-        clearEventQueue();
+    void Simulation::endSingleRun(bool commit_statistics) {
+        const Tick finalization_time = globTime;
+        std::exception_ptr first_error;
+        try {
+            Entity::callEndRun();
+        } catch (...) {
+            first_error = std::current_exception();
+        }
+        if (commit_statistics && !first_error) {
+            try {
+                BaseStat::endRun();
+            } catch (...) {
+                if (!first_error)
+                    first_error = std::current_exception();
+            }
+        } else {
+            try {
+                BaseStat::cancelRun();
+            } catch (...) {
+                if (!first_error)
+                    first_error = std::current_exception();
+            }
+        }
+        try {
+            clearEventQueue();
+        } catch (...) {
+            if (!first_error)
+                first_error = std::current_exception();
+        }
+        if (first_error) {
+            lastRunOutcome.actual_end_time = finalization_time;
+            lastRunOutcome.reached_requested_horizon = false;
+            lastRunOutcome.completed = false;
+            lastRunOutcome.reason = SimulationCompletionReason::RuntimeError;
+            std::rethrow_exception(first_error);
+        }
     }
 
     // Main function:
     // This is the simulation engine
     void Simulation::run(Tick endTick, int nRuns) {
         DBGENTER(_SIMUL_DBG_LEV);
+        lastRunOutcome.requested_end_time = endTick;
+        lastRunOutcome.actual_end_time = globTime;
+        lastRunOutcome.reached_requested_horizon = false;
+        lastRunOutcome.completed = false;
+        lastRunOutcome.reason = SimulationCompletionReason::NotStarted;
+        if (endTick < Tick(0))
+            throw std::invalid_argument(
+                "simulation horizon must be non-negative");
         bool initializeRuns = true;
         bool terminateSim = true;
 
@@ -193,19 +291,83 @@ namespace MetaSim {
         while (actRuns < numRuns) {
             std::cout << "\n Run #" << actRuns << std::endl;
 
-            initSingleRun();
+            lastRunOutcome.requested_end_time = endTick;
+            lastRunOutcome.actual_end_time = globTime;
+            lastRunOutcome.reached_requested_horizon = false;
+            lastRunOutcome.completed = false;
+            lastRunOutcome.reason =
+                SimulationCompletionReason::Initializing;
 
-            // MAIN CYCLE!!
+            bool initialized = false;
+            bool finalization_attempted = false;
+            Tick run_end_time = globTime;
             try {
-                while (globTime < endTick) {
-                    globTime = sim_step();
-                }
-            } catch (NoMoreEventsInQueue &e) {
-                std::cerr << "No more events in queue: simulation time ="
-                          << globTime << std::endl;
-            }
+                initSingleRun();
+                initialized = true;
+                lastRunOutcome.reason = SimulationCompletionReason::Running;
 
-            endSingleRun();
+                SimulationCompletionReason completion_reason =
+                    SimulationCompletionReason::ReachedHorizon;
+
+                // MAIN CYCLE!! Do not execute an event beyond the requested
+                // horizon. If the next event is later, advancing logical time
+                // to the horizon is a complete run; an empty queue before the
+                // horizon is an explicit infrastructure outcome.
+                try {
+                    while (globTime < endTick) {
+                        if (getNextEventTime() > endTick) {
+                            globTime = endTick;
+                            break;
+                        }
+                        globTime = sim_step();
+                    }
+                } catch (NoMoreEventsInQueue &e) {
+                    std::cerr << "No more events in queue: simulation time ="
+                              << globTime << std::endl;
+                    completion_reason =
+                        SimulationCompletionReason::EventQueueExhausted;
+                }
+
+                run_end_time = globTime;
+                lastRunOutcome.actual_end_time = run_end_time;
+                lastRunOutcome.reason =
+                    SimulationCompletionReason::Finalizing;
+                finalization_attempted = true;
+                endSingleRun();
+
+                // Publish success only after every finalizer and queue cleanup
+                // has completed successfully.
+                lastRunOutcome.requested_end_time = endTick;
+                lastRunOutcome.actual_end_time = run_end_time;
+                lastRunOutcome.reached_requested_horizon =
+                    completion_reason ==
+                        SimulationCompletionReason::ReachedHorizon &&
+                    run_end_time >= endTick;
+                lastRunOutcome.completed = true;
+                lastRunOutcome.reason = completion_reason;
+            } catch (...) {
+                const std::exception_ptr primary_error =
+                    std::current_exception();
+                const Tick failure_time =
+                    lastRunOutcome.reason ==
+                            SimulationCompletionReason::RuntimeError
+                        ? lastRunOutcome.actual_end_time
+                        : globTime;
+                if (initialized && !finalization_attempted) {
+                    try {
+                        endSingleRun(false);
+                    } catch (...) {
+                        // The initialization/callback exception has priority.
+                    }
+                }
+                lastRunOutcome.requested_end_time = endTick;
+                lastRunOutcome.actual_end_time = failure_time;
+                lastRunOutcome.reached_requested_horizon = false;
+                lastRunOutcome.completed = false;
+                lastRunOutcome.reason =
+                    SimulationCompletionReason::RuntimeError;
+                std::rethrow_exception(primary_error);
+            }
 
             actRuns++; // next run....
         }

@@ -15,6 +15,7 @@ add_executable(
   scheduler/st_nonblock.cpp
   scheduler/st_sync.cpp
   scheduler/semantics_families.cpp
+  scheduler/repair_regressions.cpp
 )
 
 target_link_libraries(

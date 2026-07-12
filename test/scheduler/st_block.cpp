@@ -27,6 +27,8 @@ namespace RTSim {
 class TestSTBlockScheduler : public STBlockScheduler {
 public:
     using Scheduler::enqueueModel;
+    std::size_t baseQueueSize() const { return _queue.size(); }
+    TaskModel *baseModel(AbsRTTask *task) const { return find(task); }
 };
 
 class FakeSTBlockTask : public Task {
@@ -705,6 +707,71 @@ TEST(STBlockScheduler, DeadlineMissKeepsJobAndUsesRelativeDeadline) {
     EXPECT_EQ(STBlockSchedulerTestPeer::deadlineMisses(scheduler), 1);
     EXPECT_DOUBLE_EQ(task.getRemainingWCET(), 10.0);
     EXPECT_EQ(task.getDeadline(), Tick(5));
+
+    simulation.endSingleRun();
+}
+
+TEST(STBlockScheduler, NewRunClearsChargingHoldAndMatchesFreshRunState) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTBlockScheduler scheduler;
+    CPU cpu("st-block-new-run-cpu", nullptr);
+    TestSTBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeSTBlockTask task(1, 100, 100, 1.0);
+
+    STBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &task, 100, 1, 1.0);
+    simulation.initSingleRun();
+    STBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+
+    STBlockSchedulerTestPeer::setEnergy(scheduler, 0.5);
+    task.releaseAt(Tick(0));
+    scheduler.insert(&task);
+    ASSERT_EQ(scheduler.baseQueueSize(), 1u);
+    ASSERT_TRUE(scheduler.baseModel(&task)->isActive());
+    STBlockSchedulerTestPeer::tick(scheduler);
+    ASSERT_TRUE(scheduler._is_charging_sleep);
+    ASSERT_EQ(scheduler._st_charge_blocked_task, &task);
+    ASSERT_NE(scheduler._wake_event, nullptr);
+
+    scheduler.newRun();
+    STBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    EXPECT_FALSE(scheduler._is_charging_sleep);
+    EXPECT_FALSE(scheduler._deep_charging);
+    EXPECT_EQ(scheduler._st_charge_blocked_task, nullptr);
+    EXPECT_DOUBLE_EQ(scheduler._st_charge_required_energy, 0.0);
+    EXPECT_EQ(scheduler._st_charge_slack_at_begin, Tick(0));
+    EXPECT_EQ(scheduler._wake_event, nullptr);
+    EXPECT_TRUE(scheduler._dispatch_selection_order.empty());
+    EXPECT_FALSE(scheduler._selection_frozen);
+    EXPECT_FALSE(scheduler._energy_commit_valid);
+    EXPECT_EQ(scheduler.baseQueueSize(), 0u);
+    ASSERT_NE(scheduler.baseModel(&task), nullptr);
+    EXPECT_FALSE(scheduler.baseModel(&task)->isActive());
+
+    TestSTBlockScheduler fresh;
+    CPU fresh_cpu("st-block-fresh-run-cpu", nullptr);
+    TestSTBlockMRTKernel fresh_kernel(
+        &fresh, std::set<CPU *>{&fresh_cpu});
+    FakeSTBlockTask fresh_task(2, 100, 100, 1.0);
+    STBlockSchedulerTestPeer::addTaskModel(
+        fresh, &fresh_task, 100, 1, 1.0);
+    fresh.newRun();
+    STBlockSchedulerTestPeer::cancelAutomaticTick(fresh);
+
+    STBlockSchedulerTestPeer::setEnergy(scheduler, 5.0);
+    STBlockSchedulerTestPeer::setEnergy(fresh, 5.0);
+    task.releaseAt(Tick(0));
+    fresh_task.releaseAt(Tick(0));
+    scheduler.insert(&task);
+    fresh.insert(&fresh_task);
+    STBlockSchedulerTestPeer::tick(scheduler);
+    STBlockSchedulerTestPeer::tick(fresh);
+    simulation.run_to(Tick(0));
+    EXPECT_EQ(task.getScheduleCount(), 1);
+    EXPECT_EQ(fresh_task.getScheduleCount(), 1);
+    EXPECT_DOUBLE_EQ(
+        scheduler.getCurrentEnergy(), fresh.getCurrentEnergy());
+    EXPECT_EQ(scheduler.baseQueueSize(), fresh.baseQueueSize());
 
     simulation.endSingleRun();
 }
