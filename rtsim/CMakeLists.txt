@@ -42,3 +42,22 @@ else()
 endif()
 
 target_link_libraries(rtsim-exe PRIVATE cmdarg PRIVATE rtsim)
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+
+# Record the exact local source/build pairing used by binary-dependent tests.
+# This is a reproducibility guard against accidental stale-build reuse, not a
+# cryptographic trust mechanism for hostile local administrators.
+add_custom_command(TARGET rtsim-exe POST_BUILD
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_SOURCE_DIR}/scripts/build_identity.py
+        --source-root ${CMAKE_SOURCE_DIR}
+        --build-dir ${CMAKE_BINARY_DIR}
+        --build-type ${CMAKE_BUILD_TYPE}
+        --compiler-id ${CMAKE_CXX_COMPILER_ID}
+        --compiler-version ${CMAKE_CXX_COMPILER_VERSION}
+        --binary $<TARGET_FILE:rtsim-exe>
+        --library $<TARGET_FILE:rtsim>
+        --output ${CMAKE_BINARY_DIR}/partsim_build_identity.json
+    BYPRODUCTS ${CMAKE_BINARY_DIR}/partsim_build_identity.json
+    VERBATIM
+)
