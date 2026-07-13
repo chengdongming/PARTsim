@@ -1,0 +1,145 @@
+{
+  "audit_status": "FAILED",
+  "audit_version": "CORE0A-SECOND-ADVERSARIAL-1.0",
+  "authoritative_core0a_pass_exists": false,
+  "authoritative_zip_sha256": "a51ceee47c9f0e32a80a23f4c419af1271d35b29522d91b6630812bb362a2995",
+  "build_identity_hash": "b420d0244d8409e6e92dd856d35722df39bd2238201fb60cd9479049f3931662",
+  "pilot_authorized": false,
+  "production_scope_modified": false,
+  "superseded_core0a_evidence": [
+    {
+      "commit": "dcb55f6a22f4d772a74f94ac7799b79cf5da8541",
+      "status": "INVALIDATED",
+      "zip_sha256": "d56c2f671b8ea201e6e53a4199cba333f3dcc6eb1e09ff06a1bfa8b76db8dd50"
+    },
+    {
+      "commit": "01f582b094f376a8e00640e22d0d2f25506d0e35",
+      "status": "INVALIDATED",
+      "zip_sha256": "a51ceee47c9f0e32a80a23f4c419af1271d35b29522d91b6630812bb362a2995"
+    }
+  ],
+  "gates": {
+    "event_order_and_scheduler_semantics_microcases": {
+      "reported_counts": {"N_failures": 0, "N_microcases": 6},
+      "bundled_independent_counts": {"N_failures": 0, "N_microcases": 6},
+      "second_audit_counts": {"N_failures": null, "N_microcases": 6},
+      "frozen_predicate": "N_microcases > 0 and N_failures == 0",
+      "reported_status": "PASSED",
+      "bundled_status": "PASSED",
+      "second_audit_status": "UNCONFIRMED",
+      "difference": "scheduler_event_order_traces.csv omits M/processors, so scan and processor-blocking semantics cannot be replayed from raw rows; changing actual_event to {tampered:true} and refreshing the raw manifest still produced bundled gate PASSED with N_failures=0"
+    },
+    "exact_exhaustive_domain_zero_mismatch": {
+      "reported_counts": {"N_exhaustive_instances": 160, "N_mismatches": 0},
+      "bundled_independent_counts": {"N_exhaustive_instances": 160, "N_mismatches": 0},
+      "second_audit_counts": {"N_exhaustive_instances": 160, "N_mismatches": 0},
+      "frozen_predicate": "N_exhaustive_instances > 0 and N_mismatches == 0",
+      "reported_status": "PASSED",
+      "bundled_status": "PASSED",
+      "second_audit_status": "PASSED",
+      "difference": null
+    },
+    "exact_random_boundary_instances_at_least_10000": {
+      "reported_counts": {"N_mismatches": 0, "N_random_boundary_instances": 50000},
+      "bundled_independent_counts": {"N_mismatches": 0, "N_random_boundary_instances": 50000},
+      "second_audit_counts": {"N_mismatches": 0, "N_random_boundary_instances": 50000},
+      "frozen_predicate": "N_random_boundary_instances >= 10000 and N_mismatches == 0",
+      "reported_status": "PASSED",
+      "bundled_status": "PASSED",
+      "second_audit_status": "PASSED",
+      "difference": null
+    },
+    "finite_state_counterexample_search": {
+      "reported_counts": {"N_certified_bound_violations": 0, "N_complete": 14, "N_inconclusive": 0, "N_instances": 14, "N_internal_error": 0},
+      "bundled_independent_counts": {"N_certified_bound_violations": 0, "N_complete": 14, "N_inconclusive": 0, "N_instances": 14, "N_internal_error": 0},
+      "second_audit_counts": {"N_certified_bound_violations": 0, "N_complete": 14, "N_inconclusive": 0, "N_instances": 14, "N_internal_error": 0},
+      "frozen_predicate": "N_complete > 0 and N_inconclusive == 0 and N_internal_error == 0 and N_certified_bound_violations == 0",
+      "reported_status": "PASSED",
+      "bundled_status": "PASSED",
+      "second_audit_status": "PASSED",
+      "difference": null
+    },
+    "full_w_q_h_scan": {
+      "reported_counts": {"N_scan_violations": 0, "N_tasks_checked": 102},
+      "bundled_independent_counts": {"N_scan_violations": 0, "N_tasks_checked": 102},
+      "second_audit_counts": {"N_scan_violations": null, "N_tasks_checked": 102},
+      "frozen_predicate": "N_scan_violations == 0 and N_tasks_checked > 0",
+      "reported_status": "PASSED",
+      "bundled_status": "PASSED",
+      "second_audit_status": "UNCONFIRMED",
+      "difference": "two cases use injected envelope callbacks; raw rows omit case label and callback/function identity, so omissions and premature stops cannot be independently derived"
+    },
+    "joint_certification_state_machine": {
+      "reported_counts": {"N_failures": 0, "N_state_cases": 17},
+      "bundled_independent_counts": {"N_failures": 0, "N_state_cases": 17},
+      "second_audit_counts": {"N_failures": null, "N_state_cases": 17},
+      "frozen_predicate": "N_state_cases > 0 and N_failures == 0",
+      "reported_status": "PASSED",
+      "bundled_status": "PASSED",
+      "second_audit_status": "UNCONFIRMED",
+      "difference": "raw rows omit task/source/solver inputs, actual result object, and assertion details; production_api_used and passed are producer-authored booleans"
+    },
+    "loc_theta_cw_dominance_invariant": {
+      "reported_counts": {"N_common_cases": 200, "N_violations": 0},
+      "bundled_independent_counts": {"N_common_cases": 200, "N_violations": 0},
+      "second_audit_counts": {"N_common_cases": 200, "N_violations": 0},
+      "frozen_predicate": "N_common_cases > 0 and N_violations == 0",
+      "reported_status": "PASSED",
+      "bundled_status": "PASSED",
+      "second_audit_status": "PASSED",
+      "difference": null,
+      "second_audit_notes": {"N_unique_semantic_hashes": 200, "N_solver_reruns": 10, "N_solver_rerun_mismatches": 0, "task_count_distribution": {"1": 200}}
+    },
+    "non_vacuity_coverage": {
+      "reported_counts": {"N_certified_tasksets": 14, "N_complete_local_common_cases": 200, "N_energy_blocking_cases": 379, "N_positive_E0_satisfied_traces": 25, "N_processor_interference_cases": 5},
+      "bundled_independent_counts": {"N_certified_tasksets": 14, "N_complete_local_common_cases": 200, "N_energy_blocking_cases": 379, "N_positive_E0_satisfied_traces": 25, "N_processor_interference_cases": 5},
+      "second_audit_counts": {"N_certified_tasksets": 14, "N_complete_local_common_cases": 200, "N_energy_blocking_cases": 379, "N_positive_E0_satisfied_traces": 25, "N_processor_interference_cases": 5},
+      "frozen_predicate": "N_certified_tasksets > 0 and N_energy_blocking_cases > 0 and N_processor_interference_cases > 0 and N_complete_local_common_cases > 0",
+      "reported_status": "PASSED",
+      "bundled_status": "PASSED",
+      "second_audit_status": "PASSED",
+      "difference": null
+    },
+    "processor_term_direct_scan_zero_mismatch": {
+      "reported_counts": {"N_instances": 10105, "N_mismatches": 0},
+      "bundled_independent_counts": {"N_instances": 10105, "N_mismatches": 0},
+      "second_audit_counts": {"N_instances": 10105, "N_mismatches": 0},
+      "frozen_predicate": "N_instances > 0 and N_mismatches == 0",
+      "reported_status": "PASSED",
+      "bundled_status": "PASSED",
+      "second_audit_status": "PASSED",
+      "difference": null,
+      "second_audit_notes": {"exhaustive": 105, "random": 10000}
+    },
+    "schema_lineage_and_request_state_machine": {
+      "reported_counts": {"N_cycle_violations": 0, "N_fk_violations": 0, "N_rows": 53, "N_state_transition_violations": 0},
+      "bundled_independent_counts": {"N_cycle_violations": 0, "N_fk_violations": 0, "N_rows": 53, "N_state_transition_violations": 0},
+      "second_audit_counts": {"N_cycle_violations": null, "N_fk_violations": 0, "N_rows": 53, "N_state_transition_violations": null},
+      "frozen_predicate": "N_rows > 0 and N_fk_violations == 0 and N_state_transition_violations == 0 and N_cycle_violations == 0",
+      "reported_status": "PASSED",
+      "bundled_status": "PASSED",
+      "second_audit_status": "UNCONFIRMED",
+      "difference": "53 rows contain only 16 PK, 16 input-hash coverage, 16 build-identity coverage, and 5 FK checks; there are no state-transition or DAG-cycle rows, making both reported zeros vacuous"
+    },
+    "service_curve_contract_checks": {
+      "reported_counts": {"N_curves": 15, "N_invalid": 0},
+      "bundled_independent_counts": {"N_curves": 15, "N_invalid": 0},
+      "second_audit_counts": {"N_curves": 15, "N_invalid": 0},
+      "frozen_predicate": "N_curves > 0 and N_invalid == 0",
+      "reported_status": "PASSED",
+      "bundled_status": "PASSED",
+      "second_audit_status": "PASSED",
+      "difference": null,
+      "second_audit_notes": {"production_entry_call_counts": {"finite_state_checker": 37, "microcase_formal_entry": 27, "runner": 3, "single_task_closure": 1, "taskset_analyzer": 2}}
+    }
+  },
+  "independent_metrics": {
+    "envelope_rows": 100320,
+    "finite_state": {"N_bound_checks": 25, "N_certificates": 82, "N_jobs": 82, "N_ticks": 336},
+    "workload_cases": 35805,
+    "workload_mismatches": 0,
+    "workload_monotonicity_checks": 61775,
+    "workload_monotonicity_violations": 0
+  },
+  "reason": "Four frozen gates cannot be independently evaluated from the bundled raw rows. Reported and bundled statuses agree with each other, but that agreement reuses producer-authored assertions or vacuous missing check classes."
+}
