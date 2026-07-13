@@ -1,0 +1,581 @@
+{
+  "adaptive_decisions": [
+    {
+      "U_norm": "ALL",
+      "analyses_completed": "50",
+      "certification_gain_tasks": "",
+      "decision": "KEEP_EXISTING_NO_RERUN",
+      "exact_e0": "0",
+      "gate": "PREEXISTING_FULL",
+      "local_only_closures": "",
+      "strict_response_tasks": "",
+      "tasksets_completed": "10"
+    },
+    {
+      "U_norm": "ALL",
+      "analyses_completed": "50",
+      "certification_gain_tasks": "",
+      "decision": "KEEP_EXISTING_NO_RERUN",
+      "exact_e0": "1360181973072000001/16000000000000000000",
+      "gate": "PREEXISTING_FULL",
+      "local_only_closures": "",
+      "strict_response_tasks": "",
+      "tasksets_completed": "10"
+    },
+    {
+      "U_norm": "0.4",
+      "analyses_completed": "10",
+      "certification_gain_tasks": "0",
+      "decision": "STOP_E0_NO_LOCAL_ONLY_CLOSURE",
+      "exact_e0": "178487996829/2000000000000",
+      "gate": "INITIAL_U04_TWO",
+      "local_only_closures": "0",
+      "strict_response_tasks": "0",
+      "tasksets_completed": "2"
+    },
+    {
+      "U_norm": "0.4",
+      "analyses_completed": "10",
+      "certification_gain_tasks": "0",
+      "decision": "STOP_E0_NO_LOCAL_ONLY_CLOSURE",
+      "exact_e0": "21473099401200000281/200000000000000000000",
+      "gate": "INITIAL_U04_TWO",
+      "local_only_closures": "0",
+      "strict_response_tasks": "0",
+      "tasksets_completed": "2"
+    },
+    {
+      "U_norm": "0.4",
+      "analyses_completed": "10",
+      "certification_gain_tasks": "0",
+      "decision": "STOP_E0_NO_LOCAL_ONLY_CLOSURE",
+      "exact_e0": "43409021832000000987/400000000000000000000",
+      "gate": "INITIAL_U04_TWO",
+      "local_only_closures": "0",
+      "strict_response_tasks": "0",
+      "tasksets_completed": "2"
+    },
+    {
+      "U_norm": "0.4",
+      "analyses_completed": "10",
+      "certification_gain_tasks": "0",
+      "decision": "STOP_E0_NO_LOCAL_ONLY_CLOSURE",
+      "exact_e0": "225897744831/2000000000000",
+      "gate": "INITIAL_U04_TWO",
+      "local_only_closures": "0",
+      "strict_response_tasks": "0",
+      "tasksets_completed": "2"
+    },
+    {
+      "U_norm": "0.4",
+      "analyses_completed": "10",
+      "certification_gain_tasks": "0",
+      "decision": "STOP_E0_NO_LOCAL_ONLY_CLOSURE",
+      "exact_e0": "1",
+      "gate": "INITIAL_U04_TWO",
+      "local_only_closures": "0",
+      "strict_response_tasks": "0",
+      "tasksets_completed": "2"
+    }
+  ],
+  "cells": {
+    "U0.4-E0=0": {
+      "U_norm": "0.4",
+      "analyses": 25,
+      "certification_gain_tasks": 0,
+      "certification_gain_tasksets": 0,
+      "class": "A_NO_ENVELOPE_STRICTNESS",
+      "envelope_strict_accesses": 0,
+      "exact_e0": "0",
+      "final_statuses": {
+        "NOT_APPLICABLE_DEPENDENCY": 5,
+        "NO_CANDIDATE": 20
+      },
+      "local_only_closures": 0,
+      "response_common_candidate_tasks": 0,
+      "response_equal_tasks": 0,
+      "response_strict_tasks": 0,
+      "response_strict_tasksets": 0,
+      "response_violations": 0,
+      "sample_scope": "FULL_FIVE",
+      "sampled_tasksets": 5,
+      "timeouts_after_retry": 0
+    },
+    "U0.4-E0=1": {
+      "U_norm": "0.4",
+      "analyses": 10,
+      "certification_gain_tasks": 0,
+      "certification_gain_tasksets": 0,
+      "class": "B_ENVELOPE_STRICT_NO_LOCAL_ONLY_CLOSURE",
+      "envelope_strict_accesses": 818,
+      "exact_e0": "1",
+      "final_statuses": {
+        "COMPLETED": 10
+      },
+      "local_only_closures": 0,
+      "response_common_candidate_tasks": 60,
+      "response_equal_tasks": 60,
+      "response_strict_tasks": 0,
+      "response_strict_tasksets": 0,
+      "response_violations": 0,
+      "sample_scope": "ADAPTIVE_GATE_TWO",
+      "sampled_tasksets": 2,
+      "timeouts_after_retry": 0
+    },
+    "U0.4-E0=1360181973072000001/16000000000000000000": {
+      "U_norm": "0.4",
+      "analyses": 25,
+      "certification_gain_tasks": 0,
+      "certification_gain_tasksets": 0,
+      "class": "B_ENVELOPE_STRICT_NO_LOCAL_ONLY_CLOSURE",
+      "envelope_strict_accesses": 408,
+      "exact_e0": "1360181973072000001/16000000000000000000",
+      "final_statuses": {
+        "COMPLETED": 12,
+        "NOT_APPLICABLE_DEPENDENCY": 1,
+        "NO_CANDIDATE": 1,
+        "TIMEOUT": 11
+      },
+      "local_only_closures": 0,
+      "response_common_candidate_tasks": 122,
+      "response_equal_tasks": 122,
+      "response_strict_tasks": 0,
+      "response_strict_tasksets": 0,
+      "response_violations": 0,
+      "sample_scope": "FULL_FIVE",
+      "sampled_tasksets": 5,
+      "timeouts_after_retry": 11
+    },
+    "U0.4-E0=178487996829/2000000000000": {
+      "U_norm": "0.4",
+      "analyses": 10,
+      "certification_gain_tasks": 0,
+      "certification_gain_tasksets": 0,
+      "class": "B_ENVELOPE_STRICT_NO_LOCAL_ONLY_CLOSURE",
+      "envelope_strict_accesses": 159,
+      "exact_e0": "178487996829/2000000000000",
+      "final_statuses": {
+        "COMPLETED": 3,
+        "NOT_APPLICABLE_DEPENDENCY": 1,
+        "TIMEOUT": 6
+      },
+      "local_only_closures": 0,
+      "response_common_candidate_tasks": 40,
+      "response_equal_tasks": 40,
+      "response_strict_tasks": 0,
+      "response_strict_tasksets": 0,
+      "response_violations": 0,
+      "sample_scope": "ADAPTIVE_GATE_TWO",
+      "sampled_tasksets": 2,
+      "timeouts_after_retry": 6
+    },
+    "U0.4-E0=21473099401200000281/200000000000000000000": {
+      "U_norm": "0.4",
+      "analyses": 10,
+      "certification_gain_tasks": 0,
+      "certification_gain_tasksets": 0,
+      "class": "B_ENVELOPE_STRICT_NO_LOCAL_ONLY_CLOSURE",
+      "envelope_strict_accesses": 159,
+      "exact_e0": "21473099401200000281/200000000000000000000",
+      "final_statuses": {
+        "COMPLETED": 3,
+        "NOT_APPLICABLE_DEPENDENCY": 1,
+        "TIMEOUT": 6
+      },
+      "local_only_closures": 0,
+      "response_common_candidate_tasks": 40,
+      "response_equal_tasks": 40,
+      "response_strict_tasks": 0,
+      "response_strict_tasksets": 0,
+      "response_violations": 0,
+      "sample_scope": "ADAPTIVE_GATE_TWO",
+      "sampled_tasksets": 2,
+      "timeouts_after_retry": 6
+    },
+    "U0.4-E0=225897744831/2000000000000": {
+      "U_norm": "0.4",
+      "analyses": 10,
+      "certification_gain_tasks": 0,
+      "certification_gain_tasksets": 0,
+      "class": "B_ENVELOPE_STRICT_NO_LOCAL_ONLY_CLOSURE",
+      "envelope_strict_accesses": 439,
+      "exact_e0": "225897744831/2000000000000",
+      "final_statuses": {
+        "COMPLETED": 5,
+        "NOT_APPLICABLE_DEPENDENCY": 1,
+        "TIMEOUT": 4
+      },
+      "local_only_closures": 0,
+      "response_common_candidate_tasks": 44,
+      "response_equal_tasks": 44,
+      "response_strict_tasks": 0,
+      "response_strict_tasksets": 0,
+      "response_violations": 0,
+      "sample_scope": "ADAPTIVE_GATE_TWO",
+      "sampled_tasksets": 2,
+      "timeouts_after_retry": 4
+    },
+    "U0.4-E0=43409021832000000987/400000000000000000000": {
+      "U_norm": "0.4",
+      "analyses": 10,
+      "certification_gain_tasks": 0,
+      "certification_gain_tasksets": 0,
+      "class": "B_ENVELOPE_STRICT_NO_LOCAL_ONLY_CLOSURE",
+      "envelope_strict_accesses": 159,
+      "exact_e0": "43409021832000000987/400000000000000000000",
+      "final_statuses": {
+        "COMPLETED": 3,
+        "NOT_APPLICABLE_DEPENDENCY": 1,
+        "TIMEOUT": 6
+      },
+      "local_only_closures": 0,
+      "response_common_candidate_tasks": 40,
+      "response_equal_tasks": 40,
+      "response_strict_tasks": 0,
+      "response_strict_tasksets": 0,
+      "response_violations": 0,
+      "sample_scope": "ADAPTIVE_GATE_TWO",
+      "sampled_tasksets": 2,
+      "timeouts_after_retry": 6
+    },
+    "U0.6-E0=0": {
+      "U_norm": "0.6",
+      "analyses": 25,
+      "certification_gain_tasks": 0,
+      "certification_gain_tasksets": 0,
+      "class": "A_NO_ENVELOPE_STRICTNESS",
+      "envelope_strict_accesses": 0,
+      "exact_e0": "0",
+      "final_statuses": {
+        "NOT_APPLICABLE_DEPENDENCY": 5,
+        "NO_CANDIDATE": 20
+      },
+      "local_only_closures": 0,
+      "response_common_candidate_tasks": 0,
+      "response_equal_tasks": 0,
+      "response_strict_tasks": 0,
+      "response_strict_tasksets": 0,
+      "response_violations": 0,
+      "sample_scope": "FULL_FIVE",
+      "sampled_tasksets": 5,
+      "timeouts_after_retry": 0
+    },
+    "U0.6-E0=1": {
+      "U_norm": "0.6",
+      "analyses": 0,
+      "class": "NOT_RUN_ADAPTIVE_GATE",
+      "exact_e0": "1",
+      "sample_scope": "NOT_RUN_ADAPTIVE_GATE",
+      "sampled_tasksets": 0
+    },
+    "U0.6-E0=1360181973072000001/16000000000000000000": {
+      "U_norm": "0.6",
+      "analyses": 25,
+      "certification_gain_tasks": 0,
+      "certification_gain_tasksets": 0,
+      "class": "A_NO_ENVELOPE_STRICTNESS",
+      "envelope_strict_accesses": 0,
+      "exact_e0": "1360181973072000001/16000000000000000000",
+      "final_statuses": {
+        "NOT_APPLICABLE_DEPENDENCY": 5,
+        "NO_CANDIDATE": 4,
+        "TIMEOUT": 16
+      },
+      "local_only_closures": 0,
+      "response_common_candidate_tasks": 43,
+      "response_equal_tasks": 43,
+      "response_strict_tasks": 0,
+      "response_strict_tasksets": 0,
+      "response_violations": 0,
+      "sample_scope": "FULL_FIVE",
+      "sampled_tasksets": 5,
+      "timeouts_after_retry": 16
+    },
+    "U0.6-E0=178487996829/2000000000000": {
+      "U_norm": "0.6",
+      "analyses": 0,
+      "class": "NOT_RUN_ADAPTIVE_GATE",
+      "exact_e0": "178487996829/2000000000000",
+      "sample_scope": "NOT_RUN_ADAPTIVE_GATE",
+      "sampled_tasksets": 0
+    },
+    "U0.6-E0=21473099401200000281/200000000000000000000": {
+      "U_norm": "0.6",
+      "analyses": 0,
+      "class": "NOT_RUN_ADAPTIVE_GATE",
+      "exact_e0": "21473099401200000281/200000000000000000000",
+      "sample_scope": "NOT_RUN_ADAPTIVE_GATE",
+      "sampled_tasksets": 0
+    },
+    "U0.6-E0=225897744831/2000000000000": {
+      "U_norm": "0.6",
+      "analyses": 0,
+      "class": "NOT_RUN_ADAPTIVE_GATE",
+      "exact_e0": "225897744831/2000000000000",
+      "sample_scope": "NOT_RUN_ADAPTIVE_GATE",
+      "sampled_tasksets": 0
+    },
+    "U0.6-E0=43409021832000000987/400000000000000000000": {
+      "U_norm": "0.6",
+      "analyses": 0,
+      "class": "NOT_RUN_ADAPTIVE_GATE",
+      "exact_e0": "43409021832000000987/400000000000000000000",
+      "sample_scope": "NOT_RUN_ADAPTIVE_GATE",
+      "sampled_tasksets": 0
+    }
+  },
+  "complete_instance_invariant": true,
+  "completed_analyses": 150,
+  "completed_taskset_e0_instances": 30,
+  "confirmation": {
+    "analysis_results": 0,
+    "executed": false,
+    "reason": "NO_D_OR_E_CELL",
+    "selected_cells": []
+  },
+  "core_grid_readiness": false,
+  "dominance": {
+    "envelope_violations": 0,
+    "response_violations": 0
+  },
+  "formal_grid_completed": false,
+  "next_single_structural_dimension": "constrained-deadline D/T distribution",
+  "orphan_attempts_preserved": [],
+  "parameter_identification_success": false,
+  "run_state": "PAUSED_ADAPTIVE_SCREENING",
+  "screening_design": "USER_DIRECTED_ADAPTIVE_E0_GATE",
+  "selected_exact_e0": [
+    "0",
+    "1360181973072000001/16000000000000000000",
+    "178487996829/2000000000000",
+    "21473099401200000281/200000000000000000000",
+    "43409021832000000987/400000000000000000000",
+    "225897744831/2000000000000",
+    "1"
+  ],
+  "severity": {
+    "P0": [],
+    "P1": [
+      "no local-only closure, strict response, or certification gain observed"
+    ],
+    "P2": [
+      "49 final configuration timeouts",
+      "five E0 values stopped after the two-taskset U=0.4 adaptive gate"
+    ]
+  },
+  "signals": {
+    "certification_gain_tasks": 0,
+    "envelope_accesses": 13942,
+    "local_only_closures": 0,
+    "predicted_energy_separation_hits": 0,
+    "relations": {
+      "DEADLINE_CARRY_IN": {
+        "certification_gain_tasks": 0,
+        "common_candidates": 132,
+        "equal_tasks": 132,
+        "strict_response_tasks": 0,
+        "violations": 0
+      },
+      "FIXED_CW_CARRY_IN": {
+        "certification_gain_tasks": 0,
+        "common_candidates": 100,
+        "equal_tasks": 100,
+        "strict_response_tasks": 0,
+        "violations": 0
+      },
+      "RECURSIVE_CARRY_IN": {
+        "certification_gain_tasks": 0,
+        "common_candidates": 157,
+        "equal_tasks": 157,
+        "strict_response_tasks": 0,
+        "violations": 0
+      }
+    },
+    "strict_envelope_accesses": 2142,
+    "strict_response_tasks": 0
+  },
+  "status_by_U_E0_variant": {
+    "U0.4-E0=0": {
+      "CW_D": {
+        "NO_CANDIDATE": 5
+      },
+      "CW_THETA_CW": {
+        "NO_CANDIDATE": 5
+      },
+      "LOC_D": {
+        "NO_CANDIDATE": 5
+      },
+      "LOC_THETA_CW": {
+        "NOT_APPLICABLE_DEPENDENCY": 5
+      },
+      "LOC_THETA_LOC": {
+        "NO_CANDIDATE": 5
+      }
+    },
+    "U0.4-E0=1": {
+      "CW_D": {
+        "COMPLETED": 2
+      },
+      "CW_THETA_CW": {
+        "COMPLETED": 2
+      },
+      "LOC_D": {
+        "COMPLETED": 2
+      },
+      "LOC_THETA_CW": {
+        "COMPLETED": 2
+      },
+      "LOC_THETA_LOC": {
+        "COMPLETED": 2
+      }
+    },
+    "U0.4-E0=1360181973072000001/16000000000000000000": {
+      "CW_D": {
+        "NO_CANDIDATE": 1,
+        "TIMEOUT": 4
+      },
+      "CW_THETA_CW": {
+        "COMPLETED": 4,
+        "TIMEOUT": 1
+      },
+      "LOC_D": {
+        "TIMEOUT": 5
+      },
+      "LOC_THETA_CW": {
+        "COMPLETED": 4,
+        "NOT_APPLICABLE_DEPENDENCY": 1
+      },
+      "LOC_THETA_LOC": {
+        "COMPLETED": 4,
+        "TIMEOUT": 1
+      }
+    },
+    "U0.4-E0=178487996829/2000000000000": {
+      "CW_D": {
+        "TIMEOUT": 2
+      },
+      "CW_THETA_CW": {
+        "COMPLETED": 1,
+        "TIMEOUT": 1
+      },
+      "LOC_D": {
+        "TIMEOUT": 2
+      },
+      "LOC_THETA_CW": {
+        "COMPLETED": 1,
+        "NOT_APPLICABLE_DEPENDENCY": 1
+      },
+      "LOC_THETA_LOC": {
+        "COMPLETED": 1,
+        "TIMEOUT": 1
+      }
+    },
+    "U0.4-E0=21473099401200000281/200000000000000000000": {
+      "CW_D": {
+        "TIMEOUT": 2
+      },
+      "CW_THETA_CW": {
+        "COMPLETED": 1,
+        "TIMEOUT": 1
+      },
+      "LOC_D": {
+        "TIMEOUT": 2
+      },
+      "LOC_THETA_CW": {
+        "COMPLETED": 1,
+        "NOT_APPLICABLE_DEPENDENCY": 1
+      },
+      "LOC_THETA_LOC": {
+        "COMPLETED": 1,
+        "TIMEOUT": 1
+      }
+    },
+    "U0.4-E0=225897744831/2000000000000": {
+      "CW_D": {
+        "COMPLETED": 1,
+        "TIMEOUT": 1
+      },
+      "CW_THETA_CW": {
+        "COMPLETED": 1,
+        "TIMEOUT": 1
+      },
+      "LOC_D": {
+        "COMPLETED": 1,
+        "TIMEOUT": 1
+      },
+      "LOC_THETA_CW": {
+        "COMPLETED": 1,
+        "NOT_APPLICABLE_DEPENDENCY": 1
+      },
+      "LOC_THETA_LOC": {
+        "COMPLETED": 1,
+        "TIMEOUT": 1
+      }
+    },
+    "U0.4-E0=43409021832000000987/400000000000000000000": {
+      "CW_D": {
+        "TIMEOUT": 2
+      },
+      "CW_THETA_CW": {
+        "COMPLETED": 1,
+        "TIMEOUT": 1
+      },
+      "LOC_D": {
+        "TIMEOUT": 2
+      },
+      "LOC_THETA_CW": {
+        "COMPLETED": 1,
+        "NOT_APPLICABLE_DEPENDENCY": 1
+      },
+      "LOC_THETA_LOC": {
+        "COMPLETED": 1,
+        "TIMEOUT": 1
+      }
+    },
+    "U0.6-E0=0": {
+      "CW_D": {
+        "NO_CANDIDATE": 5
+      },
+      "CW_THETA_CW": {
+        "NO_CANDIDATE": 5
+      },
+      "LOC_D": {
+        "NO_CANDIDATE": 5
+      },
+      "LOC_THETA_CW": {
+        "NOT_APPLICABLE_DEPENDENCY": 5
+      },
+      "LOC_THETA_LOC": {
+        "NO_CANDIDATE": 5
+      }
+    },
+    "U0.6-E0=1360181973072000001/16000000000000000000": {
+      "CW_D": {
+        "NO_CANDIDATE": 1,
+        "TIMEOUT": 4
+      },
+      "CW_THETA_CW": {
+        "NO_CANDIDATE": 1,
+        "TIMEOUT": 4
+      },
+      "LOC_D": {
+        "NO_CANDIDATE": 1,
+        "TIMEOUT": 4
+      },
+      "LOC_THETA_CW": {
+        "NOT_APPLICABLE_DEPENDENCY": 5
+      },
+      "LOC_THETA_LOC": {
+        "NO_CANDIDATE": 1,
+        "TIMEOUT": 4
+      }
+    }
+  },
+  "timeouts": {
+    "conditional_90_second_attempts": 50,
+    "final_timeout_analyses": 49,
+    "initial_60_second_timeouts": 50,
+    "resolved_at_90": 1,
+    "timeout_at_90": 49
+  }
+}
