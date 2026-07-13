@@ -1,0 +1,13 @@
+plot,changed_axis,level,method,sample_id,category,x,y
+certification,baseline,implicit_default_range,CW_THETA_CW,ext4-base-f2daaf1a2b93dbf086e3,COMPLETED,implicit_default_range,1
+runtime,baseline,implicit_default_range,CW_THETA_CW,ext4-base-f2daaf1a2b93dbf086e3,COMPLETED,implicit_default_range,0.808392350
+certification,baseline,implicit_default_range,LOC_THETA_LOC,ext4-base-f2daaf1a2b93dbf086e3,COMPLETED,implicit_default_range,1
+runtime,baseline,implicit_default_range,LOC_THETA_LOC,ext4-base-f2daaf1a2b93dbf086e3,COMPLETED,implicit_default_range,0.821301357
+certification,deadline_mode,constrained,CW_THETA_CW,ext4-deadline-8d7021d33c9574397b71,COMPLETED,constrained,1
+runtime,deadline_mode,constrained,CW_THETA_CW,ext4-deadline-8d7021d33c9574397b71,COMPLETED,constrained,0.748976444
+certification,deadline_mode,constrained,LOC_THETA_LOC,ext4-deadline-8d7021d33c9574397b71,COMPLETED,constrained,1
+runtime,deadline_mode,constrained,LOC_THETA_LOC,ext4-deadline-8d7021d33c9574397b71,COMPLETED,constrained,0.741495655
+certification,period_range,wide_80_400,CW_THETA_CW,ext4-period-63ebd600c163dcae807b,TIMEOUT,wide_80_400,0
+runtime,period_range,wide_80_400,CW_THETA_CW,ext4-period-63ebd600c163dcae807b,TIMEOUT,wide_80_400,4.169926265
+certification,period_range,wide_80_400,LOC_THETA_LOC,ext4-period-63ebd600c163dcae807b,TIMEOUT,wide_80_400,0
+runtime,period_range,wide_80_400,LOC_THETA_LOC,ext4-period-63ebd600c163dcae807b,TIMEOUT,wide_80_400,4.210919492

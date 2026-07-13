@@ -6,6 +6,9 @@ from pathlib import Path
 from experiments.v9_3.config import load_config
 from experiments.v9_3.ext2_real_trace import Ext2Runner
 from experiments.v9_3.result_writer import read_csv
+from experiments.v9_3.simulation_engine import materialize_simulation_inputs
+from fractions import Fraction
+import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,6 +23,14 @@ def test_no_real_data_fallback_is_explicit_and_fixture_labeled(tmp_path):
     trace, _segment_id, system_path = runner._prepare_trace()
     assert trace.fixture_label == "SYNTHETIC_TEST_FIXTURE"
     assert system_path.is_file()
+    materialized, _ = materialize_simulation_inputs(
+        system_path, tmp_path / "materialized", ({
+            "task_id": "0", "priority_rank": 0, "C": 1, "D": 2,
+            "T": 2, "P": "1/10", "workload": "hash", "arrival_offset": 0,
+        },), processors=1, initial_battery=Fraction(1),
+        battery_capacity=Fraction(2),
+    )
+    assert yaml.safe_load(materialized.read_text(encoding="utf-8"))
     metadata = json.loads((tmp_path / "trace_metadata.json").read_text(encoding="utf-8"))
     assert metadata["data_status"] == "REAL_TRACE_DATA_UNAVAILABLE"
     assert metadata["fixture_label"] == "SYNTHETIC_TEST_FIXTURE"

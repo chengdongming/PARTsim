@@ -1,0 +1,78 @@
+analysis:
+  numerical_mode: EXACT_RATIONAL
+  retry_policy: timeout_once
+  retry_timeout_seconds: 4.0
+  timeout_seconds: 2.0
+  variants:
+  - CW_THETA_CW
+  - LOC_THETA_LOC
+  worker_count: 1
+core: CORE-3
+energy:
+  battery_capacity: '100'
+  battery_mode: finite
+  exact_rational_encoding: canonical_fraction
+  initial_energy_values:
+  - '1'
+  service_curve:
+    horizon: 30000
+    id: paired-existing-energy-input-v1
+    system_template: system_config_unified_template.yml
+  simulation_initial_battery: '20'
+execution:
+  checkpoint_every: 1
+  fail_fast_on_p0: true
+  output_root: artifacts/v9_3_ext1_smoke
+  preserve_attempt_history: true
+  resume: false
+  taskset_store: artifacts/v9_3_ext1_taskset_store_smoke
+  worker_count: 1
+experiment_id: asap-block-v9.3-ext1-smoke
+extension: EXT-1
+generation:
+  constrained_deadline:
+    d_over_t_max: '1'
+    d_over_t_min: '0'
+    d_over_t_values: []
+    distribution: generator_uniform_integer
+  deadline_mode: constrained
+  generator_timeout_seconds: 120
+  max_task_util: 4/5
+  min_task_util: 1/100
+  period_max: 200
+  period_min: 40
+  power_mode: generator_default_heterogeneous
+  priority_policy: RM
+  utilization_tolerance: 1/100
+  wcet_rounding: compensated
+grid:
+  base_seed: 930611
+  seed_mode: generation_dimensions
+  tasksets_per_cell: 2
+  utilization_points:
+  - 1/5
+platform:
+  cores:
+  - 4
+  task_count:
+  - 10
+plots: {}
+rta:
+  methods:
+  - CW_THETA_CW
+  - LOC_THETA_LOC
+  numerical_mode: EXACT_RATIONAL
+  retry_policy: timeout_once
+  retry_timeout_seconds: 4
+  timeout_seconds: 2
+simulation:
+  deadline_miss_fail_fast: true
+  horizon: 300
+  horizon_extension_policy: none
+  maximum_horizon: 300
+  minimum_jobs_per_task: 1
+  simulator_bin: ./build/rtsim/rtsim
+  timeout_seconds: 20
+  trace_mode: semantic
+  trace_on_failure: true
+  warmup: 0

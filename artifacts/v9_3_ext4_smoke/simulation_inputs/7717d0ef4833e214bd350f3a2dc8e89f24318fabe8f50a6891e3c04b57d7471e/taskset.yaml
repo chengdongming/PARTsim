@@ -1,0 +1,100 @@
+taskset:
+  - name: v93_task_0
+    iat: 86
+    runtime: 4
+    startcpu: 0
+    deadline: 86
+    ph: 25
+    params: "period=86,wcet=4,arrival_offset=25,workload=hash"
+    code:
+      - fixed(4, hash)
+
+  - name: v93_task_1
+    iat: 135
+    runtime: 3
+    startcpu: 0
+    deadline: 135
+    ph: 16
+    params: "period=135,wcet=3,arrival_offset=16,workload=hash"
+    code:
+      - fixed(3, hash)
+
+  - name: v93_task_2
+    iat: 193
+    runtime: 10
+    startcpu: 0
+    deadline: 193
+    ph: 53
+    params: "period=193,wcet=10,arrival_offset=53,workload=encrypt"
+    code:
+      - fixed(10, encrypt)
+
+  - name: v93_task_3
+    iat: 200
+    runtime: 8
+    startcpu: 0
+    deadline: 200
+    ph: 6
+    params: "period=200,wcet=8,arrival_offset=6,workload=hash"
+    code:
+      - fixed(8, hash)
+
+  - name: v93_task_4
+    iat: 232
+    runtime: 8
+    startcpu: 0
+    deadline: 232
+    ph: 69
+    params: "period=232,wcet=8,arrival_offset=69,workload=decrypt"
+    code:
+      - fixed(8, decrypt)
+
+  - name: v93_task_5
+    iat: 237
+    runtime: 48
+    startcpu: 0
+    deadline: 237
+    ph: 25
+    params: "period=237,wcet=48,arrival_offset=25,workload=encrypt"
+    code:
+      - fixed(48, encrypt)
+
+  - name: v93_task_6
+    iat: 308
+    runtime: 40
+    startcpu: 0
+    deadline: 308
+    ph: 89
+    params: "period=308,wcet=40,arrival_offset=89,workload=bzip2"
+    code:
+      - fixed(40, bzip2)
+
+  - name: v93_task_7
+    iat: 348
+    runtime: 12
+    startcpu: 0
+    deadline: 348
+    ph: 13
+    params: "period=348,wcet=12,arrival_offset=13,workload=hash"
+    code:
+      - fixed(12, hash)
+
+  - name: v93_task_8
+    iat: 359
+    runtime: 12
+    startcpu: 0
+    deadline: 359
+    ph: 44
+    params: "period=359,wcet=12,arrival_offset=44,workload=idle"
+    code:
+      - fixed(12, idle)
+
+  - name: v93_task_9
+    iat: 392
+    runtime: 80
+    startcpu: 0
+    deadline: 392
+    ph: 106
+    params: "period=392,wcet=80,arrival_offset=106,workload=hash"
+    code:
+      - fixed(80, hash)

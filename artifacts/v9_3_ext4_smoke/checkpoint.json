@@ -1,0 +1,10 @@
+{
+  "config_hash": "016b454f8472eb35a4db0682339fa984a9dcdbcdd59bc604aa7d3b5b40790ad6",
+  "rta_requested": 6,
+  "rta_terminal": 6,
+  "schema": "ASAP_BLOCK_V9_3_EXT4_CHECKPOINT_V1",
+  "simulation_requested": 3,
+  "simulation_terminal": 3,
+  "stop_requested": false,
+  "updated_at_utc": "2026-07-13T17:45:44.193127Z"
+}

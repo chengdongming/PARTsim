@@ -28,3 +28,13 @@ def audited_generator_capabilities() -> Dict[str, Any]:
         "constrained_deadline_distribution": "generator_uniform_integer",
         "source": "global_task_generator.py",
     }
+
+
+def required_service_period_max(config: Dict[str, Any]) -> int:
+    """Cover every configured period-range level with one shared service prefix."""
+
+    ranges = config.get("robustness", {}).get("period_ranges", [])
+    values = [int(config["generation"]["period_max"])] + [
+        int(item["max"]) for item in ranges
+    ]
+    return max(values)

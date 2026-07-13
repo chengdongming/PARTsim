@@ -1,0 +1,3 @@
+severity,stage,analysis_id,cell_id,taskset_id,variant,code,detail,traceback,failure_input
+P2,RTA,cdfbff9c1e2148d122873a04221ba1fe1f627dee3820493b344c04be1a13ed1c,,v93-9cc7fd6b1b-t00000-63ebd600c163,CW_THETA_CW,RTA_RUNTIME_TIMEOUT,TIMEOUT,,
+P2,RTA,60b3693d53846721dd4e641b86c63967b0e83e94eabba8e27ac2481e01ea1159,,v93-9cc7fd6b1b-t00000-63ebd600c163,LOC_THETA_LOC,RTA_RUNTIME_TIMEOUT,TIMEOUT,,

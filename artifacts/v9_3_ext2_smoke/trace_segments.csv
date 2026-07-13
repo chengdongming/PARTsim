@@ -1,0 +1,2 @@
+segment_id,trace_id,source_trace_hash,selection_rule,start_sample,sample_count,start_timestamp_utc,end_timestamp_utc,fixture_label
+6c4ed46666f2d544fc7a21367562124d7b5448c7ce1d865f82ae1658fcd54c63,ext2-synthetic-smoke-v1:segment:0:3,5e908da13f626f810c0c4b2275503d9450370c18ed22c9a00622f77643edc626,FIRST_N_SAMPLES_PREDECLARED,0,3,2025-01-01T00:00:00Z,2025-01-01T00:04:00Z,SYNTHETIC_TEST_FIXTURE

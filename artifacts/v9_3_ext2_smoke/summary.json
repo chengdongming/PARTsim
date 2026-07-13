@@ -1,0 +1,10 @@
+{
+  "complete": true,
+  "data_status": "REAL_TRACE_DATA_UNAVAILABLE",
+  "fixture_label": "SYNTHETIC_TEST_FIXTURE",
+  "plot_rows": 111,
+  "requested": 1,
+  "summary_rows": 1,
+  "terminal": 1,
+  "trace_hash": "039c201a3a2c58f5bfc1420907b7532715561f33ecc3e9756753f6ea9d3bf008"
+}

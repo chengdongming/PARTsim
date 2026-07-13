@@ -1,0 +1,10 @@
+scheduler_id,timing_family,mechanism,requested_denominator,terminal_denominator,valid_terminal_denominator,sufficient_observation_denominator,pass_count,deadline_miss_count,horizon_insufficient_count,timeout_count,internal_error_count,schedulability_ratio_requested,schedulability_ratio_valid,deadline_miss_ratio_requested,deadline_miss_ratio_valid,wins,ties,losses,not_comparable
+gpfp_asap_block,ASAP,BLOCK,2,2,2,2,2,0,0,0,0,1.0,1.0,0.0,0.0,0,16,0,0
+gpfp_asap_nonblock,ASAP,NONBLOCK,2,2,2,2,2,0,0,0,0,1.0,1.0,0.0,0.0,0,16,0,0
+gpfp_asap_sync,ASAP,SYNC,2,2,2,2,2,0,0,0,0,1.0,1.0,0.0,0.0,0,16,0,0
+gpfp_alap_block,ALAP,BLOCK,2,2,2,2,2,0,0,0,0,1.0,1.0,0.0,0.0,0,16,0,0
+gpfp_alap_nonblock,ALAP,NONBLOCK,2,2,2,2,2,0,0,0,0,1.0,1.0,0.0,0.0,0,16,0,0
+gpfp_alap_sync,ALAP,SYNC,2,2,2,2,2,0,0,0,0,1.0,1.0,0.0,0.0,0,16,0,0
+gpfp_st_block,ST,BLOCK,2,2,2,2,2,0,0,0,0,1.0,1.0,0.0,0.0,0,16,0,0
+gpfp_st_nonblock,ST,NONBLOCK,2,2,2,2,2,0,0,0,0,1.0,1.0,0.0,0.0,0,16,0,0
+gpfp_st_sync,ST,SYNC,2,2,2,2,2,0,0,0,0,1.0,1.0,0.0,0.0,0,16,0,0

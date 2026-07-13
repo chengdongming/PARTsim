@@ -1,0 +1,1079 @@
+{
+  "attempt_count": 1,
+  "horizons_attempted": [
+    300
+  ],
+  "result": {
+    "completion_reason": "reached_horizon",
+    "configured_scheduler": "gpfp_asap_nonblock",
+    "horizon": 300,
+    "jobs": [
+      {
+        "absolute_deadline": 32,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 3,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 3,
+        "first_execution": 0,
+        "job_index": 0,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 0,
+        "response_time": 3,
+        "task_id": "0"
+      },
+      {
+        "absolute_deadline": 74,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 45,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 3,
+        "first_execution": 42,
+        "job_index": 1,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 42,
+        "response_time": 3,
+        "task_id": "0"
+      },
+      {
+        "absolute_deadline": 116,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 87,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 3,
+        "first_execution": 84,
+        "job_index": 2,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 84,
+        "response_time": 3,
+        "task_id": "0"
+      },
+      {
+        "absolute_deadline": 158,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 129,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 3,
+        "first_execution": 126,
+        "job_index": 3,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 126,
+        "response_time": 3,
+        "task_id": "0"
+      },
+      {
+        "absolute_deadline": 200,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 171,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 3,
+        "first_execution": 168,
+        "job_index": 4,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 168,
+        "response_time": 3,
+        "task_id": "0"
+      },
+      {
+        "absolute_deadline": 242,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 213,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 3,
+        "first_execution": 210,
+        "job_index": 5,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 210,
+        "response_time": 3,
+        "task_id": "0"
+      },
+      {
+        "absolute_deadline": 284,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 255,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 3,
+        "first_execution": 252,
+        "job_index": 6,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 252,
+        "response_time": 3,
+        "task_id": "0"
+      },
+      {
+        "absolute_deadline": 326,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 297,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 3,
+        "first_execution": 294,
+        "job_index": 7,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 294,
+        "response_time": 3,
+        "task_id": "0"
+      },
+      {
+        "absolute_deadline": 40,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 39,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 8,
+        "first_execution": 31,
+        "job_index": 0,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 31,
+        "response_time": 8,
+        "task_id": "1"
+      },
+      {
+        "absolute_deadline": 146,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 145,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 8,
+        "first_execution": 137,
+        "job_index": 1,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 137,
+        "response_time": 8,
+        "task_id": "1"
+      },
+      {
+        "absolute_deadline": 252,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 251,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 8,
+        "first_execution": 243,
+        "job_index": 2,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 243,
+        "response_time": 8,
+        "task_id": "1"
+      },
+      {
+        "absolute_deadline": 111,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 35,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 8,
+        "first_execution": 27,
+        "job_index": 0,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 27,
+        "response_time": 8,
+        "task_id": "2"
+      },
+      {
+        "absolute_deadline": 220,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 144,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 8,
+        "first_execution": 136,
+        "job_index": 1,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 136,
+        "response_time": 8,
+        "task_id": "2"
+      },
+      {
+        "absolute_deadline": 329,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 253,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 8,
+        "first_execution": 245,
+        "job_index": 2,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 245,
+        "response_time": 8,
+        "task_id": "2"
+      },
+      {
+        "absolute_deadline": 61,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 30,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 4,
+        "first_execution": 26,
+        "job_index": 0,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 26,
+        "response_time": 4,
+        "task_id": "3"
+      },
+      {
+        "absolute_deadline": 177,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 146,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 4,
+        "first_execution": 142,
+        "job_index": 1,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 142,
+        "response_time": 4,
+        "task_id": "3"
+      },
+      {
+        "absolute_deadline": 293,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 262,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 4,
+        "first_execution": 258,
+        "job_index": 2,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 258,
+        "response_time": 4,
+        "task_id": "3"
+      },
+      {
+        "absolute_deadline": 78,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 62,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 29,
+        "first_execution": 33,
+        "job_index": 0,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 33,
+        "response_time": 29,
+        "task_id": "4"
+      },
+      {
+        "absolute_deadline": 203,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 187,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 29,
+        "first_execution": 158,
+        "job_index": 1,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 158,
+        "response_time": 29,
+        "task_id": "4"
+      },
+      {
+        "absolute_deadline": 328,
+        "censored": true,
+        "censoring_reason": "UNFINISHED_AT_HORIZON",
+        "completion": null,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 17,
+        "first_execution": 283,
+        "job_index": 2,
+        "preemption_count": 0,
+        "processor_wait_ticks": null,
+        "release": 283,
+        "response_time": null,
+        "task_id": "4"
+      },
+      {
+        "absolute_deadline": 88,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 40,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 15,
+        "first_execution": 25,
+        "job_index": 0,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 25,
+        "response_time": 15,
+        "task_id": "5"
+      },
+      {
+        "absolute_deadline": 219,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 171,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 15,
+        "first_execution": 156,
+        "job_index": 1,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 156,
+        "response_time": 15,
+        "task_id": "5"
+      },
+      {
+        "absolute_deadline": 350,
+        "censored": true,
+        "censoring_reason": "UNFINISHED_AT_HORIZON",
+        "completion": null,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 13,
+        "first_execution": 287,
+        "job_index": 2,
+        "preemption_count": 0,
+        "processor_wait_ticks": null,
+        "release": 287,
+        "response_time": null,
+        "task_id": "5"
+      },
+      {
+        "absolute_deadline": 30,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 22,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 11,
+        "first_execution": 11,
+        "job_index": 0,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 11,
+        "response_time": 11,
+        "task_id": "6"
+      },
+      {
+        "absolute_deadline": 162,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 154,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 11,
+        "first_execution": 143,
+        "job_index": 1,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 143,
+        "response_time": 11,
+        "task_id": "6"
+      },
+      {
+        "absolute_deadline": 294,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 286,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 11,
+        "first_execution": 275,
+        "job_index": 2,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 275,
+        "response_time": 11,
+        "task_id": "6"
+      },
+      {
+        "absolute_deadline": 67,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 50,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 7,
+        "first_execution": 43,
+        "job_index": 0,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 43,
+        "response_time": 7,
+        "task_id": "7"
+      },
+      {
+        "absolute_deadline": 219,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 202,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 7,
+        "first_execution": 195,
+        "job_index": 1,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 195,
+        "response_time": 7,
+        "task_id": "7"
+      },
+      {
+        "absolute_deadline": 140,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 14,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 9,
+        "first_execution": 5,
+        "job_index": 0,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 5,
+        "response_time": 9,
+        "task_id": "8"
+      },
+      {
+        "absolute_deadline": 306,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 180,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 9,
+        "first_execution": 171,
+        "job_index": 1,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 171,
+        "response_time": 9,
+        "task_id": "8"
+      },
+      {
+        "absolute_deadline": 213,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 33,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 3,
+        "first_execution": 30,
+        "job_index": 0,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 30,
+        "response_time": 3,
+        "task_id": "9"
+      },
+      {
+        "absolute_deadline": 411,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 231,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 3,
+        "first_execution": 228,
+        "job_index": 1,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 228,
+        "response_time": 3,
+        "task_id": "9"
+      }
+    ],
+    "metrics": {
+      "battery_maximum_j": 31.4294,
+      "battery_minimum_j": 20.0,
+      "battery_trajectory": [
+        {
+          "energy_j": 20.0,
+          "time": 0
+        },
+        {
+          "energy_j": 20.0,
+          "time": 0
+        },
+        {
+          "energy_j": 20.077599999999997,
+          "time": 3
+        },
+        {
+          "energy_j": 20.1554,
+          "time": 5
+        },
+        {
+          "energy_j": 20.1943,
+          "time": 5
+        },
+        {
+          "energy_j": 20.3885,
+          "time": 11
+        },
+        {
+          "energy_j": 20.426599999999997,
+          "time": 11
+        },
+        {
+          "energy_j": 20.5029,
+          "time": 14
+        },
+        {
+          "energy_j": 20.808400000000002,
+          "time": 22
+        },
+        {
+          "energy_j": 20.925099999999997,
+          "time": 25
+        },
+        {
+          "energy_j": 20.963900000000002,
+          "time": 25
+        },
+        {
+          "energy_j": 20.963900000000002,
+          "time": 26
+        },
+        {
+          "energy_j": 21.0027,
+          "time": 26
+        },
+        {
+          "energy_j": 21.0027,
+          "time": 27
+        },
+        {
+          "energy_j": 21.0415,
+          "time": 27
+        },
+        {
+          "energy_j": 21.119,
+          "time": 30
+        },
+        {
+          "energy_j": 21.119,
+          "time": 30
+        },
+        {
+          "energy_j": 21.1571,
+          "time": 30
+        },
+        {
+          "energy_j": 21.1571,
+          "time": 31
+        },
+        {
+          "energy_j": 21.1951,
+          "time": 31
+        },
+        {
+          "energy_j": 21.2332,
+          "time": 33
+        },
+        {
+          "energy_j": 21.2332,
+          "time": 33
+        },
+        {
+          "energy_j": 21.2714,
+          "time": 33
+        },
+        {
+          "energy_j": 21.3096,
+          "time": 35
+        },
+        {
+          "energy_j": 21.4625,
+          "time": 39
+        },
+        {
+          "energy_j": 21.500799999999998,
+          "time": 40
+        },
+        {
+          "energy_j": 21.5775,
+          "time": 42
+        },
+        {
+          "energy_j": 21.6158,
+          "time": 42
+        },
+        {
+          "energy_j": 21.6158,
+          "time": 43
+        },
+        {
+          "energy_j": 21.6535,
+          "time": 43
+        },
+        {
+          "energy_j": 21.691200000000002,
+          "time": 45
+        },
+        {
+          "energy_j": 21.8801,
+          "time": 50
+        },
+        {
+          "energy_j": 22.3401,
+          "time": 62
+        },
+        {
+          "energy_j": 23.1956,
+          "time": 84
+        },
+        {
+          "energy_j": 23.2345,
+          "time": 84
+        },
+        {
+          "energy_j": 23.312099999999997,
+          "time": 87
+        },
+        {
+          "energy_j": 24.828799999999998,
+          "time": 126
+        },
+        {
+          "energy_j": 24.8677,
+          "time": 126
+        },
+        {
+          "energy_j": 24.9453,
+          "time": 129
+        },
+        {
+          "energy_j": 25.217599999999997,
+          "time": 136
+        },
+        {
+          "energy_j": 25.256400000000003,
+          "time": 136
+        },
+        {
+          "energy_j": 25.256400000000003,
+          "time": 137
+        },
+        {
+          "energy_j": 25.2952,
+          "time": 137
+        },
+        {
+          "energy_j": 25.450400000000002,
+          "time": 142
+        },
+        {
+          "energy_j": 25.489099999999997,
+          "time": 142
+        },
+        {
+          "energy_j": 25.489099999999997,
+          "time": 143
+        },
+        {
+          "energy_j": 25.5272,
+          "time": 143
+        },
+        {
+          "energy_j": 25.5272,
+          "time": 144
+        },
+        {
+          "energy_j": 25.5653,
+          "time": 145
+        },
+        {
+          "energy_j": 25.6034,
+          "time": 146
+        },
+        {
+          "energy_j": 25.909,
+          "time": 154
+        },
+        {
+          "energy_j": 25.9867,
+          "time": 156
+        },
+        {
+          "energy_j": 26.025599999999997,
+          "time": 156
+        },
+        {
+          "energy_j": 26.064400000000003,
+          "time": 158
+        },
+        {
+          "energy_j": 26.102700000000002,
+          "time": 158
+        },
+        {
+          "energy_j": 26.4473,
+          "time": 168
+        },
+        {
+          "energy_j": 26.4855,
+          "time": 168
+        },
+        {
+          "energy_j": 26.562,
+          "time": 171
+        },
+        {
+          "energy_j": 26.562,
+          "time": 171
+        },
+        {
+          "energy_j": 26.562,
+          "time": 171
+        },
+        {
+          "energy_j": 26.6003,
+          "time": 171
+        },
+        {
+          "energy_j": 26.9065,
+          "time": 180
+        },
+        {
+          "energy_j": 27.1749,
+          "time": 187
+        },
+        {
+          "energy_j": 27.486,
+          "time": 195
+        },
+        {
+          "energy_j": 27.5243,
+          "time": 195
+        },
+        {
+          "energy_j": 27.7543,
+          "time": 202
+        },
+        {
+          "energy_j": 28.0654,
+          "time": 210
+        },
+        {
+          "energy_j": 28.104200000000002,
+          "time": 210
+        },
+        {
+          "energy_j": 28.181900000000002,
+          "time": 213
+        },
+        {
+          "energy_j": 28.7653,
+          "time": 228
+        },
+        {
+          "energy_j": 28.8035,
+          "time": 228
+        },
+        {
+          "energy_j": 28.8798,
+          "time": 231
+        },
+        {
+          "energy_j": 29.3465,
+          "time": 243
+        },
+        {
+          "energy_j": 29.3853,
+          "time": 243
+        },
+        {
+          "energy_j": 29.4242,
+          "time": 245
+        },
+        {
+          "energy_j": 29.463,
+          "time": 245
+        },
+        {
+          "energy_j": 29.657,
+          "time": 251
+        },
+        {
+          "energy_j": 29.6958,
+          "time": 252
+        },
+        {
+          "energy_j": 29.734599999999997,
+          "time": 252
+        },
+        {
+          "energy_j": 29.734599999999997,
+          "time": 253
+        },
+        {
+          "energy_j": 29.8123,
+          "time": 255
+        },
+        {
+          "energy_j": 29.929,
+          "time": 258
+        },
+        {
+          "energy_j": 29.9678,
+          "time": 258
+        },
+        {
+          "energy_j": 30.0843,
+          "time": 262
+        },
+        {
+          "energy_j": 30.5899,
+          "time": 275
+        },
+        {
+          "energy_j": 30.6281,
+          "time": 275
+        },
+        {
+          "energy_j": 30.895400000000002,
+          "time": 283
+        },
+        {
+          "energy_j": 30.933,
+          "time": 283
+        },
+        {
+          "energy_j": 31.0083,
+          "time": 286
+        },
+        {
+          "energy_j": 31.046599999999998,
+          "time": 287
+        },
+        {
+          "energy_j": 31.0849,
+          "time": 287
+        },
+        {
+          "energy_j": 31.3146,
+          "time": 294
+        },
+        {
+          "energy_j": 31.3529,
+          "time": 294
+        },
+        {
+          "energy_j": 31.4294,
+          "time": 297
+        }
+      ],
+      "bypass_count": 0,
+      "completed_jobs": 30,
+      "consumed_energy_j": 0.08179349999999999,
+      "energy_blocked_ticks": 0,
+      "first_miss_time": null,
+      "harvested_energy_j": 11.5111,
+      "idle_cores_while_ready_jobs_exist_ticks": 0,
+      "maximum_observed_response_time": 29,
+      "mean_response_time": 8.1,
+      "missed_jobs": 0,
+      "preemptions": 0,
+      "processor_wait_ticks": 0,
+      "synchronization_wait_ticks": 0
+    },
+    "minimum_release_energy_j": 20.0,
+    "observed_task_power_j_per_tick": {
+      "0": 4.65e-05,
+      "1": 4.65e-05,
+      "2": 4.65e-05,
+      "3": 4.65e-05,
+      "4": 0.000558,
+      "5": 4.65e-05,
+      "6": 0.0006975,
+      "7": 0.000558,
+      "8": 4.65e-05,
+      "9": 0.0006975
+    },
+    "reason": "minimum_jobs_observed",
+    "release_e0_valid": true,
+    "simulation_completed": true,
+    "status": "SIM_PASS_OBSERVED",
+    "tasks": [
+      {
+        "censored_jobs": 0,
+        "completed_jobs": 8,
+        "horizon_coverage": 1.0,
+        "minimum_jobs_satisfied": true,
+        "missed_jobs": 0,
+        "observed_jobs": 8,
+        "r_sim_max": 3,
+        "task_id": "0"
+      },
+      {
+        "censored_jobs": 0,
+        "completed_jobs": 3,
+        "horizon_coverage": 1.0,
+        "minimum_jobs_satisfied": true,
+        "missed_jobs": 0,
+        "observed_jobs": 3,
+        "r_sim_max": 8,
+        "task_id": "1"
+      },
+      {
+        "censored_jobs": 0,
+        "completed_jobs": 3,
+        "horizon_coverage": 1.0,
+        "minimum_jobs_satisfied": true,
+        "missed_jobs": 0,
+        "observed_jobs": 3,
+        "r_sim_max": 8,
+        "task_id": "2"
+      },
+      {
+        "censored_jobs": 0,
+        "completed_jobs": 3,
+        "horizon_coverage": 1.0,
+        "minimum_jobs_satisfied": true,
+        "missed_jobs": 0,
+        "observed_jobs": 3,
+        "r_sim_max": 4,
+        "task_id": "3"
+      },
+      {
+        "censored_jobs": 1,
+        "completed_jobs": 2,
+        "horizon_coverage": 0.6666666666666666,
+        "minimum_jobs_satisfied": true,
+        "missed_jobs": 0,
+        "observed_jobs": 3,
+        "r_sim_max": 29,
+        "task_id": "4"
+      },
+      {
+        "censored_jobs": 1,
+        "completed_jobs": 2,
+        "horizon_coverage": 0.6666666666666666,
+        "minimum_jobs_satisfied": true,
+        "missed_jobs": 0,
+        "observed_jobs": 3,
+        "r_sim_max": 15,
+        "task_id": "5"
+      },
+      {
+        "censored_jobs": 0,
+        "completed_jobs": 3,
+        "horizon_coverage": 1.0,
+        "minimum_jobs_satisfied": true,
+        "missed_jobs": 0,
+        "observed_jobs": 3,
+        "r_sim_max": 11,
+        "task_id": "6"
+      },
+      {
+        "censored_jobs": 0,
+        "completed_jobs": 2,
+        "horizon_coverage": 1.0,
+        "minimum_jobs_satisfied": true,
+        "missed_jobs": 0,
+        "observed_jobs": 2,
+        "r_sim_max": 7,
+        "task_id": "7"
+      },
+      {
+        "censored_jobs": 0,
+        "completed_jobs": 2,
+        "horizon_coverage": 1.0,
+        "minimum_jobs_satisfied": true,
+        "missed_jobs": 0,
+        "observed_jobs": 2,
+        "r_sim_max": 9,
+        "task_id": "8"
+      },
+      {
+        "censored_jobs": 0,
+        "completed_jobs": 2,
+        "horizon_coverage": 1.0,
+        "minimum_jobs_satisfied": true,
+        "missed_jobs": 0,
+        "observed_jobs": 2,
+        "r_sim_max": 3,
+        "task_id": "9"
+      }
+    ],
+    "trace_schema_version": 2
+  },
+  "retained_trace_path": null,
+  "runtime_seconds": 2.8503260349971242,
+  "simulation_id": "02ab489c4e9d7cbc01a19864a055d0573cf33eaaa5f9a26014a22a57c60d8881",
+  "stderr_tail": "",
+  "stdout_tail": "eduler.cpp:637)\n\u001b[0m[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=298\n[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=4\n[DEBUG]   getTaskN(0)=v93_task_4 getProcessor=energy_aware_cpus-0 freq 8100 _m_dispatched=energy_aware_cpus-0 freq 8100 is_new=0\n[DEBUG]   getTaskN(1)=v93_task_5 getProcessor=energy_aware_cpus-3 freq 8100 _m_dispatched=energy_aware_cpus-3 freq 8100 is_new=0\n[DEBUG]   getTaskN(2) = nullptr, 退出循环\n[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=0\n[DEBUG] MRTKernel::dispatch() - num_newtasks=0\n[DEBUG] MRTKernel::dispatch() - num_newtasks < 1，返回\n\u001b[32m2026-07-14 01:40:35.097 [INFO0000] [scheduler00000000000] ✅ Tick 298ms 完成, 剩余能量: 31505.919500 mJ (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_asap_nonblock_scheduler.cpp:785)\n\u001b[0m\u001b[32m2026-07-14 01:40:35.097 [INFO0000] [scheduler00000000000] ⏱️ [ASAP-NonBlock] ===== Tick事件触发 @ 299ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_asap_nonblock_scheduler.cpp:88)\n\u001b[0m\u001b[32m2026-07-14 01:40:35.097 [INFO0000] [scheduler00000000000] 🔄 [ASAP-NonBlock] ===== Tick 299ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_asap_nonblock_scheduler.cpp:624)\n\u001b[0m\u001b[32m2026-07-14 01:40:35.097 [INFO0000] [scheduler00000000000] ⚡ 初始能量: 31505.919500 mJ (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_asap_nonblock_scheduler.cpp:626)\n\u001b[0m\u001b[32m2026-07-14 01:40:35.102 [INFO0000] [scheduler00000000000] ☀️ 收集太阳能: +38.889000 mJ → 31544.808500 mJ (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_asap_nonblock_scheduler.cpp:637)\n\u001b[0m[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=299\n[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=4\n[DEBUG]   getTaskN(0)=v93_task_4 getProcessor=energy_aware_cpus-0 freq 8100 _m_dispatched=energy_aware_cpus-0 freq 8100 is_new=0\n[DEBUG]   getTaskN(1)=v93_task_5 getProcessor=energy_aware_cpus-3 freq 8100 _m_dispatched=energy_aware_cpus-3 freq 8100 is_new=0\n[DEBUG]   getTaskN(2) = nullptr, 退出循环\n[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=0\n[DEBUG] MRTKernel::dispatch() - num_newtasks=0\n[DEBUG] MRTKernel::dispatch() - num_newtasks < 1，返回\n\u001b[32m2026-07-14 01:40:35.102 [INFO0000] [scheduler00000000000] ✅ Tick 299ms 完成, 剩余能量: 31544.204000 mJ (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_asap_nonblock_scheduler.cpp:785)\n\u001b[0m\u001b[32m2026-07-14 01:40:35.102 [INFO0000] [scheduler00000000000] ⏱️ [ASAP-NonBlock] ===== Tick事件触发 @ 300ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_asap_nonblock_scheduler.cpp:88)\n\u001b[0m\u001b[32m2026-07-14 01:40:35.102 [INFO0000] [scheduler00000000000] 🔄 [ASAP-NonBlock] ===== Tick 300ms ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_asap_nonblock_scheduler.cpp:624)\n\u001b[0m\u001b[32m2026-07-14 01:40:35.102 [INFO0000] [scheduler00000000000] ⚡ 初始能量: 31544.204000 mJ (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_asap_nonblock_scheduler.cpp:626)\n\u001b[0m\u001b[32m2026-07-14 01:40:35.106 [INFO0000] [scheduler00000000000] ☀️ 收集太阳能: +38.889000 mJ → 31583.093000 mJ (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_asap_nonblock_scheduler.cpp:637)\n\u001b[0m[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=300\n[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=4\n[DEBUG]   getTaskN(0)=v93_task_4 getProcessor=energy_aware_cpus-0 freq 8100 _m_dispatched=energy_aware_cpus-0 freq 8100 is_new=0\n[DEBUG]   getTaskN(1)=v93_task_5 getProcessor=energy_aware_cpus-3 freq 8100 _m_dispatched=energy_aware_cpus-3 freq 8100 is_new=0\n[DEBUG]   getTaskN(2) = nullptr, 退出循环\n[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=0\n[DEBUG] MRTKernel::dispatch() - num_newtasks=0\n[DEBUG] MRTKernel::dispatch() - num_newtasks < 1，返回\n\u001b[32m2026-07-14 01:40:35.107 [INFO0000] [scheduler00000000000] ✅ Tick 300ms 完成, 剩余能量: 31582.488500 mJ (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_asap_nonblock_scheduler.cpp:785)\n\u001b[0m\u001b[32m2026-07-14 01:40:35.107 [INFO0000] [scheduler00000000000] 🏁 [ASAP-NonBlock] endRun - 仿真结束 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_asap_nonblock_scheduler.cpp:1702)\n\u001b[0m\u001b[32m2026-07-14 01:40:35.107 [INFO0000] [scheduler00000000000] 📊 [ASAP-NonBlock] ===== TGF调度统计 ===== (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_asap_nonblock_scheduler.cpp:1716)\n\u001b[0m\u001b[32m2026-07-14 01:40:35.107 [INFO0000] [scheduler00000000000]   Tick总次数: 301 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_asap_nonblock_scheduler.cpp:1717)\n\u001b[0m\u001b[32m2026-07-14 01:40:35.107 [INFO0000] [scheduler00000000000]   任务完成数: 30 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_asap_nonblock_scheduler.cpp:1718)\n\u001b[0m\u001b[32m2026-07-14 01:40:35.107 [INFO0000] [scheduler00000000000]   能量不足跳过: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_asap_nonblock_scheduler.cpp:1719)\n\u001b[0m\u001b[32m2026-07-14 01:40:35.107 [INFO0000] [scheduler00000000000]   Deadline Miss: 0 (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_asap_nonblock_scheduler.cpp:1720)\n\u001b[0m\u001b[32m2026-07-14 01:40:35.107 [INFO0000] [scheduler00000000000]   总消耗能量: 0.084212J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_asap_nonblock_scheduler.cpp:1721)\n\u001b[0m\u001b[32m2026-07-14 01:40:35.107 [INFO0000] [scheduler00000000000]   总收集能量: 11.666700J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_asap_nonblock_scheduler.cpp:1722)\n\u001b[0m\u001b[32m2026-07-14 01:40:35.107 [INFO0000] [scheduler00000000000]   剩余能量: 31.582489J (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_asap_nonblock_scheduler.cpp:1723)\n\u001b[0m\u001b[32m2026-07-14 01:40:35.107 [INFO0000] [scheduler00000000000] ================================= (/home/devcontainers/PARTSim-project/librtsim/scheduler/gpfp_asap_nonblock_scheduler.cpp:1724)\n\u001b[0m[DEBUG] Scheduler::extract() - 开始: v93_task_5 当前时间: 300ms 队列大小: 2\n[DEBUG] Scheduler::extract() - 完成: v93_task_5 队列大小: 1\n[DEBUG] Scheduler::extract() - 开始: v93_task_4 当前时间: 300ms 队列大小: 1\n[DEBUG] Scheduler::extract() - 完成: v93_task_4 队列大小: 0\n",
+  "system_config_path": "artifacts/v9_3_ext1_smoke/simulation_inputs/02ab489c4e9d7cbc01a19864a055d0573cf33eaaa5f9a26014a22a57c60d8881/system_config.yaml",
+  "taskset_path": "artifacts/v9_3_ext1_smoke/simulation_inputs/02ab489c4e9d7cbc01a19864a055d0573cf33eaaa5f9a26014a22a57c60d8881/taskset.yaml"
+}

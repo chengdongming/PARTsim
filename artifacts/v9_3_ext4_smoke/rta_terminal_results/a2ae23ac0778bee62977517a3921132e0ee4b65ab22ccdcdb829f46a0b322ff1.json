@@ -1,0 +1,19 @@
+{
+  "analysis_id": "a2ae23ac0778bee62977517a3921132e0ee4b65ab22ccdcdb829f46a0b322ff1",
+  "attempt_count": 1,
+  "candidate_vector_json": "{\"0\":4,\"1\":4,\"2\":7,\"3\":6,\"4\":6,\"5\":21,\"6\":8,\"7\":30,\"8\":20,\"9\":29}",
+  "certification_status": "CERTIFIED_TASKSET",
+  "dominance_violation": false,
+  "method": "CW_THETA_CW",
+  "p0_rta_pass_sim_fail": false,
+  "response_bound": 30,
+  "runtime_seconds": "0.808392350",
+  "sample_id": "ext4-base-f2daaf1a2b93dbf086e3",
+  "solver_status": "COMPLETED",
+  "soundness_class": "PENDING_SIMULATION",
+  "taskset_hash": "f2daaf1a2b93dbf086e347cbf3fe3fb9833c80c16fb7ef22803a344515713e3a",
+  "taskset_id": "v93-7505f60a86-t00000-f2daaf1a2b93",
+  "taskset_proven": true,
+  "tightness_gap": "UNAVAILABLE",
+  "timeout": false
+}

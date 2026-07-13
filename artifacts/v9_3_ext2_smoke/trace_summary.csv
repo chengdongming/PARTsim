@@ -1,0 +1,2 @@
+scheduler_id,trace_id,trace_scale,requested_denominator,valid_terminal_denominator,sufficient_observation_denominator,pass_count,deadline_miss_count,horizon_insufficient_count,timeout_count,internal_error_count,pass_ratio_requested,pass_ratio_valid
+gpfp_asap_block,ext2-synthetic-smoke-v1:segment:0:3:scale:1:resampled:60000000000ns,1,1,1,1,1,0,0,0,0,1.0,1.0

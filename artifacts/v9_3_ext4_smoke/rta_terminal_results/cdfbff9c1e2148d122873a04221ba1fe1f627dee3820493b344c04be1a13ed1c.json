@@ -1,0 +1,19 @@
+{
+  "analysis_id": "cdfbff9c1e2148d122873a04221ba1fe1f627dee3820493b344c04be1a13ed1c",
+  "attempt_count": 2,
+  "candidate_vector_json": "{\"0\":4,\"1\":3,\"2\":10,\"3\":8,\"4\":11}",
+  "certification_status": "NOT_CERTIFIED",
+  "dominance_violation": false,
+  "method": "CW_THETA_CW",
+  "p0_rta_pass_sim_fail": false,
+  "response_bound": 11,
+  "runtime_seconds": "4.169926265",
+  "sample_id": "ext4-period-63ebd600c163dcae807b",
+  "solver_status": "TIMEOUT",
+  "soundness_class": "PENDING_SIMULATION",
+  "taskset_hash": "63ebd600c163dcae807b2d3646da4eed0642e9118e19f77814aa6eb87b771914",
+  "taskset_id": "v93-9cc7fd6b1b-t00000-63ebd600c163",
+  "taskset_proven": false,
+  "tightness_gap": "UNAVAILABLE",
+  "timeout": true
+}

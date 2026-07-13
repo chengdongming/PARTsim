@@ -20,7 +20,7 @@ from .cell_model import Cell, expand_cells
 from .config import config_hash, domain_hash, dump_config, fraction_text, load_config
 from .execution_engine import _analysis_input, _variant, execute_isolated
 from .ext4_aggregation import aggregate_ext4
-from .generator_family import audited_generator_capabilities
+from .generator_family import audited_generator_capabilities, required_service_period_max
 from .priority_policy import priority_mapping_hash, registered_priority_policies
 from .result_writer import (
     FAILURE_COLUMNS, append_csv_row, atomic_write_json, read_csv, write_csv,
@@ -214,9 +214,15 @@ class Ext4Runner:
             write_csv(self.root / "analysis_attempts.csv", ATTEMPT_COLUMNS, [])
 
     def _samples(self) -> tuple[list[RobustnessSample], list[Dict[str, Any]], list[Dict[str, Any]], Any]:
-        service = prepare_service_curve(self.config, self.root)
+        service_config = deepcopy(self.config)
+        service_config["generation"]["period_max"] = required_service_period_max(self.config)
+        service = prepare_service_curve(service_config, self.root)
         base_cell = expand_cells(self.config)[0]
-        store = TasksetStore(Path(self.config["execution"]["taskset_store"]), self.config, service)
+        store_root = (
+            Path(self.config["execution"]["taskset_store"])
+            / f"service_{service.identity[:16]}"
+        )
+        store = TasksetStore(store_root, self.config, service)
         index = self.config["grid"].get("taskset_index_start", 0)
         base_stored = store.get_or_create(base_cell, index)
         base_hash = sample_input_hash(base_stored.task_payload)
@@ -256,7 +262,7 @@ class Ext4Runner:
             child["generation"]["period_max"] = int(alternate["max"])
             alt_cell = expand_cells(child)[0]
             alt_store = TasksetStore(
-                Path(self.config["execution"]["taskset_store"]) / f"period_{alternate['id']}",
+                store_root / f"period_{alternate['id']}",
                 child, service,
             )
             stored = alt_store.get_or_create(alt_cell, index)
@@ -355,6 +361,15 @@ class Ext4Runner:
                     "soundness_class": "PENDING_SIMULATION", "tightness_gap": "UNAVAILABLE",
                     "p0_rta_pass_sim_fail": False, "dominance_violation": False,
                 }
+                if result is None and solver_status == "INTERNAL_CONFORMANCE_FAILURE":
+                    append_csv_row(self.root / "failures.csv", FAILURE_COLUMNS, {
+                        "severity": "P1", "stage": "RTA", "analysis_id": analysis_id,
+                        "cell_id": sample.cell_id, "taskset_id": sample.stored.taskset_id,
+                        "variant": method, "code": "RTA_INTERNAL_CONFORMANCE_FAILURE",
+                        "detail": f"{final.exception_type}: {final.exception_message}",
+                        "traceback": final.traceback_text or "",
+                        "failure_input": sample.stored.canonical_path,
+                    })
                 atomic_write_json(terminal, row)
                 rows.append(row)
                 if self.stop_requested:
@@ -475,6 +490,38 @@ class Ext4Runner:
             p0 += len(dominance_samples)
         write_csv(self.root / "rta_results.csv", RTA_COLUMNS, rta_rows)
         write_csv(self.root / "simulation_results.csv", SIM_COLUMNS, sim_rows)
+        existing_failure_keys = {
+            (row["analysis_id"], row["code"])
+            for row in read_csv(self.root / "failures.csv")
+        }
+        for row in rta_rows:
+            classification = {
+                "TIMEOUT": ("P2", "RTA_RUNTIME_TIMEOUT"),
+                "INTERNAL_CONFORMANCE_FAILURE": ("P1", "RTA_INTERNAL_CONFORMANCE_FAILURE"),
+            }.get(str(row["solver_status"]))
+            if classification and (row["analysis_id"], classification[1]) not in existing_failure_keys:
+                append_csv_row(self.root / "failures.csv", FAILURE_COLUMNS, {
+                    "severity": classification[0], "stage": "RTA",
+                    "analysis_id": row["analysis_id"], "cell_id": "",
+                    "taskset_id": row["taskset_id"], "variant": row["method"],
+                    "code": classification[1], "detail": row["solver_status"],
+                    "traceback": "", "failure_input": "",
+                })
+                existing_failure_keys.add((row["analysis_id"], classification[1]))
+        for row in sim_rows:
+            classification = {
+                "SIM_RUNTIME_TIMEOUT": ("P2", "SIM_RUNTIME_TIMEOUT"),
+                "SIM_INTERNAL_ERROR": ("P1", "SIM_INTERNAL_ERROR"),
+            }.get(str(row["status"]))
+            if classification and (row["simulation_id"], classification[1]) not in existing_failure_keys:
+                append_csv_row(self.root / "failures.csv", FAILURE_COLUMNS, {
+                    "severity": classification[0], "stage": "SIMULATION",
+                    "analysis_id": row["simulation_id"], "cell_id": "",
+                    "taskset_id": row["taskset_id"], "variant": row["scheduler_id"],
+                    "code": classification[1], "detail": row["reason"],
+                    "traceback": "", "failure_input": "",
+                })
+                existing_failure_keys.add((row["simulation_id"], classification[1]))
         if p0:
             append_csv_row(self.root / "failures.csv", FAILURE_COLUMNS, {
                 "severity": "P0", "stage": "VALIDATION", "analysis_id": "EXT4",

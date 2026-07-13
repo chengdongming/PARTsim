@@ -10,8 +10,6 @@ from pathlib import Path
 import signal
 from typing import Any, Dict, Mapping, Optional
 
-import yaml
-
 from .cell_model import expand_cells
 from .config import config_hash, domain_hash, dump_config, fraction_text, load_config
 from .energy_trace_loader import (
@@ -94,14 +92,29 @@ def _segment(trace: CanonicalEnergyTrace, start: int, count: int, rule: str) -> 
 
 
 def _simulator_system(template: Path, destination: Path, irradiance_path: Path) -> Path:
-    document = yaml.safe_load(template.read_text(encoding="utf-8"))
-    energy = document["energy_management"]
-    energy.update({
-        "use_real_solar_data": True, "solar_data_file": str(irradiance_path.resolve()),
-        "pv_efficiency": 1.0, "pv_area_m2": 1.0, "start_offset_minutes": 0,
-        "day_of_year": 1, "time_of_day_ms": 0,
-    })
-    atomic_write_text(destination, yaml.safe_dump(document, sort_keys=False, allow_unicode=True))
+    # Preserve the template's flow-style vectors.  The shared simulator adapter
+    # intentionally rewrites those vectors line-by-line; a generic YAML dump
+    # would expand them into child lines and make that audited rewrite unsafe.
+    replacements = {
+        "use_real_solar_data": "true",
+        "solar_data_file": json.dumps(str(irradiance_path.resolve())),
+        "pv_efficiency": "1.0", "pv_area_m2": "1.0",
+        "day_of_year": "1", "time_of_day_ms": "0",
+    }
+    seen = {key: 0 for key in replacements}
+    lines = []
+    for line in template.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        key = next((value for value in replacements if stripped.startswith(value + ":")), None)
+        if key is None:
+            lines.append(line)
+            continue
+        indent = line[:len(line) - len(line.lstrip())]
+        lines.append(f"{indent}{key}: {replacements[key]}")
+        seen[key] += 1
+    if any(count != 1 for count in seen.values()):
+        raise EnergyTraceError(f"trace-system template replacement counts are invalid: {seen}")
+    atomic_write_text(destination, "\n".join(lines) + "\n")
     return destination
 
 
