@@ -1,0 +1,115 @@
+{
+  "all_attempt_timing_components": {
+    "deserialization_seconds": {
+      "max": 0.000564733,
+      "mean": 0.00033378288888888884,
+      "median": 0.0003151435,
+      "p95": 0.000478148
+    },
+    "serialization_seconds": {
+      "max": 0.0004373,
+      "mean": 0.00029906794444444445,
+      "median": 0.000286684,
+      "p95": 0.000429436
+    },
+    "solver_cpu_seconds": {
+      "max": 60.54510665,
+      "mean": 28.404101100777776,
+      "median": 28.936875092999998,
+      "p95": 60.001046256
+    },
+    "solver_wall_seconds": {
+      "max": 60.546236958,
+      "mean": 28.40476515086111,
+      "median": 28.9376662935,
+      "p95": 60.002168908
+    },
+    "total_wall_seconds": {
+      "max": 60.550767127,
+      "mean": 28.409411041583333,
+      "median": 28.942964185,
+      "p95": 60.006886168
+    },
+    "transport_and_exit_seconds": {
+      "max": 0.003492684,
+      "mean": 0.0017512876944444445,
+      "median": 0.0016560995,
+      "p95": 0.002209463
+    },
+    "worker_startup_seconds": {
+      "max": 0.003249978,
+      "mean": 0.002261752194444444,
+      "median": 0.0022412815,
+      "p95": 0.002584252
+    }
+  },
+  "completion_solver_wall_seconds": {
+    "max": 57.176629019,
+    "mean": 25.215706568919998,
+    "median": 18.022844345,
+    "p95": 51.786222031
+  },
+  "distribution": {
+    "E0": {
+      "1": {
+        "completed_at_30": 18,
+        "completed_at_60": 7,
+        "original_15_timeout": 27,
+        "timeout_at_60": 2
+      }
+    },
+    "U_norm": {
+      "0.4": {
+        "completed_at_30": 5,
+        "original_15_timeout": 5
+      },
+      "0.6": {
+        "completed_at_30": 13,
+        "completed_at_60": 7,
+        "original_15_timeout": 22,
+        "timeout_at_60": 2
+      }
+    },
+    "analysis_variant": {
+      "CW_D": {
+        "completed_at_30": 6,
+        "original_15_timeout": 7,
+        "timeout_at_60": 1
+      },
+      "CW_THETA_CW": {
+        "completed_at_30": 3,
+        "completed_at_60": 3,
+        "original_15_timeout": 6
+      },
+      "LOC_D": {
+        "completed_at_30": 6,
+        "original_15_timeout": 7,
+        "timeout_at_60": 1
+      },
+      "LOC_THETA_CW": {
+        "completed_at_30": 1,
+        "original_15_timeout": 1
+      },
+      "LOC_THETA_LOC": {
+        "completed_at_30": 2,
+        "completed_at_60": 4,
+        "original_15_timeout": 6
+      }
+    }
+  },
+  "fifteen_to_thirty_completed": 18,
+  "new_certified_tasksets": 15,
+  "new_no_candidate": 10,
+  "non_timeout_candidate_drift": 0,
+  "non_timeout_certification_drift": 0,
+  "non_timeout_control_count": 10,
+  "non_timeout_outcome_drift": 0,
+  "p0": [],
+  "recommendation_rationale": "2 request(s) still timed out at 60 seconds",
+  "saved_timeout_requests": 27,
+  "sixty_second_timeouts": 2,
+  "temporary_recommendation": "FURTHER_EVALUATION",
+  "thirty_to_sixty_attempted": 9,
+  "thirty_to_sixty_completed": 7,
+  "timeout_misclassified_as_no_candidate": 0
+}

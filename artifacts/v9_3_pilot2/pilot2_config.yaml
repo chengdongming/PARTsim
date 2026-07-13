@@ -1,0 +1,70 @@
+pilot_version: 2
+rta_version: v9.3
+contract_version: 1.3.12
+
+baseline:
+  artifact_root: artifacts/v9_3_pilot
+  expected_tasksets: 60
+  expected_analyses: 300
+  expected_timeouts: 27
+  original_timeout_seconds: 15
+
+timeout_sensitivity:
+  budgets_seconds: [30, 60]
+  non_timeout_samples_per_variant: 2
+  max_workers: 1
+  recommendation_headroom_fraction: 0.10
+
+screening:
+  task_n: 10
+  M: 4
+  E0: 1
+  normalized_utilizations: [0.4, 0.6]
+  tasksets_per_cell: 5
+  base_seed: 930112
+  confirmation_base_seed: 930212
+  confirmation_tasksets_per_cell: 20
+  max_confirmation_cells: 2
+  timeout_policy: stage_a_temporary_recommendation
+  structures:
+    - id: S1
+      deadline_mode: implicit
+      power_mode: generator_default_heterogeneous
+      baseline_power_mode: true
+    - id: S2
+      deadline_mode: constrained
+      power_mode: generator_default_heterogeneous
+      baseline_power_mode: true
+    - id: S3
+      deadline_mode: implicit
+      power_mode: generator_default_heterogeneous
+      alias_of: S1
+    - id: S4
+      deadline_mode: constrained
+      power_mode: generator_default_heterogeneous
+      alias_of: S2
+  generation:
+    task_p_min: 40
+    task_p_max: 200
+    min_task_util: 0.01
+    max_task_util: 0.8
+    wcet_rounding: compensated
+    actual_utilization_tolerance_total: 0.01
+
+analysis:
+  variants: [CW_D, LOC_D, CW_THETA_CW, LOC_THETA_CW, LOC_THETA_LOC]
+  max_workers: 1
+
+energy_model:
+  system_template: system_config_unified_template.yml
+  battery_capacity_j: 20
+  simulation_initial_energy_ratio: 1
+  use_real_solar_data: false
+  solar_time_ms: 21975000
+  harvesting_scale: 1
+  service_curve_horizon_ms: 30000
+  service_curve_profile: synthetic_piecewise_default
+  tick_ms: 1
+  energy_numeric_mode: EXACT_RATIONAL
+  energy_demand_rounding: EXACT
+  energy_supply_rounding: EXACT

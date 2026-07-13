@@ -1,0 +1,5 @@
+severity,stage,taskset_id,analysis_variant,code,detail,input_file
+P1,summary,,,2,2 timeout request(s) unresolved at 60 seconds,
+P1,summary,,,5,5 screening analysis timeout(s),
+P2,summary,,,S3/S4,S3/S4 are separately seeded aliases because the baseline power mode is already heterogeneous,
+P2,summary,,,NO,no screening cell met the strict-response differentiation criterion,
