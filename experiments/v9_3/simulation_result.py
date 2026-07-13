@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from fractions import Fraction
 import json
@@ -74,6 +74,7 @@ class SimulationResult:
     configured_scheduler: str
     simulation_completed: bool
     completion_reason: str
+    metrics: Mapping[str, Any] = field(default_factory=dict)
 
     @property
     def comparison_eligible(self) -> bool:
@@ -140,16 +141,21 @@ def parse_simulation_trace(
     warmup: int,
     minimum_jobs_per_task: int,
     release_e0: Fraction,
+    expected_scheduler: str = "gpfp_asap_block",
+    expected_processors: Optional[int] = None,
 ) -> SimulationResult:
-    """Parse one complete ASAP-BLOCK trace into job/task observations."""
+    """Parse one complete audited scheduler trace into job/task observations."""
 
     data = _strict_json(trace_path)
     if data.get("trace_schema_version") != 2:
         raise SimulationTraceError("CORE-3 requires trace schema version 2")
     if data.get("taskset_semantic_hash") != expected_taskset_hash:
         raise SimulationTraceError("RTA/simulation taskset hash mismatch")
-    if data.get("configured_scheduler") != "gpfp_asap_block":
-        raise SimulationTraceError("trace is not from gpfp_asap_block")
+    if data.get("configured_scheduler") != expected_scheduler:
+        raise SimulationTraceError(
+            "trace scheduler mismatch: expected "
+            f"{expected_scheduler}, got {data.get('configured_scheduler')!r}"
+        )
     if data.get("simulation_completed") is not True:
         raise SimulationTraceError("simulation did not report complete horizon")
     if data.get("simulation_completion_reason") != "reached_horizon":
@@ -168,6 +174,12 @@ def parse_simulation_trace(
     release_energies: list[float] = []
     observed_power: Dict[str, float] = {}
     running_since: Dict[tuple[str, int], int] = {}
+    bypass_count = 0
+    sync_wait_ticks: set[int] = set()
+    idle_ready_ticks: set[int] = set()
+    battery_samples: list[tuple[int, float]] = []
+    harvested_samples: list[float] = []
+    consumed_samples: list[float] = []
 
     def job_for(name: Any, release_value: Any) -> Dict[str, Any]:
         if name not in names:
@@ -198,6 +210,15 @@ def parse_simulation_trace(
         event_time = _integer(event.get("time"), f"event {position} time")
         if event_time < 0 or event_time > horizon:
             raise SimulationTraceError("event time lies outside simulation horizon")
+        if "current_energy_mJ" in event:
+            battery = _finite(event["current_energy_mJ"], "current energy") / 1000.0
+            harvested = _finite(event.get("total_harvested_mJ", 0), "harvested energy") / 1000.0
+            consumed = _finite(event.get("total_consumed_mJ", 0), "consumed energy") / 1000.0
+            if min(battery, harvested, consumed) < -1e-12:
+                raise SimulationTraceError("negative cumulative energy observation")
+            battery_samples.append((event_time, battery))
+            harvested_samples.append(harvested)
+            consumed_samples.append(consumed)
         if event_type == "arrival":
             job = job_for(event.get("task_name"), event.get("arrival_time"))
             if job["release"] != event_time:
@@ -252,6 +273,10 @@ def parse_simulation_trace(
                 selected_job = job_for(nested.get("task_name"), nested.get("arrival_time"))
                 selected_keys.add((str(nested.get("task_name")), selected_job["release"]))
             reason = event.get("decision_reason")
+            if expected_processors is not None and ready:
+                expected_selected = min(expected_processors, len(ready))
+                if len(selected) < expected_selected:
+                    idle_ready_ticks.add(event_time)
             stopped_by_energy = reason in {
                 "highest_priority_energy_insufficient", "prefix_energy_insufficient"
             }
@@ -264,6 +289,10 @@ def parse_simulation_trace(
                     ready_job["executing"].add(event_time)
                 elif stopped_by_energy:
                     ready_job["energy_blocked"].add(event_time)
+        elif event_type == "nonblock_bypass":
+            bypass_count += 1
+        elif event_type == "sync_batch_block":
+            sync_wait_ticks.add(event_time)
 
     ordered_by_task: Dict[str, list[Dict[str, Any]]] = {
         task_id: [] for task_id in definitions
@@ -334,9 +363,49 @@ def parse_simulation_trace(
     release_valid = bool(
         minimum_energy is not None and minimum_energy + 1e-12 >= e0_float
     )
+    completed_responses = [
+        job.response_time for job in observations if job.response_time is not None
+    ]
+    first_miss = min(
+        (job.absolute_deadline for job in observations if job.deadline_miss),
+        default=None,
+    )
+    metrics: Dict[str, Any] = {
+        "missed_jobs": sum(job.deadline_miss for job in observations),
+        "first_miss_time": first_miss,
+        "maximum_observed_response_time": max(completed_responses, default=None),
+        "mean_response_time": (
+            sum(completed_responses) / len(completed_responses)
+            if completed_responses else None
+        ),
+        "completed_jobs": len(completed_responses),
+        "preemptions": sum(job.preemption_count for job in observations),
+        "processor_wait_ticks": sum(
+            job.processor_wait_ticks for job in observations
+            if job.processor_wait_ticks is not None
+        ),
+        "energy_blocked_ticks": sum(job.energy_blocked_ticks for job in observations),
+        "bypass_count": bypass_count,
+        "synchronization_wait_ticks": len(sync_wait_ticks),
+        "idle_cores_while_ready_jobs_exist_ticks": (
+            len(idle_ready_ticks) if expected_processors is not None else None
+        ),
+        "harvested_energy_j": max(harvested_samples, default=None),
+        "consumed_energy_j": max(consumed_samples, default=None),
+        "battery_minimum_j": (
+            min((value for _, value in battery_samples), default=None)
+        ),
+        "battery_maximum_j": (
+            max((value for _, value in battery_samples), default=None)
+        ),
+        "battery_trajectory": [
+            {"time": tick, "energy_j": value} for tick, value in battery_samples
+        ],
+    }
     return SimulationResult(
         status, reason, horizon, tuple(observations), tuple(task_observations),
         release_valid, minimum_energy, observed_power, 2,
         str(data["configured_scheduler"]), True,
         str(data["simulation_completion_reason"]),
+        metrics,
     )

@@ -128,6 +128,7 @@ def materialize_simulation_inputs(
     processors: int,
     initial_battery: Fraction,
     battery_capacity: Fraction,
+    scheduler_id: str = "gpfp_asap_block",
 ) -> tuple[Path, Path]:
     """Write a scheduler-only projection without changing frozen semantics."""
 
@@ -140,7 +141,7 @@ def materialize_simulation_inputs(
         raise SimulationConfigurationError("base system has no CPU island")
     replacements = {
         "numcpus": str(processors),
-        "scheduler": "gpfp_asap_block",
+        "scheduler": scheduler_id,
         "initial_energy": format(float(initial_battery), ".17g"),
         "max_energy": format(float(battery_capacity), ".17g"),
     }
@@ -222,10 +223,11 @@ def _failure_result(
     status: SimulationStatus,
     reason: str,
     horizon: int,
+    scheduler_id: str = "gpfp_asap_block",
 ) -> SimulationResult:
     return SimulationResult(
         status, reason, horizon, (), (), False, None, {}, 2,
-        "gpfp_asap_block", False, reason,
+        scheduler_id, False, reason,
     )
 
 
@@ -243,6 +245,7 @@ def simulation_result_to_dict(result: SimulationResult) -> Dict[str, Any]:
         "configured_scheduler": result.configured_scheduler,
         "simulation_completed": result.simulation_completed,
         "completion_reason": result.completion_reason,
+        "metrics": dict(result.metrics),
     }
 
 
@@ -258,6 +261,7 @@ def simulation_result_from_dict(value: Mapping[str, Any]) -> SimulationResult:
         str(value.get("configured_scheduler", "")),
         bool(value.get("simulation_completed", False)),
         str(value.get("completion_reason", "")),
+        dict(value.get("metrics", {})),
     )
 
 
@@ -309,6 +313,7 @@ def run_paired_simulation(
     exact_e0: Fraction,
     energy_config: Mapping[str, Any],
     simulation_config: Mapping[str, Any],
+    scheduler_id: str = "gpfp_asap_block",
 ) -> SimulationExecution:
     initial = Fraction(str(energy_config["simulation_initial_battery"]))
     capacity = Fraction(str(energy_config["battery_capacity"]))
@@ -316,7 +321,7 @@ def run_paired_simulation(
     system_path, taskset_path = materialize_simulation_inputs(
         base_system_path, input_root, task_payload,
         processors=processors, initial_battery=initial,
-        battery_capacity=capacity,
+        battery_capacity=capacity, scheduler_id=scheduler_id,
     )
     validate_no_overflow_guard(
         system_path, int(simulation_config["maximum_horizon"]),
@@ -353,7 +358,7 @@ def run_paired_simulation(
         command = [
             str(simulator), str(system_path), str(taskset_path), str(horizon),
             "-t", str(trace_path), "--run-id",
-            f"core3-{simulation_id_value[:16]}-h{horizon}",
+            f"v93-{simulation_id_value[:16]}-h{horizon}",
             "--taskset-semantic-hash", taskset_hash,
         ]
         if simulation_config["trace_mode"] == "semantic":
@@ -372,6 +377,7 @@ def run_paired_simulation(
                 result = _failure_result(
                     SimulationStatus.INTERNAL_ERROR,
                     f"simulator_exit_{completed.returncode}", horizon,
+                    scheduler_id,
                 )
             else:
                 try:
@@ -381,6 +387,8 @@ def run_paired_simulation(
                         warmup=int(simulation_config["warmup"]),
                         minimum_jobs_per_task=int(simulation_config["minimum_jobs_per_task"]),
                         release_e0=exact_e0,
+                        expected_scheduler=scheduler_id,
+                        expected_processors=processors,
                     )
                     for task_id, observed in result.observed_task_power_j_per_tick.items():
                         expected = float(Fraction(str(task_payload[int(task_id)]["P"])))
@@ -392,13 +400,15 @@ def run_paired_simulation(
                     result = _failure_result(
                         SimulationStatus.INTERNAL_ERROR,
                         f"trace_semantic_error:{exc}", horizon,
+                        scheduler_id,
                     )
         except subprocess.TimeoutExpired as exc:
             total_runtime += time.perf_counter() - started
             stdout_tail = str(exc.stdout or "")[-6000:]
             stderr_tail = str(exc.stderr or "")[-6000:]
             result = _failure_result(
-                SimulationStatus.RUNTIME_TIMEOUT, "simulation_timeout", horizon
+                SimulationStatus.RUNTIME_TIMEOUT, "simulation_timeout", horizon,
+                scheduler_id,
             )
 
         assert result is not None
