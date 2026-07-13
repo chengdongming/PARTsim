@@ -22,6 +22,7 @@ class Cell:
     processors: int
     task_count: int
     utilization: Fraction
+    utilization_index: int
     exact_e0: Fraction
     deadline_mode: str
     deadline_profile: str
@@ -40,6 +41,7 @@ class Cell:
             "M": self.processors,
             "task_n": self.task_count,
             "utilization": fraction_text(self.utilization),
+            "utilization_index": self.utilization_index,
             "exact_e0": fraction_text(self.exact_e0),
             "deadline_mode": self.deadline_mode,
             "deadline_profile": self.deadline_profile,
@@ -86,13 +88,20 @@ def generation_dimensions(
 
 def expand_cells(config: Mapping[str, Any]) -> Tuple[Cell, ...]:
     result = []
+    selected = config["grid"].get("cell_filter")
+    selected_pairs = (
+        {(row["utilization"], row["exact_e0"]) for row in selected}
+        if selected else None
+    )
     for processors in config["platform"]["cores"]:
         for task_count in config["platform"]["task_count"]:
-            for utilization_text in config["grid"]["utilization_points"]:
+            for utilization_index, utilization_text in enumerate(config["grid"]["utilization_points"]):
                 utilization = Fraction(utilization_text)
                 dimensions = generation_dimensions(config, processors, task_count, utilization)
                 generation_id = domain_hash("ASAP_BLOCK:V9.3:TASKSET_GENERATION_CELL:v1", dimensions)
                 for e0_text in config["energy"]["initial_energy_values"]:
+                    if selected_pairs is not None and (utilization_text, e0_text) not in selected_pairs:
+                        continue
                     e0 = Fraction(e0_text)
                     identity = {
                         "experiment_id": config["experiment_id"],
@@ -103,7 +112,7 @@ def expand_cells(config: Mapping[str, Any]) -> Tuple[Cell, ...]:
                     }
                     result.append(Cell(
                         config["experiment_id"], config["core"], processors,
-                        task_count, utilization, e0,
+                        task_count, utilization, utilization_index, e0,
                         config["generation"]["deadline_mode"], _deadline_profile(config),
                         config["generation"]["power_mode"],
                         config["generation"]["priority_policy"],
@@ -116,13 +125,25 @@ def expand_cells(config: Mapping[str, Any]) -> Tuple[Cell, ...]:
 
 
 def derive_seed(
-    base_seed: int, generation_id: str, taskset_index: int
+    base_seed: int, generation_id: str, taskset_index: int, *,
+    seed_mode: str = "generation_dimensions", utilization_index: int | None = None,
 ) -> int:
-    material = {
-        "base_seed": base_seed,
-        "generation_id": generation_id,
-        "taskset_index": taskset_index,
-    }
+    if seed_mode == "generation_dimensions":
+        material = {
+            "base_seed": base_seed,
+            "generation_id": generation_id,
+            "taskset_index": taskset_index,
+        }
+    elif seed_mode == "utilization_index_taskset_index":
+        if utilization_index is None:
+            raise ValueError("utilization-index seed mode requires utilization_index")
+        material = {
+            "base_seed": base_seed,
+            "utilization_index": utilization_index,
+            "taskset_index": taskset_index,
+        }
+    else:
+        raise ValueError(f"unknown seed mode: {seed_mode}")
     digest = domain_hash("ASAP_BLOCK:V9.3:TASKSET_SEED:v1", material)
     return int(digest[:16], 16) % 2147483647
 
@@ -151,6 +172,7 @@ def iter_requests(
     config: Mapping[str, Any], cells: Iterable[Cell]
 ) -> Iterable[tuple[Cell, int, str]]:
     for cell in cells:
-        for taskset_index in range(config["grid"]["tasksets_per_cell"]):
+        start = config["grid"].get("taskset_index_start", 0)
+        for taskset_index in range(start, start + config["grid"]["tasksets_per_cell"]):
             for variant in config["analysis"]["variants"]:
                 yield cell, taskset_index, variant

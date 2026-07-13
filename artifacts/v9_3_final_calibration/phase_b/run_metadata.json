@@ -1,0 +1,10 @@
+{
+  "config_hash": "45aee8b0ceaefcbcb0af1c90b5d387ffa4de4fc2fd96efe371bb88a8ce1458a1",
+  "core": "CORE-2",
+  "created_at_utc": "2026-07-13T15:15:47.709162Z",
+  "experiment_id": "asap-block-v9.3-final-constrained-calibration-stage-b",
+  "formal_large_scale_run": false,
+  "git_head": "cc57c93efb5f3056d0fa2e2e09acfe68aba174ae",
+  "production_entry": "asap_block_rta_v9_3_taskset.analyze_taskset_v9_3",
+  "schema": "ASAP_BLOCK_V9_3_FORMAL_RUN_V1"
+}

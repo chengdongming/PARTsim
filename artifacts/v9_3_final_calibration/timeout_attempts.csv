@@ -1,0 +1,1 @@
+phase,attempt_id,analysis_id,attempt_number,parent_attempt_id,timeout_budget_seconds,solver_status,outer_timeout,solver_wall_seconds,solver_cpu_seconds,worker_startup_seconds,serialization_seconds,ipc_seconds,total_wall_seconds,exception_type,exception_message,traceback,started_at_utc

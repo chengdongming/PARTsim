@@ -1,0 +1,70 @@
+{
+  "base_seed": 930612,
+  "calibration_seed_reused": false,
+  "combined_analysis_count": 2100,
+  "combined_conservative_wall_seconds": 5161.110719347499,
+  "combined_expected_wall_seconds": 2154.191962623437,
+  "core1": {
+    "analysis_count": 600,
+    "conservative_solver_seconds": 5150.4078594,
+    "conservative_wall_seconds": 1480.7422595775,
+    "expected_solver_seconds": 2183.923952675,
+    "expected_wall_seconds": 627.8781363940624,
+    "variant_runtime": {
+      "CW_THETA_CW": {
+        "mean_seconds": 3.6975572811666666,
+        "p95_seconds": 9.31965807
+      },
+      "LOC_THETA_LOC": {
+        "mean_seconds": 3.58218922775,
+        "p95_seconds": 7.848368128
+      }
+    },
+    "worker_count": 4
+  },
+  "core2": {
+    "analysis_count": 1500,
+    "conservative_solver_seconds": 12801.2815992,
+    "conservative_wall_seconds": 3680.3684597699994,
+    "expected_solver_seconds": 5308.917656449999,
+    "expected_wall_seconds": 1526.3138262293746,
+    "variant_runtime": {
+      "CW_D": {
+        "mean_seconds": 4.2026491905,
+        "p95_seconds": 8.540877934
+      },
+      "CW_THETA_CW": {
+        "mean_seconds": 3.6975572811666666,
+        "p95_seconds": 9.31965807
+      },
+      "LOC_D": {
+        "mean_seconds": 4.068702483833333,
+        "p95_seconds": 8.803038667
+      },
+      "LOC_THETA_CW": {
+        "mean_seconds": 2.1452940049166664,
+        "p95_seconds": 8.158995865
+      },
+      "LOC_THETA_LOC": {
+        "mean_seconds": 3.58218922775,
+        "p95_seconds": 7.848368128
+      }
+    },
+    "worker_count": 4
+  },
+  "formal_run_started": false,
+  "initial_energy_values": [
+    "1",
+    "21473099401200000281/200000000000000000000"
+  ],
+  "parameter_status": "PROPOSED_NOT_YET_FROZEN",
+  "retry_timeout_seconds": 60,
+  "tasksets_per_cell": 50,
+  "timeout_seconds": 30,
+  "utilization_points": [
+    "1/5",
+    "3/10",
+    "2/5"
+  ],
+  "worker_count": 4
+}

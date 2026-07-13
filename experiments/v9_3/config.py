@@ -27,6 +27,7 @@ KNOWN_NUMERICAL_MODES = {"EXACT_RATIONAL"}
 KNOWN_WCET_ROUNDING = {"floor", "round", "ceil", "compensated"}
 KNOWN_RETRY_POLICIES = {"none", "timeout_once"}
 KNOWN_CONSTRAINED_DISTRIBUTIONS = {"generator_uniform_integer"}
+KNOWN_SEED_MODES = {"generation_dimensions", "utilization_index_taskset_index"}
 
 
 def exact_fraction(value: Any, label: str) -> Fraction:
@@ -210,6 +211,43 @@ def validate_config(raw: Mapping[str, Any], *, expected_core: str | None = None)
     grid["tasksets_per_cell"] = _positive_int(grid.get("tasksets_per_cell"), "grid.tasksets_per_cell")
     if isinstance(grid.get("base_seed"), bool) or not isinstance(grid.get("base_seed"), int):
         raise ConfigError("grid.base_seed must be an integer")
+    seed_mode = grid.get("seed_mode", "generation_dimensions")
+    if seed_mode not in KNOWN_SEED_MODES:
+        raise ConfigError("unknown grid.seed_mode")
+    taskset_index_start = grid.get("taskset_index_start", 0)
+    if (
+        isinstance(taskset_index_start, bool)
+        or not isinstance(taskset_index_start, int)
+        or taskset_index_start < 0
+    ):
+        raise ConfigError("grid.taskset_index_start must be a non-negative integer")
+    cell_filter = grid.get("cell_filter")
+    if cell_filter is not None:
+        if not isinstance(cell_filter, list) or not cell_filter:
+            raise ConfigError("grid.cell_filter must be a non-empty list")
+        normalized_filter = []
+        for index, item in enumerate(cell_filter):
+            if not isinstance(item, dict) or set(item) != {"utilization", "exact_e0"}:
+                raise ConfigError(
+                    "each grid.cell_filter entry requires utilization and exact_e0"
+                )
+            utilization = exact_fraction(
+                item["utilization"], f"grid.cell_filter[{index}].utilization"
+            )
+            e0 = exact_fraction(item["exact_e0"], f"grid.cell_filter[{index}].exact_e0")
+            if utilization <= 0 or utilization > 1:
+                raise ConfigError("filtered utilization must satisfy 0 < U <= 1")
+            normalized_filter.append({
+                "utilization": fraction_text(utilization),
+                "exact_e0": fraction_text(e0),
+            })
+        if len({(row["utilization"], row["exact_e0"]) for row in normalized_filter}) != len(normalized_filter):
+            raise ConfigError("grid.cell_filter contains duplicates")
+        allowed_u = set(grid["utilization_points"])
+        allowed_e0 = set(energy["initial_energy_values"])
+        if any(row["utilization"] not in allowed_u or row["exact_e0"] not in allowed_e0 for row in normalized_filter):
+            raise ConfigError("grid.cell_filter must be a subset of the configured U/E0 grid")
+        grid["cell_filter"] = normalized_filter
 
     analysis = _require_mapping(config, "analysis")
     variants = analysis.get("variants")

@@ -14,6 +14,7 @@ from .config import canonical_json
 
 CELL_COLUMNS = (
     "cell_id", "experiment_id", "core", "M", "task_n", "utilization",
+    "utilization_index",
     "exact_e0", "deadline_mode", "deadline_profile", "power_mode",
     "priority_policy", "service_curve_id", "numerical_mode", "generation_id",
 )

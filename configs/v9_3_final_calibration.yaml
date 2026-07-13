@@ -1,0 +1,58 @@
+parameter_status: FINAL_CALIBRATION_ONLY
+experiment_id: asap-block-v9.3-final-constrained-calibration
+core: CORE-2
+platform:
+  cores: [4]
+  task_count: [10]
+generation:
+  deadline_mode: constrained
+  constrained_deadline:
+    d_over_t_values: []
+    d_over_t_min: "0"
+    d_over_t_max: "1"
+    distribution: generator_uniform_integer
+  period_min: 40
+  period_max: 200
+  wcet_rounding: compensated
+  utilization_tolerance: "0.01"
+  min_task_util: "0.01"
+  max_task_util: "0.8"
+  priority_policy: RM
+  power_mode: generator_default_heterogeneous
+  generator_timeout_seconds: 120
+energy:
+  initial_energy_values:
+    - "1"
+    - "21473099401200000281/200000000000000000000"
+  exact_rational_encoding: canonical_fraction
+  service_curve:
+    id: synthetic-piecewise-default-v1
+    system_template: system_config_unified_template.yml
+    horizon: 30000
+  battery_mode: finite
+  battery_capacity: "20"
+grid:
+  utilization_points: ["0.2", "0.3", "0.4"]
+  tasksets_per_cell: 1
+  base_seed: 930512
+  seed_mode: utilization_index_taskset_index
+  taskset_index_start: 0
+analysis:
+  variants: [CW_D, LOC_D, CW_THETA_CW, LOC_THETA_CW, LOC_THETA_LOC]
+  timeout_seconds: 30
+  retry_timeout_seconds: 60
+  retry_policy: timeout_once
+  worker_count: 1
+  numerical_mode: EXACT_RATIONAL
+execution:
+  checkpoint_every: 1
+  output_root: artifacts/v9_3_final_calibration/phase_a
+  taskset_store: artifacts/v9_3_final_calibration/taskset_store
+  resume: false
+  fail_fast_on_p0: true
+  preserve_attempt_history: true
+calibration:
+  artifact_root: artifacts/v9_3_final_calibration
+  diagnostic_timeout_seconds: 60
+  proposed_formal_base_seed: 930612
+plots: {}

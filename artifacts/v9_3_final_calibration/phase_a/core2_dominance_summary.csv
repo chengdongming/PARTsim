@@ -1,0 +1,4 @@
+relation,common_candidate_task_count,tighter_count,equal_count,violation_count
+LOC_D_VS_CW_D,60,0,60,0
+LOC_THETA_CW_VS_CW_THETA_CW,60,0,60,0
+LOC_THETA_LOC_VS_CW_THETA_CW,60,0,60,0

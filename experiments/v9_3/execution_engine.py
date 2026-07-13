@@ -459,9 +459,10 @@ class ExecutionEngine:
         if max_tasksets is not None:
             per_cell = min(per_cell, max_tasksets)
         chains: list[list[ExecutionPlanItem]] = []
+        taskset_index_start = self.config["grid"].get("taskset_index_start", 0)
         generated_rows: Dict[str, Dict[str, Any]] = {}
         for cell in cells:
-            for index in range(per_cell):
+            for index in range(taskset_index_start, taskset_index_start + per_cell):
                 key = (cell.generation_id, index)
                 stored = self._stored_by_key.get(key)
                 if stored is None:

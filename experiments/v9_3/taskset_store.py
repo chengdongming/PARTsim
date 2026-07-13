@@ -173,7 +173,11 @@ class TasksetStore:
 
     def _generate(self, path: Path, cell: Cell, taskset_index: int) -> StoredTaskset:
         generation = self.config["generation"]
-        seed = derive_seed(self.config["grid"]["base_seed"], cell.generation_id, taskset_index)
+        seed = derive_seed(
+            self.config["grid"]["base_seed"], cell.generation_id, taskset_index,
+            seed_mode=self.config["grid"].get("seed_mode", "generation_dimensions"),
+            utilization_index=cell.utilization_index,
+        )
         target = cell.utilization * cell.processors
         with tempfile.TemporaryDirectory(prefix="v9_3_formal_generation_") as directory:
             generated_path = Path(directory) / "tasks.yaml"
