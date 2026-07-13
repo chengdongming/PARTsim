@@ -1,0 +1,11 @@
+# v9.3 EXT-2 repository trace inventory
+
+Audit date: 2026-07-14. Formal data status: `REAL_TRACE_DATA_UNAVAILABLE`.
+
+| File | Source | License/use statement in repository | Time/unit | Interval | Missing values | Range | Preprocessing | Paper release status | SHA-256 |
+|---|---|---|---|---|---|---|---|---|---|
+| `data/raw/POWER_Point_Hourly_20250101_20260105_041d79N_123d43E_LST.csv` | Header identifies NASA/POWER, CERES SYN1deg and MERRA-2, 41.7935 N 123.4328 E | unavailable | LST; `ALLSKY_SFC_SW_DWN` is `Wh/m^2` | hourly | `-999` explicitly declared; present at the end | 2025-01-01 to 2026-01-05 | raw download | unavailable until use/publication rights are recorded | `a3c5857642b6256b1485eda0cee27f02c6355fdf0b76102be7b6ae07fb7d0328` |
+| `data/raw/POWER_Point_Hourly_20250101_20260105_041d79N_123d43E_LST.json` | Embedded feature metadata identifies the same NASA/POWER location/parameters | unavailable | keyed hourly LST; parameter unit metadata embedded | hourly | source marker is `-999` | same requested range | raw download | unavailable until use/publication rights are recorded | `e2fd0f3db33a96e3bcfe43e2ee430c3cb96e8b267a0f02a8dd55420d01350664` |
+| `data/processed/shenyang_solar_minute.csv` | Claimed by legacy loader/config to derive from NASA data | unavailable | header says `irradiance_W_per_m2`; calendar timestamps absent | one row per minute by loader convention | legacy loader maps every negative value to zero | 532800 samples; exact calendar mapping absent | yes, but script/version/hash chain unavailable | unavailable; not admissible as formal input | `c251c931560ed2498fd9d9e9ded74f923d64ac57e3d9806952752ee21079e44e` |
+
+The raw files have credible embedded source metadata, but the repository does not contain the applicable data license/use statement or a publication-rights record. The processed file also lacks a reproducible transform manifest and changes negative values through the legacy loader. Therefore the framework does not present these files as paper-ready real-trace evidence. It implements the formal loader/schema/resampling path and uses only `test/fixtures/v9_3_ext2_synthetic_trace.csv`, labeled `SYNTHETIC_TEST_FIXTURE`, for bounded code smoke.
