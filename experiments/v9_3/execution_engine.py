@@ -430,6 +430,8 @@ class ExecutionEngine:
             atomic_write_json(metadata_path, metadata)
             dump_config(self.config, self.root / "run_config.yaml")
         self.writer = ResultWriter(self.root)
+        # A resumed P0 run must never erase the already-recorded failure audit.
+        self._failures = list(read_csv(self.root / "failures.csv"))
         self.service = prepare_service_curve(self.config, self.root)
         self.store = TasksetStore(
             Path(self.config["execution"]["taskset_store"]), self.config, self.service

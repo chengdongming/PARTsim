@@ -1,0 +1,3 @@
+cell_id,variant,unconditional_denominator,terminal_count,completed_only_denominator,certified_count,no_candidate_count,timeout_count,not_applicable_count,numeric_error_count,internal_failure_count,certification_ratio_unconditional,certification_ratio_completed_only,runtime_mean,runtime_median,runtime_p95,runtime_max
+ed9006e44380fd9df5d30c8de40c403169a8a3b5004f0a0b8602ce736ee1749e,CW_THETA_CW,1,1,1,1,0,0,0,0,0,1.0,1.0,0.638396299,0.638396299,0.638396299,0.638396299
+ed9006e44380fd9df5d30c8de40c403169a8a3b5004f0a0b8602ce736ee1749e,LOC_THETA_LOC,1,1,1,1,0,0,0,0,0,1.0,1.0,0.628779754,0.628779754,0.628779754,0.628779754

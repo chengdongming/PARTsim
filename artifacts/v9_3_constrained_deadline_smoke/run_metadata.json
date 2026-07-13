@@ -1,0 +1,10 @@
+{
+  "config_hash": "fa2d3659ff2f9bee20231baa82d0aa009b1a52bcb50ec385777e505b08b5dd88",
+  "core": "CORE-1",
+  "created_at_utc": "2026-07-13T14:44:23.541033Z",
+  "experiment_id": "asap-block-v9.3-constrained-deadline-smoke",
+  "formal_large_scale_run": false,
+  "git_head": "eb3758c80287b7a45a5b669400ce97b712d84c04",
+  "production_entry": "asap_block_rta_v9_3_taskset.analyze_taskset_v9_3",
+  "schema": "ASAP_BLOCK_V9_3_FORMAL_RUN_V1"
+}

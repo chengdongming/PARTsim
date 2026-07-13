@@ -1,0 +1,2 @@
+cell_id,taskset_id,exact_e0,relation,left_variant,right_variant,dominance_expected,common_candidate_task_count,tighter_count,equal_count,violation_count,mean_reduction,median_reduction,max_reduction,mean_normalized_reduction
+ed9006e44380fd9df5d30c8de40c403169a8a3b5004f0a0b8602ce736ee1749e,v93-21471487b7-t00000-56e20a8a37c7,0,MAIN_METHOD_LOCAL_VS_COMPLETE,CW_THETA_CW,LOC_THETA_LOC,True,10,0,10,0,0.0,0.0,0,0.0

@@ -1,0 +1,3 @@
+cell_id,unconditional_requested_tasksets,completed_only_pairs,common_candidate_task_count,loc_tighter_count,equal_count,violation_count,mean_response_reduction,median_response_reduction,max_response_reduction,mean_normalized_reduction,certification_gain,certification_loss,both_certified,neither_certified
+4d3e657273d609d880d180fe41751e2dffcf981b498ee04f4e30ec89449ee193,1,1,10,0,10,0,0.0,0.0,0,0.0,0,0,1,0
+afb38e61fb72bfeaa141a315b83f1c0cc9bf50ac4c8d3565f010c16b3de4cb8f,1,1,10,0,10,0,0.0,0.0,0,0.0,0,0,1,0
