@@ -1,0 +1,100 @@
+taskset:
+  - name: v93_task_0
+    iat: 61
+    runtime: 8
+    startcpu: 0
+    deadline: 57
+    ph: 4
+    params: "period=61,wcet=8,arrival_offset=4,workload=bzip2"
+    code:
+      - fixed(8, bzip2)
+
+  - name: v93_task_1
+    iat: 64
+    runtime: 4
+    startcpu: 0
+    deadline: 39
+    ph: 13
+    params: "period=64,wcet=4,arrival_offset=13,workload=bzip2"
+    code:
+      - fixed(4, bzip2)
+
+  - name: v93_task_2
+    iat: 68
+    runtime: 3
+    startcpu: 0
+    deadline: 41
+    ph: 14
+    params: "period=68,wcet=3,arrival_offset=14,workload=control"
+    code:
+      - fixed(3, control)
+
+  - name: v93_task_3
+    iat: 85
+    runtime: 3
+    startcpu: 0
+    deadline: 22
+    ph: 11
+    params: "period=85,wcet=3,arrival_offset=11,workload=idle"
+    code:
+      - fixed(3, idle)
+
+  - name: v93_task_4
+    iat: 89
+    runtime: 18
+    startcpu: 0
+    deadline: 88
+    ph: 2
+    params: "period=89,wcet=18,arrival_offset=2,workload=encrypt"
+    code:
+      - fixed(18, encrypt)
+
+  - name: v93_task_5
+    iat: 104
+    runtime: 7
+    startcpu: 0
+    deadline: 66
+    ph: 20
+    params: "period=104,wcet=7,arrival_offset=20,workload=hash"
+    code:
+      - fixed(7, hash)
+
+  - name: v93_task_6
+    iat: 105
+    runtime: 3
+    startcpu: 0
+    deadline: 60
+    ph: 29
+    params: "period=105,wcet=3,arrival_offset=29,workload=decrypt"
+    code:
+      - fixed(3, decrypt)
+
+  - name: v93_task_7
+    iat: 115
+    runtime: 5
+    startcpu: 0
+    deadline: 7
+    ph: 16
+    params: "period=115,wcet=5,arrival_offset=16,workload=idle"
+    code:
+      - fixed(5, idle)
+
+  - name: v93_task_8
+    iat: 145
+    runtime: 10
+    startcpu: 0
+    deadline: 39
+    ph: 23
+    params: "period=145,wcet=10,arrival_offset=23,workload=encrypt"
+    code:
+      - fixed(10, encrypt)
+
+  - name: v93_task_9
+    iat: 181
+    runtime: 21
+    startcpu: 0
+    deadline: 109
+    ph: 17
+    params: "period=181,wcet=21,arrival_offset=17,workload=idle"
+    code:
+      - fixed(21, idle)

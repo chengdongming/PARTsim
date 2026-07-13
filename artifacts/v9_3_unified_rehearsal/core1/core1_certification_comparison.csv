@@ -1,0 +1,2 @@
+cell_id,taskset_id,exact_e0,left_variant,right_variant,left_certified,right_certified,certification_gain,certification_loss,both_certified,neither_certified,left_status,right_status
+4d3e657273d609d880d180fe41751e2dffcf981b498ee04f4e30ec89449ee193,v93-5b7dce0b03-t00000-2292118c3dc7,0,CW_THETA_CW,LOC_THETA_LOC,True,True,0,0,1,0,COMPLETED,COMPLETED

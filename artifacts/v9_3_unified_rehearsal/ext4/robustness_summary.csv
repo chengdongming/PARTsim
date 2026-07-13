@@ -1,0 +1,13 @@
+changed_axis,level,method,rta_requested_denominator,rta_terminal_denominator,certified_count,certification_ratio,simulation_requested_denominator,simulation_terminal_denominator,simulation_valid_denominator,simulation_pass_count,simulation_pass_ratio_valid,timeout_count,soundness_rta_pass_sim_fail,dominance_violation_count
+baseline,implicit_default_range,CW_THETA_CW,1,1,1,1.0,1,1,1,1,1.0,0,0,0
+baseline,implicit_default_range,LOC_THETA_LOC,1,1,1,1.0,1,1,1,1,1.0,0,0,0
+deadline_mode,constrained,CW_THETA_CW,1,1,1,1.0,1,1,1,1,1.0,0,0,0
+deadline_mode,constrained,LOC_THETA_LOC,1,1,1,1.0,1,1,1,1,1.0,0,0,0
+period_range,wide_80_400,CW_THETA_CW,0,0,0,UNAVAILABLE,0,0,0,0,UNAVAILABLE,0,0,0
+period_range,wide_80_400,LOC_THETA_LOC,0,0,0,UNAVAILABLE,0,0,0,0,UNAVAILABLE,0,0,0
+priority_policy,RM_ONLY,CW_THETA_CW,0,0,0,UNAVAILABLE,0,0,0,0,UNAVAILABLE,0,0,0
+priority_policy,RM_ONLY,LOC_THETA_LOC,0,0,0,UNAVAILABLE,0,0,0,0,UNAVAILABLE,0,0,0
+power_mode,generator_default_heterogeneous_ONLY,CW_THETA_CW,0,0,0,UNAVAILABLE,0,0,0,0,UNAVAILABLE,0,0,0
+power_mode,generator_default_heterogeneous_ONLY,LOC_THETA_LOC,0,0,0,UNAVAILABLE,0,0,0,0,UNAVAILABLE,0,0,0
+generator_family,UUNIFAST_DISCARD_ONLY,CW_THETA_CW,0,0,0,UNAVAILABLE,0,0,0,0,UNAVAILABLE,0,0,0
+generator_family,UUNIFAST_DISCARD_ONLY,LOC_THETA_LOC,0,0,0,UNAVAILABLE,0,0,0,0,UNAVAILABLE,0,0,0

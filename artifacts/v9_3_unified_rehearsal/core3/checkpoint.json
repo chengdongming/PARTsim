@@ -1,0 +1,16 @@
+{
+  "completed_analysis_ids": [
+    "79a42b6479950b25fe59bdecb5e3a62ec23b1fdd2321cd5a32ecb0b9bb7effd7",
+    "9829aa7a6fa771b9b58c98bba8b1b4b8b5cc7b39033a8735287b7aad90d77296"
+  ],
+  "completed_rta_count": 2,
+  "completed_simulation_count": 1,
+  "completed_simulation_ids": [
+    "e70478d4e900326073533bdf446f10ffd666b77000bc1dc478c893169cfcc069"
+  ],
+  "config_hash": "e24d8c6fcdb280656b4f661759ff70d222a155721371d3ae9a07d57f0345dd61",
+  "requested_rta_count": 2,
+  "requested_simulation_count": 1,
+  "stop_requested": false,
+  "updated_at_utc": "2026-07-13T18:39:16.435883Z"
+}

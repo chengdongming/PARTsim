@@ -1,0 +1,112 @@
+schema: ASAP_BLOCK_V9_3_EXPERIMENT_CODE_FREEZE_V1
+baseline_commit: 9e791b7d80de452d4fa041a0a323a4d5fcec1061
+freeze_candidate_commit: 1beda24d0f3ab1c58379a8f9e503df21613997b5
+branch: audit-freeze-v9.3-experiments
+decision: PASS
+scope:
+  implemented_and_frozen:
+    - CORE-1
+    - CORE-2
+    - CORE-3
+    - CORE-4
+    - CORE-5
+    - EXT-1
+    - EXT-2_FRAMEWORK
+    - EXT-4
+  excluded:
+    - CORE-0A
+    - EXT-3
+    - authoritative_pointer
+    - build_identity
+    - evidence_zip
+    - formal_large_scale_results
+production_entrypoints:
+  CORE-1: scripts/run_v9_3_core1.py
+  CORE-2: scripts/run_v9_3_core2.py
+  CORE-3: scripts/run_v9_3_core3.py
+  CORE-4: scripts/run_v9_3_core4.py
+  CORE-5: scripts/run_v9_3_core5.py
+  EXT-1: scripts/run_v9_3_ext1.py
+  EXT-2: scripts/run_v9_3_ext2.py
+  EXT-4: scripts/run_v9_3_ext4.py
+formal_candidate_configs:
+  CORE-1:
+    path: configs/v9_3_core1_formal_candidate.yaml
+    parameter_status: FORMAL_CANDIDATE_REQUIRES_FINAL_CONFIRMATION
+  CORE-2:
+    path: configs/v9_3_core2_formal_candidate.yaml
+    parameter_status: FORMAL_CANDIDATE_REQUIRES_FINAL_CONFIRMATION
+  CORE-3:
+    path: configs/v9_3_core3_template.yaml
+    parameter_status: TEMPLATE_REQUIRES_FINAL_PARAMETER_FREEZE
+  CORE-4:
+    path: configs/v9_3_core4_template.yaml
+    parameter_status: TEMPLATE_REQUIRES_FINAL_PARAMETER_FREEZE
+  CORE-5:
+    path: configs/v9_3_core5_template.yaml
+    parameter_status: TEMPLATE_REQUIRES_FINAL_PARAMETER_FREEZE
+  EXT-1:
+    path: configs/v9_3_ext1_template.yaml
+    parameter_status: TEMPLATE_REQUIRES_FINAL_PARAMETER_FREEZE
+  EXT-2:
+    path: configs/v9_3_ext2_template.yaml
+    parameter_status: FORMAL_DISABLED
+  EXT-4:
+    path: configs/v9_3_ext4_template.yaml
+    parameter_status: TEMPLATE_REQUIRES_FINAL_PARAMETER_FREEZE
+ext2:
+  data_status: REAL_TRACE_DATA_UNAVAILABLE
+  smoke_fixture_status: SYNTHETIC_TEST_FIXTURE
+  formal_enabled: false
+  enablement_requirements:
+    - provenance
+    - publication_or_use_license
+    - reproducible_preprocessing_chain
+    - certified_service_lower_bound_when_rta_is_requested
+tests:
+  v9_3_pytest:
+    passed: 128
+    failed: 0
+  repository_pytest:
+    passed: 863
+    skipped: 62
+    warnings: 32
+    failed: 0
+  ctest:
+    passed: 163
+    total: 166
+    known_failures:
+      - name: Scheduler.FIFO
+        impact: REACHABLE_BUT_SEMANTICALLY_IRRELEVANT
+      - name: Scheduler.TrueFIFO
+        impact: PROVEN_UNREACHABLE_FROM_FORMAL_EXPERIMENTS
+      - name: Scheduler.RM
+        impact: PROVEN_UNREACHABLE_FROM_FORMAL_EXPERIMENTS
+  scheduler_family_and_factory_targeted:
+    passed: 4
+    failed: 0
+  formal_python_import_compile: PASS
+  clean_release_build: PASS
+  clean_bounded_rehearsal: PASS
+  clean_resume_and_integrity: PASS
+known_non_blocking_issues:
+  - three_base_scheduler_ctest_failures_with_evidence_based_non_result_impact
+  - tools/about.py_python2_print_is_formally_unreachable
+  - tools/taskset_generator/taskgen.py_taberror_is_formally_unreachable
+rehearsal:
+  path: artifacts/v9_3_unified_rehearsal
+  source: INDEPENDENT_CLEAN_CLONE
+  formal_large_scale_run: false
+  counts:
+    CORE-1: {rta: 2, simulation: 0}
+    CORE-2: {rta: 5, simulation: 0}
+    CORE-3: {rta: 2, simulation: 1}
+    CORE-4: {rta: 4, simulation: 0}
+    CORE-5: {rta: 4, simulation: 0}
+    EXT-1: {rta: 0, simulation: 9}
+    EXT-2: {rta: 0, simulation: 1}
+    EXT-4: {rta: 4, simulation: 2}
+  all_file_hash_manifests_verified: true
+  resume_verified: true
+audit_report: docs/audits/v9_3_unified_experiment_code_audit.md
+freeze_report: docs/audits/v9_3_experiment_freeze_report.md

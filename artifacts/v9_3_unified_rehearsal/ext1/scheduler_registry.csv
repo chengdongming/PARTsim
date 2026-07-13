@@ -1,0 +1,10 @@
+scheduler_id,display_name,implementation_id,timing_family,mechanism,factory_source,implementation_source
+gpfp_asap_block,ASAP-Block,GPFPASAPBlockScheduler,ASAP,BLOCK,librtsim/system.cpp,librtsim/scheduler/gpfp_asap_block_scheduler.cpp
+gpfp_asap_nonblock,ASAP-NonBlock,GPFPASAPNonBlockScheduler,ASAP,NONBLOCK,librtsim/system.cpp,librtsim/scheduler/gpfp_asap_nonblock_scheduler.cpp
+gpfp_asap_sync,ASAP-Sync,GPFPASAPSyncScheduler,ASAP,SYNC,librtsim/system.cpp,librtsim/scheduler/gpfp_asap_sync_scheduler.cpp
+gpfp_alap_block,ALAP-Block,GPFPALAPBlockScheduler,ALAP,BLOCK,librtsim/system.cpp,librtsim/scheduler/gpfp_alap_block_scheduler.cpp
+gpfp_alap_nonblock,ALAP-NonBlock,GPFPALAPNonBlockScheduler,ALAP,NONBLOCK,librtsim/system.cpp,librtsim/scheduler/gpfp_alap_nonblock_scheduler.cpp
+gpfp_alap_sync,ALAP-Sync,GPFPALAPSyncScheduler,ALAP,SYNC,librtsim/system.cpp,librtsim/scheduler/gpfp_alap_sync_scheduler.cpp
+gpfp_st_block,ST-Block,GPFPSTBlockScheduler,ST,BLOCK,librtsim/system.cpp,librtsim/scheduler/gpfp_st_block_scheduler.cpp
+gpfp_st_nonblock,ST-NonBlock,GPFPSTNonBlockScheduler,ST,NONBLOCK,librtsim/system.cpp,librtsim/scheduler/gpfp_st_nonblock_scheduler.cpp
+gpfp_st_sync,ST-Sync,GPFPSTSyncScheduler,ST,SYNC,librtsim/system.cpp,librtsim/scheduler/gpfp_st_sync_scheduler.cpp

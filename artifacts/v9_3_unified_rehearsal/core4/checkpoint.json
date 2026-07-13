@@ -1,0 +1,12 @@
+{
+  "completed_analysis_ids": [
+    "490c77f4c0edaa6a28e3384cd9943045ff8742beccc9642df33ca82b1de105f5",
+    "a9fa8abed8db181a5f9994113d8b46bd2531c4332bd1903c2bbe0ce98927d7d4",
+    "b15adce89f2d6869d9bc66b66b0eedf05d887499a7c204282234a6e77ac09576",
+    "c257826827fd67660be993c38f1723669b66c5ec103c1f73e2f9a225847997f8"
+  ],
+  "config_hash": "b198f878a5562d02ab45bcfd1320568d93b4f183578b795e45d39168c62afab5",
+  "requested_count": 4,
+  "stop_requested": false,
+  "terminal_count": 4
+}

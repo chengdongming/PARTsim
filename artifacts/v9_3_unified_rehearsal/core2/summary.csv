@@ -1,0 +1,6 @@
+cell_id,variant,unconditional_denominator,terminal_count,completed_only_denominator,certified_count,no_candidate_count,timeout_count,not_applicable_count,numeric_error_count,internal_failure_count,runtime_censored_count,certification_ratio_unconditional,certification_ratio_completed_only,runtime_mean,runtime_median,runtime_p95,runtime_max,mean_candidate_task_count,first_failed_priority_observation_count,checked_w_total,checked_h_total,checked_q_total,envelope_call_total
+d0e0464ce63c9120e5a53941d79cb1b73e8844f3a0148b447b3f9919f2b633fd,CW_D,1,1,1,1,0,0,0,0,0,0,1.0,1.0,0.928665458,0.928665458,0.928665458,0.928665458,10.0,0,125,30,205,205
+d0e0464ce63c9120e5a53941d79cb1b73e8844f3a0148b447b3f9919f2b633fd,CW_THETA_CW,1,1,1,1,0,0,0,0,0,0,1.0,1.0,0.671044982,0.671044982,0.671044982,0.671044982,10.0,0,71,30,151,151
+d0e0464ce63c9120e5a53941d79cb1b73e8844f3a0148b447b3f9919f2b633fd,LOC_D,1,1,1,1,0,0,0,0,0,0,1.0,1.0,0.950153347,0.950153347,0.950153347,0.950153347,10.0,0,125,30,205,205
+d0e0464ce63c9120e5a53941d79cb1b73e8844f3a0148b447b3f9919f2b633fd,LOC_THETA_CW,1,1,1,1,0,0,0,0,0,0,1.0,1.0,0.660621436,0.660621436,0.660621436,0.660621436,10.0,0,71,30,151,151
+d0e0464ce63c9120e5a53941d79cb1b73e8844f3a0148b447b3f9919f2b633fd,LOC_THETA_LOC,1,1,1,1,0,0,0,0,0,0,1.0,1.0,0.664125789,0.664125789,0.664125789,0.664125789,10.0,0,71,30,151,151

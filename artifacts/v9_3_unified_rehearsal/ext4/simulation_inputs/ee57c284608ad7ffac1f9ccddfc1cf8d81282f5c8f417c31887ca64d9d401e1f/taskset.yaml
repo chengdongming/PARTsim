@@ -1,0 +1,100 @@
+taskset:
+  - name: v93_task_0
+    iat: 48
+    runtime: 4
+    startcpu: 0
+    deadline: 48
+    ph: 3
+    params: "period=48,wcet=4,arrival_offset=3,workload=hash"
+    code:
+      - fixed(4, hash)
+
+  - name: v93_task_1
+    iat: 50
+    runtime: 4
+    startcpu: 0
+    deadline: 50
+    ph: 6
+    params: "period=50,wcet=4,arrival_offset=6,workload=decrypt"
+    code:
+      - fixed(4, decrypt)
+
+  - name: v93_task_2
+    iat: 59
+    runtime: 7
+    startcpu: 0
+    deadline: 59
+    ph: 14
+    params: "period=59,wcet=7,arrival_offset=14,workload=bzip2"
+    code:
+      - fixed(7, bzip2)
+
+  - name: v93_task_3
+    iat: 87
+    runtime: 6
+    startcpu: 0
+    deadline: 87
+    ph: 16
+    params: "period=87,wcet=6,arrival_offset=16,workload=hash"
+    code:
+      - fixed(6, hash)
+
+  - name: v93_task_4
+    iat: 90
+    runtime: 2
+    startcpu: 0
+    deadline: 90
+    ph: 19
+    params: "period=90,wcet=2,arrival_offset=19,workload=bzip2"
+    code:
+      - fixed(2, bzip2)
+
+  - name: v93_task_5
+    iat: 108
+    runtime: 16
+    startcpu: 0
+    deadline: 108
+    ph: 10
+    params: "period=108,wcet=16,arrival_offset=10,workload=decrypt"
+    code:
+      - fixed(16, decrypt)
+
+  - name: v93_task_6
+    iat: 126
+    runtime: 1
+    startcpu: 0
+    deadline: 126
+    ph: 7
+    params: "period=126,wcet=1,arrival_offset=7,workload=encrypt"
+    code:
+      - fixed(1, encrypt)
+
+  - name: v93_task_7
+    iat: 144
+    runtime: 22
+    startcpu: 0
+    deadline: 144
+    ph: 42
+    params: "period=144,wcet=22,arrival_offset=42,workload=decrypt"
+    code:
+      - fixed(22, decrypt)
+
+  - name: v93_task_8
+    iat: 158
+    runtime: 8
+    startcpu: 0
+    deadline: 158
+    ph: 34
+    params: "period=158,wcet=8,arrival_offset=34,workload=hash"
+    code:
+      - fixed(8, hash)
+
+  - name: v93_task_9
+    iat: 194
+    runtime: 13
+    startcpu: 0
+    deadline: 194
+    ph: 17
+    params: "period=194,wcet=13,arrival_offset=17,workload=hash"
+    code:
+      - fixed(13, hash)

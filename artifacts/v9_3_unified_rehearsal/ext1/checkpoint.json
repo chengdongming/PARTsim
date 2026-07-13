@@ -1,0 +1,9 @@
+{
+  "config_hash": "919bff4cc3b4bffa060153eda29a3174ed8185f375e46d4a6b980dfbbf801143",
+  "pending": 0,
+  "requested": 9,
+  "schema": "ASAP_BLOCK_V9_3_EXT1_CHECKPOINT_V1",
+  "stop_requested": false,
+  "terminal": 9,
+  "updated_at_utc": "2026-07-13T18:39:16.430300Z"
+}

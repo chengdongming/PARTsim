@@ -1,0 +1,100 @@
+taskset:
+  - name: v93_task_0
+    iat: 79
+    runtime: 10
+    startcpu: 0
+    deadline: 19
+    ph: 3
+    params: "period=79,wcet=10,arrival_offset=3,workload=encrypt"
+    code:
+      - fixed(10, encrypt)
+
+  - name: v93_task_1
+    iat: 82
+    runtime: 14
+    startcpu: 0
+    deadline: 70
+    ph: 11
+    params: "period=82,wcet=14,arrival_offset=11,workload=bzip2"
+    code:
+      - fixed(14, bzip2)
+
+  - name: v93_task_2
+    iat: 122
+    runtime: 5
+    startcpu: 0
+    deadline: 115
+    ph: 1
+    params: "period=122,wcet=5,arrival_offset=1,workload=idle"
+    code:
+      - fixed(5, idle)
+
+  - name: v93_task_3
+    iat: 125
+    runtime: 4
+    startcpu: 0
+    deadline: 123
+    ph: 37
+    params: "period=125,wcet=4,arrival_offset=37,workload=decrypt"
+    code:
+      - fixed(4, decrypt)
+
+  - name: v93_task_4
+    iat: 128
+    runtime: 26
+    startcpu: 0
+    deadline: 61
+    ph: 33
+    params: "period=128,wcet=26,arrival_offset=33,workload=encrypt"
+    code:
+      - fixed(26, encrypt)
+
+  - name: v93_task_5
+    iat: 131
+    runtime: 7
+    startcpu: 0
+    deadline: 65
+    ph: 26
+    params: "period=131,wcet=7,arrival_offset=26,workload=control"
+    code:
+      - fixed(7, control)
+
+  - name: v93_task_6
+    iat: 133
+    runtime: 11
+    startcpu: 0
+    deadline: 108
+    ph: 9
+    params: "period=133,wcet=11,arrival_offset=9,workload=bzip2"
+    code:
+      - fixed(11, bzip2)
+
+  - name: v93_task_7
+    iat: 155
+    runtime: 7
+    startcpu: 0
+    deadline: 40
+    ph: 9
+    params: "period=155,wcet=7,arrival_offset=9,workload=hash"
+    code:
+      - fixed(7, hash)
+
+  - name: v93_task_8
+    iat: 170
+    runtime: 5
+    startcpu: 0
+    deadline: 169
+    ph: 14
+    params: "period=170,wcet=5,arrival_offset=14,workload=hash"
+    code:
+      - fixed(5, hash)
+
+  - name: v93_task_9
+    iat: 184
+    runtime: 3
+    startcpu: 0
+    deadline: 27
+    ph: 6
+    params: "period=184,wcet=3,arrival_offset=6,workload=decrypt"
+    code:
+      - fixed(3, decrypt)

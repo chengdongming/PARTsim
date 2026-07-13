@@ -1,0 +1,19 @@
+{
+  "available_generator_families": [
+    "UUNIFAST_DISCARD"
+  ],
+  "available_power_modes": [
+    "generator_default_heterogeneous"
+  ],
+  "available_priority_policies": [
+    "RM"
+  ],
+  "p0": 0,
+  "paired_rows": 2,
+  "plot_rows": 8,
+  "rta_requested": 4,
+  "rta_terminal": 4,
+  "simulation_requested": 2,
+  "simulation_terminal": 2,
+  "summary_rows": 12
+}

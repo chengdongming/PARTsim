@@ -1,0 +1,5 @@
+parameter_name,level_index,level_encoding,variant,taskset_count,certified_count,certification_ratio,completed_count,completed_certified_count,completed_only_ratio,candidate_count,candidate_mean,candidate_median,candidate_p95,timeout_count,dependency_unavailable_count,runtime_censored_count,runtime_mean_seconds,paired_count,tighter_count,equal_count,looser_count,certification_gain,certification_loss,monotonicity_violation_count
+initial_energy,0,"""0""",CW_THETA_CW,1,0,0.0,1,0,0.0,5,8.0,8.0,13.0,0,0,0,0.223091045,0,0,0,0,0,0,0
+initial_energy,0,"""0""",LOC_THETA_LOC,1,0,0.0,1,0,0.0,5,8.0,8.0,13.0,0,0,0,0.179025932,0,0,0,0,0,0,0
+initial_energy,1,"""1""",CW_THETA_CW,1,0,0.0,1,0,0.0,5,7.0,7.0,12.0,0,0,0,0.173044966,1,5,0,0,0,0,0
+initial_energy,1,"""1""",LOC_THETA_LOC,1,0,0.0,1,0,0.0,5,7.0,7.0,12.0,0,0,0,0.180697576,1,5,0,0,0,0,0

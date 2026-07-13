@@ -1,0 +1,129 @@
+{
+  "base_taskset_hash": "f2daaf1a2b93dbf086e347cbf3fe3fb9833c80c16fb7ef22803a344515713e3a",
+  "changed_axis": "deadline_mode",
+  "distribution": "generator_uniform_integer",
+  "schema": "ASAP_BLOCK_V9_3_EXT4_DERIVED_SAMPLE_V1",
+  "tasks": [
+    {
+      "C": 4,
+      "D": 47,
+      "D_over_T": "47/48",
+      "P": "9300000000000001/25000000000000000000",
+      "T": 48,
+      "arrival_offset": 3,
+      "priority_rank": 0,
+      "source_name": "task_7",
+      "task_id": "0",
+      "workload": "hash"
+    },
+    {
+      "C": 4,
+      "D": 46,
+      "D_over_T": "23/25",
+      "P": "279/400000",
+      "T": 50,
+      "arrival_offset": 6,
+      "priority_rank": 1,
+      "source_name": "task_5",
+      "task_id": "1",
+      "workload": "decrypt"
+    },
+    {
+      "C": 7,
+      "D": 20,
+      "D_over_T": "20/59",
+      "P": "279/500000",
+      "T": 59,
+      "arrival_offset": 14,
+      "priority_rank": 2,
+      "source_name": "task_1",
+      "task_id": "2",
+      "workload": "bzip2"
+    },
+    {
+      "C": 6,
+      "D": 68,
+      "D_over_T": "68/87",
+      "P": "9300000000000001/25000000000000000000",
+      "T": 87,
+      "arrival_offset": 16,
+      "priority_rank": 3,
+      "source_name": "task_9",
+      "task_id": "3",
+      "workload": "hash"
+    },
+    {
+      "C": 2,
+      "D": 27,
+      "D_over_T": "3/10",
+      "P": "279/500000",
+      "T": 90,
+      "arrival_offset": 19,
+      "priority_rank": 4,
+      "source_name": "task_2",
+      "task_id": "4",
+      "workload": "bzip2"
+    },
+    {
+      "C": 16,
+      "D": 60,
+      "D_over_T": "5/9",
+      "P": "279/400000",
+      "T": 108,
+      "arrival_offset": 10,
+      "priority_rank": 5,
+      "source_name": "task_4",
+      "task_id": "5",
+      "workload": "decrypt"
+    },
+    {
+      "C": 1,
+      "D": 54,
+      "D_over_T": "3/7",
+      "P": "279/400000",
+      "T": 126,
+      "arrival_offset": 7,
+      "priority_rank": 6,
+      "source_name": "task_8",
+      "task_id": "6",
+      "workload": "encrypt"
+    },
+    {
+      "C": 22,
+      "D": 97,
+      "D_over_T": "97/144",
+      "P": "279/400000",
+      "T": 144,
+      "arrival_offset": 42,
+      "priority_rank": 7,
+      "source_name": "task_0",
+      "task_id": "7",
+      "workload": "decrypt"
+    },
+    {
+      "C": 8,
+      "D": 46,
+      "D_over_T": "23/79",
+      "P": "9300000000000001/25000000000000000000",
+      "T": 158,
+      "arrival_offset": 34,
+      "priority_rank": 8,
+      "source_name": "task_6",
+      "task_id": "8",
+      "workload": "hash"
+    },
+    {
+      "C": 13,
+      "D": 124,
+      "D_over_T": "62/97",
+      "P": "9300000000000001/25000000000000000000",
+      "T": 194,
+      "arrival_offset": 17,
+      "priority_rank": 9,
+      "source_name": "task_3",
+      "task_id": "9",
+      "workload": "hash"
+    }
+  ],
+  "taskset_hash": "8d7021d33c9574397b7106a7f001c1a83fba8563f61f8a4ade83fd69cc403c7a"
+}

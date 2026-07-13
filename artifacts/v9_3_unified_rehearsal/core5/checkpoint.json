@@ -1,0 +1,10 @@
+{
+  "completed_scalability_cell_ids": [
+    "5d93bc0f349ecfa595bb63f4e36939d13862250fe21bcca60e903d57814df12f",
+    "bf898b0957e4c789200ab65cac7c16b63dbcc37841c674717bcd9b0e159012b4"
+  ],
+  "config_hash": "054c5010fa50afec17160445cb52640921c3db51b917c67a0a4ad68f8d2258b3",
+  "requested_count": 4,
+  "stop_requested": false,
+  "terminal_count": 4
+}

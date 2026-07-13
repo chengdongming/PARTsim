@@ -1,0 +1,5 @@
+scaling_axis,level_id,level_value,worker_count,variant,analysis_count,completed_count,completed_mean_seconds,completed_median_seconds,completed_p95_seconds,completed_max_seconds,timeout_count,timeout_rate,censored_count,timeout_budget_seconds,restricted_mean_runtime_seconds,restriction_tau_seconds,peak_rss_mean_kib,peak_rss_max_kib,checked_w_total,checked_h_total,checked_q_total,envelope_call_total,candidate_found_task_total,cell_wall_seconds,throughput_analyses_per_second
+task_count,10,10,1,CW_THETA_CW,1,1,0.13286453,0.13286453,0.13286453,0.13286453,0,0.0,0,4.0,0.13286453,4.0,19748.0,19748.0,39,16,51,51,5,1.380356040,1.4489015456922005
+task_count,10,10,1,LOC_THETA_LOC,1,1,0.136235159,0.136235159,0.136235159,0.136235159,0,0.0,0,4.0,0.136235159,4.0,19616.0,19616.0,39,16,51,51,5,1.380356040,1.4489015456922005
+task_count,6,6,1,CW_THETA_CW,1,1,0.13197336,0.13197336,0.13197336,0.13197336,0,0.0,0,4.0,0.13197336,4.0,19584.0,19584.0,45,18,83,83,6,1.380672510,1.4485694366890893
+task_count,6,6,1,LOC_THETA_LOC,1,1,0.129424386,0.129424386,0.129424386,0.129424386,0,0.0,0,4.0,0.129424386,4.0,19524.0,19524.0,45,18,83,83,6,1.380672510,1.4485694366890893

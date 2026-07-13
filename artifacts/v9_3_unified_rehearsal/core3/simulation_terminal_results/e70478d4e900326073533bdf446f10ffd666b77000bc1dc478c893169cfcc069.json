@@ -1,0 +1,1203 @@
+{
+  "attempt_count": 1,
+  "horizons_attempted": [
+    300
+  ],
+  "result": {
+    "completion_reason": "reached_horizon",
+    "configured_scheduler": "gpfp_asap_block",
+    "horizon": 300,
+    "jobs": [
+      {
+        "absolute_deadline": 61,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 12,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 8,
+        "first_execution": 4,
+        "job_index": 0,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 4,
+        "response_time": 8,
+        "task_id": "0"
+      },
+      {
+        "absolute_deadline": 122,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 73,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 8,
+        "first_execution": 65,
+        "job_index": 1,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 65,
+        "response_time": 8,
+        "task_id": "0"
+      },
+      {
+        "absolute_deadline": 183,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 134,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 8,
+        "first_execution": 126,
+        "job_index": 2,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 126,
+        "response_time": 8,
+        "task_id": "0"
+      },
+      {
+        "absolute_deadline": 244,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 195,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 8,
+        "first_execution": 187,
+        "job_index": 3,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 187,
+        "response_time": 8,
+        "task_id": "0"
+      },
+      {
+        "absolute_deadline": 305,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 256,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 8,
+        "first_execution": 248,
+        "job_index": 4,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 248,
+        "response_time": 8,
+        "task_id": "0"
+      },
+      {
+        "absolute_deadline": 52,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 17,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 4,
+        "first_execution": 13,
+        "job_index": 0,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 13,
+        "response_time": 4,
+        "task_id": "1"
+      },
+      {
+        "absolute_deadline": 116,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 81,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 4,
+        "first_execution": 77,
+        "job_index": 1,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 77,
+        "response_time": 4,
+        "task_id": "1"
+      },
+      {
+        "absolute_deadline": 180,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 145,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 4,
+        "first_execution": 141,
+        "job_index": 2,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 141,
+        "response_time": 4,
+        "task_id": "1"
+      },
+      {
+        "absolute_deadline": 244,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 209,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 4,
+        "first_execution": 205,
+        "job_index": 3,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 205,
+        "response_time": 4,
+        "task_id": "1"
+      },
+      {
+        "absolute_deadline": 308,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 273,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 4,
+        "first_execution": 269,
+        "job_index": 4,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 269,
+        "response_time": 4,
+        "task_id": "1"
+      },
+      {
+        "absolute_deadline": 55,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 17,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 3,
+        "first_execution": 14,
+        "job_index": 0,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 14,
+        "response_time": 3,
+        "task_id": "2"
+      },
+      {
+        "absolute_deadline": 123,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 85,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 3,
+        "first_execution": 82,
+        "job_index": 1,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 82,
+        "response_time": 3,
+        "task_id": "2"
+      },
+      {
+        "absolute_deadline": 191,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 153,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 3,
+        "first_execution": 150,
+        "job_index": 2,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 150,
+        "response_time": 3,
+        "task_id": "2"
+      },
+      {
+        "absolute_deadline": 259,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 221,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 3,
+        "first_execution": 218,
+        "job_index": 3,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 218,
+        "response_time": 3,
+        "task_id": "2"
+      },
+      {
+        "absolute_deadline": 327,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 289,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 3,
+        "first_execution": 286,
+        "job_index": 4,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 286,
+        "response_time": 3,
+        "task_id": "2"
+      },
+      {
+        "absolute_deadline": 33,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 14,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 3,
+        "first_execution": 11,
+        "job_index": 0,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 11,
+        "response_time": 3,
+        "task_id": "3"
+      },
+      {
+        "absolute_deadline": 118,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 99,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 3,
+        "first_execution": 96,
+        "job_index": 1,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 96,
+        "response_time": 3,
+        "task_id": "3"
+      },
+      {
+        "absolute_deadline": 203,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 184,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 3,
+        "first_execution": 181,
+        "job_index": 2,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 181,
+        "response_time": 3,
+        "task_id": "3"
+      },
+      {
+        "absolute_deadline": 288,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 269,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 3,
+        "first_execution": 266,
+        "job_index": 3,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 266,
+        "response_time": 3,
+        "task_id": "3"
+      },
+      {
+        "absolute_deadline": 90,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 20,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 18,
+        "first_execution": 2,
+        "job_index": 0,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 2,
+        "response_time": 18,
+        "task_id": "4"
+      },
+      {
+        "absolute_deadline": 179,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 109,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 18,
+        "first_execution": 91,
+        "job_index": 1,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 91,
+        "response_time": 18,
+        "task_id": "4"
+      },
+      {
+        "absolute_deadline": 268,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 198,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 18,
+        "first_execution": 180,
+        "job_index": 2,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 180,
+        "response_time": 18,
+        "task_id": "4"
+      },
+      {
+        "absolute_deadline": 357,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 287,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 18,
+        "first_execution": 269,
+        "job_index": 3,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 269,
+        "response_time": 18,
+        "task_id": "4"
+      },
+      {
+        "absolute_deadline": 86,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 27,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 7,
+        "first_execution": 20,
+        "job_index": 0,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 20,
+        "response_time": 7,
+        "task_id": "5"
+      },
+      {
+        "absolute_deadline": 190,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 131,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 7,
+        "first_execution": 124,
+        "job_index": 1,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 124,
+        "response_time": 7,
+        "task_id": "5"
+      },
+      {
+        "absolute_deadline": 294,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 235,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 7,
+        "first_execution": 228,
+        "job_index": 2,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 228,
+        "response_time": 7,
+        "task_id": "5"
+      },
+      {
+        "absolute_deadline": 89,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 32,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 3,
+        "first_execution": 29,
+        "job_index": 0,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 29,
+        "response_time": 3,
+        "task_id": "6"
+      },
+      {
+        "absolute_deadline": 194,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 137,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 3,
+        "first_execution": 134,
+        "job_index": 1,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 134,
+        "response_time": 3,
+        "task_id": "6"
+      },
+      {
+        "absolute_deadline": 299,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 242,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 3,
+        "first_execution": 239,
+        "job_index": 2,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 239,
+        "response_time": 3,
+        "task_id": "6"
+      },
+      {
+        "absolute_deadline": 23,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 21,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 5,
+        "first_execution": 16,
+        "job_index": 0,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 16,
+        "response_time": 5,
+        "task_id": "7"
+      },
+      {
+        "absolute_deadline": 138,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 136,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 5,
+        "first_execution": 131,
+        "job_index": 1,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 131,
+        "response_time": 5,
+        "task_id": "7"
+      },
+      {
+        "absolute_deadline": 253,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 251,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 5,
+        "first_execution": 246,
+        "job_index": 2,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 246,
+        "response_time": 5,
+        "task_id": "7"
+      },
+      {
+        "absolute_deadline": 62,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 33,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 10,
+        "first_execution": 23,
+        "job_index": 0,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 23,
+        "response_time": 10,
+        "task_id": "8"
+      },
+      {
+        "absolute_deadline": 207,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 178,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 10,
+        "first_execution": 168,
+        "job_index": 1,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 168,
+        "response_time": 10,
+        "task_id": "8"
+      },
+      {
+        "absolute_deadline": 126,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 38,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 21,
+        "first_execution": 17,
+        "job_index": 0,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 17,
+        "response_time": 21,
+        "task_id": "9"
+      },
+      {
+        "absolute_deadline": 307,
+        "censored": false,
+        "censoring_reason": null,
+        "completion": 219,
+        "deadline_miss": false,
+        "eligible_after_warmup": true,
+        "energy_blocked_ticks": 0,
+        "executed_ticks": 21,
+        "first_execution": 198,
+        "job_index": 1,
+        "preemption_count": 0,
+        "processor_wait_ticks": 0,
+        "release": 198,
+        "response_time": 21,
+        "task_id": "9"
+      }
+    ],
+    "metrics": {
+      "battery_maximum_j": 31.084400000000002,
+      "battery_minimum_j": 20.0389,
+      "battery_trajectory": [
+        {
+          "energy_j": 20.0389,
+          "time": 2
+        },
+        {
+          "energy_j": 20.077099999999998,
+          "time": 2
+        },
+        {
+          "energy_j": 20.115299999999998,
+          "time": 4
+        },
+        {
+          "energy_j": 20.152900000000002,
+          "time": 4
+        },
+        {
+          "energy_j": 20.378700000000002,
+          "time": 11
+        },
+        {
+          "energy_j": 20.4163,
+          "time": 11
+        },
+        {
+          "energy_j": 20.4163,
+          "time": 12
+        },
+        {
+          "energy_j": 20.4544,
+          "time": 13
+        },
+        {
+          "energy_j": 20.492,
+          "time": 13
+        },
+        {
+          "energy_j": 20.492,
+          "time": 14
+        },
+        {
+          "energy_j": 20.492,
+          "time": 14
+        },
+        {
+          "energy_j": 20.5296,
+          "time": 14
+        },
+        {
+          "energy_j": 20.5672,
+          "time": 16
+        },
+        {
+          "energy_j": 20.6047,
+          "time": 16
+        },
+        {
+          "energy_j": 20.6047,
+          "time": 17
+        },
+        {
+          "energy_j": 20.6047,
+          "time": 17
+        },
+        {
+          "energy_j": 20.6047,
+          "time": 17
+        },
+        {
+          "energy_j": 20.642799999999998,
+          "time": 17
+        },
+        {
+          "energy_j": 20.719,
+          "time": 20
+        },
+        {
+          "energy_j": 20.719,
+          "time": 20
+        },
+        {
+          "energy_j": 20.7575,
+          "time": 20
+        },
+        {
+          "energy_j": 20.7575,
+          "time": 21
+        },
+        {
+          "energy_j": 20.834400000000002,
+          "time": 23
+        },
+        {
+          "energy_j": 20.8722,
+          "time": 23
+        },
+        {
+          "energy_j": 20.9855,
+          "time": 27
+        },
+        {
+          "energy_j": 21.061799999999998,
+          "time": 29
+        },
+        {
+          "energy_j": 21.0992,
+          "time": 29
+        },
+        {
+          "energy_j": 21.1741,
+          "time": 32
+        },
+        {
+          "energy_j": 21.2123,
+          "time": 33
+        },
+        {
+          "energy_j": 21.4065,
+          "time": 38
+        },
+        {
+          "energy_j": 22.4565,
+          "time": 65
+        },
+        {
+          "energy_j": 22.494799999999998,
+          "time": 65
+        },
+        {
+          "energy_j": 22.763099999999998,
+          "time": 73
+        },
+        {
+          "energy_j": 22.9187,
+          "time": 77
+        },
+        {
+          "energy_j": 22.957,
+          "time": 77
+        },
+        {
+          "energy_j": 23.072,
+          "time": 81
+        },
+        {
+          "energy_j": 23.1109,
+          "time": 82
+        },
+        {
+          "energy_j": 23.1497,
+          "time": 82
+        },
+        {
+          "energy_j": 23.227400000000003,
+          "time": 85
+        },
+        {
+          "energy_j": 23.4608,
+          "time": 91
+        },
+        {
+          "energy_j": 23.499,
+          "time": 91
+        },
+        {
+          "energy_j": 23.6517,
+          "time": 96
+        },
+        {
+          "energy_j": 23.6899,
+          "time": 96
+        },
+        {
+          "energy_j": 23.7662,
+          "time": 99
+        },
+        {
+          "energy_j": 24.1481,
+          "time": 109
+        },
+        {
+          "energy_j": 24.7314,
+          "time": 124
+        },
+        {
+          "energy_j": 24.7699,
+          "time": 124
+        },
+        {
+          "energy_j": 24.808400000000002,
+          "time": 126
+        },
+        {
+          "energy_j": 24.846400000000003,
+          "time": 126
+        },
+        {
+          "energy_j": 24.9982,
+          "time": 131
+        },
+        {
+          "energy_j": 24.9982,
+          "time": 131
+        },
+        {
+          "energy_j": 25.0365,
+          "time": 131
+        },
+        {
+          "energy_j": 25.1131,
+          "time": 134
+        },
+        {
+          "energy_j": 25.1131,
+          "time": 134
+        },
+        {
+          "energy_j": 25.1512,
+          "time": 134
+        },
+        {
+          "energy_j": 25.189400000000003,
+          "time": 136
+        },
+        {
+          "energy_j": 25.2276,
+          "time": 137
+        },
+        {
+          "energy_j": 25.3831,
+          "time": 141
+        },
+        {
+          "energy_j": 25.4215,
+          "time": 141
+        },
+        {
+          "energy_j": 25.5365,
+          "time": 145
+        },
+        {
+          "energy_j": 25.730900000000002,
+          "time": 150
+        },
+        {
+          "energy_j": 25.7697,
+          "time": 150
+        },
+        {
+          "energy_j": 25.8474,
+          "time": 153
+        },
+        {
+          "energy_j": 26.430799999999998,
+          "time": 168
+        },
+        {
+          "energy_j": 26.4689,
+          "time": 168
+        },
+        {
+          "energy_j": 26.8127,
+          "time": 178
+        },
+        {
+          "energy_j": 26.8905,
+          "time": 180
+        },
+        {
+          "energy_j": 26.9286,
+          "time": 180
+        },
+        {
+          "energy_j": 26.9286,
+          "time": 181
+        },
+        {
+          "energy_j": 26.9668,
+          "time": 181
+        },
+        {
+          "energy_j": 27.0431,
+          "time": 184
+        },
+        {
+          "energy_j": 27.157700000000002,
+          "time": 187
+        },
+        {
+          "energy_j": 27.1953,
+          "time": 187
+        },
+        {
+          "energy_j": 27.4587,
+          "time": 195
+        },
+        {
+          "energy_j": 27.5733,
+          "time": 198
+        },
+        {
+          "energy_j": 27.5733,
+          "time": 198
+        },
+        {
+          "energy_j": 27.612099999999998,
+          "time": 198
+        },
+        {
+          "energy_j": 27.845200000000002,
+          "time": 205
+        },
+        {
+          "energy_j": 27.8835,
+          "time": 205
+        },
+        {
+          "energy_j": 27.9983,
+          "time": 209
+        },
+        {
+          "energy_j": 28.347900000000003,
+          "time": 218
+        },
+        {
+          "energy_j": 28.3867,
+          "time": 218
+        },
+        {
+          "energy_j": 28.3867,
+          "time": 219
+        },
+        {
+          "energy_j": 28.4644,
+          "time": 221
+        },
+        {
+          "energy_j": 28.7366,
+          "time": 228
+        },
+        {
+          "energy_j": 28.7751,
+          "time": 228
+        },
+        {
+          "energy_j": 29.0062,
+          "time": 235
+        },
+        {
+          "energy_j": 29.1618,
+          "time": 239
+        },
+        {
+          "energy_j": 29.2,
+          "time": 239
+        },
+        {
+          "energy_j": 29.276400000000002,
+          "time": 242
+        },
+        {
+          "energy_j": 29.431900000000002,
+          "time": 246
+        },
+        {
+          "energy_j": 29.4708,
+          "time": 246
+        },
+        {
+          "energy_j": 29.5096,
+          "time": 248
+        },
+        {
+          "energy_j": 29.547900000000002,
+          "time": 248
+        },
+        {
+          "energy_j": 29.6245,
+          "time": 251
+        },
+        {
+          "energy_j": 29.8161,
+          "time": 256
+        },
+        {
+          "energy_j": 30.205,
+          "time": 266
+        },
+        {
+          "energy_j": 30.2438,
+          "time": 266
+        },
+        {
+          "energy_j": 30.3215,
+          "time": 269
+        },
+        {
+          "energy_j": 30.3215,
+          "time": 269
+        },
+        {
+          "energy_j": 30.3215,
+          "time": 269
+        },
+        {
+          "energy_j": 30.3592,
+          "time": 269
+        },
+        {
+          "energy_j": 30.3592,
+          "time": 269
+        },
+        {
+          "energy_j": 30.472099999999998,
+          "time": 273
+        },
+        {
+          "energy_j": 30.9686,
+          "time": 286
+        },
+        {
+          "energy_j": 31.006700000000002,
+          "time": 286
+        },
+        {
+          "energy_j": 31.006700000000002,
+          "time": 287
+        },
+        {
+          "energy_j": 31.084400000000002,
+          "time": 289
+        }
+      ],
+      "bypass_count": 0,
+      "completed_jobs": 36,
+      "consumed_energy_j": 0.115646,
+      "energy_blocked_ticks": 0,
+      "first_miss_time": null,
+      "harvested_energy_j": 11.2,
+      "idle_cores_while_ready_jobs_exist_ticks": 0,
+      "maximum_observed_response_time": 21,
+      "mean_response_time": 7.388888888888889,
+      "missed_jobs": 0,
+      "preemptions": 0,
+      "processor_wait_ticks": 0,
+      "synchronization_wait_ticks": 0
+    },
+    "minimum_release_energy_j": 20.0389,
+    "observed_task_power_j_per_tick": {
+      "0": 0.000558,
+      "1": 0.000558,
+      "2": 4.65e-05,
+      "3": 4.65e-05,
+      "4": 0.0006975,
+      "5": 0.000372,
+      "6": 0.0006975,
+      "7": 4.65e-05,
+      "8": 0.0006975,
+      "9": 4.65e-05
+    },
+    "reason": "minimum_jobs_observed",
+    "release_e0_valid": true,
+    "simulation_completed": true,
+    "status": "SIM_PASS_OBSERVED",
+    "tasks": [
+      {
+        "censored_jobs": 0,
+        "completed_jobs": 5,
+        "horizon_coverage": 1.0,
+        "minimum_jobs_satisfied": true,
+        "missed_jobs": 0,
+        "observed_jobs": 5,
+        "r_sim_max": 8,
+        "task_id": "0"
+      },
+      {
+        "censored_jobs": 0,
+        "completed_jobs": 5,
+        "horizon_coverage": 1.0,
+        "minimum_jobs_satisfied": true,
+        "missed_jobs": 0,
+        "observed_jobs": 5,
+        "r_sim_max": 4,
+        "task_id": "1"
+      },
+      {
+        "censored_jobs": 0,
+        "completed_jobs": 5,
+        "horizon_coverage": 1.0,
+        "minimum_jobs_satisfied": true,
+        "missed_jobs": 0,
+        "observed_jobs": 5,
+        "r_sim_max": 3,
+        "task_id": "2"
+      },
+      {
+        "censored_jobs": 0,
+        "completed_jobs": 4,
+        "horizon_coverage": 1.0,
+        "minimum_jobs_satisfied": true,
+        "missed_jobs": 0,
+        "observed_jobs": 4,
+        "r_sim_max": 3,
+        "task_id": "3"
+      },
+      {
+        "censored_jobs": 0,
+        "completed_jobs": 4,
+        "horizon_coverage": 1.0,
+        "minimum_jobs_satisfied": true,
+        "missed_jobs": 0,
+        "observed_jobs": 4,
+        "r_sim_max": 18,
+        "task_id": "4"
+      },
+      {
+        "censored_jobs": 0,
+        "completed_jobs": 3,
+        "horizon_coverage": 1.0,
+        "minimum_jobs_satisfied": true,
+        "missed_jobs": 0,
+        "observed_jobs": 3,
+        "r_sim_max": 7,
+        "task_id": "5"
+      },
+      {
+        "censored_jobs": 0,
+        "completed_jobs": 3,
+        "horizon_coverage": 1.0,
+        "minimum_jobs_satisfied": true,
+        "missed_jobs": 0,
+        "observed_jobs": 3,
+        "r_sim_max": 3,
+        "task_id": "6"
+      },
+      {
+        "censored_jobs": 0,
+        "completed_jobs": 3,
+        "horizon_coverage": 1.0,
+        "minimum_jobs_satisfied": true,
+        "missed_jobs": 0,
+        "observed_jobs": 3,
+        "r_sim_max": 5,
+        "task_id": "7"
+      },
+      {
+        "censored_jobs": 0,
+        "completed_jobs": 2,
+        "horizon_coverage": 1.0,
+        "minimum_jobs_satisfied": true,
+        "missed_jobs": 0,
+        "observed_jobs": 2,
+        "r_sim_max": 10,
+        "task_id": "8"
+      },
+      {
+        "censored_jobs": 0,
+        "completed_jobs": 2,
+        "horizon_coverage": 1.0,
+        "minimum_jobs_satisfied": true,
+        "missed_jobs": 0,
+        "observed_jobs": 2,
+        "r_sim_max": 21,
+        "task_id": "9"
+      }
+    ],
+    "trace_schema_version": 2
+  },
+  "retained_trace_path": null,
+  "runtime_seconds": 2.852234570949804,
+  "simulation_id": "e70478d4e900326073533bdf446f10ffd666b77000bc1dc478c893169cfcc069",
+  "stderr_tail": "",
+  "stdout_tail": " - num_newtasks=0\n[DEBUG] MRTKernel::dispatch() - num_newtasks < 1，返回\n\u001b[32m2026-07-14 02:37:30.921 [INFO0000] [scheduler00000000000] [ASAP-Block] tick=295 active=0 selected=0 harvested=0.038889 consumed=0.000000 remain=31.356610 (/tmp/partsim_v93_audit_clean_20260714/librtsim/scheduler/gpfp_asap_block_scheduler.cpp:427)\n\u001b[0m\u001b[32m2026-07-14 02:37:30.921 [INFO0000] [scheduler00000000000] ⏱️ [ASAP-Block] ===== Tick事件触发 @ 296ms ===== (/tmp/partsim_v93_audit_clean_20260714/librtsim/scheduler/gpfp_asap_block_scheduler.cpp:88)\n\u001b[0m[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=296\n[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=4\n[DEBUG]   getTaskN(0) = nullptr, 退出循环\n[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=0\n[DEBUG] MRTKernel::dispatch() - num_newtasks=0\n[DEBUG] MRTKernel::dispatch() - num_newtasks < 1，返回\n\u001b[32m2026-07-14 02:37:30.925 [INFO0000] [scheduler00000000000] [ASAP-Block] tick=296 active=0 selected=0 harvested=0.038889 consumed=0.000000 remain=31.395499 (/tmp/partsim_v93_audit_clean_20260714/librtsim/scheduler/gpfp_asap_block_scheduler.cpp:427)\n\u001b[0m\u001b[32m2026-07-14 02:37:30.925 [INFO0000] [scheduler00000000000] ⏱️ [ASAP-Block] ===== Tick事件触发 @ 297ms ===== (/tmp/partsim_v93_audit_clean_20260714/librtsim/scheduler/gpfp_asap_block_scheduler.cpp:88)\n\u001b[0m[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=297\n[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=4\n[DEBUG]   getTaskN(0) = nullptr, 退出循环\n[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=0\n[DEBUG] MRTKernel::dispatch() - num_newtasks=0\n[DEBUG] MRTKernel::dispatch() - num_newtasks < 1，返回\n\u001b[32m2026-07-14 02:37:30.930 [INFO0000] [scheduler00000000000] [ASAP-Block] tick=297 active=0 selected=0 harvested=0.038889 consumed=0.000000 remain=31.434388 (/tmp/partsim_v93_audit_clean_20260714/librtsim/scheduler/gpfp_asap_block_scheduler.cpp:427)\n\u001b[0m\u001b[32m2026-07-14 02:37:30.930 [INFO0000] [scheduler00000000000] ⏱️ [ASAP-Block] ===== Tick事件触发 @ 298ms ===== (/tmp/partsim_v93_audit_clean_20260714/librtsim/scheduler/gpfp_asap_block_scheduler.cpp:88)\n\u001b[0m[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=298\n[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=4\n[DEBUG]   getTaskN(0) = nullptr, 退出循环\n[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=0\n[DEBUG] MRTKernel::dispatch() - num_newtasks=0\n[DEBUG] MRTKernel::dispatch() - num_newtasks < 1，返回\n\u001b[32m2026-07-14 02:37:30.934 [INFO0000] [scheduler00000000000] [ASAP-Block] tick=298 active=0 selected=0 harvested=0.038889 consumed=0.000000 remain=31.473277 (/tmp/partsim_v93_audit_clean_20260714/librtsim/scheduler/gpfp_asap_block_scheduler.cpp:427)\n\u001b[0m\u001b[32m2026-07-14 02:37:30.934 [INFO0000] [scheduler00000000000] ⏱️ [ASAP-Block] ===== Tick事件触发 @ 299ms ===== (/tmp/partsim_v93_audit_clean_20260714/librtsim/scheduler/gpfp_asap_block_scheduler.cpp:88)\n\u001b[0m[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=299\n[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=4\n[DEBUG]   getTaskN(0) = nullptr, 退出循环\n[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=0\n[DEBUG] MRTKernel::dispatch() - num_newtasks=0\n[DEBUG] MRTKernel::dispatch() - num_newtasks < 1，返回\n\u001b[32m2026-07-14 02:37:30.939 [INFO0000] [scheduler00000000000] [ASAP-Block] tick=299 active=0 selected=0 harvested=0.038889 consumed=0.000000 remain=31.512166 (/tmp/partsim_v93_audit_clean_20260714/librtsim/scheduler/gpfp_asap_block_scheduler.cpp:427)\n\u001b[0m\u001b[32m2026-07-14 02:37:30.939 [INFO0000] [scheduler00000000000] ⏱️ [ASAP-Block] ===== Tick事件触发 @ 300ms ===== (/tmp/partsim_v93_audit_clean_20260714/librtsim/scheduler/gpfp_asap_block_scheduler.cpp:88)\n\u001b[0m[DEBUG] MRTKernel::dispatch() - CALLED! _dispatch_start_time=300\n[DEBUG] MRTKernel::dispatch() - 计算num_newtasks, ncpu=4\n[DEBUG]   getTaskN(0) = nullptr, 退出循环\n[DEBUG] MRTKernel::dispatch() - 循环结束, num_newtasks=0\n[DEBUG] MRTKernel::dispatch() - num_newtasks=0\n[DEBUG] MRTKernel::dispatch() - num_newtasks < 1，返回\n\u001b[32m2026-07-14 02:37:30.944 [INFO0000] [scheduler00000000000] [ASAP-Block] tick=300 active=0 selected=0 harvested=0.038889 consumed=0.000000 remain=31.551055 (/tmp/partsim_v93_audit_clean_20260714/librtsim/scheduler/gpfp_asap_block_scheduler.cpp:427)\n\u001b[0m\u001b[32m2026-07-14 02:37:30.944 [INFO0000] [scheduler00000000000] 🏁 [ASAP-Block] endRun - 仿真结束 (/tmp/partsim_v93_audit_clean_20260714/librtsim/scheduler/gpfp_asap_block_scheduler.cpp:1289)\n\u001b[0m\u001b[32m2026-07-14 02:37:30.944 [INFO0000] [scheduler00000000000] 📊 [ASAP-Block] ===== TIE调度统计 ===== (/tmp/partsim_v93_audit_clean_20260714/librtsim/scheduler/gpfp_asap_block_scheduler.cpp:1302)\n\u001b[0m\u001b[32m2026-07-14 02:37:30.944 [INFO0000] [scheduler00000000000]   Tick总次数: 301 (/tmp/partsim_v93_audit_clean_20260714/librtsim/scheduler/gpfp_asap_block_scheduler.cpp:1303)\n\u001b[0m\u001b[32m2026-07-14 02:37:30.944 [INFO0000] [scheduler00000000000]   任务完成数: 36 (/tmp/partsim_v93_audit_clean_20260714/librtsim/scheduler/gpfp_asap_block_scheduler.cpp:1304)\n\u001b[0m\u001b[32m2026-07-14 02:37:30.944 [INFO0000] [scheduler00000000000]   能量不足跳过: 0 (/tmp/partsim_v93_audit_clean_20260714/librtsim/scheduler/gpfp_asap_block_scheduler.cpp:1305)\n\u001b[0m\u001b[32m2026-07-14 02:37:30.944 [INFO0000] [scheduler00000000000]   Deadline Miss: 0 (/tmp/partsim_v93_audit_clean_20260714/librtsim/scheduler/gpfp_asap_block_scheduler.cpp:1306)\n\u001b[0m\u001b[32m2026-07-14 02:37:30.944 [INFO0000] [scheduler00000000000]   总消耗能量: 0.115646J (/tmp/partsim_v93_audit_clean_20260714/librtsim/scheduler/gpfp_asap_block_scheduler.cpp:1307)\n\u001b[0m\u001b[32m2026-07-14 02:37:30.944 [INFO0000] [scheduler00000000000]   总收集能量: 11.666700J (/tmp/partsim_v93_audit_clean_20260714/librtsim/scheduler/gpfp_asap_block_scheduler.cpp:1308)\n\u001b[0m\u001b[32m2026-07-14 02:37:30.944 [INFO0000] [scheduler00000000000]   剩余能量: 31.551055J (/tmp/partsim_v93_audit_clean_20260714/librtsim/scheduler/gpfp_asap_block_scheduler.cpp:1309)\n\u001b[0m\u001b[32m2026-07-14 02:37:30.944 [INFO0000] [scheduler00000000000] ================================= (/tmp/partsim_v93_audit_clean_20260714/librtsim/scheduler/gpfp_asap_block_scheduler.cpp:1310)\n\u001b[0m",
+  "system_config_path": "artifacts/v9_3_unified_rehearsal/core3/simulation_inputs/e70478d4e900326073533bdf446f10ffd666b77000bc1dc478c893169cfcc069/system_config.yaml",
+  "taskset_path": "artifacts/v9_3_unified_rehearsal/core3/simulation_inputs/e70478d4e900326073533bdf446f10ffd666b77000bc1dc478c893169cfcc069/taskset.yaml"
+}

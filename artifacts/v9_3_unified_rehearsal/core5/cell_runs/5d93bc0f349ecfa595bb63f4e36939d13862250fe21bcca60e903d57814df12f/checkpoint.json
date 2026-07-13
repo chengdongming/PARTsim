@@ -1,0 +1,11 @@
+{
+  "completed_analysis_ids": [
+    "a0f2a300b6b06345f91f88ae5f1f7dc674b11980c005b359d4cabbcb8d9c3103",
+    "f78bab905d3418b01ed6f46af89e325d88ca82d9c7e633b30132ec4083fad7f3"
+  ],
+  "completed_count": 2,
+  "config_hash": "b02e7323e5afc70a3a7b57f07fa267129d706223b56d783731d7a9644b16f533",
+  "requested_count": 2,
+  "stop_requested": false,
+  "updated_at_utc": "2026-07-13T18:39:16.450836Z"
+}

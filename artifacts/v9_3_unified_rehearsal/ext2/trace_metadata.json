@@ -1,0 +1,63 @@
+{
+  "data_status": "REAL_TRACE_DATA_UNAVAILABLE",
+  "fixture_label": "SYNTHETIC_TEST_FIXTURE",
+  "physical_unit": "J",
+  "preprocessing_version": "EXT2_RESAMPLE_V1:exact_subdivision:piecewise_constant",
+  "quantity_kind": "INTERVAL_ENERGY",
+  "samples": [
+    {
+      "interval_duration_ns": 60000000000,
+      "interval_energy_j": "60",
+      "missing_data": false,
+      "original_value": "60",
+      "timestamp_ns": 1735689600000000000,
+      "timestamp_utc": "OFFSET+0s"
+    },
+    {
+      "interval_duration_ns": 60000000000,
+      "interval_energy_j": "60",
+      "missing_data": false,
+      "original_value": "60",
+      "timestamp_ns": 1735689660000000000,
+      "timestamp_utc": "OFFSET+60s"
+    },
+    {
+      "interval_duration_ns": 60000000000,
+      "interval_energy_j": "120",
+      "missing_data": false,
+      "original_value": "120",
+      "timestamp_ns": 1735689720000000000,
+      "timestamp_utc": "OFFSET+120s"
+    },
+    {
+      "interval_duration_ns": 60000000000,
+      "interval_energy_j": "120",
+      "missing_data": false,
+      "original_value": "120",
+      "timestamp_ns": 1735689780000000000,
+      "timestamp_utc": "OFFSET+180s"
+    },
+    {
+      "interval_duration_ns": 60000000000,
+      "interval_energy_j": "30",
+      "missing_data": false,
+      "original_value": "30",
+      "timestamp_ns": 1735689840000000000,
+      "timestamp_utc": "OFFSET+240s"
+    },
+    {
+      "interval_duration_ns": 60000000000,
+      "interval_energy_j": "30",
+      "missing_data": false,
+      "original_value": "30",
+      "timestamp_ns": 1735689900000000000,
+      "timestamp_utc": "OFFSET+300s"
+    }
+  ],
+  "scale": "1",
+  "selection_rule": "FIRST_N_SAMPLES_PREDECLARED",
+  "source_file_hash": "c3bc13414144e184547c593b6b816175dba4c8e3c04c5de0d9b4902936615e1c",
+  "source_id": "ext2-test-fixture",
+  "trace_hash": "039c201a3a2c58f5bfc1420907b7532715561f33ecc3e9756753f6ea9d3bf008",
+  "trace_id": "ext2-synthetic-smoke-v1:segment:0:3:scale:1:resampled:60000000000ns"
+}

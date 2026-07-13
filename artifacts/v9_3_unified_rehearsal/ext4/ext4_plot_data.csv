@@ -1,0 +1,9 @@
+plot,changed_axis,level,method,sample_id,category,x,y
+certification,baseline,implicit_default_range,CW_THETA_CW,ext4-base-f2daaf1a2b93dbf086e3,COMPLETED,implicit_default_range,1
+runtime,baseline,implicit_default_range,CW_THETA_CW,ext4-base-f2daaf1a2b93dbf086e3,COMPLETED,implicit_default_range,0.824427174
+certification,baseline,implicit_default_range,LOC_THETA_LOC,ext4-base-f2daaf1a2b93dbf086e3,COMPLETED,implicit_default_range,1
+runtime,baseline,implicit_default_range,LOC_THETA_LOC,ext4-base-f2daaf1a2b93dbf086e3,COMPLETED,implicit_default_range,0.823348681
+certification,deadline_mode,constrained,CW_THETA_CW,ext4-deadline-8d7021d33c9574397b71,COMPLETED,constrained,1
+runtime,deadline_mode,constrained,CW_THETA_CW,ext4-deadline-8d7021d33c9574397b71,COMPLETED,constrained,0.747503130
+certification,deadline_mode,constrained,LOC_THETA_LOC,ext4-deadline-8d7021d33c9574397b71,COMPLETED,constrained,1
+runtime,deadline_mode,constrained,LOC_THETA_LOC,ext4-deadline-8d7021d33c9574397b71,COMPLETED,constrained,0.703281871

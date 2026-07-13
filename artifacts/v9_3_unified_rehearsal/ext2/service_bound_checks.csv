@@ -1,0 +1,2 @@
+trace_id,construction_method,applicable_horizon_intervals,validated_interval_count,minimum_slack_j,violation_count,status,rta_status
+ext2-synthetic-smoke-v1:segment:0:3:scale:1:resampled:60000000000ns,NONE,0,0,UNAVAILABLE,0,NOT_CONSTRUCTED,NOT_APPLICABLE_NO_CERTIFIED_SERVICE_BOUND
