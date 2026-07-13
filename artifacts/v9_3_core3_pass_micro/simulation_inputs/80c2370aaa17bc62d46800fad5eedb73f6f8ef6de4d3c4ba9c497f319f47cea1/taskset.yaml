@@ -1,0 +1,100 @@
+taskset:
+  - name: v93_task_0
+    iat: 41
+    runtime: 3
+    startcpu: 0
+    deadline: 41
+    ph: 11
+    params: "period=41,wcet=3,arrival_offset=11,workload=control"
+    code:
+      - fixed(3, control)
+
+  - name: v93_task_1
+    iat: 67
+    runtime: 2
+    startcpu: 0
+    deadline: 67
+    ph: 10
+    params: "period=67,wcet=2,arrival_offset=10,workload=control"
+    code:
+      - fixed(2, control)
+
+  - name: v93_task_2
+    iat: 77
+    runtime: 9
+    startcpu: 0
+    deadline: 77
+    ph: 7
+    params: "period=77,wcet=9,arrival_offset=7,workload=bzip2"
+    code:
+      - fixed(9, bzip2)
+
+  - name: v93_task_3
+    iat: 79
+    runtime: 9
+    startcpu: 0
+    deadline: 79
+    ph: 15
+    params: "period=79,wcet=9,arrival_offset=15,workload=encrypt"
+    code:
+      - fixed(9, encrypt)
+
+  - name: v93_task_4
+    iat: 83
+    runtime: 6
+    startcpu: 0
+    deadline: 83
+    ph: 24
+    params: "period=83,wcet=6,arrival_offset=24,workload=encrypt"
+    code:
+      - fixed(6, encrypt)
+
+  - name: v93_task_5
+    iat: 95
+    runtime: 6
+    startcpu: 0
+    deadline: 95
+    ph: 12
+    params: "period=95,wcet=6,arrival_offset=12,workload=control"
+    code:
+      - fixed(6, control)
+
+  - name: v93_task_6
+    iat: 109
+    runtime: 22
+    startcpu: 0
+    deadline: 109
+    ph: 7
+    params: "period=109,wcet=22,arrival_offset=7,workload=control"
+    code:
+      - fixed(22, control)
+
+  - name: v93_task_7
+    iat: 118
+    runtime: 1
+    startcpu: 0
+    deadline: 118
+    ph: 4
+    params: "period=118,wcet=1,arrival_offset=4,workload=encrypt"
+    code:
+      - fixed(1, encrypt)
+
+  - name: v93_task_8
+    iat: 162
+    runtime: 5
+    startcpu: 0
+    deadline: 162
+    ph: 43
+    params: "period=162,wcet=5,arrival_offset=43,workload=control"
+    code:
+      - fixed(5, control)
+
+  - name: v93_task_9
+    iat: 193
+    runtime: 17
+    startcpu: 0
+    deadline: 193
+    ph: 0
+    params: "period=193,wcet=17,arrival_offset=0,workload=encrypt"
+    code:
+      - fixed(17, encrypt)

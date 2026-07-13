@@ -1,0 +1,79 @@
+analysis:
+  numerical_mode: EXACT_RATIONAL
+  retry_policy: none
+  retry_timeout_seconds: null
+  timeout_seconds: 4
+  variants:
+  - CW_THETA_CW
+  - LOC_THETA_LOC
+  worker_count: 1
+core: CORE-5
+energy:
+  battery_capacity: '20'
+  battery_mode: finite
+  exact_rational_encoding: canonical_fraction
+  initial_energy_values:
+  - '0'
+  service_curve:
+    horizon: 30000
+    id: repository-default-service-v1
+    system_template: system_config_unified_template.yml
+execution:
+  checkpoint_every: 1
+  fail_fast_on_p0: true
+  output_root: artifacts/v9_3_core5_smoke/cell_runs/5d93bc0f349ecfa595bb63f4e36939d13862250fe21bcca60e903d57814df12f
+  preserve_attempt_history: true
+  resume: false
+  taskset_store: artifacts/v9_3_core5_taskset_store_smoke
+experiment_id: asap-block-v9.3-core5-smoke::5d93bc0f349ecfa595bb63f4e36939d13862250fe21bcca60e903d57814df12f
+generation:
+  constrained_deadline:
+    d_over_t_max: '1'
+    d_over_t_min: '0'
+    d_over_t_values: []
+    distribution: generator_uniform_integer
+  deadline_mode: constrained
+  generator_timeout_seconds: 120
+  max_task_util: 4/5
+  min_task_util: 1/100
+  period_max: 200
+  period_min: 40
+  power_mode: generator_default_heterogeneous
+  priority_policy: RM
+  utilization_tolerance: 1/100
+  wcet_rounding: compensated
+grid:
+  base_seed: 930435
+  seed_mode: generation_dimensions
+  tasksets_per_cell: 1
+  utilization_points:
+  - 1/5
+platform:
+  cores:
+  - 2
+  task_count:
+  - 6
+plots: {}
+scalability:
+  core_counts:
+  - 2
+  - 4
+  max_analyses: 20
+  period_ranges:
+  - id: default-40-200
+    max: 200
+    min: 40
+  - id: exact-2x-80-400
+    max: 400
+    min: 80
+  task_counts:
+  - 6
+  - 10
+  utilization_points:
+  - 1/5
+  variants:
+  - CW_THETA_CW
+  - LOC_THETA_LOC
+  worker_counts:
+  - 1
+  - 2

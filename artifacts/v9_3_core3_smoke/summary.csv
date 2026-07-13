@@ -4,7 +4,7 @@ rta_completed,0,terminal_rta_results
 simulation_requested,2,unconditional_simulation_requests
 simulation_observed_pass,2,terminal_simulations
 soundness_evaluable,4,soundness_matrix_rows
-tightness_common_tasks,24,legal_candidate_and_observed_tasks
+tightness_common_tasks,0,legal_candidate_and_observed_tasks
 p0,0,recorded_failures
 p1,0,recorded_failures
 p2,0,recorded_failures

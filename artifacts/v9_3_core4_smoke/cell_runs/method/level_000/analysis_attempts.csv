@@ -1,0 +1,2 @@
+attempt_id,analysis_id,attempt_number,parent_attempt_id,timeout_budget_seconds,solver_status,outer_timeout,solver_wall_seconds,solver_cpu_seconds,worker_startup_seconds,serialization_seconds,ipc_seconds,total_wall_seconds,exception_type,exception_message,traceback,started_at_utc
+add9eb92048cbf2c3692d72c19d0ce42542a7066943b171c75236bdcff01c286,031c2760685006be5cccea829dc61eb0680d56b3fd840379509064708befa63e,1,,4.0,NO_CANDIDATE,False,0.076837382,0.076842869,0.087553490,0.002648550,0.011865930,0.178905352,,,,2026-07-13T17:01:44.709634Z

@@ -1,0 +1,79 @@
+analysis:
+  numerical_mode: EXACT_RATIONAL
+  retry_policy: timeout_once
+  retry_timeout_seconds: 8
+  timeout_seconds: 4
+  variants:
+  - CW_THETA_CW
+  - LOC_THETA_LOC
+  worker_count: 1
+core: CORE-4
+energy:
+  battery_capacity: '20'
+  battery_mode: finite
+  exact_rational_encoding: canonical_fraction
+  initial_energy_values:
+  - '0'
+  service_curve:
+    horizon: 30000
+    id: repository-default-service-v1
+    system_template: system_config_unified_template.yml
+execution:
+  checkpoint_every: 1
+  fail_fast_on_p0: true
+  output_root: artifacts/v9_3_core4_smoke
+  preserve_attempt_history: true
+  resume: false
+  taskset_store: artifacts/v9_3_core4_taskset_store_smoke
+experiment_id: asap-block-v9.3-core4-smoke
+generation:
+  constrained_deadline:
+    d_over_t_max: '1'
+    d_over_t_min: '0'
+    d_over_t_values: []
+    distribution: generator_uniform_integer
+  deadline_mode: constrained
+  generator_timeout_seconds: 120
+  max_task_util: 4/5
+  min_task_util: 1/100
+  period_max: 200
+  period_min: 40
+  power_mode: generator_default_heterogeneous
+  priority_policy: RM
+  utilization_tolerance: 1/100
+  wcet_rounding: compensated
+grid:
+  base_seed: 930434
+  seed_mode: generation_dimensions
+  tasksets_per_cell: 1
+  utilization_points:
+  - 1/5
+platform:
+  cores:
+  - 4
+  task_count:
+  - 10
+plots: {}
+sensitivity:
+  axes:
+    initial_energy:
+      values:
+      - '0'
+      - '1'
+    method:
+      variants:
+      - CW_THETA_CW
+      - LOC_THETA_LOC
+    power_scale:
+      values:
+      - '1'
+      - '2'
+    service_curve:
+      variants:
+      - availability: AVAILABLE
+        horizon: 30000
+        id: repository-default-service-v1
+        system_template: system_config_unified_template.yml
+      - availability: UNAVAILABLE
+        id: second-formal-service-curve
+        reason: repository has no second predeclared pointwise-orderable service configuration

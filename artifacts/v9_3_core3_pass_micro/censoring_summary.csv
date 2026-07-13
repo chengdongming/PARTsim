@@ -1,0 +1,4 @@
+scope,status,reason,count,denominator
+TASK,OBSERVED,,9,10
+TASK,OBSERVED_WITH_RIGHT_CENSORED_TAIL,,1,10
+TASKSET,SIM_PASS_OBSERVED,minimum_jobs_observed,1,1

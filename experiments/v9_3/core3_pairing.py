@@ -462,8 +462,21 @@ class Core3PairingRunner:
             (row["cell_id"], row["taskset_id"], row["task_id"]): row
             for row in simulation_tasks
         }
+        certified_analysis_ids = {
+            row["analysis_id"] for row in rta_rows
+            if _truth(row.get("taskset_proven"))
+            and row.get("certification_status") == "CERTIFIED_TASKSET"
+        }
+        partial_candidate_rows_excluded = 0
         tightness = []
         for rta_task in read_csv(self.root / "per_task_results.csv"):
+            if rta_task["analysis_id"] not in certified_analysis_ids:
+                if (
+                    rta_task.get("task_solver_status") == "CANDIDATE_FOUND"
+                    and rta_task.get("candidate_response_time") not in (None, "")
+                ):
+                    partial_candidate_rows_excluded += 1
+                continue
             simulation_task = simulation_task_index.get((
                 rta_task["cell_id"], rta_task["taskset_id"], rta_task["task_id"]
             ))
@@ -572,7 +585,15 @@ class Core3PairingRunner:
                 }
                 for row in soundness
             ),
+            "certification_taskset_denominator": len(rta_rows),
+            "certified_taskset_numerator": sum(
+                _truth(row.get("taskset_proven")) for row in rta_rows
+            ),
             "tightness_common_task_denominator": len(tightness),
+            "tightness_denominator_scope": "jointly_certified_tasksets_only",
+            "partial_candidate_rows_excluded_from_certified_tightness": (
+                partial_candidate_rows_excluded
+            ),
             "tightness": tightness_summary,
             "p0": severity["P0"], "p1": severity["P1"], "p2": severity["P2"],
             "soundness_violation_candidate": bool(severity["P0"]),

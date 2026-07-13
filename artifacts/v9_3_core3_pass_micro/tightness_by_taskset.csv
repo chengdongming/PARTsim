@@ -1,0 +1,3 @@
+taskset_id,analysis_variant,task_count,mean_absolute_gap,max_absolute_gap,mean_normalized_gap,mean_ratio,exact_equality_count
+v93-5b7dce0b03-t00000-2292118c3dc7,CW_THETA_CW,10,5.1,13.0,1.5695008912655972,2.569500891265597,4
+v93-5b7dce0b03-t00000-2292118c3dc7,LOC_THETA_LOC,10,5.1,13.0,1.5695008912655972,2.569500891265597,4

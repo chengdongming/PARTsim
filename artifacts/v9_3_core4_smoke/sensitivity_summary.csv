@@ -1,0 +1,15 @@
+parameter_name,level_index,level_encoding,variant,taskset_count,certified_count,certification_ratio,completed_count,completed_certified_count,completed_only_ratio,candidate_count,candidate_mean,candidate_median,candidate_p95,timeout_count,dependency_unavailable_count,runtime_mean_seconds,paired_count,tighter_count,equal_count,looser_count,certification_gain,certification_loss,monotonicity_violation_count
+initial_energy,0,"""0""",CW_THETA_CW,1,0,0.0,1,0,0.0,5,8.0,8.0,13.0,0,0,0.180775598,0,0,0,0,0,0,0
+initial_energy,0,"""0""",LOC_THETA_LOC,1,0,0.0,1,0,0.0,5,8.0,8.0,13.0,0,0,0.187027679,0,0,0,0,0,0,0
+initial_energy,1,"""1""",CW_THETA_CW,1,0,0.0,1,0,0.0,5,7.0,7.0,12.0,0,0,0.180974696,1,5,0,0,0,0,0
+initial_energy,1,"""1""",LOC_THETA_LOC,1,0,0.0,1,0,0.0,5,7.0,7.0,12.0,0,0,0.176605661,1,5,0,0,0,0,0
+method,0,"""CW_THETA_CW""",CW_THETA_CW,1,0,0.0,1,0,0.0,5,8.0,8.0,13.0,0,0,0.178905352,0,0,0,0,0,0,0
+method,1,"""LOC_THETA_LOC""",LOC_THETA_LOC,1,0,0.0,1,0,0.0,5,8.0,8.0,13.0,0,0,0.2010054,1,0,5,0,0,0,0
+power_scale,0,"""1""",CW_THETA_CW,1,0,0.0,1,0,0.0,5,8.0,8.0,13.0,0,0,0.175002649,0,0,0,0,0,0,0
+power_scale,0,"""1""",LOC_THETA_LOC,1,0,0.0,1,0,0.0,5,8.0,8.0,13.0,0,0,0.178095853,0,0,0,0,0,0,0
+power_scale,1,"""2""",CW_THETA_CW,1,0,0.0,1,0,0.0,5,8.0,8.0,13.0,0,0,0.18006736,1,0,5,0,0,0,0
+power_scale,1,"""2""",LOC_THETA_LOC,1,0,0.0,1,0,0.0,5,8.0,8.0,13.0,0,0,0.182299043,1,0,5,0,0,0,0
+service_curve,0,"{""availability"":""AVAILABLE"",""horizon"":30000,""id"":""repository-default-service-v1"",""system_template"":""system_config_unified_template.yml""}",CW_THETA_CW,1,0,0.0,1,0,0.0,5,8.0,8.0,13.0,0,0,0.179167494,0,0,0,0,0,0,0
+service_curve,0,"{""availability"":""AVAILABLE"",""horizon"":30000,""id"":""repository-default-service-v1"",""system_template"":""system_config_unified_template.yml""}",LOC_THETA_LOC,1,0,0.0,1,0,0.0,5,8.0,8.0,13.0,0,0,0.183154291,0,0,0,0,0,0,0
+service_curve,1,"{""availability"":""UNAVAILABLE"",""id"":""second-formal-service-curve"",""reason"":""repository has no second predeclared pointwise-orderable service configuration""}",CW_THETA_CW,1,0,0.0,0,0,,0,,,,0,1,,1,0,0,0,0,0,0
+service_curve,1,"{""availability"":""UNAVAILABLE"",""id"":""second-formal-service-curve"",""reason"":""repository has no second predeclared pointwise-orderable service configuration""}",LOC_THETA_LOC,1,0,0.0,0,0,,0,,,,0,1,,1,0,0,0,0,0,0

@@ -1,0 +1,81 @@
+{
+  "certification_taskset_denominator": 2,
+  "certified_taskset_numerator": 2,
+  "empirical_only": true,
+  "p0": 0,
+  "p1": 0,
+  "p2": 0,
+  "partial_candidate_rows_excluded_from_certified_tightness": 0,
+  "rta_completed": 2,
+  "rta_requested": 2,
+  "rta_terminal": 2,
+  "rta_timeout": 0,
+  "schema": "ASAP_BLOCK_V9_3_CORE3_SUMMARY_V1",
+  "simulation_horizon_insufficient": 0,
+  "simulation_observed_pass": 1,
+  "simulation_requested": 1,
+  "simulation_terminal": 1,
+  "soundness_counts": {
+    "RTA_PASS_SIM_PASS": 2
+  },
+  "soundness_evaluable_denominator": 2,
+  "soundness_matrix_rows": 2,
+  "soundness_violation_candidate": false,
+  "stopped": false,
+  "tightness": {
+    "loc_gap_eq_cw": 10,
+    "loc_gap_gt_cw": 0,
+    "loc_gap_lt_cw": 0,
+    "loc_vs_cw_common_task_count": 10,
+    "methods": {
+      "CW_THETA_CW": {
+        "absolute_gap": {
+          "max": 13.0,
+          "mean": 5.1,
+          "median": 3.5,
+          "p95": 13.0
+        },
+        "exact_equality_count": 4,
+        "normalized_gap": {
+          "max": 11.0,
+          "mean": 1.5695008912655972,
+          "median": 0.3484848484848485,
+          "p95": 11.0
+        },
+        "ratio": {
+          "max": 12.0,
+          "mean": 2.569500891265597,
+          "median": 1.3484848484848484,
+          "p95": 12.0
+        },
+        "task_count": 10,
+        "taskset_count": 1
+      },
+      "LOC_THETA_LOC": {
+        "absolute_gap": {
+          "max": 13.0,
+          "mean": 5.1,
+          "median": 3.5,
+          "p95": 13.0
+        },
+        "exact_equality_count": 4,
+        "normalized_gap": {
+          "max": 11.0,
+          "mean": 1.5695008912655972,
+          "median": 0.3484848484848485,
+          "p95": 11.0
+        },
+        "ratio": {
+          "max": 12.0,
+          "mean": 2.569500891265597,
+          "median": 1.3484848484848484,
+          "p95": 12.0
+        },
+        "task_count": 10,
+        "taskset_count": 1
+      }
+    }
+  },
+  "tightness_common_task_denominator": 20,
+  "tightness_denominator_scope": "jointly_certified_tasksets_only"
+}

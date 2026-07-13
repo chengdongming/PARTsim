@@ -1,0 +1,10 @@
+{
+  "config_hash": "f04290953862f1c71e82ba945c9ae1905758438c2340ff632ec749ff878f94cf",
+  "core": "CORE-5",
+  "created_at_utc": "2026-07-13T17:03:38.635906Z",
+  "experiment_id": "asap-block-v9.3-core5-smoke::bf898b0957e4c789200ab65cac7c16b63dbcc37841c674717bcd9b0e159012b4",
+  "formal_large_scale_run": false,
+  "git_head": "afa315be26febfe63d1c509a1e9cde0387b44f67",
+  "production_entry": "asap_block_rta_v9_3_taskset.analyze_taskset_v9_3",
+  "schema": "ASAP_BLOCK_V9_3_FORMAL_RUN_V1"
+}

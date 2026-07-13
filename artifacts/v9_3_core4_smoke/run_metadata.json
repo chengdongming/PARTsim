@@ -1,0 +1,6 @@
+{
+  "config_hash": "05f95726a6c4265c59aeff7b63faaa97fc9ad2cde8382ef4b9dc8013cf4ac647",
+  "finite_sample_consistency_check_only": true,
+  "formal_large_scale_run": false,
+  "schema": "ASAP_BLOCK_V9_3_CORE4_RUN_V1"
+}
