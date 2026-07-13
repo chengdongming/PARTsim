@@ -29,7 +29,8 @@ SUMMARY_COLUMNS = (
     "taskset_count", "certified_count", "certification_ratio",
     "completed_count", "completed_certified_count", "completed_only_ratio",
     "candidate_count", "candidate_mean", "candidate_median", "candidate_p95",
-    "timeout_count", "dependency_unavailable_count", "runtime_mean_seconds",
+    "timeout_count", "dependency_unavailable_count", "runtime_censored_count",
+    "runtime_mean_seconds",
     "paired_count", "tighter_count", "equal_count", "looser_count",
     "certification_gain", "certification_loss", "monotonicity_violation_count",
 )
@@ -160,7 +161,7 @@ def aggregate_core4(root: Path | str) -> Dict[str, Any]:
             and task.get("task_solver_status") == "CANDIDATE_FOUND"
         ]
         runtimes = [
-            float(row["runtime_wall_seconds"]) for row in level_results
+            float(row["runtime_wall_seconds"]) for row in completed
             if row.get("runtime_wall_seconds") not in (None, "")
         ]
         relevant_pairs = pair_by_right.get((parameter, level, variant), [])
@@ -182,6 +183,9 @@ def aggregate_core4(root: Path | str) -> Dict[str, Any]:
             "candidate_p95": _p95(candidates),
             "timeout_count": sum(row.get("solver_status") == "TIMEOUT" for row in level_results),
             "dependency_unavailable_count": sum(row["availability"] != "AVAILABLE" for row in members),
+            "runtime_censored_count": sum(
+                row.get("solver_status") == "TIMEOUT" for row in level_results
+            ),
             "runtime_mean_seconds": mean(runtimes) if runtimes else None,
             "paired_count": len(relevant_pairs),
             "tighter_count": sum(int(row["tighter_count"]) for row in relevant_pairs),

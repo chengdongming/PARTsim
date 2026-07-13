@@ -610,6 +610,16 @@ class ExecutionEngine:
             return self._load_result_state(item.analysis_id)
         prior = self._attempts_for(item.analysis_id)
         state = self._load_result_state(item.analysis_id)
+        state_required_statuses = {
+            "COMPLETED", "NO_CANDIDATE", "NOT_APPLICABLE_DEPENDENCY",
+        }
+        if (
+            prior and prior[-1]["solver_status"] in state_required_statuses
+            and state is None
+        ):
+            raise ExecutionError(
+                "completed analysis attempt is missing its analyzer state"
+            )
         max_attempts = 2 if self.config["analysis"]["retry_policy"] == "timeout_once" else 1
         if prior and prior[-1]["solver_status"] != "TIMEOUT" and state is not None:
             resumed = AttemptExecution(
@@ -847,6 +857,12 @@ class ExecutionEngine:
         assert self.writer is not None
         completed = self.writer.terminal_payloads()
         completed_ids = {payload["taskset_row"]["analysis_id"] for payload in completed}
+        requested_ids = {row["analysis_id"] for row in self._requests}
+        unexpected = completed_ids - requested_ids
+        if unexpected:
+            raise ExecutionError(
+                f"terminal results do not belong to the active plan: {sorted(unexpected)}"
+            )
         for row in self._requests:
             row["request_status"] = "TERMINAL" if row["analysis_id"] in completed_ids else "PLANNED"
         self.writer.materialize(
@@ -906,6 +922,10 @@ class ExecutionEngine:
                 signal.signal(signum, handler)
         assert self.writer is not None
         payloads = self.writer.terminal_payloads()
+        if not self.stop_requested.is_set() and len(payloads) != len(self._requests):
+            raise ExecutionError(
+                "run finished without one terminal result per request"
+            )
         counts: Dict[str, int] = {}
         for payload in payloads:
             status = payload["taskset_row"]["solver_status"]

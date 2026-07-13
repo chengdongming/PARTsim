@@ -17,3 +17,5 @@ def test_denominators_are_reported_separately():
     assert row["completed_only_denominator"] == 2
     assert row["certification_ratio_unconditional"] == 1 / 3
     assert row["certification_ratio_completed_only"] == 1 / 2
+    assert row["runtime_mean"] == 1.5
+    assert row["runtime_censored_count"] == 1

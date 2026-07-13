@@ -39,9 +39,11 @@ def classify_soundness(
             SimulationStatus.RUNTIME_TIMEOUT.value,
             SimulationStatus.INTERNAL_ERROR.value,
         }
-        or not release_e0_valid
     ):
         return SoundnessClass.SIM_TIMEOUT_OR_ERROR
+    # release_e0_valid is reported and denominated independently by the
+    # caller.  It must not erase a raw RTA_PASS_SIM_FAIL observation.
+    del release_e0_valid
     rta_pass = bool(
         _truth(rta_row.get("taskset_proven"))
         and str(rta_row.get("certification_status")) == "CERTIFIED_TASKSET"

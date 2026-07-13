@@ -8,7 +8,7 @@ import pytest
 from experiments.v9_3.config import load_config
 from experiments.v9_3.ext4_aggregation import aggregate_ext4
 from experiments.v9_3.ext4_robustness import Ext4Runner
-from experiments.v9_3.result_writer import write_csv
+from experiments.v9_3.result_writer import read_csv, write_csv
 from experiments.v9_3.ext4_robustness import (
     CELL_COLUMNS, RTA_COLUMNS, SAMPLE_COLUMNS, SIM_COLUMNS,
 )
@@ -80,3 +80,23 @@ def test_aggregation_preserves_rta_simulation_pairing_and_timeout(tmp_path):
     write_csv(tmp_path / "simulation_results.csv", SIM_COLUMNS, simulations)
     result = aggregate_ext4(tmp_path)
     assert result["paired_rows"] == 2
+    summaries = read_csv(tmp_path / "robustness_summary.csv")
+    derived_loc = next(
+        row for row in summaries
+        if row["changed_axis"] == "deadline_mode"
+        and row["method"] == "LOC_THETA_LOC"
+    )
+    assert derived_loc["rta_requested_denominator"] == "1"
+    assert derived_loc["rta_terminal_denominator"] == "1"
+    assert derived_loc["simulation_requested_denominator"] == "1"
+    assert derived_loc["simulation_terminal_denominator"] == "1"
+
+    write_csv(tmp_path / "rta_results.csv", RTA_COLUMNS, rta[:-1])
+    aggregate_ext4(tmp_path)
+    partial = next(
+        row for row in read_csv(tmp_path / "robustness_summary.csv")
+        if row["changed_axis"] == "deadline_mode"
+        and row["method"] == "LOC_THETA_LOC"
+    )
+    assert partial["rta_requested_denominator"] == "1"
+    assert partial["rta_terminal_denominator"] == "0"

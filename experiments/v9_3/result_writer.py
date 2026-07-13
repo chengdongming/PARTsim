@@ -165,6 +165,12 @@ class ResultWriter:
                 write_csv(path, columns, [])
 
     def append_attempt(self, row: Mapping[str, Any]) -> None:
+        attempt_id = str(row.get("attempt_id", ""))
+        if not attempt_id:
+            raise ResultWriterError("attempt_id must be non-empty")
+        existing = read_csv(self.root / "analysis_attempts.csv")
+        if any(item.get("attempt_id") == attempt_id for item in existing):
+            raise ResultWriterError(f"duplicate attempt_id: {attempt_id}")
         append_csv_row(self.root / "analysis_attempts.csv", ATTEMPT_COLUMNS, row)
 
     def write_terminal(self, analysis_id: str, payload: Mapping[str, Any]) -> None:

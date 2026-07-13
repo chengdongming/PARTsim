@@ -52,7 +52,14 @@ def variant_summary(
         certified = sum(row["taskset_proven"] == "True" for row in members)
         excluded = {"TIMEOUT", "NUMERIC_ERROR", "INTERNAL_CONFORMANCE_FAILURE"}
         completed_only = sum(row["solver_status"] not in excluded for row in members)
-        runtime = [_float(row, "runtime_wall_seconds") for row in members]
+        completed_members = [
+            row for row in members if row["solver_status"] not in excluded
+        ]
+        # TIMEOUT is right-censored.  Its budget/lower bound must never be
+        # mixed into the ordinary completed-event runtime summaries.
+        runtime = [
+            _float(row, "runtime_wall_seconds") for row in completed_members
+        ]
         output.append({
             "cell_id": key[0], "variant": key[1],
             "unconditional_denominator": count,
@@ -64,6 +71,7 @@ def variant_summary(
             "not_applicable_count": statuses["NOT_APPLICABLE_DEPENDENCY"],
             "numeric_error_count": statuses["NUMERIC_ERROR"],
             "internal_failure_count": statuses["INTERNAL_CONFORMANCE_FAILURE"],
+            "runtime_censored_count": statuses["TIMEOUT"],
             "certification_ratio_unconditional": certified / count if count else None,
             "certification_ratio_completed_only": certified / completed_only if completed_only else None,
             "runtime_mean": sum(value for value in runtime if math.isfinite(value)) / sum(math.isfinite(value) for value in runtime) if any(math.isfinite(value) for value in runtime) else None,

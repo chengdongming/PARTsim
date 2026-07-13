@@ -136,6 +136,19 @@ class Core5Outcome:
     summary: Mapping[str, Any]
 
 
+def _cell_timing(
+    prior: Optional[Mapping[str, Any]], terminal_count: int, elapsed: float,
+) -> tuple[Any, Any]:
+    """Keep first-run timing when resume only materializes existing terminals."""
+
+    if prior and int(prior["terminal_analysis_count"]) == terminal_count:
+        return prior["cell_wall_seconds"], prior["throughput_analyses_per_second"]
+    return (
+        f"{elapsed:.9f}",
+        terminal_count / elapsed if elapsed else None,
+    )
+
+
 class Core5ScalabilityRunner:
     def __init__(self, config: Mapping[str, Any]) -> None:
         self.config = dict(config)
@@ -187,6 +200,10 @@ class Core5ScalabilityRunner:
         max_tasksets: Optional[int] = None,
     ) -> Core5Outcome:
         self._initialize(resume)
+        prior_cells = {
+            row["scalability_cell_id"]: row
+            for row in read_csv(self.root / "scalability_cells.csv")
+        }
         cells = list(expand_scalability_cells(self.config))
         if max_cells is not None:
             if max_cells <= 0:
@@ -227,14 +244,18 @@ class Core5ScalabilityRunner:
             analysis_ids = [
                 row["analysis_id"] for row in read_csv(child_root / "analysis_requests.csv")
             ]
+            wall_seconds, throughput = _cell_timing(
+                prior_cells.get(cell.cell_id) if resume else None,
+                outcome.terminal, elapsed,
+            )
             cell_rows.append({
                 **self._cell_row(cell),
                 "variants": canonical_json(self.config["analysis"]["variants"]),
                 "tasksets_requested": per_cell_tasksets,
                 "analysis_ids_json": canonical_json(analysis_ids),
-                "cell_wall_seconds": f"{elapsed:.9f}",
+                "cell_wall_seconds": wall_seconds,
                 "terminal_analysis_count": outcome.terminal,
-                "throughput_analyses_per_second": outcome.terminal / elapsed if elapsed else None,
+                "throughput_analyses_per_second": throughput,
             })
         self._materialize_children(cell_rows)
         summary = aggregate_core5(self.root)

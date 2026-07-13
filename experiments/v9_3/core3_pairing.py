@@ -332,7 +332,6 @@ class Core3PairingRunner:
 
             p0 = bool(
                 execution.result.status is SimulationStatus.DEADLINE_MISS
-                and execution.result.release_e0_valid
                 and any(_truth(row["taskset_proven"]) for row in context["rta_rows"])
             )
             if p0:
@@ -554,6 +553,15 @@ class Core3PairingRunner:
         write_csv(self.root / "core3_plot_data.csv", PLOT_COLUMNS, plot_rows)
 
         soundness_counts = Counter(row["soundness_class"] for row in soundness)
+        raw_soundness_evaluable = {
+            SoundnessClass.RTA_PASS_SIM_PASS.value,
+            SoundnessClass.RTA_PASS_SIM_FAIL.value,
+            SoundnessClass.RTA_FAIL_SIM_PASS.value,
+            SoundnessClass.RTA_FAIL_SIM_FAIL.value,
+        }
+        release_e0_valid_count = sum(
+            _truth(row["release_e0_valid"]) for row in soundness
+        )
         failures = read_csv(self.root / "failures.csv")
         severity = Counter(row["severity"] for row in failures)
         completed_rta = sum(row["solver_status"] == "COMPLETED" for row in rta_rows)
@@ -576,15 +584,17 @@ class Core3PairingRunner:
             ),
             "soundness_matrix_rows": len(soundness),
             "soundness_counts": dict(sorted(soundness_counts.items())),
-            "soundness_evaluable_denominator": sum(
-                row["soundness_class"] in {
-                    SoundnessClass.RTA_PASS_SIM_PASS.value,
-                    SoundnessClass.RTA_PASS_SIM_FAIL.value,
-                    SoundnessClass.RTA_FAIL_SIM_PASS.value,
-                    SoundnessClass.RTA_FAIL_SIM_FAIL.value,
-                }
+            "soundness_raw_evaluable_denominator": sum(
+                row["soundness_class"] in raw_soundness_evaluable
                 for row in soundness
             ),
+            "soundness_evaluable_denominator": sum(
+                row["soundness_class"] in raw_soundness_evaluable
+                and _truth(row["release_e0_valid"])
+                for row in soundness
+            ),
+            "release_e0_valid_count": release_e0_valid_count,
+            "release_e0_invalid_count": len(soundness) - release_e0_valid_count,
             "certification_taskset_denominator": len(rta_rows),
             "certified_taskset_numerator": sum(
                 _truth(row.get("taskset_proven")) for row in rta_rows

@@ -40,11 +40,11 @@ def test_soundness_matrix_covers_all_eight_states():
     assert set(observed) == set(SoundnessClass)
 
 
-def test_invalid_release_e0_cannot_be_reported_as_soundness_failure():
+def test_invalid_release_e0_does_not_erase_raw_soundness_failure():
     assert classify_soundness(
         rta(proven=True), SimulationStatus.DEADLINE_MISS.value,
         release_e0_valid=False,
-    ) is SoundnessClass.SIM_TIMEOUT_OR_ERROR
+    ) is SoundnessClass.RTA_PASS_SIM_FAIL
 
 
 def test_gap_ratio_and_deadline_slack_use_observed_maximum():

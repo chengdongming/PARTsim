@@ -6,6 +6,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Dict
 
+import yaml
+
 from .result_writer import read_csv, write_csv
 
 
@@ -18,7 +20,8 @@ PAIRED_COLUMNS = (
 SUMMARY_COLUMNS = (
     "changed_axis", "level", "method", "rta_requested_denominator",
     "rta_terminal_denominator", "certified_count", "certification_ratio",
-    "simulation_requested_denominator", "simulation_valid_denominator",
+    "simulation_requested_denominator", "simulation_terminal_denominator",
+    "simulation_valid_denominator",
     "simulation_pass_count", "simulation_pass_ratio_valid", "timeout_count",
     "soundness_rta_pass_sim_fail", "dominance_violation_count",
 )
@@ -43,12 +46,20 @@ def aggregate_ext4(root: Path) -> Dict[str, int]:
     simulations = read_csv(root / "simulation_results.csv")
     by_rta = {(row["sample_id"], row["method"]): row for row in rta}
     by_sim = {row["sample_id"]: row for row in simulations}
+    run_config = root / "run_config.yaml"
+    if run_config.is_file():
+        document = yaml.safe_load(run_config.read_text(encoding="utf-8"))
+        methods = list(document["robustness"]["rta_methods"])
+    else:
+        # Unit fixtures created before the run-config contract still retain
+        # every observed method.  Production runs always take the branch above.
+        methods = sorted({row["method"] for row in rta})
     paired = []
     for sample in samples:
         if not sample.get("base_sample_id") or sample["sample_id"] == sample["base_sample_id"]:
             continue
         base_id, derived_id = sample["base_sample_id"], sample["sample_id"]
-        for method in sorted({row["method"] for row in rta}):
+        for method in methods:
             base, derived = by_rta.get((base_id, method)), by_rta.get((derived_id, method))
             if base is None or derived is None:
                 continue
@@ -73,7 +84,7 @@ def aggregate_ext4(root: Path) -> Dict[str, int]:
     for cell in cells:
         axis, level = cell["changed_axis"], cell["level"]
         sample_ids = {row["sample_id"] for row in samples if row["cell_id"] == cell["cell_id"]}
-        for method in sorted({row["method"] for row in rta}):
+        for method in methods:
             rta_rows = [row for row in rta if row["sample_id"] in sample_ids and row["method"] == method]
             sim_rows = [row for row in simulations if row["sample_id"] in sample_ids]
             valid_sim = [row for row in sim_rows if row["status"] in {"SIM_PASS_OBSERVED", "SIM_DEADLINE_MISS"}]
@@ -83,11 +94,12 @@ def aggregate_ext4(root: Path) -> Dict[str, int]:
             dominance = sum(_truth(row.get("dominance_violation")) for row in rta_rows)
             summaries.append({
                 "changed_axis": axis, "level": level, "method": method,
-                "rta_requested_denominator": len(rta_rows),
+                "rta_requested_denominator": len(sample_ids),
                 "rta_terminal_denominator": len(rta_rows),
                 "certified_count": certified,
-                "certification_ratio": _ratio(certified, len(rta_rows)),
-                "simulation_requested_denominator": len(sim_rows),
+                "certification_ratio": _ratio(certified, len(sample_ids)),
+                "simulation_requested_denominator": len(sample_ids),
+                "simulation_terminal_denominator": len(sim_rows),
                 "simulation_valid_denominator": len(valid_sim),
                 "simulation_pass_count": sim_pass,
                 "simulation_pass_ratio_valid": _ratio(sim_pass, len(valid_sim)),

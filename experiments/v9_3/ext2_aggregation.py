@@ -11,7 +11,8 @@ from .result_writer import read_csv, write_csv
 
 SUMMARY_COLUMNS = (
     "scheduler_id", "trace_id", "trace_scale", "requested_denominator",
-    "valid_terminal_denominator", "sufficient_observation_denominator",
+    "terminal_denominator", "valid_terminal_denominator",
+    "sufficient_observation_denominator",
     "pass_count", "deadline_miss_count", "horizon_insufficient_count",
     "timeout_count", "internal_error_count", "pass_ratio_requested",
     "pass_ratio_valid",
@@ -47,6 +48,7 @@ def aggregate_ext2(root: Path) -> Dict[str, int]:
         summaries.append({
             "scheduler_id": scheduler_id, "trace_id": trace_id,
             "trace_scale": scale, "requested_denominator": len(requested),
+            "terminal_denominator": len(terminal),
             "valid_terminal_denominator": valid,
             "sufficient_observation_denominator": valid,
             "pass_count": status["SIM_PASS_OBSERVED"],

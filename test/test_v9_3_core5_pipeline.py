@@ -6,7 +6,7 @@ from pathlib import Path
 from experiments.v9_3.config import load_config
 from experiments.v9_3.core5_aggregation import aggregate_core5
 from experiments.v9_3.core5_scalability import (
-    SCALABILITY_CELL_COLUMNS, Core5ScalabilityRunner,
+    SCALABILITY_CELL_COLUMNS, Core5ScalabilityRunner, _cell_timing,
 )
 from experiments.v9_3.resource_measurement import RESOURCE_OBSERVATION_COLUMNS
 from experiments.v9_3.result_writer import (
@@ -83,3 +83,15 @@ def test_core5_aggregation_writes_plot_data_and_worker_semantics(tmp_path):
     assert summary["worker_semantic_mismatch_count"] == 0
     assert read_csv(tmp_path / "core5_plot_data.csv")
     assert read_csv(tmp_path / "runtime_censoring.csv")[0]["event_observed"] == "True"
+
+
+def test_resume_does_not_replace_first_run_cell_timing():
+    prior = {
+        "terminal_analysis_count": "2",
+        "cell_wall_seconds": "12.500000000",
+        "throughput_analyses_per_second": "0.16",
+    }
+    assert _cell_timing(prior, 2, 0.01) == ("12.500000000", "0.16")
+    wall, throughput = _cell_timing(prior, 3, 2.0)
+    assert wall == "2.000000000"
+    assert throughput == 1.5
