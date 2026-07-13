@@ -133,8 +133,8 @@ def validate_config(raw: Mapping[str, Any], *, expected_core: str | None = None)
     if not isinstance(experiment_id, str) or not experiment_id.strip():
         raise ConfigError("experiment_id must be a non-empty string")
     core = config.get("core")
-    if core not in {"CORE-1", "CORE-2", "CORE-3"}:
-        raise ConfigError("core must be CORE-1, CORE-2, or CORE-3")
+    if core not in {"CORE-1", "CORE-2", "CORE-3", "CORE-4", "CORE-5"}:
+        raise ConfigError("core must be CORE-1, CORE-2, CORE-3, CORE-4, or CORE-5")
     if expected_core is not None and core != expected_core:
         raise ConfigError(f"runner requires {expected_core}, got {core!r}")
 
@@ -311,11 +311,12 @@ def validate_config(raw: Mapping[str, Any], *, expected_core: str | None = None)
         raise ConfigError("analysis.variants contains duplicates")
     if any(item not in KNOWN_VARIANTS for item in variants):
         raise ConfigError("analysis.variants contains an unknown variant")
-    expected = (
-        ["CW_THETA_CW", "LOC_THETA_LOC"] if core in {"CORE-1", "CORE-3"} else
-        ["CW_D", "LOC_D", "CW_THETA_CW", "LOC_THETA_CW", "LOC_THETA_LOC"]
-    )
-    if variants != expected:
+    expected = None
+    if core in {"CORE-1", "CORE-3"}:
+        expected = ["CW_THETA_CW", "LOC_THETA_LOC"]
+    elif core == "CORE-2":
+        expected = ["CW_D", "LOC_D", "CW_THETA_CW", "LOC_THETA_CW", "LOC_THETA_LOC"]
+    if expected is not None and variants != expected:
         raise ConfigError(f"{core} variants must equal {expected}")
     initial_timeout = _positive_number(analysis.get("timeout_seconds"), "analysis.timeout_seconds")
     retry_timeout = analysis.get("retry_timeout_seconds")
@@ -330,6 +331,135 @@ def validate_config(raw: Mapping[str, Any], *, expected_core: str | None = None)
     analysis["worker_count"] = _positive_int(analysis.get("worker_count"), "analysis.worker_count")
     if analysis.get("numerical_mode") not in KNOWN_NUMERICAL_MODES:
         raise ConfigError("unknown analysis.numerical_mode")
+
+    if core == "CORE-4":
+        sensitivity = _require_mapping(config, "sensitivity")
+        axes = _require_mapping(sensitivity, "axes")
+        if set(axes) != {"initial_energy", "service_curve", "power_scale", "method"}:
+            raise ConfigError(
+                "sensitivity.axes must contain exactly initial_energy, service_curve, "
+                "power_scale, and method"
+            )
+        e0_axis = _require_mapping(axes, "initial_energy")
+        e0_values = [
+            fraction_text(exact_fraction(value, f"sensitivity.axes.initial_energy.values[{index}]"))
+            for index, value in enumerate(
+                _as_list(e0_axis.get("values"), "sensitivity.axes.initial_energy.values")
+            )
+        ]
+        if len(e0_values) != len(set(e0_values)):
+            raise ConfigError("initial-energy sensitivity levels contain duplicates")
+        if e0_values != sorted(e0_values, key=Fraction):
+            raise ConfigError("initial-energy sensitivity levels must be exactly ordered")
+        e0_axis["values"] = e0_values
+
+        power_axis = _require_mapping(axes, "power_scale")
+        power_values = []
+        for index, value in enumerate(
+            _as_list(power_axis.get("values"), "sensitivity.axes.power_scale.values")
+        ):
+            scale = exact_fraction(value, f"sensitivity.axes.power_scale.values[{index}]")
+            if scale <= 0:
+                raise ConfigError("power-scale sensitivity levels must be positive")
+            power_values.append(fraction_text(scale))
+        if len(power_values) != len(set(power_values)):
+            raise ConfigError("power-scale sensitivity levels contain duplicates")
+        if power_values != sorted(power_values, key=Fraction):
+            raise ConfigError("power-scale sensitivity levels must be exactly ordered")
+        power_axis["values"] = power_values
+
+        method_axis = _require_mapping(axes, "method")
+        method_values = _as_list(method_axis.get("variants"), "sensitivity.axes.method.variants")
+        if len(method_values) != len(set(method_values)) or any(
+            value not in KNOWN_VARIANTS for value in method_values
+        ):
+            raise ConfigError("method sensitivity variants must be unique known variants")
+        if variants != method_values:
+            raise ConfigError("analysis.variants must equal sensitivity method variants")
+        method_axis["variants"] = list(method_values)
+
+        service_axis = _require_mapping(axes, "service_curve")
+        service_values = _as_list(
+            service_axis.get("variants"), "sensitivity.axes.service_curve.variants"
+        )
+        normalized_services = []
+        service_ids = set()
+        for index, value in enumerate(service_values):
+            if not isinstance(value, dict):
+                raise ConfigError(f"service-curve variant {index} must be a mapping")
+            service_id = value.get("id")
+            if not isinstance(service_id, str) or not service_id:
+                raise ConfigError(f"service-curve variant {index} requires a non-empty id")
+            if service_id in service_ids:
+                raise ConfigError("service-curve variant IDs must be unique")
+            service_ids.add(service_id)
+            availability = value.get("availability", "AVAILABLE")
+            if availability not in {"AVAILABLE", "UNAVAILABLE"}:
+                raise ConfigError("service-curve availability must be AVAILABLE or UNAVAILABLE")
+            normalized = dict(value)
+            normalized["availability"] = availability
+            if availability == "AVAILABLE":
+                template = normalized.get("system_template")
+                if not isinstance(template, str) or not template:
+                    raise ConfigError("available service-curve variants require system_template")
+                normalized["horizon"] = _positive_int(
+                    normalized.get("horizon"),
+                    f"sensitivity.axes.service_curve.variants[{index}].horizon",
+                )
+            else:
+                reason = normalized.get("reason")
+                if not isinstance(reason, str) or not reason:
+                    raise ConfigError("unavailable service-curve variants require a reason")
+            normalized_services.append(normalized)
+        service_axis["variants"] = normalized_services
+
+    if core == "CORE-5":
+        scalability = _require_mapping(config, "scalability")
+        for key in ("task_counts", "core_counts", "worker_counts"):
+            values = [
+                _positive_int(value, f"scalability.{key}")
+                for value in _as_list(scalability.get(key), f"scalability.{key}")
+            ]
+            if len(values) != len(set(values)):
+                raise ConfigError(f"scalability.{key} contains duplicates")
+            scalability[key] = values
+        utilities = _validate_ratios(
+            _as_list(scalability.get("utilization_points"), "scalability.utilization_points"),
+            "scalability.utilization_points",
+        )
+        if len(utilities) != len(set(utilities)):
+            raise ConfigError("scalability.utilization_points contains duplicates")
+        scalability["utilization_points"] = utilities
+        scale_variants = _as_list(scalability.get("variants"), "scalability.variants")
+        if len(scale_variants) != len(set(scale_variants)) or any(
+            value not in KNOWN_VARIANTS for value in scale_variants
+        ):
+            raise ConfigError("scalability.variants must contain unique known variants")
+        if variants != scale_variants:
+            raise ConfigError("analysis.variants must equal scalability.variants")
+        scalability["variants"] = list(scale_variants)
+        period_ranges = _as_list(
+            scalability.get("period_ranges"), "scalability.period_ranges"
+        )
+        normalized_ranges = []
+        range_ids = set()
+        for index, value in enumerate(period_ranges):
+            if not isinstance(value, dict) or set(value) != {"id", "min", "max"}:
+                raise ConfigError("each period range requires exactly id, min, and max")
+            range_id = value["id"]
+            if not isinstance(range_id, str) or not range_id or range_id in range_ids:
+                raise ConfigError("period-range IDs must be non-empty and unique")
+            range_ids.add(range_id)
+            lower = _positive_int(value["min"], f"scalability.period_ranges[{index}].min")
+            upper = _positive_int(value["max"], f"scalability.period_ranges[{index}].max")
+            if lower > upper:
+                raise ConfigError("period-range min must not exceed max")
+            normalized_ranges.append({"id": range_id, "min": lower, "max": upper})
+        scalability["period_ranges"] = normalized_ranges
+        hard_limit = scalability.get("max_analyses", 20)
+        scalability["max_analyses"] = _positive_int(
+            hard_limit, "scalability.max_analyses"
+        )
 
     if core == "CORE-3":
         simulation = _require_mapping(config, "simulation")

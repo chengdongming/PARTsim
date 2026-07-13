@@ -12,8 +12,10 @@ import multiprocessing
 import os
 from pathlib import Path
 import pickle
+import resource
 import signal
 import subprocess
+import sys
 import threading
 import time
 import traceback
@@ -62,6 +64,8 @@ class AttemptExecution:
     exception_type: Optional[str] = None
     exception_message: Optional[str] = None
     traceback_text: Optional[str] = None
+    peak_rss_kib: Optional[int] = None
+    peak_rss_scope: str = "UNAVAILABLE"
 
 
 @dataclass(frozen=True)
@@ -89,14 +93,21 @@ def _analysis_worker(
         result = production_runner.dispatch_rta_version(
             production_runner.V93_DISPATCH_VERSION, v93_request=request
         )
+        peak_rss = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+        if sys.platform == "darwin":
+            peak_rss //= 1024
         payload = (
             "ok", result, time.perf_counter() - wall_started,
-            time.process_time() - cpu_started,
+            time.process_time() - cpu_started, peak_rss,
         )
     except BaseException as exc:
+        peak_rss = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+        if sys.platform == "darwin":
+            peak_rss //= 1024
         payload = (
             "error", type(exc).__name__, str(exc), traceback.format_exc(),
             time.perf_counter() - wall_started, time.process_time() - cpu_started,
+            peak_rss,
         )
     try:
         sending.send(payload)
@@ -174,12 +185,16 @@ def execute_isolated(
             result, result.solver_status.value, False, solver_wall,
             float(payload[3]), startup,
             max(0.0, total - startup - solver_wall), total,
+            peak_rss_kib=int(payload[4]),
+            peak_rss_scope="CHILD_PROCESS_MAX_RSS_INCLUDES_SHARED_LIBRARIES",
         )
     solver_wall = float(payload[4])
     return AttemptExecution(
         None, "INTERNAL_CONFORMANCE_FAILURE", False, solver_wall,
         float(payload[5]), startup, max(0.0, total - startup - solver_wall), total,
         payload[1], payload[2], payload[3],
+        peak_rss_kib=int(payload[6]),
+        peak_rss_scope="CHILD_PROCESS_MAX_RSS_INCLUDES_SHARED_LIBRARIES",
     )
 
 
@@ -376,7 +391,13 @@ def _pickle_atomic(path: Path, value: Any) -> None:
 
 
 class ExecutionEngine:
-    def __init__(self, config: Mapping[str, Any]) -> None:
+    def __init__(
+        self,
+        config: Mapping[str, Any],
+        *,
+        service_override: Optional[ServiceCurveMaterial] = None,
+        store_override: Optional[TasksetStore] = None,
+    ) -> None:
         self.config = dict(config)
         self.config_identity = config_hash(config)
         self.root = Path(config["execution"]["output_root"])
@@ -392,6 +413,8 @@ class ExecutionEngine:
         self._dependencies: list[Dict[str, Any]] = []
         self._dominance: list[Dict[str, Any]] = []
         self._failures: list[Dict[str, Any]] = []
+        self._service_override = service_override
+        self._store_override = store_override
 
     def describe(self, *, max_cells: Optional[int] = None) -> Dict[str, Any]:
         cells = list(expand_cells(self.config))
@@ -432,8 +455,8 @@ class ExecutionEngine:
         self.writer = ResultWriter(self.root)
         # A resumed P0 run must never erase the already-recorded failure audit.
         self._failures = list(read_csv(self.root / "failures.csv"))
-        self.service = prepare_service_curve(self.config, self.root)
-        self.store = TasksetStore(
+        self.service = self._service_override or prepare_service_curve(self.config, self.root)
+        self.store = self._store_override or TasksetStore(
             Path(self.config["execution"]["taskset_store"]), self.config, self.service
         )
 
@@ -681,12 +704,22 @@ class ExecutionEngine:
             }
             with self._write_lock:
                 self.writer.append_attempt(attempt_row)
+                self._observe_attempt(item, attempt_row, execution)
             prior.append({key: str(value) if value is not None else "" for key, value in attempt_row.items()})
             if execution.solver_status != "TIMEOUT":
                 break
         assert final_execution is not None
         self._finish_terminal(item, final_execution, prior, state)
         return state
+
+    def _observe_attempt(
+        self,
+        item: ExecutionPlanItem,
+        attempt_row: Mapping[str, Any],
+        execution: AttemptExecution,
+    ) -> None:
+        """Optional additive resource hook for CORE-5; formal tables are unchanged."""
+
 
     def _dependency_row(
         self,
