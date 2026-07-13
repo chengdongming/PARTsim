@@ -28,6 +28,8 @@ KNOWN_WCET_ROUNDING = {"floor", "round", "ceil", "compensated"}
 KNOWN_RETRY_POLICIES = {"none", "timeout_once"}
 KNOWN_CONSTRAINED_DISTRIBUTIONS = {"generator_uniform_integer"}
 KNOWN_SEED_MODES = {"generation_dimensions", "utilization_index_taskset_index"}
+KNOWN_HORIZON_EXTENSION_POLICIES = {"none", "double"}
+KNOWN_TRACE_MODES = {"semantic"}
 
 
 def exact_fraction(value: Any, label: str) -> Fraction:
@@ -131,8 +133,8 @@ def validate_config(raw: Mapping[str, Any], *, expected_core: str | None = None)
     if not isinstance(experiment_id, str) or not experiment_id.strip():
         raise ConfigError("experiment_id must be a non-empty string")
     core = config.get("core")
-    if core not in {"CORE-1", "CORE-2"}:
-        raise ConfigError("core must be CORE-1 or CORE-2")
+    if core not in {"CORE-1", "CORE-2", "CORE-3"}:
+        raise ConfigError("core must be CORE-1, CORE-2, or CORE-3")
     if expected_core is not None and core != expected_core:
         raise ConfigError(f"runner requires {expected_core}, got {core!r}")
 
@@ -200,6 +202,20 @@ def validate_config(raw: Mapping[str, Any], *, expected_core: str | None = None)
     if energy["battery_mode"] == "finite" and capacity <= 0:
         raise ConfigError("finite battery capacity must be positive")
     energy["battery_capacity"] = fraction_text(capacity)
+    if core == "CORE-3":
+        initial_battery = exact_fraction(
+            energy.get("simulation_initial_battery"),
+            "energy.simulation_initial_battery",
+        )
+        if initial_battery > capacity:
+            raise ConfigError(
+                "energy.simulation_initial_battery must not exceed battery_capacity"
+            )
+        if initial_battery < max(Fraction(value) for value in exact_values):
+            raise ConfigError(
+                "simulation initial battery must cover every configured release-time E0"
+            )
+        energy["simulation_initial_battery"] = fraction_text(initial_battery)
     service = _require_mapping(energy, "service_curve")
     if not isinstance(service.get("id"), str) or not service["id"]:
         raise ConfigError("energy.service_curve.id must be non-empty")
@@ -249,6 +265,44 @@ def validate_config(raw: Mapping[str, Any], *, expected_core: str | None = None)
             raise ConfigError("grid.cell_filter must be a subset of the configured U/E0 grid")
         grid["cell_filter"] = normalized_filter
 
+    if core == "CORE-3":
+        rta = _require_mapping(config, "rta")
+        methods = rta.get("methods")
+        if methods != ["CW_THETA_CW", "LOC_THETA_LOC"]:
+            raise ConfigError(
+                "CORE-3 rta.methods must equal ['CW_THETA_CW', 'LOC_THETA_LOC']"
+            )
+        initial_timeout = _positive_number(
+            rta.get("timeout_seconds"), "rta.timeout_seconds"
+        )
+        retry_timeout = rta.get("retry_timeout_seconds")
+        if retry_timeout is not None:
+            retry_timeout = _positive_number(
+                retry_timeout, "rta.retry_timeout_seconds"
+            )
+            if retry_timeout < initial_timeout:
+                raise ConfigError("retry timeout must not be smaller than initial timeout")
+        retry_policy = rta.get(
+            "retry_policy", "timeout_once" if retry_timeout is not None else "none"
+        )
+        if retry_policy not in KNOWN_RETRY_POLICIES:
+            raise ConfigError("unknown rta.retry_policy")
+        if retry_policy == "timeout_once" and retry_timeout is None:
+            raise ConfigError("timeout_once requires rta.retry_timeout_seconds")
+        execution_preview = _require_mapping(config, "execution")
+        worker_count = _positive_int(
+            execution_preview.get("worker_count"), "execution.worker_count"
+        )
+        numerical_mode = rta.get("numerical_mode", "EXACT_RATIONAL")
+        config["analysis"] = {
+            "variants": list(methods),
+            "timeout_seconds": initial_timeout,
+            "retry_timeout_seconds": retry_timeout,
+            "retry_policy": retry_policy,
+            "worker_count": worker_count,
+            "numerical_mode": numerical_mode,
+        }
+
     analysis = _require_mapping(config, "analysis")
     variants = analysis.get("variants")
     if not isinstance(variants, list) or not variants:
@@ -258,7 +312,7 @@ def validate_config(raw: Mapping[str, Any], *, expected_core: str | None = None)
     if any(item not in KNOWN_VARIANTS for item in variants):
         raise ConfigError("analysis.variants contains an unknown variant")
     expected = (
-        ["CW_THETA_CW", "LOC_THETA_LOC"] if core == "CORE-1" else
+        ["CW_THETA_CW", "LOC_THETA_LOC"] if core in {"CORE-1", "CORE-3"} else
         ["CW_D", "LOC_D", "CW_THETA_CW", "LOC_THETA_CW", "LOC_THETA_LOC"]
     )
     if variants != expected:
@@ -276,6 +330,39 @@ def validate_config(raw: Mapping[str, Any], *, expected_core: str | None = None)
     analysis["worker_count"] = _positive_int(analysis.get("worker_count"), "analysis.worker_count")
     if analysis.get("numerical_mode") not in KNOWN_NUMERICAL_MODES:
         raise ConfigError("unknown analysis.numerical_mode")
+
+    if core == "CORE-3":
+        simulation = _require_mapping(config, "simulation")
+        simulation["horizon"] = _positive_int(
+            simulation.get("horizon"), "simulation.horizon"
+        )
+        warmup = simulation.get("warmup", 0)
+        if isinstance(warmup, bool) or not isinstance(warmup, int) or warmup < 0:
+            raise ConfigError("simulation.warmup must be a non-negative integer")
+        simulation["warmup"] = warmup
+        simulation["minimum_jobs_per_task"] = _positive_int(
+            simulation.get("minimum_jobs_per_task"),
+            "simulation.minimum_jobs_per_task",
+        )
+        simulation["maximum_horizon"] = _positive_int(
+            simulation.get("maximum_horizon"), "simulation.maximum_horizon"
+        )
+        if simulation["maximum_horizon"] < simulation["horizon"]:
+            raise ConfigError("simulation.maximum_horizon must cover horizon")
+        if simulation["warmup"] >= simulation["maximum_horizon"]:
+            raise ConfigError("simulation.warmup must be below maximum_horizon")
+        if simulation.get("horizon_extension_policy") not in KNOWN_HORIZON_EXTENSION_POLICIES:
+            raise ConfigError("unknown simulation.horizon_extension_policy")
+        if simulation.get("trace_mode") not in KNOWN_TRACE_MODES:
+            raise ConfigError("unknown simulation.trace_mode")
+        for key in ("deadline_miss_fail_fast", "trace_on_failure"):
+            if not isinstance(simulation.get(key), bool):
+                raise ConfigError(f"simulation.{key} must be boolean")
+        _positive_number(simulation.get("timeout_seconds"), "simulation.timeout_seconds")
+        simulator_bin = simulation.get("simulator_bin", "./build/rtsim/rtsim")
+        if not isinstance(simulator_bin, str) or not simulator_bin:
+            raise ConfigError("simulation.simulator_bin must be a non-empty path")
+        simulation["simulator_bin"] = simulator_bin
 
     execution = _require_mapping(config, "execution")
     execution["checkpoint_every"] = _positive_int(execution.get("checkpoint_every"), "execution.checkpoint_every")
