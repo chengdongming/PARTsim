@@ -1,0 +1,19 @@
+{
+  "completed_analysis_ids": [
+    "62919a2660e59a8a753a97afdc5297414c0be1cc4c2e4442851e49ea0653795e",
+    "79a42b6479950b25fe59bdecb5e3a62ec23b1fdd2321cd5a32ecb0b9bb7effd7",
+    "9829aa7a6fa771b9b58c98bba8b1b4b8b5cc7b39033a8735287b7aad90d77296",
+    "a4241738b5f6eba6c19927873cb445ab3ccddcea2efa4124dbe5245bfefa4c07"
+  ],
+  "completed_rta_count": 4,
+  "completed_simulation_count": 2,
+  "completed_simulation_ids": [
+    "054fb83a9dd74eec37da11e42b8c8674d965dc7c2fe8ce0f8355741a0f5fcbb4",
+    "2732d845f3ffcaec9511999fdc5357f9f42694a8b6e2f6f5774b1aebed721f38"
+  ],
+  "config_hash": "76ae98c2a822d19ce6a262ba1262b042b7e0f15e63cae0124f2f7dbec0f80d11",
+  "requested_rta_count": 4,
+  "requested_simulation_count": 2,
+  "stop_requested": false,
+  "updated_at_utc": "2026-07-13T16:32:56.419723Z"
+}

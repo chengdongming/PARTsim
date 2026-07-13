@@ -1,0 +1,77 @@
+{
+  "empirical_only": true,
+  "p0": 0,
+  "p1": 0,
+  "p2": 0,
+  "rta_completed": 0,
+  "rta_requested": 4,
+  "rta_terminal": 4,
+  "rta_timeout": 0,
+  "schema": "ASAP_BLOCK_V9_3_CORE3_SUMMARY_V1",
+  "simulation_horizon_insufficient": 0,
+  "simulation_observed_pass": 2,
+  "simulation_requested": 2,
+  "simulation_terminal": 2,
+  "soundness_counts": {
+    "RTA_FAIL_SIM_PASS": 4
+  },
+  "soundness_evaluable_denominator": 4,
+  "soundness_matrix_rows": 4,
+  "soundness_violation_candidate": false,
+  "stopped": false,
+  "tightness": {
+    "loc_gap_eq_cw": 12,
+    "loc_gap_gt_cw": 0,
+    "loc_gap_lt_cw": 0,
+    "loc_vs_cw_common_task_count": 12,
+    "methods": {
+      "CW_THETA_CW": {
+        "absolute_gap": {
+          "max": 8.0,
+          "mean": 1.5,
+          "median": 0.0,
+          "p95": 8.0
+        },
+        "exact_equality_count": 8,
+        "normalized_gap": {
+          "max": 2.6666666666666665,
+          "mean": 0.3048941798941799,
+          "median": 0.0,
+          "p95": 2.6666666666666665
+        },
+        "ratio": {
+          "max": 3.6666666666666665,
+          "mean": 1.30489417989418,
+          "median": 1.0,
+          "p95": 3.6666666666666665
+        },
+        "task_count": 12,
+        "taskset_count": 2
+      },
+      "LOC_THETA_LOC": {
+        "absolute_gap": {
+          "max": 8.0,
+          "mean": 1.5,
+          "median": 0.0,
+          "p95": 8.0
+        },
+        "exact_equality_count": 8,
+        "normalized_gap": {
+          "max": 2.6666666666666665,
+          "mean": 0.3048941798941799,
+          "median": 0.0,
+          "p95": 2.6666666666666665
+        },
+        "ratio": {
+          "max": 3.6666666666666665,
+          "mean": 1.30489417989418,
+          "median": 1.0,
+          "p95": 3.6666666666666665
+        },
+        "task_count": 12,
+        "taskset_count": 2
+      }
+    }
+  },
+  "tightness_common_task_denominator": 24
+}
