@@ -1,0 +1,9 @@
+{
+  "files": {
+    "dominance_checks.csv": true,
+    "generated_tasksets.csv": true,
+    "per_task_results.csv": true,
+    "per_taskset_results.csv": true
+  },
+  "match": true
+}
