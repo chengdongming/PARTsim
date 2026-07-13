@@ -45,7 +45,7 @@ def test_independent_oracles_match_small_exact_boundary_cases():
 
 
 def test_raw_schemas_have_stable_primary_keys_and_identity_fields():
-    assert len(RAW_TABLES) == 17
+    assert len(RAW_TABLES) == 27
     for name in RAW_TABLES:
         schema = TABLE_SCHEMAS[name]
         assert schema["primary_key"]
@@ -68,11 +68,11 @@ def test_build_identity_relevant_source_set_exists():
     assert all((ROOT / name).is_file() for name in SOURCE_FILES)
 
 
-def test_all_twelve_source_mutations_hit_and_are_semantically_detected():
-    assert len(SOURCE_MUTATIONS) == 12
+def test_all_ten_source_mutations_hit_and_are_semantically_detected():
+    assert len(SOURCE_MUTATIONS) == 10
     rows = [run_source_mutation(spec, "a" * 64) for spec in SOURCE_MUTATIONS]
     assert all(row["mutation_applied"] == "true" for row in rows)
-    assert all(row["test_exit_code"] != "0" for row in rows)
+    assert all(row["exit_code"] != "0" for row in rows)
     assert all(row["failure_matches_target"] == "true" for row in rows)
-    assert all(row["restored_file_hash"] == row["original_file_hash"] for row in rows)
+    assert all(row["restored_source_hash"] == row["original_source_hash"] for row in rows)
     assert all(row["detected"] == "true" for row in rows)

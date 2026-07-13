@@ -13,7 +13,57 @@ import zipfile
 from pathlib import Path
 
 
-VERSION = "CORE0A-PACKAGE-1.0"
+VERSION = "CORE0A-PACKAGE-REBUILD2-2.0"
+PLACEHOLDERS = ("CONTAINING_COMMIT_B", "CURRENT_COMMIT", "TODO", "PLACEHOLDER", "UNKNOWN")
+DETERMINISM_FIELDS = (
+    "N_environments", "N_repetitions", "N_files_compared",
+    "N_raw_files_compared", "N_raw_differences", "N_gate_differences",
+    "N_manifest_differences", "N_zip_differences",
+    "excluded_execution_only_fields",
+)
+
+
+def validate_rebuild2_metadata(root: Path, authoritative_pointer: Path | None):
+    errors = []
+    try:
+        raw = json.loads((root / "raw_evidence_manifest.json").read_text(encoding="utf-8"))
+        superseded = {(x["commit"], x["zip_sha256"], x["status"]) for x in raw["superseded_core0a_evidence"]}
+        required = {
+            ("dcb55f6a22f4d772a74f94ac7799b79cf5da8541", "d56c2f671b8ea201e6e53a4199cba333f3dcc6eb1e09ff06a1bfa8b76db8dd50", "INVALIDATED"),
+            ("01f582b094f376a8e00640e22d0d2f25506d0e35", "a51ceee47c9f0e32a80a23f4c419af1271d35b29522d91b6630812bb362a2995", "INVALIDATED"),
+        }
+        if superseded != required or raw.get("pilot_authorized") is not False:
+            errors.append("invalidated evidence list/pilot authorization mismatch")
+    except Exception as exc:
+        errors.append("raw invalidation metadata invalid: {}".format(exc))
+    try:
+        report = json.loads((root / "determinism_report.json").read_text(encoding="utf-8"))
+        missing = [field for field in DETERMINISM_FIELDS if field not in report]
+        if missing:
+            errors.append("determinism N_* fields missing: {}".format(missing))
+        for field in DETERMINISM_FIELDS[:-1]:
+            if isinstance(report.get(field), bool) or not isinstance(report.get(field), int) or report[field] < 0:
+                errors.append("determinism field is not a nonnegative measured count: {}".format(field))
+        if not isinstance(report.get("excluded_execution_only_fields"), list):
+            errors.append("excluded execution-only fields must be a list")
+    except Exception as exc:
+        errors.append("determinism report invalid: {}".format(exc))
+    if authoritative_pointer is not None:
+        try:
+            pointer = json.loads(authoritative_pointer.read_text(encoding="utf-8"))
+            required_fields = {"implementation_commit", "evidence_commit", "zip_filename", "zip_sha256", "runtime_manifest_sha256", "raw_manifest_sha256", "status", "generated_from_identity"}
+            if not required_fields <= set(pointer):
+                errors.append("authoritative pointer fields missing")
+            serialized = json.dumps(pointer, sort_keys=True)
+            if any(token in serialized for token in PLACEHOLDERS):
+                errors.append("authoritative pointer contains placeholder")
+            for field in ("implementation_commit", "evidence_commit"):
+                value = pointer.get(field, "")
+                if len(value) != 40 or any(char not in "0123456789abcdef" for char in value):
+                    errors.append("authoritative pointer has invalid {}".format(field))
+        except Exception as exc:
+            errors.append("authoritative pointer invalid: {}".format(exc))
+    return errors
 
 
 def sha256(path: Path) -> str:
@@ -43,7 +93,7 @@ def run(command, cwd: Path):
     }
 
 
-def validate(root: Path, zip_path: Path | None):
+def validate(root: Path, zip_path: Path | None, authoritative_pointer: Path | None = None):
     root = root.resolve()
     errors = []
     commands = {}
@@ -54,6 +104,7 @@ def validate(root: Path, zip_path: Path | None):
     )
     if nonregular:
         errors.append("non-regular package entries: {}".format(nonregular))
+    errors.extend(validate_rebuild2_metadata(root, authoritative_pointer))
     try:
         manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
         declared = set(manifest["files"]) | {"manifest.json", "sha256sum.txt"}
@@ -70,7 +121,7 @@ def validate(root: Path, zip_path: Path | None):
     acceptance_validator = (
         root / "ASAP_BLOCK_acceptance_report_validator_v1_3_12.py"
     ).resolve()
-    aggregator = (root / "core0a_v9_3_independent_aggregator.py").resolve()
+    aggregator = (root / "core0a_v9_3_second_rebuild_verifier.py").resolve()
     commands["full_result_validator"] = run(
         [sys.executable, "-B", result_validator, root, "--profile", "CORE0A"], root
     )
@@ -151,9 +202,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("root", type=Path)
     parser.add_argument("--zip", dest="zip_path", type=Path)
+    parser.add_argument("--authoritative-pointer", type=Path)
     args = parser.parse_args()
     try:
-        result = validate(args.root, args.zip_path)
+        result = validate(args.root, args.zip_path, args.authoritative_pointer)
     except Exception as exc:
         result = {"status": "FAILED", "validator_version": VERSION, "errors": [str(exc)]}
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))

@@ -29,6 +29,8 @@ SOURCE_FILES = (
     "core0a_v9_3_evidence.py",
     "core0a_v9_3_evidence_schema.py",
     "core0a_v9_3_independent_aggregator.py",
+    "core0a_v9_3_second_rebuild_verifier.py",
+    "core0a_v9_3_package_validator.py",
     "core0a_v9_3_oracles.py",
     "core0a_v9_3_scheduler_model.py",
     "scripts/core0a_v9_3_mutation_harness.py",

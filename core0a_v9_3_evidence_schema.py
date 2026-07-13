@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-SCHEMA_VERSION = "CORE0A-RAW-2.0"
+SCHEMA_VERSION = "CORE0A-RAW-3.0"
 
 
 def _schema(primary_key, fields):
@@ -27,21 +27,61 @@ TABLE_SCHEMAS = {
         ["case_id", "kind"],
         ["case_id", "kind", "input_hash", "build_identity_hash", "domain", "target_json", "hp_json", "lp_json", "theta_json", "w", "q", "h", "M", "production_value", "oracle_value", "match"],
     ),
+    "search_closure_specifications.csv": _schema(
+        ["specification_id"],
+        ["specification_id", "input_hash", "build_identity_hash", "case_kind", "variant", "task_json", "hp_json", "lp_json", "theta_json", "M", "E0", "w_domain_json", "A_lookup_json", "closure_point_json", "expected_result_status", "canonical_specification_hash"],
+    ),
+    "search_closure_lookup.csv": _schema(
+        ["specification_id", "w", "h", "q"],
+        ["specification_id", "w", "h", "q", "input_hash", "build_identity_hash", "envelope_value", "service_value", "expected_predicate"],
+    ),
     "search_trace_events.csv": _schema(
-        ["task_case_id", "sequence_number"],
-        ["task_case_id", "sequence_number", "input_hash", "build_identity_hash", "variant", "task_json", "hp_json", "lp_json", "theta_json", "M", "E0", "service_curve_json", "result_status", "w", "A", "h", "q", "event_type", "envelope_value", "service_value", "service_index", "coverage_index", "q_result", "h_result", "w_result"],
+        ["specification_id", "sequence_number"],
+        ["specification_id", "sequence_number", "input_hash", "build_identity_hash", "event_type", "w", "A", "h", "q", "envelope_value", "service_value", "service_index", "coverage_index", "q_result", "h_result", "w_result", "result_status"],
     ),
     "service_curve_cases.csv": _schema(
         ["curve_case_id"],
         ["curve_case_id", "input_hash", "build_identity_hash", "curve_kind", "curve_spec", "required_horizon", "expected_valid", "production_accepted", "validation_status", "analysis_attempted", "candidate_returned", "certification_returned", "match"],
     ),
-    "scheduler_event_order_traces.csv": _schema(
-        ["microcase_id", "tick", "assertion_id"],
-        ["microcase_id", "tick", "assertion_id", "input_hash", "build_identity_hash", "initial_tasks_json", "initial_energy", "boundary_events_json", "completion_events_json", "harvest_credit", "release_events_json", "boundary_energy", "eligible_hol_json", "scan_order_json", "execution_set_json", "energy_consumed", "post_tick_energy", "expected_event", "actual_event", "assertion_passed"],
+    "scheduler_event_order_cases.csv": _schema(
+        ["microcase_id"],
+        ["microcase_id", "input_hash", "build_identity_hash", "initial_tasks_json", "initial_energy", "service_curve_json", "M", "event_order_specification_id"],
     ),
-    "joint_certification_cases.csv": _schema(
-        ["state_case_id"],
-        ["state_case_id", "input_hash", "build_identity_hash", "case_kind", "variant", "expected_solver_status", "actual_solver_status", "expected_certification_status", "actual_certification_status", "expected_taskset_proven", "actual_taskset_proven", "production_api_used", "passed"],
+    "scheduler_event_order_ticks.csv": _schema(
+        ["microcase_id", "tick"],
+        ["microcase_id", "tick", "input_hash", "build_identity_hash", "energy_before", "completed_jobs_json", "harvested_energy_committed", "released_jobs_json", "ready_hol_order_json", "eligible_jobs_json", "scheduler_scan_order_json", "selected_jobs_json", "consumed_energy", "energy_after", "job_remaining_before_json", "job_remaining_after_json", "processor_blocked_jobs_json", "energy_blocked_jobs_json"],
+    ),
+    "scheduler_event_order_assertions.csv": _schema(
+        ["microcase_id", "tick", "assertion_id"],
+        ["microcase_id", "tick", "assertion_id", "input_hash", "build_identity_hash", "expected_event", "actual_event", "assertion_passed"],
+    ),
+    "joint_certification_cases.jsonl": _schema(
+        ["case_id"],
+        ["case_id", "input_hash", "build_identity_hash", "case_kind", "analysis_variant", "priority_order_json", "source_analysis_id", "dependency_context_json", "production_api_used", "reported_passed"],
+    ),
+    "joint_certification_task_inputs.csv": _schema(
+        ["case_id", "task_id"],
+        ["case_id", "task_id", "input_hash", "build_identity_hash", "priority_rank", "C", "D", "T", "P", "fixed_carry_in", "source_candidate"],
+    ),
+    "joint_certification_solver_script.csv": _schema(
+        ["case_id", "call_sequence"],
+        ["case_id", "call_sequence", "input_hash", "build_identity_hash", "task_id", "solver_outcome", "candidate", "expected_called"],
+    ),
+    "joint_certification_actual_tasks.csv": _schema(
+        ["case_id", "task_id"],
+        ["case_id", "task_id", "input_hash", "build_identity_hash", "solver_status", "certification_status", "candidate", "failure_reason", "evaluation_order"],
+    ),
+    "joint_certification_expected_tasks.csv": _schema(
+        ["case_id", "task_id"],
+        ["case_id", "task_id", "input_hash", "build_identity_hash", "solver_status", "certification_status", "candidate", "failure_reason", "evaluation_order"],
+    ),
+    "joint_certification_assertions.csv": _schema(
+        ["case_id", "assertion_id"],
+        ["case_id", "assertion_id", "input_hash", "build_identity_hash", "expected", "actual", "producer_passed"],
+    ),
+    "joint_certification_results.csv": _schema(
+        ["case_id"],
+        ["case_id", "input_hash", "build_identity_hash", "expected_solver_status", "actual_solver_status", "expected_certification_status", "actual_certification_status", "expected_taskset_proven", "actual_taskset_proven", "pre_finalizer_status", "post_finalizer_status", "source_hash_before", "source_hash_after"],
     ),
     "dominance_tasksets.csv": _schema(
         ["taskset_hash"],
@@ -73,13 +113,24 @@ TABLE_SCHEMAS = {
     ),
     "mutation_runs.csv": _schema(
         ["mutation_id"],
-        ["mutation_id", "input_hash", "build_identity_hash", "target_file", "target_symbol", "original_file_hash", "mutated_file_hash", "mutation_applied", "expected_test", "test_exit_code", "failure_matches_target", "restored_file_hash", "detected"],
+        ["mutation_id", "input_hash", "build_identity_hash", "target_file", "target_symbol", "argv_json", "cwd_policy", "environment_overrides_json", "stdout_member_path", "stderr_member_path", "stdout_sha256", "stderr_sha256", "exit_code", "expected_failing_assertion_id", "observed_failing_assertion_id", "failure_matches_target", "syntax_import_failure", "original_source_hash", "mutated_source_hash", "restored_source_hash", "mutation_applied", "detected"],
     ),
     "lineage_checks.csv": _schema(
         ["check_id"],
-        ["check_id", "input_hash", "build_identity_hash", "check_type", "source_file", "source_key", "target_file", "target_key", "expected", "actual", "passed"],
+        ["check_id", "input_hash", "build_identity_hash", "check_type", "source_table", "source_row_id", "target_table", "target_row_id", "expected", "actual", "violation", "evidence_hash"],
     ),
 }
 
 
 RAW_TABLES = tuple(TABLE_SCHEMAS)
+
+LINEAGE_REQUIRED_CHECK_TYPES = (
+    "PRIMARY_KEY_UNIQUE", "FOREIGN_KEY_VALID", "INPUT_HASH_MATCH",
+    "BUILD_HASH_MATCH", "THEORY_HASH_MATCH", "CONTRACT_HASH_MATCH",
+    "REQUEST_ACCOUNTED", "EXECUTION_STATE_VALID", "SEMANTIC_STATUS_VALID",
+    "GENERATION_FAILURE_PROPAGATION", "DEPENDENCY_SOURCE_VALID",
+    "DEPENDENCY_VECTOR_HASH_MATCH", "DEPENDENCY_DAG_EDGE_VALID",
+    "DEPENDENCY_DAG_ACYCLIC", "TASKSET_PROVEN_CONSISTENT",
+    "TASK_CERTIFICATION_CONSISTENT", "FAILURE_PROVENANCE_CONSISTENT",
+    "CANONICAL_COLUMN_ORDER",
+)

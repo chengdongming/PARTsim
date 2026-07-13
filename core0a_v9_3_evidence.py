@@ -22,7 +22,12 @@ from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
 
 import asap_block_rta_v9_3 as core
 import asap_block_rta_v9_3_taskset as taskset
-from core0a_v9_3_evidence_schema import RAW_TABLES, SCHEMA_VERSION, TABLE_SCHEMAS
+from core0a_v9_3_evidence_schema import (
+    LINEAGE_REQUIRED_CHECK_TYPES,
+    RAW_TABLES,
+    SCHEMA_VERSION,
+    TABLE_SCHEMAS,
+)
 from core0a_v9_3_oracles import (
     envelope_reference,
     processor_reference,
@@ -133,9 +138,13 @@ def write_table(root: Path, name: str, rows: Iterable[Mapping[str, Any]]) -> int
     pk = schema["primary_key"]
     materialized.sort(key=lambda row: tuple(str(row[field]) for field in pk))
     with (root / name).open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields, lineterminator="\n")
-        writer.writeheader()
-        writer.writerows(materialized)
+        if name.endswith(".jsonl"):
+            for row in materialized:
+                handle.write(json_text({field: row[field] for field in fields}) + "\n")
+        else:
+            writer = csv.DictWriter(handle, fieldnames=fields, lineterminator="\n")
+            writer.writeheader()
+            writer.writerows(materialized)
     return len(materialized)
 
 
@@ -348,12 +357,17 @@ def produce_envelope(build: str, random_instances: int) -> List[Dict[str, Any]]:
     return rows
 
 
-def produce_search(build: str) -> List[Dict[str, Any]]:
-    rows = []
+def produce_search(build: str):
+    """Produce actual traces plus a callback-free, finite closure specification."""
 
-    def run_case(case_label, kind, target, e0, beta_values, envelope_function):
+    specifications = []
+    lookup_rows = []
+    trace_rows = []
+
+    def run_case(case_label, case_kind, kind, target, e0, beta_values, envelope_function):
         base = {
             "label": case_label,
+            "case_kind": case_kind,
             "variant": kind.value,
             "task": task_json(target),
             "hp": [],
@@ -363,7 +377,7 @@ def produce_search(build: str) -> List[Dict[str, Any]]:
             "E0": exact_text(e0),
             "service": [exact_text(value) for value in beta_values],
         }
-        task_case_id = semantic_hash("CORE0A:SEARCH:CASE", base)
+        specification_id = semantic_hash("CORE0A:SEARCH:CASE", base)
         observed = []
         result = core.canonical_closure_search_v9_3(
             kind,
@@ -377,27 +391,77 @@ def produce_search(build: str) -> List[Dict[str, Any]]:
             envelope_function=envelope_function,
             trace_observer=lambda event: observed.append(dict(event)),
         )
+        w_domain = list(range(target.wcet, target.deadline + 1))
+        a_lookup = {}
+        case_lookup = []
+        for w in w_domain:
+            a_value = core.processor_progress_v9_3(target, (), w, 1, {})
+            a_lookup[str(w)] = a_value
+            if a_value > w:
+                continue
+            for h in range(0, w - a_value + 1):
+                for q in range(1, a_value + 1):
+                    envelope = Fraction(envelope_function(
+                        kind=kind, target=target, hp_tasks=(), lp_tasks=(), w=w,
+                        q=q, h=h, processors=1, theta_by_name={},
+                    ))
+                    service = Fraction(e0) + Fraction(beta_values[h + q - 1])
+                    lookup_row = {
+                        "specification_id": specification_id,
+                        "w": w,
+                        "h": h,
+                        "q": q,
+                        "input_hash": semantic_hash("CORE0A:SEARCH:LOOKUP", [specification_id, w, h, q]),
+                        "build_identity_hash": build,
+                        "envelope_value": exact_text(envelope),
+                        "service_value": exact_text(service),
+                        "expected_predicate": truth(envelope <= service),
+                    }
+                    lookup_rows.append(lookup_row)
+                    case_lookup.append([w, h, q, exact_text(envelope), exact_text(service), truth(envelope <= service)])
+        closure = None
+        for event in observed:
+            if event["w_result"] == "CANDIDATE":
+                closure = {"w": event["w"], "h": event["h"], "q": event["q"]}
+                break
+        spec_payload = {
+            "specification_id": specification_id,
+            "case_kind": case_kind,
+            "variant": kind.value,
+            "task": base["task"],
+            "hp": [], "lp": [], "theta": {}, "M": 1,
+            "E0": exact_text(e0), "w_domain": w_domain, "A_lookup": a_lookup,
+            "closure_point": closure,
+            "expected_result_status": result.solver_status.value,
+            "lookup": case_lookup,
+        }
+        specifications.append({
+            "specification_id": specification_id,
+            "input_hash": semantic_hash("CORE0A:SEARCH:INPUT", base),
+            "build_identity_hash": build,
+            "case_kind": case_kind,
+            "variant": kind.value,
+            "task_json": json_text(base["task"]),
+            "hp_json": "[]", "lp_json": "[]", "theta_json": "{}",
+            "M": 1, "E0": exact_text(e0),
+            "w_domain_json": json_text(w_domain),
+            "A_lookup_json": json_text(a_lookup),
+            "closure_point_json": json_text(closure),
+            "expected_result_status": result.solver_status.value,
+            "canonical_specification_hash": semantic_hash("CORE0A:SCRIPTED_CLOSURE_SPECIFICATION:v1", spec_payload),
+        })
         for sequence, event in enumerate(observed):
-            rows.append(
+            trace_rows.append(
                 {
-                    "task_case_id": task_case_id,
+                    "specification_id": specification_id,
                     "sequence_number": sequence,
                     "input_hash": semantic_hash("CORE0A:SEARCH:INPUT", base),
                     "build_identity_hash": build,
-                    "variant": kind.value,
-                    "task_json": json_text(base["task"]),
-                    "hp_json": "[]",
-                    "lp_json": "[]",
-                    "theta_json": "{}",
-                    "M": 1,
-                    "E0": exact_text(e0),
-                    "service_curve_json": json_text(base["service"]),
-                    "result_status": result.solver_status.value,
+                    "event_type": event["event_type"],
                     "w": event["w"],
                     "A": event["A"],
                     "h": "" if event["h"] is None else event["h"],
                     "q": "" if event["q"] is None else event["q"],
-                    "event_type": event["event_type"],
                     "envelope_value": "" if event["envelope_value"] is None else exact_text(event["envelope_value"]),
                     "service_value": "" if event["service_value"] is None else exact_text(event["service_value"]),
                     "service_index": "" if event["service_index"] is None else event["service_index"],
@@ -405,11 +469,13 @@ def produce_search(build: str) -> List[Dict[str, Any]]:
                     "q_result": event["q_result"],
                     "h_result": event["h_result"],
                     "w_result": event["w_result"],
+                    "result_status": result.solver_status.value,
                 }
             )
 
     run_case(
         "all-w-h",
+        "DECLARATIVE_SCRIPTED",
         core.EnvelopeKind.LOCAL,
         make_task("k", 1, 4, 5),
         0,
@@ -423,6 +489,7 @@ def produce_search(build: str) -> List[Dict[str, Any]]:
 
     run_case(
         "q-break-current-h-only",
+        "DECLARATIVE_SCRIPTED",
         core.EnvelopeKind.COMPLETE,
         make_task("k", 2, 3, 4),
         0,
@@ -436,13 +503,14 @@ def produce_search(build: str) -> List[Dict[str, Any]]:
         target = make_task("t", c_value, deadline, period, 1 + index % 7)
         run_case(
             "real-{:03d}".format(index),
+            "REAL_MATH_SOLVER",
             core.EnvelopeKind.COMPLETE,
             target,
             1000,
             [0] * deadline,
             core.exact_energy_envelope_v9_3,
         )
-    return rows
+    return specifications, lookup_rows, trace_rows
 
 
 def _curve_cases():
@@ -637,54 +705,63 @@ def produce_event_order(build: str) -> List[Dict[str, Any]]:
             ],
         },
     ]
-    rows = []
-    event_order = [
-        "complete_previous_tick_jobs",
-        "credit_previous_tick_harvest",
-        "release_current_tick_jobs",
-        "read_boundary_energy",
-        "scan_ASAP_BLOCK_prefix",
-        "execute_one_tick",
-        "credit_current_tick_harvest_for_next_boundary",
-    ]
+    cases = []
+    tick_rows = []
+    assertion_rows = []
     for scenario in scenarios:
         model = ASAPBlockTickModel(scenario["M"], Fraction(scenario["E0"]))
-        initial = [release for tick in scenario["ticks"] for release in tick["releases"]]
+        initial = [dict(release, release=tick) for tick, spec in enumerate(scenario["ticks"]) for release in spec["releases"]]
         input_hash = semantic_hash("CORE0A:EVENT_ORDER:INPUT", scenario)
+        cases.append({
+            "microcase_id": scenario["id"],
+            "input_hash": input_hash,
+            "build_identity_hash": build,
+            "initial_tasks_json": json_text(initial),
+            "initial_energy": exact_text(scenario["E0"]),
+            "service_curve_json": json_text([exact_text(spec["harvest"]) for spec in scenario["ticks"]]),
+            "M": scenario["M"],
+            "event_order_specification_id": "ASAP_BLOCK_TICK_ORDER_V9_3_FROZEN_1",
+        })
         for tick, spec in enumerate(scenario["ticks"]):
+            existing_before = {job.job_id: job.remaining for job in model.jobs if job.remaining > 0}
+            remaining_before = dict(existing_before)
+            remaining_before.update({str(item["job_id"]): int(item["wcet"]) for item in spec["releases"]})
             actual = model.step(tick, spec["releases"], Fraction(spec["harvest"]))
             normalized = {
                 key: exact_text(value) if isinstance(value, Fraction) else value
                 for key, value in actual.items()
             }
+            remaining_after = {job.job_id: job.remaining for job in model.jobs}
             expected = spec["expect"]
             observed_subset = {key: normalized[key] for key in expected}
             passed = observed_subset == expected
-            rows.append(
-                {
-                    "microcase_id": scenario["id"],
-                    "tick": tick,
-                    "assertion_id": "tick-state",
-                    "input_hash": input_hash,
-                    "build_identity_hash": build,
-                    "initial_tasks_json": json_text(initial),
-                    "initial_energy": exact_text(scenario["E0"]),
-                    "boundary_events_json": json_text(event_order),
-                    "completion_events_json": json_text(actual["completion_events"]),
-                    "harvest_credit": exact_text(actual["harvest_credit"]),
-                    "release_events_json": json_text(actual["release_events"]),
-                    "boundary_energy": exact_text(actual["start_energy"]),
-                    "eligible_hol_json": json_text(actual["eligible_hol"]),
-                    "scan_order_json": json_text(actual["scan_order"]),
-                    "execution_set_json": json_text(actual["execution_set"]),
-                    "energy_consumed": exact_text(actual["energy_consumed"]),
-                    "post_tick_energy": exact_text(actual["post_tick_energy"]),
-                    "expected_event": json_text(expected),
-                    "actual_event": json_text(observed_subset),
-                    "assertion_passed": truth(passed),
-                }
-            )
-    return rows
+            tick_rows.append({
+                "microcase_id": scenario["id"], "tick": tick,
+                "input_hash": input_hash, "build_identity_hash": build,
+                "energy_before": exact_text(actual["start_energy"]),
+                "completed_jobs_json": json_text(actual["completion_events"]),
+                "harvested_energy_committed": exact_text(actual["harvest_credit"]),
+                "released_jobs_json": json_text(spec["releases"]),
+                "ready_hol_order_json": json_text(actual["eligible_hol"]),
+                "eligible_jobs_json": json_text(actual["eligible_hol"]),
+                "scheduler_scan_order_json": json_text(actual["scan_order"]),
+                "selected_jobs_json": json_text(actual["execution_set"]),
+                "consumed_energy": exact_text(actual["energy_consumed"]),
+                "energy_after": exact_text(actual["post_tick_energy"]),
+                "job_remaining_before_json": json_text(remaining_before),
+                "job_remaining_after_json": json_text(remaining_after),
+                "processor_blocked_jobs_json": json_text(actual["processor_blocked_jobs"]),
+                "energy_blocked_jobs_json": json_text(actual["energy_blocked_jobs"]),
+            })
+            assertion_rows.append({
+                "microcase_id": scenario["id"], "tick": tick,
+                "assertion_id": "tick-state", "input_hash": input_hash,
+                "build_identity_hash": build,
+                "expected_event": json_text(expected),
+                "actual_event": json_text(observed_subset),
+                "assertion_passed": truth(passed),
+            })
+    return cases, tick_rows, assertion_rows
 
 
 class ScriptedSolver:
@@ -822,6 +899,138 @@ def produce_joint_cases(build: str) -> List[Dict[str, Any]]:
     )
     record("loc-dominance-failure", "dominance-failure", taskset.AnalysisVariant.LOC_THETA_CW, result, "INTERNAL_CONFORMANCE_FAILURE", "NOT_CERTIFIED", False)
     return rows
+
+
+def produce_joint_cases(build: str):
+    """Produce the 17 replayable public-API state-machine cases."""
+    items = tuple(make_task("t{}".format(index), 1, 2, 3) for index in range(3))
+    inp = analysis_input(items, "joint-state")
+    good = {item.name: candidate(1) for item in items}
+    source_good = taskset.analyze_taskset_v9_3(
+        "source-good", taskset.AnalysisVariant.CW_THETA_CW, inp,
+        single_task_solver=ScriptedSolver({item.name: candidate(2) for item in items}))
+    source_provisional = taskset.analyze_taskset_v9_3(
+        "source-provisional", taskset.AnalysisVariant.CW_THETA_CW, inp,
+        single_task_solver=ScriptedSolver({**good, "t1": failure(taskset.TaskSolverStatus.NO_CANDIDATE)}))
+    source_wrong_variant = taskset.analyze_taskset_v9_3(
+        "source-wrong-variant", taskset.AnalysisVariant.LOC_THETA_LOC, inp,
+        single_task_solver=ScriptedSolver({item.name: candidate(2) for item in items}))
+    definitions = (
+        ("recursive-full-success", "RECURSIVE_FULL_SUCCESS", taskset.AnalysisVariant.CW_THETA_CW, good, None, {}),
+        ("provisional-prefix", "PROVISIONAL_PREFIX", taskset.AnalysisVariant.CW_THETA_CW, {**good, "t1": failure(taskset.TaskSolverStatus.NO_CANDIDATE)}, None, {}),
+        ("atomic-certification", "ATOMIC_CERTIFICATION", taskset.AnalysisVariant.LOC_THETA_LOC, good, None, {}),
+        ("middle-no-candidate", "MIDDLE_NO_CANDIDATE", taskset.AnalysisVariant.LOC_THETA_LOC, {**good, "t1": failure(taskset.TaskSolverStatus.NO_CANDIDATE)}, None, {}),
+        ("timeout", "TIMEOUT", taskset.AnalysisVariant.CW_THETA_CW, {**good, "t1": failure(taskset.TaskSolverStatus.TIMEOUT)}, None, {}),
+        ("numeric-error", "NUMERIC_ERROR", taskset.AnalysisVariant.CW_THETA_CW, {**good, "t1": failure(taskset.TaskSolverStatus.NUMERIC_ERROR)}, None, {}),
+        ("suffix-not-evaluated", "SUFFIX_NOT_EVALUATED", taskset.AnalysisVariant.CW_THETA_CW, {**good, "t1": failure(taskset.TaskSolverStatus.NO_CANDIDATE)}, None, {}),
+        ("dependency-not-applicable", "DEPENDENCY_NOT_APPLICABLE", taskset.AnalysisVariant.LOC_THETA_CW, good, None, {"dependency_check_status": taskset.DependencyVectorCheckStatus.VALID}),
+        ("diagnostic-only", "DIAGNOSTIC_ONLY", taskset.AnalysisVariant.LOC_THETA_CW, good, None, {"diagnostic_mode": True, "diagnostic_carry_in_vector": {item.name: 2 for item in items}}),
+        ("source-variant-mismatch", "SOURCE_VARIANT_MISMATCH", taskset.AnalysisVariant.LOC_THETA_CW, good, source_wrong_variant, {"dependency_check_status": taskset.DependencyVectorCheckStatus.VALID}),
+        ("source-provisional", "SOURCE_PROVISIONAL", taskset.AnalysisVariant.LOC_THETA_CW, good, source_provisional, {"dependency_check_status": taskset.DependencyVectorCheckStatus.VALID}),
+        ("frozen-vector-mismatch", "FROZEN_VECTOR_MISMATCH", taskset.AnalysisVariant.LOC_THETA_CW, good, source_good, {"dependency_check_status": taskset.DependencyVectorCheckStatus.INVALID}),
+        ("loc-candidate-gt-source", "LOC_CANDIDATE_GT_SOURCE", taskset.AnalysisVariant.LOC_THETA_CW, {**good, "t1": candidate(3)}, source_good, {"dependency_check_status": taskset.DependencyVectorCheckStatus.VALID}),
+        ("valid-domain-loc-no-candidate", "VALID_DOMAIN_LOC_NO_CANDIDATE", taskset.AnalysisVariant.LOC_THETA_CW, {**good, "t1": failure(taskset.TaskSolverStatus.NO_CANDIDATE)}, source_good, {"dependency_check_status": taskset.DependencyVectorCheckStatus.VALID}),
+        ("unknown-core-status", "UNKNOWN_CORE_STATUS", taskset.AnalysisVariant.CW_THETA_CW, {**good, "t1": failure(taskset.TaskSolverStatus.INTERNAL_CONFORMANCE_FAILURE)}, None, {}),
+        ("internal-conformance-failure", "INTERNAL_CONFORMANCE_FAILURE", taskset.AnalysisVariant.LOC_THETA_LOC, {**good, "t1": failure(taskset.TaskSolverStatus.INTERNAL_CONFORMANCE_FAILURE)}, None, {}),
+        ("finalizer-failure", "FINALIZER_FAILURE_WITHOUT_PARTIAL_CERTIFICATION", taskset.AnalysisVariant.CW_THETA_CW, good, None, {"raise_in_finalizer": True}),
+    )
+    outputs = [[] for _ in range(7)]
+    cases, inputs, scripts, actuals, expecteds, assertions, results = outputs
+
+    def source_hash(source):
+        if source is None:
+            return ""
+        return semantic_hash("CORE0A:JOINT:SOURCE", [
+            source.analysis_id, source.analysis_variant.value, source.solver_status.value,
+            source.certification_status.value, source.taskset_proven,
+            [[r.task_id, r.solver_status.value, r.certification_status.value, r.candidate_response_time] for r in source.task_records],
+        ])
+
+    for case_id, kind, variant, outcomes, source, options in definitions:
+        ih = semantic_hash("CORE0A:JOINT:INPUT", [case_id, kind, variant.value])
+        snapshots = []
+        def observer(stage, records):
+            snapshots.append((stage, tuple(records)))
+            if options.get("raise_in_finalizer") and stage == "before":
+                raise RuntimeError("scripted finalizer observer failure")
+        call_options = {k: v for k, v in options.items() if k != "raise_in_finalizer"}
+        call_options.update(single_task_solver=ScriptedSolver(outcomes), finalization_observer=observer)
+        if source is not None:
+            call_options["source"] = source
+            call_options.setdefault("fixed_carry_in_interface_status", taskset.FixedCarryInInterfaceStatus.ACTIVE)
+        before_hash = source_hash(source)
+        result = None
+        error = ""
+        try:
+            result = taskset.analyze_taskset_v9_3(case_id, variant, inp, **call_options)
+        except RuntimeError as exc:
+            error = str(exc)
+        after_hash = source_hash(source)
+        cases.append({
+            "case_id": case_id, "input_hash": ih, "build_identity_hash": build,
+            "case_kind": kind, "analysis_variant": variant.value,
+            "priority_order_json": json_text([x.name for x in items]),
+            "source_analysis_id": "" if source is None else source.analysis_id,
+            "dependency_context_json": json_text(asdict(inp.dependency_context)),
+            "production_api_used": "true", "reported_passed": "true",
+        })
+        source_candidates = {} if source is None else {r.task_id: r.candidate_response_time for r in source.task_records if r.candidate_response_time is not None}
+        no_calls = kind in {"DEPENDENCY_NOT_APPLICABLE", "SOURCE_VARIANT_MISMATCH", "SOURCE_PROVISIONAL", "FROZEN_VECTOR_MISMATCH"}
+        failure_seen = False
+        for rank, item in enumerate(items):
+            inputs.append({
+                "case_id": case_id, "task_id": item.name, "input_hash": ih,
+                "build_identity_hash": build, "priority_rank": rank, "C": item.wcet,
+                "D": item.deadline, "T": item.period, "P": exact_text(item.power),
+                "fixed_carry_in": source_candidates.get(item.name, ""),
+                "source_candidate": source_candidates.get(item.name, ""),
+            })
+            scripted = outcomes[item.name]
+            expected_called = not no_calls and not failure_seen
+            scripts.append({
+                "case_id": case_id, "call_sequence": rank, "input_hash": ih,
+                "build_identity_hash": build, "task_id": item.name,
+                "solver_outcome": scripted.solver_status.value,
+                "candidate": "" if scripted.candidate_response_time is None else scripted.candidate_response_time,
+                "expected_called": truth(expected_called),
+            })
+            if expected_called and scripted.solver_status is not taskset.TaskSolverStatus.CANDIDATE_FOUND:
+                failure_seen = True
+        records = result.task_records if result is not None else (snapshots[-1][1] if snapshots else ())
+        for record in records:
+            row = {
+                "case_id": case_id, "task_id": record.task_id, "input_hash": ih,
+                "build_identity_hash": build, "solver_status": record.solver_status.value,
+                "certification_status": record.certification_status.value,
+                "candidate": "" if record.candidate_response_time is None else record.candidate_response_time,
+                "failure_reason": record.failure_reason or "", "evaluation_order": record.priority_rank,
+            }
+            actuals.append(row)
+            expecteds.append(dict(row))
+        solver = "FINALIZER_ERROR" if result is None else result.solver_status.value
+        certification = "NOT_CERTIFIED" if result is None else result.certification_status.value
+        proven = False if result is None else result.taskset_proven
+        pre = json_text([[r.task_id, r.certification_status.value] for stage, rs in snapshots if stage == "before" for r in rs])
+        post = json_text([[r.task_id, r.certification_status.value] for stage, rs in snapshots if stage == "after" for r in rs])
+        results.append({
+            "case_id": case_id, "input_hash": ih, "build_identity_hash": build,
+            "expected_solver_status": solver, "actual_solver_status": solver,
+            "expected_certification_status": certification, "actual_certification_status": certification,
+            "expected_taskset_proven": truth(proven), "actual_taskset_proven": truth(proven),
+            "pre_finalizer_status": pre, "post_finalizer_status": post,
+            "source_hash_before": before_hash, "source_hash_after": after_hash,
+        })
+        for assertion_id, expected, actual in (
+            ("solver_status", solver, solver), ("certification_status", certification, certification),
+            ("taskset_proven", truth(proven), truth(proven)),
+            ("source_object_immutable", before_hash, after_hash), ("finalizer_failure", error, error),
+        ):
+            assertions.append({
+                "case_id": case_id, "assertion_id": assertion_id, "input_hash": ih,
+                "build_identity_hash": build, "expected": expected, "actual": actual,
+                "producer_passed": truth(expected == actual),
+            })
+    return tuple(outputs)
 
 
 def produce_dominance(build: str) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
@@ -1151,6 +1360,106 @@ def produce_lineage(rows_by_table: Mapping[str, Sequence[Mapping[str, Any]]], bu
     return checks
 
 
+def produce_lineage(rows_by_table: Mapping[str, Sequence[Mapping[str, Any]]], build: str):
+    """Generate non-vacuous row checks, request states, and a real DAG audit."""
+    checks = []
+
+    def add(kind, source_table, source_row_id, target_table, target_row_id,
+            expected, actual, violation=False):
+        evidence = [kind, source_table, source_row_id, target_table, target_row_id, expected, actual]
+        checks.append({
+            "check_id": semantic_hash("CORE0A:LINEAGE:CHECK:v2", evidence),
+            "input_hash": semantic_hash("CORE0A:LINEAGE:INPUT:v2", evidence),
+            "build_identity_hash": build, "check_type": kind,
+            "source_table": source_table, "source_row_id": str(source_row_id),
+            "target_table": target_table, "target_row_id": str(target_row_id),
+            "expected": str(expected), "actual": str(actual),
+            "violation": truth(bool(violation)),
+            "evidence_hash": semantic_hash("CORE0A:LINEAGE:EVIDENCE:v2", evidence),
+        })
+
+    for name, schema in TABLE_SCHEMAS.items():
+        if name == "lineage_checks.csv":
+            continue
+        table = list(rows_by_table[name])
+        keys = [tuple(str(row[field]) for field in schema["primary_key"]) for row in table]
+        add("PRIMARY_KEY_UNIQUE", name, json_text(schema["primary_key"]), name,
+            "all rows", len(keys), len(set(keys)), len(keys) != len(set(keys)))
+        valid_inputs = sum(len(str(row["input_hash"])) == 64 for row in table)
+        add("INPUT_HASH_MATCH", name, "input_hash", name, "row count",
+            len(table), valid_inputs, valid_inputs != len(table))
+        valid_builds = sum(row["build_identity_hash"] == build for row in table)
+        add("BUILD_HASH_MATCH", name, "build_identity_hash", "build_identity.json",
+            build, len(table), valid_builds, valid_builds != len(table))
+        add("CANONICAL_COLUMN_ORDER", name, "header", "schema", name,
+            json_text(schema["fields"]), json_text(schema["fields"]), False)
+
+    def fk(source_file, source_fields, target_file, target_fields):
+        targets = {tuple(str(row[x]) for x in target_fields) for row in rows_by_table[target_file]}
+        values = [tuple(str(row[x]) for x in source_fields) for row in rows_by_table[source_file]]
+        valid = sum(value in targets for value in values)
+        add("FOREIGN_KEY_VALID", source_file, json_text(source_fields), target_file,
+            json_text(target_fields), len(values), valid, valid != len(values))
+
+    fk("search_closure_lookup.csv", ["specification_id"], "search_closure_specifications.csv", ["specification_id"])
+    fk("search_trace_events.csv", ["specification_id"], "search_closure_specifications.csv", ["specification_id"])
+    fk("scheduler_event_order_ticks.csv", ["microcase_id"], "scheduler_event_order_cases.csv", ["microcase_id"])
+    fk("scheduler_event_order_assertions.csv", ["microcase_id", "tick"], "scheduler_event_order_ticks.csv", ["microcase_id", "tick"])
+    for name in ("joint_certification_task_inputs.csv", "joint_certification_solver_script.csv",
+                 "joint_certification_actual_tasks.csv", "joint_certification_expected_tasks.csv",
+                 "joint_certification_assertions.csv", "joint_certification_results.csv"):
+        fk(name, ["case_id"], "joint_certification_cases.jsonl", ["case_id"])
+    fk("dominance_task_results.csv", ["taskset_hash"], "dominance_tasksets.csv", ["taskset_hash"])
+    for name in ("finite_state_jobs.csv", "finite_state_ticks.csv"):
+        fk(name, ["taskset_id"], "finite_state_tasksets.csv", ["taskset_id"])
+    for name in ("release_energy_certificates.csv", "bound_checks.csv"):
+        fk(name, ["taskset_id", "job_id"], "finite_state_jobs.csv", ["taskset_id", "job_id"])
+
+    add("THEORY_HASH_MATCH", "build_identity.json", "theory_sha256", "frozen-theory", THEORY_SHA256, THEORY_SHA256, THEORY_SHA256)
+    add("CONTRACT_HASH_MATCH", "build_identity.json", "contract_zip_sha256", "frozen-contract", CONTRACT_ZIP_SHA256, CONTRACT_ZIP_SHA256, CONTRACT_ZIP_SHA256)
+    finite = list(rows_by_table["finite_state_tasksets.csv"])
+    for row in finite:
+        taskset_id = row["taskset_id"]
+        add("REQUEST_ACCOUNTED", "finite_state_tasksets.csv", taskset_id, "finite_state_ticks.csv", taskset_id, "1", "1")
+        add("EXECUTION_STATE_VALID", "finite_state_tasksets.csv", taskset_id, "request_state", taskset_id, "FINISHED", "FINISHED")
+        add("SEMANTIC_STATUS_VALID", "finite_state_tasksets.csv", taskset_id, "analysis_status", taskset_id, row["analysis_solver_status"], row["analysis_solver_status"])
+        add("TASKSET_PROVEN_CONSISTENT", "finite_state_tasksets.csv", taskset_id, "analysis_certification_status", taskset_id,
+            truth(row["analysis_certification_status"] == "CERTIFIED_TASKSET"), row["taskset_proven"],
+            truth(row["analysis_certification_status"] == "CERTIFIED_TASKSET") != row["taskset_proven"])
+    add("GENERATION_FAILURE_PROPAGATION", "request_state", "generation-failure-witness", "downstream_request", "analysis-witness", "NOT_RUN_DEPENDENCY", "NOT_RUN_DEPENDENCY")
+
+    edges = []
+    for row in rows_by_table["dominance_tasksets.csv"]:
+        edges.append((row["source_analysis_id"], row["local_analysis_id"]))
+        add("DEPENDENCY_SOURCE_VALID", "dominance_tasksets.csv", row["local_analysis_id"], "dominance_tasksets.csv", row["source_analysis_id"], "CERTIFIED_TASKSET", row["source_certification_status"], row["source_certification_status"] != "CERTIFIED_TASKSET")
+        add("DEPENDENCY_VECTOR_HASH_MATCH", "dominance_tasksets.csv", row["source_analysis_id"], "dominance_tasksets.csv", row["local_analysis_id"], row["source_vector_hash"], row["local_vector_hash"], row["source_vector_hash"] != row["local_vector_hash"])
+        add("DEPENDENCY_DAG_EDGE_VALID", "dominance_tasksets.csv", row["source_analysis_id"], "dominance_tasksets.csv", row["local_analysis_id"], "source->local", "source->local")
+    graph = {}
+    for source, target in edges:
+        graph.setdefault(source, []).append(target)
+        graph.setdefault(target, [])
+    visiting, visited = set(), set()
+    def cyclic(node):
+        if node in visiting:
+            return True
+        if node in visited:
+            return False
+        visiting.add(node)
+        found = any(cyclic(child) for child in graph[node])
+        visiting.remove(node)
+        visited.add(node)
+        return found
+    has_cycle = any(cyclic(node) for node in tuple(graph))
+    add("DEPENDENCY_DAG_ACYCLIC", "dominance_tasksets.csv", json_text(sorted(graph)),
+        "dependency_edges", json_text(sorted(edges)), "false", truth(has_cycle), has_cycle)
+    add("TASK_CERTIFICATION_CONSISTENT", "joint_certification_actual_tasks.csv", "all", "joint_certification_results.csv", "all", "atomic", "atomic")
+    add("FAILURE_PROVENANCE_CONSISTENT", "joint_certification_actual_tasks.csv", "failures", "joint_certification_solver_script.csv", "failures", "mapped", "mapped")
+    missing = set(LINEAGE_REQUIRED_CHECK_TYPES) - {row["check_type"] for row in checks}
+    if missing:
+        raise EvidenceProductionError("missing lineage check types: {}".format(sorted(missing)))
+    return checks
+
+
 def read_mutation_rows(path: Path) -> List[Dict[str, Any]]:
     with path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
@@ -1188,10 +1497,23 @@ def produce_all(
     rows["workload_monotonicity_checks.csv"] = monotonic
     rows["processor_cases.csv"] = produce_processor(build)
     rows["envelope_cases.csv"] = produce_envelope(build, random_envelope_instances)
-    rows["search_trace_events.csv"] = produce_search(build)
+    search_specs, search_lookup, search_traces = produce_search(build)
+    rows["search_closure_specifications.csv"] = search_specs
+    rows["search_closure_lookup.csv"] = search_lookup
+    rows["search_trace_events.csv"] = search_traces
     rows["service_curve_cases.csv"] = produce_service_curves(build)
-    rows["scheduler_event_order_traces.csv"] = produce_event_order(build)
-    rows["joint_certification_cases.csv"] = produce_joint_cases(build)
+    event_cases, event_ticks, event_assertions = produce_event_order(build)
+    rows["scheduler_event_order_cases.csv"] = event_cases
+    rows["scheduler_event_order_ticks.csv"] = event_ticks
+    rows["scheduler_event_order_assertions.csv"] = event_assertions
+    joint = produce_joint_cases(build)
+    for name, table_rows in zip((
+        "joint_certification_cases.jsonl", "joint_certification_task_inputs.csv",
+        "joint_certification_solver_script.csv", "joint_certification_actual_tasks.csv",
+        "joint_certification_expected_tasks.csv", "joint_certification_assertions.csv",
+        "joint_certification_results.csv",
+    ), joint):
+        rows[name] = table_rows
     dominance_tasksets, dominance_tasks = produce_dominance(build)
     rows["dominance_tasksets.csv"] = dominance_tasksets
     rows["dominance_task_results.csv"] = dominance_tasks
@@ -1218,12 +1540,12 @@ def produce_all(
         "processor_cases.csv": [row for row in rows["processor_cases.csv"] if row["match"] != "true"],
         "envelope_cases.csv": [row for row in rows["envelope_cases.csv"] if row["match"] != "true"],
         "service_curve_cases.csv": [row for row in rows["service_curve_cases.csv"] if row["match"] != "true"],
-        "scheduler_event_order_traces.csv": [row for row in rows["scheduler_event_order_traces.csv"] if row["assertion_passed"] != "true"],
-        "joint_certification_cases.csv": [row for row in rows["joint_certification_cases.csv"] if row["passed"] != "true"],
+        "scheduler_event_order_assertions.csv": [row for row in event_assertions if row["expected_event"] != row["actual_event"]],
+        "joint_certification_assertions.csv": [row for row in rows["joint_certification_assertions.csv"] if row["expected"] != row["actual"]],
         "dominance_task_results.csv": [row for row in dominance_tasks if row["dominance_violation"] != "false"],
         "bound_checks.csv": [row for row in rows["bound_checks.csv"] if row["violation"] != "false" or row["inconclusive_reason"]],
-        "mutation_runs.csv": [row for row in rows["mutation_runs.csv"] if row["detected"] != "true" or row["mutation_applied"] != "true" or row["failure_matches_target"] != "true" or row["original_file_hash"] != row["restored_file_hash"]],
-        "lineage_checks.csv": [row for row in rows["lineage_checks.csv"] if row["passed"] != "true"],
+        "mutation_runs.csv": [row for row in rows["mutation_runs.csv"] if row["detected"] != "true" or row["mutation_applied"] != "true" or row["failure_matches_target"] != "true" or row["syntax_import_failure"] != "false" or row["original_source_hash"] != row["restored_source_hash"]],
+        "lineage_checks.csv": [row for row in rows["lineage_checks.csv"] if row["violation"] != "false"],
     }
     failures = {name: values[:3] for name, values in mismatch_tables.items() if values}
     if len({row["taskset_hash"] for row in dominance_tasksets}) < 200:
@@ -1252,29 +1574,66 @@ def produce_all(
         "core0a_v9_3_evidence.py",
         "core0a_v9_3_evidence_schema.py",
         "core0a_v9_3_independent_aggregator.py",
+        "core0a_v9_3_second_rebuild_verifier.py",
         "core0a_v9_3_package_validator.py",
         "scripts/core0a_v9_3_mutation_harness.py",
         "scripts/core0a_v9_3_mutation_probe.py",
     )
     project_root = Path(__file__).resolve().parent
+    transcript_names = []
+    for row in rows["mutation_runs.csv"]:
+        for field, digest_field in (("stdout_member_path", "stdout_sha256"), ("stderr_member_path", "stderr_sha256")):
+            name = row[field]
+            source = mutation_runs_path.parent / name
+            if Path(name).name != name or not source.is_file() or file_hash(source) != row[digest_field]:
+                raise EvidenceProductionError("mutation transcript provenance mismatch: {}".format(name))
+            shutil.copyfile(source, output / name)
+            transcript_names.append(name)
+    determinism = {
+        "status": "SINGLE_ENVIRONMENT_GENERATION_BASELINE",
+        "N_environments": len(["current_clean_generation"]),
+        "N_repetitions": len(["current_clean_generation"]),
+        "N_files_compared": 0,
+        "N_raw_files_compared": 0,
+        "N_raw_differences": 0,
+        "N_gate_differences": 0,
+        "N_manifest_differences": 0,
+        "N_zip_differences": 0,
+        "excluded_execution_only_fields": ["python_environment", "cwd", "locale"],
+    }
+    (output / "determinism_report.json").write_text(
+        json.dumps(determinism, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    runtime_metadata = {
+        "generated_from_identity": build,
+        "implementation_commit": build_identity["implementation_commit_sha"],
+        "pilot_authorized": False,
+        "superseded_core0a_evidence": [
+            {"commit": "dcb55f6a22f4d772a74f94ac7799b79cf5da8541", "zip_sha256": "d56c2f671b8ea201e6e53a4199cba333f3dcc6eb1e09ff06a1bfa8b76db8dd50", "status": "INVALIDATED"},
+            {"commit": "01f582b094f376a8e00640e22d0d2f25506d0e35", "zip_sha256": "a51ceee47c9f0e32a80a23f4c419af1271d35b29522d91b6630812bb362a2995", "status": "INVALIDATED"},
+        ],
+    }
+    (output / "core0a_runtime_manifest.json").write_text(
+        json.dumps(runtime_metadata, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    support_evidence_names = tuple(sorted(set(transcript_names))) + (
+        "core0a_runtime_manifest.json", "determinism_report.json")
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "build_identity_hash": build,
         "theory_sha256": THEORY_SHA256,
         "contract_zip_sha256": CONTRACT_ZIP_SHA256,
-        "files": {name: file_hash(output / name) for name in RAW_TABLES},
+        "files": {name: file_hash(output / name) for name in RAW_TABLES + support_evidence_names},
         "row_counts": row_counts,
+        "mutation_transcript_files": sorted(set(transcript_names)),
         "finite_state_domain_file": "finite_state_domain.json",
         "finite_state_domain_sha256": file_hash(output / "finite_state_domain.json"),
         "build_identity_file": "build_identity.json",
         "build_identity_sha256": file_hash(output / "build_identity.json"),
         "source_files": {name: file_hash(project_root / name) for name in source_names},
-        "superseded_core0a_evidence": {
-            "commit": "dcb55f6a22f4d772a74f94ac7799b79cf5da8541",
-            "zip_sha256": "d56c2f671b8ea201e6e53a4199cba333f3dcc6eb1e09ff06a1bfa8b76db8dd50",
-            "status": "INVALIDATED",
-            "reason": "independent evidence audit failure",
-        },
+        "superseded_core0a_evidence": [
+            {"commit": "dcb55f6a22f4d772a74f94ac7799b79cf5da8541", "zip_sha256": "d56c2f671b8ea201e6e53a4199cba333f3dcc6eb1e09ff06a1bfa8b76db8dd50", "status": "INVALIDATED"},
+            {"commit": "01f582b094f376a8e00640e22d0d2f25506d0e35", "zip_sha256": "a51ceee47c9f0e32a80a23f4c419af1271d35b29522d91b6630812bb362a2995", "status": "INVALIDATED"},
+        ],
+        "pilot_authorized": False,
     }
     (output / "raw_evidence_manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",

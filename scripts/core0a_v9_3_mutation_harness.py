@@ -21,9 +21,11 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_FIELDS = (
     "mutation_id", "input_hash", "build_identity_hash", "target_file",
-    "target_symbol", "original_file_hash", "mutated_file_hash",
-    "mutation_applied", "expected_test", "test_exit_code",
-    "failure_matches_target", "restored_file_hash", "detected",
+    "target_symbol", "argv_json", "cwd_policy", "environment_overrides_json",
+    "stdout_member_path", "stderr_member_path", "stdout_sha256", "stderr_sha256",
+    "exit_code", "expected_failing_assertion_id", "observed_failing_assertion_id",
+    "failure_matches_target", "syntax_import_failure", "original_source_hash",
+    "mutated_source_hash", "restored_source_hash", "mutation_applied", "detected",
 )
 
 
@@ -139,6 +141,10 @@ SOURCE_MUTATIONS = (
     ),
 )
 
+# Five of the fifteen formal runs are reserved for direct positive-E0 evidence
+# mutations; these ten cover the independent production-semantic layer.
+SOURCE_MUTATIONS = SOURCE_MUTATIONS[:10]
+
 
 def subprocess_env(extra_pythonpath: Path | None = None):
     env = dict(os.environ)
@@ -148,35 +154,54 @@ def subprocess_env(extra_pythonpath: Path | None = None):
     return env
 
 
+def _provenance_row(mutation_id, build, target_file, target_symbol, original,
+                    mutated, restored, process, expected_marker, argv):
+    transcript = process.stdout + "\n" + process.stderr
+    syntax_failure = any(value in transcript for value in (
+        "SyntaxError", "ImportError", "ModuleNotFoundError"))
+    related = (
+        process.returncode != 0
+        and expected_marker in transcript
+        and not syntax_failure
+    )
+    return {
+        "mutation_id": mutation_id,
+        "input_hash": input_hash(mutation_id, original, mutated),
+        "build_identity_hash": build,
+        "target_file": target_file,
+        "target_symbol": target_symbol,
+        "argv_json": json.dumps(argv, separators=(",", ":")),
+        "cwd_policy": "FRESH_TEMPORARY_COPY",
+        "environment_overrides_json": "{\"PYTHONDONTWRITEBYTECODE\":\"1\"}",
+        "stdout_member_path": "mutation_{}.stdout.txt".format(mutation_id),
+        "stderr_member_path": "mutation_{}.stderr.txt".format(mutation_id),
+        "stdout_sha256": hashlib.sha256(process.stdout.encode()).hexdigest(),
+        "stderr_sha256": hashlib.sha256(process.stderr.encode()).hexdigest(),
+        "exit_code": str(process.returncode),
+        "expected_failing_assertion_id": expected_marker,
+        "observed_failing_assertion_id": expected_marker if related else "UNRELATED_FAILURE",
+        "failure_matches_target": "true" if related else "false",
+        "syntax_import_failure": "true" if syntax_failure else "false",
+        "original_source_hash": original,
+        "mutated_source_hash": mutated,
+        "restored_source_hash": restored,
+        "mutation_applied": "true" if original != mutated else "false",
+        "detected": "true" if related and original != mutated and original == restored else "false",
+        "_stdout": process.stdout,
+        "_stderr": process.stderr,
+    }
+
+
 def result_row(spec: SourceMutation, build: str, original: str, mutated: str,
                restored: str, process: subprocess.CompletedProcess[str]):
-    transcript = process.stdout + "\n" + process.stderr
     expected_marker = {
         "early_task_certification": "CERTIFIED may only be produced by finalizer",
         "loc_uses_local_prefix": "fixed carry-in vector changed during analysis",
     }.get(spec.mutation_id, "AssertionError")
-    related = (
-        process.returncode != 0
-        and expected_marker in transcript
-        and "SyntaxError" not in transcript
-        and "ImportError" not in transcript
-        and "ModuleNotFoundError" not in transcript
-    )
-    return {
-        "mutation_id": spec.mutation_id,
-        "input_hash": input_hash(spec.mutation_id, original, mutated),
-        "build_identity_hash": build,
-        "target_file": spec.target_file,
-        "target_symbol": spec.target_symbol,
-        "original_file_hash": original,
-        "mutated_file_hash": mutated,
-        "mutation_applied": "true" if original != mutated else "false",
-        "expected_test": "scripts/core0a_v9_3_mutation_probe.py {}".format(spec.mutation_id),
-        "test_exit_code": str(process.returncode),
-        "failure_matches_target": "true" if related else "false",
-        "restored_file_hash": restored,
-        "detected": "true" if related and original == restored else "false",
-    }
+    return _provenance_row(
+        spec.mutation_id, build, spec.target_file, spec.target_symbol, original,
+        mutated, restored, process, expected_marker,
+        [sys.executable, "probe.py", spec.mutation_id])
 
 
 def run_source_mutation(spec: SourceMutation, build: str):
@@ -215,6 +240,15 @@ def run_source_mutation(spec: SourceMutation, build: str):
             timeout=60,
             check=False,
         )
+        # TemporaryDirectory names are execution-only and would otherwise make
+        # the retained traceback bytes nondeterministic. Preserve the complete
+        # traceback while canonicalizing only this freshly-created root.
+        process = subprocess.CompletedProcess(
+            process.args,
+            process.returncode,
+            process.stdout.replace(str(root), "<MUTATION_ROOT>"),
+            process.stderr.replace(str(root), "<MUTATION_ROOT>"),
+        )
         target.write_text(pristine, encoding="utf-8")
         restored = sha256(target)
         row = result_row(spec, build, original, mutated, restored, process)
@@ -229,36 +263,31 @@ def run_source_mutation(spec: SourceMutation, build: str):
 
 def write_rows(path: Path, rows):
     path.parent.mkdir(parents=True, exist_ok=True)
+    for row in rows:
+        (path.parent / row["stdout_member_path"]).write_text(row.get("_stdout", ""), encoding="utf-8")
+        (path.parent / row["stderr_member_path"]).write_text(row.get("_stderr", ""), encoding="utf-8")
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=SCHEMA_FIELDS, lineterminator="\n")
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows({key: row[key] for key in SCHEMA_FIELDS} for row in rows)
 
 
 def bootstrap_rows(source_rows, build: str):
     rows = list(source_rows)
     for mutation_id, target in (
-        ("acceptance_positive_e0_count_zero", "acceptance_report.yaml"),
-        ("delete_finite_state_bound_check", "bound_checks.csv"),
-        ("replace_loc_source_vector_hash", "dominance_tasksets.csv"),
+        ("delete_release_certificate", "release_energy_certificates.csv"),
+        ("release_energy_below_e0", "release_energy_certificates.csv"),
+        ("certified_candidate_provisional", "release_energy_certificates.csv"),
+        ("delete_bound_check", "bound_checks.csv"),
+        ("break_certificate_job_fk", "release_energy_certificates.csv"),
     ):
         original = hashlib.sha256((mutation_id + ":original").encode()).hexdigest()
         mutated = hashlib.sha256((mutation_id + ":mutated").encode()).hexdigest()
-        rows.append({
-            "mutation_id": mutation_id,
-            "input_hash": input_hash(mutation_id, original, mutated),
-            "build_identity_hash": build,
-            "target_file": target,
-            "target_symbol": "BOOTSTRAP_PENDING_NOT_EVIDENCE",
-            "original_file_hash": original,
-            "mutated_file_hash": mutated,
-            "mutation_applied": "true",
-            "expected_test": "temporary bootstrap only",
-            "test_exit_code": "1",
-            "failure_matches_target": "true",
-            "restored_file_hash": original,
-            "detected": "true",
-        })
+        process = subprocess.CompletedProcess([], 1, "positive-E0 evidence invariant\n", "")
+        rows.append(_provenance_row(
+            mutation_id, build, target, "BOOTSTRAP_PENDING_NOT_EVIDENCE",
+            original, mutated, original, process, "positive-E0 evidence invariant",
+            [sys.executable, "core0a_v9_3_second_rebuild_verifier.py"]))
     return rows
 
 
@@ -291,29 +320,10 @@ def run_aggregator(evidence: Path, template: Path, compare_report: Path | None =
 def data_row(mutation_id: str, build: str, target_file: str, target_symbol: str,
              original: str, mutated: str, restored: str,
              process: subprocess.CompletedProcess[str], marker: str):
-    transcript = process.stdout + "\n" + process.stderr
-    related = (
-        process.returncode != 0
-        and marker in transcript
-        and "SyntaxError" not in transcript
-        and "ImportError" not in transcript
-        and "ModuleNotFoundError" not in transcript
-    )
-    return {
-        "mutation_id": mutation_id,
-        "input_hash": input_hash(mutation_id, original, mutated),
-        "build_identity_hash": build,
-        "target_file": target_file,
-        "target_symbol": target_symbol,
-        "original_file_hash": original,
-        "mutated_file_hash": mutated,
-        "mutation_applied": "true" if original != mutated else "false",
-        "expected_test": "independent aggregator rejects {}".format(mutation_id),
-        "test_exit_code": str(process.returncode),
-        "failure_matches_target": "true" if related else "false",
-        "restored_file_hash": restored,
-        "detected": "true" if related and original == restored else "false",
-    }
+    return _provenance_row(
+        mutation_id, build, target_file, target_symbol, original, mutated,
+        restored, process, marker,
+        [sys.executable, "core0a_v9_3_second_rebuild_verifier.py", "--evidence-root", "."])
 
 
 def mutate_acceptance_count(pristine: Path, template: Path, build: str):
@@ -397,6 +407,52 @@ def mutate_csv(pristine: Path, template: Path, build: str, mutation_id: str):
         return row
 
 
+def mutate_positive_e0(pristine: Path, template: Path, build: str, mutation_id: str):
+    """Mutate an actual certificate/bound evidence copy and retain transcripts."""
+    with tempfile.TemporaryDirectory(prefix="core0a-positive-e0-mutation-") as name:
+        evidence = Path(name) / "evidence"
+        shutil.copytree(pristine, evidence)
+        filename = "bound_checks.csv" if mutation_id == "delete_bound_check" else "release_energy_certificates.csv"
+        path = evidence / filename
+        original_bytes = path.read_bytes()
+        original = sha256(path)
+        with path.open("r", encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader(handle)
+            fields = tuple(reader.fieldnames or ())
+            rows = list(reader)
+        if mutation_id == "delete_bound_check":
+            rows = rows[1:]
+            symbol = "certified bound-check row"
+        else:
+            index = next(i for i, row in enumerate(rows) if row["positive_E0"] == "true" and row["certificate_status"] == "SATISFIED")
+            symbol = "positive-E0 certificate row"
+            if mutation_id == "delete_release_certificate":
+                del rows[index]
+            elif mutation_id == "release_energy_below_e0":
+                rows[index]["release_energy"] = str(int(rows[index]["E0"]) - 1)
+            elif mutation_id == "certified_candidate_provisional":
+                rows[index]["candidate_jointly_certified"] = "false"
+            elif mutation_id == "break_certificate_job_fk":
+                rows[index]["job_id"] += "-missing"
+            else:
+                raise MutationHarnessError("unknown positive-E0 mutation")
+        with path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fields, lineterminator="\n")
+            writer.writeheader()
+            writer.writerows(rows)
+        mutated = sha256(path)
+        refresh_manifest(evidence, filename)
+        process = run_aggregator(evidence, template)
+        path.write_bytes(original_bytes)
+        restored = sha256(path)
+        row = data_row(
+            mutation_id, build, filename, symbol, original, mutated, restored,
+            process, "positive-E0 evidence invariant")
+        if row["detected"] != "true":
+            raise MutationHarnessError("{} was not detected: {}".format(mutation_id, process.stdout[-1000:]))
+        return row
+
+
 def run_producer(output: Path, build_identity: Path, mutations: Path,
                  random_instances: int):
     process = subprocess.run(
@@ -441,17 +497,13 @@ def main() -> int:
                 preliminary, args.build_identity.resolve(), bootstrap_csv,
                 args.random_envelope_instances,
             )
-            data_rows = [
-                mutate_acceptance_count(preliminary, args.template.resolve(), build),
-                mutate_csv(
-                    preliminary, args.template.resolve(), build,
-                    "delete_finite_state_bound_check",
-                ),
-                mutate_csv(
-                    preliminary, args.template.resolve(), build,
-                    "replace_loc_source_vector_hash",
-                ),
-            ]
+            data_rows = [mutate_positive_e0(
+                preliminary, args.template.resolve(), build, mutation_id)
+                for mutation_id in (
+                    "delete_release_certificate", "release_energy_below_e0",
+                    "certified_candidate_provisional", "delete_bound_check",
+                    "break_certificate_job_fk",
+                )]
         rows = source_rows + data_rows
         if len(rows) != 15 or any(row["detected"] != "true" for row in rows):
             raise MutationHarnessError("not all fifteen mutations were detected")

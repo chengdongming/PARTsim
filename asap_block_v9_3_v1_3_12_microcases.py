@@ -40,6 +40,7 @@ MICROCASE_TASKS = (
 MICROCASE_C_TASKS = MICROCASE_TASKS + (("2", 1, 9, 15, Fraction(1)),)
 CORE0A_VALIDATOR_FILES = (
     "core0a_v9_3_independent_aggregator.py",
+    "core0a_v9_3_second_rebuild_verifier.py",
     "core0a_v9_3_evidence_schema.py",
     "core0a_v9_3_oracles.py",
     "core0a_v9_3_package_validator.py",
@@ -288,10 +289,10 @@ def _fill_formal_contract(
             gate.update(gate_validator)
     if core0a_build_identity is not None:
         independent_validator = {
-            "validator_file": "core0a_v9_3_independent_aggregator.py",
-            "validator_version": "CORE0A-INDEPENDENT-2.0",
+            "validator_file": "core0a_v9_3_second_rebuild_verifier.py",
+            "validator_version": "CORE0A-SECOND-REBUILD-INDEPENDENT-3.0",
             "validator_sha256": common.sha256_file(
-                root / "core0a_v9_3_independent_aggregator.py"
+                root / "core0a_v9_3_second_rebuild_verifier.py"
             ),
         }
         for gate in formal["gate_validator_bindings"]["CORE0A_gates"].values():
@@ -779,7 +780,7 @@ def _install_core0a_evidence(
         [
             sys.executable,
             "-B",
-            "core0a_v9_3_independent_aggregator.py",
+            "core0a_v9_3_second_rebuild_verifier.py",
             "--evidence-root",
             ".",
             "--template",
