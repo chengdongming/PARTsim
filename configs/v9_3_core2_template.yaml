@@ -1,0 +1,78 @@
+# Template only: final paper grid remains to be calibrated and frozen.
+experiment_id: asap-block-v9.3-core2-formal-template
+core: CORE-2
+platform:
+  cores: [4]
+  task_count: [10]
+generation:
+  deadline_mode: constrained
+  constrained_deadline:
+    d_over_t_values: []
+    d_over_t_min: "0"
+    d_over_t_max: "1"
+    distribution: generator_uniform_integer
+  period_min: 40
+  period_max: 200
+  wcet_rounding: compensated
+  utilization_tolerance: "0.01"
+  min_task_util: "0.01"
+  max_task_util: "0.8"
+  priority_policy: RM
+  power_mode: generator_default_heterogeneous
+  generator_timeout_seconds: 120
+energy:
+  initial_energy_values: ["0", "1", "178487996829/2000000000000"]
+  exact_rational_encoding: canonical_fraction
+  service_curve:
+    id: synthetic-piecewise-default-v1
+    system_template: system_config_unified_template.yml
+    horizon: 30000
+  battery_mode: finite
+  battery_capacity: "20"
+grid:
+  utilization_points: ["0.2", "0.4", "0.6"]
+  tasksets_per_cell: 100
+  base_seed: 930401
+analysis:
+  variants: [CW_D, LOC_D, CW_THETA_CW, LOC_THETA_CW, LOC_THETA_LOC]
+  timeout_seconds: 60
+  retry_timeout_seconds: 90
+  retry_policy: timeout_once
+  worker_count: 1
+  numerical_mode: EXACT_RATIONAL
+execution:
+  checkpoint_every: 1
+  output_root: artifacts/v9_3_core2_formal
+  taskset_store: artifacts/v9_3_formal_taskset_store
+  resume: false
+  fail_fast_on_p0: true
+  preserve_attempt_history: true
+plots:
+  variant_certification:
+    title: Five-configuration certification ratio
+    x_label: Normalized utilization
+    y_label: Certified (0/1)
+  variant_runtime:
+    title: Five-configuration runtime
+    x_label: Normalized utilization
+    y_label: Runtime (seconds)
+  ablation:
+    title: Carry-in and window ablation
+    x_label: Priority rank
+    y_label: Response-bound reduction
+  ablation_gain_loss:
+    title: Taskset certification gain and loss
+    x_label: Exact E0 (numeric projection)
+    y_label: Gain (+1), unchanged (0), loss (-1)
+  dependency_applicability:
+    title: Fixed-CW dependency applicability
+    x_label: Exact E0
+    y_label: Applicable (0/1)
+  first_failed_priority:
+    title: First failed priority
+    x_label: Normalized utilization
+    y_label: Priority rank
+  envelope_search_cost:
+    title: Envelope and search cost
+    x_label: Normalized utilization
+    y_label: Envelope calls
