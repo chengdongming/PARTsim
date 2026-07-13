@@ -324,6 +324,19 @@ def test_five_configuration_orchestration_certifies_frozen_source_and_target():
     )
 
 
+def test_five_configuration_orchestration_uses_pilot_request_order(monkeypatch):
+    observed = []
+    dispatch = runner.dispatch_rta_version
+
+    def recording_dispatch(*args, **kwargs):
+        observed.append(kwargs["v93_request"].variant)
+        return dispatch(*args, **kwargs)
+
+    monkeypatch.setattr(runner, "dispatch_rta_version", recording_dispatch)
+    runner.run_five_configurations_v9_3(analysis_input(), analysis_ids("order"))
+    assert observed == list(runner.VARIANT_ORDER)
+
+
 def test_serialization_preserves_analyzer_states_hashes_and_dependency():
     binding = V1312SchemaBinding()
     inp = analysis_input()

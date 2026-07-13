@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import math
+import time
 from types import MappingProxyType
 from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Tuple
 
@@ -76,6 +78,7 @@ class V93DispatchRequest:
         v93.DependencyVectorCheckStatus.NOT_CHECKED
     )
     diagnostic_mode: bool = False
+    configuration_timeout_seconds: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -98,6 +101,30 @@ class SerializedAnalysis:
     taskset_row: Mapping[str, Any]
     task_rows: Tuple[Mapping[str, Any], ...]
     dependency_rows: Tuple[Mapping[str, Any], ...]
+
+
+class _ConfigurationBudgetSolver:
+    """Delegate to the production solver with one shared analysis budget."""
+
+    def __init__(self, timeout_seconds: float) -> None:
+        if (
+            isinstance(timeout_seconds, bool)
+            or not isinstance(timeout_seconds, (int, float))
+            or not math.isfinite(timeout_seconds)
+            or timeout_seconds < 0
+        ):
+            raise RunnerConformanceError(
+                "configuration timeout must be finite and non-negative"
+            )
+        self.deadline = time.monotonic() + float(timeout_seconds)
+
+    def __call__(self, **kwargs: Any) -> v93.SingleTaskSolverResult:
+        remaining = max(0.0, self.deadline - time.monotonic())
+        task_timeout = kwargs.get("timeout_seconds")
+        if task_timeout is not None:
+            remaining = min(remaining, float(task_timeout))
+        kwargs["timeout_seconds"] = remaining
+        return v93.solve_single_task_v9_3(**kwargs)
 
 
 def dispatch_rta_version(
@@ -135,6 +162,11 @@ def dispatch_rta_version(
             ),
         )
         # No exception handler here: a v9.3 failure must not invoke an older RTA.
+        solver = v93.solve_single_task_v9_3
+        if validated_request.configuration_timeout_seconds is not None:
+            solver = _ConfigurationBudgetSolver(
+                validated_request.configuration_timeout_seconds
+            )
         return v93.analyze_taskset_v9_3(
             validated_request.analysis_id,
             validated_request.variant,
@@ -142,6 +174,7 @@ def dispatch_rta_version(
             source=validated_request.source,
             dependency_check_status=validated_request.dependency_check_status,
             diagnostic_mode=validated_request.diagnostic_mode,
+            single_task_solver=solver,
         )
     raise RunnerConformanceError("unknown RTA version: {!r}".format(selected))
 
@@ -171,18 +204,12 @@ def run_five_configurations_v9_3(
     if set(analysis_ids) != set(VARIANT_ORDER):
         raise RunnerConformanceError("analysis_ids must cover exactly five variants")
     results: Dict[v93.AnalysisVariant, v93.TasksetAnalysisResult] = {}
-    # Source is completed first and stored only as its frozen result object.
-    source_variant = v93.AnalysisVariant.CW_THETA_CW
-    results[source_variant] = dispatch_rta_version(
-        V93_DISPATCH_VERSION,
-        v93_request=V93DispatchRequest(
-            analysis_ids[source_variant], source_variant, analysis_input
-        ),
-    )
+    # Preserve the paper-pilot request order.  In particular, complete the
+    # frozen CW source before dispatching its dependent local target.
     for variant in (
         v93.AnalysisVariant.CW_D,
         v93.AnalysisVariant.LOC_D,
-        v93.AnalysisVariant.LOC_THETA_LOC,
+        v93.AnalysisVariant.CW_THETA_CW,
     ):
         results[variant] = dispatch_rta_version(
             V93_DISPATCH_VERSION,
@@ -190,6 +217,7 @@ def run_five_configurations_v9_3(
                 analysis_ids[variant], variant, analysis_input
             ),
         )
+    source_variant = v93.AnalysisVariant.CW_THETA_CW
     source = results[source_variant]
     dependency_status = (
         v93.DependencyVectorCheckStatus.VALID
@@ -205,6 +233,13 @@ def run_five_configurations_v9_3(
             analysis_input,
             source=source,
             dependency_check_status=dependency_status,
+        ),
+    )
+    final_variant = v93.AnalysisVariant.LOC_THETA_LOC
+    results[final_variant] = dispatch_rta_version(
+        V93_DISPATCH_VERSION,
+        v93_request=V93DispatchRequest(
+            analysis_ids[final_variant], final_variant, analysis_input
         ),
     )
     return FiveConfigurationRun(tuple((variant, results[variant]) for variant in VARIANT_ORDER))
