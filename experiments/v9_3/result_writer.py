@@ -35,8 +35,10 @@ ATTEMPT_COLUMNS = (
     "attempt_id", "analysis_id", "attempt_number", "parent_attempt_id",
     "timeout_budget_seconds", "solver_status", "outer_timeout",
     "solver_wall_seconds", "solver_cpu_seconds", "worker_startup_seconds",
-    "serialization_seconds", "ipc_seconds", "total_wall_seconds",
-    "exception_type", "exception_message", "traceback", "started_at_utc",
+    "serialization_seconds", "ipc_seconds", "payload_received",
+    "worker_cleanup_status", "worker_exitcode", "worker_cleanup_seconds",
+    "total_wall_seconds", "exception_type", "exception_message",
+    "traceback", "started_at_utc",
 )
 TASKSET_RESULT_COLUMNS = (
     "analysis_id", "request_id", "cell_id", "taskset_id", "taskset_hash",
@@ -151,6 +153,40 @@ def read_csv(path: Path) -> list[Dict[str, str]]:
         return list(csv.DictReader(handle))
 
 
+def validate_csv_header(
+    path: Path,
+    columns: Sequence[str],
+) -> None:
+    """Reject an existing table whose physical schema is not exact."""
+
+    if not path.is_file():
+        return
+
+    with path.open(
+        "r",
+        encoding="utf-8",
+        newline="",
+    ) as handle:
+        reader = csv.reader(handle)
+
+        try:
+            actual = next(reader)
+        except StopIteration as exc:
+            raise ResultWriterError(
+                f"existing table has no header: "
+                f"{path.name}"
+            ) from exc
+
+    expected = list(columns)
+
+    if actual != expected:
+        raise ResultWriterError(
+            f"existing table header mismatch for "
+            f"{path.name}: expected {expected}, "
+            f"got {actual}"
+        )
+
+
 class ResultWriter:
     def __init__(self, root: Path) -> None:
         self.root = Path(root)
@@ -163,6 +199,11 @@ class ResultWriter:
             path = self.root / name
             if not path.exists():
                 write_csv(path, columns, [])
+            else:
+                validate_csv_header(
+                    path,
+                    columns,
+                )
 
     def append_attempt(self, row: Mapping[str, Any]) -> None:
         attempt_id = str(row.get("attempt_id", ""))

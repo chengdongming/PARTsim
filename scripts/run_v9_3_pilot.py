@@ -8,7 +8,6 @@ import csv
 import hashlib
 import json
 import math
-import multiprocessing
 import os
 import shutil
 import subprocess
@@ -33,6 +32,9 @@ import asap_block_rta_v9_3 as core
 import asap_block_rta_v9_3_taskset as taskset
 import asap_block_v9_3_runner as production_runner
 from asap_block_v1_3_12_schema_binding import V1312SchemaBinding
+from experiments.v9_3.execution_engine import (
+    execute_isolated as execute_formal_isolated,
+)
 
 
 THEORY_SHA256 = taskset.THEORY_DOCUMENT_SHA256
@@ -110,6 +112,10 @@ class AnalysisExecution:
     exception_type: Optional[str] = None
     exception_message: Optional[str] = None
     traceback_text: Optional[str] = None
+    payload_received: bool = False
+    worker_cleanup_status: str = "NOT_RECORDED"
+    worker_exitcode: Optional[int] = None
+    worker_cleanup_seconds: float = 0.0
 
 
 def _canonical(value: Any) -> Any:
@@ -362,60 +368,38 @@ def _dependency_context(
     )
 
 
-def _analysis_worker(connection: Any, request: production_runner.V93DispatchRequest) -> None:
-    cpu_started = time.process_time()
-    try:
-        result = production_runner.dispatch_rta_version(
-            production_runner.V93_DISPATCH_VERSION, v93_request=request
-        )
-        connection.send(("ok", result, time.process_time() - cpu_started))
-    except BaseException as exc:  # The parent records the traceback out of formal failure detail.
-        connection.send((
-            "error", type(exc).__name__, str(exc), traceback.format_exc(),
-            time.process_time() - cpu_started,
-        ))
-    finally:
-        connection.close()
-
-
 def execute_analysis(
-    request: production_runner.V93DispatchRequest, timeout_seconds: float,
+    request: production_runner.V93DispatchRequest,
+    timeout_seconds: float,
 ) -> AnalysisExecution:
-    """Run one production dispatch behind a hard per-configuration wall timeout."""
+    """Delegate pilot isolation to the common v9.3 worker protocol.
 
-    context = multiprocessing.get_context("fork")
-    receiving, sending = context.Pipe(duplex=False)
-    process = context.Process(target=_analysis_worker, args=(sending, request))
-    started = time.perf_counter()
-    process.start()
-    sending.close()
-    try:
-        if not receiving.poll(timeout_seconds):
-            process.terminate()
-            process.join(5)
-            if process.is_alive():
-                process.kill()
-                process.join(5)
-            return AnalysisExecution(
-                None, time.perf_counter() - started, 0.0, True,
-                "ConfigurationTimeout", "hard per-configuration timeout", None,
-            )
-        payload = receiving.recv()
-    finally:
-        receiving.close()
-    process.join(5)
-    elapsed = time.perf_counter() - started
-    if process.is_alive():
-        process.terminate()
-        process.join(5)
-        return AnalysisExecution(
-            None, elapsed, 0.0, True, "WorkerDidNotExit",
-            "analysis worker did not exit after returning a payload", None,
-        )
-    if payload[0] == "ok":
-        return AnalysisExecution(payload[1], elapsed, payload[2], False)
+    The pilot remains a non-formal legacy pipeline, but it must not maintain
+    a second payload/worker-exit implementation.
+    """
+
+    execution = execute_formal_isolated(
+        request,
+        timeout_seconds,
+        start_method="fork",
+    )
+
     return AnalysisExecution(
-        None, elapsed, payload[4], False, payload[1], payload[2], payload[3]
+        result=execution.result,
+        wall_seconds=execution.total_wall_seconds,
+        cpu_seconds=execution.solver_cpu_seconds,
+        outer_timeout=execution.outer_timeout,
+        exception_type=execution.exception_type,
+        exception_message=execution.exception_message,
+        traceback_text=execution.traceback_text,
+        payload_received=execution.payload_received,
+        worker_cleanup_status=(
+            execution.worker_cleanup_status
+        ),
+        worker_exitcode=execution.worker_exitcode,
+        worker_cleanup_seconds=(
+            execution.worker_cleanup_seconds
+        ),
     )
 
 
@@ -858,6 +842,14 @@ def run_pilot(
                             request,
                             float(config["analysis"]["timeout_seconds_per_configuration"]) + 2.0,
                         )
+                        if (
+                            execution.worker_cleanup_status
+                            == "UNREAPED_AFTER_KILL"
+                        ):
+                            raise PilotError(
+                                "analysis worker returned a complete payload "
+                                "but remained alive after terminate/kill"
+                            )
                         if execution.outer_timeout:
                             raise PilotError("hard per-configuration timeout")
                         if execution.result is None:

@@ -206,6 +206,46 @@ def _mutation(root, name):
                 row.pop(field)
         _write_csv(root, table, header, rows)
         return "binding"
+
+    if name == "nul_detail":
+        table = "per_task_results.csv"
+        sentinel = (
+            "__ASAP_BLOCK_V1312_NUL_DETAIL_SENTINEL__"
+        )
+
+        _update_rows(
+            root,
+            table,
+            lambda row: (
+                row["task_solver_status"]
+                == "NO_CANDIDATE"
+            ),
+            lambda row: row.update(
+                task_failure_detail=sentinel,
+            ),
+        )
+
+        csv_path = root / table
+        payload = csv_path.read_bytes()
+        encoded_sentinel = sentinel.encode("ascii")
+
+        assert payload.count(encoded_sentinel) == 1
+
+        csv_path.write_bytes(
+            payload.replace(
+                encoded_sentinel,
+                b"bad\x00detail",
+                1,
+            )
+        )
+
+        assert csv_path.read_bytes().count(
+            b"bad\x00detail"
+        ) == 1
+
+        _refresh_integrity(root)
+        return "result"
+
     updates = {
         "unknown_failure_code": ("per_task_results.csv", lambda r: True, lambda r: r.update(task_failure_reason_code="ALIEN")),
         "success_non_none": ("per_task_results.csv", lambda r: r["task_solver_status"] == "CANDIDATE_FOUND", lambda r: r.update(task_failure_reason_code="NO_CANDIDATE", task_failure_detail="closure exhausted through task deadline")),
@@ -213,7 +253,6 @@ def _mutation(root, name):
         "timeout_no_candidate": ("per_task_results.csv", lambda r: r["task_solver_status"] == "NO_CANDIDATE", lambda r: r.update(task_solver_status="TIMEOUT")),
         "dominance_as_no_candidate": ("per_task_results.csv", lambda r: r["task_solver_status"] == "NO_CANDIDATE", lambda r: r.update(dominance_invariant_status="DOMINANCE_INVARIANT_VIOLATION")),
         "absolute_path_detail": ("per_task_results.csv", lambda r: r["task_solver_status"] == "NO_CANDIDATE", lambda r: r.update(task_failure_detail="/tmp/raw/exception")),
-        "nul_detail": ("per_task_results.csv", lambda r: r["task_solver_status"] == "NO_CANDIDATE", lambda r: r.update(task_failure_detail="bad\x00detail")),
         "overlong_detail": ("per_task_results.csv", lambda r: r["task_solver_status"] == "NO_CANDIDATE", lambda r: r.update(task_failure_detail="x" * 5000)),
         "empty_detail_as_null": ("per_task_results.csv", lambda r: r["task_solver_status"] == "NO_CANDIDATE", lambda r: r.update(task_failure_detail="")),
         "detail_hash_mismatch": ("per_task_results.csv", lambda r: r["task_solver_status"] == "NO_CANDIDATE", lambda r: r.update(task_failure_detail="numeric guard rejected analysis")),

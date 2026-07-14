@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from fractions import Fraction
 import json
@@ -66,6 +66,17 @@ class AttemptExecution:
     traceback_text: Optional[str] = None
     peak_rss_kib: Optional[int] = None
     peak_rss_scope: str = "UNAVAILABLE"
+    payload_received: bool = False
+    worker_cleanup_status: str = "NOT_RECORDED"
+    worker_exitcode: Optional[int] = None
+    worker_cleanup_seconds: float = 0.0
+
+
+@dataclass(frozen=True)
+class WorkerCleanup:
+    status: str
+    exitcode: Optional[int]
+    seconds: float
 
 
 @dataclass(frozen=True)
@@ -115,87 +126,364 @@ def _analysis_worker(
         sending.close()
 
 
+def _reap_worker(
+    process: Any,
+    *,
+    initial_join_seconds: float,
+    terminate_join_seconds: float,
+    kill_join_seconds: float,
+) -> WorkerCleanup:
+    """Boundedly reap a worker without interpreting its analysis payload."""
+
+    cleanup_started = time.perf_counter()
+
+    process.join(max(0.0, float(initial_join_seconds)))
+
+    if not process.is_alive():
+        status = "EXITED_NORMALLY"
+    else:
+        process.terminate()
+        process.join(max(0.0, float(terminate_join_seconds)))
+
+        if not process.is_alive():
+            status = "REAPED_AFTER_TERMINATE"
+        else:
+            process.kill()
+            process.join(max(0.0, float(kill_join_seconds)))
+
+            if not process.is_alive():
+                status = "REAPED_AFTER_KILL"
+            else:
+                status = "UNREAPED_AFTER_KILL"
+
+    exitcode = process.exitcode
+    elapsed = time.perf_counter() - cleanup_started
+
+    if not process.is_alive():
+        try:
+            process.close()
+        except (AttributeError, ValueError):
+            pass
+
+    return WorkerCleanup(
+        status=status,
+        exitcode=exitcode,
+        seconds=elapsed,
+    )
+
+
 def execute_isolated(
     request: production_runner.V93DispatchRequest,
     timeout_seconds: float,
     *,
     start_method: str = "spawn",
+    worker_target: Optional[Any] = None,
+    post_payload_join_seconds: float = 5.0,
+    terminate_join_seconds: float = 5.0,
+    kill_join_seconds: float = 5.0,
 ) -> AttemptExecution:
-    """Execute one production request with a hard wall boundary."""
+    """Execute one production request with a hard pre-payload wall boundary.
+
+    Once a complete payload has been received, that payload remains
+    authoritative. Subsequent worker cleanup cannot rewrite solver status.
+    """
 
     context = multiprocessing.get_context(start_method)
     receiving, sending = context.Pipe(duplex=False)
     started_event = context.Event()
-    process = context.Process(
-        target=_analysis_worker, args=(sending, started_event, request), daemon=False
+
+    target = (
+        _analysis_worker
+        if worker_target is None
+        else worker_target
     )
+
+    process = context.Process(
+        target=target,
+        args=(sending, started_event, request),
+        daemon=False,
+    )
+
     total_started = time.perf_counter()
     process.start()
     sending.close()
-    if not started_event.wait(min(10.0, max(1.0, timeout_seconds))):
-        process.terminate()
-        process.join(5)
-        return AttemptExecution(
-            None, "TIMEOUT", True, 0.0, 0.0,
-            time.perf_counter() - total_started, 0.0,
-            time.perf_counter() - total_started,
-            "WorkerStartupTimeout", "analysis worker did not start", None,
+
+    startup_wait = min(
+        10.0,
+        max(1.0, timeout_seconds),
+    )
+
+    if not started_event.wait(startup_wait):
+        startup = time.perf_counter() - total_started
+        receiving.close()
+
+        cleanup = _reap_worker(
+            process,
+            initial_join_seconds=0.0,
+            terminate_join_seconds=terminate_join_seconds,
+            kill_join_seconds=kill_join_seconds,
         )
+
+        total = time.perf_counter() - total_started
+
+        return AttemptExecution(
+            result=None,
+            solver_status="TIMEOUT",
+            outer_timeout=True,
+            solver_wall_seconds=0.0,
+            solver_cpu_seconds=0.0,
+            worker_startup_seconds=startup,
+            ipc_seconds=max(
+                0.0,
+                total - startup - cleanup.seconds,
+            ),
+            total_wall_seconds=total,
+            exception_type="WorkerStartupTimeout",
+            exception_message=(
+                "analysis worker did not start"
+            ),
+            traceback_text=None,
+            payload_received=False,
+            worker_cleanup_status=cleanup.status,
+            worker_exitcode=cleanup.exitcode,
+            worker_cleanup_seconds=cleanup.seconds,
+        )
+
     startup = time.perf_counter() - total_started
+
     # The analyzer owns the exact configured budget. A small transport grace
     # prevents classifying a returned inner TIMEOUT as an IPC failure.
-    transport_grace = min(1.0, max(0.1, timeout_seconds * 0.05))
+    transport_grace = min(
+        1.0,
+        max(0.1, timeout_seconds * 0.05),
+    )
+
+    payload: Any = None
+    receive_error: Optional[
+        tuple[str, str, str]
+    ] = None
+
     try:
-        if not receiving.poll(timeout_seconds + transport_grace):
-            process.terminate()
-            process.join(5)
-            if process.is_alive():
-                process.kill()
-                process.join(5)
-            total = time.perf_counter() - total_started
-            return AttemptExecution(
-                None, "TIMEOUT", True, timeout_seconds, 0.0, startup,
-                max(0.0, total - startup - timeout_seconds), total,
-                "ConfigurationTimeout", "hard per-configuration timeout", None,
+        if not receiving.poll(
+            timeout_seconds + transport_grace
+        ):
+            cleanup = _reap_worker(
+                process,
+                initial_join_seconds=0.0,
+                terminate_join_seconds=(
+                    terminate_join_seconds
+                ),
+                kill_join_seconds=kill_join_seconds,
             )
+
+            total = time.perf_counter() - total_started
+
+            return AttemptExecution(
+                result=None,
+                solver_status="TIMEOUT",
+                outer_timeout=True,
+                solver_wall_seconds=timeout_seconds,
+                solver_cpu_seconds=0.0,
+                worker_startup_seconds=startup,
+                ipc_seconds=max(
+                    0.0,
+                    total
+                    - startup
+                    - timeout_seconds
+                    - cleanup.seconds,
+                ),
+                total_wall_seconds=total,
+                exception_type="ConfigurationTimeout",
+                exception_message=(
+                    "hard per-configuration timeout"
+                ),
+                traceback_text=None,
+                payload_received=False,
+                worker_cleanup_status=cleanup.status,
+                worker_exitcode=cleanup.exitcode,
+                worker_cleanup_seconds=cleanup.seconds,
+            )
+
         payload = receiving.recv()
-    except EOFError as exc:
-        total = time.perf_counter() - total_started
-        return AttemptExecution(
-            None, "INTERNAL_CONFORMANCE_FAILURE", False, 0.0, 0.0, startup,
-            max(0.0, total - startup), total,
-            type(exc).__name__, str(exc), traceback.format_exc(),
+
+    except Exception as exc:
+        receive_error = (
+            type(exc).__name__,
+            str(exc),
+            traceback.format_exc(),
         )
+
     finally:
         receiving.close()
-    process.join(5)
-    total = time.perf_counter() - total_started
-    if process.is_alive():
-        process.terminate()
-        process.join(5)
-        return AttemptExecution(
-            None, "INTERNAL_CONFORMANCE_FAILURE", False, 0.0, 0.0,
-            startup, max(0.0, total - startup), total,
-            "WorkerDidNotExit", "worker returned a payload but did not exit", None,
+
+    if receive_error is not None:
+        cleanup = _reap_worker(
+            process,
+            initial_join_seconds=0.0,
+            terminate_join_seconds=terminate_join_seconds,
+            kill_join_seconds=kill_join_seconds,
         )
-    if payload[0] == "ok":
-        result = payload[1]
-        solver_wall = float(payload[2])
+
+        total = time.perf_counter() - total_started
+
         return AttemptExecution(
-            result, result.solver_status.value, False, solver_wall,
-            float(payload[3]), startup,
-            max(0.0, total - startup - solver_wall), total,
-            peak_rss_kib=int(payload[4]),
-            peak_rss_scope="CHILD_PROCESS_MAX_RSS_INCLUDES_SHARED_LIBRARIES",
+            result=None,
+            solver_status=(
+                "INTERNAL_CONFORMANCE_FAILURE"
+            ),
+            outer_timeout=False,
+            solver_wall_seconds=0.0,
+            solver_cpu_seconds=0.0,
+            worker_startup_seconds=startup,
+            ipc_seconds=max(
+                0.0,
+                total - startup - cleanup.seconds,
+            ),
+            total_wall_seconds=total,
+            exception_type=receive_error[0],
+            exception_message=receive_error[1],
+            traceback_text=receive_error[2],
+            payload_received=False,
+            worker_cleanup_status=cleanup.status,
+            worker_exitcode=cleanup.exitcode,
+            worker_cleanup_seconds=cleanup.seconds,
         )
-    solver_wall = float(payload[4])
-    return AttemptExecution(
-        None, "INTERNAL_CONFORMANCE_FAILURE", False, solver_wall,
-        float(payload[5]), startup, max(0.0, total - startup - solver_wall), total,
-        payload[1], payload[2], payload[3],
-        peak_rss_kib=int(payload[6]),
-        peak_rss_scope="CHILD_PROCESS_MAX_RSS_INCLUDES_SHARED_LIBRARIES",
+
+    # A complete payload has crossed the IPC boundary. From this point on,
+    # cleanup state is recorded independently and cannot replace the result.
+    cleanup = _reap_worker(
+        process,
+        initial_join_seconds=post_payload_join_seconds,
+        terminate_join_seconds=terminate_join_seconds,
+        kill_join_seconds=kill_join_seconds,
     )
+
+    total = time.perf_counter() - total_started
+
+    if not isinstance(payload, tuple) or not payload:
+        return AttemptExecution(
+            result=None,
+            solver_status=(
+                "INTERNAL_CONFORMANCE_FAILURE"
+            ),
+            outer_timeout=False,
+            solver_wall_seconds=0.0,
+            solver_cpu_seconds=0.0,
+            worker_startup_seconds=startup,
+            ipc_seconds=max(
+                0.0,
+                total - startup - cleanup.seconds,
+            ),
+            total_wall_seconds=total,
+            exception_type="InvalidWorkerPayload",
+            exception_message=(
+                "worker payload is not a non-empty tuple"
+            ),
+            traceback_text=None,
+            payload_received=True,
+            worker_cleanup_status=cleanup.status,
+            worker_exitcode=cleanup.exitcode,
+            worker_cleanup_seconds=cleanup.seconds,
+        )
+
+    try:
+        payload_kind = payload[0]
+
+        if payload_kind == "ok":
+            result = payload[1]
+            solver_wall = float(payload[2])
+            solver_cpu = float(payload[3])
+            peak_rss = int(payload[4])
+
+            return AttemptExecution(
+                result=result,
+                solver_status=result.solver_status.value,
+                outer_timeout=False,
+                solver_wall_seconds=solver_wall,
+                solver_cpu_seconds=solver_cpu,
+                worker_startup_seconds=startup,
+                ipc_seconds=max(
+                    0.0,
+                    total
+                    - startup
+                    - solver_wall
+                    - cleanup.seconds,
+                ),
+                total_wall_seconds=total,
+                peak_rss_kib=peak_rss,
+                peak_rss_scope=(
+                    "CHILD_PROCESS_MAX_RSS_"
+                    "INCLUDES_SHARED_LIBRARIES"
+                ),
+                payload_received=True,
+                worker_cleanup_status=cleanup.status,
+                worker_exitcode=cleanup.exitcode,
+                worker_cleanup_seconds=cleanup.seconds,
+            )
+
+        if payload_kind == "error":
+            solver_wall = float(payload[4])
+            solver_cpu = float(payload[5])
+            peak_rss = int(payload[6])
+
+            return AttemptExecution(
+                result=None,
+                solver_status=(
+                    "INTERNAL_CONFORMANCE_FAILURE"
+                ),
+                outer_timeout=False,
+                solver_wall_seconds=solver_wall,
+                solver_cpu_seconds=solver_cpu,
+                worker_startup_seconds=startup,
+                ipc_seconds=max(
+                    0.0,
+                    total
+                    - startup
+                    - solver_wall
+                    - cleanup.seconds,
+                ),
+                total_wall_seconds=total,
+                exception_type=str(payload[1]),
+                exception_message=str(payload[2]),
+                traceback_text=str(payload[3]),
+                peak_rss_kib=peak_rss,
+                peak_rss_scope=(
+                    "CHILD_PROCESS_MAX_RSS_"
+                    "INCLUDES_SHARED_LIBRARIES"
+                ),
+                payload_received=True,
+                worker_cleanup_status=cleanup.status,
+                worker_exitcode=cleanup.exitcode,
+                worker_cleanup_seconds=cleanup.seconds,
+            )
+
+        raise ValueError(
+            f"unknown worker payload kind: {payload_kind!r}"
+        )
+
+    except Exception as exc:
+        return AttemptExecution(
+            result=None,
+            solver_status=(
+                "INTERNAL_CONFORMANCE_FAILURE"
+            ),
+            outer_timeout=False,
+            solver_wall_seconds=0.0,
+            solver_cpu_seconds=0.0,
+            worker_startup_seconds=startup,
+            ipc_seconds=max(
+                0.0,
+                total - startup - cleanup.seconds,
+            ),
+            total_wall_seconds=total,
+            exception_type="InvalidWorkerPayload",
+            exception_message=str(exc),
+            traceback_text=traceback.format_exc(),
+            payload_received=True,
+            worker_cleanup_status=cleanup.status,
+            worker_exitcode=cleanup.exitcode,
+            worker_cleanup_seconds=cleanup.seconds,
+        )
 
 
 def _vector_hash(entries: Iterable[Tuple[str, int]]) -> Optional[str]:
@@ -654,8 +942,27 @@ class ExecutionEngine:
             )
             started_at = _utc_now()
             execution = execute_isolated(request, budget)
-            final_execution = execution
             result = execution.result
+
+            if (
+                result is not None
+                and execution.payload_received
+                and execution.worker_cleanup_status
+                == "UNREAPED_AFTER_KILL"
+            ):
+                self._record_failure(
+                    item,
+                    "WorkerUnreapedAfterPayload",
+                    (
+                        "worker returned a complete payload "
+                        "but remained alive after terminate/kill"
+                    ),
+                    None,
+                )
+
+                if self.config["execution"]["fail_fast_on_p0"]:
+                    self.stop_requested.set()
+
             attempt_serialization = 0.0
             if result is not None:
                 try:
@@ -671,12 +978,14 @@ class ExecutionEngine:
                     )
                     if self.config["execution"]["fail_fast_on_p0"]:
                         self.stop_requested.set()
-                    execution = AttemptExecution(
-                        None, "INTERNAL_CONFORMANCE_FAILURE", False,
-                        execution.solver_wall_seconds, execution.solver_cpu_seconds,
-                        execution.worker_startup_seconds, execution.ipc_seconds,
-                        execution.total_wall_seconds, type(exc).__name__, str(exc),
-                        traceback.format_exc(),
+                    execution = replace(
+                        execution,
+                        result=None,
+                        solver_status="INTERNAL_CONFORMANCE_FAILURE",
+                        outer_timeout=False,
+                        exception_type=type(exc).__name__,
+                        exception_message=str(exc),
+                        traceback_text=traceback.format_exc(),
                     )
                     result = None
                 else:
@@ -692,6 +1001,11 @@ class ExecutionEngine:
                 )
                 if self.config["execution"]["fail_fast_on_p0"]:
                     self.stop_requested.set()
+            # Capture the post-validation execution object. Validation may
+            # rewrite a payload-bearing success into a fail-closed terminal
+            # execution, which must also govern terminal materialization.
+            final_execution = execution
+
             attempt_id = _attempt_id(item.analysis_id, attempt_number)
             attempt_row = {
                 "attempt_id": attempt_id,
@@ -706,6 +1020,10 @@ class ExecutionEngine:
                 "worker_startup_seconds": f"{execution.worker_startup_seconds:.9f}",
                 "serialization_seconds": f"{attempt_serialization:.9f}",
                 "ipc_seconds": f"{execution.ipc_seconds:.9f}",
+                "payload_received": execution.payload_received,
+                "worker_cleanup_status": execution.worker_cleanup_status,
+                "worker_exitcode": execution.worker_exitcode,
+                "worker_cleanup_seconds": f"{execution.worker_cleanup_seconds:.9f}",
                 "total_wall_seconds": f"{execution.total_wall_seconds + attempt_serialization:.9f}",
                 "exception_type": execution.exception_type,
                 "exception_message": execution.exception_message,
