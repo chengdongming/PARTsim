@@ -9,6 +9,9 @@ from fractions import Fraction
 import json
 import math
 import multiprocessing
+from multiprocessing.connection import (
+    wait as wait_for_multiprocessing_objects,
+)
 import os
 from pathlib import Path
 import pickle
@@ -88,6 +91,61 @@ class RunOutcome:
     stopped: bool
 
 
+def _worker_exit_confirmed(process: Any) -> bool:
+    """Refresh ``Process`` state without exceeding a non-blocking boundary."""
+
+    process.join(0.0)
+
+    if process.exitcode is not None:
+        return True
+
+    if process.is_alive():
+        return False
+
+    # ``is_alive`` also polls the child. Repeat the public join operation so
+    # the multiprocessing bookkeeping and exit code agree before close().
+    process.join(0.0)
+    return process.exitcode is not None
+
+
+def _confirm_worker_exit(
+    process: Any,
+    timeout_seconds: float,
+) -> bool:
+    """Boundedly confirm sentinel readiness and refresh ``Process.exitcode``."""
+
+    timeout = max(0.0, float(timeout_seconds))
+    deadline = time.monotonic() + timeout
+
+    if _worker_exit_confirmed(process):
+        return True
+
+    remaining = max(0.0, deadline - time.monotonic())
+
+    try:
+        ready = wait_for_multiprocessing_objects(
+            [process.sentinel],
+            timeout=remaining,
+        )
+    except (AttributeError, OSError, TypeError, ValueError):
+        # Preserve compatibility with Process-like test doubles while keeping
+        # the same deadline. Real multiprocessing.Process instances use the
+        # sentinel path above.
+        process.join(remaining)
+    else:
+        if ready:
+            process.join(0.0)
+
+    # A timeout can expire at the same instant that the sentinel becomes
+    # readable. These public, non-blocking refreshes close that observation
+    # race without using waitpid directly or extending the deadline.
+    if _worker_exit_confirmed(process):
+        return True
+
+    process.join(0.0)
+    return _worker_exit_confirmed(process)
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
@@ -132,6 +190,7 @@ def _reap_worker(
     initial_join_seconds: float,
     terminate_join_seconds: float,
     kill_join_seconds: float,
+    kill_confirmation_seconds: float,
 ) -> WorkerCleanup:
     """Boundedly reap a worker without interpreting its analysis payload."""
 
@@ -139,19 +198,24 @@ def _reap_worker(
 
     process.join(max(0.0, float(initial_join_seconds)))
 
-    if not process.is_alive():
+    if _worker_exit_confirmed(process):
         status = "EXITED_NORMALLY"
     else:
         process.terminate()
         process.join(max(0.0, float(terminate_join_seconds)))
 
-        if not process.is_alive():
+        if _worker_exit_confirmed(process):
             status = "REAPED_AFTER_TERMINATE"
         else:
             process.kill()
             process.join(max(0.0, float(kill_join_seconds)))
 
-            if not process.is_alive():
+            if _worker_exit_confirmed(process):
+                status = "REAPED_AFTER_KILL"
+            elif _confirm_worker_exit(
+                process,
+                kill_confirmation_seconds,
+            ):
                 status = "REAPED_AFTER_KILL"
             else:
                 status = "UNREAPED_AFTER_KILL"
@@ -159,7 +223,7 @@ def _reap_worker(
     exitcode = process.exitcode
     elapsed = time.perf_counter() - cleanup_started
 
-    if not process.is_alive():
+    if status != "UNREAPED_AFTER_KILL":
         try:
             process.close()
         except (AttributeError, ValueError):
@@ -181,6 +245,7 @@ def execute_isolated(
     post_payload_join_seconds: float = 5.0,
     terminate_join_seconds: float = 5.0,
     kill_join_seconds: float = 5.0,
+    kill_confirmation_seconds: float = 5.0,
 ) -> AttemptExecution:
     """Execute one production request with a hard pre-payload wall boundary.
 
@@ -222,6 +287,7 @@ def execute_isolated(
             initial_join_seconds=0.0,
             terminate_join_seconds=terminate_join_seconds,
             kill_join_seconds=kill_join_seconds,
+            kill_confirmation_seconds=kill_confirmation_seconds,
         )
 
         total = time.perf_counter() - total_started
@@ -274,6 +340,9 @@ def execute_isolated(
                     terminate_join_seconds
                 ),
                 kill_join_seconds=kill_join_seconds,
+                kill_confirmation_seconds=(
+                    kill_confirmation_seconds
+                ),
             )
 
             total = time.perf_counter() - total_started
@@ -322,6 +391,7 @@ def execute_isolated(
             initial_join_seconds=0.0,
             terminate_join_seconds=terminate_join_seconds,
             kill_join_seconds=kill_join_seconds,
+            kill_confirmation_seconds=kill_confirmation_seconds,
         )
 
         total = time.perf_counter() - total_started
@@ -356,6 +426,7 @@ def execute_isolated(
         initial_join_seconds=post_payload_join_seconds,
         terminate_join_seconds=terminate_join_seconds,
         kill_join_seconds=kill_join_seconds,
+        kill_confirmation_seconds=kill_confirmation_seconds,
     )
 
     total = time.perf_counter() - total_started
