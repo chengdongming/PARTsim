@@ -91,59 +91,160 @@ class RunOutcome:
     stopped: bool
 
 
-def _worker_exit_confirmed(process: Any) -> bool:
-    """Refresh ``Process`` state without exceeding a non-blocking boundary."""
+_PROCESS_LIFECYCLE_LOCK = threading.Lock()
+_EXITCODE_REFRESH_INTERVAL_SECONDS = 0.001
 
-    process.join(0.0)
 
-    if process.exitcode is not None:
+def _phase_deadline(timeout_seconds: float) -> float:
+    return time.monotonic() + max(0.0, float(timeout_seconds))
+
+
+def _acquire_process_lifecycle(deadline: Optional[float]) -> bool:
+    """Acquire the parent bookkeeping lock within an optional deadline."""
+
+    if deadline is None:
+        _PROCESS_LIFECYCLE_LOCK.acquire()
         return True
 
-    if process.is_alive():
+    remaining = deadline - time.monotonic()
+
+    if remaining <= 0.0:
+        return _PROCESS_LIFECYCLE_LOCK.acquire(blocking=False)
+
+    return _PROCESS_LIFECYCLE_LOCK.acquire(timeout=remaining)
+
+
+def _start_worker_process(process: Any) -> None:
+    """Serialize ``Process.start`` and its global child-registry cleanup."""
+
+    _PROCESS_LIFECYCLE_LOCK.acquire()
+
+    try:
+        process.start()
+    finally:
+        _PROCESS_LIFECYCLE_LOCK.release()
+
+
+def _signal_worker(
+    process: Any,
+    method_name: str,
+    deadline: float,
+) -> bool:
+    """Invoke a Process signal method without exceeding the phase deadline."""
+
+    if not _acquire_process_lifecycle(deadline):
         return False
 
-    # ``is_alive`` also polls the child. Repeat the public join operation so
-    # the multiprocessing bookkeeping and exit code agree before close().
-    process.join(0.0)
-    return process.exitcode is not None
+    try:
+        getattr(process, method_name)()
+        return True
+    finally:
+        _PROCESS_LIFECYCLE_LOCK.release()
+
+
+def _worker_sentinel(
+    process: Any,
+    deadline: float,
+) -> Tuple[bool, Any]:
+    """Read ``Process.sentinel`` under the lifecycle protocol."""
+
+    if not _acquire_process_lifecycle(deadline):
+        return False, None
+
+    try:
+        return True, process.sentinel
+    finally:
+        _PROCESS_LIFECYCLE_LOCK.release()
+
+
+def _worker_exit_confirmed(
+    process: Any,
+    deadline: Optional[float],
+) -> Tuple[bool, Optional[int]]:
+    """Atomically refresh exit state and close only a confirmed Process."""
+
+    if not _acquire_process_lifecycle(deadline):
+        return False, None
+
+    try:
+        process.join(0.0)
+        exitcode = process.exitcode
+
+        if exitcode is None:
+            return False, None
+
+        process.close()
+        return True, exitcode
+    finally:
+        _PROCESS_LIFECYCLE_LOCK.release()
 
 
 def _confirm_worker_exit(
     process: Any,
-    timeout_seconds: float,
-) -> bool:
-    """Boundedly confirm sentinel readiness and refresh ``Process.exitcode``."""
+    deadline: float,
+) -> Tuple[bool, Optional[int]]:
+    """Confirm exit by deadline without holding the lock during waiting."""
 
-    timeout = max(0.0, float(timeout_seconds))
-    deadline = time.monotonic() + timeout
+    confirmed, exitcode = _worker_exit_confirmed(
+        process,
+        deadline,
+    )
 
-    if _worker_exit_confirmed(process):
-        return True
+    if confirmed:
+        return True, exitcode
 
-    remaining = max(0.0, deadline - time.monotonic())
+    acquired, sentinel = _worker_sentinel(
+        process,
+        deadline,
+    )
 
-    try:
-        ready = wait_for_multiprocessing_objects(
-            [process.sentinel],
-            timeout=remaining,
+    if not acquired:
+        return False, None
+
+    while True:
+        remaining = deadline - time.monotonic()
+
+        if remaining <= 0.0:
+            return _worker_exit_confirmed(
+                process,
+                deadline,
+            )
+
+        try:
+            ready = wait_for_multiprocessing_objects(
+                [sentinel],
+                timeout=remaining,
+            )
+        except (OSError, TypeError, ValueError):
+            return _worker_exit_confirmed(
+                process,
+                deadline,
+            )
+
+        confirmed, exitcode = _worker_exit_confirmed(
+            process,
+            deadline,
         )
-    except (AttributeError, OSError, TypeError, ValueError):
-        # Preserve compatibility with Process-like test doubles while keeping
-        # the same deadline. Real multiprocessing.Process instances use the
-        # sentinel path above.
-        process.join(remaining)
-    else:
-        if ready:
-            process.join(0.0)
 
-    # A timeout can expire at the same instant that the sentinel becomes
-    # readable. These public, non-blocking refreshes close that observation
-    # race without using waitpid directly or extending the deadline.
-    if _worker_exit_confirmed(process):
-        return True
+        if confirmed:
+            return True, exitcode
 
-    process.join(0.0)
-    return _worker_exit_confirmed(process)
+        if not ready:
+            return False, None
+
+        remaining = deadline - time.monotonic()
+
+        if remaining <= 0.0:
+            return False, None
+
+        # A ready sentinel means the kernel observed exit, but CPython's
+        # shared Popen.returncode may still be awaiting another thread's
+        # serialized poll. Yield outside the lock and retry within the same
+        # deadline rather than converting that transient state into P0.
+        time.sleep(min(
+            _EXITCODE_REFRESH_INTERVAL_SECONDS,
+            remaining,
+        ))
 
 
 def _utc_now() -> str:
@@ -195,39 +296,69 @@ def _reap_worker(
     """Boundedly reap a worker without interpreting its analysis payload."""
 
     cleanup_started = time.perf_counter()
+    initial_deadline = _phase_deadline(initial_join_seconds)
+    confirmed, exitcode = _confirm_worker_exit(
+        process,
+        initial_deadline,
+    )
 
-    process.join(max(0.0, float(initial_join_seconds)))
-
-    if _worker_exit_confirmed(process):
+    if confirmed:
         status = "EXITED_NORMALLY"
     else:
-        process.terminate()
-        process.join(max(0.0, float(terminate_join_seconds)))
+        terminate_deadline = _phase_deadline(
+            terminate_join_seconds
+        )
+        _signal_worker(
+            process,
+            "terminate",
+            terminate_deadline,
+        )
+        confirmed, exitcode = _confirm_worker_exit(
+            process,
+            terminate_deadline,
+        )
 
-        if _worker_exit_confirmed(process):
+        if confirmed:
             status = "REAPED_AFTER_TERMINATE"
         else:
-            process.kill()
-            process.join(max(0.0, float(kill_join_seconds)))
-
-            if _worker_exit_confirmed(process):
-                status = "REAPED_AFTER_KILL"
-            elif _confirm_worker_exit(
+            kill_deadline = _phase_deadline(
+                kill_join_seconds
+            )
+            kill_sent = _signal_worker(
                 process,
-                kill_confirmation_seconds,
-            ):
+                "kill",
+                kill_deadline,
+            )
+            confirmed, exitcode = _confirm_worker_exit(
+                process,
+                kill_deadline,
+            )
+
+            if confirmed:
                 status = "REAPED_AFTER_KILL"
             else:
-                status = "UNREAPED_AFTER_KILL"
+                confirmation_deadline = _phase_deadline(
+                    kill_confirmation_seconds
+                )
 
-    exitcode = process.exitcode
+                if not kill_sent:
+                    _signal_worker(
+                        process,
+                        "kill",
+                        confirmation_deadline,
+                    )
+
+                confirmed, exitcode = _confirm_worker_exit(
+                    process,
+                    confirmation_deadline,
+                )
+
+                if confirmed:
+                    status = "REAPED_AFTER_KILL"
+                else:
+                    status = "UNREAPED_AFTER_KILL"
+
     elapsed = time.perf_counter() - cleanup_started
-
-    if status != "UNREAPED_AFTER_KILL":
-        try:
-            process.close()
-        except (AttributeError, ValueError):
-            pass
 
     return WorkerCleanup(
         status=status,
@@ -270,7 +401,7 @@ def execute_isolated(
     )
 
     total_started = time.perf_counter()
-    process.start()
+    _start_worker_process(process)
     sending.close()
 
     startup_wait = min(

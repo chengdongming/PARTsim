@@ -3,9 +3,12 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from enum import Enum
 import json
+import multiprocessing
+import multiprocessing.process as multiprocessing_process
 import os
 from pathlib import Path
 import signal
+import threading
 import time
 
 import pytest
@@ -121,6 +124,10 @@ def _start_and_never_send(
 ):
     started_event.set()
     time.sleep(float(linger_seconds))
+
+
+def _exit_immediately():
+    return None
 
 
 def _run_lingering_worker():
@@ -319,6 +326,45 @@ class _NeverConfirmingProcess:
         self.closed = True
 
 
+class _DelayedKillExitcodeProcess(
+    _NeverConfirmingProcess
+):
+    def __init__(self, sentinel, ready_writer):
+        super().__init__(sentinel)
+        self.ready_writer = ready_writer
+        self.post_kill_join_count = 0
+
+    def join(self, timeout=None):
+        del timeout
+
+        if not self.killed:
+            return
+
+        self.post_kill_join_count += 1
+
+        if self.post_kill_join_count >= 4:
+            self.exitcode = -signal.SIGKILL
+
+    def kill(self):
+        super().kill()
+        os.write(self.ready_writer, b"x")
+
+
+class _ObservedLifecycleLock:
+    def __init__(self, close_attempted):
+        self.lock = threading.Lock()
+        self.close_attempted = close_attempted
+
+    def acquire(self, *args, **kwargs):
+        if threading.current_thread().name == "closer":
+            self.close_attempted.set()
+
+        return self.lock.acquire(*args, **kwargs)
+
+    def release(self):
+        self.lock.release()
+
+
 def test_unconfirmed_exit_remains_unreaped_after_kill():
     read_fd, write_fd = os.pipe()
     process = _NeverConfirmingProcess(read_fd)
@@ -341,6 +387,138 @@ def test_unconfirmed_exit_remains_unreaped_after_kill():
     assert process.terminated is True
     assert process.killed is True
     assert process.closed is False
+
+
+def test_ready_sentinel_retries_delayed_exitcode_by_deadline():
+    read_fd, write_fd = os.pipe()
+    process = _DelayedKillExitcodeProcess(
+        read_fd,
+        write_fd,
+    )
+
+    try:
+        cleanup = engine_module._reap_worker(
+            process,
+            initial_join_seconds=0.0,
+            terminate_join_seconds=0.0,
+            kill_join_seconds=0.0,
+            kill_confirmation_seconds=0.1,
+        )
+    finally:
+        os.close(read_fd)
+        os.close(write_fd)
+
+    assert cleanup.status == "REAPED_AFTER_KILL"
+    assert cleanup.exitcode == -signal.SIGKILL
+    assert cleanup.seconds < 0.2
+    assert process.post_kill_join_count == 4
+    assert process.closed is True
+
+
+def test_concurrent_start_and_close_share_lifecycle_lock(
+    monkeypatch,
+):
+    context = multiprocessing.get_context("fork")
+    close_attempted = threading.Event()
+    snapshot_taken = threading.Event()
+    release_cleanup = threading.Event()
+    observed_lock = _ObservedLifecycleLock(
+        close_attempted
+    )
+    monkeypatch.setattr(
+        engine_module,
+        "_PROCESS_LIFECYCLE_LOCK",
+        observed_lock,
+    )
+
+    finished = context.Process(
+        target=_exit_immediately
+    )
+    engine_module._start_worker_process(finished)
+    assert engine_module.wait_for_multiprocessing_objects(
+        [finished.sentinel],
+        timeout=2.0,
+    )
+
+    def controlled_cleanup():
+        snapshot = list(
+            multiprocessing_process._children
+        )
+        snapshot_taken.set()
+
+        if not release_cleanup.wait(2.0):
+            raise RuntimeError(
+                "test did not release Process.start cleanup"
+            )
+
+        for child in snapshot:
+            if child._popen.poll() is not None:
+                multiprocessing_process._children.discard(
+                    child
+                )
+
+    monkeypatch.setattr(
+        multiprocessing_process,
+        "_cleanup",
+        controlled_cleanup,
+    )
+
+    starter = context.Process(
+        target=_exit_immediately
+    )
+    errors = []
+    close_result = []
+
+    def start_process():
+        try:
+            engine_module._start_worker_process(
+                starter
+            )
+        except BaseException as exc:
+            errors.append(exc)
+
+    def close_finished_process():
+        try:
+            close_result.append(
+                engine_module._worker_exit_confirmed(
+                    finished,
+                    time.monotonic() + 2.0,
+                )
+            )
+        except BaseException as exc:
+            errors.append(exc)
+
+    starter_thread = threading.Thread(
+        target=start_process,
+        name="starter",
+    )
+    closer_thread = threading.Thread(
+        target=close_finished_process,
+        name="closer",
+    )
+    starter_thread.start()
+
+    assert snapshot_taken.wait(2.0)
+
+    closer_thread.start()
+
+    assert close_attempted.wait(2.0)
+    release_cleanup.set()
+
+    starter_thread.join(2.0)
+    closer_thread.join(2.0)
+
+    assert starter_thread.is_alive() is False
+    assert closer_thread.is_alive() is False
+    assert errors == []
+    assert close_result == [(True, 0)]
+
+    starter_confirmed = engine_module._confirm_worker_exit(
+        starter,
+        time.monotonic() + 2.0,
+    )
+
+    assert starter_confirmed == (True, 0)
 
 
 def test_kill_confirmation_wait_refreshes_exitcode(
