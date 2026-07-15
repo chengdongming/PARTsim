@@ -311,7 +311,10 @@ class AcceptanceRatioRTAIntegrationTest(unittest.TestCase):
         )
         self.assertIn("单位J", help_text)
         self.assertIn("不是电池比例", help_text)
-        self.assertIn("--initial-energy 1.0", normalized_help)
+        self.assertIn(
+            "--initial-energy 1.0",
+            hyphen_normalized_help,
+        )
         self.assertIn(
             "--rta-initial-energy 1.0", hyphen_normalized_help
         )
