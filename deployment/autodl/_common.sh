@@ -47,18 +47,30 @@ run_experiment() {
   local smoke_config="$3"
   local formal_variable="$4"
   shift 4
-  local source_config profile
+  local source_config profile authorization_config
   profile="$PARTSIM_RUN_MODE"
   if [[ "$PARTSIM_RUN_MODE" == "formal" ]]; then
     if [[ "$name" == "ext2" ]]; then
       printf '%s\n' "EXT-2 formal mode is disabled: REAL_TRACE_DATA_UNAVAILABLE" >&2
       return 3
     fi
+    if [[ "$name" != "core1" && "$name" != "core2" ]]; then
+      printf '%s\n' "$name formal mode is disabled until it has a file-bound authorization contract." >&2
+      return 2
+    fi
     source_config="${!formal_variable:-}"
     if [[ -z "$source_config" ]]; then
       printf 'Set %s to an audited formal configuration.\n' "$formal_variable" >&2
       return 2
     fi
+    local authorization_variable
+    authorization_variable="${formal_variable%_CONFIG}_AUTHORIZATION"
+    authorization_config="${!authorization_variable:-}"
+    if [[ -z "$authorization_config" ]]; then
+      printf 'Set %s to the exact formal authorization file.\n' "$authorization_variable" >&2
+      return 2
+    fi
+    authorization_config="$(resolve_path "$authorization_config")"
   elif [[ "$PARTSIM_RUN_MODE" == "smoke" ]]; then
     source_config="$smoke_config"
   else
@@ -90,6 +102,14 @@ run_experiment() {
   if [[ "$PARTSIM_RUN_MODE" == "formal" ]]; then
     bounded_args=()
   fi
+  local authorization_args=()
+  if [[ -n "${authorization_config:-}" ]]; then
+    authorization_args=(
+      --formal-authorization "$authorization_config"
+      --source-freeze-config "$source_config"
+    )
+  fi
   run_logged "$name" python3 "$PROJECT_ROOT/$runner" \
-    --config "$prepared" "${resume_args[@]}" "${bounded_args[@]}"
+    --config "$prepared" "${authorization_args[@]}" \
+    "${resume_args[@]}" "${bounded_args[@]}"
 }

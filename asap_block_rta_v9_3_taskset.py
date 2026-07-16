@@ -24,6 +24,27 @@ class CertificationError(ValueError):
     """Raised when an object would violate the joint-certification contract."""
 
 
+def require_plain_int(value: object, field: str) -> int:
+    """Return a schema integer, rejecting bool and non-integral subclasses."""
+
+    if type(value) is not int:
+        raise CertificationError(f"{field} must be a plain integer")
+    return value
+
+
+def require_optional_plain_int(value: object, field: str) -> Optional[int]:
+    if value is None:
+        return None
+    return require_plain_int(value, field)
+
+
+def require_nonnegative_plain_int(value: object, field: str) -> int:
+    integer = require_plain_int(value, field)
+    if integer < 0:
+        raise CertificationError(f"{field} must be a nonnegative plain integer")
+    return integer
+
+
 class AnalysisVariant(str, Enum):
     CW_D = "CW-D"
     LOC_D = "LOC-D"
@@ -157,19 +178,23 @@ class SingleTaskSolverResult:
     failure_reason: Optional[str] = None
 
     def __post_init__(self) -> None:
+        require_optional_plain_int(
+            self.candidate_response_time, "candidate_response_time"
+        )
+        require_optional_plain_int(self.closing_w, "closing_w")
+        require_optional_plain_int(self.witness_h, "witness_h")
+        for field in (
+            "checked_w_count",
+            "checked_h_count",
+            "checked_q_count",
+            "envelope_call_count",
+        ):
+            require_nonnegative_plain_int(getattr(self, field), field)
         found = self.solver_status is TaskSolverStatus.CANDIDATE_FOUND
         if found != (self.candidate_response_time is not None):
             raise CertificationError("candidate presence must match solver status")
         if found and self.closing_w != self.candidate_response_time:
             raise CertificationError("closing_w must equal the returned candidate")
-        for value in (
-            self.checked_w_count,
-            self.checked_h_count,
-            self.checked_q_count,
-            self.envelope_call_count,
-        ):
-            if isinstance(value, bool) or value < 0:
-                raise CertificationError("solver counters must be nonnegative integers")
 
 
 _FINALIZER_TOKEN = object()
@@ -193,6 +218,7 @@ class TaskAnalysisRecord:
     _certification_token: object = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
+        validate_task_record_plain_integers(self)
         found = self.solver_status is TaskSolverStatus.CANDIDATE_FOUND
         if found != (self.candidate_response_time is not None):
             raise CertificationError("task candidate presence/status mismatch")
@@ -201,6 +227,39 @@ class TaskAnalysisRecord:
                 raise CertificationError("CERTIFIED may only be produced by finalizer")
             if not found:
                 raise CertificationError("certified task must have a candidate")
+
+
+def validate_task_record_plain_integers(record: TaskAnalysisRecord) -> None:
+    require_nonnegative_plain_int(record.priority_rank, "priority_rank")
+    require_optional_plain_int(
+        record.candidate_response_time, "candidate_response_time"
+    )
+    require_optional_plain_int(record.closing_w, "closing_w")
+    require_optional_plain_int(record.witness_h, "witness_h")
+    for field in (
+        "checked_w_count",
+        "checked_h_count",
+        "checked_q_count",
+        "envelope_call_count",
+    ):
+        require_nonnegative_plain_int(getattr(record, field), field)
+    try:
+        carry_entries = tuple(record.carry_in_values_used)
+        for _task_id, value in carry_entries:
+            require_plain_int(value, "carry_in_values_used value")
+    except (TypeError, ValueError) as exc:
+        if isinstance(exc, CertificationError):
+            raise
+        raise CertificationError(
+            "carry_in_values_used must contain task/integer pairs"
+        ) from exc
+    found = record.solver_status is TaskSolverStatus.CANDIDATE_FOUND
+    if found != (record.candidate_response_time is not None):
+        raise CertificationError("task candidate presence/status mismatch")
+    if found and record.closing_w != record.candidate_response_time:
+        raise CertificationError(
+            "closing_w must equal candidate_response_time"
+        )
 
 
 @dataclass(frozen=True)
@@ -214,6 +273,39 @@ class DominanceCounterexample:
     checked_h_count: int
     checked_q_count: int
     envelope_call_count: int
+
+    def __post_init__(self) -> None:
+        validate_dominance_counterexample_plain_integers(self)
+
+
+def validate_dominance_counterexample_plain_integers(
+    counterexample: DominanceCounterexample,
+) -> None:
+    require_nonnegative_plain_int(
+        counterexample.priority_rank, "priority_rank"
+    )
+    require_optional_plain_int(
+        counterexample.source_candidate, "source_candidate"
+    )
+    require_optional_plain_int(
+        counterexample.local_candidate, "local_candidate"
+    )
+    for field in (
+        "checked_w_count",
+        "checked_h_count",
+        "checked_q_count",
+        "envelope_call_count",
+    ):
+        require_nonnegative_plain_int(getattr(counterexample, field), field)
+    try:
+        for _task_id, value in counterexample.carry_in_vector:
+            require_plain_int(value, "dominance carry_in_vector value")
+    except (TypeError, ValueError) as exc:
+        if isinstance(exc, CertificationError):
+            raise
+        raise CertificationError(
+            "dominance carry_in_vector must contain task/integer pairs"
+        ) from exc
 
 
 @dataclass(frozen=True)
@@ -241,6 +333,7 @@ class TasksetAnalysisResult:
     _finalizer_token: object = field(repr=False, compare=False)
 
     def __post_init__(self) -> None:
+        validate_taskset_result_plain_integers(self)
         if self._finalizer_token is not _FINALIZER_TOKEN:
             raise CertificationError("task-set results may only be produced by finalizer")
         if self.method_role is not ROLE_BY_VARIANT[self.analysis_variant]:
@@ -262,6 +355,52 @@ class TasksetAnalysisResult:
             for record in self.task_records
         ):
             raise CertificationError("certified count mismatch")
+        if self.analysis_variant is AnalysisVariant.LOC_THETA_CW:
+            if not self.source_analysis_id:
+                raise CertificationError(
+                    "LOC-Theta^cw requires source_analysis_id"
+                )
+            if self.dependency_check_status not in {
+                DependencyVectorCheckStatus.VALID,
+                DependencyVectorCheckStatus.INVALID,
+            }:
+                raise CertificationError(
+                    "LOC-Theta^cw dependency status must be VALID or INVALID"
+                )
+            source_ids = tuple(item[0] for item in self.source_candidate_vector)
+            if len(source_ids) != len(set(source_ids)):
+                raise CertificationError("source candidate vector contains duplicate task IDs")
+            if self.dependency_check_status is DependencyVectorCheckStatus.VALID:
+                expected_ids = tuple(record.task_id for record in self.task_records)
+                if source_ids != tuple(sorted(expected_ids)):
+                    raise CertificationError(
+                        "VALID LOC-Theta^cw source vector must cover the task set"
+                    )
+                if self.fixed_carry_in_interface_status is not FixedCarryInInterfaceStatus.ACTIVE:
+                    raise CertificationError(
+                        "VALID LOC-Theta^cw requires ACTIVE fixed carry-in interface"
+                    )
+            elif (
+                not self.diagnostic_mode
+                and self.solver_status
+                is not AnalysisSolverStatus.NOT_APPLICABLE_DEPENDENCY
+            ):
+                raise CertificationError(
+                    "INVALID LOC-Theta^cw must be dependency N/A"
+                )
+        else:
+            if self.source_analysis_id is not None:
+                raise CertificationError(
+                    "non-LOC-Theta^cw result may not carry source_analysis_id"
+                )
+            if self.source_candidate_vector:
+                raise CertificationError(
+                    "non-LOC-Theta^cw result may not carry an external source vector"
+                )
+            if self.dependency_check_status is not DependencyVectorCheckStatus.NOT_CHECKED:
+                raise CertificationError(
+                    "non-LOC-Theta^cw dependency status must be NOT_CHECKED"
+                )
         if self.certification_status is AnalysisCertificationStatus.CERTIFIED_TASKSET:
             if self.solver_status is not AnalysisSolverStatus.COMPLETED:
                 raise CertificationError("certified task set must be completed")
@@ -271,6 +410,71 @@ class TasksetAnalysisResult:
                 raise CertificationError("certified task set must certify every task")
             if self.diagnostic_mode:
                 raise CertificationError("diagnostic result cannot be certified")
+
+
+def validate_taskset_result_plain_integers(
+    result: TasksetAnalysisResult,
+) -> None:
+    for field in (
+        "n_tasks_total",
+        "n_tasks_evaluated",
+        "n_tasks_candidate_found",
+        "n_tasks_certified",
+    ):
+        require_nonnegative_plain_int(getattr(result, field), field)
+    failed = result.first_failed_priority
+    if failed is not None:
+        failed = require_nonnegative_plain_int(
+            failed, "first_failed_priority"
+        )
+        if failed >= result.n_tasks_total:
+            raise CertificationError(
+                "first_failed_priority is outside the task set"
+            )
+    if result.n_tasks_total != len(result.task_records):
+        raise CertificationError("n_tasks_total does not match task records")
+    expected_ranks = tuple(range(result.n_tasks_total))
+    observed_ranks = tuple(
+        record.priority_rank for record in result.task_records
+    )
+    if observed_ranks != expected_ranks:
+        raise CertificationError(
+            "priority_rank must form a contiguous zero-based sequence"
+        )
+    for record in result.task_records:
+        validate_task_record_plain_integers(record)
+    evaluated = sum(
+        record.solver_status not in {
+            TaskSolverStatus.NOT_EVALUATED_AFTER_PREFIX_FAILURE,
+            TaskSolverStatus.NOT_APPLICABLE_DEPENDENCY,
+        }
+        for record in result.task_records
+    )
+    if result.n_tasks_evaluated != evaluated:
+        raise CertificationError("n_tasks_evaluated mismatch")
+    if result.n_tasks_candidate_found != sum(
+        record.solver_status is TaskSolverStatus.CANDIDATE_FOUND
+        for record in result.task_records
+    ):
+        raise CertificationError("n_tasks_candidate_found mismatch")
+    if result.n_tasks_certified != sum(
+        record.certification_status is TaskCertificationStatus.CERTIFIED
+        for record in result.task_records
+    ):
+        raise CertificationError("n_tasks_certified mismatch")
+    try:
+        for _task_id, value in result.source_candidate_vector:
+            require_plain_int(value, "source_candidate_vector value")
+    except (TypeError, ValueError) as exc:
+        if isinstance(exc, CertificationError):
+            raise
+        raise CertificationError(
+            "source_candidate_vector must contain task/integer pairs"
+        ) from exc
+    if result.dominance_counterexample is not None:
+        validate_dominance_counterexample_plain_integers(
+            result.dominance_counterexample
+        )
 
 
 class SingleTaskSolver(Protocol):
@@ -402,11 +606,82 @@ def _validate_record_vector(
     actual = tuple((record.task_id, record.priority_rank) for record in records)
     if actual != expected or len({record.task_id for record in records}) != len(records):
         raise CertificationError("task IDs and priority ranks must be complete and unique")
+    for record in records:
+        validate_task_record_plain_integers(record)
     if any(
         record.certification_status is TaskCertificationStatus.CERTIFIED
         for record in records
     ):
         raise CertificationError("pre-finalization records may not be CERTIFIED")
+
+
+def validate_carry_in_trace(
+    *,
+    variant: AnalysisVariant,
+    tasks: Sequence[core.V93Task],
+    records: Sequence[TaskAnalysisRecord],
+    compatibility_vector: Optional[Mapping[str, int]] = None,
+) -> None:
+    """Validate the exact per-task carry-in trace without mutating it."""
+
+    if len(tasks) != len(records):
+        raise CertificationError("carry-in trace requires one record per task")
+    expected_order = tuple(
+        (task.name, rank) for rank, task in enumerate(tasks)
+    )
+    observed_order = tuple(
+        (record.task_id, record.priority_rank) for record in records
+    )
+    if observed_order != expected_order:
+        raise CertificationError("carry-in trace task order mismatch")
+    for record in records:
+        validate_task_record_plain_integers(record)
+
+    recursive = variant in {
+        AnalysisVariant.CW_THETA_CW,
+        AnalysisVariant.LOC_THETA_LOC,
+    }
+    fixed = not recursive
+    frozen: Optional[Tuple[Tuple[str, int], ...]] = None
+    if fixed:
+        if compatibility_vector is None:
+            if variant is not AnalysisVariant.LOC_THETA_CW or any(
+                record.solver_status
+                is not TaskSolverStatus.NOT_APPLICABLE_DEPENDENCY
+                for record in records
+            ):
+                raise CertificationError(
+                    "fixed carry-in trace requires a compatibility vector"
+                )
+        else:
+            expected_ids = {task.name for task in tasks}
+            if set(compatibility_vector) != expected_ids:
+                raise CertificationError(
+                    "compatibility vector must cover the task set"
+                )
+            for value in compatibility_vector.values():
+                require_plain_int(value, "compatibility vector value")
+            frozen = tuple(sorted(compatibility_vector.items()))
+
+    prefix: dict[str, int] = {}
+    for record in records:
+        inactive = record.solver_status in {
+            TaskSolverStatus.NOT_EVALUATED_AFTER_PREFIX_FAILURE,
+            TaskSolverStatus.NOT_APPLICABLE_DEPENDENCY,
+        }
+        expected = () if inactive else (
+            tuple(sorted(prefix.items())) if recursive else frozen
+        )
+        if record.carry_in_values_used != expected:
+            raise CertificationError(
+                f"carry-in trace mismatch at task {record.task_id}"
+            )
+        if recursive and record.solver_status is TaskSolverStatus.CANDIDATE_FOUND:
+            if record.candidate_response_time is None:
+                raise CertificationError(
+                    "recursive carry-in prefix has a missing candidate"
+                )
+            prefix[record.task_id] = record.candidate_response_time
 
 
 def _make_result(
@@ -425,6 +700,7 @@ def _make_result(
     diagnostic_mode: bool,
     context: DependencyContext,
     counterexample: Optional[DominanceCounterexample] = None,
+    planned_source_analysis_id: Optional[str] = None,
 ) -> TasksetAnalysisResult:
     evaluated = sum(
         record.solver_status
@@ -455,8 +731,17 @@ def _make_result(
         taskset_proven=(
             certification_status is AnalysisCertificationStatus.CERTIFIED_TASKSET
         ),
-        source_analysis_id=source.analysis_id if source else None,
-        source_candidate_vector=source_vector,
+        source_analysis_id=(
+            planned_source_analysis_id
+            or (
+                source.analysis_id
+                if variant is AnalysisVariant.LOC_THETA_CW and source is not None
+                else None
+            )
+        ),
+        source_candidate_vector=(
+            source_vector if variant is AnalysisVariant.LOC_THETA_CW else ()
+        ),
         dependency_check_status=dependency_status,
         fixed_carry_in_interface_status=interface_status,
         dominance_invariant_status=dominance_status,
@@ -498,11 +783,6 @@ def finalize_joint_certification(
             raise CertificationError("recursive analysis may not use a fixed compatibility vector")
         if interface_status is not FixedCarryInInterfaceStatus.NOT_APPLICABLE:
             raise CertificationError("recursive analysis does not use fixed carry-in interface")
-        prior = {}
-        for record in before:
-            if dict(record.carry_in_values_used) != prior:
-                raise CertificationError("recursive carry-in does not equal provisional prefix")
-            prior[record.task_id] = record.candidate_response_time
     else:
         if interface_status is not FixedCarryInInterfaceStatus.ACTIVE:
             raise CertificationError("fixed carry-in certification requires ACTIVE interface")
@@ -536,9 +816,12 @@ def finalize_joint_certification(
                 raise CertificationError("fixed carry-in must satisfy C_i <= Gamma_i <= D_i")
             if record.candidate_response_time > compatibility_vector[record.task_id]:
                 raise CertificationError("candidate exceeds fixed carry-in vector")
-        expected_carry = tuple(sorted(compatibility_vector.items()))
-        if any(record.carry_in_values_used != expected_carry for record in before):
-            raise CertificationError("fixed carry-in vector changed during analysis")
+    validate_carry_in_trace(
+        variant=variant,
+        tasks=tasks,
+        records=before,
+        compatibility_vector=compatibility_vector,
+    )
     if observer:
         observer("before", before)
     upgraded = tuple(
@@ -592,22 +875,66 @@ def _certified_source_vector(
 ) -> Optional[dict]:
     if source is None:
         return None
+    # A caller can bypass frozen-dataclass construction (for example while
+    # loading an untrusted artifact).  Revalidate every integer-bearing field
+    # before deriving a compatibility vector or invoking a task solver.
+    validate_taskset_result_plain_integers(source)
     if source.analysis_variant is not AnalysisVariant.CW_THETA_CW:
         return None
     if source.solver_status is not AnalysisSolverStatus.COMPLETED:
         return None
     if source.certification_status is not AnalysisCertificationStatus.CERTIFIED_TASKSET:
         return None
-    if not source.taskset_proven or source.n_tasks_certified != source.n_tasks_total:
-        return None
-    if tuple(record.task_id for record in source.task_records) != tuple(task.name for task in tasks):
-        return None
-    if any(
-        record.solver_status is not TaskSolverStatus.CANDIDATE_FOUND
-        or record.certification_status is not TaskCertificationStatus.CERTIFIED
-        for record in source.task_records
+    if (
+        source.method_role is not ROLE_BY_VARIANT[AnalysisVariant.CW_THETA_CW]
+        or not isinstance(source.taskset_proven, bool)
+        or not source.taskset_proven
+        or not isinstance(source.diagnostic_mode, bool)
+        or source.diagnostic_mode
+        or source.first_failed_priority is not None
+        or source.n_tasks_total != len(tasks)
+        or source.n_tasks_evaluated != len(tasks)
+        or source.n_tasks_candidate_found != len(tasks)
+        or source.n_tasks_certified != len(tasks)
+        or source.source_analysis_id is not None
+        or source.source_candidate_vector
+        or source.dependency_check_status
+        is not DependencyVectorCheckStatus.NOT_CHECKED
+        or source.fixed_carry_in_interface_status
+        is not FixedCarryInInterfaceStatus.NOT_APPLICABLE
+        or source.dominance_invariant_status
+        is not DominanceInvariantStatus.NOT_APPLICABLE
+        or source.dominance_counterexample is not None
     ):
-        return None
+        raise CertificationError(
+            "certified CW source violates the joint-certification result matrix"
+        )
+    expected_records = tuple(
+        (task.name, rank) for rank, task in enumerate(tasks)
+    )
+    if tuple(
+        (record.task_id, record.priority_rank)
+        for record in source.task_records
+    ) != expected_records:
+        raise CertificationError(
+            "certified CW source task order does not match the target task set"
+        )
+    for task, record in zip(tasks, source.task_records):
+        if (
+            record.solver_status is not TaskSolverStatus.CANDIDATE_FOUND
+            or record.certification_status is not TaskCertificationStatus.CERTIFIED
+            or record.candidate_response_time is None
+            or not task.wcet <= record.candidate_response_time <= task.deadline
+            or record.closing_w != record.candidate_response_time
+        ):
+            raise CertificationError(
+                "certified CW source task record violates C <= R = closing_w <= D"
+            )
+    validate_carry_in_trace(
+        variant=AnalysisVariant.CW_THETA_CW,
+        tasks=tasks,
+        records=source.task_records,
+    )
     return {
         record.task_id: record.candidate_response_time
         for record in source.task_records
@@ -620,6 +947,7 @@ def analyze_taskset_v9_3(
     analysis_input: TasksetAnalysisInput,
     *,
     source: Optional[TasksetAnalysisResult] = None,
+    source_analysis_id: Optional[str] = None,
     dependency_check_status: DependencyVectorCheckStatus = DependencyVectorCheckStatus.NOT_CHECKED,
     fixed_carry_in_interface_status: Optional[FixedCarryInInterfaceStatus] = None,
     diagnostic_mode: bool = False,
@@ -631,6 +959,55 @@ def analyze_taskset_v9_3(
 
     if not isinstance(variant, AnalysisVariant):
         raise CertificationError("variant must be an AnalysisVariant")
+    if not isinstance(dependency_check_status, DependencyVectorCheckStatus):
+        raise CertificationError(
+            "dependency_check_status must be a DependencyVectorCheckStatus"
+        )
+    if variant is AnalysisVariant.LOC_THETA_CW:
+        resolved_source_analysis_id = (
+            source.analysis_id if source is not None else source_analysis_id
+        )
+        if not resolved_source_analysis_id:
+            raise CertificationError(
+                "LOC-Theta^cw requires a source result or planned source ID"
+            )
+        if (
+            source is not None
+            and source_analysis_id is not None
+            and source.analysis_id != source_analysis_id
+        ):
+            raise CertificationError("LOC-Theta^cw planned source ID mismatch")
+        if source is None and (
+            dependency_check_status is not DependencyVectorCheckStatus.INVALID
+        ):
+            raise CertificationError(
+                "missing LOC-Theta^cw source must have INVALID dependency"
+            )
+        if dependency_check_status not in {
+            DependencyVectorCheckStatus.VALID,
+            DependencyVectorCheckStatus.INVALID,
+        }:
+            raise CertificationError(
+                "LOC-Theta^cw dependency status must be VALID or INVALID"
+            )
+        if diagnostic_carry_in_vector is not None:
+            raise CertificationError(
+                "LOC-Theta^cw may not fall back to a diagnostic carry-in vector"
+            )
+    else:
+        resolved_source_analysis_id = None
+        if source is not None:
+            raise CertificationError(
+                "only LOC-Theta^cw may receive a source result"
+            )
+        if source_analysis_id is not None:
+            raise CertificationError(
+                "only LOC-Theta^cw may receive a planned source ID"
+            )
+        if dependency_check_status is not DependencyVectorCheckStatus.NOT_CHECKED:
+            raise CertificationError(
+                "non-LOC-Theta^cw dependency status must be NOT_CHECKED"
+            )
     try:
         validated_beta = core.validate_service_curve_v9_3(
             analysis_input.beta,
@@ -677,7 +1054,11 @@ def analyze_taskset_v9_3(
             and source.dependency_context == analysis_input.dependency_context
         )
         source_dependency_valid = bool(certified_vector and identities_match)
-        if not source_dependency_valid or dependency_check_status is DependencyVectorCheckStatus.INVALID:
+        if (
+            not source_dependency_valid
+            or not interface_valid
+            or dependency_check_status is DependencyVectorCheckStatus.INVALID
+        ):
             dependency_check_status = DependencyVectorCheckStatus.INVALID
         applicable = bool(
             certified_vector
@@ -686,28 +1067,12 @@ def analyze_taskset_v9_3(
             and dependency_check_status is DependencyVectorCheckStatus.VALID
         )
         fixed_vector = certified_vector
-        if not applicable and diagnostic_mode:
-            if diagnostic_carry_in_vector is None:
-                raise CertificationError(
-                    "diagnostic LOC-Theta^cw requires an explicit complete frozen vector"
-                )
-            if set(diagnostic_carry_in_vector) != {task.name for task in tasks}:
-                raise CertificationError("diagnostic carry-in vector is incomplete")
-            for task in tasks:
-                value = diagnostic_carry_in_vector[task.name]
-                if (
-                    isinstance(value, bool)
-                    or not isinstance(value, int)
-                    or not task.wcet <= value <= task.deadline
-                ):
-                    raise CertificationError(
-                        "diagnostic carry-in must satisfy C_i <= Gamma_i <= D_i"
-                    )
-            fixed_vector = dict(diagnostic_carry_in_vector)
     else:
         applicable = True
 
-    if not applicable and not diagnostic_mode:
+    if not applicable and (
+        variant is AnalysisVariant.LOC_THETA_CW or not diagnostic_mode
+    ):
         records = tuple(_not_applicable(task, rank) for rank, task in enumerate(tasks))
         return _make_result(
             analysis_id=analysis_id,
@@ -723,6 +1088,7 @@ def analyze_taskset_v9_3(
             dominance_status=DominanceInvariantStatus.NOT_APPLICABLE,
             diagnostic_mode=False,
             context=analysis_input.dependency_context,
+            planned_source_analysis_id=resolved_source_analysis_id,
         )
 
     records = []
@@ -829,6 +1195,7 @@ def analyze_taskset_v9_3(
             diagnostic_mode=diagnostic_mode,
             context=analysis_input.dependency_context,
             counterexample=counterexample,
+            planned_source_analysis_id=resolved_source_analysis_id,
         )
     if diagnostic_mode:
         return _make_result(
@@ -845,6 +1212,7 @@ def analyze_taskset_v9_3(
             dominance_status=DominanceInvariantStatus.NOT_CHECKED,
             diagnostic_mode=True,
             context=analysis_input.dependency_context,
+            planned_source_analysis_id=resolved_source_analysis_id,
         )
     return finalize_joint_certification(
         analysis_id=analysis_id,

@@ -196,7 +196,7 @@ def result_row(spec: SourceMutation, build: str, original: str, mutated: str,
                restored: str, process: subprocess.CompletedProcess[str]):
     expected_marker = {
         "early_task_certification": "CERTIFIED may only be produced by finalizer",
-        "loc_uses_local_prefix": "fixed carry-in vector changed during analysis",
+        "loc_uses_local_prefix": "carry-in trace mismatch",
     }.get(spec.mutation_id, "AssertionError")
     return _provenance_row(
         spec.mutation_id, build, spec.target_file, spec.target_symbol, original,

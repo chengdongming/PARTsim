@@ -18,7 +18,9 @@ import yaml
 import asap_block_rta as legacy_rta
 import asap_block_rta_v9_3 as rta_core
 
-from .cell_model import Cell, derive_seed, generation_dimensions, taskset_id
+from .cell_model import (
+    Cell, derive_seed, expand_cells, generation_dimensions, taskset_id,
+)
 from .config import canonical_json, domain_hash, fraction_text
 
 
@@ -161,6 +163,163 @@ class TasksetStore:
         self.config = config
         self.service = service
         self.root.mkdir(parents=True, exist_ok=True)
+        self.manifest_path = self.root / "pairing_manifest.json"
+        self._initialize_pairing_manifest()
+
+    def _pairing_contract(self) -> Dict[str, Any]:
+        dimensions: Dict[str, Dict[str, Any]] = {}
+        for cell in expand_cells(self.config):
+            dimensions[cell.generation_id] = {
+                "generation_id": cell.generation_id,
+                "dimensions": generation_dimensions(
+                    self.config, cell.processors, cell.task_count,
+                    cell.utilization,
+                ),
+            }
+        start = int(self.config["grid"].get("taskset_index_start", 0))
+        count = int(self.config["grid"]["tasksets_per_cell"])
+        return {
+            "generation_cells": [dimensions[key] for key in sorted(dimensions)],
+            "base_seed": int(self.config["grid"]["base_seed"]),
+            "seed_mode": self.config["grid"].get(
+                "seed_mode", "generation_dimensions"
+            ),
+            "taskset_index_start": start,
+            "taskset_index_end_exclusive": start + count,
+            "tasksets_per_generation_cell": count,
+            "exact_e0_grid": list(self.config["energy"]["initial_energy_values"]),
+            "service_curve_identity": self.service.identity,
+        }
+
+    def _initialize_pairing_manifest(self) -> None:
+        contract = self._pairing_contract()
+        pairing_id = domain_hash(
+            "ASAP_BLOCK:V9.3:CORE12_PAIRING_CONTRACT:v1", contract
+        )
+        if not self.manifest_path.is_file():
+            self._write_manifest({
+                "schema": "ASAP_BLOCK_V9_3_CORE12_PAIRING_MANIFEST_V1",
+                "pairing_id": pairing_id,
+                "contract": contract,
+                "entries": [],
+            })
+            return
+        manifest = self.manifest_document()
+        if (
+            manifest.get("schema")
+            != "ASAP_BLOCK_V9_3_CORE12_PAIRING_MANIFEST_V1"
+            or manifest.get("pairing_id") != pairing_id
+            or manifest.get("contract") != contract
+            or not isinstance(manifest.get("entries"), list)
+        ):
+            raise TasksetStoreError(
+                "CORE-1/CORE-2 pairing manifest contract mismatch"
+            )
+
+    def _write_manifest(self, document: Mapping[str, Any]) -> None:
+        _atomic_write(
+            self.manifest_path,
+            json.dumps(
+                document, ensure_ascii=False, sort_keys=True, indent=2
+            ) + "\n",
+        )
+
+    def manifest_document(self) -> Dict[str, Any]:
+        try:
+            document = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise TasksetStoreError("cannot read pairing manifest") from exc
+        if not isinstance(document, dict):
+            raise TasksetStoreError("pairing manifest must be a mapping")
+        return document
+
+    @staticmethod
+    def _manifest_entry(stored: StoredTaskset) -> Dict[str, Any]:
+        return {
+            "generation_id": stored.generation_id,
+            "taskset_index": stored.taskset_index,
+            "generation_seed": stored.seed,
+            "taskset_id": stored.taskset_id,
+            "taskset_semantic_hash": stored.semantic_hash,
+            "priority_hash": stored.priority_hash,
+            "power_hash": stored.power_hash,
+            "task_payload": list(stored.task_payload),
+            "service_curve_identity": stored.service_curve_reference,
+        }
+
+    def _register_pairing_entry(self, stored: StoredTaskset) -> None:
+        manifest = self.manifest_document()
+        entries = list(manifest["entries"])
+        entry = self._manifest_entry(stored)
+        key = (stored.generation_id, stored.taskset_index)
+        matches = [
+            row for row in entries
+            if (row.get("generation_id"), row.get("taskset_index")) == key
+        ]
+        if len(matches) > 1:
+            raise TasksetStoreError("duplicate taskset in pairing manifest")
+        if matches:
+            if matches[0] != entry:
+                raise TasksetStoreError(
+                    "pairing manifest taskset payload mismatch"
+                )
+            return
+        entries.append(entry)
+        manifest["entries"] = sorted(
+            entries,
+            key=lambda row: (row["generation_id"], row["taskset_index"]),
+        )
+        self._write_manifest(manifest)
+
+    def verify_pairing_manifest(self, *, require_complete: bool) -> None:
+        self._initialize_pairing_manifest()
+        manifest = self.manifest_document()
+        entries = manifest["entries"]
+        index: Dict[tuple[str, int], Mapping[str, Any]] = {}
+        for entry in entries:
+            key = (str(entry.get("generation_id")), int(entry.get("taskset_index")))
+            if key in index:
+                raise TasksetStoreError("duplicate taskset in pairing manifest")
+            index[key] = entry
+        if not require_complete:
+            return
+        contract = manifest["contract"]
+        start = int(contract["taskset_index_start"])
+        end = int(contract["taskset_index_end_exclusive"])
+        expected = {
+            (row["generation_id"], taskset_index)
+            for row in contract["generation_cells"]
+            for taskset_index in range(start, end)
+        }
+        if set(index) != expected:
+            raise TasksetStoreError(
+                "formal pairing manifest is missing or has extra tasksets"
+            )
+        for key, entry in index.items():
+            path = self.path_for(*key)
+            if not path.is_file():
+                raise TasksetStoreError("formal pairing manifest taskset file is missing")
+            try:
+                document = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise TasksetStoreError("cannot read paired taskset") from exc
+            observed = {
+                "generation_id": document.get("generation_id"),
+                "taskset_index": document.get("taskset_index"),
+                "generation_seed": document.get("seed"),
+                "taskset_id": document.get("taskset_id"),
+                "taskset_semantic_hash": document.get("taskset_hash"),
+                "priority_hash": document.get("priority_hash"),
+                "power_hash": document.get("power_hash"),
+                "task_payload": document.get("tasks"),
+                "service_curve_identity": document.get(
+                    "service_curve_reference"
+                ),
+            }
+            if observed != entry:
+                raise TasksetStoreError(
+                    "formal pairing manifest/taskset payload mismatch"
+                )
 
     def path_for(self, generation_id: str, taskset_index: int) -> Path:
         return self.root / generation_id / f"taskset_{taskset_index:05d}.json"
@@ -168,8 +327,11 @@ class TasksetStore:
     def get_or_create(self, cell: Cell, taskset_index: int) -> StoredTaskset:
         path = self.path_for(cell.generation_id, taskset_index)
         if path.is_file():
-            return self._load(path, cell, taskset_index)
-        return self._generate(path, cell, taskset_index)
+            stored = self._load(path, cell, taskset_index)
+        else:
+            stored = self._generate(path, cell, taskset_index)
+        self._register_pairing_entry(stored)
+        return stored
 
     def _generate(self, path: Path, cell: Cell, taskset_index: int) -> StoredTaskset:
         generation = self.config["generation"]

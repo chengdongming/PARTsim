@@ -22,9 +22,16 @@ def run_cli(expected_core: str) -> int:
     parser.add_argument("--list-cells", action="store_true")
     parser.add_argument("--max-cells", type=int)
     parser.add_argument("--max-tasksets", type=int)
+    parser.add_argument("--formal-authorization", type=Path)
+    parser.add_argument("--source-freeze-config", type=Path)
     args = parser.parse_args()
     config = load_config(args.config, expected_core=expected_core)
-    engine = ExecutionEngine(config)
+    engine = ExecutionEngine(
+        config,
+        authorization_path=args.formal_authorization,
+        source_config_path=args.source_freeze_config,
+        prepared_config_path=args.config,
+    )
     if args.dry_run or args.list_cells:
         description = engine.describe(max_cells=args.max_cells)
         if not args.list_cells:
@@ -36,6 +43,16 @@ def run_cli(expected_core: str) -> int:
         max_cells=args.max_cells,
         max_tasksets=args.max_tasksets,
     )
+    if outcome.stopped:
+        print(json.dumps({
+            "output_root": str(outcome.output_root),
+            "requested": outcome.requested,
+            "terminal": outcome.terminal,
+            "status_counts": outcome.status_counts,
+            "stopped": True,
+            "summary": None,
+        }, ensure_ascii=False, sort_keys=True))
+        return 2
     summary = (
         aggregate_core1(outcome.output_root)
         if expected_core == "CORE-1" else aggregate_core2(outcome.output_root)
@@ -48,4 +65,4 @@ def run_cli(expected_core: str) -> int:
         "stopped": outcome.stopped,
         "summary": summary,
     }, ensure_ascii=False, sort_keys=True))
-    return 2 if outcome.stopped else 0
+    return 0
