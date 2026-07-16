@@ -70,6 +70,25 @@ def failure(status):
     return ts.SingleTaskSolverResult(status, failure_reason=status.value)
 
 
+def provisional_record(**overrides):
+    fields = {
+        "task_id": "t0",
+        "priority_rank": 0,
+        "solver_status": ts.TaskSolverStatus.CANDIDATE_FOUND,
+        "certification_status": ts.TaskCertificationStatus.PROVISIONAL_NOT_CERTIFIED,
+        "candidate_response_time": 1,
+        "carry_in_values_used": (),
+        "closing_w": 1,
+        "witness_h": 0,
+        "checked_w_count": 1,
+        "checked_h_count": 1,
+        "checked_q_count": 1,
+        "envelope_call_count": 1,
+    }
+    fields.update(overrides)
+    return ts.TaskAnalysisRecord(**fields)
+
+
 class ScriptedSolver:
     def __init__(self, outcomes):
         self.outcomes = dict(outcomes)
@@ -173,6 +192,7 @@ class TestSingleTaskAdapter:
         assert result.candidate_response_time is not None
         assert not hasattr(result, "certification_status")
 
+
     @pytest.mark.parametrize(
         "core_status, expected",
         [
@@ -232,6 +252,200 @@ class TestSingleTaskAdapter:
                 energy_input=analysis_input((item,), context("exception")),
                 timeout_seconds=None,
             )
+
+
+class TestPlainIntegerContract:
+    @pytest.mark.parametrize(
+        "overrides,field",
+        (
+            ({"candidate_response_time": True, "closing_w": 1}, "candidate_response_time"),
+            ({"candidate_response_time": 1, "closing_w": True}, "closing_w"),
+            ({"witness_h": True}, "witness_h"),
+            ({"checked_w_count": True}, "checked_w_count"),
+        ),
+    )
+    def test_single_task_result_rejects_bool_scientific_integer(
+        self, overrides, field
+    ):
+        values = {
+            "solver_status": ts.TaskSolverStatus.CANDIDATE_FOUND,
+            "candidate_response_time": 1,
+            "closing_w": 1,
+            "witness_h": 0,
+            "checked_w_count": 0,
+            "checked_h_count": 0,
+            "checked_q_count": 0,
+            "envelope_call_count": 0,
+        }
+        values.update(overrides)
+        with pytest.raises(ts.CertificationError, match=field):
+            ts.SingleTaskSolverResult(**values)
+
+    @pytest.mark.parametrize(
+        "overrides,field",
+        (
+            ({"priority_rank": True}, "priority_rank"),
+            ({"candidate_response_time": True, "closing_w": 1}, "candidate_response_time"),
+            ({"closing_w": True}, "closing_w"),
+            ({"witness_h": True}, "witness_h"),
+            ({"checked_q_count": True}, "checked_q_count"),
+            ({"carry_in_values_used": (("t0", True),)}, "carry_in_values_used"),
+        ),
+    )
+    def test_task_record_rejects_bool_scientific_integer(
+        self, overrides, field
+    ):
+        with pytest.raises(ts.CertificationError, match=field):
+            provisional_record(**overrides)
+
+    @pytest.mark.parametrize(
+        "field",
+        (
+            "n_tasks_total",
+            "n_tasks_evaluated",
+            "n_tasks_candidate_found",
+            "n_tasks_certified",
+        ),
+    )
+    def test_taskset_result_rejects_bool_counter(self, field):
+        result, _solver = run_scripted(
+            ts.AnalysisVariant.CW_THETA_CW,
+            {"t0": candidate(1)},
+            input=analysis_input(tasks(1)),
+        )
+        with pytest.raises(ts.CertificationError, match=field):
+            replace(result, **{field: True})
+
+    def test_taskset_result_rejects_bool_first_failed_priority(self):
+        result, _solver = run_scripted(
+            ts.AnalysisVariant.CW_THETA_CW,
+            {"t0": failure(ts.TaskSolverStatus.NO_CANDIDATE)},
+            input=analysis_input(tasks(1)),
+        )
+        with pytest.raises(ts.CertificationError, match="first_failed_priority"):
+            replace(result, first_failed_priority=False)
+
+    @pytest.mark.parametrize(
+        "field",
+        (
+            "priority_rank",
+            "source_candidate",
+            "local_candidate",
+            "checked_h_count",
+        ),
+    )
+    def test_dominance_counterexample_rejects_bool_integer(self, field):
+        values = {
+            "task_id": "t0",
+            "priority_rank": 0,
+            "source_candidate": 1,
+            "local_candidate": 1,
+            "carry_in_vector": (("t0", 1),),
+            "checked_w_count": 0,
+            "checked_h_count": 0,
+            "checked_q_count": 0,
+            "envelope_call_count": 0,
+        }
+        values[field] = True
+        with pytest.raises(ts.CertificationError, match=field):
+            ts.DominanceCounterexample(**values)
+
+    def test_direct_analyzer_rejects_bool_candidate_and_closing(self):
+        def bool_solver(**_kwargs):
+            return ts.SingleTaskSolverResult(
+                ts.TaskSolverStatus.CANDIDATE_FOUND,
+                candidate_response_time=True,
+                closing_w=True,
+                witness_h=0,
+            )
+
+        with pytest.raises(ts.CertificationError, match="candidate_response_time"):
+            ts.analyze_taskset_v9_3(
+                "bool-direct",
+                ts.AnalysisVariant.CW_THETA_CW,
+                analysis_input(tasks(1)),
+                single_task_solver=bool_solver,
+            )
+
+    @pytest.mark.parametrize(
+        "mutation,field",
+        (
+            ("candidate", "candidate_response_time"),
+            ("closing", "closing_w"),
+            ("witness", "witness_h"),
+            ("priority", "priority_rank"),
+            ("checked", "checked_q_count"),
+            ("taskset_counter", "n_tasks_evaluated"),
+            ("carry", "carry_in_values_used"),
+            ("source_vector", "source_candidate_vector"),
+        ),
+    )
+    def test_loc_theta_cw_rejects_bool_source_before_solver_call(
+        self, mutation, field
+    ):
+        source = certified_cw()
+        records = list(source.task_records)
+        if mutation == "candidate":
+            object.__setattr__(records[0], "candidate_response_time", True)
+        elif mutation == "closing":
+            object.__setattr__(records[0], "closing_w", True)
+        elif mutation == "witness":
+            object.__setattr__(records[0], "witness_h", True)
+        elif mutation == "priority":
+            object.__setattr__(records[0], "priority_rank", True)
+        elif mutation == "checked":
+            object.__setattr__(records[0], "checked_q_count", True)
+        elif mutation == "taskset_counter":
+            object.__setattr__(source, "n_tasks_evaluated", True)
+        elif mutation == "carry":
+            object.__setattr__(
+                records[1], "carry_in_values_used", (("t0", True),)
+            )
+        elif mutation == "source_vector":
+            object.__setattr__(
+                source, "source_candidate_vector", (("t0", True),)
+            )
+        else:
+            raise AssertionError(mutation)
+        object.__setattr__(source, "task_records", tuple(records))
+
+        calls = []
+
+        def counting_solver(**_kwargs):
+            calls.append(1)
+            return candidate(1)
+
+        error = None
+        try:
+            ts.analyze_taskset_v9_3(
+                "bool-source-direct",
+                ts.AnalysisVariant.LOC_THETA_CW,
+                analysis_input(),
+                source=source,
+                dependency_check_status=ts.DependencyVectorCheckStatus.VALID,
+                single_task_solver=counting_solver,
+            )
+        except ts.CertificationError as exc:
+            error = exc
+        assert error is not None, (
+            f"{field} bool source was accepted; solver_calls={len(calls)}"
+        )
+        assert field in str(error)
+        assert calls == []
+
+    def test_plain_integer_zero_and_one_remain_valid(self):
+        result = ts.SingleTaskSolverResult(
+            ts.TaskSolverStatus.CANDIDATE_FOUND,
+            candidate_response_time=1,
+            closing_w=1,
+            witness_h=0,
+            checked_w_count=0,
+            checked_h_count=1,
+            checked_q_count=0,
+            envelope_call_count=1,
+        )
+        assert result.candidate_response_time == 1
+        assert result.witness_h == 0
 
 
 @pytest.mark.parametrize(
@@ -505,34 +719,137 @@ class TestLocThetaCw:
         with pytest.raises(FrozenInstanceError):
             source.task_records[0].candidate_response_time = 99
 
-    def test_explicit_diagnostic_requires_vector_and_never_certifies(self):
+    def test_explicit_diagnostic_cannot_fallback_to_another_vector(self):
         source, _ = run_scripted(
             ts.AnalysisVariant.CW_THETA_CW,
             {name: candidate(2) for name in ("t0", "t1", "t2")},
             diagnostic_mode=True,
         )
-        with pytest.raises(ts.CertificationError, match="explicit complete"):
+        result, solver = run_scripted(
+            ts.AnalysisVariant.LOC_THETA_CW,
+            {name: candidate(1) for name in ("t0", "t1", "t2")},
+            source=source,
+            dependency_check_status=ts.DependencyVectorCheckStatus.INVALID,
+            diagnostic_mode=True,
+        )
+        assert solver.calls == []
+        assert result.solver_status is ts.AnalysisSolverStatus.NOT_APPLICABLE_DEPENDENCY
+        assert result.certification_status is ts.AnalysisCertificationStatus.NOT_APPLICABLE
+        assert not result.taskset_proven
+        with pytest.raises(ts.CertificationError, match="may not fall back"):
             run_scripted(
                 ts.AnalysisVariant.LOC_THETA_CW,
                 {name: candidate(1) for name in ("t0", "t1", "t2")},
                 source=source,
+                dependency_check_status=ts.DependencyVectorCheckStatus.INVALID,
                 diagnostic_mode=True,
+                diagnostic_carry_in_vector={"t0": 2, "t1": 2, "t2": 2},
             )
+
+
+class TestFiveVariantSourceContractMatrix:
+    NON_DEPENDENCY_VARIANTS = (
+        ts.AnalysisVariant.CW_D,
+        ts.AnalysisVariant.LOC_D,
+        ts.AnalysisVariant.CW_THETA_CW,
+        ts.AnalysisVariant.LOC_THETA_LOC,
+    )
+
+    @pytest.mark.parametrize("variant", NON_DEPENDENCY_VARIANTS)
+    def test_non_dependency_variants_emit_no_external_source_provenance(self, variant):
+        result, _ = run_scripted(
+            variant,
+            {name: candidate(1) for name in ("t0", "t1", "t2")},
+            source=None,
+            dependency_check_status=ts.DependencyVectorCheckStatus.NOT_CHECKED,
+        )
+        assert result.source_analysis_id is None
+        assert result.source_candidate_vector == ()
+        assert (
+            result.dependency_check_status
+            is ts.DependencyVectorCheckStatus.NOT_CHECKED
+        )
+        if variant is ts.AnalysisVariant.LOC_THETA_LOC:
+            assert (
+                result.fixed_carry_in_interface_status
+                is ts.FixedCarryInInterfaceStatus.NOT_APPLICABLE
+            )
+
+    @pytest.mark.parametrize("variant", NON_DEPENDENCY_VARIANTS)
+    def test_non_dependency_variants_reject_nonempty_source(self, variant):
+        source = certified_cw()
+        with pytest.raises(ts.CertificationError, match="source"):
+            run_scripted(
+                variant,
+                {name: candidate(1) for name in ("t0", "t1", "t2")},
+                source=source,
+                dependency_check_status=ts.DependencyVectorCheckStatus.NOT_CHECKED,
+            )
+
+    @pytest.mark.parametrize("variant", NON_DEPENDENCY_VARIANTS)
+    def test_non_dependency_variants_reject_checked_dependency_status(self, variant):
+        with pytest.raises(ts.CertificationError, match="NOT_CHECKED"):
+            run_scripted(
+                variant,
+                {name: candidate(1) for name in ("t0", "t1", "t2")},
+                dependency_check_status=ts.DependencyVectorCheckStatus.VALID,
+            )
+
+    def test_loc_theta_cw_binds_the_complete_certified_source_vector(self):
+        source = certified_cw(values={"t0": 2, "t1": 2, "t2": 2})
         result, _ = run_scripted(
             ts.AnalysisVariant.LOC_THETA_CW,
             {name: candidate(1) for name in ("t0", "t1", "t2")},
             source=source,
-            diagnostic_mode=True,
-            diagnostic_carry_in_vector={"t0": 2, "t1": 2, "t2": 2},
+            dependency_check_status=ts.DependencyVectorCheckStatus.VALID,
         )
-        assert result.certification_status is ts.AnalysisCertificationStatus.DIAGNOSTIC_ONLY_NOT_CERTIFIED
-        assert not result.taskset_proven
-        with pytest.raises(ts.CertificationError):
-            replace(
-                result,
-                certification_status=ts.AnalysisCertificationStatus.CERTIFIED_TASKSET,
-                taskset_proven=True,
+        assert result.source_analysis_id == source.analysis_id
+        assert (
+            result.dependency_check_status
+            is ts.DependencyVectorCheckStatus.VALID
+        )
+        assert result.source_candidate_vector == tuple(
+            (record.task_id, record.candidate_response_time)
+            for record in source.task_records
+        )
+
+    def test_loc_theta_cw_missing_source_fails_closed(self):
+        with pytest.raises(ts.CertificationError, match="requires a source"):
+            run_scripted(
+                ts.AnalysisVariant.LOC_THETA_CW,
+                {name: candidate(1) for name in ("t0", "t1", "t2")},
+                source=None,
+                dependency_check_status=ts.DependencyVectorCheckStatus.INVALID,
             )
+
+    def test_loc_theta_cw_uncertified_source_only_returns_dependency_na(self):
+        source, _ = run_scripted(
+            ts.AnalysisVariant.CW_THETA_CW,
+            {
+                "t0": candidate(1),
+                "t1": failure(ts.TaskSolverStatus.NO_CANDIDATE),
+                "t2": candidate(1),
+            },
+        )
+        result, solver = run_scripted(
+            ts.AnalysisVariant.LOC_THETA_CW,
+            {name: candidate(1) for name in ("t0", "t1", "t2")},
+            source=source,
+            dependency_check_status=ts.DependencyVectorCheckStatus.INVALID,
+        )
+        assert solver.calls == []
+        assert (
+            result.solver_status
+            is ts.AnalysisSolverStatus.NOT_APPLICABLE_DEPENDENCY
+        )
+        assert (
+            result.certification_status
+            is ts.AnalysisCertificationStatus.NOT_APPLICABLE
+        )
+        assert (
+            result.dependency_check_status
+            is ts.DependencyVectorCheckStatus.INVALID
+        )
 
 
 class TestAtomicFinalizer:

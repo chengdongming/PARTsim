@@ -33,7 +33,7 @@ REQUEST_COLUMNS = (
 )
 ATTEMPT_COLUMNS = (
     "attempt_id", "analysis_id", "attempt_number", "parent_attempt_id",
-    "timeout_budget_seconds", "solver_status", "outer_timeout",
+    "timeout_budget_seconds", "solver_status", "failure_origin", "outer_timeout",
     "solver_wall_seconds", "solver_cpu_seconds", "worker_startup_seconds",
     "serialization_seconds", "ipc_seconds", "payload_received",
     "worker_cleanup_status", "worker_exitcode", "worker_cleanup_seconds",
@@ -44,7 +44,8 @@ TASKSET_RESULT_COLUMNS = (
     "analysis_id", "request_id", "cell_id", "taskset_id", "taskset_hash",
     "generation_seed", "M", "task_n", "utilization", "exact_e0",
     "deadline_mode", "analysis_variant", "method_role", "solver_status",
-    "certification_status", "taskset_proven", "first_failed_priority",
+    "failure_origin", "certification_status", "taskset_proven",
+    "first_failed_priority",
     "n_tasks_total", "n_tasks_evaluated", "n_tasks_candidate_found",
     "n_tasks_certified", "source_analysis_id", "source_vector_hash",
     "target_carry_in_vector_hash", "dependency_check_status",
@@ -193,17 +194,17 @@ class ResultWriter:
         self.finals = self.root / "terminal_results"
         self.states = self.root / "result_state"
         self.fail_inputs = self.root / "failure_inputs"
+        # Validate every pre-existing table before creating even one directory
+        # or missing table.  A legacy exact-header mismatch must leave the old
+        # output root byte-for-byte untouched.
+        for name, columns in TABLES.items():
+            validate_csv_header(self.root / name, columns)
         for path in (self.root, self.finals, self.states, self.fail_inputs):
             path.mkdir(parents=True, exist_ok=True)
         for name, columns in TABLES.items():
             path = self.root / name
             if not path.exists():
                 write_csv(path, columns, [])
-            else:
-                validate_csv_header(
-                    path,
-                    columns,
-                )
 
     def append_attempt(self, row: Mapping[str, Any]) -> None:
         attempt_id = str(row.get("attempt_id", ""))

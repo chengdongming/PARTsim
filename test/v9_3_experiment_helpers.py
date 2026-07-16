@@ -60,6 +60,7 @@ def make_config(tmp_path: Path, core_name: str = "CORE-1", *, e0=None):
 class FakeStore:
     def __init__(self, root: Path) -> None:
         self.root = root
+        self._entries = {}
 
     def get_or_create(self, cell, index):
         tasks = (
@@ -71,12 +72,35 @@ class FakeStore:
             {"task_id": "1", "source_name": "b", "priority_rank": 1, "C": 1, "D": 7, "T": 7, "P": "1", "D_over_T": "1", "workload": "idle", "arrival_offset": 0},
         )
         semantic = f"semantic-{cell.generation_id}"
-        return StoredTaskset(
+        stored = StoredTaskset(
             f"taskset-{cell.generation_id}-{index}", cell.generation_id, index, 123,
             semantic, "priority", "power", cell.utilization * cell.processors,
             Fraction(12, 35), cell.processors, len(tasks), cell.deadline_mode,
             tasks, payload, 0.01, "service", self.root / f"{semantic}.json",
         )
+        self._entries[(stored.generation_id, stored.taskset_index)] = {
+            "generation_id": stored.generation_id,
+            "taskset_index": stored.taskset_index,
+            "generation_seed": stored.seed,
+            "taskset_id": stored.taskset_id,
+            "taskset_semantic_hash": stored.semantic_hash,
+            "priority_hash": stored.priority_hash,
+            "power_hash": stored.power_hash,
+            "task_payload": list(stored.task_payload),
+            "service_curve_identity": stored.service_curve_reference,
+        }
+        return stored
+
+    def verify_pairing_manifest(self, *, require_complete: bool) -> None:
+        return None
+
+    def manifest_document(self):
+        return {
+            "schema": "ASAP_BLOCK_V9_3_CORE12_PAIRING_MANIFEST_V1",
+            "pairing_id": "fake-pairing-manifest",
+            "contract": {"test_fixture": True},
+            "entries": [self._entries[key] for key in sorted(self._entries)],
+        }
 
 
 def install_fake_materialization(monkeypatch, tmp_path: Path):
@@ -86,7 +110,14 @@ def install_fake_materialization(monkeypatch, tmp_path: Path):
         tuple(Fraction(0) for _ in range(10)), "service", "{}", tmp_path / "system.yml"
     )
     store = FakeStore(tmp_path / "store")
-    monkeypatch.setattr(module, "prepare_service_curve", lambda config, root: service)
+
+    def prepare_service_curve(config, root):
+        root = Path(root)
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "system_config.yaml").write_text("{}\n", encoding="utf-8")
+        return service
+
+    monkeypatch.setattr(module, "prepare_service_curve", prepare_service_curve)
     monkeypatch.setattr(module, "TasksetStore", lambda root, config, material: store)
     return service, store
 
@@ -109,14 +140,25 @@ def successful_execution(request) -> AttemptExecution:
     result = taskset.analyze_taskset_v9_3(
         request.analysis_id, request.variant, request.analysis_input,
         source=request.source,
+        source_analysis_id=request.source_analysis_id,
         dependency_check_status=request.dependency_check_status,
         single_task_solver=candidate_solver,
     )
-    return AttemptExecution(result, result.solver_status.value, False, .01, .005, .001, .001, .012)
+    return AttemptExecution(
+        result, result.solver_status.value, False, .01, .005, .001, .001, .012,
+        payload_received=True,
+        worker_cleanup_status="EXITED_NORMALLY",
+        worker_exitcode=0,
+        failure_origin="ANALYZER_RESULT",
+    )
 
 
 def timeout_execution() -> AttemptExecution:
     return AttemptExecution(
         None, "TIMEOUT", True, 1.0, 0, .001, .001, 1.002,
-        "ConfigurationTimeout", "test timeout", None,
+        "ConfigurationTimeout", "hard per-configuration timeout", None,
+        payload_received=False,
+        worker_cleanup_status="REAPED_AFTER_TERMINATE",
+        worker_exitcode=-15,
+        failure_origin="OUTER_TIMEOUT_CONFIGURATION",
     )

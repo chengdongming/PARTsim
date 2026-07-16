@@ -18,7 +18,9 @@ import asap_block_v9_3_runner as production_runner
 
 from .cell_model import Cell, expand_cells
 from .config import config_hash, domain_hash, dump_config, fraction_text, load_config
-from .execution_engine import _analysis_input, _variant, execute_isolated
+from .execution_engine import (
+    _analysis_input, _dependency_context, _variant, execute_isolated,
+)
 from .ext4_aggregation import aggregate_ext4
 from .generator_family import audited_generator_capabilities, required_service_period_max
 from .priority_policy import priority_mapping_hash, registered_priority_policies
@@ -333,7 +335,11 @@ class Ext4Runner:
                 if result is not None:
                     validate_analysis_result(
                         result, sample.stored, expected_analysis_id=analysis_id,
-                        expected_variant=_variant(method), source=None,
+                        expected_variant=_variant(method),
+                        expected_context=_dependency_context(
+                            sample.stored, base_cell, service
+                        ),
+                        source=None,
                     )
                     vector = {
                         record.task_id: record.candidate_response_time

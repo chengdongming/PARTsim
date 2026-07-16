@@ -74,6 +74,7 @@ class V93DispatchRequest:
     variant: v93.AnalysisVariant
     analysis_input: v93.TasksetAnalysisInput
     source: Optional[v93.TasksetAnalysisResult] = None
+    source_analysis_id: Optional[str] = None
     dependency_check_status: v93.DependencyVectorCheckStatus = (
         v93.DependencyVectorCheckStatus.NOT_CHECKED
     )
@@ -172,6 +173,7 @@ def dispatch_rta_version(
             validated_request.variant,
             validated_request.analysis_input,
             source=validated_request.source,
+            source_analysis_id=validated_request.source_analysis_id,
             dependency_check_status=validated_request.dependency_check_status,
             diagnostic_mode=validated_request.diagnostic_mode,
             single_task_solver=solver,

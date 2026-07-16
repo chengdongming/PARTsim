@@ -923,8 +923,8 @@ def produce_joint_cases(build: str):
         ("timeout", "TIMEOUT", taskset.AnalysisVariant.CW_THETA_CW, {**good, "t1": failure(taskset.TaskSolverStatus.TIMEOUT)}, None, {}),
         ("numeric-error", "NUMERIC_ERROR", taskset.AnalysisVariant.CW_THETA_CW, {**good, "t1": failure(taskset.TaskSolverStatus.NUMERIC_ERROR)}, None, {}),
         ("suffix-not-evaluated", "SUFFIX_NOT_EVALUATED", taskset.AnalysisVariant.CW_THETA_CW, {**good, "t1": failure(taskset.TaskSolverStatus.NO_CANDIDATE)}, None, {}),
-        ("dependency-not-applicable", "DEPENDENCY_NOT_APPLICABLE", taskset.AnalysisVariant.LOC_THETA_CW, good, None, {"dependency_check_status": taskset.DependencyVectorCheckStatus.VALID}),
-        ("diagnostic-only", "DIAGNOSTIC_ONLY", taskset.AnalysisVariant.LOC_THETA_CW, good, None, {"diagnostic_mode": True, "diagnostic_carry_in_vector": {item.name: 2 for item in items}}),
+        ("dependency-not-applicable", "DEPENDENCY_NOT_APPLICABLE", taskset.AnalysisVariant.LOC_THETA_CW, good, None, {"source_analysis_id": "planned-source-unavailable", "dependency_check_status": taskset.DependencyVectorCheckStatus.INVALID}),
+        ("diagnostic-only", "DIAGNOSTIC_ONLY", taskset.AnalysisVariant.LOC_THETA_CW, good, source_good, {"diagnostic_mode": True, "dependency_check_status": taskset.DependencyVectorCheckStatus.VALID}),
         ("source-variant-mismatch", "SOURCE_VARIANT_MISMATCH", taskset.AnalysisVariant.LOC_THETA_CW, good, source_wrong_variant, {"dependency_check_status": taskset.DependencyVectorCheckStatus.VALID}),
         ("source-provisional", "SOURCE_PROVISIONAL", taskset.AnalysisVariant.LOC_THETA_CW, good, source_provisional, {"dependency_check_status": taskset.DependencyVectorCheckStatus.VALID}),
         ("frozen-vector-mismatch", "FROZEN_VECTOR_MISMATCH", taskset.AnalysisVariant.LOC_THETA_CW, good, source_good, {"dependency_check_status": taskset.DependencyVectorCheckStatus.INVALID}),
@@ -966,11 +966,16 @@ def produce_joint_cases(build: str):
         except RuntimeError as exc:
             error = str(exc)
         after_hash = source_hash(source)
+        recorded_source_analysis_id = (
+            result.source_analysis_id
+            if result is not None
+            else ("" if source is None else source.analysis_id)
+        )
         cases.append({
             "case_id": case_id, "input_hash": ih, "build_identity_hash": build,
             "case_kind": kind, "analysis_variant": variant.value,
             "priority_order_json": json_text([x.name for x in items]),
-            "source_analysis_id": "" if source is None else source.analysis_id,
+            "source_analysis_id": recorded_source_analysis_id or "",
             "dependency_context_json": json_text(asdict(inp.dependency_context)),
             "production_api_used": "true", "reported_passed": "true",
         })

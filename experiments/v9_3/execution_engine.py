@@ -28,15 +28,22 @@ import asap_block_rta_v9_3_taskset as taskset
 import asap_block_v9_3_runner as production_runner
 
 from .cell_model import Cell, analysis_id, expand_cells
-from .config import config_hash, domain_hash, dump_config, fraction_text
+from .config import canonical_json, config_hash, domain_hash, dump_config, fraction_text
+from .formal_authorization import (
+    FormalAuthorizationError, verify_authorization,
+)
 from .result_writer import (
-    ATTEMPT_COLUMNS,
+    ATTEMPT_COLUMNS, REQUEST_COLUMNS,
     ResultWriter,
     atomic_write_json,
     read_csv,
 )
 from .taskset_store import ServiceCurveMaterial, StoredTaskset, TasksetStore, prepare_service_curve
-from .validation import ConformanceFailure, assert_unique, validate_analysis_result
+from .validation import (
+    ConformanceFailure, assert_unique, expected_attempt_id,
+    validate_analysis_result, validate_attempt_artifact_contract,
+    validate_terminal_result_contract,
+)
 
 
 class ExecutionError(RuntimeError):
@@ -73,6 +80,7 @@ class AttemptExecution:
     worker_cleanup_status: str = "NOT_RECORDED"
     worker_exitcode: Optional[int] = None
     worker_cleanup_seconds: float = 0.0
+    failure_origin: str = "NOT_RECORDED"
 
 
 @dataclass(frozen=True)
@@ -444,6 +452,7 @@ def execute_isolated(
             worker_cleanup_status=cleanup.status,
             worker_exitcode=cleanup.exitcode,
             worker_cleanup_seconds=cleanup.seconds,
+            failure_origin="OUTER_TIMEOUT_STARTUP",
         )
 
     startup = time.perf_counter() - total_started
@@ -502,6 +511,7 @@ def execute_isolated(
                 worker_cleanup_status=cleanup.status,
                 worker_exitcode=cleanup.exitcode,
                 worker_cleanup_seconds=cleanup.seconds,
+                failure_origin="OUTER_TIMEOUT_CONFIGURATION",
             )
 
         payload = receiving.recv()
@@ -548,6 +558,7 @@ def execute_isolated(
             worker_cleanup_status=cleanup.status,
             worker_exitcode=cleanup.exitcode,
             worker_cleanup_seconds=cleanup.seconds,
+            failure_origin="IPC_RECEIVE_FAILURE",
         )
 
     # A complete payload has crossed the IPC boundary. From this point on,
@@ -586,6 +597,7 @@ def execute_isolated(
             worker_cleanup_status=cleanup.status,
             worker_exitcode=cleanup.exitcode,
             worker_cleanup_seconds=cleanup.seconds,
+            failure_origin="INVALID_WORKER_PAYLOAD_SHAPE",
         )
 
     try:
@@ -621,6 +633,7 @@ def execute_isolated(
                 worker_cleanup_status=cleanup.status,
                 worker_exitcode=cleanup.exitcode,
                 worker_cleanup_seconds=cleanup.seconds,
+                failure_origin="ANALYZER_RESULT",
             )
 
         if payload_kind == "error":
@@ -657,6 +670,7 @@ def execute_isolated(
                 worker_cleanup_status=cleanup.status,
                 worker_exitcode=cleanup.exitcode,
                 worker_cleanup_seconds=cleanup.seconds,
+                failure_origin="WORKER_ERROR_PAYLOAD",
             )
 
         raise ValueError(
@@ -685,6 +699,7 @@ def execute_isolated(
             worker_cleanup_status=cleanup.status,
             worker_exitcode=cleanup.exitcode,
             worker_cleanup_seconds=cleanup.seconds,
+            failure_origin="INVALID_WORKER_PAYLOAD_CONTENT",
         )
 
 
@@ -848,6 +863,9 @@ def _terminal_payload(
         "exact_e0": fraction_text(item.cell.exact_e0),
         "deadline_mode": item.cell.deadline_mode,
         **row,
+        # Provenance is copied from the final persisted attempt.  It is not
+        # inferred from solver status, timeout flags, or exception fields.
+        "failure_origin": final_attempt["failure_origin"],
         "source_vector_hash": source_hash,
         "target_carry_in_vector_hash": target_hash,
         "final_attempt_id": final_attempt["attempt_id"],
@@ -864,10 +882,7 @@ def _terminal_payload(
 
 
 def _attempt_id(analysis_id_value: str, attempt_number: int) -> str:
-    return domain_hash(
-        "ASAP_BLOCK:V9.3:ANALYSIS_ATTEMPT:v1",
-        {"analysis_id": analysis_id_value, "attempt_number": attempt_number},
-    )
+    return expected_attempt_id(analysis_id_value, attempt_number)
 
 
 def _pickle_atomic(path: Path, value: Any) -> None:
@@ -887,6 +902,9 @@ class ExecutionEngine:
         *,
         service_override: Optional[ServiceCurveMaterial] = None,
         store_override: Optional[TasksetStore] = None,
+        authorization_path: Optional[Path] = None,
+        source_config_path: Optional[Path] = None,
+        prepared_config_path: Optional[Path] = None,
     ) -> None:
         self.config = dict(config)
         self.config_identity = config_hash(config)
@@ -905,6 +923,10 @@ class ExecutionEngine:
         self._failures: list[Dict[str, Any]] = []
         self._service_override = service_override
         self._store_override = store_override
+        self._authorization_path = authorization_path
+        self._source_config_path = source_config_path
+        self._prepared_config_path = prepared_config_path
+        self._authorization_seal: Optional[Dict[str, Any]] = None
 
     def describe(self, *, max_cells: Optional[int] = None) -> Dict[str, Any]:
         cells = list(expand_cells(self.config))
@@ -923,13 +945,46 @@ class ExecutionEngine:
     def _initialize(self, *, resume: bool) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
         metadata_path = self.root / "run_metadata.json"
+        seal_path = self.root / "formal_authorization_seal.json"
         if metadata_path.is_file():
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
             if metadata.get("config_hash") != self.config_identity:
                 raise ExecutionError("configuration hash mismatch; refusing to resume")
             if not resume:
                 raise ExecutionError("run directory already exists; use --resume")
+            if not seal_path.is_file():
+                raise ExecutionError("run is missing its formal authorization seal")
+            seal = json.loads(seal_path.read_text(encoding="utf-8"))
+            if bool(seal.get("formal_large_scale_run")):
+                current = verify_authorization(
+                    self.config,
+                    authorization_path=self._authorization_path,
+                    source_freeze_config=self._source_config_path,
+                    prepared_config=self._prepared_config_path,
+                    project_root=Path(__file__).resolve().parents[2],
+                )
+                if canonical_json(current) != canonical_json(seal):
+                    raise ExecutionError("formal authorization changed during resume")
+            elif self._authorization_path is not None:
+                raise ExecutionError("cannot promote a nonformal run during resume")
+            if (
+                metadata.get("formal_large_scale_run")
+                != seal.get("formal_large_scale_run")
+                or metadata.get("formal_authorization_id")
+                != seal.get("authorization_id")
+            ):
+                raise ExecutionError("run metadata/authorization seal mismatch")
+            self._authorization_seal = dict(seal)
         else:
+            seal = verify_authorization(
+                self.config,
+                authorization_path=self._authorization_path,
+                source_freeze_config=self._source_config_path,
+                prepared_config=self._prepared_config_path,
+                project_root=Path(__file__).resolve().parents[2],
+            )
+            self._authorization_seal = dict(seal)
+            atomic_write_json(seal_path, seal)
             metadata = {
                 "schema": "ASAP_BLOCK_V9_3_FORMAL_RUN_V1",
                 "experiment_id": self.config["experiment_id"],
@@ -938,7 +993,8 @@ class ExecutionEngine:
                 "created_at_utc": _utc_now(),
                 "git_head": self._git_head(),
                 "production_entry": "asap_block_rta_v9_3_taskset.analyze_taskset_v9_3",
-                "formal_large_scale_run": False,
+                "formal_large_scale_run": seal["formal_large_scale_run"],
+                "formal_authorization_id": seal["authorization_id"],
             }
             atomic_write_json(metadata_path, metadata)
             dump_config(self.config, self.root / "run_config.yaml")
@@ -949,6 +1005,17 @@ class ExecutionEngine:
         self.store = self._store_override or TasksetStore(
             Path(self.config["execution"]["taskset_store"]), self.config, self.service
         )
+        if hasattr(self.store, "verify_pairing_manifest"):
+            self.store.verify_pairing_manifest(
+                require_complete=bool(
+                    self._authorization_seal
+                    and self._authorization_seal["formal_large_scale_run"]
+                )
+            )
+            metadata["pairing_manifest_id"] = self.store.manifest_document()[
+                "pairing_id"
+            ]
+            atomic_write_json(metadata_path, metadata)
 
     @staticmethod
     def _git_head() -> str:
@@ -1017,6 +1084,46 @@ class ExecutionEngine:
         self._generated_rows = list(generated_rows.values())
         return chains
 
+    @staticmethod
+    def _csv_text(value: Any) -> str:
+        return "" if value is None else str(value)
+
+    def _validate_persisted_request_plan(self, *, resume: bool) -> None:
+        """Make the persisted request journal authoritative before execution."""
+
+        assert self.writer is not None
+        persisted = read_csv(self.root / "analysis_requests.csv")
+        if not resume:
+            if persisted:
+                raise ExecutionError("new run directory contains persisted requests")
+            self._checkpoint()
+            return
+        try:
+            assert_unique(persisted, "analysis_id")
+        except ConformanceFailure as exc:
+            raise ExecutionError(str(exc)) from exc
+        expected = {row["analysis_id"]: row for row in self._requests}
+        actual = {row["analysis_id"]: row for row in persisted}
+        if set(actual) != set(expected):
+            raise ExecutionError("persisted request set does not match the active plan")
+        for analysis_id_value, planned in expected.items():
+            row = actual[analysis_id_value]
+            for column in REQUEST_COLUMNS:
+                if column == "request_status":
+                    continue
+                if row.get(column, "") != self._csv_text(planned.get(column)):
+                    raise ExecutionError(
+                        f"persisted request mismatch for {analysis_id_value}: {column}"
+                    )
+            terminal_exists = (
+                self.writer.finals / f"{analysis_id_value}.json"
+            ).is_file()
+            expected_status = "TERMINAL" if terminal_exists else "PLANNED"
+            if row.get("request_status") != expected_status:
+                raise ExecutionError(
+                    f"persisted request/terminal status mismatch for {analysis_id_value}"
+                )
+
     def _attempts_for(self, analysis_id_value: str) -> list[Dict[str, str]]:
         assert self.writer is not None
         return [
@@ -1032,11 +1139,118 @@ class ExecutionEngine:
         path = self._result_state_path(analysis_id_value)
         if not path.is_file():
             return None
-        with path.open("rb") as handle:
-            result = pickle.load(handle)
+        try:
+            with path.open("rb") as handle:
+                result = pickle.load(handle)
+        except Exception as exc:
+            raise ExecutionError("unreadable resumed analyzer state") from exc
         if not isinstance(result, taskset.TasksetAnalysisResult) or result.analysis_id != analysis_id_value:
             raise ExecutionError("invalid resumed analyzer state")
         return result
+
+    def _validate_attempt_artifacts(
+        self,
+        item: ExecutionPlanItem,
+        source: Optional[taskset.TasksetAnalysisResult],
+        state: Optional[taskset.TasksetAnalysisResult],
+        attempts: Sequence[Mapping[str, str]],
+        *,
+        terminal_row: Optional[Mapping[str, object]] = None,
+    ) -> None:
+        assert self.service is not None
+        try:
+            validate_attempt_artifact_contract(
+                attempts,
+                expected_analysis_id=item.analysis_id,
+                expected_variant=item.variant,
+                retry_policy=self.config["analysis"]["retry_policy"],
+                initial_timeout_seconds=self.config["analysis"]["timeout_seconds"],
+                retry_timeout_seconds=self.config["analysis"].get(
+                    "retry_timeout_seconds"
+                ),
+                stored=item.stored,
+                expected_context=_dependency_context(
+                    item.stored, item.cell, self.service
+                ),
+                expected_source_analysis_id=item.source_analysis_id,
+                source=source,
+                terminal_row=terminal_row,
+                state=state,
+            )
+        except (ConformanceFailure, taskset.CertificationError) as exc:
+            if state is not None:
+                detail = f"resumed analyzer state failed conformance: {exc}"
+            elif "requires analyzer state" in str(exc):
+                detail = (
+                    "persisted analyzer attempt is missing its analyzer state: "
+                    f"{exc}"
+                )
+            else:
+                detail = str(exc)
+            raise ExecutionError(detail) from exc
+
+    def _validate_terminal_payload(
+        self,
+        item: ExecutionPlanItem,
+        terminal: Mapping[str, Any],
+        source: Optional[taskset.TasksetAnalysisResult],
+        state: Optional[taskset.TasksetAnalysisResult],
+        attempts: Sequence[Mapping[str, str]],
+    ) -> None:
+        if set(terminal) != {"taskset_row", "task_rows"}:
+            raise ExecutionError("terminal payload shape mismatch")
+        row = terminal.get("taskset_row")
+        task_rows = terminal.get("task_rows")
+        if not isinstance(row, dict) or not isinstance(task_rows, list):
+            raise ExecutionError("terminal payload types are invalid")
+        expected_identity = {
+            "analysis_id": item.analysis_id,
+            "request_id": item.request_id,
+            "cell_id": item.cell.cell_id,
+            "taskset_id": item.stored.taskset_id,
+            "taskset_hash": item.stored.semantic_hash,
+            "generation_seed": item.stored.seed,
+            "M": item.cell.processors,
+            "task_n": item.cell.task_count,
+            "utilization": fraction_text(item.cell.utilization),
+            "exact_e0": fraction_text(item.cell.exact_e0),
+            "deadline_mode": item.cell.deadline_mode,
+            "analysis_variant": item.variant.name,
+            "method_role": taskset.ROLE_BY_VARIANT[item.variant].value,
+        }
+        assert self.service is not None
+        try:
+            validate_terminal_result_contract(
+                attempts,
+                expected_analysis_id=item.analysis_id,
+                expected_variant=item.variant,
+                retry_policy=self.config["analysis"]["retry_policy"],
+                initial_timeout_seconds=(
+                    self.config["analysis"]["timeout_seconds"]
+                ),
+                retry_timeout_seconds=self.config["analysis"].get(
+                    "retry_timeout_seconds"
+                ),
+                stored=item.stored,
+                expected_context=_dependency_context(
+                    item.stored, item.cell, self.service
+                ),
+                expected_identity=expected_identity,
+                terminal_row=row,
+                terminal_task_rows=task_rows,
+                expected_source_analysis_id=item.source_analysis_id,
+                source=source,
+                state=state,
+                expected_task_rows=(
+                    _task_rows(item, state) if state is not None else None
+                ),
+            )
+        except (ConformanceFailure, taskset.CertificationError) as exc:
+            if state is not None:
+                detail = f"resumed analyzer state failed conformance: {exc}"
+            else:
+                detail = str(exc)
+            raise ExecutionError(detail) from exc
 
     def _record_failure(
         self, item: ExecutionPlanItem, code: str, detail: str,
@@ -1079,8 +1293,15 @@ class ExecutionEngine:
         execution: AttemptExecution,
         attempts: Sequence[Mapping[str, Any]],
         result: Optional[taskset.TasksetAnalysisResult],
+        source: Optional[taskset.TasksetAnalysisResult],
     ) -> None:
         assert self.writer is not None
+        draft = _terminal_payload(
+            item, execution, attempts, result=result, serialization_seconds=0.0
+        )
+        self._validate_terminal_payload(
+            item, draft, source, result, attempts
+        )
         serialization_started = time.perf_counter()
         payload = _terminal_payload(
             item, execution, attempts, result=result, serialization_seconds=0.0
@@ -1096,26 +1317,23 @@ class ExecutionEngine:
     ) -> Optional[taskset.TasksetAnalysisResult]:
         assert self.writer is not None and self.service is not None
         terminal = self.writer.terminal(item.analysis_id)
-        if terminal is not None:
-            return self._load_result_state(item.analysis_id)
         prior = self._attempts_for(item.analysis_id)
         state = self._load_result_state(item.analysis_id)
-        state_required_statuses = {
-            "COMPLETED", "NO_CANDIDATE", "NOT_APPLICABLE_DEPENDENCY",
-        }
-        if (
-            prior and prior[-1]["solver_status"] in state_required_statuses
-            and state is None
-        ):
-            raise ExecutionError(
-                "completed analysis attempt is missing its analyzer state"
+        if terminal is not None:
+            self._validate_terminal_payload(
+                item, terminal, source, state, prior
+            )
+            return state
+        if prior or state is not None:
+            self._validate_attempt_artifacts(
+                item, source, state, prior
             )
         max_attempts = 2 if self.config["analysis"]["retry_policy"] == "timeout_once" else 1
-        if prior and prior[-1]["solver_status"] != "TIMEOUT" and state is not None:
+        if prior and prior[-1]["solver_status"] != "TIMEOUT":
             resumed = AttemptExecution(
-                state, state.solver_status.value, False, 0, 0, 0, 0, 0
+                state, prior[-1]["solver_status"], False, 0, 0, 0, 0, 0
             )
-            self._finish_terminal(item, resumed, prior, state)
+            self._finish_terminal(item, resumed, prior, state, source)
             return state
         if len(prior) >= max_attempts:
             final_status = prior[-1]["solver_status"]
@@ -1123,7 +1341,7 @@ class ExecutionEngine:
                 state, final_status, prior[-1]["outer_timeout"] == "True",
                 0, 0, 0, 0, 0,
             )
-            self._finish_terminal(item, resumed, prior, state)
+            self._finish_terminal(item, resumed, prior, state, source)
             return state
 
         final_execution: Optional[AttemptExecution] = None
@@ -1139,7 +1357,8 @@ class ExecutionEngine:
             request = production_runner.V93DispatchRequest(
                 item.analysis_id, item.variant,
                 _analysis_input(item.stored, item.cell, self.service, budget),
-                source=source, dependency_check_status=dependency,
+                source=source, source_analysis_id=item.source_analysis_id,
+                dependency_check_status=dependency,
                 configuration_timeout_seconds=budget,
             )
             started_at = _utc_now()
@@ -1170,7 +1389,12 @@ class ExecutionEngine:
                 try:
                     validate_analysis_result(
                         result, item.stored, expected_analysis_id=item.analysis_id,
-                        expected_variant=item.variant, source=source,
+                        expected_variant=item.variant,
+                        expected_context=_dependency_context(
+                            item.stored, item.cell, self.service
+                        ),
+                        expected_source_analysis_id=item.source_analysis_id,
+                        source=source,
                     )
                     if result.solver_status is taskset.AnalysisSolverStatus.INTERNAL_CONFORMANCE_FAILURE:
                         raise ConformanceFailure("production analyzer returned INTERNAL_CONFORMANCE_FAILURE")
@@ -1188,6 +1412,7 @@ class ExecutionEngine:
                         exception_type=type(exc).__name__,
                         exception_message=str(exc),
                         traceback_text=traceback.format_exc(),
+                        failure_origin="RESULT_VALIDATION_FAILURE",
                     )
                     result = None
                 else:
@@ -1203,6 +1428,11 @@ class ExecutionEngine:
                 )
                 if self.config["execution"]["fail_fast_on_p0"]:
                     self.stop_requested.set()
+            if result is None and state is not None:
+                state_path = self._result_state_path(item.analysis_id)
+                if state_path.exists():
+                    state_path.unlink()
+                state = None
             # Capture the post-validation execution object. Validation may
             # rewrite a payload-bearing success into a fail-closed terminal
             # execution, which must also govern terminal materialization.
@@ -1216,6 +1446,7 @@ class ExecutionEngine:
                 "parent_attempt_id": prior[-1]["attempt_id"] if prior else None,
                 "timeout_budget_seconds": budget,
                 "solver_status": execution.solver_status,
+                "failure_origin": execution.failure_origin,
                 "outer_timeout": execution.outer_timeout,
                 "solver_wall_seconds": f"{execution.solver_wall_seconds:.9f}",
                 "solver_cpu_seconds": f"{execution.solver_cpu_seconds:.9f}",
@@ -1239,7 +1470,7 @@ class ExecutionEngine:
             if execution.solver_status != "TIMEOUT":
                 break
         assert final_execution is not None
-        self._finish_terminal(item, final_execution, prior, state)
+        self._finish_terminal(item, final_execution, prior, state, source)
         return state
 
     def _observe_attempt(
@@ -1352,9 +1583,11 @@ class ExecutionEngine:
         for item in chain:
             if self.stop_requested.is_set():
                 return
-            source = results.get(taskset.AnalysisVariant.CW_THETA_CW)
-            if item.variant is taskset.AnalysisVariant.LOC_THETA_CW and source is None:
-                source = self._load_result_state(item.source_analysis_id or "")
+            source = None
+            if item.variant is taskset.AnalysisVariant.LOC_THETA_CW:
+                source = results.get(taskset.AnalysisVariant.CW_THETA_CW)
+                if source is None:
+                    source = self._load_result_state(item.source_analysis_id or "")
             result = self._run_item(item, source)
             results[item.variant] = result
             if item.variant is taskset.AnalysisVariant.LOC_THETA_CW:
@@ -1397,6 +1630,11 @@ class ExecutionEngine:
             "stop_requested": self.stop_requested.is_set(),
             "updated_at_utc": _utc_now(),
         })
+        if hasattr(self.store, "manifest_document"):
+            atomic_write_json(
+                self.root / "taskset_pairing_manifest.json",
+                self.store.manifest_document(),
+            )
 
     def run(
         self,
@@ -1412,6 +1650,7 @@ class ExecutionEngine:
         resume_value = self.config["execution"]["resume"] if resume is None else resume
         self._initialize(resume=resume_value)
         chains = self._prepare_plan(max_cells=max_cells, max_tasksets=max_tasksets)
+        self._validate_persisted_request_plan(resume=resume_value)
         prior_handlers: Dict[int, Any] = {}
 
         def stop_handler(signum: int, frame: Any) -> None:

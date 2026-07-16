@@ -19,6 +19,7 @@ from experiments.v9_3.result_writer import (
     ATTEMPT_COLUMNS,
     ResultWriter,
     ResultWriterError,
+    TASKSET_RESULT_COLUMNS,
     read_csv,
 )
 from v9_3_experiment_helpers import (
@@ -98,6 +99,17 @@ def _send_malformed_payload(
     sending.close()
 
 
+def _send_non_tuple_payload(
+    sending,
+    started_event,
+    unused_request,
+):
+    del unused_request
+    started_event.set()
+    sending.send("not-a-worker-payload-tuple")
+    sending.close()
+
+
 def _send_error_payload(
     sending,
     started_event,
@@ -115,6 +127,26 @@ def _send_error_payload(
         1234,
     ))
     sending.close()
+
+
+def _exit_without_payload(
+    sending,
+    started_event,
+    unused_request,
+):
+    del unused_request
+    started_event.set()
+    sending.close()
+    os._exit(7)
+
+
+def _never_mark_started(
+    sending,
+    started_event,
+    unused_request,
+):
+    del sending, started_event, unused_request
+    time.sleep(60.0)
 
 
 def _start_and_never_send(
@@ -195,6 +227,7 @@ def test_normal_payload_and_exit_is_confirmed():
     worker_pid = execution.result.worker_pid
 
     assert execution.solver_status == "COMPLETED"
+    assert execution.failure_origin == "ANALYZER_RESULT"
     assert execution.payload_received is True
     assert execution.worker_cleanup_status == "EXITED_NORMALLY"
     assert execution.worker_exitcode == 0
@@ -216,6 +249,7 @@ def test_complete_payload_survives_sigkill_cleanup():
     worker_pid = execution.result.worker_pid
 
     assert execution.solver_status == "COMPLETED"
+    assert execution.failure_origin == "ANALYZER_RESULT"
     assert execution.outer_timeout is False
     assert execution.payload_received is True
     assert execution.worker_cleanup_status == "REAPED_AFTER_KILL"
@@ -255,6 +289,7 @@ def test_pre_payload_timeout_remains_timeout():
 
     assert execution.result is None
     assert execution.solver_status == "TIMEOUT"
+    assert execution.failure_origin == "OUTER_TIMEOUT_CONFIGURATION"
     assert execution.outer_timeout is True
     assert execution.payload_received is False
     assert execution.worker_cleanup_status in {
@@ -280,6 +315,26 @@ def test_malformed_payload_fails_closed_after_cleanup():
     assert execution.worker_cleanup_status == "EXITED_NORMALLY"
     assert execution.worker_exitcode == 0
     assert execution.exception_type == "InvalidWorkerPayload"
+    assert execution.failure_origin == "INVALID_WORKER_PAYLOAD_CONTENT"
+
+
+def test_non_tuple_payload_has_frozen_shape_failure_origin():
+    execution = execute_isolated(
+        None,
+        1.0,
+        worker_target=_send_non_tuple_payload,
+        post_payload_join_seconds=1.0,
+        terminate_join_seconds=0.1,
+        kill_join_seconds=0.1,
+        kill_confirmation_seconds=0.1,
+    )
+
+    assert execution.result is None
+    assert execution.solver_status == "INTERNAL_CONFORMANCE_FAILURE"
+    assert execution.payload_received is True
+    assert execution.failure_origin == "INVALID_WORKER_PAYLOAD_SHAPE"
+    assert execution.exception_type == "InvalidWorkerPayload"
+    assert execution.traceback_text is None
 
 
 def test_worker_error_payload_fails_closed_after_cleanup():
@@ -300,6 +355,48 @@ def test_worker_error_payload_fails_closed_after_cleanup():
     assert execution.worker_exitcode == 0
     assert execution.exception_type == "RuntimeError"
     assert execution.exception_message == "synthetic worker failure"
+    assert execution.failure_origin == "WORKER_ERROR_PAYLOAD"
+
+
+def test_no_payload_process_failure_has_frozen_ipc_failure_origin():
+    execution = execute_isolated(
+        None,
+        1.0,
+        worker_target=_exit_without_payload,
+        post_payload_join_seconds=0.1,
+        terminate_join_seconds=0.1,
+        kill_join_seconds=0.1,
+        kill_confirmation_seconds=0.1,
+    )
+
+    assert execution.result is None
+    assert execution.solver_status == "INTERNAL_CONFORMANCE_FAILURE"
+    assert execution.payload_received is False
+    assert execution.outer_timeout is False
+    assert execution.failure_origin == "IPC_RECEIVE_FAILURE"
+    if execution.worker_cleanup_status == "EXITED_NORMALLY":
+        assert execution.worker_exitcode not in {None, 0}
+    assert execution.exception_type == "EOFError"
+    assert execution.traceback_text
+
+
+def test_worker_startup_timeout_has_frozen_failure_origin():
+    execution = execute_isolated(
+        None,
+        0.01,
+        worker_target=_never_mark_started,
+        post_payload_join_seconds=0.01,
+        terminate_join_seconds=0.1,
+        kill_join_seconds=0.1,
+        kill_confirmation_seconds=0.1,
+    )
+
+    assert execution.result is None
+    assert execution.solver_status == "TIMEOUT"
+    assert execution.payload_received is False
+    assert execution.outer_timeout is True
+    assert execution.failure_origin == "OUTER_TIMEOUT_STARTUP"
+    assert execution.exception_type == "WorkerStartupTimeout"
 
 
 class _NeverConfirmingProcess:
@@ -797,6 +894,7 @@ def test_attempt_journal_records_cleanup_fields(
     assert attempts
 
     for column in (
+        "failure_origin",
         "payload_received",
         "worker_cleanup_status",
         "worker_exitcode",
@@ -814,6 +912,137 @@ def test_attempt_journal_records_cleanup_fields(
         assert (
             row["worker_cleanup_seconds"]
             == "0.250000000"
+        )
+
+
+def _execution_for_failure_origin(request, origin):
+    if origin == "ANALYZER_RESULT":
+        return successful_execution(request)
+    if origin == "OUTER_TIMEOUT_STARTUP":
+        return engine_module.AttemptExecution(
+            None, "TIMEOUT", True, 1.0, 0.0, 0.001, 0.001, 1.002,
+            exception_type="WorkerStartupTimeout",
+            exception_message="analysis worker did not start",
+            payload_received=False,
+            worker_cleanup_status="REAPED_AFTER_TERMINATE",
+            worker_exitcode=-15,
+            failure_origin=origin,
+        )
+    if origin == "OUTER_TIMEOUT_CONFIGURATION":
+        return engine_module.AttemptExecution(
+            None, "TIMEOUT", True, 1.0, 0.0, 0.001, 0.001, 1.002,
+            exception_type="ConfigurationTimeout",
+            exception_message="hard per-configuration timeout",
+            payload_received=False,
+            worker_cleanup_status="REAPED_AFTER_TERMINATE",
+            worker_exitcode=-15,
+            failure_origin=origin,
+        )
+    if origin == "IPC_RECEIVE_FAILURE":
+        return engine_module.AttemptExecution(
+            None, "INTERNAL_CONFORMANCE_FAILURE", False,
+            0.01, 0.0, 0.001, 0.001, 0.012,
+            exception_type="EOFError",
+            exception_message="worker pipe closed",
+            traceback_text="synthetic IPC traceback",
+            payload_received=False,
+            worker_cleanup_status="EXITED_NORMALLY",
+            worker_exitcode=1,
+            failure_origin=origin,
+        )
+    if origin == "INVALID_WORKER_PAYLOAD_SHAPE":
+        return engine_module.AttemptExecution(
+            None, "INTERNAL_CONFORMANCE_FAILURE", False,
+            0.01, 0.0, 0.001, 0.001, 0.012,
+            exception_type="InvalidWorkerPayload",
+            exception_message="worker payload is not a non-empty tuple",
+            payload_received=True,
+            worker_cleanup_status="EXITED_NORMALLY",
+            worker_exitcode=0,
+            failure_origin=origin,
+        )
+    if origin == "INVALID_WORKER_PAYLOAD_CONTENT":
+        return engine_module.AttemptExecution(
+            None, "INTERNAL_CONFORMANCE_FAILURE", False,
+            0.01, 0.0, 0.001, 0.001, 0.012,
+            exception_type="InvalidWorkerPayload",
+            exception_message="unknown worker payload kind",
+            traceback_text="synthetic content traceback",
+            payload_received=True,
+            worker_cleanup_status="EXITED_NORMALLY",
+            worker_exitcode=0,
+            failure_origin=origin,
+        )
+    if origin == "WORKER_ERROR_PAYLOAD":
+        return engine_module.AttemptExecution(
+            None, "INTERNAL_CONFORMANCE_FAILURE", False,
+            0.01, 0.0, 0.001, 0.001, 0.012,
+            exception_type="RuntimeError",
+            exception_message="synthetic worker error",
+            traceback_text="synthetic worker traceback",
+            payload_received=True,
+            worker_cleanup_status="EXITED_NORMALLY",
+            worker_exitcode=0,
+            failure_origin=origin,
+        )
+    if origin == "RESULT_VALIDATION_FAILURE":
+        execution = successful_execution(request)
+        return replace(
+            execution,
+            result=replace(
+                execution.result,
+                analysis_id="invalid-" + request.analysis_id,
+            ),
+        )
+    raise AssertionError(origin)
+
+
+@pytest.mark.parametrize(
+    "origin",
+    (
+        "ANALYZER_RESULT",
+        "OUTER_TIMEOUT_STARTUP",
+        "OUTER_TIMEOUT_CONFIGURATION",
+        "IPC_RECEIVE_FAILURE",
+        "INVALID_WORKER_PAYLOAD_SHAPE",
+        "INVALID_WORKER_PAYLOAD_CONTENT",
+        "WORKER_ERROR_PAYLOAD",
+        "RESULT_VALIDATION_FAILURE",
+    ),
+)
+def test_every_production_failure_origin_reaches_terminal_and_csv(
+    tmp_path, monkeypatch, origin
+):
+    install_fake_materialization(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        engine_module,
+        "execute_isolated",
+        lambda request, timeout: _execution_for_failure_origin(request, origin),
+    )
+    config = make_config(tmp_path)
+    config["execution"]["fail_fast_on_p0"] = False
+    outcome = engine_module.ExecutionEngine(config).run()
+
+    attempts = read_csv(outcome.output_root / "analysis_attempts.csv")
+    results = read_csv(outcome.output_root / "per_taskset_results.csv")
+    assert "failure_origin" in TASKSET_RESULT_COLUMNS
+    assert results
+    for result in results:
+        final_attempt = [
+            row for row in attempts
+            if row["analysis_id"] == result["analysis_id"]
+        ][-1]
+        terminal = json.loads(
+            (
+                outcome.output_root / "terminal_results"
+                / f"{result['analysis_id']}.json"
+            ).read_text(encoding="utf-8")
+        )["taskset_row"]
+        assert (
+            final_attempt["failure_origin"]
+            == terminal["failure_origin"]
+            == result["failure_origin"]
+            == origin
         )
 
 def test_validation_failure_terminal_uses_rewritten_execution(
@@ -912,6 +1141,7 @@ def test_validation_failure_terminal_uses_rewritten_execution(
 
     assert failures[0]["severity"] == "P0"
     assert failures[0]["stage"] == "ANALYSIS"
+    assert attempts[0]["failure_origin"] == "RESULT_VALIDATION_FAILURE"
 
     state_files = list(
         (
@@ -946,6 +1176,7 @@ def test_pilot_delegates_to_common_worker_protocol(
         ),
         worker_exitcode=-15,
         worker_cleanup_seconds=0.02,
+        failure_origin="ANALYZER_RESULT",
     )
 
     def fake_execute(
@@ -1029,3 +1260,38 @@ def test_existing_legacy_attempt_header_fails_closed(
         ),
     ):
         ResultWriter(root)
+
+
+def test_existing_taskset_header_missing_only_failure_origin_fails_closed(
+    tmp_path,
+):
+    root = tmp_path / "legacy-result-writer"
+    root.mkdir()
+    result_path = root / "per_taskset_results.csv"
+    legacy_header = [
+        column for column in TASKSET_RESULT_COLUMNS
+        if column != "failure_origin"
+    ]
+    result_path.write_text(
+        ",".join(legacy_header) + "\n",
+        encoding="utf-8",
+    )
+    before = {
+        path.relative_to(root): path.read_bytes()
+        for path in root.rglob("*") if path.is_file()
+    }
+
+    with pytest.raises(
+        ResultWriterError,
+        match=(
+            "existing table header mismatch "
+            "for per_taskset_results.csv"
+        ),
+    ):
+        ResultWriter(root)
+
+    after = {
+        path.relative_to(root): path.read_bytes()
+        for path in root.rglob("*") if path.is_file()
+    }
+    assert after == before
