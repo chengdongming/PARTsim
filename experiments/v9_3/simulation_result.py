@@ -176,6 +176,10 @@ def parse_simulation_trace(
     running_since: Dict[tuple[str, int], int] = {}
     bypass_count = 0
     sync_wait_ticks: set[int] = set()
+    st_charge_begin_count = 0
+    st_charge_hold_ticks: set[int] = set()
+    st_charge_release_count = 0
+    st_charge_release_reasons: list[str] = []
     idle_ready_ticks: set[int] = set()
     battery_samples: list[tuple[int, float]] = []
     harvested_samples: list[float] = []
@@ -293,6 +297,15 @@ def parse_simulation_trace(
             bypass_count += 1
         elif event_type == "sync_batch_block":
             sync_wait_ticks.add(event_time)
+        elif event_type == "st_charge_begin":
+            st_charge_begin_count += 1
+        elif event_type == "st_charge_hold":
+            st_charge_hold_ticks.add(event_time)
+        elif event_type == "st_charge_release":
+            st_charge_release_count += 1
+            reason_value = event.get("release_reason")
+            if isinstance(reason_value, str) and reason_value:
+                st_charge_release_reasons.append(reason_value)
 
     ordered_by_task: Dict[str, list[Dict[str, Any]]] = {
         task_id: [] for task_id in definitions
@@ -387,6 +400,10 @@ def parse_simulation_trace(
         "energy_blocked_ticks": sum(job.energy_blocked_ticks for job in observations),
         "bypass_count": bypass_count,
         "synchronization_wait_ticks": len(sync_wait_ticks),
+        "st_charge_begin_count": st_charge_begin_count,
+        "st_charge_hold_ticks": len(st_charge_hold_ticks),
+        "st_charge_release_count": st_charge_release_count,
+        "st_charge_release_reasons": st_charge_release_reasons,
         "idle_cores_while_ready_jobs_exist_ticks": (
             len(idle_ready_ticks) if expected_processors is not None else None
         ),

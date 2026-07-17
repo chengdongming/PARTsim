@@ -1,0 +1,538 @@
+"""Explicit-denominator aggregation and mechanism classification for EXT-1B."""
+
+from __future__ import annotations
+
+from collections import Counter, defaultdict
+from itertools import combinations
+import json
+from pathlib import Path
+from typing import Any, Dict, Iterable, Mapping
+
+from .ext1b_statistics import STATISTIC_COLUMNS, paired_statistics_rows
+from .result_writer import read_csv, write_csv
+from .scheduler_registry import SCHEDULER_IDS, scheduler_by_id
+
+
+UNAVAILABLE = "UNAVAILABLE"
+VALID_STATUSES = {"SIM_PASS_OBSERVED", "SIM_DEADLINE_MISS"}
+
+ACTIVATION_COLUMNS = (
+    "paired_instance_id", "scenario_kind", "scenario_subtype",
+    "scenario_cell_id", "mechanism_scope", "structural_activation",
+    "runtime_activation", "activation_class", "outcome_comparable",
+    "deadline_outcome_different", "activation_evidence",
+)
+PAIRED_COLUMNS = (
+    "paired_instance_id", "scenario_kind", "scenario_subtype",
+    "scenario_cell_id", "left_scheduler", "right_scheduler", "left_status",
+    "right_status", "overall_relation", "left_top_m_success",
+    "right_top_m_success", "top_m_relation", "activation_class",
+    "taskset_hash", "trace_hash",
+)
+SCHEDULER_SUMMARY_COLUMNS = (
+    "scenario_kind", "scenario_subtype", "scenario_cell_id", "scheduler_id",
+    "timing_family", "mechanism", "requested_denominator",
+    "terminal_denominator", "valid_terminal_denominator",
+    "sufficiently_observed_denominator", "structural_activation_denominator",
+    "runtime_activation_denominator", "outcome_comparable_denominator",
+    "pass_count", "deadline_miss_count", "top_m_success_count",
+    "horizon_insufficient_count", "timeout_count", "internal_error_count",
+    "pass_ratio_valid", "top_m_success_ratio_valid", "wins", "ties",
+    "losses", "not_comparable",
+)
+SCENARIO_SUMMARY_COLUMNS = (
+    "scenario_kind", "scenario_subtype", "scenario_cell_id",
+    "requested_denominator", "terminal_denominator",
+    "valid_terminal_denominator", "sufficiently_observed_denominator",
+    "structural_activation_denominator", "runtime_activation_denominator",
+    "outcome_comparable_denominator", "pass_count", "deadline_miss_count",
+    "horizon_insufficient_count", "timeout_count", "internal_error_count",
+    "generation_rejection_count", "wins", "ties", "losses",
+    "not_comparable",
+)
+PRIORITY_SUMMARY_COLUMNS = (
+    "scenario_kind", "scenario_subtype", "scenario_cell_id", "scheduler_id",
+    "priority_rank", "task_denominator", "observed_jobs", "completed_jobs",
+    "missed_jobs", "censored_jobs", "minimum_jobs_satisfied_count",
+    "maximum_observed_response_time", "first_execution_min",
+)
+PLOT_COLUMNS = (
+    "plot", "scenario_kind", "scenario_subtype", "scenario_cell_id",
+    "scheduler_id", "comparator_scheduler", "paired_instance_id",
+    "activation_class", "category", "x", "y", "denominator",
+)
+
+
+def _ratio(numerator: int, denominator: int) -> Any:
+    return numerator / denominator if denominator else UNAVAILABLE
+
+
+def _bool(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    text = str(value).upper()
+    if text in {"TRUE", "1"}:
+        return True
+    if text in {"FALSE", "0"}:
+        return False
+    return None
+
+
+def _integer(value: Any) -> int | None:
+    if value in {None, "", UNAVAILABLE, "NONE"}:
+        return None
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _top_relation(left: Any, right: Any) -> str:
+    left_value, right_value = _bool(left), _bool(right)
+    if left_value is None or right_value is None:
+        return "NOT_COMPARABLE"
+    if left_value == right_value:
+        return "TIE"
+    return "LEFT_WIN" if left_value else "RIGHT_WIN"
+
+
+def _overall_relation(left: Mapping[str, Any], right: Mapping[str, Any]) -> str:
+    """Compare deadline outcomes without turning failures into false ties."""
+
+    left_status, right_status = str(left["status"]), str(right["status"])
+    if left_status not in VALID_STATUSES or right_status not in VALID_STATUSES:
+        return "NOT_COMPARABLE"
+    if left_status == right_status:
+        return "TIE"
+    return "LEFT_WIN" if left_status == "SIM_PASS_OBSERVED" else "RIGHT_WIN"
+
+
+def _first_execution_vectors(
+    task_rows: Iterable[Mapping[str, Any]], top_m: int,
+) -> Dict[tuple[str, str], tuple[Any, ...]]:
+    grouped: Dict[tuple[str, str], list[tuple[int, Any]]] = defaultdict(list)
+    for row in task_rows:
+        rank = int(row["priority_rank"])
+        if rank < top_m:
+            grouped[(str(row["paired_instance_id"]), str(row["scheduler_id"]))].append(
+                (rank, row.get("first_execution_time", UNAVAILABLE))
+            )
+    return {
+        key: tuple(value for _, value in sorted(values))
+        for key, values in grouped.items()
+    }
+
+
+def classify_mechanism_activation(
+    results: Iterable[Mapping[str, Any]],
+    task_rows: Iterable[Mapping[str, Any]],
+    generation_attempts: Iterable[Mapping[str, Any]],
+    *,
+    top_m: int,
+) -> list[Dict[str, Any]]:
+    result_rows = list(results)
+    by_pair: Dict[str, Dict[str, Mapping[str, Any]]] = defaultdict(dict)
+    for row in result_rows:
+        by_pair[str(row["paired_instance_id"])][str(row["scheduler_id"])] = row
+    vectors = _first_execution_vectors(task_rows, top_m)
+    registry = scheduler_by_id()
+    activations: list[Dict[str, Any]] = []
+
+    for pair_id, members in sorted(by_pair.items()):
+        exemplar = next(iter(members.values()))
+        kind = str(exemplar["scenario_kind"])
+        scopes = ("ALL",) if kind != "TIMING_STRESS" else ("BLOCK", "NONBLOCK", "SYNC")
+        for scope in scopes:
+            scoped_ids = [
+                scheduler for scheduler in members
+                if scope == "ALL" or registry[scheduler].mechanism == scope
+            ]
+            scoped = [members[scheduler] for scheduler in scoped_ids]
+            runtime = False
+            evidence: Dict[str, Any] = {}
+            if kind == "BYPASS_STRESS":
+                values = {
+                    scheduler: _integer(members[scheduler].get("bypass_count")) or 0
+                    for scheduler in scoped_ids
+                    if registry[scheduler].mechanism == "NONBLOCK"
+                }
+                runtime = any(value > 0 for value in values.values())
+                evidence = {"bypass_count_by_scheduler": values}
+            elif kind == "SYNC_BATCH_STRESS":
+                values = {
+                    scheduler: _integer(members[scheduler].get("synchronization_wait_ticks")) or 0
+                    for scheduler in scoped_ids
+                    if registry[scheduler].mechanism == "SYNC"
+                }
+                runtime = any(value > 0 for value in values.values())
+                evidence = {"sync_wait_by_scheduler": values}
+            else:
+                family_vectors = {
+                    registry[scheduler].timing_family: vectors.get((pair_id, scheduler), ())
+                    for scheduler in scoped_ids
+                }
+                available_vectors = [value for value in family_vectors.values() if value]
+                st_events = sum(
+                    (_integer(row.get("st_charge_begin_count")) or 0)
+                    for row in scoped
+                    if registry[str(row["scheduler_id"])].timing_family == "ST"
+                )
+                runtime = len(set(available_vectors)) > 1 or st_events > 0
+                evidence = {
+                    "first_execution_by_family": family_vectors,
+                    "st_charge_begin_count": st_events,
+                }
+
+            statuses = [str(row["status"]) for row in scoped]
+            comparable = bool(statuses) and all(status in VALID_STATUSES for status in statuses)
+            different = comparable and len(set(statuses)) > 1
+            if not runtime:
+                activation_class = "B_STRUCTURAL_ONLY"
+            elif different:
+                activation_class = "C2_RUNTIME_ACTIVATED_OUTCOME_DIFFERENT"
+            else:
+                activation_class = "C1_RUNTIME_ACTIVATED_OUTCOME_SAME"
+            activations.append({
+                "paired_instance_id": pair_id,
+                "scenario_kind": kind,
+                "scenario_subtype": exemplar["scenario_subtype"],
+                "scenario_cell_id": exemplar["scenario_cell_id"],
+                "mechanism_scope": scope,
+                "structural_activation": True,
+                "runtime_activation": runtime,
+                "activation_class": activation_class,
+                "outcome_comparable": comparable,
+                "deadline_outcome_different": different if comparable else UNAVAILABLE,
+                "activation_evidence": json.dumps(evidence, sort_keys=True),
+            })
+
+    for attempt in generation_attempts:
+        if str(attempt.get("attempt_status")) != "REJECTED":
+            continue
+        activations.append({
+            "paired_instance_id": UNAVAILABLE,
+            "scenario_kind": attempt["scenario_kind"],
+            "scenario_subtype": attempt["scenario_subtype"],
+            "scenario_cell_id": attempt["scenario_cell_id"],
+            "mechanism_scope": "ALL",
+            "structural_activation": False,
+            "runtime_activation": False,
+            "activation_class": "A_STRUCTURAL_REJECTED",
+            "outcome_comparable": False,
+            "deadline_outcome_different": UNAVAILABLE,
+            "activation_evidence": json.dumps({
+                "rejection_code": attempt.get("rejection_code"),
+                "rejection_detail": attempt.get("rejection_detail"),
+            }, sort_keys=True),
+        })
+    return activations
+
+
+def _activation_for_scheduler(
+    activation_rows: Iterable[Mapping[str, Any]],
+) -> Dict[tuple[str, str], Mapping[str, Any]]:
+    registry = scheduler_by_id()
+    by_pair: Dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    for row in activation_rows:
+        if row["paired_instance_id"] != UNAVAILABLE:
+            by_pair[str(row["paired_instance_id"])].append(row)
+    result = {}
+    for pair_id, rows in by_pair.items():
+        for scheduler in SCHEDULER_IDS:
+            mechanism = registry[scheduler].mechanism
+            matches = [
+                row for row in rows
+                if row["mechanism_scope"] in {"ALL", mechanism}
+            ]
+            if len(matches) != 1:
+                raise RuntimeError(f"ambiguous EXT-1B activation scope for {pair_id}/{scheduler}")
+            result[(pair_id, scheduler)] = matches[0]
+    return result
+
+
+def aggregate_ext1b_rows(
+    requests: Iterable[Mapping[str, Any]],
+    results: Iterable[Mapping[str, Any]],
+    task_rows: Iterable[Mapping[str, Any]],
+    generation_attempts: Iterable[Mapping[str, Any]],
+    *,
+    top_m: int,
+    bootstrap_seed: int,
+    bootstrap_resamples: int,
+) -> Dict[str, list[Dict[str, Any]]]:
+    request_rows, result_rows, tasks = list(requests), list(results), list(task_rows)
+    attempts = list(generation_attempts)
+    activation_rows = classify_mechanism_activation(
+        result_rows, tasks, attempts, top_m=top_m
+    )
+    activation_index = _activation_for_scheduler(activation_rows)
+    registry = scheduler_by_id()
+    result_by_pair: Dict[str, Dict[str, Mapping[str, Any]]] = defaultdict(dict)
+    for row in result_rows:
+        pair_id, scheduler = str(row["paired_instance_id"]), str(row["scheduler_id"])
+        if scheduler in result_by_pair[pair_id]:
+            raise RuntimeError("duplicate EXT-1B terminal result")
+        result_by_pair[pair_id][scheduler] = row
+
+    paired_rows = []
+    relation_counts: Dict[tuple[str, str], Counter[str]] = defaultdict(Counter)
+    for pair_id, members in sorted(result_by_pair.items()):
+        for left_id, right_id in combinations(sorted(members), 2):
+            left, right = members[left_id], members[right_id]
+            relation = _overall_relation(left, right)
+            activation = activation_index[(pair_id, left_id)]
+            paired_rows.append({
+                "paired_instance_id": pair_id,
+                "scenario_kind": left["scenario_kind"],
+                "scenario_subtype": left["scenario_subtype"],
+                "scenario_cell_id": left["scenario_cell_id"],
+                "left_scheduler": left_id,
+                "right_scheduler": right_id,
+                "left_status": left["status"],
+                "right_status": right["status"],
+                "overall_relation": relation,
+                "left_top_m_success": left["top_m_success"],
+                "right_top_m_success": right["top_m_success"],
+                "top_m_relation": _top_relation(left["top_m_success"], right["top_m_success"]),
+                "activation_class": activation["activation_class"],
+                "taskset_hash": left["taskset_hash"],
+                "trace_hash": left["trace_hash"],
+            })
+            cell = str(left["scenario_cell_id"])
+            opposite = {
+                "LEFT_WIN": "RIGHT_WIN", "RIGHT_WIN": "LEFT_WIN",
+                "TIE": "TIE", "NOT_COMPARABLE": "NOT_COMPARABLE",
+            }
+            if left_id == "gpfp_asap_block":
+                relation_counts[(cell, left_id)][relation] += 1
+                relation_counts[(cell, right_id)][opposite[relation]] += 1
+            elif right_id == "gpfp_asap_block":
+                relation_counts[(cell, left_id)][relation] += 1
+                relation_counts[(cell, right_id)][opposite[relation]] += 1
+
+    scheduler_rows = []
+    cells = sorted({str(row["scenario_cell_id"]) for row in request_rows})
+    for cell in cells:
+        exemplar = next(row for row in request_rows if str(row["scenario_cell_id"]) == cell)
+        for scheduler in SCHEDULER_IDS:
+            requested = [row for row in request_rows if str(row["scenario_cell_id"]) == cell and row["scheduler_id"] == scheduler]
+            terminal = [row for row in result_rows if str(row["scenario_cell_id"]) == cell and row["scheduler_id"] == scheduler]
+            statuses = Counter(str(row["status"]) for row in terminal)
+            valid = [row for row in terminal if str(row["status"]) in VALID_STATUSES]
+            runtime = sum(bool(activation_index[(str(row["paired_instance_id"]), scheduler)]["runtime_activation"]) for row in terminal)
+            comparable = sum(bool(activation_index[(str(row["paired_instance_id"]), scheduler)]["outcome_comparable"]) for row in terminal)
+            counts = relation_counts[(cell, scheduler)]
+            registration = registry[scheduler]
+            scheduler_rows.append({
+                "scenario_kind": exemplar["scenario_kind"],
+                "scenario_subtype": exemplar["scenario_subtype"],
+                "scenario_cell_id": cell,
+                "scheduler_id": scheduler,
+                "timing_family": registration.timing_family,
+                "mechanism": registration.mechanism,
+                "requested_denominator": len(requested),
+                "terminal_denominator": len(terminal),
+                "valid_terminal_denominator": len(valid),
+                "sufficiently_observed_denominator": len(valid),
+                "structural_activation_denominator": len(requested),
+                "runtime_activation_denominator": runtime,
+                "outcome_comparable_denominator": comparable,
+                "pass_count": statuses["SIM_PASS_OBSERVED"],
+                "deadline_miss_count": statuses["SIM_DEADLINE_MISS"],
+                "top_m_success_count": sum(_bool(row["top_m_success"]) is True for row in valid),
+                "horizon_insufficient_count": statuses["SIM_HORIZON_INSUFFICIENT"],
+                "timeout_count": statuses["SIM_RUNTIME_TIMEOUT"],
+                "internal_error_count": statuses["SIM_INTERNAL_ERROR"],
+                "pass_ratio_valid": _ratio(statuses["SIM_PASS_OBSERVED"], len(valid)),
+                "top_m_success_ratio_valid": _ratio(sum(_bool(row["top_m_success"]) is True for row in valid), len(valid)),
+                "wins": counts["LEFT_WIN"],
+                "ties": counts["TIE"],
+                "losses": counts["RIGHT_WIN"],
+                "not_comparable": counts["NOT_COMPARABLE"],
+            })
+
+    scenario_rows = []
+    for cell in cells:
+        requested = [row for row in request_rows if str(row["scenario_cell_id"]) == cell]
+        terminal = [row for row in result_rows if str(row["scenario_cell_id"]) == cell]
+        statuses = Counter(str(row["status"]) for row in terminal)
+        valid = sum(statuses[value] for value in VALID_STATUSES)
+        rejected = [row for row in activation_rows if str(row["scenario_cell_id"]) == cell and row["activation_class"] == "A_STRUCTURAL_REJECTED"]
+        primary_relations = [
+            row for row in paired_rows
+            if str(row["scenario_cell_id"]) == cell
+            and "gpfp_asap_block" in {row["left_scheduler"], row["right_scheduler"]}
+        ]
+        normalized = Counter()
+        for row in primary_relations:
+            relation = row["overall_relation"]
+            if row["right_scheduler"] == "gpfp_asap_block":
+                relation = {"LEFT_WIN": "RIGHT_WIN", "RIGHT_WIN": "LEFT_WIN"}.get(relation, relation)
+            normalized[relation] += 1
+        exemplar = requested[0]
+        scenario_rows.append({
+            "scenario_kind": exemplar["scenario_kind"],
+            "scenario_subtype": exemplar["scenario_subtype"],
+            "scenario_cell_id": cell,
+            "requested_denominator": len(requested),
+            "terminal_denominator": len(terminal),
+            "valid_terminal_denominator": valid,
+            "sufficiently_observed_denominator": valid,
+            "structural_activation_denominator": len(requested),
+            "runtime_activation_denominator": sum(
+                bool(activation_index[(
+                    str(row["paired_instance_id"]), str(row["scheduler_id"]),
+                )]["runtime_activation"])
+                for row in terminal
+            ),
+            "outcome_comparable_denominator": sum(
+                bool(activation_index[(
+                    str(row["paired_instance_id"]), str(row["scheduler_id"]),
+                )]["outcome_comparable"])
+                for row in terminal
+            ),
+            "pass_count": statuses["SIM_PASS_OBSERVED"],
+            "deadline_miss_count": statuses["SIM_DEADLINE_MISS"],
+            "horizon_insufficient_count": statuses["SIM_HORIZON_INSUFFICIENT"],
+            "timeout_count": statuses["SIM_RUNTIME_TIMEOUT"],
+            "internal_error_count": statuses["SIM_INTERNAL_ERROR"],
+            "generation_rejection_count": len(rejected),
+            "wins": normalized["LEFT_WIN"],
+            "ties": normalized["TIE"],
+            "losses": normalized["RIGHT_WIN"],
+            "not_comparable": normalized["NOT_COMPARABLE"],
+        })
+
+    priority_rows = []
+    priority_groups: Dict[tuple[str, str, int], list[Mapping[str, Any]]] = defaultdict(list)
+    for row in tasks:
+        priority_groups[(str(row["scenario_cell_id"]), str(row["scheduler_id"]), int(row["priority_rank"]))].append(row)
+    for (cell, scheduler, rank), members in sorted(priority_groups.items()):
+        exemplar = members[0]
+        responses = [_integer(row.get("maximum_observed_response_time")) for row in members]
+        firsts = [_integer(row.get("first_execution_time")) for row in members]
+        priority_rows.append({
+            "scenario_kind": exemplar["scenario_kind"],
+            "scenario_subtype": exemplar["scenario_subtype"],
+            "scenario_cell_id": cell,
+            "scheduler_id": scheduler,
+            "priority_rank": rank,
+            "task_denominator": len(members),
+            "observed_jobs": sum(int(row["observed_jobs"]) for row in members),
+            "completed_jobs": sum(int(row["completed_jobs"]) for row in members),
+            "missed_jobs": sum(int(row["missed_jobs"]) for row in members),
+            "censored_jobs": sum(int(row["censored_jobs"]) for row in members),
+            "minimum_jobs_satisfied_count": sum(_bool(row["minimum_jobs_satisfied"]) is True for row in members),
+            "maximum_observed_response_time": max((value for value in responses if value is not None), default=UNAVAILABLE),
+            "first_execution_min": min((value for value in firsts if value is not None), default=UNAVAILABLE),
+        })
+
+    statistic_rows = paired_statistics_rows(
+        result_rows,
+        bootstrap_seed=bootstrap_seed,
+        bootstrap_resamples=bootstrap_resamples,
+    )
+    plots = []
+    for row in result_rows:
+        activation = activation_index[(str(row["paired_instance_id"]), str(row["scheduler_id"]))]
+        for plot, field in (
+            ("overall_pass_ratio", "overall_success"),
+            ("top_m_success_ratio", "top_m_success"),
+            ("bypass_activation", "bypass_count"),
+            ("sync_activation", "synchronization_wait_ticks"),
+            ("timing_activation", "timing_activation"),
+            ("top_m_response_time", "top_m_max_response_time"),
+            ("first_missed_priority_rank", "first_missed_priority_rank"),
+        ):
+            value = (
+                activation["runtime_activation"]
+                if field == "timing_activation"
+                else row.get(field, UNAVAILABLE)
+            )
+            plots.append({
+                "plot": plot, "scenario_kind": row["scenario_kind"],
+                "scenario_subtype": row["scenario_subtype"],
+                "scenario_cell_id": row["scenario_cell_id"],
+                "scheduler_id": row["scheduler_id"],
+                "comparator_scheduler": "",
+                "paired_instance_id": row["paired_instance_id"],
+                "activation_class": activation["activation_class"],
+                "category": row["status"], "x": value, "y": 1,
+                "denominator": 1,
+            })
+        trajectory = row.get("battery_trajectory_json")
+        if trajectory not in {None, "", UNAVAILABLE}:
+            for point in json.loads(str(trajectory)):
+                plots.append({
+                    "plot": "battery_trajectory", "scenario_kind": row["scenario_kind"],
+                    "scenario_subtype": row["scenario_subtype"],
+                    "scenario_cell_id": row["scenario_cell_id"],
+                    "scheduler_id": row["scheduler_id"], "comparator_scheduler": "",
+                    "paired_instance_id": row["paired_instance_id"],
+                    "activation_class": activation["activation_class"],
+                    "category": row["status"], "x": point["time"],
+                    "y": point["energy_j"], "denominator": 1,
+                })
+    for row in tasks:
+        activation = activation_index[(
+            str(row["paired_instance_id"]), str(row["scheduler_id"]),
+        )]
+        plots.append({
+            "plot": "first_execution_timeline",
+            "scenario_kind": row["scenario_kind"],
+            "scenario_subtype": row["scenario_subtype"],
+            "scenario_cell_id": row["scenario_cell_id"],
+            "scheduler_id": row["scheduler_id"],
+            "comparator_scheduler": "",
+            "paired_instance_id": row["paired_instance_id"],
+            "activation_class": activation["activation_class"],
+            "category": f"task:{row.get('task_id', row['priority_rank'])}",
+            "x": row.get("first_execution_time", UNAVAILABLE),
+            "y": row["priority_rank"],
+            "denominator": 1,
+        })
+    for row in statistic_rows:
+        if row["metric"] in {"overall_success", "top_m_max_response_time"}:
+            value = row["risk_difference"] if row["metric_type"] == "BINARY" else row["median_paired_difference"]
+            plots.append({
+                "plot": "paired_risk_difference" if row["metric_type"] == "BINARY" else "paired_response_difference",
+                "scenario_kind": row["scenario_kind"], "scenario_subtype": row["scenario_subtype"],
+                "scenario_cell_id": row["scenario_cell_id"],
+                "scheduler_id": "gpfp_asap_block", "comparator_scheduler": row["comparator_scheduler"],
+                "paired_instance_id": "", "activation_class": "ALL",
+                "category": row["metric"], "x": value, "y": row["paired_count"],
+                "denominator": row["paired_count"],
+            })
+    return {
+        "activation": activation_rows,
+        "paired": paired_rows,
+        "scheduler_summary": scheduler_rows,
+        "scenario_summary": scenario_rows,
+        "priority_summary": priority_rows,
+        "statistics": statistic_rows,
+        "plots": plots,
+    }
+
+
+def aggregate_ext1b(root: Path, config: Mapping[str, Any]) -> Dict[str, int]:
+    tables = aggregate_ext1b_rows(
+        read_csv(root / "simulation_requests.csv"),
+        read_csv(root / "simulation_results.csv"),
+        read_csv(root / "task_outcomes.csv"),
+        read_csv(root / "generation_attempts.csv"),
+        top_m=int(config["statistics"]["top_m"]),
+        bootstrap_seed=int(config["statistics"]["bootstrap_seed"]),
+        bootstrap_resamples=int(config["statistics"]["bootstrap_resamples"]),
+    )
+    outputs = (
+        ("mechanism_activation.csv", ACTIVATION_COLUMNS, "activation"),
+        ("paired_scheduler_outcomes.csv", PAIRED_COLUMNS, "paired"),
+        ("scheduler_summary.csv", SCHEDULER_SUMMARY_COLUMNS, "scheduler_summary"),
+        ("scenario_summary.csv", SCENARIO_SUMMARY_COLUMNS, "scenario_summary"),
+        ("priority_rank_summary.csv", PRIORITY_SUMMARY_COLUMNS, "priority_summary"),
+        ("paired_statistics.csv", STATISTIC_COLUMNS, "statistics"),
+        ("ext1b_plot_data.csv", PLOT_COLUMNS, "plots"),
+    )
+    for name, columns, key in outputs:
+        write_csv(root / name, columns, tables[key])
+    return {f"{key}_rows": len(tables[key]) for _, _, key in outputs}

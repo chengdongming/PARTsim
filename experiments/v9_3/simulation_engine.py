@@ -323,10 +323,16 @@ def run_paired_simulation(
         processors=processors, initial_battery=initial,
         battery_capacity=capacity, scheduler_id=scheduler_id,
     )
-    validate_no_overflow_guard(
-        system_path, int(simulation_config["maximum_horizon"]),
-        initial_battery=initial, battery_capacity=capacity,
-    )
+    # CORE-3's proof-oriented runs forbid harvest clipping.  EXT-1B's
+    # SLACK_LIMITED_CHARGING micro-mechanism intentionally observes the ST
+    # scheduler's documented "battery full or slack exhausted" release gate,
+    # so that one explicitly validated experiment path may use a finite,
+    # clipping battery.  The default remains fail-closed and unchanged.
+    if not bool(energy_config.get("allow_harvest_clipping", False)):
+        validate_no_overflow_guard(
+            system_path, int(simulation_config["maximum_horizon"]),
+            initial_battery=initial, battery_capacity=capacity,
+        )
 
     simulator = Path(str(simulation_config["simulator_bin"]))
     if not simulator.is_absolute():
@@ -412,19 +418,29 @@ def run_paired_simulation(
             )
 
         assert result is not None
+        retain_always = bool(simulation_config.get("retain_trace", False))
         should_retain = bool(
-            simulation_config["trace_on_failure"]
-            and trace_path.is_file()
+            trace_path.is_file()
             and (
-                result.status in {
-                    SimulationStatus.DEADLINE_MISS,
-                    SimulationStatus.INTERNAL_ERROR,
-                }
-                or not result.release_e0_valid
+                retain_always
+                or (
+                    simulation_config["trace_on_failure"]
+                    and (
+                        result.status in {
+                            SimulationStatus.DEADLINE_MISS,
+                            SimulationStatus.INTERNAL_ERROR,
+                        }
+                        or not result.release_e0_valid
+                    )
+                )
             )
         )
         if should_retain:
-            retained = failure_traces / f"{simulation_id_value}.json"
+            destination_root = (
+                run_root / "retained_traces" if retain_always else failure_traces
+            )
+            destination_root.mkdir(parents=True, exist_ok=True)
+            retained = destination_root / f"{simulation_id_value}.json"
             shutil.copy2(trace_path, retained)
         trace_path.unlink(missing_ok=True)
 
