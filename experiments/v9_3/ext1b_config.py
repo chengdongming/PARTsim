@@ -290,6 +290,9 @@ def validate_ext1b_config(raw: Mapping[str, Any]) -> Dict[str, Any]:
         stats.get("bootstrap_resamples"), "statistics.bootstrap_resamples"
     )
     stats["top_m"] = _positive_int(stats.get("top_m"), "statistics.top_m")
+    retain_trace = config["simulation"].get("retain_trace")
+    if not isinstance(retain_trace, bool):
+        raise ConfigError("simulation.retain_trace must be a boolean")
     if config["parameter_status"] == "SMOKE" and config["grid"]["tasksets_per_cell"] > 2:
         raise ConfigError("EXT-1B smoke tasksets_per_cell must not exceed 2")
 

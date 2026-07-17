@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from fractions import Fraction
 import hashlib
 from pathlib import Path
 import signal
@@ -26,7 +27,7 @@ from .result_writer import (
 from .scheduler_pairing import assert_scheduler_only_difference
 from .scheduler_registry import SCHEDULERS, audited_scheduler_registry
 from .simulation_engine import (
-    SimulationConfigurationError, load_simulation_terminal,
+    SimulationConfigurationError, SimulationExecution, load_simulation_terminal,
     run_paired_simulation, write_simulation_terminal,
 )
 from .simulation_result import SimulationStatus
@@ -249,8 +250,19 @@ class Ext1BRunner:
                 "holm_family": "eight ASAP-BLOCK comparator tests within each cell and binary endpoint",
                 "selection_policy": "structural predicates and runtime activation only; scheduler outcomes excluded",
                 "simulation_is_schedulability_proof": False,
+                "formal_large_scale_run": False,
+                "result_class": "NON_FORMAL_SMOKE_OR_PILOT",
                 "created_at_utc": _utc_now(),
             })
+
+    @staticmethod
+    def _validate_terminal_identity(
+        request: Mapping[str, Any], execution: SimulationExecution,
+    ) -> None:
+        if execution.simulation_id != str(request["request_id"]):
+            raise RuntimeError("P0 EXT-1B terminal simulation_id mismatch")
+        if execution.result.configured_scheduler != str(request["scheduler_id"]):
+            raise RuntimeError("P0 EXT-1B terminal scheduler mismatch")
 
     def _checkpoint(self, requested: int, terminal: int) -> None:
         atomic_write_json(self.root / "checkpoint.json", {
@@ -517,14 +529,25 @@ class Ext1BRunner:
             first_missed = first_missed_numeric = min(missed_ranks)
         else:
             first_missed = "NONE"
-            first_missed_numeric = len(task_rows)
+            first_missed_numeric = UNAVAILABLE
         top_responses = [
             int(row["maximum_observed_response_time"])
             for row in top_rows
             if row["maximum_observed_response_time"] != UNAVAILABLE
         ]
         top_first = [row["first_execution_time"] for row in top_rows]
-        metrics = result.metrics
+        metrics = dict(result.metrics)
+        scheduler_id = str(request["scheduler_id"])
+        if scheduler_id != "gpfp_asap_nonblock":
+            metrics["bypass_count"] = None
+        if scheduler_id != "gpfp_asap_sync":
+            metrics["synchronization_wait_ticks"] = None
+        if not scheduler_id.startswith("gpfp_st_"):
+            for key in (
+                "st_charge_begin_count", "st_charge_hold_ticks",
+                "st_charge_release_count", "st_charge_release_reasons",
+            ):
+                metrics[key] = None
         row = {
             **{key: request[key] for key in (
                 "request_id", "paired_instance_id", "scenario_kind",
@@ -555,7 +578,11 @@ class Ext1BRunner:
                 "st_charge_release_count", "harvested_energy_j",
                 "consumed_energy_j", "battery_minimum_j", "battery_maximum_j",
             )},
-            "st_charge_release_reasons": canonical_json(metrics.get("st_charge_release_reasons", [])),
+            "st_charge_release_reasons": (
+                canonical_json(metrics["st_charge_release_reasons"])
+                if metrics.get("st_charge_release_reasons") is not None
+                else UNAVAILABLE
+            ),
             "battery_trajectory_json": canonical_json(metrics.get("battery_trajectory", [])),
             "retained_trace_path": str(execution.retained_trace_path or ""),
         }
@@ -565,8 +592,12 @@ class Ext1BRunner:
         self, *, resume: bool = False, max_cells: Optional[int] = None,
         max_tasksets: Optional[int] = None,
     ) -> Ext1BOutcome:
-        if self.config["parameter_status"] == "UNFROZEN_FORMAL_TEMPLATE":
-            raise RuntimeError("UNFROZEN_FORMAL_TEMPLATE is not executable")
+        if self.config["parameter_status"] in {
+            "UNFROZEN_FORMAL_TEMPLATE", "FROZEN_FOR_FORMAL_EXECUTION",
+        }:
+            raise RuntimeError(
+                "EXT-1B formal execution is not authorized by this runner"
+            )
         self._initialize(resume)
         generated, generation_attempts, instances, plan = self._plan(max_cells, max_tasksets)
         planned_ids = {str(row["request_id"]) for row in plan}
@@ -593,6 +624,7 @@ class Ext1BRunner:
                     if not resume:
                         raise RuntimeError("terminal result exists; use --resume")
                     execution = load_simulation_terminal(terminal_path)
+                    self._validate_terminal_identity(request, execution)
                 else:
                     instance: ScenarioInstance = request["instance"]
                     energy = dict(self.config["energy"])
@@ -607,7 +639,9 @@ class Ext1BRunner:
                             task_payload=instance.tasks,
                             taskset_hash=instance.taskset_hash,
                             processors=instance.processors,
-                            exact_e0=instance.initial_battery,
+                            # EXT-1B E_init is a t=0 mechanism input, not a
+                            # proof-oriented lower bound at every later release.
+                            exact_e0=Fraction(0),
                             energy_config=energy,
                             simulation_config=self.config["simulation"],
                             scheduler_id=str(request["scheduler_id"]),
@@ -615,6 +649,7 @@ class Ext1BRunner:
                     except SimulationConfigurationError as exc:
                         raise RuntimeError(f"P0 simulation configuration failure: {exc}") from exc
                     write_simulation_terminal(terminal_path, execution)
+                self._validate_terminal_identity(request, execution)
                 terminal_count += 1
                 if execution.result.status in {
                     SimulationStatus.INTERNAL_ERROR, SimulationStatus.RUNTIME_TIMEOUT,
@@ -642,6 +677,7 @@ class Ext1BRunner:
             if not path.is_file():
                 continue
             execution = load_simulation_terminal(path)
+            self._validate_terminal_identity(request, execution)
             result_row, per_task = self._task_and_request_outcomes(request, execution)
             result_rows.append(result_row)
             task_rows.extend(per_task)
@@ -667,7 +703,11 @@ class Ext1BRunner:
         aggregation = aggregate_ext1b(self.root, self.config)
         summary = {
             "requested": len(plan), "terminal": len(result_rows),
-            "complete": len(result_rows) == len(plan), **aggregation,
+            "complete": len(result_rows) == len(plan),
+            "parameter_status": self.config["parameter_status"],
+            "formal_large_scale_run": False,
+            "result_class": "NON_FORMAL_SMOKE_OR_PILOT",
+            **aggregation,
         }
         write_file_hashes(self.root)
         return Ext1BOutcome(
@@ -679,19 +719,33 @@ def analyze_ext1b(root: Path) -> Mapping[str, Any]:
     config = load_ext1b_config(root / "run_config.yaml")
     summary = aggregate_ext1b(root, config)
     write_file_hashes(root)
-    return summary
+    return {
+        "parameter_status": config["parameter_status"],
+        "formal_large_scale_run": False,
+        "result_class": "NON_FORMAL_SMOKE_OR_PILOT",
+        **summary,
+    }
 
 
 def verify_file_hashes(root: Path) -> bool:
     manifest = root / "file_hashes.sha256"
     if not manifest.is_file():
         return False
+    listed = set()
     for line in manifest.read_text(encoding="utf-8").splitlines():
         fields = line.split("  ", 1)
         if len(fields) != 2 or len(fields[0]) != 64:
             return False
         digest, relative = fields
+        if relative in listed or relative == "file_hashes.sha256":
+            return False
+        listed.add(relative)
         path = root / relative
         if not path.is_file() or _sha256_file(path) != digest:
             return False
-    return True
+    actual = {
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*")
+        if path.is_file() and path.name != "file_hashes.sha256"
+    }
+    return listed == actual

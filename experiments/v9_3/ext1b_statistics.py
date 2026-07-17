@@ -24,6 +24,7 @@ CONTINUOUS_METRICS = (
 )
 HIGHER_IS_BETTER = {"first_missed_priority_rank_numeric"}
 UNAVAILABLE = "UNAVAILABLE"
+FLOAT_TIE_TOLERANCE = 1e-9
 
 
 STATISTIC_COLUMNS = (
@@ -127,6 +128,27 @@ def _number(value: Any) -> float | None:
     return result if math.isfinite(result) else None
 
 
+def _comparison_eligible(row: Mapping[str, Any]) -> bool:
+    return (
+        str(row.get("status")) in {"SIM_PASS_OBSERVED", "SIM_DEADLINE_MISS"}
+        and _binary(row.get("comparison_eligible")) is True
+    )
+
+
+def _ordered_counts(
+    pairs: Sequence[tuple[float, float]], *, higher_is_better: bool,
+) -> tuple[int, int, int]:
+    wins = losses = ties = 0
+    for left, right in pairs:
+        if math.isclose(left, right, rel_tol=0.0, abs_tol=FLOAT_TIE_TOLERANCE):
+            ties += 1
+        elif (left > right) == higher_is_better:
+            wins += 1
+        else:
+            losses += 1
+    return wins, ties, losses
+
+
 def _empty_row(context: Mapping[str, Any], metric_type: str, metric: str, comparator: str) -> Dict[str, Any]:
     return {
         "scenario_kind": context["scenario_kind"],
@@ -154,7 +176,10 @@ def paired_statistics_rows(
     for row in results:
         cell = str(row["scenario_cell_id"])
         pair = str(row["paired_instance_id"])
-        grouped[(cell, pair)][str(row["scheduler_id"])] = row
+        scheduler = str(row["scheduler_id"])
+        if scheduler in grouped[(cell, pair)]:
+            raise RuntimeError(f"duplicate EXT-1B statistic row for {pair}/{scheduler}")
+        grouped[(cell, pair)][scheduler] = row
         context_by_cell[cell] = {
             "scenario_kind": str(row["scenario_kind"]),
             "scenario_subtype": str(row["scenario_subtype"]),
@@ -175,6 +200,10 @@ def paired_statistics_rows(
                 pairs = []
                 for members in pair_groups:
                     if PRIMARY_SCHEDULER not in members or comparator not in members:
+                        continue
+                    if not all(_comparison_eligible(members[scheduler]) for scheduler in (
+                        PRIMARY_SCHEDULER, comparator,
+                    )):
                         continue
                     left = _binary(members[PRIMARY_SCHEDULER].get(metric))
                     right = _binary(members[comparator].get(metric))
@@ -224,6 +253,10 @@ def paired_statistics_rows(
                 for members in pair_groups:
                     if PRIMARY_SCHEDULER not in members or comparator not in members:
                         continue
+                    if not all(_comparison_eligible(members[scheduler]) for scheduler in (
+                        PRIMARY_SCHEDULER, comparator,
+                    )):
+                        continue
                     left = _number(members[PRIMARY_SCHEDULER].get(metric))
                     right = _number(members[comparator].get(metric))
                     if left is not None and right is not None:
@@ -243,12 +276,9 @@ def paired_statistics_rows(
                         differences, seed=derived_seed,
                         resamples=bootstrap_resamples, statistic="median",
                     )
-                    if metric in HIGHER_IS_BETTER:
-                        wins = sum(left > right for left, right in pairs)
-                        losses = sum(left < right for left, right in pairs)
-                    else:
-                        wins = sum(left < right for left, right in pairs)
-                        losses = sum(left > right for left, right in pairs)
+                    wins, ties, losses = _ordered_counts(
+                        pairs, higher_is_better=metric in HIGHER_IS_BETTER,
+                    )
                     row.update({
                         "median_primary": statistics.median(left for left, _ in pairs),
                         "median_comparator": statistics.median(right for _, right in pairs),
@@ -257,7 +287,7 @@ def paired_statistics_rows(
                         "ci95_lower": lower,
                         "ci95_upper": upper,
                         "wins": wins,
-                        "ties": sum(left == right for left, right in pairs),
+                        "ties": ties,
                         "losses": losses,
                     })
                 rows.append(row)

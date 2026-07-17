@@ -4,6 +4,7 @@ from copy import deepcopy
 from fractions import Fraction
 import json
 from pathlib import Path
+import subprocess
 from types import SimpleNamespace
 
 import pytest
@@ -27,11 +28,13 @@ from experiments.v9_3.ext1b_engine import (
     verify_file_hashes,
 )
 from experiments.v9_3.ext1b_generation import (
+    NATIVE_ENERGY_EPSILON_J,
     _apply_power_profile,
     StructuralRejection,
     bypass_structure,
     interpolate_exact,
     materialize_scenario_system,
+    native_energy_affordable,
     scenario_cells,
     sync_batch_structure,
     transform_constrained_deadlines,
@@ -47,6 +50,7 @@ from experiments.v9_3.result_writer import write_file_hashes
 from experiments.v9_3.scheduler_registry import SCHEDULER_IDS, scheduler_by_id
 from experiments.v9_3.simulation_engine import (
     SimulationExecution,
+    run_paired_simulation,
     write_simulation_terminal,
 )
 from experiments.v9_3.simulation_result import (
@@ -114,17 +118,20 @@ def _result_rows(kind: str = "BYPASS_STRESS", subtype: str = "B1"):
             "scenario_cell_id": "cell",
             "scheduler_id": scheduler,
             "status": "SIM_PASS_OBSERVED",
+            "comparison_eligible": True,
             "taskset_hash": "task",
             "trace_hash": "trace",
+            "simulation_config_hash": "sim",
+            "input_hash": "input",
             "overall_success": True,
             "top_m_success": True,
             "top_m_max_response_time": 2,
             "first_missed_priority_rank_numeric": 3,
             "energy_blocked_ticks": 0,
             "processor_wait_ticks": 0,
-            "synchronization_wait_ticks": 1 if mechanism == "SYNC" else 0,
-            "bypass_count": 1 if mechanism == "NONBLOCK" else 0,
-            "st_charge_begin_count": 0,
+            "synchronization_wait_ticks": 1 if scheduler == "gpfp_asap_sync" else UNAVAILABLE,
+            "bypass_count": 1 if scheduler == "gpfp_asap_nonblock" else UNAVAILABLE,
+            "st_charge_begin_count": 0 if scheduler.startswith("gpfp_st_") else UNAVAILABLE,
             "battery_trajectory_json": "[]",
         })
     return rows
@@ -149,6 +156,7 @@ def _task_rows(kind: str = "BYPASS_STRESS", subtype: str = "B1"):
                 "missed_jobs": 0,
                 "censored_jobs": 0,
                 "minimum_jobs_satisfied": True,
+                "request_comparison_eligible": True,
                 "maximum_observed_response_time": 2,
             })
     return rows
@@ -156,12 +164,11 @@ def _task_rows(kind: str = "BYPASS_STRESS", subtype: str = "B1"):
 
 def _requests(kind: str = "BYPASS_STRESS", subtype: str = "B1"):
     return [{
+        **row,
         "request_id": row["scheduler_id"],
-        "paired_instance_id": "pair",
         "scenario_kind": kind,
         "scenario_subtype": subtype,
         "scenario_cell_id": "cell",
-        "scheduler_id": row["scheduler_id"],
     } for row in _fair_rows()]
 
 
@@ -183,6 +190,52 @@ def test_ext1a_default_has_no_ext1b_execution_switches():
     assert "allow_harvest_clipping" not in raw["energy"]
 
 
+def test_ext1a_shared_defaults_keep_overflow_guard_and_failure_trace_path(
+    tmp_path, monkeypatch,
+):
+    raw = yaml.safe_load(
+        (ROOT / "configs/v9_3_ext1_smoke.yaml").read_text(encoding="utf-8")
+    )
+    config = validate_config(raw, expected_core="CORE-3")
+    simulator = tmp_path / "rtsim"
+    simulator.write_text("", encoding="utf-8")
+    system, taskset = tmp_path / "system.yaml", tmp_path / "taskset.yaml"
+    system.write_text("x", encoding="utf-8")
+    taskset.write_text("x", encoding="utf-8")
+    called = {"overflow_guard": 0}
+    monkeypatch.setattr(
+        "experiments.v9_3.simulation_engine.materialize_simulation_inputs",
+        lambda *args, **kwargs: (system, taskset),
+    )
+
+    def guard(*args, **kwargs):
+        called["overflow_guard"] += 1
+        return Fraction(0)
+
+    monkeypatch.setattr(
+        "experiments.v9_3.simulation_engine.validate_no_overflow_guard", guard,
+    )
+
+    def fake_run(command, **kwargs):
+        trace = Path(command[command.index("-t") + 1])
+        trace.write_text("{malformed", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("experiments.v9_3.simulation_engine.subprocess.run", fake_run)
+    simulation = dict(config["simulation"])
+    simulation["simulator_bin"] = str(simulator)
+    execution = run_paired_simulation(
+        simulation_id_value="x" * 64, base_system_path=system,
+        run_root=tmp_path / "run", task_payload=_payload(),
+        taskset_hash=TRACE_HASH, processors=2, exact_e0=Fraction(0),
+        energy_config=config["energy"], simulation_config=simulation,
+    )
+    assert called["overflow_guard"] == 1
+    assert execution.result.status is SimulationStatus.INTERNAL_ERROR
+    assert execution.retained_trace_path.parent.name == "failure_traces"
+    assert not (tmp_path / "run" / "retained_traces").exists()
+
+
 def test_unknown_ext1b_field_is_rejected():
     raw = _raw_config()
     raw["scenario"]["outcome_filter"] = "ASAP_BLOCK_WINS"
@@ -198,10 +251,32 @@ def test_illegal_scenario_enum_is_rejected(kind):
         validate_ext1b_config(raw)
 
 
+def test_unknown_parameter_status_is_rejected():
+    raw = _raw_config()
+    raw["parameter_status"] = "READY"
+    with pytest.raises(ConfigError, match="unknown EXT-1B parameter_status"):
+        validate_ext1b_config(raw)
+
+
 def test_formal_template_parses_but_runner_refuses_execution():
     runner = Ext1BRunner.from_path(ROOT / "configs/v9_3_ext1b_formal_template.yaml")
-    with pytest.raises(RuntimeError, match="not executable"):
+    with pytest.raises(RuntimeError, match="not authorized"):
         runner.run()
+
+
+def test_changing_only_formal_status_cannot_authorize_execution():
+    raw = _raw_config("v9_3_ext1b_formal_template.yaml")
+    raw["parameter_status"] = "FROZEN_FOR_FORMAL_EXECUTION"
+    runner = Ext1BRunner(validate_ext1b_config(raw))
+    with pytest.raises(RuntimeError, match="not authorized"):
+        runner.run()
+
+
+def test_retain_trace_requires_boolean():
+    raw = _raw_config()
+    raw["simulation"]["retain_trace"] = "false"
+    with pytest.raises(ConfigError, match="retain_trace must be a boolean"):
+        validate_ext1b_config(raw)
 
 
 @pytest.mark.parametrize(
@@ -277,6 +352,15 @@ def test_exact_interpolation_never_rounds_to_upper_boundary():
     value = interpolate_exact(Fraction(1, 10), Fraction(1, 3), Fraction(2, 3))
     assert value == Fraction(23, 90)
     assert Fraction(1, 10) <= value < Fraction(1, 3)
+
+
+def test_native_energy_epsilon_boundaries_match_constructor_predicates():
+    required = Fraction(1)
+    assert native_energy_affordable(required, required)
+    assert native_energy_affordable(required - NATIVE_ENERGY_EPSILON_J, required)
+    initial, structure = bypass_structure(_payload(), Fraction(1, 2))
+    assert native_energy_affordable(initial, Fraction(structure["low_unit_energy"]))
+    assert not native_energy_affordable(initial, Fraction(structure["high_unit_energy"]))
 
 
 def test_b1_rejects_missing_power_antagonism():
@@ -358,46 +442,84 @@ def test_timing_activation_detects_actual_first_execution_difference():
     assert all(row["activation_class"].startswith("C1_") for row in activations)
 
 
-def _write_mechanism_trace(path: Path):
+def _write_mechanism_trace(path: Path, scheduler: str, events):
     document = trace_document()
-    document["events"][2:2] = [
-        {"time": 0, "event_type": "nonblock_bypass"},
-        {"time": 1, "event_type": "sync_batch_block"},
-        {"time": 2, "event_type": "st_charge_begin"},
-        {"time": 3, "event_type": "st_charge_hold"},
-        {"time": 4, "event_type": "st_charge_hold"},
-        {"time": 5, "event_type": "st_charge_release", "release_reason": "battery_full"},
-    ]
+    document["configured_scheduler"] = scheduler
+    document["events"][2:2] = events
     path.write_text(json.dumps(document), encoding="utf-8")
     return path
 
 
 def test_trace_parser_preserves_bypass_and_sync_activation_events(tmp_path):
-    result = parse_simulation_trace(
-        _write_mechanism_trace(tmp_path / "trace.json"),
+    nonblock = parse_simulation_trace(
+        _write_mechanism_trace(tmp_path / "nonblock.json", "gpfp_asap_nonblock", [{
+            "time": 0, "event_type": "nonblock_bypass", "scheduler": "ASAP-NonBlock",
+            "blocked_higher_priority_task": "v93_task_0", "bypassed_task": "v93_task_0",
+            "blocked_task_unit_energy_mJ": 0.1, "bypassed_task_unit_energy_mJ": 0.1,
+            "available_energy_mJ": 0.1, "reason": "lower_priority_bypass_due_to_energy",
+        }]),
         [{"task_id": "0", "priority_rank": 0, "C": 2, "D": 5, "T": 10,
           "P": "1/10", "D_over_T": "1/2", "workload": "control",
           "arrival_offset": 0}],
         expected_taskset_hash=TRACE_HASH, horizon=10, warmup=0,
         minimum_jobs_per_task=1, release_e0=Fraction(1),
+        expected_scheduler="gpfp_asap_nonblock",
     )
-    assert result.metrics["bypass_count"] == 1
-    assert result.metrics["synchronization_wait_ticks"] == 1
+    sync = parse_simulation_trace(
+        _write_mechanism_trace(tmp_path / "sync.json", "gpfp_asap_sync", [{
+            "time": 1, "event_type": "sync_batch_block", "scheduler": "ASAP-Sync",
+            "batch_tasks": [{"task_name": "v93_task_0"}],
+            "batch_required_energy_mJ": 0.2, "available_energy_mJ": 0.1,
+            "feasible_subset_exists": True, "reason": "sync_batch_energy_insufficient",
+        }]),
+        [{"task_id": "0", "priority_rank": 0, "C": 2, "D": 5, "T": 10,
+          "P": "1/10", "D_over_T": "1/2", "workload": "control",
+          "arrival_offset": 0}],
+        expected_taskset_hash=TRACE_HASH, horizon=10, warmup=0,
+        minimum_jobs_per_task=1, release_e0=Fraction(1),
+        expected_scheduler="gpfp_asap_sync",
+    )
+    assert nonblock.metrics["bypass_count"] == 1
+    assert sync.metrics["synchronization_wait_ticks"] == 1
 
 
 def test_trace_parser_matches_current_st_begin_hold_release_semantics(tmp_path):
     result = parse_simulation_trace(
-        _write_mechanism_trace(tmp_path / "trace.json"),
+        _write_mechanism_trace(tmp_path / "trace.json", "gpfp_st_block", [
+            {"time": tick, "event_type": event_type, "scheduler": "ST-Block",
+             "blocked_task": "v93_task_0", "available_energy_mJ": tick,
+             "required_energy_mJ": 5, "slack_at_begin": 4,
+             **({"release_reason": "battery_full"} if event_type == "st_charge_release" else {})}
+            for tick, event_type in ((2, "st_charge_begin"), (3, "st_charge_hold"),
+                                     (4, "st_charge_hold"), (5, "st_charge_release"))
+        ]),
         [{"task_id": "0", "priority_rank": 0, "C": 2, "D": 5, "T": 10,
           "P": "1/10", "D_over_T": "1/2", "workload": "control",
           "arrival_offset": 0}],
         expected_taskset_hash=TRACE_HASH, horizon=10, warmup=0,
         minimum_jobs_per_task=1, release_e0=Fraction(1),
+        expected_scheduler="gpfp_st_block",
     )
     assert result.metrics["st_charge_begin_count"] == 1
     assert result.metrics["st_charge_hold_ticks"] == 2
     assert result.metrics["st_charge_release_count"] == 1
     assert result.metrics["st_charge_release_reasons"] == ["battery_full"]
+
+
+def test_malformed_mechanism_event_fails_closed(tmp_path):
+    with pytest.raises(Exception, match="scheduler/applicability mismatch"):
+        parse_simulation_trace(
+            _write_mechanism_trace(
+                tmp_path / "bad.json", "gpfp_asap_nonblock",
+                [{"time": 0, "event_type": "nonblock_bypass"}],
+            ),
+            [{"task_id": "0", "priority_rank": 0, "C": 2, "D": 5, "T": 10,
+              "P": "1/10", "D_over_T": "1/2", "workload": "control",
+              "arrival_offset": 0}],
+            expected_taskset_hash=TRACE_HASH, horizon=10, warmup=0,
+            minimum_jobs_per_task=1, release_e0=Fraction(0),
+            expected_scheduler="gpfp_asap_nonblock",
+        )
 
 
 def test_mechanism_classification_distinguishes_b_c1_and_c2():
@@ -417,10 +539,60 @@ def test_mechanism_classification_distinguishes_b_c1_and_c2():
     assert rejected[0]["activation_class"] == "A_STRUCTURAL_REJECTED"
 
 
+def test_mechanism_classification_distinguishes_structural_only_and_unobservable():
+    structural_only = _result_rows()
+    next(
+        row for row in structural_only
+        if row["scheduler_id"] == "gpfp_asap_nonblock"
+    )["bypass_count"] = 0
+    classified = classify_mechanism_activation(
+        structural_only, _task_rows(), [], top_m=2,
+    )
+    assert classified[0]["runtime_observable"] is True
+    assert classified[0]["runtime_activation"] is False
+    assert classified[0]["activation_class"] == "B_STRUCTURAL_ONLY"
+
+    unobservable = _result_rows()
+    next(
+        row for row in unobservable
+        if row["scheduler_id"] == "gpfp_asap_nonblock"
+    )["bypass_count"] = UNAVAILABLE
+    classified = classify_mechanism_activation(
+        unobservable, _task_rows(), [], top_m=2,
+    )
+    assert classified[0]["runtime_observable"] is False
+    assert classified[0]["runtime_activation"] == UNAVAILABLE
+    assert classified[0]["activation_class"] == "B_RUNTIME_UNOBSERVABLE"
+
+
+@pytest.mark.parametrize(
+    "left_status,right_status,expected",
+    [
+        ("SIM_PASS_OBSERVED", "SIM_PASS_OBSERVED", "TIE"),
+        ("SIM_PASS_OBSERVED", "SIM_DEADLINE_MISS", "LEFT_WIN"),
+        ("SIM_DEADLINE_MISS", "SIM_PASS_OBSERVED", "RIGHT_WIN"),
+        ("SIM_DEADLINE_MISS", "SIM_DEADLINE_MISS", "TIE"),
+    ],
+)
+def test_overall_relation_covers_all_terminal_outcome_pairs(
+    left_status, right_status, expected,
+):
+    left = {"status": left_status, "comparison_eligible": True}
+    right = {"status": right_status, "comparison_eligible": True}
+    assert _overall_relation(left, right) == expected
+
+
 def test_nonterminal_outcomes_are_neither_pass_miss_nor_ties():
     assert _overall_relation(
         {"status": "SIM_RUNTIME_TIMEOUT"},
         {"status": "SIM_RUNTIME_TIMEOUT"},
+    ) == "NOT_COMPARABLE"
+
+
+def test_comparison_ineligible_terminal_outcomes_are_not_ties():
+    assert _overall_relation(
+        {"status": "SIM_PASS_OBSERVED", "comparison_eligible": False},
+        {"status": "SIM_PASS_OBSERVED", "comparison_eligible": True},
     ) == "NOT_COMPARABLE"
     assert _overall_relation(
         {"status": "SIM_HORIZON_INSUFFICIENT"},
@@ -451,6 +623,51 @@ def test_aggregation_has_explicit_denominators_and_not_comparable():
     assert scenario["runtime_activation_denominator"] == 9
 
 
+def test_incomplete_nine_scheduler_group_is_excluded_from_comparisons():
+    tables = aggregate_ext1b_rows(
+        _requests(), _result_rows()[:-1], _task_rows(), [], top_m=2,
+        bootstrap_seed=3, bootstrap_resamples=20,
+    )
+    assert tables["activation"] == []
+    assert tables["paired"] == []
+    assert tables["statistics"] == []
+    assert tables["priority_summary"] == []
+    assert tables["plots"] == []
+
+
+def test_aggregation_rejects_result_fairness_mismatch():
+    results = _result_rows()
+    results[-1]["trace_hash"] = "different"
+    with pytest.raises(RuntimeError, match="trace_hash mismatch"):
+        aggregate_ext1b_rows(
+            _requests(), results, _task_rows(), [], top_m=2,
+            bootstrap_seed=3, bootstrap_resamples=20,
+        )
+
+
+def test_aggregation_rejects_duplicate_scheduler_terminal():
+    results = _result_rows()
+    results.append(deepcopy(results[0]))
+    with pytest.raises(RuntimeError, match="duplicate EXT-1B terminal result"):
+        aggregate_ext1b_rows(
+            _requests(), results, _task_rows(), [], top_m=2,
+            bootstrap_seed=3, bootstrap_resamples=20,
+        )
+
+
+def test_ineligible_rows_are_excluded_from_valid_counts_and_statistics():
+    results = _result_rows()
+    for row in results:
+        row["comparison_eligible"] = False
+    tables = aggregate_ext1b_rows(
+        _requests(), results, _task_rows(), [], top_m=2,
+        bootstrap_seed=3, bootstrap_resamples=20,
+    )
+    assert tables["scenario_summary"][0]["valid_terminal_denominator"] == 0
+    assert all(row["overall_relation"] == "NOT_COMPARABLE" for row in tables["paired"])
+    assert all(row["paired_count"] == 0 for row in tables["statistics"])
+
+
 def test_exact_mcnemar_known_value():
     assert exact_mcnemar_p(5, 0) == pytest.approx(0.0625)
     assert exact_mcnemar_p(0, 0) == 1
@@ -465,6 +682,12 @@ def test_paired_bootstrap_is_reproducible():
     assert paired_bootstrap_ci([1, -1, 2], **kwargs) == paired_bootstrap_ci(
         [1, -1, 2], **kwargs
     )
+
+
+def test_single_pair_bootstrap_is_degenerate_not_unavailable():
+    assert paired_bootstrap_ci(
+        [2.5], seed=19, resamples=10, statistic="median",
+    ) == (2.5, 2.5)
 
 
 def test_empty_paired_statistics_remain_unavailable_not_zero():
@@ -517,11 +740,11 @@ def test_task_outcomes_priority_top_m_and_first_miss_are_correct():
     assert row["first_missed_priority_rank_numeric"] == 1
 
 
-def test_no_miss_uses_none_and_ordered_numeric_sentinel():
+def test_no_miss_is_categorical_and_not_an_ordered_numeric_sample():
     row, _ = _outcome_fixture(SimulationStatus.PASS_OBSERVED, None)
     assert row["top_m_success"] is True
     assert row["first_missed_priority_rank"] == "NONE"
-    assert row["first_missed_priority_rank_numeric"] == 3
+    assert row["first_missed_priority_rank_numeric"] == UNAVAILABLE
 
 
 def test_nonterminal_result_has_unavailable_taskset_endpoints():
@@ -547,6 +770,28 @@ def test_terminal_write_is_idempotent_and_conflict_checked(tmp_path):
     assert path.read_bytes() == first
 
 
+def test_resume_terminal_identity_is_checked_against_request(tmp_path):
+    result = SimulationResult(
+        SimulationStatus.RUNTIME_TIMEOUT, "timeout", 10, (), (), False, None,
+        {}, 2, "gpfp_asap_block", False, "timeout", {},
+    )
+    execution = SimulationExecution(
+        "wrong-id", result, 1.0, 1, (10,), tmp_path / "system",
+        tmp_path / "tasks", None, "", "",
+    )
+    request = {"request_id": "expected-id", "scheduler_id": "gpfp_asap_block"}
+    with pytest.raises(RuntimeError, match="simulation_id mismatch"):
+        Ext1BRunner._validate_terminal_identity(request, execution)
+    wrong_scheduler = SimulationExecution(
+        "expected-id", SimulationResult(
+            SimulationStatus.RUNTIME_TIMEOUT, "timeout", 10, (), (), False,
+            None, {}, 2, "gpfp_alap_block", False, "timeout", {},
+        ), 1.0, 1, (10,), tmp_path / "system", tmp_path / "tasks", None, "", "",
+    )
+    with pytest.raises(RuntimeError, match="scheduler mismatch"):
+        Ext1BRunner._validate_terminal_identity(request, wrong_scheduler)
+
+
 def test_checkpoint_is_atomically_replaceable(tmp_path):
     config = load_ext1b_config(ROOT / "configs/v9_3_ext1b1_smoke.yaml")
     config["execution"]["output_root"] = str(tmp_path)
@@ -565,4 +810,11 @@ def test_file_hash_manifest_verifies_and_detects_change(tmp_path):
     (tmp_path / "result.csv").write_text("a,b\n1,3\n", encoding="utf-8")
     assert not verify_file_hashes(tmp_path)
     (tmp_path / "file_hashes.sha256").write_text("malformed\n", encoding="utf-8")
+    assert not verify_file_hashes(tmp_path)
+
+
+def test_file_hash_manifest_detects_unlisted_extra_file(tmp_path):
+    (tmp_path / "result.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+    write_file_hashes(tmp_path)
+    (tmp_path / "unexpected.txt").write_text("extra\n", encoding="utf-8")
     assert not verify_file_hashes(tmp_path)

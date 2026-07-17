@@ -10,16 +10,23 @@ from typing import Any, Dict, Iterable, Mapping
 
 from .ext1b_statistics import STATISTIC_COLUMNS, paired_statistics_rows
 from .result_writer import read_csv, write_csv
+from .scheduler_pairing import assert_scheduler_only_difference
 from .scheduler_registry import SCHEDULER_IDS, scheduler_by_id
 
 
 UNAVAILABLE = "UNAVAILABLE"
 VALID_STATUSES = {"SIM_PASS_OBSERVED", "SIM_DEADLINE_MISS"}
+EXT1B_FAIRNESS_FIELDS = (
+    "taskset_hash", "trace_hash", "simulation_config_hash", "input_hash",
+    "initial_battery", "battery_capacity", "horizon", "maximum_horizon",
+    "generation_seed", "M", "priority_hash", "power_hash", "deadline_hash",
+    "release_hash", "workload_vector_hash", "simulator_build_hash",
+)
 
 ACTIVATION_COLUMNS = (
     "paired_instance_id", "scenario_kind", "scenario_subtype",
     "scenario_cell_id", "mechanism_scope", "structural_activation",
-    "runtime_activation", "activation_class", "outcome_comparable",
+    "runtime_observable", "runtime_activation", "activation_class", "outcome_comparable",
     "deadline_outcome_different", "activation_evidence",
 )
 PAIRED_COLUMNS = (
@@ -34,7 +41,8 @@ SCHEDULER_SUMMARY_COLUMNS = (
     "timing_family", "mechanism", "requested_denominator",
     "terminal_denominator", "valid_terminal_denominator",
     "sufficiently_observed_denominator", "structural_activation_denominator",
-    "runtime_activation_denominator", "outcome_comparable_denominator",
+    "runtime_activation_denominator", "runtime_activation_count",
+    "outcome_comparable_denominator",
     "pass_count", "deadline_miss_count", "top_m_success_count",
     "horizon_insufficient_count", "timeout_count", "internal_error_count",
     "pass_ratio_valid", "top_m_success_ratio_valid", "wins", "ties",
@@ -45,6 +53,7 @@ SCENARIO_SUMMARY_COLUMNS = (
     "requested_denominator", "terminal_denominator",
     "valid_terminal_denominator", "sufficiently_observed_denominator",
     "structural_activation_denominator", "runtime_activation_denominator",
+    "runtime_activation_count",
     "outcome_comparable_denominator", "pass_count", "deadline_miss_count",
     "horizon_insufficient_count", "timeout_count", "internal_error_count",
     "generation_rejection_count", "wins", "ties", "losses",
@@ -87,6 +96,30 @@ def _integer(value: Any) -> int | None:
         return None
 
 
+def _result_comparable(row: Mapping[str, Any]) -> bool:
+    return (
+        str(row.get("status")) in VALID_STATUSES
+        and _bool(row.get("comparison_eligible")) is True
+    )
+
+
+def _validate_request_groups(rows: list[Mapping[str, Any]]) -> Dict[str, Mapping[str, Any]]:
+    assert_scheduler_only_difference(rows)
+    by_id: Dict[str, Mapping[str, Any]] = {}
+    grouped: Dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    for row in rows:
+        request_id = str(row.get("request_id", ""))
+        if not request_id or request_id in by_id:
+            raise RuntimeError("duplicate or empty EXT-1B request_id")
+        by_id[request_id] = row
+        grouped[str(row["paired_instance_id"])].append(row)
+    for pair_id, members in grouped.items():
+        for field in EXT1B_FAIRNESS_FIELDS:
+            if len({str(row[field]) for row in members}) != 1:
+                raise RuntimeError(f"P0 EXT-1B fairness mismatch in {field} for {pair_id}")
+    return by_id
+
+
 def _top_relation(left: Any, right: Any) -> str:
     left_value, right_value = _bool(left), _bool(right)
     if left_value is None or right_value is None:
@@ -100,7 +133,7 @@ def _overall_relation(left: Mapping[str, Any], right: Mapping[str, Any]) -> str:
     """Compare deadline outcomes without turning failures into false ties."""
 
     left_status, right_status = str(left["status"]), str(right["status"])
-    if left_status not in VALID_STATUSES or right_status not in VALID_STATUSES:
+    if not _result_comparable(left) or not _result_comparable(right):
         return "NOT_COMPARABLE"
     if left_status == right_status:
         return "TIE"
@@ -113,14 +146,19 @@ def _first_execution_vectors(
     grouped: Dict[tuple[str, str], list[tuple[int, Any]]] = defaultdict(list)
     for row in task_rows:
         rank = int(row["priority_rank"])
-        if rank < top_m:
+        if rank < top_m and _bool(row.get("request_comparison_eligible")) is True:
             grouped[(str(row["paired_instance_id"]), str(row["scheduler_id"]))].append(
                 (rank, row.get("first_execution_time", UNAVAILABLE))
             )
-    return {
-        key: tuple(value for _, value in sorted(values))
-        for key, values in grouped.items()
-    }
+    result = {}
+    for key, values in grouped.items():
+        ordered = sorted(values)
+        numeric = [_integer(value) for _, value in ordered]
+        if [rank for rank, _ in ordered] == list(range(top_m)) and all(
+            value is not None for value in numeric
+        ):
+            result[key] = tuple(int(value) for value in numeric if value is not None)
+    return result
 
 
 def classify_mechanism_activation(
@@ -148,45 +186,63 @@ def classify_mechanism_activation(
                 if scope == "ALL" or registry[scheduler].mechanism == scope
             ]
             scoped = [members[scheduler] for scheduler in scoped_ids]
-            runtime = False
+            runtime_observable = False
+            runtime: Any = UNAVAILABLE
             evidence: Dict[str, Any] = {}
             if kind == "BYPASS_STRESS":
-                values = {
-                    scheduler: _integer(members[scheduler].get("bypass_count")) or 0
-                    for scheduler in scoped_ids
-                    if registry[scheduler].mechanism == "NONBLOCK"
+                anchor = "gpfp_asap_nonblock"
+                value = _integer(members[anchor].get("bypass_count"))
+                runtime_observable = _result_comparable(members[anchor]) and value is not None
+                if runtime_observable:
+                    runtime = bool(value and value > 0)
+                evidence = {
+                    "native_event_anchor": anchor,
+                    "bypass_count": value if value is not None else UNAVAILABLE,
                 }
-                runtime = any(value > 0 for value in values.values())
-                evidence = {"bypass_count_by_scheduler": values}
             elif kind == "SYNC_BATCH_STRESS":
-                values = {
-                    scheduler: _integer(members[scheduler].get("synchronization_wait_ticks")) or 0
-                    for scheduler in scoped_ids
-                    if registry[scheduler].mechanism == "SYNC"
+                anchor = "gpfp_asap_sync"
+                value = _integer(members[anchor].get("synchronization_wait_ticks"))
+                runtime_observable = _result_comparable(members[anchor]) and value is not None
+                if runtime_observable:
+                    runtime = bool(value and value > 0)
+                evidence = {
+                    "native_event_anchor": anchor,
+                    "synchronization_wait_ticks": value if value is not None else UNAVAILABLE,
                 }
-                runtime = any(value > 0 for value in values.values())
-                evidence = {"sync_wait_by_scheduler": values}
             else:
                 family_vectors = {
-                    registry[scheduler].timing_family: vectors.get((pair_id, scheduler), ())
+                    registry[scheduler].timing_family: vectors.get((pair_id, scheduler))
                     for scheduler in scoped_ids
                 }
-                available_vectors = [value for value in family_vectors.values() if value]
-                st_events = sum(
-                    (_integer(row.get("st_charge_begin_count")) or 0)
-                    for row in scoped
+                vectors_observable = all(
+                    family_vectors.get(family) is not None
+                    for family in ("ASAP", "ALAP", "ST")
+                )
+                st_row = next(
+                    row for row in scoped
                     if registry[str(row["scheduler_id"])].timing_family == "ST"
                 )
-                runtime = len(set(available_vectors)) > 1 or st_events > 0
+                st_events = _integer(st_row.get("st_charge_begin_count"))
+                st_observable = _result_comparable(st_row) and st_events is not None
+                runtime_observable = vectors_observable or st_observable
+                if runtime_observable:
+                    runtime = bool(
+                        (vectors_observable and len(set(family_vectors.values())) > 1)
+                        or (st_observable and bool(st_events and st_events > 0))
+                    )
                 evidence = {
                     "first_execution_by_family": family_vectors,
-                    "st_charge_begin_count": st_events,
+                    "st_charge_begin_count": (
+                        st_events if st_events is not None else UNAVAILABLE
+                    ),
                 }
 
             statuses = [str(row["status"]) for row in scoped]
-            comparable = bool(statuses) and all(status in VALID_STATUSES for status in statuses)
+            comparable = bool(statuses) and all(_result_comparable(row) for row in scoped)
             different = comparable and len(set(statuses)) > 1
-            if not runtime:
+            if not runtime_observable:
+                activation_class = "B_RUNTIME_UNOBSERVABLE"
+            elif not runtime:
                 activation_class = "B_STRUCTURAL_ONLY"
             elif different:
                 activation_class = "C2_RUNTIME_ACTIVATED_OUTCOME_DIFFERENT"
@@ -199,6 +255,7 @@ def classify_mechanism_activation(
                 "scenario_cell_id": exemplar["scenario_cell_id"],
                 "mechanism_scope": scope,
                 "structural_activation": True,
+                "runtime_observable": runtime_observable,
                 "runtime_activation": runtime,
                 "activation_class": activation_class,
                 "outcome_comparable": comparable,
@@ -216,7 +273,8 @@ def classify_mechanism_activation(
             "scenario_cell_id": attempt["scenario_cell_id"],
             "mechanism_scope": "ALL",
             "structural_activation": False,
-            "runtime_activation": False,
+            "runtime_observable": False,
+            "runtime_activation": UNAVAILABLE,
             "activation_class": "A_STRUCTURAL_REJECTED",
             "outcome_comparable": False,
             "deadline_outcome_different": UNAVAILABLE,
@@ -262,21 +320,50 @@ def aggregate_ext1b_rows(
 ) -> Dict[str, list[Dict[str, Any]]]:
     request_rows, result_rows, tasks = list(requests), list(results), list(task_rows)
     attempts = list(generation_attempts)
-    activation_rows = classify_mechanism_activation(
-        result_rows, tasks, attempts, top_m=top_m
-    )
-    activation_index = _activation_for_scheduler(activation_rows)
+    request_by_id = _validate_request_groups(request_rows)
     registry = scheduler_by_id()
     result_by_pair: Dict[str, Dict[str, Mapping[str, Any]]] = defaultdict(dict)
     for row in result_rows:
         pair_id, scheduler = str(row["paired_instance_id"]), str(row["scheduler_id"])
         if scheduler in result_by_pair[pair_id]:
             raise RuntimeError("duplicate EXT-1B terminal result")
+        request_id = str(row.get("request_id", ""))
+        planned = request_by_id.get(request_id)
+        if planned is None:
+            raise RuntimeError(f"unplanned EXT-1B terminal result: {request_id}")
+        if pair_id != str(planned["paired_instance_id"]) or scheduler != str(planned["scheduler_id"]):
+            raise RuntimeError("P0 EXT-1B terminal/request identity mismatch")
+        for field in (
+            "scenario_kind", "scenario_subtype", "scenario_cell_id",
+            "taskset_hash", "trace_hash", "simulation_config_hash", "input_hash",
+        ):
+            if str(row.get(field)) != str(planned.get(field)):
+                raise RuntimeError(
+                    f"P0 EXT-1B terminal/request {field} mismatch"
+                )
         result_by_pair[pair_id][scheduler] = row
+    complete_pairs = {
+        pair_id for pair_id, members in result_by_pair.items()
+        if set(members) == set(SCHEDULER_IDS) and len(members) == len(SCHEDULER_IDS)
+    }
+    comparison_results = [
+        row for row in result_rows
+        if str(row["paired_instance_id"]) in complete_pairs
+    ]
+    comparison_tasks = [
+        row for row in tasks
+        if str(row["paired_instance_id"]) in complete_pairs
+    ]
+    activation_rows = classify_mechanism_activation(
+        comparison_results, comparison_tasks, attempts, top_m=top_m
+    )
+    activation_index = _activation_for_scheduler(activation_rows)
 
     paired_rows = []
     relation_counts: Dict[tuple[str, str], Counter[str]] = defaultdict(Counter)
     for pair_id, members in sorted(result_by_pair.items()):
+        if pair_id not in complete_pairs:
+            continue
         for left_id, right_id in combinations(sorted(members), 2):
             left, right = members[left_id], members[right_id]
             relation = _overall_relation(left, right)
@@ -318,9 +405,16 @@ def aggregate_ext1b_rows(
             requested = [row for row in request_rows if str(row["scenario_cell_id"]) == cell and row["scheduler_id"] == scheduler]
             terminal = [row for row in result_rows if str(row["scenario_cell_id"]) == cell and row["scheduler_id"] == scheduler]
             statuses = Counter(str(row["status"]) for row in terminal)
-            valid = [row for row in terminal if str(row["status"]) in VALID_STATUSES]
-            runtime = sum(bool(activation_index[(str(row["paired_instance_id"]), scheduler)]["runtime_activation"]) for row in terminal)
-            comparable = sum(bool(activation_index[(str(row["paired_instance_id"]), scheduler)]["outcome_comparable"]) for row in terminal)
+            valid = [row for row in terminal if _result_comparable(row)]
+            valid_statuses = Counter(str(row["status"]) for row in valid)
+            activations = [
+                activation_index[(str(row["paired_instance_id"]), scheduler)]
+                for row in terminal
+                if (str(row["paired_instance_id"]), scheduler) in activation_index
+            ]
+            runtime_observable = sum(_bool(row["runtime_observable"]) is True for row in activations)
+            runtime_count = sum(_bool(row["runtime_activation"]) is True for row in activations)
+            comparable = sum(_bool(row["outcome_comparable"]) is True for row in activations)
             counts = relation_counts[(cell, scheduler)]
             registration = registry[scheduler]
             scheduler_rows.append({
@@ -335,15 +429,16 @@ def aggregate_ext1b_rows(
                 "valid_terminal_denominator": len(valid),
                 "sufficiently_observed_denominator": len(valid),
                 "structural_activation_denominator": len(requested),
-                "runtime_activation_denominator": runtime,
+                "runtime_activation_denominator": runtime_observable,
+                "runtime_activation_count": runtime_count,
                 "outcome_comparable_denominator": comparable,
-                "pass_count": statuses["SIM_PASS_OBSERVED"],
-                "deadline_miss_count": statuses["SIM_DEADLINE_MISS"],
+                "pass_count": valid_statuses["SIM_PASS_OBSERVED"],
+                "deadline_miss_count": valid_statuses["SIM_DEADLINE_MISS"],
                 "top_m_success_count": sum(_bool(row["top_m_success"]) is True for row in valid),
                 "horizon_insufficient_count": statuses["SIM_HORIZON_INSUFFICIENT"],
                 "timeout_count": statuses["SIM_RUNTIME_TIMEOUT"],
                 "internal_error_count": statuses["SIM_INTERNAL_ERROR"],
-                "pass_ratio_valid": _ratio(statuses["SIM_PASS_OBSERVED"], len(valid)),
+                "pass_ratio_valid": _ratio(valid_statuses["SIM_PASS_OBSERVED"], len(valid)),
                 "top_m_success_ratio_valid": _ratio(sum(_bool(row["top_m_success"]) is True for row in valid), len(valid)),
                 "wins": counts["LEFT_WIN"],
                 "ties": counts["TIE"],
@@ -356,7 +451,13 @@ def aggregate_ext1b_rows(
         requested = [row for row in request_rows if str(row["scenario_cell_id"]) == cell]
         terminal = [row for row in result_rows if str(row["scenario_cell_id"]) == cell]
         statuses = Counter(str(row["status"]) for row in terminal)
-        valid = sum(statuses[value] for value in VALID_STATUSES)
+        valid_rows = [row for row in terminal if _result_comparable(row)]
+        valid_statuses = Counter(str(row["status"]) for row in valid_rows)
+        cell_activations = [
+            activation_index[(str(row["paired_instance_id"]), str(row["scheduler_id"]))]
+            for row in terminal
+            if (str(row["paired_instance_id"]), str(row["scheduler_id"])) in activation_index
+        ]
         rejected = [row for row in activation_rows if str(row["scenario_cell_id"]) == cell and row["activation_class"] == "A_STRUCTURAL_REJECTED"]
         primary_relations = [
             row for row in paired_rows
@@ -376,23 +477,20 @@ def aggregate_ext1b_rows(
             "scenario_cell_id": cell,
             "requested_denominator": len(requested),
             "terminal_denominator": len(terminal),
-            "valid_terminal_denominator": valid,
-            "sufficiently_observed_denominator": valid,
+            "valid_terminal_denominator": len(valid_rows),
+            "sufficiently_observed_denominator": len(valid_rows),
             "structural_activation_denominator": len(requested),
             "runtime_activation_denominator": sum(
-                bool(activation_index[(
-                    str(row["paired_instance_id"]), str(row["scheduler_id"]),
-                )]["runtime_activation"])
-                for row in terminal
+                _bool(row["runtime_observable"]) is True for row in cell_activations
+            ),
+            "runtime_activation_count": sum(
+                _bool(row["runtime_activation"]) is True for row in cell_activations
             ),
             "outcome_comparable_denominator": sum(
-                bool(activation_index[(
-                    str(row["paired_instance_id"]), str(row["scheduler_id"]),
-                )]["outcome_comparable"])
-                for row in terminal
+                _bool(row["outcome_comparable"]) is True for row in cell_activations
             ),
-            "pass_count": statuses["SIM_PASS_OBSERVED"],
-            "deadline_miss_count": statuses["SIM_DEADLINE_MISS"],
+            "pass_count": valid_statuses["SIM_PASS_OBSERVED"],
+            "deadline_miss_count": valid_statuses["SIM_DEADLINE_MISS"],
             "horizon_insufficient_count": statuses["SIM_HORIZON_INSUFFICIENT"],
             "timeout_count": statuses["SIM_RUNTIME_TIMEOUT"],
             "internal_error_count": statuses["SIM_INTERNAL_ERROR"],
@@ -405,7 +503,7 @@ def aggregate_ext1b_rows(
 
     priority_rows = []
     priority_groups: Dict[tuple[str, str, int], list[Mapping[str, Any]]] = defaultdict(list)
-    for row in tasks:
+    for row in comparison_tasks:
         priority_groups[(str(row["scenario_cell_id"]), str(row["scheduler_id"]), int(row["priority_rank"]))].append(row)
     for (cell, scheduler, rank), members in sorted(priority_groups.items()):
         exemplar = members[0]
@@ -428,12 +526,12 @@ def aggregate_ext1b_rows(
         })
 
     statistic_rows = paired_statistics_rows(
-        result_rows,
+        comparison_results,
         bootstrap_seed=bootstrap_seed,
         bootstrap_resamples=bootstrap_resamples,
     )
     plots = []
-    for row in result_rows:
+    for row in comparison_results:
         activation = activation_index[(str(row["paired_instance_id"]), str(row["scheduler_id"]))]
         for plot, field in (
             ("overall_pass_ratio", "overall_success"),
@@ -473,7 +571,7 @@ def aggregate_ext1b_rows(
                     "category": row["status"], "x": point["time"],
                     "y": point["energy_j"], "denominator": 1,
                 })
-    for row in tasks:
+    for row in comparison_tasks:
         activation = activation_index[(
             str(row["paired_instance_id"]), str(row["scheduler_id"]),
         )]

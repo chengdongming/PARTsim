@@ -16,6 +16,7 @@ from .taskset_store import StoredTaskset
 
 
 PEAK_TIME_OF_DAY_MS = 11 * 60 * 60 * 1000
+NATIVE_ENERGY_EPSILON_J = Fraction(1, 10 ** 9)
 
 
 class StructuralRejection(ValueError):
@@ -94,6 +95,26 @@ def interpolate_exact(lower: Fraction, upper: Fraction, rho: Fraction) -> Fracti
     if not lower <= result < upper:
         raise AssertionError("exact interpolation escaped its half-open interval")
     return result
+
+
+def native_energy_affordable(available: Fraction, required: Fraction) -> bool:
+    """Mirror the simulator's joule-domain affordability tolerance."""
+
+    return available + NATIVE_ENERGY_EPSILON_J >= required
+
+
+def _native_blocking_interpolation(
+    lower: Fraction, upper: Fraction, rho: Fraction,
+) -> Fraction:
+    """Choose a point that is affordable at ``lower`` but blocked at ``upper``."""
+
+    blocking_upper = upper - NATIVE_ENERGY_EPSILON_J
+    initial = interpolate_exact(lower, blocking_upper, rho)
+    if not native_energy_affordable(initial, lower):
+        raise AssertionError("constructed initial energy cannot afford the lower bound")
+    if native_energy_affordable(initial, upper):
+        raise AssertionError("constructed initial energy is not natively blocked")
+    return initial
 
 
 def scenario_cells(config: Mapping[str, Any]) -> Tuple[ScenarioCell, ...]:
@@ -223,7 +244,7 @@ def bypass_structure(
         raise StructuralRejection("NO_PRIORITY_POWER_ANTAGONISM", "no e_l < e_h pair")
     high, low = selected
     e_high, e_low = Fraction(str(high["P"])), Fraction(str(low["P"]))
-    initial = interpolate_exact(e_low, e_high, rho)
+    initial = _native_blocking_interpolation(e_low, e_high, rho)
     return initial, {
         "high_task_id": high["task_id"],
         "high_priority_rank": high["priority_rank"],
@@ -232,8 +253,12 @@ def bypass_structure(
         "low_priority_rank": low["priority_rank"],
         "low_unit_energy": fraction_text(e_low),
         "rho": fraction_text(rho),
-        "predicate": "e_l <= E_init < e_h",
-        "predicate_satisfied": e_low <= initial < e_high,
+        "native_affordability_epsilon_j": fraction_text(NATIVE_ENERGY_EPSILON_J),
+        "predicate": "E_init + native_epsilon >= e_l and E_init + native_epsilon < e_h",
+        "predicate_satisfied": (
+            native_energy_affordable(initial, e_low)
+            and not native_energy_affordable(initial, e_high)
+        ),
     }
 
 
@@ -252,7 +277,7 @@ def sync_batch_structure(
     energies = [Fraction(str(row["P"])) for row in top_q]
     prefix = sum(energies[:p_value], Fraction(0))
     batch = sum(energies, Fraction(0))
-    initial = interpolate_exact(prefix, batch, rho)
+    initial = _native_blocking_interpolation(prefix, batch, rho)
     return initial, {
         "p": p_value,
         "q": q_value,
@@ -262,8 +287,12 @@ def sync_batch_structure(
         "E_prefix": fraction_text(prefix),
         "E_batch": fraction_text(batch),
         "rho": fraction_text(rho),
-        "predicate": "E_prefix <= E_init < E_batch",
-        "predicate_satisfied": prefix <= initial < batch,
+        "native_affordability_epsilon_j": fraction_text(NATIVE_ENERGY_EPSILON_J),
+        "predicate": "E_init + native_epsilon >= E_prefix and E_init + native_epsilon < E_batch",
+        "predicate_satisfied": (
+            native_energy_affordable(initial, prefix)
+            and not native_energy_affordable(initial, batch)
+        ),
     }
 
 
