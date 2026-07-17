@@ -31,9 +31,16 @@ from v9_3_experiment_helpers import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 VERIFY_OUTPUTS = PROJECT_ROOT / "deployment" / "autodl" / "verify_outputs.py"
+TEST_COMMIT_SHA = "6aa9d7196bcecf2896f6436bda8f32e8405a1521"
 
 
-def _formal_bundle(tmp_path, monkeypatch):
+def _formal_bundle(tmp_path, monkeypatch, *, commit_sha=None):
+    if commit_sha is not None:
+        monkeypatch.setattr(
+            engine_module.ExecutionEngine,
+            "_git_head",
+            staticmethod(lambda: commit_sha),
+        )
     bundle = tmp_path / "formal-bundle"
     for name, core, aggregate in (
         ("core1", "CORE-1", aggregate_core1),

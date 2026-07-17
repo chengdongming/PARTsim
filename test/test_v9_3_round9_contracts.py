@@ -26,10 +26,18 @@ from experiments.v9_3.output_inventory import (
     verified_package_entries,
 )
 from deployment.autodl.verify_outputs import verify_core12_output
-from test_v9_3_deployment_verify_outputs import _formal_bundle, _physical_csv
+from test_v9_3_deployment_verify_outputs import (
+    TEST_COMMIT_SHA, _formal_bundle as _shared_formal_bundle, _physical_csv,
+)
 
 
-COMMIT_SHA = "6aa9d7196bcecf2896f6436bda8f32e8405a1521"
+COMMIT_SHA = TEST_COMMIT_SHA
+
+
+def _formal_bundle(tmp_path, monkeypatch):
+    return _shared_formal_bundle(
+        tmp_path, monkeypatch, commit_sha=TEST_COMMIT_SHA,
+    )
 
 
 def _write_physical(path: Path, physical) -> None:

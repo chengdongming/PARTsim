@@ -59,7 +59,11 @@ def render_plot_data(
         return converted if math.isfinite(converted) else None
 
     plot_names = sorted({row["plot"] for row in rows})
-    with tempfile.TemporaryDirectory(prefix="partsim-v9-3-plots-") as temporary:
+    output_dir.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(
+        prefix="partsim-v9-3-plots-",
+        dir=output_dir.parent,
+    ) as temporary:
         stage = Path(temporary)
         for plot_name in plot_names:
             members = [row for row in rows if row["plot"] == plot_name]
