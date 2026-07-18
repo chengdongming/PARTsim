@@ -39,7 +39,11 @@ def trace_document(
         "task_name": name, "arrival_time": "0",
         "task_unit_energy_mJ": 100.0,
     }]
-    for tick in range(c):
+    execution_ticks = (
+        max(0, c - 1)
+        if completion is None and deadline_miss else c
+    )
+    for tick in range(execution_ticks):
         events.append({
             "run_generation": 1, "time": str(tick),
             "event_type": "scheduler_decision", "scheduler": "ASAP-Block",
@@ -62,12 +66,19 @@ def trace_document(
             "event_type": "end_instance", "task_name": name,
             "arrival_time": "0", "task_unit_energy_mJ": 100.0,
         })
+    if completion is None and deadline_miss:
+        events.append({
+            "run_generation": 1, "time": str(execution_ticks),
+            "event_type": "descheduled", "task_name": name,
+            "arrival_time": "0", "reason": "preemption",
+        })
     if deadline_miss:
         events.append({
             "run_generation": 1, "time": str(d),
             "event_type": "dline_miss", "task_name": name,
             "job_id": name + "@0", "arrival_time": "0",
-            "deadline": str(d), "remaining_execution_ms": 1,
+            "deadline": str(d),
+            "remaining_execution_ms": c - execution_ticks,
         })
     events.append({
         "run_generation": 1, "time": str(horizon),

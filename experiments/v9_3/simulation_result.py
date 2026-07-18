@@ -224,6 +224,23 @@ def parse_simulation_trace(
             }
         return raw_jobs[key]
 
+    def close_running_interval(
+        name: Any, job: Dict[str, Any], end: int,
+    ) -> Optional[int]:
+        key = (str(name), job["release"])
+        start = running_since.pop(key, None)
+        if start is None:
+            return None
+        if end < start:
+            raise SimulationTraceError(
+                "negative execution interval: "
+                f"trace={trace_path}; request={trace_path.stem}; "
+                f"task={name!r}; release={job['release']}; "
+                f"start={start}; end={end}"
+            )
+        job["executing"].update(range(start, end))
+        return start
+
     events = data["events"]
     for position, event in enumerate(events):
         if not isinstance(event, dict):
@@ -265,12 +282,7 @@ def parse_simulation_trace(
         elif event_type in {"descheduled", "end_instance"}:
             name = event.get("task_name")
             job = job_for(name, event.get("arrival_time"))
-            key = (str(name), job["release"])
-            start = running_since.pop(key, None)
-            if start is not None:
-                if event_time < start:
-                    raise SimulationTraceError("negative execution interval")
-                job["executing"].update(range(start, event_time))
+            close_running_interval(name, job, event_time)
             if event_type == "descheduled" and event.get("reason") == "preemption":
                 job["preemptions"] += 1
             if event_type == "end_instance":
@@ -278,10 +290,38 @@ def parse_simulation_trace(
                     raise SimulationTraceError("duplicate job completion")
                 job["completion"] = event_time
         elif event_type == "dline_miss":
-            job = job_for(event.get("task_name"), event.get("arrival_time"))
+            name = event.get("task_name")
+            job = job_for(name, event.get("arrival_time"))
             reported_deadline = _integer(event.get("deadline"), "miss deadline")
             if reported_deadline != job["absolute_deadline"] or event_time < reported_deadline:
                 raise SimulationTraceError("deadline-miss payload mismatch")
+            running_start = close_running_interval(name, job, event_time)
+            remaining = _integer(
+                event.get("remaining_execution_ms"),
+                "deadline-miss remaining execution",
+            )
+            wcet = _integer(
+                definitions[job["task_id"]].get("C"),
+                "task WCET",
+            )
+            executed = len(job["executing"])
+            if remaining <= 0 or executed + remaining != wcet:
+                interval = (
+                    "none" if running_start is None
+                    else f"[{running_start},{event_time})"
+                )
+                job_id = event.get(
+                    "job_id", f"{name}@{job['release']}"
+                )
+                raise SimulationTraceError(
+                    "deadline-miss execution invariant failed: "
+                    f"trace={trace_path}; request={trace_path.stem}; "
+                    f"run_id={data.get('run_id')!r}; job={job_id!r}; "
+                    f"task={name!r}; release={job['release']}; "
+                    f"wcet={wcet}; executed={executed}; "
+                    f"remaining={remaining}; miss_time={event_time}; "
+                    f"running_interval={interval}"
+                )
             job["miss"] = True
         elif event_type == "scheduler_decision":
             ready = event.get("ready_jobs")

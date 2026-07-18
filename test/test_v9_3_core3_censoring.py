@@ -12,6 +12,7 @@ from experiments.v9_3.censoring import (
 )
 from experiments.v9_3.simulation_result import (
     SimulationStatus,
+    SimulationTraceError,
     parse_simulation_trace,
 )
 from v9_3_core3_helpers import task_payload, write_trace
@@ -133,6 +134,131 @@ def _parse_contract(
         minimum_jobs_per_task=minimum, release_e0=Fraction(1),
         expected_scheduler=scheduler,
     )
+
+
+def _parse_job_events(tmp_path, name, *, c, d, horizon, events):
+    task_name = "v93_task_0"
+    document = _contract_document(
+        horizon=horizon, releases=(), c=c, d=d, t=horizon + 1,
+    )
+    document["events"] = [{
+        "run_generation": 1, "time": 0, "event_type": "arrival",
+        "task_name": task_name, "arrival_time": 0,
+        "current_energy_mJ": 20000,
+    }, *events, {
+        "run_generation": 1, "time": horizon,
+        "event_type": "simulation_run_outcome",
+        "simulation_completed": True,
+        "simulation_completion_reason": "reached_horizon",
+    }]
+    path = tmp_path / name
+    path.write_text(json.dumps(document), encoding="utf-8")
+    return parse_simulation_trace(
+        path, task_payload(c=c, d=d, t=horizon + 1),
+        expected_taskset_hash=HASH, horizon=horizon, warmup=0,
+        minimum_jobs_per_task=1, release_e0=Fraction(1),
+    )
+
+
+def _scheduled(time):
+    return {
+        "run_generation": 1, "time": time, "event_type": "scheduled",
+        "task_name": "v93_task_0", "arrival_time": 0,
+        "task_unit_energy_mJ": 100,
+    }
+
+
+def _descheduled(time):
+    return {
+        "run_generation": 1, "time": time,
+        "event_type": "descheduled", "task_name": "v93_task_0",
+        "arrival_time": 0, "reason": "preemption",
+    }
+
+
+def _deadline_miss(time, remaining):
+    return {
+        "run_generation": 1, "time": time,
+        "event_type": "dline_miss", "task_name": "v93_task_0",
+        "job_id": "v93_task_0@0", "arrival_time": 0,
+        "deadline": time, "remaining_execution_ms": remaining,
+    }
+
+
+def test_active_interval_is_settled_at_deadline_miss(tmp_path):
+    result = _parse_job_events(
+        tmp_path, "active-single-miss.json", c=7, d=9, horizon=10,
+        events=[_scheduled(4), _deadline_miss(9, 2)],
+    )
+    job = result.jobs[0]
+    assert result.status is SimulationStatus.DEADLINE_MISS
+    assert job.executed_ticks == 5
+    assert job.executed_ticks + 2 == 7
+
+
+def test_resumed_active_interval_is_settled_at_deadline_miss(tmp_path):
+    result = _parse_job_events(
+        tmp_path, "active-resumed-miss.json", c=9, d=13, horizon=14,
+        events=[
+            _scheduled(4), _descheduled(7), _scheduled(8),
+            _deadline_miss(13, 1),
+        ],
+    )
+    job = result.jobs[0]
+    assert job.executed_ticks == 8
+    assert job.preemption_count == 1
+    assert job.executed_ticks + 1 == 9
+
+
+def test_deadline_miss_does_not_repeat_closed_interval(tmp_path):
+    result = _parse_job_events(
+        tmp_path, "closed-before-miss.json", c=9, d=13, horizon=14,
+        events=[_scheduled(4), _descheduled(7), _deadline_miss(13, 6)],
+    )
+    job = result.jobs[0]
+    assert job.executed_ticks == 3
+    assert job.preemption_count == 1
+    assert job.executed_ticks + 6 == 9
+
+
+def test_deadline_miss_execution_invariant_conflict_is_explicit(tmp_path):
+    with pytest.raises(
+        SimulationTraceError,
+        match="deadline-miss execution invariant failed",
+    ) as captured:
+        _parse_job_events(
+            tmp_path, "active-miss-conflict.json",
+            c=9, d=13, horizon=14,
+            events=[
+                _scheduled(4), _descheduled(7), _scheduled(8),
+                _deadline_miss(13, 2),
+            ],
+        )
+    message = str(captured.value)
+    for evidence in (
+        "request=active-miss-conflict", "job='v93_task_0@0'",
+        "task='v93_task_0'", "wcet=9", "executed=8",
+        "remaining=2", "miss_time=13", "running_interval=[8,13)",
+    ):
+        assert evidence in message
+
+
+def test_completion_at_deadline_remains_an_on_time_completion(tmp_path):
+    result = _parse_job_events(
+        tmp_path, "completion-at-deadline.json",
+        c=2, d=13, horizon=14,
+        events=[
+            _scheduled(11), {
+                "run_generation": 1, "time": 13,
+                "event_type": "end_instance", "task_name": "v93_task_0",
+                "arrival_time": 0, "task_unit_energy_mJ": 100,
+            },
+        ],
+    )
+    job = result.jobs[0]
+    assert result.status is SimulationStatus.PASS_OBSERVED
+    assert job.completion == job.absolute_deadline == 13
+    assert not job.deadline_miss
 
 
 def test_response_time_release_completion_and_job_fields(tmp_path):
