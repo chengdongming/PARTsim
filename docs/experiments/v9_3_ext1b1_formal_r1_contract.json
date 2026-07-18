@@ -1,0 +1,493 @@
+{
+  "contract_sha256": "6801f3184fcfb47169b2aef5176ff9345b0b10e73f71d2569445a5f1eaac4397",
+  "hash_algorithm": "SHA-256(canonical_json(payload))",
+  "payload": {
+    "anti_peeking": {
+      "contract_and_plan_frozen_before_formal_native_execution": true,
+      "formal_result_read_or_execution_during_freeze": false,
+      "native_simulation_invocations_during_plan_materialization": 0,
+      "post_result_parameter_seed_gate_or_denominator_edit": "prohibited",
+      "results_may_not_write_back_to_contract": true
+    },
+    "base": {
+      "commit": "a3c723d5b8870f2b7871a1b72221740575db2495",
+      "tree": "4da2b3ef765ffa5ee58aa4bc2fbc1b99ff88f172"
+    },
+    "bootstrap": {
+      "algorithm": "deterministic nonparametric percentile bootstrap",
+      "binary_effect": "mean of within-paired-taskset binary differences",
+      "cell_base_seeds": [
+        1605045777,
+        927139569,
+        1537368511,
+        665932110,
+        873693510,
+        913691139
+      ],
+      "cell_rule": "sample 200 paired-taskset identities with replacement from that cell's fixed 200",
+      "comparators": 8,
+      "confidence_interval": "percentile 95% using linear interpolation at p*(B-1)",
+      "continuous_effect": "median after first computing one within-paired-taskset difference per pair",
+      "derived_seed_domain": "ASAP_BLOCK:V9.3:EXT1B:PAIRED_BOOTSTRAP_SEED:v1",
+      "overall_rule": "independently sample 200 with replacement within each of all six cells, then merge to 1200",
+      "resamples": 10000,
+      "stratum_rule": "stratified: independently sample 200 with replacement from each of the two fixed cells, then merge to 400",
+      "unit": "paired_taskset"
+    },
+    "censoring_and_exclusion": {
+      "horizon_censored_jobs": "reported as censored; never rewritten as completion or miss",
+      "incomplete_pair": "excluded only from a named paired-effect calculation, retained in planned/technical-failure counts, and fails the technical hard gate",
+      "missing_values": "no imputation",
+      "not_applicable_metric": "reported as not-applicable, never zero-imputed",
+      "scientific_nonactivation_exclusion": "none",
+      "taskset_outcome_exclusion": "none",
+      "technical_failures": "remain in planned denominator, are counted explicitly, and fail technical validity rather than being silently dropped"
+    },
+    "comparison_eligible_definition": {
+      "bypass_activation_is_not_an_eligibility_condition": true,
+      "closed": true,
+      "deadline_miss_is_eligible": true,
+      "effect_direction_is_not_an_eligibility_condition": true,
+      "mechanical": true,
+      "outcome_selection_prohibited": true,
+      "paired_rule": "both named requests satisfy request_rule and share every frozen fairness/input identity",
+      "pass_is_eligible": true,
+      "request_rule": "release_e0_valid is true AND terminal status is SIM_PASS_OBSERVED or SIM_DEADLINE_MISS"
+    },
+    "contract_status": "FROZEN_FOR_FORMAL_EXECUTION",
+    "contract_version": "EXT1B_B1_FORMAL_CONTRACT_R1",
+    "denominator_reporting": {
+      "comparison": "for the named scheduler contrast, both terminals have release_e0_valid=true, status in {SIM_PASS_OBSERVED,SIM_DEADLINE_MISS}, exact paired-input identity, and no parser/identity failure",
+      "not_applicable": "metric is outside the scheduler registry applicability; it is reported as not-applicable and never treated as zero or as a taskset exclusion",
+      "observable": "terminal with a strictly parsed retained trace, release-E0 validity, and mechanically applicable metric payload",
+      "planned": "all frozen request-plan identities",
+      "required_outputs": [
+        "planned_count",
+        "terminal_count",
+        "observable_count",
+        "comparison_count",
+        "not_applicable_count",
+        "technical_failure_count"
+      ],
+      "technical_failure": "missing/duplicate/mismatched request, terminal, trace, manifest or hash; parser/internal/runtime-timeout/horizon-insufficient status; or incomplete nine-way pair",
+      "terminal": "planned identities having exactly one identity-matching terminal, regardless of terminal status"
+    },
+    "estimands": {
+      "primary": [
+        "per-cell and fixed-stratum ASAP-NONBLOCK native bypass activation proportion",
+        "per-cell and fixed-stratum median ASAP-NONBLOCK bypass_count_per_1000_ticks",
+        "pre-registered LOW/MEDIUM/HIGH median-intensity order"
+      ],
+      "secondary_descriptive": [
+        "paired binary mean difference for ASAP-BLOCK versus each of eight comparators",
+        "paired within-taskset continuous difference median for ASAP-BLOCK versus each of eight comparators",
+        "first miss, missed/completed jobs, response time, energy-blocked and mechanism-specific metrics"
+      ],
+      "secondary_may_change_inputs_or_denominators": false,
+      "significance_policy": "report effects and percentile 95% CIs; no unadjusted significance decision and no p-value gate"
+    },
+    "execution_policy": {
+      "checkpoint_every_requests_per_shard": 9,
+      "fail_fast_on_p0": true,
+      "fixed_shards": 6,
+      "generator_timeout_seconds": 120,
+      "launch_order": [
+        "u2of5_eta4of5_rho3of4",
+        "u3of5_eta1_rho3of4",
+        "u3of5_eta4of5_rho3of4",
+        "u3of5_eta4of5_rho1of4",
+        "u4of5_eta4of5_rho3of4",
+        "u4of5_eta3of5_rho1of2"
+      ],
+      "max_parallel_shards": 4,
+      "native_attempts_per_request": 1,
+      "native_retry_count": 0,
+      "native_timeout_seconds": 30,
+      "output_root": "/root/autodl-tmp/asap_block_v9_3_ext1b_b1_formal_r1",
+      "preserve_attempt_history": true,
+      "resume_policy": "same canonical shard config and request plan; validate terminal identity; execute missing terminals only",
+      "structural_retry_attempts": "deterministic attempts 0..15 only",
+      "taskset_store": "/root/autodl-tmp/asap_block_v9_3_ext1b_b1_formal_r1_tasksets",
+      "worker_count_per_shard": 1
+    },
+    "experiment_class": "FORMAL_INPUT_CONTRACT_NOT_RESULT",
+    "experiment_identity": "EXT1B_B1_FORMAL_R1",
+    "fixed_denominators": {
+      "analysis_unit": "paired_taskset",
+      "overall": 1200,
+      "per_cell": 200,
+      "per_stratum": 400,
+      "prohibited_exclusions": [
+        "deadline outcome",
+        "bypass absence or presence",
+        "algorithm performance",
+        "effect sign or magnitude",
+        "scientific replication failure"
+      ],
+      "rule": "all planned paired tasksets remain in planned denominators; every reduction to an observable or comparison denominator is separately counted and technically classified",
+      "unconditional": true
+    },
+    "formal_domain": "EXT1B_B1_FORMAL_R1",
+    "generation": {
+      "attempt_index_range_inclusive": [
+        0,
+        15
+      ],
+      "base_seed_algorithm": "int(domain_hash(domain,{scenario:BYPASS_STRESS:B1,utilization,eta,rho})[:16],16) mod 2147483647",
+      "base_seed_domain": "EXT1B_B1_FORMAL_R1",
+      "collision_policy": "fail closed on duplicate formal preimage, duplicate formal derived seed, or formal/registered derived-seed intersection",
+      "exact_base_seeds": [
+        971812602,
+        679148436,
+        1371499604,
+        1758024457,
+        546579808,
+        1129661266
+      ],
+      "logical_taskset_index_range_inclusive": [
+        10000,
+        10199
+      ],
+      "outcome_based_regeneration": false,
+      "retry_source_index_range_inclusive": [
+        160000,
+        163199
+      ],
+      "scheduler_enters_generation_seed": false,
+      "seed_mode": "generation_dimensions",
+      "structural_retry_limit": 16,
+      "taskset_seed_domain": "ASAP_BLOCK:V9.3:TASKSET_SEED:v1"
+    },
+    "manifest_and_archive": {
+      "archive": "external deterministic archive only after complete manifest verification; archive name, byte count, member count and SHA-256 sidecar required",
+      "git_exclusions": [
+        "results",
+        "tasksets",
+        "traces",
+        "native binaries",
+        "tarballs"
+      ],
+      "resume": "completed resume must be byte-idempotent and invoke native simulation zero times",
+      "root_manifest": "bind all six shard manifests, contract/config/plan/ledger identities, and exact recursive coverage",
+      "shard_manifest": "exact recursive file coverage and SHA-256; missing, duplicate, or extra file fails",
+      "unpack_verification": "temporary unpack must reproduce exact root-manifest coverage and hashes"
+    },
+    "ordered_cells": [
+      {
+        "base_seed": 971812602,
+        "bootstrap_seed": 1605045777,
+        "cell_id": "u2of5_eta4of5_rho3of4",
+        "eta": "4/5",
+        "generation_id": "0ce1b82308d0bc29be5e345d67ed0da0f83523f50686b330a7522c9f2c5272ac",
+        "ordinal": 0,
+        "output_root": "/root/autodl-tmp/asap_block_v9_3_ext1b_b1_formal_r1/shards/00_u2of5_eta4of5_rho3of4",
+        "paired_taskset_identity_sha256": "edb682e56aebb38f673cfbdff5f5b4bed1a5375d32a0bfecc2bbaa75ef50249a",
+        "paired_tasksets": 200,
+        "requests": 1800,
+        "retained_traces_required": 1800,
+        "rho": "3/4",
+        "semantic_shard_config_hash": "a68156ba61089ad535ad46836c390492adb2c48625d002b97019e7a65ada48bf",
+        "stratum": "LOW",
+        "taskset_store": "/root/autodl-tmp/asap_block_v9_3_ext1b_b1_formal_r1_tasksets/shards/00_u2of5_eta4of5_rho3of4",
+        "utilization": "2/5"
+      },
+      {
+        "base_seed": 679148436,
+        "bootstrap_seed": 927139569,
+        "cell_id": "u3of5_eta1_rho3of4",
+        "eta": "1",
+        "generation_id": "75def268793ff8d825d9e7c212b1a97f6c82899405e1b9a9422933d711abcb49",
+        "ordinal": 1,
+        "output_root": "/root/autodl-tmp/asap_block_v9_3_ext1b_b1_formal_r1/shards/01_u3of5_eta1_rho3of4",
+        "paired_taskset_identity_sha256": "4c40c13e0bda958ab0c0166d5a4e18f0c37de31414b561934bedd371de21b762",
+        "paired_tasksets": 200,
+        "requests": 1800,
+        "retained_traces_required": 1800,
+        "rho": "3/4",
+        "semantic_shard_config_hash": "3059e96c76ab9b42ac05e5a0de81e1e179baaaa4a669d7e90313979d84a6c7ed",
+        "stratum": "LOW",
+        "taskset_store": "/root/autodl-tmp/asap_block_v9_3_ext1b_b1_formal_r1_tasksets/shards/01_u3of5_eta1_rho3of4",
+        "utilization": "3/5"
+      },
+      {
+        "base_seed": 1371499604,
+        "bootstrap_seed": 1537368511,
+        "cell_id": "u3of5_eta4of5_rho3of4",
+        "eta": "4/5",
+        "generation_id": "75def268793ff8d825d9e7c212b1a97f6c82899405e1b9a9422933d711abcb49",
+        "ordinal": 2,
+        "output_root": "/root/autodl-tmp/asap_block_v9_3_ext1b_b1_formal_r1/shards/02_u3of5_eta4of5_rho3of4",
+        "paired_taskset_identity_sha256": "8b93459cdfc169e4b1166875d605218e8f1d8c77a0df341c48e75357b0b55541",
+        "paired_tasksets": 200,
+        "requests": 1800,
+        "retained_traces_required": 1800,
+        "rho": "3/4",
+        "semantic_shard_config_hash": "a1a59d3d7728c6b75cbeb54bf3c2dd957d6a7ec60fbff4dcc6f13de8ad0f689a",
+        "stratum": "MEDIUM",
+        "taskset_store": "/root/autodl-tmp/asap_block_v9_3_ext1b_b1_formal_r1_tasksets/shards/02_u3of5_eta4of5_rho3of4",
+        "utilization": "3/5"
+      },
+      {
+        "base_seed": 1758024457,
+        "bootstrap_seed": 665932110,
+        "cell_id": "u3of5_eta4of5_rho1of4",
+        "eta": "4/5",
+        "generation_id": "75def268793ff8d825d9e7c212b1a97f6c82899405e1b9a9422933d711abcb49",
+        "ordinal": 3,
+        "output_root": "/root/autodl-tmp/asap_block_v9_3_ext1b_b1_formal_r1/shards/03_u3of5_eta4of5_rho1of4",
+        "paired_taskset_identity_sha256": "6435d9e342a273e0dad45031f693dc04156c190c172b84a2178474035929da1f",
+        "paired_tasksets": 200,
+        "requests": 1800,
+        "retained_traces_required": 1800,
+        "rho": "1/4",
+        "semantic_shard_config_hash": "b0e17b762bbbd1804aefbaab024068db7d6989d4eb4ca3dd9f249ccda8b142b7",
+        "stratum": "MEDIUM",
+        "taskset_store": "/root/autodl-tmp/asap_block_v9_3_ext1b_b1_formal_r1_tasksets/shards/03_u3of5_eta4of5_rho1of4",
+        "utilization": "3/5"
+      },
+      {
+        "base_seed": 546579808,
+        "bootstrap_seed": 873693510,
+        "cell_id": "u4of5_eta4of5_rho3of4",
+        "eta": "4/5",
+        "generation_id": "a84d410e1eaca3b9c4358815202ecd6ff402c82d45098362223b151e4f41ac6e",
+        "ordinal": 4,
+        "output_root": "/root/autodl-tmp/asap_block_v9_3_ext1b_b1_formal_r1/shards/04_u4of5_eta4of5_rho3of4",
+        "paired_taskset_identity_sha256": "7b0c398c6ab0449fa7168c7148c8a3285e8a61a7a18393fdfcf339c73d249119",
+        "paired_tasksets": 200,
+        "requests": 1800,
+        "retained_traces_required": 1800,
+        "rho": "3/4",
+        "semantic_shard_config_hash": "92ab0ed15810cda9e020fea54883bb63614f8b1fb51e7070e5b863fe332dd857",
+        "stratum": "HIGH",
+        "taskset_store": "/root/autodl-tmp/asap_block_v9_3_ext1b_b1_formal_r1_tasksets/shards/04_u4of5_eta4of5_rho3of4",
+        "utilization": "4/5"
+      },
+      {
+        "base_seed": 1129661266,
+        "bootstrap_seed": 913691139,
+        "cell_id": "u4of5_eta3of5_rho1of2",
+        "eta": "3/5",
+        "generation_id": "a84d410e1eaca3b9c4358815202ecd6ff402c82d45098362223b151e4f41ac6e",
+        "ordinal": 5,
+        "output_root": "/root/autodl-tmp/asap_block_v9_3_ext1b_b1_formal_r1/shards/05_u4of5_eta3of5_rho1of2",
+        "paired_taskset_identity_sha256": "85b87dd4373de4ec18a92c3b883f48263d3e0cd7d80fb0e22e868a9a30efad44",
+        "paired_tasksets": 200,
+        "requests": 1800,
+        "retained_traces_required": 1800,
+        "rho": "1/2",
+        "semantic_shard_config_hash": "3332f34c753a0282cfb51ebd51a27b4f99132942d076774147d05b1e9caa8c4c",
+        "stratum": "HIGH",
+        "taskset_store": "/root/autodl-tmp/asap_block_v9_3_ext1b_b1_formal_r1_tasksets/shards/05_u4of5_eta3of5_rho1of2",
+        "utilization": "4/5"
+      }
+    ],
+    "prohibitions": [
+      "status-only promotion of configs/v9_3_ext1b_formal_template.yaml",
+      "formal result peeking before freeze",
+      "taskset regeneration based on result or activation",
+      "denominator shrinkage based on scientific outcome",
+      "CORE-1, CORE-2, B2, B3, RTA or scheduler semantic changes",
+      "AutoDL access or formal native execution in this freeze task"
+    ],
+    "request_plan": {
+      "paired_taskset_identity_rows": 1200,
+      "path": "docs/experiments/v9_3_ext1b1_formal_r1_request_plan.json",
+      "rows": 10800,
+      "sha256": "0208022c75a5314f9e17ae4807cfd669bfb9fc9ebfca3b23efe06ee1ada1b7c4"
+    },
+    "result_statuses": {
+      "current": "FORMAL_NOT_RUN",
+      "technical_fail": "B1_FORMAL_TECHNICAL_VALIDITY_FAILED",
+      "technical_pass_science_fail": "B1_FORMAL_SCIENTIFIC_REPLICATION_NOT_CONFIRMED_DATA_VALID",
+      "technical_pass_science_pass": "B1_FORMAL_SCIENTIFIC_REPLICATION_CONFIRMED"
+    },
+    "runtime_budget": {
+      "budget_excludes_unbounded_os_storage_and_aggregation_latency": true,
+      "confirm_pilot_observed_parallel_wall_seconds": 288.95273326104507,
+      "generator_plus_native_timeout_budget_hours": "243+1/3",
+      "linear_projection_seconds": 1155.8109330441803,
+      "native_timeout_only_four_shard_policy_hours": 30
+    },
+    "scale": {
+      "cells": 6,
+      "generation_preimages": 19200,
+      "paired_tasksets": 1200,
+      "paired_tasksets_per_cell": 200,
+      "paired_tasksets_per_stratum": 400,
+      "requests": 10800,
+      "requests_per_cell": 1800,
+      "retained_traces_required": 10800,
+      "schedulers_per_pair": 9,
+      "shards": 6
+    },
+    "scenario": {
+      "cores": 4,
+      "harvest_phase_policy": "PEAK_SYNTHETIC",
+      "horizon": 400,
+      "horizon_extension_policy": "none",
+      "kind": "BYPASS_STRESS",
+      "maximum_horizon": 400,
+      "priority_policy": "RM",
+      "priority_power_profile": "HIGH_PRIORITY_HIGH_POWER",
+      "release_pattern": "SYNCHRONOUS",
+      "subtype": "B1",
+      "task_count": 10
+    },
+    "scheduler_registry": [
+      "gpfp_asap_block",
+      "gpfp_asap_nonblock",
+      "gpfp_asap_sync",
+      "gpfp_alap_block",
+      "gpfp_alap_nonblock",
+      "gpfp_alap_sync",
+      "gpfp_st_block",
+      "gpfp_st_nonblock",
+      "gpfp_st_sync"
+    ],
+    "scheduler_registry_records": [
+      {
+        "display_name": "ASAP-Block",
+        "factory_source": "librtsim/system.cpp",
+        "implementation_id": "GPFPASAPBlockScheduler",
+        "implementation_source": "librtsim/scheduler/gpfp_asap_block_scheduler.cpp",
+        "mechanism": "BLOCK",
+        "scheduler_id": "gpfp_asap_block",
+        "timing_family": "ASAP"
+      },
+      {
+        "display_name": "ASAP-NonBlock",
+        "factory_source": "librtsim/system.cpp",
+        "implementation_id": "GPFPASAPNonBlockScheduler",
+        "implementation_source": "librtsim/scheduler/gpfp_asap_nonblock_scheduler.cpp",
+        "mechanism": "NONBLOCK",
+        "scheduler_id": "gpfp_asap_nonblock",
+        "timing_family": "ASAP"
+      },
+      {
+        "display_name": "ASAP-Sync",
+        "factory_source": "librtsim/system.cpp",
+        "implementation_id": "GPFPASAPSyncScheduler",
+        "implementation_source": "librtsim/scheduler/gpfp_asap_sync_scheduler.cpp",
+        "mechanism": "SYNC",
+        "scheduler_id": "gpfp_asap_sync",
+        "timing_family": "ASAP"
+      },
+      {
+        "display_name": "ALAP-Block",
+        "factory_source": "librtsim/system.cpp",
+        "implementation_id": "GPFPALAPBlockScheduler",
+        "implementation_source": "librtsim/scheduler/gpfp_alap_block_scheduler.cpp",
+        "mechanism": "BLOCK",
+        "scheduler_id": "gpfp_alap_block",
+        "timing_family": "ALAP"
+      },
+      {
+        "display_name": "ALAP-NonBlock",
+        "factory_source": "librtsim/system.cpp",
+        "implementation_id": "GPFPALAPNonBlockScheduler",
+        "implementation_source": "librtsim/scheduler/gpfp_alap_nonblock_scheduler.cpp",
+        "mechanism": "NONBLOCK",
+        "scheduler_id": "gpfp_alap_nonblock",
+        "timing_family": "ALAP"
+      },
+      {
+        "display_name": "ALAP-Sync",
+        "factory_source": "librtsim/system.cpp",
+        "implementation_id": "GPFPALAPSyncScheduler",
+        "implementation_source": "librtsim/scheduler/gpfp_alap_sync_scheduler.cpp",
+        "mechanism": "SYNC",
+        "scheduler_id": "gpfp_alap_sync",
+        "timing_family": "ALAP"
+      },
+      {
+        "display_name": "ST-Block",
+        "factory_source": "librtsim/system.cpp",
+        "implementation_id": "GPFPSTBlockScheduler",
+        "implementation_source": "librtsim/scheduler/gpfp_st_block_scheduler.cpp",
+        "mechanism": "BLOCK",
+        "scheduler_id": "gpfp_st_block",
+        "timing_family": "ST"
+      },
+      {
+        "display_name": "ST-NonBlock",
+        "factory_source": "librtsim/system.cpp",
+        "implementation_id": "GPFPSTNonBlockScheduler",
+        "implementation_source": "librtsim/scheduler/gpfp_st_nonblock_scheduler.cpp",
+        "mechanism": "NONBLOCK",
+        "scheduler_id": "gpfp_st_nonblock",
+        "timing_family": "ST"
+      },
+      {
+        "display_name": "ST-Sync",
+        "factory_source": "librtsim/system.cpp",
+        "implementation_id": "GPFPSTSyncScheduler",
+        "implementation_source": "librtsim/scheduler/gpfp_st_sync_scheduler.cpp",
+        "mechanism": "SYNC",
+        "scheduler_id": "gpfp_st_sync",
+        "timing_family": "ST"
+      }
+    ],
+    "schema": "ASAP_BLOCK_V9_3_EXT1B_B1_FORMAL_CONTRACT_V1",
+    "scientific_replication_criteria": {
+      "classification": "scientific result criteria, not technical-validity gates",
+      "failure_rule": "criterion failure yields SCIENTIFIC_REPLICATION_NOT_CONFIRMED; it does not invalidate technically valid data, regenerate tasksets, exclude pairs, or reduce any fixed denominator",
+      "per_cell_native_bypass_activation_minimum": "180/200",
+      "per_cell_runtime_activation_minimum": "180/200",
+      "per_cell_runtime_observable": "200/200",
+      "per_cell_structural_activation": "200/200",
+      "stratum_metric": "ASAP-NONBLOCK raw native bypass_count_per_1000_ticks = bypass_count/400*1000",
+      "stratum_order": "median_LOW < median_MEDIUM < median_HIGH"
+    },
+    "seed_ledger": {
+      "formal_generation_preimages": 19200,
+      "formal_unique_derived_31bit_seeds": 19200,
+      "path": "docs/experiments/v9_3_ext1b1_formal_r1_seed_ledger.json",
+      "registered_domains_audited": 30,
+      "sha256": "02c70e8f533998a3161d69693219132d55af62c42caa34c89cfec73ab5ff5661"
+    },
+    "seed_space": "EXT1B_FORMAL",
+    "simulator": {
+      "configured_path": "./build/rtsim/rtsim",
+      "execution_preflight_requires_exact_hash": true,
+      "native_semantics_source": "exact base commit/tree",
+      "sha256": "80d3da0ed4890a5cd08e786544f2a410d18a6ca478efc69bfa5fd043fe5f60cc"
+    },
+    "stopping_rules": {
+      "effect_based_early_stopping": false,
+      "outcome_based_early_stopping": false,
+      "scientific_criterion_early_stopping": false,
+      "structural_retry_exhaustion": "hard technical failure; do not replace cell or expand retry domain",
+      "technical_stop": "stop launch/execution on P0 identity, fairness, config, plan, seed, simulator, or manifest mismatch; preserve all evidence",
+      "terminal_timeout_or_internal_error": "retain terminal, fail technical validity, do not regenerate taskset"
+    },
+    "technical_validity_hard_gates": {
+      "complete_nine_way_paired_tasksets": 1200,
+      "duplicate_formal_derived_seed": 0,
+      "duplicate_generation_preimage": 0,
+      "duplicate_paired_taskset_identity": 0,
+      "duplicate_request_identity": 0,
+      "fairness_mismatch": 0,
+      "generation_mismatch": 0,
+      "horizon_insufficient": 0,
+      "input_mismatch_inside_pair": 0,
+      "internal_error": 0,
+      "manifest_missing_extra_or_hash_failure": 0,
+      "parse_failure": 0,
+      "request_terminal_trace_manifest_hash_closure_required": true,
+      "retained_traces": 10800,
+      "runtime_timeout": 0,
+      "terminal_identity_mismatch": 0,
+      "terminals": 10800,
+      "trace_identity_or_hash_mismatch": 0
+    },
+    "tracked_config": {
+      "file_sha256": "d483a09c20063f43f07c4c53a1d4df4042a93d626f6d7f1f5522e1041971617f",
+      "parameter_status": "FROZEN_FOR_FORMAL_EXECUTION",
+      "path": "configs/v9_3_ext1b1_formal_r1.yaml",
+      "role": "single-cell strict-schema campaign anchor; contract owns six ordered shards",
+      "semantic_hash": "f0e8b266e7016dfa429ecc75746005d8fb4d186f41b7f5d703a1981c735293e3"
+    }
+  },
+  "schema": "ASAP_BLOCK_V9_3_EXT1B_B1_FORMAL_CONTRACT_ENVELOPE_V1"
+}
