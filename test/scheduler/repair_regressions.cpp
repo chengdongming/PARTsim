@@ -13,6 +13,8 @@
 #include <metasim/basestat.hpp>
 #include <metasim/simul.hpp>
 #include <rtsim/abskernel.hpp>
+#include <rtsim/cpu.hpp>
+#include <rtsim/instr.hpp>
 #include <rtsim/json_trace.hpp>
 #include <rtsim/rttask.hpp>
 #include <rtsim/system.hpp>
@@ -55,6 +57,143 @@ public:
     bool isContextSwitching() const override { return false; }
     Scheduler *getScheduler() const override { return nullptr; }
 };
+
+class Round2AccountingKernel : public Round2NullKernel {
+    CPU *_cpu;
+
+public:
+    explicit Round2AccountingKernel(CPU *cpu) : _cpu(cpu) {}
+    CPU *getProcessor(const AbsRTTask *) const override { return _cpu; }
+    CPU *getOldProcessor(const AbsRTTask *) const override { return _cpu; }
+};
+
+class Round2CumulativeInstr : public Instr {
+    Tick _duration;
+    Tick _executed;
+    Tick _last_schedule;
+    bool _executing;
+
+protected:
+    Round2CumulativeInstr(const Round2CumulativeInstr &other)
+        : Instr(other),
+          _duration(other._duration),
+          _executed(other._executed),
+          _last_schedule(other._last_schedule),
+          _executing(other._executing) {}
+
+public:
+    Round2CumulativeInstr(Task *task, Tick duration)
+        : Instr(task, "round2-cumulative-instr"),
+          _duration(duration),
+          _executed(0),
+          _last_schedule(0),
+          _executing(false) {}
+
+    CLONEABLE(Instr, Round2CumulativeInstr, override)
+
+    void schedule() override {
+        _last_schedule = MetaSim::SIMUL.getTime();
+        _executing = true;
+    }
+
+    void deschedule() override {
+        if (_executing)
+            _executed += MetaSim::SIMUL.getTime() - _last_schedule;
+        _executing = false;
+    }
+
+    void reset() override {
+        _executed = 0;
+        _last_schedule = 0;
+        _executing = false;
+    }
+
+    Tick getExecTime() const override {
+        return _executed + (_executing
+            ? MetaSim::SIMUL.getTime() - _last_schedule : Tick(0));
+    }
+
+    double getActCycles() const override {
+        return double(getExecTime());
+    }
+
+    Tick getDuration() const override { return _duration; }
+    Tick getWCET() const override { return _duration; }
+    void newRun() override { reset(); }
+    void endRun() override {}
+    void refreshExec(double, double) override {}
+};
+
+TEST(TaskExecutionAccounting, MultiplePreemptionsPreserveDeadlineMiss) {
+    const std::string path =
+        "/tmp/partsim_preemption_accounting_deadline_trace.json";
+    {
+        CPU cpu("deadline-accounting-cpu", nullptr);
+        Round2AccountingKernel kernel(&cpu);
+        PeriodicTask task(MetaSim::Tick(50), MetaSim::Tick(7),
+                          MetaSim::Tick(0), "deadline-accounting-task");
+        task.addInstr(
+            std::make_unique<Round2CumulativeInstr>(&task, MetaSim::Tick(8)));
+        task.setKernel(&kernel);
+        JSONTrace trace(path, MetaSim::Tick(8));
+        trace.attachToTask(task);
+
+        MetaSim::SIMUL.initSingleRun();
+        MetaSim::SIMUL.run_to(MetaSim::Tick(0));
+        task.schedule();
+        MetaSim::SIMUL.run_to(MetaSim::Tick(2));
+        task.deschedule();
+        MetaSim::SIMUL.run_to(MetaSim::Tick(3));
+        task.schedule();
+
+        // The first slice was [0,2). Resuming the same instruction must not
+        // count that cumulative instruction time a second time.
+        EXPECT_EQ(task.getExecTime(), MetaSim::Tick(2));
+        EXPECT_DOUBLE_EQ(task.getRemainingWCET(), 6.0);
+
+        MetaSim::SIMUL.run_to(MetaSim::Tick(4));
+        task.deschedule();
+        MetaSim::SIMUL.run_to(MetaSim::Tick(5));
+        task.schedule();
+        MetaSim::SIMUL.run_to(MetaSim::Tick(7));
+        MetaSim::SIMUL.endSingleRun();
+    }
+
+    std::ifstream input(path);
+    ASSERT_TRUE(input.good());
+    const std::string contents(
+        (std::istreambuf_iterator<char>(input)),
+        std::istreambuf_iterator<char>());
+    EXPECT_NE(contents.find("\"event_type\": \"dline_miss\""),
+              std::string::npos);
+    EXPECT_NE(contents.find("\"deadline\": \"7\""), std::string::npos);
+    EXPECT_NE(contents.find("\"remaining_execution_ms\": 3"),
+              std::string::npos);
+}
+
+TEST(DeadlineLifecycle, NeverScheduledJobStillEmitsMiss) {
+    const std::string path =
+        "/tmp/partsim_never_scheduled_deadline_trace.json";
+    {
+        PeriodicTask task(MetaSim::Tick(50), MetaSim::Tick(5),
+                          MetaSim::Tick(0), "never-scheduled-task");
+        task.insertCode("fixed(2,control);");
+        task.killOnMiss(false);
+        JSONTrace trace(path, MetaSim::Tick(6));
+        trace.attachToTask(task);
+        MetaSim::SIMUL.run(MetaSim::Tick(6));
+    }
+
+    std::ifstream input(path);
+    ASSERT_TRUE(input.good());
+    const std::string contents(
+        (std::istreambuf_iterator<char>(input)),
+        std::istreambuf_iterator<char>());
+    EXPECT_NE(contents.find("\"event_type\": \"dline_miss\""),
+              std::string::npos);
+    EXPECT_NE(contents.find("\"remaining_execution_ms\": 2"),
+              std::string::npos);
+}
 
 class Round2BoundaryCompletionTask : public PeriodicTask {
 public:

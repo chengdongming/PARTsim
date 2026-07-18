@@ -176,10 +176,32 @@ def parse_simulation_trace(
     running_since: Dict[tuple[str, int], int] = {}
     bypass_count = 0
     sync_wait_ticks: set[int] = set()
+    st_charge_begin_count = 0
+    st_charge_hold_ticks: set[int] = set()
+    st_charge_release_count = 0
+    st_charge_release_reasons: list[str] = []
     idle_ready_ticks: set[int] = set()
     battery_samples: list[tuple[int, float]] = []
     harvested_samples: list[float] = []
     consumed_samples: list[float] = []
+
+    scheduler_parts = expected_scheduler.split("_")
+    if len(scheduler_parts) != 3:
+        raise SimulationTraceError("invalid expected scheduler identity")
+    mechanism_display = {
+        "block": "Block", "nonblock": "NonBlock", "sync": "Sync",
+    }.get(scheduler_parts[2])
+    if mechanism_display is None:
+        raise SimulationTraceError("invalid expected scheduler mechanism")
+    expected_display_scheduler = f"{scheduler_parts[1].upper()}-{mechanism_display}"
+
+    def validate_mechanism_scheduler(event: Mapping[str, Any], allowed: bool) -> None:
+        if not allowed or event.get("scheduler") != expected_display_scheduler:
+            raise SimulationTraceError("mechanism event scheduler/applicability mismatch")
+
+    def validate_named_task(value: Any, label: str) -> None:
+        if value not in names:
+            raise SimulationTraceError(f"{label} has unknown task name")
 
     def job_for(name: Any, release_value: Any) -> Dict[str, Any]:
         if name not in names:
@@ -201,6 +223,23 @@ def parse_simulation_trace(
                 "miss": False,
             }
         return raw_jobs[key]
+
+    def close_running_interval(
+        name: Any, job: Dict[str, Any], end: int,
+    ) -> Optional[int]:
+        key = (str(name), job["release"])
+        start = running_since.pop(key, None)
+        if start is None:
+            return None
+        if end < start:
+            raise SimulationTraceError(
+                "negative execution interval: "
+                f"trace={trace_path}; request={trace_path.stem}; "
+                f"task={name!r}; release={job['release']}; "
+                f"start={start}; end={end}"
+            )
+        job["executing"].update(range(start, end))
+        return start
 
     events = data["events"]
     for position, event in enumerate(events):
@@ -243,12 +282,7 @@ def parse_simulation_trace(
         elif event_type in {"descheduled", "end_instance"}:
             name = event.get("task_name")
             job = job_for(name, event.get("arrival_time"))
-            key = (str(name), job["release"])
-            start = running_since.pop(key, None)
-            if start is not None:
-                if event_time < start:
-                    raise SimulationTraceError("negative execution interval")
-                job["executing"].update(range(start, event_time))
+            close_running_interval(name, job, event_time)
             if event_type == "descheduled" and event.get("reason") == "preemption":
                 job["preemptions"] += 1
             if event_type == "end_instance":
@@ -256,10 +290,38 @@ def parse_simulation_trace(
                     raise SimulationTraceError("duplicate job completion")
                 job["completion"] = event_time
         elif event_type == "dline_miss":
-            job = job_for(event.get("task_name"), event.get("arrival_time"))
+            name = event.get("task_name")
+            job = job_for(name, event.get("arrival_time"))
             reported_deadline = _integer(event.get("deadline"), "miss deadline")
             if reported_deadline != job["absolute_deadline"] or event_time < reported_deadline:
                 raise SimulationTraceError("deadline-miss payload mismatch")
+            running_start = close_running_interval(name, job, event_time)
+            remaining = _integer(
+                event.get("remaining_execution_ms"),
+                "deadline-miss remaining execution",
+            )
+            wcet = _integer(
+                definitions[job["task_id"]].get("C"),
+                "task WCET",
+            )
+            executed = len(job["executing"])
+            if remaining <= 0 or executed + remaining != wcet:
+                interval = (
+                    "none" if running_start is None
+                    else f"[{running_start},{event_time})"
+                )
+                job_id = event.get(
+                    "job_id", f"{name}@{job['release']}"
+                )
+                raise SimulationTraceError(
+                    "deadline-miss execution invariant failed: "
+                    f"trace={trace_path}; request={trace_path.stem}; "
+                    f"run_id={data.get('run_id')!r}; job={job_id!r}; "
+                    f"task={name!r}; release={job['release']}; "
+                    f"wcet={wcet}; executed={executed}; "
+                    f"remaining={remaining}; miss_time={event_time}; "
+                    f"running_interval={interval}"
+                )
             job["miss"] = True
         elif event_type == "scheduler_decision":
             ready = event.get("ready_jobs")
@@ -290,9 +352,67 @@ def parse_simulation_trace(
                 elif stopped_by_energy:
                     ready_job["energy_blocked"].add(event_time)
         elif event_type == "nonblock_bypass":
+            validate_mechanism_scheduler(
+                event, expected_scheduler == "gpfp_asap_nonblock",
+            )
+            validate_named_task(
+                event.get("blocked_higher_priority_task"), "nonblock blocked task",
+            )
+            validate_named_task(event.get("bypassed_task"), "nonblock bypassed task")
+            for field in (
+                "blocked_task_unit_energy_mJ", "bypassed_task_unit_energy_mJ",
+                "available_energy_mJ",
+            ):
+                _finite(event.get(field), field)
+            if event.get("reason") != "lower_priority_bypass_due_to_energy":
+                raise SimulationTraceError("invalid nonblock bypass reason")
             bypass_count += 1
         elif event_type == "sync_batch_block":
+            validate_mechanism_scheduler(
+                event, expected_scheduler == "gpfp_asap_sync",
+            )
+            batch = event.get("batch_tasks")
+            if not isinstance(batch, list) or not batch:
+                raise SimulationTraceError("sync batch event has no batch tasks")
+            for nested in batch:
+                if not isinstance(nested, dict):
+                    raise SimulationTraceError("sync batch task is not an object")
+                validate_named_task(nested.get("task_name"), "sync batch task")
+            _finite(event.get("batch_required_energy_mJ"), "sync batch required energy")
+            _finite(event.get("available_energy_mJ"), "sync batch available energy")
+            if not isinstance(event.get("feasible_subset_exists"), bool):
+                raise SimulationTraceError("sync feasible-subset flag must be boolean")
+            if event.get("reason") != "sync_batch_energy_insufficient":
+                raise SimulationTraceError("invalid sync batch block reason")
             sync_wait_ticks.add(event_time)
+        elif event_type in {"st_charge_begin", "st_charge_hold", "st_charge_release"}:
+            validate_mechanism_scheduler(event, expected_scheduler.startswith("gpfp_st_"))
+            blocked_task = event.get("blocked_task")
+            blocked_group = event.get("blocked_group")
+            if blocked_task is not None:
+                validate_named_task(blocked_task, "ST blocked task")
+            elif isinstance(blocked_group, list) and blocked_group:
+                for nested in blocked_group:
+                    if not isinstance(nested, dict):
+                        raise SimulationTraceError("ST blocked-group task is not an object")
+                    validate_named_task(nested.get("task_name"), "ST blocked-group task")
+            else:
+                raise SimulationTraceError("ST event has no blocked task/group")
+            for field in ("available_energy_mJ", "required_energy_mJ", "slack_at_begin"):
+                _finite(event.get(field), field)
+            if event_type == "st_charge_begin":
+                st_charge_begin_count += 1
+            elif event_type == "st_charge_hold":
+                st_charge_hold_ticks.add(event_time)
+            else:
+                reason_value = event.get("release_reason")
+                if reason_value not in {
+                    "battery_full", "slack_exhausted",
+                    "battery_full_and_slack_exhausted",
+                }:
+                    raise SimulationTraceError("invalid ST charge release reason")
+                st_charge_release_count += 1
+                st_charge_release_reasons.append(str(reason_value))
 
     ordered_by_task: Dict[str, list[Dict[str, Any]]] = {
         task_id: [] for task_id in definitions
@@ -387,6 +507,10 @@ def parse_simulation_trace(
         "energy_blocked_ticks": sum(job.energy_blocked_ticks for job in observations),
         "bypass_count": bypass_count,
         "synchronization_wait_ticks": len(sync_wait_ticks),
+        "st_charge_begin_count": st_charge_begin_count,
+        "st_charge_hold_ticks": len(st_charge_hold_ticks),
+        "st_charge_release_count": st_charge_release_count,
+        "st_charge_release_reasons": st_charge_release_reasons,
         "idle_cores_while_ready_jobs_exist_ticks": (
             len(idle_ready_ticks) if expected_processors is not None else None
         ),

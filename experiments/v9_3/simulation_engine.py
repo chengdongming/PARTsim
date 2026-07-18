@@ -412,19 +412,29 @@ def run_paired_simulation(
             )
 
         assert result is not None
+        retain_always = bool(simulation_config.get("retain_trace", False))
         should_retain = bool(
-            simulation_config["trace_on_failure"]
-            and trace_path.is_file()
+            trace_path.is_file()
             and (
-                result.status in {
-                    SimulationStatus.DEADLINE_MISS,
-                    SimulationStatus.INTERNAL_ERROR,
-                }
-                or not result.release_e0_valid
+                retain_always
+                or (
+                    simulation_config["trace_on_failure"]
+                    and (
+                        result.status in {
+                            SimulationStatus.DEADLINE_MISS,
+                            SimulationStatus.INTERNAL_ERROR,
+                        }
+                        or not result.release_e0_valid
+                    )
+                )
             )
         )
         if should_retain:
-            retained = failure_traces / f"{simulation_id_value}.json"
+            destination_root = (
+                run_root / "retained_traces" if retain_always else failure_traces
+            )
+            destination_root.mkdir(parents=True, exist_ok=True)
+            retained = destination_root / f"{simulation_id_value}.json"
             shutil.copy2(trace_path, retained)
         trace_path.unlink(missing_ok=True)
 
