@@ -50,6 +50,7 @@ from experiments.v9_3.result_writer import write_file_hashes
 from experiments.v9_3.scheduler_registry import SCHEDULER_IDS, scheduler_by_id
 from experiments.v9_3.simulation_engine import (
     SimulationExecution,
+    load_simulation_terminal,
     run_paired_simulation,
     write_simulation_terminal,
 )
@@ -790,6 +791,27 @@ def test_resume_terminal_identity_is_checked_against_request(tmp_path):
     )
     with pytest.raises(RuntimeError, match="scheduler mismatch"):
         Ext1BRunner._validate_terminal_identity(request, wrong_scheduler)
+
+
+def test_resume_preserves_deadline_terminal_status(tmp_path):
+    result = SimulationResult(
+        SimulationStatus.DEADLINE_MISS, "deadline_miss", 16, (), (), True,
+        1.0, {}, 2, "gpfp_asap_nonblock", True, "reached_horizon", {},
+    )
+    execution = SimulationExecution(
+        "resume-deadline", result, 1.0, 1, (16,), tmp_path / "system",
+        tmp_path / "tasks", None, "", "",
+    )
+    terminal = tmp_path / "terminal.json"
+    write_simulation_terminal(terminal, execution)
+
+    resumed = load_simulation_terminal(terminal)
+    Ext1BRunner._validate_terminal_identity({
+        "request_id": "resume-deadline",
+        "scheduler_id": "gpfp_asap_nonblock",
+    }, resumed)
+    assert resumed.result.status is SimulationStatus.DEADLINE_MISS
+    assert resumed.result.reason == "deadline_miss"
 
 
 def test_checkpoint_is_atomically_replaceable(tmp_path):

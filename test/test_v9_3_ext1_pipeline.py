@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+from fractions import Fraction
 from pathlib import Path
 
 from experiments.v9_3.ext1_aggregation import aggregate_ext1_rows
 from experiments.v9_3.ext1_scheduler_comparison import Ext1Runner
-from experiments.v9_3.simulation_result import SimulationStatus
+from experiments.v9_3.simulation_result import (
+    SimulationStatus,
+    parse_simulation_trace,
+)
 from experiments.v9_3.scheduler_registry import SCHEDULER_IDS
+from v9_3_core3_helpers import task_payload, write_trace
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,3 +56,16 @@ def test_terminal_status_vocabulary_keeps_timeout_and_censoring_distinct():
         "SIM_HORIZON_INSUFFICIENT", "SIM_RUNTIME_TIMEOUT",
         "SIM_INTERNAL_ERROR",
     }
+
+
+def test_ext1a_shared_parser_keeps_explicit_miss_terminal(tmp_path):
+    trace = write_trace(
+        tmp_path / "ext1a-explicit-miss.json",
+        completion=None, deadline_miss=True,
+    )
+    result = parse_simulation_trace(
+        trace, task_payload(), expected_taskset_hash="a" * 64,
+        horizon=10, warmup=0, minimum_jobs_per_task=2,
+        release_e0=Fraction(1), expected_scheduler="gpfp_asap_block",
+    )
+    assert result.status is SimulationStatus.DEADLINE_MISS
