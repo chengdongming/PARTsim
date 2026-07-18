@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from fractions import Fraction
+import csv
 import hashlib
+import json
 from pathlib import Path
 import signal
 import subprocess
@@ -22,7 +24,7 @@ from .ext1b_generation import (
     scenario_cells,
 )
 from .result_writer import (
-    FAILURE_COLUMNS, atomic_write_json, write_csv, write_file_hashes,
+    FAILURE_COLUMNS, atomic_write_json, read_csv, write_csv, write_file_hashes,
 )
 from .scheduler_pairing import assert_scheduler_only_difference
 from .scheduler_registry import SCHEDULERS, audited_scheduler_registry
@@ -274,6 +276,194 @@ class Ext1BRunner:
             "stop_requested": self.stop_requested,
             "updated_at_utc": _utc_now(),
         })
+
+    @staticmethod
+    def _csv_data_rows(path: Path) -> int:
+        with path.open("r", encoding="utf-8", newline="") as handle:
+            reader = csv.reader(handle)
+            next(reader)
+            return sum(1 for _ in reader)
+
+    def _completed_resume_outcome(
+        self, *, resume: bool, max_cells: Optional[int],
+        max_tasksets: Optional[int],
+    ) -> Optional[Ext1BOutcome]:
+        """Return a validated completed result without touching its bytes."""
+
+        if not resume or max_cells is not None or max_tasksets is not None:
+            return None
+        run_config = self.root / "run_config.yaml"
+        if not run_config.is_file():
+            return None
+        observed = load_ext1b_config(run_config)
+        config_hash = ext1b_config_hash(self.config)
+        if ext1b_config_hash(observed) != config_hash:
+            raise RuntimeError("resume config hash mismatch")
+        if not verify_file_hashes(self.root):
+            return None
+
+        table_names = {
+            "generated_tasksets.csv", "generation_attempts.csv",
+            "scenario_instances.csv", "simulation_requests.csv",
+            "simulation_attempts.csv", "simulation_results.csv",
+            "task_outcomes.csv", "failures.csv", "mechanism_activation.csv",
+            "paired_scheduler_outcomes.csv", "scheduler_summary.csv",
+            "scenario_summary.csv", "priority_rank_summary.csv",
+            "paired_statistics.csv", "ext1b_plot_data.csv",
+            "scheduler_registry.csv",
+        }
+        required = table_names | {
+            "checkpoint.json", "file_hashes.sha256", "run_config.yaml",
+            "run_metadata.json",
+        }
+        if any(not (self.root / name).is_file() for name in required):
+            return None
+
+        description = self.describe()
+        expected_requests = int(description["simulation_request_count"])
+        expected_pairs = int(description["paired_instance_count"])
+        requests = read_csv(self.root / "simulation_requests.csv")
+        if len(requests) != expected_requests:
+            return None
+        request_ids = [str(row["request_id"]) for row in requests]
+        if len(set(request_ids)) != expected_requests:
+            raise RuntimeError("P0 duplicate EXT-1B persisted request")
+        assert_ext1b_fair_pairing(requests)
+        grouped: Dict[str, list[Mapping[str, Any]]] = {}
+        for request in requests:
+            pair_id = str(request["paired_instance_id"])
+            grouped.setdefault(pair_id, []).append(request)
+            expected_id = domain_hash(
+                "ASAP_BLOCK:V9.3:EXT1B:SIMULATION_REQUEST:v1",
+                {"paired_instance_id": pair_id,
+                 "scheduler_id": str(request["scheduler_id"])},
+            )
+            if str(request["request_id"]) != expected_id:
+                raise RuntimeError("P0 EXT-1B persisted request identity mismatch")
+            if str(request["request_status"]) != "PLANNED":
+                return None
+        scheduler_order = [item.scheduler_id for item in SCHEDULERS]
+        if len(grouped) != expected_pairs or any(
+            [str(row["scheduler_id"]) for row in members] != scheduler_order
+            for members in grouped.values()
+        ):
+            raise RuntimeError("P0 EXT-1B persisted plan ordering mismatch")
+
+        generated = read_csv(self.root / "generated_tasksets.csv")
+        instances = read_csv(self.root / "scenario_instances.csv")
+        if (
+            len(generated) != expected_pairs
+            or len(instances) != expected_pairs
+            or len({row["taskset_hash"] for row in generated}) != expected_pairs
+            or {row["paired_instance_id"] for row in instances} != set(grouped)
+        ):
+            return None
+
+        try:
+            checkpoint = json.loads(
+                (self.root / "checkpoint.json").read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError):
+            return None
+        checkpoint_state = {
+            "schema": "ASAP_BLOCK_V9_3_EXT1B_CHECKPOINT_V1",
+            "config_hash": config_hash,
+            "requested": expected_requests,
+            "terminal": expected_requests,
+            "pending": 0,
+            "stop_requested": False,
+        }
+        if set(checkpoint) != {*checkpoint_state, "updated_at_utc"}:
+            return None
+        if any(checkpoint.get(key) != value for key, value in checkpoint_state.items()):
+            return None
+        if not isinstance(checkpoint.get("updated_at_utc"), str):
+            return None
+
+        terminal_ids = {path.stem for path in self.terminals.glob("*.json")}
+        planned_ids = set(request_ids)
+        unexpected = terminal_ids - planned_ids
+        if unexpected:
+            raise RuntimeError(
+                f"unplanned EXT-1B terminal results in output root: {sorted(unexpected)}"
+            )
+        if terminal_ids != planned_ids:
+            return None
+
+        results = read_csv(self.root / "simulation_results.csv")
+        attempts = read_csv(self.root / "simulation_attempts.csv")
+        result_by_id = {str(row["request_id"]): row for row in results}
+        attempt_by_id = {str(row["request_id"]): row for row in attempts}
+        if (
+            len(results) != expected_requests
+            or len(result_by_id) != expected_requests
+            or set(result_by_id) != planned_ids
+            or len(attempts) != expected_requests
+            or len(attempt_by_id) != expected_requests
+            or set(attempt_by_id) != planned_ids
+            or read_csv(self.root / "failures.csv")
+        ):
+            return None
+
+        result_identity_fields = (
+            "request_id", "paired_instance_id", "scenario_kind",
+            "scenario_subtype", "scenario_cell_id", "taskset_id",
+            "taskset_hash", "trace_hash", "simulation_config_hash",
+            "input_hash", "scheduler_id",
+        )
+        for request in requests:
+            request_id = str(request["request_id"])
+            execution = load_simulation_terminal(
+                self.terminals / f"{request_id}.json"
+            )
+            self._validate_terminal_identity(request, execution)
+            result = result_by_id[request_id]
+            attempt = attempt_by_id[request_id]
+            if any(
+                str(result[field]) != str(request[field])
+                for field in result_identity_fields
+            ):
+                raise RuntimeError("P0 EXT-1B result identity mismatch")
+            if (
+                execution.attempt_count != 1
+                or str(result["scheduler_id"]) != str(request["scheduler_id"])
+                or str(result["status"]) != execution.result.status.value
+                or str(attempt["scheduler_id"]) != str(request["scheduler_id"])
+                or str(attempt["status"]) != execution.result.status.value
+                or str(attempt["attempt_number"]) != "1"
+                or execution.result.status in {
+                    SimulationStatus.INTERNAL_ERROR,
+                    SimulationStatus.RUNTIME_TIMEOUT,
+                }
+                or execution.retained_trace_path is None
+                or not execution.retained_trace_path.is_file()
+            ):
+                return None
+
+        aggregation_files = {
+            "activation_rows": "mechanism_activation.csv",
+            "paired_rows": "paired_scheduler_outcomes.csv",
+            "scheduler_summary_rows": "scheduler_summary.csv",
+            "scenario_summary_rows": "scenario_summary.csv",
+            "priority_summary_rows": "priority_rank_summary.csv",
+            "statistics_rows": "paired_statistics.csv",
+            "plots_rows": "ext1b_plot_data.csv",
+        }
+        summary = {
+            "requested": expected_requests,
+            "terminal": expected_requests,
+            "complete": True,
+            "parameter_status": self.config["parameter_status"],
+            "formal_large_scale_run": False,
+            "result_class": "NON_FORMAL_SMOKE_OR_PILOT",
+            **{
+                key: self._csv_data_rows(self.root / name)
+                for key, name in aggregation_files.items()
+            },
+        }
+        return Ext1BOutcome(
+            self.root, expected_requests, expected_requests, False, summary,
+        )
 
     def _selected_cells(self, max_cells: Optional[int]) -> list[tuple[Any, Any]]:
         values = [
@@ -598,6 +788,11 @@ class Ext1BRunner:
             raise RuntimeError(
                 "EXT-1B formal execution is not authorized by this runner"
             )
+        completed = self._completed_resume_outcome(
+            resume=resume, max_cells=max_cells, max_tasksets=max_tasksets,
+        )
+        if completed is not None:
+            return completed
         self._initialize(resume)
         generated, generation_attempts, instances, plan = self._plan(max_cells, max_tasksets)
         planned_ids = {str(row["request_id"]) for row in plan}
