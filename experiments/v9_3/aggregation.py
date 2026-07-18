@@ -58,6 +58,18 @@ class ValidatedRunClosure:
     failures: tuple[Mapping[str, str], ...]
 
 
+@dataclass(frozen=True)
+class _AnalysisRowIndexes:
+    """Single-pass indexes for analysis-scoped closure rows."""
+
+    tasks_by_analysis: Mapping[str, list[Mapping[str, str]]]
+    task_ids_by_analysis: Mapping[str, set[str]]
+    candidate_tasks_by_analysis: Mapping[
+        str, Dict[str, Mapping[str, str]]
+    ]
+    attempts_by_analysis: Mapping[str, list[Mapping[str, str]]]
+
+
 def _unique_index(
     rows: Sequence[Mapping[str, str]], *keys: str, label: str
 ) -> Dict[Any, Mapping[str, str]]:
@@ -69,6 +81,40 @@ def _unique_index(
             raise AggregationError(f"duplicate {label}: {key}")
         result[key] = row
     return result
+
+
+def _build_analysis_row_indexes(
+    tasks: Iterable[Mapping[str, str]],
+    attempts: Iterable[Mapping[str, str]],
+) -> _AnalysisRowIndexes:
+    """Group task and attempt rows without re-scanning their top-level tables."""
+
+    tasks_by_analysis: Dict[str, list[Mapping[str, str]]] = {}
+    task_ids_by_analysis: Dict[str, set[str]] = {}
+    candidate_tasks_by_analysis: Dict[
+        str, Dict[str, Mapping[str, str]]
+    ] = {}
+    for row in tasks:
+        analysis_id_value = row["analysis_id"]
+        tasks_by_analysis.setdefault(analysis_id_value, []).append(row)
+        task_ids_by_analysis.setdefault(analysis_id_value, set()).add(
+            row["task_id"]
+        )
+        if row.get("task_solver_status") == "CANDIDATE_FOUND":
+            candidate_tasks_by_analysis.setdefault(
+                analysis_id_value, {}
+            )[row["task_id"]] = row
+
+    attempts_by_analysis: Dict[str, list[Mapping[str, str]]] = {}
+    for row in attempts:
+        attempts_by_analysis.setdefault(row["analysis_id"], []).append(row)
+
+    return _AnalysisRowIndexes(
+        tasks_by_analysis=tasks_by_analysis,
+        task_ids_by_analysis=task_ids_by_analysis,
+        candidate_tasks_by_analysis=candidate_tasks_by_analysis,
+        attempts_by_analysis=attempts_by_analysis,
+    )
 
 
 def _json(path: Path, label: str) -> Mapping[str, Any]:
@@ -275,6 +321,7 @@ def validate_run_closure_read_only(
     _unique_index(attempts, "attempt_id", label="attempt")
     if any(row.get("analysis_id") not in request_by_id for row in attempts):
         raise AggregationError("attempt belongs to an extra analysis")
+    analysis_rows = _build_analysis_row_indexes(tasks, attempts)
 
     pairing_path = root / "taskset_pairing_manifest.json"
     if metadata.get("pairing_manifest_id") is not None or seal.get(
@@ -411,7 +458,7 @@ def validate_run_closure_read_only(
             ):
                 raise AggregationError("INVALID LOC_THETA_CW is not dependency N/A")
 
-        members = [row for row in tasks if row["analysis_id"] == analysis_id_value]
+        members = analysis_rows.tasks_by_analysis.get(analysis_id_value, ())
         if result["terminal_origin"] == "PRODUCTION_ANALYZER":
             if len(members) != int(result["n_tasks_total"]):
                 raise AggregationError("task result closure mismatch")
@@ -458,10 +505,9 @@ def validate_run_closure_read_only(
             if task_id_value in terminal_task_by_id:
                 raise AggregationError("duplicate terminal task row")
             terminal_task_by_id[task_id_value] = terminal_task
-        persisted_task_ids = {
-            row["task_id"] for row in tasks
-            if row["analysis_id"] == analysis_id_value
-        }
+        persisted_task_ids = analysis_rows.task_ids_by_analysis.get(
+            analysis_id_value, set()
+        )
         if set(terminal_task_by_id) != persisted_task_ids:
             raise AggregationError("terminal/CSV task set mismatch")
         for task_id_value, terminal_task in terminal_task_by_id.items():
@@ -547,10 +593,7 @@ def validate_run_closure_read_only(
             else None
         )
         analysis_attempts = sorted(
-            (
-                row for row in attempts
-                if row["analysis_id"] == analysis_id_value
-            ),
+            analysis_rows.attempts_by_analysis.get(analysis_id_value, ()),
             key=lambda row: (int(row["attempt_number"]), row["attempt_id"]),
         )
         try:
@@ -723,16 +766,8 @@ def validate_run_closure_read_only(
         for relation, left_variant, right_variant in relation_specs:
             left_id = members[left_variant]["analysis_id"]
             right_id = members[right_variant]["analysis_id"]
-            left = {
-                row["task_id"]: row for row in tasks
-                if row["analysis_id"] == left_id
-                and row["task_solver_status"] == "CANDIDATE_FOUND"
-            }
-            right = {
-                row["task_id"]: row for row in tasks
-                if row["analysis_id"] == right_id
-                and row["task_solver_status"] == "CANDIDATE_FOUND"
-            }
+            left = analysis_rows.candidate_tasks_by_analysis.get(left_id, {})
+            right = analysis_rows.candidate_tasks_by_analysis.get(right_id, {})
             common = sorted(set(left) & set(right), key=int)
             if not common:
                 expected_dominance.append({
