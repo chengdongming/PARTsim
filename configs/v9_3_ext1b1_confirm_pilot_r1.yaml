@@ -1,0 +1,97 @@
+# Frozen EXT-1B B1 confirm-pilot shard template.
+# The companion contract owns the ordered six-shard expansion. This public
+# schema represents the first frozen shard because EXT-1B configs are strictly
+# single-rho and do not accept candidate-list metadata.
+core: CORE-3
+energy:
+  battery_capacity: '100'
+  battery_mode: finite
+  exact_rational_encoding: canonical_fraction
+  initial_energy_values:
+  - '0'
+  service_curve:
+    horizon: 1000
+    id: ext1b-generation-service
+    system_template: system_config_unified_template.yml
+  simulation_initial_battery: '1'
+execution:
+  checkpoint_every: 9
+  fail_fast_on_p0: true
+  output_root: /tmp/ext1b_b1_confirm_pilot_r1/SHARD_PLACEHOLDER
+  preserve_attempt_history: true
+  resume: false
+  taskset_store: /tmp/ext1b_b1_confirm_pilot_r1/taskset_stores/SHARD_PLACEHOLDER
+  worker_count: 1
+experiment_id: asap-block-v9.3-ext1b1-confirm-pilot-r1-u2of5_eta4of5_rho3of4
+extension: EXT-1B
+generation:
+  constrained_deadline:
+    d_over_t_max: '1'
+    d_over_t_min: '0'
+    d_over_t_values: []
+    distribution: generator_uniform_integer
+  deadline_mode: constrained
+  generator_timeout_seconds: 120
+  max_task_util: 4/5
+  min_task_util: 1/100
+  period_max: 200
+  period_min: 40
+  power_mode: generator_default_heterogeneous
+  priority_policy: RM
+  utilization_tolerance: 1/100
+  wcet_rounding: compensated
+grid:
+  base_seed: 286444479
+  seed_mode: generation_dimensions
+  taskset_index_start: 1000
+  tasksets_per_cell: 50
+  utilization_points:
+  - 2/5
+parameter_status: PILOT
+platform:
+  cores:
+  - 4
+  task_count:
+  - 10
+plots: {}
+rta:
+  methods:
+  - CW_THETA_CW
+  - LOC_THETA_LOC
+  numerical_mode: EXACT_RATIONAL
+  retry_policy: timeout_once
+  retry_timeout_seconds: 4
+  timeout_seconds: 2
+scenario:
+  activation_policy: REPORT_STRUCTURAL_AND_RUNTIME
+  affordable_prefix_length: 1
+  deadline_ratio_max: '1'
+  deadline_ratio_min: '0'
+  harvest_phase_policy: PEAK_SYNTHETIC
+  initial_energy_policy: STRUCTURAL_MIDPOINT
+  interpolation_rho: 3/4
+  kind: BYPASS_STRESS
+  nominal_energy_supply_ratios:
+  - 4/5
+  priority_power_profile: HIGH_PRIORITY_HIGH_POWER
+  release_pattern: SYNCHRONOUS
+  structural_retry_limit: 16
+  subtype: B1
+  timing_cells: []
+seed_space: EXT1B_PILOT
+simulation:
+  deadline_miss_fail_fast: true
+  horizon: 400
+  horizon_extension_policy: none
+  maximum_horizon: 400
+  minimum_jobs_per_task: 2
+  retain_trace: true
+  simulator_bin: /tmp/ext1b_b1_confirm_pilot_contract_r1/build/rtsim/rtsim
+  timeout_seconds: 30
+  trace_mode: semantic
+  trace_on_failure: true
+  warmup: 0
+statistics:
+  bootstrap_resamples: 2000
+  bootstrap_seed: 1359235875
+  top_m: 4
