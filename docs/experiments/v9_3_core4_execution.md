@@ -23,7 +23,9 @@ strength.
 The repository currently has one formal service configuration. Consequently,
 the smoke config records its second service level as
 `DEPENDENCY_UNAVAILABLE`; it does not invent a curve. This is excluded from
-violation counts and remains visible in requests and denominators.
+the solver-terminal set and violation counts, remains visible in planned
+requests and denominators, and is emitted as missing (not zero) in scientific
+summary and plot metrics.
 
 ## Commands
 
@@ -38,8 +40,8 @@ python3 scripts/analyze_v9_3_core4.py artifacts/v9_3_core4_smoke
 `--max-cells` limits ordered axis levels and `--max-tasksets` limits frozen
 tasksets per cell. Resume checks the semantic configuration hash. Child runs
 retain append-only attempts and atomic terminal results. SIGINT/SIGTERM is
-handled by the shared engine. Duplicate analysis/attempt/task rows must be
-byte-equivalent or materialization fails closed.
+handled by the shared engine. Any duplicate analysis, attempt, terminal, or
+task identity fails closed, including an otherwise byte-equivalent duplicate.
 
 ## Directions and statuses
 
@@ -51,21 +53,55 @@ byte-equivalent or materialization fails closed.
   direction.
 - A timeout is `TIMEOUT_CENSORED`, never a violation.
 - A missing formal service dependency is `DEPENDENCY_UNAVAILABLE`.
-- Other non-common domains are `NOT_COMPARABLE`.
+- `COMPLETED` and `NO_CANDIDATE` are the only scientific terminal statuses.
+- Numeric, internal, invalid, worker, and unknown statuses are
+  `TECHNICAL_FAILURE`; the parent run stops before the next sensitivity level.
+- The declared `NOT_APPLICABLE_DEPENDENCY` analysis outcome is
+  `NOT_COMPARABLE`; it is known and non-scientific, not an internal failure.
+- Other non-common scientific input domains are `NOT_COMPARABLE`.
 - Equal vectors are `EQUAL`; strict movement in the expected direction is
   `MONOTONICITY_HOLDS`; a regression is `MONOTONICITY_VIOLATION`.
 
 A violation writes the base taskset, both levels, all task results, counters,
 and configuration references to `failure_inputs/`, records P0, and makes the
-runner return a stopped outcome.
+runner return a stopped outcome. The parent also propagates child `stopped`,
+request/terminal count mismatch, child P0 failures, and technical terminals as
+a top-level P0. Its checkpoint and technical failure witness are durable before
+the stopped outcome is returned; no successful scientific summary is retained.
 
 ## Outputs
 
-The run root contains the frozen taskset table, sensitivity requests, common
+The run root uses `ASAP_BLOCK_V9_3_CORE4_RUN_V2` metadata and
+`ASAP_BLOCK_V9_3_CORE4_CHECKPOINT_V2` checkpoints. It contains the frozen taskset table, sensitivity requests, common
 analysis attempts/taskset/task results, paired results, monotonicity checks,
 CSV/JSON summaries, long-form plot data, failures, checkpoint, configuration,
-and SHA-256 inventory. Certification ratio and completed-only ratio retain
-separate denominators. Candidate mean/median/p95 use candidate rows only.
+and SHA-256 inventory. Resume and analyzer entry points validate schemas, core,
+config hash, CSV headers, exact request/result/task identity sets, ordered
+levels, recomputed sweep/pair/input hashes, and single-axis invariants. A
+completed run additionally requires a valid hash inventory. Empty and partial
+roots cannot produce a successful summary.
+
+A successful run first writes every scientific artifact and a `FINALIZING`
+checkpoint, then atomically writes and immediately validates the exact SHA-256
+inventory. Only after that succeeds does it atomically replace the checkpoint
+with `COMPLETED`. The top-level `checkpoint.json` is the independent commit
+marker and is therefore excluded from the immutable inventory together with
+the inventory itself; both documents are mandatory and validated separately
+for a completed run. Symbolic links, non-regular files, unsafe or duplicate
+paths, missing/extra files, malformed digests, and hash mismatches fail closed.
+
+Describe, outcome, checkpoint, summary, and analyzer use six separate fields:
+`planned_sensitivity_row_count`, `available_solver_request_count`,
+`expected_terminal_count`, `actual_terminal_count`,
+`dependency_unavailable_row_count`, and `technical_failure_count`. For the
+committed smoke configuration the static counts are respectively 14, 12, 12,
+0 before execution, 2, and 0; a clean completed run has 12 actual terminals.
+The legacy `maximum_solver_requests` field is not used.
+
+Certification ratio and completed-only ratio retain separate denominators.
+Candidate mean/median/p95 use candidate rows only. The CORE-4 configuration
+contract fixes both method lists, including order, to
+`CW_THETA_CW -> LOC_THETA_LOC`.
 
 The committed smoke uses constrained deadlines, M=4, n=10, U=0.2, one frozen
 taskset, E0 0/1, exact power scale 1/2, and CW-Theta-cw/LOC-Theta-loc. It is

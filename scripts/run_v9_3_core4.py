@@ -38,8 +38,14 @@ def main() -> int:
         max_cells=args.max_cells, max_tasksets=args.max_tasksets,
     )
     print(json.dumps({
-        "output_root": str(outcome.output_root), "requested": outcome.requested,
-        "terminal": outcome.terminal, "stopped": outcome.stopped,
+        "output_root": str(outcome.output_root),
+        "planned_sensitivity_row_count": outcome.planned_sensitivity_row_count,
+        "available_solver_request_count": outcome.available_solver_request_count,
+        "expected_terminal_count": outcome.expected_terminal_count,
+        "actual_terminal_count": outcome.actual_terminal_count,
+        "dependency_unavailable_row_count": outcome.dependency_unavailable_row_count,
+        "technical_failure_count": outcome.technical_failure_count,
+        "stopped": outcome.stopped,
         "summary": outcome.summary,
     }, ensure_ascii=False, sort_keys=True))
     return 2 if outcome.stopped else 0

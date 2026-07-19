@@ -376,6 +376,12 @@ def validate_config(raw: Mapping[str, Any], *, expected_core: str | None = None)
             raise ConfigError("method sensitivity variants must be unique known variants")
         if variants != method_values:
             raise ConfigError("analysis.variants must equal sensitivity method variants")
+        required_core4_methods = ["CW_THETA_CW", "LOC_THETA_LOC"]
+        if variants != required_core4_methods:
+            raise ConfigError(
+                "CORE-4 method variants must equal "
+                "[CW_THETA_CW, LOC_THETA_LOC] in that order"
+            )
         method_axis["variants"] = list(method_values)
 
         service_axis = _require_mapping(axes, "service_curve")
