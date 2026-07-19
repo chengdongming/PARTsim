@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Sequence
 
 from .config import canonical_json
-from .ext1b_b2_batch_audit_r2 import (
+from .ext1b_b2_batch_audit import (
     B2_STATE_BATCH_UNAFFORDABLE_ATOMIC_WAIT_WITH_AFFORDABLE_MEMBER,
     B2_STATE_BATCH_UNAFFORDABLE_ENERGY_WAIT_NO_AFFORDABLE_MEMBER,
     B2_STATE_CONTINUATION_CANDIDATE_WAIT,
@@ -294,7 +294,7 @@ def _b2_outputs(
             "audit_closed": audit_closed,
         })
         if not audit_closed:
-            failures.append(f"B2 {pair_id}: observation contract did not close")
+            failures.append(f"B2 {pair_id}: batch audit did not close")
     return decision_rows, summary_rows, failures
 
 
@@ -412,7 +412,7 @@ def _b3_outputs(
         })
         if not audit_closed:
             failures.append(
-                f"B3 {result['request_id']}: observation contract did not close: "
+                f"B3 {result['request_id']}: timing audit did not close: "
                 + "; ".join(report.errors)
             )
     return event_rows, summary_rows, failures

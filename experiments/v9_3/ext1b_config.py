@@ -23,8 +23,6 @@ from .result_writer import atomic_write_text
 PARAMETER_STATUSES = {
     "SMOKE",
     "PILOT",
-    "UNFROZEN_FORMAL_TEMPLATE",
-    "FROZEN_FOR_FORMAL_EXECUTION",
 }
 SCENARIO_KINDS = {"BYPASS_STRESS", "SYNC_BATCH_STRESS", "TIMING_STRESS"}
 TIMING_SUBTYPES = {
@@ -34,7 +32,6 @@ TIMING_SUBTYPES = {
 SEED_SPACES = {
     "EXT1B_SMOKE",
     "EXT1B_PILOT",
-    "EXT1B_FORMAL",
 }
 
 TOP_LEVEL_KEYS = {
@@ -217,8 +214,6 @@ def validate_ext1b_config(raw: Mapping[str, Any]) -> Dict[str, Any]:
     expected_seed_space = {
         "SMOKE": "EXT1B_SMOKE",
         "PILOT": "EXT1B_PILOT",
-        "UNFROZEN_FORMAL_TEMPLATE": "EXT1B_FORMAL",
-        "FROZEN_FOR_FORMAL_EXECUTION": "EXT1B_FORMAL",
     }[status]
     if seed_space != expected_seed_space:
         raise ConfigError(f"{status} requires seed_space: {expected_seed_space}")

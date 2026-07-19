@@ -113,7 +113,7 @@ REQUIRED_FIELDS = {
 
 
 class B3TimingAuditError(RuntimeError):
-    """The trace cannot satisfy the B3 observation contract."""
+    """The trace cannot satisfy the B3 timing audit."""
 
 
 @dataclass(frozen=True)
@@ -135,7 +135,7 @@ class TimingAuditReport:
             for state in STABLE_STATES
         }
 
-    def assert_contract_closed(self) -> None:
+    def assert_audit_closed(self) -> None:
         failures = list(self.errors)
         failures.extend(
             f"{finding.identity}: {finding.state}: {finding.reason}"

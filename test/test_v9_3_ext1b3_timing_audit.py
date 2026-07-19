@@ -383,7 +383,7 @@ def test_trace_requires_b3_event(tmp_path):
     path.write_text(json.dumps(trace_document([])), encoding="utf-8")
     report = audit_timing_trace(path, expected_scheduler="gpfp_asap_block")
     with pytest.raises(B3TimingAuditError, match="missing"):
-        report.assert_contract_closed()
+        report.assert_audit_closed()
 
 
 def test_trace_rejects_duplicate_observation_identity(tmp_path):
@@ -398,7 +398,7 @@ def test_trace_rejects_duplicate_observation_identity(tmp_path):
     report = audit_timing_trace(path, expected_scheduler="gpfp_asap_block")
     assert report.findings[-1].state == UNCLASSIFIABLE
     with pytest.raises(B3TimingAuditError, match="duplicate"):
-        report.assert_contract_closed()
+        report.assert_audit_closed()
 
 
 def test_trace_rejects_duplicate_json_key(tmp_path):
@@ -411,7 +411,7 @@ def test_trace_rejects_duplicate_json_key(tmp_path):
         audit_timing_trace(path, expected_scheduler="gpfp_asap_block")
 
 
-def test_complete_trace_closes_contract(tmp_path):
+def test_complete_trace_closes_audit(tmp_path):
     path = tmp_path / "complete.json"
     path.write_text(
         json.dumps(trace_document([
@@ -421,7 +421,7 @@ def test_complete_trace_closes_contract(tmp_path):
         encoding="utf-8",
     )
     report = audit_timing_trace(path, expected_scheduler="gpfp_asap_block")
-    report.assert_contract_closed()
+    report.assert_audit_closed()
     assert report.state_counts[ASAP_IMMEDIATE_ELIGIBILITY] == 1
 
 
@@ -454,7 +454,7 @@ def test_real_nine_scheduler_microcase_emits_auditable_state(
         tmp_path / f"{scheduler}.json",
         expected_scheduler=scheduler,
     )
-    report.assert_contract_closed()
+    report.assert_audit_closed()
     findings = [
         classify_timing_event(
             event,
@@ -557,7 +557,7 @@ def test_real_selected_continuation_is_proved_from_running_lifecycle(
         tmp_path / f"{scheduler}.json",
         expected_scheduler=scheduler,
     )
-    report.assert_contract_closed()
+    report.assert_audit_closed()
     continuation_events = [
         event for event in trace["events"]
         if event.get("event_type") == "b3_timing_observation"

@@ -259,20 +259,6 @@ def test_unknown_parameter_status_is_rejected():
         validate_ext1b_config(raw)
 
 
-def test_formal_template_parses_but_runner_refuses_execution():
-    runner = Ext1BRunner.from_path(ROOT / "configs/v9_3_ext1b_formal_template.yaml")
-    with pytest.raises(RuntimeError, match="not authorized"):
-        runner.run()
-
-
-def test_changing_only_formal_status_cannot_authorize_execution():
-    raw = _raw_config("v9_3_ext1b_formal_template.yaml")
-    raw["parameter_status"] = "FROZEN_FOR_FORMAL_EXECUTION"
-    runner = Ext1BRunner(validate_ext1b_config(raw))
-    with pytest.raises(RuntimeError, match="not authorized"):
-        runner.run()
-
-
 def test_retain_trace_requires_boolean():
     raw = _raw_config()
     raw["simulation"]["retain_trace"] = "false"
@@ -301,11 +287,10 @@ def test_config_hash_is_sensitive_to_semantic_fields(path, value):
 def test_seed_spaces_and_seeds_are_separate():
     smoke = load_ext1b_config(ROOT / "configs/v9_3_ext1b1_smoke.yaml")
     pilot = load_ext1b_config(ROOT / "configs/v9_3_ext1b1_pilot.yaml")
-    formal = load_ext1b_config(ROOT / "configs/v9_3_ext1b_formal_template.yaml")
-    assert {smoke["seed_space"], pilot["seed_space"], formal["seed_space"]} == {
-        "EXT1B_SMOKE", "EXT1B_PILOT", "EXT1B_FORMAL",
+    assert {smoke["seed_space"], pilot["seed_space"]} == {
+        "EXT1B_SMOKE", "EXT1B_PILOT",
     }
-    assert len({item["grid"]["base_seed"] for item in (smoke, pilot, formal)}) == 3
+    assert smoke["grid"]["base_seed"] != pilot["grid"]["base_seed"]
 
 
 @pytest.mark.parametrize(

@@ -252,8 +252,6 @@ class Ext1BRunner:
                 "holm_family": "eight ASAP-BLOCK comparator tests within each cell and binary endpoint",
                 "selection_policy": "structural predicates and runtime activation only; scheduler outcomes excluded",
                 "simulation_is_schedulability_proof": False,
-                "formal_large_scale_run": False,
-                "result_class": "NON_FORMAL_SMOKE_OR_PILOT",
                 "created_at_utc": _utc_now(),
             })
 
@@ -468,8 +466,6 @@ class Ext1BRunner:
             "terminal": expected_requests,
             "complete": True,
             "parameter_status": self.config["parameter_status"],
-            "formal_large_scale_run": False,
-            "result_class": "NON_FORMAL_SMOKE_OR_PILOT",
             **{
                 key: self._csv_data_rows(self.root / name)
                 for key, name in aggregation_files.items()
@@ -796,12 +792,6 @@ class Ext1BRunner:
         self, *, resume: bool = False, max_cells: Optional[int] = None,
         max_tasksets: Optional[int] = None,
     ) -> Ext1BOutcome:
-        if self.config["parameter_status"] in {
-            "UNFROZEN_FORMAL_TEMPLATE", "FROZEN_FOR_FORMAL_EXECUTION",
-        }:
-            raise RuntimeError(
-                "EXT-1B formal execution is not authorized by this runner"
-            )
         completed = self._completed_resume_outcome(
             resume=resume, max_cells=max_cells, max_tasksets=max_tasksets,
         )
@@ -914,8 +904,6 @@ class Ext1BRunner:
             "requested": len(plan), "terminal": len(result_rows),
             "complete": len(result_rows) == len(plan),
             "parameter_status": self.config["parameter_status"],
-            "formal_large_scale_run": False,
-            "result_class": "NON_FORMAL_SMOKE_OR_PILOT",
             **aggregation,
         }
         write_file_hashes(self.root)
@@ -930,8 +918,6 @@ def analyze_ext1b(root: Path) -> Mapping[str, Any]:
     write_file_hashes(root)
     return {
         "parameter_status": config["parameter_status"],
-        "formal_large_scale_run": False,
-        "result_class": "NON_FORMAL_SMOKE_OR_PILOT",
         **summary,
     }
 

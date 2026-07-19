@@ -1,14 +1,13 @@
-"""Truth table and control-scope tests for the closed B2 R2 auditor."""
+"""Truth-table and matched-control tests for the B2 batch auditor."""
 
 from __future__ import annotations
 
 from copy import deepcopy
-from pathlib import Path
 
 import pytest
 
-from experiments.v9_3.ext1b_b2_batch_audit_r2 import (
-    B2R2BatchTraceError,
+from experiments.v9_3.ext1b_b2_batch_audit import (
+    B2BatchAuditError,
     B2_STATE_BATCH_AFFORDABLE_ATOMIC_LAUNCH,
     B2_STATE_BATCH_UNAFFORDABLE_ATOMIC_WAIT_WITH_AFFORDABLE_MEMBER,
     B2_STATE_BATCH_UNAFFORDABLE_ENERGY_WAIT_NO_AFFORDABLE_MEMBER,
@@ -25,15 +24,6 @@ from experiments.v9_3.ext1b_b2_batch_audit_r2 import (
     audit_asap_sync_document,
     summarize_b2_observations,
 )
-from scripts.audit_v9_3_ext1b2_r2_r1_regression import (
-    R1_FAILURE_EXPECTED,
-    R2_CLOSURE_EXPECTED,
-    audit_r2_closure,
-    reproduce_r1_failures,
-)
-from scripts.verify_v9_3_ext1b2_r2_behavior_zero_change import (
-    strip_additive_exact_fields,
-)
 
 
 TASKSET_HASH = "d" * 64
@@ -46,6 +36,7 @@ def _job(task, energy=1.0, *, arrival=0, remaining=2):
         "priority": task + 10,
         "ready_order": task,
         "task_unit_energy_mJ": energy,
+        "task_unit_energy_mJ_exact": format(energy, ".17g"),
         "remaining_time_ms": remaining,
         "absolute_deadline": 20,
     }
@@ -66,6 +57,7 @@ def _decision(tick, ready, selected, available, *, scheduler="ASAP-Sync", reason
         "event_type": "scheduler_decision",
         "scheduler": scheduler,
         "available_energy_mJ": available,
+        "available_energy_mJ_exact": format(available, ".17g"),
         "ready_jobs": deepcopy(ready),
         "selected_jobs": deepcopy(selected),
         "decision_reason": reason,
@@ -79,7 +71,9 @@ def _block(tick, jobs, required, available, *, feasible=True):
         "scheduler": "ASAP-Sync",
         "batch_tasks": deepcopy(jobs),
         "batch_required_energy_mJ": required,
+        "batch_required_energy_mJ_exact": format(required, ".17g"),
         "available_energy_mJ": available,
+        "available_energy_mJ_exact": format(available, ".17g"),
         "feasible_subset_exists": feasible,
         "reason": "sync_batch_energy_insufficient",
     }
@@ -107,14 +101,26 @@ def _candidate_wait(tick, active, continuations, candidates, available):
         "new_candidate_count": len(candidates),
         "selected_count": len(continuations),
         "active_top_m_required_energy_mJ": continuation + candidate,
+        "active_top_m_required_energy_mJ_exact": format(
+            continuation + candidate, ".17g"
+        ),
         "continuation_required_energy_mJ": continuation,
+        "continuation_required_energy_mJ_exact": format(continuation, ".17g"),
         "new_candidate_required_energy_mJ": candidate,
+        "new_candidate_required_energy_mJ_exact": format(candidate, ".17g"),
         "available_energy_before_decision_mJ": available,
+        "available_energy_before_decision_mJ_exact": format(available, ".17g"),
         "residual_energy_after_continuation_reservation_mJ": residual,
+        "residual_energy_after_continuation_reservation_mJ_exact": format(
+            residual, ".17g"
+        ),
         "whole_active_top_m_affordable": False,
         "all_new_candidates_affordable_after_continuation": all(affordable),
         "feasible_new_candidate_subset_exists": any(affordable),
         "native_affordability_epsilon_mJ": NATIVE_ENERGY_EPSILON_MJ,
+        "native_affordability_epsilon_mJ_exact": format(
+            NATIVE_ENERGY_EPSILON_MJ, ".17g"
+        ),
     }
 
 
@@ -122,14 +128,14 @@ def _trace(events, *, scheduler="gpfp_asap_sync"):
     return {
         "events": events,
         "trace_schema_version": 2,
-        "run_id": "request-r2",
+        "run_id": "request-b2",
         "taskset_semantic_hash": TASKSET_HASH,
         "configured_scheduler": scheduler,
     }
 
 
 def _audit(document, processors=2):
-    rows = audit_asap_sync_document(document, processors=processors, pair_id="pair-r2")
+    rows = audit_asap_sync_document(document, processors=processors, pair_id="pair-b2")
     assert len(rows) == 1
     return rows[0]
 
@@ -165,7 +171,7 @@ def test_exhaustive_truth_table_for_legal_mechanism_states():
     assert not_applicable["classified_state"] == B2_STATE_NOT_APPLICABLE
 
 
-def test_q0_legacy_block_is_continuation_only_not_atomic_wait():
+def test_q0_general_block_is_continuation_only_not_atomic_wait():
     jobs = [_job(0), _job(1)]
     row = _audit(_trace([
         _scheduled(0, 0), _scheduled(1, 0),
@@ -173,8 +179,8 @@ def test_q0_legacy_block_is_continuation_only_not_atomic_wait():
         _block(1, jobs, 2.0, 0.5, feasible=False),
     ]))
     assert row["classified_state"] == B2_STATE_CONTINUATION_ONLY
-    assert row["q0_legacy_block"] is True
-    assert row["legacy_block_nonatomic"] is True
+    assert row["q0_general_block"] is True
+    assert row["general_block_nonatomic"] is True
     assert row["atomic_opportunity"] is False
 
 
@@ -209,21 +215,7 @@ def test_missing_core_energy_evidence_remains_unclassifiable():
     assert row["classified_state"] == B2_STATE_UNCLASSIFIABLE
 
 
-def test_legacy_six_digit_rounding_bound_closes_known_residual_shape():
-    jobs = [_job(0, 0.0465), _job(1, 1.0)]
-    wait = _candidate_wait(1, jobs, jobs[:1], jobs[1:], 1.01109)
-    wait["residual_energy_after_continuation_reservation_mJ"] = 0.964588
-    row = _audit(_trace([
-        _scheduled(0, 0),
-        _decision(1, jobs, jobs[:1], 1.01109, reason="sync_batch_energy_insufficient"),
-        wait,
-    ]))
-    assert row["classified_state"] == B2_STATE_CONTINUATION_CANDIDATE_WAIT
-    assert row["legacy_precision_recovered"] is True
-    assert row["precision_mismatch"] is False
-
-
-def test_exact_energy_strings_override_rounded_compatibility_numbers():
+def test_exact_energy_strings_override_display_numbers():
     jobs = [_job(0, 0.0465), _job(1, 1.0)]
     for job in jobs:
         job["task_unit_energy_mJ_exact"] = format(job["task_unit_energy_mJ"], ".17g")
@@ -243,15 +235,21 @@ def test_exact_energy_strings_override_rounded_compatibility_numbers():
     row = _audit(_trace([_scheduled(0, 0), decision, wait]))
     assert row["classified_state"] == B2_STATE_CONTINUATION_CANDIDATE_WAIT
     assert row["precision_source"] == "MAX_DIGITS10_EXACT_STRING"
-    assert row["legacy_precision_recovered"] is False
-    assert row["precision_mismatch"] is False
 
 
 def test_malformed_exact_energy_fails_closed():
     jobs = [_job(0), _job(1)]
     decision = _decision(0, jobs, [], 1.5, reason="sync_batch_energy_insufficient")
     decision["available_energy_mJ_exact"] = 1.5
-    with pytest.raises(B2R2BatchTraceError, match="must be text"):
+    with pytest.raises(B2BatchAuditError, match="must be text"):
+        audit_asap_sync_document(_trace([decision]), processors=2)
+
+
+def test_missing_exact_energy_fails_closed():
+    jobs = [_job(0), _job(1)]
+    decision = _decision(0, jobs, [], 1.5, reason="sync_batch_energy_insufficient")
+    del decision["available_energy_mJ_exact"]
+    with pytest.raises(B2BatchAuditError, match="missing required"):
         audit_asap_sync_document(_trace([decision]), processors=2)
 
 
@@ -319,6 +317,19 @@ def test_matched_state_without_affordable_priority_prefix_is_not_applicable():
     )
 
 
+def test_matched_block_control_failure_is_reported():
+    jobs = [_job(0), _job(1)]
+    sync = _sync_atomic_wait(jobs, 1.5)
+    control = audit_asap_block_pair_control(
+        [sync], _block_trace(jobs, [], 1.5),
+        processors=2, expected_min_prefix_length=1,
+    )[0]
+    assert control["control_status"] == CONTROL_STATUS_ELIGIBLE_MATCHED_STATE
+    assert control["control_passed"] is False
+    summary = summarize_b2_observations([sync], [control])
+    assert summary["matched_control_failure_count"] == 1
+
+
 def test_metric_excludes_no_affordable_member_and_fails_closed_at_zero_denominator():
     jobs = [_job(0), _job(1)]
     launch = _audit(_trace([
@@ -347,29 +358,3 @@ def test_fingerprint_material_contains_no_scheduler_or_result_label():
     assert "scheduler" not in serialized
     assert "decision_reason" not in serialized
     assert "selected_jobs" not in serialized
-
-
-def test_behavior_projection_removes_only_additive_exact_fields():
-    old = {
-        "events": [{
-            "event_type": "scheduler_decision",
-            "available_energy_mJ": 1.23457,
-            "ready_jobs": [{"task_unit_energy_mJ": 0.25}],
-        }],
-    }
-    new = deepcopy(old)
-    new["events"][0]["available_energy_mJ_exact"] = "1.2345678901234567"
-    new["events"][0]["ready_jobs"][0]["task_unit_energy_mJ_exact"] = "0.25"
-    assert strip_additive_exact_fields(new) == old
-    changed = deepcopy(new)
-    changed["events"][0]["available_energy_mJ"] = 9.0
-    assert strip_additive_exact_fields(changed) != old
-
-
-def test_retired_r1_corpus_reproduces_failures_and_closes_all_57500_rows():
-    root = Path("/tmp/ext1b_b2_blind_screening_r1")
-    evidence = Path("/tmp/ext1b_b2_blind_screening_r1_evidence_r1")
-    if not root.is_dir() or not evidence.is_dir():
-        pytest.skip("external retired R1 diagnostic corpus is unavailable")
-    assert reproduce_r1_failures(root, evidence) == R1_FAILURE_EXPECTED
-    assert audit_r2_closure(root) == R2_CLOSURE_EXPECTED

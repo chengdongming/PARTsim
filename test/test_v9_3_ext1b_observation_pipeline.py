@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "test"))
 
-from experiments.v9_3.ext1b_b2_batch_audit_r2 import (
+from experiments.v9_3.ext1b_b2_batch_audit import (
     B2_STATE_CONTINUATION_ONLY,
     B2_STATE_ILLEGAL_PARTIAL_LAUNCH,
     audit_asap_sync_trace,
@@ -208,7 +208,7 @@ def test_real_b3_runner_trace_auditor_csv_and_reanalysis(tmp_path, monkeypatch):
     for row in summaries:
         trace = root / "retained_traces" / f"{row['request_id']}.json"
         direct = audit_timing_trace(trace, expected_scheduler=row["scheduler_id"])
-        direct.assert_contract_closed()
+        direct.assert_audit_closed()
         assert row["timing_unclassifiable_count"] == "0"
         assert row["timing_illegal_count"] == "0"
         assert sum(direct.state_counts.values()) > 0

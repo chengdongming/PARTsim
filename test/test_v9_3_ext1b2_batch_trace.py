@@ -1,4 +1,4 @@
-"""Truth-table contract for the EXT-1B2 retained-trace batch auditor."""
+"""Deterministic trace-parser tests for EXT-1B2 batch semantics."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from copy import deepcopy
 
 import pytest
 
-from experiments.v9_3.ext1b_b2_batch_audit import (
+from experiments.v9_3.ext1b_b2_batch_trace import (
     B2BatchTraceError,
     B2_STATE_BATCH_AFFORDABLE_ATOMIC_LAUNCH,
     B2_STATE_BATCH_UNAFFORDABLE_ATOMIC_WAIT,
