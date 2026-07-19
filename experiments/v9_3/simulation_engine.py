@@ -31,6 +31,7 @@ from .simulation_result import (
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SUPPORTED_TRACE_SCHEMA_VERSION = 2
 
 
 class SimulationConfigurationError(RuntimeError):
@@ -232,6 +233,9 @@ def _failure_result(
 
 
 def simulation_result_to_dict(result: SimulationResult) -> Dict[str, Any]:
+    trace_schema_version = _required_trace_schema_version({
+        "trace_schema_version": result.trace_schema_version,
+    })
     return {
         "status": result.status.value,
         "reason": result.reason,
@@ -241,7 +245,7 @@ def simulation_result_to_dict(result: SimulationResult) -> Dict[str, Any]:
         "release_e0_valid": result.release_e0_valid,
         "minimum_release_energy_j": result.minimum_release_energy_j,
         "observed_task_power_j_per_tick": dict(result.observed_task_power_j_per_tick),
-        "trace_schema_version": result.trace_schema_version,
+        "trace_schema_version": trace_schema_version,
         "configured_scheduler": result.configured_scheduler,
         "simulation_completed": result.simulation_completed,
         "completion_reason": result.completion_reason,
@@ -249,7 +253,24 @@ def simulation_result_to_dict(result: SimulationResult) -> Dict[str, Any]:
     }
 
 
+def _required_trace_schema_version(value: Mapping[str, Any]) -> int:
+    actual = (
+        value["trace_schema_version"]
+        if "trace_schema_version" in value else "<missing>"
+    )
+    if (
+        type(actual) is not int
+        or actual != SUPPORTED_TRACE_SCHEMA_VERSION
+    ):
+        raise SimulationConfigurationError(
+            "trace_schema_version must be the integer "
+            f"{SUPPORTED_TRACE_SCHEMA_VERSION}; actual={actual!r}"
+        )
+    return actual
+
+
 def simulation_result_from_dict(value: Mapping[str, Any]) -> SimulationResult:
+    trace_schema_version = _required_trace_schema_version(value)
     return SimulationResult(
         SimulationStatus(str(value["status"])), str(value["reason"]),
         int(value["horizon"]),
@@ -257,7 +278,7 @@ def simulation_result_from_dict(value: Mapping[str, Any]) -> SimulationResult:
         tuple(TaskObservation(**row) for row in value.get("tasks", [])),
         bool(value["release_e0_valid"]), value.get("minimum_release_energy_j"),
         dict(value.get("observed_task_power_j_per_tick", {})),
-        int(value.get("trace_schema_version", 2)),
+        trace_schema_version,
         str(value.get("configured_scheduler", "")),
         bool(value.get("simulation_completed", False)),
         str(value.get("completion_reason", "")),
