@@ -4,6 +4,7 @@ import signal
 import subprocess
 import sys
 import time
+from fractions import Fraction
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,8 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 import acceptance_ratio_test as acceptance
+from experiments.v9_3.simulation_engine import run_paired_simulation
+from experiments.v9_3.simulation_result import SimulationStatus
 from scripts.build_identity import validate_build_identity
 
 
@@ -725,6 +728,81 @@ def test_real_500ms_deadline_miss_is_rejected_once_per_job(tmp_path):
     ).evaluate(500)
     assert evaluation.status == "rejected"
     assert evaluation.reason == "deadline_miss"
+
+
+def test_deadline_miss_fail_fast_true_and_false_both_continue_to_horizon(
+    tmp_path,
+):
+    """EXT-1B's legacy-named flag never truncates a native request."""
+
+    rtsim, _build_root = require_rtsim_binary()
+    base_system = tmp_path / "base_system.yml"
+    base_system.write_text(
+        system_yaml(
+            "gpfp_asap_nonblock", initial=0.0, maximum=1.0, harvest=0.0,
+        ),
+        encoding="utf-8",
+    )
+    task_payload = [{
+        "task_id": "0", "priority_rank": 0, "C": 2, "D": 2, "T": 10,
+        "D_over_T": "1/5", "workload": "bzip2", "P": "1",
+        "arrival_offset": 0,
+    }]
+    traces = {}
+    for fail_fast in (True, False):
+        run_root = tmp_path / str(fail_fast).lower()
+        execution = run_paired_simulation(
+            simulation_id_value="deadline-miss-continuation",
+            base_system_path=base_system,
+            run_root=run_root,
+            task_payload=task_payload,
+            taskset_hash="a" * 64,
+            processors=1,
+            exact_e0=Fraction(0),
+            energy_config={
+                "simulation_initial_battery": "0",
+                "battery_capacity": "1",
+            },
+            simulation_config={
+                "horizon": 25,
+                "warmup": 0,
+                "minimum_jobs_per_task": 2,
+                "maximum_horizon": 25,
+                "horizon_extension_policy": "none",
+                "deadline_miss_fail_fast": fail_fast,
+                "timeout_seconds": 10,
+                "trace_mode": "semantic",
+                "trace_on_failure": True,
+                "retain_trace": True,
+                "simulator_bin": str(rtsim),
+            },
+            scheduler_id="gpfp_asap_nonblock",
+        )
+        result = execution.result
+        assert result.status is SimulationStatus.DEADLINE_MISS
+        assert result.simulation_completed is True
+        assert result.completion_reason == "reached_horizon"
+        assert result.horizon == 25
+        assert result.metrics["missed_jobs"] == 3
+        assert execution.retained_trace_path is not None
+        trace = json.loads(execution.retained_trace_path.read_text(encoding="utf-8"))
+        misses = [
+            event for event in trace["events"]
+            if event.get("event_type") == "dline_miss"
+        ]
+        first_miss = min(float(event["time"]) for event in misses)
+        assert [float(event["time"]) for event in misses] == [2.0, 12.0, 22.0]
+        assert any(
+            event.get("event_type") == "arrival"
+            and float(event["time"]) > first_miss
+            for event in trace["events"]
+        )
+        assert trace["observed_simulation_end_ms"] == 25
+        assert trace["simulation_completed"] is True
+        assert trace["simulation_completion_reason"] == "reached_horizon"
+        traces[fail_fast] = trace["events"]
+
+    assert traces[True] == traces[False]
 
 
 def test_completion_exactly_at_deadline_has_no_false_miss(tmp_path):

@@ -1,4 +1,10 @@
-"""Dependency-light deterministic paired statistics for EXT-1B."""
+"""Dependency-light deterministic paired statistics for EXT-1B.
+
+The inferential unit is one ``paired_instance_id`` within one scenario cell.
+Job, task, bypass-event, and bypass-episode rows never enter this module's
+bootstrap. Sampling paired differences therefore preserves all observations
+clustered inside a taskset and never mixes the six B1 U-by-eta cells.
+"""
 
 from __future__ import annotations
 
