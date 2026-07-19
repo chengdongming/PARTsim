@@ -434,13 +434,23 @@ def test_scenario_system_preserves_valid_flow_style_power_model(tmp_path):
     assert document["power_models"][0]["params"][0]["speed_params"] == [1, 0, 0, 0]
 
 
-def test_timing_activation_detects_actual_first_execution_difference():
+def test_timing_activation_uses_dedicated_audit_evidence():
     rows = _result_rows("TIMING_STRESS", "POSITIVE_SLACK_ENERGY_AVAILABLE")
+    for row in rows:
+        row["timing_activation"] = True
     tasks = _task_rows("TIMING_STRESS", "POSITIVE_SLACK_ENERGY_AVAILABLE")
     activations = classify_mechanism_activation(rows, tasks, [], top_m=2)
     assert len(activations) == 3
     assert all(row["runtime_activation"] for row in activations)
     assert all(row["activation_class"].startswith("C1_") for row in activations)
+
+
+def test_first_execution_difference_is_not_a_timing_activation_proxy():
+    rows = _result_rows("TIMING_STRESS", "POSITIVE_SLACK_ENERGY_AVAILABLE")
+    tasks = _task_rows("TIMING_STRESS", "POSITIVE_SLACK_ENERGY_AVAILABLE")
+    activations = classify_mechanism_activation(rows, tasks, [], top_m=2)
+    assert all(row["runtime_observable"] is False for row in activations)
+    assert all(row["activation_class"] == "B_RUNTIME_UNOBSERVABLE" for row in activations)
 
 
 def _write_mechanism_trace(path: Path, scheduler: str, events):
