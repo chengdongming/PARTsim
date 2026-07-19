@@ -7,12 +7,8 @@ import pytest
 
 from experiments.v9_3.config import ConfigError, load_config, validate_config
 from experiments.v9_3.core4_aggregation import aggregate_core4
-from experiments.v9_3.core4_sensitivity import (
-    SENSITIVITY_REQUEST_COLUMNS, Core4SensitivityRunner,
-)
-from experiments.v9_3.result_writer import (
-    TASKSET_RESULT_COLUMNS, TASK_RESULT_COLUMNS, write_csv,
-)
+from experiments.v9_3.core4_sensitivity import Core4SensitivityRunner
+from v9_3_core4_helpers import make_pair_fixture, write_pair_fixture
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,35 +38,7 @@ def test_invalid_exact_ordering_and_service_object_are_rejected():
 
 
 def test_summary_uses_explicit_denominators_and_writes_plot_data(tmp_path):
-    requests = []
-    results = []
-    tasks = []
-    for index, candidate in enumerate((5, 4)):
-        analysis = f"a{index}"
-        requests.append({
-            "sweep_id": "s", "base_taskset_id": "t", "base_taskset_hash": "h",
-            "taskset_index": 0, "parameter_name": "initial_energy",
-            "ordered_parameter_levels": '["\\\"0\\\"","\\\"1\\\""]',
-            "level_index": index, "level_encoding": f'"{index}"',
-            "variant": "CW_THETA_CW", "analysis_id": analysis,
-            "analysis_input_hash": analysis, "availability": "AVAILABLE",
-            "availability_reason": "", "service_curve_relation_to_previous": "NOT_APPLICABLE",
-            "paired_analysis_ids": "[]",
-        })
-        results.append({
-            "analysis_id": analysis, "taskset_id": "t", "taskset_hash": "h",
-            "analysis_variant": "CW_THETA_CW", "solver_status": "COMPLETED",
-            "taskset_proven": True, "runtime_wall_seconds": "0.1",
-            "outer_timeout": False,
-        })
-        tasks.append({
-            "analysis_id": analysis, "taskset_id": "t", "task_id": "0",
-            "task_solver_status": "CANDIDATE_FOUND",
-            "candidate_response_time": candidate,
-        })
-    write_csv(tmp_path / "sensitivity_requests.csv", SENSITIVITY_REQUEST_COLUMNS, requests)
-    write_csv(tmp_path / "per_taskset_results.csv", TASKSET_RESULT_COLUMNS, results)
-    write_csv(tmp_path / "per_task_results.csv", TASK_RESULT_COLUMNS, tasks)
+    write_pair_fixture(tmp_path, make_pair_fixture())
     summary = aggregate_core4(tmp_path)
     assert summary["paired_count"] == 1
     assert summary["p0_monotonicity_violation_count"] == 0

@@ -17,7 +17,28 @@ class MonotonicityStatus(str, Enum):
     NOT_COMPARABLE = "NOT_COMPARABLE"
     TIMEOUT_CENSORED = "TIMEOUT_CENSORED"
     DEPENDENCY_UNAVAILABLE = "DEPENDENCY_UNAVAILABLE"
+    TECHNICAL_FAILURE = "TECHNICAL_FAILURE"
     VIOLATION = "MONOTONICITY_VIOLATION"
+
+
+SCIENTIFIC_TERMINAL_STATUSES = frozenset({"COMPLETED", "NO_CANDIDATE"})
+TIMEOUT_TERMINAL_STATUSES = frozenset({"TIMEOUT"})
+NOT_COMPARABLE_TERMINAL_STATUSES = frozenset({"NOT_APPLICABLE_DEPENDENCY"})
+
+
+def terminal_status_class(status: Any, *, outer_timeout: Any = False) -> str:
+    """Classify one CORE-4 terminal using an explicit fail-closed whitelist."""
+
+    value = str(status)
+    if value == "DEPENDENCY_UNAVAILABLE":
+        return "DEPENDENCY_UNAVAILABLE"
+    if value in TIMEOUT_TERMINAL_STATUSES or _truth(outer_timeout):
+        return "TIMEOUT"
+    if value in SCIENTIFIC_TERMINAL_STATUSES:
+        return "SCIENTIFIC"
+    if value in NOT_COMPARABLE_TERMINAL_STATUSES:
+        return "NOT_COMPARABLE"
+    return "TECHNICAL_FAILURE"
 
 
 def _truth(value: Any) -> bool:
@@ -70,10 +91,27 @@ def compare_paired_analyses(
 
     if direction not in {"RESOURCE_INCREASE", "COST_INCREASE", "LOC_DOMINANCE"}:
         raise ValueError(f"unknown monotonicity direction: {direction}")
-    statuses = {str(left.get("solver_status")), str(right.get("solver_status"))}
-    if "DEPENDENCY_UNAVAILABLE" in statuses:
+    classes = {
+        terminal_status_class(
+            left.get("solver_status"), outer_timeout=left.get("outer_timeout")
+        ),
+        terminal_status_class(
+            right.get("solver_status"), outer_timeout=right.get("outer_timeout")
+        ),
+    }
+    if "DEPENDENCY_UNAVAILABLE" in classes:
         return _result(MonotonicityStatus.DEPENDENCY_UNAVAILABLE)
-    if "TIMEOUT" in statuses or _truth(left.get("outer_timeout")) or _truth(right.get("outer_timeout")):
+    if "TECHNICAL_FAILURE" in classes:
+        return _result(
+            MonotonicityStatus.TECHNICAL_FAILURE,
+            reason="non-scientific or unknown terminal status",
+        )
+    if "NOT_COMPARABLE" in classes:
+        return _result(
+            MonotonicityStatus.NOT_COMPARABLE,
+            reason="declared analysis dependency is not applicable",
+        )
+    if "TIMEOUT" in classes:
         return _result(MonotonicityStatus.TIMEOUT_CENSORED)
     if str(left.get("taskset_hash")) != str(right.get("taskset_hash")):
         return _result(MonotonicityStatus.NOT_COMPARABLE, reason="base taskset hash mismatch")

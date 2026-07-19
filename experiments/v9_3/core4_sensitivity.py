@@ -15,34 +15,55 @@ from .cell_model import Cell, expand_cells
 from .config import (
     ConfigError, canonical_json, config_hash, domain_hash, dump_config, fraction_text,
 )
-from .core4_aggregation import aggregate_core4
+from .core4_contract import (
+    CORE4_CHECKPOINT_SCHEMA,
+    CORE4_RUN_SCHEMA,
+    SENSITIVITY_REQUEST_COLUMNS,
+    Core4ContractError,
+    core4_analysis_input_hash,
+    validate_core4_artifact_contract,
+    validate_core4_hash_manifest,
+    validate_core4_resume_envelope,
+    write_core4_hash_manifest,
+)
+from .core4_aggregation import aggregate_core4, analyze_core4_artifacts
 from .execution_engine import ExecutionEngine
-from .monotonicity import MonotonicityStatus, service_curve_relation
+from .monotonicity import (
+    MonotonicityStatus,
+    service_curve_relation,
+    terminal_status_class,
+)
 from .paired_sweep import make_sweep, paired_analysis_id
 from .result_writer import (
     ATTEMPT_COLUMNS, FAILURE_COLUMNS, GENERATED_COLUMNS, REQUEST_COLUMNS,
-    TASKSET_RESULT_COLUMNS, TASK_RESULT_COLUMNS, atomic_write_json, read_csv,
-    write_csv, write_file_hashes,
+    TASKSET_RESULT_COLUMNS, TASK_RESULT_COLUMNS, ResultWriterError,
+    atomic_write_json, read_csv, validate_csv_header, write_csv,
 )
 from .taskset_store import ServiceCurveMaterial, StoredTaskset, TasksetStore, prepare_service_curve
-
-
-SENSITIVITY_REQUEST_COLUMNS = (
-    "sweep_id", "base_taskset_id", "base_taskset_hash", "taskset_index",
-    "parameter_name", "ordered_parameter_levels", "level_index",
-    "level_encoding", "variant", "analysis_id", "analysis_input_hash",
-    "availability", "availability_reason", "service_curve_relation_to_previous",
-    "paired_analysis_ids",
-)
-
 
 @dataclass(frozen=True)
 class Core4Outcome:
     output_root: Path
-    requested: int
-    terminal: int
+    planned_sensitivity_row_count: int
+    available_solver_request_count: int
+    expected_terminal_count: int
+    actual_terminal_count: int
+    dependency_unavailable_row_count: int
+    technical_failure_count: int
     stopped: bool
     summary: Mapping[str, Any]
+
+    @property
+    def requested(self) -> int:
+        """Compatibility alias; this is the planned sensitivity-row count."""
+
+        return self.planned_sensitivity_row_count
+
+    @property
+    def terminal(self) -> int:
+        """Compatibility alias for actual solver terminals."""
+
+        return self.actual_terminal_count
 
 
 def scale_taskset_power(stored: StoredTaskset, scale: Fraction) -> StoredTaskset:
@@ -110,34 +131,127 @@ class Core4SensitivityRunner:
                 })
         if max_cells is not None:
             cells = cells[:max_cells]
-        available = sum(row["availability"] == "AVAILABLE" for row in cells)
-        methods = len(self.config["analysis"]["variants"])
+        base_cell_count = len({
+            (cell.processors, cell.task_count, fraction_text(cell.utilization))
+            for cell in expand_cells(self.config)
+        })
+        base_taskset_count = (
+            base_cell_count * self.config["grid"]["tasksets_per_cell"]
+        )
+        planned_per_base = sum(
+            1 if row["parameter_name"] == "method"
+            else len(self.config["analysis"]["variants"])
+            for row in cells
+        )
+        available_per_base = sum(
+            (1 if row["parameter_name"] == "method"
+             else len(self.config["analysis"]["variants"]))
+            for row in cells if row["availability"] == "AVAILABLE"
+        )
+        unavailable_per_base = planned_per_base - available_per_base
+        planned = planned_per_base * base_taskset_count
+        available = available_per_base * base_taskset_count
+        unavailable = unavailable_per_base * base_taskset_count
         return {
             "experiment_id": self.config["experiment_id"], "core": "CORE-4",
             "cell_count": len(cells), "cells": cells,
             "tasksets_per_cell": self.config["grid"]["tasksets_per_cell"],
-            "maximum_solver_requests": available * methods
-            * self.config["grid"]["tasksets_per_cell"],
+            "planned_sensitivity_row_count": planned,
+            "available_solver_request_count": available,
+            "expected_terminal_count": available,
+            "actual_terminal_count": 0,
+            "dependency_unavailable_row_count": unavailable,
+            "technical_failure_count": 0,
             "finite_sample_consistency_check_only": True,
         }
 
     def _initialize(self, resume: bool) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
         metadata_path = self.root / "run_metadata.json"
+        counts = self._static_counts()
         if metadata_path.is_file():
-            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-            if metadata.get("config_hash") != self.identity:
-                raise ConfigError("CORE-4 configuration hash mismatch")
             if not resume:
                 raise ConfigError("CORE-4 run directory exists; use --resume")
+            try:
+                validate_core4_resume_envelope(
+                    self.root,
+                    expected_config_hash=self.identity,
+                    expected_experiment_id=self.config["experiment_id"],
+                    expected_counts={
+                        key: counts[key]
+                        for key in (
+                            "planned_sensitivity_row_count",
+                            "available_solver_request_count",
+                            "expected_terminal_count",
+                            "dependency_unavailable_row_count",
+                        )
+                    },
+                )
+            except Core4ContractError as exc:
+                raise ConfigError(str(exc)) from exc
         else:
+            existing = sorted(path.name for path in self.root.iterdir())
+            if existing:
+                raise ConfigError(
+                    "CORE-4 output root has artifacts but no run_metadata.json"
+                )
             atomic_write_json(metadata_path, {
-                "schema": "ASAP_BLOCK_V9_3_CORE4_RUN_V1",
+                "schema": CORE4_RUN_SCHEMA,
+                "experiment_id": self.config["experiment_id"],
+                "core": "CORE-4",
                 "config_hash": self.identity,
+                **{
+                    key: counts[key]
+                    for key in (
+                        "planned_sensitivity_row_count",
+                        "available_solver_request_count",
+                        "expected_terminal_count",
+                        "dependency_unavailable_row_count",
+                    )
+                },
                 "formal_large_scale_run": False,
                 "finite_sample_consistency_check_only": True,
             })
             dump_config(self.config, self.root / "run_config.yaml")
+            self._write_checkpoint(
+                phase="INITIALIZED", actual_terminal_count=0,
+                technical_failure_count=0, stop_requested=False,
+            )
+
+    def _static_counts(self, *, max_cells: Optional[int] = None) -> Dict[str, int]:
+        description = self.describe(max_cells=max_cells)
+        return {
+            key: int(description[key])
+            for key in (
+                "planned_sensitivity_row_count",
+                "available_solver_request_count",
+                "expected_terminal_count",
+                "actual_terminal_count",
+                "dependency_unavailable_row_count",
+                "technical_failure_count",
+            )
+        }
+
+    def _write_checkpoint(
+        self, *, phase: str, actual_terminal_count: int,
+        technical_failure_count: int, stop_requested: bool,
+        completed_analysis_ids: Optional[list[str]] = None,
+    ) -> None:
+        counts = self._static_counts()
+        atomic_write_json(self.root / "checkpoint.json", {
+            "schema": CORE4_CHECKPOINT_SCHEMA,
+            "core": "CORE-4",
+            "config_hash": self.identity,
+            "phase": phase,
+            "planned_sensitivity_row_count": counts["planned_sensitivity_row_count"],
+            "available_solver_request_count": counts["available_solver_request_count"],
+            "expected_terminal_count": counts["expected_terminal_count"],
+            "actual_terminal_count": int(actual_terminal_count),
+            "dependency_unavailable_row_count": counts["dependency_unavailable_row_count"],
+            "technical_failure_count": int(technical_failure_count),
+            "completed_analysis_ids": sorted(completed_analysis_ids or []),
+            "stop_requested": bool(stop_requested),
+        })
 
     def _service_materials(self) -> tuple[ServiceCurveMaterial, Dict[str, ServiceCurveMaterial], Dict[str, str]]:
         base = prepare_service_curve(self.config, self.root / "service_material" / "base")
@@ -241,25 +355,104 @@ class Core4SensitivityRunner:
                     engine = ExecutionEngine(
                         child, service_override=services[service_id], store_override=view
                     )
-                    engine.run(resume=resume, max_tasksets=per_cell)
+                    child_outcome = engine.run(resume=resume, max_tasksets=per_cell)
+                    child_artifact_errors = []
+                    for filename, columns in (
+                        ("per_taskset_results.csv", TASKSET_RESULT_COLUMNS),
+                        ("failures.csv", FAILURE_COLUMNS),
+                    ):
+                        path = child_root / filename
+                        if not path.is_file():
+                            child_artifact_errors.append(
+                                f"missing child artifact: {filename}"
+                            )
+                            continue
+                        try:
+                            validate_csv_header(path, columns)
+                        except ResultWriterError as exc:
+                            child_artifact_errors.append(str(exc))
                     child_results = read_csv(child_root / "per_taskset_results.csv")
                     child_generated = read_csv(child_root / "generated_tasksets.csv")
-                generated_index = {
-                    row["taskset_id"]: int(row["taskset_index"]) for row in child_generated
-                }
-                by_id = {row["taskset_id"]: row for row in child_results}
+                    child_failures = read_csv(child_root / "failures.csv")
+                    expected_child_requests = len(base_tasksets) * len(variants)
+                    technical_statuses = [
+                        row for row in child_results
+                        if terminal_status_class(
+                            row.get("solver_status"),
+                            outer_timeout=row.get("outer_timeout"),
+                        ) in {"TECHNICAL_FAILURE", "DEPENDENCY_UNAVAILABLE"}
+                    ]
+                    p0_failures = [
+                        row for row in child_failures if row.get("severity") == "P0"
+                    ]
+                    child_analysis_ids = [row.get("analysis_id", "") for row in child_results]
+                    reasons = []
+                    reasons.extend(child_artifact_errors)
+                    if child_outcome.stopped:
+                        reasons.append("child_outcome.stopped=True")
+                    if child_outcome.requested != expected_child_requests:
+                        reasons.append(
+                            "child requested count does not match the CORE-4 level plan"
+                        )
+                    if child_outcome.terminal != child_outcome.requested:
+                        reasons.append("child terminal count does not equal child requested count")
+                    if child_outcome.terminal != len(child_results):
+                        reasons.append("child outcome terminal count does not match materialized results")
+                    if len(child_analysis_ids) != len(set(child_analysis_ids)):
+                        reasons.append("child contains duplicate terminal analysis_id")
+                    if p0_failures:
+                        reasons.append("child failures.csv contains P0")
+                    if technical_statuses:
+                        reasons.append("child contains technical or unknown terminal status")
+                    if reasons:
+                        self._materialize_children(request_rows, base_tasksets)
+                        return self._technical_failure_outcome(
+                            code="CORE4_CHILD_EXECUTION_FAILURE",
+                            detail="; ".join(reasons),
+                            context={
+                                "axis": axis,
+                                "level_index": level_index,
+                                "child_output_root": str(child_root),
+                                "child_outcome": {
+                                    "requested": child_outcome.requested,
+                                    "terminal": child_outcome.terminal,
+                                    "stopped": child_outcome.stopped,
+                                    "status_counts": dict(child_outcome.status_counts),
+                                },
+                                "p0_failures": p0_failures,
+                                "technical_terminals": technical_statuses,
+                            },
+                        )
                 for key, base_stored in base_tasksets.items():
                     taskset_index = key[1]
                     for variant in variants:
-                        match = next((
-                            row for row in child_results
-                            if row["analysis_variant"] == variant
-                            and generated_index.get(row["taskset_id"]) == taskset_index
-                            and int(row["M"]) == key[0][0]
-                            and int(row["task_n"]) == key[0][1]
-                        ), None)
+                        match = None
+                        if availability == "AVAILABLE":
+                            matches = [
+                                row for row in child_results
+                                if row["analysis_variant"] == variant
+                                and row["taskset_hash"] == base_stored.semantic_hash
+                                and int(row["M"]) == key[0][0]
+                                and int(row["task_n"]) == key[0][1]
+                            ]
+                            if len(matches) != 1:
+                                self._materialize_children(request_rows, base_tasksets)
+                                return self._technical_failure_outcome(
+                                    code="CORE4_CHILD_PAIRING_FAILURE",
+                                    detail=(
+                                        "available child result does not map exactly once "
+                                        "to its frozen base taskset and variant"
+                                    ),
+                                    context={
+                                        "axis": axis, "level_index": level_index,
+                                        "variant": variant,
+                                        "base_taskset_hash": base_stored.semantic_hash,
+                                        "match_count": len(matches),
+                                    },
+                                )
+                            match = matches[0]
                         analysis_id = (
-                            match["analysis_id"] if match else domain_hash(
+                            match["analysis_id"] if match is not None else domain_hash(
                                 "ASAP_BLOCK:V9.3:UNAVAILABLE_SENSITIVITY_REQUEST:v1",
                                 {
                                     "sweep": sweep.sweep_id,
@@ -268,24 +461,36 @@ class Core4SensitivityRunner:
                                 },
                             )
                         )
-                        request_rows.append({
+                        transformed = scale_taskset_power(base_stored, scale)
+                        material = services.get(service_id) if availability == "AVAILABLE" else None
+                        row = {
+                            "experiment_id": self.config["experiment_id"],
                             "sweep_id": sweep.sweep_id,
                             "base_taskset_id": base_stored.taskset_id,
                             "base_taskset_hash": base_stored.semantic_hash,
                             "taskset_index": taskset_index,
+                            "M": base_stored.processors,
+                            "task_n": base_stored.task_count,
+                            "base_priority_hash": base_stored.priority_hash,
+                            "base_power_hash": base_stored.power_hash,
+                            "base_service_curve_identity": base_stored.service_curve_reference,
+                            "base_task_input_json": canonical_json(base_stored.task_payload),
                             "parameter_name": axis,
                             "ordered_parameter_levels": canonical_json(sweep.level_encodings),
                             "level_index": level_index, "level_encoding": level_encoding,
                             "variant": variant, "analysis_id": analysis_id,
-                            "analysis_input_hash": domain_hash(
-                                "ASAP_BLOCK:V9.3:SENSITIVITY_INPUT:v1",
-                                {
-                                    "base": base_stored.semantic_hash, "e0": e0,
-                                    "service": services[service_id].identity
-                                    if availability == "AVAILABLE" else service_id,
-                                    "power_scale": fraction_text(scale), "variant": variant,
-                                },
+                            "analysis_input_hash": "",
+                            "exact_e0": fraction_text(Fraction(e0)),
+                            "service_curve_declaration_id": service_id,
+                            "service_curve_identity": material.identity if material else "",
+                            "service_curve_values_json": (
+                                canonical_json([fraction_text(value) for value in material.values])
+                                if material else ""
                             ),
+                            "power_scale": fraction_text(scale),
+                            "analysis_power_hash": transformed.power_hash,
+                            "analysis_task_input_json": canonical_json(transformed.task_payload),
+                            "numerical_mode": self.config["analysis"]["numerical_mode"],
                             "availability": availability,
                             "availability_reason": reason,
                             "service_curve_relation_to_previous": (
@@ -293,29 +498,147 @@ class Core4SensitivityRunner:
                                 if axis == "service_curve" else "NOT_APPLICABLE"
                             ),
                             "paired_analysis_ids": "",
-                        })
+                        }
+                        row["analysis_input_hash"] = core4_analysis_input_hash(row)
+                        request_rows.append(row)
             if max_cells is not None and selected_cells >= max_cells:
                 break
 
         self._fill_pair_ids(request_rows)
-        self._materialize_children(request_rows, base_tasksets)
-        summary = aggregate_core4(self.root)
-        stopped = bool(summary["p0_monotonicity_violation_count"])
+        try:
+            self._materialize_children(request_rows, base_tasksets)
+            summary = aggregate_core4(self.root)
+        except Exception as exc:
+            return self._technical_failure_outcome(
+                code="CORE4_AGGREGATION_CONTRACT_FAILURE",
+                detail=str(exc),
+                context={"exception_type": type(exc).__name__},
+            )
+        stopped = bool(
+            summary["p0_monotonicity_violation_count"]
+            or summary["technical_failure_count"]
+        )
         if stopped:
             self._record_monotonicity_failures()
-        atomic_write_json(self.root / "checkpoint.json", {
-            "config_hash": self.identity,
-            "completed_analysis_ids": sorted(
-                row["analysis_id"] for row in read_csv(self.root / "per_taskset_results.csv")
-            ),
-            "requested_count": len(request_rows),
-            "terminal_count": len(read_csv(self.root / "per_taskset_results.csv")),
-            "stop_requested": stopped,
-        })
-        write_file_hashes(self.root)
+        results = read_csv(self.root / "per_taskset_results.csv")
+        completed_ids = [row["analysis_id"] for row in results]
+        if stopped:
+            self._write_checkpoint(
+                phase="STOPPED", actual_terminal_count=len(results),
+                technical_failure_count=int(summary["technical_failure_count"]),
+                stop_requested=True, completed_analysis_ids=completed_ids,
+            )
+            write_core4_hash_manifest(self.root)
+            validate_core4_hash_manifest(
+                self.root, require_completed_files=False
+            )
+        else:
+            self._write_checkpoint(
+                phase="FINALIZING", actual_terminal_count=len(results),
+                technical_failure_count=0, stop_requested=False,
+                completed_analysis_ids=completed_ids,
+            )
+            write_core4_hash_manifest(self.root)
+            validate_core4_hash_manifest(
+                self.root, require_completed_files=True
+            )
+            validate_core4_artifact_contract(
+                self.root, require_completed=False
+            )
+            self._write_checkpoint(
+                phase="COMPLETED", actual_terminal_count=len(results),
+                technical_failure_count=0, stop_requested=False,
+                completed_analysis_ids=completed_ids,
+            )
+        counts = self._static_counts()
         return Core4Outcome(
-            self.root, len(request_rows),
-            len(read_csv(self.root / "per_taskset_results.csv")), stopped, summary,
+            self.root,
+            counts["planned_sensitivity_row_count"],
+            counts["available_solver_request_count"],
+            counts["expected_terminal_count"],
+            len(results),
+            counts["dependency_unavailable_row_count"],
+            int(summary["technical_failure_count"]),
+            stopped,
+            summary,
+        )
+
+    def _technical_failure_outcome(
+        self, *, code: str, detail: str, context: Mapping[str, Any]
+    ) -> Core4Outcome:
+        for name in (
+            "paired_parameter_results.csv", "monotonicity_checks.csv",
+            "sensitivity_summary.csv", "sensitivity_summary.json",
+            "core4_plot_data.csv",
+        ):
+            path = self.root / name
+            if path.is_file():
+                path.unlink()
+        failure_id = domain_hash(
+            "ASAP_BLOCK:V9.3:CORE4_TECHNICAL_FAILURE:v1",
+            {"code": code, "detail": detail, "context": context},
+        )
+        failure_path = self.root / "failure_inputs" / f"{failure_id}.json"
+        atomic_write_json(failure_path, {
+            "schema": "ASAP_BLOCK_V9_3_CORE4_TECHNICAL_FAILURE_V1",
+            "failure_id": failure_id,
+            "code": code,
+            "detail": detail,
+            "context": context,
+        })
+        failures_path = self.root / "failures.csv"
+        failures = read_csv(failures_path)
+        failures.append({
+            "severity": "P0", "stage": "CORE4_CONTRACT",
+            "analysis_id": failure_id, "cell_id": "", "taskset_id": "",
+            "variant": "", "code": code, "detail": detail, "traceback": "",
+            "failure_input": str(failure_path),
+        })
+        write_csv(failures_path, FAILURE_COLUMNS, failures)
+        results = read_csv(self.root / "per_taskset_results.csv")
+        technical_ids = {
+            row["analysis_id"] for row in results
+            if terminal_status_class(
+                row.get("solver_status"), outer_timeout=row.get("outer_timeout")
+            ) == "TECHNICAL_FAILURE"
+        }
+        technical_ids.update(
+            row["analysis_id"] for row in failures if row.get("severity") == "P0"
+        )
+        technical_count = max(1, len(technical_ids))
+        counts = self._static_counts()
+        summary = {
+            "finite_sample_consistency_check_only": True,
+            "stopped": True,
+            "technical_failure_code": code,
+            "technical_failure_detail": detail,
+            "planned_sensitivity_row_count": counts["planned_sensitivity_row_count"],
+            "available_solver_request_count": counts["available_solver_request_count"],
+            "expected_terminal_count": counts["expected_terminal_count"],
+            "actual_terminal_count": len(results),
+            "dependency_unavailable_row_count": counts["dependency_unavailable_row_count"],
+            "technical_failure_count": technical_count,
+        }
+        atomic_write_json(self.root / "technical_failure_summary.json", summary)
+        self._write_checkpoint(
+            phase="STOPPED", actual_terminal_count=len(results),
+            technical_failure_count=technical_count, stop_requested=True,
+            completed_analysis_ids=[row["analysis_id"] for row in results],
+        )
+        write_core4_hash_manifest(self.root)
+        validate_core4_hash_manifest(
+            self.root, require_completed_files=False
+        )
+        return Core4Outcome(
+            self.root,
+            counts["planned_sensitivity_row_count"],
+            counts["available_solver_request_count"],
+            counts["expected_terminal_count"],
+            len(results),
+            counts["dependency_unavailable_row_count"],
+            technical_count,
+            True,
+            summary,
         )
 
     def _fill_pair_ids(self, rows: list[Dict[str, Any]]) -> None:
@@ -365,8 +688,15 @@ class Core4SensitivityRunner:
             deduped = {}
             for row in rows:
                 key = tuple(row.get(field, "") for field in unique_keys)
-                if key in deduped and canonical_json(deduped[key]) != canonical_json(row):
-                    raise ConfigError(f"conflicting duplicate in {filename}: {key}")
+                if key in deduped:
+                    qualifier = (
+                        "conflicting "
+                        if canonical_json(deduped[key]) != canonical_json(row)
+                        else ""
+                    )
+                    raise ConfigError(
+                        f"{qualifier}duplicate in {filename}: {key}"
+                    )
                 deduped[key] = row
             write_csv(self.root / filename, columns, deduped.values())
         generated = {stored.taskset_id: stored.generated_row() for stored in base_tasksets.values()}
@@ -404,4 +734,4 @@ class Core4SensitivityRunner:
 
 
 def analyze_core4(config: Mapping[str, Any]) -> Mapping[str, Any]:
-    return aggregate_core4(Path(config["execution"]["output_root"]))
+    return analyze_core4_artifacts(Path(config["execution"]["output_root"]))

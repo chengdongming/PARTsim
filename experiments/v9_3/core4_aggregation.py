@@ -10,7 +10,18 @@ from statistics import mean, median
 from typing import Any, Dict, Iterable, Mapping, Sequence
 
 from .config import canonical_json
-from .monotonicity import MonotonicityStatus, compare_paired_analyses
+from .core4_contract import (
+    ValidatedCore4Rows,
+    validate_core4_artifact_contract,
+    validate_core4_hash_manifest,
+    validate_core4_pairing,
+    write_core4_hash_manifest,
+)
+from .monotonicity import (
+    MonotonicityStatus,
+    compare_paired_analyses,
+    terminal_status_class,
+)
 from .paired_sweep import paired_analysis_id
 from .result_writer import atomic_write_json, read_csv, write_csv
 
@@ -54,11 +65,14 @@ def _tasks_by_analysis(rows: Iterable[Mapping[str, Any]]) -> Dict[str, list[Mapp
     return result
 
 
-def build_monotonicity_rows(root: Path | str) -> list[Dict[str, Any]]:
+def build_monotonicity_rows(
+    root: Path | str, *, validated: ValidatedCore4Rows | None = None
+) -> list[Dict[str, Any]]:
     root = Path(root)
-    requests = read_csv(root / "sensitivity_requests.csv")
-    results = {row["analysis_id"]: row for row in read_csv(root / "per_taskset_results.csv")}
-    tasks = _tasks_by_analysis(read_csv(root / "per_task_results.csv"))
+    evidence = validated or validate_core4_pairing(root)
+    requests = list(evidence.requests)
+    results = {row["analysis_id"]: row for row in evidence.results}
+    tasks = _tasks_by_analysis(evidence.tasks)
     groups: Dict[tuple[str, str], list[Mapping[str, str]]] = defaultdict(list)
     for request in requests:
         key_variant = "METHOD_PAIR" if request["parameter_name"] == "method" else request["variant"]
@@ -70,7 +84,10 @@ def build_monotonicity_rows(root: Path | str) -> list[Dict[str, Any]]:
             left = results.get(left_request["analysis_id"])
             right = results.get(right_request["analysis_id"])
             parameter = left_request["parameter_name"]
-            if left is None or right is None:
+            if parameter == "service_curve" and (
+                left_request["availability"] != "AVAILABLE"
+                or right_request["availability"] != "AVAILABLE"
+            ):
                 comparison = {
                     "monotonicity_status": MonotonicityStatus.DEPENDENCY_UNAVAILABLE.value,
                     "common_candidate_count": 0, "tighter_count": 0,
@@ -78,15 +95,11 @@ def build_monotonicity_rows(root: Path | str) -> list[Dict[str, Any]]:
                     "certification_gain": 0, "certification_loss": 0,
                     "violation_reasons": "", "strict_reasons": "",
                 }
-            elif parameter == "service_curve" and (
-                left_request["availability"] != "AVAILABLE"
-                or right_request["availability"] != "AVAILABLE"
-            ):
-                comparison = compare_paired_analyses(
-                    {**left, "solver_status": "DEPENDENCY_UNAVAILABLE"},
-                    right, (), (), direction="RESOURCE_INCREASE",
-                )
             else:
+                if left is None or right is None:
+                    raise RuntimeError(
+                        "validated available CORE-4 pair is missing a terminal"
+                    )
                 direction = (
                     "COST_INCREASE" if parameter == "power_scale" else
                     "LOC_DOMINANCE" if parameter == "method" else
@@ -123,11 +136,12 @@ def build_monotonicity_rows(root: Path | str) -> list[Dict[str, Any]]:
 
 def aggregate_core4(root: Path | str) -> Dict[str, Any]:
     root = Path(root)
-    requests = read_csv(root / "sensitivity_requests.csv")
-    results = {row["analysis_id"]: row for row in read_csv(root / "per_taskset_results.csv")}
-    task_rows = read_csv(root / "per_task_results.csv")
+    evidence = validate_core4_pairing(root)
+    requests = list(evidence.requests)
+    results = {row["analysis_id"]: row for row in evidence.results}
+    task_rows = list(evidence.tasks)
     tasks = _tasks_by_analysis(task_rows)
-    pairs = build_monotonicity_rows(root)
+    pairs = build_monotonicity_rows(root, validated=evidence)
     write_csv(root / "paired_parameter_results.csv", PAIR_COLUMNS, pairs)
     write_csv(root / "monotonicity_checks.csv", PAIR_COLUMNS, pairs)
 
@@ -149,7 +163,8 @@ def aggregate_core4(root: Path | str) -> Dict[str, Any]:
         )].append(request)
     summary_rows = []
     for (parameter, level_index, level, variant), members in sorted(grouped.items()):
-        level_results = [results[row["analysis_id"]] for row in members if row["analysis_id"] in results]
+        available_members = [row for row in members if row["availability"] == "AVAILABLE"]
+        level_results = [results[row["analysis_id"]] for row in available_members]
         completed = [
             row for row in level_results
             if row.get("solver_status") in {"COMPLETED", "NO_CANDIDATE"}
@@ -169,18 +184,22 @@ def aggregate_core4(root: Path | str) -> Dict[str, Any]:
         certified = sum(_truth(row.get("taskset_proven")) for row in level_results)
         completed_certified = sum(_truth(row.get("taskset_proven")) for row in completed)
         total = len(members)
+        available_total = len(available_members)
+        unavailable_level = available_total == 0
         summary_rows.append({
             "parameter_name": parameter, "level_index": level_index,
             "level_encoding": level, "variant": variant,
             "taskset_count": total, "certified_count": certified,
-            "certification_ratio": certified / total if total else None,
+            "certification_ratio": (
+                None if unavailable_level else certified / available_total
+            ),
             "completed_count": len(completed),
             "completed_certified_count": completed_certified,
             "completed_only_ratio": completed_certified / len(completed) if completed else None,
-            "candidate_count": len(candidates),
-            "candidate_mean": mean(candidates) if candidates else None,
-            "candidate_median": median(candidates) if candidates else None,
-            "candidate_p95": _p95(candidates),
+            "candidate_count": None if unavailable_level else len(candidates),
+            "candidate_mean": mean(candidates) if candidates and not unavailable_level else None,
+            "candidate_median": median(candidates) if candidates and not unavailable_level else None,
+            "candidate_p95": _p95(candidates) if not unavailable_level else None,
             "timeout_count": sum(row.get("solver_status") == "TIMEOUT" for row in level_results),
             "dependency_unavailable_count": sum(row["availability"] != "AVAILABLE" for row in members),
             "runtime_censored_count": sum(
@@ -198,6 +217,9 @@ def aggregate_core4(root: Path | str) -> Dict[str, Any]:
     write_csv(root / "sensitivity_summary.csv", SUMMARY_COLUMNS, summary_rows)
     plot_rows = []
     for row in summary_rows:
+        unavailable_level = (
+            int(row["dependency_unavailable_count"]) == int(row["taskset_count"])
+        )
         for metric in (
             "certification_ratio", "completed_only_ratio", "candidate_mean",
             "candidate_median", "candidate_p95", "timeout_count",
@@ -206,7 +228,8 @@ def aggregate_core4(root: Path | str) -> Dict[str, Any]:
             plot_rows.append({
                 "plot": "core4_sensitivity", "parameter_name": row["parameter_name"],
                 "level_index": row["level_index"], "level_encoding": row["level_encoding"],
-                "variant": row["variant"], "metric": metric, "value": row[metric],
+                "variant": row["variant"], "metric": metric,
+                "value": None if unavailable_level else row[metric],
             })
     write_csv(
         root / "core4_plot_data.csv",
@@ -214,12 +237,43 @@ def aggregate_core4(root: Path | str) -> Dict[str, Any]:
         plot_rows,
     )
     status_counts = Counter(row["monotonicity_status"] for row in pairs)
+    planned = len(requests)
+    available = sum(row["availability"] == "AVAILABLE" for row in requests)
+    unavailable = planned - available
+    technical_ids = {
+        row["analysis_id"]
+        for row in evidence.results
+        if terminal_status_class(
+            row.get("solver_status"), outer_timeout=row.get("outer_timeout")
+        ) == "TECHNICAL_FAILURE"
+    }
+    technical_ids.update(
+        row["analysis_id"]
+        for row in evidence.failures
+        if row.get("severity") == "P0" and row.get("analysis_id")
+    )
     summary = {
         "finite_sample_consistency_check_only": True,
+        "planned_sensitivity_row_count": planned,
+        "available_solver_request_count": available,
+        "expected_terminal_count": available,
+        "actual_terminal_count": len(evidence.results),
+        "dependency_unavailable_row_count": unavailable,
+        "technical_failure_count": len(technical_ids),
         "level_summaries": summary_rows,
         "paired_count": len(pairs),
         "monotonicity_status_counts": dict(sorted(status_counts.items())),
         "p0_monotonicity_violation_count": status_counts[MonotonicityStatus.VIOLATION.value],
     }
     atomic_write_json(root / "sensitivity_summary.json", summary)
+    return summary
+
+
+def analyze_core4_artifacts(root: Path | str) -> Dict[str, Any]:
+    """Validate a completed persisted run before rebuilding its summaries."""
+
+    validate_core4_artifact_contract(root)
+    summary = aggregate_core4(root)
+    write_core4_hash_manifest(root)
+    validate_core4_hash_manifest(root, require_completed_files=True)
     return summary
