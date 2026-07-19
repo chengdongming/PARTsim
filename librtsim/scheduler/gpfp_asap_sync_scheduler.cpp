@@ -734,6 +734,52 @@ namespace RTSim {
                 makeASAPSyncTraceJobs(active_tasks, _task_models),
                 makeASAPSyncTraceJobs(selected_tasks, _task_models),
                 decision_reason);
+            const bool continuation_candidate_wait =
+                decision_reason == "sync_batch_energy_insufficient" &&
+                continuation_affordable &&
+                !continuation_tasks.empty() &&
+                !idle_core_batch.empty() &&
+                !idle_core_batch_affordable &&
+                selected_tasks == continuation_tasks;
+            if (continuation_candidate_wait) {
+                const double residual_after_continuation =
+                    std::max(0.0, _current_energy - continuation_energy);
+                bool all_new_candidates_affordable = true;
+                bool feasible_new_candidate_subset_exists = false;
+                for (AbsRTTask *task : idle_core_batch) {
+                    const bool individually_affordable =
+                        residual_after_continuation + epsilon >=
+                        getConfiguredUnitEnergyForTask(task);
+                    all_new_candidates_affordable =
+                        all_new_candidates_affordable && individually_affordable;
+                    feasible_new_candidate_subset_exists =
+                        feasible_new_candidate_subset_exists || individually_affordable;
+                }
+                _trace_logger->logSyncBatchCandidateWait(
+                    "ASAP-Sync",
+                    makeASAPSyncTraceJobs(desired_tasks, _task_models),
+                    makeASAPSyncTraceJobs(continuation_tasks, _task_models),
+                    makeASAPSyncTraceJobs(idle_core_batch, _task_models),
+                    makeASAPSyncTraceJobs(selected_tasks, _task_models),
+                    (continuation_energy + idle_core_batch_energy) * 1000.0,
+                    continuation_energy * 1000.0,
+                    idle_core_batch_energy * 1000.0,
+                    _current_energy * 1000.0,
+                    residual_after_continuation * 1000.0,
+                    idle_core_batch_affordable,
+                    all_new_candidates_affordable,
+                    feasible_new_candidate_subset_exists,
+                    epsilon * 1000.0);
+            }
+            _trace_logger->logB3ASAPDecision(
+                "ASAP-Sync",
+                "SYNC",
+                _current_energy * 1000.0,
+                static_cast<std::size_t>(total_cpus),
+                makeASAPSyncTraceJobs(active_tasks, _task_models),
+                makeASAPSyncTraceJobs(selected_tasks, _task_models),
+                makeASAPSyncTraceJobs(continuation_tasks, _task_models),
+                decision_reason);
             if (sync_batch_blocked &&
                 selected_tasks.empty() &&
                 !desired_tasks.empty()) {

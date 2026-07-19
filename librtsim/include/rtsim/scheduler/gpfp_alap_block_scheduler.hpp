@@ -24,6 +24,7 @@ namespace RTSim {
     class AbsRTTask;
     class ALAPBlockScheduler;
     class MRTKernel;
+    class JSONTrace;
 
     // 时间类型别名
     using TimeMs = int64_t;
@@ -180,6 +181,8 @@ namespace RTSim {
         std::vector<AbsRTTask *> _waiting_queue;
         std::map<CPU *, AbsRTTask *> _running_tasks;
         MRTKernel *_kernel;
+        JSONTrace *_trace_logger = nullptr;
+        bool _semantic_trace_enabled = false;
 
         // ========== 运行时能量检查事件（每任务一个） ==========
         // ⭐ V40重构：能量检查事件已删除，能量由performTickScheduling处理
@@ -343,6 +346,12 @@ namespace RTSim {
         void setSuspendReason(AbsRTTask *task, const std::string &reason);
         std::string getSuspendReason(AbsRTTask *task) const override;
         void clearSuspendReason(AbsRTTask *task) override;
+        void setTraceLogger(void *trace) override {
+            _trace_logger = static_cast<JSONTrace *>(trace);
+        }
+        void setSemanticTraceEnabled(bool enabled) override {
+            _semantic_trace_enabled = enabled;
+        }
 
         // ⭐ 运行时能量检查接口（V28.15新增）
         // ⭐ V40重构：能量检查事件已删除，能量由performTickScheduling处理

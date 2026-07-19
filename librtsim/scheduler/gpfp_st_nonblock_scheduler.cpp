@@ -24,6 +24,7 @@
 #include <rtsim/scheduler/energy_bridge.hpp>
 #include <rtsim/scheduler/st_energy_utils.hpp>
 #include <rtsim/mrtkernel.hpp>
+#include <rtsim/b3_timing_trace.hpp>
 
 // 统一日志系统
 #include "../../utils/unified_logger.hpp"
@@ -655,6 +656,7 @@ namespace RTSim {
         const double epsilon = 1e-9;
         const size_t processor_count = running_tasks_map.size();
         AbsRTTask *waiting_task = nullptr;
+        std::vector<AbsRTTask *> timing_wait_tasks;
 
         for (AbsRTTask *task : active_tasks) {
             if (_dispatch_selection_order.size() >= processor_count) {
@@ -689,6 +691,7 @@ namespace RTSim {
                 }
             }
             if (isSkippedTaskHeld(task)) {
+                timing_wait_tasks.push_back(task);
                 auto slack_it = _skipped_slack_at_begin.find(task);
                 logSTChargeEvent("st_charge_hold",
                                  task,
@@ -712,6 +715,7 @@ namespace RTSim {
             Tick slack = calculateSlackForTask(task);
             if (slack > 0) {
                 waiting_task = task;
+                timing_wait_tasks.push_back(task);
                 scheduleWakeForSkippedTask(task, current_time);
                 SCHEDULER_LOG_INFO(std::string("⏸️ [ST-NonBlock] 高优任务缺电但仍有Slack，保留等待并继续NonBlock扫描: ") +
                                    getTaskName(task) +
@@ -735,6 +739,28 @@ namespace RTSim {
                             _current_energy < epsilon;
         _deep_charging = (waiting_task != nullptr);
         _is_charging_sleep = false;
+
+        if (_trace_logger && _semantic_trace_enabled &&
+            !active_tasks.empty()) {
+            std::vector<AbsRTTask *> continuing_tasks;
+            for (AbsRTTask *task : _dispatch_selection_order) {
+                if (running_tasks.count(task) > 0) {
+                    continuing_tasks.push_back(task);
+                }
+            }
+            _trace_logger->logB3STDecision(
+                "ST-NonBlock",
+                "NONBLOCK",
+                _current_energy * 1000.0,
+                _max_energy * 1000.0,
+                processor_count,
+                makeB3TraceJobs(active_tasks, _task_models),
+                makeB3TraceJobs(_dispatch_selection_order, _task_models),
+                makeB3TraceJobs(continuing_tasks, _task_models),
+                makeB3TraceJobs(timing_wait_tasks, _task_models),
+                timing_wait_tasks.empty() ? "ST_ASAP_NATIVE_GATE"
+                                          : "ST_NONBLOCK_CHARGE_WAIT");
+        }
 
         if (!_dispatch_selection_order.empty()) {
             commitTickEnergy(current_time, reserved_energy);

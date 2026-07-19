@@ -21,6 +21,7 @@
 #include <rtsim/cpu.hpp>
 #include <rtsim/scheduler/energy_bridge.hpp>
 #include <rtsim/mrtkernel.hpp>
+#include <rtsim/b3_timing_trace.hpp>
 
 // 统一日志系统
 #include "../../utils/unified_logger.hpp"
@@ -824,6 +825,26 @@ namespace RTSim {
         _current_batch_tasks = selected_tasks;
         _current_batch_size = static_cast<int>(_current_batch_tasks.size());
         _batch_scheduled_this_tick = !selected_tasks.empty();
+
+        if (_trace_logger && _semantic_trace_enabled &&
+            !active_tasks.empty()) {
+            std::vector<AbsRTTask *> trace_active = active_tasks;
+            sortByRMPriority(trace_active);
+            const bool sync_energy_blocked =
+                !continuation_affordable ||
+                (!idle_core_batch.empty() && !idle_core_batch_affordable);
+            _trace_logger->logB3ALAPDecision(
+                "ALAP-Sync",
+                "SYNC",
+                _current_energy * 1000.0,
+                static_cast<std::size_t>(total_cpus),
+                makeB3TraceJobs(trace_active, _task_models),
+                makeB3TraceJobs(urgent_candidates, _task_models),
+                makeB3TraceJobs(selected_tasks, _task_models),
+                makeB3TraceJobs(continuation_tasks, _task_models),
+                sync_energy_blocked ? "ALAP_SYNC_ATOMIC_ENERGY_WAIT"
+                                    : "ALAP_SYNC_NATIVE_GATE");
+        }
 
         if (!selected_tasks.empty()) {
             _stats.total_batch_schedules++;
