@@ -14,8 +14,12 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "test"))
 
 from experiments.v9_3.ext1b_b2_batch_audit import (
+    B2_STATE_BATCH_UNAFFORDABLE_ATOMIC_WAIT_WITH_AFFORDABLE_MEMBER,
+    B2_STATE_BATCH_UNAFFORDABLE_ENERGY_WAIT_NO_AFFORDABLE_MEMBER,
     B2_STATE_CONTINUATION_ONLY,
     B2_STATE_ILLEGAL_PARTIAL_LAUNCH,
+    CONTROL_STATUS_ELIGIBLE_MATCHED_STATE,
+    CONTROL_STATUS_NOT_APPLICABLE,
     audit_asap_sync_trace,
     summarize_b2_observations,
 )
@@ -77,10 +81,21 @@ def _minimal_b2_root(tmp_path: Path):
     ]
     write_csv(tmp_path / "simulation_requests.csv", tuple(requests[0]), requests)
     write_csv(tmp_path / "simulation_results.csv", tuple(results[0]), results)
+    scenario = {
+        "paired_instance_id": pair_id,
+        "scenario_kind": "SYNC_BATCH_STRESS",
+        "scenario_cell_id": "cell",
+        "normalized_utilization": "2/10",
+        "nominal_energy_supply_ratio": "2/8",
+    }
+    write_csv(tmp_path / "scenario_instances.csv", tuple(scenario), [scenario])
     return {"scenario": {"affordable_prefix_length": 1}}
 
 
 def _b2_row(state: str):
+    atomic_wait = state == (
+        B2_STATE_BATCH_UNAFFORDABLE_ATOMIC_WAIT_WITH_AFFORDABLE_MEMBER
+    )
     return {
         "request_id": "gpfp_asap_sync",
         "pair_id": "pair",
@@ -88,15 +103,15 @@ def _b2_row(state: str):
         "scheduler_id": "gpfp_asap_sync",
         "tick": 0,
         "idle_core_count": 1,
-        "active_top_m_job_ids": ["H@0"],
-        "continuation_job_ids": ["H@0"],
-        "candidate_job_ids": [],
-        "candidate_count": 0,
-        "affordable_prefix_length": 0,
-        "whole_batch_required_energy_mJ": 1.0,
+        "active_top_m_job_ids": ["H@0", "L@0"] if atomic_wait else ["H@0"],
+        "continuation_job_ids": [] if atomic_wait else ["H@0"],
+        "candidate_job_ids": ["H@0", "L@0"] if atomic_wait else [],
+        "candidate_count": 2 if atomic_wait else 0,
+        "affordable_prefix_length": 1 if atomic_wait else 0,
+        "whole_batch_required_energy_mJ": 2.0 if atomic_wait else 1.0,
         "available_energy_mJ": 1.0,
-        "whole_batch_affordable": True,
-        "feasible_subset_exists": False,
+        "whole_batch_affordable": not atomic_wait,
+        "feasible_subset_exists": atomic_wait,
         "selected_count": 0,
         "actual_launch_count": 0,
         "atomic_opportunity": False,
@@ -124,6 +139,9 @@ def test_b2_zero_denominator_is_explicit(tmp_path, monkeypatch):
     assert summary["atomic_wait_share"] == ""
     assert summary["denominator_zero"] == "True"
     assert summary["continuation_only_decision_count"] == "1"
+    assert summary["normalized_utilization"] == "1/5"
+    assert summary["nominal_energy_supply_ratio"] == "1/4"
+    assert summary["mechanism_activated"] == "False"
 
 
 def test_b2_illegal_partial_launch_fails_closed(tmp_path, monkeypatch):
@@ -141,6 +159,81 @@ def test_b2_illegal_partial_launch_fails_closed(tmp_path, monkeypatch):
     assert read_csv(tmp_path / "b2_batch_decisions.csv")[0][
         "classified_state"
     ] == B2_STATE_ILLEGAL_PARTIAL_LAUNCH
+
+
+def test_b2_core_wait_has_exact_dimensions_and_direct_activation(tmp_path, monkeypatch):
+    config = _minimal_b2_root(tmp_path)
+    monkeypatch.setattr(
+        "experiments.v9_3.ext1b_observation.audit_asap_sync_trace",
+        lambda *args, **kwargs: [_b2_row(
+            B2_STATE_BATCH_UNAFFORDABLE_ATOMIC_WAIT_WITH_AFFORDABLE_MEMBER
+        )],
+    )
+    monkeypatch.setattr(
+        "experiments.v9_3.ext1b_observation.audit_asap_block_pair_trace",
+        lambda *args, **kwargs: [{
+            "control_status": CONTROL_STATUS_ELIGIBLE_MATCHED_STATE,
+            "control_passed": True,
+        }],
+    )
+    write_ext1b_observation_outputs(tmp_path, config)
+    decision = read_csv(tmp_path / "b2_batch_decisions.csv")[0]
+    summary = read_csv(tmp_path / "b2_summary.csv")[0]
+    for row in (decision, summary):
+        assert row["scenario_cell_id"] == "cell"
+        assert row["normalized_utilization"] == "1/5"
+        assert row["nominal_energy_supply_ratio"] == "1/4"
+    assert summary["atomic_wait_with_affordable_member_count"] == "1"
+    assert summary["audit_closed"] == "True"
+    assert summary["mechanism_activated"] == "True"
+
+
+def test_b2_no_affordable_member_does_not_activate(tmp_path, monkeypatch):
+    config = _minimal_b2_root(tmp_path)
+    row = _b2_row(B2_STATE_BATCH_UNAFFORDABLE_ENERGY_WAIT_NO_AFFORDABLE_MEMBER)
+    row.update({
+        "active_top_m_job_ids": ["H@0", "L@0"],
+        "continuation_job_ids": [],
+        "candidate_job_ids": ["H@0", "L@0"],
+        "candidate_count": 2,
+        "whole_batch_affordable": False,
+        "feasible_subset_exists": False,
+    })
+    monkeypatch.setattr(
+        "experiments.v9_3.ext1b_observation.audit_asap_sync_trace",
+        lambda *args, **kwargs: [row],
+    )
+    monkeypatch.setattr(
+        "experiments.v9_3.ext1b_observation.audit_asap_block_pair_trace",
+        lambda *args, **kwargs: [],
+    )
+    write_ext1b_observation_outputs(tmp_path, config)
+    summary = read_csv(tmp_path / "b2_summary.csv")[0]
+    assert summary["atomic_wait_with_affordable_member_count"] == "0"
+    assert summary["audit_closed"] == "True"
+    assert summary["mechanism_activated"] == "False"
+
+
+def test_b2_predecision_fingerprint_mismatch_fails_closed(tmp_path, monkeypatch):
+    config = _minimal_b2_root(tmp_path)
+    monkeypatch.setattr(
+        "experiments.v9_3.ext1b_observation.audit_asap_sync_trace",
+        lambda *args, **kwargs: [_b2_row(
+            B2_STATE_BATCH_UNAFFORDABLE_ATOMIC_WAIT_WITH_AFFORDABLE_MEMBER
+        )],
+    )
+    monkeypatch.setattr(
+        "experiments.v9_3.ext1b_observation.audit_asap_block_pair_trace",
+        lambda *args, **kwargs: [{
+            "control_status": CONTROL_STATUS_NOT_APPLICABLE,
+            "control_passed": None,
+        }],
+    )
+    with pytest.raises(Ext1BObservationError, match="did not close"):
+        write_ext1b_observation_outputs(tmp_path, config)
+    summary = read_csv(tmp_path / "b2_summary.csv")[0]
+    assert summary["audit_closed"] == "False"
+    assert summary["mechanism_activated"] == "False"
 
 
 def _integration_config(tmp_path: Path, name: str, binary: Path):
@@ -226,6 +319,37 @@ def test_real_b2_runner_trace_auditor_csv_and_reanalysis(tmp_path, monkeypatch):
     before = (root / "b2_summary.csv").read_bytes()
     analyze_ext1b(root)
     assert (root / "b2_summary.csv").read_bytes() == before
+
+
+def test_real_two_scheduler_b2_completed_resume_is_byte_noop(tmp_path, monkeypatch):
+    monkeypatch.setenv("PARTSIM_LOG_DIR", str(tmp_path / "logs"))
+    binary, _ = require_rtsim_binary()
+    config = _integration_config(
+        tmp_path, "v9_3_ext1b2_sync_calibration.yaml", binary,
+    )
+    config["grid"]["utilization_points"] = ["1/5"]
+    config["grid"]["tasksets_per_cell"] = 1
+    config["scenario"]["nominal_energy_supply_ratios"] = ["1/4"]
+    runner = Ext1BRunner(config)
+    initial = runner.run()
+    assert initial.requested == initial.terminal == 2
+    summary = read_csv(initial.output_root / "b2_summary.csv")[0]
+    assert summary["normalized_utilization"] == "1/5"
+    assert summary["nominal_energy_supply_ratio"] == "1/4"
+    assert summary["audit_closed"] == "True"
+    assert summary["mechanism_activated"] == "True"
+
+    before = {
+        path.relative_to(initial.output_root).as_posix(): path.read_bytes()
+        for path in initial.output_root.rglob("*") if path.is_file()
+    }
+    resumed = runner.run(resume=True)
+    after = {
+        path.relative_to(initial.output_root).as_posix(): path.read_bytes()
+        for path in initial.output_root.rglob("*") if path.is_file()
+    }
+    assert resumed.requested == resumed.terminal == 2
+    assert after == before
 
 
 def test_real_b3_runner_trace_auditor_csv_and_reanalysis(tmp_path, monkeypatch):

@@ -315,12 +315,82 @@ def test_energy_calibration_dry_plan_has_required_cardinality():
     assert runner.config["simulation"]["maximum_horizon"] == 400
 
 
+def test_b2_sync_calibration_contract_dry_plan_and_request_order(tmp_path):
+    runner = Ext1BRunner.from_path(
+        ROOT / "configs/v9_3_ext1b2_sync_calibration.yaml"
+    )
+    description = runner.describe()
+    assert description["cell_count"] == 2 * 3 == 6
+    assert description["tasksets_per_cell"] == 20
+    assert description["scheduler_count"] == 2
+    assert description["paired_instance_count"] == 120
+    assert description["simulation_request_count"] == 240
+    assert description["scheduler_ids"] == [
+        "gpfp_asap_block", "gpfp_asap_sync",
+    ]
+    assert runner.config["required_outputs"] == [
+        "b2_batch_decisions.csv", "b2_summary.csv",
+    ]
+    assert runner.config["seed_space"] == "EXT1B2_SYNC_CALIBRATION_PILOT"
+    assert runner.config["grid"]["base_seed"] not in {931201, 941201}
+    assert runner.config["simulation"]["horizon"] == 400
+    assert runner.config["simulation"]["maximum_horizon"] == 400
+
+    runner.root = tmp_path / "run"
+    runner.terminals = runner.root / "simulation_terminal_results"
+    runner.config["execution"]["output_root"] = str(runner.root)
+    runner.config["execution"]["taskset_store"] = str(tmp_path / "store")
+    _, _, _, requests = runner._plan(max_cells=1, max_tasksets=1)
+    assert len(requests) == 2
+    assert [row["scheduler_id"] for row in requests] == description["scheduler_ids"]
+    assert len({row["input_hash"] for row in requests}) == 1
+    assert len({row["taskset_hash"] for row in requests}) == 1
+
+
+def test_b2_seed_space_is_pilot_only_and_scheduler_pair_is_exact():
+    raw = _raw_config("v9_3_ext1b2_sync_calibration.yaml")
+    smoke = deepcopy(raw)
+    smoke["parameter_status"] = "SMOKE"
+    with pytest.raises(ConfigError, match="SMOKE requires seed_space"):
+        validate_ext1b_config(smoke)
+
+    reversed_pair = deepcopy(raw)
+    reversed_pair["scheduler_ids"] = [
+        "gpfp_asap_sync", "gpfp_asap_block",
+    ]
+    with pytest.raises(ConfigError, match="must equal"):
+        validate_ext1b_config(reversed_pair)
+
+
+def test_sync_batch_stress_requires_block_and_sync_schedulers():
+    raw = _raw_config("v9_3_ext1b2_smoke.yaml")
+    raw["scheduler_ids"] = ["gpfp_asap_sync"]
+    with pytest.raises(ConfigError, match="must include"):
+        validate_ext1b_config(raw)
+
+
+def test_required_output_contracts_preserve_b1_and_upgrade_b2():
+    b1 = load_ext1b_config(ROOT / "configs/v9_3_ext1b1_energy_calibration.yaml")
+    b2 = load_ext1b_config(ROOT / "configs/v9_3_ext1b2_smoke.yaml")
+    assert b1["required_outputs"] == [
+        "b1_bypass_episodes.csv", "b1_task_effects.csv",
+        "b1_paired_effects.csv", "b1_summary.csv",
+    ]
+    assert b2["required_outputs"] == [
+        "b2_batch_decisions.csv", "b2_summary.csv",
+    ]
+
+
 def test_existing_config_without_scheduler_ids_keeps_nine_scheduler_order():
     runner = Ext1BRunner.from_path(ROOT / "configs/v9_3_ext1b1_smoke.yaml")
     description = runner.describe(max_cells=1, max_tasksets=1)
     assert description["scheduler_count"] == 9
     assert description["simulation_request_count"] == 9
     assert description["scheduler_ids"] == list(SCHEDULER_IDS)
+    b2 = Ext1BRunner.from_path(ROOT / "configs/v9_3_ext1b2_smoke.yaml")
+    assert b2.describe(max_cells=1, max_tasksets=1)["scheduler_ids"] == list(
+        SCHEDULER_IDS
+    )
 
 
 def test_retain_trace_requires_boolean():
@@ -429,6 +499,10 @@ def test_b2_prefix_interval_and_capacity_floor():
     initial, structure = sync_batch_structure(_payload(), 2, 1, Fraction(1, 2))
     prefix, batch = Fraction(structure["E_prefix"]), Fraction(structure["E_batch"])
     assert prefix <= initial < batch
+    assert Fraction(structure["E_init_materialized"]) == initial
+    assert structure["ready_job_count"] >= structure["q"] == 2
+    assert native_energy_affordable(initial, prefix)
+    assert not native_energy_affordable(initial, batch)
     capacity = initial
     assert capacity >= initial
 
@@ -437,6 +511,31 @@ def test_b2_prefix_interval_and_capacity_floor():
 def test_b2_rejects_illegal_p_q(p):
     with pytest.raises(StructuralRejection, match="INVALID_AFFORDABLE_PREFIX"):
         sync_batch_structure(_payload(), 2, p, Fraction(1, 2))
+
+
+def test_b2_rejects_insufficient_ready_jobs_and_top_m_smaller_than_two():
+    delayed = deepcopy(_payload())
+    delayed[1]["arrival_offset"] = 1
+    delayed[2]["arrival_offset"] = 1
+    with pytest.raises(
+        StructuralRejection, match="INSUFFICIENT_READY_JOBS_FOR_TOP_M"
+    ):
+        sync_batch_structure(delayed, 2, 1, Fraction(1, 2))
+    with pytest.raises(StructuralRejection, match="ACTIVE_TOP_M_TOO_SMALL"):
+        sync_batch_structure(_payload(), 1, 1, Fraction(1, 2))
+
+
+def test_b2_rejects_non_strict_or_native_epsilon_collapsed_interval():
+    equal = deepcopy(_payload()[:2])
+    equal[1]["P"] = "0"
+    with pytest.raises(StructuralRejection, match="NON_STRICT_ENERGY_INTERVAL"):
+        sync_batch_structure(equal, 2, 1, Fraction(1, 2))
+
+    collapsed = deepcopy(_payload()[:2])
+    collapsed[0]["P"] = "1"
+    collapsed[1]["P"] = "1/2000000000"
+    with pytest.raises(StructuralRejection, match="NON_STRICT_ENERGY_INTERVAL"):
+        sync_batch_structure(collapsed, 2, 1, Fraction(1, 2))
 
 
 def test_b2_top_q_is_selected_by_priority_not_input_order():
