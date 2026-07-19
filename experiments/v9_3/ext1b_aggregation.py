@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping
 
+from .ext1b_observation import write_ext1b_observation_outputs
 from .ext1b_statistics import STATISTIC_COLUMNS, paired_statistics_rows
 from .result_writer import read_csv, write_csv
 from .scheduler_pairing import assert_scheduler_only_difference
@@ -167,12 +168,15 @@ def classify_mechanism_activation(
     generation_attempts: Iterable[Mapping[str, Any]],
     *,
     top_m: int,
+    b2_summaries: Iterable[Mapping[str, Any]] = (),
 ) -> list[Dict[str, Any]]:
     result_rows = list(results)
     by_pair: Dict[str, Dict[str, Mapping[str, Any]]] = defaultdict(dict)
     for row in result_rows:
         by_pair[str(row["paired_instance_id"])][str(row["scheduler_id"])] = row
-    vectors = _first_execution_vectors(task_rows, top_m)
+    b2_by_pair = {
+        str(row["paired_instance_id"]): row for row in b2_summaries
+    }
     registry = scheduler_by_id()
     activations: list[Dict[str, Any]] = []
 
@@ -201,40 +205,47 @@ def classify_mechanism_activation(
                 }
             elif kind == "SYNC_BATCH_STRESS":
                 anchor = "gpfp_asap_sync"
-                value = _integer(members[anchor].get("synchronization_wait_ticks"))
-                runtime_observable = _result_comparable(members[anchor]) and value is not None
+                summary = b2_by_pair.get(pair_id)
+                value = (
+                    _integer(summary.get("atomic_wait_with_affordable_member_count"))
+                    if summary is not None else None
+                )
+                runtime_observable = (
+                    _result_comparable(members[anchor])
+                    and summary is not None
+                    and _bool(summary.get("audit_closed")) is True
+                )
                 if runtime_observable:
                     runtime = bool(value and value > 0)
                 evidence = {
                     "native_event_anchor": anchor,
-                    "synchronization_wait_ticks": value if value is not None else UNAVAILABLE,
+                    "atomic_wait_with_affordable_member_count": (
+                        value if value is not None else UNAVAILABLE
+                    ),
+                    "atomic_wait_share": (
+                        summary.get("atomic_wait_share", UNAVAILABLE)
+                        if summary is not None else UNAVAILABLE
+                    ),
+                    "denominator_zero": (
+                        summary.get("denominator_zero", UNAVAILABLE)
+                        if summary is not None else UNAVAILABLE
+                    ),
                 }
             else:
-                family_vectors = {
-                    registry[scheduler].timing_family: vectors.get((pair_id, scheduler))
+                family_activation = {
+                    registry[scheduler].timing_family: _bool(
+                        members[scheduler].get("timing_activation")
+                    )
                     for scheduler in scoped_ids
                 }
-                vectors_observable = all(
-                    family_vectors.get(family) is not None
+                runtime_observable = all(
+                    family_activation.get(family) is not None
                     for family in ("ASAP", "ALAP", "ST")
                 )
-                st_row = next(
-                    row for row in scoped
-                    if registry[str(row["scheduler_id"])].timing_family == "ST"
-                )
-                st_events = _integer(st_row.get("st_charge_begin_count"))
-                st_observable = _result_comparable(st_row) and st_events is not None
-                runtime_observable = vectors_observable or st_observable
                 if runtime_observable:
-                    runtime = bool(
-                        (vectors_observable and len(set(family_vectors.values())) > 1)
-                        or (st_observable and bool(st_events and st_events > 0))
-                    )
+                    runtime = any(bool(value) for value in family_activation.values())
                 evidence = {
-                    "first_execution_by_family": family_vectors,
-                    "st_charge_begin_count": (
-                        st_events if st_events is not None else UNAVAILABLE
-                    ),
+                    "dedicated_timing_audit_activation_by_family": family_activation,
                 }
 
             statuses = [str(row["status"]) for row in scoped]
@@ -317,6 +328,7 @@ def aggregate_ext1b_rows(
     top_m: int,
     bootstrap_seed: int,
     bootstrap_resamples: int,
+    b2_summaries: Iterable[Mapping[str, Any]] = (),
 ) -> Dict[str, list[Dict[str, Any]]]:
     request_rows, result_rows, tasks = list(requests), list(results), list(task_rows)
     attempts = list(generation_attempts)
@@ -355,7 +367,8 @@ def aggregate_ext1b_rows(
         if str(row["paired_instance_id"]) in complete_pairs
     ]
     activation_rows = classify_mechanism_activation(
-        comparison_results, comparison_tasks, attempts, top_m=top_m
+        comparison_results, comparison_tasks, attempts, top_m=top_m,
+        b2_summaries=b2_summaries,
     )
     activation_index = _activation_for_scheduler(activation_rows)
 
@@ -613,6 +626,7 @@ def aggregate_ext1b_rows(
 
 
 def aggregate_ext1b(root: Path, config: Mapping[str, Any]) -> Dict[str, int]:
+    observation_counts = write_ext1b_observation_outputs(root, config)
     tables = aggregate_ext1b_rows(
         read_csv(root / "simulation_requests.csv"),
         read_csv(root / "simulation_results.csv"),
@@ -621,6 +635,7 @@ def aggregate_ext1b(root: Path, config: Mapping[str, Any]) -> Dict[str, int]:
         top_m=int(config["statistics"]["top_m"]),
         bootstrap_seed=int(config["statistics"]["bootstrap_seed"]),
         bootstrap_resamples=int(config["statistics"]["bootstrap_resamples"]),
+        b2_summaries=read_csv(root / "b2_summary.csv"),
     )
     outputs = (
         ("mechanism_activation.csv", ACTIVATION_COLUMNS, "activation"),
@@ -633,4 +648,7 @@ def aggregate_ext1b(root: Path, config: Mapping[str, Any]) -> Dict[str, int]:
     )
     for name, columns, key in outputs:
         write_csv(root / name, columns, tables[key])
-    return {f"{key}_rows": len(tables[key]) for _, _, key in outputs}
+    return {
+        **observation_counts,
+        **{f"{key}_rows": len(tables[key]) for _, _, key in outputs},
+    }

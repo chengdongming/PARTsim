@@ -312,6 +312,19 @@ class Ext1BRunner:
             "paired_statistics.csv", "ext1b_plot_data.csv",
             "scheduler_registry.csv",
         }
+        observation_files: Dict[str, str] = {}
+        scenario_kind = str(self.config["scenario"]["kind"])
+        if scenario_kind == "SYNC_BATCH_STRESS":
+            observation_files = {
+                "b2_decision_rows": "b2_batch_decisions.csv",
+                "b2_summary_rows": "b2_summary.csv",
+            }
+        elif scenario_kind == "TIMING_STRESS":
+            observation_files = {
+                "b3_event_rows": "b3_timing_events.csv",
+                "b3_summary_rows": "b3_summary.csv",
+            }
+        table_names.update(observation_files.values())
         required = table_names | {
             "checkpoint.json", "file_hashes.sha256", "run_config.yaml",
             "run_metadata.json",
@@ -448,6 +461,7 @@ class Ext1BRunner:
             "priority_summary_rows": "priority_rank_summary.csv",
             "statistics_rows": "paired_statistics.csv",
             "plots_rows": "ext1b_plot_data.csv",
+            **observation_files,
         }
         summary = {
             "requested": expected_requests,
