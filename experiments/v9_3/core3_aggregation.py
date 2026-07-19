@@ -16,8 +16,10 @@ class SoundnessClass(str, Enum):
     RTA_PASS_SIM_FAIL = "RTA_PASS_SIM_FAIL"
     RTA_FAIL_SIM_PASS = "RTA_FAIL_SIM_PASS"
     RTA_FAIL_SIM_FAIL = "RTA_FAIL_SIM_FAIL"
-    RTA_PASS_SIM_CENSORED = "RTA_PASS_SIM_CENSORED"
-    RTA_FAIL_SIM_CENSORED = "RTA_FAIL_SIM_CENSORED"
+    ASSUMPTION_E0_NOT_SATISFIED = "ASSUMPTION_E0_NOT_SATISFIED"
+    NO_OVERFLOW_GUARD_NOT_SATISFIED = "NO_OVERFLOW_GUARD_NOT_SATISFIED"
+    HORIZON_CENSORED = "HORIZON_CENSORED"
+    OBSERVATION_COMPARISON_INELIGIBLE = "OBSERVATION_COMPARISON_INELIGIBLE"
     RTA_TIMEOUT = "RTA_TIMEOUT"
     SIM_TIMEOUT_OR_ERROR = "SIM_TIMEOUT_OR_ERROR"
 
@@ -30,10 +32,25 @@ def classify_soundness(
     rta_row: Mapping[str, Any],
     simulation_status: str,
     *,
-    release_e0_valid: bool = True,
+    release_e0_valid: bool,
+    comparison_eligible: bool,
+    no_overflow_guard: bool,
 ) -> SoundnessClass:
-    if str(rta_row.get("solver_status")) == "TIMEOUT":
-        return SoundnessClass.RTA_TIMEOUT
+    for field, value in (
+        ("release_e0_valid", release_e0_valid),
+        ("comparison_eligible", comparison_eligible),
+        ("no_overflow_guard", no_overflow_guard),
+    ):
+        if type(value) is not bool:
+            raise TypeError(
+                f"{field} must be an explicit bool, got {value!r}"
+            )
+    # Eligibility is decided before the PASS/FAIL quadrant.  The raw
+    # simulation status remains available in soundness_matrix.csv, so an
+    # invalid premise is visible without being misrepresented as evidence
+    # for or against the RTA bound.
+    if simulation_status == SimulationStatus.HORIZON_INSUFFICIENT.value:
+        return SoundnessClass.HORIZON_CENSORED
     if (
         simulation_status in {
             SimulationStatus.RUNTIME_TIMEOUT.value,
@@ -41,11 +58,17 @@ def classify_soundness(
         }
     ):
         return SoundnessClass.SIM_TIMEOUT_OR_ERROR
-    # release_e0_valid is reported and denominated independently by the
-    # caller.  It must not erase a raw RTA_PASS_SIM_FAIL observation.
-    del release_e0_valid
+    if not release_e0_valid:
+        return SoundnessClass.ASSUMPTION_E0_NOT_SATISFIED
+    if not no_overflow_guard:
+        return SoundnessClass.NO_OVERFLOW_GUARD_NOT_SATISFIED
+    if not comparison_eligible:
+        return SoundnessClass.OBSERVATION_COMPARISON_INELIGIBLE
+    if str(rta_row.get("solver_status")) == "TIMEOUT":
+        return SoundnessClass.RTA_TIMEOUT
     rta_pass = bool(
-        _truth(rta_row.get("taskset_proven"))
+        str(rta_row.get("solver_status")) == "COMPLETED"
+        and _truth(rta_row.get("taskset_proven"))
         and str(rta_row.get("certification_status")) == "CERTIFIED_TASKSET"
     )
     if simulation_status == SimulationStatus.PASS_OBSERVED.value:
@@ -58,12 +81,42 @@ def classify_soundness(
             SoundnessClass.RTA_PASS_SIM_FAIL
             if rta_pass else SoundnessClass.RTA_FAIL_SIM_FAIL
         )
-    if simulation_status == SimulationStatus.HORIZON_INSUFFICIENT.value:
-        return (
-            SoundnessClass.RTA_PASS_SIM_CENSORED
-            if rta_pass else SoundnessClass.RTA_FAIL_SIM_CENSORED
-        )
     raise ValueError(f"unknown simulation status: {simulation_status}")
+
+
+def response_bound_violation_row(
+    rta_task_row: Mapping[str, Any],
+    simulation_task_row: Mapping[str, Any],
+    *,
+    eligible: bool,
+) -> Optional[Dict[str, Any]]:
+    """Return the exact task-level witness when an observed response exceeds RTA."""
+
+    if type(eligible) is not bool:
+        raise TypeError(f"eligible must be an explicit bool, got {eligible!r}")
+    if not eligible:
+        return None
+    candidate = int(rta_task_row["candidate_response_time"])
+    simulated = int(simulation_task_row["r_sim_max"])
+    if simulated <= candidate:
+        return None
+    return {
+        "analysis_id": rta_task_row["analysis_id"],
+        "cell_id": rta_task_row["cell_id"],
+        "taskset_id": rta_task_row["taskset_id"],
+        "exact_e0": rta_task_row["exact_e0"],
+        "analysis_variant": rta_task_row["analysis_variant"],
+        "task_id": rta_task_row["task_id"],
+        "priority_rank": rta_task_row["priority_rank"],
+        "C": rta_task_row["C"],
+        "D": rta_task_row["D"],
+        "T": rta_task_row["T"],
+        "P": rta_task_row["P"],
+        "candidate_response_time": candidate,
+        "r_sim_max": simulated,
+        "absolute_gap": candidate - simulated,
+        "simulation_status": simulation_task_row["simulation_status"],
+    }
 
 
 def tightness_row(

@@ -14,6 +14,9 @@ simulation pass is never reported as a proof of theoretical soundness.
   `asap_block_v9_3_runner.dispatch_rta_version` ->
   `asap_block_rta_v9_3_taskset.analyze_taskset_v9_3`.
 - Simulation uses the `gpfp_asap_block` C++ factory and schema-v2 JSON trace.
+- Every serialized simulation terminal explicitly carries integer
+  `trace_schema_version: 2`. Deserialization rejects a missing field, booleans,
+  strings, null, and every version other than 2.
 - Frozen tasksets, seeds, cells, taskset hashes, task ordering, attempt journal,
   terminal records, and config-hash resume checks are the CORE-1/CORE-2
   framework's existing formats.
@@ -77,10 +80,23 @@ exact equality and the LOC-versus-CW gap relation. Equal candidates are
 asserted to yield equal tightness; an internal envelope difference is not
 counted as response-time improvement.
 
-The taskset/method soundness matrix uses exactly the eight requested classes.
-An eligible `RTA_PASS_SIM_FAIL` is recorded as P0, copies the canonical
-taskset, all RTA task rows, simulation inputs and failure trace into a minimal
-reproducer, and stops the smoke/run when fail-fast is enabled.
+The taskset/method soundness matrix keeps the raw simulation status separate
+from comparison eligibility. Only E0-valid, no-overflow, comparison-eligible
+observations enter the four RTA/simulation PASS/FAIL quadrants. Invalid E0 is
+`ASSUMPTION_E0_NOT_SATISFIED`; a missing no-overflow proof and other observation
+ineligibility have separate classes; insufficient horizon is
+`HORIZON_CENSORED`; simulator timeout/error remains `SIM_TIMEOUT_OR_ERROR`.
+These classes have independent counts and never enter the soundness
+denominator.
+
+An eligible `RTA_PASS_SIM_FAIL` is recorded as a taskset-level P0. Independently,
+each eligible `CANDIDATE_FOUND` task with `R_sim_max > R_RTA` is recorded as
+`RTA_RESPONSE_BOUND_VIOLATION`, even when `R_sim_max <= D` and no deadline was
+missed. Its witness preserves the taskset/hash, method, task parameters, E0,
+candidate, observation, negative gap, simulation/job tables, parsed job trace,
+and retained raw trace when available. Deadline and response-bound failures may
+both be present, while the summary reports their union as one unique
+counterexample taskset. Either P0 stops the run when fail-fast is enabled.
 
 ## Execution
 
@@ -102,7 +118,16 @@ python3 scripts/analyze_v9_3_core3.py artifacts/v9_3_core3_smoke
 ```
 
 Resume reuses four RTA terminal records and two simulation terminal records;
-conflicting duplicate terminals and a changed config hash fail closed.
+conflicting duplicate terminals and a changed config hash fail closed. CORE-3
+comparison artifacts also carry artifact contract version 2. Resume and the
+read-only analyzer reject pre-v2 comparison artifacts instead of treating an
+old classification as valid.
+When `checkpoint.json` exists, both entry points validate its artifact contract
+version, checkpoint schema/version, `CORE-3` identity, and configuration hash
+before looking for simulation terminals or materialized comparison outputs.
+Consequently a checkpoint-only v1 or versionless run root fails closed, while a
+root with neither checkpoint nor older comparison artifacts remains a valid new
+run root.
 Normal pass traces are parsed and deleted. Full traces are retained only for a
 deadline miss, semantic/internal error, or invalid release-energy premise.
 
@@ -110,7 +135,7 @@ deadline miss, semantic/internal error, or invalid release-energy premise.
 
 Each run writes `run_config.yaml`, `run_metadata.json`,
 `generated_tasksets.csv`, `rta_results.csv`, the three simulation result
-tables, `soundness_matrix.csv`, both tightness tables,
+tables, `soundness_matrix.csv`, `response_bound_violations.csv`, both tightness tables,
 `censoring_summary.csv`, `runtime_summary.csv`, `failures.csv`,
 `checkpoint.json`, `summary.json`, `summary.csv`, `core3_plot_data.csv`, and
 `file_hashes.sha256`. The shared engine's cells, requests, attempts, per-task

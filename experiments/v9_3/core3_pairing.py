@@ -18,6 +18,7 @@ from .core3_aggregation import (
     SoundnessClass,
     aggregate_tightness,
     classify_soundness,
+    response_bound_violation_row,
     tightness_row,
 )
 from .execution_engine import ExecutionEngine, RunOutcome
@@ -41,21 +42,28 @@ from .simulation_engine import (
 from .simulation_result import SimulationResult, SimulationStatus
 
 
+CORE3_ARTIFACT_CONTRACT_VERSION = 2
+CORE3_CHECKPOINT_SCHEMA = "ASAP_BLOCK_V9_3_CORE3_CHECKPOINT"
+CORE3_CHECKPOINT_SCHEMA_VERSION = 2
+
 SIMULATION_TASKSET_COLUMNS = (
     "simulation_id", "cell_id", "taskset_id", "taskset_hash", "exact_e0",
-    "M", "status", "reason", "comparison_eligible", "horizon",
+    "M", "status", "reason", "comparison_eligible",
+    "comparison_ineligible_reason", "horizon",
     "simulation_initial_battery", "release_e0_valid",
     "minimum_release_energy_j", "service_curve_reference",
     "no_overflow_guard", "runtime_seconds", "attempt_count",
     "horizons_attempted", "observed_jobs", "completed_jobs", "missed_jobs",
     "censored_jobs", "retained_trace_path", "system_config_path",
-    "taskset_path",
+    "taskset_path", "trace_schema_version", "configured_scheduler",
+    "simulation_completed", "completion_reason",
 )
 SIMULATION_TASK_COLUMNS = (
     "simulation_id", "cell_id", "taskset_id", "taskset_hash", "exact_e0",
     "task_id", "observed_jobs", "completed_jobs", "missed_jobs",
     "censored_jobs", "r_sim_max", "horizon_coverage",
-    "minimum_jobs_satisfied", "tightness_eligible", "censoring_label",
+    "minimum_jobs_satisfied", "tightness_eligible",
+    "response_bound_eligible", "censoring_label",
 )
 SIMULATION_JOB_COLUMNS = (
     "simulation_id", "cell_id", "taskset_id", "taskset_hash", "exact_e0",
@@ -68,8 +76,8 @@ SOUNDNESS_COLUMNS = (
     "analysis_id", "simulation_id", "cell_id", "taskset_id", "taskset_hash",
     "exact_e0", "analysis_variant", "rta_solver_status",
     "rta_certification_status", "rta_taskset_proven", "simulation_status",
-    "release_e0_valid", "comparison_eligible", "soundness_class",
-    "p0_violation_candidate",
+    "release_e0_valid", "no_overflow_guard", "comparison_eligible",
+    "comparison_ineligible_reason", "soundness_class", "p0_violation_candidate",
 )
 TIGHTNESS_COLUMNS = (
     "analysis_id", "cell_id", "taskset_id", "exact_e0", "analysis_variant",
@@ -80,6 +88,16 @@ TIGHTNESS_TASKSET_COLUMNS = (
     "taskset_id", "analysis_variant", "task_count", "mean_absolute_gap",
     "max_absolute_gap", "mean_normalized_gap", "mean_ratio",
     "exact_equality_count",
+)
+RESPONSE_BOUND_VIOLATION_COLUMNS = (
+    "code", "analysis_id", "simulation_id", "cell_id", "taskset_id",
+    "taskset_hash", "exact_e0", "analysis_variant", "task_id",
+    "priority_rank", "C", "D", "T", "P", "candidate_response_time",
+    "r_sim_max", "absolute_gap", "simulation_status", "release_e0_valid",
+    "no_overflow_guard", "comparison_eligible",
+    "simulation_taskset_results_path", "simulation_task_results_path",
+    "simulation_job_results_path", "retained_trace_path", "system_config_path",
+    "taskset_path", "observation_trace_path", "failure_input",
 )
 CENSORING_COLUMNS = (
     "scope", "status", "reason", "count", "denominator",
@@ -92,6 +110,12 @@ PLOT_COLUMNS = (
     "plot", "method", "taskset_id", "task_id", "category", "x", "y",
 )
 SUMMARY_COLUMNS = ("metric", "value", "denominator")
+
+
+@dataclass(frozen=True)
+class ResponseBoundEligibility:
+    eligible: bool
+    reason: str
 
 
 @dataclass(frozen=True)
@@ -111,6 +135,102 @@ def _utc_now() -> str:
 
 def _truth(value: Any) -> bool:
     return value is True or str(value).strip().lower() == "true"
+
+
+def _required_artifact_bool(
+    row: Mapping[str, Any],
+    field: str,
+) -> bool:
+    if field not in row:
+        raise RuntimeError(
+            f"CORE-3 contract-v2 row is missing boolean field {field!r}"
+        )
+    value = row[field]
+    if type(value) is bool:
+        return value
+    if value == "True":
+        return True
+    if value == "False":
+        return False
+    raise RuntimeError(
+        "CORE-3 contract-v2 boolean field "
+        f"{field!r} has invalid value {value!r}"
+    )
+
+
+def _observation_comparison_eligibility(
+    execution: SimulationExecution,
+) -> tuple[bool, str]:
+    """Return the fail-closed CORE-3 observation gate and its first reason."""
+
+    result = execution.result
+    if result.status is SimulationStatus.HORIZON_INSUFFICIENT:
+        return False, SoundnessClass.HORIZON_CENSORED.value
+    if result.status in {
+        SimulationStatus.RUNTIME_TIMEOUT,
+        SimulationStatus.INTERNAL_ERROR,
+    }:
+        return False, SoundnessClass.SIM_TIMEOUT_OR_ERROR.value
+    if not result.release_e0_valid:
+        return False, SoundnessClass.ASSUMPTION_E0_NOT_SATISFIED.value
+    if execution.attempt_count <= 0:
+        return False, SoundnessClass.NO_OVERFLOW_GUARD_NOT_SATISFIED.value
+    if (
+        result.trace_schema_version != 2
+        or result.configured_scheduler != "gpfp_asap_block"
+        or not result.simulation_completed
+        or result.completion_reason != "reached_horizon"
+        or not result.comparison_eligible
+    ):
+        return False, SoundnessClass.OBSERVATION_COMPARISON_INELIGIBLE.value
+    return True, ""
+
+
+def _response_bound_eligibility(
+    execution: SimulationExecution,
+    task: Optional[Any],
+    rta_task_row: Mapping[str, Any],
+) -> ResponseBoundEligibility:
+    observation_eligible, observation_reason = (
+        _observation_comparison_eligibility(execution)
+    )
+    if not observation_eligible:
+        return ResponseBoundEligibility(False, observation_reason)
+    if task is None:
+        return ResponseBoundEligibility(False, "TASK_OBSERVATION_MISSING")
+    if str(rta_task_row.get("task_solver_status")) != "CANDIDATE_FOUND":
+        return ResponseBoundEligibility(False, "TASK_CANDIDATE_NOT_FOUND")
+    if rta_task_row.get("candidate_response_time") in (None, ""):
+        return ResponseBoundEligibility(
+            False, "CANDIDATE_RESPONSE_TIME_MISSING"
+        )
+    if not task.minimum_jobs_satisfied:
+        return ResponseBoundEligibility(False, "MINIMUM_JOBS_NOT_SATISFIED")
+    if task.censored_jobs != 0:
+        return ResponseBoundEligibility(False, "RIGHT_CENSORED")
+    if task.r_sim_max is None:
+        return ResponseBoundEligibility(False, "R_SIM_MAX_MISSING")
+    return ResponseBoundEligibility(True, "ELIGIBLE")
+
+
+def _rta_taskset_certified(row: Mapping[str, Any]) -> bool:
+    return bool(
+        str(row.get("solver_status")) == "COMPLETED"
+        and str(row.get("certification_status")) == "CERTIFIED_TASKSET"
+        and _truth(row.get("taskset_proven"))
+    )
+
+
+def deadline_soundness_violation(
+    rta_rows: Sequence[Mapping[str, Any]],
+    execution: SimulationExecution,
+) -> bool:
+    eligible, _reason = _observation_comparison_eligibility(execution)
+    return bool(
+        eligible
+        and execution.result.status is SimulationStatus.DEADLINE_MISS
+        and any(_rta_taskset_certified(row) for row in rta_rows)
+    )
 
 
 def _failed_execution(
@@ -136,6 +256,70 @@ class Core3PairingRunner:
         self.simulation_terminals = self.root / "simulation_terminal_results"
         self.stop_requested = False
         self._simulation_context: Dict[str, Dict[str, Any]] = {}
+
+    def _validate_existing_core3_contract(self) -> None:
+        checkpoint_path = self.root / "checkpoint.json"
+        existing_comparisons = bool(
+            any(self.simulation_terminals.glob("*.json"))
+            or (self.root / "soundness_matrix.csv").is_file()
+            or (self.root / "response_bound_violations.csv").is_file()
+            or (self.root / "summary.json").is_file()
+        )
+        if not checkpoint_path.exists():
+            if existing_comparisons:
+                raise RuntimeError(
+                    "CORE-3 comparison artifacts exist without checkpoint.json"
+                )
+            return
+        try:
+            checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RuntimeError(
+                "CORE-3 comparison artifacts lack a readable contract checkpoint"
+            ) from exc
+        if not isinstance(checkpoint, dict):
+            raise RuntimeError(
+                "CORE-3 checkpoint must be a JSON object"
+            )
+
+        contract_version = checkpoint.get("core3_artifact_contract_version")
+        if (
+            type(contract_version) is not int
+            or contract_version != CORE3_ARTIFACT_CONTRACT_VERSION
+        ):
+            raise RuntimeError(
+                "CORE-3 artifact contract version must be integer "
+                f"{CORE3_ARTIFACT_CONTRACT_VERSION}; actual="
+                f"{contract_version!r}"
+            )
+        checkpoint_schema = checkpoint.get("schema")
+        if checkpoint_schema != CORE3_CHECKPOINT_SCHEMA:
+            raise RuntimeError(
+                "CORE-3 checkpoint schema mismatch: expected "
+                f"{CORE3_CHECKPOINT_SCHEMA!r}; actual={checkpoint_schema!r}"
+            )
+        checkpoint_version = checkpoint.get("schema_version")
+        if (
+            type(checkpoint_version) is not int
+            or checkpoint_version != CORE3_CHECKPOINT_SCHEMA_VERSION
+        ):
+            raise RuntimeError(
+                "CORE-3 checkpoint schema_version must be integer "
+                f"{CORE3_CHECKPOINT_SCHEMA_VERSION}; actual="
+                f"{checkpoint_version!r}"
+            )
+        checkpoint_core = checkpoint.get("core")
+        if checkpoint_core != "CORE-3":
+            raise RuntimeError(
+                "CORE-3 checkpoint core mismatch: expected 'CORE-3'; "
+                f"actual={checkpoint_core!r}"
+            )
+        checkpoint_config_hash = checkpoint.get("config_hash")
+        if checkpoint_config_hash != self.config_identity:
+            raise RuntimeError(
+                "CORE-3 checkpoint configuration hash mismatch: expected "
+                f"{self.config_identity!r}; actual={checkpoint_config_hash!r}"
+            )
 
     def describe(self) -> Dict[str, Any]:
         description = ExecutionEngine(self.config).describe()
@@ -208,6 +392,10 @@ class Core3PairingRunner:
             path.stem for path in (self.root / "terminal_results").glob("*.json")
         )
         atomic_write_json(self.root / "checkpoint.json", {
+            "core3_artifact_contract_version": CORE3_ARTIFACT_CONTRACT_VERSION,
+            "schema": CORE3_CHECKPOINT_SCHEMA,
+            "schema_version": CORE3_CHECKPOINT_SCHEMA_VERSION,
+            "core": "CORE-3",
             "config_hash": self.config_identity,
             "completed_analysis_ids": completed_rta,
             "completed_rta_count": len(completed_rta),
@@ -233,7 +421,7 @@ class Core3PairingRunner:
         )
         reproduction.mkdir(parents=True, exist_ok=True)
         for source, name in (
-            (context["canonical"], "canonical_taskset.json"),
+            (context.get("canonical", Path("")), "canonical_taskset.json"),
             (execution.system_config_path, "system_config.yaml"),
             (execution.taskset_path, "taskset.yaml"),
             (self.root / "run_config.yaml", "run_config.yaml"),
@@ -242,8 +430,13 @@ class Core3PairingRunner:
                 shutil.copy2(source, reproduction / name)
         if execution.retained_trace_path and execution.retained_trace_path.is_file():
             shutil.copy2(execution.retained_trace_path, reproduction / "simulation_trace.json")
+        taskset_rows = context.get("rta_rows") or [
+            row for row in read_csv(self.root / "per_taskset_results.csv")
+            if row.get("cell_id") == str(context["cell_id"])
+            and row.get("taskset_id") == str(context["taskset_id"])
+        ]
         task_rows = read_csv(self.root / "per_task_results.csv")
-        atomic_write_json(reproduction / "rta_taskset_results.json", context["rta_rows"])
+        atomic_write_json(reproduction / "rta_taskset_results.json", taskset_rows)
         atomic_write_json(reproduction / "rta_task_results.json", [
             row for row in task_rows
             if row["cell_id"] == context["cell_id"]
@@ -269,6 +462,159 @@ class Core3PairingRunner:
             })
         return reproduction
 
+    def _response_bound_violations(
+        self,
+        context: Mapping[str, Any],
+        execution: SimulationExecution,
+        rta_task_rows: Sequence[Mapping[str, Any]],
+    ) -> list[Dict[str, Any]]:
+        tasks = {task.task_id: task for task in execution.result.tasks}
+        no_overflow_guard = execution.attempt_count > 0
+        violations = []
+        for rta_task in rta_task_rows:
+            if (
+                str(rta_task.get("cell_id")) != str(context["cell_id"])
+                or str(rta_task.get("taskset_id")) != str(context["taskset_id"])
+            ):
+                continue
+            task = tasks.get(str(rta_task.get("task_id")))
+            eligibility = _response_bound_eligibility(
+                execution, task, rta_task
+            )
+            witness = response_bound_violation_row(
+                rta_task,
+                {
+                    **(task.row() if task is not None else {}),
+                    "simulation_status": execution.result.status.value,
+                },
+                eligible=eligibility.eligible,
+            )
+            if witness is None:
+                continue
+            violations.append({
+                "code": "RTA_RESPONSE_BOUND_VIOLATION",
+                **witness,
+                "simulation_id": execution.simulation_id,
+                "taskset_hash": context["taskset_hash"],
+                "release_e0_valid": execution.result.release_e0_valid,
+                "no_overflow_guard": no_overflow_guard,
+                "comparison_eligible": eligibility.eligible,
+                "simulation_taskset_results_path": str(
+                    self.root / "simulation_taskset_results.csv"
+                ),
+                "simulation_task_results_path": str(
+                    self.root / "simulation_task_results.csv"
+                ),
+                "simulation_job_results_path": str(
+                    self.root / "simulation_job_results.csv"
+                ),
+                "retained_trace_path": str(execution.retained_trace_path or ""),
+                "system_config_path": str(execution.system_config_path),
+                "taskset_path": str(execution.taskset_path),
+                "observation_trace_path": "",
+                "failure_input": "",
+            })
+        return violations
+
+    def _record_response_bound_failure(
+        self,
+        context: Mapping[str, Any],
+        execution: SimulationExecution,
+        violations: Sequence[Mapping[str, Any]],
+    ) -> Path:
+        reproduction = self._record_failure(
+            context,
+            execution,
+            severity="P0",
+            code="RTA_RESPONSE_BOUND_VIOLATION",
+            detail=(
+                f"{len(violations)} task/analysis response bound(s) were exceeded "
+                "by observed maximum response time"
+            ),
+        )
+        violating_tasks = {str(row["task_id"]) for row in violations}
+        observation_trace_path = reproduction / "response_bound_job_trace.json"
+        atomic_write_json(observation_trace_path, {
+            "simulation_id": execution.simulation_id,
+            "simulation_status": execution.result.status.value,
+            "horizon": execution.result.horizon,
+            "jobs": [
+                job.row() for job in execution.result.jobs
+                if job.task_id in violating_tasks
+            ],
+        })
+        materialized = []
+        for violation in violations:
+            row = {
+                **violation,
+                "observation_trace_path": str(observation_trace_path),
+                "failure_input": str(reproduction),
+            }
+            materialized.append(row)
+            if isinstance(violation, dict):
+                violation["observation_trace_path"] = str(
+                    observation_trace_path
+                )
+                violation["failure_input"] = str(reproduction)
+        atomic_write_json(
+            reproduction / "response_bound_violations.json",
+            materialized,
+        )
+        return reproduction
+
+    def _synchronize_soundness_failures(
+        self,
+        plan: Sequence[Mapping[str, Any]],
+        executions: Mapping[str, SimulationExecution],
+        response_bound_violations: Sequence[Dict[str, Any]],
+    ) -> None:
+        """Replace derived CORE-3 soundness failures from authoritative terminals."""
+
+        scoped_simulations = set(executions)
+        derived_codes = {
+            "RTA_PASS_SIM_FAIL",
+            "RTA_RESPONSE_BOUND_VIOLATION",
+        }
+        preserved = [
+            row for row in read_csv(self.root / "failures.csv")
+            if not (
+                row.get("analysis_id") in scoped_simulations
+                and row.get("code") in derived_codes
+            )
+        ]
+        write_csv(self.root / "failures.csv", FAILURE_COLUMNS, preserved)
+
+        by_simulation: Dict[str, list[Dict[str, Any]]] = {}
+        for row in response_bound_violations:
+            by_simulation.setdefault(str(row["simulation_id"]), []).append(row)
+        for context in plan:
+            simulation_id_value = str(context["simulation_id"])
+            execution = executions.get(simulation_id_value)
+            if execution is None:
+                continue
+            rta_rows = context.get("rta_rows") or [
+                row for row in read_csv(self.root / "per_taskset_results.csv")
+                if row.get("cell_id") == str(context["cell_id"])
+                and row.get("taskset_id") == str(context["taskset_id"])
+            ]
+            if deadline_soundness_violation(rta_rows, execution):
+                self._record_failure(
+                    context,
+                    execution,
+                    severity="P0",
+                    code="RTA_PASS_SIM_FAIL",
+                    detail=(
+                        "RTA-certified taskset produced a simulation deadline miss"
+                    ),
+                )
+            violations = by_simulation.get(simulation_id_value, [])
+            if violations:
+                reproduction = self._record_response_bound_failure(
+                    context, execution, violations
+                )
+                for violation in violations:
+                    violation["failure_input"] = str(reproduction)
+
     def _run_simulations(
         self,
         rta_outcome: RunOutcome,
@@ -278,6 +624,7 @@ class Core3PairingRunner:
     ) -> Dict[str, SimulationExecution]:
         self.simulation_terminals.mkdir(parents=True, exist_ok=True)
         results: Dict[str, SimulationExecution] = {}
+        rta_task_rows = read_csv(self.root / "per_task_results.csv")
         for index, context in enumerate(plan, start=1):
             simulation_id_value = str(context["simulation_id"])
             terminal = self.simulation_terminals / f"{simulation_id_value}.json"
@@ -330,16 +677,26 @@ class Core3PairingRunner:
                     ),
                 )
 
-            p0 = bool(
-                execution.result.status is SimulationStatus.DEADLINE_MISS
-                and any(_truth(row["taskset_proven"]) for row in context["rta_rows"])
+            deadline_p0 = deadline_soundness_violation(
+                context["rta_rows"], execution
             )
-            if p0:
+            response_bound_violations = self._response_bound_violations(
+                context, execution, rta_task_rows
+            )
+            if deadline_p0:
                 self._record_failure(
                     context, execution, severity="P0",
                     code="RTA_PASS_SIM_FAIL",
                     detail="RTA-certified taskset produced a simulation deadline miss",
                 )
+            if response_bound_violations:
+                reproduction = self._record_response_bound_failure(
+                    context, execution, response_bound_violations
+                )
+                for violation in response_bound_violations:
+                    violation["failure_input"] = str(reproduction)
+            p0 = deadline_p0 or bool(response_bound_violations)
+            if p0:
                 self.stop_requested = True
             if index % int(self.config["execution"]["checkpoint_every"]) == 0 or p0:
                 self._checkpoint(rta_outcome, plan)
@@ -355,6 +712,14 @@ class Core3PairingRunner:
         executions: Mapping[str, SimulationExecution],
     ) -> Dict[str, Any]:
         shutil.copy2(self.root / "per_taskset_results.csv", self.root / "rta_results.csv")
+        rta_task_rows = read_csv(self.root / "per_task_results.csv")
+        rta_task_rows_by_key: Dict[tuple[str, str, str], list[Mapping[str, Any]]] = {}
+        for row in rta_task_rows:
+            key = (
+                str(row["cell_id"]), str(row["taskset_id"]),
+                str(row["task_id"]),
+            )
+            rta_task_rows_by_key.setdefault(key, []).append(row)
         simulation_tasksets = []
         simulation_tasks = []
         simulation_jobs = []
@@ -364,6 +729,10 @@ class Core3PairingRunner:
             if execution is None:
                 continue
             result = execution.result
+            comparison_eligible, comparison_ineligible_reason = (
+                _observation_comparison_eligibility(execution)
+            )
+            no_overflow_guard = execution.attempt_count > 0
             simulation_tasksets.append({
                 "simulation_id": simulation_id_value,
                 "cell_id": context["cell_id"],
@@ -373,13 +742,14 @@ class Core3PairingRunner:
                 "M": context["cell"]["M"],
                 "status": result.status.value,
                 "reason": result.reason,
-                "comparison_eligible": result.comparison_eligible,
+                "comparison_eligible": comparison_eligible,
+                "comparison_ineligible_reason": comparison_ineligible_reason,
                 "horizon": result.horizon,
                 "simulation_initial_battery": self.config["energy"]["simulation_initial_battery"],
                 "release_e0_valid": result.release_e0_valid,
                 "minimum_release_energy_j": result.minimum_release_energy_j,
                 "service_curve_reference": context["generated"]["service_curve_reference"],
-                "no_overflow_guard": execution.attempt_count > 0,
+                "no_overflow_guard": no_overflow_guard,
                 "runtime_seconds": f"{execution.runtime_seconds:.9f}",
                 "attempt_count": execution.attempt_count,
                 "horizons_attempted": json.dumps(execution.horizons_attempted),
@@ -390,8 +760,16 @@ class Core3PairingRunner:
                 "retained_trace_path": execution.retained_trace_path,
                 "system_config_path": execution.system_config_path,
                 "taskset_path": execution.taskset_path,
+                "trace_schema_version": result.trace_schema_version,
+                "configured_scheduler": result.configured_scheduler,
+                "simulation_completed": result.simulation_completed,
+                "completion_reason": result.completion_reason,
             })
             for task in result.tasks:
+                task_rta_rows = rta_task_rows_by_key.get((
+                    str(context["cell_id"]), str(context["taskset_id"]),
+                    str(task.task_id),
+                ), [])
                 simulation_tasks.append({
                     "simulation_id": simulation_id_value,
                     "cell_id": context["cell_id"],
@@ -400,6 +778,12 @@ class Core3PairingRunner:
                     "exact_e0": fraction_text(context["exact_e0"]),
                     **task.row(),
                     "tightness_eligible": task_is_tightness_eligible(result, task),
+                    "response_bound_eligible": any(
+                        _response_bound_eligibility(
+                            execution, task, rta_task
+                        ).eligible
+                        for rta_task in task_rta_rows
+                    ),
                     "censoring_label": censoring_label(task),
                 })
             for job in result.jobs:
@@ -434,9 +818,20 @@ class Core3PairingRunner:
             simulation = simulation_by_pair.get((row["cell_id"], row["taskset_id"]))
             if simulation is None:
                 continue
+            release_e0_valid = _required_artifact_bool(
+                simulation, "release_e0_valid"
+            )
+            comparison_eligible = _required_artifact_bool(
+                simulation, "comparison_eligible"
+            )
+            no_overflow_guard = _required_artifact_bool(
+                simulation, "no_overflow_guard"
+            )
             classification = classify_soundness(
                 row, str(simulation["status"]),
-                release_e0_valid=_truth(simulation["release_e0_valid"]),
+                release_e0_valid=release_e0_valid,
+                comparison_eligible=comparison_eligible,
+                no_overflow_guard=no_overflow_guard,
             )
             soundness.append({
                 "analysis_id": row["analysis_id"],
@@ -451,7 +846,11 @@ class Core3PairingRunner:
                 "rta_taskset_proven": row["taskset_proven"],
                 "simulation_status": simulation["status"],
                 "release_e0_valid": simulation["release_e0_valid"],
+                "no_overflow_guard": simulation["no_overflow_guard"],
                 "comparison_eligible": simulation["comparison_eligible"],
+                "comparison_ineligible_reason": simulation[
+                    "comparison_ineligible_reason"
+                ],
                 "soundness_class": classification.value,
                 "p0_violation_candidate": classification is SoundnessClass.RTA_PASS_SIM_FAIL,
             })
@@ -463,12 +862,11 @@ class Core3PairingRunner:
         }
         certified_analysis_ids = {
             row["analysis_id"] for row in rta_rows
-            if _truth(row.get("taskset_proven"))
-            and row.get("certification_status") == "CERTIFIED_TASKSET"
+            if _rta_taskset_certified(row)
         }
         partial_candidate_rows_excluded = 0
         tightness = []
-        for rta_task in read_csv(self.root / "per_task_results.csv"):
+        for rta_task in rta_task_rows:
             if rta_task["analysis_id"] not in certified_analysis_ids:
                 if (
                     rta_task.get("task_solver_status") == "CANDIDATE_FOUND"
@@ -489,6 +887,24 @@ class Core3PairingRunner:
         write_csv(
             self.root / "tightness_by_taskset.csv",
             TIGHTNESS_TASKSET_COLUMNS, tightness_tasksets,
+        )
+
+        response_bound_violations = []
+        for context in plan:
+            execution = executions.get(str(context["simulation_id"]))
+            if execution is not None:
+                response_bound_violations.extend(
+                    self._response_bound_violations(
+                        context, execution, rta_task_rows
+                    )
+                )
+        self._synchronize_soundness_failures(
+            plan, executions, response_bound_violations
+        )
+        write_csv(
+            self.root / "response_bound_violations.csv",
+            RESPONSE_BOUND_VIOLATION_COLUMNS,
+            response_bound_violations,
         )
 
         censor_counts = Counter(
@@ -550,23 +966,66 @@ class Core3PairingRunner:
                 "taskset_id": "", "task_id": "", "category": category,
                 "x": category, "y": count,
             })
+        for row in response_bound_violations:
+            plot_rows.append({
+                "plot": "response_bound_violation",
+                "method": row["analysis_variant"],
+                "taskset_id": row["taskset_id"],
+                "task_id": row["task_id"],
+                "category": row["code"],
+                "x": row["candidate_response_time"],
+                "y": row["r_sim_max"],
+            })
         write_csv(self.root / "core3_plot_data.csv", PLOT_COLUMNS, plot_rows)
 
         soundness_counts = Counter(row["soundness_class"] for row in soundness)
-        raw_soundness_evaluable = {
+        soundness_quadrants = {
             SoundnessClass.RTA_PASS_SIM_PASS.value,
             SoundnessClass.RTA_PASS_SIM_FAIL.value,
             SoundnessClass.RTA_FAIL_SIM_PASS.value,
             SoundnessClass.RTA_FAIL_SIM_FAIL.value,
         }
+        raw_comparison_outcomes = {
+            SimulationStatus.PASS_OBSERVED.value,
+            SimulationStatus.DEADLINE_MISS.value,
+        }
+        deadline_counterexample_tasksets = {
+            (row["cell_id"], row["taskset_id"], row["exact_e0"])
+            for row in soundness
+            if _truth(row["p0_violation_candidate"])
+        }
+        deadline_violation_comparisons = sum(
+            _truth(row["p0_violation_candidate"]) for row in soundness
+        )
+        response_counterexample_tasks = {
+            (
+                row["cell_id"], row["taskset_id"], row["exact_e0"],
+                row["task_id"],
+            )
+            for row in response_bound_violations
+        }
+        response_counterexample_tasksets = {
+            (row["cell_id"], row["taskset_id"], row["exact_e0"])
+            for row in response_bound_violations
+        }
+        unique_soundness_counterexample_tasksets = (
+            deadline_counterexample_tasksets | response_counterexample_tasksets
+        )
         release_e0_valid_count = sum(
             _truth(row["release_e0_valid"]) for row in soundness
+        )
+        no_overflow_guard_valid_count = sum(
+            _truth(row["no_overflow_guard"]) for row in soundness
+        )
+        comparison_eligible_count = sum(
+            _truth(row["comparison_eligible"]) for row in soundness
         )
         failures = read_csv(self.root / "failures.csv")
         severity = Counter(row["severity"] for row in failures)
         completed_rta = sum(row["solver_status"] == "COMPLETED" for row in rta_rows)
         summary = {
-            "schema": "ASAP_BLOCK_V9_3_CORE3_SUMMARY_V1",
+            "schema": "ASAP_BLOCK_V9_3_CORE3_SUMMARY_V2",
+            "core3_artifact_contract_version": CORE3_ARTIFACT_CONTRACT_VERSION,
             "empirical_only": True,
             "rta_requested": rta_outcome.requested,
             "rta_terminal": len(rta_rows),
@@ -578,23 +1037,53 @@ class Core3PairingRunner:
                 row["status"] == SimulationStatus.PASS_OBSERVED.value
                 for row in simulation_tasksets
             ),
+            "simulation_deadline_miss": sum(
+                row["status"] == SimulationStatus.DEADLINE_MISS.value
+                for row in simulation_tasksets
+            ),
             "simulation_horizon_insufficient": sum(
                 row["status"] == SimulationStatus.HORIZON_INSUFFICIENT.value
+                for row in simulation_tasksets
+            ),
+            "simulation_runtime_timeout": sum(
+                row["status"] == SimulationStatus.RUNTIME_TIMEOUT.value
+                for row in simulation_tasksets
+            ),
+            "simulation_internal_error": sum(
+                row["status"] == SimulationStatus.INTERNAL_ERROR.value
+                for row in simulation_tasksets
+            ),
+            "simulation_release_e0_invalid": sum(
+                not _truth(row["release_e0_valid"])
+                for row in simulation_tasksets
+            ),
+            "simulation_no_overflow_guard_invalid": sum(
+                not _truth(row["no_overflow_guard"])
                 for row in simulation_tasksets
             ),
             "soundness_matrix_rows": len(soundness),
             "soundness_counts": dict(sorted(soundness_counts.items())),
             "soundness_raw_evaluable_denominator": sum(
-                row["soundness_class"] in raw_soundness_evaluable
+                row["simulation_status"] in raw_comparison_outcomes
                 for row in soundness
             ),
             "soundness_evaluable_denominator": sum(
-                row["soundness_class"] in raw_soundness_evaluable
-                and _truth(row["release_e0_valid"])
+                row["soundness_class"] in soundness_quadrants
                 for row in soundness
             ),
+            "assumption_e0_not_satisfied_count": soundness_counts[
+                SoundnessClass.ASSUMPTION_E0_NOT_SATISFIED.value
+            ],
             "release_e0_valid_count": release_e0_valid_count,
             "release_e0_invalid_count": len(soundness) - release_e0_valid_count,
+            "no_overflow_guard_valid_count": no_overflow_guard_valid_count,
+            "no_overflow_guard_invalid_count": (
+                len(soundness) - no_overflow_guard_valid_count
+            ),
+            "comparison_eligible_count": comparison_eligible_count,
+            "comparison_ineligible_count": (
+                len(soundness) - comparison_eligible_count
+            ),
             "certification_taskset_denominator": len(rta_rows),
             "certified_taskset_numerator": sum(
                 _truth(row.get("taskset_proven")) for row in rta_rows
@@ -605,8 +1094,28 @@ class Core3PairingRunner:
                 partial_candidate_rows_excluded
             ),
             "tightness": tightness_summary,
+            "deadline_miss_soundness_violation_count": len(
+                deadline_counterexample_tasksets
+            ),
+            "deadline_miss_soundness_violation_comparison_count": (
+                deadline_violation_comparisons
+            ),
+            "response_bound_violation_task_count": len(
+                response_counterexample_tasks
+            ),
+            "response_bound_violation_comparison_count": len(
+                response_bound_violations
+            ),
+            "response_bound_violation_taskset_count": len(
+                response_counterexample_tasksets
+            ),
+            "total_unique_soundness_counterexample_taskset_count": len(
+                unique_soundness_counterexample_tasksets
+            ),
             "p0": severity["P0"], "p1": severity["P1"], "p2": severity["P2"],
-            "soundness_violation_candidate": bool(severity["P0"]),
+            "soundness_violation_candidate": bool(
+                unique_soundness_counterexample_tasksets
+            ),
             "stopped": self.stop_requested or rta_outcome.stopped,
         }
         atomic_write_json(self.root / "summary.json", summary)
@@ -616,6 +1125,15 @@ class Core3PairingRunner:
             {"metric": "simulation_requested", "value": summary["simulation_requested"], "denominator": "unconditional_simulation_requests"},
             {"metric": "simulation_observed_pass", "value": summary["simulation_observed_pass"], "denominator": "terminal_simulations"},
             {"metric": "soundness_evaluable", "value": summary["soundness_evaluable_denominator"], "denominator": "soundness_matrix_rows"},
+            {"metric": "assumption_e0_not_satisfied", "value": summary["assumption_e0_not_satisfied_count"], "denominator": "soundness_matrix_rows"},
+            {"metric": "no_overflow_guard_invalid", "value": summary["no_overflow_guard_invalid_count"], "denominator": "soundness_matrix_rows"},
+            {"metric": "comparison_ineligible", "value": summary["comparison_ineligible_count"], "denominator": "soundness_matrix_rows"},
+            {"metric": "deadline_miss_soundness_violations", "value": summary["deadline_miss_soundness_violation_count"], "denominator": "unique_tasksets"},
+            {"metric": "deadline_miss_soundness_violation_comparisons", "value": summary["deadline_miss_soundness_violation_comparison_count"], "denominator": "eligible_rta_simulation_comparisons"},
+            {"metric": "response_bound_violation_tasks", "value": summary["response_bound_violation_task_count"], "denominator": "eligible_candidate_tasks"},
+            {"metric": "response_bound_violation_comparisons", "value": summary["response_bound_violation_comparison_count"], "denominator": "eligible_candidate_analysis_comparisons"},
+            {"metric": "response_bound_violation_tasksets", "value": summary["response_bound_violation_taskset_count"], "denominator": "unique_tasksets"},
+            {"metric": "total_unique_soundness_counterexample_tasksets", "value": summary["total_unique_soundness_counterexample_taskset_count"], "denominator": "unique_tasksets"},
             {"metric": "tightness_common_tasks", "value": summary["tightness_common_task_denominator"], "denominator": "legal_candidate_and_observed_tasks"},
             {"metric": "p0", "value": summary["p0"], "denominator": "recorded_failures"},
             {"metric": "p1", "value": summary["p1"], "denominator": "recorded_failures"},
@@ -626,15 +1144,26 @@ class Core3PairingRunner:
         return summary
 
     def run(self, *, resume: bool = False) -> Core3Outcome:
+        self._validate_existing_core3_contract()
         rta_outcome = ExecutionEngine(self.config).run(resume=resume)
         plan = self._simulation_plan()
         executions: Dict[str, SimulationExecution] = {}
         if not rta_outcome.stopped:
+            # Persist the new comparison contract before the first simulation
+            # terminal, so an interrupted run can only resume under v2 rules.
+            self._checkpoint(rta_outcome, plan)
             executions = self._run_simulations(
                 rta_outcome, plan, resume=resume,
             )
         else:
             self.stop_requested = True
+            for context in plan:
+                simulation_id_value = str(context["simulation_id"])
+                terminal = self.simulation_terminals / f"{simulation_id_value}.json"
+                if terminal.is_file():
+                    executions[simulation_id_value] = load_simulation_terminal(
+                        terminal
+                    )
             self._checkpoint(rta_outcome, plan)
         summary = self._materialize(rta_outcome, plan, executions)
         return Core3Outcome(
@@ -648,6 +1177,7 @@ def analyze_core3(config: Mapping[str, Any]) -> Mapping[str, Any]:
     """Rebuild CORE-3 summaries from terminal RTA/simulation records only."""
 
     runner = Core3PairingRunner(config)
+    runner._validate_existing_core3_contract()
     plan = runner._simulation_plan()
     executions = {}
     for context in plan:
