@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 from pathlib import Path
 import sys
 
@@ -67,6 +66,14 @@ def _scheduled(tick: int, task_id: str = "0", release: int = 0):
     }
 
 
+def _deadline_miss(tick: int, task_id: str = "0", release: int = 0):
+    return {
+        "time": tick,
+        "event_type": "dline_miss",
+        **_native_job(task_id, release),
+    }
+
+
 def _trace(events):
     return {
         "trace_schema_version": 2,
@@ -102,10 +109,14 @@ def _request(pair: str = "pair", scheduler: str = NONBLOCK_SCHEDULER):
     }
 
 
-def _episodes(events, *, status: str = "SIM_PASS_OBSERVED"):
+def _episodes(
+    events, *, status: str = "SIM_PASS_OBSERVED",
+    completion_reason: str = "reached_horizon",
+):
     return reconstruct_bypass_episodes(
         _trace(events), request=_request(), high_task_id="0", low_task_id="1",
         known_task_ids={"0", "1", "2"}, terminal_status=status,
+        terminal_completion_reason=completion_reason,
     )
 
 
@@ -118,14 +129,15 @@ def test_single_bypass_recovers_at_next_unit_boundary():
     assert rows[0]["censored"] is False
 
 
-def test_consecutive_bypass_events_form_one_episode():
+def test_bypass_gap_without_execution_stays_in_one_open_episode():
     rows = _episodes([
-        _decision(0), _bypass(0), _decision(1), _bypass(1),
-        _decision(2), _bypass(2), _scheduled(3),
+        _decision(10), _bypass(10),
+        _decision(12), _bypass(12), _scheduled(13),
     ])
     assert len(rows) == 1
-    assert rows[0]["episode_last_bypass_tick"] == 2
-    assert rows[0]["bypass_event_count"] == 3
+    assert rows[0]["episode_start_tick"] == 10
+    assert rows[0]["episode_last_bypass_tick"] == 12
+    assert rows[0]["bypass_event_count_in_episode"] == 2
     assert rows[0]["recovery_delay_ticks"] == 3
 
 
@@ -149,14 +161,49 @@ def test_unrecovered_episode_is_censored_at_horizon():
     assert rows[0]["censor_reason"] == "HORIZON_CUTOFF"
 
 
-def test_different_blocked_jobs_never_merge():
+def test_interleaved_blocked_jobs_keep_independent_open_episodes():
     rows = _episodes([
         _decision(0), _bypass(0),
         _decision(1, blocked="2"), _bypass(1, blocked="2"),
-        _scheduled(2, "0"), _scheduled(2, "2"),
+        _decision(2), _bypass(2), _scheduled(3, "0"),
+        _decision(4, blocked="2"), _bypass(4, blocked="2"),
+        _scheduled(5, "2"),
     ])
     assert len(rows) == 2
     assert {row["blocked_job_id"] for row in rows} == {"0@0", "2@0"}
+    assert {
+        row["blocked_job_id"]: row["bypass_event_count_in_episode"]
+        for row in rows
+    } == {"0@0": 2, "2@0": 2}
+
+
+def test_deadline_miss_does_not_close_episode_when_simulation_continues():
+    rows = _episodes([
+        _decision(10), _bypass(10), _deadline_miss(11), _scheduled(13),
+    ], status="SIM_DEADLINE_MISS")
+    assert len(rows) == 1
+    assert rows[0]["censored"] is False
+    assert rows[0]["recovery_tick"] == 13
+    assert rows[0]["recovery_delay_ticks"] == 3
+    assert rows[0]["censor_reason"] == ""
+
+
+def test_deadline_miss_termination_censors_unrecovered_episode():
+    rows = _episodes(
+        [_decision(10), _bypass(10), _deadline_miss(11)],
+        status="SIM_DEADLINE_MISS",
+        completion_reason="deadline_miss_terminated",
+    )
+    assert rows[0]["censored"] is True
+    assert rows[0]["censor_reason"] == (
+        "DEADLINE_MISS_TERMINATION_BEFORE_RECOVERY"
+    )
+
+
+def test_normal_simulation_end_has_distinct_censor_reason():
+    rows = _episodes([_decision(10), _bypass(10)])
+    assert rows[0]["censored"] is True
+    assert rows[0]["censor_reason"] == "SIMULATION_END_BEFORE_RECOVERY"
 
 
 def test_zero_bypass_events_produces_zero_episodes():
@@ -238,6 +285,37 @@ def test_missing_high_or_low_task_link_fails_closed():
         )
 
 
+def test_first_start_response_and_deadline_denominators_are_explicit():
+    request = _request(scheduler=BLOCK_SCHEDULER)
+    jobs = [
+        _job("0", 0, 10, 5, first=12),
+        _job("0", 1, 20, None, censored=True),
+        _job("0", 2, 30, None, first=31, missed=True),
+    ]
+    effect = build_b1_task_effect_row(
+        request, _result(request, status="SIM_DEADLINE_MISS"),
+        [_task_row(request, task_id, jobs) for task_id in ("0", "1")],
+        jobs, {"high_task_id": "0", "low_task_id": "1"},
+    )
+    assert "high_first_execution_time" not in effect
+    assert effect["high_response_time_observed_job_count"] == 1
+    assert effect["high_response_time_mean"] == 5
+    assert effect["high_first_start_observed_job_count"] == 2
+    assert effect["high_first_start_delay_mean_ticks"] == 1.5
+    assert effect["high_first_start_delay_max_ticks"] == 2
+    assert effect["high_deadline_observable_job_count"] == 2
+    assert effect["high_deadline_miss_count"] == 1
+    assert effect["high_deadline_miss_ratio"] == 0.5
+    assert effect["low_response_time_observed_job_count"] == 0
+    assert effect["low_response_time_mean"] == ""
+    assert effect["low_response_time_denominator_zero"] is True
+    assert effect["low_first_start_delay_mean_ticks"] == ""
+    assert effect["low_first_start_denominator_zero"] is True
+    assert effect["low_deadline_miss_count"] == ""
+    assert effect["low_deadline_miss_ratio"] == ""
+    assert effect["low_deadline_denominator_zero"] is True
+
+
 def _scenario():
     return {
         "paired_instance_id": "pair",
@@ -291,6 +369,12 @@ def test_timeout_error_and_horizon_are_excluded_from_effect_summary(
     assert summary["valid_pairs"] == 0
     assert summary[summary_field] == 1
     assert summary["high_response_mean_delta_pair_count"] == 0
+    assert summary["high_response_time_observed_job_count"] == 0
+    assert summary["high_response_time_denominator_zero"] is True
+    assert summary["high_first_start_observed_job_count"] == 0
+    assert summary["high_first_start_denominator_zero"] is True
+    assert summary["high_deadline_observable_job_count"] == 0
+    assert summary["high_deadline_denominator_zero"] is True
     assert summary["recovery_denominator_zero"] is True
     assert summary["recovery_delay_mean_ticks"] == ""
     assert summary["recovery_delay_median_ticks"] == ""
@@ -316,17 +400,31 @@ def test_job_level_paired_delta_direction_is_nonblock_minus_block():
     )
     row = rows[0]
     assert row["pair_valid"] is True
+    assert row["high_first_start_delay_mean_delta"] == 1
+    assert row["low_first_start_delay_mean_delta"] == -1.5
     assert row["high_response_mean_delta"] == 2
     assert row["low_response_mean_delta"] == -3
     assert row["ready_but_idle_ticks_delta"] == -3
+    assert row["high_response_time_observed_job_count"] == 2
+    assert row["high_first_start_observed_job_count"] == 2
+    assert row["high_deadline_observable_job_count"] == 2
+    summary = summarize_b1(rows, [], [block_result, nonblock_result])
+    assert summary["high_response_time_observed_job_count"] == 2
+    assert summary["high_response_time_denominator_zero"] is False
+    assert summary["low_first_start_observed_job_count"] == 2
+    assert summary["low_first_start_denominator_zero"] is False
+    assert summary["high_deadline_observable_job_count"] == 2
+    assert summary["high_deadline_denominator_zero"] is False
+    assert summary["resolved_bypass_episode_count"] == 0
+    assert summary["recovery_denominator_zero"] is True
 
 
-def test_official_candidate_cli_paths_are_noninteractive_and_persisted(tmp_path):
+def test_pilot_cli_paths_are_noninteractive_and_persisted(tmp_path):
     output = tmp_path / "output"
     simulator = tmp_path / "rtsim"
     simulator.write_text("", encoding="utf-8")
     runner = runner_with_overrides(
-        ROOT / "configs" / "v9_3_ext1b1_official_candidate.yaml",
+        ROOT / "configs" / "v9_3_ext1b1_pilot.yaml",
         output_root=output, simulator_bin=simulator,
     )
     assert runner.root == output.resolve()

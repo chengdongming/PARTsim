@@ -1,8 +1,25 @@
+# This is the only executable B1 pilot configuration. Its sample size is not a
+# final paper parameter and still requires explicit user approval before use.
 experiment_id: asap-block-v9.3-ext1b1-pilot
 core: CORE-3
 extension: EXT-1B
 parameter_status: PILOT
 seed_space: EXT1B_PILOT
+scheduler_ids:
+  - gpfp_asap_block
+  - gpfp_asap_nonblock
+  - gpfp_asap_sync
+  - gpfp_alap_block
+  - gpfp_alap_nonblock
+  - gpfp_alap_sync
+  - gpfp_st_block
+  - gpfp_st_nonblock
+  - gpfp_st_sync
+required_outputs:
+  - b1_bypass_episodes.csv
+  - b1_task_effects.csv
+  - b1_paired_effects.csv
+  - b1_summary.csv
 platform: {cores: [4], task_count: [10]}
 generation:
   deadline_mode: constrained

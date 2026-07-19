@@ -27,8 +27,9 @@ B1_EPISODE_COLUMNS = (
     "taskset_hash", "scheduler", "blocked_task_id", "blocked_job_id",
     "low_task_id", "bypassed_task_id", "bypassed_job_id",
     "bypassed_task_ids_json", "bypassed_job_ids_json",
-    "episode_start_tick", "episode_last_bypass_tick", "bypass_event_count",
-    "recovery_tick", "recovery_delay_ticks", "censored", "censor_reason",
+    "episode_start_tick", "episode_last_bypass_tick",
+    "bypass_event_count_in_episode", "recovery_tick", "recovery_delay_ticks",
+    "censored", "censor_reason",
 )
 
 B1_TASK_EFFECT_COLUMNS = (
@@ -36,15 +37,25 @@ B1_TASK_EFFECT_COLUMNS = (
     "taskset_hash", "scheduler", "status", "comparison_eligible",
     "high_task_id", "low_task_id",
     "high_observation_state", "high_job_count", "high_completed_job_count",
-    "high_censored_job_count", "high_first_execution_time",
+    "high_censored_job_count", "high_response_time_observed_job_count",
     "high_response_time_mean", "high_response_time_max",
+    "high_response_time_denominator_zero", "high_first_start_observed_job_count",
+    "high_first_start_delay_mean_ticks", "high_first_start_delay_max_ticks",
+    "high_first_start_denominator_zero", "high_deadline_observable_job_count",
     "high_deadline_miss_count", "high_deadline_miss_ratio",
-    "high_job_identities_json", "high_response_job_identities_json",
+    "high_deadline_denominator_zero", "high_job_identities_json",
+    "high_response_job_identities_json", "high_first_start_job_identities_json",
+    "high_deadline_observable_job_identities_json",
     "low_observation_state", "low_job_count", "low_completed_job_count",
-    "low_censored_job_count", "low_first_execution_time",
+    "low_censored_job_count", "low_response_time_observed_job_count",
     "low_response_time_mean", "low_response_time_max",
+    "low_response_time_denominator_zero", "low_first_start_observed_job_count",
+    "low_first_start_delay_mean_ticks", "low_first_start_delay_max_ticks",
+    "low_first_start_denominator_zero", "low_deadline_observable_job_count",
     "low_deadline_miss_count", "low_deadline_miss_ratio",
-    "low_job_identities_json", "low_response_job_identities_json",
+    "low_deadline_denominator_zero", "low_job_identities_json",
+    "low_response_job_identities_json", "low_first_start_job_identities_json",
+    "low_deadline_observable_job_identities_json",
     "ready_but_idle_ticks",
     "total_deadline_miss_count",
 )
@@ -56,18 +67,26 @@ B1_PAIRED_EFFECT_COLUMNS = (
     "pair_failure_reason", "mechanism_activated", "bypass_event_count",
     "bypass_episode_count", "resolved_bypass_episode_count",
     "censored_bypass_episode_count", "high_response_pairable",
-    "low_response_pairable", "high_first_execution_delta",
+    "low_response_pairable", "high_first_start_pairable",
+    "low_first_start_pairable", "high_deadline_pairable",
+    "low_deadline_pairable", "high_response_time_observed_job_count",
+    "high_response_time_denominator_zero", "low_response_time_observed_job_count",
+    "low_response_time_denominator_zero", "high_first_start_observed_job_count",
+    "high_first_start_denominator_zero", "low_first_start_observed_job_count",
+    "low_first_start_denominator_zero", "high_deadline_observable_job_count",
+    "high_deadline_denominator_zero", "low_deadline_observable_job_count",
+    "low_deadline_denominator_zero", "high_first_start_delay_mean_delta",
     "high_response_mean_delta", "high_response_max_delta",
-    "high_deadline_miss_delta", "low_first_execution_delta",
+    "high_deadline_miss_delta", "low_first_start_delay_mean_delta",
     "low_response_mean_delta", "low_response_max_delta",
     "low_deadline_miss_delta", "ready_but_idle_ticks_delta",
     "total_deadline_miss_delta",
 )
 
 DELTA_FIELDS = (
-    "high_first_execution_delta", "high_response_mean_delta",
+    "high_first_start_delay_mean_delta", "high_response_mean_delta",
     "high_response_max_delta", "high_deadline_miss_delta",
-    "low_first_execution_delta", "low_response_mean_delta",
+    "low_first_start_delay_mean_delta", "low_response_mean_delta",
     "low_response_max_delta", "low_deadline_miss_delta",
     "ready_but_idle_ticks_delta", "total_deadline_miss_delta",
 )
@@ -80,6 +99,18 @@ B1_SUMMARY_COLUMNS = (
     "recovery_delay_median_ticks", "recovery_delay_max_ticks",
     "recovery_denominator_zero", "timeout_count", "internal_error_count",
     "horizon_insufficient_count",
+    "high_response_time_observed_job_count",
+    "high_response_time_denominator_zero",
+    "low_response_time_observed_job_count",
+    "low_response_time_denominator_zero",
+    "high_first_start_observed_job_count",
+    "high_first_start_denominator_zero",
+    "low_first_start_observed_job_count",
+    "low_first_start_denominator_zero",
+    "high_deadline_observable_job_count",
+    "high_deadline_denominator_zero",
+    "low_deadline_observable_job_count",
+    "low_deadline_denominator_zero",
     *tuple(
         name
         for field in DELTA_FIELDS
@@ -196,15 +227,25 @@ def _decision_for_bypass(
 def reconstruct_bypass_episodes(
     trace: Path | str | Mapping[str, Any], *, request: Mapping[str, Any],
     high_task_id: str, low_task_id: str, known_task_ids: Iterable[str],
-    terminal_status: str,
+    terminal_status: str, terminal_completion_reason: str | None = None,
 ) -> list[Dict[str, Any]]:
-    """Reconstruct consecutive per-job bypass intervals from a native trace."""
+    """Keep one episode open per blocked job until that job next executes."""
 
     document = _strict_trace(trace) if not isinstance(trace, Mapping) else trace
     if document.get("trace_schema_version") != 2:
         raise B1AnalysisError("B1 requires trace schema version 2")
     if document.get("configured_scheduler") != NONBLOCK_SCHEDULER:
         raise B1AnalysisError("B1 bypass trace scheduler is not ASAP-NONBLOCK")
+    completion_reason = (
+        str(terminal_completion_reason)
+        if terminal_completion_reason is not None
+        else str(document.get("simulation_completion_reason", ""))
+    )
+    if (
+        completion_reason == "deadline_miss_terminated"
+        and terminal_status != "SIM_DEADLINE_MISS"
+    ):
+        raise B1AnalysisError("deadline-miss termination/status mismatch")
     known = {str(value) for value in known_task_ids}
     if high_task_id not in known or low_task_id not in known or high_task_id == low_task_id:
         raise B1AnalysisError("B1 high/low structure identity is invalid")
@@ -223,22 +264,81 @@ def reconstruct_bypass_episodes(
         prior_tick = tick
         typed_events.append(raw)
 
-    scheduled: Dict[str, list[int]] = defaultdict(list)
-    missed: Dict[str, list[int]] = defaultdict(list)
+    scheduled_at_tick: Dict[int, set[str]] = defaultdict(set)
     completed: Dict[str, list[int]] = defaultdict(list)
-    bypasses: list[Dict[str, Any]] = []
+    open_episodes: Dict[str, Dict[str, Any]] = {}
+    episodes: list[Dict[str, Any]] = []
+
+    def materialize(
+        episode: Mapping[str, Any], recovery_tick: int | None,
+    ) -> Dict[str, Any]:
+        start = int(episode["episode_start_tick"])
+        blocked_job_id = str(episode["blocked_job_id"])
+        if recovery_tick is not None and recovery_tick <= start:
+            raise B1AnalysisError("B1 recovery must occur after episode start")
+        if any(
+            tick >= start and (recovery_tick is None or tick < recovery_tick)
+            for tick in completed.get(blocked_job_id, [])
+        ):
+            raise B1AnalysisError("job completed without an observed recovery")
+        if recovery_tick is not None:
+            censored = False
+            censor_reason = ""
+            recovery_delay: Any = recovery_tick - start
+        else:
+            censored = True
+            recovery_delay = ""
+            if completion_reason == "deadline_miss_terminated":
+                censor_reason = "DEADLINE_MISS_TERMINATION_BEFORE_RECOVERY"
+            elif terminal_status == "SIM_HORIZON_INSUFFICIENT":
+                censor_reason = "HORIZON_CUTOFF"
+            else:
+                censor_reason = "SIMULATION_END_BEFORE_RECOVERY"
+        bypassed_task_ids = sorted(episode["bypassed_task_ids"])
+        bypassed_job_ids = sorted(episode["bypassed_job_ids"])
+        return {
+            "request_id": request["request_id"],
+            "paired_instance_id": request["paired_instance_id"],
+            "scenario_cell_id": request["scenario_cell_id"],
+            "taskset_id": request["taskset_id"],
+            "taskset_hash": request["taskset_hash"],
+            "scheduler": NONBLOCK_SCHEDULER,
+            "blocked_task_id": episode["blocked_task_id"],
+            "blocked_job_id": blocked_job_id,
+            "low_task_id": low_task_id,
+            "bypassed_task_id": (
+                bypassed_task_ids[0] if len(bypassed_task_ids) == 1 else "MULTIPLE"
+            ),
+            "bypassed_job_id": (
+                bypassed_job_ids[0] if len(bypassed_job_ids) == 1 else "MULTIPLE"
+            ),
+            "bypassed_task_ids_json": canonical_json(bypassed_task_ids),
+            "bypassed_job_ids_json": canonical_json(bypassed_job_ids),
+            "episode_start_tick": start,
+            "episode_last_bypass_tick": episode["episode_last_bypass_tick"],
+            "bypass_event_count_in_episode": episode[
+                "bypass_event_count_in_episode"
+            ],
+            "recovery_tick": "" if recovery_tick is None else recovery_tick,
+            "recovery_delay_ticks": recovery_delay,
+            "censored": censored,
+            "censor_reason": censor_reason,
+        }
 
     for position, event in enumerate(typed_events):
         event_type = event.get("event_type")
         tick = _integer(event.get("time"), f"trace event {position} time")
-        if event_type in {"scheduled", "dline_miss", "end_instance"}:
+        if event_type == "scheduled":
             _, identity = _job_identity(event, known)
-            target = (
-                scheduled if event_type == "scheduled"
-                else missed if event_type == "dline_miss"
-                else completed
-            )
-            target[identity].append(tick)
+            scheduled_at_tick[tick].add(identity)
+            episode = open_episodes.pop(identity, None)
+            if episode is not None:
+                episodes.append(materialize(episode, tick))
+        elif event_type == "end_instance":
+            _, identity = _job_identity(event, known)
+            completed[identity].append(tick)
+        elif event_type == "dline_miss":
+            _job_identity(event, known)
         if event_type != "nonblock_bypass":
             continue
         if event.get("scheduler") != "ASAP-NonBlock" or event.get("reason") != (
@@ -275,89 +375,29 @@ def reconstruct_bypass_episodes(
         }
         if blocked_job_id in selected_ids:
             raise B1AnalysisError("blocked bypass job is also selected")
-        if tick in scheduled.get(blocked_job_id, []):
+        if blocked_job_id in scheduled_at_tick.get(tick, set()):
             raise B1AnalysisError("blocked bypass job executes at the bypass tick")
-        bypasses.append({
-            "tick": tick,
-            "blocked_task_id": blocked_id,
-            "blocked_job_id": blocked_job_id,
-            "bypassed_task_id": bypassed_id,
-            "bypassed_job_id": bypassed_job_id,
-        })
-
-    by_blocked_job: Dict[str, list[Dict[str, Any]]] = defaultdict(list)
-    for event in bypasses:
-        by_blocked_job[event["blocked_job_id"]].append(event)
-
-    episodes: list[Dict[str, Any]] = []
-    for blocked_job_id, members in by_blocked_job.items():
-        members.sort(key=lambda row: int(row["tick"]))
-        segments: list[list[Dict[str, Any]]] = []
-        current: list[Dict[str, Any]] = []
-        for event in members:
-            tick = int(event["tick"])
-            if current:
-                previous = int(current[-1]["tick"])
-                execution_boundary = any(
-                    previous < scheduled_tick <= tick
-                    for scheduled_tick in scheduled.get(blocked_job_id, [])
-                )
-                if tick != previous + 1 or execution_boundary:
-                    segments.append(current)
-                    current = []
-            current.append(event)
-        if current:
-            segments.append(current)
-
-        for segment in segments:
-            start = int(segment[0]["tick"])
-            last = int(segment[-1]["tick"])
-            recovery = min(
-                (tick for tick in scheduled.get(blocked_job_id, []) if tick > start),
-                default=None,
-            )
-            censored = recovery is None
-            if not censored:
-                censor_reason = ""
-                recovery_delay: Any = recovery - start
-            else:
-                recovery_delay = ""
-                if any(tick >= start for tick in missed.get(blocked_job_id, [])):
-                    censor_reason = "DEADLINE_MISS_BEFORE_RECOVERY"
-                elif any(tick >= start for tick in completed.get(blocked_job_id, [])):
-                    raise B1AnalysisError("job completed without an observed recovery")
-                elif terminal_status == "SIM_HORIZON_INSUFFICIENT":
-                    censor_reason = "HORIZON_CUTOFF"
-                else:
-                    censor_reason = "NO_RECOVERY_BEFORE_SIMULATION_END"
-            bypassed_task_ids = sorted({row["bypassed_task_id"] for row in segment})
-            bypassed_job_ids = sorted({row["bypassed_job_id"] for row in segment})
-            episodes.append({
-                "request_id": request["request_id"],
-                "paired_instance_id": request["paired_instance_id"],
-                "scenario_cell_id": request["scenario_cell_id"],
-                "taskset_id": request["taskset_id"],
-                "taskset_hash": request["taskset_hash"],
-                "scheduler": NONBLOCK_SCHEDULER,
-                "blocked_task_id": segment[0]["blocked_task_id"],
+        episode = open_episodes.get(blocked_job_id)
+        if episode is None:
+            open_episodes[blocked_job_id] = {
+                "blocked_task_id": blocked_id,
                 "blocked_job_id": blocked_job_id,
-                "low_task_id": low_task_id,
-                "bypassed_task_id": (
-                    bypassed_task_ids[0] if len(bypassed_task_ids) == 1 else "MULTIPLE"
-                ),
-                "bypassed_job_id": (
-                    bypassed_job_ids[0] if len(bypassed_job_ids) == 1 else "MULTIPLE"
-                ),
-                "bypassed_task_ids_json": canonical_json(bypassed_task_ids),
-                "bypassed_job_ids_json": canonical_json(bypassed_job_ids),
-                "episode_start_tick": start,
-                "episode_last_bypass_tick": last,
-                "bypass_event_count": len(segment),
-                "recovery_tick": "" if recovery is None else recovery,
-                "recovery_delay_ticks": recovery_delay,
-                "censored": censored,
-                "censor_reason": censor_reason,
-            })
+                "episode_start_tick": tick,
+                "episode_last_bypass_tick": tick,
+                "bypass_event_count_in_episode": 1,
+                "bypassed_task_ids": {bypassed_id},
+                "bypassed_job_ids": {bypassed_job_id},
+            }
+        else:
+            if str(episode["blocked_task_id"]) != blocked_id:
+                raise B1AnalysisError("blocked job/task identity changed within episode")
+            episode["episode_last_bypass_tick"] = tick
+            episode["bypass_event_count_in_episode"] += 1
+            episode["bypassed_task_ids"].add(bypassed_id)
+            episode["bypassed_job_ids"].add(bypassed_job_id)
+
+    for episode in open_episodes.values():
+        episodes.append(materialize(episode, None))
     return sorted(
         episodes,
         key=lambda row: (
@@ -403,33 +443,47 @@ def _role_metrics(
     for field, expected in expected_counts.items():
         if _integer(task_row.get(field), f"{role} {field}") != expected:
             raise B1AnalysisError(f"{role} task/job {field} mismatch")
-    responses = [
-        _integer(job.get("response_time"), f"{role} response_time")
-        for job in eligible if job.get("response_time") is not None
-    ]
-    firsts = [
-        _integer(job.get("first_execution"), f"{role} first_execution")
-        for job in eligible if job.get("first_execution") is not None
-    ]
     identified_jobs = sorted(
         [
             (
                 f"{task_id}@{_integer(job.get('release'), f'{role} release')}#"
                 f"{_integer(job.get('job_index'), f'{role} job_index')}",
                 job,
+                _integer(job.get("release"), f"{role} release"),
+                _integer(job.get("job_index"), f"{role} job_index"),
             )
             for job in eligible
         ],
-        key=lambda item: item[0],
+        key=lambda item: (item[2], item[3]),
     )
-    identities = [identity for identity, _ in identified_jobs]
+    identities = [identity for identity, _, _, _ in identified_jobs]
     if len(identities) != len(set(identities)):
         raise B1AnalysisError(f"{role} job identities are not unique")
-    response_identities = [
-        identity for identity, job in identified_jobs
+    response_jobs = [
+        (identity, job) for identity, job, _, _ in identified_jobs
         if job.get("response_time") is not None
     ]
-    derived_first = min(firsts) if firsts else None
+    first_start_jobs: list[tuple[str, int, int]] = []
+    for identity, job, release, _ in identified_jobs:
+        if job.get("first_execution") is None:
+            continue
+        first_tick = _integer(job.get("first_execution"), f"{role} first_execution")
+        if first_tick < release:
+            raise B1AnalysisError(f"{role} first execution precedes release")
+        first_start_jobs.append((identity, first_tick, first_tick - release))
+    deadline_jobs = [
+        (identity, job) for identity, job, _, _ in identified_jobs
+        if job.get("completion") is not None
+        or _bool(job.get("deadline_miss")) is True
+    ]
+    responses = [
+        _integer(job.get("response_time"), f"{role} response_time")
+        for _, job in response_jobs
+    ]
+    first_start_delays = [delay for _, _, delay in first_start_jobs]
+    derived_first = min(
+        (first_tick for _, first_tick, _ in first_start_jobs), default=None,
+    )
     reported_first = _optional_number(task_row.get("first_execution_time"))
     if reported_first != derived_first:
         raise B1AnalysisError(f"{role} task/job first-execution mismatch")
@@ -444,15 +498,34 @@ def _role_metrics(
         f"{role}_job_count": job_count,
         f"{role}_completed_job_count": len(completed),
         f"{role}_censored_job_count": len(censored),
-        f"{role}_first_execution_time": derived_first if derived_first is not None else "",
+        f"{role}_response_time_observed_job_count": len(response_jobs),
         f"{role}_response_time_mean": mean(responses) if responses else "",
         f"{role}_response_time_max": max(responses) if responses else "",
-        f"{role}_deadline_miss_count": len(missed),
-        f"{role}_deadline_miss_ratio": (
-            len(missed) / job_count if job_count else ""
+        f"{role}_response_time_denominator_zero": not response_jobs,
+        f"{role}_first_start_observed_job_count": len(first_start_jobs),
+        f"{role}_first_start_delay_mean_ticks": (
+            mean(first_start_delays) if first_start_delays else ""
         ),
+        f"{role}_first_start_delay_max_ticks": (
+            max(first_start_delays) if first_start_delays else ""
+        ),
+        f"{role}_first_start_denominator_zero": not first_start_jobs,
+        f"{role}_deadline_observable_job_count": len(deadline_jobs),
+        f"{role}_deadline_miss_count": len(missed) if deadline_jobs else "",
+        f"{role}_deadline_miss_ratio": (
+            len(missed) / len(deadline_jobs) if deadline_jobs else ""
+        ),
+        f"{role}_deadline_denominator_zero": not deadline_jobs,
         f"{role}_job_identities_json": canonical_json(identities),
-        f"{role}_response_job_identities_json": canonical_json(response_identities),
+        f"{role}_response_job_identities_json": canonical_json(
+            [identity for identity, _ in response_jobs]
+        ),
+        f"{role}_first_start_job_identities_json": canonical_json(
+            [identity for identity, _, _ in first_start_jobs]
+        ),
+        f"{role}_deadline_observable_job_identities_json": canonical_json(
+            [identity for identity, _ in deadline_jobs]
+        ),
     }
 
 
@@ -613,9 +686,54 @@ def build_b1_paired_effects(
         failures = list(dict.fromkeys(failures))
         valid = not failures
         pair_episodes = episode_by_pair.get(pair_id, [])
-        event_count = sum(_integer(row["bypass_event_count"], "episode event count") for row in pair_episodes)
+        event_count = sum(
+            _integer(
+                row["bypass_event_count_in_episode"], "episode event count",
+            )
+            for row in pair_episodes
+        )
         resolved = sum(_bool(row.get("censored")) is False for row in pair_episodes)
         censored = sum(_bool(row.get("censored")) is True for row in pair_episodes)
+        pairability: Dict[str, bool] = {}
+        denominators: Dict[str, int] = {}
+        for role in ("high", "low"):
+            for metric, identity_suffix, count_suffix in (
+                (
+                    "response", "response_job_identities_json",
+                    "response_time_observed_job_count",
+                ),
+                (
+                    "first_start", "first_start_job_identities_json",
+                    "first_start_observed_job_count",
+                ),
+                (
+                    "deadline", "deadline_observable_job_identities_json",
+                    "deadline_observable_job_count",
+                ),
+            ):
+                key = f"{role}_{metric}"
+                pairability[key] = False
+                denominators[key] = 0
+                if not valid or block_effect is None or nonblock_effect is None:
+                    continue
+                identity_field = f"{role}_{identity_suffix}"
+                count_field = f"{role}_{count_suffix}"
+                block_ids = str(block_effect.get(identity_field))
+                nonblock_ids = str(nonblock_effect.get(identity_field))
+                block_count = _integer(
+                    block_effect.get(count_field), f"block {count_field}",
+                )
+                nonblock_count = _integer(
+                    nonblock_effect.get(count_field), f"nonblock {count_field}",
+                )
+                if block_ids == nonblock_ids and block_count != nonblock_count:
+                    raise B1AnalysisError(f"B1 paired {count_field} mismatch")
+                pairability[key] = (
+                    block_ids == nonblock_ids and block_ids != "[]"
+                    and block_count > 0
+                )
+                if pairability[key]:
+                    denominators[key] = block_count
         row: Dict[str, Any] = {
             "paired_instance_id": pair_id,
             "scenario_cell_id": scenario["scenario_cell_id"],
@@ -634,46 +752,63 @@ def build_b1_paired_effects(
             "bypass_episode_count": len(pair_episodes),
             "resolved_bypass_episode_count": resolved,
             "censored_bypass_episode_count": censored,
-            "high_response_pairable": bool(
-                valid
-                and block_effect is not None and nonblock_effect is not None
-                and str(block_effect.get("high_response_job_identities_json"))
-                == str(nonblock_effect.get("high_response_job_identities_json"))
-                and str(block_effect.get("high_response_job_identities_json")) != "[]"
-            ),
-            "low_response_pairable": bool(
-                valid
-                and block_effect is not None and nonblock_effect is not None
-                and str(block_effect.get("low_response_job_identities_json"))
-                == str(nonblock_effect.get("low_response_job_identities_json"))
-                and str(block_effect.get("low_response_job_identities_json")) != "[]"
-            ),
+            **{
+                f"{role}_{metric}_pairable": pairability[f"{role}_{metric}"]
+                for role in ("high", "low")
+                for metric in ("response", "first_start", "deadline")
+            },
+            **{
+                f"{role}_{count_suffix}": denominators[f"{role}_{metric}"]
+                for role in ("high", "low")
+                for metric, count_suffix in (
+                    ("response", "response_time_observed_job_count"),
+                    ("first_start", "first_start_observed_job_count"),
+                    ("deadline", "deadline_observable_job_count"),
+                )
+            },
+            **{
+                f"{role}_{zero_suffix}": not denominators[f"{role}_{metric}"]
+                for role in ("high", "low")
+                for metric, zero_suffix in (
+                    ("response", "response_time_denominator_zero"),
+                    ("first_start", "first_start_denominator_zero"),
+                    ("deadline", "deadline_denominator_zero"),
+                )
+            },
         }
         delta_sources = {
-            "high_first_execution_delta": "high_first_execution_time",
-            "high_response_mean_delta": "high_response_time_mean",
-            "high_response_max_delta": "high_response_time_max",
-            "high_deadline_miss_delta": "high_deadline_miss_count",
-            "low_first_execution_delta": "low_first_execution_time",
-            "low_response_mean_delta": "low_response_time_mean",
-            "low_response_max_delta": "low_response_time_max",
-            "low_deadline_miss_delta": "low_deadline_miss_count",
-            "ready_but_idle_ticks_delta": "ready_but_idle_ticks",
-            "total_deadline_miss_delta": "total_deadline_miss_count",
+            "high_first_start_delay_mean_delta": (
+                "high_first_start_delay_mean_ticks", "high_first_start_pairable",
+            ),
+            "high_response_mean_delta": (
+                "high_response_time_mean", "high_response_pairable",
+            ),
+            "high_response_max_delta": (
+                "high_response_time_max", "high_response_pairable",
+            ),
+            "high_deadline_miss_delta": (
+                "high_deadline_miss_count", "high_deadline_pairable",
+            ),
+            "low_first_start_delay_mean_delta": (
+                "low_first_start_delay_mean_ticks", "low_first_start_pairable",
+            ),
+            "low_response_mean_delta": (
+                "low_response_time_mean", "low_response_pairable",
+            ),
+            "low_response_max_delta": (
+                "low_response_time_max", "low_response_pairable",
+            ),
+            "low_deadline_miss_delta": (
+                "low_deadline_miss_count", "low_deadline_pairable",
+            ),
+            "ready_but_idle_ticks_delta": ("ready_but_idle_ticks", None),
+            "total_deadline_miss_delta": ("total_deadline_miss_count", None),
         }
-        for delta_field, source_field in delta_sources.items():
-            response_role = (
-                "high" if delta_field.startswith("high_response_")
-                else "low" if delta_field.startswith("low_response_")
-                else None
-            )
+        for delta_field, (source_field, pairability_field) in delta_sources.items():
             row[delta_field] = (
                 _pair_delta(nonblock_effect, block_effect, source_field)
                 if valid and nonblock_effect is not None and block_effect is not None
-                and (
-                    response_role is None
-                    or row[f"{response_role}_response_pairable"]
-                )
+                and (pairability_field is None or row[pairability_field])
                 else ""
             )
         output.append(row)
@@ -689,7 +824,10 @@ def summarize_b1(
         for row in episodes if _bool(row.get("censored")) is False
     ]
     event_count = sum(
-        _integer(row["bypass_event_count"], "episode event count") for row in episodes
+        _integer(
+            row["bypass_event_count_in_episode"], "episode event count",
+        )
+        for row in episodes
     )
     main_results = [
         row for row in results
@@ -717,6 +855,27 @@ def summarize_b1(
         "internal_error_count": statuses.count("SIM_INTERNAL_ERROR"),
         "horizon_insufficient_count": statuses.count("SIM_HORIZON_INSUFFICIENT"),
     }
+    for role in ("high", "low"):
+        for count_suffix, zero_suffix in (
+            (
+                "response_time_observed_job_count",
+                "response_time_denominator_zero",
+            ),
+            (
+                "first_start_observed_job_count",
+                "first_start_denominator_zero",
+            ),
+            (
+                "deadline_observable_job_count",
+                "deadline_denominator_zero",
+            ),
+        ):
+            count_field = f"{role}_{count_suffix}"
+            observed_count = sum(
+                _integer(row.get(count_field), count_field) for row in paired_rows
+            )
+            summary[count_field] = observed_count
+            summary[f"{role}_{zero_suffix}"] = observed_count == 0
     valid_pairs = [row for row in paired_rows if _bool(row.get("pair_valid")) is True]
     for field in DELTA_FIELDS:
         values = [
@@ -813,9 +972,12 @@ def write_ext1b_b1_outputs(root: Path, config: Mapping[str, Any]) -> Dict[str, i
                 high_task_id=str(structure.get("high_task_id", "")),
                 low_task_id=str(structure.get("low_task_id", "")),
                 known_task_ids=known_task_ids, terminal_status=status,
+                terminal_completion_reason=execution.result.completion_reason,
             )
             expected_events = _optional_number(result.get("bypass_count"))
-            actual_events = sum(int(row["bypass_event_count"]) for row in observed)
+            actual_events = sum(
+                int(row["bypass_event_count_in_episode"]) for row in observed
+            )
             if expected_events is None or expected_events != actual_events:
                 raise B1AnalysisError(
                     f"B1 bypass event count mismatch for {request_id}: "

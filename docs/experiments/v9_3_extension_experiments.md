@@ -30,10 +30,8 @@ release reasons. Missing or inconsistent trace evidence fails closed.
 Bounded configurations are:
 
 - `configs/v9_3_ext1_smoke.yaml` for EXT-1A;
-- `configs/v9_3_ext1b1_{smoke,pilot}.yaml` for B1;
-- `configs/v9_3_ext1b1_official_candidate.yaml` is an executable B1 batch
-  candidate copied from the pilot settings; its sample size is not a final
-  paper parameter and requires user approval;
+- `configs/v9_3_ext1b1_{smoke,pilot}.yaml` for B1; the pilot is the only
+  executable B1 batch configuration and its sample size still requires review;
 - `configs/v9_3_ext1b2_{smoke,pilot}.yaml` for B2;
 - `configs/v9_3_ext1b3_{smoke,pilot}.yaml` for B3.
 
@@ -51,10 +49,10 @@ python3 scripts/run_v9_3_ext1b.py --config configs/v9_3_ext1b2_smoke.yaml --resu
 python3 scripts/analyze_v9_3_ext1b.py --output-root artifacts/v9_3_ext1b2_smoke --verify-hashes
 
 python3 scripts/run_v9_3_ext1b.py \
-  --config configs/v9_3_ext1b1_official_candidate.yaml \
+  --config configs/v9_3_ext1b1_pilot.yaml \
   --output-root /path/to/v9_3_ext1b1
 python3 scripts/run_v9_3_ext1b.py \
-  --config configs/v9_3_ext1b1_official_candidate.yaml \
+  --config configs/v9_3_ext1b1_pilot.yaml \
   --output-root /path/to/v9_3_ext1b1 --resume
 python3 scripts/analyze_v9_3_ext1b.py \
   --output-root /path/to/v9_3_ext1b1 --verify-hashes
@@ -75,12 +73,17 @@ rebuilds derived tables from retained raw results and audit evidence.
 B1 additionally writes `b1_bypass_episodes.csv`, `b1_task_effects.csv`,
 `b1_paired_effects.csv`, and `b1_summary.csv`. Its primary effect direction is
 NONBLOCK minus BLOCK; other scheduler results remain secondary raw evidence.
-An episode merges consecutive native bypass events for one blocked job without
-crossing an execution boundary. Recovery is that job's first later execution;
-unresolved episodes are censored and excluded from recovery-delay averages.
+An episode opens at one blocked job's first native bypass event and remains open
+across ticks with no bypass until that same job next executes. Later bypasses
+only update its event count and last-bypass tick. Different jobs may have
+overlapping episodes. Unresolved episodes are censored and excluded from
+recovery-delay averages.
 High/low task metrics are reaggregated over every eligible terminal job, whose
 stable identities remain in the terminal JSON and are recorded in the task
-effect table for paired validation.
+effect table for paired validation. Paper-facing first-start delay is each
+job's first-execution tick minus its release tick; absolute execution ticks
+remain only in raw job evidence. Response, first-start, deadline-outcome, and
+resolved-episode summaries expose their observed denominators and zero flags.
 
 Terminal simulation states are `SIM_PASS_OBSERVED`, `SIM_DEADLINE_MISS`,
 `SIM_HORIZON_INSUFFICIENT`, `SIM_RUNTIME_TIMEOUT`, and `SIM_INTERNAL_ERROR`.
