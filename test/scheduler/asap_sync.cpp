@@ -201,6 +201,21 @@ static std::size_t CountASAPSyncTraceMarker(
     return count;
 }
 
+static std::size_t CountASAPSyncEventMarker(
+    const std::string &contents,
+    const std::string &event_marker,
+    const std::string &marker) {
+    std::size_t count = 0;
+    std::istringstream lines(contents);
+    std::string line;
+    while (std::getline(lines, line)) {
+        if (line.find(event_marker) != std::string::npos) {
+            count += CountASAPSyncTraceMarker(line, marker);
+        }
+    }
+    return count;
+}
+
 struct ContinuationWaitObservation {
     std::vector<int> selected_task_numbers;
     int continuation_schedule_count;
@@ -755,8 +770,14 @@ TEST(ASAPSyncScheduler, CandidateWaitIsOncePerTickAndUsesFreshJobIdentity) {
                   trace,
                   "\"event_type\": \"sync_batch_candidate_wait\""),
               2);
-    EXPECT_EQ(CountASAPSyncTraceMarker(trace, "\"time\": \"0\""), 2);
-    EXPECT_EQ(CountASAPSyncTraceMarker(trace, "\"time\": \"1\""), 2);
+    const std::string candidate_wait_marker =
+        "\"event_type\": \"sync_batch_candidate_wait\"";
+    EXPECT_EQ(CountASAPSyncEventMarker(
+                  trace, candidate_wait_marker, "\"time\": \"0\""),
+              1);
+    EXPECT_EQ(CountASAPSyncEventMarker(
+                  trace, candidate_wait_marker, "\"time\": \"1\""),
+              1);
     EXPECT_NE(trace.find("\"task_name\": \"FakeASAPSyncTask1\""),
               std::string::npos);
     EXPECT_NE(trace.find("\"task_name\": \"FakeASAPSyncTask2\""),
