@@ -31,6 +31,9 @@ Bounded configurations are:
 
 - `configs/v9_3_ext1_smoke.yaml` for EXT-1A;
 - `configs/v9_3_ext1b1_{smoke,pilot}.yaml` for B1;
+- `configs/v9_3_ext1b1_official_candidate.yaml` is an executable B1 batch
+  candidate copied from the pilot settings; its sample size is not a final
+  paper parameter and requires user approval;
 - `configs/v9_3_ext1b2_{smoke,pilot}.yaml` for B2;
 - `configs/v9_3_ext1b3_{smoke,pilot}.yaml` for B3.
 
@@ -46,6 +49,15 @@ python3 scripts/run_v9_3_ext1b.py --config configs/v9_3_ext1b2_smoke.yaml --dry-
 python3 scripts/run_v9_3_ext1b.py --config configs/v9_3_ext1b2_smoke.yaml
 python3 scripts/run_v9_3_ext1b.py --config configs/v9_3_ext1b2_smoke.yaml --resume
 python3 scripts/analyze_v9_3_ext1b.py --output-root artifacts/v9_3_ext1b2_smoke --verify-hashes
+
+python3 scripts/run_v9_3_ext1b.py \
+  --config configs/v9_3_ext1b1_official_candidate.yaml \
+  --output-root /path/to/v9_3_ext1b1
+python3 scripts/run_v9_3_ext1b.py \
+  --config configs/v9_3_ext1b1_official_candidate.yaml \
+  --output-root /path/to/v9_3_ext1b1 --resume
+python3 scripts/analyze_v9_3_ext1b.py \
+  --output-root /path/to/v9_3_ext1b1 --verify-hashes
 ```
 
 Use `--max-cells` and `--max-tasksets` only for bounded validation. Pilot or
@@ -59,6 +71,16 @@ Git commit, simulator/build hash, terminal records, raw CSVs, retained semantic
 traces when enabled, B2/B3 audit CSVs, aggregate/statistical tables,
 `ext1b_plot_data.csv`, and `file_hashes.sha256`. `analyze_v9_3_ext1b.py`
 rebuilds derived tables from retained raw results and audit evidence.
+
+B1 additionally writes `b1_bypass_episodes.csv`, `b1_task_effects.csv`,
+`b1_paired_effects.csv`, and `b1_summary.csv`. Its primary effect direction is
+NONBLOCK minus BLOCK; other scheduler results remain secondary raw evidence.
+An episode merges consecutive native bypass events for one blocked job without
+crossing an execution boundary. Recovery is that job's first later execution;
+unresolved episodes are censored and excluded from recovery-delay averages.
+High/low task metrics are reaggregated over every eligible terminal job, whose
+stable identities remain in the terminal JSON and are recorded in the task
+effect table for paired validation.
 
 Terminal simulation states are `SIM_PASS_OBSERVED`, `SIM_DEADLINE_MISS`,
 `SIM_HORIZON_INSUFFICIENT`, `SIM_RUNTIME_TIMEOUT`, and `SIM_INTERNAL_ERROR`.

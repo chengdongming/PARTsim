@@ -312,7 +312,14 @@ class Ext1BRunner:
         }
         observation_files: Dict[str, str] = {}
         scenario_kind = str(self.config["scenario"]["kind"])
-        if scenario_kind == "SYNC_BATCH_STRESS":
+        if scenario_kind == "BYPASS_STRESS":
+            observation_files = {
+                "b1_episode_rows": "b1_bypass_episodes.csv",
+                "b1_task_effect_rows": "b1_task_effects.csv",
+                "b1_paired_effect_rows": "b1_paired_effects.csv",
+                "b1_summary_rows": "b1_summary.csv",
+            }
+        elif scenario_kind == "SYNC_BATCH_STRESS":
             observation_files = {
                 "b2_decision_rows": "b2_batch_decisions.csv",
                 "b2_summary_rows": "b2_summary.csv",
@@ -645,7 +652,10 @@ class Ext1BRunner:
                 input_hash = domain_hash(
                     "ASAP_BLOCK:V9.3:EXT1B:FAIR_INPUT:v1", fair_material
                 )
+                selected_schedulers = set(self.config["scheduler_ids"])
                 for registration in SCHEDULERS:
+                    if registration.scheduler_id not in selected_schedulers:
+                        continue
                     request_id = domain_hash(
                         "ASAP_BLOCK:V9.3:EXT1B:SIMULATION_REQUEST:v1",
                         {"paired_instance_id": instance.paired_instance_id,
@@ -900,6 +910,12 @@ class Ext1BRunner:
         write_csv(self.root / "task_outcomes.csv", TASK_COLUMNS, task_rows)
         write_csv(self.root / "failures.csv", FAILURE_COLUMNS, failures)
         aggregation = aggregate_ext1b(self.root, self.config)
+        missing_outputs = [
+            name for name in self.config["required_outputs"]
+            if not (self.root / name).is_file()
+        ]
+        if missing_outputs:
+            raise RuntimeError(f"missing required EXT-1B outputs: {missing_outputs}")
         summary = {
             "requested": len(plan), "terminal": len(result_rows),
             "complete": len(result_rows) == len(plan),

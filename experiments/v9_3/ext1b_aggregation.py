@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping
 
+from .ext1b_b1_analysis import write_ext1b_b1_outputs
 from .ext1b_observation import write_ext1b_observation_outputs
 from .ext1b_statistics import STATISTIC_COLUMNS, paired_statistics_rows
 from .result_writer import read_csv, write_csv
@@ -626,6 +627,7 @@ def aggregate_ext1b_rows(
 
 
 def aggregate_ext1b(root: Path, config: Mapping[str, Any]) -> Dict[str, int]:
+    b1_counts = write_ext1b_b1_outputs(root, config)
     observation_counts = write_ext1b_observation_outputs(root, config)
     tables = aggregate_ext1b_rows(
         read_csv(root / "simulation_requests.csv"),
@@ -649,6 +651,7 @@ def aggregate_ext1b(root: Path, config: Mapping[str, Any]) -> Dict[str, int]:
     for name, columns, key in outputs:
         write_csv(root / name, columns, tables[key])
     return {
+        **b1_counts,
         **observation_counts,
         **{f"{key}_rows": len(tables[key]) for _, _, key in outputs},
     }

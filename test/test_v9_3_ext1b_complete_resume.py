@@ -15,7 +15,7 @@ from experiments.v9_3.simulation_engine import (
     SimulationExecution, load_simulation_terminal,
 )
 from experiments.v9_3.simulation_result import (
-    SimulationResult, SimulationStatus, TaskObservation,
+    JobObservation, SimulationResult, SimulationStatus, TaskObservation,
 )
 
 
@@ -49,10 +49,50 @@ def _completed_run(tmp_path: Path, monkeypatch):
         calls.append(simulation_id)
         trace = Path(kwargs["run_root"]) / "retained_traces" / f"{simulation_id}.json"
         trace.parent.mkdir(parents=True, exist_ok=True)
-        trace.write_text("{}\n", encoding="utf-8")
+        first, second = kwargs["task_payload"][:2]
+        events = []
+        if scheduler == "gpfp_asap_nonblock":
+            blocked = {
+                "task_name": f"v93_task_{first['task_id']}",
+                "arrival_time": 0,
+            }
+            bypassed = {
+                "task_name": f"v93_task_{second['task_id']}",
+                "arrival_time": 0,
+            }
+            events.extend([
+                {
+                    "time": 0, "event_type": "scheduler_decision",
+                    "scheduler": "ASAP-NonBlock",
+                    "ready_jobs": [blocked, bypassed],
+                    "selected_jobs": [bypassed],
+                },
+                {
+                    "time": 0, "event_type": "nonblock_bypass",
+                    "scheduler": "ASAP-NonBlock",
+                    "blocked_higher_priority_task": blocked["task_name"],
+                    "bypassed_task": bypassed["task_name"],
+                    "reason": "lower_priority_bypass_due_to_energy",
+                },
+                {
+                    "time": 1, "event_type": "dline_miss", **blocked,
+                },
+            ])
+        trace.write_text(json.dumps({
+            "trace_schema_version": 2,
+            "configured_scheduler": scheduler,
+            "events": events,
+        }) + "\n", encoding="utf-8")
         tasks = tuple(
             TaskObservation(
                 str(task["task_id"]), 1, 0, 1, 0, None, 0.0, False,
+            )
+            for task in kwargs["task_payload"]
+        )
+        jobs = tuple(
+            JobObservation(
+                str(task["task_id"]), 0, 0, None, int(task["D"]), None,
+                True, None, 0, 0, None, 0, True, False, None,
             )
             for task in kwargs["task_payload"]
         )
@@ -73,7 +113,7 @@ def _completed_run(tmp_path: Path, monkeypatch):
         status = control["status"]
         result = SimulationResult(
             status, "deadline_miss", int(config["simulation"]["horizon"]),
-            (), tasks, True, 0.0, {}, 2, scheduler, True,
+            jobs, tasks, True, 0.0, {}, 2, scheduler, True,
             "reached_horizon", metrics,
         )
         return SimulationExecution(

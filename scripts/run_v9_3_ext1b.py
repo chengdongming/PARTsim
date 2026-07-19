@@ -12,12 +12,37 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from experiments.v9_3.ext1b_config import load_ext1b_config
 from experiments.v9_3.ext1b_engine import Ext1BRunner, verify_file_hashes
+
+
+def runner_with_overrides(
+    config_path: Path, *, output_root: Path | None = None,
+    taskset_store: Path | None = None, simulator_bin: Path | None = None,
+) -> Ext1BRunner:
+    """Load one config and apply explicit, persisted path overrides."""
+
+    config = load_ext1b_config(config_path)
+    if output_root is not None:
+        resolved_output = output_root.resolve()
+        config["execution"]["output_root"] = str(resolved_output)
+        if taskset_store is None:
+            config["execution"]["taskset_store"] = str(
+                resolved_output / "taskset_store"
+            )
+    if taskset_store is not None:
+        config["execution"]["taskset_store"] = str(taskset_store.resolve())
+    if simulator_bin is not None:
+        config["simulation"]["simulator_bin"] = str(simulator_bin.resolve())
+    return Ext1BRunner(config)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=Path)
+    parser.add_argument("--output-root", type=Path)
+    parser.add_argument("--taskset-store", type=Path)
+    parser.add_argument("--simulator-bin", type=Path)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--list-cells", action="store_true")
@@ -31,7 +56,10 @@ def main() -> int:
         return 0 if valid else 1
     if args.config is None:
         parser.error("--config is required unless --verify-hashes is used")
-    runner = Ext1BRunner.from_path(args.config)
+    runner = runner_with_overrides(
+        args.config, output_root=args.output_root,
+        taskset_store=args.taskset_store, simulator_bin=args.simulator_bin,
+    )
     if args.dry_run or args.list_cells:
         value = runner.describe(
             max_cells=args.max_cells, max_tasksets=args.max_tasksets,

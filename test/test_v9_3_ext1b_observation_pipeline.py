@@ -153,6 +153,35 @@ def _integration_config(tmp_path: Path, name: str, binary: Path):
     return config
 
 
+def test_real_b1_runner_trace_analyzer_four_csvs_and_reanalysis(
+    tmp_path, monkeypatch,
+):
+    monkeypatch.setenv("PARTSIM_LOG_DIR", str(tmp_path / "logs"))
+    binary, _ = require_rtsim_binary()
+    config = _integration_config(tmp_path, "v9_3_ext1b1_smoke.yaml", binary)
+    outcome = Ext1BRunner(config).run(max_cells=1, max_tasksets=1)
+    assert outcome.requested == outcome.terminal == 9
+    root = outcome.output_root
+    names = (
+        "b1_bypass_episodes.csv", "b1_task_effects.csv",
+        "b1_paired_effects.csv", "b1_summary.csv",
+    )
+    before = {name: (root / name).read_bytes() for name in names}
+    effects = read_csv(root / "b1_task_effects.csv")
+    paired = read_csv(root / "b1_paired_effects.csv")
+    summary = read_csv(root / "b1_summary.csv")
+    assert len(effects) == 2
+    assert {row["scheduler"] for row in effects} == {
+        "gpfp_asap_block", "gpfp_asap_nonblock",
+    }
+    assert len(paired) == len(summary) == 1
+    assert summary[0]["total_pairs"] == "1"
+    assert int(summary[0]["bypass_event_count"]) >= 1
+    assert int(summary[0]["bypass_episode_count"]) >= 1
+    analyze_ext1b(root)
+    assert {name: (root / name).read_bytes() for name in names} == before
+
+
 def test_real_b2_runner_trace_auditor_csv_and_reanalysis(tmp_path, monkeypatch):
     monkeypatch.setenv("PARTSIM_LOG_DIR", str(tmp_path / "logs"))
     binary, _ = require_rtsim_binary()

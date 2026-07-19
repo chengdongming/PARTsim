@@ -1,8 +1,25 @@
-experiment_id: asap-block-v9.3-ext1b1-pilot
+# Executable candidate copied from v9_3_ext1b1_pilot.yaml.
+# tasksets_per_cell is not a final paper sample size and requires user approval.
+experiment_id: asap-block-v9.3-ext1b1-official-candidate
 core: CORE-3
 extension: EXT-1B
 parameter_status: PILOT
 seed_space: EXT1B_PILOT
+scheduler_ids:
+  - gpfp_asap_block
+  - gpfp_asap_nonblock
+  - gpfp_asap_sync
+  - gpfp_alap_block
+  - gpfp_alap_nonblock
+  - gpfp_alap_sync
+  - gpfp_st_block
+  - gpfp_st_nonblock
+  - gpfp_st_sync
+required_outputs:
+  - b1_bypass_episodes.csv
+  - b1_task_effects.csv
+  - b1_paired_effects.csv
+  - b1_summary.csv
 platform: {cores: [4], task_count: [10]}
 generation:
   deadline_mode: constrained
@@ -25,8 +42,19 @@ energy:
   battery_capacity: "100"
 grid: {utilization_points: ["1/5", "2/5"], tasksets_per_cell: 12, base_seed: 931201, seed_mode: generation_dimensions, taskset_index_start: 0}
 rta: {methods: [CW_THETA_CW, LOC_THETA_LOC], timeout_seconds: 2, retry_timeout_seconds: 4, retry_policy: timeout_once, numerical_mode: EXACT_RATIONAL}
-simulation: {horizon: 400, warmup: 0, minimum_jobs_per_task: 2, maximum_horizon: 400, horizon_extension_policy: none, deadline_miss_fail_fast: true, timeout_seconds: 30, trace_mode: semantic, trace_on_failure: true, retain_trace: true, simulator_bin: ./build/rtsim/rtsim}
-execution: {worker_count: 1, checkpoint_every: 9, output_root: artifacts/v9_3_ext1b1_pilot, taskset_store: artifacts/v9_3_ext1b1_taskset_store_pilot, resume: false, fail_fast_on_p0: true, preserve_attempt_history: true}
+simulation:
+  horizon: 400
+  warmup: 0
+  minimum_jobs_per_task: 2
+  maximum_horizon: 400
+  horizon_extension_policy: none
+  deadline_miss_fail_fast: true
+  timeout_seconds: 30
+  trace_mode: semantic
+  trace_on_failure: true
+  retain_trace: true
+  simulator_bin: ./build/rtsim/rtsim
+execution: {worker_count: 1, checkpoint_every: 9, output_root: artifacts/v9_3_ext1b1_official_candidate, taskset_store: artifacts/v9_3_ext1b1_taskset_store_official_candidate, resume: false, fail_fast_on_p0: true, preserve_attempt_history: true}
 scenario:
   kind: BYPASS_STRESS
   subtype: B1
