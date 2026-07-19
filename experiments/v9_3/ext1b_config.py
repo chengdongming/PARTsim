@@ -24,6 +24,7 @@ from .scheduler_registry import SCHEDULER_IDS
 PARAMETER_STATUSES = {
     "SMOKE",
     "PILOT",
+    "FORMAL",
 }
 SCENARIO_KINDS = {"BYPASS_STRESS", "SYNC_BATCH_STRESS", "TIMING_STRESS"}
 TIMING_SUBTYPES = {
@@ -35,6 +36,7 @@ SEED_SPACES = {
     "EXT1B_PILOT",
     "EXT1B1_ENERGY_CALIBRATION_PILOT",
     "EXT1B2_SYNC_CALIBRATION_PILOT",
+    "EXT1B1_FORMAL_R1",
 }
 
 B2_SCHEDULER_IDS = (
@@ -237,6 +239,7 @@ def validate_ext1b_config(raw: Mapping[str, Any]) -> Dict[str, Any]:
             "EXT1B1_ENERGY_CALIBRATION_PILOT",
             "EXT1B2_SYNC_CALIBRATION_PILOT",
         },
+        "FORMAL": {"EXT1B1_FORMAL_R1"},
     }[status]
     if seed_space not in allowed_seed_spaces:
         raise ConfigError(
@@ -361,6 +364,37 @@ def validate_ext1b_config(raw: Mapping[str, Any]) -> Dict[str, Any]:
     normalized = validate_config(config, expected_core="CORE-3")
     normalized["scenario"] = scenario
     normalized["statistics"] = stats
+    if status == "FORMAL":
+        expected_schedulers = [
+            "gpfp_asap_block",
+            "gpfp_asap_nonblock",
+        ]
+        if kind != "BYPASS_STRESS" or scenario.get("subtype") != "B1":
+            raise ConfigError("EXT-1B FORMAL currently requires BYPASS_STRESS subtype B1")
+        if normalized["scheduler_ids"] != expected_schedulers:
+            raise ConfigError(
+                f"EXT-1B1 FORMAL scheduler_ids must equal {expected_schedulers}"
+            )
+        if normalized["grid"]["utilization_points"] != ["1/5", "2/5"]:
+            raise ConfigError(
+                "EXT-1B1 FORMAL utilization_points must equal ['1/5', '2/5']"
+            )
+        if scenario["nominal_energy_supply_ratios"] != ["1/4", "1/2", "3/4"]:
+            raise ConfigError(
+                "EXT-1B1 FORMAL nominal_energy_supply_ratios must equal "
+                "['1/4', '1/2', '3/4']"
+            )
+        if normalized["grid"]["tasksets_per_cell"] != 200:
+            raise ConfigError("EXT-1B1 FORMAL tasksets_per_cell must equal 200")
+        if normalized["grid"]["base_seed"] != 951201:
+            raise ConfigError("EXT-1B1 FORMAL base_seed must equal 951201")
+        if normalized["execution"]["worker_count"] != 1:
+            raise ConfigError("EXT-1B1 FORMAL worker_count must equal 1")
+        simulation = normalized["simulation"]
+        if simulation["horizon"] != 400 or simulation["maximum_horizon"] != 400:
+            raise ConfigError(
+                "EXT-1B1 FORMAL horizon and maximum_horizon must both equal 400"
+            )
     return normalized
 
 

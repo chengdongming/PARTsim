@@ -831,6 +831,12 @@ def summarize_b1(
     paired_rows: Sequence[Mapping[str, Any]], episodes: Sequence[Mapping[str, Any]],
     results: Sequence[Mapping[str, Any]],
 ) -> Dict[str, Any]:
+    """Return cell-level descriptive B1 summaries.
+
+    Episode recovery rates and delays are descriptive observations, not
+    independent-sample inference. Paired taskset effects remain one row per
+    ``paired_instance_id``; episode rows are never bootstrap replicates.
+    """
     resolved_delays = [
         _integer(row["recovery_delay_ticks"], "recovery delay")
         for row in episodes if _bool(row.get("censored")) is False

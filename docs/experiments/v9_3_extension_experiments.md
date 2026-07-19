@@ -85,6 +85,34 @@ job's first-execution tick minus its release tick; absolute execution ticks
 remain only in raw job evidence. Response, first-start, deadline-outcome, and
 resolved-episode summaries expose their observed denominators and zero flags.
 
+For EXT-1B1, the independent random-sample unit is the paired taskset
+(`paired_instance_id`) within each U-by-eta cell. Multiple bypass episodes from
+one taskset remain clustered and must not be interpreted as independent
+replicates. `b1_summary.csv` recovery proportions and recovery delays are
+descriptive episode summaries; inferential paired bootstrap rows in
+`paired_statistics.csv` resample paired taskset effects separately within each
+cell.
+
+The frozen B1 effect direction is `delta = NONBLOCK - BLOCK`. Its primary
+metrics are high- and low-priority deadline-miss deltas, high- and low-priority
+first-start-delay mean deltas, resolved bypass-episode proportion, recovery
+delay, and mechanism activation rate. Thus a positive high-priority delta
+means NONBLOCK is worse for the high-priority task, while a negative
+low-priority delta means NONBLOCK is better for the low-priority task. Total
+deadline misses, ready-but-idle ticks, and high/low response means are
+secondary. Taskset acceptance/pass rate and the number of episodes are not B1
+primary endpoints or independent sample counts.
+
+`simulation.deadline_miss_fail_fast` is an orchestration-level legacy name. In
+the EXT-1B runner it is validated and included in the simulation configuration
+identity, but it is not passed to the native simulator and does not stop a
+request at its first miss. The native run continues to the configured horizon;
+the trace reports `simulation_completed=true` and
+`simulation_completion_reason=reached_horizon`, while the parsed terminal
+status is `SIM_DEADLINE_MISS` if any job missed. This preserves later releases,
+executions, bypass recovery, response/first-start observations, censoring
+denominators, and the retained semantic trace.
+
 Terminal simulation states are `SIM_PASS_OBSERVED`, `SIM_DEADLINE_MISS`,
 `SIM_HORIZON_INSUFFICIENT`, `SIM_RUNTIME_TIMEOUT`, and `SIM_INTERNAL_ERROR`.
 Auditors additionally expose illegal or unclassifiable mechanism evidence;
