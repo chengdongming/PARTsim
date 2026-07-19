@@ -338,6 +338,20 @@ def test_dispatch_and_continuation_evidence_are_fail_closed():
     ).state == ASAP_IMMEDIATE_ELIGIBILITY
 
 
+def test_running_continuation_may_be_blocked_without_becoming_unclassifiable():
+    event = observation(
+        "gpfp_asap_sync", "blocked",
+        continuation=True,
+        available_energy_mJ=0.0,
+        job_energy_affordable=False,
+        decision_energy_affordable=False,
+        blocking_policy_reason="SYNC_ATOMIC_BATCH_WAIT",
+    )
+    assert finding(
+        "gpfp_asap_sync", event, dispatch=False, running=True
+    ).state == NOT_APPLICABLE
+
+
 def trace_document(events):
     return {
         "trace_schema_version": 2,

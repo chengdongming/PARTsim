@@ -289,14 +289,18 @@ def classify_timing_event(
         }
         if selected != selected_outcome:
             raise ValueError("selected/result mismatch")
-        if continuation != (outcome == "CONTINUE_SELECTED"):
-            raise ValueError("continuation/result mismatch")
+        if outcome == "CONTINUE_SELECTED" and not continuation:
+            raise ValueError("continuation result lacks running-before flag")
+        if outcome == "DISPATCH_SELECTED" and continuation:
+            raise ValueError("dispatch result is incorrectly marked continuation")
         scheduled = set(scheduled_identities)
         running_before = set(running_before_identities)
         if outcome == "DISPATCH_SELECTED" and identity not in scheduled:
             raise ValueError("selected job has no same-tick dispatch")
         if outcome == "CONTINUE_SELECTED" and identity not in running_before:
             raise ValueError("continuation has no running-before evidence")
+        if continuation and identity not in running_before:
+            raise ValueError("continuation flag has no running-before evidence")
         if not selected and identity in scheduled:
             raise ValueError("unselected job has same-tick dispatch")
     except (TypeError, ValueError, ZeroDivisionError) as exc:
