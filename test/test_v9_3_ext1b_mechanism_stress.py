@@ -259,6 +259,70 @@ def test_unknown_parameter_status_is_rejected():
         validate_ext1b_config(raw)
 
 
+@pytest.mark.parametrize(
+    ("scheduler_ids", "message"),
+    [
+        ([], "non-empty list"),
+        (
+            ["gpfp_asap_block", "gpfp_asap_block"],
+            "contains duplicates",
+        ),
+        (["gpfp_asap_block", "unknown_scheduler"], "unknown schedulers"),
+    ],
+)
+def test_scheduler_ids_reject_empty_duplicate_and_unknown(scheduler_ids, message):
+    raw = _raw_config()
+    raw["scheduler_ids"] = scheduler_ids
+    with pytest.raises(ConfigError, match=message):
+        validate_ext1b_config(raw)
+
+
+def test_two_scheduler_plan_and_description_follow_config_order(tmp_path):
+    selected = ["gpfp_asap_nonblock", "gpfp_asap_block"]
+    raw = _raw_config()
+    raw["scheduler_ids"] = selected
+    raw["execution"]["output_root"] = str(tmp_path / "run")
+    raw["execution"]["taskset_store"] = str(tmp_path / "store")
+    runner = Ext1BRunner(validate_ext1b_config(raw))
+
+    description = runner.describe(max_cells=1, max_tasksets=1)
+    assert description["scheduler_count"] == 2
+    assert description["paired_instance_count"] == 1
+    assert description["simulation_request_count"] == 2
+    assert description["scheduler_ids"] == selected
+
+    _, _, _, requests = runner._plan(max_cells=1, max_tasksets=1)
+    assert len(requests) == 2
+    assert [row["scheduler_id"] for row in requests] == selected
+
+
+def test_energy_calibration_dry_plan_has_required_cardinality():
+    runner = Ext1BRunner.from_path(
+        ROOT / "configs/v9_3_ext1b1_energy_calibration.yaml"
+    )
+    description = runner.describe()
+    assert description["cell_count"] == 2 * 3 == 6
+    assert description["tasksets_per_cell"] == 20
+    assert description["scheduler_count"] == 2
+    assert description["paired_instance_count"] == 120
+    assert description["simulation_request_count"] == 240
+    assert description["scheduler_ids"] == [
+        "gpfp_asap_block", "gpfp_asap_nonblock",
+    ]
+    assert runner.config["seed_space"] == "EXT1B1_ENERGY_CALIBRATION_PILOT"
+    assert runner.config["grid"]["base_seed"] != 931201
+    assert runner.config["simulation"]["horizon"] == 400
+    assert runner.config["simulation"]["maximum_horizon"] == 400
+
+
+def test_existing_config_without_scheduler_ids_keeps_nine_scheduler_order():
+    runner = Ext1BRunner.from_path(ROOT / "configs/v9_3_ext1b1_smoke.yaml")
+    description = runner.describe(max_cells=1, max_tasksets=1)
+    assert description["scheduler_count"] == 9
+    assert description["simulation_request_count"] == 9
+    assert description["scheduler_ids"] == list(SCHEDULER_IDS)
+
+
 def test_retain_trace_requires_boolean():
     raw = _raw_config()
     raw["simulation"]["retain_trace"] = "false"

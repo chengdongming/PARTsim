@@ -1,4 +1,4 @@
-"""Independent EXT-1B nine-scheduler mechanism-stress runner."""
+"""Independent EXT-1B configured-scheduler mechanism-stress runner."""
 
 from __future__ import annotations
 
@@ -52,8 +52,9 @@ GENERATED_COLUMNS = (
 )
 SCENARIO_INSTANCE_COLUMNS = (
     "paired_instance_id", "scenario_kind", "scenario_subtype",
-    "scenario_cell_id", "logical_taskset_index", "taskset_id", "taskset_hash",
-    "trace_hash", "generation_seed", "M", "horizon", "maximum_horizon",
+    "scenario_cell_id", "normalized_utilization", "logical_taskset_index",
+    "taskset_id", "taskset_hash", "trace_hash", "generation_seed", "M",
+    "horizon", "maximum_horizon",
     "initial_battery", "battery_capacity", "nominal_demand_j_per_tick",
     "nominal_harvest_j_per_tick", "nominal_energy_supply_ratio",
     "base_harvesting_rate_w", "allow_harvest_clipping", "priority_hash",
@@ -134,8 +135,11 @@ def _git_head(project_root: Path) -> str:
     return completed.stdout.strip() if completed.returncode == 0 else UNAVAILABLE
 
 
-def assert_ext1b_fair_pairing(rows: Sequence[Mapping[str, Any]]) -> None:
-    assert_scheduler_only_difference(rows)
+def assert_ext1b_fair_pairing(
+    rows: Sequence[Mapping[str, Any]],
+    schedulers: Sequence[str] = tuple(item.scheduler_id for item in SCHEDULERS),
+) -> None:
+    assert_scheduler_only_difference(rows, schedulers)
     grouped: Dict[str, list[Mapping[str, Any]]] = {}
     for row in rows:
         grouped.setdefault(str(row["paired_instance_id"]), []).append(row)
@@ -160,7 +164,12 @@ class Ext1BRunner:
         self.config = dict(config)
         if self.config.get("extension") != "EXT-1B":
             raise ValueError("EXT-1B runner requires extension: EXT-1B")
-        audited_scheduler_registry()
+        registry = {
+            item.scheduler_id: item for item in audited_scheduler_registry()
+        }
+        self.schedulers = tuple(
+            registry[scheduler_id] for scheduler_id in self.config["scheduler_ids"]
+        )
         self.project_root = Path(__file__).resolve().parents[2]
         self.root = Path(self.config["execution"]["output_root"])
         self.terminals = self.root / "simulation_terminal_results"
@@ -190,11 +199,11 @@ class Ext1BRunner:
             "config_hash": ext1b_config_hash(self.config),
             "cell_count": len(cells),
             "tasksets_per_cell": tasksets,
-            "scheduler_count": len(SCHEDULERS),
+            "scheduler_count": len(self.schedulers),
             "paired_instance_count": len(cells) * tasksets,
-            "simulation_request_count": len(cells) * tasksets * len(SCHEDULERS),
+            "simulation_request_count": len(cells) * tasksets * len(self.schedulers),
             "cells": cells,
-            "scheduler_ids": [item.scheduler_id for item in SCHEDULERS],
+            "scheduler_ids": [item.scheduler_id for item in self.schedulers],
         }
 
     def _install_signal_handlers(self) -> Dict[int, Any]:
@@ -226,7 +235,7 @@ class Ext1BRunner:
             dump_ext1b_config(self.config, run_config)
         write_csv(
             self.root / "scheduler_registry.csv", REGISTRY_COLUMNS,
-            [item.row() for item in audited_scheduler_registry()],
+            [item.row() for item in self.schedulers],
         )
         for name, columns in (
             ("generation_attempts.csv", GENERATION_ATTEMPT_COLUMNS),
@@ -237,6 +246,12 @@ class Ext1BRunner:
                 write_csv(self.root / name, columns, [])
         metadata_path = self.root / "run_metadata.json"
         if not metadata_path.is_file():
+            comparator_count = sum(
+                item.scheduler_id != "gpfp_asap_block" for item in self.schedulers
+            )
+            comparator_label = (
+                "eight" if comparator_count == 8 else str(comparator_count)
+            )
             atomic_write_json(metadata_path, {
                 "schema": "ASAP_BLOCK_V9_3_EXT1B_METADATA_V1",
                 "experiment_id": self.config["experiment_id"],
@@ -249,7 +264,10 @@ class Ext1BRunner:
                 "simulator_build_hash": _sha256_file(self._simulator_path()),
                 "bootstrap_seed": self.config["statistics"]["bootstrap_seed"],
                 "bootstrap_resamples": self.config["statistics"]["bootstrap_resamples"],
-                "holm_family": "eight ASAP-BLOCK comparator tests within each cell and binary endpoint",
+                "holm_family": (
+                    f"{comparator_label} ASAP-BLOCK comparator tests within each "
+                    "cell and binary endpoint"
+                ),
                 "selection_policy": "structural predicates and runtime activation only; scheduler outcomes excluded",
                 "simulation_is_schedulability_proof": False,
                 "created_at_utc": _utc_now(),
@@ -346,7 +364,7 @@ class Ext1BRunner:
         request_ids = [str(row["request_id"]) for row in requests]
         if len(set(request_ids)) != expected_requests:
             raise RuntimeError("P0 duplicate EXT-1B persisted request")
-        assert_ext1b_fair_pairing(requests)
+        assert_ext1b_fair_pairing(requests, self.config["scheduler_ids"])
         grouped: Dict[str, list[Mapping[str, Any]]] = {}
         for request in requests:
             pair_id = str(request["paired_instance_id"])
@@ -360,7 +378,7 @@ class Ext1BRunner:
                 raise RuntimeError("P0 EXT-1B persisted request identity mismatch")
             if str(request["request_status"]) != "PLANNED":
                 return None
-        scheduler_order = [item.scheduler_id for item in SCHEDULERS]
+        scheduler_order = [item.scheduler_id for item in self.schedulers]
         if len(grouped) != expected_pairs or any(
             [str(row["scheduler_id"]) for row in members] != scheduler_order
             for members in grouped.values()
@@ -597,6 +615,7 @@ class Ext1BRunner:
                     "scenario_kind": instance.scenario_cell.kind,
                     "scenario_subtype": instance.subtype,
                     "scenario_cell_id": instance.scenario_cell.cell_id,
+                    "normalized_utilization": fraction_text(base_cell.utilization),
                     "logical_taskset_index": instance.logical_taskset_index,
                     "taskset_id": instance.taskset_id,
                     "taskset_hash": instance.taskset_hash,
@@ -652,10 +671,7 @@ class Ext1BRunner:
                 input_hash = domain_hash(
                     "ASAP_BLOCK:V9.3:EXT1B:FAIR_INPUT:v1", fair_material
                 )
-                selected_schedulers = set(self.config["scheduler_ids"])
-                for registration in SCHEDULERS:
-                    if registration.scheduler_id not in selected_schedulers:
-                        continue
+                for registration in self.schedulers:
                     request_id = domain_hash(
                         "ASAP_BLOCK:V9.3:EXT1B:SIMULATION_REQUEST:v1",
                         {"paired_instance_id": instance.paired_instance_id,
@@ -674,7 +690,7 @@ class Ext1BRunner:
                         "request_status": "PLANNED",
                         "instance": instance,
                     })
-        assert_ext1b_fair_pairing(requests)
+        assert_ext1b_fair_pairing(requests, self.config["scheduler_ids"])
         return generated_rows, attempt_rows, instance_rows, requests
 
     def _task_and_request_outcomes(

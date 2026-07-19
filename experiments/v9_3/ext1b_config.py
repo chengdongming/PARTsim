@@ -33,6 +33,7 @@ TIMING_SUBTYPES = {
 SEED_SPACES = {
     "EXT1B_SMOKE",
     "EXT1B_PILOT",
+    "EXT1B1_ENERGY_CALIBRATION_PILOT",
 }
 
 TOP_LEVEL_KEYS = {
@@ -213,25 +214,30 @@ def validate_ext1b_config(raw: Mapping[str, Any]) -> Dict[str, Any]:
     if status not in PARAMETER_STATUSES:
         raise ConfigError("unknown EXT-1B parameter_status")
     seed_space = config.get("seed_space")
-    expected_seed_space = {
-        "SMOKE": "EXT1B_SMOKE",
-        "PILOT": "EXT1B_PILOT",
+    allowed_seed_spaces = {
+        "SMOKE": {"EXT1B_SMOKE"},
+        "PILOT": {"EXT1B_PILOT", "EXT1B1_ENERGY_CALIBRATION_PILOT"},
     }[status]
-    if seed_space != expected_seed_space:
-        raise ConfigError(f"{status} requires seed_space: {expected_seed_space}")
+    if seed_space not in allowed_seed_spaces:
+        raise ConfigError(
+            f"{status} requires seed_space in {sorted(allowed_seed_spaces)}"
+        )
 
     scenario = _mapping(config, "scenario")
     kind = scenario.get("kind")
     if kind not in SCENARIO_KINDS:
         raise ConfigError("unknown EXT-1B scenario kind")
     scheduler_ids = config.get("scheduler_ids", list(SCHEDULER_IDS))
-    if (
-        not isinstance(scheduler_ids, list)
-        or any(not isinstance(item, str) for item in scheduler_ids)
-        or tuple(scheduler_ids) != SCHEDULER_IDS
-    ):
+    if not isinstance(scheduler_ids, list) or not scheduler_ids:
+        raise ConfigError("EXT-1B scheduler_ids must be a non-empty list")
+    if any(not isinstance(item, str) or not item for item in scheduler_ids):
+        raise ConfigError("EXT-1B scheduler_ids must contain non-empty strings")
+    if len(scheduler_ids) != len(set(scheduler_ids)):
+        raise ConfigError("EXT-1B scheduler_ids contains duplicates")
+    unknown_schedulers = sorted(set(scheduler_ids) - set(SCHEDULER_IDS))
+    if unknown_schedulers:
         raise ConfigError(
-            "EXT-1B scheduler_ids must list the nine registered schedulers in order"
+            f"EXT-1B scheduler_ids contains unknown schedulers: {unknown_schedulers}"
         )
     config["scheduler_ids"] = list(scheduler_ids)
     expected_outputs = (
