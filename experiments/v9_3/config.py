@@ -420,6 +420,12 @@ def validate_config(raw: Mapping[str, Any], *, expected_core: str | None = None)
         service_axis["variants"] = normalized_services
 
     if core == "CORE-5":
+        required_core5_methods = ["CW_THETA_CW", "LOC_THETA_LOC"]
+        if variants != required_core5_methods:
+            raise ConfigError(
+                "CORE-5 method variants must equal "
+                "[CW_THETA_CW, LOC_THETA_LOC] in that order"
+            )
         scalability = _require_mapping(config, "scalability")
         for key in ("task_counts", "core_counts", "worker_counts"):
             values = [

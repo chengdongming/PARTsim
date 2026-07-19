@@ -46,26 +46,56 @@ def restricted_mean_runtime(
     return area
 
 
-def runtime_summary(rows: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
-    completed = [float(row["observed_time_seconds"]) for row in rows if str(row["event_observed"]) == "True"]
-    timeout_count = sum(str(row["censoring_status"]) == "RIGHT_CENSORED_TIMEOUT" for row in rows)
+def runtime_summary(
+    rows: Sequence[Mapping[str, Any]], *, planned_analysis_count: int | None = None,
+) -> Dict[str, Any]:
+    completed = [
+        float(row["observed_time_seconds"])
+        for row in rows if str(row["event_observed"]) == "True"
+    ]
+    timeout_count = sum(
+        str(row["censoring_status"]) == "RIGHT_CENSORED_TIMEOUT"
+        for row in rows
+    )
+    technical_count = sum(
+        str(row.get("terminal_class")) == "TECHNICAL_FAILURE"
+        or str(row["censoring_status"]) == "TECHNICAL_FAILURE"
+        for row in rows
+    )
     observations = [
         (float(row["observed_time_seconds"]), str(row["event_observed"]) == "True")
         for row in rows
         if str(row["event_observed"]) == "True"
         or str(row["censoring_status"]) == "RIGHT_CENSORED_TIMEOUT"
     ]
-    tau = max((float(row["timeout_budget_seconds"]) for row in rows), default=0.0)
+    evaluable_count = len(observations)
+    tau = max(
+        (
+            float(row["timeout_budget_seconds"])
+            for row in rows
+            if str(row["event_observed"]) == "True"
+            or str(row["censoring_status"]) == "RIGHT_CENSORED_TIMEOUT"
+        ),
+        default=None,
+    )
+    planned = len(rows) if planned_analysis_count is None else planned_analysis_count
     return {
-        "analysis_count": len(rows),
+        "planned_analysis_count": planned,
+        "terminal_analysis_count": len(rows),
+        "runtime_evaluable_count": evaluable_count,
         "completed_count": len(completed),
         "completed_mean_seconds": mean(completed) if completed else None,
         "completed_median_seconds": median(completed) if completed else None,
         "completed_p95_seconds": p95(completed),
         "completed_max_seconds": max(completed) if completed else None,
         "timeout_count": timeout_count,
-        "timeout_rate": timeout_count / len(rows) if rows else None,
+        "technical_failure_count": technical_count,
+        "timeout_rate_evaluable_denominator": evaluable_count,
+        "timeout_rate": timeout_count / evaluable_count if evaluable_count else None,
         "censored_count": timeout_count,
         "restriction_tau_seconds": tau,
-        "restricted_mean_runtime_seconds": restricted_mean_runtime(observations, tau),
+        "restricted_mean_runtime_seconds": (
+            restricted_mean_runtime(observations, tau)
+            if tau is not None else None
+        ),
     }
