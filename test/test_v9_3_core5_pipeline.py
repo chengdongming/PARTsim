@@ -10,7 +10,8 @@ from experiments.v9_3.core5_scalability import (
 )
 from experiments.v9_3.resource_measurement import RESOURCE_OBSERVATION_COLUMNS
 from experiments.v9_3.result_writer import (
-    ATTEMPT_COLUMNS, FAILURE_COLUMNS, TASKSET_RESULT_COLUMNS,
+    ATTEMPT_COLUMNS, FAILURE_COLUMNS, GENERATED_COLUMNS, REQUEST_COLUMNS,
+    TASKSET_RESULT_COLUMNS,
     TASK_RESULT_COLUMNS, read_csv, write_csv,
 )
 
@@ -33,6 +34,7 @@ def test_core5_aggregation_writes_plot_data_and_worker_semantics(tmp_path):
     results = []
     tasks = []
     observations = []
+    requests = []
     for worker in (1, 2):
         analysis = f"a{worker}"
         cells.append({
@@ -49,12 +51,22 @@ def test_core5_aggregation_writes_plot_data_and_worker_semantics(tmp_path):
             "attempt_id": f"x{worker}", "analysis_id": analysis,
             "attempt_number": 1, "timeout_budget_seconds": 2,
             "solver_status": "COMPLETED", "outer_timeout": False,
+            "payload_received": True,
             "solver_wall_seconds": .5, "solver_cpu_seconds": .4,
             "worker_startup_seconds": .05, "serialization_seconds": .01,
             "ipc_seconds": .04, "total_wall_seconds": .6,
         })
+        requests.append({
+            "request_id": f"r{worker}", "analysis_id": analysis,
+            "cell_id": f"inner{worker}", "taskset_id": "t",
+            "taskset_hash": "hash", "exact_e0": "0",
+            "variant": "CW_THETA_CW", "numerical_mode": "EXACT_RATIONAL",
+            "timeout_seconds": 2, "retry_timeout_seconds": "",
+            "source_analysis_id": "", "request_status": "TERMINAL",
+        })
         results.append({
-            "analysis_id": analysis, "taskset_id": "t", "taskset_hash": "hash",
+            "analysis_id": analysis, "request_id": f"r{worker}",
+            "taskset_id": "t", "taskset_hash": "hash",
             "analysis_variant": "CW_THETA_CW", "solver_status": "COMPLETED",
             "certification_status": "CERTIFIED_TASKSET", "taskset_proven": True,
             "n_tasks_candidate_found": 1, "final_attempt_id": f"x{worker}",
@@ -70,9 +82,19 @@ def test_core5_aggregation_writes_plot_data_and_worker_semantics(tmp_path):
         observations.append({
             "attempt_id": f"x{worker}", "analysis_id": analysis,
             "peak_rss_kib": 100 + worker, "peak_rss_scope": "CHILD_PROCESS",
-            "peak_rss_unit": "KiB",
+            "peak_rss_unit": "KiB", "observation_status": "AVAILABLE",
+            "unavailability_reason": "",
         })
     write_csv(tmp_path / "scalability_cells.csv", SCALABILITY_CELL_COLUMNS, cells)
+    write_csv(tmp_path / "generated_tasksets.csv", GENERATED_COLUMNS, [{
+        "generation_id": "g", "taskset_id": "t", "taskset_index": 0,
+        "generation_seed": 1, "M": 2, "task_n": 6,
+        "target_total_utilization": "1/5", "deadline_mode": "constrained",
+        "d_over_t_values_json": "[]", "taskset_hash": "hash",
+        "priority_hash": "priority", "power_hash": "power",
+        "service_curve_reference": "service", "task_input_json": "[]",
+    }])
+    write_csv(tmp_path / "analysis_requests.csv", REQUEST_COLUMNS, requests)
     write_csv(tmp_path / "analysis_attempts.csv", ATTEMPT_COLUMNS, attempts)
     write_csv(tmp_path / "per_taskset_results.csv", TASKSET_RESULT_COLUMNS, results)
     write_csv(tmp_path / "per_task_results.csv", TASK_RESULT_COLUMNS, tasks)
