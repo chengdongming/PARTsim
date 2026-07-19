@@ -347,6 +347,66 @@ def test_b2_sync_calibration_contract_dry_plan_and_request_order(tmp_path):
     assert len({row["taskset_hash"] for row in requests}) == 1
 
 
+def test_b3_timing_calibration_contract_and_dry_run_cardinality():
+    runner = Ext1BRunner.from_path(
+        ROOT / "configs/v9_3_ext1b3_timing_calibration.yaml"
+    )
+    description = runner.describe()
+    assert runner.config["experiment_id"] == (
+        "asap-block-v9.3-ext1b3-timing-calibration"
+    )
+    assert runner.config["parameter_status"] == "PILOT"
+    assert runner.config["seed_space"] == "EXT1B3_TIMING_CALIBRATION_PILOT"
+    assert runner.config["scheduler_ids"] == [
+        "gpfp_asap_block", "gpfp_alap_block", "gpfp_st_block",
+    ]
+    assert runner.config["required_outputs"] == [
+        "b3_timing_events.csv", "b3_summary.csv",
+    ]
+    assert runner.config["platform"] == {"cores": [4], "task_count": [10]}
+    assert runner.config["grid"]["utilization_points"] == ["1/5", "2/5"]
+    assert runner.config["grid"]["tasksets_per_cell"] == 20
+    assert runner.config["grid"]["base_seed"] == 961201
+    assert runner.config["simulation"]["retain_trace"] is True
+    assert description["cell_count"] == 4
+    assert description["tasksets_per_cell"] == 20
+    assert description["scheduler_count"] == 3
+    assert description["paired_instance_count"] == 80
+    assert description["simulation_request_count"] == 240
+
+    cells = scenario_cells(runner.config)
+    assert [cell.cell_id for cell in cells] == [
+        "positive-slack-energy-available", "slack-limited-charging",
+    ]
+    assert [cell.subtype for cell in cells] == [
+        "POSITIVE_SLACK_ENERGY_AVAILABLE", "SLACK_LIMITED_CHARGING",
+    ]
+    assert [cell.deadline_ratio_min for cell in cells] == [
+        Fraction(1, 2), Fraction(3, 4),
+    ]
+    assert [cell.deadline_ratio_max for cell in cells] == [
+        Fraction(3, 4), Fraction(1),
+    ]
+    assert [cell.nominal_supply_ratio for cell in cells] == [
+        Fraction(0), Fraction(1, 2),
+    ]
+
+
+def test_b3_calibration_seed_is_pilot_only_and_scheduler_order_is_exact():
+    raw = _raw_config("v9_3_ext1b3_timing_calibration.yaml")
+    smoke = deepcopy(raw)
+    smoke["parameter_status"] = "SMOKE"
+    with pytest.raises(ConfigError, match="SMOKE requires seed_space"):
+        validate_ext1b_config(smoke)
+
+    reversed_schedulers = deepcopy(raw)
+    reversed_schedulers["scheduler_ids"] = list(
+        reversed(reversed_schedulers["scheduler_ids"])
+    )
+    with pytest.raises(ConfigError, match="must equal"):
+        validate_ext1b_config(reversed_schedulers)
+
+
 def test_b2_seed_space_is_pilot_only_and_scheduler_pair_is_exact():
     raw = _raw_config("v9_3_ext1b2_sync_calibration.yaml")
     smoke = deepcopy(raw)
@@ -369,15 +429,19 @@ def test_sync_batch_stress_requires_block_and_sync_schedulers():
         validate_ext1b_config(raw)
 
 
-def test_required_output_contracts_preserve_b1_and_upgrade_b2():
+def test_required_output_contracts_preserve_b1_b2_and_lock_b3():
     b1 = load_ext1b_config(ROOT / "configs/v9_3_ext1b1_energy_calibration.yaml")
     b2 = load_ext1b_config(ROOT / "configs/v9_3_ext1b2_smoke.yaml")
+    b3 = load_ext1b_config(ROOT / "configs/v9_3_ext1b3_smoke.yaml")
     assert b1["required_outputs"] == [
         "b1_bypass_episodes.csv", "b1_task_effects.csv",
         "b1_paired_effects.csv", "b1_summary.csv",
     ]
     assert b2["required_outputs"] == [
         "b2_batch_decisions.csv", "b2_summary.csv",
+    ]
+    assert b3["required_outputs"] == [
+        "b3_timing_events.csv", "b3_summary.csv",
     ]
 
 
@@ -398,6 +462,22 @@ def test_retain_trace_requires_boolean():
     raw["simulation"]["retain_trace"] = "false"
     with pytest.raises(ConfigError, match="retain_trace must be a boolean"):
         validate_ext1b_config(raw)
+
+
+def test_timing_stress_requires_retained_semantic_trace():
+    raw = _raw_config("v9_3_ext1b3_timing_calibration.yaml")
+    raw["simulation"]["retain_trace"] = False
+    with pytest.raises(ConfigError, match="TIMING_STRESS requires retained"):
+        validate_ext1b_config(raw)
+
+
+def test_b1_b2_retained_trace_configs_remain_valid():
+    for name in (
+        "v9_3_ext1b1_energy_calibration.yaml",
+        "v9_3_ext1b2_sync_calibration.yaml",
+    ):
+        config = load_ext1b_config(ROOT / "configs" / name)
+        assert config["simulation"]["retain_trace"] is True
 
 
 @pytest.mark.parametrize(
@@ -867,6 +947,62 @@ def test_empty_paired_statistics_remain_unavailable_not_zero():
     assert binary["risk_difference"] == UNAVAILABLE
     assert binary["mcnemar_exact_p"] == UNAVAILABLE
     assert binary["holm_adjusted_p"] == UNAVAILABLE
+
+
+def test_b3_statistics_keep_u_cells_separate_and_compare_all_block_families(
+    monkeypatch,
+):
+    schedulers = (
+        "gpfp_asap_block", "gpfp_alap_block", "gpfp_st_block",
+    )
+    rows = []
+    for utilization in ("1/5", "2/5"):
+        pair_id = f"pair-{utilization}"
+        for scheduler in schedulers:
+            rows.append({
+                "scenario_kind": "TIMING_STRESS",
+                "scenario_subtype": "POSITIVE_SLACK_ENERGY_AVAILABLE",
+                "scenario_cell_id": "opaque-timing-cell",
+                "normalized_utilization": utilization,
+                "paired_instance_id": pair_id,
+                "scheduler_id": scheduler,
+                "status": "SIM_PASS_OBSERVED",
+                "comparison_eligible": True,
+                "overall_success": True,
+                "top_m_success": True,
+            })
+
+    sample_sizes = []
+
+    def capture(differences, **_kwargs):
+        sample_sizes.append(len(differences))
+        return (0.0, 0.0)
+
+    monkeypatch.setattr(
+        "experiments.v9_3.ext1b_statistics.paired_bootstrap_ci", capture
+    )
+    statistics_rows = paired_statistics_rows(
+        rows, bootstrap_seed=1, bootstrap_resamples=10,
+        scheduler_ids=schedulers,
+    )
+    binary = [
+        row for row in statistics_rows if row["metric_type"] == "BINARY"
+    ]
+    assert len(binary) == 2 * 2 * 3
+    assert {(
+        row["primary_scheduler"], row["comparator_scheduler"]
+    ) for row in binary} == {
+        ("gpfp_asap_block", "gpfp_alap_block"),
+        ("gpfp_asap_block", "gpfp_st_block"),
+        ("gpfp_alap_block", "gpfp_st_block"),
+    }
+    assert all(row["paired_count"] == 1 for row in binary)
+    assert all(size == 1 for size in sample_sizes)
+    assert {row["normalized_utilization"] for row in binary} == {
+        "1/5", "2/5",
+    }
+    assert any("1/5" in row["holm_family"] for row in binary)
+    assert any("2/5" in row["holm_family"] for row in binary)
 
 
 def _outcome_fixture(status: SimulationStatus, missed_rank: int | None):

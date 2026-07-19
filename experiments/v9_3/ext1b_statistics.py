@@ -9,6 +9,7 @@ clustered inside a taskset and never mixes the six B1 U-by-eta cells.
 from __future__ import annotations
 
 from collections import defaultdict
+from itertools import combinations
 import math
 import random
 import statistics
@@ -41,6 +42,11 @@ STATISTIC_COLUMNS = (
     "median_paired_difference", "mean_paired_difference", "ci95_lower",
     "ci95_upper", "mcnemar_exact_p", "holm_adjusted_p", "wins", "ties",
     "losses", "bootstrap_seed", "bootstrap_resamples", "holm_family",
+)
+B3_STATISTIC_COLUMNS = (
+    *STATISTIC_COLUMNS[:3],
+    "normalized_utilization",
+    *STATISTIC_COLUMNS[3:],
 )
 
 
@@ -155,20 +161,26 @@ def _ordered_counts(
     return wins, ties, losses
 
 
-def _empty_row(context: Mapping[str, Any], metric_type: str, metric: str, comparator: str) -> Dict[str, Any]:
-    return {
+def _empty_row(
+    context: Mapping[str, Any], metric_type: str, metric: str,
+    primary: str, comparator: str,
+) -> Dict[str, Any]:
+    row = {
         "scenario_kind": context["scenario_kind"],
         "scenario_subtype": context["scenario_subtype"],
         "scenario_cell_id": context["scenario_cell_id"],
         "metric_type": metric_type,
         "metric": metric,
-        "primary_scheduler": PRIMARY_SCHEDULER,
+        "primary_scheduler": primary,
         "comparator_scheduler": comparator,
         **{column: UNAVAILABLE for column in STATISTIC_COLUMNS if column not in {
             "scenario_kind", "scenario_subtype", "scenario_cell_id", "metric_type",
             "metric", "primary_scheduler", "comparator_scheduler",
         }},
     }
+    if context["scenario_kind"] == "TIMING_STRESS":
+        row["normalized_utilization"] = context["normalized_utilization"]
+    return row
 
 
 def paired_statistics_rows(
@@ -181,44 +193,75 @@ def paired_statistics_rows(
     selected_scheduler_ids = tuple(scheduler_ids)
     if PRIMARY_SCHEDULER not in selected_scheduler_ids:
         return []
-    comparators = tuple(
-        scheduler for scheduler in selected_scheduler_ids
-        if scheduler != PRIMARY_SCHEDULER
+    result_rows = list(results)
+    timing_only = bool(result_rows) and {
+        str(row.get("scenario_kind")) for row in result_rows
+    } == {"TIMING_STRESS"}
+    comparisons = (
+        tuple(combinations(selected_scheduler_ids, 2))
+        if timing_only
+        else tuple(
+            (PRIMARY_SCHEDULER, scheduler)
+            for scheduler in selected_scheduler_ids
+            if scheduler != PRIMARY_SCHEDULER
+        )
     )
-    grouped: Dict[tuple[str, str], Dict[str, Mapping[str, Any]]] = defaultdict(dict)
-    context_by_cell: Dict[str, Dict[str, str]] = {}
-    for row in results:
+    grouped: Dict[
+        tuple[tuple[str, str, str], str],
+        Dict[str, Mapping[str, Any]],
+    ] = defaultdict(dict)
+    context_by_cell: Dict[tuple[str, str, str], Dict[str, str]] = {}
+    for row in result_rows:
         cell = str(row["scenario_cell_id"])
+        cell_key = (
+            (
+                cell,
+                str(row.get("normalized_utilization", "")),
+                str(row.get("scenario_subtype", "")),
+            )
+            if timing_only
+            else (cell, "", "")
+        )
         pair = str(row["paired_instance_id"])
         scheduler = str(row["scheduler_id"])
-        if scheduler in grouped[(cell, pair)]:
+        if scheduler in grouped[(cell_key, pair)]:
             raise RuntimeError(f"duplicate EXT-1B statistic row for {pair}/{scheduler}")
-        grouped[(cell, pair)][scheduler] = row
-        context_by_cell[cell] = {
+        grouped[(cell_key, pair)][scheduler] = row
+        context_by_cell[cell_key] = {
             "scenario_kind": str(row["scenario_kind"]),
             "scenario_subtype": str(row["scenario_subtype"]),
             "scenario_cell_id": cell,
+            "normalized_utilization": cell_key[1],
         }
 
     rows: list[Dict[str, Any]] = []
-    binary_family_indexes: Dict[tuple[str, str], list[int]] = defaultdict(list)
-    for cell in sorted(context_by_cell):
-        context = context_by_cell[cell]
-        pair_groups = [members for (cell_id, _), members in grouped.items() if cell_id == cell]
+    binary_family_indexes: Dict[
+        tuple[tuple[str, str, str], str], list[int]
+    ] = defaultdict(list)
+    for cell_key in sorted(context_by_cell):
+        context = context_by_cell[cell_key]
+        pair_groups = [
+            members for (group_key, _), members in grouped.items()
+            if group_key == cell_key
+        ]
         for metric in BINARY_METRICS:
-            comparator_label = "eight" if len(comparators) == 8 else str(len(comparators))
-            family = f"{cell}:{metric}:ASAP-BLOCK-vs-{comparator_label}"
-            for comparator in comparators:
-                row = _empty_row(context, "BINARY", metric, comparator)
+            family = (
+                f"{cell_key}:{metric}:"
+                + ",".join(f"{left}-vs-{right}" for left, right in comparisons)
+            )
+            for primary, comparator in comparisons:
+                row = _empty_row(
+                    context, "BINARY", metric, primary, comparator
+                )
                 pairs = []
                 for members in pair_groups:
-                    if PRIMARY_SCHEDULER not in members or comparator not in members:
+                    if primary not in members or comparator not in members:
                         continue
                     if not all(_comparison_eligible(members[scheduler]) for scheduler in (
-                        PRIMARY_SCHEDULER, comparator,
+                        primary, comparator,
                     )):
                         continue
-                    left = _binary(members[PRIMARY_SCHEDULER].get(metric))
+                    left = _binary(members[primary].get(metric))
                     right = _binary(members[comparator].get(metric))
                     if left is not None and right is not None:
                         pairs.append((left, right))
@@ -242,7 +285,8 @@ def paired_statistics_rows(
                 if pairs:
                     differences = [float(left) - float(right) for left, right in pairs]
                     derived_seed = _bootstrap_seed(bootstrap_seed, {
-                        "cell": cell, "metric": metric, "comparator": comparator,
+                        "cell": cell_key, "metric": metric,
+                        "primary": primary, "comparator": comparator,
                     })
                     lower, upper = paired_bootstrap_ci(
                         differences, seed=derived_seed,
@@ -255,20 +299,23 @@ def paired_statistics_rows(
                         "mcnemar_exact_p": exact_mcnemar_p(primary_only, comparator_only),
                     })
                 rows.append(row)
-                binary_family_indexes[(cell, metric)].append(len(rows) - 1)
+                binary_family_indexes[(cell_key, metric)].append(len(rows) - 1)
 
         for metric in CONTINUOUS_METRICS:
-            for comparator in comparators:
-                row = _empty_row(context, "CONTINUOUS_OR_ORDERED", metric, comparator)
+            for primary, comparator in comparisons:
+                row = _empty_row(
+                    context, "CONTINUOUS_OR_ORDERED", metric,
+                    primary, comparator,
+                )
                 pairs = []
                 for members in pair_groups:
-                    if PRIMARY_SCHEDULER not in members or comparator not in members:
+                    if primary not in members or comparator not in members:
                         continue
                     if not all(_comparison_eligible(members[scheduler]) for scheduler in (
-                        PRIMARY_SCHEDULER, comparator,
+                        primary, comparator,
                     )):
                         continue
-                    left = _number(members[PRIMARY_SCHEDULER].get(metric))
+                    left = _number(members[primary].get(metric))
                     right = _number(members[comparator].get(metric))
                     if left is not None and right is not None:
                         pairs.append((left, right))
@@ -281,7 +328,8 @@ def paired_statistics_rows(
                 if pairs:
                     differences = [left - right for left, right in pairs]
                     derived_seed = _bootstrap_seed(bootstrap_seed, {
-                        "cell": cell, "metric": metric, "comparator": comparator,
+                        "cell": cell_key, "metric": metric,
+                        "primary": primary, "comparator": comparator,
                     })
                     lower, upper = paired_bootstrap_ci(
                         differences, seed=derived_seed,

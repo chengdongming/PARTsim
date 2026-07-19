@@ -210,7 +210,7 @@ TRUTH_TABLE.extend([
             blocking_policy_reason="BLOCK_HEAD_OF_LINE",
         ),
         False,
-        ALAP_URGENT_ELIGIBILITY,
+        NOT_APPLICABLE,
     ),
     (
         "gpfp_alap_block",
@@ -224,7 +224,7 @@ TRUTH_TABLE.extend([
             blocking_policy_reason="ENERGY_INSUFFICIENT",
         ),
         False,
-        ALAP_URGENT_ELIGIBILITY,
+        NOT_APPLICABLE,
     ),
     (
         "gpfp_alap_block",
@@ -352,17 +352,18 @@ def test_running_continuation_may_be_blocked_without_becoming_unclassifiable():
     ).state == NOT_APPLICABLE
 
 
-def trace_document(events):
+def trace_document(events, scheduler="gpfp_asap_block"):
     return {
         "trace_schema_version": 2,
-        "configured_scheduler": "gpfp_asap_block",
+        "configured_scheduler": scheduler,
+        "processor_count": 4,
         "events": events,
     }
 
 
-def scheduled_event():
+def scheduled_event(time=0):
     return {
-        "time": "0",
+        "time": str(time),
         "event_type": "scheduled",
         "task_name": "H",
         "arrival_time": "0",
@@ -425,6 +426,157 @@ def test_complete_trace_closes_audit(tmp_path):
     assert report.state_counts[ASAP_IMMEDIATE_ELIGIBILITY] == 1
 
 
+def _write_trace(tmp_path, scheduler, events, name):
+    path = tmp_path / name
+    path.write_text(
+        json.dumps(trace_document(events, scheduler)), encoding="utf-8"
+    )
+    return audit_timing_trace(path, expected_scheduler=scheduler)
+
+
+def test_deterministic_m4_asap_microcase_activates_immediately(tmp_path):
+    asap = observation("gpfp_asap_block")
+    alap = observation("gpfp_alap_block", "deferred")
+    assert finding("gpfp_asap_block", asap).state == ASAP_IMMEDIATE_ELIGIBILITY
+    assert finding(
+        "gpfp_alap_block", alap, dispatch=False
+    ).state == ALAP_POSITIVE_SLACK_DEFER
+
+    report = _write_trace(
+        tmp_path,
+        "gpfp_asap_block",
+        [arrival_event(), scheduled_event(), asap],
+        "m4-asap.json",
+    )
+    report.assert_audit_closed()
+    assert report.timing_activation is True
+    assert report.activation_candidate_job_count == 1
+    assert report.same_job_transition_count == 0
+
+
+def test_deterministic_m4_alap_same_job_transition_activates(tmp_path):
+    defer = observation(
+        "gpfp_alap_block", "deferred",
+        absolute_deadline=3, scheduler_slack=1,
+    )
+    urgent = observation(
+        "gpfp_alap_block", time=1,
+        absolute_deadline=3, scheduler_slack=0,
+    )
+    report = _write_trace(
+        tmp_path,
+        "gpfp_alap_block",
+        [arrival_event(), defer, scheduled_event(1), urgent],
+        "m4-alap.json",
+    )
+    report.assert_audit_closed()
+    assert report.timing_activation is True
+    assert report.activation_candidate_job_count == 1
+    assert report.same_job_transition_count == 1
+    assert report.activation_denominator_zero is False
+
+
+def test_deterministic_m4_st_recovers_while_slack_positive(tmp_path):
+    wait = observation(
+        "gpfp_st_block", "deferred",
+        available_energy_mJ=1.0,
+        job_energy_affordable=False,
+        decision_energy_affordable=False,
+    )
+    recovered = observation(
+        "gpfp_st_block", time=1,
+        scheduler_slack=7,
+    )
+    report = _write_trace(
+        tmp_path,
+        "gpfp_st_block",
+        [arrival_event(), wait, scheduled_event(1), recovered],
+        "m4-st.json",
+    )
+    report.assert_audit_closed()
+    assert report.timing_activation is True
+    assert report.activation_candidate_job_count == 1
+    assert report.same_job_transition_count == 1
+
+
+def test_incomplete_alap_transition_does_not_activate(tmp_path):
+    defer = observation("gpfp_alap_block", "deferred")
+    report = _write_trace(
+        tmp_path,
+        "gpfp_alap_block",
+        [arrival_event(), defer],
+        "incomplete-alap.json",
+    )
+    assert report.timing_activation is False
+    assert report.activation_candidate_job_count == 1
+    assert report.same_job_transition_count == 0
+    with pytest.raises(B3TimingAuditError, match="missing transition evidence"):
+        report.assert_audit_closed()
+
+
+def test_terminal_nonactivation_is_complete_evidence(tmp_path):
+    defer = observation("gpfp_alap_block", "deferred")
+    terminal = {
+        "time": "10",
+        "event_type": "simulation_run_outcome",
+        "simulation_completed": True,
+        "simulation_completion_reason": "reached_horizon",
+    }
+    report = _write_trace(
+        tmp_path,
+        "gpfp_alap_block",
+        [arrival_event(), defer, terminal],
+        "terminal-nonactivation.json",
+    )
+    report.assert_audit_closed()
+    assert report.timing_activation is False
+    assert report.same_job_transition_count == 0
+
+
+def test_st_execution_only_after_slack_exhaustion_does_not_activate(tmp_path):
+    wait = observation(
+        "gpfp_st_block", "deferred",
+        available_energy_mJ=1.0,
+        job_energy_affordable=False,
+        decision_energy_affordable=False,
+    )
+    late = observation(
+        "gpfp_st_block", time=8,
+        absolute_deadline=10, scheduler_slack=0,
+    )
+    report = _write_trace(
+        tmp_path,
+        "gpfp_st_block",
+        [arrival_event(), wait, scheduled_event(8), late],
+        "late-st.json",
+    )
+    assert report.timing_activation is False
+    assert report.same_job_transition_count == 0
+    report.assert_audit_closed()
+
+
+def test_same_job_observation_time_reversal_fails_closed(tmp_path):
+    later = observation(
+        "gpfp_asap_block", time=2,
+        scheduler_slack=6,
+    )
+    earlier = observation(
+        "gpfp_asap_block", time=1,
+        scheduler_slack=7,
+    )
+    report = _write_trace(
+        tmp_path,
+        "gpfp_asap_block",
+        [
+            arrival_event(), scheduled_event(2), later,
+            scheduled_event(1), earlier,
+        ],
+        "reversed.json",
+    )
+    with pytest.raises(B3TimingAuditError, match="time is reversed"):
+        report.assert_audit_closed()
+
+
 @pytest.mark.parametrize("scheduler,expected", [
     ("gpfp_asap_block", ASAP_IMMEDIATE_ELIGIBILITY),
     ("gpfp_asap_nonblock", ASAP_IMMEDIATE_ELIGIBILITY),
@@ -438,7 +590,16 @@ def test_complete_trace_closes_audit(tmp_path):
 ])
 def test_real_nine_scheduler_microcase_emits_auditable_state(
         tmp_path, scheduler, expected):
-    completed, trace = _run_scheduler(tmp_path, scheduler)
+    run_kwargs = (
+        {
+            "wcet": 2,
+            "deadline": 4 if scheduler == "gpfp_alap_sync" else 3,
+            "duration": 4 if scheduler == "gpfp_alap_sync" else 3,
+        }
+        if scheduler.startswith("gpfp_alap_")
+        else {}
+    )
+    completed, trace = _run_scheduler(tmp_path, scheduler, **run_kwargs)
     assert completed.returncode == 0, completed.stderr
     scheduled = {
         (int(event["time"]), event["task_name"], int(event["arrival_time"]))
@@ -455,14 +616,7 @@ def test_real_nine_scheduler_microcase_emits_auditable_state(
         expected_scheduler=scheduler,
     )
     report.assert_audit_closed()
-    findings = [
-        classify_timing_event(
-            event,
-            configured_scheduler=scheduler,
-            scheduled_identities=scheduled,
-        )
-        for event in observations
-    ]
+    findings = report.findings
     assert all(finding.state not in {
         ILLEGAL_TIMING_TRANSITION, UNCLASSIFIABLE
     } for finding in findings), findings

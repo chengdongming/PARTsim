@@ -75,11 +75,17 @@ B2_SUMMARY_COLUMNS = (
 )
 B3_EVENT_COLUMNS = (
     "request_id", "paired_instance_id", "scenario_cell_id", "taskset_hash",
+    "normalized_utilization", "timing_subtype",
+    "nominal_energy_supply_ratio", "deadline_ratio_min",
+    "deadline_ratio_max",
     "scheduler_id", "scheduler_family", "blocking_policy", "time",
     "task_name", "arrival_time", "job_id", "classified_state", "reason",
 )
 B3_SUMMARY_COLUMNS = (
     "request_id", "paired_instance_id", "scenario_cell_id", "taskset_hash",
+    "normalized_utilization", "timing_subtype",
+    "nominal_energy_supply_ratio", "deadline_ratio_min",
+    "deadline_ratio_max",
     "input_hash", "scheduler_id", "scheduler_family", "blocking_policy",
     "comparison_scope", "status", "asap_immediate_count",
     "alap_positive_slack_defer_count", "alap_urgent_eligible_count",
@@ -89,7 +95,8 @@ B3_SUMMARY_COLUMNS = (
     "timing_not_applicable_count", "timing_unclassifiable_count",
     "timing_illegal_count", "ready_but_idle_ticks", "first_execution_time",
     "response_time", "deadline_miss", "timing_activation", "audit_error_count",
-    "audit_closed",
+    "audit_closed", "same_job_transition_count",
+    "activation_candidate_job_count", "activation_denominator_zero",
 )
 
 
@@ -175,6 +182,75 @@ def _b2_dimensions_by_pair(
         if not dimensions[pair_id]["scenario_cell_id"]:
             raise Ext1BObservationError(
                 f"missing B2 scenario_cell_id for {pair_id}"
+            )
+    return dimensions
+
+
+def _b3_dimensions_by_pair(
+    scenarios: Iterable[Mapping[str, Any]],
+) -> Dict[str, Dict[str, str]]:
+    dimensions: Dict[str, Dict[str, str]] = {}
+    for row in scenarios:
+        if str(row.get("scenario_kind")) != "TIMING_STRESS":
+            continue
+        pair_id = str(row.get("paired_instance_id", ""))
+        if not pair_id or pair_id in dimensions:
+            raise Ext1BObservationError(
+                f"duplicate or empty B3 scenario instance: {pair_id!r}"
+            )
+        try:
+            structure = json.loads(str(row.get("structure_json", "")))
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise Ext1BObservationError(
+                f"invalid B3 frozen structure metadata for {pair_id}"
+            ) from exc
+        timing = structure.get("timing_dimensions") if isinstance(structure, dict) else None
+        if not isinstance(timing, dict):
+            raise Ext1BObservationError(
+                f"missing B3 frozen timing dimensions for {pair_id}"
+            )
+        scenario_cell_id = str(row.get("scenario_cell_id", ""))
+        timing_subtype = str(row.get("scenario_subtype", ""))
+        if (
+            str(timing.get("scenario_cell_id", "")) != scenario_cell_id
+            or str(timing.get("scenario_kind", "")) != "TIMING_STRESS"
+            or str(timing.get("scenario_subtype", "")) != timing_subtype
+        ):
+            raise Ext1BObservationError(
+                f"B3 frozen timing dimension identity mismatch for {pair_id}"
+            )
+        nominal = _dimension_text(
+            row.get("nominal_energy_supply_ratio"),
+            f"B3 nominal_energy_supply_ratio for {pair_id}",
+        )
+        frozen_nominal = _dimension_text(
+            timing.get("nominal_energy_supply_ratio"),
+            f"B3 frozen nominal_energy_supply_ratio for {pair_id}",
+        )
+        if nominal != frozen_nominal:
+            raise Ext1BObservationError(
+                f"B3 nominal energy dimension mismatch for {pair_id}"
+            )
+        dimensions[pair_id] = {
+            "scenario_cell_id": scenario_cell_id,
+            "normalized_utilization": _dimension_text(
+                row.get("normalized_utilization"),
+                f"B3 normalized_utilization for {pair_id}",
+            ),
+            "timing_subtype": timing_subtype,
+            "nominal_energy_supply_ratio": nominal,
+            "deadline_ratio_min": _dimension_text(
+                timing.get("deadline_ratio_min"),
+                f"B3 deadline_ratio_min for {pair_id}",
+            ),
+            "deadline_ratio_max": _dimension_text(
+                timing.get("deadline_ratio_max"),
+                f"B3 deadline_ratio_max for {pair_id}",
+            ),
+        }
+        if not scenario_cell_id or not timing_subtype:
+            raise Ext1BObservationError(
+                f"missing B3 scenario identity for {pair_id}"
             )
     return dimensions
 
@@ -369,6 +445,7 @@ def _b2_outputs(
 
 def _b3_outputs(
     root: Path,
+    scenarios: Sequence[Mapping[str, Any]],
     requests: Sequence[Mapping[str, Any]],
     results: Sequence[Dict[str, Any]],
 ) -> tuple[list[Dict[str, Any]], list[Dict[str, Any]], list[str]]:
@@ -376,6 +453,10 @@ def _b3_outputs(
     summary_rows: list[Dict[str, Any]] = []
     failures: list[str] = []
     request_index = {str(row["request_id"]): row for row in requests}
+    try:
+        dimensions_by_pair = _b3_dimensions_by_pair(scenarios)
+    except Exception as exc:
+        return event_rows, summary_rows, [f"B3 dimensions: {exc}"]
 
     for result in results:
         if str(result.get("scenario_kind")) != "TIMING_STRESS":
@@ -389,6 +470,21 @@ def _b3_outputs(
             continue
         display_name, family, policy = TIMING_SCHEDULERS[scheduler_id]
         try:
+            pair_id = str(result["paired_instance_id"])
+            dimensions = dimensions_by_pair.get(pair_id)
+            if dimensions is None:
+                raise Ext1BObservationError(
+                    f"request has no frozen B3 scenario instance: {pair_id}"
+                )
+            if (
+                str(request.get("scenario_cell_id"))
+                != dimensions["scenario_cell_id"]
+                or str(request.get("scenario_subtype"))
+                != dimensions["timing_subtype"]
+            ):
+                raise Ext1BObservationError(
+                    f"B3 request/scenario dimension mismatch for {pair_id}"
+                )
             report = audit_timing_trace(
                 _trace_path(root, result), expected_scheduler=scheduler_id
             )
@@ -404,6 +500,11 @@ def _b3_outputs(
                 "paired_instance_id": result["paired_instance_id"],
                 "scenario_cell_id": result["scenario_cell_id"],
                 "taskset_hash": result["taskset_hash"],
+                **{key: dimensions[key] for key in (
+                    "normalized_utilization", "timing_subtype",
+                    "nominal_energy_supply_ratio", "deadline_ratio_min",
+                    "deadline_ratio_max",
+                )},
                 "scheduler_id": scheduler_id,
                 "scheduler_family": family,
                 "blocking_policy": policy,
@@ -426,12 +527,7 @@ def _b3_outputs(
             "battery_full", "slack_exhausted", "battery_full_and_slack_exhausted"
         }
         release_other = sum(reason not in known_release for reason in release_reasons)
-        target_states = {
-            "ASAP": (ASAP_IMMEDIATE_ELIGIBILITY,),
-            "ALAP": (ALAP_POSITIVE_SLACK_DEFER, ALAP_URGENT_ELIGIBILITY),
-            "ST": (ST_AFFORDABLE_ASAP_BEHAVIOR, ST_ENERGY_INSUFFICIENT_SLACK_WAIT),
-        }[family]
-        timing_activation = any(counts[state] > 0 for state in target_states)
+        timing_activation = report.timing_activation
         audit_error_count = (
             len(report.errors)
             + counts[UNCLASSIFIABLE]
@@ -444,6 +540,11 @@ def _b3_outputs(
             "paired_instance_id": result["paired_instance_id"],
             "scenario_cell_id": result["scenario_cell_id"],
             "taskset_hash": result["taskset_hash"],
+            **{key: dimensions[key] for key in (
+                "normalized_utilization", "timing_subtype",
+                "nominal_energy_supply_ratio", "deadline_ratio_min",
+                "deadline_ratio_max",
+            )},
             "input_hash": result["input_hash"],
             "scheduler_id": scheduler_id,
             "scheduler_family": family,
@@ -478,6 +579,9 @@ def _b3_outputs(
             "timing_activation": timing_activation,
             "audit_error_count": audit_error_count,
             "audit_closed": audit_closed,
+            "same_job_transition_count": report.same_job_transition_count,
+            "activation_candidate_job_count": report.activation_candidate_job_count,
+            "activation_denominator_zero": report.activation_denominator_zero,
         })
         if not audit_closed:
             failures.append(
@@ -500,7 +604,9 @@ def write_ext1b_observation_outputs(
     b2_decisions, b2_summaries, b2_failures = _b2_outputs(
         root, config, scenarios, requests, results
     )
-    b3_events, b3_summaries, b3_failures = _b3_outputs(root, requests, results)
+    b3_events, b3_summaries, b3_failures = _b3_outputs(
+        root, scenarios, requests, results
+    )
     write_csv(root / "b2_batch_decisions.csv", B2_DECISION_COLUMNS, b2_decisions)
     write_csv(root / "b2_summary.csv", B2_SUMMARY_COLUMNS, b2_summaries)
     write_csv(root / "b3_timing_events.csv", B3_EVENT_COLUMNS, b3_events)

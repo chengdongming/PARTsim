@@ -28,6 +28,7 @@ from experiments.v9_3.ext1b_config import load_ext1b_config
 from experiments.v9_3.ext1b_engine import Ext1BRunner, analyze_ext1b
 from experiments.v9_3.ext1b_observation import (
     Ext1BObservationError,
+    _b3_dimensions_by_pair,
     write_ext1b_observation_outputs,
 )
 from experiments.v9_3.result_writer import read_csv, write_csv
@@ -236,6 +237,35 @@ def test_b2_predecision_fingerprint_mismatch_fails_closed(tmp_path, monkeypatch)
     assert summary["mechanism_activated"] == "False"
 
 
+def test_b3_dimensions_come_from_frozen_exact_scenario_metadata():
+    scenario = {
+        "paired_instance_id": "pair",
+        "scenario_kind": "TIMING_STRESS",
+        "scenario_subtype": "SLACK_LIMITED_CHARGING",
+        "scenario_cell_id": "opaque-cell-name",
+        "normalized_utilization": "2/10",
+        "nominal_energy_supply_ratio": "2/4",
+        "structure_json": (
+            '{"timing_dimensions":{'
+            '"scenario_cell_id":"opaque-cell-name",'
+            '"scenario_kind":"TIMING_STRESS",'
+            '"scenario_subtype":"SLACK_LIMITED_CHARGING",'
+            '"deadline_ratio_min":"6/8",'
+            '"deadline_ratio_max":"1",'
+            '"nominal_energy_supply_ratio":"1/2",'
+            '"initial_energy_policy":"HALF_TARGET"}}'
+        ),
+    }
+    assert _b3_dimensions_by_pair([scenario])["pair"] == {
+        "scenario_cell_id": "opaque-cell-name",
+        "normalized_utilization": "1/5",
+        "timing_subtype": "SLACK_LIMITED_CHARGING",
+        "nominal_energy_supply_ratio": "1/2",
+        "deadline_ratio_min": "3/4",
+        "deadline_ratio_max": "1",
+    }
+
+
 def _integration_config(tmp_path: Path, name: str, binary: Path):
     config = deepcopy(load_ext1b_config(ROOT / "configs" / name))
     config["simulation"]["simulator_bin"] = str(binary)
@@ -360,7 +390,21 @@ def test_real_b3_runner_trace_auditor_csv_and_reanalysis(tmp_path, monkeypatch):
     assert outcome.requested == outcome.terminal == 9
     root = outcome.output_root
     summaries = read_csv(root / "b3_summary.csv")
+    events = read_csv(root / "b3_timing_events.csv")
     assert len(summaries) == 9
+    assert events
+    dimension_columns = {
+        "normalized_utilization", "timing_subtype",
+        "nominal_energy_supply_ratio", "deadline_ratio_min",
+        "deadline_ratio_max",
+    }
+    for row in events + summaries:
+        assert dimension_columns <= set(row)
+        assert row["normalized_utilization"] == "1/5"
+        assert row["timing_subtype"] == "POSITIVE_SLACK_ENERGY_AVAILABLE"
+        assert row["nominal_energy_supply_ratio"] == "0"
+        assert row["deadline_ratio_min"] == "3/4"
+        assert row["deadline_ratio_max"] == "1"
     assert {row["comparison_scope"] for row in summaries} >= {"PRIMARY_BLOCK"}
     assert all(row["audit_closed"] == "True" for row in summaries)
     for row in summaries:

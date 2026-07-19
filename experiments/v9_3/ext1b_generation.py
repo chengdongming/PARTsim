@@ -485,6 +485,13 @@ def build_scenario_instance(
         initial, capacity, allow_clipping, structure = _timing_structure(
             payload, cell, stored.processors, rho
         )
+        # Persist the exact scenario dimensions with the accepted instance.
+        # B3 observation outputs consume this frozen metadata and never parse
+        # dimensions from the human-readable scenario cell ID.
+        structure = {
+            **structure,
+            "timing_dimensions": cell.row(),
+        }
 
     provisional = domain_hash(
         "ASAP_BLOCK:V9.3:EXT1B:SYSTEM_INPUT:v1",
