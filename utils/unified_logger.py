@@ -45,7 +45,11 @@ class UnifiedLogger:
         if not self._initialized:
             self._loggers: Dict[str, logging.Logger] = {}
             self._default_level = LogLevel.INFO
-            self._log_dir = "logs"
+            # A process-level override keeps repository imports usable from
+            # read-only worktrees and isolated native child directories.
+            # Logging location is operational metadata, not a scientific
+            # input; the historical cwd-relative default remains unchanged.
+            self._log_dir = os.environ.get("PARTSIM_LOG_DIR") or "logs"
             self._setup_log_directory()
             self._initialized = True
     

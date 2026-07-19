@@ -392,6 +392,28 @@ namespace RTSim {
                 makeASAPBlockTraceJobs(active_jobs, _task_models),
                 makeASAPBlockTraceJobs(selected, _task_models),
                 decision_reason);
+            std::vector<AbsRTTask *> continuing_tasks;
+            if (_kernel) {
+                const std::set<AbsRTTask *> selected_set(
+                    selected.begin(), selected.end());
+                for (const auto &[cpu, task] :
+                     _kernel->getCurrentExecutingTasks()) {
+                    (void)cpu;
+                    if (task && task->isExecuting() &&
+                        selected_set.count(task) > 0) {
+                        continuing_tasks.push_back(task);
+                    }
+                }
+            }
+            _trace_logger->logB3ASAPDecision(
+                "ASAP-Block",
+                "BLOCK",
+                available_energy * 1000.0,
+                processor_count,
+                makeASAPBlockTraceJobs(active_jobs, _task_models),
+                makeASAPBlockTraceJobs(selected, _task_models),
+                makeASAPBlockTraceJobs(continuing_tasks, _task_models),
+                decision_reason);
             if (stopped_by_energy && selected.empty()) {
                 _trace_logger->logEnergyBlock(
                     "ASAP-Block",

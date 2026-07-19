@@ -323,10 +323,16 @@ def run_paired_simulation(
         processors=processors, initial_battery=initial,
         battery_capacity=capacity, scheduler_id=scheduler_id,
     )
-    validate_no_overflow_guard(
-        system_path, int(simulation_config["maximum_horizon"]),
-        initial_battery=initial, battery_capacity=capacity,
-    )
+    # CORE-3's proof-oriented runs forbid harvest clipping.  EXT-1B's
+    # SLACK_LIMITED_CHARGING micro-mechanism intentionally observes the ST
+    # scheduler's documented "battery full or slack exhausted" release gate,
+    # so that one explicitly validated experiment path may use a finite,
+    # clipping battery.  The default remains fail-closed and unchanged.
+    if not bool(energy_config.get("allow_harvest_clipping", False)):
+        validate_no_overflow_guard(
+            system_path, int(simulation_config["maximum_horizon"]),
+            initial_battery=initial, battery_capacity=capacity,
+        )
 
     simulator = Path(str(simulation_config["simulator_bin"]))
     if not simulator.is_absolute():

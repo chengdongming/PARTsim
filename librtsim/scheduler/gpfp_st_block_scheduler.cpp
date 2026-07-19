@@ -23,6 +23,7 @@
 #include <rtsim/scheduler/energy_bridge.hpp>
 #include <rtsim/scheduler/st_energy_utils.hpp>
 #include <rtsim/mrtkernel.hpp>
+#include <rtsim/b3_timing_trace.hpp>
 
 // 统一日志系统
 #include "../../utils/unified_logger.hpp"
@@ -544,6 +545,24 @@ namespace RTSim {
                         }
                     }
                 }
+                if (_trace_logger && _semantic_trace_enabled &&
+                    _st_charge_blocked_task) {
+                    std::vector<AbsRTTask *> held_tasks{
+                        _st_charge_blocked_task};
+                    const std::size_t processors = _kernel
+                        ? _kernel->getCurrentExecutingTasks().size() : 1;
+                    _trace_logger->logB3STDecision(
+                        "ST-Block",
+                        "BLOCK",
+                        _current_energy * 1000.0,
+                        _max_energy * 1000.0,
+                        processors,
+                        makeB3TraceJobs(held_tasks, _task_models),
+                        {},
+                        {},
+                        makeB3TraceJobs(held_tasks, _task_models),
+                        "ST_CHARGE_HOLD");
+                }
                 resetTickDispatchState();
                 _dispatching_tasks_total_energy = 0.0;
                 _selection_tick = current_time;
@@ -625,6 +644,8 @@ namespace RTSim {
 
         _alap_blocking = (blocking_task != nullptr);
         _energy_depleted = _dispatch_selection_order.empty() && !active_tasks.empty();
+        std::vector<AbsRTTask *> timing_wait_tasks;
+        double observation_available_energy = _current_energy;
         if (blocking_task) {
             Tick slack = calculateSlackForTask(blocking_task);
             int64_t slack_ms = static_cast<int64_t>(slack);
@@ -638,6 +659,7 @@ namespace RTSim {
                 _st_charge_slack_at_begin = slack;
                 const double decision_available_energy =
                     std::max(0.0, _current_energy - reserved_energy);
+                observation_available_energy = decision_available_energy;
                 logSTChargeEvent("st_charge_begin",
                                  blocking_task,
                                  _st_charge_required_energy,
@@ -648,6 +670,7 @@ namespace RTSim {
                 _counted_tasks_in_dispatch.clear();
                 reserved_energy = 0.0;
                 _dispatching_tasks_total_energy = 0.0;
+                timing_wait_tasks.push_back(blocking_task);
 
                 Tick wake_time =
                     computeSafeWakeTimeFromOffset(std::max<int64_t>(0, slack_ms));
@@ -675,6 +698,28 @@ namespace RTSim {
                 delete _wake_event;
                 _wake_event = nullptr;
             }
+        }
+
+        if (_trace_logger && _semantic_trace_enabled &&
+            !active_tasks.empty()) {
+            std::vector<AbsRTTask *> continuing_tasks;
+            for (AbsRTTask *task : _dispatch_selection_order) {
+                if (running_tasks.count(task) > 0) {
+                    continuing_tasks.push_back(task);
+                }
+            }
+            _trace_logger->logB3STDecision(
+                "ST-Block",
+                "BLOCK",
+                observation_available_energy * 1000.0,
+                _max_energy * 1000.0,
+                processor_count,
+                makeB3TraceJobs(active_tasks, _task_models),
+                makeB3TraceJobs(_dispatch_selection_order, _task_models),
+                makeB3TraceJobs(continuing_tasks, _task_models),
+                makeB3TraceJobs(timing_wait_tasks, _task_models),
+                timing_wait_tasks.empty() ? "ST_ASAP_NATIVE_GATE"
+                                          : "ST_CHARGE_BEGIN");
         }
 
         if (!_dispatch_selection_order.empty()) {

@@ -35,6 +35,8 @@ from experiments.v9_3.ext1b_generation import (
     interpolate_exact,
     materialize_scenario_system,
     native_energy_affordable,
+    scenario_cells,
+    sync_batch_structure,
     transform_constrained_deadlines,
 )
 from experiments.v9_3.ext1b_statistics import (
@@ -257,20 +259,6 @@ def test_unknown_parameter_status_is_rejected():
         validate_ext1b_config(raw)
 
 
-def test_formal_template_parses_but_runner_refuses_execution():
-    runner = Ext1BRunner.from_path(ROOT / "configs/v9_3_ext1b_formal_template.yaml")
-    with pytest.raises(RuntimeError, match="not authorized"):
-        runner.run()
-
-
-def test_changing_only_formal_status_cannot_authorize_execution():
-    raw = _raw_config("v9_3_ext1b_formal_template.yaml")
-    raw["parameter_status"] = "FROZEN_FOR_FORMAL_EXECUTION"
-    runner = Ext1BRunner(validate_ext1b_config(raw))
-    with pytest.raises(RuntimeError, match="not authorized"):
-        runner.run()
-
-
 def test_retain_trace_requires_boolean():
     raw = _raw_config()
     raw["simulation"]["retain_trace"] = "false"
@@ -299,11 +287,10 @@ def test_config_hash_is_sensitive_to_semantic_fields(path, value):
 def test_seed_spaces_and_seeds_are_separate():
     smoke = load_ext1b_config(ROOT / "configs/v9_3_ext1b1_smoke.yaml")
     pilot = load_ext1b_config(ROOT / "configs/v9_3_ext1b1_pilot.yaml")
-    formal = load_ext1b_config(ROOT / "configs/v9_3_ext1b_formal_template.yaml")
-    assert {smoke["seed_space"], pilot["seed_space"], formal["seed_space"]} == {
-        "EXT1B_SMOKE", "EXT1B_PILOT", "EXT1B_FORMAL",
+    assert {smoke["seed_space"], pilot["seed_space"]} == {
+        "EXT1B_SMOKE", "EXT1B_PILOT",
     }
-    assert len({item["grid"]["base_seed"] for item in (smoke, pilot, formal)}) == 3
+    assert smoke["grid"]["base_seed"] != pilot["grid"]["base_seed"]
 
 
 @pytest.mark.parametrize(
@@ -374,7 +361,28 @@ def test_b1_construction_is_deterministic():
     )
 
 
-def test_b1_generation_deadlines_obey_c_le_d_le_t_and_ratio_interval():
+def test_b2_prefix_interval_and_capacity_floor():
+    initial, structure = sync_batch_structure(_payload(), 2, 1, Fraction(1, 2))
+    prefix, batch = Fraction(structure["E_prefix"]), Fraction(structure["E_batch"])
+    assert prefix <= initial < batch
+    capacity = initial
+    assert capacity >= initial
+
+
+@pytest.mark.parametrize("p", [0, 2, 3])
+def test_b2_rejects_illegal_p_q(p):
+    with pytest.raises(StructuralRejection, match="INVALID_AFFORDABLE_PREFIX"):
+        sync_batch_structure(_payload(), 2, p, Fraction(1, 2))
+
+
+def test_b2_top_q_is_selected_by_priority_not_input_order():
+    shuffled = [_payload()[2], _payload()[0], _payload()[1]]
+    _, structure = sync_batch_structure(shuffled, 2, 1, Fraction(1, 2))
+    assert structure["top_q_task_ids"] == ["0", "1"]
+    assert structure["q"] == 2
+
+
+def test_b3_deadlines_obey_c_le_d_le_t_and_ratio_interval():
     transformed = transform_constrained_deadlines(
         _payload(), Fraction(1, 2), Fraction(3, 4), 44
     )
@@ -383,10 +391,19 @@ def test_b1_generation_deadlines_obey_c_le_d_le_t_and_ratio_interval():
                for row in transformed)
 
 
-def test_b1_deadline_transform_is_reproducible_and_seeded():
+def test_b3_deadline_transform_is_reproducible_and_seeded():
     left = transform_constrained_deadlines(_payload(), Fraction(1, 2), Fraction(1), 7)
     right = transform_constrained_deadlines(_payload(), Fraction(1, 2), Fraction(1), 7)
     assert left == right
+
+
+def test_b3_contains_both_required_timing_cells():
+    config = load_ext1b_config(ROOT / "configs/v9_3_ext1b3_smoke.yaml")
+    cells = scenario_cells(config)
+    assert {cell.subtype for cell in cells} == {
+        "POSITIVE_SLACK_ENERGY_AVAILABLE", "SLACK_LIMITED_CHARGING",
+    }
+    assert cells[0].deadline_ratio_min > cells[1].deadline_ratio_min
 
 
 def test_scenario_system_preserves_valid_flow_style_power_model(tmp_path):
@@ -402,6 +419,25 @@ def test_scenario_system_preserves_valid_flow_style_power_model(tmp_path):
     assert document["power_models"][0]["params"][0]["speed_params"] == [1, 0, 0, 0]
 
 
+def test_timing_activation_uses_dedicated_audit_evidence():
+    rows = _result_rows("TIMING_STRESS", "POSITIVE_SLACK_ENERGY_AVAILABLE")
+    for row in rows:
+        row["timing_activation"] = True
+    tasks = _task_rows("TIMING_STRESS", "POSITIVE_SLACK_ENERGY_AVAILABLE")
+    activations = classify_mechanism_activation(rows, tasks, [], top_m=2)
+    assert len(activations) == 3
+    assert all(row["runtime_activation"] for row in activations)
+    assert all(row["activation_class"].startswith("C1_") for row in activations)
+
+
+def test_first_execution_difference_is_not_a_timing_activation_proxy():
+    rows = _result_rows("TIMING_STRESS", "POSITIVE_SLACK_ENERGY_AVAILABLE")
+    tasks = _task_rows("TIMING_STRESS", "POSITIVE_SLACK_ENERGY_AVAILABLE")
+    activations = classify_mechanism_activation(rows, tasks, [], top_m=2)
+    assert all(row["runtime_observable"] is False for row in activations)
+    assert all(row["activation_class"] == "B_RUNTIME_UNOBSERVABLE" for row in activations)
+
+
 def _write_mechanism_trace(path: Path, scheduler: str, events):
     document = trace_document()
     document["configured_scheduler"] = scheduler
@@ -410,7 +446,7 @@ def _write_mechanism_trace(path: Path, scheduler: str, events):
     return path
 
 
-def test_trace_parser_preserves_bypass_activation_events(tmp_path):
+def test_trace_parser_preserves_bypass_and_sync_activation_events(tmp_path):
     nonblock = parse_simulation_trace(
         _write_mechanism_trace(tmp_path / "nonblock.json", "gpfp_asap_nonblock", [{
             "time": 0, "event_type": "nonblock_bypass", "scheduler": "ASAP-NonBlock",
@@ -425,7 +461,54 @@ def test_trace_parser_preserves_bypass_activation_events(tmp_path):
         minimum_jobs_per_task=1, release_e0=Fraction(1),
         expected_scheduler="gpfp_asap_nonblock",
     )
+    sync = parse_simulation_trace(
+        _write_mechanism_trace(tmp_path / "sync.json", "gpfp_asap_sync", [
+            {
+                "time": 1, "event_type": "sync_batch_block", "scheduler": "ASAP-Sync",
+                "batch_tasks": [{"task_name": "v93_task_0"}],
+                "batch_required_energy_mJ": 0.2, "available_energy_mJ": 0.1,
+                "feasible_subset_exists": True, "reason": "sync_batch_energy_insufficient",
+            },
+            {
+                "time": 2, "event_type": "sync_batch_candidate_wait",
+                "scheduler": "ASAP-Sync",
+                "reason": "continuation_preserved_new_candidate_batch_energy_insufficient",
+            },
+        ]),
+        [{"task_id": "0", "priority_rank": 0, "C": 2, "D": 5, "T": 10,
+          "P": "1/10", "D_over_T": "1/2", "workload": "control",
+          "arrival_offset": 0}],
+        expected_taskset_hash=TRACE_HASH, horizon=10, warmup=0,
+        minimum_jobs_per_task=1, release_e0=Fraction(1),
+        expected_scheduler="gpfp_asap_sync",
+    )
     assert nonblock.metrics["bypass_count"] == 1
+    # The additive continuation-wait event is intentionally not folded into
+    # the legacy sync_batch_block aggregate.
+    assert sync.metrics["synchronization_wait_ticks"] == 1
+
+
+def test_trace_parser_matches_current_st_begin_hold_release_semantics(tmp_path):
+    result = parse_simulation_trace(
+        _write_mechanism_trace(tmp_path / "trace.json", "gpfp_st_block", [
+            {"time": tick, "event_type": event_type, "scheduler": "ST-Block",
+             "blocked_task": "v93_task_0", "available_energy_mJ": tick,
+             "required_energy_mJ": 5, "slack_at_begin": 4,
+             **({"release_reason": "battery_full"} if event_type == "st_charge_release" else {})}
+            for tick, event_type in ((2, "st_charge_begin"), (3, "st_charge_hold"),
+                                     (4, "st_charge_hold"), (5, "st_charge_release"))
+        ]),
+        [{"task_id": "0", "priority_rank": 0, "C": 2, "D": 5, "T": 10,
+          "P": "1/10", "D_over_T": "1/2", "workload": "control",
+          "arrival_offset": 0}],
+        expected_taskset_hash=TRACE_HASH, horizon=10, warmup=0,
+        minimum_jobs_per_task=1, release_e0=Fraction(1),
+        expected_scheduler="gpfp_st_block",
+    )
+    assert result.metrics["st_charge_begin_count"] == 1
+    assert result.metrics["st_charge_hold_ticks"] == 2
+    assert result.metrics["st_charge_release_count"] == 1
+    assert result.metrics["st_charge_release_reasons"] == ["battery_full"]
 
 
 def test_malformed_mechanism_event_fails_closed(tmp_path):

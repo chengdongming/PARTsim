@@ -222,6 +222,7 @@ namespace RTSim {
 
         // ⭐ V58新增：JSONTrace指针，用于在Early Abort时注入dline_miss记录
         JSONTrace *_trace_logger = nullptr;
+        bool _semantic_trace_enabled = false;
 
         // ========== 私有方法 ==========
 
@@ -352,6 +353,9 @@ namespace RTSim {
 
         void setTraceLogger(void *trace) override {
             _trace_logger = static_cast<JSONTrace *>(trace);
+        }
+        void setSemanticTraceEnabled(bool enabled) override {
+            _semantic_trace_enabled = enabled;
         }
 
         // ⭐ 运行时能量检查接口（V28.15新增）

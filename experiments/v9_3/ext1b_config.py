@@ -18,13 +18,12 @@ from .config import (
     validate_config,
 )
 from .result_writer import atomic_write_text
+from .scheduler_registry import SCHEDULER_IDS
 
 
 PARAMETER_STATUSES = {
     "SMOKE",
     "PILOT",
-    "UNFROZEN_FORMAL_TEMPLATE",
-    "FROZEN_FOR_FORMAL_EXECUTION",
 }
 SCENARIO_KINDS = {"BYPASS_STRESS", "SYNC_BATCH_STRESS", "TIMING_STRESS"}
 TIMING_SUBTYPES = {
@@ -34,13 +33,13 @@ TIMING_SUBTYPES = {
 SEED_SPACES = {
     "EXT1B_SMOKE",
     "EXT1B_PILOT",
-    "EXT1B_FORMAL",
 }
 
 TOP_LEVEL_KEYS = {
     "experiment_id", "core", "extension", "parameter_status", "seed_space",
     "platform", "generation", "energy", "grid", "rta", "simulation",
-    "execution", "scenario", "statistics", "plots",
+    "execution", "scenario", "statistics", "plots", "scheduler_ids",
+    "required_outputs",
 }
 PLATFORM_KEYS = {"cores", "task_count"}
 GENERATION_KEYS = {
@@ -217,8 +216,6 @@ def validate_ext1b_config(raw: Mapping[str, Any]) -> Dict[str, Any]:
     expected_seed_space = {
         "SMOKE": "EXT1B_SMOKE",
         "PILOT": "EXT1B_PILOT",
-        "UNFROZEN_FORMAL_TEMPLATE": "EXT1B_FORMAL",
-        "FROZEN_FOR_FORMAL_EXECUTION": "EXT1B_FORMAL",
     }[status]
     if seed_space != expected_seed_space:
         raise ConfigError(f"{status} requires seed_space: {expected_seed_space}")
@@ -227,6 +224,29 @@ def validate_ext1b_config(raw: Mapping[str, Any]) -> Dict[str, Any]:
     kind = scenario.get("kind")
     if kind not in SCENARIO_KINDS:
         raise ConfigError("unknown EXT-1B scenario kind")
+    scheduler_ids = config.get("scheduler_ids", list(SCHEDULER_IDS))
+    if (
+        not isinstance(scheduler_ids, list)
+        or any(not isinstance(item, str) for item in scheduler_ids)
+        or tuple(scheduler_ids) != SCHEDULER_IDS
+    ):
+        raise ConfigError(
+            "EXT-1B scheduler_ids must list the nine registered schedulers in order"
+        )
+    config["scheduler_ids"] = list(scheduler_ids)
+    expected_outputs = (
+        [
+            "b1_bypass_episodes.csv", "b1_task_effects.csv",
+            "b1_paired_effects.csv", "b1_summary.csv",
+        ]
+        if kind == "BYPASS_STRESS" else []
+    )
+    required_outputs = config.get("required_outputs", expected_outputs)
+    if required_outputs != expected_outputs:
+        raise ConfigError(
+            f"{kind} required_outputs must equal {expected_outputs}"
+        )
+    config["required_outputs"] = list(required_outputs)
     scenario["structural_retry_limit"] = _positive_int(
         scenario.get("structural_retry_limit"), "scenario.structural_retry_limit"
     )
@@ -293,6 +313,8 @@ def validate_ext1b_config(raw: Mapping[str, Any]) -> Dict[str, Any]:
     retain_trace = config["simulation"].get("retain_trace")
     if not isinstance(retain_trace, bool):
         raise ConfigError("simulation.retain_trace must be a boolean")
+    if kind == "BYPASS_STRESS" and not retain_trace:
+        raise ConfigError("BYPASS_STRESS requires retained semantic traces")
     if config["parameter_status"] == "SMOKE" and config["grid"]["tasksets_per_cell"] > 2:
         raise ConfigError("EXT-1B smoke tasksets_per_cell must not exceed 2")
 

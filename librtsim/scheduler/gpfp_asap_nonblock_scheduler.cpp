@@ -748,6 +748,22 @@ namespace RTSim {
                 makeASAPNonBlockTraceJobs(active_tasks, _task_models),
                 makeASAPNonBlockTraceJobs(_dispatch_selection_order, _task_models),
                 decision_reason);
+            std::vector<AbsRTTask *> continuing_tasks;
+            for (AbsRTTask *task : _dispatch_selection_order) {
+                if (running_tasks.count(task) > 0) {
+                    continuing_tasks.push_back(task);
+                }
+            }
+            _trace_logger->logB3ASAPDecision(
+                "ASAP-NonBlock",
+                "NONBLOCK",
+                _current_energy * 1000.0,
+                static_cast<std::size_t>(total_cpus),
+                makeASAPNonBlockTraceJobs(active_tasks, _task_models),
+                makeASAPNonBlockTraceJobs(_dispatch_selection_order,
+                                          _task_models),
+                makeASAPNonBlockTraceJobs(continuing_tasks, _task_models),
+                decision_reason);
             if (bypassed_task) {
                 _trace_logger->logNonBlockBypass(
                     "ASAP-NonBlock",

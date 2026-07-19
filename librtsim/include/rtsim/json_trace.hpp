@@ -43,6 +43,37 @@ namespace RTSim {
         double absolute_deadline;
     };
 
+    // EXT-1B/B3 read-only timing evidence.  Schedulers populate this only
+    // after their native selection decision has been finalized; no field is
+    // consumed by scheduling code.
+    struct B3TimingObservation {
+        std::string scheduler;
+        std::string scheduler_family;
+        std::string blocking_policy;
+        std::string task_name;
+        std::string task_id;
+        double arrival_time;
+        std::string job_id;
+        double remaining_time_ms;
+        double rounded_remaining_ms;
+        double absolute_deadline;
+        double scheduler_slack;
+        bool ready;
+        bool timing_gate_open;
+        bool cpu_available;
+        bool continuation;
+        bool selected;
+        double job_required_energy_mJ;
+        double decision_required_energy_mJ;
+        double available_energy_mJ;
+        bool job_energy_affordable;
+        bool decision_energy_affordable;
+        double native_epsilon_mJ;
+        std::string blocking_policy_reason;
+        std::string actual_outcome;
+        std::string reason_code;
+    };
+
     class JSONTrace {
     public:
         static constexpr int TRACE_SCHEMA_VERSION = 2;
@@ -165,6 +196,22 @@ namespace RTSim {
             double available_energy_mJ,
             bool feasible_subset_exists);
 
+        void logSyncBatchCandidateWait(
+            const std::string &scheduler,
+            const std::vector<SchedulerTraceJob> &active_top_m_tasks,
+            const std::vector<SchedulerTraceJob> &continuation_tasks,
+            const std::vector<SchedulerTraceJob> &new_candidate_tasks,
+            const std::vector<SchedulerTraceJob> &selected_tasks,
+            double active_top_m_required_energy_mJ,
+            double continuation_required_energy_mJ,
+            double new_candidate_required_energy_mJ,
+            double available_energy_before_decision_mJ,
+            double residual_energy_after_continuation_reservation_mJ,
+            bool whole_active_top_m_affordable,
+            bool all_new_candidates_affordable_after_continuation,
+            bool feasible_new_candidate_subset_exists,
+            double native_affordability_epsilon_mJ);
+
         void logSTChargeEvent(
             const std::string &event_type,
             const std::string &scheduler,
@@ -173,6 +220,41 @@ namespace RTSim {
             double required_energy_mJ,
             double slack_at_begin,
             const std::string &release_reason = "");
+
+        void logB3TimingObservation(const B3TimingObservation &observation);
+
+        void logB3ASAPDecision(
+            const std::string &scheduler,
+            const std::string &blocking_policy,
+            double available_energy_mJ,
+            std::size_t processor_count,
+            const std::vector<SchedulerTraceJob> &ready_jobs,
+            const std::vector<SchedulerTraceJob> &selected_jobs,
+            const std::vector<SchedulerTraceJob> &continuing_jobs,
+            const std::string &decision_reason);
+
+        void logB3ALAPDecision(
+            const std::string &scheduler,
+            const std::string &blocking_policy,
+            double available_energy_mJ,
+            std::size_t processor_count,
+            const std::vector<SchedulerTraceJob> &ready_jobs,
+            const std::vector<SchedulerTraceJob> &urgent_jobs,
+            const std::vector<SchedulerTraceJob> &selected_jobs,
+            const std::vector<SchedulerTraceJob> &continuing_jobs,
+            const std::string &decision_reason);
+
+        void logB3STDecision(
+            const std::string &scheduler,
+            const std::string &blocking_policy,
+            double available_energy_mJ,
+            double maximum_energy_mJ,
+            std::size_t processor_count,
+            const std::vector<SchedulerTraceJob> &ready_jobs,
+            const std::vector<SchedulerTraceJob> &selected_jobs,
+            const std::vector<SchedulerTraceJob> &continuing_jobs,
+            const std::vector<SchedulerTraceJob> &timing_wait_jobs,
+            const std::string &decision_reason);
 
         void probe(ArrEvt &e);
 

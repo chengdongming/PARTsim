@@ -22,6 +22,7 @@
 #include <rtsim/scheduler/energy_bridge.hpp>
 #include <rtsim/scheduler/st_energy_utils.hpp>
 #include <rtsim/mrtkernel.hpp>
+#include <rtsim/b3_timing_trace.hpp>
 
 // 统一日志系统
 #include "../../utils/unified_logger.hpp"
@@ -834,6 +835,29 @@ namespace RTSim {
             _current_batch_size = static_cast<int>(_current_batch_tasks.size());
             _batch_scheduled_this_tick = !selected_tasks.empty();
             _dispatching_tasks_total_energy = required_batch_energy;
+
+            if (_trace_logger && _semantic_trace_enabled &&
+                !active_tasks.empty()) {
+                std::vector<AbsRTTask *> timing_wait_tasks;
+                if (!blocked_batch.empty() && group_slack > Tick(0)) {
+                    timing_wait_tasks = blocked_batch;
+                } else if (charging_wait_active) {
+                    timing_wait_tasks.assign(
+                        _waiting_queue.begin(), _waiting_queue.end());
+                }
+                _trace_logger->logB3STDecision(
+                    "ST-Sync",
+                    "SYNC",
+                    _current_energy * 1000.0,
+                    _max_energy * 1000.0,
+                    static_cast<std::size_t>(total_cpus),
+                    makeB3TraceJobs(active_tasks, _task_models),
+                    makeB3TraceJobs(selected_tasks, _task_models),
+                    makeB3TraceJobs(continuation_tasks, _task_models),
+                    makeB3TraceJobs(timing_wait_tasks, _task_models),
+                    timing_wait_tasks.empty() ? "ST_SYNC_ASAP_GATE"
+                                              : "ST_SYNC_CHARGE_WAIT");
+            }
 
             if (!selected_tasks.empty()) {
                 if (_current_energy + epsilon < required_batch_energy) {

@@ -21,6 +21,7 @@
 #include <rtsim/cpu.hpp>
 #include <rtsim/scheduler/energy_bridge.hpp>
 #include <rtsim/mrtkernel.hpp>
+#include <rtsim/b3_timing_trace.hpp>
 
 // 统一日志系统
 #include "../../utils/unified_logger.hpp"
@@ -578,6 +579,28 @@ namespace RTSim {
         _selection_frozen = true;
         _dispatch_selection_order = selected_tasks;
         _dispatching_tasks_total_energy = tick_energy;
+
+        if (_trace_logger && _semantic_trace_enabled &&
+            !active_tasks.empty()) {
+            std::vector<AbsRTTask *> trace_active = active_tasks;
+            sortByRMPriority(trace_active);
+            std::vector<AbsRTTask *> continuing_tasks;
+            for (AbsRTTask *task : selected_tasks) {
+                if (running_tasks.count(task) > 0) {
+                    continuing_tasks.push_back(task);
+                }
+            }
+            _trace_logger->logB3ALAPDecision(
+                "ALAP-NonBlock",
+                "NONBLOCK",
+                _current_energy * 1000.0,
+                processor_count,
+                makeB3TraceJobs(trace_active, _task_models),
+                makeB3TraceJobs(candidates, _task_models),
+                makeB3TraceJobs(selected_tasks, _task_models),
+                makeB3TraceJobs(continuing_tasks, _task_models),
+                "ALAP_NONBLOCK_NATIVE_GATE");
+        }
 
         commitTickEnergy(current_time, tick_energy);
 
