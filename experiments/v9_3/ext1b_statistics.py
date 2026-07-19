@@ -170,7 +170,15 @@ def paired_statistics_rows(
     *,
     bootstrap_seed: int,
     bootstrap_resamples: int,
+    scheduler_ids: Sequence[str] = SCHEDULER_IDS,
 ) -> list[Dict[str, Any]]:
+    selected_scheduler_ids = tuple(scheduler_ids)
+    if PRIMARY_SCHEDULER not in selected_scheduler_ids:
+        return []
+    comparators = tuple(
+        scheduler for scheduler in selected_scheduler_ids
+        if scheduler != PRIMARY_SCHEDULER
+    )
     grouped: Dict[tuple[str, str], Dict[str, Mapping[str, Any]]] = defaultdict(dict)
     context_by_cell: Dict[str, Dict[str, str]] = {}
     for row in results:
@@ -192,10 +200,9 @@ def paired_statistics_rows(
         context = context_by_cell[cell]
         pair_groups = [members for (cell_id, _), members in grouped.items() if cell_id == cell]
         for metric in BINARY_METRICS:
-            family = f"{cell}:{metric}:ASAP-BLOCK-vs-eight"
-            for comparator in SCHEDULER_IDS:
-                if comparator == PRIMARY_SCHEDULER:
-                    continue
+            comparator_label = "eight" if len(comparators) == 8 else str(len(comparators))
+            family = f"{cell}:{metric}:ASAP-BLOCK-vs-{comparator_label}"
+            for comparator in comparators:
                 row = _empty_row(context, "BINARY", metric, comparator)
                 pairs = []
                 for members in pair_groups:
@@ -245,9 +252,7 @@ def paired_statistics_rows(
                 binary_family_indexes[(cell, metric)].append(len(rows) - 1)
 
         for metric in CONTINUOUS_METRICS:
-            for comparator in SCHEDULER_IDS:
-                if comparator == PRIMARY_SCHEDULER:
-                    continue
+            for comparator in comparators:
                 row = _empty_row(context, "CONTINUOUS_OR_ORDERED", metric, comparator)
                 pairs = []
                 for members in pair_groups:

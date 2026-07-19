@@ -10,7 +10,7 @@ from pathlib import Path
 from statistics import mean, median
 from typing import Any, Dict, Iterable, Mapping, Sequence
 
-from .config import canonical_json
+from .config import canonical_json, fraction_text
 from .result_writer import read_csv, write_csv
 from .simulation_engine import load_simulation_terminal
 
@@ -23,7 +23,8 @@ TRACE_AUDITABLE_STATUSES = COMPARABLE_STATUSES | {"SIM_HORIZON_INSUFFICIENT"}
 UNAVAILABLE = "UNAVAILABLE"
 
 B1_EPISODE_COLUMNS = (
-    "request_id", "paired_instance_id", "scenario_cell_id", "taskset_id",
+    "request_id", "paired_instance_id", "scenario_cell_id",
+    "normalized_utilization", "nominal_energy_supply_ratio", "taskset_id",
     "taskset_hash", "scheduler", "blocked_task_id", "blocked_job_id",
     "low_task_id", "bypassed_task_id", "bypassed_job_id",
     "bypassed_task_ids_json", "bypassed_job_ids_json",
@@ -33,7 +34,8 @@ B1_EPISODE_COLUMNS = (
 )
 
 B1_TASK_EFFECT_COLUMNS = (
-    "request_id", "paired_instance_id", "scenario_cell_id", "taskset_id",
+    "request_id", "paired_instance_id", "scenario_cell_id",
+    "normalized_utilization", "nominal_energy_supply_ratio", "taskset_id",
     "taskset_hash", "scheduler", "status", "comparison_eligible",
     "high_task_id", "low_task_id",
     "high_observation_state", "high_job_count", "high_completed_job_count",
@@ -61,7 +63,8 @@ B1_TASK_EFFECT_COLUMNS = (
 )
 
 B1_PAIRED_EFFECT_COLUMNS = (
-    "paired_instance_id", "scenario_cell_id", "taskset_id", "taskset_hash",
+    "paired_instance_id", "scenario_cell_id", "normalized_utilization",
+    "nominal_energy_supply_ratio", "taskset_id", "taskset_hash",
     "block_request_id", "nonblock_request_id", "block_status",
     "nonblock_status", "high_task_id", "low_task_id", "pair_valid",
     "pair_failure_reason", "mechanism_activated", "bypass_event_count",
@@ -92,7 +95,8 @@ DELTA_FIELDS = (
 )
 
 B1_SUMMARY_COLUMNS = (
-    "total_pairs", "valid_pairs", "invalid_pairs", "mechanism_activated_pairs",
+    "normalized_utilization", "nominal_energy_supply_ratio", "total_pairs",
+    "valid_pairs", "invalid_pairs", "mechanism_activated_pairs",
     "bypass_event_count", "bypass_episode_count",
     "resolved_bypass_episode_count", "censored_bypass_episode_count",
     "recovery_delay_sum_ticks", "recovery_delay_mean_ticks",
@@ -166,6 +170,14 @@ def _bool(value: Any) -> bool | None:
     if text in {"FALSE", "0"}:
         return False
     return None
+
+
+def _dimension_text(value: Any, label: str) -> str:
+    try:
+        parsed = Fraction(str(value).strip())
+    except (ValueError, ZeroDivisionError) as exc:
+        raise B1AnalysisError(f"{label} must be an exact rational") from exc
+    return fraction_text(parsed)
 
 
 def _task_id(task_name: Any, known_task_ids: set[str]) -> str:
@@ -922,6 +934,8 @@ def write_ext1b_b1_outputs(root: Path, config: Mapping[str, Any]) -> Dict[str, i
     for row in task_rows:
         task_by_request[str(row["request_id"])].append(row)
     structure_by_pair: Dict[str, Mapping[str, Any]] = {}
+    dimensions_by_pair: Dict[str, Dict[str, str]] = {}
+    dimension_order: list[tuple[str, str]] = []
     for row in scenarios:
         pair_id = str(row["paired_instance_id"])
         if pair_id in structure_by_pair:
@@ -937,6 +951,23 @@ def write_ext1b_b1_outputs(root: Path, config: Mapping[str, Any]) -> Dict[str, i
         if not high_task_id or not low_task_id or high_task_id == low_task_id:
             raise B1AnalysisError(f"B1 structure has invalid high/low IDs for {pair_id}")
         structure_by_pair[pair_id] = structure
+        dimensions = {
+            "normalized_utilization": _dimension_text(
+                row.get("normalized_utilization"),
+                f"B1 normalized_utilization for {pair_id}",
+            ),
+            "nominal_energy_supply_ratio": _dimension_text(
+                row.get("nominal_energy_supply_ratio"),
+                f"B1 nominal_energy_supply_ratio for {pair_id}",
+            ),
+        }
+        dimensions_by_pair[pair_id] = dimensions
+        dimension_key = (
+            dimensions["normalized_utilization"],
+            dimensions["nominal_energy_supply_ratio"],
+        )
+        if dimension_key not in dimension_order:
+            dimension_order.append(dimension_key)
 
     task_effects: list[Dict[str, Any]] = []
     episodes: list[Dict[str, Any]] = []
@@ -962,6 +993,7 @@ def write_ext1b_b1_outputs(root: Path, config: Mapping[str, Any]) -> Dict[str, i
         effect = build_b1_task_effect_row(
             request, result, task_by_request.get(request_id, []), jobs, structure,
         )
+        effect.update(dimensions_by_pair[pair_id])
         task_effects.append(effect)
 
         status = str(result.get("status"))
@@ -983,19 +1015,38 @@ def write_ext1b_b1_outputs(root: Path, config: Mapping[str, Any]) -> Dict[str, i
                     f"B1 bypass event count mismatch for {request_id}: "
                     f"result={expected_events}, trace={actual_events}"
                 )
+            for episode in observed:
+                episode.update(dimensions_by_pair[pair_id])
             episodes.extend(observed)
 
     paired = build_b1_paired_effects(
         scenarios, requests, results, task_effects, episodes,
     )
-    summary = summarize_b1(paired, episodes, results)
+    for row in paired:
+        row.update(dimensions_by_pair[str(row["paired_instance_id"])])
+    summaries = []
+    for normalized_utilization, nominal_supply_ratio in dimension_order:
+        dimensions = {
+            "normalized_utilization": normalized_utilization,
+            "nominal_energy_supply_ratio": nominal_supply_ratio,
+        }
+        pair_ids = {
+            pair_id for pair_id, observed in dimensions_by_pair.items()
+            if observed == dimensions
+        }
+        summary = summarize_b1(
+            [row for row in paired if str(row["paired_instance_id"]) in pair_ids],
+            [row for row in episodes if str(row["paired_instance_id"]) in pair_ids],
+            [row for row in results if str(row["paired_instance_id"]) in pair_ids],
+        )
+        summaries.append({**dimensions, **summary})
     write_csv(root / "b1_bypass_episodes.csv", B1_EPISODE_COLUMNS, episodes)
     write_csv(root / "b1_task_effects.csv", B1_TASK_EFFECT_COLUMNS, task_effects)
     write_csv(root / "b1_paired_effects.csv", B1_PAIRED_EFFECT_COLUMNS, paired)
-    write_csv(root / "b1_summary.csv", B1_SUMMARY_COLUMNS, [summary])
+    write_csv(root / "b1_summary.csv", B1_SUMMARY_COLUMNS, summaries)
     return {
         "b1_episode_rows": len(episodes),
         "b1_task_effect_rows": len(task_effects),
         "b1_paired_effect_rows": len(paired),
-        "b1_summary_rows": 1,
+        "b1_summary_rows": len(summaries),
     }

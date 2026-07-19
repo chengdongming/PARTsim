@@ -6,7 +6,7 @@ from collections import Counter, defaultdict
 from itertools import combinations
 import json
 from pathlib import Path
-from typing import Any, Dict, Iterable, Mapping
+from typing import Any, Dict, Iterable, Mapping, Sequence
 
 from .ext1b_b1_analysis import write_ext1b_b1_outputs
 from .ext1b_observation import write_ext1b_observation_outputs
@@ -105,8 +105,10 @@ def _result_comparable(row: Mapping[str, Any]) -> bool:
     )
 
 
-def _validate_request_groups(rows: list[Mapping[str, Any]]) -> Dict[str, Mapping[str, Any]]:
-    assert_scheduler_only_difference(rows)
+def _validate_request_groups(
+    rows: list[Mapping[str, Any]], scheduler_ids: Sequence[str],
+) -> Dict[str, Mapping[str, Any]]:
+    assert_scheduler_only_difference(rows, scheduler_ids)
     by_id: Dict[str, Mapping[str, Any]] = {}
     grouped: Dict[str, list[Mapping[str, Any]]] = defaultdict(list)
     for row in rows:
@@ -196,8 +198,16 @@ def classify_mechanism_activation(
             evidence: Dict[str, Any] = {}
             if kind == "BYPASS_STRESS":
                 anchor = "gpfp_asap_nonblock"
-                value = _integer(members[anchor].get("bypass_count"))
-                runtime_observable = _result_comparable(members[anchor]) and value is not None
+                anchor_row = members.get(anchor)
+                value = (
+                    _integer(anchor_row.get("bypass_count"))
+                    if anchor_row is not None else None
+                )
+                runtime_observable = (
+                    anchor_row is not None
+                    and _result_comparable(anchor_row)
+                    and value is not None
+                )
                 if runtime_observable:
                     runtime = bool(value and value > 0)
                 evidence = {
@@ -206,13 +216,15 @@ def classify_mechanism_activation(
                 }
             elif kind == "SYNC_BATCH_STRESS":
                 anchor = "gpfp_asap_sync"
+                anchor_row = members.get(anchor)
                 summary = b2_by_pair.get(pair_id)
                 value = (
                     _integer(summary.get("atomic_wait_with_affordable_member_count"))
                     if summary is not None else None
                 )
                 runtime_observable = (
-                    _result_comparable(members[anchor])
+                    anchor_row is not None
+                    and _result_comparable(anchor_row)
                     and summary is not None
                     and _bool(summary.get("audit_closed")) is True
                 )
@@ -300,6 +312,7 @@ def classify_mechanism_activation(
 
 def _activation_for_scheduler(
     activation_rows: Iterable[Mapping[str, Any]],
+    scheduler_ids: Sequence[str] = SCHEDULER_IDS,
 ) -> Dict[tuple[str, str], Mapping[str, Any]]:
     registry = scheduler_by_id()
     by_pair: Dict[str, list[Mapping[str, Any]]] = defaultdict(list)
@@ -308,7 +321,7 @@ def _activation_for_scheduler(
             by_pair[str(row["paired_instance_id"])].append(row)
     result = {}
     for pair_id, rows in by_pair.items():
-        for scheduler in SCHEDULER_IDS:
+        for scheduler in scheduler_ids:
             mechanism = registry[scheduler].mechanism
             matches = [
                 row for row in rows
@@ -330,10 +343,12 @@ def aggregate_ext1b_rows(
     bootstrap_seed: int,
     bootstrap_resamples: int,
     b2_summaries: Iterable[Mapping[str, Any]] = (),
+    scheduler_ids: Sequence[str] = SCHEDULER_IDS,
 ) -> Dict[str, list[Dict[str, Any]]]:
     request_rows, result_rows, tasks = list(requests), list(results), list(task_rows)
     attempts = list(generation_attempts)
-    request_by_id = _validate_request_groups(request_rows)
+    selected_scheduler_ids = tuple(scheduler_ids)
+    request_by_id = _validate_request_groups(request_rows, selected_scheduler_ids)
     registry = scheduler_by_id()
     result_by_pair: Dict[str, Dict[str, Mapping[str, Any]]] = defaultdict(dict)
     for row in result_rows:
@@ -357,7 +372,8 @@ def aggregate_ext1b_rows(
         result_by_pair[pair_id][scheduler] = row
     complete_pairs = {
         pair_id for pair_id, members in result_by_pair.items()
-        if set(members) == set(SCHEDULER_IDS) and len(members) == len(SCHEDULER_IDS)
+        if set(members) == set(selected_scheduler_ids)
+        and len(members) == len(selected_scheduler_ids)
     }
     comparison_results = [
         row for row in result_rows
@@ -371,14 +387,16 @@ def aggregate_ext1b_rows(
         comparison_results, comparison_tasks, attempts, top_m=top_m,
         b2_summaries=b2_summaries,
     )
-    activation_index = _activation_for_scheduler(activation_rows)
+    activation_index = _activation_for_scheduler(
+        activation_rows, selected_scheduler_ids,
+    )
 
     paired_rows = []
     relation_counts: Dict[tuple[str, str], Counter[str]] = defaultdict(Counter)
     for pair_id, members in sorted(result_by_pair.items()):
         if pair_id not in complete_pairs:
             continue
-        for left_id, right_id in combinations(sorted(members), 2):
+        for left_id, right_id in combinations(selected_scheduler_ids, 2):
             left, right = members[left_id], members[right_id]
             relation = _overall_relation(left, right)
             activation = activation_index[(pair_id, left_id)]
@@ -415,7 +433,7 @@ def aggregate_ext1b_rows(
     cells = sorted({str(row["scenario_cell_id"]) for row in request_rows})
     for cell in cells:
         exemplar = next(row for row in request_rows if str(row["scenario_cell_id"]) == cell)
-        for scheduler in SCHEDULER_IDS:
+        for scheduler in selected_scheduler_ids:
             requested = [row for row in request_rows if str(row["scenario_cell_id"]) == cell and row["scheduler_id"] == scheduler]
             terminal = [row for row in result_rows if str(row["scenario_cell_id"]) == cell and row["scheduler_id"] == scheduler]
             statuses = Counter(str(row["status"]) for row in terminal)
@@ -543,6 +561,7 @@ def aggregate_ext1b_rows(
         comparison_results,
         bootstrap_seed=bootstrap_seed,
         bootstrap_resamples=bootstrap_resamples,
+        scheduler_ids=selected_scheduler_ids,
     )
     plots = []
     for row in comparison_results:
@@ -638,6 +657,7 @@ def aggregate_ext1b(root: Path, config: Mapping[str, Any]) -> Dict[str, int]:
         bootstrap_seed=int(config["statistics"]["bootstrap_seed"]),
         bootstrap_resamples=int(config["statistics"]["bootstrap_resamples"]),
         b2_summaries=read_csv(root / "b2_summary.csv"),
+        scheduler_ids=tuple(config["scheduler_ids"]),
     )
     outputs = (
         ("mechanism_activation.csv", ACTIVATION_COLUMNS, "activation"),

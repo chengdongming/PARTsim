@@ -170,6 +170,11 @@ def test_real_b1_runner_trace_analyzer_four_csvs_and_reanalysis(
     effects = read_csv(root / "b1_task_effects.csv")
     paired = read_csv(root / "b1_paired_effects.csv")
     summary = read_csv(root / "b1_summary.csv")
+    episodes = read_csv(root / "b1_bypass_episodes.csv")
+    for rows in (episodes, effects, paired, summary):
+        assert rows
+        assert {row["normalized_utilization"] for row in rows} == {"1/5"}
+        assert {row["nominal_energy_supply_ratio"] for row in rows} == {"0"}
     assert len(effects) == 2
     assert {row["scheduler"] for row in effects} == {
         "gpfp_asap_block", "gpfp_asap_nonblock",

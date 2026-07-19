@@ -34,8 +34,10 @@ def _request_ids(root: Path) -> list[str]:
         return [row["request_id"] for row in csv.DictReader(handle)]
 
 
-def _completed_run(tmp_path: Path, monkeypatch):
+def _completed_run(tmp_path: Path, monkeypatch, scheduler_ids=None):
     config = load_ext1b_config(ROOT / "configs/v9_3_ext1b1_smoke.yaml")
+    if scheduler_ids is not None:
+        config["scheduler_ids"] = list(scheduler_ids)
     config["execution"]["output_root"] = str(tmp_path / "run")
     config["execution"]["taskset_store"] = str(tmp_path / "store")
     config["simulation"]["simulator_bin"] = str(tmp_path / "unused-rtsim")
@@ -128,8 +130,9 @@ def _completed_run(tmp_path: Path, monkeypatch):
     )
     runner = Ext1BRunner(config)
     initial = runner.run()
-    assert initial.requested == initial.terminal == 9
-    assert len(calls) == 9
+    expected = len(config["scheduler_ids"])
+    assert initial.requested == initial.terminal == expected
+    assert len(calls) == expected
     assert verify_file_hashes(runner.root)
     return runner, calls, control
 
@@ -142,6 +145,34 @@ def test_fully_completed_resume_is_byte_noop(tmp_path, monkeypatch):
     assert outcome.requested == outcome.terminal == 9
     assert len(calls) == native_before
     assert _tree_hashes(runner.root) == before
+
+
+def test_two_scheduler_completed_resume_and_b1_dimensions(tmp_path, monkeypatch):
+    selected = ("gpfp_asap_block", "gpfp_asap_nonblock")
+    runner, calls, _ = _completed_run(tmp_path, monkeypatch, selected)
+    with (runner.root / "simulation_requests.csv").open(
+        newline="", encoding="utf-8",
+    ) as handle:
+        assert [row["scheduler_id"] for row in csv.DictReader(handle)] == list(selected)
+    with (runner.root / "scheduler_registry.csv").open(
+        newline="", encoding="utf-8",
+    ) as handle:
+        assert [row["scheduler_id"] for row in csv.DictReader(handle)] == list(selected)
+    before = _tree_hashes(runner.root)
+    outcome = runner.run(resume=True)
+    assert outcome.requested == outcome.terminal == 2
+    assert len(calls) == 2
+    assert _tree_hashes(runner.root) == before
+
+    for name in (
+        "b1_bypass_episodes.csv", "b1_task_effects.csv",
+        "b1_paired_effects.csv", "b1_summary.csv",
+    ):
+        with (runner.root / name).open(newline="", encoding="utf-8") as handle:
+            rows = list(csv.DictReader(handle))
+        assert rows
+        assert {row["normalized_utilization"] for row in rows} == {"1/5"}
+        assert {row["nominal_energy_supply_ratio"] for row in rows} == {"0"}
 
 
 def test_completed_resume_preserves_checkpoint_bytes(tmp_path, monkeypatch):
