@@ -567,6 +567,7 @@ def summarize_b2_observations(
     rows: Sequence[Mapping[str, Any]],
     controls: Sequence[Mapping[str, Any]] = (), *,
     reported_synchronization_wait_ticks: int | None = None,
+    require_matched_controls: bool = False,
 ) -> Dict[str, Any]:
     """Return non-overloaded counters and the atomicity-only metric."""
 
@@ -583,6 +584,12 @@ def summarize_b2_observations(
     reported_mismatch = 0
     if reported_synchronization_wait_ticks is not None:
         reported_mismatch = int(raw_blocks != reported_synchronization_wait_ticks)
+    control_evidence_incomplete = sum(
+        control.get("control_status") == CONTROL_STATUS_EVIDENCE_INCOMPLETE
+        for control in controls
+    )
+    if require_matched_controls and len(controls) != waiting:
+        control_evidence_incomplete += abs(len(controls) - waiting)
     summary = {
         "decision_row_count": len(rows),
         "state_counts": state_counts,
@@ -598,14 +605,17 @@ def summarize_b2_observations(
             and control.get("control_passed") is not True
             for control in controls
         ),
+        "matched_control_success_count": sum(
+            control.get("control_status")
+            == CONTROL_STATUS_ELIGIBLE_MATCHED_STATE
+            and control.get("control_passed") is True
+            for control in controls
+        ),
         "control_not_applicable_count": sum(
             control.get("control_status") == CONTROL_STATUS_NOT_APPLICABLE
             for control in controls
         ),
-        "control_evidence_incomplete_count": sum(
-            control.get("control_status") == CONTROL_STATUS_EVIDENCE_INCOMPLETE
-            for control in controls
-        ),
+        "control_evidence_incomplete_count": control_evidence_incomplete,
         "continuation_evidence_failure_count": sum(
             row.get("continuation_evidence_failure") is True for row in rows
         ),

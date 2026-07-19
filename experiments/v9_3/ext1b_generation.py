@@ -270,27 +270,65 @@ def sync_batch_structure(
         (row for row in payload if int(row.get("arrival_offset", 0)) == 0),
         key=lambda row: int(row["priority_rank"]),
     )
-    q_value = min(processors, len(ready))
+    if len(ready) < processors:
+        raise StructuralRejection(
+            "INSUFFICIENT_READY_JOBS_FOR_TOP_M",
+            f"ready={len(ready)},M={processors}",
+        )
+    q_value = processors
+    if q_value < 2:
+        raise StructuralRejection(
+            "ACTIVE_TOP_M_TOO_SMALL", f"q={q_value}"
+        )
     if not 1 <= p_value < q_value:
         raise StructuralRejection("INVALID_AFFORDABLE_PREFIX", f"p={p_value},q={q_value}")
     top_q = ready[:q_value]
     energies = [Fraction(str(row["P"])) for row in top_q]
     prefix = sum(energies[:p_value], Fraction(0))
     batch = sum(energies, Fraction(0))
+    if not prefix < batch:
+        raise StructuralRejection(
+            "NON_STRICT_ENERGY_INTERVAL",
+            f"prefix={fraction_text(prefix)},batch={fraction_text(batch)}",
+        )
     initial = _native_blocking_interpolation(prefix, batch, rho)
+    # The simulator input materializer writes a round-trippable binary64
+    # decimal.  Freeze that exact value here, then re-check the structural
+    # predicate so quantization can never silently move E_init onto or outside
+    # either native-affordability boundary.
+    materialized_initial = Fraction(format(float(initial), ".17g"))
+    if (
+        materialized_initial < prefix
+        or materialized_initial >= batch
+        or not native_energy_affordable(materialized_initial, prefix)
+        or native_energy_affordable(materialized_initial, batch)
+    ):
+        raise StructuralRejection(
+            "QUANTIZED_INITIAL_ENERGY_OUTSIDE_INTERVAL",
+            f"E_init={fraction_text(materialized_initial)},"
+            f"prefix={fraction_text(prefix)},batch={fraction_text(batch)}",
+        )
+    initial = materialized_initial
     return initial, {
         "p": p_value,
         "q": q_value,
+        "ready_job_count": len(ready),
         "top_q_task_ids": [row["task_id"] for row in top_q],
         "top_q_priority_ranks": [row["priority_rank"] for row in top_q],
         "top_q_unit_energies": [fraction_text(value) for value in energies],
         "E_prefix": fraction_text(prefix),
         "E_batch": fraction_text(batch),
+        "E_init_materialized": fraction_text(initial),
+        "energy_unit": "joule_per_tick",
         "rho": fraction_text(rho),
         "native_affordability_epsilon_j": fraction_text(NATIVE_ENERGY_EPSILON_J),
-        "predicate": "E_init + native_epsilon >= E_prefix and E_init + native_epsilon < E_batch",
+        "predicate": (
+            "E_prefix <= E_init < E_batch and native affordability accepts "
+            "the prefix but rejects the batch"
+        ),
         "predicate_satisfied": (
-            native_energy_affordable(initial, prefix)
+            prefix <= initial < batch
+            and native_energy_affordable(initial, prefix)
             and not native_energy_affordable(initial, batch)
         ),
     }

@@ -1,0 +1,52 @@
+experiment_id: asap-block-v9.3-ext1b2-sync-calibration
+core: CORE-3
+extension: EXT-1B
+parameter_status: PILOT
+seed_space: EXT1B2_SYNC_CALIBRATION_PILOT
+scheduler_ids:
+  - gpfp_asap_block
+  - gpfp_asap_sync
+required_outputs:
+  - b2_batch_decisions.csv
+  - b2_summary.csv
+platform: {cores: [4], task_count: [10]}
+generation:
+  deadline_mode: constrained
+  constrained_deadline: {d_over_t_values: [], d_over_t_min: "0", d_over_t_max: "1", distribution: generator_uniform_integer}
+  period_min: 40
+  period_max: 200
+  wcet_rounding: compensated
+  utilization_tolerance: "1/100"
+  min_task_util: "1/100"
+  max_task_util: "4/5"
+  priority_policy: RM
+  power_mode: generator_default_heterogeneous
+  generator_timeout_seconds: 120
+energy:
+  initial_energy_values: ["0"]
+  simulation_initial_battery: "1"
+  exact_rational_encoding: canonical_fraction
+  service_curve: {id: ext1b-generation-service, system_template: system_config_unified_template.yml, horizon: 1000}
+  battery_mode: finite
+  battery_capacity: "100"
+grid: {utilization_points: ["1/5", "2/5"], tasksets_per_cell: 20, base_seed: 951202, seed_mode: generation_dimensions, taskset_index_start: 0}
+rta: {methods: [CW_THETA_CW, LOC_THETA_LOC], timeout_seconds: 2, retry_timeout_seconds: 4, retry_policy: timeout_once, numerical_mode: EXACT_RATIONAL}
+simulation: {horizon: 400, warmup: 0, minimum_jobs_per_task: 2, maximum_horizon: 400, horizon_extension_policy: none, deadline_miss_fail_fast: true, timeout_seconds: 30, trace_mode: semantic, trace_on_failure: true, retain_trace: true, simulator_bin: ./build/rtsim/rtsim}
+execution: {worker_count: 1, checkpoint_every: 5, output_root: artifacts/v9_3_ext1b2_sync_calibration, taskset_store: artifacts/v9_3_ext1b2_taskset_store_sync_calibration, resume: false, fail_fast_on_p0: true, preserve_attempt_history: true}
+scenario:
+  kind: SYNC_BATCH_STRESS
+  subtype: B2
+  structural_retry_limit: 16
+  activation_policy: REPORT_STRUCTURAL_AND_RUNTIME
+  priority_power_profile: HIGH_PRIORITY_HIGH_POWER
+  affordable_prefix_length: 1
+  deadline_ratio_min: "0"
+  deadline_ratio_max: "1"
+  nominal_energy_supply_ratios: ["1/4", "1/2", "3/4"]
+  initial_energy_policy: STRUCTURAL_MIDPOINT
+  release_pattern: SYNCHRONOUS
+  harvest_phase_policy: PEAK_SYNTHETIC
+  interpolation_rho: "1/2"
+  timing_cells: []
+statistics: {bootstrap_seed: 9512902, bootstrap_resamples: 2000, top_m: 4}
+plots: {}

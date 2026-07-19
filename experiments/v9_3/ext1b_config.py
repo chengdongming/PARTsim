@@ -34,7 +34,23 @@ SEED_SPACES = {
     "EXT1B_SMOKE",
     "EXT1B_PILOT",
     "EXT1B1_ENERGY_CALIBRATION_PILOT",
+    "EXT1B2_SYNC_CALIBRATION_PILOT",
 }
+
+B2_SCHEDULER_IDS = (
+    "gpfp_asap_block",
+    "gpfp_asap_sync",
+)
+B1_REQUIRED_OUTPUTS = (
+    "b1_bypass_episodes.csv",
+    "b1_task_effects.csv",
+    "b1_paired_effects.csv",
+    "b1_summary.csv",
+)
+B2_REQUIRED_OUTPUTS = (
+    "b2_batch_decisions.csv",
+    "b2_summary.csv",
+)
 
 TOP_LEVEL_KEYS = {
     "experiment_id", "core", "extension", "parameter_status", "seed_space",
@@ -216,7 +232,11 @@ def validate_ext1b_config(raw: Mapping[str, Any]) -> Dict[str, Any]:
     seed_space = config.get("seed_space")
     allowed_seed_spaces = {
         "SMOKE": {"EXT1B_SMOKE"},
-        "PILOT": {"EXT1B_PILOT", "EXT1B1_ENERGY_CALIBRATION_PILOT"},
+        "PILOT": {
+            "EXT1B_PILOT",
+            "EXT1B1_ENERGY_CALIBRATION_PILOT",
+            "EXT1B2_SYNC_CALIBRATION_PILOT",
+        },
     }[status]
     if seed_space not in allowed_seed_spaces:
         raise ConfigError(
@@ -239,14 +259,27 @@ def validate_ext1b_config(raw: Mapping[str, Any]) -> Dict[str, Any]:
         raise ConfigError(
             f"EXT-1B scheduler_ids contains unknown schedulers: {unknown_schedulers}"
         )
+    if kind == "SYNC_BATCH_STRESS" and not set(B2_SCHEDULER_IDS).issubset(
+        scheduler_ids
+    ):
+        raise ConfigError(
+            "SYNC_BATCH_STRESS scheduler_ids must include "
+            "gpfp_asap_block and gpfp_asap_sync"
+        )
+    if (
+        seed_space == "EXT1B2_SYNC_CALIBRATION_PILOT"
+        and tuple(scheduler_ids) != B2_SCHEDULER_IDS
+    ):
+        raise ConfigError(
+            "EXT1B2_SYNC_CALIBRATION_PILOT scheduler_ids must equal "
+            "['gpfp_asap_block', 'gpfp_asap_sync'] in that order"
+        )
     config["scheduler_ids"] = list(scheduler_ids)
-    expected_outputs = (
-        [
-            "b1_bypass_episodes.csv", "b1_task_effects.csv",
-            "b1_paired_effects.csv", "b1_summary.csv",
-        ]
-        if kind == "BYPASS_STRESS" else []
-    )
+    expected_outputs = {
+        "BYPASS_STRESS": list(B1_REQUIRED_OUTPUTS),
+        "SYNC_BATCH_STRESS": list(B2_REQUIRED_OUTPUTS),
+        "TIMING_STRESS": [],
+    }[kind]
     required_outputs = config.get("required_outputs", expected_outputs)
     if required_outputs != expected_outputs:
         raise ConfigError(

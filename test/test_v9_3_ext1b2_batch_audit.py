@@ -358,3 +358,54 @@ def test_fingerprint_material_contains_no_scheduler_or_result_label():
     assert "scheduler" not in serialized
     assert "decision_reason" not in serialized
     assert "selected_jobs" not in serialized
+
+
+def test_deterministic_m4_atomic_wait_and_block_prefix_control_microcase():
+    jobs = [_job(index, 1.0) for index in range(4)]
+    sync_rows = audit_asap_sync_document(
+        _trace([
+            _decision(
+                0, jobs, [], 1.5,
+                reason="sync_batch_energy_insufficient",
+            ),
+            _block(0, jobs, 4.0, 1.5),
+        ]),
+        processors=4,
+        pair_id="pair-b2-m4",
+    )
+    assert len(sync_rows) == 1
+    sync = sync_rows[0]
+    assert len(sync["active_top_m_job_ids"]) == 4
+    assert sync["candidate_count"] == 4
+    assert sync["whole_batch_affordable"] is False
+    assert sync["feasible_subset_exists"] is True
+    assert sync["affordable_prefix_length"] == 1
+    assert sync["actual_launch_count"] == 0
+    assert sync["classified_state"] == (
+        B2_STATE_BATCH_UNAFFORDABLE_ATOMIC_WAIT_WITH_AFFORDABLE_MEMBER
+    )
+
+    controls = audit_asap_block_pair_control(
+        sync_rows,
+        _block_trace(jobs, jobs[:1], 1.5, scheduled=(0,)),
+        processors=4,
+        expected_min_prefix_length=1,
+    )
+    assert len(controls) == 1
+    assert controls[0]["control_status"] == CONTROL_STATUS_ELIGIBLE_MATCHED_STATE
+    assert controls[0]["control_passed"] is True
+    assert controls[0]["selected_job_ids"] == ["v93_task_0@0"]
+    assert controls[0]["actually_launched_job_ids"] == ["v93_task_0@0"]
+
+    summary = summarize_b2_observations(
+        sync_rows, controls, require_matched_controls=True,
+    )
+    assert summary["atomic_wait_with_affordable_member_count"] == 1
+    assert summary["active_batch_opportunity_count"] == 1
+    assert summary["illegal_partial_count"] == 0
+    assert summary["illegal_transition_count"] == 0
+    assert summary["state_unclassifiable_count"] == 0
+    assert summary["matched_control_failure_count"] == 0
+    assert summary["matched_control_success_count"] == 1
+    assert summary["control_not_applicable_count"] == 0
+    assert summary["control_evidence_incomplete_count"] == 0

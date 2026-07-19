@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from fractions import Fraction
 import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Sequence
 
-from .config import canonical_json
+from .config import canonical_json, fraction_text
 from .ext1b_b2_batch_audit import (
     B2_STATE_BATCH_UNAFFORDABLE_ATOMIC_WAIT_WITH_AFFORDABLE_MEMBER,
     B2_STATE_BATCH_UNAFFORDABLE_ENERGY_WAIT_NO_AFFORDABLE_MEMBER,
@@ -44,7 +45,9 @@ AUDITABLE_STATUSES = {
 
 B2_DECISION_COLUMNS = (
     "request_id", "paired_instance_id", "taskset_hash", "scheduler_id",
-    "tick", "classified_state", "active_top_m_count", "continuation_count",
+    "scenario_cell_id", "normalized_utilization",
+    "nominal_energy_supply_ratio", "tick", "classified_state",
+    "active_top_m_count", "continuation_count",
     "candidate_count", "affordable_prefix_length", "whole_batch_required_energy_mJ",
     "available_energy_mJ", "whole_batch_affordable", "feasible_subset_exists",
     "selected_count", "actual_launch_count", "atomic_opportunity",
@@ -53,7 +56,8 @@ B2_DECISION_COLUMNS = (
     "evidence_event_ids_json",
 )
 B2_SUMMARY_COLUMNS = (
-    "paired_instance_id", "scenario_cell_id", "taskset_hash", "input_hash",
+    "paired_instance_id", "scenario_cell_id", "normalized_utilization",
+    "nominal_energy_supply_ratio", "taskset_hash", "input_hash",
     "comparison_scope", "asap_block_request_id", "asap_sync_request_id",
     "asap_block_status", "asap_sync_status", "batch_candidate_decision_count",
     "affordable_atomic_launch_count", "unaffordable_atomic_wait_count",
@@ -65,8 +69,9 @@ B2_SUMMARY_COLUMNS = (
     "deadline_miss", "asap_block_ready_but_idle_ticks",
     "asap_block_first_execution_time", "asap_block_response_time",
     "asap_block_deadline_miss", "matched_control_failure_count",
-    "control_not_applicable_count", "control_evidence_incomplete_count",
-    "state_counts_json", "audit_closed",
+    "matched_control_success_count", "control_not_applicable_count",
+    "control_evidence_incomplete_count", "state_counts_json", "audit_closed",
+    "mechanism_activated",
 )
 B3_EVENT_COLUMNS = (
     "request_id", "paired_instance_id", "scenario_cell_id", "taskset_hash",
@@ -136,9 +141,48 @@ def _by_pair(rows: Iterable[Mapping[str, Any]]) -> Dict[str, Dict[str, Mapping[s
     return grouped
 
 
+def _dimension_text(value: Any, label: str) -> str:
+    try:
+        parsed = Fraction(str(value).strip())
+    except (ValueError, ZeroDivisionError) as exc:
+        raise Ext1BObservationError(f"{label} must be an exact rational") from exc
+    return fraction_text(parsed)
+
+
+def _b2_dimensions_by_pair(
+    scenarios: Iterable[Mapping[str, Any]],
+) -> Dict[str, Dict[str, str]]:
+    dimensions: Dict[str, Dict[str, str]] = {}
+    for row in scenarios:
+        if str(row.get("scenario_kind")) != "SYNC_BATCH_STRESS":
+            continue
+        pair_id = str(row.get("paired_instance_id", ""))
+        if not pair_id or pair_id in dimensions:
+            raise Ext1BObservationError(
+                f"duplicate or empty B2 scenario instance: {pair_id!r}"
+            )
+        dimensions[pair_id] = {
+            "scenario_cell_id": str(row.get("scenario_cell_id", "")),
+            "normalized_utilization": _dimension_text(
+                row.get("normalized_utilization"),
+                f"B2 normalized_utilization for {pair_id}",
+            ),
+            "nominal_energy_supply_ratio": _dimension_text(
+                row.get("nominal_energy_supply_ratio"),
+                f"B2 nominal_energy_supply_ratio for {pair_id}",
+            ),
+        }
+        if not dimensions[pair_id]["scenario_cell_id"]:
+            raise Ext1BObservationError(
+                f"missing B2 scenario_cell_id for {pair_id}"
+            )
+    return dimensions
+
+
 def _b2_outputs(
     root: Path,
     config: Mapping[str, Any],
+    scenarios: Sequence[Mapping[str, Any]],
     requests: Sequence[Mapping[str, Any]],
     results: Sequence[Mapping[str, Any]],
 ) -> tuple[list[Dict[str, Any]], list[Dict[str, Any]], list[str]]:
@@ -147,6 +191,7 @@ def _b2_outputs(
     failures: list[str] = []
     requests_by_pair = _by_pair(requests)
     results_by_pair = _by_pair(results)
+    dimensions_by_pair = _b2_dimensions_by_pair(scenarios)
     expected_prefix = int(config["scenario"].get("affordable_prefix_length", 1))
 
     for pair_id, members in sorted(requests_by_pair.items()):
@@ -162,6 +207,19 @@ def _b2_outputs(
         if str(sync_result.get("status")) not in AUDITABLE_STATUSES:
             continue
         try:
+            dimensions = dimensions_by_pair.get(pair_id)
+            if dimensions is None:
+                raise Ext1BObservationError(
+                    f"B2 request has no frozen scenario instance: {pair_id}"
+                )
+            if any(
+                str(request.get("scenario_cell_id"))
+                != dimensions["scenario_cell_id"]
+                for request in (sync_request, block_request)
+            ):
+                raise Ext1BObservationError(
+                    f"B2 request/scenario cell mismatch for {pair_id}"
+                )
             sync_trace = _trace_path(root, sync_result)
             block_trace = _trace_path(root, block_result)
             audited = audit_asap_sync_trace(
@@ -182,6 +240,7 @@ def _b2_outputs(
                 reported_synchronization_wait_ticks=_integer(
                     sync_result.get("synchronization_wait_ticks")
                 ),
+                require_matched_controls=True,
             )
         except Exception as exc:
             failures.append(f"B2 {pair_id}: {exc}")
@@ -201,6 +260,7 @@ def _b2_outputs(
                 "paired_instance_id": pair_id,
                 "taskset_hash": row["taskset_semantic_hash"],
                 "scheduler_id": row["scheduler_id"],
+                **dimensions,
                 "tick": row["tick"],
                 "classified_state": row["classified_state"],
                 "active_top_m_count": len(row.get("active_top_m_job_ids", [])),
@@ -242,10 +302,14 @@ def _b2_outputs(
             summary["control_evidence_incomplete_count"],
             summary["continuation_evidence_failure_count"],
             summary["synchronization_wait_ticks_mismatch_count"],
+            (
+                summary["atomic_wait_with_affordable_member_count"] > 0
+                and summary["matched_control_success_count"] == 0
+            ),
         ))
         summary_rows.append({
             "paired_instance_id": pair_id,
-            "scenario_cell_id": sync_request["scenario_cell_id"],
+            **dimensions,
             "taskset_hash": sync_request["taskset_hash"],
             "input_hash": sync_request["input_hash"],
             "comparison_scope": "PRIMARY_ASAP_BLOCK_VS_ASAP_SYNC",
@@ -286,12 +350,17 @@ def _b2_outputs(
             ],
             "asap_block_deadline_miss": block_result["missed_jobs"],
             "matched_control_failure_count": summary["matched_control_failure_count"],
+            "matched_control_success_count": summary["matched_control_success_count"],
             "control_not_applicable_count": summary["control_not_applicable_count"],
             "control_evidence_incomplete_count": summary[
                 "control_evidence_incomplete_count"
             ],
             "state_counts_json": canonical_json(state_counts),
             "audit_closed": audit_closed,
+            "mechanism_activated": (
+                audit_closed
+                and int(summary["atomic_wait_with_affordable_member_count"]) > 0
+            ),
         })
         if not audit_closed:
             failures.append(f"B2 {pair_id}: batch audit did not close")
@@ -427,8 +496,9 @@ def write_ext1b_observation_outputs(
     root = Path(root)
     requests = read_csv(root / "simulation_requests.csv")
     results: list[Dict[str, Any]] = read_csv(root / "simulation_results.csv")
+    scenarios = read_csv(root / "scenario_instances.csv")
     b2_decisions, b2_summaries, b2_failures = _b2_outputs(
-        root, config, requests, results
+        root, config, scenarios, requests, results
     )
     b3_events, b3_summaries, b3_failures = _b3_outputs(root, requests, results)
     write_csv(root / "b2_batch_decisions.csv", B2_DECISION_COLUMNS, b2_decisions)
