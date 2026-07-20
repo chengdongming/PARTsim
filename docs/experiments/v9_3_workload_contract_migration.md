@@ -70,8 +70,10 @@ the config/cell/seed/taskset identities migrate even where the human-readable
 
 | Config | Old experiment identity | New experiment identity | Existing/future action | Reason |
 |---|---|---|---|---|
-| `v9_3_core1_formal_candidate.yaml` | `asap-block-v9.3-core-1-formal-candidate` | suffix `-workload-contract-v2` | old artifacts retained; future run uses new root | shared CORE store contract |
-| `v9_3_core2_formal_candidate.yaml` | `asap-block-v9.3-core-2-formal-candidate` | suffix `-workload-contract-v2` | same | paired with CORE-1 under new manifest |
+| `v9_3_core1_formal.yaml` | none | `asap-block-v9.3-core1-formal-final-v2-workload-contract-v2` | new authorized formal run only | frozen 24-cell/9,600-request CORE-1 contract |
+| `v9_3_core2_formal.yaml` | none | `asap-block-v9.3-core2-formal-final-v2-workload-contract-v2` | new authorized formal run only | frozen 24-cell/24,000-request CORE-2 contract |
+| `v9_3_core1_formal_candidate.yaml` | `asap-block-v9.3-core-1-formal-candidate` | suffix `-workload-contract-v2` | retained unchanged as candidate evidence; not a formal entry config | candidate provenance |
+| `v9_3_core2_formal_candidate.yaml` | `asap-block-v9.3-core-2-formal-candidate` | suffix `-workload-contract-v2` | same | candidate provenance |
 | `v9_3_core1_template.yaml` | `asap-block-v9.3-core1-formal-template` | suffix `-workload-contract-v2` | template was not a result; materialize fresh | future formal contract |
 | `v9_3_core2_template.yaml` | `asap-block-v9.3-core2-formal-template` | suffix `-workload-contract-v2` | same | future formal contract |
 | `v9_3_core3_template.yaml` | `asap-block-v9.3-core3-template` | suffix `-workload-contract-v2` | materialize fresh if authorized | direct generated workload/P |
