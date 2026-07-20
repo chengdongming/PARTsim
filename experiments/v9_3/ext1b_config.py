@@ -33,11 +33,11 @@ TIMING_SUBTYPES = {
 }
 SEED_SPACES = {
     "EXT1B_SMOKE",
-    "EXT1B_PILOT",
-    "EXT1B1_ENERGY_CALIBRATION_PILOT",
-    "EXT1B2_SYNC_CALIBRATION_PILOT",
-    "EXT1B3_TIMING_CALIBRATION_PILOT",
-    "EXT1B1_FORMAL_R1",
+    "EXT1B_PILOT_WORKLOAD_CONTRACT_V2",
+    "EXT1B1_ENERGY_CALIBRATION_PILOT_WORKLOAD_CONTRACT_V2",
+    "EXT1B2_SYNC_CALIBRATION_PILOT_WORKLOAD_CONTRACT_V2",
+    "EXT1B3_TIMING_CALIBRATION_PILOT_WORKLOAD_CONTRACT_V2",
+    "EXT1B1_FORMAL_R1_WORKLOAD_CONTRACT_V2",
 }
 
 B2_SCHEDULER_IDS = (
@@ -75,7 +75,7 @@ GENERATION_KEYS = {
     "deadline_mode", "constrained_deadline", "period_min", "period_max",
     "wcet_rounding", "utilization_tolerance", "min_task_util",
     "max_task_util", "priority_policy", "power_mode",
-    "generator_timeout_seconds",
+    "generator_timeout_seconds", "workload_candidates", "workload_contract",
 }
 CONSTRAINED_KEYS = {
     "d_over_t_values", "d_over_t_min", "d_over_t_max", "distribution",
@@ -245,12 +245,12 @@ def validate_ext1b_config(raw: Mapping[str, Any]) -> Dict[str, Any]:
     allowed_seed_spaces = {
         "SMOKE": {"EXT1B_SMOKE"},
         "PILOT": {
-            "EXT1B_PILOT",
-            "EXT1B1_ENERGY_CALIBRATION_PILOT",
-            "EXT1B2_SYNC_CALIBRATION_PILOT",
-            "EXT1B3_TIMING_CALIBRATION_PILOT",
+            "EXT1B_PILOT_WORKLOAD_CONTRACT_V2",
+            "EXT1B1_ENERGY_CALIBRATION_PILOT_WORKLOAD_CONTRACT_V2",
+            "EXT1B2_SYNC_CALIBRATION_PILOT_WORKLOAD_CONTRACT_V2",
+            "EXT1B3_TIMING_CALIBRATION_PILOT_WORKLOAD_CONTRACT_V2",
         },
-        "FORMAL": {"EXT1B1_FORMAL_R1"},
+        "FORMAL": {"EXT1B1_FORMAL_R1_WORKLOAD_CONTRACT_V2"},
     }[status]
     if seed_space not in allowed_seed_spaces:
         raise ConfigError(
@@ -281,19 +281,21 @@ def validate_ext1b_config(raw: Mapping[str, Any]) -> Dict[str, Any]:
             "gpfp_asap_block and gpfp_asap_sync"
         )
     if (
-        seed_space == "EXT1B2_SYNC_CALIBRATION_PILOT"
+        seed_space == "EXT1B2_SYNC_CALIBRATION_PILOT_WORKLOAD_CONTRACT_V2"
         and tuple(scheduler_ids) != B2_SCHEDULER_IDS
     ):
         raise ConfigError(
-            "EXT1B2_SYNC_CALIBRATION_PILOT scheduler_ids must equal "
+            "EXT1B2_SYNC_CALIBRATION_PILOT_WORKLOAD_CONTRACT_V2 "
+            "scheduler_ids must equal "
             "['gpfp_asap_block', 'gpfp_asap_sync'] in that order"
         )
     if (
-        seed_space == "EXT1B3_TIMING_CALIBRATION_PILOT"
+        seed_space == "EXT1B3_TIMING_CALIBRATION_PILOT_WORKLOAD_CONTRACT_V2"
         and tuple(scheduler_ids) != B3_PRIMARY_SCHEDULER_IDS
     ):
         raise ConfigError(
-            "EXT1B3_TIMING_CALIBRATION_PILOT scheduler_ids must equal "
+            "EXT1B3_TIMING_CALIBRATION_PILOT_WORKLOAD_CONTRACT_V2 "
+            "scheduler_ids must equal "
             "['gpfp_asap_block', 'gpfp_alap_block', 'gpfp_st_block'] "
             "in that order"
         )
@@ -318,6 +320,14 @@ def validate_ext1b_config(raw: Mapping[str, Any]) -> Dict[str, Any]:
         "HIGH_PRIORITY_HIGH_POWER", "ACTUAL_GENERATOR_ORDER",
     }:
         raise ConfigError("unknown scenario.priority_power_profile")
+    workload_candidates = config["generation"].get("workload_candidates")
+    if (
+        scenario["priority_power_profile"] == "ACTUAL_GENERATOR_ORDER"
+        and workload_candidates is None
+    ):
+        raise ConfigError(
+            "ACTUAL_GENERATOR_ORDER requires generation.workload_candidates"
+        )
     scenario["affordable_prefix_length"] = _positive_int(
         scenario.get("affordable_prefix_length"),
         "scenario.affordable_prefix_length",
@@ -431,7 +441,7 @@ def load_ext1b_config(path: Path | str) -> Dict[str, Any]:
 def ext1b_config_hash(config: Mapping[str, Any]) -> str:
     semantic = deepcopy(dict(config))
     semantic.get("execution", {}).pop("resume", None)
-    return domain_hash("ASAP_BLOCK:V9.3:EXT1B:CONFIG:v1", semantic)
+    return domain_hash("ASAP_BLOCK:V9.3:EXT1B:CONFIG:v2", semantic)
 
 
 def dump_ext1b_config(config: Mapping[str, Any], path: Path) -> None:

@@ -124,6 +124,10 @@ schema. The CLI dispatches by validated profile; the V2 runner and its exact
 8/16/20 guard are unchanged. Formal and V2 analyzers inspect the run schema
 before reading data and reject mixed profiles. The formal configs have unique
 output roots, taskset stores, config hashes, and authorization-seal bindings.
+Their migrated experiment IDs end in `-workload-contract-v2`; future CORE-5A
+and CORE-5B runs use fresh output roots and stores ending in
+`workload_contract_v2`. This changes workload/config/generation provenance but
+does not change either frozen scalability profile.
 
 Both formal profiles use E0 `1/20`, capacity 20, the two production variants,
 exact-rational mode, one retry at 240 seconds after a 120-second timeout, and

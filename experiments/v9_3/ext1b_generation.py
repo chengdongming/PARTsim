@@ -10,7 +10,9 @@ from typing import Any, Dict, Mapping, Sequence, Tuple
 
 import asap_block_rta as legacy_rta
 
-from .config import canonical_json, domain_hash, fraction_text
+from .config import (
+    canonical_json, domain_hash, fraction_text, task_workload_energy_model,
+)
 from .result_writer import atomic_write_json, atomic_write_text
 from .taskset_store import StoredTaskset
 
@@ -142,10 +144,8 @@ def scenario_cells(config: Mapping[str, Any]) -> Tuple[ScenarioCell, ...]:
 def workload_energy_table(system_path: Path) -> Tuple[Tuple[str, Fraction], ...]:
     """Read and sort the simulator's configured workload energy model."""
 
-    system = legacy_rta.load_system_config(str(system_path))
-    names = sorted(str(name) for name in system.workload_coefficients if name != "idle")
     values = tuple(sorted(
-        ((name, Fraction(str(system.task_energy_per_tick(name)))) for name in names),
+        task_workload_energy_model(system_path),
         key=lambda item: (item[1], item[0]),
     ))
     if len(values) < 2 or values[0][1] >= values[-1][1]:
@@ -516,7 +516,7 @@ def build_scenario_instance(
         raise StructuralRejection("CAPACITY_BELOW_INITIAL", "derived capacity is invalid")
 
     task_material = {
-        "schema": "ASAP_BLOCK_V9_3_EXT1B_TASKSET_V1",
+        "schema": "ASAP_BLOCK_V9_3_EXT1B_TASKSET_V2",
         "scenario_cell": cell.row(),
         "source_taskset_hash": stored.semantic_hash,
         "logical_taskset_index": logical_taskset_index,
@@ -524,8 +524,9 @@ def build_scenario_instance(
         "generation_seed": stored.seed,
         "tasks": payload,
         "structure": structure,
+        "task_workload_contract": config["generation"]["workload_contract"],
     }
-    taskset_hash = domain_hash("ASAP_BLOCK:V9.3:EXT1B:TASKSET:v1", task_material)
+    taskset_hash = domain_hash("ASAP_BLOCK:V9.3:EXT1B:TASKSET:v2", task_material)
     priority_hash = domain_hash(
         "ASAP_BLOCK:V9.3:EXT1B:PRIORITY:v1",
         [(row["task_id"], row["priority_rank"]) for row in payload],

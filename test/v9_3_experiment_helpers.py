@@ -32,13 +32,18 @@ def make_config(tmp_path: Path, core_name: str = "CORE-1", *, e0=None):
             "utilization_tolerance": "0.1", "min_task_util": "0.01",
             "max_task_util": "0.8", "priority_policy": "RM",
             "power_mode": "generator_default_heterogeneous",
+            "workload_candidates": [
+                "bzip2", "control", "decrypt", "encrypt", "hash",
+            ],
             "generator_timeout_seconds": 10,
         },
         "energy": {
             "initial_energy_values": e0 or ["100"],
             "exact_rational_encoding": "canonical_fraction",
             "service_curve": {
-                "id": "test-curve", "system_template": "unused.yml", "horizon": 20,
+                "id": "test-curve",
+                "system_template": "system_config_unified_template.yml",
+                "horizon": 20,
             },
             "battery_mode": "finite", "battery_capacity": "200",
         },
@@ -64,12 +69,12 @@ class FakeStore:
 
     def get_or_create(self, cell, index):
         tasks = (
-            core.V93Task("0", 1, 5, 5, Fraction(1)),
-            core.V93Task("1", 1, 7, 7, Fraction(1)),
+            core.V93Task("0", 1, 5, 5, Fraction(93, 2000000)),
+            core.V93Task("1", 1, 7, 7, Fraction(93, 2000000)),
         )
         payload = (
-            {"task_id": "0", "source_name": "a", "priority_rank": 0, "C": 1, "D": 5, "T": 5, "P": "1", "D_over_T": "1", "workload": "idle", "arrival_offset": 0},
-            {"task_id": "1", "source_name": "b", "priority_rank": 1, "C": 1, "D": 7, "T": 7, "P": "1", "D_over_T": "1", "workload": "idle", "arrival_offset": 0},
+            {"task_id": "0", "source_name": "a", "priority_rank": 0, "C": 1, "D": 5, "T": 5, "P": "93/2000000", "D_over_T": "1", "workload": "control", "arrival_offset": 0},
+            {"task_id": "1", "source_name": "b", "priority_rank": 1, "C": 1, "D": 7, "T": 7, "P": "93/2000000", "D_over_T": "1", "workload": "control", "arrival_offset": 0},
         )
         semantic = f"semantic-{cell.generation_id}"
         stored = StoredTaskset(

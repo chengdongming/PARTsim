@@ -14,6 +14,7 @@ import asap_block_rta as legacy_rta
 
 from experiments.v9_3.cell_model import derive_seed, expand_cells
 from experiments.v9_3.config import config_hash, load_config
+from experiments.v9_3.config import TASK_WORKLOAD_CONTRACT_VERSION
 from experiments.v9_3.core3_pairing import Core3PairingRunner
 from experiments.v9_3.execution_engine import ExecutionEngine
 from experiments.v9_3.simulation_engine import (
@@ -107,6 +108,25 @@ def test_r2_formal_tracks_share_scale_service_and_harvest_with_fixed_margin():
     assert Fraction(b100["available_headroom_j"]) > Fraction(
         b20["available_headroom_j"]
     )
+
+
+@pytest.mark.parametrize("path", [R1_B20, R1_B100, R2_B20, R2_B100])
+def test_core3_formal_configs_enforce_the_global_workload_contract(path):
+    config = load_config(path, expected_core="CORE-3")
+    assert config["generation"]["workload_candidates"] == [
+        "bzip2", "control", "decrypt", "encrypt", "hash",
+    ]
+    assert config["generation"]["workload_contract"]["version"] == (
+        TASK_WORKLOAD_CONTRACT_VERSION
+    )
+
+
+@pytest.mark.parametrize("path", [R2_B20, R2_B100])
+def test_r2_formal_artifact_identity_uses_fresh_workload_contract_paths(path):
+    config = load_config(path, expected_core="CORE-3")
+    assert config["experiment_id"].endswith("-workload-contract-v2")
+    assert "workload_contract_v2" in config["execution"]["output_root"]
+    assert "workload_contract_v2" in config["execution"]["taskset_store"]
 
 
 def test_r2_tracks_only_change_capacity_and_experiment_output_identity():

@@ -12,6 +12,21 @@ from typing import Any, Dict, Iterable, Mapping
 
 import yaml
 
+import asap_block_rta as legacy_rta
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+TASK_WORKLOAD_CONTRACT_VERSION = "REAL_TIME_TASK_WORKLOAD_CONTRACT_V2"
+TASK_WORKLOAD_CANDIDATE_DOMAIN = (
+    "ASAP_BLOCK:V9.3:REAL_TIME_TASK_WORKLOAD_CANDIDATES:v2"
+)
+TASK_WORKLOAD_POWER_MODEL_DOMAIN = (
+    "ASAP_BLOCK:V9.3:REAL_TIME_TASK_WORKLOAD_POWER_MODEL:v2"
+)
+TASK_WORKLOAD_CONTRACT_DOMAIN = (
+    "ASAP_BLOCK:V9.3:REAL_TIME_TASK_WORKLOAD_CONTRACT:v2"
+)
+
 
 class ConfigError(ValueError):
     """Raised when an experiment configuration is unsafe or ambiguous."""
@@ -86,6 +101,120 @@ def domain_hash(domain: str, value: Any) -> str:
     return hashlib.sha256(
         domain.encode("ascii") + b"\0" + canonical_json(value).encode("utf-8")
     ).hexdigest()
+
+
+def task_workload_energy_model(
+    system_path: Path | str,
+) -> tuple[tuple[str, Fraction], ...]:
+    """Return the lexical, exact, non-idle task power model."""
+
+    path = Path(system_path)
+    try:
+        system = legacy_rta.load_system_config(str(path))
+    except Exception as exc:
+        raise ConfigError(f"cannot load task workload power model: {path}") from exc
+    names = tuple(sorted(
+        str(name)
+        for name in system.workload_coefficients
+        if str(name) != "idle"
+    ))
+    if not names:
+        raise ConfigError("actual non-idle task workload power model is empty")
+    return tuple(
+        (name, Fraction(str(system.task_energy_per_tick(name))))
+        for name in names
+    )
+
+
+def task_workload_contract_material(
+    candidates: Iterable[str], system_path: Path | str,
+) -> Dict[str, Any]:
+    """Build the mandatory auditable workload contract for one system model."""
+
+    ordered = tuple(candidates)
+    if not ordered:
+        raise ConfigError("generation.workload_candidates must be a non-empty list")
+    if any(
+        not isinstance(value, str) or not value or value.strip() != value
+        for value in ordered
+    ):
+        raise ConfigError(
+            "generation.workload_candidates must contain canonical non-empty strings"
+        )
+    if len(ordered) != len(set(ordered)):
+        raise ConfigError("generation.workload_candidates contains duplicates")
+    if "idle" in ordered:
+        raise ConfigError("generation.workload_candidates must not contain idle")
+    if ordered != tuple(sorted(ordered)):
+        raise ConfigError(
+            "generation.workload_candidates must use stable lexical order"
+        )
+
+    model = task_workload_energy_model(system_path)
+    model_names = tuple(name for name, _energy in model)
+    if ordered != model_names:
+        raise ConfigError(
+            "configured task workload candidates do not exactly match the "
+            f"non-idle actual power model: configured={ordered}, actual={model_names}"
+        )
+    candidate_material = {
+        "version": TASK_WORKLOAD_CONTRACT_VERSION,
+        "ordered_candidates": list(ordered),
+    }
+    power_material = {
+        "version": TASK_WORKLOAD_CONTRACT_VERSION,
+        "power_model": [
+            {"workload": name, "energy_per_tick": fraction_text(energy)}
+            for name, energy in model
+        ],
+    }
+    candidate_identity = domain_hash(
+        TASK_WORKLOAD_CANDIDATE_DOMAIN, candidate_material,
+    )
+    power_model_identity = domain_hash(
+        TASK_WORKLOAD_POWER_MODEL_DOMAIN, power_material,
+    )
+    identity_material = {
+        "version": TASK_WORKLOAD_CONTRACT_VERSION,
+        "candidate_identity": candidate_identity,
+        "power_model_identity": power_model_identity,
+    }
+    return {
+        "version": TASK_WORKLOAD_CONTRACT_VERSION,
+        "idle_system_state_reserved": True,
+        "ordered_candidates": list(ordered),
+        "candidate_identity": candidate_identity,
+        "power_model": power_material["power_model"],
+        "power_model_identity": power_model_identity,
+        "contract_identity": domain_hash(
+            TASK_WORKLOAD_CONTRACT_DOMAIN, identity_material,
+        ),
+    }
+
+
+def prepare_task_workload_contract(
+    config: Mapping[str, Any], system_path: Path | str,
+) -> Dict[str, Any]:
+    """Derive and verify the mandatory contract in a normalized v9.3 config."""
+
+    generation = config.get("generation")
+    if not isinstance(generation, Mapping):
+        raise ConfigError("generation must be a mapping")
+    configured = generation.get("workload_candidates")
+    if configured is None:
+        raise ConfigError(
+            "generation.workload_candidates is required by the mandatory "
+            "non-idle task workload contract"
+        )
+    if not isinstance(configured, list):
+        raise ConfigError("generation.workload_candidates must be a non-empty list")
+    expected = task_workload_contract_material(configured, system_path)
+    frozen = generation.get("workload_contract")
+    if frozen is not None and frozen != expected:
+        raise ConfigError(
+            "generation.workload_contract does not match the actual system power model"
+        )
+    return expected
 
 
 def _require_mapping(parent: Mapping[str, Any], key: str) -> Dict[str, Any]:
@@ -164,6 +293,32 @@ def validate_config(raw: Mapping[str, Any], *, expected_core: str | None = None)
         generation[label] = fraction_text(value)
     if Fraction(generation["min_task_util"]) > Fraction(generation["max_task_util"]):
         raise ConfigError("generation.min_task_util must not exceed max_task_util")
+    candidates = generation.get("workload_candidates")
+    if candidates is None:
+        raise ConfigError(
+            "generation.workload_candidates is required by the mandatory "
+            "non-idle task workload contract"
+        )
+    if not isinstance(candidates, list) or not candidates:
+        raise ConfigError("generation.workload_candidates must be a non-empty list")
+    # Full model membership is checked after the service-curve system template
+    # has itself passed structural validation below.
+    if any(
+        not isinstance(value, str) or not value or value.strip() != value
+        for value in candidates
+    ):
+        raise ConfigError(
+            "generation.workload_candidates must contain canonical non-empty strings"
+        )
+    if len(candidates) != len(set(candidates)):
+        raise ConfigError("generation.workload_candidates contains duplicates")
+    if "idle" in candidates:
+        raise ConfigError("generation.workload_candidates must not contain idle")
+    if candidates != sorted(candidates):
+        raise ConfigError(
+            "generation.workload_candidates must use stable lexical order"
+        )
+    generation["workload_candidates"] = list(candidates)
     constrained = _require_mapping(generation, "constrained_deadline")
     distribution = constrained.get("distribution")
     if distribution not in KNOWN_CONSTRAINED_DISTRIBUTIONS:
@@ -226,6 +381,14 @@ def validate_config(raw: Mapping[str, Any], *, expected_core: str | None = None)
     if not isinstance(service.get("id"), str) or not service["id"]:
         raise ConfigError("energy.service_curve.id must be non-empty")
     _positive_int(service.get("horizon"), "energy.service_curve.horizon")
+    system_template = service.get("system_template")
+    if not isinstance(system_template, str) or not system_template:
+        raise ConfigError("energy.service_curve.system_template must be a non-empty path")
+    system_path = Path(system_template)
+    if not system_path.is_absolute():
+        system_path = PROJECT_ROOT / system_path
+    contract = prepare_task_workload_contract(config, system_path)
+    generation["workload_contract"] = contract
     if "require_real_solar_data" in service and not isinstance(
         service["require_real_solar_data"], bool
     ):
@@ -650,7 +813,7 @@ def config_hash(config: Mapping[str, Any]) -> str:
     # Resume is a runtime choice, not an experiment semantic.
     semantic = deepcopy(dict(config))
     semantic.get("execution", {}).pop("resume", None)
-    return domain_hash("ASAP_BLOCK:V9.3:FORMAL_CONFIG:v1", semantic)
+    return domain_hash("ASAP_BLOCK:V9.3:FORMAL_CONFIG:v2", semantic)
 
 
 def dump_config(config: Mapping[str, Any], path: Path) -> None:

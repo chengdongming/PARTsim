@@ -139,7 +139,9 @@ set initial battery equal to capacity. The real-solar trace offers
 `11666700000000003/10000000000000` J over 30,000 ms, so both have negative
 harvest headroom and fail the mandatory preflight. These r1 parameters never
 produced formal experiment results, are superseded by r2, and must not be used
-for a formal run.
+for a formal run. They declare the repository-wide non-idle workload pool so
+the common config loader can inspect them, but that schema migration does not
+reauthorize them or change their failing energy result.
 
 The only authorized formal entry configurations are
 `configs/v9_3_core3_formal_b20_r2.yaml` and
@@ -149,6 +151,17 @@ energy settings differ only in finite battery capacity: 20 J versus 100 J.
 They share the same service identity, solar trace, solar scale, generation
 identity, taskset indices, and seeds; experiment IDs, output roots, taskset
 stores, and config hashes remain disjoint.
+
+After the workload-contract-v2 migration, the r2 experiment IDs are
+`asap-block-v9.3-core3-formal-b20-r2-workload-contract-v2` and
+`asap-block-v9.3-core3-formal-b100-r2-workload-contract-v2`. Their output roots
+are respectively `results/v9_3_core3_formal_b20_r2_workload_contract_v2` and
+`results/v9_3_core3_formal_b100_r2_workload_contract_v2`; their stores are
+`results/v9_3_core3_taskset_store_formal_b20_r2_workload_contract_v2` and
+`results/v9_3_core3_taskset_store_formal_b100_r2_workload_contract_v2`. These
+fresh paths cannot resume a legacy V1/V2 store. The normalized config hashes,
+generation identities, seeds, and taskset IDs consequently migrate; the
+scientific energy parameters and B20/B100 pairing rules do not.
 
 The real-solar scale is frozen by a result-independent feasibility rule. At
 the template's 1 m² reference area, use the same data, day/time, efficiency,
@@ -175,6 +188,13 @@ when the contract fails. `--dry-run` may include the same audit under
 before the first output directory, taskset, RTA request, checkpoint, or
 simulation is created. Missing inputs, non-finite/negative harvest, invalid
 scales, and insufficient capacity fail closed.
+
+Configuration loading first enforces the independent global workload gate:
+the exact stable pool is `[bzip2, control, decrypt, encrypt, hash]`, `idle` is
+reserved for system state, and each generated or loaded task must match the
+actual power model exactly. Passing that gate cannot bypass the energy
+preflight, and passing the energy preflight cannot make a legacy or malformed
+workload store executable.
 
 Record the gates and plans before any separately authorized formal run:
 

@@ -1,4 +1,4 @@
-experiment_id: asap-block-v9.3-core5b-formal-workers-r1
+experiment_id: asap-block-v9.3-core5b-formal-workers-r1-workload-contract-v2
 core: CORE-5
 platform: {cores: [4], task_count: [10]}
 generation:
@@ -12,6 +12,7 @@ generation:
   max_task_util: "4/5"
   priority_policy: RM
   power_mode: generator_default_heterogeneous
+  workload_candidates: [bzip2, control, decrypt, encrypt, hash]
   generator_timeout_seconds: 120
 energy:
   initial_energy_values: ["1/20"]
@@ -51,8 +52,8 @@ scalability:
   max_analyses: 6000
 execution:
   checkpoint_every: 1
-  output_root: results/v9_3_core5b_formal_workers_r1
-  taskset_store: results/v9_3_core5b_taskset_store_formal_r1
+  output_root: results/v9_3_core5b_formal_workers_r1_workload_contract_v2
+  taskset_store: results/v9_3_core5b_taskset_store_formal_r1_workload_contract_v2
   resume: false
   fail_fast_on_p0: true
   preserve_attempt_history: true

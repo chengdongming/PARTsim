@@ -1,5 +1,5 @@
 # Template only: final paper grid remains to be calibrated and frozen.
-experiment_id: asap-block-v9.3-core2-formal-template
+experiment_id: asap-block-v9.3-core2-formal-template-workload-contract-v2
 core: CORE-2
 platform:
   cores: [4]
@@ -19,6 +19,7 @@ generation:
   max_task_util: "0.8"
   priority_policy: RM
   power_mode: generator_default_heterogeneous
+  workload_candidates: [bzip2, control, decrypt, encrypt, hash]
   generator_timeout_seconds: 120
 energy:
   initial_energy_values: ["0", "1", "178487996829/2000000000000"]
@@ -42,8 +43,8 @@ analysis:
   numerical_mode: EXACT_RATIONAL
 execution:
   checkpoint_every: 1
-  output_root: artifacts/v9_3_core2_formal
-  taskset_store: artifacts/v9_3_formal_taskset_store
+  output_root: artifacts/v9_3_core2_formal_workload_contract_v2
+  taskset_store: artifacts/v9_3_formal_taskset_store_workload_contract_v2
   resume: false
   fail_fast_on_p0: true
   preserve_attempt_history: true

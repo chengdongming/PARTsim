@@ -1,5 +1,6 @@
 from dataclasses import replace
 from fractions import Fraction
+from pathlib import Path
 
 import pytest
 
@@ -35,7 +36,8 @@ def test_core1_core2_generation_identity_is_reusable(tmp_path):
 
 def _service(tmp_path, identity="service"):
     return ServiceCurveMaterial(
-        (Fraction(0),), identity, "{}", tmp_path / "system.yml"
+        (Fraction(0),), identity, "{}",
+        Path(__file__).resolve().parents[1] / "system_config_unified_template.yml",
     )
 
 

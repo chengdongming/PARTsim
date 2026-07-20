@@ -30,6 +30,10 @@ summary and plot metrics.
 
 `configs/v9_3_core4_formal.yaml` freezes `M=4`, `n=10`, five utilization
 levels (`3/10` through `7/10`), 200 tasksets per utilization, and seed 930444.
+Its migrated experiment ID ends in `-workload-contract-v2`, and any future
+formal run uses the fresh `v9_3_core4_formal_sustainability_r1_workload_contract_v2`
+output root and `v9_3_core4_taskset_store_formal_r1_workload_contract_v2`
+store. The scientific sensitivity profile is unchanged.
 Its baseline is E0 `1/20`, power scale `1`, service scale `1`, and battery 20.
 Each sensitivity axis varies alone around that baseline:
 

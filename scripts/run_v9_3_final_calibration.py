@@ -200,7 +200,10 @@ def _candidate_config(
 ) -> Dict[str, Any]:
     config = deepcopy(dict(source))
     config["parameter_status"] = "PROPOSED_NOT_YET_FROZEN"
-    config["experiment_id"] = f"asap-block-v9.3-{core_name.lower()}-formal-candidate"
+    config["experiment_id"] = (
+        f"asap-block-v9.3-{core_name.lower()}-formal-candidate-"
+        "workload-contract-v2"
+    )
     config["core"] = core_name
     config.pop("calibration", None)
     config["analysis"]["variants"] = (
@@ -218,8 +221,12 @@ def _candidate_config(
     config["grid"]["taskset_index_start"] = 0
     config["grid"].pop("cell_filter", None)
     suffix = "core1" if core_name == "CORE-1" else "core2"
-    config["execution"]["output_root"] = f"artifacts/v9_3_{suffix}_formal"
-    config["execution"]["taskset_store"] = "artifacts/v9_3_formal_taskset_store"
+    config["execution"]["output_root"] = (
+        f"artifacts/v9_3_{suffix}_formal_workload_contract_v2"
+    )
+    config["execution"]["taskset_store"] = (
+        "artifacts/v9_3_formal_taskset_store_workload_contract_v2"
+    )
     config["execution"]["resume"] = False
     return config
 

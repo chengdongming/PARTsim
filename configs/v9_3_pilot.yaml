@@ -17,6 +17,8 @@ task_generation:
   num_tasksets_per_cell: 10
   smoke_tasksets_per_cell: 2
   base_seed: 930012
+  workload_contract_version: REAL_TIME_TASK_WORKLOAD_CONTRACT_V2
+  workload_candidates: [bzip2, control, decrypt, encrypt, hash]
 
 analysis:
   variants:

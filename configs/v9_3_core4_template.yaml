@@ -1,4 +1,4 @@
-experiment_id: asap-block-v9.3-core4-template-not-frozen
+experiment_id: asap-block-v9.3-core4-template-not-frozen-workload-contract-v2
 core: CORE-4
 platform: {cores: [4], task_count: [10]}
 generation:
@@ -12,6 +12,7 @@ generation:
   max_task_util: "0.8"
   priority_policy: RM
   power_mode: generator_default_heterogeneous
+  workload_candidates: [bzip2, control, decrypt, encrypt, hash]
   generator_timeout_seconds: 120
 energy:
   initial_energy_values: ["0"]
@@ -38,8 +39,8 @@ sensitivity:
     method: {variants: [CW_THETA_CW, LOC_THETA_LOC]}
 execution:
   checkpoint_every: 1
-  output_root: artifacts/v9_3_core4_template_not_frozen
-  taskset_store: artifacts/v9_3_core4_taskset_store
+  output_root: artifacts/v9_3_core4_template_not_frozen_workload_contract_v2
+  taskset_store: artifacts/v9_3_core4_taskset_store_workload_contract_v2
   resume: false
   fail_fast_on_p0: true
   preserve_attempt_history: true

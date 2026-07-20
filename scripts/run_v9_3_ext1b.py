@@ -45,6 +45,7 @@ def main() -> int:
     parser.add_argument("--simulator-bin", type=Path)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--plan-only", action="store_true")
     parser.add_argument("--list-cells", action="store_true")
     parser.add_argument("--max-cells", type=int)
     parser.add_argument("--max-tasksets", type=int)
@@ -56,6 +57,10 @@ def main() -> int:
         return 0 if valid else 1
     if args.config is None:
         parser.error("--config is required unless --verify-hashes is used")
+    if args.plan_only and (args.dry_run or args.list_cells or args.resume):
+        parser.error(
+            "--plan-only cannot be combined with --dry-run, --list-cells, or --resume"
+        )
     runner = runner_with_overrides(
         args.config, output_root=args.output_root,
         taskset_store=args.taskset_store, simulator_bin=args.simulator_bin,
@@ -67,6 +72,12 @@ def main() -> int:
         if not args.list_cells:
             value.pop("cells", None)
         print(json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2))
+        return 0
+    if args.plan_only:
+        outcome = runner.materialize_plan(
+            max_cells=args.max_cells, max_tasksets=args.max_tasksets,
+        )
+        print(json.dumps(dict(outcome.summary), ensure_ascii=False, sort_keys=True))
         return 0
     outcome = runner.run(
         resume=args.resume or runner.config["execution"]["resume"],

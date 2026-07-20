@@ -22,7 +22,15 @@ import asap_block_rta_v9_3 as rta_core
 from .cell_model import (
     Cell, derive_seed, expand_cells, generation_dimensions, taskset_id,
 )
-from .config import canonical_json, domain_hash, fraction_text
+from .config import (
+    ConfigError,
+    TASK_WORKLOAD_CONTRACT_VERSION,
+    canonical_json,
+    domain_hash,
+    fraction_text,
+    prepare_task_workload_contract as prepare_config_workload_contract,
+    task_workload_energy_model,
+)
 from .simulation_engine import (
     SimulationConfigurationError,
     construct_paired_harvest_trace,
@@ -32,6 +40,10 @@ from .simulation_engine import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 TASK_GENERATOR = PROJECT_ROOT / "global_task_generator.py"
+FROZEN_TASKSET_SCHEMA = "ASAP_BLOCK_V9_3_FROZEN_TASKSET_V3"
+FROZEN_TASKSET_SEMANTIC_DOMAIN = "ASAP_BLOCK:V9.3:TASKSET_SEMANTIC:v3"
+PAIRING_MANIFEST_SCHEMA = "ASAP_BLOCK_V9_3_CORE12_PAIRING_MANIFEST_V2"
+PAIRING_CONTRACT_DOMAIN = "ASAP_BLOCK:V9.3:CORE12_PAIRING_CONTRACT:v2"
 
 
 class TasksetStoreError(RuntimeError):
@@ -90,6 +102,47 @@ class ServiceCurveMaterial:
     identity: str
     raw_spec: str
     system_path: Path
+
+
+@dataclass(frozen=True)
+class TaskWorkloadContract:
+    candidates: Tuple[str, ...]
+    candidate_identity: str
+    power_model: Tuple[Tuple[str, Fraction], ...]
+    power_model_identity: str
+    contract_identity: str
+
+    def canonical_material(self) -> Dict[str, Any]:
+        return {
+            "version": TASK_WORKLOAD_CONTRACT_VERSION,
+            "idle_system_state_reserved": True,
+            "ordered_candidates": list(self.candidates),
+            "candidate_identity": self.candidate_identity,
+            "power_model": [
+                {"workload": name, "energy_per_tick": fraction_text(energy)}
+                for name, energy in self.power_model
+            ],
+            "power_model_identity": self.power_model_identity,
+            "contract_identity": self.contract_identity,
+        }
+
+def prepare_task_workload_contract(
+    config: Mapping[str, Any], system_path: Path,
+) -> TaskWorkloadContract:
+    try:
+        material = prepare_config_workload_contract(config, system_path)
+    except ConfigError as exc:
+        raise TasksetStoreError(str(exc)) from exc
+    return TaskWorkloadContract(
+        tuple(material["ordered_candidates"]),
+        str(material["candidate_identity"]),
+        tuple(
+            (str(row["workload"]), Fraction(str(row["energy_per_tick"])))
+            for row in material["power_model"]
+        ),
+        str(material["power_model_identity"]),
+        str(material["contract_identity"]),
+    )
 
 
 def _atomic_write(path: Path, text: str) -> None:
@@ -221,6 +274,9 @@ class TasksetStore:
         self.root = Path(root)
         self.config = config
         self.service = service
+        self.task_workload_contract = prepare_task_workload_contract(
+            config, service.system_path
+        )
         self.root.mkdir(parents=True, exist_ok=True)
         self.manifest_path = self.root / "pairing_manifest.json"
         self._initialize_pairing_manifest()
@@ -237,7 +293,7 @@ class TasksetStore:
             }
         start = int(self.config["grid"].get("taskset_index_start", 0))
         count = int(self.config["grid"]["tasksets_per_cell"])
-        return {
+        contract = {
             "generation_cells": [dimensions[key] for key in sorted(dimensions)],
             "base_seed": int(self.config["grid"]["base_seed"]),
             "seed_mode": self.config["grid"].get(
@@ -249,24 +305,34 @@ class TasksetStore:
             "exact_e0_grid": list(self.config["energy"]["initial_energy_values"]),
             "service_curve_identity": self.service.identity,
         }
+        contract["task_workload_contract"] = (
+            self.task_workload_contract.canonical_material()
+        )
+        return contract
 
     def _initialize_pairing_manifest(self) -> None:
         contract = self._pairing_contract()
-        pairing_id = domain_hash(
-            "ASAP_BLOCK:V9.3:CORE12_PAIRING_CONTRACT:v1", contract
-        )
+        pairing_id = domain_hash(PAIRING_CONTRACT_DOMAIN, contract)
         if not self.manifest_path.is_file():
             self._write_manifest({
-                "schema": "ASAP_BLOCK_V9_3_CORE12_PAIRING_MANIFEST_V1",
+                "schema": PAIRING_MANIFEST_SCHEMA,
                 "pairing_id": pairing_id,
                 "contract": contract,
                 "entries": [],
             })
             return
         manifest = self.manifest_document()
+        observed_contract = manifest.get("contract")
         if (
-            manifest.get("schema")
-            != "ASAP_BLOCK_V9_3_CORE12_PAIRING_MANIFEST_V1"
+            manifest.get("schema") == "ASAP_BLOCK_V9_3_CORE12_PAIRING_MANIFEST_V1"
+            and isinstance(observed_contract, Mapping)
+            and "task_workload_contract" not in observed_contract
+        ):
+            raise TasksetStoreError(
+                "legacy taskset store lacks mandatory non-idle workload contract"
+            )
+        if (
+            manifest.get("schema") != PAIRING_MANIFEST_SCHEMA
             or manifest.get("pairing_id") != pairing_id
             or manifest.get("contract") != contract
             or not isinstance(manifest.get("entries"), list)
@@ -354,27 +420,19 @@ class TasksetStore:
             raise TasksetStoreError(
                 "formal pairing manifest is missing or has extra tasksets"
             )
+        cells_by_generation = {
+            cell.generation_id: cell for cell in expand_cells(self.config)
+        }
         for key, entry in index.items():
             path = self.path_for(*key)
             if not path.is_file():
                 raise TasksetStoreError("formal pairing manifest taskset file is missing")
-            try:
-                document = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError) as exc:
-                raise TasksetStoreError("cannot read paired taskset") from exc
-            observed = {
-                "generation_id": document.get("generation_id"),
-                "taskset_index": document.get("taskset_index"),
-                "generation_seed": document.get("seed"),
-                "taskset_id": document.get("taskset_id"),
-                "taskset_semantic_hash": document.get("taskset_hash"),
-                "priority_hash": document.get("priority_hash"),
-                "power_hash": document.get("power_hash"),
-                "task_payload": document.get("tasks"),
-                "service_curve_identity": document.get(
-                    "service_curve_reference"
-                ),
-            }
+            cell = cells_by_generation.get(key[0])
+            if cell is None:
+                raise TasksetStoreError(
+                    "formal pairing manifest has unknown generation identity"
+                )
+            observed = self._manifest_entry(self._load(path, cell, key[1]))
             if observed != entry:
                 raise TasksetStoreError(
                     "formal pairing manifest/taskset payload mismatch"
@@ -413,6 +471,8 @@ class TasksetStore:
                 "--wcet-rounding", generation["wcet_rounding"],
                 "--actual-utilization-tolerance-total", format(float(Fraction(generation["utilization_tolerance"])), ".15g"),
             ]
+            for workload in self.task_workload_contract.candidates:
+                command.extend(["--task-workload-candidate", workload])
             if generation["deadline_mode"] == "constrained":
                 command.append("--constrained-deadlines")
             started = time.perf_counter()
@@ -435,7 +495,25 @@ class TasksetStore:
         payload = []
         for rank, legacy_task in enumerate(legacy_tasks):
             raw = raw_by_name[legacy_task.name]
-            power = Fraction(str(system.task_energy_per_tick(legacy_task.workload)))
+            workload = _workload(raw)
+            if workload == "idle":
+                raise TasksetStoreError(
+                    "generator produced reserved idle workload for a real-time task"
+                )
+            if workload not in self.task_workload_contract.candidates:
+                raise TasksetStoreError(
+                    f"generator produced workload outside task candidate contract: {workload}"
+                )
+            if str(legacy_task.workload) != workload:
+                raise TasksetStoreError(
+                    "generator workload representations disagree"
+                )
+            power = Fraction(str(system.task_energy_per_tick(workload)))
+            expected_power = dict(self.task_workload_contract.power_model)[workload]
+            if power != expected_power:
+                raise TasksetStoreError(
+                    "generator produced workload/P mismatch against actual power model"
+                )
             task_id_value = str(rank)
             if legacy_task.deadline > legacy_task.period:
                 raise TasksetStoreError("generator produced D > T")
@@ -452,7 +530,7 @@ class TasksetStore:
                 "T": legacy_task.period,
                 "P": fraction_text(power),
                 "D_over_T": fraction_text(Fraction(legacy_task.deadline, legacy_task.period)),
-                "workload": _workload(raw),
+                "workload": workload,
                 "arrival_offset": _offset(raw),
             })
         actual = sum(Fraction(task.wcet, task.period) for task in tasks)
@@ -463,7 +541,7 @@ class TasksetStore:
             self.config, cell.processors, cell.task_count, cell.utilization
         )
         canonical_payload = {
-            "schema": "ASAP_BLOCK_V9_3_FROZEN_TASKSET_V1",
+            "schema": FROZEN_TASKSET_SCHEMA,
             "generation_id": cell.generation_id,
             "taskset_index": taskset_index,
             "seed": seed,
@@ -475,8 +553,13 @@ class TasksetStore:
             "deadline_mode": cell.deadline_mode,
             "service_curve_reference": self.service.identity,
             "tasks": payload,
+            "task_workload_contract": (
+                self.task_workload_contract.canonical_material()
+            ),
         }
-        semantic_hash = domain_hash("ASAP_BLOCK:V9.3:TASKSET_SEMANTIC:v1", canonical_payload)
+        semantic_hash = domain_hash(
+            FROZEN_TASKSET_SEMANTIC_DOMAIN, canonical_payload
+        )
         priority_hash = domain_hash(
             "ASAP_BLOCK:V9.3:PRIORITY_VECTOR:v1",
             [{"task_id": item["task_id"], "priority_rank": item["priority_rank"]} for item in payload],
@@ -501,34 +584,89 @@ class TasksetStore:
             document = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             raise TasksetStoreError(f"cannot read frozen taskset {path}: {exc}") from exc
+        schema = document.get("schema")
+        if (
+            schema == "ASAP_BLOCK_V9_3_FROZEN_TASKSET_V1"
+            or "task_workload_contract" not in document
+        ):
+            raise TasksetStoreError(
+                "legacy taskset store lacks mandatory non-idle workload contract"
+            )
+        if schema != FROZEN_TASKSET_SCHEMA:
+            raise TasksetStoreError("frozen taskset workload contract schema mismatch")
+        if document.get(
+            "task_workload_contract"
+        ) != self.task_workload_contract.canonical_material():
+            raise TasksetStoreError("frozen taskset workload contract mismatch")
         if document.get("generation_id") != cell.generation_id:
             raise TasksetStoreError("frozen taskset generation identity mismatch")
         if document.get("taskset_index") != taskset_index:
             raise TasksetStoreError("frozen taskset index mismatch")
         if document.get("service_curve_reference") != self.service.identity:
             raise TasksetStoreError("frozen taskset service-curve identity mismatch")
+        preimage_keys = [
+            "schema", "generation_id", "taskset_index", "seed",
+            "generation_parameters", "target_total_utilization",
+            "actual_total_utilization", "priority_policy", "power_mode",
+            "deadline_mode", "service_curve_reference", "tasks",
+        ]
+        preimage_keys.append("task_workload_contract")
         preimage = {
             key: document[key]
-            for key in (
-                "schema", "generation_id", "taskset_index", "seed",
-                "generation_parameters", "target_total_utilization",
-                "actual_total_utilization", "priority_policy", "power_mode",
-                "deadline_mode", "service_curve_reference", "tasks",
-            )
+            for key in preimage_keys
         }
-        observed = domain_hash("ASAP_BLOCK:V9.3:TASKSET_SEMANTIC:v1", preimage)
+        observed = domain_hash(FROZEN_TASKSET_SEMANTIC_DOMAIN, preimage)
         if observed != document.get("taskset_hash"):
             raise TasksetStoreError("frozen taskset semantic hash mismatch")
         return self._from_document(document, path)
 
     def _from_document(self, document: Mapping[str, Any], path: Path) -> StoredTaskset:
         payload = tuple(document["tasks"])
+        energy_by_workload = dict(self.task_workload_contract.power_model)
+        for item in payload:
+            workload = item.get("workload")
+            if workload == "idle":
+                raise TasksetStoreError(
+                    "stored real-time task uses reserved idle workload"
+                )
+            if (
+                not isinstance(workload, str)
+                or not workload
+                or workload.strip() != workload
+                or workload not in energy_by_workload
+            ):
+                raise TasksetStoreError(
+                    f"stored real-time task uses unknown workload: {workload}"
+                )
+            try:
+                observed_power = Fraction(str(item["P"]))
+            except (KeyError, ValueError, ZeroDivisionError) as exc:
+                raise TasksetStoreError("stored real-time task has invalid P") from exc
+            if observed_power != energy_by_workload[workload]:
+                raise TasksetStoreError(
+                    "stored real-time task P does not match actual power model"
+                )
         tasks = tuple(rta_core.V93Task(
             str(item["task_id"]), int(item["C"]), int(item["D"]),
             int(item["T"]), Fraction(str(item["P"])),
         ) for item in payload)
         if any(task.deadline > task.period for task in tasks):
             raise TasksetStoreError("stored taskset violates D <= T")
+        expected_priority_hash = domain_hash(
+            "ASAP_BLOCK:V9.3:PRIORITY_VECTOR:v1",
+            [
+                {"task_id": item["task_id"], "priority_rank": item["priority_rank"]}
+                for item in payload
+            ],
+        )
+        expected_power_hash = domain_hash(
+            "ASAP_BLOCK:V9.3:POWER_VECTOR:v1",
+            [{"task_id": item["task_id"], "P": item["P"]} for item in payload],
+        )
+        if document.get("priority_hash") != expected_priority_hash:
+            raise TasksetStoreError("frozen taskset priority hash mismatch")
+        if document.get("power_hash") != expected_power_hash:
+            raise TasksetStoreError("frozen taskset power hash mismatch")
         return StoredTaskset(
             str(document["taskset_id"]), str(document["generation_id"]),
             int(document["taskset_index"]), int(document["seed"]),

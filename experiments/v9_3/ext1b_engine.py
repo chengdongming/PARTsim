@@ -159,6 +159,16 @@ class Ext1BOutcome:
     summary: Mapping[str, Any]
 
 
+@dataclass(frozen=True)
+class Ext1BPlanOutcome:
+    output_root: Path
+    generated_tasksets: int
+    generation_attempts: int
+    paired_instances: int
+    simulation_requests: int
+    summary: Mapping[str, Any]
+
+
 class Ext1BRunner:
     def __init__(self, config: Mapping[str, Any]) -> None:
         self.config = dict(config)
@@ -259,6 +269,9 @@ class Ext1BRunner:
                 "parameter_status": self.config["parameter_status"],
                 "seed_space": self.config["seed_space"],
                 "config_hash": ext1b_config_hash(self.config),
+                "task_workload_contract": self.config["generation"][
+                    "workload_contract"
+                ],
                 "git_head": _git_head(self.project_root),
                 "simulator_path": str(self._simulator_path()),
                 "simulator_build_hash": _sha256_file(self._simulator_path()),
@@ -941,6 +954,118 @@ class Ext1BRunner:
         write_file_hashes(self.root)
         return Ext1BOutcome(
             self.root, len(plan), len(result_rows), self.stop_requested, summary
+        )
+
+    def materialize_plan(
+        self, *, max_cells: Optional[int] = None,
+        max_tasksets: Optional[int] = None,
+    ) -> Ext1BPlanOutcome:
+        """Materialize generation, transforms, scenarios, and requests only."""
+
+        self._initialize(resume=False)
+        generated, generation_attempts, instances, plan = self._plan(
+            max_cells, max_tasksets
+        )
+        public_requests = [
+            {key: row[key] for key in REQUEST_COLUMNS} for row in plan
+        ]
+        write_csv(
+            self.root / "generated_tasksets.csv", GENERATED_COLUMNS, generated,
+        )
+        write_csv(
+            self.root / "generation_attempts.csv",
+            GENERATION_ATTEMPT_COLUMNS,
+            generation_attempts,
+        )
+        write_csv(
+            self.root / "scenario_instances.csv",
+            SCENARIO_INSTANCE_COLUMNS,
+            instances,
+        )
+        write_csv(
+            self.root / "simulation_requests.csv",
+            REQUEST_COLUMNS,
+            public_requests,
+        )
+        contract = self.config["generation"]["workload_contract"]
+        energy_by_workload = {
+            str(row["workload"]): Fraction(str(row["energy_per_tick"]))
+            for row in contract["power_model"]
+        }
+        idle_count = 0
+        unknown_count = 0
+        power_mismatch_count = 0
+        task_record_count = 0
+        observed_workloads: set[str] = set()
+        for row in generated:
+            for task in json.loads(str(row["task_input_json"])):
+                task_record_count += 1
+                workload = str(task.get("workload"))
+                observed_workloads.add(workload)
+                if workload == "idle":
+                    idle_count += 1
+                if workload not in energy_by_workload:
+                    unknown_count += 1
+                    continue
+                try:
+                    observed_power = Fraction(str(task.get("P")))
+                except (ValueError, ZeroDivisionError):
+                    power_mismatch_count += 1
+                    continue
+                if observed_power != energy_by_workload[workload]:
+                    power_mismatch_count += 1
+        workload_summary = {
+            "schema": "ASAP_BLOCK_V9_3_WORKLOAD_CONTRACT_SUMMARY_V1",
+            "workload_contract_version": contract["version"],
+            "contract_identity": contract["contract_identity"],
+            "candidate_identity": contract["candidate_identity"],
+            "power_model_identity": contract["power_model_identity"],
+            "ordered_candidates": list(contract["ordered_candidates"]),
+            "observed_workloads": sorted(observed_workloads),
+            "task_record_count": task_record_count,
+            "idle_task_count": idle_count,
+            "unknown_workload_count": unknown_count,
+            "power_mismatch_count": power_mismatch_count,
+            "legacy_taskset_count": 0,
+        }
+        atomic_write_json(
+            self.root / "workload_contract_summary.json", workload_summary
+        )
+        if idle_count or unknown_count or power_mismatch_count:
+            raise RuntimeError(
+                "plan-only workload contract validation failed: "
+                f"idle={idle_count}, unknown={unknown_count}, "
+                f"power_mismatch={power_mismatch_count}"
+            )
+        summary = {
+            "schema": "ASAP_BLOCK_V9_3_EXT1B_PLAN_ONLY_V2",
+            "output_root": str(self.root),
+            "plan_only": True,
+            "simulator_invoked": False,
+            "cell_count": len(self._selected_cells(max_cells)),
+            "generated_tasksets": len(generated),
+            "generation_attempts": len(generation_attempts),
+            "paired_instances": len(instances),
+            "simulation_requests": len(public_requests),
+            "workload_contract_version": contract["version"],
+            "candidate_identity": contract["candidate_identity"],
+            "power_model_identity": contract["power_model_identity"],
+            "idle_task_count": idle_count,
+            "unknown_workload_count": unknown_count,
+            "power_mismatch_count": power_mismatch_count,
+            "legacy_taskset_count": 0,
+        }
+        atomic_write_json(self.root / "plan_summary.json", summary)
+        if any(self.terminals.glob("*.json")):
+            raise RuntimeError("plan-only output contains simulator terminals")
+        write_file_hashes(self.root)
+        return Ext1BPlanOutcome(
+            self.root,
+            len(generated),
+            len(generation_attempts),
+            len(instances),
+            len(public_requests),
+            summary,
         )
 
 

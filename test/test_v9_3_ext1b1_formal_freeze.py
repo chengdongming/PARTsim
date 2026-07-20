@@ -39,9 +39,11 @@ def test_formal_config_exact_contract_and_dry_run_cardinality():
     config = runner.config
     description = runner.describe()
 
-    assert config["experiment_id"] == "asap-block-v9.3-ext1b1-formal-r1"
+    assert config["experiment_id"] == (
+        "asap-block-v9.3-ext1b1-formal-r1-workload-contract-v2"
+    )
     assert config["parameter_status"] == "FORMAL"
-    assert config["seed_space"] == "EXT1B1_FORMAL_R1"
+    assert config["seed_space"] == "EXT1B1_FORMAL_R1_WORKLOAD_CONTRACT_V2"
     assert config["grid"]["base_seed"] == 951201
     assert config["platform"] == {"cores": [4], "task_count": [10]}
     assert config["grid"]["utilization_points"] == ["1/5", "2/5"]
@@ -105,7 +107,9 @@ def test_parameter_status_and_seed_spaces_are_bidirectionally_locked():
     pilot_with_formal_seed = _raw(
         ROOT / "configs" / "v9_3_ext1b1_pilot.yaml"
     )
-    pilot_with_formal_seed["seed_space"] = "EXT1B1_FORMAL_R1"
+    pilot_with_formal_seed["seed_space"] = (
+        "EXT1B1_FORMAL_R1_WORKLOAD_CONTRACT_V2"
+    )
     with pytest.raises(ConfigError, match="PILOT requires seed_space"):
         validate_ext1b_config(pilot_with_formal_seed)
 

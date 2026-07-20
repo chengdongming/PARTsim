@@ -27,6 +27,8 @@ screening:
     max_task_util: 0.8
     wcet_rounding: compensated
     actual_utilization_tolerance_total: 0.01
+    workload_contract_version: REAL_TIME_TASK_WORKLOAD_CONTRACT_V2
+    workload_candidates: [bzip2, control, decrypt, encrypt, hash]
 
 timeout:
   initial_seconds: 60
