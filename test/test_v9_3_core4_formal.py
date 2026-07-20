@@ -11,6 +11,10 @@ import pytest
 
 from experiments.v9_3.config import load_config
 from experiments.v9_3.core4_sensitivity import Core4SensitivityRunner
+from experiments.v9_3.formal_authorization import (
+    FORMAL_PARAMETER_STATUS,
+    FormalAuthorizationError,
+)
 from experiments.v9_3.monotonicity import service_curve_relation
 
 
@@ -21,6 +25,7 @@ SMOKE = ROOT / "configs/v9_3_core4_smoke.yaml"
 
 def test_formal_parameter_and_aggregate_contract():
     config = load_config(FORMAL, expected_core="CORE-4")
+    assert config["parameter_status"] == FORMAL_PARAMETER_STATUS
     assert config["platform"] == {"cores": [4], "task_count": [10]}
     assert config["grid"]["utilization_points"] == [
         "3/10", "2/5", "1/2", "3/5", "7/10",
@@ -62,17 +67,19 @@ def test_formal_parameter_and_aggregate_contract():
     }
 
 
-@pytest.mark.parametrize(
-    ("source", "expected_formal"),
-    ((FORMAL, True), (SMOKE, False)),
-)
-def test_run_metadata_distinguishes_formal_and_smoke_profiles(
-    tmp_path, source, expected_formal
-):
-    config = deepcopy(load_config(source, expected_core="CORE-4"))
-    config["execution"]["output_root"] = str(
-        tmp_path / ("formal" if expected_formal else "smoke")
-    )
+def test_formal_profile_fails_closed_before_creating_output(tmp_path):
+    config = deepcopy(load_config(FORMAL, expected_core="CORE-4"))
+    config["execution"]["output_root"] = str(tmp_path / "formal")
+    config["execution"]["taskset_store"] = str(tmp_path / "store")
+    runner = Core4SensitivityRunner(config)
+    with pytest.raises(FormalAuthorizationError, match="formal-authorization"):
+        runner._initialize(resume=False)
+    assert not runner.root.exists()
+
+
+def test_smoke_metadata_remains_explicitly_nonformal(tmp_path):
+    config = deepcopy(load_config(SMOKE, expected_core="CORE-4"))
+    config["execution"]["output_root"] = str(tmp_path / "smoke")
     config["execution"]["taskset_store"] = str(tmp_path / "store")
     runner = Core4SensitivityRunner(config)
 
@@ -80,7 +87,8 @@ def test_run_metadata_distinguishes_formal_and_smoke_profiles(
     metadata = json.loads(
         (runner.root / "run_metadata.json").read_text(encoding="utf-8")
     )
-    assert metadata["formal_large_scale_run"] is expected_formal
+    assert metadata["formal_large_scale_run"] is False
+    assert metadata["formal_authorization_id"] is None
     assert metadata["finite_sample_consistency_check_only"] is True
 
     # The same profile-specific flags are part of the fail-closed resume

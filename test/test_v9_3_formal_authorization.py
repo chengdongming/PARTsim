@@ -31,6 +31,7 @@ def _authorization_fixture(tmp_path, monkeypatch, core_name="CORE-1"):
         lambda project_root: dict(REPOSITORY_IDENTITY),
     )
     config = make_config(tmp_path, core_name)
+    config["parameter_status"] = authorization.FORMAL_PARAMETER_STATUS
     store = tmp_path / "store"
     store.mkdir(parents=True, exist_ok=True)
     (store / "pairing_manifest.json").write_text(
@@ -193,6 +194,7 @@ def test_formal_authorization_rejects_cross_core_reuse(
         tmp_path, monkeypatch, authorized_core,
     )
     runtime = make_config(tmp_path / "runtime", runtime_core)
+    runtime["parameter_status"] = authorization.FORMAL_PARAMETER_STATUS
     runtime["execution"]["taskset_store"] = config["execution"]["taskset_store"]
     with pytest.raises(
         authorization.FormalAuthorizationError,

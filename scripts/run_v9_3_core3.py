@@ -24,9 +24,16 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--list-cells", action="store_true")
     parser.add_argument("--preflight", action="store_true")
+    parser.add_argument("--formal-authorization", type=Path)
+    parser.add_argument("--source-freeze-config", type=Path)
     args = parser.parse_args()
     config = load_config(args.config, expected_core="CORE-3")
-    runner = Core3PairingRunner(config)
+    runner = Core3PairingRunner(
+        config,
+        authorization_path=args.formal_authorization,
+        source_config_path=args.source_freeze_config,
+        prepared_config_path=args.config,
+    )
     if args.preflight:
         report = runner.energy_preflight()
         print(json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2))
