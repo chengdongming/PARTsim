@@ -88,6 +88,12 @@ _GENERAL_BLOCK_ERROR_PREFIXES = (
 _CANDIDATE_ERROR_PREFIXES = (
     "candidate_wait_", "multiple_sync_batch_candidate_wait_events",
 )
+_IRREVERSIBLE_LIFECYCLE_COMPONENTS = ("completed", "missed", "killed")
+_IRREVERSIBLE_LIFECYCLE_EVENTS = {
+    "end_instance": "completed",
+    "dline_miss": "missed",
+    "kill": "killed",
+}
 
 
 class B2BatchAuditError(trace.B2BatchTraceError):
@@ -191,6 +197,127 @@ def _lifecycle_before_events(
     return snapshots
 
 
+def _irreversible_lifecycle_before_ticks(
+    events: Sequence[Mapping[str, Any]], target_ticks: Sequence[Any],
+) -> Dict[int, Dict[str, list[str]]]:
+    targets = sorted({
+        trace._integer(value, "strict-before target tick")
+        for value in target_ticks
+    })
+    changes: Dict[int, Dict[str, set[str]]] = {}
+    for position, event in enumerate(events):
+        event_tick = trace._integer(event.get("time"), f"event {position} time")
+        component = _IRREVERSIBLE_LIFECYCLE_EVENTS.get(event.get("event_type"))
+        if component is None:
+            continue
+        identifier = _job_identity(event)
+        if identifier is None:
+            raise B2BatchAuditError(
+                f"event {position} has invalid irreversible lifecycle identity"
+            )
+        changes.setdefault(event_tick, {
+            key: set() for key in _IRREVERSIBLE_LIFECYCLE_COMPONENTS
+        })[component].add(identifier)
+
+    history = {
+        key: set() for key in _IRREVERSIBLE_LIFECYCLE_COMPONENTS
+    }
+    result: Dict[int, Dict[str, list[str]]] = {}
+    change_ticks = sorted(changes)
+    change_index = 0
+    for target in targets:
+        while (
+            change_index < len(change_ticks)
+            and change_ticks[change_index] < target
+        ):
+            for component in _IRREVERSIBLE_LIFECYCLE_COMPONENTS:
+                history[component].update(
+                    changes[change_ticks[change_index]][component]
+                )
+            change_index += 1
+        result[target] = {
+            component: sorted(history[component])
+            for component in _IRREVERSIBLE_LIFECYCLE_COMPONENTS
+        }
+    return result
+
+
+def _irreversible_lifecycle_before_tick(
+    events: Sequence[Mapping[str, Any]], target_tick: Any,
+) -> Dict[str, list[str]]:
+    """Return irreversible lifecycle history strictly before ``target_tick``.
+
+    Events at the target tick are excluded because completion, miss, kill, or
+    deschedule events may precede a scheduler call within that tick.  Only the
+    deterministic ``completed``, ``missed``, and ``killed`` histories prove
+    prior trajectory divergence: those histories are irreversible and are
+    already part of the complete pre-decision fingerprint.  ``running`` can
+    change again within the tick, while a ``released`` mismatch may instead
+    signal ordering or trace-evidence damage, so neither is sufficient proof.
+    Callers must also prove trace coverage before treating a history difference
+    as non-applicability; divergence without coverage remains incomplete.
+    """
+
+    tick = trace._integer(target_tick, "strict-before target tick")
+    return _irreversible_lifecycle_before_ticks(events, [tick])[tick]
+
+
+def _validated_irreversible_lifecycle(
+    value: Any, label: str,
+) -> Dict[str, list[str]]:
+    if not isinstance(value, dict) or set(value) != set(
+        _IRREVERSIBLE_LIFECYCLE_COMPONENTS
+    ):
+        raise B2BatchAuditError(f"{label} has invalid lifecycle components")
+    result: Dict[str, list[str]] = {}
+    for component in _IRREVERSIBLE_LIFECYCLE_COMPONENTS:
+        identifiers = value.get(component)
+        if (
+            not isinstance(identifiers, list)
+            or any(not isinstance(identifier, str) or not identifier
+                   for identifier in identifiers)
+            or identifiers != sorted(set(identifiers))
+        ):
+            raise B2BatchAuditError(
+                f"{label} has invalid {component} lifecycle history"
+            )
+        result[component] = list(identifiers)
+    return result
+
+
+def _trace_covers_tick(document: Mapping[str, Any], tick: Any) -> bool:
+    """Prove coverage from the valid schema-v2 observed end tick.
+
+    Malformed, boolean, negative, non-integral, or non-finite values raise;
+    arbitrary later business events are deliberately not coverage evidence.
+    """
+
+    try:
+        target = trace._integer(tick, "control target tick")
+        observed_end = trace._integer(
+            document.get("observed_simulation_end_ms"),
+            "observed_simulation_end_ms",
+        )
+    except trace.B2BatchTraceError as exc:
+        raise B2BatchAuditError(str(exc)) from exc
+    return observed_end >= target
+
+
+def _incomplete_missing_decision_control(
+    common: Mapping[str, Any], error: str, *, covers_tick: bool | None,
+    **evidence: Any,
+) -> Dict[str, Any]:
+    return {
+        **common,
+        "control_status": CONTROL_STATUS_EVIDENCE_INCOMPLETE,
+        "control_passed": False,
+        "control_errors": [error],
+        "block_state_fingerprint": None,
+        "block_trace_covers_tick": covers_tick,
+        **evidence,
+    }
+
+
 def _canonical_number(value: Any) -> str:
     number = trace._finite(value, "state fingerprint numeric field")
     return format(number, ".17g")
@@ -279,10 +406,14 @@ def audit_asap_sync_document(
     base_rows = trace.audit_asap_sync_document(
         normalized, processors=processors, request_id=request_id, pair_id=pair_id,
     )
+    strict_before_by_tick = _irreversible_lifecycle_before_ticks(
+        events, [base["tick"] for base in base_rows],
+    )
     rows: list[Dict[str, Any]] = []
     for base in base_rows:
         position = base["evidence_event_ids"]["scheduler_decision"][0]
         event = events[position]
+        tick = trace._integer(event.get("time"), f"event {position} time")
         errors = list(base.get("classification_errors", []))
         general_block_errors = [
             error for error in errors
@@ -387,6 +518,9 @@ def audit_asap_sync_document(
                 None if material is None else _fingerprint(material)
             ),
             "predecision_state_material": material,
+            "strict_before_irreversible_lifecycle": deepcopy(
+                strict_before_by_tick[tick]
+            ),
         })
         rows.append(row)
     return rows
@@ -417,7 +551,7 @@ def audit_asap_block_pair_control(
     block_document: Mapping[str, Any], *, processors: int,
     expected_min_prefix_length: int,
 ) -> list[Dict[str, Any]]:
-    """Evaluate BLOCK only when the complete pre-decision state matches."""
+    """Evaluate BLOCK only when paired evidence supports comparability."""
 
     normalized = _normalize_exact_energy(block_document)
     events = trace._validate_document(normalized, "gpfp_asap_block")
@@ -427,7 +561,7 @@ def audit_asap_block_pair_control(
     for sync in sync_rows:
         if sync.get("classified_state") not in ATOMIC_WAIT_STATES:
             continue
-        tick = int(sync["tick"])
+        tick = trace._integer(sync.get("tick"), "SYNC control tick")
         position = positions.get(tick)
         common = {
             "pair_id": sync.get("pair_id", "UNAVAILABLE"),
@@ -435,13 +569,92 @@ def audit_asap_block_pair_control(
             "sync_state_fingerprint": sync.get("predecision_state_fingerprint"),
         }
         if position is None:
-            controls.append({
-                **common,
-                "control_status": CONTROL_STATUS_EVIDENCE_INCOMPLETE,
-                "control_passed": False,
-                "control_errors": ["missing_asap_block_decision"],
-                "block_state_fingerprint": None,
-            })
+            try:
+                block_trace_covers_tick = _trace_covers_tick(normalized, tick)
+            except trace.B2BatchTraceError:
+                controls.append(_incomplete_missing_decision_control(
+                    common, "invalid_block_trace_coverage", covers_tick=None,
+                ))
+                continue
+            if not block_trace_covers_tick:
+                controls.append(_incomplete_missing_decision_control(
+                    common, "block_trace_does_not_cover_tick",
+                    covers_tick=False,
+                ))
+                continue
+            if sync.get("taskset_semantic_hash") != normalized.get(
+                "taskset_semantic_hash"
+            ):
+                controls.append(_incomplete_missing_decision_control(
+                    common, "taskset_semantic_hash_mismatch", covers_tick=True,
+                ))
+                continue
+            sync_predecision = sync.get("predecision_state_material")
+            if not isinstance(sync_predecision, dict):
+                controls.append(_incomplete_missing_decision_control(
+                    common, "missing_sync_predecision_state_material",
+                    covers_tick=True,
+                ))
+                continue
+            sync_processors = sync_predecision.get("processor_count")
+            if (
+                isinstance(sync_processors, bool)
+                or not isinstance(sync_processors, int)
+                or sync_processors != processors
+            ):
+                controls.append(_incomplete_missing_decision_control(
+                    common, "processor_count_mismatch", covers_tick=True,
+                ))
+                continue
+            try:
+                sync_lifecycle = _validated_irreversible_lifecycle(
+                    sync.get("strict_before_irreversible_lifecycle"),
+                    "SYNC strict-before evidence",
+                )
+            except B2BatchAuditError:
+                controls.append(_incomplete_missing_decision_control(
+                    common, "invalid_sync_strict_before_lifecycle_evidence",
+                    covers_tick=True,
+                ))
+                continue
+            try:
+                block_lifecycle = _irreversible_lifecycle_before_tick(
+                    events, tick,
+                )
+            except trace.B2BatchTraceError:
+                controls.append(_incomplete_missing_decision_control(
+                    common, "invalid_block_strict_before_lifecycle_evidence",
+                    covers_tick=True,
+                ))
+                continue
+            differing = sorted(
+                component for component in _IRREVERSIBLE_LIFECYCLE_COMPONENTS
+                if sync_lifecycle[component] != block_lifecycle[component]
+            )
+            lifecycle_evidence = {
+                "sync_strict_before_irreversible_lifecycle": sync_lifecycle,
+                "block_strict_before_irreversible_lifecycle": block_lifecycle,
+            }
+            if differing:
+                controls.append({
+                    **common,
+                    "control_status": CONTROL_STATUS_NOT_APPLICABLE,
+                    "control_passed": None,
+                    "control_errors": [],
+                    "block_state_fingerprint": None,
+                    "block_trace_covers_tick": True,
+                    "not_applicable_reason": "prior_trajectory_divergence",
+                    "incomparable_state_components": differing,
+                    **lifecycle_evidence,
+                })
+                continue
+            controls.append(_incomplete_missing_decision_control(
+                common,
+                "missing_asap_block_decision_without_proven_divergence",
+                covers_tick=True,
+                incomparable_state_components=[],
+                **lifecycle_evidence,
+            ))
             continue
         block_material = _predecision_material(
             normalized, events, snapshots, position, processors=processors,
