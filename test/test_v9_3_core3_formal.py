@@ -9,6 +9,7 @@ import pytest
 
 from experiments.v9_3.cell_model import expand_cells
 from experiments.v9_3.config import config_hash, load_config
+from experiments.v9_3.formal_authorization import FORMAL_PARAMETER_STATUS
 from experiments.v9_3.core3_pairing import (
     Core3PairingRunner,
     _observation_comparison_eligibility,
@@ -19,8 +20,8 @@ from experiments.v9_3.simulation_result import SimulationResult, SimulationStatu
 
 
 ROOT = Path(__file__).resolve().parents[1]
-B20 = ROOT / "configs/v9_3_core3_formal_b20.yaml"
-B100 = ROOT / "configs/v9_3_core3_formal_b100.yaml"
+B20 = ROOT / "configs/v9_3_core3_formal_b20_r2.yaml"
+B100 = ROOT / "configs/v9_3_core3_formal_b100_r2.yaml"
 
 
 @pytest.fixture(params=[B20, B100])
@@ -29,6 +30,7 @@ def formal_config(request):
 
 
 def test_formal_parameter_contract(formal_config):
+    assert formal_config["parameter_status"] == FORMAL_PARAMETER_STATUS
     assert formal_config["platform"] == {"cores": [4], "task_count": [10]}
     assert formal_config["grid"]["utilization_points"] == [
         "1/10", "1/5", "3/10", "2/5", "1/2", "3/5", "7/10", "4/5",

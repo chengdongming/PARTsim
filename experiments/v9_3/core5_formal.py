@@ -12,7 +12,7 @@ import random
 import resource
 import statistics
 import time
-from typing import Any, Dict, Mapping, Sequence
+from typing import Any, Dict, Mapping, Optional, Sequence
 
 from .config import (
     ConfigError, canonical_json, config_hash, domain_hash, dump_config,
@@ -28,6 +28,11 @@ from .core5_contract import (
 from .core5_scalability import ResourceExecutionEngine
 from .core5_terminal import (
     Core5TerminalClass, classify_core5_terminal, truth,
+)
+from .formal_authorization import (
+    FormalAuthorizationError,
+    revalidate_authorization_seal,
+    verify_authorization,
 )
 from .resource_measurement import RESOURCE_OBSERVATION_COLUMNS
 from .result_writer import (
@@ -842,13 +847,24 @@ class ExactTimeScaleStoreView:
 
 
 class Core5FormalRunner:
-    def __init__(self, config: Mapping[str, Any]) -> None:
+    def __init__(
+        self,
+        config: Mapping[str, Any],
+        *,
+        authorization_path: Optional[Path] = None,
+        source_config_path: Optional[Path] = None,
+        prepared_config_path: Optional[Path] = None,
+    ) -> None:
         self.config = dict(config)
         self.profile = self.config["scalability"].get("profile")
         if self.profile not in {CORE5A_PROFILE, CORE5B_PROFILE}:
             raise ConfigError("CORE-5 formal runner requires a formal profile")
         self.root = Path(self.config["execution"]["output_root"])
         self.identity = config_hash(self.config)
+        self._authorization_path = authorization_path
+        self._source_config_path = source_config_path
+        self._prepared_config_path = prepared_config_path
+        self._authorization_seal: Optional[Dict[str, Any]] = None
 
     def describe(self, *, max_cells: int | None = None) -> Dict[str, Any]:
         if self.profile == CORE5A_PROFILE:
@@ -912,6 +928,14 @@ class Core5FormalRunner:
         })
 
     def _initialize(self, *, resume: bool) -> tuple[list[str], int, str]:
+        seal = verify_authorization(
+            self.config,
+            authorization_path=self._authorization_path,
+            source_freeze_config=self._source_config_path,
+            prepared_config=self._prepared_config_path,
+            project_root=Path(__file__).resolve().parents[2],
+        )
+        self._authorization_seal = dict(seal)
         metadata_path = self.root / "run_metadata.json"
         if metadata_path.is_file():
             if not resume:
@@ -930,14 +954,6 @@ class Core5FormalRunner:
                 self.root / "run_config.yaml", expected_core="CORE-5"
             )
             plan = self.describe()
-            expected_seal = {
-                "schema": "ASAP_BLOCK_V9_3_CORE5_FORMAL_AUTHORIZATION_SEAL_V1",
-                "profile": self.profile,
-                "config_hash": self.identity,
-                "plan_hash": plan["plan_hash"],
-                "output_root": str(self.root),
-                "taskset_store": self.config["execution"]["taskset_store"],
-            }
             completed_ids = checkpoint.get("completed_run_ids")
             if (
                 metadata.get("schema") != CORE5_FORMAL_RUN_SCHEMA
@@ -954,7 +970,9 @@ class Core5FormalRunner:
                 or checkpoint.get("config_hash") != self.identity
                 or checkpoint.get("plan_hash") != plan["plan_hash"]
                 or config_hash(persisted) != self.identity
-                or seal != expected_seal
+                or seal != self._authorization_seal
+                or metadata.get("formal_authorization_id")
+                != seal.get("authorization_id")
                 or not isinstance(completed_ids, list)
                 or any(
                     not isinstance(value, str) or not value
@@ -980,14 +998,6 @@ class Core5FormalRunner:
                 "formal CORE-5 output has artifacts without metadata"
             )
         plan = self.describe()
-        seal = {
-            "schema": "ASAP_BLOCK_V9_3_CORE5_FORMAL_AUTHORIZATION_SEAL_V1",
-            "profile": self.profile,
-            "config_hash": self.identity,
-            "plan_hash": plan["plan_hash"],
-            "output_root": str(self.root),
-            "taskset_store": self.config["execution"]["taskset_store"],
-        }
         atomic_write_json(self.root / "formal_authorization_seal.json", seal)
         atomic_write_json(metadata_path, {
             "schema": CORE5_FORMAL_RUN_SCHEMA,
@@ -995,6 +1005,7 @@ class Core5FormalRunner:
             "config_hash": self.identity,
             "plan_hash": plan["plan_hash"],
             "formal_large_scale_run": True,
+            "formal_authorization_id": seal["authorization_id"],
             "authorization_seal_schema": seal["schema"],
         })
         dump_config(self.config, self.root / "run_config.yaml")
@@ -1013,6 +1024,12 @@ class Core5FormalRunner:
         from copy import deepcopy
 
         child = deepcopy(self.config)
+        child.pop("parameter_status", None)
+        child["scalability"]["profile"] = "bounded-smoke-v2"
+        child["parent_formal_authorization_id"] = (
+            self._authorization_seal["authorization_id"]
+            if self._authorization_seal else None
+        )
         # Worker/repetition are operational dimensions; this experiment ID is
         # deliberately stable so mathematical analysis IDs remain identical.
         child["experiment_id"] = self.config["experiment_id"]
@@ -1587,18 +1604,15 @@ def analyze_core5_formal_artifacts(root: Path | str) -> Mapping[str, Any]:
         ) from exc
     runner = Core5FormalRunner(config)
     plan = runner.describe()
-    expected_seal = {
-        "schema": "ASAP_BLOCK_V9_3_CORE5_FORMAL_AUTHORIZATION_SEAL_V1",
-        "profile": profile,
-        "config_hash": config_hash(config),
-        "plan_hash": plan["plan_hash"],
-        "output_root": config["execution"]["output_root"],
-        "taskset_store": config["execution"]["taskset_store"],
-    }
-    if seal != expected_seal:
+    try:
+        revalidate_authorization_seal(
+            config, seal, project_root=Path(__file__).resolve().parents[2]
+        )
+    except FormalAuthorizationError as exc:
         raise Core5FormalContractError(
             "formal analyzer rejects authorization-seal mismatch"
-        )
+        ) from exc
+    runner._authorization_seal = dict(seal)
     if (
         metadata.get("profile") != profile
         or checkpoint.get("profile") != profile
@@ -1607,6 +1621,8 @@ def analyze_core5_formal_artifacts(root: Path | str) -> Mapping[str, Any]:
         or checkpoint.get("config_hash") != config_hash(config)
         or metadata.get("plan_hash") != plan["plan_hash"]
         or checkpoint.get("plan_hash") != plan["plan_hash"]
+        or metadata.get("formal_authorization_id")
+        != seal.get("authorization_id")
     ):
         raise Core5FormalContractError("CORE-5 formal profile/config/plan mismatch")
     if checkpoint.get("phase") != "COMPLETED":
