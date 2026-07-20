@@ -41,6 +41,11 @@ SEED_SPACES = {
     "EXT1B2_SYNC_CALIBRATION_PILOT_WORKLOAD_CONTRACT_V2",
     "EXT1B3_TIMING_CALIBRATION_PILOT_WORKLOAD_CONTRACT_V2",
     "EXT1B1_FORMAL_R1_WORKLOAD_CONTRACT_V2",
+    "EXT1B2_FORMAL_MECHANISM_R1_WORKLOAD_CONTRACT_V2",
+    (
+        "EXT1B3_FORMAL_MECHANISM_R1_WORKLOAD_CONTRACT_V2_"
+        "CAPACITY_CONTRACT_V1"
+    ),
 }
 
 B2_SCHEDULER_IDS = (
@@ -121,6 +126,268 @@ TIMING_CELL_KEYS = {
 STATISTICS_KEYS = {"bootstrap_seed", "bootstrap_resamples", "top_m"}
 
 
+def _formal_common_frozen() -> Dict[str, Any]:
+    """Return the shared normalized, result-independent formal contract."""
+
+    return {
+        "platform": {"cores": [4], "task_count": [10]},
+        "generation": {
+            "deadline_mode": "constrained",
+            "constrained_deadline": {
+                "d_over_t_values": [],
+                "d_over_t_min": "0",
+                "d_over_t_max": "1",
+                "distribution": "generator_uniform_integer",
+            },
+            "period_min": 40,
+            "period_max": 200,
+            "wcet_rounding": "compensated",
+            "utilization_tolerance": "1/100",
+            "min_task_util": "1/100",
+            "max_task_util": "4/5",
+            "priority_policy": "RM",
+            "power_mode": "generator_default_heterogeneous",
+            "generator_timeout_seconds": 120,
+            "workload_candidates": [
+                "bzip2", "control", "decrypt", "encrypt", "hash",
+            ],
+            "workload_contract": {
+                "version": "REAL_TIME_TASK_WORKLOAD_CONTRACT_V2",
+                "idle_system_state_reserved": True,
+                "ordered_candidates": [
+                    "bzip2", "control", "decrypt", "encrypt", "hash",
+                ],
+                "candidate_identity": (
+                    "482ea49bc149a1a8563ed0cd9bc2be0506d44026fd01f1b65316743b7c12fa75"
+                ),
+                "power_model": [
+                    {"workload": "bzip2", "energy_per_tick": "279/500000"},
+                    {
+                        "workload": "control",
+                        "energy_per_tick": (
+                            "9300000000000001/200000000000000000000"
+                        ),
+                    },
+                    {"workload": "decrypt", "energy_per_tick": "279/400000"},
+                    {"workload": "encrypt", "energy_per_tick": "279/400000"},
+                    {
+                        "workload": "hash",
+                        "energy_per_tick": (
+                            "9300000000000001/25000000000000000000"
+                        ),
+                    },
+                ],
+                "power_model_identity": (
+                    "5624a208979f3bd453aec86a4b85800f26d7c04e30a9c1597abefd82a2a63f59"
+                ),
+                "contract_identity": (
+                    "ab37bb9ecb2b7d45ed4d3106dae65f3abb549c2e5b4932a56c6d7d52733c71a9"
+                ),
+            },
+        },
+        "energy": {
+            "initial_energy_values": ["0"],
+            "simulation_initial_battery": "1",
+            "exact_rational_encoding": "canonical_fraction",
+            "service_curve": {
+                "id": "ext1b-generation-service",
+                "system_template": "system_config_unified_template.yml",
+                "horizon": 1000,
+            },
+            "battery_mode": "finite",
+            "battery_capacity": "100",
+        },
+        "rta": {
+            "methods": ["CW_THETA_CW", "LOC_THETA_LOC"],
+            "timeout_seconds": 2,
+            "retry_timeout_seconds": 4,
+            "retry_policy": "timeout_once",
+            "numerical_mode": "EXACT_RATIONAL",
+        },
+        "simulation": {
+            "horizon": 400,
+            "warmup": 0,
+            "minimum_jobs_per_task": 2,
+            "maximum_horizon": 400,
+            "horizon_extension_policy": "none",
+            "deadline_miss_fail_fast": True,
+            "timeout_seconds": 30,
+            "trace_mode": "semantic",
+            "trace_on_failure": True,
+            "retain_trace": True,
+            "simulator_bin": "./build/rtsim/rtsim",
+        },
+        "plots": {},
+    }
+
+
+def _formal_profile(
+    profile_id: str,
+    *,
+    experiment_id: str,
+    scheduler_ids: tuple[str, ...],
+    required_outputs: tuple[str, ...],
+    base_seed: int,
+    output_root: str,
+    taskset_store: str,
+    bootstrap_seed: int,
+    scenario: Mapping[str, Any],
+) -> Dict[str, Any]:
+    frozen = _formal_common_frozen()
+    # Scenario is intentionally first so cross-profile identity misuse reports
+    # the scientific mismatch before secondary scheduler/output differences.
+    frozen = {
+        "scenario": deepcopy(dict(scenario)),
+        "scheduler_ids": list(scheduler_ids),
+        "required_outputs": list(required_outputs),
+        "experiment_id": experiment_id,
+        "core": "CORE-3",
+        "extension": "EXT-1B",
+        **frozen,
+        "grid": {
+            "utilization_points": ["1/5", "2/5"],
+            "tasksets_per_cell": 200,
+            "base_seed": base_seed,
+            "seed_mode": "generation_dimensions",
+            "taskset_index_start": 0,
+        },
+        "execution": {
+            "worker_count": 1,
+            "checkpoint_every": 5,
+            "output_root": output_root,
+            "taskset_store": taskset_store,
+            "resume": False,
+            "fail_fast_on_p0": True,
+            "preserve_attempt_history": True,
+        },
+        "statistics": {
+            "bootstrap_seed": bootstrap_seed,
+            "bootstrap_resamples": 2000,
+            "top_m": 4,
+        },
+    }
+    return {"profile_id": profile_id, "frozen": frozen}
+
+
+_B1_FORMAL_SCENARIO = {
+    "kind": "BYPASS_STRESS",
+    "subtype": "B1",
+    "structural_retry_limit": 16,
+    "activation_policy": "REPORT_STRUCTURAL_AND_RUNTIME",
+    "priority_power_profile": "HIGH_PRIORITY_HIGH_POWER",
+    "affordable_prefix_length": 1,
+    "deadline_ratio_min": "0",
+    "deadline_ratio_max": "1",
+    "nominal_energy_supply_ratios": ["1/4", "1/2", "3/4"],
+    "initial_energy_policy": "STRUCTURAL_MIDPOINT",
+    "release_pattern": "SYNCHRONOUS",
+    "harvest_phase_policy": "PEAK_SYNTHETIC",
+    "interpolation_rho": "1/2",
+    "timing_cells": [],
+}
+_B2_FORMAL_SCENARIO = {
+    **_B1_FORMAL_SCENARIO,
+    "kind": "SYNC_BATCH_STRESS",
+    "subtype": "B2",
+}
+_B3_FORMAL_SCENARIO = {
+    "kind": "TIMING_STRESS",
+    "capacity_feasibility_contract": (
+        B3_TASK_CAPACITY_FEASIBILITY_CONTRACT_VERSION
+    ),
+    "subtype": "MULTI_CELL",
+    "structural_retry_limit": 16,
+    "activation_policy": "REPORT_STRUCTURAL_AND_RUNTIME",
+    "priority_power_profile": "ACTUAL_GENERATOR_ORDER",
+    "affordable_prefix_length": 1,
+    "deadline_ratio_min": "1/2",
+    "deadline_ratio_max": "1",
+    "nominal_energy_supply_ratios": ["0", "1/2"],
+    "initial_energy_policy": "TOP_M_AFFORDABLE",
+    "release_pattern": "SYNCHRONOUS",
+    "harvest_phase_policy": "PEAK_SYNTHETIC",
+    "interpolation_rho": "1/2",
+    "timing_cells": [
+        {
+            "id": "positive-slack-energy-available",
+            "subtype": "POSITIVE_SLACK_ENERGY_AVAILABLE",
+            "deadline_ratio_min": "1/2",
+            "deadline_ratio_max": "3/4",
+            "nominal_energy_supply_ratio": "0",
+            "initial_energy_policy": "TOP_M_AFFORDABLE",
+        },
+        {
+            "id": "slack-limited-charging",
+            "subtype": "SLACK_LIMITED_CHARGING",
+            "deadline_ratio_min": "3/4",
+            "deadline_ratio_max": "1",
+            "nominal_energy_supply_ratio": "1/2",
+            "initial_energy_policy": "HALF_TARGET",
+        },
+    ],
+}
+
+
+FORMAL_PROFILE_BY_SEED_SPACE = {
+    "EXT1B1_FORMAL_R1_WORKLOAD_CONTRACT_V2": _formal_profile(
+        "B1",
+        experiment_id=(
+            "asap-block-v9.3-ext1b1-formal-r1-workload-contract-v2"
+        ),
+        scheduler_ids=("gpfp_asap_block", "gpfp_asap_nonblock"),
+        required_outputs=B1_REQUIRED_OUTPUTS,
+        base_seed=951201,
+        output_root="artifacts/v9_3_ext1b1_formal_r1_workload_contract_v2",
+        taskset_store=(
+            "artifacts/v9_3_ext1b1_taskset_store_formal_r1_workload_contract_v2"
+        ),
+        bootstrap_seed=9312901,
+        scenario=_B1_FORMAL_SCENARIO,
+    ),
+    "EXT1B2_FORMAL_MECHANISM_R1_WORKLOAD_CONTRACT_V2": _formal_profile(
+        "B2",
+        experiment_id=(
+            "asap-block-v9.3-ext1b2-sync-formal-r1-workload-contract-v2"
+        ),
+        scheduler_ids=B2_SCHEDULER_IDS,
+        required_outputs=B2_REQUIRED_OUTPUTS,
+        base_seed=971201,
+        output_root=(
+            "artifacts/v9_3_ext1b2_sync_formal_r1_workload_contract_v2"
+        ),
+        taskset_store=(
+            "artifacts/v9_3_ext1b2_taskset_store_sync_formal_r1_"
+            "workload_contract_v2"
+        ),
+        bootstrap_seed=9712902,
+        scenario=_B2_FORMAL_SCENARIO,
+    ),
+    (
+        "EXT1B3_FORMAL_MECHANISM_R1_WORKLOAD_CONTRACT_V2_"
+        "CAPACITY_CONTRACT_V1"
+    ): _formal_profile(
+        "B3",
+        experiment_id=(
+            "asap-block-v9.3-ext1b3-timing-formal-r1-workload-contract-v2-"
+            "capacity-contract-v1"
+        ),
+        scheduler_ids=B3_PRIMARY_SCHEDULER_IDS,
+        required_outputs=B3_REQUIRED_OUTPUTS,
+        base_seed=971301,
+        output_root=(
+            "artifacts/v9_3_ext1b3_timing_formal_r1_workload_contract_v2_"
+            "capacity_contract_v1"
+        ),
+        taskset_store=(
+            "artifacts/v9_3_ext1b3_taskset_store_timing_formal_r1_"
+            "workload_contract_v2_capacity_contract_v1"
+        ),
+        bootstrap_seed=9712903,
+        scenario=_B3_FORMAL_SCENARIO,
+    ),
+}
+
+
 def _reject_unknown(value: Mapping[str, Any], allowed: set[str], label: str) -> None:
     unknown = set(value) - allowed
     if unknown:
@@ -132,6 +399,57 @@ def _mapping(parent: Mapping[str, Any], key: str) -> Dict[str, Any]:
     if not isinstance(value, dict):
         raise ConfigError(f"{key} must be a mapping")
     return value
+
+
+def _first_mismatch_path(observed: Any, expected: Any, path: str) -> str | None:
+    if isinstance(expected, Mapping):
+        if not isinstance(observed, Mapping):
+            return path
+        if set(observed) != set(expected):
+            missing = sorted(set(expected) - set(observed))
+            extra = sorted(set(observed) - set(expected))
+            if missing:
+                return f"{path}.{missing[0]}"
+            if extra:
+                return f"{path}.{extra[0]}"
+        for key, expected_value in expected.items():
+            mismatch = _first_mismatch_path(
+                observed[key], expected_value, f"{path}.{key}",
+            )
+            if mismatch is not None:
+                return mismatch
+        return None
+    if isinstance(expected, list):
+        if not isinstance(observed, list) or len(observed) != len(expected):
+            return path
+        for index, expected_value in enumerate(expected):
+            mismatch = _first_mismatch_path(
+                observed[index], expected_value, f"{path}[{index}]",
+            )
+            if mismatch is not None:
+                return mismatch
+        return None
+    return None if observed == expected else path
+
+
+def _validate_formal_profile(config: Mapping[str, Any]) -> None:
+    seed_space = config.get("seed_space")
+    profile = FORMAL_PROFILE_BY_SEED_SPACE.get(seed_space)
+    if profile is None:
+        raise ConfigError(
+            "FORMAL requires seed_space in "
+            f"{sorted(FORMAL_PROFILE_BY_SEED_SPACE)}"
+        )
+    profile_id = profile["profile_id"]
+    for field, expected in profile["frozen"].items():
+        mismatch = _first_mismatch_path(config.get(field), expected, field)
+        if mismatch is not None:
+            if mismatch in {"simulation.horizon", "simulation.maximum_horizon"}:
+                mismatch = "simulation.horizon and maximum_horizon"
+            raise ConfigError(
+                f"EXT-1B FORMAL profile {profile_id} {mismatch} "
+                "does not match its frozen value"
+            )
 
 
 def _positive_int(value: Any, label: str) -> int:
@@ -253,7 +571,7 @@ def validate_ext1b_config(raw: Mapping[str, Any]) -> Dict[str, Any]:
             "EXT1B2_SYNC_CALIBRATION_PILOT_WORKLOAD_CONTRACT_V2",
             "EXT1B3_TIMING_CALIBRATION_PILOT_WORKLOAD_CONTRACT_V2",
         },
-        "FORMAL": {"EXT1B1_FORMAL_R1_WORKLOAD_CONTRACT_V2"},
+        "FORMAL": set(FORMAL_PROFILE_BY_SEED_SPACE),
     }[status]
     if seed_space not in allowed_seed_spaces:
         raise ConfigError(
@@ -417,36 +735,7 @@ def validate_ext1b_config(raw: Mapping[str, Any]) -> Dict[str, Any]:
     normalized["scenario"] = scenario
     normalized["statistics"] = stats
     if status == "FORMAL":
-        expected_schedulers = [
-            "gpfp_asap_block",
-            "gpfp_asap_nonblock",
-        ]
-        if kind != "BYPASS_STRESS" or scenario.get("subtype") != "B1":
-            raise ConfigError("EXT-1B FORMAL currently requires BYPASS_STRESS subtype B1")
-        if normalized["scheduler_ids"] != expected_schedulers:
-            raise ConfigError(
-                f"EXT-1B1 FORMAL scheduler_ids must equal {expected_schedulers}"
-            )
-        if normalized["grid"]["utilization_points"] != ["1/5", "2/5"]:
-            raise ConfigError(
-                "EXT-1B1 FORMAL utilization_points must equal ['1/5', '2/5']"
-            )
-        if scenario["nominal_energy_supply_ratios"] != ["1/4", "1/2", "3/4"]:
-            raise ConfigError(
-                "EXT-1B1 FORMAL nominal_energy_supply_ratios must equal "
-                "['1/4', '1/2', '3/4']"
-            )
-        if normalized["grid"]["tasksets_per_cell"] != 200:
-            raise ConfigError("EXT-1B1 FORMAL tasksets_per_cell must equal 200")
-        if normalized["grid"]["base_seed"] != 951201:
-            raise ConfigError("EXT-1B1 FORMAL base_seed must equal 951201")
-        if normalized["execution"]["worker_count"] != 1:
-            raise ConfigError("EXT-1B1 FORMAL worker_count must equal 1")
-        simulation = normalized["simulation"]
-        if simulation["horizon"] != 400 or simulation["maximum_horizon"] != 400:
-            raise ConfigError(
-                "EXT-1B1 FORMAL horizon and maximum_horizon must both equal 400"
-            )
+        _validate_formal_profile(normalized)
     return normalized
 
 
