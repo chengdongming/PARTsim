@@ -69,6 +69,23 @@ def simulation_identity(
     )
 
 
+def shared_e0_simulation_identity(
+    generation_id: str,
+    taskset_hash: str,
+    simulation_config: Mapping[str, Any],
+) -> str:
+    """Identify one simulation whose trace is projected onto several RTA E0s."""
+
+    return domain_hash(
+        "ASAP_BLOCK:V9.3:CORE3_SHARED_E0_SIMULATION:v1",
+        {
+            "generation_id": generation_id,
+            "taskset_hash": taskset_hash,
+            "simulation": simulation_config,
+        },
+    )
+
+
 def _taskset_document(task_payload: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
     tasks = []
     expected_ranks = list(range(len(task_payload)))
