@@ -13,6 +13,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from experiments.v9_3.config import load_config
+from experiments.v9_3.core5_formal import Core5FormalRunner
 from experiments.v9_3.core5_scalability import Core5ScalabilityRunner
 
 
@@ -26,7 +27,12 @@ def main() -> int:
     parser.add_argument("--max-tasksets", type=int)
     args = parser.parse_args()
     config = load_config(args.config, expected_core="CORE-5")
-    runner = Core5ScalabilityRunner(config)
+    profile = config["scalability"].get("profile", "bounded-smoke-v2")
+    runner = (
+        Core5ScalabilityRunner(config)
+        if profile == "bounded-smoke-v2"
+        else Core5FormalRunner(config)
+    )
     if args.dry_run or args.list_cells:
         description = runner.describe(max_cells=args.max_cells)
         if not args.list_cells:
@@ -37,6 +43,14 @@ def main() -> int:
         resume=args.resume or config["execution"]["resume"],
         max_cells=args.max_cells, max_tasksets=args.max_tasksets,
     )
+    if profile != "bounded-smoke-v2":
+        print(json.dumps({
+            "output_root": config["execution"]["output_root"],
+            "profile": profile,
+            "summary": outcome,
+            "stopped": False,
+        }, ensure_ascii=False, sort_keys=True))
+        return 0
     print(json.dumps({
         "output_root": str(outcome.output_root), "requested": outcome.requested,
         "terminal": outcome.terminal, "stopped": outcome.stopped,

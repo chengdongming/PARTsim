@@ -75,6 +75,10 @@ the config/cell/seed/taskset identities migrate even where the human-readable
 | `v9_3_core1_template.yaml` | `asap-block-v9.3-core1-formal-template` | suffix `-workload-contract-v2` | template was not a result; materialize fresh | future formal contract |
 | `v9_3_core2_template.yaml` | `asap-block-v9.3-core2-formal-template` | suffix `-workload-contract-v2` | same | future formal contract |
 | `v9_3_core3_template.yaml` | `asap-block-v9.3-core3-template` | suffix `-workload-contract-v2` | materialize fresh if authorized | direct generated workload/P |
+| `v9_3_core3_formal_b20.yaml`, `v9_3_core3_formal_b100.yaml` | r1 labels retained | labels and legacy paths retained as audit-only | mandatory workload field permits common-schema inspection, but the energy preflight still rejects both and formal execution remains prohibited | superseded CORE-3 energy tracks |
+| `v9_3_core3_formal_b20_r2.yaml`, `v9_3_core3_formal_b100_r2.yaml` | r2 labels and paths from PR #35 | suffix `-workload-contract-v2`; fresh suffixed roots/stores | only authorized CORE-3 formal entry configs; energy parameters unchanged | workload and energy preflights are independently mandatory |
+| `v9_3_core4_formal.yaml` | `asap-block-v9.3-core4-formal-sustainability-r1` | suffix `-workload-contract-v2` | future run uses a fresh suffixed root/store | post-fork formal sustainability config |
+| `v9_3_core5a_formal_algorithmic.yaml`, `v9_3_core5b_formal_workers.yaml` | r1 formal labels | suffix `-workload-contract-v2` | future runs use distinct fresh suffixed roots/stores | post-fork formal scalability configs |
 | `v9_3_core4_template.yaml` | `asap-block-v9.3-core4-template-not-frozen` | suffix `-workload-contract-v2` | no frozen formal result to rerun | base store for sensitivity children |
 | `v9_3_core5_template.yaml` | `asap-block-v9.3-core5-template-not-frozen` | suffix `-workload-contract-v2` | no frozen formal result to rerun | base store for scalability children |
 | `v9_3_ext1_template.yaml` | `asap-block-v9.3-ext1-template` | suffix `-workload-contract-v2` | materialize fresh if enabled | generated simulation workload |
@@ -193,6 +197,25 @@ B3 continues to preserve `WORKLOAD_NOT_IN_ACTUAL_POWER_MODEL` as a defensive
 scenario rejection. The source generator now prevents idle at origin, so the
 formal timing-calibration plan can materialize 4 cells, 80 paired instances,
 and 240 requests without simulator execution.
+
+## Synchronization with CORE-3 energy preflight
+
+PR #34 was synchronized by ordinary merge with `origin/master` at
+`8b4f9762014fc17b24d6424b3e32ef1ab0accdc1`, including PR #35's
+`ddaa08ad` CORE-3 energy-headroom repair. The only textual conflicts were in
+`experiments/v9_3/config.py` and `experiments/v9_3/taskset_store.py`. The
+resolution composes the mandatory workload/P contract with the real-solar,
+dyadic-scale, service-projection, and runtime no-overflow checks; neither gate
+substitutes for or disables the other.
+
+The merge does not introduce another workload schema or identity version.
+`REAL_TIME_TASK_WORKLOAD_CONTRACT_V2`, frozen taskset V3, semantic domain v3,
+CORE-1/2 pairing V2, and generation/cell/seed/config identity v2 remain the
+current domains. CORE-3 energy preflight retains its independent V1 report
+schema and its PR #35 service identity. Migrating the new formal configs does
+change their normalized config hashes, generation identities, seeds, taskset
+IDs, and artifact paths as required; it does not change the frozen energy
+parameters, real-solar data, horizon, or dyadic rule.
 
 ## Read-only audit
 

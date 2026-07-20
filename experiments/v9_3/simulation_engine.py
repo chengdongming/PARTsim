@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from fractions import Fraction
+import hashlib
 import json
 import math
 import os
 from pathlib import Path
 import shutil
 import subprocess
+import tempfile
 import time
 from typing import Any, Dict, Mapping, Optional, Sequence
 
@@ -32,6 +34,7 @@ from .simulation_result import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SUPPORTED_TRACE_SCHEMA_VERSION = 2
+CORE3_ENERGY_PREFLIGHT_SCHEMA = "ASAP_BLOCK_V9_3_CORE3_ENERGY_PREFLIGHT_V1"
 
 
 class SimulationConfigurationError(RuntimeError):
@@ -64,6 +67,23 @@ def simulation_identity(
             "cell_id": cell_id,
             "taskset_hash": taskset_hash,
             "exact_e0": fraction_text(exact_e0),
+            "simulation": simulation_config,
+        },
+    )
+
+
+def shared_e0_simulation_identity(
+    generation_id: str,
+    taskset_hash: str,
+    simulation_config: Mapping[str, Any],
+) -> str:
+    """Identify one simulation whose trace is projected onto several RTA E0s."""
+
+    return domain_hash(
+        "ASAP_BLOCK:V9.3:CORE3_SHARED_E0_SIMULATION:v1",
+        {
+            "generation_id": generation_id,
+            "taskset_hash": taskset_hash,
             "simulation": simulation_config,
         },
     )
@@ -121,17 +141,50 @@ def _render_taskset_yaml(task_payload: Sequence[Mapping[str, Any]]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def materialize_simulation_inputs(
+def _system_fraction(
+    value: Any,
+    label: str,
+    *,
+    positive: bool = False,
+) -> Fraction:
+    if isinstance(value, bool):
+        raise SimulationConfigurationError(f"{label} must be finite and numeric")
+    try:
+        exact = Fraction(str(value))
+        numeric = float(exact)
+    except (TypeError, ValueError, ZeroDivisionError) as exc:
+        raise SimulationConfigurationError(
+            f"{label} must be finite and numeric"
+        ) from exc
+    if not math.isfinite(numeric) or exact < 0 or (positive and exact <= 0):
+        qualifier = "positive" if positive else "non-negative"
+        raise SimulationConfigurationError(
+            f"{label} must be finite and {qualifier}"
+        )
+    return exact
+
+
+def configured_solar_scale(energy_config: Mapping[str, Any]) -> Fraction:
+    service = energy_config.get("service_curve")
+    if not isinstance(service, Mapping):
+        raise SimulationConfigurationError("energy.service_curve must be a mapping")
+    return _system_fraction(
+        service.get("solar_scale", "1"),
+        "energy.service_curve.solar_scale",
+        positive=True,
+    )
+
+
+def render_system_projection(
     base_system_path: Path,
-    destination: Path,
-    task_payload: Sequence[Mapping[str, Any]],
     *,
     processors: int,
     initial_battery: Fraction,
     battery_capacity: Fraction,
     scheduler_id: str = "gpfp_asap_block",
-) -> tuple[Path, Path]:
-    """Write a scheduler-only projection without changing frozen semantics."""
+    service_curve: Optional[Mapping[str, Any]] = None,
+) -> str:
+    """Return the single side-effect-free system projection used by CORE-3."""
 
     try:
         source_text = base_system_path.read_text(encoding="utf-8")
@@ -140,12 +193,65 @@ def materialize_simulation_inputs(
         raise SimulationConfigurationError(f"cannot load base system: {exc}") from exc
     if not isinstance(system, dict) or not isinstance(system.get("cpu_islands"), list):
         raise SimulationConfigurationError("base system has no CPU island")
+    energy = system.get("energy_management")
+    if not isinstance(energy, dict):
+        raise SimulationConfigurationError("base system has no energy_management mapping")
+    if isinstance(processors, bool) or not isinstance(processors, int) or processors <= 0:
+        raise SimulationConfigurationError("processors must be a positive integer")
+    initial = _system_fraction(initial_battery, "initial battery")
+    capacity = _system_fraction(
+        battery_capacity, "battery capacity", positive=True
+    )
+    if initial > capacity:
+        raise SimulationConfigurationError("initial battery exceeds capacity")
+
+    service = dict(service_curve or {})
+    scale = _system_fraction(
+        service.get("solar_scale", "1"), "solar scale", positive=True
+    )
+    reference_area = _system_fraction(
+        energy.get("pv_area_m2"), "template pv_area_m2", positive=True
+    )
+    expected_reference = service.get("raw_reference_pv_area_m2")
+    if expected_reference is not None:
+        expected = _system_fraction(
+            expected_reference, "raw reference pv_area_m2", positive=True
+        )
+        if expected != reference_area:
+            raise SimulationConfigurationError(
+                "template pv_area_m2 does not match frozen raw reference: "
+                f"template={fraction_text(reference_area)} expected="
+                f"{fraction_text(expected)}"
+            )
+    effective_area = reference_area * scale
+    effective_float = float(effective_area)
+    if not math.isfinite(effective_float) or effective_float <= 0:
+        raise SimulationConfigurationError(
+            "effective pv_area_m2 is not a finite positive runtime value"
+        )
+
     replacements = {
         "numcpus": str(processors),
         "scheduler": scheduler_id,
-        "initial_energy": format(float(initial_battery), ".17g"),
-        "max_energy": format(float(battery_capacity), ".17g"),
+        "initial_energy": format(float(initial), ".17g"),
+        "max_energy": format(float(capacity), ".17g"),
+        "pv_area_m2": format(effective_float, ".17g"),
     }
+    if bool(energy.get("use_real_solar_data", False)):
+        raw_solar_path = energy.get("solar_data_file")
+        if not isinstance(raw_solar_path, str) or not raw_solar_path:
+            raise SimulationConfigurationError(
+                "real-solar system requires solar_data_file"
+            )
+        solar_path = Path(raw_solar_path)
+        if not solar_path.is_absolute():
+            solar_path = (base_system_path.parent / solar_path).resolve()
+        if not solar_path.is_file():
+            raise SimulationConfigurationError(
+                f"solar data file not found: {solar_path}"
+            )
+        replacements["solar_data_file"] = json.dumps(str(solar_path))
+
     seen = {key: 0 for key in replacements}
     speed_parameter_count = 0
     rendered_lines = []
@@ -164,7 +270,6 @@ def materialize_simulation_inputs(
         if matched is None:
             rendered_lines.append(line)
             continue
-        # These four keys occur exactly once in the audited system template.
         indent = line[:len(line) - len(line.lstrip())]
         comment = ""
         if "#" in line:
@@ -178,13 +283,37 @@ def materialize_simulation_inputs(
             "system template replacement counts are invalid: "
             f"{seen}, speed_params={speed_parameter_count}"
         )
+    return "\n".join(rendered_lines) + "\n"
+
+
+def materialize_simulation_inputs(
+    base_system_path: Path,
+    destination: Path,
+    task_payload: Sequence[Mapping[str, Any]],
+    *,
+    processors: int,
+    initial_battery: Fraction,
+    battery_capacity: Fraction,
+    scheduler_id: str = "gpfp_asap_block",
+    service_curve: Optional[Mapping[str, Any]] = None,
+) -> tuple[Path, Path]:
+    """Write a scheduler-only projection without changing frozen semantics."""
+
+    rendered_system = render_system_projection(
+        base_system_path,
+        processors=processors,
+        initial_battery=initial_battery,
+        battery_capacity=battery_capacity,
+        scheduler_id=scheduler_id,
+        service_curve=service_curve,
+    )
 
     destination.mkdir(parents=True, exist_ok=True)
     system_path = destination / "system_config.yaml"
     taskset_path = destination / "taskset.yaml"
     atomic_write_text(
         system_path,
-        "\n".join(rendered_lines) + "\n",
+        rendered_system,
     )
     atomic_write_text(
         taskset_path,
@@ -193,31 +322,306 @@ def materialize_simulation_inputs(
     return system_path, taskset_path
 
 
+def construct_paired_harvest_trace(
+    system_path: Path,
+    horizon_ms: int,
+) -> tuple[Fraction, ...]:
+    """Construct the exact audit view of the production per-tick trace."""
+
+    if isinstance(horizon_ms, bool) or not isinstance(horizon_ms, int) or horizon_ms <= 0:
+        raise SimulationConfigurationError("harvest horizon must be a positive integer")
+    try:
+        system = legacy_rta.load_system_config(str(system_path))
+        raw_trace = legacy_rta._harvest_trace_from_config(system, horizon_ms)
+    except Exception as exc:
+        raise SimulationConfigurationError(
+            f"cannot construct paired simulation harvest trace: {exc}"
+        ) from exc
+    trace = []
+    for index, value in enumerate(raw_trace):
+        try:
+            numeric = float(value)
+            exact = Fraction(str(value))
+        except (TypeError, ValueError, ZeroDivisionError) as exc:
+            raise SimulationConfigurationError(
+                f"harvest trace value {index} is not finite numeric data"
+            ) from exc
+        if not math.isfinite(numeric) or exact < 0:
+            raise SimulationConfigurationError(
+                f"harvest trace value {index} must be finite and non-negative"
+            )
+        trace.append(exact)
+    if len(trace) != horizon_ms:
+        raise SimulationConfigurationError(
+            "paired harvest trace length does not match maximum_horizon"
+        )
+    return tuple(trace)
+
+
+def no_overflow_contract(
+    *,
+    initial_battery: Fraction,
+    battery_capacity: Fraction,
+    offered_harvest: Fraction,
+    required_safety_margin: Fraction = Fraction(0),
+) -> tuple[Fraction, Fraction, bool]:
+    """Return required capacity, remaining headroom, and strict gate result."""
+
+    initial = _system_fraction(initial_battery, "initial battery")
+    capacity = _system_fraction(
+        battery_capacity, "battery capacity", positive=True
+    )
+    harvest = _system_fraction(offered_harvest, "offered harvest")
+    margin = _system_fraction(required_safety_margin, "required safety margin")
+    required = initial + harvest
+    available = capacity - required
+    return required, available, available >= margin
+
+
+def select_largest_dyadic_solar_scale(
+    *,
+    raw_offered_harvest: Fraction,
+    initial_battery: Fraction,
+    battery_capacity: Fraction,
+    required_safety_margin: Fraction,
+) -> Fraction:
+    """Apply the frozen result-independent CORE-3 dyadic feasibility rule."""
+
+    raw = _system_fraction(raw_offered_harvest, "raw offered harvest")
+    initial = _system_fraction(initial_battery, "initial battery")
+    capacity = _system_fraction(
+        battery_capacity, "battery capacity", positive=True
+    )
+    margin = _system_fraction(required_safety_margin, "required safety margin")
+    budget = capacity - margin - initial
+    if budget < 0 or (budget == 0 and raw > 0):
+        raise SimulationConfigurationError(
+            "no positive dyadic solar scale can satisfy the frozen headroom rule"
+        )
+    scale = Fraction(1)
+    while scale * raw > budget:
+        scale /= 2
+    return scale
+
+
 def validate_no_overflow_guard(
     system_path: Path,
     maximum_horizon: int,
     *,
     initial_battery: Fraction,
     battery_capacity: Fraction,
+    required_safety_margin: Fraction = Fraction(0),
 ) -> Fraction:
     """Return offered harvest after proving capacity cannot clip it."""
 
-    try:
-        system = legacy_rta.load_system_config(str(system_path))
-        harvest = legacy_rta._harvest_trace_from_config(system, maximum_horizon)
-    except Exception as exc:
-        raise SimulationConfigurationError(
-            f"cannot construct paired simulation harvest trace: {exc}"
-        ) from exc
-    exact_harvest = sum((Fraction(str(value)) for value in harvest), Fraction(0))
-    required = initial_battery + exact_harvest
-    if battery_capacity < required:
+    exact_harvest = sum(
+        construct_paired_harvest_trace(system_path, maximum_horizon),
+        Fraction(0),
+    )
+    required, available, valid = no_overflow_contract(
+        initial_battery=initial_battery,
+        battery_capacity=battery_capacity,
+        offered_harvest=exact_harvest,
+        required_safety_margin=required_safety_margin,
+    )
+    if not valid:
         raise SimulationConfigurationError(
             "finite battery can clip configured harvest through maximum_horizon: "
-            f"capacity={fraction_text(battery_capacity)} required_at_least="
-            f"{fraction_text(required)}"
+            f"initial={fraction_text(initial_battery)} "
+            f"capacity={fraction_text(battery_capacity)} "
+            f"offered_harvest={fraction_text(exact_harvest)} "
+            f"required_capacity={fraction_text(required)} "
+            f"available_headroom={fraction_text(available)} "
+            f"required_safety_margin={fraction_text(required_safety_margin)}"
         )
     return exact_harvest
+
+
+def _sha256(path: Path) -> str:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError as exc:
+        raise SimulationConfigurationError(f"cannot hash audit input {path}: {exc}") from exc
+
+
+def core3_energy_preflight(config: Mapping[str, Any]) -> Dict[str, Any]:
+    """Audit CORE-3 energy headroom without creating experiment artifacts."""
+
+    energy_config = config.get("energy")
+    simulation_config = config.get("simulation")
+    platform_config = config.get("platform")
+    if not all(isinstance(item, Mapping) for item in (
+        energy_config, simulation_config, platform_config,
+    )):
+        raise SimulationConfigurationError("CORE-3 preflight configuration is incomplete")
+    assert isinstance(energy_config, Mapping)
+    assert isinstance(simulation_config, Mapping)
+    assert isinstance(platform_config, Mapping)
+    service = energy_config.get("service_curve")
+    if not isinstance(service, Mapping):
+        raise SimulationConfigurationError("energy.service_curve must be a mapping")
+    template_value = service.get("system_template")
+    if not isinstance(template_value, str) or not template_value:
+        raise SimulationConfigurationError("service curve has no system template")
+    template_path = Path(template_value)
+    if not template_path.is_absolute():
+        template_path = PROJECT_ROOT / template_path
+    if not template_path.is_file():
+        raise SimulationConfigurationError(
+            f"service-curve system template not found: {template_path}"
+        )
+    cores = platform_config.get("cores")
+    if not isinstance(cores, list) or not cores:
+        raise SimulationConfigurationError("CORE-3 preflight requires platform cores")
+    processors = max(cores)
+    horizon = simulation_config.get("maximum_horizon")
+    if isinstance(horizon, bool) or not isinstance(horizon, int) or horizon <= 0:
+        raise SimulationConfigurationError("maximum_horizon must be a positive integer")
+    initial = _system_fraction(
+        energy_config.get("simulation_initial_battery"),
+        "simulation initial battery",
+    )
+    capacity = _system_fraction(
+        energy_config.get("battery_capacity"), "battery capacity", positive=True
+    )
+    margin = _system_fraction(
+        energy_config.get("required_safety_margin", "0"),
+        "required safety margin",
+    )
+    scale = configured_solar_scale(energy_config)
+
+    raw_service = dict(service)
+    raw_service["solar_scale"] = "1"
+    with tempfile.TemporaryDirectory(prefix="v9_3_core3_energy_preflight_") as temp:
+        audit_root = Path(temp)
+        raw_system_path, _ = materialize_simulation_inputs(
+            template_path,
+            audit_root / "raw_reference",
+            (),
+            processors=processors,
+            initial_battery=initial,
+            battery_capacity=capacity,
+            service_curve=raw_service,
+        )
+        scaled_system_path, _ = materialize_simulation_inputs(
+            template_path,
+            audit_root / "scaled_runtime",
+            (),
+            processors=processors,
+            initial_battery=initial,
+            battery_capacity=capacity,
+            service_curve=service,
+        )
+        raw_system = legacy_rta.load_system_config(str(raw_system_path))
+        scaled_system = legacy_rta.load_system_config(str(scaled_system_path))
+        raw_trace = construct_paired_harvest_trace(raw_system_path, horizon)
+        scaled_trace = construct_paired_harvest_trace(scaled_system_path, horizon)
+        raw_harvest = sum(raw_trace, Fraction(0))
+        scaled_harvest = sum(scaled_trace, Fraction(0))
+        solar_path = Path(scaled_system.solar_data_file)
+        if not solar_path.is_absolute():
+            solar_path = Path(legacy_rta._resolve_solar_path(scaled_system))
+        if scaled_system.use_real_solar_data and not solar_path.is_file():
+            raise SimulationConfigurationError(
+                f"solar data file not found: {solar_path}"
+            )
+        solar_sha256 = _sha256(solar_path) if scaled_system.use_real_solar_data else ""
+
+    if (
+        raw_system.use_real_solar_data != scaled_system.use_real_solar_data
+        or raw_system.day_of_year != scaled_system.day_of_year
+        or raw_system.time_of_day_ms != scaled_system.time_of_day_ms
+        or raw_system.pv_efficiency != scaled_system.pv_efficiency
+    ):
+        raise SimulationConfigurationError(
+            "raw/scaled preflight projections changed real-solar semantics"
+        )
+    if bool(service.get("require_real_solar_data", False)) and not bool(
+        scaled_system.use_real_solar_data
+    ):
+        raise SimulationConfigurationError(
+            "service curve requires real-solar data but the system disables it"
+        )
+    required, available, valid = no_overflow_contract(
+        initial_battery=initial,
+        battery_capacity=capacity,
+        offered_harvest=scaled_harvest,
+        required_safety_margin=margin,
+    )
+    selection = service.get("dyadic_scale_selection")
+    selected_scale: Optional[Fraction] = None
+    selection_rule = ""
+    if selection is not None:
+        if not isinstance(selection, Mapping):
+            raise SimulationConfigurationError(
+                "dyadic_scale_selection must be a mapping"
+            )
+        selection_rule = str(selection.get("rule", ""))
+        if selection_rule != "largest_feasible_dyadic_v1":
+            raise SimulationConfigurationError(
+                "unsupported dyadic solar scale selection rule"
+            )
+        selected_scale = select_largest_dyadic_solar_scale(
+            raw_offered_harvest=raw_harvest,
+            initial_battery=_system_fraction(
+                selection.get("reference_initial_battery"),
+                "dyadic reference initial battery",
+            ),
+            battery_capacity=_system_fraction(
+                selection.get("reference_battery_capacity"),
+                "dyadic reference battery capacity",
+                positive=True,
+            ),
+            required_safety_margin=_system_fraction(
+                selection.get("required_safety_margin"),
+                "dyadic required safety margin",
+            ),
+        )
+        if selected_scale != scale:
+            raise SimulationConfigurationError(
+                "configured solar scale is not the largest feasible dyadic: "
+                f"configured={fraction_text(scale)} selected="
+                f"{fraction_text(selected_scale)}"
+            )
+    try:
+        solar_data_display = str(solar_path.relative_to(PROJECT_ROOT))
+    except ValueError:
+        solar_data_display = str(solar_path)
+    report: Dict[str, Any] = {
+        "schema": CORE3_ENERGY_PREFLIGHT_SCHEMA,
+        "service_curve_id": str(service.get("id", "")),
+        "system_template_path": str(template_value),
+        "system_template_sha256": _sha256(template_path),
+        "solar_data_path": solar_data_display,
+        "solar_data_sha256": solar_sha256,
+        "use_real_solar_data": bool(scaled_system.use_real_solar_data),
+        "day_of_year": scaled_system.day_of_year,
+        "time_of_day_ms": scaled_system.time_of_day_ms,
+        "horizon_ms": horizon,
+        "pv_efficiency": fraction_text(Fraction(str(scaled_system.pv_efficiency))),
+        "pv_area_m2": fraction_text(Fraction(str(scaled_system.pv_area_m2))),
+        "raw_reference_pv_area_m2": fraction_text(
+            Fraction(str(raw_system.pv_area_m2))
+        ),
+        "raw_offered_harvest_j": fraction_text(raw_harvest),
+        "applied_solar_scale": fraction_text(scale),
+        "scaled_offered_harvest_j": fraction_text(scaled_harvest),
+        "simulation_initial_battery_j": fraction_text(initial),
+        "battery_capacity_j": fraction_text(capacity),
+        "required_capacity_j": fraction_text(required),
+        "available_headroom_j": fraction_text(available),
+        "required_safety_margin_j": fraction_text(margin),
+        "no_overflow_preflight_valid": valid,
+    }
+    if selected_scale is not None:
+        report.update({
+            "dyadic_scale_selection_rule": selection_rule,
+            "largest_feasible_dyadic_scale": fraction_text(selected_scale),
+        })
+    report["preflight_identity"] = domain_hash(
+        "ASAP_BLOCK:V9.3:CORE3_ENERGY_PREFLIGHT:v1", report
+    )
+    return report
 
 
 def _failure_result(
@@ -343,6 +747,7 @@ def run_paired_simulation(
         base_system_path, input_root, task_payload,
         processors=processors, initial_battery=initial,
         battery_capacity=capacity, scheduler_id=scheduler_id,
+        service_curve=energy_config.get("service_curve"),
     )
     # CORE-3's proof-oriented runs forbid harvest clipping.  EXT-1B's
     # SLACK_LIMITED_CHARGING micro-mechanism intentionally observes the ST
@@ -353,6 +758,9 @@ def run_paired_simulation(
         validate_no_overflow_guard(
             system_path, int(simulation_config["maximum_horizon"]),
             initial_battery=initial, battery_capacity=capacity,
+            required_safety_margin=Fraction(
+                str(energy_config.get("required_safety_margin", "0"))
+            ),
         )
 
     simulator = Path(str(simulation_config["simulator_bin"]))

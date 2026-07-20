@@ -67,7 +67,7 @@ def _load_generation_config(path: Path):
 
 def test_all_repository_v93_generation_configs_have_exact_contract():
     paths = _common_generation_configs()
-    assert len(paths) == 31
+    assert len(paths) == 38
     for path in paths:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
         assert raw["generation"]["workload_candidates"] == list(CANDIDATES), path
@@ -505,6 +505,11 @@ def test_formal_and_calibration_identity_migration_is_explicit():
     paths = (
         "v9_3_core1_formal_candidate.yaml",
         "v9_3_core2_formal_candidate.yaml",
+        "v9_3_core3_formal_b20_r2.yaml",
+        "v9_3_core3_formal_b100_r2.yaml",
+        "v9_3_core4_formal.yaml",
+        "v9_3_core5a_formal_algorithmic.yaml",
+        "v9_3_core5b_formal_workers.yaml",
         "v9_3_final_calibration.yaml",
         "v9_3_ext1b1_formal_r1.yaml",
         "v9_3_ext1b1_energy_calibration.yaml",

@@ -1,0 +1,65 @@
+experiment_id: asap-block-v9.3-core3-formal-b20-r1
+core: CORE-3
+platform:
+  cores: [4]
+  task_count: [10]
+generation:
+  deadline_mode: constrained
+  constrained_deadline:
+    d_over_t_values: []
+    d_over_t_min: "0"
+    d_over_t_max: "1"
+    distribution: generator_uniform_integer
+  period_min: 40
+  period_max: 200
+  wcet_rounding: compensated
+  utilization_tolerance: "1/100"
+  min_task_util: "1/100"
+  max_task_util: "4/5"
+  priority_policy: RM
+  power_mode: generator_default_heterogeneous
+  workload_candidates: [bzip2, control, decrypt, encrypt, hash]
+  generator_timeout_seconds: 120
+energy:
+  initial_energy_values: ["0", "1/20", "1"]
+  simulation_initial_battery: "20"
+  exact_rational_encoding: canonical_fraction
+  service_curve:
+    id: paired-real-solar-service-v1
+    system_template: system_config_unified_template.yml
+    horizon: 30000
+  battery_mode: finite
+  battery_capacity: "20"
+grid:
+  utilization_points: ["1/10", "1/5", "3/10", "2/5", "1/2", "3/5", "7/10", "4/5"]
+  tasksets_per_cell: 200
+  base_seed: 930433
+  seed_mode: generation_dimensions
+  taskset_index_start: 0
+rta:
+  methods: [CW_THETA_CW, LOC_THETA_LOC]
+  timeout_seconds: 60
+  retry_timeout_seconds: 120
+  retry_policy: timeout_once
+  numerical_mode: EXACT_RATIONAL
+simulation:
+  horizon: 30000
+  warmup: 0
+  minimum_jobs_per_task: 100
+  maximum_horizon: 30000
+  horizon_extension_policy: none
+  deadline_miss_fail_fast: true
+  timeout_seconds: 300
+  trace_mode: semantic
+  trace_on_failure: true
+  simulator_bin: ./build/rtsim/rtsim
+  reuse_across_e0: true
+execution:
+  worker_count: 4
+  checkpoint_every: 1
+  output_root: results/v9_3_core3_formal_b20_r1
+  taskset_store: results/v9_3_core3_taskset_store_formal_b20_r1
+  resume: false
+  fail_fast_on_p0: true
+  preserve_attempt_history: true
+plots: {}

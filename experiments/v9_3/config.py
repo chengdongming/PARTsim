@@ -371,6 +371,12 @@ def validate_config(raw: Mapping[str, Any], *, expected_core: str | None = None)
                 "simulation initial battery must cover every configured release-time E0"
             )
         energy["simulation_initial_battery"] = fraction_text(initial_battery)
+        required_margin = exact_fraction(
+            energy.get("required_safety_margin", "0"),
+            "energy.required_safety_margin",
+        )
+        if "required_safety_margin" in energy:
+            energy["required_safety_margin"] = fraction_text(required_margin)
     service = _require_mapping(energy, "service_curve")
     if not isinstance(service.get("id"), str) or not service["id"]:
         raise ConfigError("energy.service_curve.id must be non-empty")
@@ -383,6 +389,60 @@ def validate_config(raw: Mapping[str, Any], *, expected_core: str | None = None)
         system_path = PROJECT_ROOT / system_path
     contract = prepare_task_workload_contract(config, system_path)
     generation["workload_contract"] = contract
+    if "require_real_solar_data" in service and not isinstance(
+        service["require_real_solar_data"], bool
+    ):
+        raise ConfigError(
+            "energy.service_curve.require_real_solar_data must be boolean"
+        )
+    if "solar_scale" in service:
+        solar_scale = exact_fraction(
+            service["solar_scale"], "energy.service_curve.solar_scale"
+        )
+        if solar_scale <= 0:
+            raise ConfigError("energy.service_curve.solar_scale must be positive")
+        service["solar_scale"] = fraction_text(solar_scale)
+    if "raw_reference_pv_area_m2" in service:
+        reference_area = exact_fraction(
+            service["raw_reference_pv_area_m2"],
+            "energy.service_curve.raw_reference_pv_area_m2",
+        )
+        if reference_area <= 0:
+            raise ConfigError(
+                "energy.service_curve.raw_reference_pv_area_m2 must be positive"
+            )
+        service["raw_reference_pv_area_m2"] = fraction_text(reference_area)
+    if "dyadic_scale_selection" in service:
+        selection = service["dyadic_scale_selection"]
+        if not isinstance(selection, dict) or set(selection) != {
+            "rule",
+            "reference_initial_battery",
+            "reference_battery_capacity",
+            "required_safety_margin",
+        }:
+            raise ConfigError(
+                "energy.service_curve.dyadic_scale_selection has invalid fields"
+            )
+        if selection["rule"] != "largest_feasible_dyadic_v1":
+            raise ConfigError("unknown dyadic solar scale selection rule")
+        for field in (
+            "reference_initial_battery",
+            "reference_battery_capacity",
+            "required_safety_margin",
+        ):
+            value = exact_fraction(
+                selection[field],
+                f"energy.service_curve.dyadic_scale_selection.{field}",
+            )
+            if field == "reference_battery_capacity" and value <= 0:
+                raise ConfigError(
+                    "dyadic reference battery capacity must be positive"
+                )
+            selection[field] = fraction_text(value)
+    if "synthetic_piecewise" in service and not isinstance(
+        service["synthetic_piecewise"], bool
+    ):
+        raise ConfigError("energy.service_curve.synthetic_piecewise must be boolean")
 
     grid = _require_mapping(config, "grid")
     utilities = _validate_ratios(_as_list(grid.get("utilization_points"), "grid.utilization_points"), "grid.utilization_points")
@@ -575,12 +635,35 @@ def validate_config(raw: Mapping[str, Any], *, expected_core: str | None = None)
                     normalized.get("horizon"),
                     f"sensitivity.axes.service_curve.variants[{index}].horizon",
                 )
+                if "exact_scale" in normalized:
+                    scale = exact_fraction(
+                        normalized["exact_scale"],
+                        f"sensitivity.axes.service_curve.variants[{index}].exact_scale",
+                    )
+                    if scale <= 0:
+                        raise ConfigError("service-curve exact_scale must be positive")
+                    normalized["exact_scale"] = fraction_text(scale)
             else:
                 reason = normalized.get("reason")
                 if not isinstance(reason, str) or not reason:
                     raise ConfigError("unavailable service-curve variants require a reason")
             normalized_services.append(normalized)
         service_axis["variants"] = normalized_services
+
+        baseline = sensitivity.get("baseline")
+        if baseline is not None:
+            if not isinstance(baseline, dict) or set(baseline) != {
+                "E0", "power_scale", "service_curve_scale", "battery_capacity"
+            }:
+                raise ConfigError(
+                    "CORE-4 sensitivity.baseline requires E0, power_scale, "
+                    "service_curve_scale, and battery_capacity"
+                )
+            for key in ("E0", "power_scale", "service_curve_scale", "battery_capacity"):
+                value = exact_fraction(baseline[key], f"sensitivity.baseline.{key}")
+                if key != "E0" and value <= 0:
+                    raise ConfigError(f"sensitivity.baseline.{key} must be positive")
+                baseline[key] = fraction_text(value)
 
     if core == "CORE-5":
         required_core5_methods = ["CW_THETA_CW", "LOC_THETA_LOC"]
@@ -635,6 +718,37 @@ def validate_config(raw: Mapping[str, Any], *, expected_core: str | None = None)
         scalability["max_analyses"] = _positive_int(
             hard_limit, "scalability.max_analyses"
         )
+        profile = scalability.get("profile", "bounded-smoke-v2")
+        if profile not in {
+            "bounded-smoke-v2", "formal-algorithmic-v1", "formal-workers-v1"
+        }:
+            raise ConfigError("unknown CORE-5 scalability profile")
+        if profile != "bounded-smoke-v2":
+            plan_version = scalability.get("plan_version")
+            if plan_version != "ASAP_BLOCK_V9_3_CORE5_FORMAL_PLAN_V1":
+                raise ConfigError("formal CORE-5 requires formal plan version V1")
+            scalability["profile"] = profile
+            if profile == "formal-algorithmic-v1":
+                scales = [
+                    exact_fraction(value, f"scalability.time_scales[{index}]")
+                    for index, value in enumerate(
+                        _as_list(scalability.get("time_scales"), "scalability.time_scales")
+                    )
+                ]
+                if scales != [Fraction(1), Fraction(2), Fraction(4)]:
+                    raise ConfigError("CORE-5A time_scales must equal [1, 2, 4]")
+                scalability["time_scales"] = [fraction_text(value) for value in scales]
+                if scalability["worker_counts"] != [1]:
+                    raise ConfigError("CORE-5A worker_counts must equal [1]")
+            else:
+                repetitions = _positive_int(
+                    scalability.get("repetitions_per_worker"),
+                    "scalability.repetitions_per_worker",
+                )
+                schedule_seed = scalability.get("schedule_seed")
+                if isinstance(schedule_seed, bool) or not isinstance(schedule_seed, int):
+                    raise ConfigError("scalability.schedule_seed must be an integer")
+                scalability["repetitions_per_worker"] = repetitions
 
     if core == "CORE-3":
         simulation = _require_mapping(config, "simulation")
@@ -668,6 +782,11 @@ def validate_config(raw: Mapping[str, Any], *, expected_core: str | None = None)
         if not isinstance(simulator_bin, str) or not simulator_bin:
             raise ConfigError("simulation.simulator_bin must be a non-empty path")
         simulation["simulator_bin"] = simulator_bin
+        reuse_across_e0 = simulation.get("reuse_across_e0", False)
+        if not isinstance(reuse_across_e0, bool):
+            raise ConfigError("simulation.reuse_across_e0 must be boolean")
+        if reuse_across_e0:
+            simulation["reuse_across_e0"] = True
 
     execution = _require_mapping(config, "execution")
     execution["checkpoint_every"] = _positive_int(execution.get("checkpoint_every"), "execution.checkpoint_every")

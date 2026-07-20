@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
 
 from experiments.v9_3.config import load_config
 from experiments.v9_3.core3_pairing import Core3PairingRunner
+from experiments.v9_3.simulation_engine import SimulationConfigurationError
 
 
 def main() -> int:
@@ -22,16 +23,28 @@ def main() -> int:
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--list-cells", action="store_true")
+    parser.add_argument("--preflight", action="store_true")
     args = parser.parse_args()
     config = load_config(args.config, expected_core="CORE-3")
     runner = Core3PairingRunner(config)
+    if args.preflight:
+        report = runner.energy_preflight()
+        print(json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2))
+        return 0 if report["no_overflow_preflight_valid"] else 2
     if args.dry_run or args.list_cells:
         description = runner.describe()
         if not args.list_cells:
             description.pop("cells", None)
         print(json.dumps(description, ensure_ascii=False, sort_keys=True, indent=2))
         return 0
-    outcome = runner.run(resume=args.resume or config["execution"]["resume"])
+    try:
+        outcome = runner.run(resume=args.resume or config["execution"]["resume"])
+    except SimulationConfigurationError as exc:
+        print(json.dumps({
+            "error": str(exc),
+            "energy_preflight": runner.energy_preflight(),
+        }, ensure_ascii=False, sort_keys=True), file=sys.stderr)
+        return 2
     print(json.dumps({
         "output_root": str(outcome.output_root),
         "requested_rta": outcome.requested_rta,
