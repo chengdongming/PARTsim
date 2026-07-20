@@ -36,12 +36,18 @@ SEED_SPACES = {
     "EXT1B_PILOT",
     "EXT1B1_ENERGY_CALIBRATION_PILOT",
     "EXT1B2_SYNC_CALIBRATION_PILOT",
+    "EXT1B3_TIMING_CALIBRATION_PILOT",
     "EXT1B1_FORMAL_R1",
 }
 
 B2_SCHEDULER_IDS = (
     "gpfp_asap_block",
     "gpfp_asap_sync",
+)
+B3_PRIMARY_SCHEDULER_IDS = (
+    "gpfp_asap_block",
+    "gpfp_alap_block",
+    "gpfp_st_block",
 )
 B1_REQUIRED_OUTPUTS = (
     "b1_bypass_episodes.csv",
@@ -52,6 +58,10 @@ B1_REQUIRED_OUTPUTS = (
 B2_REQUIRED_OUTPUTS = (
     "b2_batch_decisions.csv",
     "b2_summary.csv",
+)
+B3_REQUIRED_OUTPUTS = (
+    "b3_timing_events.csv",
+    "b3_summary.csv",
 )
 
 TOP_LEVEL_KEYS = {
@@ -238,6 +248,7 @@ def validate_ext1b_config(raw: Mapping[str, Any]) -> Dict[str, Any]:
             "EXT1B_PILOT",
             "EXT1B1_ENERGY_CALIBRATION_PILOT",
             "EXT1B2_SYNC_CALIBRATION_PILOT",
+            "EXT1B3_TIMING_CALIBRATION_PILOT",
         },
         "FORMAL": {"EXT1B1_FORMAL_R1"},
     }[status]
@@ -277,11 +288,20 @@ def validate_ext1b_config(raw: Mapping[str, Any]) -> Dict[str, Any]:
             "EXT1B2_SYNC_CALIBRATION_PILOT scheduler_ids must equal "
             "['gpfp_asap_block', 'gpfp_asap_sync'] in that order"
         )
+    if (
+        seed_space == "EXT1B3_TIMING_CALIBRATION_PILOT"
+        and tuple(scheduler_ids) != B3_PRIMARY_SCHEDULER_IDS
+    ):
+        raise ConfigError(
+            "EXT1B3_TIMING_CALIBRATION_PILOT scheduler_ids must equal "
+            "['gpfp_asap_block', 'gpfp_alap_block', 'gpfp_st_block'] "
+            "in that order"
+        )
     config["scheduler_ids"] = list(scheduler_ids)
     expected_outputs = {
         "BYPASS_STRESS": list(B1_REQUIRED_OUTPUTS),
         "SYNC_BATCH_STRESS": list(B2_REQUIRED_OUTPUTS),
-        "TIMING_STRESS": [],
+        "TIMING_STRESS": list(B3_REQUIRED_OUTPUTS),
     }[kind]
     required_outputs = config.get("required_outputs", expected_outputs)
     if required_outputs != expected_outputs:
@@ -357,6 +377,8 @@ def validate_ext1b_config(raw: Mapping[str, Any]) -> Dict[str, Any]:
         raise ConfigError("simulation.retain_trace must be a boolean")
     if kind == "BYPASS_STRESS" and not retain_trace:
         raise ConfigError("BYPASS_STRESS requires retained semantic traces")
+    if kind == "TIMING_STRESS" and not retain_trace:
+        raise ConfigError("TIMING_STRESS requires retained semantic traces")
     if config["parameter_status"] == "SMOKE" and config["grid"]["tasksets_per_cell"] > 2:
         raise ConfigError("EXT-1B smoke tasksets_per_cell must not exceed 2")
 

@@ -121,12 +121,17 @@ class TimingFinding:
     state: str
     identity: tuple[int, str, int]
     reason: str
+    scheduler_slack: int | None = None
 
 
 @dataclass(frozen=True)
 class TimingAuditReport:
     findings: tuple[TimingFinding, ...]
     errors: tuple[str, ...]
+    timing_activation: bool = False
+    same_job_transition_count: int = 0
+    activation_candidate_job_count: int = 0
+    activation_denominator_zero: bool = True
 
     @property
     def state_counts(self) -> Mapping[str, int]:
@@ -330,7 +335,8 @@ def classify_timing_event(
             if not selected:
                 return _illegal(event, "eligible ASAP job was deferred")
             return TimingFinding(
-                ASAP_IMMEDIATE_ELIGIBILITY, identity, "all ASAP gates open"
+                ASAP_IMMEDIATE_ELIGIBILITY, identity, "all ASAP gates open",
+                slack,
             )
         return TimingFinding(NOT_APPLICABLE, identity, "non-timing gate closed")
 
@@ -348,12 +354,21 @@ def classify_timing_event(
                     ALAP_POSITIVE_SLACK_DEFER,
                     identity,
                     "positive scheduler slack uniquely caused defer",
+                    slack,
                 )
             return TimingFinding(NOT_APPLICABLE, identity, "non-timing gate closed")
+        if cpu and decision_affordable and policy_reason == "NONE" and selected:
+            return TimingFinding(
+                ALAP_URGENT_ELIGIBILITY,
+                identity,
+                "non-positive slack opened the timing gate and the job executed",
+                slack,
+            )
         return TimingFinding(
-            ALAP_URGENT_ELIGIBILITY,
+            NOT_APPLICABLE,
             identity,
-            "non-positive scheduler slack opened ALAP timing gate",
+            "ALAP timing gate is open but a non-timing gate or selection is absent",
+            slack,
         )
 
     if slack <= 0 and not gate:
@@ -368,6 +383,7 @@ def classify_timing_event(
                 ST_AFFORDABLE_ASAP_BEHAVIOR,
                 identity,
                 "ST followed ASAP with an affordable native decision",
+                slack,
             )
         return TimingFinding(NOT_APPLICABLE, identity, "non-timing gate closed")
     if (
@@ -378,6 +394,7 @@ def classify_timing_event(
             ST_ENERGY_INSUFFICIENT_SLACK_WAIT,
             identity,
             "native energy gate closed while positive slack permits wait",
+            slack,
         )
     return TimingFinding(NOT_APPLICABLE, identity, "not a B3 timing transition")
 
@@ -395,6 +412,12 @@ def audit_timing_trace(
         errors.append("configured scheduler mismatch")
 
     events = data["events"]
+    trace_has_terminal_outcome = any(
+        isinstance(event, dict)
+        and event.get("event_type") == "simulation_run_outcome"
+        and event.get("simulation_completed") is True
+        for event in events
+    )
     scheduled: set[tuple[int, str, int]] = set()
     for event in events:
         if not isinstance(event, dict) or event.get("event_type") != "scheduled":
@@ -412,6 +435,7 @@ def audit_timing_trace(
     identities: set[tuple[int, str, int]] = set()
     arrivals: set[tuple[str, int]] = set()
     running: set[tuple[int, str, int]] = set()
+    last_observation_time: dict[tuple[str, int], int] = {}
     observation_count = 0
     stop_events = {"descheduled", "end_instance", "dline_miss", "killed"}
     for event in events:
@@ -464,6 +488,17 @@ def audit_timing_trace(
             raw_identity = _identity(event)
         except (TypeError, ValueError, ZeroDivisionError):
             raw_identity = (-1, str(event.get("task_name", "")), -1)
+        raw_job_identity = raw_identity[1:]
+        previous_time = last_observation_time.get(raw_job_identity)
+        if previous_time is not None and raw_identity[0] < previous_time:
+            errors.append(
+                "same-job B3 observation time is reversed for "
+                f"{raw_job_identity[0]}@{raw_job_identity[1]}: "
+                f"{raw_identity[0]} < {previous_time}"
+            )
+        last_observation_time[raw_job_identity] = max(
+            raw_identity[0], previous_time if previous_time is not None else raw_identity[0]
+        )
         running_before = {
             (raw_identity[0], item[1], item[2]) for item in running
         }
@@ -493,4 +528,70 @@ def audit_timing_trace(
             findings.append(finding)
     if observation_count == 0:
         errors.append("missing b3_timing_observation trace")
-    return TimingAuditReport(tuple(findings), tuple(errors))
+
+    family = SCHEDULERS.get(expected_scheduler, ("", "", ""))[1]
+    by_job: dict[tuple[str, int], list[TimingFinding]] = {}
+    for finding in findings:
+        if finding.state in {UNCLASSIFIABLE, ILLEGAL_TIMING_TRANSITION}:
+            continue
+        by_job.setdefault(finding.identity[1:], []).append(finding)
+
+    candidate_jobs: set[tuple[str, int]] = set()
+    transition_jobs: set[tuple[str, int]] = set()
+    if family == "ASAP":
+        candidate_jobs = {
+            job for job, rows in by_job.items()
+            if any(row.state == ASAP_IMMEDIATE_ELIGIBILITY for row in rows)
+        }
+        timing_activation = bool(candidate_jobs)
+    else:
+        stage_a = (
+            ALAP_POSITIVE_SLACK_DEFER
+            if family == "ALAP"
+            else ST_ENERGY_INSUFFICIENT_SLACK_WAIT
+        )
+        stage_b = (
+            ALAP_URGENT_ELIGIBILITY
+            if family == "ALAP"
+            else ST_AFFORDABLE_ASAP_BEHAVIOR
+        )
+        for job, rows in by_job.items():
+            first_stage_a = min(
+                (row.identity[0] for row in rows if row.state == stage_a),
+                default=None,
+            )
+            if first_stage_a is None:
+                continue
+            candidate_jobs.add(job)
+            if (
+                not any(row.identity[0] > first_stage_a for row in rows)
+                and not trace_has_terminal_outcome
+            ):
+                errors.append(
+                    "missing transition evidence after timing-deferred "
+                    f"observation for {job[0]}@{job[1]}"
+                )
+            matching_stage_b = any(
+                row.state == stage_b
+                and row.identity[0] > first_stage_a
+                and (
+                    family != "ST"
+                    or (
+                        row.scheduler_slack is not None
+                        and row.scheduler_slack > 0
+                    )
+                )
+                for row in rows
+            )
+            if matching_stage_b:
+                transition_jobs.add(job)
+        timing_activation = bool(transition_jobs)
+
+    return TimingAuditReport(
+        tuple(findings),
+        tuple(errors),
+        timing_activation=timing_activation,
+        same_job_transition_count=len(transition_jobs),
+        activation_candidate_job_count=len(candidate_jobs),
+        activation_denominator_zero=not candidate_jobs,
+    )

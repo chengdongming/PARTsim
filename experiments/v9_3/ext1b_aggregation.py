@@ -10,7 +10,11 @@ from typing import Any, Dict, Iterable, Mapping, Sequence
 
 from .ext1b_b1_analysis import write_ext1b_b1_outputs
 from .ext1b_observation import write_ext1b_observation_outputs
-from .ext1b_statistics import STATISTIC_COLUMNS, paired_statistics_rows
+from .ext1b_statistics import (
+    B3_STATISTIC_COLUMNS,
+    STATISTIC_COLUMNS,
+    paired_statistics_rows,
+)
 from .result_writer import read_csv, write_csv
 from .scheduler_pairing import assert_scheduler_only_difference
 from .scheduler_registry import SCHEDULER_IDS, scheduler_by_id
@@ -343,6 +347,7 @@ def aggregate_ext1b_rows(
     bootstrap_seed: int,
     bootstrap_resamples: int,
     b2_summaries: Iterable[Mapping[str, Any]] = (),
+    scenario_instances: Iterable[Mapping[str, Any]] = (),
     scheduler_ids: Sequence[str] = SCHEDULER_IDS,
 ) -> Dict[str, list[Dict[str, Any]]]:
     request_rows, result_rows, tasks = list(requests), list(results), list(task_rows)
@@ -375,10 +380,21 @@ def aggregate_ext1b_rows(
         if set(members) == set(selected_scheduler_ids)
         and len(members) == len(selected_scheduler_ids)
     }
-    comparison_results = [
-        row for row in result_rows
-        if str(row["paired_instance_id"]) in complete_pairs
-    ]
+    dimensions_by_pair = {
+        str(row["paired_instance_id"]): {
+            "normalized_utilization": str(row.get("normalized_utilization", "")),
+        }
+        for row in scenario_instances
+        if str(row.get("scenario_kind")) == "TIMING_STRESS"
+    }
+    comparison_results = []
+    for row in result_rows:
+        pair_id = str(row["paired_instance_id"])
+        if pair_id not in complete_pairs:
+            continue
+        enriched = dict(row)
+        enriched.update(dimensions_by_pair.get(pair_id, {}))
+        comparison_results.append(enriched)
     comparison_tasks = [
         row for row in tasks
         if str(row["paired_instance_id"]) in complete_pairs
@@ -629,7 +645,8 @@ def aggregate_ext1b_rows(
                 "plot": "paired_risk_difference" if row["metric_type"] == "BINARY" else "paired_response_difference",
                 "scenario_kind": row["scenario_kind"], "scenario_subtype": row["scenario_subtype"],
                 "scenario_cell_id": row["scenario_cell_id"],
-                "scheduler_id": "gpfp_asap_block", "comparator_scheduler": row["comparator_scheduler"],
+                "scheduler_id": row["primary_scheduler"],
+                "comparator_scheduler": row["comparator_scheduler"],
                 "paired_instance_id": "", "activation_class": "ALL",
                 "category": row["metric"], "x": value, "y": row["paired_count"],
                 "denominator": row["paired_count"],
@@ -657,7 +674,13 @@ def aggregate_ext1b(root: Path, config: Mapping[str, Any]) -> Dict[str, int]:
         bootstrap_seed=int(config["statistics"]["bootstrap_seed"]),
         bootstrap_resamples=int(config["statistics"]["bootstrap_resamples"]),
         b2_summaries=read_csv(root / "b2_summary.csv"),
+        scenario_instances=read_csv(root / "scenario_instances.csv"),
         scheduler_ids=tuple(config["scheduler_ids"]),
+    )
+    statistic_columns = (
+        B3_STATISTIC_COLUMNS
+        if config["scenario"]["kind"] == "TIMING_STRESS"
+        else STATISTIC_COLUMNS
     )
     outputs = (
         ("mechanism_activation.csv", ACTIVATION_COLUMNS, "activation"),
@@ -665,7 +688,7 @@ def aggregate_ext1b(root: Path, config: Mapping[str, Any]) -> Dict[str, int]:
         ("scheduler_summary.csv", SCHEDULER_SUMMARY_COLUMNS, "scheduler_summary"),
         ("scenario_summary.csv", SCENARIO_SUMMARY_COLUMNS, "scenario_summary"),
         ("priority_rank_summary.csv", PRIORITY_SUMMARY_COLUMNS, "priority_summary"),
-        ("paired_statistics.csv", STATISTIC_COLUMNS, "statistics"),
+        ("paired_statistics.csv", statistic_columns, "statistics"),
         ("ext1b_plot_data.csv", PLOT_COLUMNS, "plots"),
     )
     for name, columns, key in outputs:
