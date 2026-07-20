@@ -18,8 +18,10 @@ from experiments.v9_3.ext1b_b2_batch_audit import (
     B2_STATE_NOT_APPLICABLE,
     B2_STATE_UNCLASSIFIABLE,
     CONTROL_STATUS_ELIGIBLE_MATCHED_STATE,
+    CONTROL_STATUS_EVIDENCE_INCOMPLETE,
     CONTROL_STATUS_NOT_APPLICABLE,
     NATIVE_ENERGY_EPSILON_MJ,
+    _trace_covers_tick,
     audit_asap_block_pair_control,
     audit_asap_sync_document,
     summarize_b2_observations,
@@ -124,13 +126,17 @@ def _candidate_wait(tick, active, continuations, candidates, available):
     }
 
 
-def _trace(events, *, scheduler="gpfp_asap_sync"):
+def _trace(
+    events, *, scheduler="gpfp_asap_sync", observed_end=100,
+    taskset_hash=TASKSET_HASH,
+):
     return {
         "events": events,
         "trace_schema_version": 2,
         "run_id": "request-b2",
-        "taskset_semantic_hash": TASKSET_HASH,
+        "taskset_semantic_hash": taskset_hash,
         "configured_scheduler": scheduler,
+        "observed_simulation_end_ms": observed_end,
     }
 
 
@@ -253,8 +259,9 @@ def test_missing_exact_energy_fails_closed():
         audit_asap_sync_document(_trace([decision]), processors=2)
 
 
-def _sync_atomic_wait(jobs, available, *, tick=0):
+def _sync_atomic_wait(jobs, available, *, tick=0, before=()):
     return _audit(_trace([
+        *deepcopy(before),
         _decision(tick, jobs, [], available, reason="sync_batch_energy_insufficient"),
         _block(tick, jobs, sum(job["task_unit_energy_mJ"] for job in jobs), available),
     ]))
@@ -268,6 +275,24 @@ def _block_trace(jobs, selected, available, *, tick=0, scheduled=()):
         ),
         *[_scheduled(task, tick) for task in scheduled],
     ], scheduler="gpfp_asap_block")
+
+
+def _lifecycle(event_type, task, tick, *, arrival=0):
+    return {
+        "time": tick,
+        "event_type": event_type,
+        "task_name": f"v93_task_{task}",
+        "arrival_time": arrival,
+    }
+
+
+def _missing_block_trace(
+    events=(), *, observed_end=100, taskset_hash=TASKSET_HASH,
+):
+    return _trace(
+        list(events), scheduler="gpfp_asap_block",
+        observed_end=observed_end, taskset_hash=taskset_hash,
+    )
 
 
 def test_matched_t0_control_is_eligible_and_passes():
@@ -304,6 +329,196 @@ def test_later_fully_rematched_state_can_be_eligible():
     assert control["control_passed"] is True
 
 
+def test_missing_block_decision_after_prior_irreversible_divergence_is_na():
+    jobs = [_job(0), _job(1)]
+    tick = 10
+    sync = _sync_atomic_wait(jobs, 1.5, tick=tick, before=(
+        _lifecycle("end_instance", 2, 2),
+        _lifecycle("kill", 3, 3),
+    ))
+    block = _missing_block_trace(
+        [_lifecycle("dline_miss", 4, 4)], observed_end=tick,
+    )
+
+    first = audit_asap_block_pair_control(
+        [sync], block, processors=2, expected_min_prefix_length=1,
+    )[0]
+    second = audit_asap_block_pair_control(
+        [sync], deepcopy(block), processors=2, expected_min_prefix_length=1,
+    )[0]
+
+    assert first == second
+    assert first["control_status"] == CONTROL_STATUS_NOT_APPLICABLE
+    assert first["control_passed"] is None
+    assert first["control_errors"] == []
+    assert first["not_applicable_reason"] == "prior_trajectory_divergence"
+    assert first["block_trace_covers_tick"] is True
+    assert first["incomparable_state_components"] == [
+        "completed", "killed", "missed",
+    ]
+    assert first["sync_strict_before_irreversible_lifecycle"] == {
+        "completed": ["v93_task_2@0"],
+        "missed": [],
+        "killed": ["v93_task_3@0"],
+    }
+    assert first["block_strict_before_irreversible_lifecycle"] == {
+        "completed": [],
+        "missed": ["v93_task_4@0"],
+        "killed": [],
+    }
+    summary = summarize_b2_observations(
+        [sync], [first], require_matched_controls=True,
+    )
+    assert summary["control_evidence_incomplete_count"] == 0
+    assert summary["control_not_applicable_count"] == 1
+
+
+def test_missing_block_decision_without_tick_coverage_is_incomplete():
+    jobs = [_job(0), _job(1)]
+    sync = _sync_atomic_wait(
+        jobs, 1.5, tick=10,
+        before=(_lifecycle("end_instance", 2, 2),),
+    )
+    control = audit_asap_block_pair_control(
+        [sync], _missing_block_trace(observed_end=9),
+        processors=2, expected_min_prefix_length=1,
+    )[0]
+
+    assert control["control_status"] == CONTROL_STATUS_EVIDENCE_INCOMPLETE
+    assert control["control_passed"] is False
+    assert control["control_errors"] == ["block_trace_does_not_cover_tick"]
+    assert control["block_trace_covers_tick"] is False
+    summary = summarize_b2_observations([sync], [control])
+    assert summary["control_evidence_incomplete_count"] == 1
+
+
+def test_missing_block_decision_without_proven_divergence_is_incomplete():
+    jobs = [_job(0), _job(1)]
+    sync = _sync_atomic_wait(jobs, 1.5, tick=10)
+    control = audit_asap_block_pair_control(
+        [sync], _missing_block_trace(observed_end=10),
+        processors=2, expected_min_prefix_length=1,
+    )[0]
+
+    assert control["control_status"] == CONTROL_STATUS_EVIDENCE_INCOMPLETE
+    assert control["control_passed"] is False
+    assert control["control_errors"] == [
+        "missing_asap_block_decision_without_proven_divergence"
+    ]
+    assert control["block_trace_covers_tick"] is True
+    assert control["incomparable_state_components"] == []
+
+
+def test_same_tick_irreversible_event_does_not_prove_prior_divergence():
+    jobs = [_job(0), _job(1)]
+    sync = _sync_atomic_wait(
+        jobs, 1.5, tick=10,
+        before=(_lifecycle("end_instance", 2, 10),),
+    )
+    control = audit_asap_block_pair_control(
+        [sync], _missing_block_trace(observed_end=10),
+        processors=2, expected_min_prefix_length=1,
+    )[0]
+
+    assert sync["predecision_state_material"]["lifecycle"]["completed"] == [
+        "v93_task_2@0"
+    ]
+    assert sync["strict_before_irreversible_lifecycle"]["completed"] == []
+    assert control["control_status"] == CONTROL_STATUS_EVIDENCE_INCOMPLETE
+    assert control["incomparable_state_components"] == []
+
+
+@pytest.mark.parametrize(
+    "event",
+    [
+        _lifecycle("scheduled", 9, 2),
+        _lifecycle("arrival", 9, 2),
+    ],
+    ids=["running-only", "released-only"],
+)
+def test_reversible_or_release_only_difference_does_not_prove_divergence(event):
+    jobs = [_job(0), _job(1)]
+    sync = _sync_atomic_wait(jobs, 1.5, tick=10, before=(event,))
+    control = audit_asap_block_pair_control(
+        [sync], _missing_block_trace(observed_end=10),
+        processors=2, expected_min_prefix_length=1,
+    )[0]
+
+    assert control["control_status"] == CONTROL_STATUS_EVIDENCE_INCOMPLETE
+    assert control["control_errors"] == [
+        "missing_asap_block_decision_without_proven_divergence"
+    ]
+    assert control["incomparable_state_components"] == []
+
+
+@pytest.mark.parametrize(
+    "field_value",
+    [True, 10.5, -1, float("nan"), float("inf"), None],
+    ids=["bool", "non-integer", "negative", "nan", "infinity", "missing"],
+)
+def test_invalid_or_missing_block_coverage_fails_closed(field_value):
+    jobs = [_job(0), _job(1)]
+    sync = _sync_atomic_wait(
+        jobs, 1.5, tick=10,
+        before=(_lifecycle("end_instance", 2, 2),),
+    )
+    block = _missing_block_trace(observed_end=field_value)
+    if field_value is None:
+        block.pop("observed_simulation_end_ms")
+
+    with pytest.raises(B2BatchAuditError):
+        _trace_covers_tick(block, 10)
+    control = audit_asap_block_pair_control(
+        [sync], block, processors=2, expected_min_prefix_length=1,
+    )[0]
+    assert control["control_status"] == CONTROL_STATUS_EVIDENCE_INCOMPLETE
+    assert control["control_errors"] == ["invalid_block_trace_coverage"]
+    assert control["block_trace_covers_tick"] is None
+
+
+def test_trace_coverage_uses_observed_end_and_validates_target_tick():
+    block = _missing_block_trace(observed_end="10")
+    assert _trace_covers_tick(block, 10) is True
+    assert _trace_covers_tick(block, 11) is False
+    with pytest.raises(B2BatchAuditError):
+        _trace_covers_tick(block, True)
+
+
+def test_missing_decision_metadata_mismatch_cannot_prove_divergence():
+    jobs = [_job(0), _job(1)]
+    sync = _sync_atomic_wait(
+        jobs, 1.5, tick=10,
+        before=(_lifecycle("end_instance", 2, 2),),
+    )
+    mismatched_hash = audit_asap_block_pair_control(
+        [sync], _missing_block_trace(
+            observed_end=10, taskset_hash="e" * 64,
+        ),
+        processors=2, expected_min_prefix_length=1,
+    )[0]
+    mismatched_processors_sync = deepcopy(sync)
+    mismatched_processors_sync["predecision_state_material"][
+        "processor_count"
+    ] = 3
+    mismatched_processors = audit_asap_block_pair_control(
+        [mismatched_processors_sync], _missing_block_trace(observed_end=10),
+        processors=2, expected_min_prefix_length=1,
+    )[0]
+
+    assert mismatched_hash["control_status"] == (
+        CONTROL_STATUS_EVIDENCE_INCOMPLETE
+    )
+    assert mismatched_hash["control_errors"] == [
+        "taskset_semantic_hash_mismatch"
+    ]
+    assert mismatched_processors["control_status"] == (
+        CONTROL_STATUS_EVIDENCE_INCOMPLETE
+    )
+    assert mismatched_processors["control_errors"] == [
+        "processor_count_mismatch"
+    ]
+
+
 def test_matched_state_without_affordable_priority_prefix_is_not_applicable():
     jobs = [_job(0, 2.0), _job(1, 1.0)]
     sync = _sync_atomic_wait(jobs, 1.5, tick=4)
@@ -328,6 +543,49 @@ def test_matched_block_control_failure_is_reported():
     assert control["control_passed"] is False
     summary = summarize_b2_observations([sync], [control])
     assert summary["matched_control_failure_count"] == 1
+
+
+def test_prior_divergence_and_matched_success_preserve_summary_closure():
+    jobs = [_job(0), _job(1)]
+    diverged_sync = _sync_atomic_wait(
+        jobs, 1.5, tick=10,
+        before=(_lifecycle("end_instance", 2, 2),),
+    )
+    diverged_control = audit_asap_block_pair_control(
+        [diverged_sync], _missing_block_trace(observed_end=10),
+        processors=2, expected_min_prefix_length=1,
+    )[0]
+    matched_sync = _sync_atomic_wait(jobs, 1.5)
+    matched_control = audit_asap_block_pair_control(
+        [matched_sync], _block_trace(
+            jobs, jobs[:1], 1.5, scheduled=(0,),
+        ),
+        processors=2, expected_min_prefix_length=1,
+    )[0]
+
+    summary = summarize_b2_observations(
+        [diverged_sync, matched_sync],
+        [diverged_control, matched_control],
+        require_matched_controls=True,
+    )
+    assert summary["atomic_wait_with_affordable_member_count"] == 2
+    assert summary["control_not_applicable_count"] == 1
+    assert summary["control_evidence_incomplete_count"] == 0
+    assert summary["matched_control_success_count"] == 1
+    assert summary["matched_control_failure_count"] == 0
+    assert not any((
+        summary["illegal_partial_count"],
+        summary["illegal_transition_count"],
+        summary["state_unclassifiable_count"],
+        summary["matched_control_failure_count"],
+        summary["control_evidence_incomplete_count"],
+        summary["continuation_evidence_failure_count"],
+        summary["synchronization_wait_ticks_mismatch_count"],
+        (
+            summary["atomic_wait_with_affordable_member_count"] > 0
+            and summary["matched_control_success_count"] == 0
+        ),
+    ))
 
 
 def test_metric_excludes_no_affordable_member_and_fails_closed_at_zero_denominator():
