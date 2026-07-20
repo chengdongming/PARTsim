@@ -13,6 +13,7 @@ import traceback
 from typing import Any, Dict, Mapping, Optional, Sequence
 
 from .censoring import censoring_label, task_is_tightness_eligible
+from .cell_model import expand_cells
 from .config import config_hash, fraction_text
 from .core3_aggregation import (
     SoundnessClass,
@@ -36,6 +37,7 @@ from .simulation_engine import (
     SimulationExecution,
     load_simulation_terminal,
     run_paired_simulation,
+    shared_e0_simulation_identity,
     simulation_identity,
     write_simulation_terminal,
 )
@@ -158,8 +160,21 @@ def _required_artifact_bool(
     )
 
 
+def _release_e0_valid(
+    execution: SimulationExecution, exact_e0: Optional[Fraction] = None,
+) -> bool:
+    result = execution.result
+    if exact_e0 is None:
+        return result.release_e0_valid
+    return bool(
+        result.minimum_release_energy_j is not None
+        and result.minimum_release_energy_j + 1e-12 >= float(exact_e0)
+    )
+
+
 def _observation_comparison_eligibility(
     execution: SimulationExecution,
+    exact_e0: Optional[Fraction] = None,
 ) -> tuple[bool, str]:
     """Return the fail-closed CORE-3 observation gate and its first reason."""
 
@@ -171,7 +186,7 @@ def _observation_comparison_eligibility(
         SimulationStatus.INTERNAL_ERROR,
     }:
         return False, SoundnessClass.SIM_TIMEOUT_OR_ERROR.value
-    if not result.release_e0_valid:
+    if not _release_e0_valid(execution, exact_e0):
         return False, SoundnessClass.ASSUMPTION_E0_NOT_SATISFIED.value
     if execution.attempt_count <= 0:
         return False, SoundnessClass.NO_OVERFLOW_GUARD_NOT_SATISFIED.value
@@ -180,7 +195,6 @@ def _observation_comparison_eligibility(
         or result.configured_scheduler != "gpfp_asap_block"
         or not result.simulation_completed
         or result.completion_reason != "reached_horizon"
-        or not result.comparison_eligible
     ):
         return False, SoundnessClass.OBSERVATION_COMPARISON_INELIGIBLE.value
     return True, ""
@@ -190,9 +204,10 @@ def _response_bound_eligibility(
     execution: SimulationExecution,
     task: Optional[Any],
     rta_task_row: Mapping[str, Any],
+    exact_e0: Optional[Fraction] = None,
 ) -> ResponseBoundEligibility:
     observation_eligible, observation_reason = (
-        _observation_comparison_eligibility(execution)
+        _observation_comparison_eligibility(execution, exact_e0)
     )
     if not observation_eligible:
         return ResponseBoundEligibility(False, observation_reason)
@@ -224,8 +239,9 @@ def _rta_taskset_certified(row: Mapping[str, Any]) -> bool:
 def deadline_soundness_violation(
     rta_rows: Sequence[Mapping[str, Any]],
     execution: SimulationExecution,
+    exact_e0: Optional[Fraction] = None,
 ) -> bool:
-    eligible, _reason = _observation_comparison_eligibility(execution)
+    eligible, _reason = _observation_comparison_eligibility(execution, exact_e0)
     return bool(
         eligible
         and execution.result.status is SimulationStatus.DEADLINE_MISS
@@ -323,12 +339,21 @@ class Core3PairingRunner:
 
     def describe(self) -> Dict[str, Any]:
         description = ExecutionEngine(self.config).describe()
-        return {
+        generation_cell_count = len({
+            cell.generation_id for cell in expand_cells(self.config)
+        })
+        unique_taskset_count = (
+            generation_cell_count * self.config["grid"]["tasksets_per_cell"]
+        )
+        simulation_request_count = (
+            unique_taskset_count
+            if self.config["simulation"].get("reuse_across_e0", False)
+            else description["cell_count"] * self.config["grid"]["tasksets_per_cell"]
+        )
+        result = {
             **description,
             "rta_request_count": description["request_count"],
-            "simulation_request_count": (
-                description["cell_count"] * self.config["grid"]["tasksets_per_cell"]
-            ),
+            "simulation_request_count": simulation_request_count,
             "simulation": self.config["simulation"],
             "energy_mapping": {
                 "rta_release_e0_values": self.config["energy"]["initial_energy_values"],
@@ -336,6 +361,12 @@ class Core3PairingRunner:
                 "battery_capacity": self.config["energy"]["battery_capacity"],
             },
         }
+        if self.config["simulation"].get("reuse_across_e0", False):
+            result["unique_taskset_count"] = unique_taskset_count
+            result["total_terminal_count"] = (
+                description["request_count"] + simulation_request_count
+            )
+        return result
 
     def _simulation_plan(self) -> list[Dict[str, Any]]:
         cells = {row["cell_id"]: row for row in read_csv(self.root / "cells.csv")}
@@ -344,23 +375,56 @@ class Core3PairingRunner:
             for row in read_csv(self.root / "generated_tasksets.csv")
         }
         rta_rows = read_csv(self.root / "per_taskset_results.csv")
+        reuse = self.config["simulation"].get("reuse_across_e0", False)
         unique: Dict[tuple[str, str], Dict[str, Any]] = {}
         for row in rta_rows:
-            key = (row["cell_id"], row["taskset_id"])
+            cell = cells[row["cell_id"]]
+            key = (
+                cell["generation_id"] if reuse else row["cell_id"],
+                row["taskset_id"],
+            )
             unique.setdefault(key, row)
         plan = []
-        for (cell_id, taskset_id), row in sorted(unique.items()):
+        for (_scope_id, taskset_id), row in sorted(unique.items()):
+            cell_id = row["cell_id"]
             cell = cells[cell_id]
             generated_row = generated[taskset_id]
             exact_e0 = Fraction(cell["exact_e0"])
-            simulation_id_value = simulation_identity(
-                cell_id, row["taskset_hash"], exact_e0,
-                self.config["simulation"],
-            )
+            if reuse:
+                simulation_id_value = shared_e0_simulation_identity(
+                    cell["generation_id"], row["taskset_hash"],
+                    self.config["simulation"],
+                )
+            else:
+                simulation_id_value = simulation_identity(
+                    cell_id, row["taskset_hash"], exact_e0,
+                    self.config["simulation"],
+                )
             canonical = Path(generated_row["canonical_taskset_json"])
             document = json.loads(canonical.read_text(encoding="utf-8"))
             if document.get("taskset_hash") != row["taskset_hash"]:
                 raise RuntimeError("canonical/RTA taskset hash mismatch")
+            comparisons = [
+                {
+                    "cell_id": candidate["cell_id"],
+                    "cell": cells[candidate["cell_id"]],
+                    "exact_e0": Fraction(cells[candidate["cell_id"]]["exact_e0"]),
+                    "rta_rows": [
+                        item for item in rta_rows
+                        if item["cell_id"] == candidate["cell_id"]
+                        and item["taskset_id"] == taskset_id
+                    ],
+                }
+                for candidate in rta_rows
+                if candidate["taskset_id"] == taskset_id
+                and (
+                    not reuse or cells[candidate["cell_id"]]["generation_id"]
+                    == cell["generation_id"]
+                )
+            ]
+            deduped_comparisons = {
+                item["cell_id"]: item for item in comparisons
+            }
             context = {
                 "simulation_id": simulation_id_value,
                 "cell_id": cell_id,
@@ -372,9 +436,11 @@ class Core3PairingRunner:
                 "canonical": canonical,
                 "document": document,
                 "rta_rows": [
-                    item for item in rta_rows
-                    if item["cell_id"] == cell_id and item["taskset_id"] == taskset_id
+                    rta_row
+                    for comparison in deduped_comparisons.values()
+                    for rta_row in comparison["rta_rows"]
                 ],
+                "comparisons": list(deduped_comparisons.values()),
             }
             self._simulation_context[simulation_id_value] = context
             plan.append(context)
@@ -478,8 +544,11 @@ class Core3PairingRunner:
             ):
                 continue
             task = tasks.get(str(rta_task.get("task_id")))
+            exact_e0 = Fraction(
+                context.get("exact_e0", rta_task.get("exact_e0", "0"))
+            )
             eligibility = _response_bound_eligibility(
-                execution, task, rta_task
+                execution, task, rta_task, exact_e0
             )
             witness = response_bound_violation_row(
                 rta_task,
@@ -496,7 +565,9 @@ class Core3PairingRunner:
                 **witness,
                 "simulation_id": execution.simulation_id,
                 "taskset_hash": context["taskset_hash"],
-                "release_e0_valid": execution.result.release_e0_valid,
+                "release_e0_valid": _release_e0_valid(
+                    execution, exact_e0
+                ),
                 "no_overflow_guard": no_overflow_guard,
                 "comparison_eligible": eligibility.eligible,
                 "simulation_taskset_results_path": str(
@@ -597,20 +668,40 @@ class Core3PairingRunner:
                 if row.get("cell_id") == str(context["cell_id"])
                 and row.get("taskset_id") == str(context["taskset_id"])
             ]
-            if deadline_soundness_violation(rta_rows, execution):
+            comparisons = context.get("comparisons") or [{
+                "cell_id": context["cell_id"],
+                "cell": context["cell"],
+                "exact_e0": context["exact_e0"],
+                "rta_rows": rta_rows,
+            }]
+            deadline_comparisons = [
+                comparison for comparison in comparisons
+                if deadline_soundness_violation(
+                    comparison["rta_rows"], execution,
+                    Fraction(comparison["exact_e0"]),
+                )
+            ]
+            if deadline_comparisons:
+                failure_context = {**context, **deadline_comparisons[0]}
                 self._record_failure(
-                    context,
+                    failure_context,
                     execution,
                     severity="P0",
                     code="RTA_PASS_SIM_FAIL",
                     detail=(
-                        "RTA-certified taskset produced a simulation deadline miss"
+                        "RTA-certified taskset produced a simulation deadline miss "
+                        f"at E0={fraction_text(Fraction(failure_context['exact_e0']))}"
                     ),
                 )
             violations = by_simulation.get(simulation_id_value, [])
             if violations:
+                violation_cell = violations[0]["cell_id"]
+                failure_comparison = next(
+                    comparison for comparison in comparisons
+                    if comparison["cell_id"] == violation_cell
+                )
                 reproduction = self._record_response_bound_failure(
-                    context, execution, violations
+                    {**context, **failure_comparison}, execution, violations
                 )
                 for violation in violations:
                     violation["failure_input"] = str(reproduction)
@@ -667,31 +758,60 @@ class Core3PairingRunner:
                     context, execution, severity="P2", code="SIM_RUNTIME_TIMEOUT",
                     detail=execution.result.reason,
                 )
-            elif not execution.result.release_e0_valid:
+            else:
+                invalid_comparisons = [
+                    comparison for comparison in context.get("comparisons", [context])
+                    if not _release_e0_valid(
+                        execution, Fraction(comparison["exact_e0"])
+                    )
+                ]
+                if invalid_comparisons:
+                    invalid_context = {**context, **invalid_comparisons[0]}
+                    self._record_failure(
+                        invalid_context, execution, severity="P1",
+                        code="RTA_E0_RELEASE_CERTIFICATE_NOT_OBSERVED",
+                        detail=(
+                            "simulation does not empirically satisfy the configured "
+                            "per-release E0 premise at E0="
+                            f"{fraction_text(Fraction(invalid_context['exact_e0']))}"
+                        ),
+                    )
+
+            comparisons = context.get("comparisons") or [context]
+            deadline_comparisons = [
+                comparison for comparison in comparisons
+                if deadline_soundness_violation(
+                    comparison["rta_rows"], execution,
+                    Fraction(comparison["exact_e0"]),
+                )
+            ]
+            deadline_p0 = bool(deadline_comparisons)
+            response_bound_violations = []
+            for comparison in comparisons:
+                response_bound_violations.extend(
+                    self._response_bound_violations(
+                        {**context, **comparison}, execution, rta_task_rows
+                    )
+                )
+            if deadline_p0:
+                failure_context = {**context, **deadline_comparisons[0]}
                 self._record_failure(
-                    context, execution, severity="P1",
-                    code="RTA_E0_RELEASE_CERTIFICATE_NOT_OBSERVED",
+                    failure_context, execution, severity="P0",
+                    code="RTA_PASS_SIM_FAIL",
                     detail=(
-                        "simulation does not empirically satisfy the configured "
-                        "per-release E0 premise"
+                        "RTA-certified taskset produced a simulation deadline miss "
+                        f"at E0={fraction_text(Fraction(failure_context['exact_e0']))}"
                     ),
                 )
-
-            deadline_p0 = deadline_soundness_violation(
-                context["rta_rows"], execution
-            )
-            response_bound_violations = self._response_bound_violations(
-                context, execution, rta_task_rows
-            )
-            if deadline_p0:
-                self._record_failure(
-                    context, execution, severity="P0",
-                    code="RTA_PASS_SIM_FAIL",
-                    detail="RTA-certified taskset produced a simulation deadline miss",
-                )
             if response_bound_violations:
+                violation_cell = response_bound_violations[0]["cell_id"]
+                failure_comparison = next(
+                    comparison for comparison in comparisons
+                    if comparison["cell_id"] == violation_cell
+                )
                 reproduction = self._record_response_bound_failure(
-                    context, execution, response_bound_violations
+                    {**context, **failure_comparison}, execution,
+                    response_bound_violations,
                 )
                 for violation in response_bound_violations:
                     violation["failure_input"] = str(reproduction)
@@ -729,72 +849,79 @@ class Core3PairingRunner:
             if execution is None:
                 continue
             result = execution.result
-            comparison_eligible, comparison_ineligible_reason = (
-                _observation_comparison_eligibility(execution)
-            )
             no_overflow_guard = execution.attempt_count > 0
-            simulation_tasksets.append({
-                "simulation_id": simulation_id_value,
-                "cell_id": context["cell_id"],
-                "taskset_id": context["taskset_id"],
-                "taskset_hash": context["taskset_hash"],
-                "exact_e0": fraction_text(context["exact_e0"]),
-                "M": context["cell"]["M"],
-                "status": result.status.value,
-                "reason": result.reason,
-                "comparison_eligible": comparison_eligible,
-                "comparison_ineligible_reason": comparison_ineligible_reason,
-                "horizon": result.horizon,
-                "simulation_initial_battery": self.config["energy"]["simulation_initial_battery"],
-                "release_e0_valid": result.release_e0_valid,
-                "minimum_release_energy_j": result.minimum_release_energy_j,
-                "service_curve_reference": context["generated"]["service_curve_reference"],
-                "no_overflow_guard": no_overflow_guard,
-                "runtime_seconds": f"{execution.runtime_seconds:.9f}",
-                "attempt_count": execution.attempt_count,
-                "horizons_attempted": json.dumps(execution.horizons_attempted),
-                "observed_jobs": sum(task.observed_jobs for task in result.tasks),
-                "completed_jobs": sum(task.completed_jobs for task in result.tasks),
-                "missed_jobs": sum(task.missed_jobs for task in result.tasks),
-                "censored_jobs": sum(task.censored_jobs for task in result.tasks),
-                "retained_trace_path": execution.retained_trace_path,
-                "system_config_path": execution.system_config_path,
-                "taskset_path": execution.taskset_path,
-                "trace_schema_version": result.trace_schema_version,
-                "configured_scheduler": result.configured_scheduler,
-                "simulation_completed": result.simulation_completed,
-                "completion_reason": result.completion_reason,
-            })
-            for task in result.tasks:
-                task_rta_rows = rta_task_rows_by_key.get((
-                    str(context["cell_id"]), str(context["taskset_id"]),
-                    str(task.task_id),
-                ), [])
-                simulation_tasks.append({
+            for comparison in context.get("comparisons", [context]):
+                exact_e0 = Fraction(comparison["exact_e0"])
+                comparison_eligible, comparison_ineligible_reason = (
+                    _observation_comparison_eligibility(execution, exact_e0)
+                )
+                release_e0_valid = _release_e0_valid(execution, exact_e0)
+                cell_id = comparison["cell_id"]
+                simulation_tasksets.append({
                     "simulation_id": simulation_id_value,
-                    "cell_id": context["cell_id"],
+                    "cell_id": cell_id,
                     "taskset_id": context["taskset_id"],
                     "taskset_hash": context["taskset_hash"],
-                    "exact_e0": fraction_text(context["exact_e0"]),
-                    **task.row(),
-                    "tightness_eligible": task_is_tightness_eligible(result, task),
-                    "response_bound_eligible": any(
-                        _response_bound_eligibility(
-                            execution, task, rta_task
-                        ).eligible
-                        for rta_task in task_rta_rows
-                    ),
-                    "censoring_label": censoring_label(task),
+                    "exact_e0": fraction_text(exact_e0),
+                    "M": comparison["cell"]["M"],
+                    "status": result.status.value,
+                    "reason": result.reason,
+                    "comparison_eligible": comparison_eligible,
+                    "comparison_ineligible_reason": comparison_ineligible_reason,
+                    "horizon": result.horizon,
+                    "simulation_initial_battery": self.config["energy"]["simulation_initial_battery"],
+                    "release_e0_valid": release_e0_valid,
+                    "minimum_release_energy_j": result.minimum_release_energy_j,
+                    "service_curve_reference": context["generated"]["service_curve_reference"],
+                    "no_overflow_guard": no_overflow_guard,
+                    "runtime_seconds": f"{execution.runtime_seconds:.9f}",
+                    "attempt_count": execution.attempt_count,
+                    "horizons_attempted": json.dumps(execution.horizons_attempted),
+                    "observed_jobs": sum(task.observed_jobs for task in result.tasks),
+                    "completed_jobs": sum(task.completed_jobs for task in result.tasks),
+                    "missed_jobs": sum(task.missed_jobs for task in result.tasks),
+                    "censored_jobs": sum(task.censored_jobs for task in result.tasks),
+                    "retained_trace_path": execution.retained_trace_path,
+                    "system_config_path": execution.system_config_path,
+                    "taskset_path": execution.taskset_path,
+                    "trace_schema_version": result.trace_schema_version,
+                    "configured_scheduler": result.configured_scheduler,
+                    "simulation_completed": result.simulation_completed,
+                    "completion_reason": result.completion_reason,
                 })
-            for job in result.jobs:
-                simulation_jobs.append({
-                    "simulation_id": simulation_id_value,
-                    "cell_id": context["cell_id"],
-                    "taskset_id": context["taskset_id"],
-                    "taskset_hash": context["taskset_hash"],
-                    "exact_e0": fraction_text(context["exact_e0"]),
-                    **job.row(),
-                })
+                for task in result.tasks:
+                    task_rta_rows = rta_task_rows_by_key.get((
+                        str(cell_id), str(context["taskset_id"]),
+                        str(task.task_id),
+                    ), [])
+                    simulation_tasks.append({
+                        "simulation_id": simulation_id_value,
+                        "cell_id": cell_id,
+                        "taskset_id": context["taskset_id"],
+                        "taskset_hash": context["taskset_hash"],
+                        "exact_e0": fraction_text(exact_e0),
+                        **task.row(),
+                        "tightness_eligible": (
+                            comparison_eligible
+                            and task_is_tightness_eligible(result, task)
+                        ),
+                        "response_bound_eligible": any(
+                            _response_bound_eligibility(
+                                execution, task, rta_task, exact_e0
+                            ).eligible
+                            for rta_task in task_rta_rows
+                        ),
+                        "censoring_label": censoring_label(task),
+                    })
+                for job in result.jobs:
+                    simulation_jobs.append({
+                        "simulation_id": simulation_id_value,
+                        "cell_id": cell_id,
+                        "taskset_id": context["taskset_id"],
+                        "taskset_hash": context["taskset_hash"],
+                        "exact_e0": fraction_text(exact_e0),
+                        **job.row(),
+                    })
         write_csv(
             self.root / "simulation_taskset_results.csv",
             SIMULATION_TASKSET_COLUMNS, simulation_tasksets,
@@ -1032,26 +1159,26 @@ class Core3PairingRunner:
             "rta_completed": completed_rta,
             "rta_timeout": sum(row["solver_status"] == "TIMEOUT" for row in rta_rows),
             "simulation_requested": len(plan),
-            "simulation_terminal": len(simulation_tasksets),
+            "simulation_terminal": len(executions),
             "simulation_observed_pass": sum(
-                row["status"] == SimulationStatus.PASS_OBSERVED.value
-                for row in simulation_tasksets
+                execution.result.status is SimulationStatus.PASS_OBSERVED
+                for execution in executions.values()
             ),
             "simulation_deadline_miss": sum(
-                row["status"] == SimulationStatus.DEADLINE_MISS.value
-                for row in simulation_tasksets
+                execution.result.status is SimulationStatus.DEADLINE_MISS
+                for execution in executions.values()
             ),
             "simulation_horizon_insufficient": sum(
-                row["status"] == SimulationStatus.HORIZON_INSUFFICIENT.value
-                for row in simulation_tasksets
+                execution.result.status is SimulationStatus.HORIZON_INSUFFICIENT
+                for execution in executions.values()
             ),
             "simulation_runtime_timeout": sum(
-                row["status"] == SimulationStatus.RUNTIME_TIMEOUT.value
-                for row in simulation_tasksets
+                execution.result.status is SimulationStatus.RUNTIME_TIMEOUT
+                for execution in executions.values()
             ),
             "simulation_internal_error": sum(
-                row["status"] == SimulationStatus.INTERNAL_ERROR.value
-                for row in simulation_tasksets
+                execution.result.status is SimulationStatus.INTERNAL_ERROR
+                for execution in executions.values()
             ),
             "simulation_release_e0_invalid": sum(
                 not _truth(row["release_e0_valid"])

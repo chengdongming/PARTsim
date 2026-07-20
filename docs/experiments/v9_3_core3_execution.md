@@ -131,6 +131,43 @@ run root.
 Normal pass traces are parsed and deleted. Full traces are retained only for a
 deadline miss, semantic/internal error, or invalid release-energy premise.
 
+## Frozen formal B20/B100 tracks
+
+The formal configurations are `configs/v9_3_core3_formal_b20.yaml` and
+`configs/v9_3_core3_formal_b100.yaml`. Both expand the same generation
+identity: `M=4`, `n=10`, eight exact utilization levels from `1/10` through
+`4/5`, indices `0..199`, seed `930433`, constrained deadlines, and the same
+service declaration. Thus each track has 1,600 unique frozen tasksets. The
+three release assumptions (`0`, `1/20`, `1`) and two methods produce 9,600 RTA
+requests.
+
+`simulation.reuse_across_e0: true` is a formal, explicit projection contract.
+One 30,000-tick simulation is keyed by generation identity, taskset hash, and
+simulation configuration, then reused for the three RTA release assumptions.
+The runner recomputes release-E0 validity and comparison eligibility for every
+E0 projection; the no-overflow guard is also persisted on every projection.
+This gives 1,600 simulation requests and 11,200 total terminals per track.
+The smoke omits this option and retains its existing request expansion and
+output contract.
+
+B20 uses battery capacity and simulation initial battery 20; B100 uses 100.
+Their output roots, taskset stores, experiment identities, and config hashes
+are disjoint. Their generation IDs, indices, seeds, and generated taskset
+semantics must pair exactly. The fixed horizon uses extension policy `none`;
+it can never exceed 30,000.
+
+Before an authorized formal run, record the JSON plans without creating run
+artifacts:
+
+```bash
+python3 scripts/run_v9_3_core3.py --config configs/v9_3_core3_formal_b20.yaml --dry-run
+python3 scripts/run_v9_3_core3.py --config configs/v9_3_core3_formal_b100.yaml --dry-run
+python3 scripts/run_v9_3_core3.py --config configs/v9_3_core3_formal_b20.yaml --list-cells
+python3 scripts/run_v9_3_core3.py --config configs/v9_3_core3_formal_b100.yaml --list-cells
+```
+
+No formal experiment was run while freezing these parameters.
+
 ## Required run products
 
 Each run writes `run_config.yaml`, `run_metadata.json`,

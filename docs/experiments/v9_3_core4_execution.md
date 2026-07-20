@@ -20,12 +20,45 @@ available levels are accepted as weak-to-strong only after every required
 discrete service value has been compared exactly. A name never establishes
 strength.
 
-The repository currently has one formal service configuration. Consequently,
-the smoke config records its second service level as
+The smoke contract intentionally retains its historical second service level as
 `DEPENDENCY_UNAVAILABLE`; it does not invent a curve. This is excluded from
 the solver-terminal set and violation counts, remains visible in planned
 requests and denominators, and is emitted as missing (not zero) in scientific
 summary and plot metrics.
+
+## Frozen formal sustainability profile
+
+`configs/v9_3_core4_formal.yaml` freezes `M=4`, `n=10`, five utilization
+levels (`3/10` through `7/10`), 200 tasksets per utilization, and seed 930444.
+Its baseline is E0 `1/20`, power scale `1`, service scale `1`, and battery 20.
+Each sensitivity axis varies alone around that baseline:
+
+- E0: `0, 1/100, 1/50, 3/100, 1/20, 1/5, 1`;
+- task power: `1/2, 3/4, 1, 5/4, 3/2`;
+- service: `1/2, 3/4, 1, 5/4, 3/2`;
+- method: `CW_THETA_CW, LOC_THETA_LOC`.
+
+The service declarations share `system_config_unified_template.yml`. The
+harvesting trace is built once per declaration using the existing source path,
+converted to exact decimal Fractions, and multiplied by the declared canonical
+Fraction—never by a binary floating-point scale. All 30,001 discrete values
+for `0..30000` are materialized in memory and compared pointwise. A run writes
+`service_curve_catalog.json` with declaration identity, scale, source template,
+source SHA-256, curve SHA-256, semantic hash, horizon, and point count.
+
+There are 1,000 base tasksets. Per base taskset, the E0, service, power, and
+method axes plan 14, 10, 10, and 2 solver rows, respectively. The formal plan
+therefore contains 36,000 solver requests/terminals and zero unavailable
+dependencies. The dry-run reports both aggregate and per-axis counts.
+
+Formal plan inspection is read-only:
+
+```text
+python3 scripts/run_v9_3_core4.py --config configs/v9_3_core4_formal.yaml --dry-run
+python3 scripts/run_v9_3_core4.py --config configs/v9_3_core4_formal.yaml --list-cells
+```
+
+No formal experiment was run while freezing this profile.
 
 ## Commands
 
@@ -80,6 +113,11 @@ config hash, CSV headers, exact request/result/task identity sets, ordered
 levels, recomputed sweep/pair/input hashes, and single-axis invariants. A
 completed run additionally requires a valid hash inventory. Empty and partial
 roots cannot produce a successful summary.
+
+Run metadata is profile-bound: `formal-sustainability-v1` records
+`formal_large_scale_run: true`, while bounded smoke records `false`. Both
+retain `finite_sample_consistency_check_only: true`; resume and artifact
+validation reject either flag if it conflicts with the persisted profile.
 
 A successful run first writes every scientific artifact and a `FINALIZING`
 checkpoint, then atomically writes and immediately validates the exact SHA-256
