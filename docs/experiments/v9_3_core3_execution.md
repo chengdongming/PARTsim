@@ -131,42 +131,88 @@ run root.
 Normal pass traces are parsed and deleted. Full traces are retained only for a
 deadline miss, semantic/internal error, or invalid release-energy premise.
 
-## Frozen formal B20/B100 tracks
+## Frozen formal B20/B100 r2 tracks
 
-The formal configurations are `configs/v9_3_core3_formal_b20.yaml` and
-`configs/v9_3_core3_formal_b100.yaml`. Both expand the same generation
-identity: `M=4`, `n=10`, eight exact utilization levels from `1/10` through
-`4/5`, indices `0..199`, seed `930433`, constrained deadlines, and the same
-service declaration. Thus each track has 1,600 unique frozen tasksets. The
-three release assumptions (`0`, `1/20`, `1`) and two methods produce 9,600 RTA
-requests.
+The r1 files `configs/v9_3_core3_formal_b20.yaml` and
+`configs/v9_3_core3_formal_b100.yaml` are retained only as audit history. They
+set initial battery equal to capacity. The real-solar trace offers
+`11666700000000003/10000000000000` J over 30,000 ms, so both have negative
+harvest headroom and fail the mandatory preflight. These r1 parameters never
+produced formal experiment results, are superseded by r2, and must not be used
+for a formal run.
 
-`simulation.reuse_across_e0: true` is a formal, explicit projection contract.
-One 30,000-tick simulation is keyed by generation identity, taskset hash, and
-simulation configuration, then reused for the three RTA release assumptions.
-The runner recomputes release-E0 validity and comparison eligibility for every
-E0 projection; the no-overflow guard is also persisted on every projection.
-This gives 1,600 simulation requests and 11,200 total terminals per track.
-The smoke omits this option and retains its existing request expansion and
-output contract.
+The only authorized formal entry configurations are
+`configs/v9_3_core3_formal_b20_r2.yaml` and
+`configs/v9_3_core3_formal_b100_r2.yaml`. Both use simulation initial battery
+1 J, which covers the maximum release certificate E0=1 J. Their scientific
+energy settings differ only in finite battery capacity: 20 J versus 100 J.
+They share the same service identity, solar trace, solar scale, generation
+identity, taskset indices, and seeds; experiment IDs, output roots, taskset
+stores, and config hashes remain disjoint.
 
-B20 uses battery capacity and simulation initial battery 20; B100 uses 100.
-Their output roots, taskset stores, experiment identities, and config hashes
-are disjoint. Their generation IDs, indices, seeds, and generated taskset
-semantics must pair exactly. The fixed horizon uses extension policy `none`;
-it can never exceed 30,000.
+The real-solar scale is frozen by a result-independent feasibility rule. At
+the template's 1 m² reference area, use the same data, day/time, efficiency,
+tick mapping, system projection, harvest constructor, and 30,000 ms horizon as
+runtime to compute `H_raw`. Search the predetermined sequence
+`1, 1/2, 1/4, ...` and choose the largest `s` satisfying
+`1 + s*H_raw <= 20 - 1`, where the last 1 J is a fixed safety margin. This
+selects `s=1/128`; therefore effective `pv_area_m2=1/128`. The choice does not
+use RTA acceptance, simulation misses, response times, or runtime results.
+B100 deliberately uses the same scale and receives no separate harvest boost.
 
-Before an authorized formal run, record the JSON plans without creating run
-artifacts:
+Both r2 tracks expand the same `M=4`, `n=10`, constrained-deadline generation
+grid: eight utilization levels, indices `0..199`, seed `930433`, three release
+assumptions, and two methods. Each has 24 cells, 1,600 unique tasksets, 9,600
+RTA requests, 1,600 simulations, and 11,200 terminals. The fixed horizon and
+extension policy remain 30,000 and `none`; timeout/retry parameters are
+unchanged. `simulation.reuse_across_e0: true` continues to project one
+simulation onto the three E0 assumptions while recomputing each release gate.
+
+`--preflight` is read-only: it uses a cleaned `TemporaryDirectory`, creates no
+output root, taskset store, checkpoint, or terminal record, and returns nonzero
+when the contract fails. `--dry-run` may include the same audit under
+`energy_preflight`. A real runner invocation executes this identical gate
+before the first output directory, taskset, RTA request, checkpoint, or
+simulation is created. Missing inputs, non-finite/negative harvest, invalid
+scales, and insufficient capacity fail closed.
+
+Record the gates and plans before any separately authorized formal run:
 
 ```bash
-python3 scripts/run_v9_3_core3.py --config configs/v9_3_core3_formal_b20.yaml --dry-run
-python3 scripts/run_v9_3_core3.py --config configs/v9_3_core3_formal_b100.yaml --dry-run
-python3 scripts/run_v9_3_core3.py --config configs/v9_3_core3_formal_b20.yaml --list-cells
-python3 scripts/run_v9_3_core3.py --config configs/v9_3_core3_formal_b100.yaml --list-cells
+python3 scripts/run_v9_3_core3.py --config configs/v9_3_core3_formal_b20_r2.yaml --preflight
+python3 scripts/run_v9_3_core3.py --config configs/v9_3_core3_formal_b100_r2.yaml --preflight
+python3 scripts/run_v9_3_core3.py --config configs/v9_3_core3_formal_b20_r2.yaml --dry-run
+python3 scripts/run_v9_3_core3.py --config configs/v9_3_core3_formal_b100_r2.yaml --list-cells
 ```
 
-No formal experiment was run while freezing these parameters.
+The following B20 excerpt can be embedded directly in an artifact audit
+record; all energy identities are canonical fractions:
+
+```json
+{
+  "schema": "ASAP_BLOCK_V9_3_CORE3_ENERGY_PREFLIGHT_V1",
+  "service_curve_id": "paired-real-solar-service-v2-dyadic-1-128",
+  "system_template_sha256": "7b0f16f4a0c248b1da7e125d6402b8ca073fe5301346b881018e730f92d27de9",
+  "solar_data_sha256": "c251c931560ed2498fd9d9e9ded74f923d64ac57e3d9806952752ee21079e44e",
+  "horizon_ms": 30000,
+  "raw_reference_pv_area_m2": "1",
+  "raw_offered_harvest_j": "11666700000000003/10000000000000",
+  "dyadic_scale_selection_rule": "largest_feasible_dyadic_v1",
+  "largest_feasible_dyadic_scale": "1/128",
+  "applied_solar_scale": "1/128",
+  "pv_area_m2": "1/128",
+  "scaled_offered_harvest_j": "18229218750000003/2000000000000000",
+  "simulation_initial_battery_j": "1",
+  "battery_capacity_j": "20",
+  "required_capacity_j": "20229218750000003/2000000000000000",
+  "available_headroom_j": "19770781249999997/2000000000000000",
+  "required_safety_margin_j": "1",
+  "no_overflow_preflight_valid": true
+}
+```
+
+No formal experiment was run while repairing and freezing r2. A finite
+simulation remains empirical observation, not a theoretical proof.
 
 ## Required run products
 

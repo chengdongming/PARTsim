@@ -23,6 +23,11 @@ from .cell_model import (
     Cell, derive_seed, expand_cells, generation_dimensions, taskset_id,
 )
 from .config import canonical_json, domain_hash, fraction_text
+from .simulation_engine import (
+    SimulationConfigurationError,
+    construct_paired_harvest_trace,
+    render_system_projection,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -104,26 +109,45 @@ def prepare_service_curve(
     template = PROJECT_ROOT / str(spec["system_template"])
     if not template.is_file():
         raise TasksetStoreError(f"service-curve system template not found: {template}")
-    with template.open("r", encoding="utf-8") as handle:
-        system_document = yaml.safe_load(handle)
-    if spec.get("synthetic_piecewise", False):
-        system_document.setdefault("energy_management", {})[
-            "use_real_solar_data"
-        ] = False
-    system_document["cpu_islands"][0]["numcpus"] = max(config["platform"]["cores"])
-    energy = system_document.setdefault("energy_management", {})
-    energy["max_energy"] = float(Fraction(config["energy"]["battery_capacity"]))
-    # Generator energy state is a generation parameter, not theorem E0. Keep
-    # it independent of the analysis E0 grid so paired cells freeze one taskset.
-    energy["initial_energy"] = energy["max_energy"]
+    capacity = Fraction(config["energy"]["battery_capacity"])
+    if config["core"] == "CORE-3":
+        initial = Fraction(config["energy"]["simulation_initial_battery"])
+        try:
+            rendered = render_system_projection(
+                template,
+                processors=max(config["platform"]["cores"]),
+                initial_battery=initial,
+                battery_capacity=capacity,
+                service_curve=spec,
+            )
+        except SimulationConfigurationError as exc:
+            raise TasksetStoreError(f"cannot render service system: {exc}") from exc
+    else:
+        # Keep every non-CORE-3 system projection byte-semantically aligned
+        # with the pre-existing shared framework.
+        with template.open("r", encoding="utf-8") as handle:
+            system_document = yaml.safe_load(handle)
+        if spec.get("synthetic_piecewise", False):
+            system_document.setdefault("energy_management", {})[
+                "use_real_solar_data"
+            ] = False
+        system_document["cpu_islands"][0]["numcpus"] = max(
+            config["platform"]["cores"]
+        )
+        energy = system_document.setdefault("energy_management", {})
+        energy["max_energy"] = float(capacity)
+        energy["initial_energy"] = energy["max_energy"]
+        rendered = yaml.safe_dump(
+            system_document, allow_unicode=True, sort_keys=False
+        )
     system_path = run_root / "system_config.yaml"
-    _atomic_write(
-        system_path,
-        yaml.safe_dump(system_document, allow_unicode=True, sort_keys=False),
-    )
+    _atomic_write(system_path, rendered)
     system = legacy_rta.load_system_config(str(system_path))
     horizon = int(spec["horizon"])
-    trace = legacy_rta._harvest_trace_from_config(system, horizon)
+    try:
+        trace = construct_paired_harvest_trace(system_path, horizon)
+    except SimulationConfigurationError as exc:
+        raise TasksetStoreError(f"cannot construct service trace: {exc}") from exc
     curve = legacy_rta.build_energy_service_curve(trace, horizon)
     required = max(config["generation"]["period_max"] - 1, 0)
     if required >= len(curve):
@@ -149,6 +173,22 @@ def prepare_service_curve(
                 template.read_bytes()
             ).hexdigest(),
             "exact_scale": fraction_text(exact_scale),
+        })
+    if "solar_scale" in spec:
+        solar_path = Path(system.solar_data_file)
+        if not solar_path.is_absolute():
+            solar_path = Path(legacy_rta._resolve_solar_path(system))
+        raw.update({
+            "source_template_sha256": hashlib.sha256(
+                template.read_bytes()
+            ).hexdigest(),
+            "solar_data_sha256": hashlib.sha256(
+                solar_path.read_bytes()
+            ).hexdigest(),
+            "solar_scale": fraction_text(Fraction(str(spec["solar_scale"]))),
+            "effective_pv_area_m2": fraction_text(
+                Fraction(str(system.pv_area_m2))
+            ),
         })
     identity = domain_hash("ASAP_BLOCK:V9.3:SERVICE_CURVE:v1", raw)
     return ServiceCurveMaterial(values, identity, canonical_json(raw), system_path)
