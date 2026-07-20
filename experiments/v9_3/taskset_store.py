@@ -86,6 +86,76 @@ class ServiceCurveMaterial:
     system_path: Path
 
 
+@dataclass(frozen=True)
+class TaskWorkloadContract:
+    candidates: Tuple[str, ...]
+    candidate_identity: str
+    power_model: Tuple[Tuple[str, Fraction], ...]
+    power_model_identity: str
+
+    def canonical_material(self) -> Dict[str, Any]:
+        return {
+            "version": "NON_IDLE_V1",
+            "ordered_candidates": list(self.candidates),
+            "candidate_identity": self.candidate_identity,
+            "power_model": [
+                {"workload": name, "energy_per_tick": fraction_text(energy)}
+                for name, energy in self.power_model
+            ],
+            "power_model_identity": self.power_model_identity,
+        }
+
+
+def task_workload_energy_model(
+    system_path: Path,
+) -> Tuple[Tuple[str, Fraction], ...]:
+    """Return the lexical non-idle task workload model used by generation."""
+
+    system = legacy_rta.load_system_config(str(system_path))
+    names = sorted(
+        str(name) for name in system.workload_coefficients if str(name) != "idle"
+    )
+    return tuple(
+        (name, Fraction(str(system.task_energy_per_tick(name)))) for name in names
+    )
+
+
+def prepare_task_workload_contract(
+    config: Mapping[str, Any], system_path: Path,
+) -> TaskWorkloadContract | None:
+    configured = config["generation"].get("workload_candidates")
+    if configured is None:
+        return None
+    candidates = tuple(str(name) for name in configured)
+    if not candidates or "idle" in candidates:
+        raise TasksetStoreError(
+            "configured task workload candidates must be non-empty and exclude idle"
+        )
+    model = task_workload_energy_model(system_path)
+    model_names = tuple(name for name, _energy in model)
+    if candidates != model_names:
+        raise TasksetStoreError(
+            "configured task workload candidates do not exactly match the "
+            f"non-idle actual power model: configured={candidates}, actual={model_names}"
+        )
+    candidate_material = {"ordered_candidates": list(candidates)}
+    candidate_identity = domain_hash(
+        "ASAP_BLOCK:V9.3:TASK_WORKLOAD_CANDIDATES:v1", candidate_material,
+    )
+    model_material = [
+        {"workload": name, "energy_per_tick": fraction_text(energy)}
+        for name, energy in model
+    ]
+    return TaskWorkloadContract(
+        candidates,
+        candidate_identity,
+        model,
+        domain_hash(
+            "ASAP_BLOCK:V9.3:TASK_WORKLOAD_POWER_MODEL:v1", model_material,
+        ),
+    )
+
+
 def _atomic_write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
@@ -162,6 +232,9 @@ class TasksetStore:
         self.root = Path(root)
         self.config = config
         self.service = service
+        self.task_workload_contract = prepare_task_workload_contract(
+            config, service.system_path
+        )
         self.root.mkdir(parents=True, exist_ok=True)
         self.manifest_path = self.root / "pairing_manifest.json"
         self._initialize_pairing_manifest()
@@ -178,7 +251,7 @@ class TasksetStore:
             }
         start = int(self.config["grid"].get("taskset_index_start", 0))
         count = int(self.config["grid"]["tasksets_per_cell"])
-        return {
+        contract = {
             "generation_cells": [dimensions[key] for key in sorted(dimensions)],
             "base_seed": int(self.config["grid"]["base_seed"]),
             "seed_mode": self.config["grid"].get(
@@ -190,6 +263,11 @@ class TasksetStore:
             "exact_e0_grid": list(self.config["energy"]["initial_energy_values"]),
             "service_curve_identity": self.service.identity,
         }
+        if self.task_workload_contract is not None:
+            contract["task_workload_contract"] = (
+                self.task_workload_contract.canonical_material()
+            )
+        return contract
 
     def _initialize_pairing_manifest(self) -> None:
         contract = self._pairing_contract()
@@ -354,6 +432,9 @@ class TasksetStore:
                 "--wcet-rounding", generation["wcet_rounding"],
                 "--actual-utilization-tolerance-total", format(float(Fraction(generation["utilization_tolerance"])), ".15g"),
             ]
+            if self.task_workload_contract is not None:
+                for workload in self.task_workload_contract.candidates:
+                    command.extend(["--task-workload-candidate", workload])
             if generation["deadline_mode"] == "constrained":
                 command.append("--constrained-deadlines")
             started = time.perf_counter()
@@ -376,7 +457,15 @@ class TasksetStore:
         payload = []
         for rank, legacy_task in enumerate(legacy_tasks):
             raw = raw_by_name[legacy_task.name]
-            power = Fraction(str(system.task_energy_per_tick(legacy_task.workload)))
+            workload = _workload(raw)
+            if (
+                self.task_workload_contract is not None
+                and workload not in self.task_workload_contract.candidates
+            ):
+                raise TasksetStoreError(
+                    f"generator produced workload outside task candidate contract: {workload}"
+                )
+            power = Fraction(str(system.task_energy_per_tick(workload)))
             task_id_value = str(rank)
             if legacy_task.deadline > legacy_task.period:
                 raise TasksetStoreError("generator produced D > T")
@@ -393,7 +482,7 @@ class TasksetStore:
                 "T": legacy_task.period,
                 "P": fraction_text(power),
                 "D_over_T": fraction_text(Fraction(legacy_task.deadline, legacy_task.period)),
-                "workload": _workload(raw),
+                "workload": workload,
                 "arrival_offset": _offset(raw),
             })
         actual = sum(Fraction(task.wcet, task.period) for task in tasks)
@@ -404,7 +493,11 @@ class TasksetStore:
             self.config, cell.processors, cell.task_count, cell.utilization
         )
         canonical_payload = {
-            "schema": "ASAP_BLOCK_V9_3_FROZEN_TASKSET_V1",
+            "schema": (
+                "ASAP_BLOCK_V9_3_FROZEN_TASKSET_V2"
+                if self.task_workload_contract is not None
+                else "ASAP_BLOCK_V9_3_FROZEN_TASKSET_V1"
+            ),
             "generation_id": cell.generation_id,
             "taskset_index": taskset_index,
             "seed": seed,
@@ -417,7 +510,13 @@ class TasksetStore:
             "service_curve_reference": self.service.identity,
             "tasks": payload,
         }
-        semantic_hash = domain_hash("ASAP_BLOCK:V9.3:TASKSET_SEMANTIC:v1", canonical_payload)
+        semantic_domain = "ASAP_BLOCK:V9.3:TASKSET_SEMANTIC:v1"
+        if self.task_workload_contract is not None:
+            canonical_payload["task_workload_contract"] = (
+                self.task_workload_contract.canonical_material()
+            )
+            semantic_domain = "ASAP_BLOCK:V9.3:TASKSET_SEMANTIC:v2"
+        semantic_hash = domain_hash(semantic_domain, canonical_payload)
         priority_hash = domain_hash(
             "ASAP_BLOCK:V9.3:PRIORITY_VECTOR:v1",
             [{"task_id": item["task_id"], "priority_rank": item["priority_rank"]} for item in payload],
@@ -448,22 +547,53 @@ class TasksetStore:
             raise TasksetStoreError("frozen taskset index mismatch")
         if document.get("service_curve_reference") != self.service.identity:
             raise TasksetStoreError("frozen taskset service-curve identity mismatch")
+        expected_schema = (
+            "ASAP_BLOCK_V9_3_FROZEN_TASKSET_V2"
+            if self.task_workload_contract is not None
+            else "ASAP_BLOCK_V9_3_FROZEN_TASKSET_V1"
+        )
+        if document.get("schema") != expected_schema:
+            raise TasksetStoreError("frozen taskset workload contract schema mismatch")
+        if self.task_workload_contract is not None and document.get(
+            "task_workload_contract"
+        ) != self.task_workload_contract.canonical_material():
+            raise TasksetStoreError("frozen taskset workload contract mismatch")
+        preimage_keys = [
+            "schema", "generation_id", "taskset_index", "seed",
+            "generation_parameters", "target_total_utilization",
+            "actual_total_utilization", "priority_policy", "power_mode",
+            "deadline_mode", "service_curve_reference", "tasks",
+        ]
+        if self.task_workload_contract is not None:
+            preimage_keys.append("task_workload_contract")
         preimage = {
             key: document[key]
-            for key in (
-                "schema", "generation_id", "taskset_index", "seed",
-                "generation_parameters", "target_total_utilization",
-                "actual_total_utilization", "priority_policy", "power_mode",
-                "deadline_mode", "service_curve_reference", "tasks",
-            )
+            for key in preimage_keys
         }
-        observed = domain_hash("ASAP_BLOCK:V9.3:TASKSET_SEMANTIC:v1", preimage)
+        semantic_domain = (
+            "ASAP_BLOCK:V9.3:TASKSET_SEMANTIC:v2"
+            if self.task_workload_contract is not None
+            else "ASAP_BLOCK:V9.3:TASKSET_SEMANTIC:v1"
+        )
+        observed = domain_hash(semantic_domain, preimage)
         if observed != document.get("taskset_hash"):
             raise TasksetStoreError("frozen taskset semantic hash mismatch")
         return self._from_document(document, path)
 
     def _from_document(self, document: Mapping[str, Any], path: Path) -> StoredTaskset:
         payload = tuple(document["tasks"])
+        if self.task_workload_contract is not None:
+            invalid_workloads = sorted({
+                str(item.get("workload"))
+                for item in payload
+                if str(item.get("workload"))
+                not in self.task_workload_contract.candidates
+            })
+            if invalid_workloads:
+                raise TasksetStoreError(
+                    "stored taskset contains workload outside task candidate "
+                    f"contract: {invalid_workloads}"
+                )
         tasks = tuple(rta_core.V93Task(
             str(item["task_id"]), int(item["C"]), int(item["D"]),
             int(item["T"]), Fraction(str(item["P"])),

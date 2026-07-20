@@ -44,6 +44,10 @@ python3 scripts/run_v9_3_ext1.py --config configs/v9_3_ext1_smoke.yaml
 python3 scripts/analyze_v9_3_ext1.py --output-root artifacts/v9_3_ext1_smoke
 
 python3 scripts/run_v9_3_ext1b.py --config configs/v9_3_ext1b2_smoke.yaml --dry-run
+python3 scripts/run_v9_3_ext1b.py \
+  --config configs/v9_3_ext1b3_timing_calibration.yaml \
+  --output-root /path/to/v9_3_ext1b3_plan \
+  --taskset-store /path/to/v9_3_ext1b3_plan_store --plan-only
 python3 scripts/run_v9_3_ext1b.py --config configs/v9_3_ext1b2_smoke.yaml
 python3 scripts/run_v9_3_ext1b.py --config configs/v9_3_ext1b2_smoke.yaml --resume
 python3 scripts/analyze_v9_3_ext1b.py --output-root artifacts/v9_3_ext1b2_smoke --verify-hashes
@@ -61,6 +65,15 @@ python3 scripts/analyze_v9_3_ext1b.py \
 Use `--max-cells` and `--max-tasksets` only for bounded validation. Pilot or
 larger execution requires an explicit reviewed config and is not implied by
 these examples.
+
+`--dry-run` reports cardinalities only. `--plan-only` is the full structural
+preflight: it runs taskset generation and retries, deadline transformation,
+scenario construction, and request planning, then writes
+`generated_tasksets.csv`, `generation_attempts.csv`,
+`scenario_instances.csv`, and `simulation_requests.csv` without invoking the
+simulator. B3 freezes a lexically ordered non-idle task workload pool in the
+configuration and taskset provenance; `idle` remains available only as the
+system idle-power state.
 
 ## Reanalysis and outputs
 

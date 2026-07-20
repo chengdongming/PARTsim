@@ -2,7 +2,7 @@ experiment_id: asap-block-v9.3-ext1b3-timing-calibration
 core: CORE-3
 extension: EXT-1B
 parameter_status: PILOT
-seed_space: EXT1B3_TIMING_CALIBRATION_PILOT
+seed_space: EXT1B3_TIMING_CALIBRATION_PILOT_V2
 scheduler_ids:
   - gpfp_asap_block
   - gpfp_alap_block
@@ -23,6 +23,7 @@ generation:
   priority_policy: RM
   power_mode: generator_default_heterogeneous
   generator_timeout_seconds: 120
+  workload_candidates: [bzip2, control, decrypt, encrypt, hash]
 energy:
   initial_energy_values: ["0"]
   simulation_initial_battery: "1"

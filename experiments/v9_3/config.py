@@ -164,6 +164,26 @@ def validate_config(raw: Mapping[str, Any], *, expected_core: str | None = None)
         generation[label] = fraction_text(value)
     if Fraction(generation["min_task_util"]) > Fraction(generation["max_task_util"]):
         raise ConfigError("generation.min_task_util must not exceed max_task_util")
+    if "workload_candidates" in generation:
+        candidates = generation["workload_candidates"]
+        if not isinstance(candidates, list) or not candidates:
+            raise ConfigError("generation.workload_candidates must be a non-empty list")
+        if any(
+            not isinstance(value, str) or not value or value.strip() != value
+            for value in candidates
+        ):
+            raise ConfigError(
+                "generation.workload_candidates must contain canonical non-empty strings"
+            )
+        if len(candidates) != len(set(candidates)):
+            raise ConfigError("generation.workload_candidates contains duplicates")
+        if "idle" in candidates:
+            raise ConfigError("generation.workload_candidates must not contain idle")
+        if candidates != sorted(candidates):
+            raise ConfigError(
+                "generation.workload_candidates must use stable lexical order"
+            )
+        generation["workload_candidates"] = list(candidates)
     constrained = _require_mapping(generation, "constrained_deadline")
     distribution = constrained.get("distribution")
     if distribution not in KNOWN_CONSTRAINED_DISTRIBUTIONS:

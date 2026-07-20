@@ -159,6 +159,16 @@ class Ext1BOutcome:
     summary: Mapping[str, Any]
 
 
+@dataclass(frozen=True)
+class Ext1BPlanOutcome:
+    output_root: Path
+    generated_tasksets: int
+    generation_attempts: int
+    paired_instances: int
+    simulation_requests: int
+    summary: Mapping[str, Any]
+
+
 class Ext1BRunner:
     def __init__(self, config: Mapping[str, Any]) -> None:
         self.config = dict(config)
@@ -941,6 +951,58 @@ class Ext1BRunner:
         write_file_hashes(self.root)
         return Ext1BOutcome(
             self.root, len(plan), len(result_rows), self.stop_requested, summary
+        )
+
+    def materialize_plan(
+        self, *, max_cells: Optional[int] = None,
+        max_tasksets: Optional[int] = None,
+    ) -> Ext1BPlanOutcome:
+        """Materialize generation, transforms, scenarios, and requests only."""
+
+        self._initialize(resume=False)
+        generated, generation_attempts, instances, plan = self._plan(
+            max_cells, max_tasksets
+        )
+        public_requests = [
+            {key: row[key] for key in REQUEST_COLUMNS} for row in plan
+        ]
+        write_csv(
+            self.root / "generated_tasksets.csv", GENERATED_COLUMNS, generated,
+        )
+        write_csv(
+            self.root / "generation_attempts.csv",
+            GENERATION_ATTEMPT_COLUMNS,
+            generation_attempts,
+        )
+        write_csv(
+            self.root / "scenario_instances.csv",
+            SCENARIO_INSTANCE_COLUMNS,
+            instances,
+        )
+        write_csv(
+            self.root / "simulation_requests.csv",
+            REQUEST_COLUMNS,
+            public_requests,
+        )
+        summary = {
+            "schema": "ASAP_BLOCK_V9_3_EXT1B_PLAN_ONLY_V1",
+            "output_root": str(self.root),
+            "plan_only": True,
+            "simulator_invoked": False,
+            "cell_count": len(self._selected_cells(max_cells)),
+            "generated_tasksets": len(generated),
+            "generation_attempts": len(generation_attempts),
+            "paired_instances": len(instances),
+            "simulation_requests": len(public_requests),
+        }
+        atomic_write_json(self.root / "plan_summary.json", summary)
+        return Ext1BPlanOutcome(
+            self.root,
+            len(generated),
+            len(generation_attempts),
+            len(instances),
+            len(public_requests),
+            summary,
         )
 
 

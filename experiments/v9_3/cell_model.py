@@ -68,7 +68,7 @@ def generation_dimensions(
     config: Mapping[str, Any], processors: int, task_count: int, utilization: Fraction
 ) -> Dict[str, Any]:
     generation = config["generation"]
-    return {
+    dimensions = {
         "M": processors,
         "task_n": task_count,
         "utilization": fraction_text(utilization),
@@ -84,6 +84,18 @@ def generation_dimensions(
         "power_mode": generation["power_mode"],
         "service_curve_id": config["energy"]["service_curve"]["id"],
     }
+    candidates = generation.get("workload_candidates")
+    if candidates is not None:
+        candidate_material = {"ordered_candidates": list(candidates)}
+        dimensions["task_workload_contract"] = {
+            "version": "NON_IDLE_V1",
+            **candidate_material,
+            "candidate_identity": domain_hash(
+                "ASAP_BLOCK:V9.3:TASK_WORKLOAD_CANDIDATES:v1",
+                candidate_material,
+            ),
+        }
+    return dimensions
 
 
 def expand_cells(config: Mapping[str, Any]) -> Tuple[Cell, ...]:

@@ -12,7 +12,7 @@ import math
 import sys
 import yaml
 import os
-from typing import List, Dict, Set, Tuple, Optional, Any
+from typing import List, Dict, Set, Tuple, Optional, Any, Sequence
 from collections import defaultdict
 from datetime import datetime
 
@@ -336,8 +336,9 @@ class DAGGenerator:
 class EnergyAwareTaskGenerator:
     """能量感知任务生成器 - 增强版"""
     
-    def __init__(self, seed=None, energy_manager: EnergyManager = None, 
-                 system_config_path: str = None):
+    def __init__(self, seed=None, energy_manager: EnergyManager = None,
+                 system_config_path: str = None,
+                 task_workload_candidates: Optional[Sequence[str]] = None):
         self.uunifast = UUniFastDiscard(seed)
         self.dag_generator = DAGGenerator(seed)
         self.energy_manager = energy_manager
@@ -352,6 +353,9 @@ class EnergyAwareTaskGenerator:
         
         # 从配置中获取工作负载类型
         self.workload_types = self._get_workload_types()
+        self.task_workload_candidates = self._resolve_task_workload_candidates(
+            task_workload_candidates
+        )
         
         # 从配置中加载功率参数
         self.power_coefficients = self._load_power_coefficients()
@@ -370,6 +374,33 @@ class EnergyAwareTaskGenerator:
         logger.info(f"  工作负载类型: {len(self.workload_types)} 种")
         logger.info(f"  基础功耗: {self.base_power} W")
         logger.info(f"  基础频率: {self.base_frequency} MHz")
+
+    def _resolve_task_workload_candidates(
+            self, configured: Optional[Sequence[str]]) -> Tuple[str, ...]:
+        """Freeze the ordered pool used for real-time task workloads.
+
+        The legacy default is retained for callers that do not opt in to a
+        generation contract. Formal callers pass an explicit pool so its
+        order and membership can be included in their provenance.
+        """
+
+        if configured is None:
+            return ("idle", "control", "bzip2", "hash", "encrypt", "decrypt")
+        candidates = tuple(str(value) for value in configured)
+        if not candidates:
+            raise ValueError("task workload candidate pool must not be empty")
+        if any(not value or value.strip() != value for value in candidates):
+            raise ValueError("task workload candidates must be non-empty canonical names")
+        if len(candidates) != len(set(candidates)):
+            raise ValueError("task workload candidates must be unique")
+        if "idle" in candidates:
+            raise ValueError("idle is a system state, not a task workload candidate")
+        unknown = sorted(set(candidates) - set(self.workload_types))
+        if unknown:
+            raise ValueError(
+                f"task workload candidates are absent from the configured model: {unknown}"
+            )
+        return candidates
     
     def _load_system_config(self, config_path: str) -> Dict:
         """加载系统配置文件"""
@@ -686,10 +717,8 @@ class EnergyAwareTaskGenerator:
                     if max_arrival_offset_value > 0:
                         arrival_offset_value = random.randint(0, max_arrival_offset_value)
 
-                # 选择工作负载类型 - 均匀分布（所有类型概率相同）
-                # 每种类型: 16.67% (6种工作负载)
-                workload_types = ["idle", "control", "bzip2", "hash", "encrypt", "decrypt"]
-                workload = random.choice(workload_types)
+                # 选择工作负载类型 - 均匀分布（所有候选类型概率相同）
+                workload = random.choice(self.task_workload_candidates)
 
                 # 计算能耗 - 使用系统配置参数
                 energy = self.calculate_energy(execution_time, workload, self.base_frequency)
@@ -1082,6 +1111,15 @@ def main():
                        help="输出文件")
     parser.add_argument("--seed", type=int, default=None,
                        help="随机种子")
+    parser.add_argument(
+        "--task-workload-candidate",
+        action="append",
+        dest="task_workload_candidates",
+        help=(
+            "实时任务workload候选；可重复，顺序会影响确定性生成。"
+            "显式候选池不得包含idle"
+        ),
+    )
     parser.add_argument("--min-task-util", type=float, default=0.01,
                        help="UUniFast-Discard单任务最小利用率")
     parser.add_argument("--max-task-util", type=float, default=0.8,
@@ -1167,7 +1205,8 @@ def main():
         generator = EnergyAwareTaskGenerator(
             seed=args.seed, 
             energy_manager=energy_manager,
-            system_config_path=args.system_config
+            system_config_path=args.system_config,
+            task_workload_candidates=args.task_workload_candidates,
         )
         
         tasks, resources, dag, energy_info = generator.generate_taskset(

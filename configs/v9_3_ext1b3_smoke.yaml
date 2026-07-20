@@ -16,6 +16,7 @@ generation:
   priority_policy: RM
   power_mode: generator_default_heterogeneous
   generator_timeout_seconds: 30
+  workload_candidates: [bzip2, control, decrypt, encrypt, hash]
 energy:
   initial_energy_values: ["0"]
   simulation_initial_battery: "1"

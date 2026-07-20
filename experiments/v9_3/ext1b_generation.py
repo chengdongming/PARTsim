@@ -12,7 +12,7 @@ import asap_block_rta as legacy_rta
 
 from .config import canonical_json, domain_hash, fraction_text
 from .result_writer import atomic_write_json, atomic_write_text
-from .taskset_store import StoredTaskset
+from .taskset_store import StoredTaskset, task_workload_energy_model
 
 
 PEAK_TIME_OF_DAY_MS = 11 * 60 * 60 * 1000
@@ -142,10 +142,8 @@ def scenario_cells(config: Mapping[str, Any]) -> Tuple[ScenarioCell, ...]:
 def workload_energy_table(system_path: Path) -> Tuple[Tuple[str, Fraction], ...]:
     """Read and sort the simulator's configured workload energy model."""
 
-    system = legacy_rta.load_system_config(str(system_path))
-    names = sorted(str(name) for name in system.workload_coefficients if name != "idle")
     values = tuple(sorted(
-        ((name, Fraction(str(system.task_energy_per_tick(name)))) for name in names),
+        task_workload_energy_model(system_path),
         key=lambda item: (item[1], item[0]),
     ))
     if len(values) < 2 or values[0][1] >= values[-1][1]:

@@ -356,7 +356,7 @@ def test_b3_timing_calibration_contract_and_dry_run_cardinality():
         "asap-block-v9.3-ext1b3-timing-calibration"
     )
     assert runner.config["parameter_status"] == "PILOT"
-    assert runner.config["seed_space"] == "EXT1B3_TIMING_CALIBRATION_PILOT"
+    assert runner.config["seed_space"] == "EXT1B3_TIMING_CALIBRATION_PILOT_V2"
     assert runner.config["scheduler_ids"] == [
         "gpfp_asap_block", "gpfp_alap_block", "gpfp_st_block",
     ]
