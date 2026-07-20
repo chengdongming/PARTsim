@@ -165,6 +165,30 @@ child CPU time, peak RSS, speedup, and parallel efficiency. Single-request
 worker runtimes are marked as excluded from the CORE-5A complexity regression.
 The analyzer rejects missing worker/repetition children or a mixed config.
 
+Formal parent resume classifies each child artifact root before execution. A
+durably complete child is validated and skipped; a valid partial child resumes
+through the shared engine; a missing child starts fresh. Configuration,
+authorization-seal, checkpoint, table-schema, or request/terminal identity
+mismatches fail closed. A signal interruption inside a child leaves the parent
+`INTERRUPTED`, so `--resume` continues that child without repeating its
+durable terminals.
+
+CORE-5A writes `core5a_metrics.json`, reconstructed exclusively from child
+requests, attempts, taskset/task terminals, and RSS observations. It persists
+terminal counts, completed-runtime median/P95/max, peak RSS, available search
+and inverse-service counters, candidate counts, retry/timeout counts, and
+censoring states. Fixed-point iterations are not exposed by the frozen solver
+interface and therefore remain explicit `null` with status `UNAVAILABLE`,
+never a synthetic zero.
+
+CORE-5B writes `worker_semantic_checks.csv`. Each of the 300 rows proves the
+20-execution closure: workers `{1,2,4,8}`, five distinct repetitions per
+worker, and exact equality of input hash, terminal, response bounds, search
+and inverse-service counters, and candidate count. Both profiles finish with a
+parent `file_hashes.sha256`; the formal analyzer validates that manifest and
+then independently reconstructs the profile-specific persisted artifact from
+all child evidence.
+
 Inspect either frozen plan without generating tasksets or invoking the solver:
 
 ```text
