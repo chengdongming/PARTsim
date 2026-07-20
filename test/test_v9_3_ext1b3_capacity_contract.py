@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 from copy import deepcopy
 from dataclasses import replace
 from fractions import Fraction
@@ -261,16 +262,14 @@ def test_retry_rejects_infeasible_candidate_and_emits_complete_pair(
     outcome = Ext1BRunner(config).materialize_plan(
         max_cells=1, max_tasksets=1,
     )
-    attempts = list(__import__("csv").DictReader(
-        (tmp_path / "plan/generation_attempts.csv").open(
-            newline="", encoding="utf-8"
-        )
-    ))
-    requests = list(__import__("csv").DictReader(
-        (tmp_path / "plan/simulation_requests.csv").open(
-            newline="", encoding="utf-8"
-        )
-    ))
+    with (tmp_path / "plan/generation_attempts.csv").open(
+        newline="", encoding="utf-8"
+    ) as handle:
+        attempts = list(csv.DictReader(handle))
+    with (tmp_path / "plan/simulation_requests.csv").open(
+        newline="", encoding="utf-8"
+    ) as handle:
+        requests = list(csv.DictReader(handle))
     assert [row["rejection_code"] for row in attempts] == [
         CAPACITY_FEASIBILITY_ERROR_CODE,
         "",
@@ -303,16 +302,14 @@ def test_retry_rejects_infeasible_candidate_and_emits_complete_pair(
                 "capacity_feasibility_contract_identity": identity,
             },
         )
-    generated = list(__import__("csv").DictReader(
-        (tmp_path / "plan/generated_tasksets.csv").open(
-            newline="", encoding="utf-8"
-        )
-    ))
-    instances = list(__import__("csv").DictReader(
-        (tmp_path / "plan/scenario_instances.csv").open(
-            newline="", encoding="utf-8"
-        )
-    ))
+    with (tmp_path / "plan/generated_tasksets.csv").open(
+        newline="", encoding="utf-8"
+    ) as handle:
+        generated = list(csv.DictReader(handle))
+    with (tmp_path / "plan/scenario_instances.csv").open(
+        newline="", encoding="utf-8"
+    ) as handle:
+        instances = list(csv.DictReader(handle))
     assert len(generated) == len(instances) == 1
     assert generated[0]["capacity_feasibility_contract_identity"] == identity
     assert instances[0]["capacity_feasibility_contract_identity"] == identity
