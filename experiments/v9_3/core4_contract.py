@@ -12,6 +12,10 @@ from typing import Any, Dict, Iterable, Mapping, Sequence
 
 from .cell_model import expand_cells
 from .config import canonical_json, config_hash, domain_hash, fraction_text, load_config
+from .formal_authorization import (
+    FormalAuthorizationError,
+    revalidate_authorization_seal,
+)
 from .monotonicity import service_curve_relation, terminal_status_class
 from .paired_sweep import make_sweep, paired_analysis_id
 from .result_writer import (
@@ -766,7 +770,7 @@ def configured_core4_counts(config: Mapping[str, Any]) -> Dict[str, int]:
 
 
 def _validate_run_mode_metadata(
-    metadata: Mapping[str, Any], config: Mapping[str, Any]
+    metadata: Mapping[str, Any], config: Mapping[str, Any], root: Path
 ) -> None:
     expected_formal = (
         config["sensitivity"].get("profile")
@@ -779,6 +783,28 @@ def _validate_run_mode_metadata(
     if metadata.get("finite_sample_consistency_check_only") is not True:
         raise Core4ContractError(
             "CORE-4 metadata must retain finite-sample-only semantics"
+        )
+    if expected_formal:
+        seal = _load_json(
+            root / "formal_authorization_seal.json", "formal authorization seal"
+        )
+        try:
+            revalidate_authorization_seal(
+                config, seal, project_root=Path(__file__).resolve().parents[2]
+            )
+        except FormalAuthorizationError as exc:
+            raise Core4ContractError(
+                "CORE-4 formal authorization seal is no longer valid"
+            ) from exc
+        if metadata.get("formal_authorization_id") != seal.get(
+            "authorization_id"
+        ):
+            raise Core4ContractError(
+                "CORE-4 metadata/authorization seal mismatch"
+            )
+    elif metadata.get("formal_authorization_id") is not None:
+        raise Core4ContractError(
+            "nonformal CORE-4 metadata carries a formal authorization"
         )
 
 
@@ -804,7 +830,7 @@ def validate_core4_artifact_contract(
     loaded = load_config(run_config, expected_core="CORE-4")
     if config_hash(loaded) != metadata.get("config_hash"):
         raise Core4ContractError("CORE-4 persisted config hash mismatch")
-    _validate_run_mode_metadata(metadata, loaded)
+    _validate_run_mode_metadata(metadata, loaded, root)
     configured_counts = configured_core4_counts(loaded)
     for field, value in configured_counts.items():
         if metadata.get(field) != value:
@@ -914,7 +940,7 @@ def validate_core4_resume_envelope(
     persisted_config = load_config(run_config, expected_core="CORE-4")
     if config_hash(persisted_config) != expected_config_hash:
         raise Core4ContractError("CORE-4 persisted configuration hash mismatch")
-    _validate_run_mode_metadata(metadata, persisted_config)
+    _validate_run_mode_metadata(metadata, persisted_config, root)
     for field, value in expected_counts.items():
         if metadata.get(field) != value:
             raise Core4ContractError(f"CORE-4 resume metadata count mismatch: {field}")

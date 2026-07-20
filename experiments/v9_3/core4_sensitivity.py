@@ -28,6 +28,10 @@ from .core4_contract import (
 )
 from .core4_aggregation import aggregate_core4, analyze_core4_artifacts
 from .execution_engine import ExecutionEngine
+from .formal_authorization import (
+    requires_formal_authorization,
+    verify_authorization,
+)
 from .monotonicity import (
     MonotonicityStatus,
     service_curve_relation,
@@ -105,10 +109,21 @@ class FrozenStoreView:
 
 
 class Core4SensitivityRunner:
-    def __init__(self, config: Mapping[str, Any]) -> None:
+    def __init__(
+        self,
+        config: Mapping[str, Any],
+        *,
+        authorization_path: Optional[Path] = None,
+        source_config_path: Optional[Path] = None,
+        prepared_config_path: Optional[Path] = None,
+    ) -> None:
         self.config = dict(config)
         self.root = Path(config["execution"]["output_root"])
         self.identity = config_hash(config)
+        self._authorization_path = authorization_path
+        self._source_config_path = source_config_path
+        self._prepared_config_path = prepared_config_path
+        self._authorization_seal: Optional[Dict[str, Any]] = None
 
     def _levels(self) -> list[tuple[str, list[Any]]]:
         axes = self.config["sensitivity"]["axes"]
@@ -195,12 +210,42 @@ class Core4SensitivityRunner:
         return result
 
     def _initialize(self, resume: bool) -> None:
+        seal = verify_authorization(
+            self.config,
+            authorization_path=self._authorization_path,
+            source_freeze_config=self._source_config_path,
+            prepared_config=self._prepared_config_path,
+            project_root=Path(__file__).resolve().parents[2],
+        )
+        self._authorization_seal = dict(seal)
         self.root.mkdir(parents=True, exist_ok=True)
         metadata_path = self.root / "run_metadata.json"
+        seal_path = self.root / "formal_authorization_seal.json"
         counts = self._static_counts()
         if metadata_path.is_file():
             if not resume:
                 raise ConfigError("CORE-4 run directory exists; use --resume")
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            if bool(metadata.get("formal_large_scale_run")):
+                if not seal_path.is_file():
+                    raise ConfigError(
+                        "formal CORE-4 run is missing its authorization seal"
+                    )
+                persisted_seal = json.loads(
+                    seal_path.read_text(encoding="utf-8")
+                )
+                if canonical_json(persisted_seal) != canonical_json(seal):
+                    raise ConfigError(
+                        "formal CORE-4 authorization changed during resume"
+                    )
+                if metadata.get("formal_authorization_id") != seal.get(
+                    "authorization_id"
+                ):
+                    raise ConfigError(
+                        "CORE-4 metadata/authorization seal mismatch"
+                    )
+            elif seal.get("formal_large_scale_run"):
+                raise ConfigError("cannot promote a nonformal CORE-4 run")
             try:
                 validate_core4_resume_envelope(
                     self.root,
@@ -224,6 +269,8 @@ class Core4SensitivityRunner:
                 raise ConfigError(
                     "CORE-4 output root has artifacts but no run_metadata.json"
                 )
+            if seal["formal_large_scale_run"]:
+                atomic_write_json(seal_path, seal)
             atomic_write_json(metadata_path, {
                 "schema": CORE4_RUN_SCHEMA,
                 "experiment_id": self.config["experiment_id"],
@@ -238,10 +285,8 @@ class Core4SensitivityRunner:
                         "dependency_unavailable_row_count",
                     )
                 },
-                "formal_large_scale_run": (
-                    self.config["sensitivity"].get("profile")
-                    == "formal-sustainability-v1"
-                ),
+                "formal_large_scale_run": seal["formal_large_scale_run"],
+                "formal_authorization_id": seal["authorization_id"],
                 "finite_sample_consistency_check_only": True,
             })
             dump_config(self.config, self.root / "run_config.yaml")
@@ -356,6 +401,13 @@ class Core4SensitivityRunner:
         self, *, resume: bool = False, max_cells: Optional[int] = None,
         max_tasksets: Optional[int] = None,
     ) -> Core4Outcome:
+        if requires_formal_authorization(self.config) and (
+            max_cells is not None or max_tasksets is not None
+        ):
+            raise ConfigError(
+                "formal CORE-4 execution cannot be truncated; use --dry-run "
+                "for inspection"
+            )
         if max_cells is not None and max_cells <= 0:
             raise ConfigError("max_cells must be positive")
         if max_tasksets is not None and max_tasksets <= 0:
@@ -404,6 +456,14 @@ class Core4SensitivityRunner:
                 child_generated: list[Mapping[str, str]] = []
                 if availability == "AVAILABLE":
                     child = deepcopy(self.config)
+                    child.pop("parameter_status", None)
+                    child["sensitivity"]["profile"] = (
+                        "formal-sustainability-child-v1"
+                    )
+                    child["parent_formal_authorization_id"] = (
+                        self._authorization_seal["authorization_id"]
+                        if self._authorization_seal else None
+                    )
                     child["experiment_id"] = (
                         f"{self.config['experiment_id']}::{axis}::{level_index}"
                     )

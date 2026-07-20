@@ -1,5 +1,6 @@
 experiment_id: asap-block-v9.3-core3-formal-b100-r2-workload-contract-v2
 core: CORE-3
+parameter_status: FROZEN_FOR_FORMAL_EXECUTION
 platform:
   cores: [4]
   task_count: [10]

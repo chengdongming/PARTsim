@@ -23,6 +23,11 @@ from .core3_aggregation import (
     tightness_row,
 )
 from .execution_engine import ExecutionEngine, RunOutcome
+from .formal_authorization import (
+    FormalAuthorizationError,
+    requires_formal_authorization,
+    revalidate_authorization_seal,
+)
 from .result_writer import (
     FAILURE_COLUMNS,
     TASKSET_RESULT_COLUMNS,
@@ -266,7 +271,14 @@ def _failed_execution(
 
 
 class Core3PairingRunner:
-    def __init__(self, config: Mapping[str, Any]) -> None:
+    def __init__(
+        self,
+        config: Mapping[str, Any],
+        *,
+        authorization_path: Optional[Path] = None,
+        source_config_path: Optional[Path] = None,
+        prepared_config_path: Optional[Path] = None,
+    ) -> None:
         self.config = dict(config)
         self.root = Path(config["execution"]["output_root"])
         self.config_identity = config_hash(config)
@@ -274,6 +286,9 @@ class Core3PairingRunner:
         self.stop_requested = False
         self._simulation_context: Dict[str, Dict[str, Any]] = {}
         self._energy_preflight: Optional[Dict[str, Any]] = None
+        self._authorization_path = authorization_path
+        self._source_config_path = source_config_path
+        self._prepared_config_path = prepared_config_path
 
     def energy_preflight(self) -> Dict[str, Any]:
         if self._energy_preflight is None:
@@ -294,6 +309,35 @@ class Core3PairingRunner:
         return report
 
     def _validate_existing_core3_contract(self) -> None:
+        metadata_path = self.root / "run_metadata.json"
+        if metadata_path.is_file() and requires_formal_authorization(self.config):
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                seal = json.loads(
+                    (self.root / "formal_authorization_seal.json").read_text(
+                        encoding="utf-8"
+                    )
+                )
+                revalidate_authorization_seal(
+                    self.config,
+                    seal,
+                    project_root=Path(__file__).resolve().parents[2],
+                )
+            except (
+                OSError, json.JSONDecodeError, FormalAuthorizationError,
+            ) as exc:
+                raise RuntimeError(
+                    "CORE-3 formal authorization seal is no longer valid"
+                ) from exc
+            if (
+                metadata.get("config_hash") != self.config_identity
+                or metadata.get("formal_large_scale_run") is not True
+                or metadata.get("formal_authorization_id")
+                != seal.get("authorization_id")
+            ):
+                raise RuntimeError(
+                    "CORE-3 metadata/authorization seal mismatch"
+                )
         checkpoint_path = self.root / "checkpoint.json"
         existing_comparisons = bool(
             any(self.simulation_terminals.glob("*.json"))
@@ -1294,7 +1338,12 @@ class Core3PairingRunner:
     def run(self, *, resume: bool = False) -> Core3Outcome:
         self.require_energy_preflight()
         self._validate_existing_core3_contract()
-        rta_outcome = ExecutionEngine(self.config).run(resume=resume)
+        rta_outcome = ExecutionEngine(
+            self.config,
+            authorization_path=self._authorization_path,
+            source_config_path=self._source_config_path,
+            prepared_config_path=self._prepared_config_path,
+        ).run(resume=resume)
         plan = self._simulation_plan()
         executions: Dict[str, SimulationExecution] = {}
         if not rta_outcome.stopped:

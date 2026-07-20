@@ -30,7 +30,8 @@ import asap_block_v9_3_runner as production_runner
 from .cell_model import Cell, analysis_id, expand_cells
 from .config import canonical_json, config_hash, domain_hash, dump_config, fraction_text
 from .formal_authorization import (
-    FORMAL_PARAMETER_STATUS, FormalAuthorizationError, verify_authorization,
+    FORMAL_PARAMETER_STATUS, FormalAuthorizationError,
+    requires_formal_authorization, verify_authorization,
 )
 from .result_writer import (
     ATTEMPT_COLUMNS, REQUEST_COLUMNS,
@@ -950,7 +951,6 @@ class ExecutionEngine:
         return description
 
     def _initialize(self, *, resume: bool) -> None:
-        self.root.mkdir(parents=True, exist_ok=True)
         metadata_path = self.root / "run_metadata.json"
         seal_path = self.root / "formal_authorization_seal.json"
         if metadata_path.is_file():
@@ -991,6 +991,15 @@ class ExecutionEngine:
                 project_root=Path(__file__).resolve().parents[2],
             )
             self._authorization_seal = dict(seal)
+            if self.root.exists():
+                if self.root.is_symlink() or not self.root.is_dir():
+                    raise ExecutionError("invalid run output root")
+                if any(self.root.iterdir()):
+                    raise ExecutionError(
+                        "run output has artifacts without run_metadata.json"
+                    )
+            else:
+                self.root.mkdir(parents=True)
             atomic_write_json(seal_path, seal)
             metadata = {
                 "schema": "ASAP_BLOCK_V9_3_FORMAL_RUN_V1",
@@ -1650,6 +1659,12 @@ class ExecutionEngine:
         max_cells: Optional[int] = None,
         max_tasksets: Optional[int] = None,
     ) -> RunOutcome:
+        if requires_formal_authorization(self.config) and (
+            max_cells is not None or max_tasksets is not None
+        ):
+            raise ExecutionError(
+                "formal execution cannot be truncated; use --dry-run for inspection"
+            )
         if max_cells is not None and max_cells <= 0:
             raise ExecutionError("max_cells must be positive")
         if max_tasksets is not None and max_tasksets <= 0:

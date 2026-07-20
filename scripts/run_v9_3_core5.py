@@ -25,13 +25,20 @@ def main() -> int:
     parser.add_argument("--list-cells", action="store_true")
     parser.add_argument("--max-cells", type=int)
     parser.add_argument("--max-tasksets", type=int)
+    parser.add_argument("--formal-authorization", type=Path)
+    parser.add_argument("--source-freeze-config", type=Path)
     args = parser.parse_args()
     config = load_config(args.config, expected_core="CORE-5")
     profile = config["scalability"].get("profile", "bounded-smoke-v2")
     runner = (
         Core5ScalabilityRunner(config)
         if profile == "bounded-smoke-v2"
-        else Core5FormalRunner(config)
+        else Core5FormalRunner(
+            config,
+            authorization_path=args.formal_authorization,
+            source_config_path=args.source_freeze_config,
+            prepared_config_path=args.config,
+        )
     )
     if args.dry_run or args.list_cells:
         description = runner.describe(max_cells=args.max_cells)

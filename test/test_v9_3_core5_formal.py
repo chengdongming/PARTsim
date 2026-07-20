@@ -33,6 +33,7 @@ from experiments.v9_3.core5_formal import (
     expand_core5a_cells,
     inspect_formal_child,
 )
+import experiments.v9_3.formal_authorization as authorization
 from experiments.v9_3.resource_measurement import RESOURCE_OBSERVATION_COLUMNS
 from experiments.v9_3.result_writer import (
     ATTEMPT_COLUMNS, FAILURE_COLUMNS, GENERATED_COLUMNS, REQUEST_COLUMNS,
@@ -59,6 +60,36 @@ def _reduced_formal_config(source: Path, tmp_path: Path):
     config["execution"]["output_root"] = str(tmp_path / "run")
     config["execution"]["taskset_store"] = str(tmp_path / "store")
     return config
+
+
+def _authorized_runner(config, tmp_path: Path, monkeypatch):
+    repository = {
+        "git_commit": "6aa9d7196bcecf2896f6436bda8f32e8405a1521",
+        "git_tree": "1" * 40,
+        "repository_clean": True,
+    }
+    monkeypatch.setattr(
+        authorization, "_repository_identity", lambda _root: dict(repository)
+    )
+    source = tmp_path / "source-freeze.yaml"
+    prepared = tmp_path / "prepared.yaml"
+    dump_config(config, source)
+    dump_config(config, prepared)
+    binding = authorization.expected_binding(
+        config,
+        project_root=ROOT,
+        source_freeze_config=source,
+        prepared_config=prepared,
+    )
+    document = authorization.make_authorization_document(binding)
+    authorization_path = tmp_path / "formal-authorization.json"
+    authorization_path.write_text(json.dumps(document), encoding="utf-8")
+    return Core5FormalRunner(
+        config,
+        authorization_path=authorization_path,
+        source_config_path=source,
+        prepared_config_path=prepared,
+    )
 
 
 def _write_child_artifacts(
@@ -405,7 +436,7 @@ def test_core5a_parent_resume_continues_real_partial_child_artifact(
         formal_module, "prepare_service_curve",
         lambda _config, _root: object(),
     )
-    runner = Core5FormalRunner(config)
+    runner = _authorized_runner(config, tmp_path, monkeypatch)
     runner._initialize(resume=False)
     child = runner._child_config(
         run_id=cell.cell_id, processors=cell.processors,
@@ -448,7 +479,7 @@ def test_core5b_parent_resume_continues_real_partial_child_artifact(
     config = _reduced_formal_config(CORE5B, tmp_path)
     config["scalability"]["worker_counts"] = [1]
     config["scalability"]["repetitions_per_worker"] = 1
-    runner = Core5FormalRunner(config)
+    runner = _authorized_runner(config, tmp_path, monkeypatch)
     runner._initialize(resume=False)
     scheduled = core5b_execution_schedule(config)[0]
     child = runner._child_config(
@@ -486,9 +517,11 @@ def test_core5b_parent_resume_continues_real_partial_child_artifact(
     assert all(row["execution_count"] == "1" for row in checks)
 
 
-def test_core5a_analyzer_reconstructs_persisted_child_metrics(tmp_path):
+def test_core5a_analyzer_reconstructs_persisted_child_metrics(
+    tmp_path, monkeypatch
+):
     config = _reduced_formal_config(CORE5A, tmp_path)
-    runner = Core5FormalRunner(config)
+    runner = _authorized_runner(config, tmp_path, monkeypatch)
     runner._initialize(resume=False)
     for cell in expand_core5a_cells(config):
         child = runner._child_config(
@@ -562,9 +595,11 @@ def test_core5a_analyzer_reconstructs_persisted_child_metrics(tmp_path):
         analyze_core5_formal_artifacts(runner.root)
 
 
-def test_core5b_analyzer_reconstructs_twenty_execution_semantics(tmp_path):
+def test_core5b_analyzer_reconstructs_twenty_execution_semantics(
+    tmp_path, monkeypatch
+):
     config = _reduced_formal_config(CORE5B, tmp_path)
-    runner = Core5FormalRunner(config)
+    runner = _authorized_runner(config, tmp_path, monkeypatch)
     runner._initialize(resume=False)
     request_ids = ["math-0", "math-1"]
     for scheduled in core5b_execution_schedule(config):
