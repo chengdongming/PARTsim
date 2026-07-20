@@ -216,10 +216,66 @@ def validate_config(raw: Mapping[str, Any], *, expected_core: str | None = None)
                 "simulation initial battery must cover every configured release-time E0"
             )
         energy["simulation_initial_battery"] = fraction_text(initial_battery)
+        required_margin = exact_fraction(
+            energy.get("required_safety_margin", "0"),
+            "energy.required_safety_margin",
+        )
+        if "required_safety_margin" in energy:
+            energy["required_safety_margin"] = fraction_text(required_margin)
     service = _require_mapping(energy, "service_curve")
     if not isinstance(service.get("id"), str) or not service["id"]:
         raise ConfigError("energy.service_curve.id must be non-empty")
     _positive_int(service.get("horizon"), "energy.service_curve.horizon")
+    if "require_real_solar_data" in service and not isinstance(
+        service["require_real_solar_data"], bool
+    ):
+        raise ConfigError(
+            "energy.service_curve.require_real_solar_data must be boolean"
+        )
+    if "solar_scale" in service:
+        solar_scale = exact_fraction(
+            service["solar_scale"], "energy.service_curve.solar_scale"
+        )
+        if solar_scale <= 0:
+            raise ConfigError("energy.service_curve.solar_scale must be positive")
+        service["solar_scale"] = fraction_text(solar_scale)
+    if "raw_reference_pv_area_m2" in service:
+        reference_area = exact_fraction(
+            service["raw_reference_pv_area_m2"],
+            "energy.service_curve.raw_reference_pv_area_m2",
+        )
+        if reference_area <= 0:
+            raise ConfigError(
+                "energy.service_curve.raw_reference_pv_area_m2 must be positive"
+            )
+        service["raw_reference_pv_area_m2"] = fraction_text(reference_area)
+    if "dyadic_scale_selection" in service:
+        selection = service["dyadic_scale_selection"]
+        if not isinstance(selection, dict) or set(selection) != {
+            "rule",
+            "reference_initial_battery",
+            "reference_battery_capacity",
+            "required_safety_margin",
+        }:
+            raise ConfigError(
+                "energy.service_curve.dyadic_scale_selection has invalid fields"
+            )
+        if selection["rule"] != "largest_feasible_dyadic_v1":
+            raise ConfigError("unknown dyadic solar scale selection rule")
+        for field in (
+            "reference_initial_battery",
+            "reference_battery_capacity",
+            "required_safety_margin",
+        ):
+            value = exact_fraction(
+                selection[field],
+                f"energy.service_curve.dyadic_scale_selection.{field}",
+            )
+            if field == "reference_battery_capacity" and value <= 0:
+                raise ConfigError(
+                    "dyadic reference battery capacity must be positive"
+                )
+            selection[field] = fraction_text(value)
     if "synthetic_piecewise" in service and not isinstance(
         service["synthetic_piecewise"], bool
     ):

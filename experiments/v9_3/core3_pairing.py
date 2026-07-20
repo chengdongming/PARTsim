@@ -35,6 +35,7 @@ from .result_writer import (
 from .simulation_engine import (
     SimulationConfigurationError,
     SimulationExecution,
+    core3_energy_preflight,
     load_simulation_terminal,
     run_paired_simulation,
     shared_e0_simulation_identity,
@@ -272,6 +273,25 @@ class Core3PairingRunner:
         self.simulation_terminals = self.root / "simulation_terminal_results"
         self.stop_requested = False
         self._simulation_context: Dict[str, Dict[str, Any]] = {}
+        self._energy_preflight: Optional[Dict[str, Any]] = None
+
+    def energy_preflight(self) -> Dict[str, Any]:
+        if self._energy_preflight is None:
+            self._energy_preflight = core3_energy_preflight(self.config)
+        return dict(self._energy_preflight)
+
+    def require_energy_preflight(self) -> Dict[str, Any]:
+        report = self.energy_preflight()
+        if not report["no_overflow_preflight_valid"]:
+            raise SimulationConfigurationError(
+                "CORE-3 energy preflight failed before artifact creation: "
+                f"initial={report['simulation_initial_battery_j']} "
+                f"capacity={report['battery_capacity_j']} "
+                f"offered_harvest={report['scaled_offered_harvest_j']} "
+                f"required_capacity={report['required_capacity_j']} "
+                f"required_safety_margin={report['required_safety_margin_j']}"
+            )
+        return report
 
     def _validate_existing_core3_contract(self) -> None:
         checkpoint_path = self.root / "checkpoint.json"
@@ -360,6 +380,7 @@ class Core3PairingRunner:
                 "simulation_initial_battery": self.config["energy"]["simulation_initial_battery"],
                 "battery_capacity": self.config["energy"]["battery_capacity"],
             },
+            "energy_preflight": self.energy_preflight(),
         }
         if self.config["simulation"].get("reuse_across_e0", False):
             result["unique_taskset_count"] = unique_taskset_count
@@ -1271,6 +1292,7 @@ class Core3PairingRunner:
         return summary
 
     def run(self, *, resume: bool = False) -> Core3Outcome:
+        self.require_energy_preflight()
         self._validate_existing_core3_contract()
         rta_outcome = ExecutionEngine(self.config).run(resume=resume)
         plan = self._simulation_plan()
