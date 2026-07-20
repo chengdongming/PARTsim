@@ -8,12 +8,18 @@ from pathlib import Path
 import subprocess
 from typing import Any, Dict, Mapping, Optional
 
-from .config import config_hash, domain_hash
+from .config import (
+    TASK_WORKLOAD_CONTRACT_VERSION,
+    config_hash,
+    domain_hash,
+)
 
 
 AUTHORIZATION_SCHEMA = "ASAP_BLOCK_V9_3_FORMAL_AUTHORIZATION_V1"
 SEAL_SCHEMA = "ASAP_BLOCK_V9_3_FORMAL_AUTHORIZATION_SEAL_V1"
 FORMAL_CONFIRMATION_TOKEN = "RUN_V9_3_FORMAL"
+FORMAL_PARAMETER_STATUS = "FROZEN_FOR_FORMAL_EXECUTION"
+FORMAL_TASKSET_STORE_SCHEMA = "ASAP_BLOCK_V9_3_CORE12_PAIRING_MANIFEST_V2"
 
 
 class FormalAuthorizationError(RuntimeError):
@@ -49,6 +55,26 @@ def taskset_store_identity(path: Path | str) -> str:
     if not manifest.is_file():
         raise FormalAuthorizationError(
             "formal taskset store requires pairing_manifest.json"
+        )
+    try:
+        document = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise FormalAuthorizationError(
+            "cannot read formal taskset store manifest"
+        ) from exc
+    contract = document.get("contract") if isinstance(document, dict) else None
+    workload_contract = (
+        contract.get("task_workload_contract")
+        if isinstance(contract, dict) else None
+    )
+    if (
+        not isinstance(document, dict)
+        or document.get("schema") != FORMAL_TASKSET_STORE_SCHEMA
+        or not isinstance(workload_contract, dict)
+        or workload_contract.get("version") != TASK_WORKLOAD_CONTRACT_VERSION
+    ):
+        raise FormalAuthorizationError(
+            "formal taskset store requires the workload-contract-v2 schema"
         )
     return domain_hash(
         "ASAP_BLOCK:V9.3:TASKSET_STORE_IDENTITY:v1",
@@ -124,11 +150,20 @@ def verify_authorization(
     prepared_config: Optional[Path],
     project_root: Path,
 ) -> Dict[str, Any]:
+    requires_formal_authorization = (
+        config.get("parameter_status") == FORMAL_PARAMETER_STATUS
+    )
     if authorization_path is None:
+        if requires_formal_authorization:
+            raise FormalAuthorizationError(
+                "frozen formal execution requires --formal-authorization and "
+                "--source-freeze-config"
+            )
         return nonformal_seal(config)
     if source_freeze_config is None or prepared_config is None:
         raise FormalAuthorizationError(
-            "formal authorization requires source and prepared config paths"
+            "formal authorization requires --source-freeze-config and the "
+            "prepared config path"
         )
     try:
         document = json.loads(authorization_path.read_text(encoding="utf-8"))

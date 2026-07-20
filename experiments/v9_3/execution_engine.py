@@ -30,7 +30,7 @@ import asap_block_v9_3_runner as production_runner
 from .cell_model import Cell, analysis_id, expand_cells
 from .config import canonical_json, config_hash, domain_hash, dump_config, fraction_text
 from .formal_authorization import (
-    FormalAuthorizationError, verify_authorization,
+    FORMAL_PARAMETER_STATUS, FormalAuthorizationError, verify_authorization,
 )
 from .result_writer import (
     ATTEMPT_COLUMNS, REQUEST_COLUMNS,
@@ -932,15 +932,22 @@ class ExecutionEngine:
         cells = list(expand_cells(self.config))
         if max_cells is not None:
             cells = cells[:max_cells]
-        return {
+        tasksets_per_cell = self.config["grid"]["tasksets_per_cell"]
+        unique_generation_cells = len({cell.generation_id for cell in cells})
+        description = {
             "experiment_id": self.config["experiment_id"],
             "core": self.config["core"],
             "cell_count": len(cells),
-            "tasksets_per_cell": self.config["grid"]["tasksets_per_cell"],
+            "tasksets_per_cell": tasksets_per_cell,
             "variants": self.config["analysis"]["variants"],
-            "request_count": len(cells) * self.config["grid"]["tasksets_per_cell"] * len(self.config["analysis"]["variants"]),
+            "request_count": len(cells) * tasksets_per_cell * len(self.config["analysis"]["variants"]),
             "cells": [cell.row() for cell in cells],
         }
+        if self.config.get("parameter_status") == FORMAL_PARAMETER_STATUS:
+            description["unique_taskset_count"] = (
+                unique_generation_cells * tasksets_per_cell
+            )
+        return description
 
     def _initialize(self, *, resume: bool) -> None:
         self.root.mkdir(parents=True, exist_ok=True)

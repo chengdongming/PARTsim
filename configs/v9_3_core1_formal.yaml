@@ -1,0 +1,61 @@
+experiment_id: asap-block-v9.3-core1-formal-final-v2-workload-contract-v2
+core: CORE-1
+parameter_status: FROZEN_FOR_FORMAL_EXECUTION
+platform:
+  cores: [4]
+  task_count: [10]
+generation:
+  deadline_mode: constrained
+  constrained_deadline:
+    d_over_t_values: []
+    d_over_t_min: "0"
+    d_over_t_max: "1"
+    distribution: generator_uniform_integer
+  period_min: 40
+  period_max: 200
+  wcet_rounding: compensated
+  utilization_tolerance: "1/100"
+  min_task_util: "1/100"
+  max_task_util: "4/5"
+  priority_policy: RM
+  power_mode: generator_default_heterogeneous
+  workload_candidates: [bzip2, control, decrypt, encrypt, hash]
+  generator_timeout_seconds: 120
+energy:
+  initial_energy_values: ["0", "1/20", "1"]
+  exact_rational_encoding: canonical_fraction
+  service_curve:
+    id: synthetic-piecewise-default-v1
+    system_template: system_config_unified_template.yml
+    horizon: 30000
+  battery_mode: finite
+  battery_capacity: "20"
+grid:
+  utilization_points:
+    - "1/10"
+    - "1/5"
+    - "3/10"
+    - "2/5"
+    - "1/2"
+    - "3/5"
+    - "7/10"
+    - "4/5"
+  tasksets_per_cell: 200
+  base_seed: 930612
+  seed_mode: generation_dimensions
+  taskset_index_start: 0
+analysis:
+  variants: [CW_THETA_CW, LOC_THETA_LOC]
+  timeout_seconds: 60
+  retry_timeout_seconds: 120
+  retry_policy: timeout_once
+  worker_count: 4
+  numerical_mode: EXACT_RATIONAL
+execution:
+  checkpoint_every: 1
+  output_root: results/v9_3_core1_formal_final_v2_workload_contract_v2
+  taskset_store: results/v9_3_core12_taskset_store_formal_final_v2_workload_contract_v2
+  resume: false
+  fail_fast_on_p0: true
+  preserve_attempt_history: true
+plots: {}

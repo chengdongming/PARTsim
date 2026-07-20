@@ -19,7 +19,7 @@ REPOSITORY_IDENTITY = {
 }
 
 
-def _authorization_fixture(tmp_path, monkeypatch):
+def _authorization_fixture(tmp_path, monkeypatch, core_name="CORE-1"):
     install_fake_materialization(monkeypatch, tmp_path)
     monkeypatch.setattr(
         engine_module, "execute_isolated",
@@ -30,11 +30,19 @@ def _authorization_fixture(tmp_path, monkeypatch):
         "_repository_identity",
         lambda project_root: dict(REPOSITORY_IDENTITY),
     )
-    config = make_config(tmp_path)
+    config = make_config(tmp_path, core_name)
     store = tmp_path / "store"
     store.mkdir(parents=True, exist_ok=True)
     (store / "pairing_manifest.json").write_text(
-        json.dumps({"schema": "test-pairing-manifest"}), encoding="utf-8"
+        json.dumps({
+            "schema": authorization.FORMAL_TASKSET_STORE_SCHEMA,
+            "contract": {
+                "task_workload_contract": {
+                    "version": authorization.TASK_WORKLOAD_CONTRACT_VERSION,
+                },
+            },
+        }),
+        encoding="utf-8",
     )
     source = tmp_path / "source-freeze.yaml"
     prepared = tmp_path / "prepared.yaml"
@@ -169,6 +177,56 @@ def test_formal_authorization_requires_both_config_files(tmp_path, monkeypatch):
     )
     with pytest.raises(
         authorization.FormalAuthorizationError,
-        match="source and prepared",
+        match="--source-freeze-config",
     ):
         ExecutionEngine(config, authorization_path=path).run()
+
+
+@pytest.mark.parametrize(
+    "authorized_core,runtime_core",
+    (("CORE-1", "CORE-2"), ("CORE-2", "CORE-1")),
+)
+def test_formal_authorization_rejects_cross_core_reuse(
+    tmp_path, monkeypatch, authorized_core, runtime_core,
+):
+    config, source, prepared, path, _document = _authorization_fixture(
+        tmp_path, monkeypatch, authorized_core,
+    )
+    runtime = make_config(tmp_path / "runtime", runtime_core)
+    runtime["execution"]["taskset_store"] = config["execution"]["taskset_store"]
+    with pytest.raises(
+        authorization.FormalAuthorizationError,
+        match="authorization binding mismatch",
+    ):
+        authorization.verify_authorization(
+            runtime,
+            authorization_path=path,
+            source_freeze_config=source,
+            prepared_config=prepared,
+            project_root=tmp_path,
+        )
+
+
+@pytest.mark.parametrize("bound_file", ("source", "prepared"))
+def test_formal_authorization_rejects_changed_bound_config_file(
+    tmp_path, monkeypatch, bound_file,
+):
+    config, source, prepared, path, _document = _authorization_fixture(
+        tmp_path, monkeypatch,
+    )
+    target = source if bound_file == "source" else prepared
+    target.write_text(
+        target.read_text(encoding="utf-8") + "\n# changed after authorization\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        authorization.FormalAuthorizationError,
+        match="authorization binding mismatch",
+    ):
+        authorization.verify_authorization(
+            config,
+            authorization_path=path,
+            source_freeze_config=source,
+            prepared_config=prepared,
+            project_root=tmp_path,
+        )

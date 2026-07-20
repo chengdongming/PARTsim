@@ -79,9 +79,17 @@ run_experiment() {
   fi
   source_config="$(resolve_path "$source_config")"
   local run_root store_root prepared
-  run_root="$PARTSIM_OUTPUT_ROOT/$name"
+  if [[ "$PARTSIM_RUN_MODE" == "formal" ]]; then
+    run_root="$PARTSIM_OUTPUT_ROOT/${name}_formal_workload_contract_v2"
+  else
+    run_root="$PARTSIM_OUTPUT_ROOT/$name"
+  fi
   if [[ "$name" == "core1" || "$name" == "core2" ]]; then
-    store_root="$PARTSIM_OUTPUT_ROOT/taskset_store_core12"
+    if [[ "$PARTSIM_RUN_MODE" == "formal" ]]; then
+      store_root="$PARTSIM_OUTPUT_ROOT/taskset_store_core12_formal_workload_contract_v2"
+    else
+      store_root="$PARTSIM_OUTPUT_ROOT/taskset_store_core12"
+    fi
   else
     store_root="$PARTSIM_OUTPUT_ROOT/taskset_stores/$name"
   fi
