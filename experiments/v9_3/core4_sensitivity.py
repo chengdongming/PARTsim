@@ -152,7 +152,7 @@ class Core4SensitivityRunner:
         planned = planned_per_base * base_taskset_count
         available = available_per_base * base_taskset_count
         unavailable = unavailable_per_base * base_taskset_count
-        return {
+        result = {
             "experiment_id": self.config["experiment_id"], "core": "CORE-4",
             "cell_count": len(cells), "cells": cells,
             "tasksets_per_cell": self.config["grid"]["tasksets_per_cell"],
@@ -164,6 +164,35 @@ class Core4SensitivityRunner:
             "technical_failure_count": 0,
             "finite_sample_consistency_check_only": True,
         }
+        if self.config["sensitivity"].get("profile") == "formal-sustainability-v1":
+            axis_counts: Dict[str, Dict[str, int]] = {}
+            for axis, _levels in self._levels():
+                axis_cells = [
+                    row for row in cells if row["parameter_name"] == axis
+                ]
+                planned_axis_per_base = sum(
+                    1 if axis == "method"
+                    else len(self.config["analysis"]["variants"])
+                    for _row in axis_cells
+                )
+                available_axis_per_base = sum(
+                    (1 if axis == "method"
+                     else len(self.config["analysis"]["variants"]))
+                    for row in axis_cells
+                    if row["availability"] == "AVAILABLE"
+                )
+                axis_planned = planned_axis_per_base * base_taskset_count
+                axis_available = available_axis_per_base * base_taskset_count
+                axis_counts[axis] = {
+                    "planned_row_count": axis_planned,
+                    "solver_request_count": axis_available,
+                    "dependency_unavailable_count": axis_planned - axis_available,
+                    "terminal_count": axis_available,
+                }
+            result["axis_counts"] = axis_counts
+            result["solver_request_count"] = available
+            result["total_terminal_count"] = available
+        return result
 
     def _initialize(self, resume: bool) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
@@ -209,7 +238,10 @@ class Core4SensitivityRunner:
                         "dependency_unavailable_row_count",
                     )
                 },
-                "formal_large_scale_run": False,
+                "formal_large_scale_run": (
+                    self.config["sensitivity"].get("profile")
+                    == "formal-sustainability-v1"
+                ),
                 "finite_sample_consistency_check_only": True,
             })
             dump_config(self.config, self.root / "run_config.yaml")
@@ -270,6 +302,10 @@ class Core4SensitivityRunner:
                 child["energy"]["service_curve"] = {
                     "id": spec["id"], "system_template": spec["system_template"],
                     "horizon": spec["horizon"],
+                    **(
+                        {"exact_scale": spec["exact_scale"]}
+                        if "exact_scale" in spec else {}
+                    ),
                 }
                 material = prepare_service_curve(
                     child, self.root / "service_material" / spec["id"]
@@ -284,6 +320,36 @@ class Core4SensitivityRunner:
                 )
             relations[spec["id"]] = relation
             previous = material
+        catalog = []
+        catalog_specs = (
+            self.config["sensitivity"]["axes"]["service_curve"]["variants"]
+            if self.config["sensitivity"].get("profile")
+            == "formal-sustainability-v1"
+            else []
+        )
+        for spec in catalog_specs:
+            if spec["availability"] != "AVAILABLE":
+                continue
+            material = materials[spec["id"]]
+            raw = json.loads(material.raw_spec)
+            catalog.append({
+                "identity": spec["id"],
+                "scale": raw["exact_scale"],
+                "source_template": raw["system_template"],
+                "source_template_sha256": raw["source_template_sha256"],
+                "curve_sha256": domain_hash(
+                    "ASAP_BLOCK:V9.3:CORE4:CURVE_VALUES:v1",
+                    raw["validated_prefix"],
+                ),
+                "semantic_hash": material.identity,
+                "horizon": spec["horizon"],
+                "point_count": len(material.values),
+            })
+        if catalog:
+            atomic_write_json(self.root / "service_curve_catalog.json", {
+                "schema": "ASAP_BLOCK_V9_3_CORE4_SERVICE_CURVE_CATALOG_V1",
+                "curves": catalog,
+            })
         return base, materials, relations
 
     def run(
@@ -346,6 +412,10 @@ class Core4SensitivityRunner:
                         "id": service_id,
                         "system_template": service_spec["system_template"],
                         "horizon": service_spec["horizon"],
+                        **(
+                            {"exact_scale": service_spec["exact_scale"]}
+                            if "exact_scale" in service_spec else {}
+                        ),
                     }
                     child["analysis"]["variants"] = variants
                     child_root = self.root / "cell_runs" / axis / f"level_{level_index:03d}"

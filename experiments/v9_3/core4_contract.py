@@ -763,6 +763,25 @@ def configured_core4_counts(config: Mapping[str, Any]) -> Dict[str, int]:
         "expected_terminal_count": available,
         "dependency_unavailable_row_count": planned - available,
     }
+
+
+def _validate_run_mode_metadata(
+    metadata: Mapping[str, Any], config: Mapping[str, Any]
+) -> None:
+    expected_formal = (
+        config["sensitivity"].get("profile")
+        == "formal-sustainability-v1"
+    )
+    if metadata.get("formal_large_scale_run") is not expected_formal:
+        raise Core4ContractError(
+            "CORE-4 formal_large_scale_run metadata/profile mismatch"
+        )
+    if metadata.get("finite_sample_consistency_check_only") is not True:
+        raise Core4ContractError(
+            "CORE-4 metadata must retain finite-sample-only semantics"
+        )
+
+
 def validate_core4_artifact_contract(
     root: Path | str, *, require_completed: bool = True
 ) -> ValidatedCore4Rows:
@@ -785,6 +804,7 @@ def validate_core4_artifact_contract(
     loaded = load_config(run_config, expected_core="CORE-4")
     if config_hash(loaded) != metadata.get("config_hash"):
         raise Core4ContractError("CORE-4 persisted config hash mismatch")
+    _validate_run_mode_metadata(metadata, loaded)
     configured_counts = configured_core4_counts(loaded)
     for field, value in configured_counts.items():
         if metadata.get(field) != value:
@@ -894,6 +914,7 @@ def validate_core4_resume_envelope(
     persisted_config = load_config(run_config, expected_core="CORE-4")
     if config_hash(persisted_config) != expected_config_hash:
         raise Core4ContractError("CORE-4 persisted configuration hash mismatch")
+    _validate_run_mode_metadata(metadata, persisted_config)
     for field, value in expected_counts.items():
         if metadata.get(field) != value:
             raise Core4ContractError(f"CORE-4 resume metadata count mismatch: {field}")
