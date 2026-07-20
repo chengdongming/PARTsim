@@ -7,6 +7,7 @@ events.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from fractions import Fraction
 import json
@@ -141,17 +142,50 @@ class TimingAuditReport:
         }
 
     def assert_audit_closed(self) -> None:
-        failures = list(self.errors)
-        failures.extend(
-            f"{finding.identity}: {finding.state}: {finding.reason}"
+        if self.errors or any(
+            finding.state in {ILLEGAL_TIMING_TRANSITION, UNCLASSIFIABLE}
             for finding in self.findings
+        ):
+            raise B3TimingAuditError(self.closure_diagnostic())
+
+    def closure_diagnostic(
+        self,
+        *,
+        request_id: str = "UNAVAILABLE",
+        scheduler_id: str = "UNAVAILABLE",
+        sample_limit: int = 5,
+    ) -> str:
+        """Return bounded diagnostics without changing closure semantics."""
+
+        if isinstance(sample_limit, bool) or sample_limit < 0:
+            raise ValueError("sample_limit must be a non-negative integer")
+        failures = tuple(
+            finding for finding in self.findings
             if finding.state in {
                 ILLEGAL_TIMING_TRANSITION,
                 UNCLASSIFIABLE,
             }
         )
-        if failures:
-            raise B3TimingAuditError("; ".join(failures))
+        reasons = Counter(finding.reason for finding in failures)
+        reason_text = ",".join(
+            f"{reason}:{count}" for reason, count in sorted(reasons.items())
+        ) or "NONE"
+        samples = failures[:sample_limit]
+        sample_text = " | ".join(
+            f"{finding.identity}:{finding.state}:{finding.reason}"
+            for finding in samples
+        ) or "NONE"
+        error_text = " | ".join(self.errors[:sample_limit]) or "NONE"
+        return "; ".join((
+            f"request_id={request_id}",
+            f"scheduler_id={scheduler_id}",
+            f"illegal_finding_count={sum(f.state == ILLEGAL_TIMING_TRANSITION for f in failures)}",
+            f"unclassifiable_finding_count={sum(f.state == UNCLASSIFIABLE for f in failures)}",
+            f"report_error_count={len(self.errors)}",
+            f"reason_counts={reason_text}",
+            f"sample={sample_text}",
+            f"report_error_sample={error_text}",
+        ))
 
 
 def _strict_json(path: Path) -> Mapping[str, Any]:

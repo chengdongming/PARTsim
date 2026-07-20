@@ -19,9 +19,14 @@ from .ext1b_aggregation import aggregate_ext1b
 from .ext1b_config import (
     dump_ext1b_config, ext1b_config_hash, load_ext1b_config,
 )
+from .ext1b_capacity_contract import (
+    CAPACITY_FEASIBILITY_ERROR_CODE,
+    capacity_contract_identity,
+    capacity_feasibility_violations,
+)
 from .ext1b_generation import (
     ScenarioInstance, StructuralRejection, build_scenario_instance,
-    scenario_cells,
+    enforce_b3_capacity_feasibility, scenario_cells,
 )
 from .result_writer import (
     FAILURE_COLUMNS, atomic_write_json, read_csv, write_csv, write_file_hashes,
@@ -42,6 +47,14 @@ GENERATION_ATTEMPT_COLUMNS = (
     "logical_taskset_index", "attempt_index", "source_taskset_index",
     "generation_seed", "source_taskset_id", "source_taskset_hash",
     "attempt_status", "rejection_code", "rejection_detail",
+    "experiment_id", "paired_instance_id", "logical_index", "source_index",
+    "capacity_infeasible_task_count", "capacity_infeasible_taskset_count",
+    "task_name", "workload", "actual_power", "actual_power_unit",
+    "tick_duration", "tick_duration_unit", "task_tick_energy_mJ",
+    "battery_capacity_mJ", "native_affordability_epsilon_mJ",
+    "excess_energy_mJ", "energy_unit", "power_model_identity",
+    "workload_contract_version", "capacity_feasibility_contract_version",
+    "capacity_feasibility_contract_identity", "violations_json",
 )
 GENERATED_COLUMNS = (
     "taskset_id", "taskset_hash", "source_taskset_id", "source_taskset_hash",
@@ -49,6 +62,8 @@ GENERATED_COLUMNS = (
     "logical_taskset_index", "accepted_attempt_index", "generation_seed", "M",
     "task_n", "priority_hash", "power_hash", "deadline_hash", "release_hash",
     "workload_power_mapping_json", "task_input_json", "canonical_taskset_json",
+    "scenario_candidate_identity", "capacity_feasibility_contract_version",
+    "capacity_feasibility_contract_identity",
 )
 SCENARIO_INSTANCE_COLUMNS = (
     "paired_instance_id", "scenario_kind", "scenario_subtype",
@@ -59,7 +74,9 @@ SCENARIO_INSTANCE_COLUMNS = (
     "nominal_harvest_j_per_tick", "nominal_energy_supply_ratio",
     "base_harvesting_rate_w", "allow_harvest_clipping", "priority_hash",
     "power_hash", "deadline_hash", "release_hash", "structure_json",
-    "system_template_path",
+    "system_template_path", "scenario_candidate_identity",
+    "capacity_feasibility_contract_version",
+    "capacity_feasibility_contract_identity",
 )
 REQUEST_COLUMNS = (
     "request_id", "paired_instance_id", "scenario_kind", "scenario_subtype",
@@ -68,6 +85,8 @@ REQUEST_COLUMNS = (
     "M", "initial_battery", "battery_capacity", "horizon", "maximum_horizon",
     "priority_hash", "power_hash", "deadline_hash", "release_hash",
     "workload_vector_hash", "simulator_build_hash", "request_status",
+    "capacity_feasibility_contract_version",
+    "capacity_feasibility_contract_identity",
 )
 ATTEMPT_COLUMNS = (
     "attempt_id", "request_id", "scheduler_id", "attempt_number", "status",
@@ -115,6 +134,35 @@ def _utc_now() -> str:
 
 def _available(value: Any) -> Any:
     return UNAVAILABLE if value is None else value
+
+
+def _b3_capacity_contract_identity(config: Mapping[str, Any]) -> str:
+    if config.get("scenario", {}).get("kind") != "TIMING_STRESS":
+        return ""
+    return capacity_contract_identity(config)
+
+
+def _request_identity(
+    paired_instance_id: str,
+    scheduler_id: str,
+    capacity_identity: str,
+) -> str:
+    if capacity_identity:
+        return domain_hash(
+            "ASAP_BLOCK:V9.3:EXT1B:SIMULATION_REQUEST:v2",
+            {
+                "paired_instance_id": paired_instance_id,
+                "scheduler_id": scheduler_id,
+                "capacity_feasibility_contract_identity": capacity_identity,
+            },
+        )
+    return domain_hash(
+        "ASAP_BLOCK:V9.3:EXT1B:SIMULATION_REQUEST:v1",
+        {
+            "paired_instance_id": paired_instance_id,
+            "scheduler_id": scheduler_id,
+        },
+    )
 
 
 def _sha256_file(path: Path) -> str:
@@ -262,8 +310,13 @@ class Ext1BRunner:
             comparator_label = (
                 "eight" if comparator_count == 8 else str(comparator_count)
             )
-            atomic_write_json(metadata_path, {
-                "schema": "ASAP_BLOCK_V9_3_EXT1B_METADATA_V1",
+            capacity_identity = _b3_capacity_contract_identity(self.config)
+            metadata = {
+                "schema": (
+                    "ASAP_BLOCK_V9_3_EXT1B_METADATA_V2"
+                    if capacity_identity
+                    else "ASAP_BLOCK_V9_3_EXT1B_METADATA_V1"
+                ),
                 "experiment_id": self.config["experiment_id"],
                 "extension": "EXT-1B",
                 "parameter_status": self.config["parameter_status"],
@@ -284,7 +337,17 @@ class Ext1BRunner:
                 "selection_policy": "structural predicates and runtime activation only; scheduler outcomes excluded",
                 "simulation_is_schedulability_proof": False,
                 "created_at_utc": _utc_now(),
-            })
+            }
+            if capacity_identity:
+                metadata.update({
+                    "capacity_feasibility_contract_version": self.config[
+                        "scenario"
+                    ]["capacity_feasibility_contract"],
+                    "capacity_feasibility_contract_identity": (
+                        capacity_identity
+                    ),
+                })
+            atomic_write_json(metadata_path, metadata)
 
     @staticmethod
     def _validate_terminal_identity(
@@ -379,16 +442,23 @@ class Ext1BRunner:
             raise RuntimeError("P0 duplicate EXT-1B persisted request")
         assert_ext1b_fair_pairing(requests, self.config["scheduler_ids"])
         grouped: Dict[str, list[Mapping[str, Any]]] = {}
+        capacity_identity = _b3_capacity_contract_identity(self.config)
         for request in requests:
             pair_id = str(request["paired_instance_id"])
             grouped.setdefault(pair_id, []).append(request)
-            expected_id = domain_hash(
-                "ASAP_BLOCK:V9.3:EXT1B:SIMULATION_REQUEST:v1",
-                {"paired_instance_id": pair_id,
-                 "scheduler_id": str(request["scheduler_id"])},
+            expected_id = _request_identity(
+                pair_id,
+                str(request["scheduler_id"]),
+                capacity_identity,
             )
             if str(request["request_id"]) != expected_id:
                 raise RuntimeError("P0 EXT-1B persisted request identity mismatch")
+            if capacity_identity and str(request.get(
+                "capacity_feasibility_contract_identity", ""
+            )) != capacity_identity:
+                raise RuntimeError(
+                    "P0 EXT-1B persisted capacity contract identity mismatch"
+                )
             if str(request["request_status"]) != "PLANNED":
                 return None
         scheduler_order = [item.scheduler_id for item in self.schedulers]
@@ -566,24 +636,41 @@ class Ext1BRunner:
                         "generation_seed": stored.seed,
                         "source_taskset_id": stored.taskset_id,
                         "source_taskset_hash": stored.semantic_hash,
+                        "experiment_id": self.config["experiment_id"],
+                        "paired_instance_id": "",
+                        "logical_index": logical_index,
+                        "source_index": source_index,
                     }
                     try:
-                        accepted = build_scenario_instance(
+                        candidate = build_scenario_instance(
                             stored, self.config, scenario_cell,
                             logical_taskset_index=logical_index,
                             attempt_index=attempt_index,
                             system_root=self.root / "scenario_systems",
                         )
+                        if scenario_cell.kind == "TIMING_STRESS":
+                            # Independent request-emission preflight.  The
+                            # materializer already enforces the same predicate;
+                            # this second gate prevents a mutated/reused
+                            # ScenarioInstance from reaching any scheduler.
+                            enforce_b3_capacity_feasibility(
+                                candidate.tasks,
+                                candidate.battery_capacity,
+                                self.config,
+                            )
+                        accepted = candidate
                     except StructuralRejection as exc:
                         attempt_rows.append({
                             **common, "attempt_status": "REJECTED",
                             "rejection_code": exc.code,
                             "rejection_detail": exc.detail,
+                            **exc.diagnostics,
                         })
                         continue
                     attempt_rows.append({
                         **common, "attempt_status": "ACCEPTED",
                         "rejection_code": "", "rejection_detail": "",
+                        "paired_instance_id": accepted.paired_instance_id,
                     })
                     break
                 if accepted is None:
@@ -622,6 +709,17 @@ class Ext1BRunner:
                     "workload_power_mapping_json": canonical_json(power_map),
                     "task_input_json": canonical_json(instance.tasks),
                     "canonical_taskset_json": str(canonical_path),
+                    "scenario_candidate_identity": (
+                        instance.scenario_candidate_identity
+                    ),
+                    "capacity_feasibility_contract_version": (
+                        self.config["scenario"].get(
+                            "capacity_feasibility_contract", ""
+                        )
+                    ),
+                    "capacity_feasibility_contract_identity": (
+                        instance.capacity_feasibility_contract_identity
+                    ),
                 })
                 instance_rows.append({
                     "paired_instance_id": instance.paired_instance_id,
@@ -650,6 +748,17 @@ class Ext1BRunner:
                     "release_hash": instance.release_hash,
                     "structure_json": canonical_json(instance.structure),
                     "system_template_path": str(instance.system_template_path),
+                    "scenario_candidate_identity": (
+                        instance.scenario_candidate_identity
+                    ),
+                    "capacity_feasibility_contract_version": (
+                        self.config["scenario"].get(
+                            "capacity_feasibility_contract", ""
+                        )
+                    ),
+                    "capacity_feasibility_contract_identity": (
+                        instance.capacity_feasibility_contract_identity
+                    ),
                 })
                 simulation_hash = domain_hash(
                     "ASAP_BLOCK:V9.3:EXT1B:SIMULATION_CONFIG:v1",
@@ -685,10 +794,10 @@ class Ext1BRunner:
                     "ASAP_BLOCK:V9.3:EXT1B:FAIR_INPUT:v1", fair_material
                 )
                 for registration in self.schedulers:
-                    request_id = domain_hash(
-                        "ASAP_BLOCK:V9.3:EXT1B:SIMULATION_REQUEST:v1",
-                        {"paired_instance_id": instance.paired_instance_id,
-                         "scheduler_id": registration.scheduler_id},
+                    request_id = _request_identity(
+                        instance.paired_instance_id,
+                        registration.scheduler_id,
+                        instance.capacity_feasibility_contract_identity,
                     )
                     requests.append({
                         "request_id": request_id,
@@ -701,6 +810,14 @@ class Ext1BRunner:
                         "input_hash": input_hash,
                         "scheduler_id": registration.scheduler_id,
                         "request_status": "PLANNED",
+                        "capacity_feasibility_contract_version": (
+                            self.config["scenario"].get(
+                                "capacity_feasibility_contract", ""
+                            )
+                        ),
+                        "capacity_feasibility_contract_identity": (
+                            instance.capacity_feasibility_contract_identity
+                        ),
                         "instance": instance,
                     })
         assert_ext1b_fair_pairing(requests, self.config["scheduler_ids"])
@@ -997,8 +1114,16 @@ class Ext1BRunner:
         power_mismatch_count = 0
         task_record_count = 0
         observed_workloads: set[str] = set()
+        capacity_infeasible_task_count = 0
+        capacity_infeasible_taskset_count = 0
+        capacity_identity = _b3_capacity_contract_identity(self.config)
+        capacities_by_taskset = {
+            str(row["taskset_id"]): Fraction(str(row["battery_capacity"]))
+            for row in instances
+        }
         for row in generated:
-            for task in json.loads(str(row["task_input_json"])):
+            tasks = json.loads(str(row["task_input_json"]))
+            for task in tasks:
                 task_record_count += 1
                 workload = str(task.get("workload"))
                 observed_workloads.add(workload)
@@ -1014,6 +1139,18 @@ class Ext1BRunner:
                     continue
                 if observed_power != energy_by_workload[workload]:
                     power_mismatch_count += 1
+            if capacity_identity:
+                violations = capacity_feasibility_violations(
+                    tasks,
+                    capacities_by_taskset[str(row["taskset_id"])],
+                    self.config,
+                )
+                capacity_infeasible_task_count += len(violations)
+                capacity_infeasible_taskset_count += bool(violations)
+        capacity_rejection_count = sum(
+            row.get("rejection_code") == CAPACITY_FEASIBILITY_ERROR_CODE
+            for row in generation_attempts
+        )
         workload_summary = {
             "schema": "ASAP_BLOCK_V9_3_WORKLOAD_CONTRACT_SUMMARY_V1",
             "workload_contract_version": contract["version"],
@@ -1028,17 +1165,45 @@ class Ext1BRunner:
             "power_mismatch_count": power_mismatch_count,
             "legacy_taskset_count": 0,
         }
+        if capacity_identity:
+            workload_summary.update({
+                "capacity_feasibility_contract_version": self.config[
+                    "scenario"
+                ]["capacity_feasibility_contract"],
+                "capacity_feasibility_contract_identity": capacity_identity,
+                "capacity_infeasible_task_count": (
+                    capacity_infeasible_task_count
+                ),
+                "capacity_infeasible_taskset_count": (
+                    capacity_infeasible_taskset_count
+                ),
+                "capacity_feasibility_rejection_count": (
+                    capacity_rejection_count
+                ),
+            })
         atomic_write_json(
             self.root / "workload_contract_summary.json", workload_summary
         )
-        if idle_count or unknown_count or power_mismatch_count:
+        if (
+            idle_count
+            or unknown_count
+            or power_mismatch_count
+            or capacity_infeasible_task_count
+            or capacity_infeasible_taskset_count
+        ):
             raise RuntimeError(
-                "plan-only workload contract validation failed: "
+                "plan-only workload/capacity contract validation failed: "
                 f"idle={idle_count}, unknown={unknown_count}, "
-                f"power_mismatch={power_mismatch_count}"
+                f"power_mismatch={power_mismatch_count}, "
+                f"capacity_tasks={capacity_infeasible_task_count}, "
+                f"capacity_tasksets={capacity_infeasible_taskset_count}"
             )
         summary = {
-            "schema": "ASAP_BLOCK_V9_3_EXT1B_PLAN_ONLY_V2",
+            "schema": (
+                "ASAP_BLOCK_V9_3_EXT1B_PLAN_ONLY_V3"
+                if capacity_identity
+                else "ASAP_BLOCK_V9_3_EXT1B_PLAN_ONLY_V2"
+            ),
             "output_root": str(self.root),
             "plan_only": True,
             "simulator_invoked": False,
@@ -1055,6 +1220,22 @@ class Ext1BRunner:
             "power_mismatch_count": power_mismatch_count,
             "legacy_taskset_count": 0,
         }
+        if capacity_identity:
+            summary.update({
+                "capacity_feasibility_contract_version": self.config[
+                    "scenario"
+                ]["capacity_feasibility_contract"],
+                "capacity_feasibility_contract_identity": capacity_identity,
+                "capacity_infeasible_task_count": (
+                    capacity_infeasible_task_count
+                ),
+                "capacity_infeasible_taskset_count": (
+                    capacity_infeasible_taskset_count
+                ),
+                "capacity_feasibility_rejection_count": (
+                    capacity_rejection_count
+                ),
+            })
         atomic_write_json(self.root / "plan_summary.json", summary)
         if any(self.terminals.glob("*.json")):
             raise RuntimeError("plan-only output contains simulator terminals")

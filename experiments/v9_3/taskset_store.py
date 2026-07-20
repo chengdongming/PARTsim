@@ -31,6 +31,10 @@ from .config import (
     prepare_task_workload_contract as prepare_config_workload_contract,
     task_workload_energy_model,
 )
+from .ext1b_capacity_contract import (
+    capacity_contract_identity,
+    capacity_contract_material,
+)
 from .simulation_engine import (
     SimulationConfigurationError,
     construct_paired_harvest_trace,
@@ -308,6 +312,11 @@ class TasksetStore:
         contract["task_workload_contract"] = (
             self.task_workload_contract.canonical_material()
         )
+        if self.config.get("scenario", {}).get("kind") == "TIMING_STRESS":
+            contract["scenario_capacity_feasibility_contract"] = {
+                **capacity_contract_material(self.config),
+                "contract_identity": capacity_contract_identity(self.config),
+            }
         return contract
 
     def _initialize_pairing_manifest(self) -> None:
@@ -330,6 +339,27 @@ class TasksetStore:
         ):
             raise TasksetStoreError(
                 "legacy taskset store lacks mandatory non-idle workload contract"
+            )
+        if (
+            self.config.get("scenario", {}).get("kind") == "TIMING_STRESS"
+            and isinstance(observed_contract, Mapping)
+            and "scenario_capacity_feasibility_contract"
+            not in observed_contract
+        ):
+            raise TasksetStoreError(
+                "legacy B3 taskset store lacks the capacity feasibility "
+                "contract; regenerate the B3 taskset store"
+            )
+        if (
+            self.config.get("scenario", {}).get("kind") == "TIMING_STRESS"
+            and isinstance(observed_contract, Mapping)
+            and observed_contract.get(
+                "scenario_capacity_feasibility_contract"
+            ) != contract.get("scenario_capacity_feasibility_contract")
+        ):
+            raise TasksetStoreError(
+                "B3 taskset store capacity feasibility contract mismatch; "
+                "regenerate the B3 taskset store"
             )
         if (
             manifest.get("schema") != PAIRING_MANIFEST_SCHEMA

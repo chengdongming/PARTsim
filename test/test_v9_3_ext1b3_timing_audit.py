@@ -18,6 +18,8 @@ from experiments.v9_3.ext1b_b3_timing_audit import (  # noqa: E402
     NOT_APPLICABLE,
     ST_AFFORDABLE_ASAP_BEHAVIOR,
     ST_ENERGY_INSUFFICIENT_SLACK_WAIT,
+    TimingAuditReport,
+    TimingFinding,
     UNCLASSIFIABLE,
     audit_timing_trace,
     classify_timing_event,
@@ -385,6 +387,38 @@ def test_trace_requires_b3_event(tmp_path):
     report = audit_timing_trace(path, expected_scheduler="gpfp_asap_block")
     with pytest.raises(B3TimingAuditError, match="missing"):
         report.assert_audit_closed()
+
+
+def test_closure_diagnostic_includes_findings_reasons_sample_and_identities():
+    report = TimingAuditReport(
+        findings=(
+            TimingFinding(
+                ILLEGAL_TIMING_TRANSITION,
+                (7, "v93_task_1", 0),
+                "affordable ST decision kept timing gate closed",
+            ),
+            TimingFinding(
+                UNCLASSIFIABLE,
+                (8, "v93_task_2", 0),
+                "job affordability mismatch",
+            ),
+        ),
+        errors=(),
+    )
+    diagnostic = report.closure_diagnostic(
+        request_id="request-123",
+        scheduler_id="gpfp_st_block",
+        sample_limit=1,
+    )
+    assert "request_id=request-123" in diagnostic
+    assert "scheduler_id=gpfp_st_block" in diagnostic
+    assert "illegal_finding_count=1" in diagnostic
+    assert "unclassifiable_finding_count=1" in diagnostic
+    assert "affordable ST decision kept timing gate closed:1" in diagnostic
+    assert "job affordability mismatch:1" in diagnostic
+    assert "sample=" in diagnostic
+    assert "v93_task_1" in diagnostic
+    assert "v93_task_2" not in diagnostic
 
 
 def test_trace_rejects_duplicate_observation_identity(tmp_path):

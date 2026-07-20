@@ -27,9 +27,10 @@ energy:
 grid: {utilization_points: ["1/5"], tasksets_per_cell: 1, base_seed: 931103, seed_mode: generation_dimensions, taskset_index_start: 0}
 rta: {methods: [CW_THETA_CW, LOC_THETA_LOC], timeout_seconds: 1, retry_timeout_seconds: 2, retry_policy: timeout_once, numerical_mode: EXACT_RATIONAL}
 simulation: {horizon: 60, warmup: 0, minimum_jobs_per_task: 1, maximum_horizon: 60, horizon_extension_policy: none, deadline_miss_fail_fast: true, timeout_seconds: 10, trace_mode: semantic, trace_on_failure: true, retain_trace: true, simulator_bin: ./build/rtsim/rtsim}
-execution: {worker_count: 1, checkpoint_every: 1, output_root: artifacts/v9_3_ext1b3_smoke, taskset_store: artifacts/v9_3_ext1b3_taskset_store_smoke, resume: false, fail_fast_on_p0: true, preserve_attempt_history: true}
+execution: {worker_count: 1, checkpoint_every: 1, output_root: artifacts/v9_3_ext1b3_smoke_capacity_contract_v1, taskset_store: artifacts/v9_3_ext1b3_taskset_store_smoke_capacity_contract_v1, resume: false, fail_fast_on_p0: true, preserve_attempt_history: true}
 scenario:
   kind: TIMING_STRESS
+  capacity_feasibility_contract: B3_TASK_CAPACITY_FEASIBILITY_CONTRACT_V1
   subtype: MULTI_CELL
   structural_retry_limit: 8
   activation_policy: REPORT_STRUCTURAL_AND_RUNTIME

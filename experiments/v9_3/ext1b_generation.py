@@ -13,21 +13,30 @@ import asap_block_rta as legacy_rta
 from .config import (
     canonical_json, domain_hash, fraction_text, task_workload_energy_model,
 )
+from .ext1b_capacity_contract import (
+    NATIVE_ENERGY_EPSILON_J,
+    capacity_contract_identity,
+    capacity_feasibility_violations,
+    capacity_rejection_detail,
+)
 from .result_writer import atomic_write_json, atomic_write_text
 from .taskset_store import StoredTaskset
 
 
 PEAK_TIME_OF_DAY_MS = 11 * 60 * 60 * 1000
-NATIVE_ENERGY_EPSILON_J = Fraction(1, 10 ** 9)
 
 
 class StructuralRejection(ValueError):
     """A reproducible structural rejection that never inspects outcomes."""
 
-    def __init__(self, code: str, detail: str) -> None:
+    def __init__(
+        self, code: str, detail: str,
+        diagnostics: Mapping[str, Any] | None = None,
+    ) -> None:
         super().__init__(f"{code}:{detail}")
         self.code = code
         self.detail = detail
+        self.diagnostics = dict(diagnostics or {})
 
 
 @dataclass(frozen=True)
@@ -55,6 +64,8 @@ class ScenarioCell:
 @dataclass(frozen=True)
 class ScenarioInstance:
     paired_instance_id: str
+    scenario_candidate_identity: str
+    capacity_feasibility_contract_identity: str
     scenario_cell: ScenarioCell
     logical_taskset_index: int
     attempt_index: int
@@ -103,6 +114,33 @@ def native_energy_affordable(available: Fraction, required: Fraction) -> bool:
     """Mirror the simulator's joule-domain affordability tolerance."""
 
     return available + NATIVE_ENERGY_EPSILON_J >= required
+
+
+def enforce_b3_capacity_feasibility(
+    tasks: Sequence[Mapping[str, Any]],
+    battery_capacity: Fraction,
+    config: Mapping[str, Any],
+) -> None:
+    """Reject a whole B3 scenario candidate if any task cannot run a tick."""
+
+    violations = capacity_feasibility_violations(
+        tasks, battery_capacity, config,
+    )
+    if not violations:
+        return
+    representative = dict(violations[0])
+    rejection_code = str(representative.pop("code"))
+    diagnostics = {
+        **representative,
+        "capacity_infeasible_task_count": len(violations),
+        "capacity_infeasible_taskset_count": 1,
+        "violations_json": canonical_json(violations),
+    }
+    raise StructuralRejection(
+        rejection_code,
+        capacity_rejection_detail(violations),
+        diagnostics,
+    )
 
 
 def _native_blocking_interpolation(
@@ -515,8 +553,28 @@ def build_scenario_instance(
     if capacity < initial:
         raise StructuralRejection("CAPACITY_BELOW_INITIAL", "derived capacity is invalid")
 
+    capacity_identity = ""
+    scenario_candidate_identity = ""
+    if cell.kind == "TIMING_STRESS":
+        enforce_b3_capacity_feasibility(payload, capacity, config)
+        capacity_identity = capacity_contract_identity(config)
+        scenario_candidate_identity = domain_hash(
+            "ASAP_BLOCK:V9.3:EXT1B:B3:SCENARIO_CANDIDATE:v1",
+            {
+                "scenario_cell": cell.row(),
+                "source_taskset_hash": stored.semantic_hash,
+                "logical_taskset_index": logical_taskset_index,
+                "attempt_index": attempt_index,
+                "capacity_feasibility_contract_identity": capacity_identity,
+            },
+        )
+
     task_material = {
-        "schema": "ASAP_BLOCK_V9_3_EXT1B_TASKSET_V2",
+        "schema": (
+            "ASAP_BLOCK_V9_3_EXT1B_TASKSET_V3"
+            if cell.kind == "TIMING_STRESS"
+            else "ASAP_BLOCK_V9_3_EXT1B_TASKSET_V2"
+        ),
         "scenario_cell": cell.row(),
         "source_taskset_hash": stored.semantic_hash,
         "logical_taskset_index": logical_taskset_index,
@@ -526,7 +584,22 @@ def build_scenario_instance(
         "structure": structure,
         "task_workload_contract": config["generation"]["workload_contract"],
     }
-    taskset_hash = domain_hash("ASAP_BLOCK:V9.3:EXT1B:TASKSET:v2", task_material)
+    if cell.kind == "TIMING_STRESS":
+        task_material.update({
+            "scenario_candidate_identity": scenario_candidate_identity,
+            "capacity_feasibility_contract": config["scenario"][
+                "capacity_feasibility_contract"
+            ],
+            "capacity_feasibility_contract_identity": capacity_identity,
+        })
+    taskset_hash = domain_hash(
+        (
+            "ASAP_BLOCK:V9.3:EXT1B:TASKSET:v3"
+            if cell.kind == "TIMING_STRESS"
+            else "ASAP_BLOCK:V9.3:EXT1B:TASKSET:v2"
+        ),
+        task_material,
+    )
     priority_hash = domain_hash(
         "ASAP_BLOCK:V9.3:EXT1B:PRIORITY:v1",
         [(row["task_id"], row["priority_rank"]) for row in payload],
@@ -543,9 +616,7 @@ def build_scenario_instance(
         "ASAP_BLOCK:V9.3:EXT1B:RELEASE:v1",
         [(row["task_id"], row["arrival_offset"]) for row in payload],
     )
-    paired_id = domain_hash(
-        "ASAP_BLOCK:V9.3:EXT1B:PAIRED_INSTANCE:v1",
-        {
+    paired_material = {
             "scenario_cell": cell.row(),
             "logical_taskset_index": logical_taskset_index,
             "taskset_hash": taskset_hash,
@@ -554,13 +625,26 @@ def build_scenario_instance(
             "battery_capacity": fraction_text(capacity),
             "processors": stored.processors,
             "horizon": config["simulation"]["horizon"],
-        },
+    }
+    if cell.kind == "TIMING_STRESS":
+        paired_material.update({
+            "scenario_candidate_identity": scenario_candidate_identity,
+            "capacity_feasibility_contract_identity": capacity_identity,
+        })
+    paired_id = domain_hash(
+        (
+            "ASAP_BLOCK:V9.3:EXT1B:PAIRED_INSTANCE:v2"
+            if cell.kind == "TIMING_STRESS"
+            else "ASAP_BLOCK:V9.3:EXT1B:PAIRED_INSTANCE:v1"
+        ),
+        paired_material,
     )
     taskset_id = f"ext1b-{cell.cell_id}-{logical_taskset_index:04d}-{taskset_hash[:12]}"
     canonical_path = system_root.parent / "scenario_tasksets" / f"{taskset_hash}.json"
     atomic_write_json(canonical_path, {**task_material, "taskset_id": taskset_id, "taskset_hash": taskset_hash})
     return ScenarioInstance(
-        paired_id, cell, logical_taskset_index, attempt_index, stored.seed,
+        paired_id, scenario_candidate_identity, capacity_identity,
+        cell, logical_taskset_index, attempt_index, stored.seed,
         stored.taskset_id, stored.semantic_hash, taskset_id, taskset_hash,
         priority_hash, power_hash, deadline_hash, release_hash, trace_hash,
         stored.processors, tuple(payload), initial, capacity, demand,

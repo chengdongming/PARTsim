@@ -586,7 +586,11 @@ def _b3_outputs(
         if not audit_closed:
             failures.append(
                 f"B3 {result['request_id']}: timing audit did not close: "
-                + "; ".join(report.errors)
+                + report.closure_diagnostic(
+                    request_id=str(result["request_id"]),
+                    scheduler_id=scheduler_id,
+                    sample_limit=5,
+                )
             )
     return event_rows, summary_rows, failures
 
