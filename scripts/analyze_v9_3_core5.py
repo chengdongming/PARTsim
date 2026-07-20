@@ -14,6 +14,11 @@ if str(ROOT) not in sys.path:
 
 from experiments.v9_3.core5_aggregation import analyze_core5_artifacts
 from experiments.v9_3.core5_contract import Core5ContractError
+from experiments.v9_3.core5_formal import (
+    CORE5_FORMAL_RUN_SCHEMA,
+    Core5FormalContractError,
+    analyze_core5_formal_artifacts,
+)
 
 
 def main() -> int:
@@ -21,8 +26,18 @@ def main() -> int:
     parser.add_argument("run_root", type=Path)
     args = parser.parse_args()
     try:
-        summary = analyze_core5_artifacts(args.run_root)
-    except (Core5ContractError, OSError, ValueError) as exc:
+        metadata = json.loads(
+            (args.run_root / "run_metadata.json").read_text(encoding="utf-8")
+        )
+        summary = (
+            analyze_core5_formal_artifacts(args.run_root)
+            if metadata.get("schema") == CORE5_FORMAL_RUN_SCHEMA
+            else analyze_core5_artifacts(args.run_root)
+        )
+    except (
+        Core5ContractError, Core5FormalContractError, OSError, ValueError,
+        json.JSONDecodeError,
+    ) as exc:
         print(f"CORE-5 analyzer rejected artifact root: {exc}", file=sys.stderr)
         return 2
     print(json.dumps(summary, ensure_ascii=False, sort_keys=True, indent=2))

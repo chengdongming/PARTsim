@@ -115,3 +115,88 @@ exact 2x 80-400 range accepted by the existing generator interface, workers
 identical mathematical inputs and require identical terminal/candidate
 semantics. This bounded run produces implementation evidence only, not paper
 complexity claims or frozen parameters.
+
+## Frozen formal profiles
+
+The formal profiles use `ASAP_BLOCK_V9_3_CORE5_FORMAL_PLAN_V1`,
+`ASAP_BLOCK_V9_3_CORE5_FORMAL_RUN_V1`, and a distinct formal checkpoint
+schema. The CLI dispatches by validated profile; the V2 runner and its exact
+8/16/20 guard are unchanged. Formal and V2 analyzers inspect the run schema
+before reading data and reject mixed profiles. The formal configs have unique
+output roots, taskset stores, config hashes, and authorization-seal bindings.
+
+Both formal profiles use E0 `1/20`, capacity 20, the two production variants,
+exact-rational mode, one retry at 240 seconds after a 120-second timeout, and
+the `synthetic-piecewise-default-v1` service. The latter explicitly disables
+real-solar input in the materialized system configuration; its name alone does
+not select the source.
+
+### CORE-5A algorithmic profile
+
+`configs/v9_3_core5a_formal_algorithmic.yaml` expands each of
+`U={3/10,1/2,7/10}` over:
+
+- task count `n={5,10,15,20}` at M=4 and periods 40..200;
+- cores `M={2,4,8}` at n=20 and periods 40..200;
+- exact time scale `{1,2,4}` at M=4 and n=10.
+
+Duplicate baselines are eliminated by the full mathematical input, leaving
+eight configurations per utilization and 24 cells. With 100 tasksets and two
+methods this is 4,800 mathematical/solver requests. Scale 2 and 4 reuse the
+same frozen scale-1 source taskset and multiply C, D, and T by the exact integer
+factor. Utilization, D/T, task order/identity, power, and source hash remain
+paired. Worker count is fixed at one. Runtime distributions, peak RSS, solver
+counters, retries, timeouts, and censoring are algorithmic outputs; throughput
+worker comparisons are excluded.
+
+### CORE-5B worker profile
+
+`configs/v9_3_core5b_formal_workers.yaml` fixes M=4, n=10, periods 40..200,
+the three utilizations, 50 tasksets per utilization, and both methods: exactly
+300 mathematical requests. Worker counts `{1,2,4,8}` each have five
+repetitions. The 20-run order is a deterministic permutation seeded by
+93044505, producing 6,000 solver executions.
+
+Worker and repetition are operational dimensions and never enter the
+mathematical input hash. Every repeated request must match input hash,
+terminal, response bounds, fixed-point/search/inverse-service counters, and
+candidate count. Any mismatch is P0. Reports include wall time, analyses/s,
+child CPU time, peak RSS, speedup, and parallel efficiency. Single-request
+worker runtimes are marked as excluded from the CORE-5A complexity regression.
+The analyzer rejects missing worker/repetition children or a mixed config.
+
+Formal parent resume classifies each child artifact root before execution. A
+durably complete child is validated and skipped; a valid partial child resumes
+through the shared engine; a missing child starts fresh. Configuration,
+authorization-seal, checkpoint, table-schema, or request/terminal identity
+mismatches fail closed. A signal interruption inside a child leaves the parent
+`INTERRUPTED`, so `--resume` continues that child without repeating its
+durable terminals.
+
+CORE-5A writes `core5a_metrics.json`, reconstructed exclusively from child
+requests, attempts, taskset/task terminals, and RSS observations. It persists
+terminal counts, completed-runtime median/P95/max, peak RSS, available search
+and inverse-service counters, candidate counts, retry/timeout counts, and
+censoring states. Fixed-point iterations are not exposed by the frozen solver
+interface and therefore remain explicit `null` with status `UNAVAILABLE`,
+never a synthetic zero.
+
+CORE-5B writes `worker_semantic_checks.csv`. Each of the 300 rows proves the
+20-execution closure: workers `{1,2,4,8}`, five distinct repetitions per
+worker, and exact equality of input hash, terminal, response bounds, search
+and inverse-service counters, and candidate count. Both profiles finish with a
+parent `file_hashes.sha256`; the formal analyzer validates that manifest and
+then independently reconstructs the profile-specific persisted artifact from
+all child evidence.
+
+Inspect either frozen plan without generating tasksets or invoking the solver:
+
+```text
+python3 scripts/run_v9_3_core5.py --config configs/v9_3_core5a_formal_algorithmic.yaml --dry-run
+python3 scripts/run_v9_3_core5.py --config configs/v9_3_core5a_formal_algorithmic.yaml --list-cells
+python3 scripts/run_v9_3_core5.py --config configs/v9_3_core5b_formal_workers.yaml --dry-run
+python3 scripts/run_v9_3_core5.py --config configs/v9_3_core5b_formal_workers.yaml --list-cells
+```
+
+Do not combine these configs or output roots. No formal experiment was run
+while freezing the contracts.
