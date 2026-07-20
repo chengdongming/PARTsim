@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from fractions import Fraction
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -123,14 +124,28 @@ def prepare_service_curve(
     required = max(config["generation"]["period_max"] - 1, 0)
     if required >= len(curve):
         raise TasksetStoreError("service-curve horizon is shorter than required deadline horizon")
-    values = tuple(Fraction(str(curve[index])) for index in range(required + 1))
-    values = rta_core.validate_service_curve_v9_3(values, required)
+    exact_scale = Fraction(str(spec.get("exact_scale", "1")))
+    if exact_scale <= 0:
+        raise TasksetStoreError("service-curve exact scale must be positive")
+    material_horizon = horizon if "exact_scale" in spec else required
+    values = tuple(
+        Fraction(str(curve[index])) * exact_scale
+        for index in range(material_horizon + 1)
+    )
+    values = rta_core.validate_service_curve_v9_3(values, material_horizon)
     raw = {
         "id": spec["id"],
         "horizon": horizon,
         "system_template": str(spec["system_template"]),
         "validated_prefix": [fraction_text(item) for item in values],
     }
+    if "exact_scale" in spec:
+        raw.update({
+            "source_template_sha256": hashlib.sha256(
+                template.read_bytes()
+            ).hexdigest(),
+            "exact_scale": fraction_text(exact_scale),
+        })
     identity = domain_hash("ASAP_BLOCK:V9.3:SERVICE_CURVE:v1", raw)
     return ServiceCurveMaterial(values, identity, canonical_json(raw), system_path)
 

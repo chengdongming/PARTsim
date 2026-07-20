@@ -412,12 +412,35 @@ def validate_config(raw: Mapping[str, Any], *, expected_core: str | None = None)
                     normalized.get("horizon"),
                     f"sensitivity.axes.service_curve.variants[{index}].horizon",
                 )
+                if "exact_scale" in normalized:
+                    scale = exact_fraction(
+                        normalized["exact_scale"],
+                        f"sensitivity.axes.service_curve.variants[{index}].exact_scale",
+                    )
+                    if scale <= 0:
+                        raise ConfigError("service-curve exact_scale must be positive")
+                    normalized["exact_scale"] = fraction_text(scale)
             else:
                 reason = normalized.get("reason")
                 if not isinstance(reason, str) or not reason:
                     raise ConfigError("unavailable service-curve variants require a reason")
             normalized_services.append(normalized)
         service_axis["variants"] = normalized_services
+
+        baseline = sensitivity.get("baseline")
+        if baseline is not None:
+            if not isinstance(baseline, dict) or set(baseline) != {
+                "E0", "power_scale", "service_curve_scale", "battery_capacity"
+            }:
+                raise ConfigError(
+                    "CORE-4 sensitivity.baseline requires E0, power_scale, "
+                    "service_curve_scale, and battery_capacity"
+                )
+            for key in ("E0", "power_scale", "service_curve_scale", "battery_capacity"):
+                value = exact_fraction(baseline[key], f"sensitivity.baseline.{key}")
+                if key != "E0" and value <= 0:
+                    raise ConfigError(f"sensitivity.baseline.{key} must be positive")
+                baseline[key] = fraction_text(value)
 
     if core == "CORE-5":
         required_core5_methods = ["CW_THETA_CW", "LOC_THETA_LOC"]
