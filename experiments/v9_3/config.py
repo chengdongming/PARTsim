@@ -220,6 +220,10 @@ def validate_config(raw: Mapping[str, Any], *, expected_core: str | None = None)
     if not isinstance(service.get("id"), str) or not service["id"]:
         raise ConfigError("energy.service_curve.id must be non-empty")
     _positive_int(service.get("horizon"), "energy.service_curve.horizon")
+    if "synthetic_piecewise" in service and not isinstance(
+        service["synthetic_piecewise"], bool
+    ):
+        raise ConfigError("energy.service_curve.synthetic_piecewise must be boolean")
 
     grid = _require_mapping(config, "grid")
     utilities = _validate_ratios(_as_list(grid.get("utilization_points"), "grid.utilization_points"), "grid.utilization_points")
@@ -472,6 +476,37 @@ def validate_config(raw: Mapping[str, Any], *, expected_core: str | None = None)
         scalability["max_analyses"] = _positive_int(
             hard_limit, "scalability.max_analyses"
         )
+        profile = scalability.get("profile", "bounded-smoke-v2")
+        if profile not in {
+            "bounded-smoke-v2", "formal-algorithmic-v1", "formal-workers-v1"
+        }:
+            raise ConfigError("unknown CORE-5 scalability profile")
+        if profile != "bounded-smoke-v2":
+            plan_version = scalability.get("plan_version")
+            if plan_version != "ASAP_BLOCK_V9_3_CORE5_FORMAL_PLAN_V1":
+                raise ConfigError("formal CORE-5 requires formal plan version V1")
+            scalability["profile"] = profile
+            if profile == "formal-algorithmic-v1":
+                scales = [
+                    exact_fraction(value, f"scalability.time_scales[{index}]")
+                    for index, value in enumerate(
+                        _as_list(scalability.get("time_scales"), "scalability.time_scales")
+                    )
+                ]
+                if scales != [Fraction(1), Fraction(2), Fraction(4)]:
+                    raise ConfigError("CORE-5A time_scales must equal [1, 2, 4]")
+                scalability["time_scales"] = [fraction_text(value) for value in scales]
+                if scalability["worker_counts"] != [1]:
+                    raise ConfigError("CORE-5A worker_counts must equal [1]")
+            else:
+                repetitions = _positive_int(
+                    scalability.get("repetitions_per_worker"),
+                    "scalability.repetitions_per_worker",
+                )
+                schedule_seed = scalability.get("schedule_seed")
+                if isinstance(schedule_seed, bool) or not isinstance(schedule_seed, int):
+                    raise ConfigError("scalability.schedule_seed must be an integer")
+                scalability["repetitions_per_worker"] = repetitions
 
     if core == "CORE-3":
         simulation = _require_mapping(config, "simulation")

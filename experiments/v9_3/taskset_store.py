@@ -105,6 +105,10 @@ def prepare_service_curve(
         raise TasksetStoreError(f"service-curve system template not found: {template}")
     with template.open("r", encoding="utf-8") as handle:
         system_document = yaml.safe_load(handle)
+    if spec.get("synthetic_piecewise", False):
+        system_document.setdefault("energy_management", {})[
+            "use_real_solar_data"
+        ] = False
     system_document["cpu_islands"][0]["numcpus"] = max(config["platform"]["cores"])
     energy = system_document.setdefault("energy_management", {})
     energy["max_energy"] = float(Fraction(config["energy"]["battery_capacity"]))
