@@ -238,7 +238,10 @@ class Core4SensitivityRunner:
                         "dependency_unavailable_row_count",
                     )
                 },
-                "formal_large_scale_run": False,
+                "formal_large_scale_run": (
+                    self.config["sensitivity"].get("profile")
+                    == "formal-sustainability-v1"
+                ),
                 "finite_sample_consistency_check_only": True,
             })
             dump_config(self.config, self.root / "run_config.yaml")
@@ -318,7 +321,13 @@ class Core4SensitivityRunner:
             relations[spec["id"]] = relation
             previous = material
         catalog = []
-        for spec in self.config["sensitivity"]["axes"]["service_curve"]["variants"]:
+        catalog_specs = (
+            self.config["sensitivity"]["axes"]["service_curve"]["variants"]
+            if self.config["sensitivity"].get("profile")
+            == "formal-sustainability-v1"
+            else []
+        )
+        for spec in catalog_specs:
             if spec["availability"] != "AVAILABLE":
                 continue
             material = materials[spec["id"]]

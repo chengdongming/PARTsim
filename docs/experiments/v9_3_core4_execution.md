@@ -114,6 +114,11 @@ levels, recomputed sweep/pair/input hashes, and single-axis invariants. A
 completed run additionally requires a valid hash inventory. Empty and partial
 roots cannot produce a successful summary.
 
+Run metadata is profile-bound: `formal-sustainability-v1` records
+`formal_large_scale_run: true`, while bounded smoke records `false`. Both
+retain `finite_sample_consistency_check_only: true`; resume and artifact
+validation reject either flag if it conflicts with the persisted profile.
+
 A successful run first writes every scientific artifact and a `FINALIZING`
 checkpoint, then atomically writes and immediately validates the exact SHA-256
 inventory. Only after that succeeds does it atomically replace the checkpoint

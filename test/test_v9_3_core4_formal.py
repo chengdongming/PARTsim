@@ -7,6 +7,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+import pytest
+
 from experiments.v9_3.config import load_config
 from experiments.v9_3.core4_sensitivity import Core4SensitivityRunner
 from experiments.v9_3.monotonicity import service_curve_relation
@@ -14,6 +16,7 @@ from experiments.v9_3.monotonicity import service_curve_relation
 
 ROOT = Path(__file__).resolve().parents[1]
 FORMAL = ROOT / "configs/v9_3_core4_formal.yaml"
+SMOKE = ROOT / "configs/v9_3_core4_smoke.yaml"
 
 
 def test_formal_parameter_and_aggregate_contract():
@@ -59,6 +62,32 @@ def test_formal_parameter_and_aggregate_contract():
     }
 
 
+@pytest.mark.parametrize(
+    ("source", "expected_formal"),
+    ((FORMAL, True), (SMOKE, False)),
+)
+def test_run_metadata_distinguishes_formal_and_smoke_profiles(
+    tmp_path, source, expected_formal
+):
+    config = deepcopy(load_config(source, expected_core="CORE-4"))
+    config["execution"]["output_root"] = str(
+        tmp_path / ("formal" if expected_formal else "smoke")
+    )
+    config["execution"]["taskset_store"] = str(tmp_path / "store")
+    runner = Core4SensitivityRunner(config)
+
+    runner._initialize(resume=False)
+    metadata = json.loads(
+        (runner.root / "run_metadata.json").read_text(encoding="utf-8")
+    )
+    assert metadata["formal_large_scale_run"] is expected_formal
+    assert metadata["finite_sample_consistency_check_only"] is True
+
+    # The same profile-specific flags are part of the fail-closed resume
+    # envelope, not merely labels written on first initialization.
+    runner._initialize(resume=True)
+
+
 def test_formal_service_curves_are_exact_and_ordered_over_full_horizon(tmp_path):
     config = deepcopy(load_config(FORMAL, expected_core="CORE-4"))
     config["execution"]["output_root"] = str(tmp_path / "run")
@@ -91,6 +120,21 @@ def test_formal_service_curves_are_exact_and_ordered_over_full_horizon(tmp_path)
     assert all(len(row["source_template_sha256"]) == 64 for row in catalog["curves"])
     assert all(len(row["curve_sha256"]) == 64 for row in catalog["curves"])
     assert all(len(row["semantic_hash"]) == 64 for row in catalog["curves"])
+
+
+def test_smoke_service_materials_do_not_require_formal_catalog_fields(tmp_path):
+    config = deepcopy(load_config(SMOKE, expected_core="CORE-4"))
+    config["execution"]["output_root"] = str(tmp_path / "run")
+    config["execution"]["taskset_store"] = str(tmp_path / "store")
+    runner = Core4SensitivityRunner(config)
+    runner.root.mkdir(parents=True)
+    _base, materials, relations = runner._service_materials()
+    assert "repository-default-service-v1" in materials
+    assert relations == {
+        "repository-default-service-v1": "FIRST_LEVEL",
+        "second-formal-service-curve": "DEPENDENCY_UNAVAILABLE",
+    }
+    assert not (runner.root / "service_curve_catalog.json").exists()
 
 
 def test_smoke_v2_dry_run_contract_is_unchanged():
