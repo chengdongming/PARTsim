@@ -505,6 +505,11 @@ def validate_config(raw: Mapping[str, Any], *, expected_core: str | None = None)
         if not isinstance(simulator_bin, str) or not simulator_bin:
             raise ConfigError("simulation.simulator_bin must be a non-empty path")
         simulation["simulator_bin"] = simulator_bin
+        reuse_across_e0 = simulation.get("reuse_across_e0", False)
+        if not isinstance(reuse_across_e0, bool):
+            raise ConfigError("simulation.reuse_across_e0 must be boolean")
+        if reuse_across_e0:
+            simulation["reuse_across_e0"] = True
 
     execution = _require_mapping(config, "execution")
     execution["checkpoint_every"] = _positive_int(execution.get("checkpoint_every"), "execution.checkpoint_every")
