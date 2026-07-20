@@ -235,7 +235,7 @@ def test_formal_b3_plan_only_materializes_full_structure_without_simulation(
     outcome = runner.materialize_plan()
     contract = config["generation"]["workload_contract"]
     assert outcome.summary == {
-        "schema": "ASAP_BLOCK_V9_3_EXT1B_PLAN_ONLY_V2",
+        "schema": "ASAP_BLOCK_V9_3_EXT1B_PLAN_ONLY_V3",
         "output_root": str(tmp_path / "plan"),
         "plan_only": True,
         "simulator_invoked": False,
@@ -247,6 +247,19 @@ def test_formal_b3_plan_only_materializes_full_structure_without_simulation(
         "workload_contract_version": TASK_WORKLOAD_CONTRACT_VERSION,
         "candidate_identity": contract["candidate_identity"],
         "power_model_identity": contract["power_model_identity"],
+        "capacity_feasibility_contract_version": config["scenario"][
+            "capacity_feasibility_contract"
+        ],
+        "capacity_feasibility_contract_identity": outcome.summary[
+            "capacity_feasibility_contract_identity"
+        ],
+        "capacity_infeasible_task_count": 0,
+        "capacity_infeasible_taskset_count": 0,
+        "capacity_feasibility_rejection_count": sum(
+            row["rejection_code"]
+            == "TASK_TICK_ENERGY_EXCEEDS_BATTERY_CAPACITY"
+            for row in _rows(tmp_path / "plan/generation_attempts.csv")
+        ),
         "idle_task_count": 0,
         "unknown_workload_count": 0,
         "power_mismatch_count": 0,

@@ -17,6 +17,9 @@ from .config import (
     fraction_text,
     validate_config,
 )
+from .ext1b_capacity_contract import (
+    B3_TASK_CAPACITY_FEASIBILITY_CONTRACT_VERSION,
+)
 from .result_writer import atomic_write_text
 from .scheduler_registry import SCHEDULER_IDS
 
@@ -109,7 +112,7 @@ SCENARIO_KEYS = {
     "deadline_ratio_min", "deadline_ratio_max",
     "nominal_energy_supply_ratios", "initial_energy_policy",
     "release_pattern", "harvest_phase_policy", "interpolation_rho",
-    "timing_cells",
+    "timing_cells", "capacity_feasibility_contract",
 }
 TIMING_CELL_KEYS = {
     "id", "subtype", "deadline_ratio_min", "deadline_ratio_max",
@@ -364,10 +367,27 @@ def validate_ext1b_config(raw: Mapping[str, Any]) -> Dict[str, Any]:
     scenario["interpolation_rho"] = fraction_text(rho)
 
     if kind == "TIMING_STRESS":
+        capacity_contract = scenario.get("capacity_feasibility_contract")
+        if capacity_contract is None:
+            raise ConfigError(
+                "legacy B3 config lacks the capacity feasibility contract; "
+                "regenerate the B3 config/store/output"
+            )
+        if capacity_contract != (
+            B3_TASK_CAPACITY_FEASIBILITY_CONTRACT_VERSION
+        ):
+            raise ConfigError(
+                "unknown B3 capacity feasibility contract; regenerate the "
+                "B3 config/store/output"
+            )
         if scenario.get("subtype") != "MULTI_CELL":
             raise ConfigError("TIMING_STRESS requires subtype: MULTI_CELL")
         _validate_timing_cells(scenario)
     else:
+        if "capacity_feasibility_contract" in scenario:
+            raise ConfigError(
+                "capacity_feasibility_contract is only valid for TIMING_STRESS"
+            )
         expected = "B1" if kind == "BYPASS_STRESS" else "B2"
         if scenario.get("subtype") != expected:
             raise ConfigError(f"{kind} requires subtype: {expected}")
