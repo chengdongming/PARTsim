@@ -8,6 +8,8 @@
 
 import random
 import argparse
+import hashlib
+import json
 import math
 import sys
 import yaml
@@ -56,6 +58,25 @@ DEFAULT_FREQUENCY_POWER_RATIOS = {
     10000: 1.10,
     10500: 1.15,
 }
+
+TASK_WORKLOAD_CONTRACT_VERSION = "REAL_TIME_TASK_WORKLOAD_CONTRACT_V2"
+TASK_WORKLOAD_CANDIDATE_DOMAIN = (
+    "ASAP_BLOCK:V9.3:REAL_TIME_TASK_WORKLOAD_CANDIDATES:v2"
+)
+
+
+def _task_workload_candidate_identity(candidates: Sequence[str]) -> str:
+    material = {
+        "version": TASK_WORKLOAD_CONTRACT_VERSION,
+        "ordered_candidates": list(candidates),
+    }
+    encoded = json.dumps(
+        material, ensure_ascii=False, sort_keys=True,
+        separators=(",", ":"), allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(
+        TASK_WORKLOAD_CANDIDATE_DOMAIN.encode("ascii") + b"\0" + encoded
+    ).hexdigest()
 
 
 def _normalise_energy_model(model: Dict[str, Any]) -> Dict[str, Any]:
@@ -351,14 +372,12 @@ class EnergyAwareTaskGenerator:
             self.energy_config
         )
         
-        # 从配置中获取工作负载类型
-        self.workload_types = self._get_workload_types()
+        # 从配置中加载功率参数
+        self.power_coefficients = self._load_power_coefficients()
+        self.workload_types = sorted(self.power_coefficients)
         self.task_workload_candidates = self._resolve_task_workload_candidates(
             task_workload_candidates
         )
-        
-        # 从配置中加载功率参数
-        self.power_coefficients = self._load_power_coefficients()
         self.base_power = self._load_base_power()
         self.frequency_power_ratios = self._load_frequency_ratios()
 
@@ -377,15 +396,17 @@ class EnergyAwareTaskGenerator:
 
     def _resolve_task_workload_candidates(
             self, configured: Optional[Sequence[str]]) -> Tuple[str, ...]:
-        """Freeze the ordered pool used for real-time task workloads.
-
-        The legacy default is retained for callers that do not opt in to a
-        generation contract. Formal callers pass an explicit pool so its
-        order and membership can be included in their provenance.
-        """
+        """Freeze the lexical non-idle pool used for real-time tasks."""
 
         if configured is None:
-            return ("idle", "control", "bzip2", "hash", "encrypt", "decrypt")
+            candidates = tuple(sorted(
+                name for name in self.workload_types if name != "idle"
+            ))
+            if not candidates:
+                raise ValueError(
+                    "configured power model has no non-idle task workloads"
+                )
+            return candidates
         candidates = tuple(str(value) for value in configured)
         if not candidates:
             raise ValueError("task workload candidate pool must not be empty")
@@ -395,6 +416,8 @@ class EnergyAwareTaskGenerator:
             raise ValueError("task workload candidates must be unique")
         if "idle" in candidates:
             raise ValueError("idle is a system state, not a task workload candidate")
+        if candidates != tuple(sorted(candidates)):
+            raise ValueError("task workload candidates must use stable lexical order")
         unknown = sorted(set(candidates) - set(self.workload_types))
         if unknown:
             raise ValueError(
@@ -1117,7 +1140,8 @@ def main():
         dest="task_workload_candidates",
         help=(
             "实时任务workload候选；可重复，顺序会影响确定性生成。"
-            "显式候选池不得包含idle"
+            "显式候选池必须按词典序排列且不得包含idle；省略时从已加载"
+            "系统功耗模型派生完整词典序非idle集合"
         ),
     )
     parser.add_argument("--min-task-util", type=float, default=0.01,
@@ -1270,6 +1294,17 @@ def main():
             "num_tasks": args.num_tasks,
             "num_cores": args.cpus,
             "M": args.cpus,
+            "task_workload_contract_version": (
+                TASK_WORKLOAD_CONTRACT_VERSION
+            ),
+            "task_workload_candidates": ",".join(
+                generator.task_workload_candidates
+            ),
+            "task_workload_candidate_identity": (
+                _task_workload_candidate_identity(
+                    generator.task_workload_candidates
+                )
+            ),
         }
         
         # 计算每个工作负载类型的总能耗

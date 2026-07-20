@@ -309,7 +309,9 @@ def test_energy_calibration_dry_plan_has_required_cardinality():
     assert description["scheduler_ids"] == [
         "gpfp_asap_block", "gpfp_asap_nonblock",
     ]
-    assert runner.config["seed_space"] == "EXT1B1_ENERGY_CALIBRATION_PILOT"
+    assert runner.config["seed_space"] == (
+        "EXT1B1_ENERGY_CALIBRATION_PILOT_WORKLOAD_CONTRACT_V2"
+    )
     assert runner.config["grid"]["base_seed"] != 931201
     assert runner.config["simulation"]["horizon"] == 400
     assert runner.config["simulation"]["maximum_horizon"] == 400
@@ -331,7 +333,9 @@ def test_b2_sync_calibration_contract_dry_plan_and_request_order(tmp_path):
     assert runner.config["required_outputs"] == [
         "b2_batch_decisions.csv", "b2_summary.csv",
     ]
-    assert runner.config["seed_space"] == "EXT1B2_SYNC_CALIBRATION_PILOT"
+    assert runner.config["seed_space"] == (
+        "EXT1B2_SYNC_CALIBRATION_PILOT_WORKLOAD_CONTRACT_V2"
+    )
     assert runner.config["grid"]["base_seed"] not in {931201, 941201}
     assert runner.config["simulation"]["horizon"] == 400
     assert runner.config["simulation"]["maximum_horizon"] == 400
@@ -353,10 +357,12 @@ def test_b3_timing_calibration_contract_and_dry_run_cardinality():
     )
     description = runner.describe()
     assert runner.config["experiment_id"] == (
-        "asap-block-v9.3-ext1b3-timing-calibration"
+        "asap-block-v9.3-ext1b3-timing-calibration-workload-contract-v2"
     )
     assert runner.config["parameter_status"] == "PILOT"
-    assert runner.config["seed_space"] == "EXT1B3_TIMING_CALIBRATION_PILOT_V2"
+    assert runner.config["seed_space"] == (
+        "EXT1B3_TIMING_CALIBRATION_PILOT_WORKLOAD_CONTRACT_V2"
+    )
     assert runner.config["scheduler_ids"] == [
         "gpfp_asap_block", "gpfp_alap_block", "gpfp_st_block",
     ]
@@ -502,7 +508,7 @@ def test_seed_spaces_and_seeds_are_separate():
     smoke = load_ext1b_config(ROOT / "configs/v9_3_ext1b1_smoke.yaml")
     pilot = load_ext1b_config(ROOT / "configs/v9_3_ext1b1_pilot.yaml")
     assert {smoke["seed_space"], pilot["seed_space"]} == {
-        "EXT1B_SMOKE", "EXT1B_PILOT",
+        "EXT1B_SMOKE", "EXT1B_PILOT_WORKLOAD_CONTRACT_V2",
     }
     assert smoke["grid"]["base_seed"] != pilot["grid"]["base_seed"]
 

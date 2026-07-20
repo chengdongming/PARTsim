@@ -22,11 +22,11 @@ energy:
 execution:
   checkpoint_every: 1
   fail_fast_on_p0: true
-  output_root: artifacts/v9_3_core1_formal
+  output_root: artifacts/v9_3_core1_formal_workload_contract_v2
   preserve_attempt_history: true
   resume: false
-  taskset_store: artifacts/v9_3_formal_taskset_store
-experiment_id: asap-block-v9.3-core-1-formal-candidate
+  taskset_store: artifacts/v9_3_formal_taskset_store_workload_contract_v2
+experiment_id: asap-block-v9.3-core-1-formal-candidate-workload-contract-v2
 generation:
   constrained_deadline:
     d_over_t_max: '1'
@@ -40,6 +40,7 @@ generation:
   period_max: 200
   period_min: 40
   power_mode: generator_default_heterogeneous
+  workload_candidates: [bzip2, control, decrypt, encrypt, hash]
   priority_policy: RM
   utilization_tolerance: 1/100
   wcet_rounding: compensated

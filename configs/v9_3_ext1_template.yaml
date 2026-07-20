@@ -1,5 +1,5 @@
 # Production template only. Formal grid values remain intentionally unfrozen.
-experiment_id: asap-block-v9.3-ext1-template
+experiment_id: asap-block-v9.3-ext1-template-workload-contract-v2
 core: CORE-3
 extension: EXT-1
 platform: {cores: [4], task_count: [10]}
@@ -14,6 +14,7 @@ generation:
   max_task_util: "0.8"
   priority_policy: RM
   power_mode: generator_default_heterogeneous
+  workload_candidates: [bzip2, control, decrypt, encrypt, hash]
   generator_timeout_seconds: 120
 energy:
   initial_energy_values: ["1"]
@@ -25,5 +26,5 @@ energy:
 grid: {utilization_points: ["0.2"], tasksets_per_cell: 1, base_seed: 930610, seed_mode: generation_dimensions}
 rta: {methods: [CW_THETA_CW, LOC_THETA_LOC], timeout_seconds: 10, retry_timeout_seconds: 20, retry_policy: timeout_once, numerical_mode: EXACT_RATIONAL}
 simulation: {horizon: 1000, warmup: 0, minimum_jobs_per_task: 3, maximum_horizon: 2000, horizon_extension_policy: double, deadline_miss_fail_fast: true, timeout_seconds: 60, trace_mode: semantic, trace_on_failure: true, simulator_bin: ./build/rtsim/rtsim}
-execution: {worker_count: 1, checkpoint_every: 1, output_root: artifacts/v9_3_ext1_template, taskset_store: artifacts/v9_3_ext1_taskset_store, resume: false, fail_fast_on_p0: true, preserve_attempt_history: true}
+execution: {worker_count: 1, checkpoint_every: 1, output_root: artifacts/v9_3_ext1_template_workload_contract_v2, taskset_store: artifacts/v9_3_ext1_taskset_store_workload_contract_v2, resume: false, fail_fast_on_p0: true, preserve_attempt_history: true}
 plots: {}

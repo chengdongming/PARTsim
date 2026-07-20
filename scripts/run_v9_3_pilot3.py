@@ -192,6 +192,26 @@ def load_config(path: Path) -> Dict[str, Any]:
     for key, expected in frozen.items():
         if screening.get(key) != expected:
             raise Pilot3Error(f"screening.{key} must remain {expected!r}")
+    generation = screening.get("generation")
+    if not isinstance(generation, dict):
+        raise Pilot3Error("screening.generation must be a mapping")
+    if generation.get("workload_contract_version") != (
+        pilot1.TASK_WORKLOAD_CONTRACT_VERSION
+    ):
+        raise Pilot3Error("Pilot-3 workload contract version changed")
+    if generation.get("workload_candidates") != [
+        "bzip2", "control", "decrypt", "encrypt", "hash",
+    ]:
+        raise Pilot3Error("Pilot-3 workload candidates changed")
+    try:
+        generation["workload_contract"] = (
+            pilot1.task_workload_contract_material(
+                generation["workload_candidates"],
+                PROJECT_ROOT / str(config["energy_model"]["system_template"]),
+            )
+        )
+    except pilot1.ConfigError as exc:
+        raise Pilot3Error(str(exc)) from exc
     if config["timeout"] != {"initial_seconds": 60, "retry_seconds": 90, "max_workers": 1}:
         raise Pilot3Error("Pilot-3 timeout policy must be single-worker 60 then conditional 90")
     if config["confirmation"]["base_seed"] != 930412:
@@ -211,7 +231,7 @@ def load_config(path: Path) -> Dict[str, Any]:
 
 def _pilot2_context(config: Mapping[str, Any]) -> Dict[str, Any]:
     saved = PROJECT_ROOT / str(config["pilot2"]["artifact_root"]) / "pilot2_config.yaml"
-    pilot2_config = pilot2.load_config(saved)
+    pilot2_config = pilot2.load_config(saved, allow_legacy_read_only=True)
     return pilot2._baseline_context(pilot2_config)
 
 
@@ -421,6 +441,8 @@ def _generate_paired_taskset(
             "--wcet-rounding", str(generation["wcet_rounding"]),
             "--actual-utilization-tolerance-total", str(generation["actual_utilization_tolerance_total"]),
         ]
+        for workload in generation["workload_candidates"]:
+            command.extend(["--task-workload-candidate", workload])
         started = time.perf_counter()
         completed = subprocess.run(
             command, cwd=str(PROJECT_ROOT), capture_output=True, text=True,
@@ -438,13 +460,24 @@ def _generate_paired_taskset(
     payload = []
     for rank, legacy_task in enumerate(legacy_tasks):
         raw = raw_by_name[legacy_task.name]
-        power = Fraction(str(system.task_energy_per_tick(legacy_task.workload)))
+        workload = pilot1._task_workload(raw)
+        if workload == "idle":
+            raise Pilot3Error("generated real-time task uses reserved idle workload")
+        energy_by_workload = {
+            row["workload"]: Fraction(str(row["energy_per_tick"]))
+            for row in generation["workload_contract"]["power_model"]
+        }
+        if workload not in energy_by_workload:
+            raise Pilot3Error("generated real-time task uses unknown workload")
+        power = Fraction(str(system.task_energy_per_tick(workload)))
+        if power != energy_by_workload[workload]:
+            raise Pilot3Error("generated real-time task P mismatches actual power model")
         task_id = str(rank)
         tasks.append(core.V93Task(task_id, legacy_task.wcet, legacy_task.deadline, legacy_task.period, power))
         payload.append({
             "task_id": task_id, "source_name": legacy_task.name, "priority_rank": rank,
             "C": legacy_task.wcet, "D": legacy_task.deadline, "T": legacy_task.period,
-            "P": _fraction_text(power), "workload": pilot1._task_workload(raw),
+            "P": _fraction_text(power), "workload": workload,
             "arrival_offset": int(next((
                 part.split("=", 1)[1] for part in str(raw.get("params", "")).split(",")
                 if part.strip().startswith("arrival_offset=")
@@ -456,8 +489,12 @@ def _generate_paired_taskset(
     if abs(actual - target) > Fraction(str(generation["actual_utilization_tolerance_total"])):
         raise Pilot3Error("paired taskset utilization is outside tolerance")
     semantic = pilot1._domain_hash(
-        "ASAP_BLOCK:PILOT3:TASKSET_SEMANTIC:v9.3",
-        {"M": screening["M"], "tasks": payload, "service_curve_hash": context["beta_hash"]},
+        "ASAP_BLOCK:PILOT3:TASKSET_SEMANTIC:v9.3:workload-contract-v2",
+        {
+            "M": screening["M"], "tasks": payload,
+            "service_curve_hash": context["beta_hash"],
+            "task_workload_contract": generation["workload_contract"],
+        },
     )
     priority_hash = pilot1._domain_hash(
         "ASAP_BLOCK:PILOT3:PRIORITY:v9.3",

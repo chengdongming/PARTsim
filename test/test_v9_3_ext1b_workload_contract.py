@@ -20,6 +20,9 @@ from experiments.v9_3.cell_model import (  # noqa: E402
     generation_dimensions,
 )
 from experiments.v9_3.config import ConfigError, domain_hash  # noqa: E402
+from experiments.v9_3.config import (  # noqa: E402
+    TASK_WORKLOAD_CONTRACT_VERSION,
+)
 from experiments.v9_3.ext1b_config import (  # noqa: E402
     ext1b_config_hash,
     load_ext1b_config,
@@ -59,8 +62,8 @@ def test_ext1b_generator_contract_excludes_idle_across_many_tasksets():
         generator = EnergyAwareTaskGenerator(
             seed=seed,
             system_config_path=str(SYSTEM_TEMPLATE),
-            task_workload_candidates=CANDIDATES,
         )
+        assert generator.task_workload_candidates == CANDIDATES
         tasks, _resources, _dag, _energy = generator.generate_taskset(
             n=10,
             total_utilization=0.8,
@@ -91,17 +94,19 @@ def test_candidate_pool_is_stable_and_part_of_generation_identity():
         config, cell.processors, cell.task_count, cell.utilization,
     )
     contract = dimensions["task_workload_contract"]
-    material = {"ordered_candidates": list(CANDIDATES)}
-    assert contract == {
-        "version": "NON_IDLE_V1",
-        **material,
-        "candidate_identity": domain_hash(
-            "ASAP_BLOCK:V9.3:TASK_WORKLOAD_CANDIDATES:v1", material,
-        ),
-    }
+    assert contract == config["generation"]["workload_contract"]
+    assert contract["version"] == TASK_WORKLOAD_CONTRACT_VERSION
+    assert contract["ordered_candidates"] == list(CANDIDATES)
+    assert contract["idle_system_state_reserved"] is True
+    assert len(contract["candidate_identity"]) == 64
+    assert len(contract["power_model_identity"]) == 64
+    assert len(contract["contract_identity"]) == 64
 
     changed = deepcopy(config)
-    changed["generation"]["workload_candidates"] = list(CANDIDATES[:-1])
+    changed["generation"]["workload_contract"] = {
+        **changed["generation"]["workload_contract"],
+        "candidate_identity": "0" * 64,
+    }
     changed_cell = expand_cells(changed)[0]
     assert changed_cell.generation_id != cell.generation_id
     assert ext1b_config_hash(changed) != ext1b_config_hash(config)
@@ -144,7 +149,7 @@ def test_same_b3_source_identity_repeats_exactly_and_freezes_provenance(tmp_path
     assert {row["workload"] for row in first.task_payload} <= set(CANDIDATES)
 
     document = json.loads(first.canonical_path.read_text(encoding="utf-8"))
-    assert document["schema"] == "ASAP_BLOCK_V9_3_FROZEN_TASKSET_V2"
+    assert document["schema"] == "ASAP_BLOCK_V9_3_FROZEN_TASKSET_V3"
     frozen = document["task_workload_contract"]
     assert tuple(frozen["ordered_candidates"]) == CANDIDATES
     assert frozen["candidate_identity"] == generation_dimensions(
@@ -172,7 +177,7 @@ def test_power_model_change_invalidates_workload_provenance(tmp_path):
     service_b = ServiceCurveMaterial((Fraction(0),), "same", "{}", changed_path)
     root = tmp_path / "store"
     TasksetStore(root, config, service_a)
-    with pytest.raises(TasksetStoreError, match="pairing manifest contract mismatch"):
+    with pytest.raises(TasksetStoreError, match="does not match the actual system"):
         TasksetStore(root, config, service_b)
 
 
@@ -228,8 +233,9 @@ def test_formal_b3_plan_only_materializes_full_structure_without_simulation(
     )
     runner = Ext1BRunner(config)
     outcome = runner.materialize_plan()
+    contract = config["generation"]["workload_contract"]
     assert outcome.summary == {
-        "schema": "ASAP_BLOCK_V9_3_EXT1B_PLAN_ONLY_V1",
+        "schema": "ASAP_BLOCK_V9_3_EXT1B_PLAN_ONLY_V2",
         "output_root": str(tmp_path / "plan"),
         "plan_only": True,
         "simulator_invoked": False,
@@ -238,6 +244,13 @@ def test_formal_b3_plan_only_materializes_full_structure_without_simulation(
         "generation_attempts": outcome.generation_attempts,
         "paired_instances": 80,
         "simulation_requests": 240,
+        "workload_contract_version": TASK_WORKLOAD_CONTRACT_VERSION,
+        "candidate_identity": contract["candidate_identity"],
+        "power_model_identity": contract["power_model_identity"],
+        "idle_task_count": 0,
+        "unknown_workload_count": 0,
+        "power_mismatch_count": 0,
+        "legacy_taskset_count": 0,
     }
 
     generated = _rows(tmp_path / "plan/generated_tasksets.csv")
@@ -248,6 +261,8 @@ def test_formal_b3_plan_only_materializes_full_structure_without_simulation(
     assert len(requests) == 240
     assert all(row["request_status"] == "PLANNED" for row in requests)
     assert not list((tmp_path / "plan/simulation_terminal_results").glob("*.json"))
+    assert (tmp_path / "plan/workload_contract_summary.json").is_file()
+    assert (tmp_path / "plan/file_hashes.sha256").is_file()
     assert all(
         int(row["source_taskset_index"])
         == int(row["logical_taskset_index"]) * 16 + int(row["attempt_index"])

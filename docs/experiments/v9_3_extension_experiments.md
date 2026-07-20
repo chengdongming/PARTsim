@@ -70,10 +70,12 @@ these examples.
 preflight: it runs taskset generation and retries, deadline transformation,
 scenario construction, and request planning, then writes
 `generated_tasksets.csv`, `generation_attempts.csv`,
-`scenario_instances.csv`, and `simulation_requests.csv` without invoking the
-simulator. B3 freezes a lexically ordered non-idle task workload pool in the
-configuration and taskset provenance; `idle` remains available only as the
-system idle-power state.
+`scenario_instances.csv`, `simulation_requests.csv`, `plan_summary.json`,
+`workload_contract_summary.json`, and `file_hashes.sha256` without invoking the
+simulator. Every v9.3 generation config freezes the lexically ordered non-idle
+task workload pool and exact power model in configuration and taskset
+provenance; `idle` remains available only as the system idle-power state. See
+`v9_3_workload_contract_migration.md` for legacy-store and regeneration rules.
 
 ## Reanalysis and outputs
 

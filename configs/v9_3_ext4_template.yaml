@@ -1,5 +1,5 @@
 # Production template only; formal robustness levels remain unfrozen.
-experiment_id: asap-block-v9.3-ext4-template
+experiment_id: asap-block-v9.3-ext4-template-workload-contract-v2
 core: CORE-3
 extension: EXT-4
 platform: {cores: [4], task_count: [10]}
@@ -14,6 +14,7 @@ generation:
   max_task_util: "0.8"
   priority_policy: RM
   power_mode: generator_default_heterogeneous
+  workload_candidates: [bzip2, control, decrypt, encrypt, hash]
   generator_timeout_seconds: 120
 energy:
   initial_energy_values: ["1"]
@@ -35,5 +36,5 @@ robustness:
   run_simulation: true
   max_rta_analyses: 12
   max_simulations: 6
-execution: {worker_count: 1, checkpoint_every: 1, output_root: artifacts/v9_3_ext4_template, taskset_store: artifacts/v9_3_ext4_taskset_store, resume: false, fail_fast_on_p0: true, preserve_attempt_history: true}
+execution: {worker_count: 1, checkpoint_every: 1, output_root: artifacts/v9_3_ext4_template_workload_contract_v2, taskset_store: artifacts/v9_3_ext4_taskset_store_workload_contract_v2, resume: false, fail_fast_on_p0: true, preserve_attempt_history: true}
 plots: {}

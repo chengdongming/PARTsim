@@ -35,6 +35,11 @@ from asap_block_v1_3_12_schema_binding import V1312SchemaBinding
 from experiments.v9_3.execution_engine import (
     execute_isolated as execute_formal_isolated,
 )
+from experiments.v9_3.config import (
+    ConfigError,
+    TASK_WORKLOAD_CONTRACT_VERSION,
+    task_workload_contract_material,
+)
 
 
 THEORY_SHA256 = taskset.THEORY_DOCUMENT_SHA256
@@ -173,7 +178,9 @@ def derive_seed(base_seed: int, u_index: int, e0_index: int, taskset_index: int)
     return int.from_bytes(digest[:8], "big") % 2147483647
 
 
-def load_pilot_config(path: Path) -> Dict[str, Any]:
+def load_pilot_config(
+    path: Path, *, allow_legacy_read_only: bool = False,
+) -> Dict[str, Any]:
     with Path(path).open("r", encoding="utf-8") as handle:
         config = yaml.safe_load(handle)
     if not isinstance(config, dict):
@@ -206,6 +213,29 @@ def load_pilot_config(path: Path) -> Dict[str, Any]:
         raise PilotError("paper runtime pilot requires max_workers=1")
     if energy.get("energy_numeric_mode") != "EXACT_RATIONAL":
         raise PilotError("v9.3 pilot requires EXACT_RATIONAL")
+    if generation.get("workload_contract_version") is None:
+        if not allow_legacy_read_only:
+            raise PilotError(
+                "frozen task_generation.workload_contract_version must be "
+                f"{TASK_WORKLOAD_CONTRACT_VERSION!r}"
+            )
+        generation["workload_contract_status"] = "LEGACY_NON_EXECUTABLE"
+    else:
+        if generation.get("workload_contract_version") != (
+            TASK_WORKLOAD_CONTRACT_VERSION
+        ):
+            raise PilotError("pilot workload contract version changed")
+        if generation.get("workload_candidates") != [
+            "bzip2", "control", "decrypt", "encrypt", "hash",
+        ]:
+            raise PilotError("pilot workload candidates changed")
+        try:
+            generation["workload_contract"] = task_workload_contract_material(
+                generation["workload_candidates"],
+                PROJECT_ROOT / str(energy["system_template"]),
+            )
+        except ConfigError as exc:
+            raise PilotError(str(exc)) from exc
     return config
 
 
@@ -286,6 +316,8 @@ def _generate_taskset(
             "--actual-utilization-tolerance-total",
             str(generation["actual_utilization_tolerance_total"]),
         ]
+        for workload in generation["workload_candidates"]:
+            command.extend(["--task-workload-candidate", workload])
         started = time.perf_counter()
         completed = subprocess.run(
             command, cwd=str(PROJECT_ROOT), capture_output=True, text=True,
@@ -306,7 +338,18 @@ def _generate_taskset(
     payload: List[Mapping[str, Any]] = []
     for rank, legacy_task in enumerate(legacy_tasks):
         raw = raw_by_name[legacy_task.name]
-        power = Fraction(str(system.task_energy_per_tick(legacy_task.workload)))
+        workload = _task_workload(raw)
+        if workload == "idle":
+            raise PilotError("generated real-time task uses reserved idle workload")
+        energy_by_workload = {
+            row["workload"]: Fraction(str(row["energy_per_tick"]))
+            for row in generation["workload_contract"]["power_model"]
+        }
+        if workload not in energy_by_workload:
+            raise PilotError("generated real-time task uses unknown workload")
+        power = Fraction(str(system.task_energy_per_tick(workload)))
+        if power != energy_by_workload[workload]:
+            raise PilotError("generated real-time task P mismatches actual power model")
         task_id = str(rank)
         tasks.append(core.V93Task(
             task_id, legacy_task.wcet, legacy_task.deadline, legacy_task.period, power
@@ -315,7 +358,7 @@ def _generate_taskset(
             "task_id": task_id, "source_name": legacy_task.name,
             "priority_rank": rank, "C": legacy_task.wcet,
             "D": legacy_task.deadline, "T": legacy_task.period,
-            "P": _fraction_text(power), "workload": _task_workload(raw),
+            "P": _fraction_text(power), "workload": workload,
             "arrival_offset": int(
                 next((part.split("=", 1)[1] for part in str(raw.get("params", "")).split(",")
                       if part.strip().startswith("arrival_offset=")), "0")
@@ -328,8 +371,12 @@ def _generate_taskset(
     semantic_preimage = {
         "M": generation["M"], "tasks": payload,
         "service_curve_hash": beta_hash,
+        "task_workload_contract": generation["workload_contract"],
     }
-    semantic_hash = _domain_hash("ASAP_BLOCK:PILOT:TASKSET_SEMANTIC:v9.3", semantic_preimage)
+    semantic_hash = _domain_hash(
+        "ASAP_BLOCK:PILOT:TASKSET_SEMANTIC:v9.3:workload-contract-v2",
+        semantic_preimage,
+    )
     priority_hash = _domain_hash(
         "ASAP_BLOCK:PILOT:PRIORITY:v9.3",
         [{"task_id": item["task_id"], "priority_rank": item["priority_rank"]} for item in payload],

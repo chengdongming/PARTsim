@@ -84,17 +84,10 @@ def generation_dimensions(
         "power_mode": generation["power_mode"],
         "service_curve_id": config["energy"]["service_curve"]["id"],
     }
-    candidates = generation.get("workload_candidates")
-    if candidates is not None:
-        candidate_material = {"ordered_candidates": list(candidates)}
-        dimensions["task_workload_contract"] = {
-            "version": "NON_IDLE_V1",
-            **candidate_material,
-            "candidate_identity": domain_hash(
-                "ASAP_BLOCK:V9.3:TASK_WORKLOAD_CANDIDATES:v1",
-                candidate_material,
-            ),
-        }
+    contract = generation.get("workload_contract")
+    if not isinstance(contract, Mapping):
+        raise ValueError("normalized v9.3 config lacks mandatory workload contract")
+    dimensions["task_workload_contract"] = dict(contract)
     return dimensions
 
 
@@ -110,7 +103,9 @@ def expand_cells(config: Mapping[str, Any]) -> Tuple[Cell, ...]:
             for utilization_index, utilization_text in enumerate(config["grid"]["utilization_points"]):
                 utilization = Fraction(utilization_text)
                 dimensions = generation_dimensions(config, processors, task_count, utilization)
-                generation_id = domain_hash("ASAP_BLOCK:V9.3:TASKSET_GENERATION_CELL:v1", dimensions)
+                generation_id = domain_hash(
+                    "ASAP_BLOCK:V9.3:TASKSET_GENERATION_CELL:v2", dimensions
+                )
                 for e0_text in config["energy"]["initial_energy_values"]:
                     if selected_pairs is not None and (utilization_text, e0_text) not in selected_pairs:
                         continue
@@ -130,7 +125,7 @@ def expand_cells(config: Mapping[str, Any]) -> Tuple[Cell, ...]:
                         config["generation"]["priority_policy"],
                         config["energy"]["service_curve"]["id"],
                         config["analysis"]["numerical_mode"],
-                        domain_hash("ASAP_BLOCK:V9.3:FORMAL_CELL:v1", identity),
+                        domain_hash("ASAP_BLOCK:V9.3:FORMAL_CELL:v2", identity),
                         generation_id,
                     ))
     return tuple(result)
@@ -156,17 +151,17 @@ def derive_seed(
         }
     else:
         raise ValueError(f"unknown seed mode: {seed_mode}")
-    digest = domain_hash("ASAP_BLOCK:V9.3:TASKSET_SEED:v1", material)
+    digest = domain_hash("ASAP_BLOCK:V9.3:TASKSET_SEED:v2", material)
     return int(digest[:16], 16) % 2147483647
 
 
 def taskset_id(generation_id: str, taskset_index: int, semantic_hash: str) -> str:
-    return f"v93-{generation_id[:10]}-t{taskset_index:05d}-{semantic_hash[:12]}"
+    return f"v93-wc2-{generation_id[:10]}-t{taskset_index:05d}-{semantic_hash[:12]}"
 
 
 def analysis_id(cell: Cell, taskset_hash: str, variant: str) -> str:
     return domain_hash(
-        "ASAP_BLOCK:V9.3:FORMAL_ANALYSIS:v1",
+        "ASAP_BLOCK:V9.3:FORMAL_ANALYSIS:v2",
         {
             "experiment_id": cell.experiment_id,
             "core": cell.core,

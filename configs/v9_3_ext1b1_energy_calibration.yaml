@@ -1,8 +1,8 @@
-experiment_id: asap-block-v9.3-ext1b1-energy-calibration
+experiment_id: asap-block-v9.3-ext1b1-energy-calibration-workload-contract-v2
 core: CORE-3
 extension: EXT-1B
 parameter_status: PILOT
-seed_space: EXT1B1_ENERGY_CALIBRATION_PILOT
+seed_space: EXT1B1_ENERGY_CALIBRATION_PILOT_WORKLOAD_CONTRACT_V2
 scheduler_ids:
   - gpfp_asap_block
   - gpfp_asap_nonblock
@@ -23,6 +23,7 @@ generation:
   max_task_util: "4/5"
   priority_policy: RM
   power_mode: generator_default_heterogeneous
+  workload_candidates: [bzip2, control, decrypt, encrypt, hash]
   generator_timeout_seconds: 120
 energy:
   initial_energy_values: ["0"]
@@ -34,7 +35,7 @@ energy:
 grid: {utilization_points: ["1/5", "2/5"], tasksets_per_cell: 20, base_seed: 941201, seed_mode: generation_dimensions, taskset_index_start: 0}
 rta: {methods: [CW_THETA_CW, LOC_THETA_LOC], timeout_seconds: 2, retry_timeout_seconds: 4, retry_policy: timeout_once, numerical_mode: EXACT_RATIONAL}
 simulation: {horizon: 400, warmup: 0, minimum_jobs_per_task: 2, maximum_horizon: 400, horizon_extension_policy: none, deadline_miss_fail_fast: true, timeout_seconds: 30, trace_mode: semantic, trace_on_failure: true, retain_trace: true, simulator_bin: ./build/rtsim/rtsim}
-execution: {worker_count: 1, checkpoint_every: 5, output_root: artifacts/v9_3_ext1b1_energy_calibration, taskset_store: artifacts/v9_3_ext1b1_taskset_store_energy_calibration, resume: false, fail_fast_on_p0: true, preserve_attempt_history: true}
+execution: {worker_count: 1, checkpoint_every: 5, output_root: artifacts/v9_3_ext1b1_energy_calibration_workload_contract_v2, taskset_store: artifacts/v9_3_ext1b1_taskset_store_energy_calibration_workload_contract_v2, resume: false, fail_fast_on_p0: true, preserve_attempt_history: true}
 scenario:
   kind: BYPASS_STRESS
   subtype: B1

@@ -269,6 +269,9 @@ class Ext1BRunner:
                 "parameter_status": self.config["parameter_status"],
                 "seed_space": self.config["seed_space"],
                 "config_hash": ext1b_config_hash(self.config),
+                "task_workload_contract": self.config["generation"][
+                    "workload_contract"
+                ],
                 "git_head": _git_head(self.project_root),
                 "simulator_path": str(self._simulator_path()),
                 "simulator_build_hash": _sha256_file(self._simulator_path()),
@@ -984,8 +987,58 @@ class Ext1BRunner:
             REQUEST_COLUMNS,
             public_requests,
         )
+        contract = self.config["generation"]["workload_contract"]
+        energy_by_workload = {
+            str(row["workload"]): Fraction(str(row["energy_per_tick"]))
+            for row in contract["power_model"]
+        }
+        idle_count = 0
+        unknown_count = 0
+        power_mismatch_count = 0
+        task_record_count = 0
+        observed_workloads: set[str] = set()
+        for row in generated:
+            for task in json.loads(str(row["task_input_json"])):
+                task_record_count += 1
+                workload = str(task.get("workload"))
+                observed_workloads.add(workload)
+                if workload == "idle":
+                    idle_count += 1
+                if workload not in energy_by_workload:
+                    unknown_count += 1
+                    continue
+                try:
+                    observed_power = Fraction(str(task.get("P")))
+                except (ValueError, ZeroDivisionError):
+                    power_mismatch_count += 1
+                    continue
+                if observed_power != energy_by_workload[workload]:
+                    power_mismatch_count += 1
+        workload_summary = {
+            "schema": "ASAP_BLOCK_V9_3_WORKLOAD_CONTRACT_SUMMARY_V1",
+            "workload_contract_version": contract["version"],
+            "contract_identity": contract["contract_identity"],
+            "candidate_identity": contract["candidate_identity"],
+            "power_model_identity": contract["power_model_identity"],
+            "ordered_candidates": list(contract["ordered_candidates"]),
+            "observed_workloads": sorted(observed_workloads),
+            "task_record_count": task_record_count,
+            "idle_task_count": idle_count,
+            "unknown_workload_count": unknown_count,
+            "power_mismatch_count": power_mismatch_count,
+            "legacy_taskset_count": 0,
+        }
+        atomic_write_json(
+            self.root / "workload_contract_summary.json", workload_summary
+        )
+        if idle_count or unknown_count or power_mismatch_count:
+            raise RuntimeError(
+                "plan-only workload contract validation failed: "
+                f"idle={idle_count}, unknown={unknown_count}, "
+                f"power_mismatch={power_mismatch_count}"
+            )
         summary = {
-            "schema": "ASAP_BLOCK_V9_3_EXT1B_PLAN_ONLY_V1",
+            "schema": "ASAP_BLOCK_V9_3_EXT1B_PLAN_ONLY_V2",
             "output_root": str(self.root),
             "plan_only": True,
             "simulator_invoked": False,
@@ -994,8 +1047,18 @@ class Ext1BRunner:
             "generation_attempts": len(generation_attempts),
             "paired_instances": len(instances),
             "simulation_requests": len(public_requests),
+            "workload_contract_version": contract["version"],
+            "candidate_identity": contract["candidate_identity"],
+            "power_model_identity": contract["power_model_identity"],
+            "idle_task_count": idle_count,
+            "unknown_workload_count": unknown_count,
+            "power_mismatch_count": power_mismatch_count,
+            "legacy_taskset_count": 0,
         }
         atomic_write_json(self.root / "plan_summary.json", summary)
+        if any(self.terminals.glob("*.json")):
+            raise RuntimeError("plan-only output contains simulator terminals")
+        write_file_hashes(self.root)
         return Ext1BPlanOutcome(
             self.root,
             len(generated),

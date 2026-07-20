@@ -1,5 +1,5 @@
 parameter_status: FINAL_CALIBRATION_ONLY
-experiment_id: asap-block-v9.3-final-constrained-calibration
+experiment_id: asap-block-v9.3-final-constrained-calibration-workload-contract-v2
 core: CORE-2
 platform:
   cores: [4]
@@ -19,6 +19,7 @@ generation:
   max_task_util: "0.8"
   priority_policy: RM
   power_mode: generator_default_heterogeneous
+  workload_candidates: [bzip2, control, decrypt, encrypt, hash]
   generator_timeout_seconds: 120
 energy:
   initial_energy_values:
@@ -46,13 +47,13 @@ analysis:
   numerical_mode: EXACT_RATIONAL
 execution:
   checkpoint_every: 1
-  output_root: artifacts/v9_3_final_calibration/phase_a
-  taskset_store: artifacts/v9_3_final_calibration/taskset_store
+  output_root: artifacts/v9_3_final_calibration_workload_contract_v2/phase_a
+  taskset_store: artifacts/v9_3_final_calibration_workload_contract_v2/taskset_store
   resume: false
   fail_fast_on_p0: true
   preserve_attempt_history: true
 calibration:
-  artifact_root: artifacts/v9_3_final_calibration
+  artifact_root: artifacts/v9_3_final_calibration_workload_contract_v2
   diagnostic_timeout_seconds: 60
   proposed_formal_base_seed: 930612
 plots: {}

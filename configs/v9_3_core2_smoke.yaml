@@ -18,6 +18,7 @@ generation:
   max_task_util: "0.8"
   priority_policy: RM
   power_mode: generator_default_heterogeneous
+  workload_candidates: [bzip2, control, decrypt, encrypt, hash]
   generator_timeout_seconds: 120
 energy:
   initial_energy_values: ["0", "1"]
