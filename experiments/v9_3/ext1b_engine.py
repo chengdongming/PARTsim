@@ -70,7 +70,7 @@ GENERATION_ATTEMPT_COLUMNS = (
     "actual_trace_affordable_tick", "actual_trace_full_tick",
     "target_initial_slack", "configured_recovery_margin_ticks",
     "actual_trace_recovery_headroom", "predicate_satisfied",
-    "violations_json",
+    "violations_json", "diagnostics_json",
 )
 GENERATED_COLUMNS = (
     "taskset_id", "taskset_hash", "source_taskset_id", "source_taskset_hash",
@@ -193,6 +193,24 @@ RECOVERY_CONTRACT_FIELDS = (
     "actual_trace_full_tick",
 )
 TRACE_TARGET_CONTRACT_FIELDS = TARGET_JOB_FIELDS + RECOVERY_CONTRACT_FIELDS
+
+
+def _generation_attempt_diagnostic_fields(
+    diagnostics: Mapping[str, Any],
+) -> Dict[str, Any]:
+    declared: Dict[str, Any] = {}
+    extra: Dict[str, Any] = {}
+
+    for key, value in diagnostics.items():
+        if key in GENERATION_ATTEMPT_COLUMNS and key != "diagnostics_json":
+            declared[key] = value
+        else:
+            extra[key] = value
+
+    return {
+        **declared,
+        "diagnostics_json": canonical_json(extra),
+    }
 
 
 def _utc_now() -> str:
@@ -920,7 +938,9 @@ class Ext1BRunner:
                             **common, "attempt_status": "REJECTED",
                             "rejection_code": exc.code,
                             "rejection_detail": exc.detail,
-                            **exc.diagnostics,
+                            **_generation_attempt_diagnostic_fields(
+                                exc.diagnostics
+                            ),
                         })
                         continue
                     attempt_rows.append({
