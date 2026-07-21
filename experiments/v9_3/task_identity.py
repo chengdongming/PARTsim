@@ -17,3 +17,15 @@ def runtime_task_name_for_source_id(source_task_id: Any) -> str:
     if not value or value.strip() != value:
         raise ValueError("source task ID must be a non-empty canonical string")
     return f"{RUNTIME_TASK_NAME_PREFIX}{value}"
+
+
+def runtime_job_id(task_name: Any, arrival_time: Any) -> str:
+    """Return the exact native trace job identity for one task release."""
+
+    if not isinstance(task_name, str) or not task_name or task_name.strip() != task_name:
+        raise ValueError("runtime task name must be a non-empty canonical string")
+    if isinstance(arrival_time, bool) or not isinstance(arrival_time, int):
+        raise ValueError("arrival time must be an integer")
+    if arrival_time < 0:
+        raise ValueError("arrival time must be non-negative")
+    return f"{task_name}@{arrival_time}"

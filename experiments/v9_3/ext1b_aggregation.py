@@ -383,7 +383,8 @@ def aggregate_ext1b_rows(
         for field in (
             "scenario_kind", "scenario_subtype", "scenario_cell_id",
             "scenario_contract_id", "taskset_hash", "trace_hash",
-            "simulation_config_hash", "input_hash",
+            "simulation_config_hash", "input_hash", "target_runtime_task_name",
+            "target_arrival_time", "target_job_id",
         ):
             if str(row.get(field)) != str(planned.get(field)):
                 raise RuntimeError(
@@ -678,9 +679,20 @@ def aggregate_ext1b_rows(
     }
 
 
-def aggregate_ext1b(root: Path, config: Mapping[str, Any]) -> Dict[str, int]:
+def aggregate_ext1b(
+    root: Path,
+    config: Mapping[str, Any],
+    *,
+    output_file_hash_verification_closed: bool = False,
+) -> Dict[str, int]:
     b1_counts = write_ext1b_b1_outputs(root, config)
-    observation_counts = write_ext1b_observation_outputs(root, config)
+    observation_counts = write_ext1b_observation_outputs(
+        root,
+        config,
+        output_file_hash_verification_closed=(
+            output_file_hash_verification_closed
+        ),
+    )
     tables = aggregate_ext1b_rows(
         read_csv(root / "simulation_requests.csv"),
         read_csv(root / "simulation_results.csv"),

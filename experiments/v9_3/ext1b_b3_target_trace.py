@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from fractions import Fraction
 from typing import Any, Mapping, Sequence
 
-from .config import fraction_text
+from .config import domain_hash, fraction_text
 from .ext1b_capacity_contract import NATIVE_ENERGY_EPSILON_J
 
 
@@ -30,6 +30,10 @@ B3_V2_HARVEST_TRACE_DOMAIN = (
 B3_V2_STORE_CONTRACT_DOMAIN = (
     "ASAP_BLOCK:V9.3:EXT1B:B3:TARGET_TRACE_STORE_CONTRACT:v2"
 )
+B3_V2_SIMULATION_CONFIG_DOMAIN = (
+    "ASAP_BLOCK:V9.3:EXT1B:SIMULATION_CONFIG:v2"
+)
+B3_V2_FAIR_INPUT_DOMAIN = "ASAP_BLOCK:V9.3:EXT1B:FAIR_INPUT:v2"
 ST_NATIVE_HARVEST_APPLICATION_THRESHOLD_J = Fraction(1, 10**6)
 
 
@@ -61,7 +65,104 @@ def target_trace_contract_material() -> dict[str, Any]:
         "request_domain": B3_V2_REQUEST_DOMAIN,
         "harvest_trace_domain": B3_V2_HARVEST_TRACE_DOMAIN,
         "store_contract_domain": B3_V2_STORE_CONTRACT_DOMAIN,
+        "simulation_config_domain": B3_V2_SIMULATION_CONFIG_DOMAIN,
+        "fair_input_domain": B3_V2_FAIR_INPUT_DOMAIN,
     }
+
+
+def v2_taskset_hash_from_document(document: Mapping[str, Any]) -> str:
+    material = dict(document)
+    observed_hash = material.pop("taskset_hash", None)
+    material.pop("taskset_id", None)
+    if (
+        material.get("schema") != B3_V2_TASKSET_SCHEMA
+        or material.get("scenario_contract_id")
+        != B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2
+        or not isinstance(observed_hash, str)
+    ):
+        raise ValueError("invalid B3-v2 canonical taskset identity material")
+    return domain_hash(B3_V2_TASKSET_DOMAIN, material)
+
+
+def v2_scenario_candidate_identity(
+    *, scenario_cell: Mapping[str, Any], source_taskset_hash: str,
+    logical_taskset_index: int, attempt_index: int,
+    capacity_feasibility_contract_identity: str, trace_hash: str,
+    structure: Mapping[str, Any],
+) -> str:
+    return domain_hash(B3_V2_SCENARIO_CANDIDATE_DOMAIN, {
+        "scenario_cell": dict(scenario_cell),
+        "source_taskset_hash": source_taskset_hash,
+        "logical_taskset_index": logical_taskset_index,
+        "attempt_index": attempt_index,
+        "capacity_feasibility_contract_identity": (
+            capacity_feasibility_contract_identity
+        ),
+        "scenario_contract_id": B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2,
+        "trace_hash": trace_hash,
+        "structure": dict(structure),
+    })
+
+
+def v2_paired_instance_identity(
+    *, scenario_cell: Mapping[str, Any], logical_taskset_index: int,
+    taskset_hash: str, trace_hash: str, initial_battery: str,
+    battery_capacity: str, processors: int, horizon: int,
+    scenario_candidate_identity: str,
+    capacity_feasibility_contract_identity: str,
+) -> str:
+    return domain_hash(B3_V2_PAIRED_INSTANCE_DOMAIN, {
+        "scenario_cell": dict(scenario_cell),
+        "logical_taskset_index": logical_taskset_index,
+        "taskset_hash": taskset_hash,
+        "trace_hash": trace_hash,
+        "initial_battery": initial_battery,
+        "battery_capacity": battery_capacity,
+        "processors": processors,
+        "horizon": horizon,
+        "scenario_candidate_identity": scenario_candidate_identity,
+        "capacity_feasibility_contract_identity": (
+            capacity_feasibility_contract_identity
+        ),
+        "scenario_contract_id": B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2,
+    })
+
+
+def v2_simulation_config_identity(
+    *, simulation: Mapping[str, Any], initial_battery: str,
+    battery_capacity: str, allow_harvest_clipping: bool,
+    system_template_hash: str,
+) -> str:
+    return domain_hash(B3_V2_SIMULATION_CONFIG_DOMAIN, {
+        "simulation": dict(simulation),
+        "initial_battery": initial_battery,
+        "battery_capacity": battery_capacity,
+        "allow_harvest_clipping": allow_harvest_clipping,
+        "system_template_hash": system_template_hash,
+    })
+
+
+def v2_fair_input_identity(material: Mapping[str, Any]) -> str:
+    return domain_hash(B3_V2_FAIR_INPUT_DOMAIN, dict(material))
+
+
+def v2_request_identity(
+    *, paired_instance_id: str, scheduler_id: str,
+    capacity_feasibility_contract_identity: str,
+    target_runtime_task_name: str, target_arrival_time: int,
+    target_job_id: str,
+) -> str:
+    return domain_hash(B3_V2_REQUEST_DOMAIN, {
+        "paired_instance_id": paired_instance_id,
+        "scheduler_id": scheduler_id,
+        "capacity_feasibility_contract_identity": (
+            capacity_feasibility_contract_identity
+        ),
+        "scenario_contract_id": B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2,
+        "target_runtime_task_name": target_runtime_task_name,
+        "target_arrival_time": target_arrival_time,
+        "target_job_id": target_job_id,
+    })
 
 
 @dataclass(frozen=True)

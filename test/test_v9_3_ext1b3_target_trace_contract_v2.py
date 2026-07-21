@@ -40,6 +40,13 @@ from experiments.v9_3.ext1b_generation import (  # noqa: E402
     build_scenario_instance,
     scenario_cells,
 )
+from experiments.v9_3.ext1b_observation import (  # noqa: E402
+    Ext1BObservationError,
+    _b3_dimensions_by_pair,
+    _store_manifest_audit,
+    _validate_b3_target_identity,
+    _v2_identity_audit,
+)
 from experiments.v9_3.simulation_engine import _taskset_document  # noqa: E402
 from experiments.v9_3.task_identity import (  # noqa: E402
     runtime_task_name_for_source_id,
@@ -67,6 +74,7 @@ def _observation(
     slack: int,
     *,
     wait: bool,
+    arrival_time: int = 0,
 ) -> dict[str, object]:
     remaining = 2
     selected = not wait
@@ -79,8 +87,8 @@ def _observation(
         "blocking_policy": "BLOCK",
         "task_name": task_name,
         "task_id": task_name,
-        "arrival_time": 0,
-        "job_id": f"{task_name}@0",
+        "arrival_time": arrival_time,
+        "job_id": f"{task_name}@{arrival_time}",
         "remaining_time_ms": float(remaining),
         "rounded_remaining_ms": remaining,
         "absolute_deadline": time + remaining + slack,
@@ -107,6 +115,9 @@ def _write_trace(tmp_path: Path, events: list[dict[str, object]]) -> Path:
     path.write_text(json.dumps({
         "trace_schema_version": 2,
         "configured_scheduler": "gpfp_st_block",
+        "target_runtime_task_name": TARGET,
+        "target_arrival_time": 0,
+        "target_job_id": f"{TARGET}@0",
         "events": events,
     }), encoding="utf-8")
     return path
@@ -120,12 +131,14 @@ def _arrivals(*names: str) -> list[dict[str, object]]:
     ]
 
 
-def _scheduled(task_name: str, time: int) -> dict[str, object]:
+def _scheduled(
+    task_name: str, time: int, arrival_time: int = 0,
+) -> dict[str, object]:
     return {
         "time": time,
         "event_type": "scheduled",
         "task_name": task_name,
-        "arrival_time": 0,
+        "arrival_time": arrival_time,
     }
 
 
@@ -156,6 +169,7 @@ def test_non_target_transition_cannot_activate_the_target(tmp_path):
         _write_trace(tmp_path, events),
         expected_scheduler="gpfp_st_block",
         target_runtime_task_name=TARGET,
+        target_arrival_time=0,
     )
     assert report.timing_activation is True
     assert report.target_wait_observed is True
@@ -176,6 +190,7 @@ def test_target_wait_then_positive_slack_execution_activates(tmp_path):
         _write_trace(tmp_path, events),
         expected_scheduler="gpfp_st_block",
         target_runtime_task_name=TARGET,
+        target_arrival_time=0,
     )
     assert report.target_positive_slack_transition is True
     assert report.target_transition_after_slack_exhaustion is False
@@ -195,6 +210,7 @@ def test_target_execution_only_at_zero_slack_does_not_activate(tmp_path):
         _write_trace(tmp_path, events),
         expected_scheduler="gpfp_st_block",
         target_runtime_task_name=TARGET,
+        target_arrival_time=0,
     )
     assert report.timing_activation is False
     assert report.target_positive_slack_transition is False
@@ -215,11 +231,72 @@ def test_target_wait_then_terminal_without_transition_does_not_activate(
         _write_trace(tmp_path, events),
         expected_scheduler="gpfp_st_block",
         target_runtime_task_name=TARGET,
+        target_arrival_time=0,
     )
     assert report.timing_activation is False
     assert report.target_positive_slack_transition is False
     assert report.target_terminated_without_transition is True
     assert report.target_audit_closed is True
+
+
+def test_later_same_task_transition_cannot_activate_initial_target_job(tmp_path):
+    events = _arrivals(TARGET) + [
+        _observation(TARGET, 0, 8, wait=True),
+        {"time": 10, "event_type": "arrival", "task_name": TARGET,
+         "arrival_time": 10},
+        _observation(TARGET, 10, 8, wait=True, arrival_time=10),
+        _observation(TARGET, 12, 6, wait=False, arrival_time=10),
+        _scheduled(TARGET, 12, arrival_time=10),
+        _outcome(),
+    ]
+    report = audit_timing_trace(
+        _write_trace(tmp_path, events),
+        expected_scheduler="gpfp_st_block",
+        target_runtime_task_name=TARGET,
+        target_arrival_time=0,
+    )
+    assert report.target_wait_observed is True
+    assert report.target_positive_slack_transition is False
+    assert report.any_target_job_positive_transition_count == 1
+    assert report.later_target_job_positive_transition_count == 1
+
+
+def test_later_same_task_terminal_does_not_terminate_initial_target_job(tmp_path):
+    events = _arrivals(TARGET) + [
+        _observation(TARGET, 0, 8, wait=True),
+        {"time": 10, "event_type": "arrival", "task_name": TARGET,
+         "arrival_time": 10},
+        {"time": 12, "event_type": "killed", "task_name": TARGET,
+         "arrival_time": 10},
+        _outcome(),
+    ]
+    report = audit_timing_trace(
+        _write_trace(tmp_path, events),
+        expected_scheduler="gpfp_st_block",
+        target_runtime_task_name=TARGET,
+        target_arrival_time=0,
+    )
+    assert report.target_wait_observed is True
+    assert report.target_positive_slack_transition is False
+    assert report.target_terminated_without_transition is False
+
+
+def test_trace_target_job_identity_mismatch_fails_closed(tmp_path):
+    path = _write_trace(
+        tmp_path,
+        _arrivals(TARGET) + [_observation(TARGET, 0, 8, wait=True), _outcome()],
+    )
+    document = json.loads(path.read_text(encoding="utf-8"))
+    document["target_job_id"] = f"{TARGET}@40"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    report = audit_timing_trace(
+        path,
+        expected_scheduler="gpfp_st_block",
+        target_runtime_task_name=TARGET,
+        target_arrival_time=0,
+    )
+    assert report.target_audit_closed is False
+    assert "trace target job identity mismatch" in report.errors
 
 
 def test_actual_trace_tick_order_and_native_epsilon_boundary():
@@ -324,6 +401,26 @@ def test_v2_config_and_identity_domains_are_isolated():
     assert B3_V2_TASKSET_DOMAIN.endswith(":v4")
     assert B3_V2_PAIRED_INSTANCE_DOMAIN.endswith(":v3")
     assert B3_V2_REQUEST_DOMAIN.endswith(":v3")
+    assert v2["grid"]["base_seed"] == 981301
+    assert v2["statistics"]["bootstrap_seed"] == 9813903
+
+
+def test_v2_random_and_storage_identities_are_repository_unique():
+    v2 = yaml.safe_load(V2_CONFIG.read_text(encoding="utf-8"))
+    selectors = (
+        ("experiment_id", lambda row: row["experiment_id"]),
+        ("seed_space", lambda row: row["seed_space"]),
+        ("base_seed", lambda row: row["grid"]["base_seed"]),
+        ("bootstrap_seed", lambda row: row["statistics"]["bootstrap_seed"]),
+        ("output_root", lambda row: row["execution"]["output_root"]),
+        ("taskset_store", lambda row: row["execution"]["taskset_store"]),
+    )
+    for path in sorted((ROOT / "configs").glob("v9_3_ext1b*.yaml")):
+        if path == V2_CONFIG:
+            continue
+        other = yaml.safe_load(path.read_text(encoding="utf-8"))
+        for label, select in selectors:
+            assert select(v2) != select(other), (label, path.name)
 
 
 def test_v2_calibration_interpolation_candidates_remain_strict():
@@ -391,6 +488,22 @@ def test_plan_persists_v2_contract_capacity_and_outcome_independent_indices(
         assert structure["target_runtime_task_name"] == (
             runtime_task_name_for_source_id(structure["target_source_task_id"])
         )
+        assert structure["target_arrival_time"] == 0
+        assert structure["target_job_id"] == f"{TARGET}@0"
+        assert row["target_runtime_task_name"] == TARGET
+        assert int(row["target_arrival_time"]) == 0
+        assert row["target_job_id"] == f"{TARGET}@0"
+        pair_requests = [
+            request for request in requests
+            if request["paired_instance_id"] == row["paired_instance_id"]
+        ]
+        assert len(pair_requests) == 3
+        assert all(
+            request["target_runtime_task_name"] == TARGET
+            and int(request["target_arrival_time"]) == 0
+            and request["target_job_id"] == f"{TARGET}@0"
+            for request in pair_requests
+        )
     retry_limit = config["scenario"]["structural_retry_limit"]
     assert all(
         int(row["source_taskset_index"])
@@ -407,6 +520,74 @@ def test_plan_persists_v2_contract_capacity_and_outcome_independent_indices(
     assert canonical["scenario_contract_id"] == (
         B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2
     )
+    dimensions = _b3_dimensions_by_pair(instances)
+    first_pair = instances[0]["paired_instance_id"]
+    bad_request = deepcopy(next(
+        row for row in requests if row["paired_instance_id"] == first_pair
+    ))
+    bad_request["target_job_id"] = f"{TARGET}@40"
+    with pytest.raises(Ext1BObservationError, match="target identity mismatch"):
+        _validate_b3_target_identity(dimensions[first_pair], bad_request)
+
+    bad_scenario = deepcopy(instances)
+    bad_scenario[0]["target_arrival_time"] = "40"
+    with pytest.raises(
+        Ext1BObservationError,
+        match="scenario/structure target identity mismatch",
+    ):
+        _b3_dimensions_by_pair(bad_scenario)
+
+    store_closed, store_entries = _store_manifest_audit(
+        tmp_path / "plan", config,
+    )
+    request_index = {}
+    for request in requests:
+        request_index.setdefault(request["paired_instance_id"], {})[
+            request["scheduler_id"]
+        ] = request
+    audits = _v2_identity_audit(
+        tmp_path / "plan",
+        config,
+        instances,
+        {row["taskset_id"]: row for row in generated},
+        request_index,
+        attempts,
+        store_closed,
+        store_entries,
+        True,
+    )
+    assert all(audits.values())
+    unverified_output_audits = _v2_identity_audit(
+        tmp_path / "plan",
+        config,
+        instances,
+        {row["taskset_id"]: row for row in generated},
+        request_index,
+        attempts,
+        store_closed,
+        store_entries,
+        False,
+    )
+    assert unverified_output_audits[
+        "output_file_hash_verification_closed"
+    ] is False
+    assert unverified_output_audits["hash_audit_closed"] is False
+    tampered_generated = deepcopy(generated)
+    tampered_generated[0]["taskset_hash"] = "0" * 64
+    tampered_audits = _v2_identity_audit(
+        tmp_path / "plan",
+        config,
+        instances,
+        {row["taskset_id"]: row for row in tampered_generated},
+        request_index,
+        attempts,
+        store_closed,
+        store_entries,
+        True,
+    )
+    assert tampered_audits["identity_shape_audit_closed"] is True
+    assert tampered_audits["taskset_hash_audit_closed"] is False
+    assert tampered_audits["hash_audit_closed"] is False
 
 
 def test_resume_wrong_contract_or_store_fails_closed(tmp_path):

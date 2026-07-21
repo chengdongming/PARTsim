@@ -27,9 +27,12 @@ from .ext1b_capacity_contract import (
 )
 from .ext1b_b3_target_trace import (
     B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2,
-    B3_V2_REQUEST_DOMAIN,
     is_b3_target_trace_v2,
     target_trace_contract_material,
+    v2_fair_input_identity,
+    v2_request_identity,
+    v2_simulation_config_identity,
+    v2_taskset_hash_from_document,
 )
 from .ext1b_generation import (
     ScenarioInstance, StructuralRejection, build_scenario_instance,
@@ -46,6 +49,7 @@ from .simulation_engine import (
 )
 from .simulation_result import SimulationStatus
 from .taskset_store import TasksetStore, prepare_service_curve
+from .task_identity import runtime_job_id
 
 
 REGISTRY_COLUMNS = tuple(SCHEDULERS[0].row())
@@ -76,6 +80,7 @@ GENERATED_COLUMNS = (
     "workload_power_mapping_json", "task_input_json", "canonical_taskset_json",
     "scenario_candidate_identity", "capacity_feasibility_contract_version",
     "capacity_feasibility_contract_identity", "scenario_contract_id",
+    "target_runtime_task_name", "target_arrival_time", "target_job_id",
 )
 SCENARIO_INSTANCE_COLUMNS = (
     "paired_instance_id", "scenario_kind", "scenario_subtype",
@@ -89,6 +94,7 @@ SCENARIO_INSTANCE_COLUMNS = (
     "system_template_path", "scenario_candidate_identity",
     "capacity_feasibility_contract_version",
     "capacity_feasibility_contract_identity", "scenario_contract_id",
+    "target_runtime_task_name", "target_arrival_time", "target_job_id",
 )
 REQUEST_COLUMNS = (
     "request_id", "paired_instance_id", "scenario_kind", "scenario_subtype",
@@ -99,6 +105,7 @@ REQUEST_COLUMNS = (
     "workload_vector_hash", "simulator_build_hash", "request_status",
     "capacity_feasibility_contract_version",
     "capacity_feasibility_contract_identity", "scenario_contract_id",
+    "target_runtime_task_name", "target_arrival_time", "target_job_id",
 )
 ATTEMPT_COLUMNS = (
     "attempt_id", "request_id", "scheduler_id", "attempt_number", "status",
@@ -106,7 +113,8 @@ ATTEMPT_COLUMNS = (
 )
 RESULT_COLUMNS = (
     "request_id", "paired_instance_id", "scenario_kind", "scenario_subtype",
-    "scenario_cell_id", "scenario_contract_id", "taskset_id", "taskset_hash",
+    "scenario_cell_id", "scenario_contract_id", "target_runtime_task_name",
+    "target_arrival_time", "target_job_id", "taskset_id", "taskset_hash",
     "trace_hash",
     "simulation_config_hash", "input_hash", "scheduler_id", "status", "reason",
     "comparison_eligible", "horizon", "horizon_censoring", "runtime_seconds",
@@ -117,6 +125,8 @@ RESULT_COLUMNS = (
     "target_positive_slack_transition",
     "target_transition_after_slack_exhaustion",
     "target_terminated_without_transition",
+    "any_target_job_positive_transition_count",
+    "later_target_job_positive_transition_count",
     "non_target_positive_transition_count", "activation_from_other_job_only",
     "target_audit_closed", "target_audit_error_count",
     "missed_jobs", "first_miss_time",
@@ -143,9 +153,13 @@ EXT1B_FAIRNESS_FIELDS = (
     "initial_battery", "battery_capacity", "horizon", "maximum_horizon",
     "generation_seed", "M", "priority_hash", "power_hash", "deadline_hash",
     "release_hash", "workload_vector_hash", "simulator_build_hash",
-    "scenario_contract_id",
+    "scenario_contract_id", "target_runtime_task_name",
+    "target_arrival_time", "target_job_id",
 )
 UNAVAILABLE = "UNAVAILABLE"
+TARGET_JOB_FIELDS = (
+    "target_runtime_task_name", "target_arrival_time", "target_job_id",
+)
 
 
 def _utc_now() -> str:
@@ -167,18 +181,20 @@ def _request_identity(
     scheduler_id: str,
     capacity_identity: str,
     scenario_contract_id: str = "",
+    target_runtime_task_name: str = "",
+    target_arrival_time: int | str = "",
+    target_job_id: str = "",
 ) -> str:
     if scenario_contract_id:
         if scenario_contract_id != B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2:
             raise ValueError("unknown EXT-1B/B3 scenario contract identity")
-        return domain_hash(
-            B3_V2_REQUEST_DOMAIN,
-            {
-                "paired_instance_id": paired_instance_id,
-                "scheduler_id": scheduler_id,
-                "capacity_feasibility_contract_identity": capacity_identity,
-                "scenario_contract_id": scenario_contract_id,
-            },
+        return v2_request_identity(
+            paired_instance_id=paired_instance_id,
+            scheduler_id=scheduler_id,
+            capacity_feasibility_contract_identity=capacity_identity,
+            target_runtime_task_name=target_runtime_task_name,
+            target_arrival_time=int(target_arrival_time),
+            target_job_id=target_job_id,
         )
     if capacity_identity:
         return domain_hash(
@@ -196,6 +212,57 @@ def _request_identity(
             "scheduler_id": scheduler_id,
         },
     )
+
+
+def _target_job_fields(
+    structure: Mapping[str, Any], *, required: bool,
+) -> Dict[str, Any]:
+    if not required:
+        return {key: "" for key in TARGET_JOB_FIELDS}
+    missing = [key for key in TARGET_JOB_FIELDS if key not in structure]
+    if missing:
+        raise RuntimeError(f"B3-v2 structure lacks target job identity: {missing}")
+    name = str(structure["target_runtime_task_name"])
+    arrival = structure["target_arrival_time"]
+    if isinstance(arrival, bool) or not isinstance(arrival, int) or arrival != 0:
+        raise RuntimeError("B3-v2 target arrival time must equal integer zero")
+    job_id = str(structure["target_job_id"])
+    if job_id != runtime_job_id(name, arrival):
+        raise RuntimeError("B3-v2 target job identity is inconsistent")
+    return {
+        "target_runtime_task_name": name,
+        "target_arrival_time": arrival,
+        "target_job_id": job_id,
+    }
+
+
+def _bind_target_identity_to_trace(
+    request: Mapping[str, Any], execution: SimulationExecution, *, materialize: bool,
+) -> None:
+    """Persist or validate the B3-v2 target identity in the retained trace."""
+
+    if not str(request.get("scenario_contract_id", "")):
+        return
+    path = execution.retained_trace_path
+    if path is None or not path.is_file():
+        raise RuntimeError("P0 B3-v2 retained trace is missing")
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError("P0 B3-v2 retained trace is invalid") from exc
+    expected = {
+        "target_runtime_task_name": str(request["target_runtime_task_name"]),
+        "target_arrival_time": int(request["target_arrival_time"]),
+        "target_job_id": str(request["target_job_id"]),
+    }
+    observed = {key: document.get(key) for key in TARGET_JOB_FIELDS}
+    if materialize:
+        if any(value is not None for value in observed.values()) and observed != expected:
+            raise RuntimeError("P0 B3-v2 retained trace target identity conflict")
+        document.update(expected)
+        atomic_write_json(path, document)
+    elif observed != expected:
+        raise RuntimeError("P0 B3-v2 retained trace target identity mismatch")
 
 
 def _sha256_file(path: Path) -> str:
@@ -498,6 +565,9 @@ class Ext1BRunner:
                 str(request["scheduler_id"]),
                 capacity_identity,
                 scenario_contract_id,
+                str(request.get("target_runtime_task_name", "")),
+                request.get("target_arrival_time", ""),
+                str(request.get("target_job_id", "")),
             )
             if str(request["request_id"]) != expected_id:
                 raise RuntimeError("P0 EXT-1B persisted request identity mismatch")
@@ -581,6 +651,7 @@ class Ext1BRunner:
         result_identity_fields = (
             "request_id", "paired_instance_id", "scenario_kind",
             "scenario_subtype", "scenario_cell_id", "scenario_contract_id",
+            "target_runtime_task_name", "target_arrival_time", "target_job_id",
             "taskset_id",
             "taskset_hash", "trace_hash", "simulation_config_hash",
             "input_hash", "scheduler_id",
@@ -591,6 +662,9 @@ class Ext1BRunner:
                 self.terminals / f"{request_id}.json"
             )
             self._validate_terminal_identity(request, execution)
+            _bind_target_identity_to_trace(
+                request, execution, materialize=False,
+            )
             result = result_by_id[request_id]
             attempt = attempt_by_id[request_id]
             if any(
@@ -750,6 +824,9 @@ class Ext1BRunner:
                     )
 
                 instance = accepted
+                target_job = _target_job_fields(
+                    instance.structure, required=target_trace_v2,
+                )
                 canonical_path = self.root / "scenario_tasksets" / f"{instance.taskset_hash}.json"
                 power_map = [
                     {"task_id": row["task_id"], "priority_rank": row["priority_rank"],
@@ -788,6 +865,7 @@ class Ext1BRunner:
                         instance.capacity_feasibility_contract_identity
                     ),
                     "scenario_contract_id": scenario_contract_id,
+                    **target_job,
                 })
                 instance_rows.append({
                     "paired_instance_id": instance.paired_instance_id,
@@ -828,20 +906,22 @@ class Ext1BRunner:
                         instance.capacity_feasibility_contract_identity
                     ),
                     "scenario_contract_id": scenario_contract_id,
+                    **target_job,
                 })
-                simulation_hash = domain_hash(
-                    (
-                        "ASAP_BLOCK:V9.3:EXT1B:SIMULATION_CONFIG:v2"
-                        if target_trace_v2
-                        else "ASAP_BLOCK:V9.3:EXT1B:SIMULATION_CONFIG:v1"
-                    ),
-                    {
+                simulation_material = {
                         "simulation": self.config["simulation"],
                         "initial_battery": fraction_text(instance.initial_battery),
                         "battery_capacity": fraction_text(instance.battery_capacity),
                         "allow_harvest_clipping": instance.allow_harvest_clipping,
                         "system_template_hash": _sha256_file(instance.system_template_path),
-                    },
+                }
+                simulation_hash = (
+                    v2_simulation_config_identity(**simulation_material)
+                    if target_trace_v2
+                    else domain_hash(
+                        "ASAP_BLOCK:V9.3:EXT1B:SIMULATION_CONFIG:v1",
+                        simulation_material,
+                    )
                 )
                 workload_vector_hash = domain_hash(
                     "ASAP_BLOCK:V9.3:EXT1B:WORKLOAD_VECTOR:v1", power_map
@@ -863,14 +943,14 @@ class Ext1BRunner:
                     "workload_vector_hash": workload_vector_hash,
                     "simulator_build_hash": simulator_hash,
                     "scenario_contract_id": scenario_contract_id,
+                    **target_job,
                 }
-                input_hash = domain_hash(
-                    (
-                        "ASAP_BLOCK:V9.3:EXT1B:FAIR_INPUT:v2"
-                        if target_trace_v2
-                        else "ASAP_BLOCK:V9.3:EXT1B:FAIR_INPUT:v1"
-                    ),
-                    fair_material,
+                input_hash = (
+                    v2_fair_input_identity(fair_material)
+                    if target_trace_v2
+                    else domain_hash(
+                        "ASAP_BLOCK:V9.3:EXT1B:FAIR_INPUT:v1", fair_material,
+                    )
                 )
                 for registration in self.schedulers:
                     request_id = _request_identity(
@@ -878,6 +958,9 @@ class Ext1BRunner:
                         registration.scheduler_id,
                         instance.capacity_feasibility_contract_identity,
                         scenario_contract_id,
+                        target_job["target_runtime_task_name"],
+                        target_job["target_arrival_time"],
+                        target_job["target_job_id"],
                     )
                     requests.append({
                         "request_id": request_id,
@@ -899,9 +982,12 @@ class Ext1BRunner:
                             instance.capacity_feasibility_contract_identity
                         ),
                         "scenario_contract_id": scenario_contract_id,
+                        **target_job,
                         "instance": instance,
                     })
         assert_ext1b_fair_pairing(requests, self.config["scheduler_ids"])
+        if target_trace_v2:
+            store.verify_pairing_manifest(require_complete=False)
         return generated_rows, attempt_rows, instance_rows, requests
 
     def _task_and_request_outcomes(
@@ -993,6 +1079,9 @@ class Ext1BRunner:
                 "input_hash", "scheduler_id",
             )},
             "scenario_contract_id": request.get("scenario_contract_id", ""),
+            **{
+                key: request.get(key, "") for key in TARGET_JOB_FIELDS
+            },
             "status": result.status.value,
             "reason": result.reason,
             "comparison_eligible": result.comparison_eligible,
@@ -1012,6 +1101,8 @@ class Ext1BRunner:
                 "target_positive_slack_transition",
                 "target_transition_after_slack_exhaustion",
                 "target_terminated_without_transition",
+                "any_target_job_positive_transition_count",
+                "later_target_job_positive_transition_count",
                 "non_target_positive_transition_count",
                 "activation_from_other_job_only",
                 "target_audit_closed",
@@ -1072,6 +1163,9 @@ class Ext1BRunner:
                         raise RuntimeError("terminal result exists; use --resume")
                     execution = load_simulation_terminal(terminal_path)
                     self._validate_terminal_identity(request, execution)
+                    _bind_target_identity_to_trace(
+                        request, execution, materialize=False,
+                    )
                 else:
                     instance: ScenarioInstance = request["instance"]
                     energy = dict(self.config["energy"])
@@ -1095,6 +1189,9 @@ class Ext1BRunner:
                         )
                     except SimulationConfigurationError as exc:
                         raise RuntimeError(f"P0 simulation configuration failure: {exc}") from exc
+                    _bind_target_identity_to_trace(
+                        request, execution, materialize=True,
+                    )
                     write_simulation_terminal(terminal_path, execution)
                 self._validate_terminal_identity(request, execution)
                 terminal_count += 1
@@ -1125,6 +1222,9 @@ class Ext1BRunner:
                 continue
             execution = load_simulation_terminal(path)
             self._validate_terminal_identity(request, execution)
+            _bind_target_identity_to_trace(
+                request, execution, materialize=False,
+            )
             result_row, per_task = self._task_and_request_outcomes(request, execution)
             result_rows.append(result_row)
             task_rows.extend(per_task)
@@ -1148,6 +1248,15 @@ class Ext1BRunner:
         write_csv(self.root / "task_outcomes.csv", TASK_COLUMNS, task_rows)
         write_csv(self.root / "failures.csv", FAILURE_COLUMNS, failures)
         aggregation = aggregate_ext1b(self.root, self.config)
+        if is_b3_target_trace_v2(self.config):
+            write_file_hashes(self.root)
+            if not verify_file_hashes(self.root):
+                raise RuntimeError("P0 B3-v2 output file hash verification failed")
+            aggregation = aggregate_ext1b(
+                self.root,
+                self.config,
+                output_file_hash_verification_closed=True,
+            )
         missing_outputs = [
             name for name in self.config["required_outputs"]
             if not (self.root / name).is_file()
@@ -1161,6 +1270,8 @@ class Ext1BRunner:
             **aggregation,
         }
         write_file_hashes(self.root)
+        if not verify_file_hashes(self.root):
+            raise RuntimeError("P0 EXT-1B final output file hash verification failed")
         return Ext1BOutcome(
             self.root, len(plan), len(result_rows), self.stop_requested, summary
         )
@@ -1345,6 +1456,21 @@ class Ext1BRunner:
                 if str(row.get("attempt_status")) == "REJECTED"
             )
             retry_limit = int(self.config["scenario"]["structural_retry_limit"])
+            taskset_hash_audit_closed = True
+            for row in generated:
+                try:
+                    document = json.loads(
+                        Path(str(row["canonical_taskset_json"])).read_text(
+                            encoding="utf-8"
+                        )
+                    )
+                    observed_hash = v2_taskset_hash_from_document(document)
+                except (KeyError, OSError, ValueError, json.JSONDecodeError):
+                    taskset_hash_audit_closed = False
+                    break
+                if observed_hash != str(row["taskset_hash"]):
+                    taskset_hash_audit_closed = False
+                    break
             summary.update({
                 "scenario_contract_id": (
                     B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2
@@ -1360,10 +1486,11 @@ class Ext1BRunner:
                 "structural_rejection_code_counts": dict(
                     sorted(rejection_counts.items())
                 ),
-                "taskset_hash_audit_closed": (
-                    len({row["taskset_hash"] for row in generated})
-                    == len(generated)
+                "identity_shape_audit_closed": all(
+                    len(str(row["taskset_hash"])) == 64 for row in generated
                 ),
+                "taskset_hash_audit_closed": taskset_hash_audit_closed,
+                "taskset_store_manifest_audit_closed": True,
                 "pairing_audit_closed": True,
                 "workload_audit_closed": not any((
                     idle_count, unknown_count, power_mismatch_count,
@@ -1393,6 +1520,17 @@ def analyze_ext1b(root: Path) -> Mapping[str, Any]:
     config = load_ext1b_config(root / "run_config.yaml")
     summary = aggregate_ext1b(root, config)
     write_file_hashes(root)
+    if not verify_file_hashes(root):
+        raise RuntimeError("P0 EXT-1B output file hash verification failed")
+    if is_b3_target_trace_v2(config):
+        summary = aggregate_ext1b(
+            root,
+            config,
+            output_file_hash_verification_closed=True,
+        )
+        write_file_hashes(root)
+        if not verify_file_hashes(root):
+            raise RuntimeError("P0 B3-v2 final output file hash verification failed")
     return {
         "parameter_status": config["parameter_status"],
         **summary,

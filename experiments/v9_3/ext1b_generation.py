@@ -23,16 +23,16 @@ from .ext1b_capacity_contract import (
 from .ext1b_b3_target_trace import (
     B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2,
     B3_V2_HARVEST_TRACE_DOMAIN,
-    B3_V2_PAIRED_INSTANCE_DOMAIN,
-    B3_V2_SCENARIO_CANDIDATE_DOMAIN,
     B3_V2_TASKSET_DOMAIN,
     B3_V2_TASKSET_SCHEMA,
     actual_trace_recovery,
     is_b3_target_trace_v2,
+    v2_paired_instance_identity,
+    v2_scenario_candidate_identity,
 )
 from .result_writer import atomic_write_json, atomic_write_text
 from .taskset_store import StoredTaskset
-from .task_identity import runtime_task_name_for_source_id
+from .task_identity import runtime_job_id, runtime_task_name_for_source_id
 
 
 PEAK_TIME_OF_DAY_MS = 11 * 60 * 60 * 1000
@@ -453,10 +453,14 @@ def _timing_structure(
     target = ordered[0]
     target_energy = Fraction(str(target["P"]))
     target_slack = int(target["D"]) - int(target["C"])
+    target_runtime_name = runtime_task_name_for_source_id(target["task_id"])
+    target_arrival_time = 0
     target_identity = {
         "target_source_task_id": str(target["task_id"]),
-        "target_runtime_task_name": runtime_task_name_for_source_id(
-            target["task_id"]
+        "target_runtime_task_name": target_runtime_name,
+        "target_arrival_time": target_arrival_time,
+        "target_job_id": runtime_job_id(
+            target_runtime_name, target_arrival_time,
         ),
         "target_priority_rank": int(target["priority_rank"]),
         "target_workload": str(target["workload"]),
@@ -733,13 +737,21 @@ def build_scenario_instance(
                 "trace_hash": trace_hash,
                 "structure": structure,
             })
-        scenario_candidate_identity = domain_hash(
-            (
-                B3_V2_SCENARIO_CANDIDATE_DOMAIN
-                if target_trace_v2
-                else "ASAP_BLOCK:V9.3:EXT1B:B3:SCENARIO_CANDIDATE:v1"
-            ),
-            candidate_material,
+        scenario_candidate_identity = (
+            v2_scenario_candidate_identity(
+                scenario_cell=cell.row(),
+                source_taskset_hash=stored.semantic_hash,
+                logical_taskset_index=logical_taskset_index,
+                attempt_index=attempt_index,
+                capacity_feasibility_contract_identity=capacity_identity,
+                trace_hash=trace_hash,
+                structure=structure,
+            )
+            if target_trace_v2
+            else domain_hash(
+                "ASAP_BLOCK:V9.3:EXT1B:B3:SCENARIO_CANDIDATE:v1",
+                candidate_material,
+            )
         )
 
     task_material = {
@@ -816,15 +828,28 @@ def build_scenario_instance(
             paired_material["scenario_contract_id"] = (
                 B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2
             )
-    paired_id = domain_hash(
-        (
-            B3_V2_PAIRED_INSTANCE_DOMAIN
-            if target_trace_v2
-            else "ASAP_BLOCK:V9.3:EXT1B:PAIRED_INSTANCE:v2"
-            if cell.kind == "TIMING_STRESS"
-            else "ASAP_BLOCK:V9.3:EXT1B:PAIRED_INSTANCE:v1"
-        ),
-        paired_material,
+    paired_id = (
+        v2_paired_instance_identity(
+            scenario_cell=cell.row(),
+            logical_taskset_index=logical_taskset_index,
+            taskset_hash=taskset_hash,
+            trace_hash=trace_hash,
+            initial_battery=fraction_text(initial),
+            battery_capacity=fraction_text(capacity),
+            processors=stored.processors,
+            horizon=int(config["simulation"]["horizon"]),
+            scenario_candidate_identity=scenario_candidate_identity,
+            capacity_feasibility_contract_identity=capacity_identity,
+        )
+        if target_trace_v2
+        else domain_hash(
+            (
+                "ASAP_BLOCK:V9.3:EXT1B:PAIRED_INSTANCE:v2"
+                if cell.kind == "TIMING_STRESS"
+                else "ASAP_BLOCK:V9.3:EXT1B:PAIRED_INSTANCE:v1"
+            ),
+            paired_material,
+        )
     )
     taskset_id = f"ext1b-{cell.cell_id}-{logical_taskset_index:04d}-{taskset_hash[:12]}"
     canonical_path = system_root.parent / "scenario_tasksets" / f"{taskset_hash}.json"

@@ -469,6 +469,23 @@ class TasksetStore:
             if key in index:
                 raise TasksetStoreError("duplicate taskset in pairing manifest")
             index[key] = entry
+        cells_by_generation = {
+            cell.generation_id: cell for cell in expand_cells(self.config)
+        }
+        for key, entry in index.items():
+            path = self.path_for(*key)
+            if not path.is_file():
+                raise TasksetStoreError("pairing manifest taskset file is missing")
+            cell = cells_by_generation.get(key[0])
+            if cell is None:
+                raise TasksetStoreError(
+                    "pairing manifest has unknown generation identity"
+                )
+            observed = self._manifest_entry(self._load(path, cell, key[1]))
+            if observed != entry:
+                raise TasksetStoreError(
+                    "pairing manifest/taskset payload mismatch"
+                )
         if not require_complete:
             return
         contract = manifest["contract"]
@@ -483,23 +500,6 @@ class TasksetStore:
             raise TasksetStoreError(
                 "formal pairing manifest is missing or has extra tasksets"
             )
-        cells_by_generation = {
-            cell.generation_id: cell for cell in expand_cells(self.config)
-        }
-        for key, entry in index.items():
-            path = self.path_for(*key)
-            if not path.is_file():
-                raise TasksetStoreError("formal pairing manifest taskset file is missing")
-            cell = cells_by_generation.get(key[0])
-            if cell is None:
-                raise TasksetStoreError(
-                    "formal pairing manifest has unknown generation identity"
-                )
-            observed = self._manifest_entry(self._load(path, cell, key[1]))
-            if observed != entry:
-                raise TasksetStoreError(
-                    "formal pairing manifest/taskset payload mismatch"
-                )
 
     def path_for(self, generation_id: str, taskset_index: int) -> Path:
         return self.root / generation_id / f"taskset_{taskset_index:05d}.json"

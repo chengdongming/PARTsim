@@ -15,6 +15,8 @@ import math
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
+from .task_identity import runtime_job_id
+
 
 B3_STATE_ASAP_IMMEDIATE_ELIGIBILITY = (
     "B3_STATE_ASAP_IMMEDIATE_ELIGIBILITY"
@@ -137,6 +139,8 @@ class TimingAuditReport:
     target_positive_slack_transition: bool = False
     target_transition_after_slack_exhaustion: bool = False
     target_terminated_without_transition: bool = False
+    any_target_job_positive_transition_count: int = 0
+    later_target_job_positive_transition_count: int = 0
     non_target_positive_transition_count: int = 0
     activation_from_other_job_only: bool = False
     target_audit_closed: bool = False
@@ -446,6 +450,7 @@ def audit_timing_trace(
     *,
     expected_scheduler: str,
     target_runtime_task_name: str | None = None,
+    target_arrival_time: int | None = None,
 ) -> TimingAuditReport:
     data = _strict_json(path)
     errors: list[str] = []
@@ -453,6 +458,33 @@ def audit_timing_trace(
         errors.append("timing audit requires trace schema version 2")
     if data.get("configured_scheduler") != expected_scheduler:
         errors.append("configured scheduler mismatch")
+
+    target_job_identity: tuple[str, int] | None = None
+    if (target_runtime_task_name is None) != (target_arrival_time is None):
+        errors.append(
+            "target runtime task name and arrival time must be supplied together"
+        )
+    elif target_runtime_task_name is not None:
+        if not isinstance(target_runtime_task_name, str) or not target_runtime_task_name:
+            errors.append("target runtime task name must be non-empty")
+        elif isinstance(target_arrival_time, bool) or not isinstance(
+            target_arrival_time, int
+        ) or target_arrival_time < 0:
+            errors.append("target arrival time must be a non-negative integer")
+        else:
+            target_job_identity = (
+                target_runtime_task_name, target_arrival_time,
+            )
+            expected_job_id = runtime_job_id(*target_job_identity)
+            trace_identity = (
+                data.get("target_runtime_task_name"),
+                data.get("target_arrival_time"),
+                data.get("target_job_id"),
+            )
+            if trace_identity != (
+                target_runtime_task_name, target_arrival_time, expected_job_id,
+            ):
+                errors.append("trace target job identity mismatch")
 
     events = data["events"]
     trace_has_terminal_outcome = any(
@@ -641,43 +673,43 @@ def audit_timing_trace(
     target_positive_slack_transition = False
     target_transition_after_slack_exhaustion = False
     target_terminated_without_transition = False
+    any_target_job_positive_transition_count = 0
+    later_target_job_positive_transition_count = 0
     non_target_positive_transition_count = 0
     activation_from_other_job_only = False
-    if target_runtime_task_name is not None:
-        if not isinstance(target_runtime_task_name, str) or not target_runtime_task_name:
-            errors.append("target runtime task name must be non-empty")
-        elif not any(
-            task_name == target_runtime_task_name for task_name, _ in arrivals
-        ):
+    if target_job_identity is not None:
+        if target_job_identity not in arrivals:
             errors.append(
-                "target runtime task has no matching arrival: "
-                f"{target_runtime_task_name}"
+                "target runtime job has no matching arrival: "
+                f"{runtime_job_id(*target_job_identity)}"
             )
         elif family == "ST":
-            target_jobs = {
-                job for job in by_job if job[0] == target_runtime_task_name
-            }
-            target_wait_times: dict[tuple[str, int], int] = {}
-            for job in target_jobs:
-                first_wait = min((
-                    row.identity[0] for row in by_job[job]
-                    if row.state == ST_ENERGY_INSUFFICIENT_SLACK_WAIT
-                ), default=None)
-                if first_wait is not None:
-                    target_wait_times[job] = first_wait
-            target_wait_observed = bool(target_wait_times)
-            target_positive_jobs = {
+            first_wait = min((
+                row.identity[0] for row in by_job.get(target_job_identity, ())
+                if row.state == ST_ENERGY_INSUFFICIENT_SLACK_WAIT
+            ), default=None)
+            target_wait_observed = first_wait is not None
+            target_positive_slack_transition = (
+                target_job_identity in transition_jobs
+            )
+            target_task_positive_jobs = {
                 job for job in transition_jobs
                 if job[0] == target_runtime_task_name
             }
-            target_positive_slack_transition = bool(target_positive_jobs)
-            for job, first_wait in target_wait_times.items():
+            any_target_job_positive_transition_count = len(
+                target_task_positive_jobs
+            )
+            later_target_job_positive_transition_count = sum(
+                job[1] > target_arrival_time
+                for job in target_task_positive_jobs
+            )
+            if first_wait is not None:
                 post_wait_transitions = [
-                    row for row in by_job[job]
+                    row for row in by_job.get(target_job_identity, ())
                     if row.state == ST_AFFORDABLE_ASAP_BEHAVIOR
                     and row.identity[0] > first_wait
                 ]
-                if job not in target_positive_jobs and any(
+                if not target_positive_slack_transition and any(
                     row.scheduler_slack is not None
                     and row.scheduler_slack <= 0
                     for row in post_wait_transitions
@@ -685,14 +717,17 @@ def audit_timing_trace(
                     target_transition_after_slack_exhaustion = True
                 if not post_wait_transitions and any(
                     terminal_time > first_wait
-                    for terminal_time, _ in terminal_events.get(job, [])
+                    for terminal_time, _ in terminal_events.get(
+                        target_job_identity, []
+                    )
                 ):
                     target_terminated_without_transition = True
             non_target_positive_transition_count = sum(
                 job[0] != target_runtime_task_name for job in transition_jobs
             )
             activation_from_other_job_only = (
-                bool(transition_jobs) and not target_positive_slack_transition
+                non_target_positive_transition_count > 0
+                and not target_positive_slack_transition
             )
 
     invalid_count = sum(
@@ -701,7 +736,7 @@ def audit_timing_trace(
     )
     target_audit_error_count = len(errors) + invalid_count
     target_audit_closed = (
-        target_runtime_task_name is not None
+        target_job_identity is not None
         and target_audit_error_count == 0
     )
 
@@ -719,6 +754,12 @@ def audit_timing_trace(
         ),
         target_terminated_without_transition=(
             target_terminated_without_transition
+        ),
+        any_target_job_positive_transition_count=(
+            any_target_job_positive_transition_count
+        ),
+        later_target_job_positive_transition_count=(
+            later_target_job_positive_transition_count
         ),
         non_target_positive_transition_count=(
             non_target_positive_transition_count
