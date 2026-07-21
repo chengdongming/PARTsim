@@ -1,4 +1,4 @@
-experiment_id: asap-block-v9.3-ext1b3-target-actual-trace-calibration-v2
+experiment_id: asap-block-v9.3-ext1b3-b3-v2-full-calibration
 core: CORE-3
 extension: EXT-1B
 parameter_status: CALIBRATION
@@ -29,13 +29,13 @@ energy:
   initial_energy_values: ["0"]
   simulation_initial_battery: "1"
   exact_rational_encoding: canonical_fraction
-  service_curve: {id: ext1b3-target-trace-generation-service-v2, system_template: system_config_unified_template.yml, horizon: 1000}
+  service_curve: {id: ext1b3-b3-v2-full-calibration-service, system_template: system_config_unified_template.yml, horizon: 1000}
   battery_mode: finite
   battery_capacity: "100"
-grid: {utilization_points: ["1/5", "2/5"], tasksets_per_cell: 8, base_seed: 981301, seed_mode: generation_dimensions, taskset_index_start: 0}
+grid: {utilization_points: ["1/5", "2/5"], tasksets_per_cell: 50, base_seed: 981301, seed_mode: generation_dimensions, taskset_index_start: 0}
 rta: {methods: [CW_THETA_CW, LOC_THETA_LOC], timeout_seconds: 2, retry_timeout_seconds: 4, retry_policy: timeout_once, numerical_mode: EXACT_RATIONAL}
 simulation: {horizon: 400, warmup: 0, minimum_jobs_per_task: 2, maximum_horizon: 400, horizon_extension_policy: none, deadline_miss_fail_fast: true, timeout_seconds: 30, trace_mode: semantic, trace_on_failure: true, retain_trace: true, simulator_bin: ./build/rtsim/rtsim}
-execution: {worker_count: 1, checkpoint_every: 4, output_root: artifacts/v9_3_ext1b3_target_trace_calibration_v2, taskset_store: artifacts/v9_3_ext1b3_target_trace_taskset_store_v2, resume: false, fail_fast_on_p0: true, preserve_attempt_history: true}
+execution: {worker_count: 1, checkpoint_every: 10, output_root: artifacts/v9_3_ext1b3_b3_v2_full_calibration, taskset_store: artifacts/v9_3_ext1b3_b3_v2_full_calibration_taskset_store, resume: false, fail_fast_on_p0: true, preserve_attempt_history: true}
 scenario:
   kind: TIMING_STRESS
   scenario_contract_id: B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2
