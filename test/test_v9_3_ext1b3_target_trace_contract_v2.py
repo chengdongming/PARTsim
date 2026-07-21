@@ -33,12 +33,16 @@ from experiments.v9_3.ext1b_capacity_contract import (  # noqa: E402
     NATIVE_ENERGY_EPSILON_J,
     capacity_feasibility_violations,
 )
-from experiments.v9_3.config import ConfigError  # noqa: E402
+from experiments.v9_3.config import ConfigError, canonical_json  # noqa: E402
 from experiments.v9_3.ext1b_config import (  # noqa: E402
     load_ext1b_config,
     validate_ext1b_config,
 )
-from experiments.v9_3.ext1b_engine import Ext1BRunner  # noqa: E402
+from experiments.v9_3.ext1b_engine import (  # noqa: E402
+    GENERATION_ATTEMPT_COLUMNS,
+    Ext1BRunner,
+    _generation_attempt_diagnostic_fields,
+)
 from experiments.v9_3.ext1b_generation import (  # noqa: E402
     StructuralRejection,
     _timing_structure,
@@ -51,6 +55,10 @@ from experiments.v9_3.ext1b_observation import (  # noqa: E402
     _store_manifest_audit,
     _validate_b3_target_identity,
     _v2_identity_audit,
+)
+from experiments.v9_3.result_writer import (  # noqa: E402
+    ResultWriterError,
+    write_csv,
 )
 from experiments.v9_3.simulation_engine import _taskset_document  # noqa: E402
 from experiments.v9_3.task_identity import (  # noqa: E402
@@ -343,6 +351,67 @@ def test_actual_trace_tick_order_and_native_epsilon_boundary():
     # at tick 1; the exact-rational answer would incorrectly report tick 1.
     assert below_epsilon.affordable_tick == below_epsilon.full_tick == 2
     assert below_epsilon.predicate_satisfied is True
+
+
+def test_actual_trace_rejection_diagnostics_are_canonical_json(tmp_path):
+    import csv
+
+    diagnostics = {
+        "actual_trace_full_tick_strictly_before_earliest_initial_deadline": (
+            False
+        ),
+        "actual_trace_target_affordable_tick": 17,
+        "predicate": "actual-trace recovery predicate",
+        "recovery_earliest_initial_deadline": 19,
+    }
+
+    mapped = _generation_attempt_diagnostic_fields(diagnostics)
+    row = {"attempt_id": "attempt-1", **mapped}
+
+    assert set(row) <= set(GENERATION_ATTEMPT_COLUMNS)
+    assert not (set(diagnostics) & set(row))
+
+    path = tmp_path / "generation_attempts.csv"
+    write_csv(path, GENERATION_ATTEMPT_COLUMNS, [row])
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        persisted = next(csv.DictReader(handle))
+
+    assert persisted["diagnostics_json"] == canonical_json(diagnostics)
+    assert json.loads(persisted["diagnostics_json"]) == diagnostics
+
+
+def test_declared_diagnostic_stays_in_column_and_extra_is_preserved():
+    extra_value = {
+        "ticks": [3, 5, 8],
+        "recovery": {"applicable": True},
+    }
+    mapped = _generation_attempt_diagnostic_fields({
+        "predicate_satisfied": False,
+        "future_diagnostic": extra_value,
+    })
+
+    assert mapped["predicate_satisfied"] is False
+    assert json.loads(mapped["diagnostics_json"]) == {
+        "future_diagnostic": extra_value,
+    }
+    assert mapped["diagnostics_json"] == canonical_json({
+        "future_diagnostic": extra_value,
+    })
+    assert "future_diagnostic" not in mapped
+    assert _generation_attempt_diagnostic_fields({
+        "predicate_satisfied": True,
+    })["diagnostics_json"] == canonical_json({})
+
+
+def test_generation_attempt_csv_still_rejects_unexpected_top_level_column(
+    tmp_path,
+):
+    with pytest.raises(ResultWriterError, match="unexpected columns"):
+        write_csv(
+            tmp_path / "generation_attempts.csv",
+            GENERATION_ATTEMPT_COLUMNS,
+            [{"attempt_id": "attempt-1", "truly_unexpected": "value"}],
+        )
 
 
 @pytest.mark.parametrize("slack,expected", [(4, False), (5, True)])
