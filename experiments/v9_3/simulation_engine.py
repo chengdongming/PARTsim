@@ -30,6 +30,7 @@ from .simulation_result import (
     TaskObservation,
     parse_simulation_trace,
 )
+from .task_identity import runtime_task_name_for_source_id
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -105,7 +106,7 @@ def _taskset_document(task_payload: Sequence[Mapping[str, Any]]) -> Dict[str, An
         workload = str(row["workload"])
         offset = int(row.get("arrival_offset", 0))
         tasks.append({
-            "name": f"v93_task_{task_id}",
+            "name": runtime_task_name_for_source_id(task_id),
             "iat": t_value,
             "deadline": d_value,
             "runtime": c_value,

@@ -15,6 +15,8 @@ import math
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
+from .task_identity import runtime_job_id
+
 
 B3_STATE_ASAP_IMMEDIATE_ELIGIBILITY = (
     "B3_STATE_ASAP_IMMEDIATE_ELIGIBILITY"
@@ -133,6 +135,23 @@ class TimingAuditReport:
     same_job_transition_count: int = 0
     activation_candidate_job_count: int = 0
     activation_denominator_zero: bool = True
+    target_wait_observed: bool = False
+    target_positive_slack_transition: bool = False
+    target_transition_after_slack_exhaustion: bool = False
+    target_terminated_without_transition: bool = False
+    any_target_job_positive_transition_count: int = 0
+    later_target_job_positive_transition_count: int = 0
+    non_target_positive_transition_count: int = 0
+    activation_from_other_job_only: bool = False
+    target_audit_closed: bool = False
+    target_audit_error_count: int = 0
+    full_release_target_present: bool = False
+    full_release_target_selected: bool = False
+    full_release_prefix_affordable: bool = False
+    runtime_recovery_prefix_matches: bool = False
+    runtime_recovery_prefix_names: tuple[str, ...] = ()
+    recovery_prefix_audit_closed: bool = False
+    recovery_prefix_audit_error_count: int = 0
 
     @property
     def state_counts(self) -> Mapping[str, int]:
@@ -437,6 +456,14 @@ def audit_timing_trace(
     path: Path,
     *,
     expected_scheduler: str,
+    target_runtime_task_name: str | None = None,
+    target_arrival_time: int | None = None,
+    target_recovery_contract_applicable: bool | None = None,
+    recovery_prefix_identity: str | None = None,
+    recovery_prefix_runtime_names: Sequence[str] = (),
+    recovery_prefix_required_energy: str | None = None,
+    materialized_battery_capacity: str | None = None,
+    actual_trace_full_tick: int | None = None,
 ) -> TimingAuditReport:
     data = _strict_json(path)
     errors: list[str] = []
@@ -444,6 +471,76 @@ def audit_timing_trace(
         errors.append("timing audit requires trace schema version 2")
     if data.get("configured_scheduler") != expected_scheduler:
         errors.append("configured scheduler mismatch")
+
+    target_job_identity: tuple[str, int] | None = None
+    recovery_applicable = (
+        target_runtime_task_name is not None
+        if target_recovery_contract_applicable is None
+        else target_recovery_contract_applicable
+    )
+    if not isinstance(recovery_applicable, bool):
+        errors.append("target recovery applicability must be boolean")
+        recovery_applicable = False
+    if (target_runtime_task_name is None) != (target_arrival_time is None):
+        errors.append(
+            "target runtime task name and arrival time must be supplied together"
+        )
+    elif target_runtime_task_name is not None:
+        if not isinstance(target_runtime_task_name, str) or not target_runtime_task_name:
+            errors.append("target runtime task name must be non-empty")
+        elif isinstance(target_arrival_time, bool) or not isinstance(
+            target_arrival_time, int
+        ) or target_arrival_time < 0:
+            errors.append("target arrival time must be a non-negative integer")
+        else:
+            target_job_identity = (
+                target_runtime_task_name, target_arrival_time,
+            )
+            expected_job_id = runtime_job_id(*target_job_identity)
+            trace_identity = (
+                data.get("target_runtime_task_name"),
+                data.get("target_arrival_time"),
+                data.get("target_job_id"),
+            )
+            if trace_identity != (
+                target_runtime_task_name, target_arrival_time, expected_job_id,
+            ):
+                errors.append("trace target job identity mismatch")
+
+    prefix_audit_requested = (
+        recovery_applicable and recovery_prefix_identity is not None
+    )
+    prefix_identity_valid = True
+    if target_recovery_contract_applicable is not None:
+        if data.get("target_recovery_contract_applicable") is not recovery_applicable:
+            errors.append("trace target recovery applicability mismatch")
+            prefix_identity_valid = False
+        if recovery_applicable:
+            prefix_names = tuple(str(name) for name in recovery_prefix_runtime_names)
+            expected_recovery = {
+                "recovery_prefix_identity": recovery_prefix_identity,
+                "recovery_prefix_length": len(prefix_names),
+                "recovery_prefix_runtime_names_json": json.dumps(
+                    list(prefix_names), separators=(",", ":"),
+                ),
+                "recovery_prefix_required_energy": (
+                    recovery_prefix_required_energy
+                ),
+                "materialized_battery_capacity": (
+                    materialized_battery_capacity
+                ),
+                "actual_trace_full_tick": actual_trace_full_tick,
+            }
+            if any(data.get(key) != value for key, value in expected_recovery.items()):
+                errors.append("trace recovery prefix identity mismatch")
+                prefix_identity_valid = False
+            if (
+                not prefix_names
+                or not isinstance(actual_trace_full_tick, int)
+                or actual_trace_full_tick <= 0
+            ):
+                errors.append("invalid recovery prefix audit inputs")
+                prefix_identity_valid = False
 
     events = data["events"]
     trace_has_terminal_outcome = any(
@@ -469,6 +566,7 @@ def audit_timing_trace(
     identities: set[tuple[int, str, int]] = set()
     arrivals: set[tuple[str, int]] = set()
     running: set[tuple[int, str, int]] = set()
+    terminal_events: dict[tuple[str, int], list[tuple[int, str]]] = {}
     last_observation_time: dict[tuple[str, int], int] = {}
     observation_count = 0
     stop_events = {"descheduled", "end_instance", "dline_miss", "killed"}
@@ -512,6 +610,11 @@ def audit_timing_trace(
                     item for item in running
                     if item[1:] != (task_name, arrival)
                 }
+                if event_type in {"end_instance", "dline_miss", "killed"}:
+                    terminal_events.setdefault((task_name, arrival), []).append((
+                        _integer(event.get("time"), f"{event_type} time"),
+                        str(event_type),
+                    ))
             except (TypeError, ValueError, ZeroDivisionError) as exc:
                 errors.append(f"invalid {event_type} event: {exc}")
             continue
@@ -600,6 +703,7 @@ def audit_timing_trace(
             if (
                 not any(row.identity[0] > first_stage_a for row in rows)
                 and not trace_has_terminal_outcome
+                and job not in terminal_events
             ):
                 errors.append(
                     "missing transition evidence after timing-deferred "
@@ -621,6 +725,166 @@ def audit_timing_trace(
                 transition_jobs.add(job)
         timing_activation = bool(transition_jobs)
 
+    target_wait_observed = False
+    target_positive_slack_transition = False
+    target_transition_after_slack_exhaustion = False
+    target_terminated_without_transition = False
+    any_target_job_positive_transition_count = 0
+    later_target_job_positive_transition_count = 0
+    non_target_positive_transition_count = 0
+    activation_from_other_job_only = False
+    full_release_target_present = False
+    full_release_target_selected = False
+    full_release_prefix_affordable = False
+    runtime_recovery_prefix_matches = False
+    runtime_recovery_prefix_names: tuple[str, ...] = ()
+    prefix_errors_before = len(errors)
+    if target_job_identity is not None and recovery_applicable:
+        if target_job_identity not in arrivals:
+            errors.append(
+                "target runtime job has no matching arrival: "
+                f"{runtime_job_id(*target_job_identity)}"
+            )
+        elif family == "ST":
+            first_wait = min((
+                row.identity[0] for row in by_job.get(target_job_identity, ())
+                if row.state == ST_ENERGY_INSUFFICIENT_SLACK_WAIT
+            ), default=None)
+            target_wait_observed = first_wait is not None
+            target_positive_slack_transition = (
+                target_job_identity in transition_jobs
+            )
+            target_task_positive_jobs = {
+                job for job in transition_jobs
+                if job[0] == target_runtime_task_name
+            }
+            any_target_job_positive_transition_count = len(
+                target_task_positive_jobs
+            )
+            later_target_job_positive_transition_count = sum(
+                job[1] > target_arrival_time
+                for job in target_task_positive_jobs
+            )
+            if first_wait is not None:
+                post_wait_transitions = [
+                    row for row in by_job.get(target_job_identity, ())
+                    if row.state == ST_AFFORDABLE_ASAP_BEHAVIOR
+                    and row.identity[0] > first_wait
+                ]
+                if not target_positive_slack_transition and any(
+                    row.scheduler_slack is not None
+                    and row.scheduler_slack <= 0
+                    for row in post_wait_transitions
+                ):
+                    target_transition_after_slack_exhaustion = True
+                if not post_wait_transitions and any(
+                    terminal_time > first_wait
+                    for terminal_time, _ in terminal_events.get(
+                        target_job_identity, []
+                    )
+                ):
+                    target_terminated_without_transition = True
+            non_target_positive_transition_count = sum(
+                job[0] != target_runtime_task_name for job in transition_jobs
+            )
+            activation_from_other_job_only = (
+                non_target_positive_transition_count > 0
+                and not target_positive_slack_transition
+            )
+
+    if prefix_audit_requested and family == "ST":
+        expected_names = tuple(
+            str(name) for name in recovery_prefix_runtime_names
+        )
+        full_tick_rows = []
+        for event in events:
+            if (
+                isinstance(event, dict)
+                and event.get("event_type") == "b3_timing_observation"
+            ):
+                try:
+                    if _integer(event.get("time"), "prefix audit time") == (
+                        actual_trace_full_tick
+                    ):
+                        full_tick_rows.append(event)
+                except (TypeError, ValueError, ZeroDivisionError):
+                    continue
+        initial_rows = [
+            row for row in full_tick_rows
+            if row.get("ready") is True
+            and row.get("arrival_time") == target_arrival_time
+        ]
+        selected_names = tuple(
+            str(row.get("task_name", "")) for row in initial_rows
+            if row.get("selected") is True
+        )
+        runtime_recovery_prefix_names = selected_names
+        full_release_target_present = any(
+            str(row.get("task_name", "")) == target_runtime_task_name
+            for row in initial_rows
+        )
+        full_release_target_selected = any(
+            str(row.get("task_name", "")) == target_runtime_task_name
+            and row.get("selected") is True
+            for row in initial_rows
+        )
+        runtime_recovery_prefix_matches = selected_names == expected_names
+        expected_rows = [
+            row for name in expected_names for row in initial_rows
+            if str(row.get("task_name", "")) == name
+        ]
+        full_release_prefix_affordable = (
+            len(expected_rows) == len(expected_names)
+            and all(
+                row.get("selected") is True
+                and row.get("decision_energy_affordable") is True
+                and row.get("reason_code") != "ST_CHARGE_BEGIN"
+                for row in expected_rows
+            )
+        )
+        full_tick_target_transition = any(
+            finding.identity == (
+                actual_trace_full_tick,
+                target_runtime_task_name,
+                target_arrival_time,
+            )
+            and finding.state == ST_AFFORDABLE_ASAP_BEHAVIOR
+            and finding.scheduler_slack is not None
+            and finding.scheduler_slack > 0
+            for finding in findings
+        )
+        if not full_release_target_present:
+            errors.append("initial target job absent at full-battery release tick")
+        if not full_release_target_selected:
+            errors.append("initial target job not selected at full-battery release tick")
+        if not runtime_recovery_prefix_matches:
+            errors.append("runtime RM/task-number prefix differs from structure")
+        if not full_release_prefix_affordable:
+            errors.append("runtime top-q has an energy blocker at full release")
+        if not full_tick_target_transition:
+            errors.append("initial target lacks positive-slack transition at full release")
+
+    invalid_count = sum(
+        finding.state in {ILLEGAL_TIMING_TRANSITION, UNCLASSIFIABLE}
+        for finding in findings
+    )
+    target_audit_error_count = len(errors) + invalid_count
+    target_audit_closed = (
+        target_job_identity is not None
+        and target_audit_error_count == 0
+    )
+    recovery_prefix_audit_error_count = len(errors) - prefix_errors_before
+    if not prefix_identity_valid:
+        recovery_prefix_audit_error_count += 1
+    recovery_prefix_audit_closed = (
+        prefix_audit_requested
+        and family == "ST"
+        and recovery_prefix_audit_error_count == 0
+        and prefix_identity_valid
+        and full_release_prefix_affordable
+        and runtime_recovery_prefix_matches
+    )
+
     return TimingAuditReport(
         tuple(findings),
         tuple(errors),
@@ -628,4 +892,31 @@ def audit_timing_trace(
         same_job_transition_count=len(transition_jobs),
         activation_candidate_job_count=len(candidate_jobs),
         activation_denominator_zero=not candidate_jobs,
+        target_wait_observed=target_wait_observed,
+        target_positive_slack_transition=target_positive_slack_transition,
+        target_transition_after_slack_exhaustion=(
+            target_transition_after_slack_exhaustion
+        ),
+        target_terminated_without_transition=(
+            target_terminated_without_transition
+        ),
+        any_target_job_positive_transition_count=(
+            any_target_job_positive_transition_count
+        ),
+        later_target_job_positive_transition_count=(
+            later_target_job_positive_transition_count
+        ),
+        non_target_positive_transition_count=(
+            non_target_positive_transition_count
+        ),
+        activation_from_other_job_only=activation_from_other_job_only,
+        target_audit_closed=target_audit_closed,
+        target_audit_error_count=target_audit_error_count,
+        full_release_target_present=full_release_target_present,
+        full_release_target_selected=full_release_target_selected,
+        full_release_prefix_affordable=full_release_prefix_affordable,
+        runtime_recovery_prefix_matches=runtime_recovery_prefix_matches,
+        runtime_recovery_prefix_names=runtime_recovery_prefix_names,
+        recovery_prefix_audit_closed=recovery_prefix_audit_closed,
+        recovery_prefix_audit_error_count=recovery_prefix_audit_error_count,
     )

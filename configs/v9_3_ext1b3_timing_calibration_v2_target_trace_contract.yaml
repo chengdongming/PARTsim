@@ -1,0 +1,63 @@
+experiment_id: asap-block-v9.3-ext1b3-target-actual-trace-calibration-v2
+core: CORE-3
+extension: EXT-1B
+parameter_status: CALIBRATION
+seed_space: EXT1B3_TARGET_TRACE_CALIBRATION_WORKLOAD_CONTRACT_V3
+scheduler_ids:
+  - gpfp_asap_block
+  - gpfp_alap_block
+  - gpfp_st_block
+required_outputs:
+  - b3_timing_events.csv
+  - b3_summary.csv
+  - b3_calibration_summary.csv
+platform: {cores: [4], task_count: [10]}
+generation:
+  deadline_mode: constrained
+  constrained_deadline: {d_over_t_values: [], d_over_t_min: "0", d_over_t_max: "1", distribution: generator_uniform_integer}
+  period_min: 40
+  period_max: 200
+  wcet_rounding: compensated
+  utilization_tolerance: "1/100"
+  min_task_util: "1/100"
+  max_task_util: "4/5"
+  priority_policy: RM
+  power_mode: generator_default_heterogeneous
+  generator_timeout_seconds: 120
+  workload_candidates: [bzip2, control, decrypt, encrypt, hash]
+energy:
+  initial_energy_values: ["0"]
+  simulation_initial_battery: "1"
+  exact_rational_encoding: canonical_fraction
+  service_curve: {id: ext1b3-target-trace-generation-service-v2, system_template: system_config_unified_template.yml, horizon: 1000}
+  battery_mode: finite
+  battery_capacity: "100"
+grid: {utilization_points: ["1/5", "2/5"], tasksets_per_cell: 8, base_seed: 981301, seed_mode: generation_dimensions, taskset_index_start: 0}
+rta: {methods: [CW_THETA_CW, LOC_THETA_LOC], timeout_seconds: 2, retry_timeout_seconds: 4, retry_policy: timeout_once, numerical_mode: EXACT_RATIONAL}
+simulation: {horizon: 400, warmup: 0, minimum_jobs_per_task: 2, maximum_horizon: 400, horizon_extension_policy: none, deadline_miss_fail_fast: true, timeout_seconds: 30, trace_mode: semantic, trace_on_failure: true, retain_trace: true, simulator_bin: ./build/rtsim/rtsim}
+execution: {worker_count: 1, checkpoint_every: 4, output_root: artifacts/v9_3_ext1b3_target_trace_calibration_v2, taskset_store: artifacts/v9_3_ext1b3_target_trace_taskset_store_v2, resume: false, fail_fast_on_p0: true, preserve_attempt_history: true}
+scenario:
+  kind: TIMING_STRESS
+  scenario_contract_id: B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2
+  capacity_feasibility_contract: B3_TASK_CAPACITY_FEASIBILITY_CONTRACT_V1
+  subtype: MULTI_CELL
+  structural_retry_limit: 24
+  activation_policy: REPORT_STRUCTURAL_AND_RUNTIME
+  priority_power_profile: ACTUAL_GENERATOR_ORDER
+  affordable_prefix_length: 1
+  deadline_ratio_min: "1/2"
+  deadline_ratio_max: "1"
+  nominal_energy_supply_ratios: ["0", "1/3", "1/2"]
+  initial_energy_policy: TOP_M_AFFORDABLE
+  release_pattern: SYNCHRONOUS
+  harvest_phase_policy: PEAK_SYNTHETIC
+  interpolation_rho: "1/2"
+  calibration_grid:
+    recovery_margin_ticks: [1, 3]
+    interpolation_rhos: ["1/3", "1/2"]
+    nominal_energy_supply_ratios: ["1/3", "1/2"]
+  timing_cells:
+    - {id: positive-slack-energy-available-v2, subtype: POSITIVE_SLACK_ENERGY_AVAILABLE, deadline_ratio_min: "1/2", deadline_ratio_max: "3/4", nominal_energy_supply_ratio: "0", initial_energy_policy: TOP_M_AFFORDABLE}
+    - {id: target-trace-slack-limited-charging-v2, subtype: SLACK_LIMITED_CHARGING, deadline_ratio_min: "3/4", deadline_ratio_max: "1", nominal_energy_supply_ratio: "1/2", initial_energy_policy: HALF_TARGET}
+statistics: {bootstrap_seed: 9813903, bootstrap_resamples: 2000, top_m: 4}
+plots: {}

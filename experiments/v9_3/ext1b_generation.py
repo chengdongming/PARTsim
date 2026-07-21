@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from fractions import Fraction
+from itertools import product
 from pathlib import Path
 import random
 from typing import Any, Dict, Mapping, Sequence, Tuple
@@ -19,8 +20,23 @@ from .ext1b_capacity_contract import (
     capacity_feasibility_violations,
     capacity_rejection_detail,
 )
+from .ext1b_b3_target_trace import (
+    B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2,
+    B3_V2_HARVEST_TRACE_DOMAIN,
+    B3_V2_TASKSET_DOMAIN,
+    B3_V2_TASKSET_SCHEMA,
+    actual_trace_recovery,
+    binary64_materialized_text,
+    is_b3_target_trace_v2,
+    native_binary64_affordable,
+    recovery_prefix_affordable_at_capacity,
+    runtime_recovery_prefix,
+    v2_paired_instance_identity,
+    v2_scenario_candidate_identity,
+)
 from .result_writer import atomic_write_json, atomic_write_text
 from .taskset_store import StoredTaskset
+from .task_identity import runtime_job_id, runtime_task_name_for_source_id
 
 
 PEAK_TIME_OF_DAY_MS = 11 * 60 * 60 * 1000
@@ -48,9 +64,12 @@ class ScenarioCell:
     deadline_ratio_max: Fraction
     nominal_supply_ratio: Fraction
     initial_energy_policy: str
+    interpolation_rho: Fraction | None = None
+    recovery_margin_ticks: int | None = None
+    scenario_contract_id: str | None = None
 
     def row(self) -> Dict[str, Any]:
-        return {
+        result = {
             "scenario_cell_id": self.cell_id,
             "scenario_kind": self.kind,
             "scenario_subtype": self.subtype,
@@ -59,6 +78,13 @@ class ScenarioCell:
             "nominal_energy_supply_ratio": fraction_text(self.nominal_supply_ratio),
             "initial_energy_policy": self.initial_energy_policy,
         }
+        if self.scenario_contract_id is not None:
+            result.update({
+                "scenario_contract_id": self.scenario_contract_id,
+                "interpolation_rho": fraction_text(self.interpolation_rho),
+                "recovery_margin_ticks": self.recovery_margin_ticks,
+            })
+        return result
 
 
 @dataclass(frozen=True)
@@ -161,6 +187,46 @@ def scenario_cells(config: Mapping[str, Any]) -> Tuple[ScenarioCell, ...]:
     scenario = config["scenario"]
     kind = str(scenario["kind"])
     if kind == "TIMING_STRESS":
+        if is_b3_target_trace_v2(config):
+            grid = scenario["calibration_grid"]
+            result = []
+            for row in scenario["timing_cells"]:
+                common = (
+                    kind,
+                    str(row["subtype"]),
+                    Fraction(str(row["deadline_ratio_min"])),
+                    Fraction(str(row["deadline_ratio_max"])),
+                )
+                if row["subtype"] == "POSITIVE_SLACK_ENERGY_AVAILABLE":
+                    result.append(ScenarioCell(
+                        str(row["id"]), *common,
+                        Fraction(str(row["nominal_energy_supply_ratio"])),
+                        str(row["initial_energy_policy"]),
+                        Fraction(str(scenario["interpolation_rho"])),
+                        0,
+                        B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2,
+                    ))
+                    continue
+                for margin_index, rho_index, eta_index in product(
+                    range(len(grid["recovery_margin_ticks"])),
+                    range(len(grid["interpolation_rhos"])),
+                    range(len(grid["nominal_energy_supply_ratios"])),
+                ):
+                    margin = int(grid["recovery_margin_ticks"][margin_index])
+                    rho = Fraction(str(grid["interpolation_rhos"][rho_index]))
+                    eta = Fraction(str(
+                        grid["nominal_energy_supply_ratios"][eta_index]
+                    ))
+                    cell_id = (
+                        f"{row['id']}-margin-{margin_index:02d}-"
+                        f"rho-{rho_index:02d}-eta-{eta_index:02d}"
+                    )
+                    result.append(ScenarioCell(
+                        cell_id, *common, eta,
+                        str(row["initial_energy_policy"]), rho, margin,
+                        B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2,
+                    ))
+            return tuple(result)
         return tuple(ScenarioCell(
             str(row["id"]), kind, str(row["subtype"]),
             Fraction(str(row["deadline_ratio_min"])),
@@ -377,6 +443,8 @@ def _timing_structure(
     cell: ScenarioCell,
     processors: int,
     rho: Fraction,
+    *,
+    target_trace_v2: bool = False,
 ) -> tuple[Fraction, Fraction, bool, Dict[str, Any]]:
     ordered = sorted(payload, key=lambda row: int(row["priority_rank"]))
     q_value = min(processors, len(ordered))
@@ -386,11 +454,28 @@ def _timing_structure(
         raise StructuralRejection("TOP_M_HAS_NONPOSITIVE_SLACK", canonical_json(slacks))
     demand = nominal_demand_j_per_tick(payload)
     harvest = demand * cell.nominal_supply_ratio
+    target = ordered[0]
+    target_energy = Fraction(str(target["P"]))
+    target_slack = int(target["D"]) - int(target["C"])
+    target_runtime_name = runtime_task_name_for_source_id(target["task_id"])
+    target_arrival_time = 0
+    target_identity = {
+        "target_source_task_id": str(target["task_id"]),
+        "target_runtime_task_name": target_runtime_name,
+        "target_arrival_time": target_arrival_time,
+        "target_job_id": runtime_job_id(
+            target_runtime_name, target_arrival_time,
+        ),
+        "target_priority_rank": int(target["priority_rank"]),
+        "target_workload": str(target["workload"]),
+        "target_unit_energy": fraction_text(target_energy),
+        "target_initial_slack": target_slack,
+    }
     if cell.subtype == "POSITIVE_SLACK_ENERGY_AVAILABLE":
         if harvest != 0:
             raise StructuralRejection("AVAILABLE_CELL_REQUIRES_ZERO_HARVEST", fraction_text(harvest))
         required = sum((Fraction(str(row["P"])) for row in top_q), Fraction(0))
-        return required, required, False, {
+        structure = {
             "q": q_value,
             "top_q_task_ids": [row["task_id"] for row in top_q],
             "top_q_initial_slacks": slacks,
@@ -398,16 +483,62 @@ def _timing_structure(
             "predicate": "positive slack and top-q energy available at release",
             "predicate_satisfied": True,
         }
+        if target_trace_v2:
+            structure.update({
+                **target_identity,
+                "target_recovery_contract_applicable": False,
+                "recovery_prefix_identity": "",
+                "recovery_prefix_length": 0,
+                "recovery_prefix_required_energy": "",
+                "materialized_battery_capacity": fraction_text(required),
+            })
+        return required, required, False, structure
 
-    target = ordered[0]
-    target_energy = Fraction(str(target["P"]))
     initial = rho * target_energy
     if harvest <= 0:
         raise StructuralRejection("CHARGING_CELL_HAS_ZERO_HARVEST", "eta*demand is zero")
     capacity = target_energy + harvest
+    if target_trace_v2:
+        # Freeze exactly what the simulator reads, then size the battery for
+        # the complete runtime RM/task-number prefix rather than one task.
+        initial = Fraction(binary64_materialized_text(initial))
+        try:
+            prefix = runtime_recovery_prefix(
+                payload, processors, initial_energy=initial,
+            )
+        except ValueError as exc:
+            raise StructuralRejection(
+                "RECOVERY_PREFIX_IDENTITY_INVALID", str(exc),
+            ) from exc
+        capacity = Fraction(prefix["materialized_battery_capacity"])
+        if prefix["recovery_prefix_task_ids"][0] != str(target["task_id"]):
+            raise StructuralRejection(
+                "RECOVERY_PREFIX_TARGET_MISMATCH",
+                "highest-priority runtime prefix job is not the target",
+                prefix,
+            )
+        if not prefix["target_blocked_at_initial_energy"]:
+            raise StructuralRejection(
+                "TARGET_NOT_BLOCKED_AT_INITIAL_ENERGY",
+                "E_init + native epsilon reaches target unit energy",
+                prefix,
+            )
+        if not recovery_prefix_affordable_at_capacity(prefix, capacity):
+            raise StructuralRejection(
+                "RECOVERY_PREFIX_NOT_AFFORDABLE_AT_FULL",
+                "materialized full battery cannot reserve runtime top-q",
+                prefix,
+            )
+        return initial, capacity, True, {
+            **target_identity,
+            **prefix,
+            "interpolation_rho": fraction_text(rho),
+            "native_affordability_epsilon_j": fraction_text(
+                NATIVE_ENERGY_EPSILON_J
+            ),
+        }
     affordable_tick = _ceil_fraction((target_energy - initial) / harvest)
     full_tick = _ceil_fraction((capacity - initial) / harvest)
-    target_slack = int(target["D"]) - int(target["C"])
     if not 0 < affordable_tick < full_tick < target_slack:
         raise StructuralRejection(
             "CHARGING_TIMES_NOT_SEPARABLE",
@@ -468,13 +599,26 @@ def materialize_scenario_system(
     return destination
 
 
-def actual_trace_material(system_path: Path, horizon: int) -> tuple[Tuple[Fraction, ...], str]:
+def actual_trace_material(
+    system_path: Path,
+    horizon: int,
+    *,
+    target_trace_v2: bool = False,
+) -> tuple[Tuple[Fraction, ...], str]:
     system = legacy_rta.load_system_config(str(system_path))
     values = tuple(Fraction(str(value)) for value in legacy_rta._harvest_trace_from_config(system, horizon))
-    identity = domain_hash(
-        "ASAP_BLOCK:V9.3:EXT1B:HARVEST_TRACE:v1",
-        [fraction_text(value) for value in values],
-    )
+    material: Any = [fraction_text(value) for value in values]
+    domain = "ASAP_BLOCK:V9.3:EXT1B:HARVEST_TRACE:v1"
+    if target_trace_v2:
+        domain = B3_V2_HARVEST_TRACE_DOMAIN
+        material = {
+            "scenario_contract_id": (
+                B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2
+            ),
+            "tick_order": "trace[t-1]_is_harvested_before_decision_at_tick_t",
+            "values": material,
+        }
+    identity = domain_hash(domain, material)
     return values, identity
 
 
@@ -488,13 +632,18 @@ def build_scenario_instance(
     system_root: Path,
 ) -> ScenarioInstance:
     scenario = config["scenario"]
+    target_trace_v2 = is_b3_target_trace_v2(config)
     base_system = Path(__file__).resolve().parents[2] / config["energy"]["service_curve"]["system_template"]
     power_table = workload_energy_table(base_system)
     payload = _apply_power_profile(
         stored.task_payload, power_table, str(scenario["priority_power_profile"])
     )
     transform_seed = int(domain_hash(
-        "ASAP_BLOCK:V9.3:EXT1B:DEADLINE_SEED:v1",
+        (
+            "ASAP_BLOCK:V9.3:EXT1B:DEADLINE_SEED:v2"
+            if target_trace_v2
+            else "ASAP_BLOCK:V9.3:EXT1B:DEADLINE_SEED:v1"
+        ),
         {
             "generation_seed": stored.seed,
             "scenario_cell_id": cell.cell_id,
@@ -505,7 +654,11 @@ def build_scenario_instance(
         payload = transform_constrained_deadlines(
             payload, cell.deadline_ratio_min, cell.deadline_ratio_max, transform_seed
         )
-    rho = Fraction(str(scenario["interpolation_rho"]))
+    rho = (
+        cell.interpolation_rho
+        if cell.interpolation_rho is not None
+        else Fraction(str(scenario["interpolation_rho"]))
+    )
     demand = nominal_demand_j_per_tick(payload)
     nominal_harvest = demand * cell.nominal_supply_ratio
     base_rate_w = nominal_harvest * 1000
@@ -521,7 +674,8 @@ def build_scenario_instance(
         capacity = initial
     else:
         initial, capacity, allow_clipping, structure = _timing_structure(
-            payload, cell, stored.processors, rho
+            payload, cell, stored.processors, rho,
+            target_trace_v2=target_trace_v2,
         )
         # Persist the exact scenario dimensions with the accepted instance.
         # B3 observation outputs consume this frozen metadata and never parse
@@ -532,7 +686,11 @@ def build_scenario_instance(
         }
 
     provisional = domain_hash(
-        "ASAP_BLOCK:V9.3:EXT1B:SYSTEM_INPUT:v1",
+        (
+            "ASAP_BLOCK:V9.3:EXT1B:SYSTEM_INPUT:v2"
+            if target_trace_v2
+            else "ASAP_BLOCK:V9.3:EXT1B:SYSTEM_INPUT:v1"
+        ),
         {
             "cell": cell.row(), "source_hash": stored.semantic_hash,
             "logical_taskset_index": logical_taskset_index,
@@ -546,32 +704,137 @@ def build_scenario_instance(
         base_harvesting_rate_w=base_rate_w,
     )
     trace_values, trace_hash = actual_trace_material(
-        scenario_system, int(config["simulation"]["maximum_horizon"])
+        scenario_system,
+        int(config["simulation"]["maximum_horizon"]),
+        target_trace_v2=target_trace_v2,
     )
     if not allow_clipping:
         capacity = initial + sum(trace_values, Fraction(0))
     if capacity < initial:
         raise StructuralRejection("CAPACITY_BELOW_INITIAL", "derived capacity is invalid")
 
+    if target_trace_v2 and cell.subtype == "SLACK_LIMITED_CHARGING":
+        try:
+            recovery = actual_trace_recovery(
+                trace_values,
+                initial_energy=initial,
+                battery_capacity=capacity,
+                target_unit_energy=Fraction(str(structure["target_unit_energy"])),
+                target_initial_slack=int(structure["target_initial_slack"]),
+                recovery_margin_ticks=int(cell.recovery_margin_ticks),
+                earliest_initial_deadline=int(
+                    structure["recovery_earliest_initial_deadline"]
+                ),
+            )
+        except ValueError as exc:
+            message = str(exc)
+            code = (
+                "ACTUAL_TRACE_TARGET_NEVER_AFFORDABLE"
+                if "target affordable" in message
+                else "ACTUAL_TRACE_BATTERY_NEVER_FULL"
+                if "full-battery" in message
+                else "ACTUAL_TRACE_RECOVERY_INVALID"
+            )
+            raise StructuralRejection(code, message) from exc
+        recovery_material = recovery.material()
+        structure = {**structure, **recovery_material}
+        prefix_affordable = recovery_prefix_affordable_at_capacity(
+            structure, capacity,
+        )
+        structure["recovery_prefix_affordable_at_full"] = (
+            prefix_affordable
+        )
+        structure["target_blocked_at_initial_energy"] = (
+            not native_binary64_affordable(
+                initial,
+                structure["target_unit_energy"],
+            )
+        )
+        structure["predicate"] = (
+            str(structure["predicate"])
+            + "; target initially blocked; full battery affords complete "
+            "runtime RM/task-number top-q prefix"
+        )
+        structure["predicate_satisfied"] = bool(
+            structure["predicate_satisfied"]
+            and structure["target_blocked_at_initial_energy"]
+            and prefix_affordable
+        )
+        if not recovery.predicate_satisfied:
+            rejection_code = (
+                "ACTUAL_TRACE_FULL_NOT_BEFORE_EARLIEST_INITIAL_DEADLINE"
+                if recovery.earliest_initial_deadline is not None
+                and recovery.full_tick >= recovery.earliest_initial_deadline
+                else "ACTUAL_TRACE_RECOVERY_MARGIN_NOT_SATISFIED"
+            )
+            raise StructuralRejection(
+                rejection_code,
+                canonical_json(recovery_material),
+                recovery_material,
+            )
+        if not prefix_affordable:
+            raise StructuralRejection(
+                "RECOVERY_PREFIX_NOT_AFFORDABLE_AT_FULL",
+                canonical_json(structure),
+                structure,
+            )
+    elif target_trace_v2 and cell.subtype == (
+        "POSITIVE_SLACK_ENERGY_AVAILABLE"
+    ):
+        structure = {
+            **structure,
+            "actual_trace_affordable_tick": 0,
+            "actual_trace_target_affordable_tick": 0,
+            "actual_trace_full_tick": 0,
+            "configured_recovery_margin_ticks": 0,
+            "actual_trace_recovery_headroom": int(
+                structure["target_initial_slack"]
+            ),
+            "target_recovery_contract_applicable": False,
+        }
+
     capacity_identity = ""
     scenario_candidate_identity = ""
     if cell.kind == "TIMING_STRESS":
         enforce_b3_capacity_feasibility(payload, capacity, config)
         capacity_identity = capacity_contract_identity(config)
-        scenario_candidate_identity = domain_hash(
-            "ASAP_BLOCK:V9.3:EXT1B:B3:SCENARIO_CANDIDATE:v1",
-            {
+        candidate_material = {
                 "scenario_cell": cell.row(),
                 "source_taskset_hash": stored.semantic_hash,
                 "logical_taskset_index": logical_taskset_index,
                 "attempt_index": attempt_index,
                 "capacity_feasibility_contract_identity": capacity_identity,
-            },
+        }
+        if target_trace_v2:
+            candidate_material.update({
+                "scenario_contract_id": (
+                    B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2
+                ),
+                "trace_hash": trace_hash,
+                "structure": structure,
+            })
+        scenario_candidate_identity = (
+            v2_scenario_candidate_identity(
+                scenario_cell=cell.row(),
+                source_taskset_hash=stored.semantic_hash,
+                logical_taskset_index=logical_taskset_index,
+                attempt_index=attempt_index,
+                capacity_feasibility_contract_identity=capacity_identity,
+                trace_hash=trace_hash,
+                structure=structure,
+            )
+            if target_trace_v2
+            else domain_hash(
+                "ASAP_BLOCK:V9.3:EXT1B:B3:SCENARIO_CANDIDATE:v1",
+                candidate_material,
+            )
         )
 
     task_material = {
         "schema": (
-            "ASAP_BLOCK_V9_3_EXT1B_TASKSET_V3"
+            B3_V2_TASKSET_SCHEMA
+            if target_trace_v2
+            else "ASAP_BLOCK_V9_3_EXT1B_TASKSET_V3"
             if cell.kind == "TIMING_STRESS"
             else "ASAP_BLOCK_V9_3_EXT1B_TASKSET_V2"
         ),
@@ -592,9 +855,15 @@ def build_scenario_instance(
             ],
             "capacity_feasibility_contract_identity": capacity_identity,
         })
+        if target_trace_v2:
+            task_material["scenario_contract_id"] = (
+                B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2
+            )
     taskset_hash = domain_hash(
         (
-            "ASAP_BLOCK:V9.3:EXT1B:TASKSET:v3"
+            B3_V2_TASKSET_DOMAIN
+            if target_trace_v2
+            else "ASAP_BLOCK:V9.3:EXT1B:TASKSET:v3"
             if cell.kind == "TIMING_STRESS"
             else "ASAP_BLOCK:V9.3:EXT1B:TASKSET:v2"
         ),
@@ -631,13 +900,32 @@ def build_scenario_instance(
             "scenario_candidate_identity": scenario_candidate_identity,
             "capacity_feasibility_contract_identity": capacity_identity,
         })
-    paired_id = domain_hash(
-        (
-            "ASAP_BLOCK:V9.3:EXT1B:PAIRED_INSTANCE:v2"
-            if cell.kind == "TIMING_STRESS"
-            else "ASAP_BLOCK:V9.3:EXT1B:PAIRED_INSTANCE:v1"
-        ),
-        paired_material,
+        if target_trace_v2:
+            paired_material["scenario_contract_id"] = (
+                B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2
+            )
+    paired_id = (
+        v2_paired_instance_identity(
+            scenario_cell=cell.row(),
+            logical_taskset_index=logical_taskset_index,
+            taskset_hash=taskset_hash,
+            trace_hash=trace_hash,
+            initial_battery=fraction_text(initial),
+            battery_capacity=fraction_text(capacity),
+            processors=stored.processors,
+            horizon=int(config["simulation"]["horizon"]),
+            scenario_candidate_identity=scenario_candidate_identity,
+            capacity_feasibility_contract_identity=capacity_identity,
+        )
+        if target_trace_v2
+        else domain_hash(
+            (
+                "ASAP_BLOCK:V9.3:EXT1B:PAIRED_INSTANCE:v2"
+                if cell.kind == "TIMING_STRESS"
+                else "ASAP_BLOCK:V9.3:EXT1B:PAIRED_INSTANCE:v1"
+            ),
+            paired_material,
+        )
     )
     taskset_id = f"ext1b-{cell.cell_id}-{logical_taskset_index:04d}-{taskset_hash[:12]}"
     canonical_path = system_root.parent / "scenario_tasksets" / f"{taskset_hash}.json"

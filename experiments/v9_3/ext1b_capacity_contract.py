@@ -8,6 +8,7 @@ from typing import Any, Dict, Mapping, Sequence, Tuple
 import asap_block_rta as legacy_rta
 
 from .config import canonical_json, domain_hash, fraction_text
+from .task_identity import runtime_task_name_for_source_id
 
 
 B3_TASK_CAPACITY_FEASIBILITY_CONTRACT_VERSION = (
@@ -99,7 +100,7 @@ def capacity_feasibility_violations(
         task_id = str(row.get("task_id", ""))
         violations.append({
             "code": CAPACITY_FEASIBILITY_ERROR_CODE,
-            "task_name": f"v93_task_{task_id}",
+            "task_name": runtime_task_name_for_source_id(task_id),
             "workload": workload,
             "actual_power": fraction_text(actual_power_w),
             "actual_power_unit": "W",

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Sequence
 
 from .ext1b_b1_analysis import write_ext1b_b1_outputs
+from .ext1b_b3_target_trace import is_b3_target_trace_v2
 from .ext1b_observation import write_ext1b_observation_outputs
 from .ext1b_statistics import (
     B3_STATISTIC_COLUMNS,
@@ -27,6 +28,7 @@ EXT1B_FAIRNESS_FIELDS = (
     "initial_battery", "battery_capacity", "horizon", "maximum_horizon",
     "generation_seed", "M", "priority_hash", "power_hash", "deadline_hash",
     "release_hash", "workload_vector_hash", "simulator_build_hash",
+    "scenario_contract_id",
 )
 
 ACTIVATION_COLUMNS = (
@@ -123,7 +125,7 @@ def _validate_request_groups(
         grouped[str(row["paired_instance_id"])].append(row)
     for pair_id, members in grouped.items():
         for field in EXT1B_FAIRNESS_FIELDS:
-            if len({str(row[field]) for row in members}) != 1:
+            if len({str(row.get(field, "")) for row in members}) != 1:
                 raise RuntimeError(f"P0 EXT-1B fairness mismatch in {field} for {pair_id}")
     return by_id
 
@@ -176,6 +178,7 @@ def classify_mechanism_activation(
     *,
     top_m: int,
     b2_summaries: Iterable[Mapping[str, Any]] = (),
+    target_bound_timing: bool = False,
 ) -> list[Dict[str, Any]]:
     result_rows = list(results)
     by_pair: Dict[str, Dict[str, Mapping[str, Any]]] = defaultdict(dict)
@@ -251,7 +254,12 @@ def classify_mechanism_activation(
             else:
                 family_activation = {
                     registry[scheduler].timing_family: _bool(
-                        members[scheduler].get("timing_activation")
+                        members[scheduler].get(
+                            "target_positive_slack_transition"
+                            if target_bound_timing
+                            and registry[scheduler].timing_family == "ST"
+                            else "timing_activation"
+                        )
                     )
                     for scheduler in scoped_ids
                 }
@@ -263,6 +271,11 @@ def classify_mechanism_activation(
                     runtime = any(bool(value) for value in family_activation.values())
                 evidence = {
                     "dedicated_timing_audit_activation_by_family": family_activation,
+                    "st_activation_contract": (
+                        "target_same_job_positive_slack_transition"
+                        if target_bound_timing
+                        else "legacy_any_same_job_transition"
+                    ),
                 }
 
             statuses = [str(row["status"]) for row in scoped]
@@ -349,6 +362,7 @@ def aggregate_ext1b_rows(
     b2_summaries: Iterable[Mapping[str, Any]] = (),
     scenario_instances: Iterable[Mapping[str, Any]] = (),
     scheduler_ids: Sequence[str] = SCHEDULER_IDS,
+    target_bound_timing: bool = False,
 ) -> Dict[str, list[Dict[str, Any]]]:
     request_rows, result_rows, tasks = list(requests), list(results), list(task_rows)
     attempts = list(generation_attempts)
@@ -368,7 +382,9 @@ def aggregate_ext1b_rows(
             raise RuntimeError("P0 EXT-1B terminal/request identity mismatch")
         for field in (
             "scenario_kind", "scenario_subtype", "scenario_cell_id",
-            "taskset_hash", "trace_hash", "simulation_config_hash", "input_hash",
+            "scenario_contract_id", "taskset_hash", "trace_hash",
+            "simulation_config_hash", "input_hash", "target_runtime_task_name",
+            "target_arrival_time", "target_job_id",
         ):
             if str(row.get(field)) != str(planned.get(field)):
                 raise RuntimeError(
@@ -402,6 +418,7 @@ def aggregate_ext1b_rows(
     activation_rows = classify_mechanism_activation(
         comparison_results, comparison_tasks, attempts, top_m=top_m,
         b2_summaries=b2_summaries,
+        target_bound_timing=target_bound_timing,
     )
     activation_index = _activation_for_scheduler(
         activation_rows, selected_scheduler_ids,
@@ -662,9 +679,20 @@ def aggregate_ext1b_rows(
     }
 
 
-def aggregate_ext1b(root: Path, config: Mapping[str, Any]) -> Dict[str, int]:
+def aggregate_ext1b(
+    root: Path,
+    config: Mapping[str, Any],
+    *,
+    output_file_hash_verification_closed: bool = False,
+) -> Dict[str, int]:
     b1_counts = write_ext1b_b1_outputs(root, config)
-    observation_counts = write_ext1b_observation_outputs(root, config)
+    observation_counts = write_ext1b_observation_outputs(
+        root,
+        config,
+        output_file_hash_verification_closed=(
+            output_file_hash_verification_closed
+        ),
+    )
     tables = aggregate_ext1b_rows(
         read_csv(root / "simulation_requests.csv"),
         read_csv(root / "simulation_results.csv"),
@@ -676,6 +704,7 @@ def aggregate_ext1b(root: Path, config: Mapping[str, Any]) -> Dict[str, int]:
         b2_summaries=read_csv(root / "b2_summary.csv"),
         scenario_instances=read_csv(root / "scenario_instances.csv"),
         scheduler_ids=tuple(config["scheduler_ids"]),
+        target_bound_timing=is_b3_target_trace_v2(config),
     )
     statistic_columns = (
         B3_STATISTIC_COLUMNS

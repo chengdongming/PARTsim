@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from fractions import Fraction
@@ -24,6 +25,15 @@ from .ext1b_capacity_contract import (
     capacity_contract_identity,
     capacity_feasibility_violations,
 )
+from .ext1b_b3_target_trace import (
+    B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2,
+    is_b3_target_trace_v2,
+    target_trace_contract_material,
+    v2_fair_input_identity,
+    v2_request_identity,
+    v2_simulation_config_identity,
+    v2_taskset_hash_from_document,
+)
 from .ext1b_generation import (
     ScenarioInstance, StructuralRejection, build_scenario_instance,
     enforce_b3_capacity_feasibility, scenario_cells,
@@ -39,12 +49,14 @@ from .simulation_engine import (
 )
 from .simulation_result import SimulationStatus
 from .taskset_store import TasksetStore, prepare_service_curve
+from .task_identity import runtime_job_id
 
 
 REGISTRY_COLUMNS = tuple(SCHEDULERS[0].row())
 GENERATION_ATTEMPT_COLUMNS = (
     "attempt_id", "scenario_kind", "scenario_subtype", "scenario_cell_id",
-    "logical_taskset_index", "attempt_index", "source_taskset_index",
+    "normalized_utilization", "logical_taskset_index", "attempt_index",
+    "source_taskset_index",
     "generation_seed", "source_taskset_id", "source_taskset_hash",
     "attempt_status", "rejection_code", "rejection_detail",
     "experiment_id", "paired_instance_id", "logical_index", "source_index",
@@ -54,7 +66,11 @@ GENERATION_ATTEMPT_COLUMNS = (
     "battery_capacity_mJ", "native_affordability_epsilon_mJ",
     "excess_energy_mJ", "energy_unit", "power_model_identity",
     "workload_contract_version", "capacity_feasibility_contract_version",
-    "capacity_feasibility_contract_identity", "violations_json",
+    "capacity_feasibility_contract_identity", "scenario_contract_id",
+    "actual_trace_affordable_tick", "actual_trace_full_tick",
+    "target_initial_slack", "configured_recovery_margin_ticks",
+    "actual_trace_recovery_headroom", "predicate_satisfied",
+    "violations_json",
 )
 GENERATED_COLUMNS = (
     "taskset_id", "taskset_hash", "source_taskset_id", "source_taskset_hash",
@@ -63,7 +79,13 @@ GENERATED_COLUMNS = (
     "task_n", "priority_hash", "power_hash", "deadline_hash", "release_hash",
     "workload_power_mapping_json", "task_input_json", "canonical_taskset_json",
     "scenario_candidate_identity", "capacity_feasibility_contract_version",
-    "capacity_feasibility_contract_identity",
+    "capacity_feasibility_contract_identity", "scenario_contract_id",
+    "target_runtime_task_name", "target_arrival_time", "target_job_id",
+    "target_recovery_contract_applicable", "recovery_prefix_identity",
+    "recovery_prefix_length", "recovery_prefix_runtime_names_json",
+    "recovery_prefix_required_energy",
+    "materialized_battery_capacity", "actual_trace_target_affordable_tick",
+    "actual_trace_full_tick",
 )
 SCENARIO_INSTANCE_COLUMNS = (
     "paired_instance_id", "scenario_kind", "scenario_subtype",
@@ -76,7 +98,13 @@ SCENARIO_INSTANCE_COLUMNS = (
     "power_hash", "deadline_hash", "release_hash", "structure_json",
     "system_template_path", "scenario_candidate_identity",
     "capacity_feasibility_contract_version",
-    "capacity_feasibility_contract_identity",
+    "capacity_feasibility_contract_identity", "scenario_contract_id",
+    "target_runtime_task_name", "target_arrival_time", "target_job_id",
+    "target_recovery_contract_applicable", "recovery_prefix_identity",
+    "recovery_prefix_length", "recovery_prefix_runtime_names_json",
+    "recovery_prefix_required_energy",
+    "materialized_battery_capacity", "actual_trace_target_affordable_tick",
+    "actual_trace_full_tick",
 )
 REQUEST_COLUMNS = (
     "request_id", "paired_instance_id", "scenario_kind", "scenario_subtype",
@@ -86,7 +114,13 @@ REQUEST_COLUMNS = (
     "priority_hash", "power_hash", "deadline_hash", "release_hash",
     "workload_vector_hash", "simulator_build_hash", "request_status",
     "capacity_feasibility_contract_version",
-    "capacity_feasibility_contract_identity",
+    "capacity_feasibility_contract_identity", "scenario_contract_id",
+    "target_runtime_task_name", "target_arrival_time", "target_job_id",
+    "target_recovery_contract_applicable", "recovery_prefix_identity",
+    "recovery_prefix_length", "recovery_prefix_runtime_names_json",
+    "recovery_prefix_required_energy",
+    "materialized_battery_capacity", "actual_trace_target_affordable_tick",
+    "actual_trace_full_tick",
 )
 ATTEMPT_COLUMNS = (
     "attempt_id", "request_id", "scheduler_id", "attempt_number", "status",
@@ -94,13 +128,28 @@ ATTEMPT_COLUMNS = (
 )
 RESULT_COLUMNS = (
     "request_id", "paired_instance_id", "scenario_kind", "scenario_subtype",
-    "scenario_cell_id", "taskset_id", "taskset_hash", "trace_hash",
+    "scenario_cell_id", "scenario_contract_id", "target_runtime_task_name",
+    "target_arrival_time", "target_job_id", "taskset_id", "taskset_hash",
+    "target_recovery_contract_applicable", "recovery_prefix_identity",
+    "recovery_prefix_length", "recovery_prefix_runtime_names_json",
+    "recovery_prefix_required_energy",
+    "materialized_battery_capacity", "actual_trace_target_affordable_tick",
+    "actual_trace_full_tick",
+    "trace_hash",
     "simulation_config_hash", "input_hash", "scheduler_id", "status", "reason",
     "comparison_eligible", "horizon", "horizon_censoring", "runtime_seconds",
     "attempt_count", "overall_success", "top_m_success",
     "top_m_max_response_time", "top_m_first_execution_vector",
     "first_missed_priority_rank", "first_missed_priority_rank_numeric",
-    "timing_activation", "missed_jobs", "first_miss_time",
+    "timing_activation", "target_wait_observed",
+    "target_positive_slack_transition",
+    "target_transition_after_slack_exhaustion",
+    "target_terminated_without_transition",
+    "any_target_job_positive_transition_count",
+    "later_target_job_positive_transition_count",
+    "non_target_positive_transition_count", "activation_from_other_job_only",
+    "target_audit_closed", "target_audit_error_count",
+    "missed_jobs", "first_miss_time",
     "maximum_observed_response_time", "mean_response_time", "completed_jobs",
     "preemptions", "processor_wait_ticks", "energy_blocked_ticks",
     "bypass_count", "synchronization_wait_ticks",
@@ -124,8 +173,26 @@ EXT1B_FAIRNESS_FIELDS = (
     "initial_battery", "battery_capacity", "horizon", "maximum_horizon",
     "generation_seed", "M", "priority_hash", "power_hash", "deadline_hash",
     "release_hash", "workload_vector_hash", "simulator_build_hash",
+    "scenario_contract_id", "target_runtime_task_name",
+    "target_arrival_time", "target_job_id",
+    "target_recovery_contract_applicable", "recovery_prefix_identity",
+    "recovery_prefix_length", "recovery_prefix_runtime_names_json",
+    "recovery_prefix_required_energy",
+    "materialized_battery_capacity", "actual_trace_target_affordable_tick",
+    "actual_trace_full_tick",
 )
 UNAVAILABLE = "UNAVAILABLE"
+TARGET_JOB_FIELDS = (
+    "target_runtime_task_name", "target_arrival_time", "target_job_id",
+)
+RECOVERY_CONTRACT_FIELDS = (
+    "target_recovery_contract_applicable", "recovery_prefix_identity",
+    "recovery_prefix_length", "recovery_prefix_runtime_names_json",
+    "recovery_prefix_required_energy",
+    "materialized_battery_capacity", "actual_trace_target_affordable_tick",
+    "actual_trace_full_tick",
+)
+TRACE_TARGET_CONTRACT_FIELDS = TARGET_JOB_FIELDS + RECOVERY_CONTRACT_FIELDS
 
 
 def _utc_now() -> str:
@@ -134,6 +201,10 @@ def _utc_now() -> str:
 
 def _available(value: Any) -> Any:
     return UNAVAILABLE if value is None else value
+
+
+def _contract_bool(value: Any) -> bool:
+    return value is True or str(value).strip().upper() in {"TRUE", "1"}
 
 
 def _b3_capacity_contract_identity(config: Mapping[str, Any]) -> str:
@@ -146,7 +217,51 @@ def _request_identity(
     paired_instance_id: str,
     scheduler_id: str,
     capacity_identity: str,
+    scenario_contract_id: str = "",
+    target_runtime_task_name: str = "",
+    target_arrival_time: int | str = "",
+    target_job_id: str = "",
+    recovery_contract: Mapping[str, Any] | None = None,
 ) -> str:
+    if scenario_contract_id:
+        if scenario_contract_id != B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2:
+            raise ValueError("unknown EXT-1B/B3 scenario contract identity")
+        recovery = dict(recovery_contract or {})
+        normalized_recovery = {
+            "target_recovery_contract_applicable": _contract_bool(
+                recovery["target_recovery_contract_applicable"]
+            ),
+            "recovery_prefix_identity": str(
+                recovery["recovery_prefix_identity"]
+            ),
+            "recovery_prefix_length": int(
+                recovery["recovery_prefix_length"]
+            ),
+            "recovery_prefix_runtime_names_json": str(
+                recovery["recovery_prefix_runtime_names_json"]
+            ),
+            "recovery_prefix_required_energy": str(
+                recovery["recovery_prefix_required_energy"]
+            ),
+            "materialized_battery_capacity": str(
+                recovery["materialized_battery_capacity"]
+            ),
+            "actual_trace_target_affordable_tick": int(
+                recovery["actual_trace_target_affordable_tick"]
+            ),
+            "actual_trace_full_tick": int(
+                recovery["actual_trace_full_tick"]
+            ),
+        }
+        return v2_request_identity(
+            paired_instance_id=paired_instance_id,
+            scheduler_id=scheduler_id,
+            capacity_feasibility_contract_identity=capacity_identity,
+            target_runtime_task_name=target_runtime_task_name,
+            target_arrival_time=int(target_arrival_time),
+            target_job_id=target_job_id,
+            recovery_contract=normalized_recovery,
+        )
     if capacity_identity:
         return domain_hash(
             "ASAP_BLOCK:V9.3:EXT1B:SIMULATION_REQUEST:v2",
@@ -163,6 +278,97 @@ def _request_identity(
             "scheduler_id": scheduler_id,
         },
     )
+
+
+def _target_contract_fields(
+    structure: Mapping[str, Any], *, required: bool,
+) -> Dict[str, Any]:
+    if not required:
+        return {key: "" for key in TRACE_TARGET_CONTRACT_FIELDS}
+    structure_fields = tuple(
+        key for key in TRACE_TARGET_CONTRACT_FIELDS
+        if key != "recovery_prefix_runtime_names_json"
+    )
+    missing = [key for key in structure_fields if key not in structure]
+    if missing:
+        raise RuntimeError(f"B3-v2 structure lacks target job identity: {missing}")
+    name = str(structure["target_runtime_task_name"])
+    arrival = structure["target_arrival_time"]
+    if isinstance(arrival, bool) or not isinstance(arrival, int) or arrival != 0:
+        raise RuntimeError("B3-v2 target arrival time must equal integer zero")
+    job_id = str(structure["target_job_id"])
+    if job_id != runtime_job_id(name, arrival):
+        raise RuntimeError("B3-v2 target job identity is inconsistent")
+    applicable = _contract_bool(
+        structure["target_recovery_contract_applicable"]
+    )
+    prefix_identity = str(structure["recovery_prefix_identity"])
+    prefix_length = int(structure["recovery_prefix_length"])
+    if applicable:
+        if len(prefix_identity) != 64 or prefix_length <= 0:
+            raise RuntimeError("B3-v2 recovery prefix identity is invalid")
+    elif prefix_identity or prefix_length != 0:
+        raise RuntimeError("B3-v2 non-applicable recovery prefix must be empty")
+    recovery_values = {
+        key: structure[key]
+        for key in RECOVERY_CONTRACT_FIELDS
+        if key != "recovery_prefix_runtime_names_json"
+    }
+    recovery_values["recovery_prefix_runtime_names_json"] = canonical_json(
+        structure.get("recovery_prefix_runtime_names", [])
+    )
+    return {
+        "target_runtime_task_name": name,
+        "target_arrival_time": arrival,
+        "target_job_id": job_id,
+        **recovery_values,
+    }
+
+
+def _bind_target_identity_to_trace(
+    request: Mapping[str, Any], execution: SimulationExecution, *, materialize: bool,
+) -> None:
+    """Persist or validate the B3-v2 target identity in the retained trace."""
+
+    if not str(request.get("scenario_contract_id", "")):
+        return
+    path = execution.retained_trace_path
+    if path is None or not path.is_file():
+        raise RuntimeError("P0 B3-v2 retained trace is missing")
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError("P0 B3-v2 retained trace is invalid") from exc
+    expected = {
+        key: request[key] for key in TRACE_TARGET_CONTRACT_FIELDS
+    }
+    expected["target_runtime_task_name"] = str(
+        expected["target_runtime_task_name"]
+    )
+    expected["target_arrival_time"] = int(expected["target_arrival_time"])
+    expected["target_job_id"] = str(expected["target_job_id"])
+    expected["target_recovery_contract_applicable"] = _contract_bool(
+        expected["target_recovery_contract_applicable"]
+    )
+    expected["recovery_prefix_length"] = int(
+        expected["recovery_prefix_length"]
+    )
+    expected["actual_trace_target_affordable_tick"] = int(
+        expected["actual_trace_target_affordable_tick"]
+    )
+    expected["actual_trace_full_tick"] = int(
+        expected["actual_trace_full_tick"]
+    )
+    observed = {
+        key: document.get(key) for key in TRACE_TARGET_CONTRACT_FIELDS
+    }
+    if materialize:
+        if any(value is not None for value in observed.values()) and observed != expected:
+            raise RuntimeError("P0 B3-v2 retained trace target identity conflict")
+        document.update(expected)
+        atomic_write_json(path, document)
+    elif observed != expected:
+        raise RuntimeError("P0 B3-v2 retained trace target identity mismatch")
 
 
 def _sha256_file(path: Path) -> str:
@@ -193,7 +399,7 @@ def assert_ext1b_fair_pairing(
         grouped.setdefault(str(row["paired_instance_id"]), []).append(row)
     for pair_id, members in grouped.items():
         for field in EXT1B_FAIRNESS_FIELDS:
-            values = {str(row[field]) for row in members}
+            values = {str(row.get(field, "")) for row in members}
             if len(values) != 1:
                 raise RuntimeError(f"P0 EXT-1B fairness mismatch in {field} for {pair_id}")
 
@@ -311,9 +517,12 @@ class Ext1BRunner:
                 "eight" if comparator_count == 8 else str(comparator_count)
             )
             capacity_identity = _b3_capacity_contract_identity(self.config)
+            target_trace_v2 = is_b3_target_trace_v2(self.config)
             metadata = {
                 "schema": (
-                    "ASAP_BLOCK_V9_3_EXT1B_METADATA_V2"
+                    "ASAP_BLOCK_V9_3_EXT1B_B3_TARGET_TRACE_METADATA_V3"
+                    if target_trace_v2
+                    else "ASAP_BLOCK_V9_3_EXT1B_METADATA_V2"
                     if capacity_identity
                     else "ASAP_BLOCK_V9_3_EXT1B_METADATA_V1"
                 ),
@@ -347,6 +556,10 @@ class Ext1BRunner:
                         capacity_identity
                     ),
                 })
+            if target_trace_v2:
+                metadata["target_trace_contract"] = (
+                    target_trace_contract_material()
+                )
             atomic_write_json(metadata_path, metadata)
 
     @staticmethod
@@ -423,6 +636,10 @@ class Ext1BRunner:
                 "b3_event_rows": "b3_timing_events.csv",
                 "b3_summary_rows": "b3_summary.csv",
             }
+            if is_b3_target_trace_v2(self.config):
+                observation_files["b3_calibration_summary_rows"] = (
+                    "b3_calibration_summary.csv"
+                )
         table_names.update(observation_files.values())
         required = table_names | {
             "checkpoint.json", "file_hashes.sha256", "run_config.yaml",
@@ -443,6 +660,9 @@ class Ext1BRunner:
         assert_ext1b_fair_pairing(requests, self.config["scheduler_ids"])
         grouped: Dict[str, list[Mapping[str, Any]]] = {}
         capacity_identity = _b3_capacity_contract_identity(self.config)
+        scenario_contract_id = str(
+            self.config.get("scenario", {}).get("scenario_contract_id", "")
+        )
         for request in requests:
             pair_id = str(request["paired_instance_id"])
             grouped.setdefault(pair_id, []).append(request)
@@ -450,6 +670,14 @@ class Ext1BRunner:
                 pair_id,
                 str(request["scheduler_id"]),
                 capacity_identity,
+                scenario_contract_id,
+                str(request.get("target_runtime_task_name", "")),
+                request.get("target_arrival_time", ""),
+                str(request.get("target_job_id", "")),
+                {
+                    key: request.get(key, "")
+                    for key in RECOVERY_CONTRACT_FIELDS
+                },
             )
             if str(request["request_id"]) != expected_id:
                 raise RuntimeError("P0 EXT-1B persisted request identity mismatch")
@@ -458,6 +686,12 @@ class Ext1BRunner:
             )) != capacity_identity:
                 raise RuntimeError(
                     "P0 EXT-1B persisted capacity contract identity mismatch"
+                )
+            if str(request.get("scenario_contract_id", "")) != (
+                scenario_contract_id
+            ):
+                raise RuntimeError(
+                    "P0 EXT-1B persisted scenario contract mismatch"
                 )
             if str(request["request_status"]) != "PLANNED":
                 return None
@@ -526,7 +760,14 @@ class Ext1BRunner:
 
         result_identity_fields = (
             "request_id", "paired_instance_id", "scenario_kind",
-            "scenario_subtype", "scenario_cell_id", "taskset_id",
+            "scenario_subtype", "scenario_cell_id", "scenario_contract_id",
+            "target_runtime_task_name", "target_arrival_time", "target_job_id",
+            "target_recovery_contract_applicable", "recovery_prefix_identity",
+            "recovery_prefix_length", "recovery_prefix_runtime_names_json",
+            "recovery_prefix_required_energy",
+            "materialized_battery_capacity",
+            "actual_trace_target_affordable_tick", "actual_trace_full_tick",
+            "taskset_id",
             "taskset_hash", "trace_hash", "simulation_config_hash",
             "input_hash", "scheduler_id",
         )
@@ -536,6 +777,9 @@ class Ext1BRunner:
                 self.terminals / f"{request_id}.json"
             )
             self._validate_terminal_identity(request, execution)
+            _bind_target_identity_to_trace(
+                request, execution, materialize=False,
+            )
             result = result_by_id[request_id]
             attempt = attempt_by_id[request_id]
             if any(
@@ -604,6 +848,10 @@ class Ext1BRunner:
         retry_limit = int(self.config["scenario"]["structural_retry_limit"])
         start = int(self.config["grid"].get("taskset_index_start", 0))
         simulator_hash = _sha256_file(self._simulator_path())
+        target_trace_v2 = is_b3_target_trace_v2(self.config)
+        scenario_contract_id = str(
+            self.config["scenario"].get("scenario_contract_id", "")
+        )
         generated_rows: list[Dict[str, Any]] = []
         attempt_rows: list[Dict[str, Any]] = []
         instance_rows: list[Dict[str, Any]] = []
@@ -617,7 +865,11 @@ class Ext1BRunner:
                     source_index = logical_index * retry_limit + attempt_index
                     stored = store.get_or_create(base_cell, source_index)
                     attempt_id = domain_hash(
-                        "ASAP_BLOCK:V9.3:EXT1B:GENERATION_ATTEMPT:v1",
+                        (
+                            "ASAP_BLOCK:V9.3:EXT1B:GENERATION_ATTEMPT:v2"
+                            if target_trace_v2
+                            else "ASAP_BLOCK:V9.3:EXT1B:GENERATION_ATTEMPT:v1"
+                        ),
                         {
                             "scenario_cell_id": scenario_cell.cell_id,
                             "logical_taskset_index": logical_index,
@@ -630,6 +882,9 @@ class Ext1BRunner:
                         "scenario_kind": scenario_cell.kind,
                         "scenario_subtype": scenario_cell.subtype,
                         "scenario_cell_id": scenario_cell.cell_id,
+                        "normalized_utilization": fraction_text(
+                            base_cell.utilization
+                        ),
                         "logical_taskset_index": logical_index,
                         "attempt_index": attempt_index,
                         "source_taskset_index": source_index,
@@ -640,6 +895,7 @@ class Ext1BRunner:
                         "paired_instance_id": "",
                         "logical_index": logical_index,
                         "source_index": source_index,
+                        "scenario_contract_id": scenario_contract_id,
                     }
                     try:
                         candidate = build_scenario_instance(
@@ -683,6 +939,9 @@ class Ext1BRunner:
                     )
 
                 instance = accepted
+                target_job = _target_contract_fields(
+                    instance.structure, required=target_trace_v2,
+                )
                 canonical_path = self.root / "scenario_tasksets" / f"{instance.taskset_hash}.json"
                 power_map = [
                     {"task_id": row["task_id"], "priority_rank": row["priority_rank"],
@@ -720,6 +979,8 @@ class Ext1BRunner:
                     "capacity_feasibility_contract_identity": (
                         instance.capacity_feasibility_contract_identity
                     ),
+                    "scenario_contract_id": scenario_contract_id,
+                    **target_job,
                 })
                 instance_rows.append({
                     "paired_instance_id": instance.paired_instance_id,
@@ -759,16 +1020,23 @@ class Ext1BRunner:
                     "capacity_feasibility_contract_identity": (
                         instance.capacity_feasibility_contract_identity
                     ),
+                    "scenario_contract_id": scenario_contract_id,
+                    **target_job,
                 })
-                simulation_hash = domain_hash(
-                    "ASAP_BLOCK:V9.3:EXT1B:SIMULATION_CONFIG:v1",
-                    {
+                simulation_material = {
                         "simulation": self.config["simulation"],
                         "initial_battery": fraction_text(instance.initial_battery),
                         "battery_capacity": fraction_text(instance.battery_capacity),
                         "allow_harvest_clipping": instance.allow_harvest_clipping,
                         "system_template_hash": _sha256_file(instance.system_template_path),
-                    },
+                }
+                simulation_hash = (
+                    v2_simulation_config_identity(**simulation_material)
+                    if target_trace_v2
+                    else domain_hash(
+                        "ASAP_BLOCK:V9.3:EXT1B:SIMULATION_CONFIG:v1",
+                        simulation_material,
+                    )
                 )
                 workload_vector_hash = domain_hash(
                     "ASAP_BLOCK:V9.3:EXT1B:WORKLOAD_VECTOR:v1", power_map
@@ -789,15 +1057,29 @@ class Ext1BRunner:
                     "release_hash": instance.release_hash,
                     "workload_vector_hash": workload_vector_hash,
                     "simulator_build_hash": simulator_hash,
+                    "scenario_contract_id": scenario_contract_id,
+                    **target_job,
                 }
-                input_hash = domain_hash(
-                    "ASAP_BLOCK:V9.3:EXT1B:FAIR_INPUT:v1", fair_material
+                input_hash = (
+                    v2_fair_input_identity(fair_material)
+                    if target_trace_v2
+                    else domain_hash(
+                        "ASAP_BLOCK:V9.3:EXT1B:FAIR_INPUT:v1", fair_material,
+                    )
                 )
                 for registration in self.schedulers:
                     request_id = _request_identity(
                         instance.paired_instance_id,
                         registration.scheduler_id,
                         instance.capacity_feasibility_contract_identity,
+                        scenario_contract_id,
+                        target_job["target_runtime_task_name"],
+                        target_job["target_arrival_time"],
+                        target_job["target_job_id"],
+                        {
+                            key: target_job[key]
+                            for key in RECOVERY_CONTRACT_FIELDS
+                        },
                     )
                     requests.append({
                         "request_id": request_id,
@@ -818,9 +1100,13 @@ class Ext1BRunner:
                         "capacity_feasibility_contract_identity": (
                             instance.capacity_feasibility_contract_identity
                         ),
+                        "scenario_contract_id": scenario_contract_id,
+                        **target_job,
                         "instance": instance,
                     })
         assert_ext1b_fair_pairing(requests, self.config["scheduler_ids"])
+        if target_trace_v2:
+            store.verify_pairing_manifest(require_complete=False)
         return generated_rows, attempt_rows, instance_rows, requests
 
     def _task_and_request_outcomes(
@@ -911,6 +1197,11 @@ class Ext1BRunner:
                 "taskset_hash", "trace_hash", "simulation_config_hash",
                 "input_hash", "scheduler_id",
             )},
+            "scenario_contract_id": request.get("scenario_contract_id", ""),
+            **{
+                key: request.get(key, "")
+                for key in TRACE_TARGET_CONTRACT_FIELDS
+            },
             "status": result.status.value,
             "reason": result.reason,
             "comparison_eligible": result.comparison_eligible,
@@ -925,6 +1216,18 @@ class Ext1BRunner:
             "first_missed_priority_rank": first_missed,
             "first_missed_priority_rank_numeric": first_missed_numeric,
             "timing_activation": UNAVAILABLE,
+            **{key: UNAVAILABLE for key in (
+                "target_wait_observed",
+                "target_positive_slack_transition",
+                "target_transition_after_slack_exhaustion",
+                "target_terminated_without_transition",
+                "any_target_job_positive_transition_count",
+                "later_target_job_positive_transition_count",
+                "non_target_positive_transition_count",
+                "activation_from_other_job_only",
+                "target_audit_closed",
+                "target_audit_error_count",
+            )},
             **{key: _available(metrics.get(key)) for key in (
                 "missed_jobs", "first_miss_time", "maximum_observed_response_time",
                 "mean_response_time", "completed_jobs", "preemptions",
@@ -980,6 +1283,9 @@ class Ext1BRunner:
                         raise RuntimeError("terminal result exists; use --resume")
                     execution = load_simulation_terminal(terminal_path)
                     self._validate_terminal_identity(request, execution)
+                    _bind_target_identity_to_trace(
+                        request, execution, materialize=False,
+                    )
                 else:
                     instance: ScenarioInstance = request["instance"]
                     energy = dict(self.config["energy"])
@@ -1003,6 +1309,9 @@ class Ext1BRunner:
                         )
                     except SimulationConfigurationError as exc:
                         raise RuntimeError(f"P0 simulation configuration failure: {exc}") from exc
+                    _bind_target_identity_to_trace(
+                        request, execution, materialize=True,
+                    )
                     write_simulation_terminal(terminal_path, execution)
                 self._validate_terminal_identity(request, execution)
                 terminal_count += 1
@@ -1033,6 +1342,9 @@ class Ext1BRunner:
                 continue
             execution = load_simulation_terminal(path)
             self._validate_terminal_identity(request, execution)
+            _bind_target_identity_to_trace(
+                request, execution, materialize=False,
+            )
             result_row, per_task = self._task_and_request_outcomes(request, execution)
             result_rows.append(result_row)
             task_rows.extend(per_task)
@@ -1056,6 +1368,15 @@ class Ext1BRunner:
         write_csv(self.root / "task_outcomes.csv", TASK_COLUMNS, task_rows)
         write_csv(self.root / "failures.csv", FAILURE_COLUMNS, failures)
         aggregation = aggregate_ext1b(self.root, self.config)
+        if is_b3_target_trace_v2(self.config):
+            write_file_hashes(self.root)
+            if not verify_file_hashes(self.root):
+                raise RuntimeError("P0 B3-v2 output file hash verification failed")
+            aggregation = aggregate_ext1b(
+                self.root,
+                self.config,
+                output_file_hash_verification_closed=True,
+            )
         missing_outputs = [
             name for name in self.config["required_outputs"]
             if not (self.root / name).is_file()
@@ -1069,6 +1390,8 @@ class Ext1BRunner:
             **aggregation,
         }
         write_file_hashes(self.root)
+        if not verify_file_hashes(self.root):
+            raise RuntimeError("P0 EXT-1B final output file hash verification failed")
         return Ext1BOutcome(
             self.root, len(plan), len(result_rows), self.stop_requested, summary
         )
@@ -1152,7 +1475,11 @@ class Ext1BRunner:
             for row in generation_attempts
         )
         workload_summary = {
-            "schema": "ASAP_BLOCK_V9_3_WORKLOAD_CONTRACT_SUMMARY_V1",
+            "schema": (
+                "ASAP_BLOCK_V9_3_EXT1B_B3_TARGET_TRACE_WORKLOAD_SUMMARY_V2"
+                if is_b3_target_trace_v2(self.config)
+                else "ASAP_BLOCK_V9_3_WORKLOAD_CONTRACT_SUMMARY_V1"
+            ),
             "workload_contract_version": contract["version"],
             "contract_identity": contract["contract_identity"],
             "candidate_identity": contract["candidate_identity"],
@@ -1181,6 +1508,10 @@ class Ext1BRunner:
                     capacity_rejection_count
                 ),
             })
+        if is_b3_target_trace_v2(self.config):
+            workload_summary["target_trace_contract"] = (
+                target_trace_contract_material()
+            )
         atomic_write_json(
             self.root / "workload_contract_summary.json", workload_summary
         )
@@ -1200,7 +1531,9 @@ class Ext1BRunner:
             )
         summary = {
             "schema": (
-                "ASAP_BLOCK_V9_3_EXT1B_PLAN_ONLY_V3"
+                "ASAP_BLOCK_V9_3_EXT1B_B3_TARGET_TRACE_PLAN_ONLY_V4"
+                if is_b3_target_trace_v2(self.config)
+                else "ASAP_BLOCK_V9_3_EXT1B_PLAN_ONLY_V3"
                 if capacity_identity
                 else "ASAP_BLOCK_V9_3_EXT1B_PLAN_ONLY_V2"
             ),
@@ -1236,6 +1569,59 @@ class Ext1BRunner:
                     capacity_rejection_count
                 ),
             })
+        if is_b3_target_trace_v2(self.config):
+            rejection_counts = Counter(
+                str(row.get("rejection_code"))
+                for row in generation_attempts
+                if str(row.get("attempt_status")) == "REJECTED"
+            )
+            retry_limit = int(self.config["scenario"]["structural_retry_limit"])
+            taskset_hash_audit_closed = True
+            for row in generated:
+                try:
+                    document = json.loads(
+                        Path(str(row["canonical_taskset_json"])).read_text(
+                            encoding="utf-8"
+                        )
+                    )
+                    observed_hash = v2_taskset_hash_from_document(document)
+                except (KeyError, OSError, ValueError, json.JSONDecodeError):
+                    taskset_hash_audit_closed = False
+                    break
+                if observed_hash != str(row["taskset_hash"]):
+                    taskset_hash_audit_closed = False
+                    break
+            summary.update({
+                "scenario_contract_id": (
+                    B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2
+                ),
+                "target_trace_contract": target_trace_contract_material(),
+                "calibration_unit_count": len(
+                    self._selected_cells(max_cells)
+                ),
+                "structurally_accepted_count": len(instances),
+                "structural_rejection_attempt_count": sum(
+                    rejection_counts.values()
+                ),
+                "structural_rejection_code_counts": dict(
+                    sorted(rejection_counts.items())
+                ),
+                "identity_shape_audit_closed": all(
+                    len(str(row["taskset_hash"])) == 64 for row in generated
+                ),
+                "taskset_hash_audit_closed": taskset_hash_audit_closed,
+                "taskset_store_manifest_audit_closed": True,
+                "pairing_audit_closed": True,
+                "workload_audit_closed": not any((
+                    idle_count, unknown_count, power_mismatch_count,
+                )),
+                "source_index_audit_closed": all(
+                    int(row["source_taskset_index"])
+                    == int(row["logical_taskset_index"]) * retry_limit
+                    + int(row["attempt_index"])
+                    for row in generation_attempts
+                ),
+            })
         atomic_write_json(self.root / "plan_summary.json", summary)
         if any(self.terminals.glob("*.json")):
             raise RuntimeError("plan-only output contains simulator terminals")
@@ -1254,6 +1640,17 @@ def analyze_ext1b(root: Path) -> Mapping[str, Any]:
     config = load_ext1b_config(root / "run_config.yaml")
     summary = aggregate_ext1b(root, config)
     write_file_hashes(root)
+    if not verify_file_hashes(root):
+        raise RuntimeError("P0 EXT-1B output file hash verification failed")
+    if is_b3_target_trace_v2(config):
+        summary = aggregate_ext1b(
+            root,
+            config,
+            output_file_hash_verification_closed=True,
+        )
+        write_file_hashes(root)
+        if not verify_file_hashes(root):
+            raise RuntimeError("P0 B3-v2 final output file hash verification failed")
     return {
         "parameter_status": config["parameter_status"],
         **summary,
