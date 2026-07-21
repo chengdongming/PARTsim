@@ -133,6 +133,14 @@ class TimingAuditReport:
     same_job_transition_count: int = 0
     activation_candidate_job_count: int = 0
     activation_denominator_zero: bool = True
+    target_wait_observed: bool = False
+    target_positive_slack_transition: bool = False
+    target_transition_after_slack_exhaustion: bool = False
+    target_terminated_without_transition: bool = False
+    non_target_positive_transition_count: int = 0
+    activation_from_other_job_only: bool = False
+    target_audit_closed: bool = False
+    target_audit_error_count: int = 0
 
     @property
     def state_counts(self) -> Mapping[str, int]:
@@ -437,6 +445,7 @@ def audit_timing_trace(
     path: Path,
     *,
     expected_scheduler: str,
+    target_runtime_task_name: str | None = None,
 ) -> TimingAuditReport:
     data = _strict_json(path)
     errors: list[str] = []
@@ -469,6 +478,7 @@ def audit_timing_trace(
     identities: set[tuple[int, str, int]] = set()
     arrivals: set[tuple[str, int]] = set()
     running: set[tuple[int, str, int]] = set()
+    terminal_events: dict[tuple[str, int], list[tuple[int, str]]] = {}
     last_observation_time: dict[tuple[str, int], int] = {}
     observation_count = 0
     stop_events = {"descheduled", "end_instance", "dline_miss", "killed"}
@@ -512,6 +522,11 @@ def audit_timing_trace(
                     item for item in running
                     if item[1:] != (task_name, arrival)
                 }
+                if event_type in {"end_instance", "dline_miss", "killed"}:
+                    terminal_events.setdefault((task_name, arrival), []).append((
+                        _integer(event.get("time"), f"{event_type} time"),
+                        str(event_type),
+                    ))
             except (TypeError, ValueError, ZeroDivisionError) as exc:
                 errors.append(f"invalid {event_type} event: {exc}")
             continue
@@ -600,6 +615,7 @@ def audit_timing_trace(
             if (
                 not any(row.identity[0] > first_stage_a for row in rows)
                 and not trace_has_terminal_outcome
+                and job not in terminal_events
             ):
                 errors.append(
                     "missing transition evidence after timing-deferred "
@@ -621,6 +637,74 @@ def audit_timing_trace(
                 transition_jobs.add(job)
         timing_activation = bool(transition_jobs)
 
+    target_wait_observed = False
+    target_positive_slack_transition = False
+    target_transition_after_slack_exhaustion = False
+    target_terminated_without_transition = False
+    non_target_positive_transition_count = 0
+    activation_from_other_job_only = False
+    if target_runtime_task_name is not None:
+        if not isinstance(target_runtime_task_name, str) or not target_runtime_task_name:
+            errors.append("target runtime task name must be non-empty")
+        elif not any(
+            task_name == target_runtime_task_name for task_name, _ in arrivals
+        ):
+            errors.append(
+                "target runtime task has no matching arrival: "
+                f"{target_runtime_task_name}"
+            )
+        elif family == "ST":
+            target_jobs = {
+                job for job in by_job if job[0] == target_runtime_task_name
+            }
+            target_wait_times: dict[tuple[str, int], int] = {}
+            for job in target_jobs:
+                first_wait = min((
+                    row.identity[0] for row in by_job[job]
+                    if row.state == ST_ENERGY_INSUFFICIENT_SLACK_WAIT
+                ), default=None)
+                if first_wait is not None:
+                    target_wait_times[job] = first_wait
+            target_wait_observed = bool(target_wait_times)
+            target_positive_jobs = {
+                job for job in transition_jobs
+                if job[0] == target_runtime_task_name
+            }
+            target_positive_slack_transition = bool(target_positive_jobs)
+            for job, first_wait in target_wait_times.items():
+                post_wait_transitions = [
+                    row for row in by_job[job]
+                    if row.state == ST_AFFORDABLE_ASAP_BEHAVIOR
+                    and row.identity[0] > first_wait
+                ]
+                if job not in target_positive_jobs and any(
+                    row.scheduler_slack is not None
+                    and row.scheduler_slack <= 0
+                    for row in post_wait_transitions
+                ):
+                    target_transition_after_slack_exhaustion = True
+                if not post_wait_transitions and any(
+                    terminal_time > first_wait
+                    for terminal_time, _ in terminal_events.get(job, [])
+                ):
+                    target_terminated_without_transition = True
+            non_target_positive_transition_count = sum(
+                job[0] != target_runtime_task_name for job in transition_jobs
+            )
+            activation_from_other_job_only = (
+                bool(transition_jobs) and not target_positive_slack_transition
+            )
+
+    invalid_count = sum(
+        finding.state in {ILLEGAL_TIMING_TRANSITION, UNCLASSIFIABLE}
+        for finding in findings
+    )
+    target_audit_error_count = len(errors) + invalid_count
+    target_audit_closed = (
+        target_runtime_task_name is not None
+        and target_audit_error_count == 0
+    )
+
     return TimingAuditReport(
         tuple(findings),
         tuple(errors),
@@ -628,4 +712,18 @@ def audit_timing_trace(
         same_job_transition_count=len(transition_jobs),
         activation_candidate_job_count=len(candidate_jobs),
         activation_denominator_zero=not candidate_jobs,
+        target_wait_observed=target_wait_observed,
+        target_positive_slack_transition=target_positive_slack_transition,
+        target_transition_after_slack_exhaustion=(
+            target_transition_after_slack_exhaustion
+        ),
+        target_terminated_without_transition=(
+            target_terminated_without_transition
+        ),
+        non_target_positive_transition_count=(
+            non_target_positive_transition_count
+        ),
+        activation_from_other_job_only=activation_from_other_job_only,
+        target_audit_closed=target_audit_closed,
+        target_audit_error_count=target_audit_error_count,
     )

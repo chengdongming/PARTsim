@@ -35,6 +35,11 @@ from .ext1b_capacity_contract import (
     capacity_contract_identity,
     capacity_contract_material,
 )
+from .ext1b_b3_target_trace import (
+    B3_V2_STORE_CONTRACT_DOMAIN,
+    is_b3_target_trace_v2,
+    target_trace_contract_material,
+)
 from .simulation_engine import (
     SimulationConfigurationError,
     construct_paired_harvest_trace,
@@ -48,6 +53,9 @@ FROZEN_TASKSET_SCHEMA = "ASAP_BLOCK_V9_3_FROZEN_TASKSET_V3"
 FROZEN_TASKSET_SEMANTIC_DOMAIN = "ASAP_BLOCK:V9.3:TASKSET_SEMANTIC:v3"
 PAIRING_MANIFEST_SCHEMA = "ASAP_BLOCK_V9_3_CORE12_PAIRING_MANIFEST_V2"
 PAIRING_CONTRACT_DOMAIN = "ASAP_BLOCK:V9.3:CORE12_PAIRING_CONTRACT:v2"
+B3_V2_PAIRING_MANIFEST_SCHEMA = (
+    "ASAP_BLOCK_V9_3_EXT1B_B3_TARGET_TRACE_PAIRING_MANIFEST_V3"
+)
 
 
 class TasksetStoreError(RuntimeError):
@@ -317,14 +325,29 @@ class TasksetStore:
                 **capacity_contract_material(self.config),
                 "contract_identity": capacity_contract_identity(self.config),
             }
+        if is_b3_target_trace_v2(self.config):
+            contract["scenario_target_trace_contract"] = (
+                target_trace_contract_material()
+            )
         return contract
 
     def _initialize_pairing_manifest(self) -> None:
         contract = self._pairing_contract()
-        pairing_id = domain_hash(PAIRING_CONTRACT_DOMAIN, contract)
+        target_trace_v2 = is_b3_target_trace_v2(self.config)
+        pairing_id = domain_hash(
+            B3_V2_STORE_CONTRACT_DOMAIN
+            if target_trace_v2
+            else PAIRING_CONTRACT_DOMAIN,
+            contract,
+        )
+        expected_schema = (
+            B3_V2_PAIRING_MANIFEST_SCHEMA
+            if target_trace_v2
+            else PAIRING_MANIFEST_SCHEMA
+        )
         if not self.manifest_path.is_file():
             self._write_manifest({
-                "schema": PAIRING_MANIFEST_SCHEMA,
+                "schema": expected_schema,
                 "pairing_id": pairing_id,
                 "contract": contract,
                 "entries": [],
@@ -362,7 +385,17 @@ class TasksetStore:
                 "regenerate the B3 taskset store"
             )
         if (
-            manifest.get("schema") != PAIRING_MANIFEST_SCHEMA
+            target_trace_v2
+            and isinstance(observed_contract, Mapping)
+            and observed_contract.get("scenario_target_trace_contract")
+            != contract.get("scenario_target_trace_contract")
+        ):
+            raise TasksetStoreError(
+                "B3-v2 taskset store target-trace contract mismatch; "
+                "regenerate the isolated B3-v2 taskset store"
+            )
+        if (
+            manifest.get("schema") != expected_schema
             or manifest.get("pairing_id") != pairing_id
             or manifest.get("contract") != contract
             or not isinstance(manifest.get("entries"), list)

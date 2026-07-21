@@ -33,7 +33,9 @@ from .ext1b_b3_timing_audit import (
     UNCLASSIFIABLE,
     audit_timing_trace,
 )
+from .ext1b_b3_target_trace import is_b3_target_trace_v2
 from .result_writer import read_csv, write_csv
+from .task_identity import runtime_task_name_for_source_id
 
 
 UNAVAILABLE = "UNAVAILABLE"
@@ -97,6 +99,33 @@ B3_SUMMARY_COLUMNS = (
     "response_time", "deadline_miss", "timing_activation", "audit_error_count",
     "audit_closed", "same_job_transition_count",
     "activation_candidate_job_count", "activation_denominator_zero",
+    "target_source_task_id", "target_runtime_task_name",
+    "target_priority_rank", "target_workload", "target_unit_energy",
+    "target_initial_slack", "target_wait_observed",
+    "target_positive_slack_transition",
+    "target_transition_after_slack_exhaustion",
+    "target_terminated_without_transition",
+    "non_target_positive_transition_count", "activation_from_other_job_only",
+    "target_audit_closed", "target_audit_error_count",
+)
+B3_CALIBRATION_COLUMNS = (
+    "scenario_cell_id", "normalized_utilization", "timing_subtype",
+    "configured_recovery_margin_ticks", "interpolation_rho",
+    "nominal_energy_supply_ratio", "structurally_accepted_count",
+    "structural_rejection_attempt_count", "rejection_code_counts_json",
+    "target_observation_denominator", "target_wait_observed_count",
+    "target_wait_observed_ratio", "target_positive_slack_transition_count",
+    "target_positive_slack_transition_ratio",
+    "activation_from_other_job_only_count",
+    "activation_from_other_job_only_ratio",
+    "target_transition_after_slack_exhaustion_count",
+    "target_transition_after_slack_exhaustion_ratio",
+    "target_terminated_without_transition_count",
+    "target_terminated_without_transition_ratio", "target_audit_closed_count",
+    "target_audit_error_count", "capacity_infeasible_task_count",
+    "capacity_infeasible_taskset_count", "taskset_hash_audit_closed",
+    "pairing_audit_closed", "workload_audit_closed",
+    "source_index_audit_closed", "calibration_unit_audit_closed",
 )
 
 
@@ -108,6 +137,14 @@ def _integer(value: Any, default: int = 0) -> int:
     if value in {None, "", UNAVAILABLE}:
         return default
     return int(value)
+
+
+def _bool_value(value: Any) -> bool:
+    return value is True or str(value).strip().upper() in {"TRUE", "1"}
+
+
+def _ratio(numerator: int, denominator: int) -> Any:
+    return numerator / denominator if denominator else UNAVAILABLE
 
 
 def _trace_path(root: Path, row: Mapping[str, Any]) -> Path:
@@ -188,8 +225,8 @@ def _b2_dimensions_by_pair(
 
 def _b3_dimensions_by_pair(
     scenarios: Iterable[Mapping[str, Any]],
-) -> Dict[str, Dict[str, str]]:
-    dimensions: Dict[str, Dict[str, str]] = {}
+) -> Dict[str, Dict[str, Any]]:
+    dimensions: Dict[str, Dict[str, Any]] = {}
     for row in scenarios:
         if str(row.get("scenario_kind")) != "TIMING_STRESS":
             continue
@@ -248,6 +285,36 @@ def _b3_dimensions_by_pair(
                 f"B3 deadline_ratio_max for {pair_id}",
             ),
         }
+        scenario_contract_id = str(row.get("scenario_contract_id", ""))
+        if scenario_contract_id:
+            dimensions[pair_id]["scenario_contract_id"] = scenario_contract_id
+            required_target = (
+                "target_source_task_id", "target_runtime_task_name",
+                "target_priority_rank", "target_workload",
+                "target_unit_energy", "target_initial_slack",
+            )
+            missing = [key for key in required_target if key not in structure]
+            if missing:
+                raise Ext1BObservationError(
+                    f"missing B3-v2 target identity fields for {pair_id}: {missing}"
+                )
+            source_id = str(structure["target_source_task_id"])
+            runtime_name = str(structure["target_runtime_task_name"])
+            if runtime_name != runtime_task_name_for_source_id(source_id):
+                raise Ext1BObservationError(
+                    f"B3-v2 target source/runtime identity mismatch for {pair_id}"
+                )
+            dimensions[pair_id].update({
+                "target_source_task_id": source_id,
+                "target_runtime_task_name": runtime_name,
+                "target_priority_rank": int(structure["target_priority_rank"]),
+                "target_workload": str(structure["target_workload"]),
+                "target_unit_energy": _dimension_text(
+                    structure["target_unit_energy"],
+                    f"B3-v2 target unit energy for {pair_id}",
+                ),
+                "target_initial_slack": int(structure["target_initial_slack"]),
+            })
         if not scenario_cell_id or not timing_subtype:
             raise Ext1BObservationError(
                 f"missing B3 scenario identity for {pair_id}"
@@ -445,6 +512,7 @@ def _b2_outputs(
 
 def _b3_outputs(
     root: Path,
+    config: Mapping[str, Any],
     scenarios: Sequence[Mapping[str, Any]],
     requests: Sequence[Mapping[str, Any]],
     results: Sequence[Dict[str, Any]],
@@ -485,8 +553,27 @@ def _b3_outputs(
                 raise Ext1BObservationError(
                     f"B3 request/scenario dimension mismatch for {pair_id}"
                 )
+            expected_contract = str(
+                config["scenario"].get("scenario_contract_id", "")
+            )
+            if (
+                str(request.get("scenario_contract_id", ""))
+                != expected_contract
+                or str(dimensions.get("scenario_contract_id", ""))
+                != expected_contract
+            ):
+                raise Ext1BObservationError(
+                    f"B3 request/scenario contract mismatch for {pair_id}"
+                )
+            target_trace_v2 = is_b3_target_trace_v2(config)
             report = audit_timing_trace(
-                _trace_path(root, result), expected_scheduler=scheduler_id
+                _trace_path(root, result),
+                expected_scheduler=scheduler_id,
+                target_runtime_task_name=(
+                    str(dimensions["target_runtime_task_name"])
+                    if target_trace_v2
+                    else None
+                ),
             )
         except Exception as exc:
             failures.append(f"B3 {result['request_id']}: {exc}")
@@ -535,6 +622,28 @@ def _b3_outputs(
         )
         audit_closed = audit_error_count == 0
         result["timing_activation"] = timing_activation
+        target_fields = {
+            "target_wait_observed": report.target_wait_observed,
+            "target_positive_slack_transition": (
+                report.target_positive_slack_transition
+            ),
+            "target_transition_after_slack_exhaustion": (
+                report.target_transition_after_slack_exhaustion
+            ),
+            "target_terminated_without_transition": (
+                report.target_terminated_without_transition
+            ),
+            "non_target_positive_transition_count": (
+                report.non_target_positive_transition_count
+            ),
+            "activation_from_other_job_only": (
+                report.activation_from_other_job_only
+            ),
+            "target_audit_closed": report.target_audit_closed,
+            "target_audit_error_count": report.target_audit_error_count,
+        }
+        if target_trace_v2:
+            result.update(target_fields)
         summary_rows.append({
             "request_id": result["request_id"],
             "paired_instance_id": result["paired_instance_id"],
@@ -582,6 +691,20 @@ def _b3_outputs(
             "same_job_transition_count": report.same_job_transition_count,
             "activation_candidate_job_count": report.activation_candidate_job_count,
             "activation_denominator_zero": report.activation_denominator_zero,
+            **({key: dimensions[key] for key in (
+                "target_source_task_id", "target_runtime_task_name",
+                "target_priority_rank", "target_workload",
+                "target_unit_energy", "target_initial_slack",
+            )} if target_trace_v2 else {
+                key: UNAVAILABLE for key in (
+                    "target_source_task_id", "target_runtime_task_name",
+                    "target_priority_rank", "target_workload",
+                    "target_unit_energy", "target_initial_slack",
+                )
+            }),
+            **(target_fields if target_trace_v2 else {
+                key: UNAVAILABLE for key in target_fields
+            }),
         })
         if not audit_closed:
             failures.append(
@@ -593,6 +716,185 @@ def _b3_outputs(
                 )
             )
     return event_rows, summary_rows, failures
+
+
+def _b3_calibration_rows(
+    config: Mapping[str, Any],
+    scenarios: Sequence[Mapping[str, Any]],
+    requests: Sequence[Mapping[str, Any]],
+    summaries: Sequence[Mapping[str, Any]],
+    generation_attempts: Sequence[Mapping[str, Any]],
+    generated_tasksets: Sequence[Mapping[str, Any]],
+) -> list[Dict[str, Any]]:
+    """Return one independent audit/result row per v2 calibration unit."""
+
+    if not is_b3_target_trace_v2(config):
+        return []
+    scheduler_ids = set(config["scheduler_ids"])
+    retry_limit = int(config["scenario"]["structural_retry_limit"])
+    workload_contract = config["generation"]["workload_contract"]
+    energy_by_workload = {
+        str(row["workload"]): _dimension_text(row["energy_per_tick"], "power")
+        for row in workload_contract["power_model"]
+    }
+    generated_by_taskset = {
+        str(row["taskset_id"]): row for row in generated_tasksets
+    }
+    requests_by_pair = _by_pair(requests)
+    scenario_groups: Dict[tuple[str, str], list[Mapping[str, Any]]] = defaultdict(list)
+    for row in scenarios:
+        scenario_groups[(
+            str(row["scenario_cell_id"]),
+            _dimension_text(row["normalized_utilization"], "normalized utilization"),
+        )].append(row)
+    attempts_by_unit: Dict[tuple[str, str], list[Mapping[str, Any]]] = defaultdict(list)
+    for row in generation_attempts:
+        attempts_by_unit[(
+            str(row["scenario_cell_id"]),
+            _dimension_text(row["normalized_utilization"], "attempt utilization"),
+        )].append(row)
+    summary_by_unit: Dict[tuple[str, str], list[Mapping[str, Any]]] = defaultdict(list)
+    for row in summaries:
+        if str(row.get("scheduler_id")) != "gpfp_st_block":
+            continue
+        summary_by_unit[(
+            str(row["scenario_cell_id"]),
+            _dimension_text(row["normalized_utilization"], "summary utilization"),
+        )].append(row)
+
+    rows = []
+    for key, instances in sorted(scenario_groups.items()):
+        cell_id, utilization = key
+        first_structure = json.loads(str(instances[0]["structure_json"]))
+        timing = first_structure["timing_dimensions"]
+        attempts = attempts_by_unit.get(key, [])
+        st_summaries = summary_by_unit.get(key, [])
+        rejected = [
+            row for row in attempts
+            if str(row.get("attempt_status")) == "REJECTED"
+        ]
+        rejection_codes = Counter(str(row.get("rejection_code")) for row in rejected)
+
+        def count(field: str) -> int:
+            return sum(_bool_value(row.get(field)) for row in st_summaries)
+
+        denominator = len(st_summaries)
+        target_wait = count("target_wait_observed")
+        target_positive = count("target_positive_slack_transition")
+        other_only = count("activation_from_other_job_only")
+        exhausted = count("target_transition_after_slack_exhaustion")
+        terminated = count("target_terminated_without_transition")
+
+        hash_audit = all(
+            len(str(instance.get(field, ""))) == 64
+            for instance in instances
+            for field in (
+                "paired_instance_id", "taskset_hash", "trace_hash",
+                "priority_hash", "power_hash", "deadline_hash",
+                "release_hash", "scenario_candidate_identity",
+            )
+        ) and len({str(row["paired_instance_id"]) for row in instances}) == len(
+            instances
+        )
+        pairing_audit = all(
+            set(requests_by_pair.get(str(instance["paired_instance_id"]), {}))
+            == scheduler_ids
+            and len({
+                str(row.get("input_hash"))
+                for row in requests_by_pair[str(instance["paired_instance_id"])].values()
+            }) == 1
+            for instance in instances
+        )
+        workload_audit = True
+        for instance in instances:
+            generated = generated_by_taskset.get(str(instance["taskset_id"]))
+            if generated is None:
+                workload_audit = False
+                break
+            try:
+                tasks = json.loads(str(generated["task_input_json"]))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                workload_audit = False
+                break
+            if any(
+                str(task.get("workload")) not in energy_by_workload
+                or str(task.get("workload")) == "idle"
+                or _dimension_text(task.get("P"), "task power")
+                != energy_by_workload.get(str(task.get("workload")))
+                for task in tasks
+            ):
+                workload_audit = False
+                break
+        source_index_audit = all(
+            int(row["source_taskset_index"])
+            == int(row["logical_taskset_index"]) * retry_limit
+            + int(row["attempt_index"])
+            and int(row["source_index"]) == int(row["source_taskset_index"])
+            and int(row["logical_index"]) == int(row["logical_taskset_index"])
+            for row in attempts
+        )
+        capacity_tasks = sum(
+            _integer(row.get("capacity_infeasible_task_count")) for row in rejected
+        )
+        capacity_tasksets = sum(
+            _integer(row.get("capacity_infeasible_taskset_count")) for row in rejected
+        )
+        target_audit_closed = count("target_audit_closed")
+        target_audit_errors = sum(
+            _integer(row.get("target_audit_error_count")) for row in st_summaries
+        )
+        audit_closed = all((
+            hash_audit,
+            pairing_audit,
+            workload_audit,
+            source_index_audit,
+            target_audit_closed == denominator,
+            target_audit_errors == 0,
+        ))
+        rows.append({
+            "scenario_cell_id": cell_id,
+            "normalized_utilization": utilization,
+            "timing_subtype": str(instances[0]["scenario_subtype"]),
+            "configured_recovery_margin_ticks": timing[
+                "recovery_margin_ticks"
+            ],
+            "interpolation_rho": timing["interpolation_rho"],
+            "nominal_energy_supply_ratio": timing[
+                "nominal_energy_supply_ratio"
+            ],
+            "structurally_accepted_count": len(instances),
+            "structural_rejection_attempt_count": len(rejected),
+            "rejection_code_counts_json": canonical_json(rejection_codes),
+            "target_observation_denominator": denominator,
+            "target_wait_observed_count": target_wait,
+            "target_wait_observed_ratio": _ratio(target_wait, denominator),
+            "target_positive_slack_transition_count": target_positive,
+            "target_positive_slack_transition_ratio": _ratio(
+                target_positive, denominator
+            ),
+            "activation_from_other_job_only_count": other_only,
+            "activation_from_other_job_only_ratio": _ratio(
+                other_only, denominator
+            ),
+            "target_transition_after_slack_exhaustion_count": exhausted,
+            "target_transition_after_slack_exhaustion_ratio": _ratio(
+                exhausted, denominator
+            ),
+            "target_terminated_without_transition_count": terminated,
+            "target_terminated_without_transition_ratio": _ratio(
+                terminated, denominator
+            ),
+            "target_audit_closed_count": target_audit_closed,
+            "target_audit_error_count": target_audit_errors,
+            "capacity_infeasible_task_count": capacity_tasks,
+            "capacity_infeasible_taskset_count": capacity_tasksets,
+            "taskset_hash_audit_closed": hash_audit,
+            "pairing_audit_closed": pairing_audit,
+            "workload_audit_closed": workload_audit,
+            "source_index_audit_closed": source_index_audit,
+            "calibration_unit_audit_closed": audit_closed,
+        })
+    return rows
 
 
 def write_ext1b_observation_outputs(
@@ -609,12 +911,26 @@ def write_ext1b_observation_outputs(
         root, config, scenarios, requests, results
     )
     b3_events, b3_summaries, b3_failures = _b3_outputs(
-        root, scenarios, requests, results
+        root, config, scenarios, requests, results
     )
     write_csv(root / "b2_batch_decisions.csv", B2_DECISION_COLUMNS, b2_decisions)
     write_csv(root / "b2_summary.csv", B2_SUMMARY_COLUMNS, b2_summaries)
     write_csv(root / "b3_timing_events.csv", B3_EVENT_COLUMNS, b3_events)
     write_csv(root / "b3_summary.csv", B3_SUMMARY_COLUMNS, b3_summaries)
+    calibration_rows = _b3_calibration_rows(
+        config,
+        scenarios,
+        requests,
+        b3_summaries,
+        read_csv(root / "generation_attempts.csv"),
+        read_csv(root / "generated_tasksets.csv"),
+    )
+    if is_b3_target_trace_v2(config):
+        write_csv(
+            root / "b3_calibration_summary.csv",
+            B3_CALIBRATION_COLUMNS,
+            calibration_rows,
+        )
     if results:
         write_csv(root / "simulation_results.csv", tuple(results[0]), results)
     failures = b2_failures + b3_failures
@@ -625,4 +941,7 @@ def write_ext1b_observation_outputs(
         "b2_summary_rows": len(b2_summaries),
         "b3_event_rows": len(b3_events),
         "b3_summary_rows": len(b3_summaries),
+        **({
+            "b3_calibration_summary_rows": len(calibration_rows),
+        } if is_b3_target_trace_v2(config) else {}),
     }

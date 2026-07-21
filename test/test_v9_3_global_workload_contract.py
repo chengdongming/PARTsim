@@ -67,7 +67,7 @@ def _load_generation_config(path: Path):
 
 def test_all_repository_v93_generation_configs_have_exact_contract():
     paths = _common_generation_configs()
-    assert len(paths) == 42
+    assert len(paths) == 43
     assert {
         path.name for path in paths
     }.issuperset({
@@ -76,6 +76,7 @@ def test_all_repository_v93_generation_configs_have_exact_contract():
             "v9_3_ext1b3_timing_formal_r1_workload_contract_v2_"
             "capacity_contract_v1.yaml"
         ),
+        "v9_3_ext1b3_timing_calibration_v2_target_trace_contract.yaml",
     })
     for path in paths:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))

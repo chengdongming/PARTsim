@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from fractions import Fraction
@@ -24,6 +25,12 @@ from .ext1b_capacity_contract import (
     capacity_contract_identity,
     capacity_feasibility_violations,
 )
+from .ext1b_b3_target_trace import (
+    B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2,
+    B3_V2_REQUEST_DOMAIN,
+    is_b3_target_trace_v2,
+    target_trace_contract_material,
+)
 from .ext1b_generation import (
     ScenarioInstance, StructuralRejection, build_scenario_instance,
     enforce_b3_capacity_feasibility, scenario_cells,
@@ -44,7 +51,8 @@ from .taskset_store import TasksetStore, prepare_service_curve
 REGISTRY_COLUMNS = tuple(SCHEDULERS[0].row())
 GENERATION_ATTEMPT_COLUMNS = (
     "attempt_id", "scenario_kind", "scenario_subtype", "scenario_cell_id",
-    "logical_taskset_index", "attempt_index", "source_taskset_index",
+    "normalized_utilization", "logical_taskset_index", "attempt_index",
+    "source_taskset_index",
     "generation_seed", "source_taskset_id", "source_taskset_hash",
     "attempt_status", "rejection_code", "rejection_detail",
     "experiment_id", "paired_instance_id", "logical_index", "source_index",
@@ -54,7 +62,11 @@ GENERATION_ATTEMPT_COLUMNS = (
     "battery_capacity_mJ", "native_affordability_epsilon_mJ",
     "excess_energy_mJ", "energy_unit", "power_model_identity",
     "workload_contract_version", "capacity_feasibility_contract_version",
-    "capacity_feasibility_contract_identity", "violations_json",
+    "capacity_feasibility_contract_identity", "scenario_contract_id",
+    "actual_trace_affordable_tick", "actual_trace_full_tick",
+    "target_initial_slack", "configured_recovery_margin_ticks",
+    "actual_trace_recovery_headroom", "predicate_satisfied",
+    "violations_json",
 )
 GENERATED_COLUMNS = (
     "taskset_id", "taskset_hash", "source_taskset_id", "source_taskset_hash",
@@ -63,7 +75,7 @@ GENERATED_COLUMNS = (
     "task_n", "priority_hash", "power_hash", "deadline_hash", "release_hash",
     "workload_power_mapping_json", "task_input_json", "canonical_taskset_json",
     "scenario_candidate_identity", "capacity_feasibility_contract_version",
-    "capacity_feasibility_contract_identity",
+    "capacity_feasibility_contract_identity", "scenario_contract_id",
 )
 SCENARIO_INSTANCE_COLUMNS = (
     "paired_instance_id", "scenario_kind", "scenario_subtype",
@@ -76,7 +88,7 @@ SCENARIO_INSTANCE_COLUMNS = (
     "power_hash", "deadline_hash", "release_hash", "structure_json",
     "system_template_path", "scenario_candidate_identity",
     "capacity_feasibility_contract_version",
-    "capacity_feasibility_contract_identity",
+    "capacity_feasibility_contract_identity", "scenario_contract_id",
 )
 REQUEST_COLUMNS = (
     "request_id", "paired_instance_id", "scenario_kind", "scenario_subtype",
@@ -86,7 +98,7 @@ REQUEST_COLUMNS = (
     "priority_hash", "power_hash", "deadline_hash", "release_hash",
     "workload_vector_hash", "simulator_build_hash", "request_status",
     "capacity_feasibility_contract_version",
-    "capacity_feasibility_contract_identity",
+    "capacity_feasibility_contract_identity", "scenario_contract_id",
 )
 ATTEMPT_COLUMNS = (
     "attempt_id", "request_id", "scheduler_id", "attempt_number", "status",
@@ -94,13 +106,20 @@ ATTEMPT_COLUMNS = (
 )
 RESULT_COLUMNS = (
     "request_id", "paired_instance_id", "scenario_kind", "scenario_subtype",
-    "scenario_cell_id", "taskset_id", "taskset_hash", "trace_hash",
+    "scenario_cell_id", "scenario_contract_id", "taskset_id", "taskset_hash",
+    "trace_hash",
     "simulation_config_hash", "input_hash", "scheduler_id", "status", "reason",
     "comparison_eligible", "horizon", "horizon_censoring", "runtime_seconds",
     "attempt_count", "overall_success", "top_m_success",
     "top_m_max_response_time", "top_m_first_execution_vector",
     "first_missed_priority_rank", "first_missed_priority_rank_numeric",
-    "timing_activation", "missed_jobs", "first_miss_time",
+    "timing_activation", "target_wait_observed",
+    "target_positive_slack_transition",
+    "target_transition_after_slack_exhaustion",
+    "target_terminated_without_transition",
+    "non_target_positive_transition_count", "activation_from_other_job_only",
+    "target_audit_closed", "target_audit_error_count",
+    "missed_jobs", "first_miss_time",
     "maximum_observed_response_time", "mean_response_time", "completed_jobs",
     "preemptions", "processor_wait_ticks", "energy_blocked_ticks",
     "bypass_count", "synchronization_wait_ticks",
@@ -124,6 +143,7 @@ EXT1B_FAIRNESS_FIELDS = (
     "initial_battery", "battery_capacity", "horizon", "maximum_horizon",
     "generation_seed", "M", "priority_hash", "power_hash", "deadline_hash",
     "release_hash", "workload_vector_hash", "simulator_build_hash",
+    "scenario_contract_id",
 )
 UNAVAILABLE = "UNAVAILABLE"
 
@@ -146,7 +166,20 @@ def _request_identity(
     paired_instance_id: str,
     scheduler_id: str,
     capacity_identity: str,
+    scenario_contract_id: str = "",
 ) -> str:
+    if scenario_contract_id:
+        if scenario_contract_id != B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2:
+            raise ValueError("unknown EXT-1B/B3 scenario contract identity")
+        return domain_hash(
+            B3_V2_REQUEST_DOMAIN,
+            {
+                "paired_instance_id": paired_instance_id,
+                "scheduler_id": scheduler_id,
+                "capacity_feasibility_contract_identity": capacity_identity,
+                "scenario_contract_id": scenario_contract_id,
+            },
+        )
     if capacity_identity:
         return domain_hash(
             "ASAP_BLOCK:V9.3:EXT1B:SIMULATION_REQUEST:v2",
@@ -193,7 +226,7 @@ def assert_ext1b_fair_pairing(
         grouped.setdefault(str(row["paired_instance_id"]), []).append(row)
     for pair_id, members in grouped.items():
         for field in EXT1B_FAIRNESS_FIELDS:
-            values = {str(row[field]) for row in members}
+            values = {str(row.get(field, "")) for row in members}
             if len(values) != 1:
                 raise RuntimeError(f"P0 EXT-1B fairness mismatch in {field} for {pair_id}")
 
@@ -311,9 +344,12 @@ class Ext1BRunner:
                 "eight" if comparator_count == 8 else str(comparator_count)
             )
             capacity_identity = _b3_capacity_contract_identity(self.config)
+            target_trace_v2 = is_b3_target_trace_v2(self.config)
             metadata = {
                 "schema": (
-                    "ASAP_BLOCK_V9_3_EXT1B_METADATA_V2"
+                    "ASAP_BLOCK_V9_3_EXT1B_B3_TARGET_TRACE_METADATA_V3"
+                    if target_trace_v2
+                    else "ASAP_BLOCK_V9_3_EXT1B_METADATA_V2"
                     if capacity_identity
                     else "ASAP_BLOCK_V9_3_EXT1B_METADATA_V1"
                 ),
@@ -347,6 +383,10 @@ class Ext1BRunner:
                         capacity_identity
                     ),
                 })
+            if target_trace_v2:
+                metadata["target_trace_contract"] = (
+                    target_trace_contract_material()
+                )
             atomic_write_json(metadata_path, metadata)
 
     @staticmethod
@@ -423,6 +463,10 @@ class Ext1BRunner:
                 "b3_event_rows": "b3_timing_events.csv",
                 "b3_summary_rows": "b3_summary.csv",
             }
+            if is_b3_target_trace_v2(self.config):
+                observation_files["b3_calibration_summary_rows"] = (
+                    "b3_calibration_summary.csv"
+                )
         table_names.update(observation_files.values())
         required = table_names | {
             "checkpoint.json", "file_hashes.sha256", "run_config.yaml",
@@ -443,6 +487,9 @@ class Ext1BRunner:
         assert_ext1b_fair_pairing(requests, self.config["scheduler_ids"])
         grouped: Dict[str, list[Mapping[str, Any]]] = {}
         capacity_identity = _b3_capacity_contract_identity(self.config)
+        scenario_contract_id = str(
+            self.config.get("scenario", {}).get("scenario_contract_id", "")
+        )
         for request in requests:
             pair_id = str(request["paired_instance_id"])
             grouped.setdefault(pair_id, []).append(request)
@@ -450,6 +497,7 @@ class Ext1BRunner:
                 pair_id,
                 str(request["scheduler_id"]),
                 capacity_identity,
+                scenario_contract_id,
             )
             if str(request["request_id"]) != expected_id:
                 raise RuntimeError("P0 EXT-1B persisted request identity mismatch")
@@ -458,6 +506,12 @@ class Ext1BRunner:
             )) != capacity_identity:
                 raise RuntimeError(
                     "P0 EXT-1B persisted capacity contract identity mismatch"
+                )
+            if str(request.get("scenario_contract_id", "")) != (
+                scenario_contract_id
+            ):
+                raise RuntimeError(
+                    "P0 EXT-1B persisted scenario contract mismatch"
                 )
             if str(request["request_status"]) != "PLANNED":
                 return None
@@ -526,7 +580,8 @@ class Ext1BRunner:
 
         result_identity_fields = (
             "request_id", "paired_instance_id", "scenario_kind",
-            "scenario_subtype", "scenario_cell_id", "taskset_id",
+            "scenario_subtype", "scenario_cell_id", "scenario_contract_id",
+            "taskset_id",
             "taskset_hash", "trace_hash", "simulation_config_hash",
             "input_hash", "scheduler_id",
         )
@@ -604,6 +659,10 @@ class Ext1BRunner:
         retry_limit = int(self.config["scenario"]["structural_retry_limit"])
         start = int(self.config["grid"].get("taskset_index_start", 0))
         simulator_hash = _sha256_file(self._simulator_path())
+        target_trace_v2 = is_b3_target_trace_v2(self.config)
+        scenario_contract_id = str(
+            self.config["scenario"].get("scenario_contract_id", "")
+        )
         generated_rows: list[Dict[str, Any]] = []
         attempt_rows: list[Dict[str, Any]] = []
         instance_rows: list[Dict[str, Any]] = []
@@ -617,7 +676,11 @@ class Ext1BRunner:
                     source_index = logical_index * retry_limit + attempt_index
                     stored = store.get_or_create(base_cell, source_index)
                     attempt_id = domain_hash(
-                        "ASAP_BLOCK:V9.3:EXT1B:GENERATION_ATTEMPT:v1",
+                        (
+                            "ASAP_BLOCK:V9.3:EXT1B:GENERATION_ATTEMPT:v2"
+                            if target_trace_v2
+                            else "ASAP_BLOCK:V9.3:EXT1B:GENERATION_ATTEMPT:v1"
+                        ),
                         {
                             "scenario_cell_id": scenario_cell.cell_id,
                             "logical_taskset_index": logical_index,
@@ -630,6 +693,9 @@ class Ext1BRunner:
                         "scenario_kind": scenario_cell.kind,
                         "scenario_subtype": scenario_cell.subtype,
                         "scenario_cell_id": scenario_cell.cell_id,
+                        "normalized_utilization": fraction_text(
+                            base_cell.utilization
+                        ),
                         "logical_taskset_index": logical_index,
                         "attempt_index": attempt_index,
                         "source_taskset_index": source_index,
@@ -640,6 +706,7 @@ class Ext1BRunner:
                         "paired_instance_id": "",
                         "logical_index": logical_index,
                         "source_index": source_index,
+                        "scenario_contract_id": scenario_contract_id,
                     }
                     try:
                         candidate = build_scenario_instance(
@@ -720,6 +787,7 @@ class Ext1BRunner:
                     "capacity_feasibility_contract_identity": (
                         instance.capacity_feasibility_contract_identity
                     ),
+                    "scenario_contract_id": scenario_contract_id,
                 })
                 instance_rows.append({
                     "paired_instance_id": instance.paired_instance_id,
@@ -759,9 +827,14 @@ class Ext1BRunner:
                     "capacity_feasibility_contract_identity": (
                         instance.capacity_feasibility_contract_identity
                     ),
+                    "scenario_contract_id": scenario_contract_id,
                 })
                 simulation_hash = domain_hash(
-                    "ASAP_BLOCK:V9.3:EXT1B:SIMULATION_CONFIG:v1",
+                    (
+                        "ASAP_BLOCK:V9.3:EXT1B:SIMULATION_CONFIG:v2"
+                        if target_trace_v2
+                        else "ASAP_BLOCK:V9.3:EXT1B:SIMULATION_CONFIG:v1"
+                    ),
                     {
                         "simulation": self.config["simulation"],
                         "initial_battery": fraction_text(instance.initial_battery),
@@ -789,15 +862,22 @@ class Ext1BRunner:
                     "release_hash": instance.release_hash,
                     "workload_vector_hash": workload_vector_hash,
                     "simulator_build_hash": simulator_hash,
+                    "scenario_contract_id": scenario_contract_id,
                 }
                 input_hash = domain_hash(
-                    "ASAP_BLOCK:V9.3:EXT1B:FAIR_INPUT:v1", fair_material
+                    (
+                        "ASAP_BLOCK:V9.3:EXT1B:FAIR_INPUT:v2"
+                        if target_trace_v2
+                        else "ASAP_BLOCK:V9.3:EXT1B:FAIR_INPUT:v1"
+                    ),
+                    fair_material,
                 )
                 for registration in self.schedulers:
                     request_id = _request_identity(
                         instance.paired_instance_id,
                         registration.scheduler_id,
                         instance.capacity_feasibility_contract_identity,
+                        scenario_contract_id,
                     )
                     requests.append({
                         "request_id": request_id,
@@ -818,6 +898,7 @@ class Ext1BRunner:
                         "capacity_feasibility_contract_identity": (
                             instance.capacity_feasibility_contract_identity
                         ),
+                        "scenario_contract_id": scenario_contract_id,
                         "instance": instance,
                     })
         assert_ext1b_fair_pairing(requests, self.config["scheduler_ids"])
@@ -911,6 +992,7 @@ class Ext1BRunner:
                 "taskset_hash", "trace_hash", "simulation_config_hash",
                 "input_hash", "scheduler_id",
             )},
+            "scenario_contract_id": request.get("scenario_contract_id", ""),
             "status": result.status.value,
             "reason": result.reason,
             "comparison_eligible": result.comparison_eligible,
@@ -925,6 +1007,16 @@ class Ext1BRunner:
             "first_missed_priority_rank": first_missed,
             "first_missed_priority_rank_numeric": first_missed_numeric,
             "timing_activation": UNAVAILABLE,
+            **{key: UNAVAILABLE for key in (
+                "target_wait_observed",
+                "target_positive_slack_transition",
+                "target_transition_after_slack_exhaustion",
+                "target_terminated_without_transition",
+                "non_target_positive_transition_count",
+                "activation_from_other_job_only",
+                "target_audit_closed",
+                "target_audit_error_count",
+            )},
             **{key: _available(metrics.get(key)) for key in (
                 "missed_jobs", "first_miss_time", "maximum_observed_response_time",
                 "mean_response_time", "completed_jobs", "preemptions",
@@ -1152,7 +1244,11 @@ class Ext1BRunner:
             for row in generation_attempts
         )
         workload_summary = {
-            "schema": "ASAP_BLOCK_V9_3_WORKLOAD_CONTRACT_SUMMARY_V1",
+            "schema": (
+                "ASAP_BLOCK_V9_3_EXT1B_B3_TARGET_TRACE_WORKLOAD_SUMMARY_V2"
+                if is_b3_target_trace_v2(self.config)
+                else "ASAP_BLOCK_V9_3_WORKLOAD_CONTRACT_SUMMARY_V1"
+            ),
             "workload_contract_version": contract["version"],
             "contract_identity": contract["contract_identity"],
             "candidate_identity": contract["candidate_identity"],
@@ -1181,6 +1277,10 @@ class Ext1BRunner:
                     capacity_rejection_count
                 ),
             })
+        if is_b3_target_trace_v2(self.config):
+            workload_summary["target_trace_contract"] = (
+                target_trace_contract_material()
+            )
         atomic_write_json(
             self.root / "workload_contract_summary.json", workload_summary
         )
@@ -1200,7 +1300,9 @@ class Ext1BRunner:
             )
         summary = {
             "schema": (
-                "ASAP_BLOCK_V9_3_EXT1B_PLAN_ONLY_V3"
+                "ASAP_BLOCK_V9_3_EXT1B_B3_TARGET_TRACE_PLAN_ONLY_V4"
+                if is_b3_target_trace_v2(self.config)
+                else "ASAP_BLOCK_V9_3_EXT1B_PLAN_ONLY_V3"
                 if capacity_identity
                 else "ASAP_BLOCK_V9_3_EXT1B_PLAN_ONLY_V2"
             ),
@@ -1234,6 +1336,43 @@ class Ext1BRunner:
                 ),
                 "capacity_feasibility_rejection_count": (
                     capacity_rejection_count
+                ),
+            })
+        if is_b3_target_trace_v2(self.config):
+            rejection_counts = Counter(
+                str(row.get("rejection_code"))
+                for row in generation_attempts
+                if str(row.get("attempt_status")) == "REJECTED"
+            )
+            retry_limit = int(self.config["scenario"]["structural_retry_limit"])
+            summary.update({
+                "scenario_contract_id": (
+                    B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2
+                ),
+                "target_trace_contract": target_trace_contract_material(),
+                "calibration_unit_count": len(
+                    self._selected_cells(max_cells)
+                ),
+                "structurally_accepted_count": len(instances),
+                "structural_rejection_attempt_count": sum(
+                    rejection_counts.values()
+                ),
+                "structural_rejection_code_counts": dict(
+                    sorted(rejection_counts.items())
+                ),
+                "taskset_hash_audit_closed": (
+                    len({row["taskset_hash"] for row in generated})
+                    == len(generated)
+                ),
+                "pairing_audit_closed": True,
+                "workload_audit_closed": not any((
+                    idle_count, unknown_count, power_mismatch_count,
+                )),
+                "source_index_audit_closed": all(
+                    int(row["source_taskset_index"])
+                    == int(row["logical_taskset_index"]) * retry_limit
+                    + int(row["attempt_index"])
+                    for row in generation_attempts
                 ),
             })
         atomic_write_json(self.root / "plan_summary.json", summary)

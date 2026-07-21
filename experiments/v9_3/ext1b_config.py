@@ -20,6 +20,9 @@ from .config import (
 from .ext1b_capacity_contract import (
     B3_TASK_CAPACITY_FEASIBILITY_CONTRACT_VERSION,
 )
+from .ext1b_b3_target_trace import (
+    B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2,
+)
 from .result_writer import atomic_write_text
 from .scheduler_registry import SCHEDULER_IDS
 
@@ -27,6 +30,7 @@ from .scheduler_registry import SCHEDULER_IDS
 PARAMETER_STATUSES = {
     "SMOKE",
     "PILOT",
+    "CALIBRATION",
     "FORMAL",
 }
 SCENARIO_KINDS = {"BYPASS_STRESS", "SYNC_BATCH_STRESS", "TIMING_STRESS"}
@@ -40,6 +44,7 @@ SEED_SPACES = {
     "EXT1B1_ENERGY_CALIBRATION_PILOT_WORKLOAD_CONTRACT_V2",
     "EXT1B2_SYNC_CALIBRATION_PILOT_WORKLOAD_CONTRACT_V2",
     "EXT1B3_TIMING_CALIBRATION_PILOT_WORKLOAD_CONTRACT_V2",
+    "EXT1B3_TARGET_TRACE_CALIBRATION_WORKLOAD_CONTRACT_V3",
     "EXT1B1_FORMAL_R1_WORKLOAD_CONTRACT_V2",
     "EXT1B2_FORMAL_MECHANISM_R1_WORKLOAD_CONTRACT_V2",
     (
@@ -70,6 +75,10 @@ B2_REQUIRED_OUTPUTS = (
 B3_REQUIRED_OUTPUTS = (
     "b3_timing_events.csv",
     "b3_summary.csv",
+)
+B3_V2_REQUIRED_OUTPUTS = (
+    *B3_REQUIRED_OUTPUTS,
+    "b3_calibration_summary.csv",
 )
 
 TOP_LEVEL_KEYS = {
@@ -117,13 +126,19 @@ SCENARIO_KEYS = {
     "deadline_ratio_min", "deadline_ratio_max",
     "nominal_energy_supply_ratios", "initial_energy_policy",
     "release_pattern", "harvest_phase_policy", "interpolation_rho",
-    "timing_cells", "capacity_feasibility_contract",
+    "timing_cells", "capacity_feasibility_contract", "scenario_contract_id",
+    "calibration_grid",
 }
 TIMING_CELL_KEYS = {
     "id", "subtype", "deadline_ratio_min", "deadline_ratio_max",
     "nominal_energy_supply_ratio", "initial_energy_policy",
 }
 STATISTICS_KEYS = {"bootstrap_seed", "bootstrap_resamples", "top_m"}
+CALIBRATION_GRID_KEYS = {
+    "recovery_margin_ticks",
+    "interpolation_rhos",
+    "nominal_energy_supply_ratios",
+}
 
 
 def _formal_common_frozen() -> Dict[str, Any]:
@@ -550,6 +565,66 @@ def _validate_timing_cells(scenario: Dict[str, Any]) -> None:
     scenario["timing_cells"] = normalized
 
 
+def _validate_b3_v2_calibration_grid(scenario: Dict[str, Any]) -> None:
+    raw = scenario.get("calibration_grid")
+    if not isinstance(raw, dict):
+        raise ConfigError("B3-v2 requires scenario.calibration_grid")
+    _reject_unknown(raw, CALIBRATION_GRID_KEYS, "scenario.calibration_grid")
+    if set(raw) != CALIBRATION_GRID_KEYS:
+        raise ConfigError(
+            "B3-v2 calibration_grid requires recovery_margin_ticks, "
+            "interpolation_rhos, and nominal_energy_supply_ratios"
+        )
+
+    margins = raw["recovery_margin_ticks"]
+    if not isinstance(margins, list) or len(margins) < 2:
+        raise ConfigError("B3-v2 requires at least two recovery margin candidates")
+    normalized_margins = []
+    for index, value in enumerate(margins):
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ConfigError(
+                f"calibration_grid.recovery_margin_ticks[{index}] must be "
+                "a non-negative integer"
+            )
+        normalized_margins.append(value)
+    if len(set(normalized_margins)) != len(normalized_margins):
+        raise ConfigError("B3-v2 recovery margin candidates must be unique")
+
+    def exact_candidates(key: str) -> list[str]:
+        values = raw[key]
+        if not isinstance(values, list) or len(values) < 2:
+            raise ConfigError(f"B3-v2 requires at least two {key} candidates")
+        normalized = []
+        for index, value in enumerate(values):
+            parsed = exact_fraction(value, f"calibration_grid.{key}[{index}]")
+            valid = (
+                0 < parsed < 1
+                if key == "interpolation_rhos"
+                else 0 < parsed <= 1
+            )
+            if not valid:
+                raise ConfigError(
+                    f"calibration_grid.{key}[{index}] must satisfy "
+                    + (
+                        "0 < value < 1"
+                        if key == "interpolation_rhos"
+                        else "0 < value <= 1"
+                    )
+                )
+            normalized.append(fraction_text(parsed))
+        if len(set(normalized)) != len(normalized):
+            raise ConfigError(f"B3-v2 {key} candidates must be unique")
+        return normalized
+
+    scenario["calibration_grid"] = {
+        "recovery_margin_ticks": normalized_margins,
+        "interpolation_rhos": exact_candidates("interpolation_rhos"),
+        "nominal_energy_supply_ratios": exact_candidates(
+            "nominal_energy_supply_ratios"
+        ),
+    }
+
+
 def validate_ext1b_config(raw: Mapping[str, Any]) -> Dict[str, Any]:
     """Normalize an EXT-1B config and reject every unknown field."""
 
@@ -570,6 +645,9 @@ def validate_ext1b_config(raw: Mapping[str, Any]) -> Dict[str, Any]:
             "EXT1B1_ENERGY_CALIBRATION_PILOT_WORKLOAD_CONTRACT_V2",
             "EXT1B2_SYNC_CALIBRATION_PILOT_WORKLOAD_CONTRACT_V2",
             "EXT1B3_TIMING_CALIBRATION_PILOT_WORKLOAD_CONTRACT_V2",
+        },
+        "CALIBRATION": {
+            "EXT1B3_TARGET_TRACE_CALIBRATION_WORKLOAD_CONTRACT_V3",
         },
         "FORMAL": set(FORMAL_PROFILE_BY_SEED_SPACE),
     }[status]
@@ -620,11 +698,26 @@ def validate_ext1b_config(raw: Mapping[str, Any]) -> Dict[str, Any]:
             "['gpfp_asap_block', 'gpfp_alap_block', 'gpfp_st_block'] "
             "in that order"
         )
+    if (
+        seed_space == "EXT1B3_TARGET_TRACE_CALIBRATION_WORKLOAD_CONTRACT_V3"
+        and tuple(scheduler_ids) != B3_PRIMARY_SCHEDULER_IDS
+    ):
+        raise ConfigError(
+            "EXT1B3_TARGET_TRACE_CALIBRATION_WORKLOAD_CONTRACT_V3 "
+            "scheduler_ids must equal "
+            "['gpfp_asap_block', 'gpfp_alap_block', 'gpfp_st_block'] "
+            "in that order"
+        )
     config["scheduler_ids"] = list(scheduler_ids)
     expected_outputs = {
         "BYPASS_STRESS": list(B1_REQUIRED_OUTPUTS),
         "SYNC_BATCH_STRESS": list(B2_REQUIRED_OUTPUTS),
-        "TIMING_STRESS": list(B3_REQUIRED_OUTPUTS),
+        "TIMING_STRESS": list(
+            B3_V2_REQUIRED_OUTPUTS
+            if scenario.get("scenario_contract_id")
+            == B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2
+            else B3_REQUIRED_OUTPUTS
+        ),
     }[kind]
     required_outputs = config.get("required_outputs", expected_outputs)
     if required_outputs != expected_outputs:
@@ -701,6 +794,23 @@ def validate_ext1b_config(raw: Mapping[str, Any]) -> Dict[str, Any]:
         if scenario.get("subtype") != "MULTI_CELL":
             raise ConfigError("TIMING_STRESS requires subtype: MULTI_CELL")
         _validate_timing_cells(scenario)
+        scenario_contract = scenario.get("scenario_contract_id")
+        if scenario_contract is None:
+            if "calibration_grid" in scenario:
+                raise ConfigError(
+                    "legacy B3 config cannot declare a B3-v2 calibration grid"
+                )
+        elif scenario_contract == B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2:
+            if status != "CALIBRATION" or seed_space != (
+                "EXT1B3_TARGET_TRACE_CALIBRATION_WORKLOAD_CONTRACT_V3"
+            ):
+                raise ConfigError(
+                    "B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2 is isolated "
+                    "to the CALIBRATION v3 seed space"
+                )
+            _validate_b3_v2_calibration_grid(scenario)
+        else:
+            raise ConfigError("unknown B3 scenario contract ID")
     else:
         if "capacity_feasibility_contract" in scenario:
             raise ConfigError(
@@ -711,6 +821,10 @@ def validate_ext1b_config(raw: Mapping[str, Any]) -> Dict[str, Any]:
             raise ConfigError(f"{kind} requires subtype: {expected}")
         if scenario.get("timing_cells") != []:
             raise ConfigError("non-timing scenarios require timing_cells: []")
+        if "scenario_contract_id" in scenario or "calibration_grid" in scenario:
+            raise ConfigError(
+                "B3 target-trace fields are only valid for TIMING_STRESS"
+            )
 
     stats = _mapping(config, "statistics")
     stats["bootstrap_seed"] = _positive_int(
