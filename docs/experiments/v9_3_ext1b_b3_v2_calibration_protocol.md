@@ -98,8 +98,19 @@ root 或旧 taskset store；不得以 `resume=true` 启动本校准。
 - 不得存在 runner failure、timeout、internal error、horizon insufficient；
 - timing transition 的 illegal、unclassifiable 和 audit error 计数均为零，全部
   timing audits 闭合；
-- generation attempts 满足固定 retry limit 和 source-index 规则，每个逻辑单元
-  精确接受一个样本；
+- generation attempts 按
+  `(scenario_cell_id, normalized_utilization, logical_taskset_index)` 分组后，
+  恰好形成 `18 × 50 = 900` 个逻辑组；每个 unit 的 logical index 域精确为
+  `0..49`；
+- 每组 attempt index 唯一且从 0 连续到 accepted attempt；accepted 恰好一条且
+  必须是最后一条，此前全部为 rejected；CSV 行序不影响排序后的验证，但任何缺口、
+  重复、越界、全拒绝或 accepted 后追加 attempt 均 fail closed；
+- 每行同时满足固定 retry limit、source-index 公式以及 `logical_index` /
+  `source_index` 兼容字段一致性；
+- 每个 accepted attempt 与 `generated_tasksets.csv`、`scenario_instances.csv` 和
+  `simulation_requests.csv` 逐级闭合：accepted/source identity、attempt index、seed、
+  final taskset identity、paired instance identity 以及固定三个 scheduler 必须形成
+  双射；request 不得引用 rejected 或不存在的 attempt；
 - hash、pairing、workload、source-index、taskset-store manifest 和 output-file
   audit 全部闭合；
 - accepted capacity-infeasible task/taskset 计数为零；
@@ -109,6 +120,14 @@ root 或旧 taskset store；不得以 `resume=true` 启动本校准。
 
 任何一个 calibration unit 的完整性审计失败都会使完整校准 fail closed。备选组合
 的机制指标不参与主候选选择，但备选证据缺失或不可审计会使整个预注册网格不完整。
+
+`dataset_integrity` 必须显式报告 `logical_attempt_group_count`、
+`complete_attempt_history_group_count`、`incomplete_attempt_history_group_count`、
+`missing_attempt_index_count`、`duplicate_attempt_index_count`、
+`accepted_not_last_count`、`multiple_accepted_count`、`no_accepted_count`，以及
+`logical_index_domain_closed`、`attempt_sequence_audit_closed`、
+`accepted_cross_table_identity_audit_closed`。完整性通过依赖这些计数达到冻结值且三个
+closure 全部为 `true`。
 
 `SIM_DEADLINE_MISS` 可原样保留为机制实验的合法终端状态，但不得解释为可调度性
 证明或性能证据，也不得参与参数替换。
@@ -176,12 +195,28 @@ python3 scripts/audit_v9_3_ext1b3_b3_v2_calibration.py \
 
 ```bash
 python3 scripts/decide_v9_3_ext1b3_b3_v2_candidate.py \
+  --config configs/v9_3_ext1b3_timing_calibration_v2_target_trace_contract.yaml \
+  --output-root artifacts/v9_3_ext1b3_b3_v2_full_calibration \
   --acceptance-report b3_v2_calibration_acceptance.json \
   > b3_v2_candidate_decision.json
 ```
 
-决策器不访问或修改原始实验产物。主候选失败、验收报告缺失/损坏或替换规则被
-篡改时，决策必须包含：
+`--acceptance-report` 可省略。决策器的唯一权威数据源是 `--config` 与
+`--output-root`：它必须在内存中直接调用 `audit_calibration()` 重新审计原始证据，
+并只基于该结果决策。若提供 acceptance report，它仅是一致性副本；决策器分别生成
+canonical JSON 并要求两份对象逐字段完全相等。解析错误、重复 JSON key、缺失/未知
+字段或任意差异都会拒绝，外部报告不能单独授权通过。
+
+即使内部审计报告声称 `passed=true`，决策器仍以 strict schema 重新验证完整 8 候选
+参数积、唯一 primary 身份、两个 utilization、每个 metric 的类型/denominator/精确
+ratio、overall 的逐字段求和、全部 gate checks 与 failed-check list，并从计数独立重算
+逐 utilization 和总体门禁。`dataset_integrity.passed`、`primary_gate.passed`、
+`numeric_gate_passed` 与 `calibration_passed` 必须和重算结果完全一致，不能作为被信任
+的快捷授权位。
+
+两个脚本均不修改 output root、taskset store、run config、metadata 或 CSV，也不生成
+FORMAL profile；它们只向 stdout 输出 JSON。无法读取原始证据同样返回结构化拒绝。
+主候选失败、原始证据缺失/损坏、外部副本不一致或替换规则被篡改时，决策必须包含：
 
 ```text
 decision: REJECTED
