@@ -22,6 +22,9 @@ from experiments.v9_3.ext1b_b3_target_trace import (  # noqa: E402
     B3_V2_TASKSET_DOMAIN,
     B3_V2_TASKSET_SCHEMA,
     actual_trace_recovery,
+    binary64_materialized_text,
+    recovery_prefix_affordable_at_capacity,
+    runtime_recovery_prefix,
 )
 from experiments.v9_3.ext1b_b3_timing_audit import (  # noqa: E402
     audit_timing_trace,
@@ -37,6 +40,8 @@ from experiments.v9_3.ext1b_config import (  # noqa: E402
 )
 from experiments.v9_3.ext1b_engine import Ext1BRunner  # noqa: E402
 from experiments.v9_3.ext1b_generation import (  # noqa: E402
+    StructuralRejection,
+    _timing_structure,
     build_scenario_instance,
     scenario_cells,
 )
@@ -75,10 +80,16 @@ def _observation(
     *,
     wait: bool,
     arrival_time: int = 0,
+    available_energy_mj: float | None = None,
+    decision_required_energy_mj: float = 2.0,
 ) -> dict[str, object]:
     remaining = 2
     selected = not wait
-    available = 0.0 if wait else 3.0
+    available = (
+        0.0 if wait else 3.0
+        if available_energy_mj is None
+        else available_energy_mj
+    )
     return {
         "time": time,
         "event_type": "b3_timing_observation",
@@ -99,7 +110,7 @@ def _observation(
         "continuation": False,
         "selected": selected,
         "job_required_energy_mJ": 2.0,
-        "decision_required_energy_mJ": 2.0,
+        "decision_required_energy_mJ": decision_required_energy_mj,
         "available_energy_mJ": available,
         "job_energy_affordable": not wait,
         "decision_energy_affordable": not wait,
@@ -110,16 +121,24 @@ def _observation(
     }
 
 
-def _write_trace(tmp_path: Path, events: list[dict[str, object]]) -> Path:
+def _write_trace(
+    tmp_path: Path,
+    events: list[dict[str, object]],
+    *,
+    recovery: dict[str, object] | None = None,
+) -> Path:
     path = tmp_path / "trace.json"
-    path.write_text(json.dumps({
+    document = {
         "trace_schema_version": 2,
         "configured_scheduler": "gpfp_st_block",
         "target_runtime_task_name": TARGET,
         "target_arrival_time": 0,
         "target_job_id": f"{TARGET}@0",
         "events": events,
-    }), encoding="utf-8")
+    }
+    if recovery is not None:
+        document.update(recovery)
+    path.write_text(json.dumps(document), encoding="utf-8")
     return path
 
 
@@ -320,7 +339,9 @@ def test_actual_trace_tick_order_and_native_epsilon_boundary():
         target_initial_slack=3,
         recovery_margin_ticks=0,
     )
-    assert below_epsilon.affordable_tick == below_epsilon.full_tick == 1
+    # Native binary64 addition remains just below the affordability boundary
+    # at tick 1; the exact-rational answer would incorrectly report tick 1.
+    assert below_epsilon.affordable_tick == below_epsilon.full_tick == 2
     assert below_epsilon.predicate_satisfied is True
 
 
@@ -337,6 +358,189 @@ def test_full_tick_recovery_margin_strict_boundary(slack, expected):
     assert recovery.affordable_tick == 1
     assert recovery.full_tick == 3
     assert recovery.predicate_satisfied is expected
+
+
+@pytest.mark.parametrize("earliest_deadline,expected", [(3, False), (4, True)])
+def test_full_tick_earliest_initial_deadline_strict_boundary(
+    earliest_deadline, expected,
+):
+    recovery = actual_trace_recovery(
+        [Fraction(1), Fraction(1), Fraction(1)],
+        initial_energy=Fraction(0),
+        battery_capacity=Fraction(3),
+        target_unit_energy=Fraction(1),
+        target_initial_slack=5,
+        recovery_margin_ticks=1,
+        earliest_initial_deadline=earliest_deadline,
+    )
+    assert recovery.full_tick == 3
+    assert recovery.predicate_satisfied is expected
+
+
+def _prefix_tasks() -> tuple[dict[str, object], ...]:
+    return (
+        {"task_id": "0", "priority_rank": 0, "C": 1, "D": 20,
+         "T": 40, "P": "1/1000", "workload": "bzip2",
+         "arrival_offset": 0},
+        {"task_id": "1", "priority_rank": 1, "C": 1, "D": 21,
+         "T": 40, "P": "2/1000", "workload": "control",
+         "arrival_offset": 0},
+        {"task_id": "2", "priority_rank": 2, "C": 1, "D": 22,
+         "T": 60, "P": "3/1000", "workload": "hash",
+         "arrival_offset": 0},
+    )
+
+
+def test_binary64_full_capacity_affords_complete_runtime_top_q():
+    prefix = runtime_recovery_prefix(
+        _prefix_tasks(), 2, initial_energy=Fraction(1, 4_000),
+    )
+    assert prefix["recovery_prefix_length"] == 2
+    assert prefix["recovery_prefix_task_ids"] == ["0", "1"]
+    assert prefix["recovery_prefix_runtime_names"] == [TARGET, OTHER]
+    assert prefix["recovery_prefix_priority_ranks"] == [0, 1]
+    assert prefix["target_blocked_at_initial_energy"] is True
+    assert prefix["recovery_prefix_affordable_at_full"] is True
+    assert recovery_prefix_affordable_at_capacity(
+        prefix, prefix["materialized_battery_capacity"]
+    )
+
+
+def test_capacity_below_prefix_beyond_native_epsilon_is_rejected(
+    monkeypatch,
+):
+    config = load_ext1b_config(V2_CONFIG)
+    cell = next(
+        item for item in scenario_cells(config)
+        if item.subtype == "SLACK_LIMITED_CHARGING"
+    )
+    real_prefix = runtime_recovery_prefix
+
+    def undersized(tasks, processors, *, initial_energy):
+        material = real_prefix(
+            tasks, processors, initial_energy=initial_energy,
+        )
+        required = Fraction(material["recovery_prefix_required_energy"])
+        material["materialized_battery_capacity"] = (
+            binary64_materialized_text(
+                required - 2 * NATIVE_ENERGY_EPSILON_J
+            )
+        )
+        return material
+
+    monkeypatch.setattr(
+        "experiments.v9_3.ext1b_generation.runtime_recovery_prefix",
+        undersized,
+    )
+    with pytest.raises(
+        StructuralRejection,
+        match="RECOVERY_PREFIX_NOT_AFFORDABLE_AT_FULL",
+    ):
+        _timing_structure(
+            _prefix_tasks(), cell, 2, Fraction(1, 2),
+            target_trace_v2=True,
+        )
+
+
+def test_target_only_capacity_does_not_satisfy_top_q_recovery():
+    prefix = runtime_recovery_prefix(
+        _prefix_tasks(), 2, initial_energy=Fraction(1, 4_000),
+    )
+    target_only_capacity = _prefix_tasks()[0]["P"]
+    assert recovery_prefix_affordable_at_capacity(
+        prefix, target_only_capacity,
+    ) is False
+
+
+def test_runtime_rm_task_number_tie_break_matches_generated_prefix():
+    prefix = runtime_recovery_prefix(
+        _prefix_tasks(), 2, initial_energy=Fraction(1, 4_000),
+    )
+    assert prefix["recovery_prefix_task_ids"] == ["0", "1"]
+    assert prefix["recovery_prefix_runtime_names"] == [TARGET, OTHER]
+    assert prefix["recovery_earliest_initial_deadline"] == 20
+
+
+def _recovery_trace_contract() -> dict[str, object]:
+    return {
+        "target_recovery_contract_applicable": True,
+        "recovery_prefix_identity": "f" * 64,
+        "recovery_prefix_length": 2,
+        "recovery_prefix_runtime_names_json": json.dumps(
+            [TARGET, OTHER], separators=(",", ":"),
+        ),
+        "recovery_prefix_required_energy": "0.004",
+        "materialized_battery_capacity": "0.004",
+        "actual_trace_target_affordable_tick": 1,
+        "actual_trace_full_tick": 2,
+    }
+
+
+def test_full_battery_release_selects_initial_target_and_complete_prefix(
+    tmp_path,
+):
+    events = _arrivals(TARGET, OTHER) + [
+        _observation(TARGET, 0, 8, wait=True),
+        _observation(
+            TARGET, 2, 6, wait=False, available_energy_mj=4.0,
+            decision_required_energy_mj=2.0,
+        ),
+        _observation(
+            OTHER, 2, 7, wait=False, available_energy_mj=4.0,
+            decision_required_energy_mj=4.0,
+        ),
+        _scheduled(TARGET, 2),
+        _scheduled(OTHER, 2),
+        _outcome(),
+    ]
+    contract = _recovery_trace_contract()
+    report = audit_timing_trace(
+        _write_trace(tmp_path, events, recovery=contract),
+        expected_scheduler="gpfp_st_block",
+        target_runtime_task_name=TARGET,
+        target_arrival_time=0,
+        target_recovery_contract_applicable=True,
+        recovery_prefix_identity=str(contract["recovery_prefix_identity"]),
+        recovery_prefix_runtime_names=(TARGET, OTHER),
+        recovery_prefix_required_energy="0.004",
+        materialized_battery_capacity="0.004",
+        actual_trace_full_tick=2,
+    )
+    assert report.target_positive_slack_transition is True
+    assert report.full_release_target_present is True
+    assert report.full_release_target_selected is True
+    assert report.full_release_prefix_affordable is True
+    assert report.runtime_recovery_prefix_matches is True
+    assert report.recovery_prefix_audit_closed is True
+    assert report.target_audit_closed is True
+
+
+def test_runtime_prefix_mismatch_fails_closed(tmp_path):
+    events = _arrivals(TARGET, OTHER) + [
+        _observation(TARGET, 0, 8, wait=True),
+        _observation(
+            TARGET, 2, 6, wait=False, available_energy_mj=4.0,
+        ),
+        _observation(OTHER, 2, 7, wait=True),
+        _scheduled(TARGET, 2),
+        _outcome(),
+    ]
+    contract = _recovery_trace_contract()
+    report = audit_timing_trace(
+        _write_trace(tmp_path, events, recovery=contract),
+        expected_scheduler="gpfp_st_block",
+        target_runtime_task_name=TARGET,
+        target_arrival_time=0,
+        target_recovery_contract_applicable=True,
+        recovery_prefix_identity=str(contract["recovery_prefix_identity"]),
+        recovery_prefix_runtime_names=(TARGET, OTHER),
+        recovery_prefix_required_energy="0.004",
+        materialized_battery_capacity="0.004",
+        actual_trace_full_tick=2,
+    )
+    assert report.recovery_prefix_audit_closed is False
+    assert report.target_audit_closed is False
+    assert "runtime RM/task-number prefix differs from structure" in report.errors
 
 
 def _stored_taskset(config, tmp_path: Path) -> StoredTaskset:
@@ -397,10 +601,10 @@ def test_v2_config_and_identity_domains_are_isolated():
     assert v2["scenario"]["scenario_contract_id"] == (
         B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2
     )
-    assert B3_V2_TASKSET_SCHEMA.endswith("V4")
-    assert B3_V2_TASKSET_DOMAIN.endswith(":v4")
-    assert B3_V2_PAIRED_INSTANCE_DOMAIN.endswith(":v3")
-    assert B3_V2_REQUEST_DOMAIN.endswith(":v3")
+    assert B3_V2_TASKSET_SCHEMA.endswith("V5")
+    assert B3_V2_TASKSET_DOMAIN.endswith(":v5")
+    assert B3_V2_PAIRED_INSTANCE_DOMAIN.endswith(":v4")
+    assert B3_V2_REQUEST_DOMAIN.endswith(":v4")
     assert v2["grid"]["base_seed"] == 981301
     assert v2["statistics"]["bootstrap_seed"] == 9813903
 
@@ -453,8 +657,8 @@ def test_plan_persists_v2_contract_capacity_and_outcome_independent_indices(
     config["execution"]["output_root"] = str(tmp_path / "plan")
     config["execution"]["taskset_store"] = str(tmp_path / "store")
     config["simulation"]["simulator_bin"] = str(tmp_path / "not-invoked")
-    outcome = Ext1BRunner(config).materialize_plan(max_cells=2, max_tasksets=1)
-    assert outcome.paired_instances == 2
+    outcome = Ext1BRunner(config).materialize_plan(max_cells=3, max_tasksets=1)
+    assert outcome.paired_instances == 3
 
     def rows(name: str) -> list[dict[str, str]]:
         import csv
@@ -493,6 +697,26 @@ def test_plan_persists_v2_contract_capacity_and_outcome_independent_indices(
         assert row["target_runtime_task_name"] == TARGET
         assert int(row["target_arrival_time"]) == 0
         assert row["target_job_id"] == f"{TARGET}@0"
+        applicable = structure["target_recovery_contract_applicable"]
+        assert (row["target_recovery_contract_applicable"] == "True") is (
+            applicable
+        )
+        if applicable:
+            assert structure["recovery_prefix_length"] == min(
+                int(row["M"]), structure["initial_ready_job_count"]
+            )
+            assert structure["recovery_prefix_runtime_names"][0] == TARGET
+            assert structure["recovery_prefix_affordable_at_full"] is True
+            assert structure["target_blocked_at_initial_energy"] is True
+            assert Fraction(row["battery_capacity"]) == Fraction(
+                structure["recovery_prefix_required_energy"]
+            )
+            assert row["recovery_prefix_identity"] == structure[
+                "recovery_prefix_identity"
+            ]
+        else:
+            assert structure["recovery_prefix_identity"] == ""
+            assert structure["recovery_prefix_length"] == 0
         pair_requests = [
             request for request in requests
             if request["paired_instance_id"] == row["paired_instance_id"]
@@ -502,6 +726,12 @@ def test_plan_persists_v2_contract_capacity_and_outcome_independent_indices(
             request["target_runtime_task_name"] == TARGET
             and int(request["target_arrival_time"]) == 0
             and request["target_job_id"] == f"{TARGET}@0"
+            and request["recovery_prefix_identity"]
+            == row["recovery_prefix_identity"]
+            and request["recovery_prefix_required_energy"]
+            == row["recovery_prefix_required_energy"]
+            and request["materialized_battery_capacity"]
+            == row["materialized_battery_capacity"]
             for request in pair_requests
         )
     retry_limit = config["scenario"]["structural_retry_limit"]
@@ -528,6 +758,20 @@ def test_plan_persists_v2_contract_capacity_and_outcome_independent_indices(
     bad_request["target_job_id"] = f"{TARGET}@40"
     with pytest.raises(Ext1BObservationError, match="target identity mismatch"):
         _validate_b3_target_identity(dimensions[first_pair], bad_request)
+
+    charging = next(
+        row for row in instances
+        if row["target_recovery_contract_applicable"] == "True"
+    )
+    bad_prefix = deepcopy(next(
+        row for row in requests
+        if row["paired_instance_id"] == charging["paired_instance_id"]
+    ))
+    bad_prefix["recovery_prefix_identity"] = "0" * 64
+    with pytest.raises(Ext1BObservationError, match="target identity mismatch"):
+        _validate_b3_target_identity(
+            dimensions[charging["paired_instance_id"]], bad_prefix,
+        )
 
     bad_scenario = deepcopy(instances)
     bad_scenario[0]["target_arrival_time"] = "40"

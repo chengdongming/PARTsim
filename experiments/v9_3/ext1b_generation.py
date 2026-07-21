@@ -26,7 +26,11 @@ from .ext1b_b3_target_trace import (
     B3_V2_TASKSET_DOMAIN,
     B3_V2_TASKSET_SCHEMA,
     actual_trace_recovery,
+    binary64_materialized_text,
     is_b3_target_trace_v2,
+    native_binary64_affordable,
+    recovery_prefix_affordable_at_capacity,
+    runtime_recovery_prefix,
     v2_paired_instance_identity,
     v2_scenario_candidate_identity,
 )
@@ -480,7 +484,14 @@ def _timing_structure(
             "predicate_satisfied": True,
         }
         if target_trace_v2:
-            structure.update(target_identity)
+            structure.update({
+                **target_identity,
+                "target_recovery_contract_applicable": False,
+                "recovery_prefix_identity": "",
+                "recovery_prefix_length": 0,
+                "recovery_prefix_required_energy": "",
+                "materialized_battery_capacity": fraction_text(required),
+            })
         return required, required, False, structure
 
     initial = rho * target_energy
@@ -488,12 +499,39 @@ def _timing_structure(
         raise StructuralRejection("CHARGING_CELL_HAS_ZERO_HARVEST", "eta*demand is zero")
     capacity = target_energy + harvest
     if target_trace_v2:
-        # Freeze the exact binary64 decimal values later written into the
-        # simulator system projection before evaluating actual-trace ticks.
-        initial = Fraction(format(float(initial), ".17g"))
-        capacity = Fraction(format(float(capacity), ".17g"))
+        # Freeze exactly what the simulator reads, then size the battery for
+        # the complete runtime RM/task-number prefix rather than one task.
+        initial = Fraction(binary64_materialized_text(initial))
+        try:
+            prefix = runtime_recovery_prefix(
+                payload, processors, initial_energy=initial,
+            )
+        except ValueError as exc:
+            raise StructuralRejection(
+                "RECOVERY_PREFIX_IDENTITY_INVALID", str(exc),
+            ) from exc
+        capacity = Fraction(prefix["materialized_battery_capacity"])
+        if prefix["recovery_prefix_task_ids"][0] != str(target["task_id"]):
+            raise StructuralRejection(
+                "RECOVERY_PREFIX_TARGET_MISMATCH",
+                "highest-priority runtime prefix job is not the target",
+                prefix,
+            )
+        if not prefix["target_blocked_at_initial_energy"]:
+            raise StructuralRejection(
+                "TARGET_NOT_BLOCKED_AT_INITIAL_ENERGY",
+                "E_init + native epsilon reaches target unit energy",
+                prefix,
+            )
+        if not recovery_prefix_affordable_at_capacity(prefix, capacity):
+            raise StructuralRejection(
+                "RECOVERY_PREFIX_NOT_AFFORDABLE_AT_FULL",
+                "materialized full battery cannot reserve runtime top-q",
+                prefix,
+            )
         return initial, capacity, True, {
             **target_identity,
+            **prefix,
             "interpolation_rho": fraction_text(rho),
             "native_affordability_epsilon_j": fraction_text(
                 NATIVE_ENERGY_EPSILON_J
@@ -684,6 +722,9 @@ def build_scenario_instance(
                 target_unit_energy=Fraction(str(structure["target_unit_energy"])),
                 target_initial_slack=int(structure["target_initial_slack"]),
                 recovery_margin_ticks=int(cell.recovery_margin_ticks),
+                earliest_initial_deadline=int(
+                    structure["recovery_earliest_initial_deadline"]
+                ),
             )
         except ValueError as exc:
             message = str(exc)
@@ -697,11 +738,45 @@ def build_scenario_instance(
             raise StructuralRejection(code, message) from exc
         recovery_material = recovery.material()
         structure = {**structure, **recovery_material}
+        prefix_affordable = recovery_prefix_affordable_at_capacity(
+            structure, capacity,
+        )
+        structure["recovery_prefix_affordable_at_full"] = (
+            prefix_affordable
+        )
+        structure["target_blocked_at_initial_energy"] = (
+            not native_binary64_affordable(
+                initial,
+                structure["target_unit_energy"],
+            )
+        )
+        structure["predicate"] = (
+            str(structure["predicate"])
+            + "; target initially blocked; full battery affords complete "
+            "runtime RM/task-number top-q prefix"
+        )
+        structure["predicate_satisfied"] = bool(
+            structure["predicate_satisfied"]
+            and structure["target_blocked_at_initial_energy"]
+            and prefix_affordable
+        )
         if not recovery.predicate_satisfied:
+            rejection_code = (
+                "ACTUAL_TRACE_FULL_NOT_BEFORE_EARLIEST_INITIAL_DEADLINE"
+                if recovery.earliest_initial_deadline is not None
+                and recovery.full_tick >= recovery.earliest_initial_deadline
+                else "ACTUAL_TRACE_RECOVERY_MARGIN_NOT_SATISFIED"
+            )
             raise StructuralRejection(
-                "ACTUAL_TRACE_RECOVERY_MARGIN_NOT_SATISFIED",
+                rejection_code,
                 canonical_json(recovery_material),
                 recovery_material,
+            )
+        if not prefix_affordable:
+            raise StructuralRejection(
+                "RECOVERY_PREFIX_NOT_AFFORDABLE_AT_FULL",
+                canonical_json(structure),
+                structure,
             )
     elif target_trace_v2 and cell.subtype == (
         "POSITIVE_SLACK_ENERGY_AVAILABLE"
@@ -709,12 +784,13 @@ def build_scenario_instance(
         structure = {
             **structure,
             "actual_trace_affordable_tick": 0,
+            "actual_trace_target_affordable_tick": 0,
             "actual_trace_full_tick": 0,
             "configured_recovery_margin_ticks": 0,
             "actual_trace_recovery_headroom": int(
                 structure["target_initial_slack"]
             ),
-            "actual_trace_recovery_contract_applicable": False,
+            "target_recovery_contract_applicable": False,
         }
 
     capacity_identity = ""

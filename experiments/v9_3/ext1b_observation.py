@@ -35,10 +35,12 @@ from .ext1b_b3_timing_audit import (
     audit_timing_trace,
 )
 from .ext1b_b3_target_trace import (
+    RECOVERY_PREFIX_MATERIAL_FIELDS,
     is_b3_target_trace_v2,
     v2_fair_input_identity,
     v2_paired_instance_identity,
     v2_request_identity,
+    v2_recovery_prefix_identity,
     v2_scenario_candidate_identity,
     v2_simulation_config_identity,
     v2_taskset_hash_from_document,
@@ -113,7 +115,11 @@ B3_SUMMARY_COLUMNS = (
     "target_source_task_id", "target_runtime_task_name",
     "target_arrival_time", "target_job_id",
     "target_priority_rank", "target_workload", "target_unit_energy",
-    "target_initial_slack", "target_wait_observed",
+    "target_initial_slack", "target_recovery_contract_applicable",
+    "recovery_prefix_identity", "recovery_prefix_length",
+    "recovery_prefix_required_energy", "materialized_battery_capacity",
+    "actual_trace_target_affordable_tick", "actual_trace_full_tick",
+    "target_wait_observed",
     "target_positive_slack_transition",
     "target_transition_after_slack_exhaustion",
     "target_terminated_without_transition",
@@ -121,13 +127,21 @@ B3_SUMMARY_COLUMNS = (
     "later_target_job_positive_transition_count",
     "non_target_positive_transition_count", "activation_from_other_job_only",
     "target_audit_closed", "target_audit_error_count",
+    "full_release_target_present", "full_release_target_selected",
+    "full_release_prefix_affordable", "runtime_recovery_prefix_matches",
+    "runtime_recovery_prefix_names_json", "recovery_prefix_audit_closed",
+    "recovery_prefix_audit_error_count",
 )
 B3_CALIBRATION_COLUMNS = (
     "scenario_cell_id", "normalized_utilization", "timing_subtype",
     "configured_recovery_margin_ticks", "interpolation_rho",
-    "nominal_energy_supply_ratio", "actual_trace_affordable_ticks_json",
+    "nominal_energy_supply_ratio", "target_recovery_contract_applicable",
+    "actual_trace_affordable_ticks_json",
+    "actual_trace_target_affordable_ticks_json",
     "actual_trace_full_ticks_json", "target_initial_slacks_json",
-    "actual_trace_recovery_headrooms_json", "structurally_accepted_count",
+    "actual_trace_recovery_headrooms_json", "recovery_prefix_identities_json",
+    "recovery_prefix_lengths_json", "recovery_prefix_required_energies_json",
+    "materialized_battery_capacities_json", "structurally_accepted_count",
     "structural_rejection_attempt_count", "rejection_code_counts_json",
     "target_observation_denominator", "target_wait_observed_count",
     "target_wait_observed_ratio", "target_positive_slack_transition_count",
@@ -142,7 +156,11 @@ B3_CALIBRATION_COLUMNS = (
     "target_transition_after_slack_exhaustion_ratio",
     "target_terminated_without_transition_count",
     "target_terminated_without_transition_ratio", "target_audit_closed_count",
-    "target_audit_error_count", "rejected_capacity_infeasible_task_count",
+    "target_audit_error_count", "full_release_prefix_affordable_count",
+    "full_release_prefix_affordable_ratio",
+    "recovery_prefix_audit_closed_count",
+    "recovery_prefix_audit_error_count",
+    "rejected_capacity_infeasible_task_count",
     "rejected_capacity_infeasible_taskset_count",
     "accepted_capacity_infeasible_task_count",
     "accepted_capacity_infeasible_taskset_count",
@@ -320,6 +338,12 @@ def _b3_dimensions_by_pair(
                 "target_arrival_time", "target_job_id",
                 "target_priority_rank", "target_workload",
                 "target_unit_energy", "target_initial_slack",
+                "target_recovery_contract_applicable",
+                "recovery_prefix_identity", "recovery_prefix_length",
+                "recovery_prefix_required_energy",
+                "materialized_battery_capacity",
+                "actual_trace_target_affordable_tick",
+                "actual_trace_full_tick",
             )
             missing = [key for key in required_target if key not in structure]
             if missing:
@@ -348,6 +372,91 @@ def _b3_dimensions_by_pair(
                 raise Ext1BObservationError(
                     f"B3-v2 scenario/structure target identity mismatch for {pair_id}"
                 )
+            applicable = _bool_value(
+                structure["target_recovery_contract_applicable"]
+            )
+            recovery_names = list(
+                structure.get("recovery_prefix_runtime_names", [])
+            )
+            recovery_names_json = canonical_json(recovery_names)
+            recovery_fields = {
+                "target_recovery_contract_applicable": applicable,
+                "recovery_prefix_identity": str(
+                    structure["recovery_prefix_identity"]
+                ),
+                "recovery_prefix_length": int(
+                    structure["recovery_prefix_length"]
+                ),
+                "recovery_prefix_runtime_names_json": recovery_names_json,
+                "recovery_prefix_required_energy": str(
+                    structure["recovery_prefix_required_energy"]
+                ),
+                "materialized_battery_capacity": str(
+                    structure["materialized_battery_capacity"]
+                ),
+                "actual_trace_target_affordable_tick": int(
+                    structure["actual_trace_target_affordable_tick"]
+                ),
+                "actual_trace_full_tick": int(
+                    structure["actual_trace_full_tick"]
+                ),
+            }
+            if any(
+                str(row.get(key, "")) != str(value)
+                for key, value in recovery_fields.items()
+                if key != "target_recovery_contract_applicable"
+            ) or _bool_value(row.get(
+                "target_recovery_contract_applicable"
+            )) != applicable:
+                raise Ext1BObservationError(
+                    f"B3-v2 scenario/structure recovery prefix mismatch for {pair_id}"
+                )
+            if _dimension_text(
+                row.get("battery_capacity"), "scenario battery capacity"
+            ) != _dimension_text(
+                structure["materialized_battery_capacity"],
+                "materialized battery capacity",
+            ):
+                raise Ext1BObservationError(
+                    f"B3-v2 scenario recovery capacity mismatch for {pair_id}"
+                )
+            if applicable:
+                prefix_missing = [
+                    key for key in RECOVERY_PREFIX_MATERIAL_FIELDS
+                    if key not in structure
+                ]
+                if prefix_missing:
+                    raise Ext1BObservationError(
+                        f"missing B3-v2 recovery prefix fields for {pair_id}: "
+                        f"{prefix_missing}"
+                    )
+                try:
+                    expected_prefix = v2_recovery_prefix_identity(structure)
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise Ext1BObservationError(
+                        f"invalid B3-v2 recovery prefix for {pair_id}"
+                    ) from exc
+                if (
+                    expected_prefix != recovery_fields["recovery_prefix_identity"]
+                    or recovery_fields["recovery_prefix_length"]
+                    != len(recovery_names)
+                    or not recovery_names
+                    or recovery_names[0] != runtime_name
+                    or structure["recovery_prefix_affordable_at_full"] is not True
+                    or structure["target_blocked_at_initial_energy"] is not True
+                ):
+                    raise Ext1BObservationError(
+                        f"B3-v2 recovery prefix contract mismatch for {pair_id}"
+                    )
+            elif any((
+                recovery_fields["recovery_prefix_identity"],
+                recovery_fields["recovery_prefix_length"],
+                recovery_names,
+                recovery_fields["recovery_prefix_required_energy"],
+            )):
+                raise Ext1BObservationError(
+                    f"B3-v2 non-applicable recovery prefix is non-empty for {pair_id}"
+                )
             dimensions[pair_id].update({
                 "target_source_task_id": source_id,
                 "target_runtime_task_name": runtime_name,
@@ -360,6 +469,8 @@ def _b3_dimensions_by_pair(
                     f"B3-v2 target unit energy for {pair_id}",
                 ),
                 "target_initial_slack": int(structure["target_initial_slack"]),
+                **recovery_fields,
+                "recovery_prefix_runtime_names": recovery_names,
             })
         if not scenario_cell_id or not timing_subtype:
             raise Ext1BObservationError(
@@ -374,6 +485,10 @@ def _validate_b3_target_identity(
 ) -> None:
     fields = (
         "target_runtime_task_name", "target_arrival_time", "target_job_id",
+        "target_recovery_contract_applicable", "recovery_prefix_identity",
+        "recovery_prefix_length", "recovery_prefix_runtime_names_json",
+        "recovery_prefix_required_energy", "materialized_battery_capacity",
+        "actual_trace_target_affordable_tick", "actual_trace_full_tick",
     )
     if any(
         str(source.get(key, "")) != str(dimensions[key])
@@ -631,6 +746,12 @@ def _b3_outputs(
             target_trace_v2 = is_b3_target_trace_v2(config)
             if target_trace_v2:
                 _validate_b3_target_identity(dimensions, request, result)
+            applicable = (
+                target_trace_v2
+                and _bool_value(
+                    dimensions["target_recovery_contract_applicable"]
+                )
+            )
             report = audit_timing_trace(
                 _trace_path(root, result),
                 expected_scheduler=scheduler_id,
@@ -643,6 +764,29 @@ def _b3_outputs(
                     int(dimensions["target_arrival_time"])
                     if target_trace_v2
                     else None
+                ),
+                target_recovery_contract_applicable=(
+                    applicable if target_trace_v2 else None
+                ),
+                recovery_prefix_identity=(
+                    str(dimensions["recovery_prefix_identity"])
+                    if applicable else None
+                ),
+                recovery_prefix_runtime_names=(
+                    dimensions["recovery_prefix_runtime_names"]
+                    if applicable else ()
+                ),
+                recovery_prefix_required_energy=(
+                    str(dimensions["recovery_prefix_required_energy"])
+                    if applicable else None
+                ),
+                materialized_battery_capacity=(
+                    str(dimensions["materialized_battery_capacity"])
+                    if applicable else None
+                ),
+                actual_trace_full_tick=(
+                    int(dimensions["actual_trace_full_tick"])
+                    if applicable else None
                 ),
             )
         except Exception as exc:
@@ -718,6 +862,35 @@ def _b3_outputs(
             "target_audit_closed": report.target_audit_closed,
             "target_audit_error_count": report.target_audit_error_count,
         }
+        if target_trace_v2 and not applicable:
+            target_fields = {key: UNAVAILABLE for key in target_fields}
+        prefix_runtime_fields = {
+            "full_release_target_present": (
+                report.full_release_target_present
+            ),
+            "full_release_target_selected": (
+                report.full_release_target_selected
+            ),
+            "full_release_prefix_affordable": (
+                report.full_release_prefix_affordable
+            ),
+            "runtime_recovery_prefix_matches": (
+                report.runtime_recovery_prefix_matches
+            ),
+            "runtime_recovery_prefix_names_json": canonical_json(
+                report.runtime_recovery_prefix_names
+            ),
+            "recovery_prefix_audit_closed": (
+                report.recovery_prefix_audit_closed
+            ),
+            "recovery_prefix_audit_error_count": (
+                report.recovery_prefix_audit_error_count
+            ),
+        }
+        if not applicable or family != "ST":
+            prefix_runtime_fields = {
+                key: UNAVAILABLE for key in prefix_runtime_fields
+            }
         if target_trace_v2:
             result.update(target_fields)
         summary_rows.append({
@@ -772,17 +945,30 @@ def _b3_outputs(
                 "target_arrival_time", "target_job_id",
                 "target_priority_rank", "target_workload",
                 "target_unit_energy", "target_initial_slack",
+                "target_recovery_contract_applicable",
+                "recovery_prefix_identity", "recovery_prefix_length",
+                "recovery_prefix_required_energy",
+                "materialized_battery_capacity",
+                "actual_trace_target_affordable_tick",
+                "actual_trace_full_tick",
             )} if target_trace_v2 else {
                 key: UNAVAILABLE for key in (
                     "target_source_task_id", "target_runtime_task_name",
                     "target_arrival_time", "target_job_id",
                     "target_priority_rank", "target_workload",
                     "target_unit_energy", "target_initial_slack",
+                    "target_recovery_contract_applicable",
+                    "recovery_prefix_identity", "recovery_prefix_length",
+                    "recovery_prefix_required_energy",
+                    "materialized_battery_capacity",
+                    "actual_trace_target_affordable_tick",
+                    "actual_trace_full_tick",
                 )
             }),
             **(target_fields if target_trace_v2 else {
                 key: UNAVAILABLE for key in target_fields
             }),
+            **prefix_runtime_fields,
         })
         if not audit_closed:
             failures.append(
@@ -881,6 +1067,37 @@ def _v2_identity_audit(
             )
             canonical = json.loads(canonical_path.read_text(encoding="utf-8"))
             recomputed_taskset = v2_taskset_hash_from_document(canonical)
+            expected_recovery = {
+                "target_recovery_contract_applicable": _bool_value(
+                    structure["target_recovery_contract_applicable"]
+                ),
+                "recovery_prefix_identity": str(
+                    structure["recovery_prefix_identity"]
+                ),
+                "recovery_prefix_length": int(
+                    structure["recovery_prefix_length"]
+                ),
+                "recovery_prefix_runtime_names_json": canonical_json(
+                    structure.get("recovery_prefix_runtime_names", [])
+                ),
+                "recovery_prefix_required_energy": str(
+                    structure["recovery_prefix_required_energy"]
+                ),
+                "materialized_battery_capacity": str(
+                    structure["materialized_battery_capacity"]
+                ),
+                "actual_trace_target_affordable_tick": int(
+                    structure["actual_trace_target_affordable_tick"]
+                ),
+                "actual_trace_full_tick": int(
+                    structure["actual_trace_full_tick"]
+                ),
+            }
+            explicit_recovery_closed = all(
+                str(source.get(key, "")) == str(value)
+                for source in (generated, instance)
+                for key, value in expected_recovery.items()
+            )
             taskset_closed = taskset_closed and all((
                 recomputed_taskset == str(canonical.get("taskset_hash")),
                 recomputed_taskset == str(generated["taskset_hash"]),
@@ -890,6 +1107,7 @@ def _v2_identity_audit(
                     str(generated["task_input_json"])
                 ),
                 canonical.get("structure") == structure,
+                explicit_recovery_closed,
             ))
 
             scenario_cell = structure["timing_dimensions"]
@@ -977,6 +1195,7 @@ def _v2_identity_audit(
                         request["target_arrival_time"]
                     ),
                     "target_job_id": str(request["target_job_id"]),
+                    **expected_recovery,
                 }
                 expected_input_hash = v2_fair_input_identity(fair_material)
                 expected_request_id = v2_request_identity(
@@ -990,6 +1209,7 @@ def _v2_identity_audit(
                     ),
                     target_arrival_time=int(request["target_arrival_time"]),
                     target_job_id=str(request["target_job_id"]),
+                    recovery_contract=expected_recovery,
                 )
                 request_closed = request_closed and all((
                     str(request["simulation_config_hash"])
@@ -998,6 +1218,10 @@ def _v2_identity_audit(
                     str(request["request_id"]) == expected_request_id,
                     str(request["paired_instance_id"]) == recomputed_pair,
                     str(request["taskset_hash"]) == recomputed_taskset,
+                    all(
+                        str(request.get(key, "")) == str(value)
+                        for key, value in expected_recovery.items()
+                    ),
                 ))
                 input_hashes.add(str(request["input_hash"]))
             pairing_closed = pairing_closed and len(input_hashes) == 1
@@ -1013,6 +1237,10 @@ def _v2_identity_audit(
                 "release_hash", "scenario_candidate_identity",
             )
         )
+        if _bool_value(instance.get("target_recovery_contract_applicable")):
+            shape_closed = shape_closed and _identity_shape(
+                instance.get("recovery_prefix_identity", "")
+            )
 
     expected_store_rows = [
         row for row in attempts if str(row.get("source_taskset_id", ""))
@@ -1098,8 +1326,13 @@ def _b3_calibration_rows(
         cell_id, utilization = key
         first_structure = json.loads(str(instances[0]["structure_json"]))
         timing = first_structure["timing_dimensions"]
+        recovery_applicable = _bool_value(
+            first_structure["target_recovery_contract_applicable"]
+        )
         attempts = attempts_by_unit.get(key, [])
         st_summaries = summary_by_unit.get(key, [])
+        if not recovery_applicable:
+            st_summaries = []
         rejected = [
             row for row in attempts
             if str(row.get("attempt_status")) == "REJECTED"
@@ -1200,6 +1433,12 @@ def _b3_calibration_rows(
         target_audit_errors = sum(
             _integer(row.get("target_audit_error_count")) for row in st_summaries
         )
+        prefix_affordable = count("full_release_prefix_affordable")
+        prefix_audit_closed = count("recovery_prefix_audit_closed")
+        prefix_audit_errors = sum(
+            _integer(row.get("recovery_prefix_audit_error_count"))
+            for row in st_summaries
+        )
         audit_closed = all((
             identity_audits["hash_audit_closed"],
             identity_audits["pairing_audit_closed"],
@@ -1207,6 +1446,11 @@ def _b3_calibration_rows(
             source_index_audit,
             target_audit_closed == denominator,
             target_audit_errors == 0,
+            not recovery_applicable
+            or prefix_affordable == denominator,
+            not recovery_applicable
+            or prefix_audit_closed == denominator,
+            prefix_audit_errors == 0,
             accepted_capacity_tasks == 0,
             accepted_capacity_tasksets == 0,
         ))
@@ -1225,8 +1469,13 @@ def _b3_calibration_rows(
             "nominal_energy_supply_ratio": timing[
                 "nominal_energy_supply_ratio"
             ],
+            "target_recovery_contract_applicable": recovery_applicable,
             "actual_trace_affordable_ticks_json": canonical_json([
                 int(structure["actual_trace_affordable_tick"])
+                for structure in structures
+            ]),
+            "actual_trace_target_affordable_ticks_json": canonical_json([
+                int(structure["actual_trace_target_affordable_tick"])
                 for structure in structures
             ]),
             "actual_trace_full_ticks_json": canonical_json([
@@ -1239,6 +1488,22 @@ def _b3_calibration_rows(
             ]),
             "actual_trace_recovery_headrooms_json": canonical_json([
                 int(structure["actual_trace_recovery_headroom"])
+                for structure in structures
+            ]),
+            "recovery_prefix_identities_json": canonical_json([
+                str(structure["recovery_prefix_identity"])
+                for structure in structures
+            ]),
+            "recovery_prefix_lengths_json": canonical_json([
+                int(structure["recovery_prefix_length"])
+                for structure in structures
+            ]),
+            "recovery_prefix_required_energies_json": canonical_json([
+                str(structure["recovery_prefix_required_energy"])
+                for structure in structures
+            ]),
+            "materialized_battery_capacities_json": canonical_json([
+                str(structure["materialized_battery_capacity"])
                 for structure in structures
             ]),
             "structurally_accepted_count": len(instances),
@@ -1275,6 +1540,12 @@ def _b3_calibration_rows(
             ),
             "target_audit_closed_count": target_audit_closed,
             "target_audit_error_count": target_audit_errors,
+            "full_release_prefix_affordable_count": prefix_affordable,
+            "full_release_prefix_affordable_ratio": _ratio(
+                prefix_affordable, denominator
+            ),
+            "recovery_prefix_audit_closed_count": prefix_audit_closed,
+            "recovery_prefix_audit_error_count": prefix_audit_errors,
             "rejected_capacity_infeasible_task_count": (
                 rejected_capacity_tasks
             ),

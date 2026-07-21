@@ -81,6 +81,11 @@ GENERATED_COLUMNS = (
     "scenario_candidate_identity", "capacity_feasibility_contract_version",
     "capacity_feasibility_contract_identity", "scenario_contract_id",
     "target_runtime_task_name", "target_arrival_time", "target_job_id",
+    "target_recovery_contract_applicable", "recovery_prefix_identity",
+    "recovery_prefix_length", "recovery_prefix_runtime_names_json",
+    "recovery_prefix_required_energy",
+    "materialized_battery_capacity", "actual_trace_target_affordable_tick",
+    "actual_trace_full_tick",
 )
 SCENARIO_INSTANCE_COLUMNS = (
     "paired_instance_id", "scenario_kind", "scenario_subtype",
@@ -95,6 +100,11 @@ SCENARIO_INSTANCE_COLUMNS = (
     "capacity_feasibility_contract_version",
     "capacity_feasibility_contract_identity", "scenario_contract_id",
     "target_runtime_task_name", "target_arrival_time", "target_job_id",
+    "target_recovery_contract_applicable", "recovery_prefix_identity",
+    "recovery_prefix_length", "recovery_prefix_runtime_names_json",
+    "recovery_prefix_required_energy",
+    "materialized_battery_capacity", "actual_trace_target_affordable_tick",
+    "actual_trace_full_tick",
 )
 REQUEST_COLUMNS = (
     "request_id", "paired_instance_id", "scenario_kind", "scenario_subtype",
@@ -106,6 +116,11 @@ REQUEST_COLUMNS = (
     "capacity_feasibility_contract_version",
     "capacity_feasibility_contract_identity", "scenario_contract_id",
     "target_runtime_task_name", "target_arrival_time", "target_job_id",
+    "target_recovery_contract_applicable", "recovery_prefix_identity",
+    "recovery_prefix_length", "recovery_prefix_runtime_names_json",
+    "recovery_prefix_required_energy",
+    "materialized_battery_capacity", "actual_trace_target_affordable_tick",
+    "actual_trace_full_tick",
 )
 ATTEMPT_COLUMNS = (
     "attempt_id", "request_id", "scheduler_id", "attempt_number", "status",
@@ -115,6 +130,11 @@ RESULT_COLUMNS = (
     "request_id", "paired_instance_id", "scenario_kind", "scenario_subtype",
     "scenario_cell_id", "scenario_contract_id", "target_runtime_task_name",
     "target_arrival_time", "target_job_id", "taskset_id", "taskset_hash",
+    "target_recovery_contract_applicable", "recovery_prefix_identity",
+    "recovery_prefix_length", "recovery_prefix_runtime_names_json",
+    "recovery_prefix_required_energy",
+    "materialized_battery_capacity", "actual_trace_target_affordable_tick",
+    "actual_trace_full_tick",
     "trace_hash",
     "simulation_config_hash", "input_hash", "scheduler_id", "status", "reason",
     "comparison_eligible", "horizon", "horizon_censoring", "runtime_seconds",
@@ -155,11 +175,24 @@ EXT1B_FAIRNESS_FIELDS = (
     "release_hash", "workload_vector_hash", "simulator_build_hash",
     "scenario_contract_id", "target_runtime_task_name",
     "target_arrival_time", "target_job_id",
+    "target_recovery_contract_applicable", "recovery_prefix_identity",
+    "recovery_prefix_length", "recovery_prefix_runtime_names_json",
+    "recovery_prefix_required_energy",
+    "materialized_battery_capacity", "actual_trace_target_affordable_tick",
+    "actual_trace_full_tick",
 )
 UNAVAILABLE = "UNAVAILABLE"
 TARGET_JOB_FIELDS = (
     "target_runtime_task_name", "target_arrival_time", "target_job_id",
 )
+RECOVERY_CONTRACT_FIELDS = (
+    "target_recovery_contract_applicable", "recovery_prefix_identity",
+    "recovery_prefix_length", "recovery_prefix_runtime_names_json",
+    "recovery_prefix_required_energy",
+    "materialized_battery_capacity", "actual_trace_target_affordable_tick",
+    "actual_trace_full_tick",
+)
+TRACE_TARGET_CONTRACT_FIELDS = TARGET_JOB_FIELDS + RECOVERY_CONTRACT_FIELDS
 
 
 def _utc_now() -> str:
@@ -168,6 +201,10 @@ def _utc_now() -> str:
 
 def _available(value: Any) -> Any:
     return UNAVAILABLE if value is None else value
+
+
+def _contract_bool(value: Any) -> bool:
+    return value is True or str(value).strip().upper() in {"TRUE", "1"}
 
 
 def _b3_capacity_contract_identity(config: Mapping[str, Any]) -> str:
@@ -184,10 +221,38 @@ def _request_identity(
     target_runtime_task_name: str = "",
     target_arrival_time: int | str = "",
     target_job_id: str = "",
+    recovery_contract: Mapping[str, Any] | None = None,
 ) -> str:
     if scenario_contract_id:
         if scenario_contract_id != B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2:
             raise ValueError("unknown EXT-1B/B3 scenario contract identity")
+        recovery = dict(recovery_contract or {})
+        normalized_recovery = {
+            "target_recovery_contract_applicable": _contract_bool(
+                recovery["target_recovery_contract_applicable"]
+            ),
+            "recovery_prefix_identity": str(
+                recovery["recovery_prefix_identity"]
+            ),
+            "recovery_prefix_length": int(
+                recovery["recovery_prefix_length"]
+            ),
+            "recovery_prefix_runtime_names_json": str(
+                recovery["recovery_prefix_runtime_names_json"]
+            ),
+            "recovery_prefix_required_energy": str(
+                recovery["recovery_prefix_required_energy"]
+            ),
+            "materialized_battery_capacity": str(
+                recovery["materialized_battery_capacity"]
+            ),
+            "actual_trace_target_affordable_tick": int(
+                recovery["actual_trace_target_affordable_tick"]
+            ),
+            "actual_trace_full_tick": int(
+                recovery["actual_trace_full_tick"]
+            ),
+        }
         return v2_request_identity(
             paired_instance_id=paired_instance_id,
             scheduler_id=scheduler_id,
@@ -195,6 +260,7 @@ def _request_identity(
             target_runtime_task_name=target_runtime_task_name,
             target_arrival_time=int(target_arrival_time),
             target_job_id=target_job_id,
+            recovery_contract=normalized_recovery,
         )
     if capacity_identity:
         return domain_hash(
@@ -214,12 +280,16 @@ def _request_identity(
     )
 
 
-def _target_job_fields(
+def _target_contract_fields(
     structure: Mapping[str, Any], *, required: bool,
 ) -> Dict[str, Any]:
     if not required:
-        return {key: "" for key in TARGET_JOB_FIELDS}
-    missing = [key for key in TARGET_JOB_FIELDS if key not in structure]
+        return {key: "" for key in TRACE_TARGET_CONTRACT_FIELDS}
+    structure_fields = tuple(
+        key for key in TRACE_TARGET_CONTRACT_FIELDS
+        if key != "recovery_prefix_runtime_names_json"
+    )
+    missing = [key for key in structure_fields if key not in structure]
     if missing:
         raise RuntimeError(f"B3-v2 structure lacks target job identity: {missing}")
     name = str(structure["target_runtime_task_name"])
@@ -229,10 +299,29 @@ def _target_job_fields(
     job_id = str(structure["target_job_id"])
     if job_id != runtime_job_id(name, arrival):
         raise RuntimeError("B3-v2 target job identity is inconsistent")
+    applicable = _contract_bool(
+        structure["target_recovery_contract_applicable"]
+    )
+    prefix_identity = str(structure["recovery_prefix_identity"])
+    prefix_length = int(structure["recovery_prefix_length"])
+    if applicable:
+        if len(prefix_identity) != 64 or prefix_length <= 0:
+            raise RuntimeError("B3-v2 recovery prefix identity is invalid")
+    elif prefix_identity or prefix_length != 0:
+        raise RuntimeError("B3-v2 non-applicable recovery prefix must be empty")
+    recovery_values = {
+        key: structure[key]
+        for key in RECOVERY_CONTRACT_FIELDS
+        if key != "recovery_prefix_runtime_names_json"
+    }
+    recovery_values["recovery_prefix_runtime_names_json"] = canonical_json(
+        structure.get("recovery_prefix_runtime_names", [])
+    )
     return {
         "target_runtime_task_name": name,
         "target_arrival_time": arrival,
         "target_job_id": job_id,
+        **recovery_values,
     }
 
 
@@ -251,11 +340,28 @@ def _bind_target_identity_to_trace(
     except (OSError, json.JSONDecodeError) as exc:
         raise RuntimeError("P0 B3-v2 retained trace is invalid") from exc
     expected = {
-        "target_runtime_task_name": str(request["target_runtime_task_name"]),
-        "target_arrival_time": int(request["target_arrival_time"]),
-        "target_job_id": str(request["target_job_id"]),
+        key: request[key] for key in TRACE_TARGET_CONTRACT_FIELDS
     }
-    observed = {key: document.get(key) for key in TARGET_JOB_FIELDS}
+    expected["target_runtime_task_name"] = str(
+        expected["target_runtime_task_name"]
+    )
+    expected["target_arrival_time"] = int(expected["target_arrival_time"])
+    expected["target_job_id"] = str(expected["target_job_id"])
+    expected["target_recovery_contract_applicable"] = _contract_bool(
+        expected["target_recovery_contract_applicable"]
+    )
+    expected["recovery_prefix_length"] = int(
+        expected["recovery_prefix_length"]
+    )
+    expected["actual_trace_target_affordable_tick"] = int(
+        expected["actual_trace_target_affordable_tick"]
+    )
+    expected["actual_trace_full_tick"] = int(
+        expected["actual_trace_full_tick"]
+    )
+    observed = {
+        key: document.get(key) for key in TRACE_TARGET_CONTRACT_FIELDS
+    }
     if materialize:
         if any(value is not None for value in observed.values()) and observed != expected:
             raise RuntimeError("P0 B3-v2 retained trace target identity conflict")
@@ -568,6 +674,10 @@ class Ext1BRunner:
                 str(request.get("target_runtime_task_name", "")),
                 request.get("target_arrival_time", ""),
                 str(request.get("target_job_id", "")),
+                {
+                    key: request.get(key, "")
+                    for key in RECOVERY_CONTRACT_FIELDS
+                },
             )
             if str(request["request_id"]) != expected_id:
                 raise RuntimeError("P0 EXT-1B persisted request identity mismatch")
@@ -652,6 +762,11 @@ class Ext1BRunner:
             "request_id", "paired_instance_id", "scenario_kind",
             "scenario_subtype", "scenario_cell_id", "scenario_contract_id",
             "target_runtime_task_name", "target_arrival_time", "target_job_id",
+            "target_recovery_contract_applicable", "recovery_prefix_identity",
+            "recovery_prefix_length", "recovery_prefix_runtime_names_json",
+            "recovery_prefix_required_energy",
+            "materialized_battery_capacity",
+            "actual_trace_target_affordable_tick", "actual_trace_full_tick",
             "taskset_id",
             "taskset_hash", "trace_hash", "simulation_config_hash",
             "input_hash", "scheduler_id",
@@ -824,7 +939,7 @@ class Ext1BRunner:
                     )
 
                 instance = accepted
-                target_job = _target_job_fields(
+                target_job = _target_contract_fields(
                     instance.structure, required=target_trace_v2,
                 )
                 canonical_path = self.root / "scenario_tasksets" / f"{instance.taskset_hash}.json"
@@ -961,6 +1076,10 @@ class Ext1BRunner:
                         target_job["target_runtime_task_name"],
                         target_job["target_arrival_time"],
                         target_job["target_job_id"],
+                        {
+                            key: target_job[key]
+                            for key in RECOVERY_CONTRACT_FIELDS
+                        },
                     )
                     requests.append({
                         "request_id": request_id,
@@ -1080,7 +1199,8 @@ class Ext1BRunner:
             )},
             "scenario_contract_id": request.get("scenario_contract_id", ""),
             **{
-                key: request.get(key, "") for key in TARGET_JOB_FIELDS
+                key: request.get(key, "")
+                for key in TRACE_TARGET_CONTRACT_FIELDS
             },
             "status": result.status.value,
             "reason": result.reason,
