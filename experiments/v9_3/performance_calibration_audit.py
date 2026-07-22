@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from dataclasses import dataclass
+from fractions import Fraction
 from typing import Any, Dict, Iterable, Mapping, Sequence, Tuple
 
 from .config import domain_hash
+from .performance_calibration import final_10s_grid_cells
 from .performance_config import CAL_UTILIZATIONS, OUTCOME_VERSION, PRIMARY_SCHEDULERS
 from .performance_config import INITIAL_ETAS, INITIAL_KAPPAS
 from .performance_identity import (
@@ -17,6 +19,7 @@ from .performance_identity import (
 
 CAL_AUDIT_SCHEMA = "ASAP_BLOCK_V9_3_B4_CAL_AUDIT_V1"
 CAL_AUDIT_DOMAIN = "ASAP_BLOCK:V9.3:B4:CAL_AUDIT:v1"
+CAL_AUDIT_SET_DOMAIN = "ASAP_BLOCK:V9.3:B4:CAL_AUDIT_SET:v1"
 CAL_RESULT_DOMAIN = "ASAP_BLOCK:V9.3:B4:CAL_TERMINAL_RESULT:v1"
 CAL_RESULT_SET_DOMAIN = "ASAP_BLOCK:V9.3:B4:CAL_TERMINAL_RESULT_SET:v1"
 
@@ -31,7 +34,8 @@ CAL_COUNTERS = (
     "energy_identity_mismatch", "canonical_request_identity_mismatch",
     "nonzero_arrival_offset", "taskset_not_in_manifest",
     "wrong_taskset_count", "incomplete_scheduler_pairing",
-    "wrong_energy_condition_set", "manifest_not_calibration_store",
+    "wrong_energy_condition_set", "wrong_selected_condition_mapping",
+    "manifest_not_calibration_store",
 )
 
 
@@ -67,11 +71,26 @@ def _expected_horizon(phase: str) -> int:
     raise ValueError(f"unknown CAL phase: {phase}")
 
 
-def _expected_count(phase: str, requests: Sequence[Mapping[str, Any]]) -> int:
+def calibration_audit_set_identity(phase_audits: Sequence[Mapping[str, Any]]) -> str:
+    return domain_hash(
+        CAL_AUDIT_SET_DOMAIN,
+        [str(audit.get("audit_identity", "")) for audit in phase_audits],
+    )
+
+
+def _expected_count(
+    phase: str, requests: Sequence[Mapping[str, Any]],
+    frozen_final_10s_grid_cells: Sequence[Mapping[str, Any]] | None,
+) -> int:
     if phase == "initial":
         return 6750
     if phase == "confirmation":
         return 1350
+    if phase == "confirmation_full_grid":
+        return (
+            len(frozen_final_10s_grid_cells or ())
+            * len(CAL_UTILIZATIONS) * len(PRIMARY_SCHEDULERS) * 30
+        )
     cells = {
         (str(request["energy_material"]["kappa"]), str(request["energy_material"]["eta"]))
         for request in requests
@@ -92,15 +111,29 @@ def _result_set_identity(results: Sequence[Mapping[str, Any]]) -> str:
 
 def audit_calibration_phase(
     phase: str, plan: Mapping[str, Any], results: Iterable[Mapping[str, Any]],
-    manifest: Mapping[str, Any],
+    manifest: Mapping[str, Any], *,
+    frozen_final_10s_grid_cells: Sequence[Mapping[str, Any]] | None = None,
+    selected_condition_mapping: Mapping[str, Sequence[Any]] | None = None,
 ) -> CalibrationPhaseAudit:
     """Close one CAL phase before exposing any row to the Q-only selector."""
 
     requests = list(plan.get("requests", []))
     result_list = list(results)
     counters = Counter({name: 0 for name in CAL_COUNTERS})
+    canonical_frozen_grid = None
+    frozen_grid_contract_valid = True
+    if phase == "confirmation_full_grid":
+        try:
+            supplied_grid = list(frozen_final_10s_grid_cells or ())
+            canonical_frozen_grid = final_10s_grid_cells(supplied_grid)
+            frozen_grid_contract_valid = supplied_grid == list(canonical_frozen_grid)
+        except (TypeError, ValueError):
+            frozen_grid_contract_valid = False
     expected_horizon = _expected_horizon(phase)
-    expected_count = _expected_count(phase, requests)
+    expected_count = _expected_count(
+        phase, requests,
+        canonical_frozen_grid if frozen_grid_contract_valid else (),
+    )
     if len(requests) != expected_count:
         counters["wrong_plan_count"] += abs(expected_count - len(requests)) or 1
 
@@ -136,6 +169,7 @@ def audit_calibration_phase(
     group_tasksets: Dict[tuple, set] = defaultdict(set)
     cell_scheduler_sets: Dict[tuple, Dict[str, set]] = defaultdict(lambda: defaultdict(set))
     conditions = set()
+    condition_cells: Dict[str, set] = defaultdict(set)
     for request_id, expected in planned.items():
         values = observed.get(request_id, [])
         if len(values) != 1:
@@ -209,6 +243,7 @@ def audit_calibration_phase(
         kappa, eta = str(material.get("kappa", "")), str(material.get("eta", ""))
         condition = str(expected.get("energy_condition", ""))
         conditions.add(condition)
+        condition_cells[condition].add((kappa, eta))
         group = (kappa, eta, utilization, scheduler)
         group_tasksets[group].add(taskset_hash)
         cell_scheduler_sets[(kappa, eta, utilization)][scheduler].add(taskset_hash)
@@ -257,6 +292,26 @@ def audit_calibration_phase(
         counters["wrong_energy_condition_set"] += 1
     if phase == "confirmation" and conditions != {"low", "transition", "high"}:
         counters["wrong_energy_condition_set"] += 1
+    if phase == "confirmation":
+        try:
+            expected_mapping = {
+                condition: {(str(Fraction(str(cell[0]))), str(Fraction(str(cell[1]))))}
+                for condition, cell in (selected_condition_mapping or {}).items()
+            }
+        except (IndexError, TypeError, ValueError, ZeroDivisionError):
+            expected_mapping = {}
+        if (
+            set(expected_mapping) != {"low", "transition", "high"}
+            or dict(condition_cells) != expected_mapping
+        ):
+            counters["wrong_selected_condition_mapping"] += 1
+    if phase == "confirmation_full_grid":
+        frozen_cells = {
+            (str(cell["kappa"]), str(cell["eta"]))
+            for cell in (canonical_frozen_grid or ())
+        }
+        if not frozen_grid_contract_valid or not frozen_cells or cells != frozen_cells:
+            counters["wrong_energy_condition_set"] += 1
     result_set_identity = _result_set_identity(result_list)
     material = {
         "schema": CAL_AUDIT_SCHEMA, "phase": phase,

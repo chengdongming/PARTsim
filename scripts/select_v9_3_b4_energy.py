@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-from fractions import Fraction
 import json
 from pathlib import Path
 import sys
@@ -14,12 +13,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from experiments.v9_3.config import domain_hash
 from experiments.v9_3.performance_audit import load_terminal_results
 from experiments.v9_3.performance_calibration import (
-    resolve_30s_confirmation, resolve_branch_a_extension, select_calibration,
+    final_10s_grid_cells, final_10s_grid_identity, resolve_30s_confirmation,
+    resolve_branch_a_extension, select_calibration,
 )
-from experiments.v9_3.performance_calibration_audit import audit_calibration_phase
+from experiments.v9_3.performance_calibration_audit import (
+    audit_calibration_phase, calibration_audit_set_identity,
+)
 from experiments.v9_3.performance_config import load_performance_config
 from experiments.v9_3.performance_environment import (
     StageEnvironmentError, assert_environment_compatible, build_stage_environment,
@@ -27,9 +28,6 @@ from experiments.v9_3.performance_environment import (
 from experiments.v9_3.performance_identity import calibration_selection_identity
 from experiments.v9_3.performance_taskset_store import PerformanceTasksetStore
 from experiments.v9_3.result_writer import atomic_write_json
-
-
-CAL_AUDIT_SET_DOMAIN = "ASAP_BLOCK:V9.3:B4:CAL_AUDIT_SET:v1"
 
 
 def _write_cells(path: Path, rows: list) -> None:
@@ -119,10 +117,12 @@ def main() -> int:
     results_by_id = {str(result["semantic_request_id"]): result for result in all_results}
     audits = []
 
-    def run_audit(label: str, audit_phase: str):
+    def run_audit(label: str, audit_phase: str, **audit_contract):
         plan = plans[label]
         rows = [results_by_id[str(request["semantic_request_id"])] for request in plan["requests"]]
-        audit = audit_calibration_phase(audit_phase, plan, rows, manifest)
+        audit = audit_calibration_phase(
+            audit_phase, plan, rows, manifest, **audit_contract,
+        )
         audits.append(audit)
         return audit
 
@@ -147,19 +147,16 @@ def main() -> int:
             atomic_write_json(args.output, document)
             print(json.dumps(document, sort_keys=True))
             return 2
+        combined_10s_rows.extend(extension_audit.audited_rows)
         if selection.extension_branch == "A":
             selection = resolve_branch_a_extension(
                 selection, initial_audit.audited_rows, extension_audit.audited_rows,
             )
         else:
-            combined_10s_rows.extend(extension_audit.audited_rows)
             selection = select_calibration(combined_10s_rows, extension_already_used=True)
 
     q_values = list(selection.q_values)
-    grid = sorted(
-        {(str(row["kappa"]), str(row["eta"])) for row in q_values},
-        key=lambda pair: (Fraction(pair[0]), Fraction(pair[1])),
-    )
+    frozen_grid = final_10s_grid_cells(combined_10s_rows)
     audit_documents = [audit.document() for audit in audits]
     document = {
         "schema": "ASAP_BLOCK_V9_3_B4_CALIBRATION_SELECTION_V1",
@@ -168,7 +165,9 @@ def main() -> int:
             "kappa": ["10", "50", "200"],
             "eta": ["1/2", "3/4", "1", "5/4", "3/2"],
         },
-        "final_grid": [{"kappa": kappa, "eta": eta} for kappa, eta in grid],
+        "final_grid": list(frozen_grid),
+        "final_10s_grid_cells": list(frozen_grid),
+        "final_10s_grid_identity": final_10s_grid_identity(frozen_grid),
         "result_10s": selection.document(),
         "fallback_full_30s_grid_used": False,
         "taskset_store_identity": manifest["store_identity"],
@@ -183,7 +182,15 @@ def main() -> int:
     }
 
     if "confirmation" in plans and selection.status == "SELECTED":
-        confirmation_audit = run_audit("confirmation", "confirmation")
+        selected_mapping = {
+            "low": (selection.kappa_star, selection.eta_low),
+            "transition": (selection.kappa_star, selection.eta_transition),
+            "high": (selection.kappa_star, selection.eta_high),
+        }
+        confirmation_audit = run_audit(
+            "confirmation", "confirmation",
+            selected_condition_mapping=selected_mapping,
+        )
         if confirmation_audit.status != "CAL_VALID":
             document = _invalid_document("30-second CAL confirmation closure failed", audits)
             atomic_write_json(args.output, document)
@@ -191,7 +198,10 @@ def main() -> int:
             return 2
         full_rows = None
         if "confirmation_full_grid" in plans:
-            full_audit = run_audit("confirmation_full_grid", "confirmation_full_grid")
+            full_audit = run_audit(
+                "confirmation_full_grid", "confirmation_full_grid",
+                frozen_final_10s_grid_cells=frozen_grid,
+            )
             if full_audit.status != "CAL_VALID":
                 document = _invalid_document("full-grid 30-second CAL closure failed", audits)
                 atomic_write_json(args.output, document)
@@ -209,8 +219,8 @@ def main() -> int:
         document["confirmation_status"] = resolved["status"]
 
     document["phase_audits"] = [audit.document() for audit in audits]
-    document["calibration_audit_identity"] = domain_hash(
-        CAL_AUDIT_SET_DOMAIN, [audit.audit_identity for audit in audits],
+    document["calibration_audit_identity"] = calibration_audit_set_identity(
+        document["phase_audits"],
     )
     document["request_counters"] = {
         audit.phase: {

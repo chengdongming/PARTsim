@@ -7,10 +7,50 @@ from fractions import Fraction
 from statistics import median
 from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Tuple
 
+from .config import domain_hash
 from .performance_config import CAL_UTILIZATIONS, EXTENDED_ETAS, INITIAL_ETAS, INITIAL_KAPPAS, PRIMARY_SCHEDULERS
 
 
 SELECTION_RULE_VERSION = "ASAP_BLOCK_V9_3_B4_CAL_Q_ONLY_V1"
+CAL_FINAL_10S_GRID_DOMAIN = "ASAP_BLOCK:V9.3:B4:CAL_FINAL_10S_GRID:v1"
+
+
+def final_10s_grid_cells(rows: Iterable[Mapping[str, Any]]) -> Tuple[Mapping[str, str], ...]:
+    """Return the unique canonical 10-second cells in exact Fraction order."""
+
+    pairs = set()
+    for row in rows:
+        try:
+            kappa = str(Fraction(str(row["kappa"])))
+            eta = str(Fraction(str(row["eta"])))
+        except (KeyError, TypeError, ValueError, ZeroDivisionError) as exc:
+            raise ValueError("final 10-second grid contains an invalid cell") from exc
+        pairs.add((kappa, eta))
+    if not pairs:
+        raise ValueError("final 10-second grid is empty")
+    return tuple(
+        {"kappa": kappa, "eta": eta}
+        for kappa, eta in sorted(
+            pairs, key=lambda pair: (Fraction(pair[0]), Fraction(pair[1])),
+        )
+    )
+
+
+def final_10s_grid_identity(cells: Iterable[Mapping[str, Any]]) -> str:
+    return domain_hash(CAL_FINAL_10S_GRID_DOMAIN, list(final_10s_grid_cells(cells)))
+
+
+def verify_final_10s_grid(
+    cells: Any, claimed_identity: Any,
+) -> Tuple[Mapping[str, str], ...]:
+    if not isinstance(cells, list):
+        raise ValueError("final_10s_grid_cells must be a list")
+    canonical = final_10s_grid_cells(cells)
+    if cells != list(canonical):
+        raise ValueError("final_10s_grid_cells are not unique and Fraction-sorted")
+    if not claimed_identity or final_10s_grid_identity(canonical) != claimed_identity:
+        raise ValueError("final_10s_grid_identity mismatch")
+    return canonical
 
 
 @dataclass(frozen=True)

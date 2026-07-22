@@ -87,6 +87,8 @@ The provisional three conditions are confirmed on the same 90 tasksets and five 
 
 CAL selection never treats CSV as authoritative. Each initial, extension, confirmation, or fallback phase first closes its request-plan IDs exactly against compact terminal JSON and the verified frozen CAL manifest. Missing, duplicate, or extra results; a final timeout; internal/trace error; non-terminal simulation; identity mismatch; nonzero offset; or anything other than exactly 30 paired tasksets per scheduler cell produces `CAL_INVALID`. Branch A freezes its provisional `kappa_star` and transition eta and searches only the preregistered missing endpoint; endpoint results are never fed back into transition selection.
 
+Every provisional or selected CAL control is accepted only after its selection identity, aggregate CAL-audit identity, all `CAL_VALID` phase audits, and stage-environment identity verify. The audited initial-plus-extension cells are frozen in Fraction order as `final_10s_grid_cells` under the independent `ASAP_BLOCK:V9.3:B4:CAL_FINAL_10S_GRID:v1` identity. A 30-second full-grid fallback must use exactly that sealed cell set—never cells reconstructed from mutable `q_values`—with 450 requests per cell. The ordinary confirmation plan is also bound exactly to `low`, `transition`, and `high` at their sealed `(kappa,eta)` pairs.
+
 ## Frozen formal store and horizon gate
 
 After the CAL seal, all 1,600 formal tasksets are frozen. The gate selects the lexically smallest 50 taskset semantic hashes at every utilization point. It uses transition energy, the five primary schedulers, and 30/60-second horizons: 4,000 requests.

@@ -15,13 +15,15 @@ from .performance_config import (
     ALL_SCHEDULERS, CONTRACT_VERSION, INITIAL_KAPPAS, PRIMARY_SCHEDULERS,
     assert_execution_seals, semantic_config_material,
 )
+from .performance_calibration import verify_final_10s_grid
+from .performance_calibration_audit import calibration_audit_set_identity
 from .performance_energy import (
     EnergyMaterial, build_energy_material, raw_solar_reference,
     runner_energy_config,
 )
 from .performance_environment import (
     StageEnvironmentError, assert_environment_compatible,
-    build_stage_environment,
+    build_stage_environment, validate_stage_environment,
 )
 from .performance_identity import (
     assert_unique_request_ids, calibration_selection_identity, execution_identity,
@@ -79,18 +81,15 @@ def exact_source_commit(project_root: Path = PROJECT_ROOT) -> str:
 
 
 def load_selection_seal(path: Path) -> Mapping[str, Any]:
-    try:
-        document = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise PerformanceExecutionError(f"cannot load selection seal: {path}") from exc
+    document = load_verified_calibration_control(path)
     required = {"kappa_star", "eta_low", "eta_transition", "eta_high"}
     if not required.issubset(document):
         raise PerformanceExecutionError("CAL selection seal is incomplete")
     return document
 
 
-def load_calibration_control(path: Path) -> Mapping[str, Any]:
-    """Load either a provisional extension decision or a final CAL seal."""
+def load_verified_calibration_control(path: Path) -> Mapping[str, Any]:
+    """Load a provisional or selected CAL control only after all seals close."""
 
     try:
         document = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -98,6 +97,38 @@ def load_calibration_control(path: Path) -> Mapping[str, Any]:
         raise PerformanceExecutionError(f"cannot load CAL control document: {path}") from exc
     if not isinstance(document, dict):
         raise PerformanceExecutionError("CAL control document must be an object")
+    claimed_selection = document.get("selection_identity")
+    selection_material = {
+        key: value for key, value in document.items() if key != "selection_identity"
+    }
+    if (
+        not claimed_selection
+        or calibration_selection_identity(selection_material) != claimed_selection
+    ):
+        raise PerformanceExecutionError("CAL control selection identity mismatch")
+    phase_audits = document.get("phase_audits")
+    if not isinstance(phase_audits, list) or not phase_audits:
+        raise PerformanceExecutionError("CAL control has no phase audits")
+    if any(
+        not isinstance(audit, dict)
+        or audit.get("status") != "CAL_VALID"
+        or not audit.get("audit_identity")
+        for audit in phase_audits
+    ):
+        raise PerformanceExecutionError("CAL control contains an invalid phase audit")
+    if (
+        calibration_audit_set_identity(phase_audits)
+        != document.get("calibration_audit_identity")
+    ):
+        raise PerformanceExecutionError("CAL control audit identity mismatch")
+    try:
+        validate_stage_environment(document["stage_environment"])
+        verify_final_10s_grid(
+            document.get("final_10s_grid_cells"),
+            document.get("final_10s_grid_identity"),
+        )
+    except (KeyError, StageEnvironmentError, ValueError) as exc:
+        raise PerformanceExecutionError(f"CAL control seal is invalid: {exc}") from exc
     return document
 
 
@@ -124,7 +155,7 @@ def _conditions(config: Mapping[str, Any], phase: str = "default") -> Tuple[Tupl
         if phase in {"extension_a", "extension_b", "confirmation_full_grid"}:
             if not control_path:
                 raise PerformanceExecutionError(f"CAL phase {phase} requires a control document")
-            control = load_calibration_control(Path(control_path))
+            control = load_verified_calibration_control(Path(control_path))
             requested = tuple(str(value) for value in control.get("requested_extension_etas", ()))
             if phase == "extension_a":
                 if control.get("extension_branch") != "A" or not control.get("kappa_star") or not requested:
@@ -140,14 +171,13 @@ def _conditions(config: Mapping[str, Any], phase: str = "default") -> Tuple[Tupl
                     (f"k{kappa}-e{eta}", kappa, eta)
                     for kappa in INITIAL_KAPPAS for eta in requested
                 )
-            q_values = control.get("q_values")
-            if not isinstance(q_values, list) or not q_values:
-                raise PerformanceExecutionError("full-grid 30-second fallback requires final CAL Q cells")
-            cells = sorted(
-                {(str(row["kappa"]), str(row["eta"])) for row in q_values},
-                key=lambda pair: (Fraction(pair[0]), Fraction(pair[1])),
+            cells = verify_final_10s_grid(
+                control["final_10s_grid_cells"], control["final_10s_grid_identity"],
             )
-            return tuple((f"k{kappa}-e{eta}", kappa, eta) for kappa, eta in cells)
+            return tuple(
+                (f"k{cell['kappa']}-e{cell['eta']}", cell["kappa"], cell["eta"])
+                for cell in cells
+            )
         if phase == "confirmation":
             if not control_path:
                 raise PerformanceExecutionError("CAL confirmation requires a selection seal")
@@ -540,7 +570,7 @@ def execute_plan(
                 raise PerformanceExecutionError(f"horizon stage environment mismatch: {exc}") from exc
     elif config["stage"] == "CALIBRATION" and phase != "default":
         control_path = config["execution"].get("calibration_seal") or config["energy"].get("selection_seal")
-        control = load_calibration_control(Path(control_path))
+        control = load_verified_calibration_control(Path(control_path))
         _assert_provenance(control, source_commit, binary_hash, "initial CAL phase")
         try:
             assert_environment_compatible(

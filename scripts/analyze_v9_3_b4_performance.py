@@ -15,6 +15,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from experiments.v9_3.performance_analysis import generate_four_figures
 from experiments.v9_3.performance_audit import audit_formal_results, load_terminal_results
 from experiments.v9_3.performance_config import load_performance_config
+from experiments.v9_3.performance_engine import load_verified_calibration_control
 from experiments.v9_3.performance_environment import (
     StageEnvironmentError, assert_environment_compatible, build_stage_environment,
 )
@@ -33,7 +34,7 @@ def main() -> int:
     args = parser.parse_args()
     plan = json.loads(args.plan.read_text(encoding="utf-8"))
     results = load_terminal_results(args.results)
-    calibration = json.loads(args.calibration_seal.read_text(encoding="utf-8"))
+    calibration = load_verified_calibration_control(args.calibration_seal)
     horizon = json.loads(args.horizon_seal.read_text(encoding="utf-8"))
     config = load_performance_config(args.config)
     if config["stage"] != "FORMAL":

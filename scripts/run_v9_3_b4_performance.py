@@ -15,7 +15,9 @@ if str(PROJECT_ROOT) not in sys.path:
 from experiments.v9_3.performance_analysis import generate_four_figures
 from experiments.v9_3.performance_audit import audit_formal_results, load_terminal_results
 from experiments.v9_3.performance_config import load_performance_config, plan_counts
-from experiments.v9_3.performance_engine import calibration_phase_plan_counts, execute_plan
+from experiments.v9_3.performance_engine import (
+    calibration_phase_plan_counts, execute_plan, load_verified_calibration_control,
+)
 from experiments.v9_3.performance_environment import (
     StageEnvironmentError, assert_environment_compatible, build_stage_environment,
 )
@@ -79,7 +81,9 @@ def main() -> int:
     output_root = Path(config["execution"]["output_root"])
     plan = json.loads((output_root / "formal_plan.json").read_text(encoding="utf-8"))
     results = load_terminal_results(output_root / "terminal_results")
-    calibration = json.loads(Path(config["execution"]["calibration_seal"]).read_text(encoding="utf-8"))
+    calibration = load_verified_calibration_control(
+        Path(config["execution"]["calibration_seal"]),
+    )
     horizon = json.loads(Path(config["execution"]["horizon_seal"]).read_text(encoding="utf-8"))
     try:
         environment = build_stage_environment(config, project_root=PROJECT_ROOT)

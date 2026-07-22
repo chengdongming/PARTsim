@@ -1,10 +1,23 @@
+import json
+
+import pytest
+
+from experiments.v9_3.config import domain_hash
 from experiments.v9_3.performance_calibration import (
+    CAL_FINAL_10S_GRID_DOMAIN, final_10s_grid_cells, final_10s_grid_identity,
     calibration_q_values, confirm_30s, resolve_30s_confirmation, select_calibration,
     resolve_branch_a_extension,
 )
 from experiments.v9_3.performance_calibration_audit import audit_calibration_phase
 from experiments.v9_3.performance_config import CAL_UTILIZATIONS, INITIAL_ETAS, INITIAL_KAPPAS, PRIMARY_SCHEDULERS
-from experiments.v9_3.performance_identity import energy_identity, execution_identity, semantic_request_id
+from experiments.v9_3.performance_engine import (
+    PerformanceExecutionError, load_verified_calibration_control,
+)
+from experiments.v9_3.performance_identity import (
+    calibration_selection_identity, energy_identity, execution_identity,
+    semantic_request_id,
+)
+from v9_3_b4_helpers import calibration_control_document
 
 
 def rows(q_by_cell, tasksets=10):
@@ -119,21 +132,24 @@ def test_branch_a_endpoint_cannot_reselect_transition():
     assert resolved.eta_low == "1/4" and resolved.eta_high == "5/4"
 
 
-def _cal_authority_fixture(*, confirmation=False):
+def _cal_authority_fixture(*, confirmation=False, cells=None, horizon=None):
     schedulers = PRIMARY_SCHEDULERS
     tasksets = {
         utilization: [f"task-{utilization}-{index}" for index in range(30)]
         for utilization in CAL_UTILIZATIONS
     }
-    if confirmation:
-        cells = (("low", "10", "3/4"), ("transition", "10", "1"), ("high", "10", "5/4"))
+    if cells is None:
+        if confirmation:
+            cells = (("low", "10", "3/4"), ("transition", "10", "1"), ("high", "10", "5/4"))
+            horizon = 30000
+        else:
+            cells = tuple(
+                (f"k{kappa}-e{eta}", kappa, eta)
+                for kappa in INITIAL_KAPPAS for eta in INITIAL_ETAS
+            )
+            horizon = 10000
+    if horizon is None:
         horizon = 30000
-    else:
-        cells = tuple(
-            (f"k{kappa}-e{eta}", kappa, eta)
-            for kappa in INITIAL_KAPPAS for eta in INITIAL_ETAS
-        )
-        horizon = 10000
     plan_rows, result_rows = [], []
     for condition, kappa, eta in cells:
         for utilization in CAL_UTILIZATIONS:
@@ -206,6 +222,10 @@ def test_complete_initial_and_confirmation_cal_authority_closure():
     confirmation = _cal_authority_fixture(confirmation=True)
     audited = audit_calibration_phase(
         "confirmation", confirmation["plan"], confirmation["results"], confirmation["manifest"],
+        selected_condition_mapping={
+            "low": ("10", "3/4"), "transition": ("10", "1"),
+            "high": ("10", "5/4"),
+        },
     )
     assert audited.status == "CAL_VALID"
     assert audited.planned_requests == audited.observed_results == 1350
@@ -250,3 +270,183 @@ def test_cal_authority_rejects_missing_29_technical_extra_and_identity_errors():
     wrong_execution = [dict(row) for row in results]
     wrong_execution[0] = {**wrong_execution[0], "execution_identity": "wrong"}
     assert audit_calibration_phase("initial", plan, wrong_execution, manifest).status == "CAL_INVALID"
+
+
+def _initial_grid_cells():
+    return [
+        {"kappa": kappa, "eta": eta}
+        for kappa in INITIAL_KAPPAS for eta in INITIAL_ETAS
+    ]
+
+
+def _cell_tuples(cells):
+    return tuple(
+        (f"k{cell['kappa']}-e{cell['eta']}", cell["kappa"], cell["eta"])
+        for cell in cells
+    )
+
+
+def test_verified_calibration_control_rejects_tampered_or_unsigned_selection(tmp_path):
+    path = tmp_path / "control.json"
+    document = calibration_control_document()
+    path.write_text(json.dumps(document), encoding="utf-8")
+    assert load_verified_calibration_control(path) == document
+
+    tampered = {**document, "q_values": [*document["q_values"], {"kappa": "999", "eta": "9"}]}
+    path.write_text(json.dumps(tampered), encoding="utf-8")
+    with pytest.raises(PerformanceExecutionError, match="selection identity"):
+        load_verified_calibration_control(path)
+
+    unsigned = dict(document)
+    unsigned.pop("selection_identity")
+    path.write_text(json.dumps(unsigned), encoding="utf-8")
+    with pytest.raises(PerformanceExecutionError, match="selection identity"):
+        load_verified_calibration_control(path)
+
+    audit_tampered = {**document, "calibration_audit_identity": "wrong"}
+    audit_tampered.pop("selection_identity")
+    audit_tampered["selection_identity"] = calibration_selection_identity(audit_tampered)
+    path.write_text(json.dumps(audit_tampered), encoding="utf-8")
+    with pytest.raises(PerformanceExecutionError, match="audit identity"):
+        load_verified_calibration_control(path)
+
+    grid_tampered = {**document, "final_10s_grid_identity": "wrong"}
+    grid_tampered.pop("selection_identity")
+    grid_tampered["selection_identity"] = calibration_selection_identity(grid_tampered)
+    path.write_text(json.dumps(grid_tampered), encoding="utf-8")
+    with pytest.raises(PerformanceExecutionError, match="final_10s_grid_identity"):
+        load_verified_calibration_control(path)
+
+
+def test_branch_a_and_branch_b_final_grid_identities_are_frozen():
+    branch_a = [*_initial_grid_cells(), {"kappa": "10", "eta": "1/4"}]
+    frozen_a = final_10s_grid_cells(branch_a)
+    assert len(frozen_a) == 16
+    assert final_10s_grid_identity(frozen_a) == domain_hash(
+        CAL_FINAL_10S_GRID_DOMAIN, list(frozen_a),
+    )
+    assert frozen_a[0] == {"kappa": "10", "eta": "1/4"}
+
+    branch_b = [
+        {"kappa": kappa, "eta": eta}
+        for kappa in INITIAL_KAPPAS
+        for eta in ("1/4", *INITIAL_ETAS, "2")
+    ]
+    frozen_b = final_10s_grid_cells(branch_b)
+    assert len(frozen_b) == 21
+    assert final_10s_grid_identity(frozen_b) == domain_hash(
+        CAL_FINAL_10S_GRID_DOMAIN, list(frozen_b),
+    )
+
+
+@pytest.fixture(scope="module")
+def branch_a_full_grid_authority():
+    cells = list(final_10s_grid_cells([
+        *_initial_grid_cells(), {"kappa": "10", "eta": "1/4"},
+    ]))
+    return cells, _cal_authority_fixture(cells=_cell_tuples(cells), horizon=30000)
+
+
+def _audit_full_grid(fixture, frozen_cells):
+    return audit_calibration_phase(
+        "confirmation_full_grid", fixture["plan"], fixture["results"],
+        fixture["manifest"], frozen_final_10s_grid_cells=frozen_cells,
+    )
+
+
+def test_correct_branch_a_full_grid_fallback_passes(branch_a_full_grid_authority):
+    cells, fixture = branch_a_full_grid_authority
+    audited = _audit_full_grid(fixture, cells)
+    assert audited.status == "CAL_VALID"
+    assert audited.planned_requests == 16 * 3 * 5 * 30
+
+
+def test_full_grid_with_only_three_selected_cells_is_rejected(branch_a_full_grid_authority):
+    cells, fixture = branch_a_full_grid_authority
+    selected = {("10", "3/4"), ("10", "1"), ("10", "5/4")}
+    ids = {
+        request["semantic_request_id"] for request in fixture["plan"]["requests"]
+        if (
+            request["energy_material"]["kappa"], request["energy_material"]["eta"],
+        ) in selected
+    }
+    short = {
+        "plan": {**fixture["plan"], "requests": [
+            row for row in fixture["plan"]["requests"]
+            if row["semantic_request_id"] in ids
+        ]},
+        "results": [
+            row for row in fixture["results"] if row["semantic_request_id"] in ids
+        ],
+        "manifest": fixture["manifest"],
+    }
+    audited = _audit_full_grid(short, cells)
+    assert audited.status == "CAL_INVALID"
+    assert audited.counters["wrong_plan_count"] > 0
+    assert audited.counters["wrong_energy_condition_set"] > 0
+
+
+def test_full_grid_missing_endpoint_cell_is_rejected(branch_a_full_grid_authority):
+    cells, fixture = branch_a_full_grid_authority
+    endpoint = ("10", "1/4")
+    ids = {
+        request["semantic_request_id"] for request in fixture["plan"]["requests"]
+        if (
+            request["energy_material"]["kappa"], request["energy_material"]["eta"],
+        ) != endpoint
+    }
+    short = {
+        "plan": {**fixture["plan"], "requests": [
+            row for row in fixture["plan"]["requests"]
+            if row["semantic_request_id"] in ids
+        ]},
+        "results": [
+            row for row in fixture["results"] if row["semantic_request_id"] in ids
+        ],
+        "manifest": fixture["manifest"],
+    }
+    assert _audit_full_grid(short, cells).status == "CAL_INVALID"
+
+
+def test_full_grid_with_unregistered_cell_is_rejected(branch_a_full_grid_authority):
+    cells, fixture = branch_a_full_grid_authority
+    extra = _cal_authority_fixture(
+        cells=(("unregistered", "999", "9"),), horizon=30000,
+    )
+    expanded = {
+        "plan": {**fixture["plan"], "requests": [
+            *fixture["plan"]["requests"], *extra["plan"]["requests"],
+        ]},
+        "results": [*fixture["results"], *extra["results"]],
+        "manifest": fixture["manifest"],
+    }
+    assert _audit_full_grid(expanded, cells).status == "CAL_INVALID"
+
+
+def test_confirmation_rejects_wrong_low_condition_mapping():
+    fixture = _cal_authority_fixture(cells=(
+        ("low", "10", "1/2"),
+        ("transition", "10", "1"),
+        ("high", "10", "5/4"),
+    ), horizon=30000)
+    audited = audit_calibration_phase(
+        "confirmation", fixture["plan"], fixture["results"], fixture["manifest"],
+        selected_condition_mapping={
+            "low": ("10", "3/4"), "transition": ("10", "1"),
+            "high": ("10", "5/4"),
+        },
+    )
+    assert audited.status == "CAL_INVALID"
+    assert audited.counters["wrong_selected_condition_mapping"] == 1
+
+
+def test_correct_branch_b_full_grid_fallback_passes():
+    cells = list(final_10s_grid_cells([
+        {"kappa": kappa, "eta": eta}
+        for kappa in INITIAL_KAPPAS
+        for eta in ("1/4", *INITIAL_ETAS, "2")
+    ]))
+    fixture = _cal_authority_fixture(cells=_cell_tuples(cells), horizon=30000)
+    audited = _audit_full_grid(fixture, cells)
+    assert audited.status == "CAL_VALID"
+    assert audited.planned_requests == 21 * 3 * 5 * 30

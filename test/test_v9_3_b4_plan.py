@@ -3,7 +3,7 @@ from experiments.v9_3.performance_engine import build_requests, calibration_phas
 from experiments.v9_3.performance_identity import audit_gate_formal_relationship
 from experiments.v9_3.performance_identity import horizon_selection_identity
 from experiments.v9_3.performance_taskset_store import PerformanceTaskset
-from v9_3_b4_helpers import config, task_payload
+from v9_3_b4_helpers import calibration_control_document, config, task_payload
 
 
 def test_plan_audit_requires_exact_count_and_unique_ids():
@@ -30,10 +30,9 @@ def _tasksets(count, utilization_points):
 
 def test_actual_cal_gate_formal_request_counts_and_subset(tmp_path):
     selection = tmp_path / "calibration_selection.json"
-    selection.write_text(__import__("json").dumps({
-        "kappa_star": "50", "eta_low": "3/4",
-        "eta_transition": "1", "eta_high": "5/4",
-    }), encoding="utf-8")
+    selection.write_text(
+        __import__("json").dumps(calibration_control_document()), encoding="utf-8",
+    )
     horizon = tmp_path / "horizon_selection.json"
     horizon_document = {
         "state": "SELECT_30S", "selected_horizon_ms": 30000,
@@ -85,24 +84,26 @@ def test_actual_cal_gate_formal_request_counts_and_subset(tmp_path):
 def test_cal_extension_and_full_grid_phase_counts(tmp_path):
     cal = config("v9_3_b4_calibration_r1.yaml")
     control = tmp_path / "calibration_control.json"
-    control.write_text(__import__("json").dumps({
-        "extension_branch": "A", "kappa_star": "50",
-        "requested_extension_etas": ["1/4"],
-    }), encoding="utf-8")
+    control.write_text(__import__("json").dumps(calibration_control_document(
+        status="EXTENSION_REQUIRED", extension_branch="A", kappa_star="50",
+        requested_extension_etas=["1/4"],
+    )), encoding="utf-8")
     cal["execution"]["calibration_seal"] = str(control)
     assert calibration_phase_plan_counts(cal, "extension_a")["requests"] == 450
 
-    control.write_text(__import__("json").dumps({
-        "extension_branch": "B", "requested_extension_etas": ["1/4", "2"],
-    }), encoding="utf-8")
+    control.write_text(__import__("json").dumps(calibration_control_document(
+        status="EXTENSION_REQUIRED", extension_branch="B",
+        requested_extension_etas=["1/4", "2"],
+    )), encoding="utf-8")
     assert calibration_phase_plan_counts(cal, "extension_b")["requests"] == 2700
 
-    control.write_text(__import__("json").dumps({
-        "q_values": [
-            {"kappa": kappa, "eta": eta}
-            for kappa in ("10", "50", "200")
-            for eta in ("1/2", "3/4", "1", "5/4", "3/2")
-        ],
-    }), encoding="utf-8")
+    branch_a_cells = [
+        {"kappa": kappa, "eta": eta}
+        for kappa in ("10", "50", "200")
+        for eta in ("1/2", "3/4", "1", "5/4", "3/2")
+    ] + [{"kappa": "50", "eta": "1/4"}]
+    control.write_text(__import__("json").dumps(
+        calibration_control_document(cells=branch_a_cells),
+    ), encoding="utf-8")
     fallback = calibration_phase_plan_counts(cal, "confirmation_full_grid")
-    assert fallback["requests"] == 6750 and fallback["horizons"] == 1
+    assert fallback["requests"] == 7200 and fallback["horizons"] == 1
