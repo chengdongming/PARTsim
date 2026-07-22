@@ -25,6 +25,8 @@ from experiments.v9_3.ext1b_generation import (
     scenario_cells,
     workload_energy_table,
 )
+from experiments.v9_3.performance_config import CONFIG_SCHEMA as B4_CONFIG_SCHEMA
+from experiments.v9_3.performance_config import load_performance_config
 from experiments.v9_3.taskset_store import (
     FROZEN_TASKSET_SCHEMA,
     FROZEN_TASKSET_SEMANTIC_DOMAIN,
@@ -60,6 +62,8 @@ def _common_generation_configs():
 
 def _load_generation_config(path: Path):
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if raw.get("schema") == B4_CONFIG_SCHEMA:
+        return load_performance_config(path)
     if raw.get("extension") == "EXT-1B":
         return load_ext1b_config(path)
     return load_config(path)
@@ -67,7 +71,7 @@ def _load_generation_config(path: Path):
 
 def test_all_repository_v93_generation_configs_have_exact_contract():
     paths = _common_generation_configs()
-    assert len(paths) == 43
+    assert len(paths) == 47
     assert {
         path.name for path in paths
     }.issuperset({
@@ -77,12 +81,24 @@ def test_all_repository_v93_generation_configs_have_exact_contract():
             "capacity_contract_v1.yaml"
         ),
         "v9_3_ext1b3_timing_calibration_v2_target_trace_contract.yaml",
+        "v9_3_b4_calibration_r1.yaml",
+        "v9_3_b4_horizon_gate_r1.yaml",
+        "v9_3_b4_formal_template_r1.yaml",
+        "v9_3_b4_smoke.yaml",
     })
     for path in paths:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
         assert raw["generation"]["workload_candidates"] == list(CANDIDATES), path
         config = _load_generation_config(path)
-        contract = config["generation"]["workload_contract"]
+        if raw.get("schema") == B4_CONFIG_SCHEMA:
+            template = Path(config["generation"]["system_template"])
+            if not template.is_absolute():
+                template = ROOT / template
+            contract = task_workload_contract_material(
+                config["generation"]["workload_candidates"], template,
+            )
+        else:
+            contract = config["generation"]["workload_contract"]
         assert contract["version"] == TASK_WORKLOAD_CONTRACT_VERSION, path
         assert contract["ordered_candidates"] == list(CANDIDATES), path
         assert [row["workload"] for row in contract["power_model"]] == list(

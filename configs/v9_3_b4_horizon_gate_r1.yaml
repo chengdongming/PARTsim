@@ -1,0 +1,86 @@
+schema: ASAP_BLOCK_V9_3_B4_CONFIG_V1
+experiment_id: asap-block-v9.3-b4-horizon-gate-r1
+stage: HORIZON_GATE
+parameter_status: GATE
+seed_space: ASAP_BLOCK_V9_3_B4_FORMAL_R1
+platform:
+  cores: 4
+  task_count: 10
+  scheduling: global
+  preemptive: true
+  migrative: true
+  priority_policy: RM
+  time_unit_ms: 1
+generation:
+  deadline_mode: constrained
+  period_min: 40
+  period_max: 200
+  wcet_rounding: compensated
+  utilization_tolerance_total: "1/100"
+  min_task_util: "1/100"
+  max_task_util: "4/5"
+  dag_enabled: false
+  arrival_offset: false
+  workload_candidates: [bzip2, control, decrypt, encrypt, hash]
+  system_template: system_config_unified_template.yml
+  generator_timeout_seconds: 120
+  structural_retry_limit: 20
+  generation_contract_version: ASAP_BLOCK_V9_3_B4_SYNCHRONOUS_TASKGEN_V1
+energy:
+  normalization_horizon_ms: 60000
+  kappa_values: ["1"]
+  eta_values: ["1"]
+  selected_conditions: []
+  allow_harvest_clipping: true
+  solar_phase: TEMPLATE_TIME_OF_DAY
+  system_template: system_config_unified_template.yml
+  selection_seal: artifacts/v9_3_b4_calibration_r1/calibration_selection.json
+grid:
+  utilization_points: ["1/10", "2/10", "3/10", "4/10", "5/10", "6/10", "7/10", "8/10"]
+  tasksets_per_utilization: 200
+  selected_tasksets_per_utilization: 50
+  base_seed: 982201
+  taskset_index_start: 0
+simulation:
+  horizons_ms: [30000, 60000]
+  warmup_ms: 0
+  minimum_adjudicable_jobs_per_task: 100
+  timeout_seconds: 300
+  retry_timeout_seconds: 600
+  trace_mode: job
+  trace_sample_fraction: "1/20"
+  simulator_bin: ./build/rtsim/rtsim
+execution:
+  worker_count: 1
+  checkpoint_every: 25
+  output_root: artifacts/v9_3_b4_horizon_gate_r1
+  taskset_store: artifacts/v9_3_b4_formal_tasksets_r1
+  resume: false
+  calibration_seal: artifacts/v9_3_b4_calibration_r1/calibration_selection.json
+  horizon_seal: ""
+statistics:
+  bootstrap_seed: 983201
+  permutation_seed: 983202
+  resamples: 10000
+  confidence_level: "19/20"
+scheduler_ids: &all_schedulers
+  - gpfp_asap_block
+  - gpfp_asap_nonblock
+  - gpfp_asap_sync
+  - gpfp_alap_block
+  - gpfp_alap_nonblock
+  - gpfp_alap_sync
+  - gpfp_st_block
+  - gpfp_st_nonblock
+  - gpfp_st_sync
+primary_scheduler_ids:
+  - gpfp_asap_block
+  - gpfp_asap_nonblock
+  - gpfp_asap_sync
+  - gpfp_alap_block
+  - gpfp_st_block
+confirmatory_comparisons:
+  - [gpfp_asap_block, gpfp_asap_nonblock]
+  - [gpfp_asap_block, gpfp_asap_sync]
+  - [gpfp_asap_block, gpfp_alap_block]
+  - [gpfp_asap_block, gpfp_st_block]
