@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import asdict, dataclass
 from fractions import Fraction
 import csv
@@ -41,6 +42,16 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 B4_RUNNER_RELEASE_E0 = Fraction(0)
 class PerformanceExecutionError(RuntimeError):
     pass
+
+
+class PerformanceRequestExecutionError(PerformanceExecutionError):
+    def __init__(self, request_id: str, summary: Mapping[str, Any], cause: BaseException):
+        self.failed_request_id = request_id
+        self.summary = dict(summary)
+        super().__init__(
+            f"B4 request execution failed: {request_id}; "
+            f"summary={json.dumps(self.summary, sort_keys=True)}; cause={cause}"
+        )
 
 
 @dataclass(frozen=True)
@@ -439,8 +450,19 @@ def _reuse_selected_gate_results(
         ):
             raise PerformanceExecutionError(f"selected gate result identity/terminal mismatch: {request_id}")
         target = target_root / f"{request_id}.json"
-        if target.is_file() and config["execution"]["resume"]:
-            existing = json.loads(target.read_text(encoding="utf-8"))
+        if target.exists() and not config["execution"]["resume"]:
+            raise PerformanceExecutionError(
+                f"selected gate terminal exists while resume=false: {request_id}"
+            )
+        if target.exists():
+            try:
+                if not target.is_file():
+                    raise ValueError("gate terminal path is not a regular file")
+                existing = json.loads(target.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError, ValueError) as exc:
+                raise PerformanceExecutionError(
+                    f"unreadable resumed gate result: {request_id}"
+                ) from exc
             if existing != result:
                 raise PerformanceExecutionError(f"resumed gate result differs: {request_id}")
         else:
@@ -528,6 +550,239 @@ def execute_request(
     }
 
 
+def _request_result_path(output_root: Path, request: PerformanceRequest) -> Path:
+    return Path(output_root) / "terminal_results" / f"{request.semantic_request_id}.json"
+
+
+def _failure_summary(
+    *, worker_count: int, completed: int, resumed: int, failed_request_id: str,
+) -> Dict[str, Any]:
+    return {
+        "configured_worker_count": worker_count,
+        "completed_this_invocation": completed,
+        "resumed_valid_results": resumed,
+        "failed_request_id": failed_request_id,
+    }
+
+
+def _raise_request_failure(
+    request: PerformanceRequest, cause: BaseException, *, worker_count: int,
+    completed: int, resumed: int,
+) -> None:
+    raise PerformanceRequestExecutionError(
+        request.semantic_request_id,
+        _failure_summary(
+            worker_count=worker_count, completed=completed, resumed=resumed,
+            failed_request_id=request.semantic_request_id,
+        ),
+        cause,
+    ) from cause
+
+
+def _scan_existing_terminal_results(
+    config: Mapping[str, Any], requests: Sequence[PerformanceRequest],
+    output_root: Path,
+) -> Tuple[Tuple[PerformanceRequest, ...], int]:
+    """Validate current-plan terminal evidence before any simulator is scheduled."""
+
+    resume = bool(config["execution"]["resume"])
+    pending = []
+    resumed = 0
+    observed_ids = [request.semantic_request_id for request in requests]
+    if len(observed_ids) != len(set(observed_ids)):
+        raise PerformanceExecutionError("execution batch contains duplicate request IDs")
+    for request in requests:
+        path = _request_result_path(output_root, request)
+        if not path.exists():
+            pending.append(request)
+            continue
+        if not resume:
+            _raise_request_failure(
+                request, FileExistsError("terminal result exists while resume=false"),
+                worker_count=int(config["execution"]["worker_count"]),
+                completed=0, resumed=resumed,
+            )
+        try:
+            if not path.is_file():
+                raise ValueError("terminal result path is not a regular file")
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            _raise_request_failure(
+                request, ValueError(f"unreadable resumed terminal result: {exc}"),
+                worker_count=int(config["execution"]["worker_count"]),
+                completed=0, resumed=resumed,
+            )
+        if (
+            not isinstance(document, dict)
+            or document.get("semantic_request_id") != request.semantic_request_id
+            or document.get("execution_identity") != request.execution_identity
+            or document.get("terminal") is not True
+        ):
+            _raise_request_failure(
+                request, ValueError("resumed terminal result identity/terminal mismatch"),
+                worker_count=int(config["execution"]["worker_count"]),
+                completed=0, resumed=resumed,
+            )
+        resumed += 1
+    return tuple(pending), resumed
+
+
+def _validate_worker_result(
+    request: PerformanceRequest, result: Mapping[str, Any],
+) -> None:
+    if (
+        not isinstance(result, Mapping)
+        or result.get("semantic_request_id") != request.semantic_request_id
+        or result.get("execution_identity") != request.execution_identity
+        or not isinstance(result.get("terminal"), bool)
+    ):
+        raise PerformanceExecutionError("worker returned a mismatched terminal result")
+
+
+def _write_execution_progress(
+    output_root: Path, *, worker_count: int, completed: int, resumed: int,
+    failed_request_id: Optional[str] = None,
+) -> None:
+    document = {
+        "schema": "ASAP_BLOCK_V9_3_B4_EXECUTION_PROGRESS_V1",
+        "configured_worker_count": worker_count,
+        "completed_this_invocation": completed,
+        "resumed_valid_results": resumed,
+    }
+    if failed_request_id is not None:
+        document["failed_request_id"] = failed_request_id
+    atomic_write_json(Path(output_root) / "execution_progress.json", document)
+
+
+def _execute_selected_requests(
+    config: Mapping[str, Any], selected: Sequence[PerformanceRequest],
+    taskset_by_id: Mapping[str, PerformanceTaskset], output_root: Path, *,
+    resumed_valid_results: int,
+) -> int:
+    """Execute a frozen request prefix; only this parent layer writes terminals."""
+
+    worker_count = int(config["execution"]["worker_count"])
+    checkpoint_every = int(config["execution"]["checkpoint_every"])
+    indexed = list(enumerate(selected))
+    completed = 0
+
+    def run(request: PerformanceRequest) -> Dict[str, Any]:
+        return execute_request(
+            config, request, taskset_by_id[request.taskset_id], output_root,
+        )
+
+    def commit(request: PerformanceRequest, result: Mapping[str, Any]) -> None:
+        nonlocal completed
+        _validate_worker_result(request, result)
+        path = _request_result_path(output_root, request)
+        if path.exists():
+            raise FileExistsError(f"terminal result appeared during execution: {path}")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_json(path, result)
+        completed += 1
+        if completed % checkpoint_every == 0:
+            _write_execution_progress(
+                output_root, worker_count=worker_count, completed=completed,
+                resumed=resumed_valid_results,
+            )
+
+    if worker_count == 1:
+        for _index, request in indexed:
+            try:
+                commit(request, run(request))
+            except Exception as exc:
+                _write_execution_progress(
+                    output_root, worker_count=worker_count, completed=completed,
+                    resumed=resumed_valid_results,
+                    failed_request_id=request.semantic_request_id,
+                )
+                _raise_request_failure(
+                    request, exc, worker_count=worker_count, completed=completed,
+                    resumed=resumed_valid_results,
+                )
+        return completed
+
+    executor = ThreadPoolExecutor(
+        max_workers=worker_count, thread_name_prefix="b4-simulator",
+    )
+    iterator = iter(indexed)
+    in_flight: Dict[Future, Tuple[int, PerformanceRequest]] = {}
+
+    def fill_window() -> None:
+        while len(in_flight) < worker_count:
+            try:
+                index, request = next(iterator)
+            except StopIteration:
+                return
+            in_flight[executor.submit(run, request)] = (index, request)
+
+    fill_window()
+    shutdown = False
+    try:
+        while in_flight:
+            done, _not_done = wait(tuple(in_flight), return_when=FIRST_COMPLETED)
+            finished = sorted(
+                ((in_flight.pop(future), future) for future in done),
+                key=lambda item: item[0][0],
+            )
+            successes = []
+            failures = []
+            for (index, request), future in finished:
+                try:
+                    successes.append((index, request, future.result()))
+                except Exception as exc:
+                    failures.append((index, request, exc))
+            for index, request, result in successes:
+                try:
+                    commit(request, result)
+                except Exception as exc:
+                    failures.append((index, request, exc))
+            if failures:
+                _index, failed_request, cause = min(failures, key=lambda item: item[0])
+                for future in in_flight:
+                    future.cancel()
+                executor.shutdown(wait=True)
+                shutdown = True
+                _write_execution_progress(
+                    output_root, worker_count=worker_count, completed=completed,
+                    resumed=resumed_valid_results,
+                    failed_request_id=failed_request.semantic_request_id,
+                )
+                _raise_request_failure(
+                    failed_request, cause, worker_count=worker_count,
+                    completed=completed, resumed=resumed_valid_results,
+                )
+            fill_window()
+    finally:
+        if not shutdown:
+            executor.shutdown(wait=True)
+    return completed
+
+
+def _execute_request_batch(
+    config: Mapping[str, Any], requests: Sequence[PerformanceRequest],
+    taskset_by_id: Mapping[str, PerformanceTaskset], output_root: Path, *,
+    max_requests: Optional[int] = None,
+) -> Dict[str, Any]:
+    pending, resumed = _scan_existing_terminal_results(config, requests, output_root)
+    selected = pending if max_requests is None else pending[:max_requests]
+    completed = _execute_selected_requests(
+        config, selected, taskset_by_id, output_root,
+        resumed_valid_results=resumed,
+    )
+    worker_count = int(config["execution"]["worker_count"])
+    _write_execution_progress(
+        output_root, worker_count=worker_count, completed=completed, resumed=resumed,
+    )
+    return {
+        "configured_worker_count": worker_count,
+        "selected_requests": len(selected),
+        "completed_this_invocation": completed,
+        "resumed_valid_results": resumed,
+        "simulator_invoked": bool(selected),
+    }
+
+
 def execute_plan(
     config: Mapping[str, Any], store: PerformanceTasksetStore, *,
     max_requests: Optional[int] = None, phase: str = "default",
@@ -610,24 +865,28 @@ def execute_plan(
     reused_gate_ids = _reuse_selected_gate_results(
         config, requests, output_root, source_commit, binary_hash,
     )
-    pending = tuple(request for request in requests if request.semantic_request_id not in reused_gate_ids)
-    selected = pending if max_requests is None else pending[:max_requests]
+    execution_requests = tuple(
+        request for request in requests
+        if request.semantic_request_id not in reused_gate_ids
+    )
     taskset_by_id = {taskset.taskset_id: taskset for taskset in tasksets}
-    completed = 0
-    for request in selected:
-        result_path = output_root / "terminal_results" / f"{request.semantic_request_id}.json"
-        if result_path.is_file() and config["execution"]["resume"]:
-            completed += 1
-            continue
-        result = execute_request(config, request, taskset_by_id[request.taskset_id], output_root)
-        result_path.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_json(result_path, result)
-        completed += 1
+    execution_summary = _execute_request_batch(
+        config, execution_requests, taskset_by_id, output_root,
+        max_requests=max_requests,
+    )
     if config["stage"] == "CALIBRATION":
         _refresh_calibration_csvs(output_root)
     return {
         "planned_requests": len(requests), "reused_gate_requests": len(reused_gate_ids),
-        "selected_requests": len(selected),
-        "completed_requests": completed, "simulator_invoked": bool(selected),
+        "selected_requests": execution_summary["selected_requests"],
+        "completed_requests": (
+            len(reused_gate_ids)
+            + execution_summary["resumed_valid_results"]
+            + execution_summary["completed_this_invocation"]
+        ),
+        "configured_worker_count": execution_summary["configured_worker_count"],
+        "completed_this_invocation": execution_summary["completed_this_invocation"],
+        "resumed_valid_results": execution_summary["resumed_valid_results"],
+        "simulator_invoked": execution_summary["simulator_invoked"],
         "source_commit": source_commit, "simulator_binary_sha256": binary_hash,
     }
