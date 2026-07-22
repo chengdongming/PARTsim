@@ -116,7 +116,7 @@ namespace RTSim {
     // =====================================================
 
     GPFPBatchScheduler::GPFPBatchScheduler() :
-        Scheduler(),
+        Scheduler(TaskModel::TaskModelCmp::QueueOrder::LegacyDescending),
         _num_cores(4),
         _current_frequency(1400.0),
         _unit_time(50),
@@ -263,7 +263,7 @@ namespace RTSim {
 
     GPFPBatchScheduler::GPFPBatchScheduler(
         const std::vector<std::string> &params) :
-        Scheduler(),
+        Scheduler(TaskModel::TaskModelCmp::QueueOrder::LegacyDescending),
         _num_cores(4),
         _current_frequency(1400.0),
         _unit_time(50),

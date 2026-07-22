@@ -28,6 +28,7 @@ namespace RTSim {
        work is done in the Scheduler class.
     */
     class RMScheduler : public FPScheduler {
+    protected:
         /**
             \ingroup kernels
 
@@ -39,7 +40,7 @@ namespace RTSim {
 
         public:
             RMModel(AbsRTTask *t) : FPModel(t, 0), extP(false) {}
-            Tick getPriority() {
+            Tick getPriority() const override {
                 if (extP)
                     return _prio;
                 else

@@ -44,6 +44,10 @@ class priority_list : private std::set<T, Compare, Alloc> {
     typedef std::set<T, Compare, Alloc> Impl;
 
 public:
+    priority_list() = default;
+
+    explicit priority_list(const Compare &compare) : Impl(compare) {}
+
     typedef typename Impl::iterator iterator;
     typedef typename Impl::const_iterator const_iterator;
     typedef typename Impl::pointer pointer;
