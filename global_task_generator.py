@@ -1100,6 +1100,21 @@ def load_system_config(system_file: str) -> Dict:
         return {}
 
 
+def configure_arrival_offset_arguments(parser):
+    """Add the backward-compatible, explicitly disableable offset switch."""
+
+    arrival_group = parser.add_mutually_exclusive_group()
+    arrival_group.add_argument(
+        "--arrival-offset", dest="arrival_offset", action="store_true",
+        default=True, help="启用到达时间偏移（兼容默认行为）",
+    )
+    arrival_group.add_argument(
+        "--no-arrival-offset", dest="arrival_offset", action="store_false",
+        help="禁用到达时间偏移并生成同步释放任务",
+    )
+    return parser
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="能量感知全局调度任务集生成器 - 增强版",
@@ -1126,8 +1141,7 @@ def main():
                        help="系统配置文件路径，用于读取能量参数")
     parser.add_argument("--energy-aware", action="store_true", default=True,
                        help="启用能量感知调度")
-    parser.add_argument("--arrival-offset", action="store_true", default=True,
-                       help="启用到达时间偏移")
+    configure_arrival_offset_arguments(parser)
     parser.add_argument("--max-arrival-offset", type=int, default=None,
                        help="最大到达时间偏移(ms)，默认为任务周期的30%%")
     parser.add_argument("-o", "--output", default="energy_aware_tasks.yml",
