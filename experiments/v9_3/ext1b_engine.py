@@ -655,9 +655,14 @@ class Ext1BRunner:
                 "b3_summary_rows": "b3_summary.csv",
             }
             if is_b3_target_trace_v2(self.config):
-                observation_files["b3_calibration_summary_rows"] = (
-                    "b3_calibration_summary.csv"
-                )
+                if self.config.get("parameter_status") == "FORMAL":
+                    observation_files[
+                        "b3_formal_confirmation_summary_rows"
+                    ] = "b3_formal_confirmation_summary.csv"
+                else:
+                    observation_files["b3_calibration_summary_rows"] = (
+                        "b3_calibration_summary.csv"
+                    )
         table_names.update(observation_files.values())
         required = table_names | {
             "checkpoint.json", "file_hashes.sha256", "run_config.yaml",

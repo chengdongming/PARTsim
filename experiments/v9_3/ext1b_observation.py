@@ -1285,7 +1285,7 @@ def _b3_calibration_rows(
     *,
     output_file_hash_verification_closed: bool,
 ) -> list[Dict[str, Any]]:
-    """Return one independent audit/result row per v2 calibration unit."""
+    """Return one independent audit/result row per B3-v2 scenario unit."""
 
     if not is_b3_target_trace_v2(config):
         return []
@@ -1601,8 +1601,13 @@ def write_ext1b_observation_outputs(
         ),
     )
     if is_b3_target_trace_v2(config):
+        summary_name = (
+            "b3_formal_confirmation_summary.csv"
+            if config.get("parameter_status") == "FORMAL"
+            else "b3_calibration_summary.csv"
+        )
         write_csv(
-            root / "b3_calibration_summary.csv",
+            root / summary_name,
             B3_CALIBRATION_COLUMNS,
             calibration_rows,
         )
@@ -1617,6 +1622,10 @@ def write_ext1b_observation_outputs(
         "b3_event_rows": len(b3_events),
         "b3_summary_rows": len(b3_summaries),
         **({
-            "b3_calibration_summary_rows": len(calibration_rows),
+            (
+                "b3_formal_confirmation_summary_rows"
+                if config.get("parameter_status") == "FORMAL"
+                else "b3_calibration_summary_rows"
+            ): len(calibration_rows),
         } if is_b3_target_trace_v2(config) else {}),
     }
