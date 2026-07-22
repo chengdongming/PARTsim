@@ -83,4 +83,3 @@ confirmatory_comparisons:
   - [gpfp_asap_block, gpfp_asap_sync]
   - [gpfp_asap_block, gpfp_alap_block]
   - [gpfp_asap_block, gpfp_st_block]
-
