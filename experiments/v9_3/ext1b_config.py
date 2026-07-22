@@ -45,6 +45,7 @@ SEED_SPACES = {
     "EXT1B2_SYNC_CALIBRATION_PILOT_WORKLOAD_CONTRACT_V2",
     "EXT1B3_TIMING_CALIBRATION_PILOT_WORKLOAD_CONTRACT_V2",
     "EXT1B3_TARGET_TRACE_CALIBRATION_WORKLOAD_CONTRACT_V3",
+    "EXT1B3_B3_V2_FORMAL_CONFIRMATION_R1_WORKLOAD_CONTRACT_V3",
     "EXT1B1_FORMAL_R1_WORKLOAD_CONTRACT_V2",
     "EXT1B2_FORMAL_MECHANISM_R1_WORKLOAD_CONTRACT_V2",
     (
@@ -79,6 +80,10 @@ B3_REQUIRED_OUTPUTS = (
 B3_V2_REQUIRED_OUTPUTS = (
     *B3_REQUIRED_OUTPUTS,
     "b3_calibration_summary.csv",
+)
+B3_V2_FORMAL_REQUIRED_OUTPUTS = (
+    *B3_REQUIRED_OUTPUTS,
+    "b3_formal_confirmation_summary.csv",
 )
 
 TOP_LEVEL_KEYS = {
@@ -247,8 +252,11 @@ def _formal_profile(
     taskset_store: str,
     bootstrap_seed: int,
     scenario: Mapping[str, Any],
+    service_curve_id: str | None = None,
 ) -> Dict[str, Any]:
     frozen = _formal_common_frozen()
+    if service_curve_id is not None:
+        frozen["energy"]["service_curve"]["id"] = service_curve_id
     # Scenario is intentionally first so cross-profile identity misuse reports
     # the scientific mismatch before secondary scheduler/output differences.
     frozen = {
@@ -341,6 +349,50 @@ _B3_FORMAL_SCENARIO = {
         },
     ],
 }
+_B3_V2_FORMAL_SCENARIO = {
+    "kind": "TIMING_STRESS",
+    "scenario_contract_id": B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2,
+    "capacity_feasibility_contract": (
+        B3_TASK_CAPACITY_FEASIBILITY_CONTRACT_VERSION
+    ),
+    "subtype": "MULTI_CELL",
+    "structural_retry_limit": 24,
+    "activation_policy": "REPORT_STRUCTURAL_AND_RUNTIME",
+    "priority_power_profile": "ACTUAL_GENERATOR_ORDER",
+    "affordable_prefix_length": 1,
+    "deadline_ratio_min": "1/2",
+    "deadline_ratio_max": "1",
+    "nominal_energy_supply_ratios": ["0", "1/2"],
+    "initial_energy_policy": "TOP_M_AFFORDABLE",
+    "release_pattern": "SYNCHRONOUS",
+    "harvest_phase_policy": "PEAK_SYNTHETIC",
+    "interpolation_rho": "1/2",
+    # The v2 scenario expander consumes this field.  FORMAL freezes each
+    # dimension to one value, so it cannot perform candidate selection.
+    "calibration_grid": {
+        "recovery_margin_ticks": [1],
+        "interpolation_rhos": ["1/2"],
+        "nominal_energy_supply_ratios": ["1/2"],
+    },
+    "timing_cells": [
+        {
+            "id": "positive-slack-energy-available-v2-formal-r1",
+            "subtype": "POSITIVE_SLACK_ENERGY_AVAILABLE",
+            "deadline_ratio_min": "1/2",
+            "deadline_ratio_max": "3/4",
+            "nominal_energy_supply_ratio": "0",
+            "initial_energy_policy": "TOP_M_AFFORDABLE",
+        },
+        {
+            "id": "slack-limited-charging-v2-formal-r1",
+            "subtype": "SLACK_LIMITED_CHARGING",
+            "deadline_ratio_min": "3/4",
+            "deadline_ratio_max": "1",
+            "nominal_energy_supply_ratio": "1/2",
+            "initial_energy_policy": "HALF_TARGET",
+        },
+    ],
+}
 
 
 FORMAL_PROFILE_BY_SEED_SPACE = {
@@ -399,6 +451,29 @@ FORMAL_PROFILE_BY_SEED_SPACE = {
         ),
         bootstrap_seed=9712903,
         scenario=_B3_FORMAL_SCENARIO,
+    ),
+    "EXT1B3_B3_V2_FORMAL_CONFIRMATION_R1_WORKLOAD_CONTRACT_V3": (
+        _formal_profile(
+            "B3_V2",
+            experiment_id=(
+                "asap-block-v9.3-ext1b3-b3-v2-formal-confirmation-r1"
+            ),
+            scheduler_ids=B3_PRIMARY_SCHEDULER_IDS,
+            required_outputs=B3_V2_FORMAL_REQUIRED_OUTPUTS,
+            base_seed=524843528,
+            output_root=(
+                "artifacts/v9_3_ext1b3_b3_v2_formal_confirmation_r1"
+            ),
+            taskset_store=(
+                "artifacts/v9_3_ext1b3_b3_v2_formal_confirmation_r1_"
+                "taskset_store"
+            ),
+            bootstrap_seed=1070221135,
+            scenario=_B3_V2_FORMAL_SCENARIO,
+            service_curve_id=(
+                "ext1b3-b3-v2-formal-confirmation-r1-service"
+            ),
+        )
     ),
 }
 
@@ -565,7 +640,9 @@ def _validate_timing_cells(scenario: Dict[str, Any]) -> None:
     scenario["timing_cells"] = normalized
 
 
-def _validate_b3_v2_calibration_grid(scenario: Dict[str, Any]) -> None:
+def _validate_b3_v2_calibration_grid(
+    scenario: Dict[str, Any], *, minimum_candidates: int = 2,
+) -> None:
     raw = scenario.get("calibration_grid")
     if not isinstance(raw, dict):
         raise ConfigError("B3-v2 requires scenario.calibration_grid")
@@ -577,8 +654,10 @@ def _validate_b3_v2_calibration_grid(scenario: Dict[str, Any]) -> None:
         )
 
     margins = raw["recovery_margin_ticks"]
-    if not isinstance(margins, list) or len(margins) < 2:
-        raise ConfigError("B3-v2 requires at least two recovery margin candidates")
+    if not isinstance(margins, list) or len(margins) < minimum_candidates:
+        raise ConfigError(
+            "B3-v2 parameter grid has too few recovery margin candidates"
+        )
     normalized_margins = []
     for index, value in enumerate(margins):
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
@@ -592,8 +671,10 @@ def _validate_b3_v2_calibration_grid(scenario: Dict[str, Any]) -> None:
 
     def exact_candidates(key: str) -> list[str]:
         values = raw[key]
-        if not isinstance(values, list) or len(values) < 2:
-            raise ConfigError(f"B3-v2 requires at least two {key} candidates")
+        if not isinstance(values, list) or len(values) < minimum_candidates:
+            raise ConfigError(
+                f"B3-v2 parameter grid has too few {key} candidates"
+            )
         normalized = []
         for index, value in enumerate(values):
             parsed = exact_fraction(value, f"calibration_grid.{key}[{index}]")
@@ -713,7 +794,11 @@ def validate_ext1b_config(raw: Mapping[str, Any]) -> Dict[str, Any]:
         "BYPASS_STRESS": list(B1_REQUIRED_OUTPUTS),
         "SYNC_BATCH_STRESS": list(B2_REQUIRED_OUTPUTS),
         "TIMING_STRESS": list(
-            B3_V2_REQUIRED_OUTPUTS
+            (
+                B3_V2_FORMAL_REQUIRED_OUTPUTS
+                if status == "FORMAL"
+                else B3_V2_REQUIRED_OUTPUTS
+            )
             if scenario.get("scenario_contract_id")
             == B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2
             else B3_REQUIRED_OUTPUTS
@@ -801,14 +886,25 @@ def validate_ext1b_config(raw: Mapping[str, Any]) -> Dict[str, Any]:
                     "legacy B3 config cannot declare a B3-v2 calibration grid"
                 )
         elif scenario_contract == B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2:
-            if status != "CALIBRATION" or seed_space != (
-                "EXT1B3_TARGET_TRACE_CALIBRATION_WORKLOAD_CONTRACT_V3"
-            ):
+            calibration_profile = (
+                status == "CALIBRATION"
+                and seed_space
+                == "EXT1B3_TARGET_TRACE_CALIBRATION_WORKLOAD_CONTRACT_V3"
+            )
+            formal_profile = (
+                status == "FORMAL"
+                and seed_space
+                == "EXT1B3_B3_V2_FORMAL_CONFIRMATION_R1_WORKLOAD_CONTRACT_V3"
+            )
+            if not calibration_profile and not formal_profile:
                 raise ConfigError(
-                    "B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2 is isolated "
-                    "to the CALIBRATION v3 seed space"
+                    "B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2 requires its "
+                    "registered CALIBRATION or FORMAL v3 seed space"
                 )
-            _validate_b3_v2_calibration_grid(scenario)
+            _validate_b3_v2_calibration_grid(
+                scenario,
+                minimum_candidates=2 if calibration_profile else 1,
+            )
         else:
             raise ConfigError("unknown B3 scenario contract ID")
     else:

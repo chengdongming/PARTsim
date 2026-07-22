@@ -33,6 +33,9 @@ B3_PATH = (
     ROOT
     / "configs/v9_3_ext1b3_timing_formal_r1_workload_contract_v2_capacity_contract_v1.yaml"
 )
+B3_V2_PATH = (
+    ROOT / "configs/v9_3_ext1b3_b3_v2_formal_confirmation_r1.yaml"
+)
 
 FORMAL_CASES = (
     (
@@ -68,6 +71,16 @@ FORMAL_CASES = (
         800,
         2400,
     ),
+    (
+        "B3_V2",
+        B3_V2_PATH,
+        "EXT1B3_B3_V2_FORMAL_CONFIRMATION_R1_WORKLOAD_CONTRACT_V3",
+        524843528,
+        ["gpfp_asap_block", "gpfp_alap_block", "gpfp_st_block"],
+        4,
+        800,
+        2400,
+    ),
 )
 
 
@@ -94,7 +107,7 @@ def test_formal_profile_registry_is_explicit_and_complete():
     assert {
         profile["profile_id"]
         for profile in FORMAL_PROFILE_BY_SEED_SPACE.values()
-    } == {"B1", "B2", "B3"}
+    } == {"B1", "B2", "B3", "B3_V2"}
 
 
 @pytest.mark.parametrize(
