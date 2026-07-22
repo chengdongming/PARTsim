@@ -71,7 +71,10 @@ def _load_generation_config(path: Path):
 
 def test_all_repository_v93_generation_configs_have_exact_contract():
     paths = _common_generation_configs()
-    assert len(paths) == 47
+    # Merged master contains the PR #46 B3 formal-confirmation profile plus
+    # the four PR #45 B4 profiles. Keep the inventory exact and continue
+    # validating every member below.
+    assert len(paths) == 48
     assert {
         path.name for path in paths
     }.issuperset({
@@ -81,6 +84,7 @@ def test_all_repository_v93_generation_configs_have_exact_contract():
             "capacity_contract_v1.yaml"
         ),
         "v9_3_ext1b3_timing_calibration_v2_target_trace_contract.yaml",
+        "v9_3_ext1b3_b3_v2_formal_confirmation_r1.yaml",
         "v9_3_b4_calibration_r1.yaml",
         "v9_3_b4_horizon_gate_r1.yaml",
         "v9_3_b4_formal_template_r1.yaml",

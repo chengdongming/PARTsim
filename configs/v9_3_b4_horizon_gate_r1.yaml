@@ -51,7 +51,7 @@ simulation:
   trace_sample_fraction: "1/20"
   simulator_bin: ./build/rtsim/rtsim
 execution:
-  worker_count: 1
+  worker_count: 24
   checkpoint_every: 25
   output_root: artifacts/v9_3_b4_horizon_gate_r1
   taskset_store: artifacts/v9_3_b4_formal_tasksets_r1

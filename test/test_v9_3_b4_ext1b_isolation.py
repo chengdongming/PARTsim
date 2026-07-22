@@ -4,6 +4,10 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+# Freeze PR #45 itself. Later master commits (including PR #46 EXT-1B fixes)
+# must not expand the change interval attributed to B4.
+B4_BASE = "b391ee6ad2854834ab1248ef713499350f195b9e"
+B4_HEAD = "584bf0605493f2d012e1b8ff1d3257c6bea9d3cb"
 
 
 def test_b4_modules_do_not_import_ext1b_specific_modules():
@@ -18,9 +22,9 @@ def test_b4_modules_do_not_import_ext1b_specific_modules():
         assert not any("ext1b" in name for name in imports), (path, imports)
 
 
-def test_b4_does_not_modify_ext1b_contract_files():
+def test_frozen_b4_changeset_does_not_modify_ext1b_contract_files():
     changed = __import__("subprocess").run(
-        ["git", "diff", "--name-only", "b391ee6ad2854834ab1248ef713499350f195b9e"],
+        ["git", "diff", "--name-only", B4_BASE, B4_HEAD],
         cwd=PROJECT_ROOT, capture_output=True, text=True, check=True,
     ).stdout.splitlines()
     assert not any(

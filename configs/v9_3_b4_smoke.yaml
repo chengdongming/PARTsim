@@ -50,7 +50,7 @@ simulation:
   trace_sample_fraction: "1/20"
   simulator_bin: ./build/rtsim/rtsim
 execution:
-  worker_count: 1
+  worker_count: 4
   checkpoint_every: 1
   output_root: artifacts/v9_3_b4_smoke
   taskset_store: artifacts/v9_3_b4_smoke_tasksets
