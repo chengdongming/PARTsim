@@ -42,6 +42,27 @@ class SimulationConfigurationError(RuntimeError):
     """Raised before execution when RTA/simulation inputs cannot be paired."""
 
 
+def trace_retention_statuses(
+    simulation_config: Mapping[str, Any],
+) -> set[str]:
+    """Return the optional retention set while preserving legacy defaults."""
+
+    configured = simulation_config.get("retain_trace_statuses")
+    if configured is None:
+        return {
+            SimulationStatus.DEADLINE_MISS.value,
+            SimulationStatus.INTERNAL_ERROR.value,
+        }
+    if (
+        not isinstance(configured, (list, tuple))
+        or any(not isinstance(value, str) for value in configured)
+    ):
+        raise SimulationConfigurationError(
+            "retain_trace_statuses must be a list of status strings"
+        )
+    return set(configured)
+
+
 @dataclass(frozen=True)
 class SimulationExecution:
     simulation_id: str
@@ -849,6 +870,7 @@ def run_paired_simulation(
 
         assert result is not None
         retain_always = bool(simulation_config.get("retain_trace", False))
+        retain_statuses = trace_retention_statuses(simulation_config)
         should_retain = bool(
             trace_path.is_file()
             and (
@@ -856,10 +878,7 @@ def run_paired_simulation(
                 or (
                     simulation_config["trace_on_failure"]
                     and (
-                        result.status in {
-                            SimulationStatus.DEADLINE_MISS,
-                            SimulationStatus.INTERNAL_ERROR,
-                        }
+                        result.status.value in retain_statuses
                         or not result.release_e0_valid
                     )
                 )
