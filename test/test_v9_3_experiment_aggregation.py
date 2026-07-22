@@ -89,6 +89,18 @@ def _worker_internal_run(tmp_path, monkeypatch):
     return outcome
 
 
+def test_aggregation_rejects_legacy_numeric_contract_metadata(
+    tmp_path, monkeypatch
+):
+    outcome = _completed_run(tmp_path, monkeypatch)
+    path = outcome.output_root / "run_metadata.json"
+    metadata = json.loads(path.read_text(encoding="utf-8"))
+    metadata["numeric_contract_sha256"] = "legacy-contract"
+    path.write_text(json.dumps(metadata), encoding="utf-8")
+    with pytest.raises(AggregationError, match="numeric/theory metadata mismatch"):
+        aggregate_core1(outcome.output_root)
+
+
 def test_aggregation_rejects_impossible_no_payload_internal_failure(
     tmp_path, monkeypatch
 ):

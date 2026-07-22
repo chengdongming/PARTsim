@@ -40,6 +40,7 @@ from experiments.v9_3.config import (
     TASK_WORKLOAD_CONTRACT_VERSION,
     task_workload_contract_material,
 )
+from experiments.v9_3 import exact_energy
 
 
 THEORY_SHA256 = taskset.THEORY_DOCUMENT_SHA256
@@ -396,8 +397,16 @@ def _generate_taskset(
 
 
 def _dependency_context(
-    generated: GeneratedTaskset, beta_hash: str, config_hash: str,
+    generated: GeneratedTaskset,
+    beta: Tuple[Fraction, ...],
+    beta_hash: str,
+    config_hash: str,
 ) -> taskset.DependencyContext:
+    exact_input_identity = exact_energy.exact_input_identity(
+        task_powers=((item.name, item.power) for item in generated.tasks),
+        e0=Fraction(generated.e0),
+        service_prefix=beta,
+    )
     return taskset.DependencyContext(
         taskset_identity=generated.semantic_hash,
         task_definitions_identity=_domain_hash(
@@ -412,6 +421,13 @@ def _dependency_context(
         theory_document_sha256=THEORY_SHA256,
         fixed_carry_in_interface_sha256=taskset.FIXED_CARRY_IN_INTERFACE_SHA256,
         formal_contract_identity=None,
+        numeric_contract_sha256=exact_energy.NUMERIC_CONTRACT_SHA256,
+        source_numeric_model=exact_energy.SOURCE_NUMERIC_MODEL,
+        demand_rounding_mode=exact_energy.DEMAND_ROUNDING_MODE,
+        supply_rounding_mode=exact_energy.SUPPLY_ROUNDING_MODE,
+        e0_rounding_mode=exact_energy.E0_ROUNDING_MODE,
+        exact_input_identity=exact_input_identity,
+        float_decision_path=exact_energy.FLOAT_DECISION_PATH,
     )
 
 
@@ -456,7 +472,7 @@ def _analysis_input(
 ) -> taskset.TasksetAnalysisInput:
     return taskset.TasksetAnalysisInput(
         generated.tasks, int(len(generated.tasks) and 4), Fraction(generated.e0),
-        beta, _dependency_context(generated, beta_hash, config_hash),
+        beta, _dependency_context(generated, beta, beta_hash, config_hash),
         timeout_seconds=timeout_seconds,
     )
 

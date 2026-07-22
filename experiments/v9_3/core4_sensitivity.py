@@ -12,6 +12,7 @@ from typing import Any, Dict, Mapping, Optional
 import asap_block_rta_v9_3 as rta_core
 
 from .cell_model import Cell, expand_cells
+from . import exact_energy
 from .config import (
     ConfigError, canonical_json, config_hash, domain_hash, dump_config, fraction_text,
 )
@@ -77,7 +78,11 @@ def scale_taskset_power(stored: StoredTaskset, scale: Fraction) -> StoredTaskset
         raise ConfigError("power scale must be positive")
     tasks = tuple(replace(task, power=Fraction(task.power) * scale) for task in stored.tasks)
     payload = tuple({
-        **row, "P": fraction_text(Fraction(str(row["P"])) * scale),
+        **row, "P": fraction_text(
+            exact_energy.parse_persisted_fraction(
+                row["P"], "CORE-4 source task P",
+            ) * scale
+        ),
     } for row in stored.task_payload)
     power_hash = domain_hash(
         "ASAP_BLOCK:V9.3:SENSITIVITY_POWER_VECTOR:v1",
@@ -446,7 +451,12 @@ class Core4SensitivityRunner:
                     str(level) if axis == "initial_energy" else
                     self.config["energy"]["initial_energy_values"][0]
                 )
-                scale = Fraction(str(level)) if axis == "power_scale" else Fraction(1)
+                scale = (
+                    exact_energy.exact_e0_lower_bound(
+                        level, "CORE-4 power scale",
+                    )
+                    if axis == "power_scale" else Fraction(1)
+                )
                 service_spec = (
                     level if axis == "service_curve" else self.config["energy"]["service_curve"]
                 )

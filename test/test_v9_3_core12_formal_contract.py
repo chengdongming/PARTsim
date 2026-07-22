@@ -251,7 +251,9 @@ def test_formal_authorization_and_taskset_store_reject_legacy_schema(tmp_path):
         encoding="utf-8",
     )
     with pytest.raises(
-        FormalAuthorizationError, match="workload-contract-v2 schema"
+        # V4 binds the exact-binary64 workload material, so the legacy
+        # rejection names that contract instead of the earlier V2 label.
+        FormalAuthorizationError, match="exact-binary64 workload schema"
     ):
         taskset_store_identity(legacy_store)
 

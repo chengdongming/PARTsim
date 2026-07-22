@@ -11,6 +11,7 @@ import sys
 import pytest
 import yaml
 
+import asap_block_rta as legacy_rta
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -33,7 +34,12 @@ from experiments.v9_3.ext1b_capacity_contract import (  # noqa: E402
     NATIVE_ENERGY_EPSILON_J,
     capacity_feasibility_violations,
 )
-from experiments.v9_3.config import ConfigError, canonical_json  # noqa: E402
+from experiments.v9_3.config import (  # noqa: E402
+    ConfigError,
+    canonical_json,
+    fraction_text,
+    task_demand_for_wcet,
+)
 from experiments.v9_3.ext1b_config import (  # noqa: E402
     load_ext1b_config,
     validate_ext1b_config,
@@ -452,7 +458,7 @@ def _prefix_tasks() -> tuple[dict[str, object], ...]:
          "T": 40, "P": "1/1000", "workload": "bzip2",
          "arrival_offset": 0},
         {"task_id": "1", "priority_rank": 1, "C": 1, "D": 21,
-         "T": 40, "P": "2/1000", "workload": "control",
+         "T": 40, "P": "1/500", "workload": "control",
          "arrival_offset": 0},
         {"task_id": "2", "priority_rank": 2, "C": 1, "D": 22,
          "T": 60, "P": "3/1000", "workload": "hash",
@@ -613,9 +619,12 @@ def test_runtime_prefix_mismatch_fails_closed(tmp_path):
 
 
 def _stored_taskset(config, tmp_path: Path) -> StoredTaskset:
-    energy = str(config["generation"]["workload_contract"]["power_model"][0][
-        "energy_per_tick"
-    ])
+    system = legacy_rta.load_system_config(str(
+        ROOT / config["energy"]["service_curve"]["system_template"]
+    ))
+    energy = fraction_text(task_demand_for_wcet(
+        system, "bzip2", 1, label="target-trace fixture exact P",
+    ))
     tasks = tuple({
         "task_id": str(index), "source_name": f"source-{index}",
         "priority_rank": index, "C": 1, "D": 100, "T": 100,
@@ -670,9 +679,11 @@ def test_v2_config_and_identity_domains_are_isolated():
     assert v2["scenario"]["scenario_contract_id"] == (
         B3_TARGET_ACTUAL_TRACE_RECOVERY_CONTRACT_V2
     )
-    assert B3_V2_TASKSET_SCHEMA.endswith("V5")
-    assert B3_V2_TASKSET_DOMAIN.endswith(":v5")
-    assert B3_V2_PAIRED_INSTANCE_DOMAIN.endswith(":v4")
+    # The final C/workload/exact-P numeric material is a new identity
+    # preimage; old V5/v4 scenario artifacts must not resume silently.
+    assert B3_V2_TASKSET_SCHEMA.endswith("V6")
+    assert B3_V2_TASKSET_DOMAIN.endswith(":v6")
+    assert B3_V2_PAIRED_INSTANCE_DOMAIN.endswith(":v5")
     assert B3_V2_REQUEST_DOMAIN.endswith(":v4")
     assert v2["grid"]["base_seed"] == 981301
     assert v2["statistics"]["bootstrap_seed"] == 9813903

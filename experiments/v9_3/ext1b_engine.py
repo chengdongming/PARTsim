@@ -14,8 +14,13 @@ import signal
 import subprocess
 from typing import Any, Dict, Mapping, Optional, Sequence
 
+import asap_block_rta as legacy_rta
+
+from . import exact_energy
 from .cell_model import expand_cells
-from .config import canonical_json, domain_hash, fraction_text
+from .config import (
+    canonical_json, domain_hash, fraction_text, task_demand_for_wcet,
+)
 from .ext1b_aggregation import aggregate_ext1b
 from .ext1b_config import (
     dump_ext1b_config, ext1b_config_hash, load_ext1b_config,
@@ -1453,10 +1458,14 @@ class Ext1BRunner:
             public_requests,
         )
         contract = self.config["generation"]["workload_contract"]
-        energy_by_workload = {
-            str(row["workload"]): Fraction(str(row["energy_per_tick"]))
+        known_workloads = {
+            str(row["workload"])
             for row in contract["power_model"]
         }
+        system = legacy_rta.load_system_config(str(
+            Path(__file__).resolve().parents[2]
+            / self.config["energy"]["service_curve"]["system_template"]
+        ))
         idle_count = 0
         unknown_count = 0
         power_mismatch_count = 0
@@ -1477,15 +1486,24 @@ class Ext1BRunner:
                 observed_workloads.add(workload)
                 if workload == "idle":
                     idle_count += 1
-                if workload not in energy_by_workload:
+                if workload not in known_workloads:
                     unknown_count += 1
                     continue
                 try:
-                    observed_power = Fraction(str(task.get("P")))
-                except (ValueError, ZeroDivisionError):
+                    observed_power = exact_energy.parse_persisted_fraction(
+                        task.get("P"),
+                        f"plan task {task.get('task_id', '')} exact P",
+                    )
+                except exact_energy.ExactEnergyError:
                     power_mismatch_count += 1
                     continue
-                if observed_power != energy_by_workload[workload]:
+                expected_power = task_demand_for_wcet(
+                    system,
+                    workload,
+                    int(task["C"]),
+                    label=f"plan task {task.get('task_id', '')} exact P",
+                )
+                if observed_power != expected_power:
                     power_mismatch_count += 1
             if capacity_identity:
                 violations = capacity_feasibility_violations(

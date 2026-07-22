@@ -9,12 +9,14 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
+import asap_block_rta as legacy_rta
 from experiments.v9_3.cell_model import expand_cells, taskset_id
 from experiments.v9_3.config import (
     ConfigError,
     TASK_WORKLOAD_CONTRACT_VERSION,
     domain_hash,
     load_config,
+    task_demand_for_wcet,
     task_workload_contract_material,
     validate_config,
 )
@@ -261,7 +263,7 @@ def _recompute_document_hashes(document):
         "generation_parameters", "target_total_utilization",
         "actual_total_utilization", "priority_policy", "power_mode",
         "deadline_mode", "service_curve_reference", "tasks",
-        "task_workload_contract",
+        "task_workload_contract", "numeric_contract",
     ]
     document["taskset_hash"] = domain_hash(
         FROZEN_TASKSET_SEMANTIC_DOMAIN,
@@ -280,7 +282,7 @@ def _recompute_document_hashes(document):
         ("missing_contract", "legacy taskset store lacks mandatory"),
         ("idle", "stored real-time task uses reserved idle workload"),
         ("unknown", "stored real-time task uses unknown workload"),
-        ("power", "P does not match actual power model"),
+        ("power", "P does not match materialized C\\+\\+ demand"),
         ("candidate_identity", "workload contract mismatch"),
         ("power_identity", "workload contract mismatch"),
         ("semantic_hash", "semantic hash mismatch"),
@@ -418,11 +420,17 @@ def test_each_core_materializes_two_compliant_tasksets(tmp_path, core, path):
     tasksets = [store.get_or_create(cell, index) for index in range(2)]
     store.verify_pairing_manifest(require_complete=True)
     model = dict(store.task_workload_contract.power_model)
+    system = legacy_rta.load_system_config(str(service.system_path))
     assert len(tasksets) == 2
     assert all(
         row["workload"] != "idle"
         and row["workload"] in model
-        and Fraction(str(row["P"])) == model[row["workload"]]
+        and Fraction(str(row["P"])) == task_demand_for_wcet(
+            system,
+            row["workload"],
+            int(row["C"]),
+            label="test task demand",
+        )
         for stored in tasksets for row in stored.task_payload
     )
     assert store.manifest_document()["contract"][
@@ -481,14 +489,24 @@ def test_b1_b2_high_priority_power_mapping_remains_exact(tmp_path, path):
     assert instance is not None
     table = workload_energy_table(SYSTEM)
     low, high, middle = table[0], table[-1], table[len(table) // 2]
+    system = legacy_rta.load_system_config(str(SYSTEM))
     task_count = len(instance.tasks)
     expected = []
     for row in instance.tasks:
         rank = int(row["priority_rank"])
-        expected.append(
+        selected = (
             high if rank * 3 < task_count else
             low if rank * 3 >= 2 * task_count else middle
         )
+        workload = selected[0]
+        # The generation table selects the workload only.  Scenario P is the
+        # final C++-order binary64 materialization for this task's C.
+        expected.append((workload, task_demand_for_wcet(
+            system,
+            workload,
+            int(row["C"]),
+            label=f"scenario task {row['task_id']} expected exact P",
+        )))
     assert [
         (row["workload"], Fraction(str(row["P"]))) for row in instance.tasks
     ] == expected

@@ -7,6 +7,7 @@ from fractions import Fraction
 from typing import Any, Dict, Iterable, Mapping, Tuple
 
 from .config import domain_hash, fraction_text
+from . import exact_energy
 
 
 CORE1_VARIANTS = ("CW_THETA_CW", "LOC_THETA_LOC")
@@ -116,6 +117,12 @@ def expand_cells(config: Mapping[str, Any]) -> Tuple[Cell, ...]:
                         **dimensions,
                         "exact_e0": fraction_text(e0),
                         "numerical_mode": config["analysis"]["numerical_mode"],
+                        "theory_document_sha256": (
+                            exact_energy.THEORY_DOCUMENT_SHA256
+                        ),
+                        "numeric_contract_sha256": (
+                            exact_energy.NUMERIC_CONTRACT_SHA256
+                        ),
                     }
                     result.append(Cell(
                         config["experiment_id"], config["core"], processors,
@@ -161,7 +168,7 @@ def taskset_id(generation_id: str, taskset_index: int, semantic_hash: str) -> st
 
 def analysis_id(cell: Cell, taskset_hash: str, variant: str) -> str:
     return domain_hash(
-        "ASAP_BLOCK:V9.3:FORMAL_ANALYSIS:v2",
+        "ASAP_BLOCK:V9.3:FORMAL_ANALYSIS:v3",
         {
             "experiment_id": cell.experiment_id,
             "core": cell.core,
@@ -171,6 +178,8 @@ def analysis_id(cell: Cell, taskset_hash: str, variant: str) -> str:
             "variant": variant,
             "numerical_mode": cell.numerical_mode,
             "service_curve_id": cell.service_curve_id,
+            "theory_document_sha256": exact_energy.THEORY_DOCUMENT_SHA256,
+            "numeric_contract_sha256": exact_energy.NUMERIC_CONTRACT_SHA256,
         },
     )
 

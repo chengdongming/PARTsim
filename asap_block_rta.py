@@ -1596,11 +1596,25 @@ def _time_factor(absolute_time_ms: int) -> float:
     return 0.0
 
 
+def materialize_runtime_start_offset_ms(
+    day_of_year: int, time_of_day_ms: int,
+) -> int:
+    """Mirror EnergyConfig's production whole-minute start-time phase.
+
+    ``time_of_day_ms`` is floored to its containing minute before the
+    simulator starts.  Subsequent scheduler ticks advance from that
+    materialized boundary; the discarded millisecond remainder never
+    reappears.
+    """
+
+    return ((day_of_year - 1) * 1440 + time_of_day_ms // 60000) * 60000
+
+
 def _harvest_trace_from_config(
     config: RTASystemConfig, horizon_ms: int
 ) -> List[float]:
-    start_offset = (
-        (config.day_of_year - 1) * 86400000 + config.time_of_day_ms
+    start_offset = materialize_runtime_start_offset_ms(
+        config.day_of_year, config.time_of_day_ms,
     )
     if config.use_real_solar_data:
         irradiance = _load_irradiance_values(_resolve_solar_path(config))
@@ -1610,19 +1624,29 @@ def _harvest_trace_from_config(
             value = irradiance[minute] if minute < len(irradiance) else 0.0
             trace.append(
                 value
-                * config.pv_efficiency
                 * config.pv_area_m2
-                * TICK_SECONDS
+                * config.pv_efficiency
+                * (1.0 * TICK_SECONDS)
             )
         return trace
 
-    # This mirrors ASAPBlockScheduler::collectSolarEnergy for one-ms ticks.
-    return [
-        config.base_harvesting_rate
-        * _time_factor(start_offset + tick)
-        * TICK_SECONDS
-        for tick in range(1, horizon_ms + 1)
-    ]
+    # Mirror ASAPBlockScheduler::collectSolarEnergy's binary64 operation order
+    # for a one-ms tick, including the area/efficiency cancellation performed
+    # by the production C++ scheduler.
+    trace = []
+    peak_irradiance = config.base_harvesting_rate / (
+        config.pv_area_m2 * config.pv_efficiency
+    )
+    for tick in range(1, horizon_ms + 1):
+        irradiance = peak_irradiance * _time_factor(start_offset + tick)
+        elapsed_seconds = 1.0 * TICK_SECONDS
+        trace.append(
+            irradiance
+            * config.pv_area_m2
+            * config.pv_efficiency
+            * elapsed_seconds
+        )
+    return trace
 
 
 def _check_single_tick_capacity(

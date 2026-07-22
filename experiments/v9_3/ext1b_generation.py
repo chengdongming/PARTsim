@@ -12,8 +12,10 @@ from typing import Any, Dict, Mapping, Sequence, Tuple
 import asap_block_rta as legacy_rta
 
 from .config import (
-    canonical_json, domain_hash, fraction_text, task_workload_energy_model,
+    canonical_json, domain_hash, fraction_text, task_demand_for_wcet,
+    task_workload_energy_model,
 )
+from . import exact_energy
 from .ext1b_capacity_contract import (
     NATIVE_ENERGY_EPSILON_J,
     capacity_contract_identity,
@@ -123,6 +125,13 @@ class ScenarioInstance:
 
 def _ceil_fraction(value: Fraction) -> int:
     return -(-value.numerator // value.denominator)
+
+
+def _exact_task_power(row: Mapping[str, Any], label: str) -> Fraction:
+    try:
+        return exact_energy.parse_persisted_fraction(row["P"], label)
+    except exact_energy.ExactEnergyError as exc:
+        raise StructuralRejection("INVALID_EXACT_TASK_POWER", str(exc)) from exc
 
 
 def interpolate_exact(lower: Fraction, upper: Fraction, rho: Fraction) -> Fraction:
@@ -264,8 +273,10 @@ def _apply_power_profile(
     payload: Sequence[Mapping[str, Any]],
     table: Sequence[tuple[str, Fraction]],
     profile: str,
+    *,
+    system: legacy_rta.RTASystemConfig,
 ) -> list[Dict[str, Any]]:
-    energy_by_workload = dict(table)
+    known_workloads = {name for name, _energy in table}
     low, high = table[0], table[-1]
     middle = table[len(table) // 2]
     result = []
@@ -282,11 +293,42 @@ def _apply_power_profile(
                 workload, energy = middle
         else:
             workload = str(row["workload"])
-            if workload not in energy_by_workload:
+            if workload not in known_workloads:
                 raise StructuralRejection(
                     "WORKLOAD_NOT_IN_ACTUAL_POWER_MODEL", workload,
                 )
-            energy = energy_by_workload[workload]
+        expected = task_demand_for_wcet(
+            system,
+            workload,
+            int(row["C"]),
+            label=f"EXT-1B task {row['task_id']} final exact P",
+        )
+        if workload == str(raw["workload"]):
+            try:
+                stored = exact_energy.parse_persisted_fraction(
+                    raw["P"], f"EXT-1B task {row['task_id']} stored exact P",
+                )
+            except exact_energy.ExactEnergyError as exc:
+                raise StructuralRejection(
+                    "STORED_EXACT_POWER_MISMATCH", str(exc),
+                ) from exc
+            if stored != expected:
+                raise StructuralRejection(
+                    "STORED_EXACT_POWER_MISMATCH",
+                    canonical_json({
+                        "task_id": row["task_id"],
+                        "workload": workload,
+                        "C": int(row["C"]),
+                        "stored_P": fraction_text(stored),
+                        "expected_P": fraction_text(expected),
+                        "numeric_contract_sha256": (
+                            exact_energy.NUMERIC_CONTRACT_SHA256
+                        ),
+                    }),
+                )
+            energy = stored
+        else:
+            energy = expected
         row["workload"] = workload
         row["P"] = fraction_text(energy)
         row["arrival_offset"] = 0
@@ -323,7 +365,8 @@ def transform_constrained_deadlines(
 
 def nominal_demand_j_per_tick(payload: Sequence[Mapping[str, Any]]) -> Fraction:
     return sum((
-        Fraction(int(row["C"]), int(row["T"])) * Fraction(str(row["P"]))
+        Fraction(int(row["C"]), int(row["T"]))
+        * _exact_task_power(row, f"nominal task {row['task_id']} P")
         for row in payload
     ), Fraction(0))
 
@@ -336,18 +379,28 @@ def bypass_structure(
     for high_index, high in enumerate(ordered[:-1]):
         lower = [
             row for row in ordered[high_index + 1:]
-            if Fraction(str(row["P"])) < Fraction(str(high["P"]))
+            if _exact_task_power(
+                row, f"bypass task {row['task_id']} P",
+            ) < _exact_task_power(
+                high, f"bypass task {high['task_id']} P",
+            )
         ]
         if lower:
             selected = (high, min(
                 lower,
-                key=lambda row: (Fraction(str(row["P"])), -int(row["priority_rank"])),
+                key=lambda row: (
+                    _exact_task_power(
+                        row, f"bypass task {row['task_id']} P",
+                    ),
+                    -int(row["priority_rank"]),
+                ),
             ))
             break
     if selected is None:
         raise StructuralRejection("NO_PRIORITY_POWER_ANTAGONISM", "no e_l < e_h pair")
     high, low = selected
-    e_high, e_low = Fraction(str(high["P"])), Fraction(str(low["P"]))
+    e_high = _exact_task_power(high, f"bypass task {high['task_id']} P")
+    e_low = _exact_task_power(low, f"bypass task {low['task_id']} P")
     initial = _native_blocking_interpolation(e_low, e_high, rho)
     return initial, {
         "high_task_id": high["task_id"],
@@ -387,7 +440,10 @@ def sync_batch_structure(
     if not 1 <= p_value < q_value:
         raise StructuralRejection("INVALID_AFFORDABLE_PREFIX", f"p={p_value},q={q_value}")
     top_q = ready[:q_value]
-    energies = [Fraction(str(row["P"])) for row in top_q]
+    energies = [
+        _exact_task_power(row, f"sync task {row['task_id']} P")
+        for row in top_q
+    ]
     prefix = sum(energies[:p_value], Fraction(0))
     batch = sum(energies, Fraction(0))
     if not prefix < batch:
@@ -455,7 +511,9 @@ def _timing_structure(
     demand = nominal_demand_j_per_tick(payload)
     harvest = demand * cell.nominal_supply_ratio
     target = ordered[0]
-    target_energy = Fraction(str(target["P"]))
+    target_energy = _exact_task_power(
+        target, f"timing target {target['task_id']} P",
+    )
     target_slack = int(target["D"]) - int(target["C"])
     target_runtime_name = runtime_task_name_for_source_id(target["task_id"])
     target_arrival_time = 0
@@ -474,7 +532,10 @@ def _timing_structure(
     if cell.subtype == "POSITIVE_SLACK_ENERGY_AVAILABLE":
         if harvest != 0:
             raise StructuralRejection("AVAILABLE_CELL_REQUIRES_ZERO_HARVEST", fraction_text(harvest))
-        required = sum((Fraction(str(row["P"])) for row in top_q), Fraction(0))
+        required = sum((
+            _exact_task_power(row, f"timing task {row['task_id']} P")
+            for row in top_q
+        ), Fraction(0))
         structure = {
             "q": q_value,
             "top_q_task_ids": [row["task_id"] for row in top_q],
@@ -634,9 +695,13 @@ def build_scenario_instance(
     scenario = config["scenario"]
     target_trace_v2 = is_b3_target_trace_v2(config)
     base_system = Path(__file__).resolve().parents[2] / config["energy"]["service_curve"]["system_template"]
+    system = legacy_rta.load_system_config(str(base_system))
     power_table = workload_energy_table(base_system)
     payload = _apply_power_profile(
-        stored.task_payload, power_table, str(scenario["priority_power_profile"])
+        stored.task_payload,
+        power_table,
+        str(scenario["priority_power_profile"]),
+        system=system,
     )
     transform_seed = int(domain_hash(
         (
@@ -830,13 +895,31 @@ def build_scenario_instance(
             )
         )
 
+    scenario_exact_energy_identity = domain_hash(
+        "ASAP_BLOCK:V9.3:EXT1B:SCENARIO_EXACT_ENERGY:v1",
+        {
+            "numeric_contract_sha256": exact_energy.NUMERIC_CONTRACT_SHA256,
+            "source_numeric_model": exact_energy.SOURCE_NUMERIC_MODEL,
+            "tasks": [
+                {
+                    "task_id": row["task_id"],
+                    "workload": row["workload"],
+                    "C": int(row["C"]),
+                    "P": row["P"],
+                }
+                for row in payload
+            ],
+            "E0": fraction_text(initial),
+            "trace_hash": trace_hash,
+        },
+    )
     task_material = {
         "schema": (
             B3_V2_TASKSET_SCHEMA
             if target_trace_v2
-            else "ASAP_BLOCK_V9_3_EXT1B_TASKSET_V3"
+            else "ASAP_BLOCK_V9_3_EXT1B_TASKSET_V4"
             if cell.kind == "TIMING_STRESS"
-            else "ASAP_BLOCK_V9_3_EXT1B_TASKSET_V2"
+            else "ASAP_BLOCK_V9_3_EXT1B_TASKSET_V3"
         ),
         "scenario_cell": cell.row(),
         "source_taskset_hash": stored.semantic_hash,
@@ -846,6 +929,8 @@ def build_scenario_instance(
         "tasks": payload,
         "structure": structure,
         "task_workload_contract": config["generation"]["workload_contract"],
+        "numeric_contract_sha256": exact_energy.NUMERIC_CONTRACT_SHA256,
+        "scenario_exact_energy_identity": scenario_exact_energy_identity,
     }
     if cell.kind == "TIMING_STRESS":
         task_material.update({
@@ -863,9 +948,9 @@ def build_scenario_instance(
         (
             B3_V2_TASKSET_DOMAIN
             if target_trace_v2
-            else "ASAP_BLOCK:V9.3:EXT1B:TASKSET:v3"
+            else "ASAP_BLOCK:V9.3:EXT1B:TASKSET:v4"
             if cell.kind == "TIMING_STRESS"
-            else "ASAP_BLOCK:V9.3:EXT1B:TASKSET:v2"
+            else "ASAP_BLOCK:V9.3:EXT1B:TASKSET:v3"
         ),
         task_material,
     )
@@ -874,8 +959,15 @@ def build_scenario_instance(
         [(row["task_id"], row["priority_rank"]) for row in payload],
     )
     power_hash = domain_hash(
-        "ASAP_BLOCK:V9.3:EXT1B:POWER:v1",
-        [(row["task_id"], row["workload"], row["P"]) for row in payload],
+        "ASAP_BLOCK:V9.3:EXT1B:POWER:v2",
+        {
+            "numeric_contract_sha256": exact_energy.NUMERIC_CONTRACT_SHA256,
+            "scenario_exact_energy_identity": scenario_exact_energy_identity,
+            "tasks": [
+                (row["task_id"], row["workload"], row["C"], row["P"])
+                for row in payload
+            ],
+        },
     )
     deadline_hash = domain_hash(
         "ASAP_BLOCK:V9.3:EXT1B:DEADLINE:v1",
@@ -920,9 +1012,9 @@ def build_scenario_instance(
         if target_trace_v2
         else domain_hash(
             (
-                "ASAP_BLOCK:V9.3:EXT1B:PAIRED_INSTANCE:v2"
+                "ASAP_BLOCK:V9.3:EXT1B:PAIRED_INSTANCE:v3"
                 if cell.kind == "TIMING_STRESS"
-                else "ASAP_BLOCK:V9.3:EXT1B:PAIRED_INSTANCE:v1"
+                else "ASAP_BLOCK:V9.3:EXT1B:PAIRED_INSTANCE:v2"
             ),
             paired_material,
         )

@@ -26,6 +26,7 @@ from experiments.v9_3.config import (  # noqa: E402
     TASK_WORKLOAD_POWER_MODEL_DOMAIN,
     domain_hash,
 )
+from experiments.v9_3.exact_energy import numeric_contract_metadata  # noqa: E402
 from experiments.v9_3.taskset_store import (  # noqa: E402
     FROZEN_TASKSET_SCHEMA,
     FROZEN_TASKSET_SEMANTIC_DOMAIN,
@@ -148,6 +149,8 @@ def _semantic_preimage(document: Mapping[str, Any], schema: str) -> Mapping[str,
         keys = list(FROZEN_PREIMAGE_KEYS)
         if schema != "ASAP_BLOCK_V9_3_FROZEN_TASKSET_V1":
             keys.append("task_workload_contract")
+        if schema == FROZEN_TASKSET_SCHEMA:
+            keys.append("numeric_contract")
         return {key: document[key] for key in keys}
     keys = (
         "schema", "scenario_cell", "source_taskset_hash",
@@ -173,6 +176,7 @@ def audit(paths: Iterable[Path], *, verify_hashes: bool) -> Dict[str, Any]:
     power_mismatches = 0
     missing_contract = 0
     semantic_failures = 0
+    numeric_contract_failures = 0
     missing_pairing_manifests = sum(
         1
         for path in input_paths
@@ -260,6 +264,11 @@ def audit(paths: Iterable[Path], *, verify_hashes: bool) -> Dict[str, Any]:
             "ASAP_BLOCK_V9_3_EXT1B_TASKSET_V2"
         ):
             legacy_files += 1
+        if (
+            schema == FROZEN_TASKSET_SCHEMA
+            and document.get("numeric_contract") != numeric_contract_metadata()
+        ):
+            numeric_contract_failures += 1
 
         energy_by_workload: Dict[str, Fraction] = {}
         if isinstance(contract, Mapping) and isinstance(contract.get("power_model"), list):
@@ -292,7 +301,13 @@ def audit(paths: Iterable[Path], *, verify_hashes: bool) -> Dict[str, Any]:
                 except (ValueError, ZeroDivisionError):
                     power_mismatches += 1
                     continue
-                if power != energy_by_workload[workload]:
+                # V4 P is the per-task C++ binary64 unit demand, whose final
+                # multiply/divide rounding depends on C.  The V2 workload
+                # table remains generation-only and is not an RTA oracle.
+                if (
+                    schema != FROZEN_TASKSET_SCHEMA
+                    and power != energy_by_workload[workload]
+                ):
                     power_mismatches += 1
         files_with_idle += int(file_has_idle)
         if verify_hashes:
@@ -312,6 +327,7 @@ def audit(paths: Iterable[Path], *, verify_hashes: bool) -> Dict[str, Any]:
             "COMPLIANT" if not any((
                 files_with_idle, unknown_workloads, power_mismatches,
                 missing_contract, semantic_failures, pairing_failures,
+                numeric_contract_failures,
             )) else "NONCOMPLIANT"
         ),
         "input_paths": [str(path) for path in input_paths],
@@ -329,6 +345,7 @@ def audit(paths: Iterable[Path], *, verify_hashes: bool) -> Dict[str, Any]:
         "power_model_mismatches": power_mismatches,
         "missing_contract": missing_contract,
         "semantic_hash_failures": semantic_failures,
+        "numeric_contract_failures": numeric_contract_failures,
         "pairing_manifest_files": pairing_files,
         "missing_pairing_manifests": missing_pairing_manifests,
         "pairing_manifest_failures": pairing_failures,

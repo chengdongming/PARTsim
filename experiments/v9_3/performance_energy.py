@@ -11,6 +11,8 @@ from typing import Any, Dict, Mapping, Sequence
 
 import yaml
 
+import asap_block_rta as legacy_rta
+
 from .config import exact_fraction, fraction_text
 from .performance_config import NORMALIZATION_HORIZON_MS
 from .performance_identity import energy_identity
@@ -90,7 +92,9 @@ def raw_solar_reference(
         raise ValueError("system template time_of_day_ms is invalid")
     # Match EnergyConfig.start_offset_minutes: the real-solar source is a
     # year-long minute vector, not a one-day vector.
-    phase_ms = (day_of_year - 1) * 24 * 60 * 60 * 1000 + time_of_day_ms
+    phase_ms = legacy_rta.materialize_runtime_start_offset_ms(
+        day_of_year, time_of_day_ms,
+    )
     values = []
     with source.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.reader(handle)

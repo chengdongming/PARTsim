@@ -13,6 +13,7 @@ import sys
 import pytest
 import yaml
 
+import asap_block_rta as legacy_rta
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -29,13 +30,19 @@ from experiments.v9_3.ext1b_config import (  # noqa: E402
     load_ext1b_config,
     validate_ext1b_config,
 )
-from experiments.v9_3.config import domain_hash  # noqa: E402
+from experiments.v9_3.config import (  # noqa: E402
+    domain_hash,
+    fraction_text,
+    task_demand_for_wcet,
+)
 from experiments.v9_3.ext1b_engine import Ext1BRunner  # noqa: E402
 from experiments.v9_3.ext1b_generation import (  # noqa: E402
     StructuralRejection,
+    _apply_power_profile,
     build_scenario_instance,
     enforce_b3_capacity_feasibility,
     scenario_cells,
+    workload_energy_table,
 )
 from experiments.v9_3.cell_model import expand_cells  # noqa: E402
 from experiments.v9_3.taskset_store import (  # noqa: E402
@@ -49,10 +56,9 @@ CALIBRATION = ROOT / "configs/v9_3_ext1b3_timing_calibration.yaml"
 
 
 def _task(config, workload="hash", task_id="0"):
-    model = {
-        str(row["workload"]): Fraction(str(row["energy_per_tick"]))
-        for row in config["generation"]["workload_contract"]["power_model"]
-    }
+    system = legacy_rta.load_system_config(
+        str(ROOT / config["energy"]["service_curve"]["system_template"])
+    )
     return {
         "task_id": task_id,
         "source_name": f"source-{task_id}",
@@ -60,7 +66,11 @@ def _task(config, workload="hash", task_id="0"):
         "C": 1,
         "D": 10,
         "T": 20,
-        "P": str(model[workload]),
+        # Capacity is a runtime decision, so the frozen generation-only
+        # workload table is not a valid P source here.
+        "P": fraction_text(task_demand_for_wcet(
+            system, workload, 1, label=f"capacity task {task_id}",
+        )),
         "D_over_T": "1/2",
         "workload": workload,
         "arrival_offset": 0,
@@ -230,6 +240,74 @@ def test_valid_existing_taskset_keeps_workload_and_actual_power(tmp_path):
     assert not capacity_feasibility_violations(
         instance.tasks, instance.battery_capacity, config,
     )
+
+
+@pytest.mark.parametrize("base_frequency", [7000.0, 8100.0, 10500.0])
+def test_power_profile_uses_final_workload_wcet_and_frequency(base_frequency):
+    system_path = ROOT / "system_config_unified_template.yml"
+    system = replace(
+        legacy_rta.load_system_config(str(system_path)),
+        base_frequency=base_frequency,
+    )
+    payload = [
+        {
+            "task_id": str(index),
+            "priority_rank": index,
+            "C": wcet,
+            "D": 20,
+            "T": 40,
+            "workload": workload,
+            "P": fraction_text(task_demand_for_wcet(
+                system, workload, wcet, label=f"stored task {index}",
+            )),
+            "arrival_offset": 17,
+        }
+        for index, (wcet, workload) in enumerate(
+            ((1, "control"), (7, "hash"), (19, "encrypt"))
+        )
+    ]
+    transformed = _apply_power_profile(
+        payload,
+        workload_energy_table(system_path),
+        "HIGH_PRIORITY_HIGH_POWER",
+        system=system,
+    )
+    assert any(
+        before["workload"] != after["workload"]
+        for before, after in zip(payload, transformed)
+    )
+    for row in transformed:
+        expected = task_demand_for_wcet(
+            system,
+            str(row["workload"]),
+            int(row["C"]),
+            label=f"final task {row['task_id']}",
+        )
+        assert Fraction(str(row["P"])) == expected
+
+
+def test_unchanged_workload_with_non_exact_stored_power_fails_closed():
+    system_path = ROOT / "system_config_unified_template.yml"
+    system = legacy_rta.load_system_config(str(system_path))
+    payload = [{
+        "task_id": "0",
+        "priority_rank": 0,
+        "C": 11,
+        "D": 20,
+        "T": 40,
+        "workload": "bzip2",
+        "P": "279/500000",
+        "arrival_offset": 0,
+    }]
+    with pytest.raises(
+        StructuralRejection, match="STORED_EXACT_POWER_MISMATCH",
+    ):
+        _apply_power_profile(
+            payload,
+            workload_energy_table(system_path),
+            "ACTUAL_GENERATOR_ORDER",
+            system=system,
+        )
 
 
 def test_retry_rejects_infeasible_candidate_and_emits_complete_pair(

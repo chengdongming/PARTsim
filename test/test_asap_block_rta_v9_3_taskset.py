@@ -8,6 +8,7 @@ import yaml
 
 import asap_block_rta_v9_3 as core
 import asap_block_rta_v9_3_taskset as ts
+from experiments.v9_3 import exact_energy
 
 
 SCHEMA = (
@@ -32,6 +33,13 @@ def context(tag="base"):
         theory_document_sha256=ts.THEORY_DOCUMENT_SHA256,
         fixed_carry_in_interface_sha256=ts.FIXED_CARRY_IN_INTERFACE_SHA256,
         formal_contract_identity="formal-" + tag,
+        numeric_contract_sha256=exact_energy.NUMERIC_CONTRACT_SHA256,
+        source_numeric_model=exact_energy.SOURCE_NUMERIC_MODEL,
+        demand_rounding_mode=exact_energy.DEMAND_ROUNDING_MODE,
+        supply_rounding_mode=exact_energy.SUPPLY_ROUNDING_MODE,
+        e0_rounding_mode=exact_energy.E0_ROUNDING_MODE,
+        exact_input_identity="exact-input-" + tag,
+        float_decision_path=False,
     )
 
 
@@ -1014,11 +1022,14 @@ def test_taskset_entry_rejects_illegal_curve_before_injected_solver_runs():
         called.append(True)
         return candidate(1)
 
-    with pytest.raises(ts.CertificationError, match="service curve"):
-        ts.analyze_taskset_v9_3(
-            "invalid-curve",
-            ts.AnalysisVariant.LOC_THETA_LOC,
-            inp,
-            single_task_solver=forbidden_solver,
-        )
+    result = ts.analyze_taskset_v9_3(
+        "invalid-curve",
+        ts.AnalysisVariant.LOC_THETA_LOC,
+        inp,
+        single_task_solver=forbidden_solver,
+    )
+    assert result.solver_status is ts.AnalysisSolverStatus.NUMERIC_ERROR
+    assert result.certification_status is ts.AnalysisCertificationStatus.NOT_CERTIFIED
+    assert result.taskset_proven is False
+    assert "service curve" in result.task_records[0].failure_reason
     assert called == []

@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 from typing import Any, Dict, Iterable, Mapping, Sequence
 
+from . import exact_energy
 from .cell_model import expand_cells
 from .config import canonical_json, config_hash, domain_hash, fraction_text, load_config
 from .formal_authorization import (
@@ -186,8 +187,10 @@ def _task_payload(text: str, label: str) -> list[Dict[str, Any]]:
         for field in ("C", "D", "T", "priority_rank"):
             _plain_int(row.get(field), f"{label}.{field}")
         try:
-            power = Fraction(str(row.get("P")))
-        except (ValueError, ZeroDivisionError) as exc:
+            power = exact_energy.parse_persisted_fraction(
+                row.get("P"), f"{label}.P",
+            )
+        except exact_energy.ExactEnergyError as exc:
             raise Core4ContractError(f"{label}.P is not an exact rational") from exc
         if power <= 0 or fraction_text(power) != str(row.get("P")):
             raise Core4ContractError(f"{label}.P is not a canonical positive rational")
@@ -282,7 +285,12 @@ def _validate_effective_tasks(row: Mapping[str, str]) -> tuple[list[Dict[str, An
         for field in ("task_id", "priority_rank", "C", "D", "T"):
             if str(original.get(field)) != str(transformed.get(field)):
                 raise Core4ContractError(f"analysis changed non-power task field {field}")
-        expected_power = Fraction(str(original["P"])) * scale
+        try:
+            expected_power = exact_energy.parse_persisted_fraction(
+                original["P"], "CORE-4 original task P",
+            ) * scale
+        except exact_energy.ExactEnergyError as exc:
+            raise Core4ContractError("base task P is not exact") from exc
         if str(transformed["P"]) != fraction_text(expected_power):
             raise Core4ContractError("power vector is not uniformly scaled by power_scale")
     if row["base_priority_hash"] != _priority_hash(base):
@@ -357,7 +365,15 @@ def _validate_axis_group(rows: Sequence[Mapping[str, str]], levels: Sequence[str
         for row, level in zip(rows, decoded_levels):
             if row["power_scale"] != "1":
                 raise Core4ContractError("initial_energy axis changed power_scale")
-            if row["exact_e0"] != fraction_text(Fraction(str(level))):
+            try:
+                exact_level = exact_energy.exact_e0_lower_bound(
+                    level, "CORE-4 initial energy level",
+                )
+            except exact_energy.ExactEnergyError as exc:
+                raise Core4ContractError(
+                    "initial_energy level is not exact"
+                ) from exc
+            if row["exact_e0"] != fraction_text(exact_level):
                 raise Core4ContractError("initial_energy level does not match exact_e0")
             if row["service_curve_identity"] != row["base_service_curve_identity"]:
                 raise Core4ContractError("initial_energy axis changed service identity")
@@ -421,7 +437,13 @@ def _validate_axis_group(rows: Sequence[Mapping[str, str]], levels: Sequence[str
             parameter,
         )
         for row, level in zip(rows, decoded_levels):
-            if row["power_scale"] != fraction_text(Fraction(str(level))):
+            try:
+                exact_level = exact_energy.exact_e0_lower_bound(
+                    level, "CORE-4 power level",
+                )
+            except exact_energy.ExactEnergyError as exc:
+                raise Core4ContractError("power level is not exact") from exc
+            if row["power_scale"] != fraction_text(exact_level):
                 raise Core4ContractError("power level does not match power_scale")
             if row["service_curve_identity"] != row["base_service_curve_identity"]:
                 raise Core4ContractError("power_scale axis changed service identity")

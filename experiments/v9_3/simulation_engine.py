@@ -21,6 +21,7 @@ import asap_block_rta as legacy_rta
 
 from .censoring import next_horizon
 from .config import canonical_json, domain_hash, fraction_text
+from . import exact_energy
 from .result_writer import atomic_write_json, atomic_write_text
 from .simulation_result import (
     JobObservation,
@@ -169,16 +170,17 @@ def _system_fraction(
     *,
     positive: bool = False,
 ) -> Fraction:
-    if isinstance(value, bool):
-        raise SimulationConfigurationError(f"{label} must be finite and numeric")
     try:
-        exact = Fraction(str(value))
-        numeric = float(exact)
-    except (TypeError, ValueError, ZeroDivisionError) as exc:
+        exact = (
+            exact_energy.materialize_supply_lower_bound(value, label).exact_value
+            if type(value) is float
+            else exact_energy.exact_e0_lower_bound(value, label)
+        )
+    except exact_energy.ExactEnergyError as exc:
         raise SimulationConfigurationError(
             f"{label} must be finite and numeric"
         ) from exc
-    if not math.isfinite(numeric) or exact < 0 or (positive and exact <= 0):
+    if positive and exact <= 0:
         qualifier = "positive" if positive else "non-negative"
         raise SimulationConfigurationError(
             f"{label} must be finite and {qualifier}"
@@ -348,7 +350,7 @@ def construct_paired_harvest_trace(
     system_path: Path,
     horizon_ms: int,
 ) -> tuple[Fraction, ...]:
-    """Construct the exact audit view of the production per-tick trace."""
+    """Construct the exact audit view of the production binary64 tick trace."""
 
     if isinstance(horizon_ms, bool) or not isinstance(horizon_ms, int) or horizon_ms <= 0:
         raise SimulationConfigurationError("harvest horizon must be a positive integer")
@@ -362,16 +364,13 @@ def construct_paired_harvest_trace(
     trace = []
     for index, value in enumerate(raw_trace):
         try:
-            numeric = float(value)
-            exact = Fraction(str(value))
-        except (TypeError, ValueError, ZeroDivisionError) as exc:
+            exact = exact_energy.materialize_supply_lower_bound(
+                value, f"harvest trace value {index}",
+            ).exact_value
+        except exact_energy.ExactEnergyError as exc:
             raise SimulationConfigurationError(
                 f"harvest trace value {index} is not finite numeric data"
             ) from exc
-        if not math.isfinite(numeric) or exact < 0:
-            raise SimulationConfigurationError(
-                f"harvest trace value {index} must be finite and non-negative"
-            )
         trace.append(exact)
     if len(trace) != horizon_ms:
         raise SimulationConfigurationError(
@@ -620,10 +619,20 @@ def core3_energy_preflight(config: Mapping[str, Any]) -> Dict[str, Any]:
         "day_of_year": scaled_system.day_of_year,
         "time_of_day_ms": scaled_system.time_of_day_ms,
         "horizon_ms": horizon,
-        "pv_efficiency": fraction_text(Fraction(str(scaled_system.pv_efficiency))),
-        "pv_area_m2": fraction_text(Fraction(str(scaled_system.pv_area_m2))),
+        "pv_efficiency": fraction_text(
+            exact_energy.materialize_supply_lower_bound(
+                scaled_system.pv_efficiency, "scaled pv efficiency",
+            ).exact_value
+        ),
+        "pv_area_m2": fraction_text(
+            exact_energy.materialize_supply_lower_bound(
+                scaled_system.pv_area_m2, "scaled pv area",
+            ).exact_value
+        ),
         "raw_reference_pv_area_m2": fraction_text(
-            Fraction(str(raw_system.pv_area_m2))
+            exact_energy.materialize_supply_lower_bound(
+                raw_system.pv_area_m2, "raw reference pv area",
+            ).exact_value
         ),
         "raw_offered_harvest_j": fraction_text(raw_harvest),
         "applied_solar_scale": fraction_text(scale),
@@ -762,8 +771,16 @@ def run_paired_simulation(
     simulation_config: Mapping[str, Any],
     scheduler_id: str = "gpfp_asap_block",
 ) -> SimulationExecution:
-    initial = Fraction(str(energy_config["simulation_initial_battery"]))
-    capacity = Fraction(str(energy_config["battery_capacity"]))
+    try:
+        initial = exact_energy.exact_e0_lower_bound(
+            energy_config["simulation_initial_battery"],
+            "simulation initial battery",
+        )
+        capacity = exact_energy.exact_e0_lower_bound(
+            energy_config["battery_capacity"], "simulation battery capacity",
+        )
+    except exact_energy.ExactEnergyError as exc:
+        raise SimulationConfigurationError(str(exc)) from exc
     input_root = run_root / "simulation_inputs" / simulation_id_value
     system_path, taskset_path = materialize_simulation_inputs(
         base_system_path, input_root, task_payload,
@@ -848,7 +865,10 @@ def run_paired_simulation(
                         expected_processors=processors,
                     )
                     for task_id, observed in result.observed_task_power_j_per_tick.items():
-                        expected = float(Fraction(str(task_payload[int(task_id)]["P"])))
+                        expected = float(exact_energy.parse_persisted_fraction(
+                            task_payload[int(task_id)]["P"],
+                            f"simulation task {task_id} P",
+                        ))
                         if not math.isclose(observed, expected, rel_tol=1e-9, abs_tol=1e-12):
                             raise SimulationTraceError(
                                 f"task {task_id} RTA/simulation power mismatch"
