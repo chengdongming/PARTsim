@@ -58,6 +58,124 @@ public:
     Scheduler *getScheduler() const override { return nullptr; }
 };
 
+struct B3BoundaryTraceEvidence {
+    double available;
+    double epsilon;
+    double required;
+    bool recorded_affordable;
+    std::string available_token;
+    std::string epsilon_token;
+    std::string job_required_token;
+    std::string decision_required_token;
+};
+
+static std::string readJsonScalar(const std::string &contents,
+                                  const std::string &field) {
+    const std::string marker = "\"" + field + "\": ";
+    const std::size_t start = contents.find(marker);
+    EXPECT_NE(start, std::string::npos) << field;
+    if (start == std::string::npos) return "";
+    const std::size_t value_start = start + marker.size();
+    const std::size_t value_end = contents.find_first_of(",}", value_start);
+    EXPECT_NE(value_end, std::string::npos) << field;
+    if (value_end == std::string::npos) return "";
+    return contents.substr(value_start, value_end - value_start);
+}
+
+static B3BoundaryTraceEvidence writeB3BoundaryTrace(
+    bool affordable,
+    const std::string &suffix) {
+    const double epsilon = 1e-6;
+    const double required = 0.744;
+    double available = required - epsilon;
+
+    while (available + epsilon < required) {
+        available = std::nextafter(available, required);
+    }
+    if (!affordable) {
+        do {
+            available = std::nextafter(available, 0.0);
+        } while (available + epsilon >= required);
+    }
+
+    const std::string path =
+        "/tmp/partsim_b3_boundary_trace_" + suffix + ".json";
+    SchedulerTraceJob job{
+        "boundary-task", 0.0, 1.0, 0, required, 1.0, 10.0};
+    {
+        JSONTrace trace(path, MetaSim::Tick(2));
+        trace.setSemanticTraceEnabled(true);
+        MetaSim::SIMUL.initSingleRun();
+        trace.logB3ASAPDecision(
+            "ASAP-Block",
+            "BLOCK",
+            available,
+            1,
+            {job},
+            affordable ? std::vector<SchedulerTraceJob>{job}
+                       : std::vector<SchedulerTraceJob>{},
+            {},
+            affordable ? "selected_prefix"
+                       : "highest_priority_energy_insufficient");
+        MetaSim::SIMUL.endSingleRun();
+    }
+
+    std::ifstream input(path);
+    EXPECT_TRUE(input.good());
+    const std::string contents(
+        (std::istreambuf_iterator<char>(input)),
+        std::istreambuf_iterator<char>());
+    const std::string available_token =
+        readJsonScalar(contents, "available_energy_mJ");
+    const std::string epsilon_token =
+        readJsonScalar(contents, "native_epsilon_mJ");
+    const std::string job_required_token =
+        readJsonScalar(contents, "job_required_energy_mJ");
+    const std::string decision_required_token =
+        readJsonScalar(contents, "decision_required_energy_mJ");
+    const std::string recorded_token =
+        readJsonScalar(contents, "decision_energy_affordable");
+
+    EXPECT_EQ(available + epsilon >= required, affordable);
+    EXPECT_EQ(std::stod(available_token), available);
+    EXPECT_EQ(std::stod(epsilon_token), epsilon);
+    EXPECT_EQ(std::stod(job_required_token), required);
+    EXPECT_EQ(std::stod(decision_required_token), required);
+
+    return {
+        std::stod(available_token),
+        std::stod(epsilon_token),
+        std::stod(decision_required_token),
+        recorded_token == "true",
+        available_token,
+        epsilon_token,
+        job_required_token,
+        decision_required_token,
+    };
+}
+
+TEST(B3TimingTrace, RoundTripsUnaffordableBinary64Boundary) {
+    const auto evidence = writeB3BoundaryTrace(false, "unaffordable");
+
+    EXPECT_FALSE(evidence.available_token.empty());
+    EXPECT_NE(evidence.available_token.front(), '"');
+    EXPECT_NE(evidence.epsilon_token.front(), '"');
+    EXPECT_NE(evidence.job_required_token.front(), '"');
+    EXPECT_NE(evidence.decision_required_token.front(), '"');
+    EXPECT_NE(evidence.available_token, "0.743999");
+    EXPECT_FALSE(evidence.recorded_affordable);
+    EXPECT_FALSE(
+        evidence.available + evidence.epsilon >= evidence.required);
+}
+
+TEST(B3TimingTrace, RoundTripsAffordableBinary64Boundary) {
+    const auto evidence = writeB3BoundaryTrace(true, "affordable");
+
+    EXPECT_TRUE(evidence.recorded_affordable);
+    EXPECT_TRUE(
+        evidence.available + evidence.epsilon >= evidence.required);
+}
+
 class Round2AccountingKernel : public Round2NullKernel {
     CPU *_cpu;
 
