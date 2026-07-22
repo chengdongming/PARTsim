@@ -136,3 +136,114 @@ TEST(Scheduler, TrueFIFO) {
     EXPECT_EQ((dynamic_cast<Task *>(*(stask_it++))), tasks[2].get())
         << "Wrong final ordering in iterator (" << 2 << ")!";
 }
+
+TEST(TrueFIFORegression, InitialInsertUsesInsertionTime) {
+    auto &simulation = Simulation::getInstance();
+    KernelMock kernel;
+    TrueFIFOScheduler sched;
+    Task first(nullptr, 100);
+    Task second(nullptr, 100);
+    first.insertCode("fixed(1,bzip2);");
+    second.insertCode("fixed(1,bzip2);");
+    kernel.addTask(first, "");
+    kernel.addTask(second, "");
+    sched.addTask(&first, "");
+    sched.addTask(&second, "");
+    simulation.initSingleRun();
+
+    simulation.run_to(1);
+    sched.insert(&first);
+    simulation.run_to(2);
+    sched.insert(&second);
+
+    EXPECT_EQ(sched.getTaskN(0), &first);
+    EXPECT_EQ(sched.getTaskN(1), &second);
+}
+
+TEST(TrueFIFORegression, ReverseInsertAtSameTimeUsesTaskNumber) {
+    auto &simulation = Simulation::getInstance();
+    TrueFIFOScheduler sched;
+    Task lower_number(nullptr, 100);
+    Task higher_number(nullptr, 100);
+    lower_number.insertCode("fixed(1,bzip2);");
+    higher_number.insertCode("fixed(1,bzip2);");
+    sched.addTask(&lower_number, "");
+    sched.addTask(&higher_number, "");
+    simulation.initSingleRun();
+
+    simulation.run_to(1);
+    sched.insert(&higher_number);
+    sched.insert(&lower_number);
+
+    EXPECT_EQ(sched.getTaskN(0), &lower_number);
+    EXPECT_EQ(sched.getTaskN(1), &higher_number);
+}
+
+TEST(TrueFIFORegression, ExtractThenReinsertMovesTaskToTail) {
+    auto &simulation = Simulation::getInstance();
+    TrueFIFOScheduler sched;
+    Task first(nullptr, 100);
+    Task second(nullptr, 100);
+    first.insertCode("fixed(1,bzip2);");
+    second.insertCode("fixed(1,bzip2);");
+    sched.addTask(&first, "");
+    sched.addTask(&second, "");
+    simulation.initSingleRun();
+
+    simulation.run_to(1);
+    sched.insert(&first);
+    simulation.run_to(2);
+    sched.insert(&second);
+    sched.extract(&first);
+    simulation.run_to(3);
+    sched.insert(&first);
+
+    EXPECT_EQ(sched.getTaskN(0), &second);
+    EXPECT_EQ(sched.getTaskN(1), &first);
+}
+
+TEST(TrueFIFORegression, SameTickReinsertKeepsDeterministicTieBreak) {
+    auto &simulation = Simulation::getInstance();
+    TrueFIFOScheduler sched;
+    Task lower_number(nullptr, 100);
+    Task higher_number(nullptr, 100);
+    lower_number.insertCode("fixed(1,bzip2);");
+    higher_number.insertCode("fixed(1,bzip2);");
+    sched.addTask(&lower_number, "");
+    sched.addTask(&higher_number, "");
+    simulation.initSingleRun();
+
+    simulation.run_to(1);
+    sched.insert(&higher_number);
+    sched.insert(&lower_number);
+    sched.extract(&higher_number);
+    sched.insert(&higher_number);
+
+    EXPECT_EQ(sched.getTaskN(0), &lower_number);
+    EXPECT_EQ(sched.getTaskN(1), &higher_number);
+}
+
+TEST(TrueFIFORegression, TaskNumberTieBreakRetainsEveryTask) {
+    auto &simulation = Simulation::getInstance();
+    TrueFIFOScheduler sched;
+    Task first(nullptr, 100);
+    Task second(nullptr, 100);
+    Task third(nullptr, 100);
+    first.insertCode("fixed(1,bzip2);");
+    second.insertCode("fixed(1,bzip2);");
+    third.insertCode("fixed(1,bzip2);");
+    sched.addTask(&first, "");
+    sched.addTask(&second, "");
+    sched.addTask(&third, "");
+    simulation.initSingleRun();
+
+    simulation.run_to(1);
+    sched.insert(&third);
+    sched.insert(&second);
+    sched.insert(&first);
+
+    EXPECT_EQ(sched.getTaskN(0), &first);
+    EXPECT_EQ(sched.getTaskN(1), &second);
+    EXPECT_EQ(sched.getTaskN(2), &third);
+    EXPECT_EQ(sched.getSize(), 3);
+}

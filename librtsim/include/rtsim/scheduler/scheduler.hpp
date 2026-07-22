@@ -162,8 +162,25 @@ namespace RTSim {
 
         class TaskModelCmp {
         public:
+            enum class QueueOrder {
+                DocumentedAscending,
+                LegacyDescending,
+            };
+
+        private:
+            QueueOrder _queueOrder;
+
+        public:
+            explicit TaskModelCmp(
+                QueueOrder queueOrder = QueueOrder::DocumentedAscending) :
+                _queueOrder(queueOrder) {}
+
             /*
-               Remember that lower numbers mean higher priorities...
+               The default queue contract is ascending in all three keys:
+               lower priority value, earlier insertion time, then lower task
+               number. LegacyDescending is an explicit compatibility mode for
+               schedulers that historically used the reverse of this entire
+               tuple; it is never inferred from the priority sign.
 
                This function returns true if "a" has higher priority
                than "b".
@@ -409,6 +426,8 @@ namespace RTSim {
         void discardTasks(bool f);
 
     protected:
+        explicit Scheduler(TaskModel::TaskModelCmp::QueueOrder queueOrder);
+
         /// pointer to the kernel
         AbsKernel *_kernel;
 

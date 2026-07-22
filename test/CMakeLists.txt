@@ -2,6 +2,7 @@ enable_testing()
 
 add_executable(
   test_librtsim
+  scheduler/comparator.cpp
   scheduler/fifo.cpp
   scheduler/truefifo.cpp
   scheduler/rm.cpp

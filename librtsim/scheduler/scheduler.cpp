@@ -39,13 +39,13 @@ namespace RTSim {
         // Order by priority, then inserion time, and finally task number using
         // tuple's partial ordering instead of writing our own (less error
         // prone)
-        // For RM scheduling: priority values are negative (e.g., -500, -600, -1000, -1200)
-        // where shorter period = higher priority = less negative (e.g., -500 > -1200)
-        // We use std::greater so highest priority (least negative/largest number) is at begin()
         auto a_tuple = std::tuple(a->getPriority(), a->getInsertTime(),
                                   a->getTaskNumber());
         auto b_tuple = std::tuple(b->getPriority(), b->getInsertTime(),
                                   b->getTaskNumber());
+
+        if (_queueOrder == QueueOrder::DocumentedAscending)
+            return a_tuple < b_tuple;
 
         return a_tuple > b_tuple;
     }
@@ -83,9 +83,13 @@ namespace RTSim {
     /*-----------------------------------------------------------------*/
 
     Scheduler::Scheduler() :
+        Scheduler(TaskModel::TaskModelCmp::QueueOrder::DocumentedAscending) {}
+
+    Scheduler::Scheduler(
+        TaskModel::TaskModelCmp::QueueOrder queueOrder) :
         Entity(""),
         _kernel(0),
-        _queue(),
+        _queue(TaskModel::TaskModelCmp(queueOrder)),
         _tasks(),
         _currExe(0) {}
 
@@ -318,4 +322,3 @@ namespace RTSim {
         return getTaskN(0);
     }
 } // namespace RTSim
-

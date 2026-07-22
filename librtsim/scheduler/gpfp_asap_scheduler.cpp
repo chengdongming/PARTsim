@@ -244,7 +244,7 @@ namespace RTSim {
 
     void GPFPASAPTaskModel::setPeriod(int period) {
         _period = period;
-        _rm_priority = -period; // RM优先级：周期越小，优先级越高（负数的绝对值越大=优先级越高）
+        _rm_priority = -period; // RM优先级：周期越小，数值越大，优先级越高
     }
 
     // =====================================================
@@ -252,7 +252,7 @@ namespace RTSim {
     // =====================================================
 
     GPFPASAPScheduler::GPFPASAPScheduler() :
-        Scheduler(),
+        Scheduler(TaskModel::TaskModelCmp::QueueOrder::LegacyDescending),
         _num_cores(4),
         _current_frequency(1400.0),
         _unit_time(50),  // 默认值，稍后会从ConfigManager更新
@@ -439,7 +439,7 @@ namespace RTSim {
 
     GPFPASAPScheduler::GPFPASAPScheduler(
         const std::vector<std::string> &params) :
-        Scheduler(),
+        Scheduler(TaskModel::TaskModelCmp::QueueOrder::LegacyDescending),
         _num_cores(4),
         _current_frequency(1400.0),
         _unit_time(50),  // 默认值，稍后会从ConfigManager更新
