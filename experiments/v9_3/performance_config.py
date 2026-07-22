@@ -17,6 +17,7 @@ CONFIG_DOMAIN = "ASAP_BLOCK:V9.3:B4:CONFIG:v1"
 CONTRACT_VERSION = "ASAP_BLOCK_V9_3_B4_PERF_G_R1"
 OUTCOME_VERSION = "PERF_OUTCOME_V2"
 NORMALIZATION_HORIZON_MS = 60000
+GENERATION_CONTRACT_VERSION = "ASAP_BLOCK_V9_3_B4_SYNCHRONOUS_TASKGEN_V1"
 
 ALL_SCHEDULERS = tuple(SCHEDULER_IDS)
 PRIMARY_SCHEDULERS = (
@@ -184,6 +185,8 @@ def normalize_performance_config(raw: Mapping[str, Any]) -> Dict[str, Any]:
     _require_order(generation.get("workload_candidates"), WORKLOADS, "generation.workload_candidates")
     _positive_int(generation.get("generator_timeout_seconds"), "generation.generator_timeout_seconds")
     _positive_int(generation.get("structural_retry_limit"), "generation.structural_retry_limit")
+    if generation.get("generation_contract_version") != GENERATION_CONTRACT_VERSION:
+        raise ConfigError("B4 generation contract version mismatch")
 
     if energy.get("normalization_horizon_ms") != NORMALIZATION_HORIZON_MS:
         raise ConfigError("energy.normalization_horizon_ms must be 60000")
@@ -273,10 +276,27 @@ def normalize_performance_config(raw: Mapping[str, Any]) -> Dict[str, Any]:
         raise ConfigError("smoke minimum job threshold must remain tiny")
 
     config["contract_version"] = CONTRACT_VERSION
-    config["config_hash"] = domain_hash(CONFIG_DOMAIN, {
-        key: value for key, value in config.items() if key not in {"config_hash"}
-    })
+    config["config_hash"] = domain_hash(CONFIG_DOMAIN, scientific_config_material(config))
     return config
+
+
+def scientific_config_material(config: Mapping[str, Any]) -> Dict[str, Any]:
+    """Return stage science without paths or mutable execution controls."""
+
+    material = deepcopy(dict(config))
+    for key in ("config_hash", "contract_version", "experiment_id", "parameter_status"):
+        material.pop(key, None)
+    material.pop("execution", None)
+    simulation = material.get("simulation", {})
+    for key in ("timeout_seconds", "retry_timeout_seconds", "simulator_bin"):
+        simulation.pop(key, None)
+    generation = material.get("generation", {})
+    for key in ("system_template", "generator_timeout_seconds", "structural_retry_limit"):
+        generation.pop(key, None)
+    energy = material.get("energy", {})
+    for key in ("system_template", "selection_seal"):
+        energy.pop(key, None)
+    return material
 
 
 def load_performance_config(path: Path) -> Dict[str, Any]:

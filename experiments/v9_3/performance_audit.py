@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from fractions import Fraction
 import json
+import math
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional, Sequence
 
 from .performance_config import ALL_SCHEDULERS, OUTCOME_VERSION
+from .performance_outcome import evaluate_simulation_result
+from .performance_taskset_store import PerformanceTasksetStore, PerformanceTasksetStoreError
+from .simulation_result import SimulationTraceError, parse_simulation_trace
 from .performance_identity import audit_gate_formal_relationship
-from .performance_identity import energy_identity, execution_identity, semantic_request_id
-
-
-REQUEST_CONTRACT_VERSION = "ASAP_BLOCK_V9_3_B4_REQUEST_V1"
+from .performance_identity import (
+    REQUEST_CONTRACT_VERSION, energy_identity, execution_identity,
+    semantic_request_id,
+)
 
 
 FORMAL_COUNTERS = (
@@ -26,7 +31,11 @@ FORMAL_COUNTERS = (
     "canonical_request_identity_mismatch", "selected_gate_not_subset_of_formal",
     "unselected_horizon_present_in_formal", "source_or_binary_changed_after_CAL",
     "taskset_store_not_frozen", "silent_UNAVAILABLE_to_zero_conversion",
+    "sampled_trace_requests", "audited_trace_requests", "missing_sampled_trace",
+    "trace_outcome_mismatch", "trace_identity_mismatch",
 )
+
+FORMAL_INFORMATION_COUNTERS = {"sampled_trace_requests", "audited_trace_requests"}
 
 
 def _empty() -> Counter:
@@ -43,6 +52,103 @@ def load_terminal_results(root: Path) -> list:
     return results
 
 
+def _equivalent(left: Any, right: Any) -> bool:
+    if isinstance(left, Mapping) and isinstance(right, Mapping):
+        return set(left) == set(right) and all(_equivalent(left[key], right[key]) for key in left)
+    if isinstance(left, list) and isinstance(right, list):
+        return len(left) == len(right) and all(_equivalent(a, b) for a, b in zip(left, right))
+    if isinstance(left, float) or isinstance(right, float):
+        try:
+            return abs(float(left) - float(right)) <= 1e-12
+        except (TypeError, ValueError):
+            return False
+    return left == right
+
+
+def audit_retained_trace_sample(
+    config: Mapping[str, Any], plan: Mapping[str, Any],
+    terminal_results: Iterable[Mapping[str, Any]],
+    taskset_store: PerformanceTasksetStore,
+) -> Dict[str, int]:
+    """Independently parse and recompute every identity-selected retained trace."""
+
+    counters = {
+        "sampled_trace_requests": 0, "audited_trace_requests": 0,
+        "missing_sampled_trace": 0, "trace_outcome_mismatch": 0,
+        "trace_identity_mismatch": 0,
+    }
+    results = {str(result.get("semantic_request_id", "")): result for result in terminal_results}
+    try:
+        manifest = taskset_store.verify_manifest()
+        by_hash = {
+            str(entry["taskset_semantic_hash"]): taskset_store.load(
+                str(entry["utilization"]), int(entry["taskset_index"]),
+            )
+            for entry in manifest["entries"]
+        }
+    except (OSError, ValueError, PerformanceTasksetStoreError):
+        by_hash = {}
+    for request in plan.get("requests", []):
+        if request.get("retain_trace") is not True:
+            continue
+        counters["sampled_trace_requests"] += 1
+        request_id = str(request["semantic_request_id"])
+        result = results.get(request_id)
+        if result is None:
+            counters["missing_sampled_trace"] += 1
+            continue
+        trace_text = str(result.get("retained_trace_path") or "")
+        trace_path = Path(trace_text) if trace_text else None
+        if trace_path is None or not trace_path.is_file():
+            counters["missing_sampled_trace"] += 1
+            continue
+        taskset = by_hash.get(str(request["taskset_semantic_hash"]))
+        if taskset is None:
+            counters["trace_identity_mismatch"] += 1
+            continue
+        if (
+            result.get("taskset_semantic_hash") != request.get("taskset_semantic_hash")
+            or result.get("scheduler_id") != request.get("scheduler_id")
+            or result.get("runtime_horizon_ms") != request.get("runtime_horizon_ms")
+            or result.get("power_hash") != request.get("power_hash")
+            or getattr(taskset, "power_hash", None) != request.get("power_hash")
+        ):
+            counters["trace_identity_mismatch"] += 1
+            continue
+        try:
+            parsed = parse_simulation_trace(
+                trace_path, taskset.tasks,
+                expected_taskset_hash=taskset.taskset_semantic_hash,
+                horizon=int(request["runtime_horizon_ms"]),
+                warmup=int(config["simulation"]["warmup_ms"]),
+                minimum_jobs_per_task=int(config["simulation"]["minimum_adjudicable_jobs_per_task"]),
+                release_e0=Fraction(0), expected_scheduler=str(request["scheduler_id"]),
+                expected_processors=int(config["platform"]["cores"]),
+            )
+            for task_id, observed_power in parsed.observed_task_power_j_per_tick.items():
+                expected_power = float(Fraction(str(taskset.tasks[int(task_id)]["P"])))
+                if not math.isclose(
+                    observed_power, expected_power, rel_tol=1e-9, abs_tol=1e-12,
+                ):
+                    raise SimulationTraceError(
+                        f"task {task_id} frozen/trace power mismatch"
+                    )
+        except (OSError, KeyError, TypeError, ValueError, SimulationTraceError):
+            counters["trace_identity_mismatch"] += 1
+            continue
+        counters["audited_trace_requests"] += 1
+        recomputed = evaluate_simulation_result(
+            parsed, taskset.tasks,
+            horizon_ms=int(request["runtime_horizon_ms"]),
+            warmup_ms=int(config["simulation"]["warmup_ms"]),
+            minimum_jobs_per_task=int(config["simulation"]["minimum_adjudicable_jobs_per_task"]),
+            processors=int(config["platform"]["cores"]),
+        ).row()
+        if not _equivalent(recomputed, result.get("outcome", {})):
+            counters["trace_outcome_mismatch"] += 1
+    return counters
+
+
 def audit_formal_results(
     plan: Mapping[str, Any], results: Iterable[Mapping[str, Any]], *,
     selected_gate_ids: Optional[Iterable[str]] = None,
@@ -51,6 +157,8 @@ def audit_formal_results(
     calibration_source_commit: Optional[str] = None,
     calibration_binary_sha256: Optional[str] = None,
     gate_energy_identity_shared: Optional[bool] = None,
+    config: Optional[Mapping[str, Any]] = None,
+    taskset_store: Optional[PerformanceTasksetStore] = None,
 ) -> Dict[str, Any]:
     counters = _empty()
     planned = {str(row["semantic_request_id"]): row for row in plan.get("requests", [])}
@@ -58,8 +166,9 @@ def audit_formal_results(
         counters["missing_request"] += abs(43200 - len(plan.get("requests", [])))
     if len(planned) != len(plan.get("requests", [])):
         counters["duplicate_request"] += len(plan.get("requests", [])) - len(planned)
+    result_list = list(results)
     observed = defaultdict(list)
-    for result in results:
+    for result in result_list:
         observed[str(result.get("semantic_request_id", ""))].append(result)
     counters["duplicate_request"] += sum(max(0, len(values) - 1) for values in observed.values())
     counters["missing_request"] += len(set(planned) - set(observed))
@@ -191,7 +300,16 @@ def audit_formal_results(
     else:
         counters["selected_gate_not_subset_of_formal"] += 1
         counters["unselected_horizon_present_in_formal"] += 1
-    complete = all(counters[name] == 0 for name in FORMAL_COUNTERS)
+    sampled = sum(bool(request.get("retain_trace")) for request in plan.get("requests", []))
+    if config is None or taskset_store is None:
+        counters["sampled_trace_requests"] = sampled
+        counters["missing_sampled_trace"] = sampled
+    else:
+        counters.update(audit_retained_trace_sample(config, plan, result_list, taskset_store))
+    complete = all(
+        counters[name] == 0 for name in FORMAL_COUNTERS
+        if name not in FORMAL_INFORMATION_COUNTERS
+    )
     return {
         "schema": "ASAP_BLOCK_V9_3_B4_FORMAL_AUDIT_V1",
         "status": "FORMAL_COMPLETE" if complete else "FORMAL_INCOMPLETE",

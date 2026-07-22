@@ -10,13 +10,24 @@ from .performance_config import (
     CONFIRMATORY_COMPARISONS, FORMAL_UTILIZATIONS, OUTCOME_VERSION,
     PRIMARY_SCHEDULERS,
 )
-from .performance_engine import REQUEST_CONTRACT_VERSION
-from .performance_identity import energy_identity, execution_identity, semantic_request_id
+from .performance_identity import (
+    REQUEST_CONTRACT_VERSION, energy_identity, execution_identity,
+    semantic_request_id,
+)
 
 
 SELECT_30S = "SELECT_30S"
 SELECT_60S = "SELECT_60S"
 INVALID_GATE = "INVALID_GATE"
+
+
+def paired_direction_stable(effect_30: float, effect_60: float) -> bool:
+    strict_same_direction = (
+        (effect_30 > 0 and effect_60 > 0)
+        or (effect_30 < 0 and effect_60 < 0)
+    )
+    both_small = abs(effect_30) < 0.02 and abs(effect_60) < 0.02
+    return strict_same_direction or both_small
 
 
 @dataclass(frozen=True)
@@ -212,9 +223,7 @@ def decide_horizon_gate(rows: Iterable[Mapping[str, Any]], *, expected_requests:
                 effects[horizon] = 0.0
             else:
                 effects[horizon] = sum(values) / len(values)
-        same_direction = effects[30000] * effects[60000] >= 0
-        both_small = abs(effects[30000]) < 0.02 and abs(effects[60000]) < 0.02
-        stable = same_direction or both_small
+        stable = paired_direction_stable(effects[30000], effects[60000])
         paired_stable = paired_stable and stable
         paired[f"{left}-{right}"] = {"effects": effects, "stable": stable}
     adjudicable = all(bool(row.get("minimum_jobs_satisfied")) for row in rows)

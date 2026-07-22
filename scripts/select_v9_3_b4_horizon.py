@@ -13,6 +13,10 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from experiments.v9_3.performance_audit import load_terminal_results
+from experiments.v9_3.performance_config import load_performance_config
+from experiments.v9_3.performance_environment import (
+    StageEnvironmentError, assert_environment_compatible, build_stage_environment,
+)
 from experiments.v9_3.performance_horizon_gate import decide_horizon_gate, gate_rows_from_terminal
 from experiments.v9_3.performance_identity import horizon_selection_identity
 from experiments.v9_3.result_writer import atomic_write_json
@@ -22,9 +26,23 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--results", type=Path, required=True)
+    parser.add_argument("--config", type=Path, required=True)
+    parser.add_argument("--simulator-bin", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     plan = json.loads(args.plan.read_text(encoding="utf-8"))
+    config = load_performance_config(args.config)
+    if config["stage"] != "HORIZON_GATE":
+        parser.error("horizon selection requires a HORIZON_GATE config")
+    if args.simulator_bin is not None:
+        config["simulation"]["simulator_bin"] = str(args.simulator_bin.resolve())
+    try:
+        environment = build_stage_environment(config, project_root=PROJECT_ROOT)
+        assert_environment_compatible(
+            environment, plan["stage_environment"], require_stage_config=True,
+        )
+    except (KeyError, StageEnvironmentError) as exc:
+        parser.error(f"gate stage environment mismatch: {exc}")
     terminal = load_terminal_results(args.results)
     rows, closure = gate_rows_from_terminal(plan, terminal)
     decision = decide_horizon_gate(rows)
@@ -42,6 +60,7 @@ def main() -> int:
         "gate_plan_identity": plan.get("formal_plan_identity"),
         "source_commit": plan.get("source_commit"),
         "simulator_binary_sha256": plan.get("simulator_binary_sha256"),
+        "stage_environment": environment,
         "selected_gate_request_ids": selected,
         "unselected_gate_request_ids": unselected,
     }

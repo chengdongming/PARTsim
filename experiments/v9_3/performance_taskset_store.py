@@ -17,7 +17,7 @@ import yaml
 from .config import (
     canonical_json, domain_hash, fraction_text, task_workload_contract_material,
 )
-from .performance_config import CONTRACT_VERSION
+from .performance_config import CONTRACT_VERSION, GENERATION_CONTRACT_VERSION
 from .performance_energy import burst_energy, taskset_demand
 from .performance_identity import taskset_store_identity
 from .result_writer import atomic_write_json, atomic_write_text
@@ -26,7 +26,6 @@ from .result_writer import atomic_write_json, atomic_write_text
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 TASKSET_SCHEMA = "ASAP_BLOCK_V9_3_B4_FROZEN_TASKSET_V1"
 MANIFEST_SCHEMA = "ASAP_BLOCK_V9_3_B4_TASKSET_MANIFEST_V1"
-GENERATION_CONTRACT_VERSION = "ASAP_BLOCK_V9_3_B4_SYNCHRONOUS_TASKGEN_V1"
 TASKSET_DOMAIN = "ASAP_BLOCK:V9.3:B4:TASKSET:v1"
 PRIORITY_DOMAIN = "ASAP_BLOCK:V9.3:B4:PRIORITY:v1"
 POWER_DOMAIN = "ASAP_BLOCK:V9.3:B4:POWER:v1"
@@ -35,6 +34,55 @@ RELEASE_DOMAIN = "ASAP_BLOCK:V9.3:B4:RELEASE:v1"
 
 class PerformanceTasksetStoreError(RuntimeError):
     pass
+
+
+def expected_store_contract(config: Mapping[str, Any]) -> Dict[str, Any]:
+    template = Path(config["generation"]["system_template"])
+    if not template.is_absolute():
+        template = PROJECT_ROOT / template
+    workload_contract = task_workload_contract_material(
+        config["generation"]["workload_candidates"], template,
+    )
+    generation = config["generation"]
+    count = int(config["grid"]["tasksets_per_utilization"])
+    return {
+        "schema": MANIFEST_SCHEMA,
+        "contract_version": CONTRACT_VERSION,
+        "generation_contract_version": GENERATION_CONTRACT_VERSION,
+        "seed_space": config["seed_space"],
+        "base_seed": int(config["grid"]["base_seed"]),
+        "utilization_points": list(config["grid"]["utilization_points"]),
+        "configured_tasksets_per_utilization": count,
+        "taskset_index_range": [0, count - 1],
+        "generation_contract": {
+            "deadline_mode": generation["deadline_mode"],
+            "period_min": int(generation["period_min"]),
+            "period_max": int(generation["period_max"]),
+            "wcet_rounding": generation["wcet_rounding"],
+            "utilization_tolerance_total": generation["utilization_tolerance_total"],
+            "min_task_util": generation["min_task_util"],
+            "max_task_util": generation["max_task_util"],
+            "dag_enabled": generation["dag_enabled"],
+            "arrival_offset": generation["arrival_offset"],
+            "release_pattern": "SYNCHRONOUS",
+            "generation_semantic_flags": ["--constrained-deadlines", "--no-arrival-offset"],
+            "workload_candidates": list(generation["workload_candidates"]),
+        },
+        "system_template_hash": _sha256(template),
+        "workload_contract": workload_contract,
+    }
+
+
+def _manifest_identity_material(document: Mapping[str, Any]) -> Dict[str, Any]:
+    material = {
+        key: value for key, value in document.items()
+        if key not in {"attempt_history", "store_identity"}
+    }
+    material["entries"] = [
+        {key: value for key, value in entry.items() if key != "path"}
+        for entry in material.get("entries", [])
+    ]
+    return material
 
 
 @dataclass(frozen=True)
@@ -129,7 +177,8 @@ def _semantic_generation_command(command: Sequence[str]) -> list:
 
 def _task_document(
     raw_document: Mapping[str, Any], config: Mapping[str, Any], utilization: str,
-    taskset_index: int, seed: int, command: Sequence[str], workload_contract: Mapping[str, Any],
+    taskset_index: int, seed: int, generation_attempt: int,
+    command: Sequence[str], workload_contract: Mapping[str, Any],
 ) -> Dict[str, Any]:
     raw_tasks = raw_document.get("taskset")
     if not isinstance(raw_tasks, list) or len(raw_tasks) != config["platform"]["task_count"]:
@@ -173,6 +222,7 @@ def _task_document(
         "schema": TASKSET_SCHEMA, "contract_version": CONTRACT_VERSION,
         "generation_contract_version": GENERATION_CONTRACT_VERSION,
         "seed_space": config["seed_space"], "generation_seed": seed,
+        "generation_attempt": generation_attempt,
         "generation_parameters": _semantic_generation_command(command),
         "utilization": utilization,
         "taskset_index": taskset_index,
@@ -266,7 +316,7 @@ class PerformanceTasksetStore:
                             raise PerformanceTasksetStoreError("generator exited nonzero")
                         raw_document = yaml.safe_load(generated.read_text(encoding="utf-8"))
                         document = _task_document(
-                            raw_document, self.config, utilization, index, seed,
+                            raw_document, self.config, utilization, index, seed, attempt,
                             command, self.workload_contract,
                         )
                         path.parent.mkdir(parents=True, exist_ok=True)
@@ -288,21 +338,14 @@ class PerformanceTasksetStore:
                         f"structural retry limit exhausted for u={utilization}, index={index}: {last_error}"
                     )
         contract = {
-            "schema": MANIFEST_SCHEMA, "contract_version": CONTRACT_VERSION,
-            "generation_contract_version": GENERATION_CONTRACT_VERSION,
-            "seed_space": self.config["seed_space"],
-            "base_seed": self.config["grid"]["base_seed"],
-            "utilization_points": list(points),
-            "configured_tasksets_per_utilization": configured_count,
+            **expected_store_contract(self.config),
             "frozen_tasksets_per_utilization": count,
-            "system_template_hash": _sha256(self.system_template),
-            "workload_contract": self.workload_contract,
             "entries": entries,
         }
         manifest = {
             **contract, "attempt_history": attempts,
-            "store_identity": taskset_store_identity(contract),
         }
+        manifest["store_identity"] = taskset_store_identity(_manifest_identity_material(manifest))
         atomic_write_json(self.manifest_path, manifest)
         if self.config["stage"] == "CALIBRATION":
             atomic_write_json(self.root / "calibration_taskset_manifest.json", manifest)
@@ -313,7 +356,7 @@ class PerformanceTasksetStore:
             key: document[key] for key in (
                 "taskset_id", "taskset_semantic_hash", "priority_hash", "power_hash",
                 "release_hash", "utilization", "taskset_index", "generation_seed",
-                "actual_total_utilization", "p_dem", "e_burst",
+                "generation_attempt", "actual_total_utilization", "p_dem", "e_burst",
             )
         }
         entry["path"] = str(path.resolve())
@@ -330,13 +373,38 @@ class PerformanceTasksetStore:
             raise PerformanceTasksetStoreError("stored taskset has nonzero arrival offset")
         semantic_keys = (
             "schema", "contract_version", "generation_contract_version", "seed_space",
-            "generation_seed", "generation_parameters", "utilization", "taskset_index",
+            "generation_seed", "generation_attempt", "generation_parameters", "utilization", "taskset_index",
             "target_total_utilization", "actual_total_utilization", "priority_policy",
             "release_pattern", "tasks", "workload_contract",
         )
         material = {key: document[key] for key in semantic_keys}
         if domain_hash(TASKSET_DOMAIN, material) != document.get("taskset_semantic_hash"):
             raise PerformanceTasksetStoreError("taskset semantic hash mismatch")
+        utilization = str(document.get("utilization", ""))
+        if utilization not in self.config["grid"]["utilization_points"]:
+            raise PerformanceTasksetStoreError("taskset utilization is outside the current config")
+        utilization_index = self.config["grid"]["utilization_points"].index(utilization)
+        index = int(document.get("taskset_index", -1))
+        configured_count = int(self.config["grid"]["tasksets_per_utilization"])
+        if not 0 <= index < configured_count:
+            raise PerformanceTasksetStoreError("taskset index is outside the current config")
+        attempt = int(document.get("generation_attempt", -1))
+        if not 0 <= attempt <= int(self.config["generation"]["structural_retry_limit"]):
+            raise PerformanceTasksetStoreError("taskset generation attempt is invalid")
+        expected_seed = generation_seed(
+            int(self.config["grid"]["base_seed"]), utilization_index,
+            configured_count, index, attempt,
+        )
+        if int(document.get("generation_seed", -1)) != expected_seed:
+            raise PerformanceTasksetStoreError("taskset generation seed/config mismatch")
+        if document.get("workload_contract") != self.workload_contract:
+            raise PerformanceTasksetStoreError("taskset workload contract differs from current config")
+        expected_parameters = _semantic_generation_command(generation_command(
+            self.config, utilization=Fraction(utilization), seed=expected_seed,
+            output=Path("/unused"),
+        ))
+        if document.get("generation_parameters") != expected_parameters:
+            raise PerformanceTasksetStoreError("taskset generation semantic flags/config mismatch")
         expected_priority = domain_hash(PRIORITY_DOMAIN, [
             {"task_id": task["task_id"], "priority_rank": task["priority_rank"], "T": task["T"]}
             for task in document["tasks"]
@@ -373,11 +441,29 @@ class PerformanceTasksetStore:
         if not self.manifest_path.is_file():
             raise PerformanceTasksetStoreError("taskset store is not frozen")
         document = json.loads(self.manifest_path.read_text(encoding="utf-8"))
-        contract = {key: value for key, value in document.items() if key not in {"attempt_history", "store_identity"}}
-        if taskset_store_identity(contract) != document.get("store_identity"):
+        if taskset_store_identity(_manifest_identity_material(document)) != document.get("store_identity"):
             raise PerformanceTasksetStoreError("taskset store identity mismatch")
+        expected = expected_store_contract(self.config)
+        mismatches = [key for key, value in expected.items() if document.get(key) != value]
+        if mismatches:
+            raise PerformanceTasksetStoreError(f"taskset store/current config mismatch: {mismatches}")
+        configured_count = int(self.config["grid"]["tasksets_per_utilization"])
+        if document.get("frozen_tasksets_per_utilization") != configured_count:
+            raise PerformanceTasksetStoreError("taskset store is only partially frozen")
+        expected_pairs = [
+            (utilization, index)
+            for utilization in self.config["grid"]["utilization_points"]
+            for index in range(configured_count)
+        ]
+        observed_pairs = [
+            (str(entry.get("utilization")), int(entry.get("taskset_index", -1)))
+            for entry in document.get("entries", [])
+        ]
+        if observed_pairs != expected_pairs:
+            raise PerformanceTasksetStoreError("taskset manifest utilization/index grid mismatch")
         for entry in document["entries"]:
             observed = self._read_and_verify(Path(entry["path"]))
-            if observed["taskset_semantic_hash"] != entry["taskset_semantic_hash"]:
-                raise PerformanceTasksetStoreError("manifest/taskset hash mismatch")
+            for key, value in entry.items():
+                if key != "path" and observed.get(key) != value:
+                    raise PerformanceTasksetStoreError(f"manifest/taskset field mismatch: {key}")
         return document

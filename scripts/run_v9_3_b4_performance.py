@@ -16,6 +16,9 @@ from experiments.v9_3.performance_analysis import generate_four_figures
 from experiments.v9_3.performance_audit import audit_formal_results, load_terminal_results
 from experiments.v9_3.performance_config import load_performance_config, plan_counts
 from experiments.v9_3.performance_engine import calibration_phase_plan_counts, execute_plan
+from experiments.v9_3.performance_environment import (
+    StageEnvironmentError, assert_environment_compatible, build_stage_environment,
+)
 from experiments.v9_3.performance_taskset_store import PerformanceTasksetStore
 
 
@@ -78,6 +81,15 @@ def main() -> int:
     results = load_terminal_results(output_root / "terminal_results")
     calibration = json.loads(Path(config["execution"]["calibration_seal"]).read_text(encoding="utf-8"))
     horizon = json.loads(Path(config["execution"]["horizon_seal"]).read_text(encoding="utf-8"))
+    try:
+        environment = build_stage_environment(config, project_root=PROJECT_ROOT)
+        assert_environment_compatible(
+            environment, plan["stage_environment"], require_stage_config=True,
+        )
+        assert_environment_compatible(environment, calibration["stage_environment"])
+        assert_environment_compatible(environment, horizon["stage_environment"])
+    except (KeyError, StageEnvironmentError) as exc:
+        parser.error(f"analyze-only stage environment mismatch: {exc}")
     audit = audit_formal_results(
         plan, results,
         selected_gate_ids=horizon.get("selected_gate_request_ids"),
@@ -88,6 +100,7 @@ def main() -> int:
         gate_energy_identity_shared=horizon.get("gate_closure", {}).get(
             "energy_identity_shared_across_horizons"
         ),
+        config=config, taskset_store=store,
     )
     summary = generate_four_figures(
         results, audit, output_root=output_root / "analysis",

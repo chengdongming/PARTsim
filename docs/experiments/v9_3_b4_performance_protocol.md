@@ -85,6 +85,8 @@ The single preregistered eta extension is `{0.25,2}`. If transition already exis
 
 The provisional three conditions are confirmed on the same 90 tasksets and five algorithms at 30 seconds (1,350 requests). A failed confirmation triggers one full 30-second CAL-grid fallback using the same Q-only rule. Conditions are sealed before PERF-G results are viewed.
 
+CAL selection never treats CSV as authoritative. Each initial, extension, confirmation, or fallback phase first closes its request-plan IDs exactly against compact terminal JSON and the verified frozen CAL manifest. Missing, duplicate, or extra results; a final timeout; internal/trace error; non-terminal simulation; identity mismatch; nonzero offset; or anything other than exactly 30 paired tasksets per scheduler cell produces `CAL_INVALID`. Branch A freezes its provisional `kappa_star` and transition eta and searches only the preregistered missing endpoint; endpoint results are never fed back into transition selection.
+
 ## Frozen formal store and horizon gate
 
 After the CAL seal, all 1,600 formal tasksets are frozen. The gate selects the lexically smallest 50 taskset semantic hashes at every utilization point. It uses transition energy, the five primary schedulers, and 30/60-second horizons: 4,000 requests.
@@ -142,11 +144,15 @@ Positive JMR differences mean BLOCK has the lower high-priority miss ratio. Each
 
 ## Trace and execution policy
 
-`trace_mode: job` deliberately omits `--semantic-traces`, avoiding B1/B2/B3 per-tick mechanism diagnostics while retaining arrival, schedule/deschedule, completion, explicit miss, and simulation-completion events. Every request produces compact terminal JSON. Full job traces are retained for a deterministic identity-based 5% sample and, when possible, internal/trace errors. Ordinary deadline misses do not cause bulk trace retention.
+`trace_mode: job` deliberately omits `--semantic-traces`, avoiding B1/B2/B3 per-tick mechanism diagnostics while retaining arrival, schedule/deschedule, completion, explicit miss, and simulation-completion events. Every request produces compact terminal JSON. Full job traces are retained for a deterministic identity-based sample with nominal rate 5% and, when possible, internal/trace errors. Ordinary deadline misses do not cause bulk trace retention. Every identity-selected retained trace is independently reparsed against the frozen taskset and recomputed with `PERF_OUTCOME_V2` before `FORMAL_COMPLETE`.
+
+B4 does not use the shared runner's RTA release-energy certificate. Its runner-side certificate threshold is fixed to zero and terminal JSON records `rta_release_e0_certificate=NOT_APPLICABLE`. This does not change the simulated initial battery, which remains the planned `B/2`; it only prevents normal later releases below `B/2` from causing bulk failure-trace retention.
 
 `--plan-only` validates configuration and static counts without simulator, generator, output root, or store creation. `--freeze-tasksets` may call only the generator. `--execute` requires a frozen, hash-closed store and required stage seals; it never generates missing tasksets. `--analyze-only` cannot fill missing requests or generate figures before the terminal gate.
 
 Formal timeouts are 300 seconds with one 600-second retry. Resume preserves semantic request identities and deterministic ordering.
+
+Every executable or analysis stage carries `B4_STAGE_ENVIRONMENT_V1`: exact clean source commit, simulator hash, system-template and solar hashes, workload/power identity, outcome source/version, energy/request contract versions, and a path-independent scientific stage-config hash. CAL, gate, formal, and analysis fail closed if their shared environment provenance differs. Frozen stores are also rebound to the current seed/grid/generator/template/workload contract, so a same-sized stale store is inadmissible.
 
 ## Request counts and prohibited runs
 

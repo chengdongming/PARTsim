@@ -136,6 +136,92 @@ def select_calibration(rows: Iterable[Mapping[str, Any]], *, extension_already_u
     return CalibrationDecision("STOP_NO_THREE_CONDITIONS", "A", kappa, eta_low, eta_transition, eta_high, q_values, scores)
 
 
+def resolve_branch_a_extension(
+    provisional_decision: CalibrationDecision,
+    initial_q: Iterable[Mapping[str, Any]],
+    endpoint_q: Iterable[Mapping[str, Any]],
+) -> CalibrationDecision:
+    """Resolve missing endpoints without ever reselecting Branch A transition."""
+
+    if (
+        provisional_decision.status != "EXTENSION_REQUIRED"
+        or provisional_decision.extension_branch != "A"
+        or provisional_decision.kappa_star is None
+        or provisional_decision.eta_transition is None
+    ):
+        raise ValueError("Branch A resolution requires its provisional decision")
+    initial_rows = list(initial_q)
+    endpoint_rows = list(endpoint_q)
+    requested = set(provisional_decision.requested_extension_etas)
+    if not requested or requested - {"1/4", "2"}:
+        raise ValueError("Branch A endpoint request is invalid")
+    frozen_kappa = provisional_decision.kappa_star
+    frozen_transition = provisional_decision.eta_transition
+    allowed = {
+        (frozen_kappa, eta, utilization, scheduler)
+        for eta in requested for utilization in CAL_UTILIZATIONS
+        for scheduler in PRIMARY_SCHEDULERS
+    }
+    observed = {
+        (str(row["kappa"]), str(row["eta"]), str(row["u_norm"]), str(row["scheduler_id"]))
+        for row in endpoint_rows
+    }
+    if observed != allowed:
+        raise ValueError("Branch A endpoint rows exceed the frozen kappa/eta grid")
+
+    baseline_tasksets = {}
+    for utilization in CAL_UTILIZATIONS:
+        tasksets = {
+            str(row["taskset_id"]) for row in initial_rows
+            if str(row["kappa"]) == frozen_kappa
+            and str(row["eta"]) == frozen_transition
+            and str(row["u_norm"]) == utilization
+        }
+        if len(tasksets) != 30:
+            raise ValueError("Branch A initial transition cell lacks 30 frozen tasksets")
+        baseline_tasksets[utilization] = tasksets
+    for eta in requested:
+        for utilization in CAL_UTILIZATIONS:
+            tasksets = {
+                str(row["taskset_id"]) for row in endpoint_rows
+                if str(row["eta"]) == eta and str(row["u_norm"]) == utilization
+            }
+            if tasksets != baseline_tasksets[utilization]:
+                raise ValueError("Branch A endpoint does not reuse the frozen 90 tasksets")
+
+    initial_values = calibration_q_values(initial_rows)
+    endpoint_values = calibration_q_values(endpoint_rows)
+    endpoint_lookup = {
+        (str(row["eta"]), str(row["u_norm"])): float(row["Q"])
+        for row in endpoint_values
+    }
+    eta_low = provisional_decision.eta_low
+    eta_high = provisional_decision.eta_high
+    if eta_low is None:
+        candidates = [
+            eta for eta in requested
+            if Fraction(eta) < Fraction(frozen_transition)
+            and endpoint_lookup[(eta, "1/2")] <= 0.2
+        ]
+        eta_low = max(candidates, key=Fraction) if candidates else None
+    if eta_high is None:
+        candidates = [
+            eta for eta in requested
+            if Fraction(eta) > Fraction(frozen_transition)
+            and endpoint_lookup[(eta, "1/2")] >= 0.8
+        ]
+        eta_high = min(candidates, key=Fraction) if candidates else None
+    status = "SELECTED" if eta_low is not None and eta_high is not None else "STOP_NO_THREE_CONDITIONS"
+    decision = CalibrationDecision(
+        status, "A", frozen_kappa, eta_low, frozen_transition, eta_high,
+        tuple((*initial_values, *endpoint_values)),
+        provisional_decision.transition_scores,
+    )
+    if decision.kappa_star != frozen_kappa or decision.eta_transition != frozen_transition:
+        raise AssertionError("Branch A transition changed after endpoint extension")
+    return decision
+
+
 def confirm_30s(selection: CalibrationDecision, rows_30s: Iterable[Mapping[str, Any]]) -> Dict[str, Any]:
     if selection.status != "SELECTED":
         raise ValueError("30-second confirmation requires a complete provisional selection")

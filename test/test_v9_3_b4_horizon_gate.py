@@ -1,5 +1,10 @@
+import pytest
+
 from experiments.v9_3.performance_config import FORMAL_UTILIZATIONS, PRIMARY_SCHEDULERS
-from experiments.v9_3.performance_horizon_gate import INVALID_GATE, SELECT_30S, SELECT_60S, decide_horizon_gate
+from experiments.v9_3.performance_horizon_gate import (
+    INVALID_GATE, SELECT_30S, SELECT_60S, decide_horizon_gate,
+    paired_direction_stable,
+)
 
 
 def gate_rows(change=False):
@@ -34,3 +39,16 @@ def test_technical_or_identity_failure_is_invalid_gate():
     rows = gate_rows()
     rows[0]["identity_valid"] = False
     assert decide_horizon_gate(rows).state == INVALID_GATE
+
+
+@pytest.mark.parametrize(("short", "long", "stable"), [
+    (0.0, 0.10, False),
+    (0.0, -0.10, False),
+    (0.0, 0.01, True),
+    (0.01, -0.01, True),
+    (0.03, 0.10, True),
+    (-0.03, -0.10, True),
+    (0.0, 0.02, False),
+])
+def test_paired_direction_zero_and_strict_small_boundaries(short, long, stable):
+    assert paired_direction_stable(short, long) is stable

@@ -19,10 +19,14 @@ from .performance_energy import (
     EnergyMaterial, build_energy_material, raw_solar_reference,
     runner_energy_config,
 )
+from .performance_environment import (
+    StageEnvironmentError, assert_environment_compatible,
+    build_stage_environment,
+)
 from .performance_identity import (
     assert_unique_request_ids, calibration_selection_identity, execution_identity,
     formal_plan_identity, horizon_selection_identity, semantic_config_hash,
-    semantic_request_id, trace_sample_selected,
+    semantic_request_id, trace_sample_selected, REQUEST_CONTRACT_VERSION,
 )
 from .performance_outcome import evaluate_simulation_result
 from .performance_taskset_store import PerformanceTaskset, PerformanceTasksetStore
@@ -32,9 +36,7 @@ from .simulation_result import SimulationStatus
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-REQUEST_CONTRACT_VERSION = "ASAP_BLOCK_V9_3_B4_REQUEST_V1"
-
-
+B4_RUNNER_RELEASE_E0 = Fraction(0)
 class PerformanceExecutionError(RuntimeError):
     pass
 
@@ -277,6 +279,7 @@ def tasksets_from_store(config: Mapping[str, Any], store: PerformanceTasksetStor
 def formal_plan_document(
     config: Mapping[str, Any], requests: Sequence[PerformanceRequest], *,
     source_commit: str, simulator_binary_sha256: str, taskset_store_identity_value: str,
+    stage_environment: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     request_ids = [request.semantic_request_id for request in requests]
     material = {
@@ -285,11 +288,16 @@ def formal_plan_document(
         "taskset_store_identity": taskset_store_identity_value,
         "request_count": len(requests),
     }
-    return {
+    if stage_environment is not None:
+        material["stage_environment_identity"] = stage_environment["environment_identity"]
+    document = {
         "schema": "ASAP_BLOCK_V9_3_B4_FORMAL_PLAN_V1", **material,
         "formal_plan_identity": formal_plan_identity(request_ids, material),
         "requests": [request.row() for request in requests],
     }
+    if stage_environment is not None:
+        document["stage_environment"] = dict(stage_environment)
+    return document
 
 
 def _csv_value(value: Any) -> Any:
@@ -449,7 +457,7 @@ def execute_request(
             run_root=Path(run_root), task_payload=taskset.tasks,
             taskset_hash=taskset.taskset_semantic_hash,
             processors=int(config["platform"]["cores"]),
-            exact_e0=Fraction(material.planned_initial_energy),
+            exact_e0=B4_RUNNER_RELEASE_E0,
             energy_config=runner_energy_config(material),
             simulation_config=_runner_simulation_config(config, request, timeout),
             scheduler_id=request.scheduler_id,
@@ -476,6 +484,9 @@ def execute_request(
         "schema": "ASAP_BLOCK_V9_3_B4_TERMINAL_RESULT_V1",
         **request.row(), "attempts": attempts,
         "arrival_offsets_zero": all(int(task.get("arrival_offset", -1)) == 0 for task in taskset.tasks),
+        "rta_release_e0_certificate": "NOT_APPLICABLE",
+        "runner_release_e0_value": "0",
+        "planned_initial_energy": material.planned_initial_energy,
         "terminal": execution.result.status is not SimulationStatus.RUNTIME_TIMEOUT,
         "legacy_status": execution.result.status.value,
         "legacy_reason": execution.result.reason,
@@ -498,6 +509,16 @@ def execute_plan(
         simulator = PROJECT_ROOT / simulator
     source_commit = exact_source_commit()
     binary_hash = _sha256(simulator)
+    try:
+        stage_environment = build_stage_environment(
+            config, project_root=PROJECT_ROOT, simulator_path=simulator,
+        )
+    except StageEnvironmentError as exc:
+        raise PerformanceExecutionError(str(exc)) from exc
+    if stage_environment["exact_source_commit"] != source_commit:
+        raise PerformanceExecutionError("stage environment/source commit mismatch")
+    if stage_environment["simulator_binary_sha256"] != binary_hash:
+        raise PerformanceExecutionError("stage environment/simulator mismatch")
     if config["stage"] in {"HORIZON_GATE", "FORMAL"}:
         selection = load_selection_seal(Path(config["execution"]["calibration_seal"]))
         if selection.get("confirmation_status") != "CONFIRMED":
@@ -507,10 +528,26 @@ def execute_plan(
         if not claimed or calibration_selection_identity(material) != claimed:
             raise PerformanceExecutionError("CAL selection identity mismatch")
         _assert_provenance(selection, source_commit, binary_hash, "CAL")
+        try:
+            assert_environment_compatible(stage_environment, selection["stage_environment"])
+        except (KeyError, StageEnvironmentError) as exc:
+            raise PerformanceExecutionError(f"CAL stage environment mismatch: {exc}") from exc
+        if config["stage"] == "FORMAL":
+            horizon_seal = load_horizon_seal(Path(config["execution"]["horizon_seal"]))
+            try:
+                assert_environment_compatible(stage_environment, horizon_seal["stage_environment"])
+            except (KeyError, StageEnvironmentError) as exc:
+                raise PerformanceExecutionError(f"horizon stage environment mismatch: {exc}") from exc
     elif config["stage"] == "CALIBRATION" and phase != "default":
         control_path = config["execution"].get("calibration_seal") or config["energy"].get("selection_seal")
         control = load_calibration_control(Path(control_path))
         _assert_provenance(control, source_commit, binary_hash, "initial CAL phase")
+        try:
+            assert_environment_compatible(
+                stage_environment, control["stage_environment"], require_stage_config=True,
+            )
+        except (KeyError, StageEnvironmentError) as exc:
+            raise PerformanceExecutionError(f"CAL phase environment mismatch: {exc}") from exc
     tasksets = tasksets_from_store(config, store)
     requests = build_requests(
         config, tasksets, source_commit=source_commit,
@@ -522,6 +559,7 @@ def execute_plan(
         config, requests, source_commit=source_commit,
         simulator_binary_sha256=binary_hash,
         taskset_store_identity_value=manifest["store_identity"],
+        stage_environment=stage_environment,
     )
     plan_name = {
         "CALIBRATION": (
