@@ -325,6 +325,29 @@ def test_malformed_evidence_is_unclassifiable(mutation):
     assert finding("gpfp_asap_block", event).state == UNCLASSIFIABLE
 
 
+def test_decision_affordability_mismatch_remains_fail_closed():
+    event = observation(
+        "gpfp_asap_block",
+        "blocked",
+        available_energy_mJ=3.0,
+        decision_required_energy_mJ=2.0,
+        decision_energy_affordable=False,
+    )
+
+    result = finding("gpfp_asap_block", event, dispatch=False)
+
+    assert result.state == UNCLASSIFIABLE
+    assert result.reason == "decision affordability mismatch"
+
+
+def test_non_boundary_affordability_classification_is_unchanged():
+    event = observation("gpfp_asap_block")
+
+    result = finding("gpfp_asap_block", event)
+
+    assert result.state == ASAP_IMMEDIATE_ELIGIBILITY
+
+
 def test_dispatch_and_continuation_evidence_are_fail_closed():
     event = observation("gpfp_asap_block")
     assert finding("gpfp_asap_block", event, dispatch=False).state == (

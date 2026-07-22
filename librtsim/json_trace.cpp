@@ -508,18 +508,19 @@ namespace RTSim {
         fd << "\"selected\": "
            << (observation.selected ? "true" : "false") << ", ";
         fd << "\"job_required_energy_mJ\": "
-           << observation.job_required_energy_mJ << ", ";
+           << exactDoubleString(observation.job_required_energy_mJ) << ", ";
         fd << "\"decision_required_energy_mJ\": "
-           << observation.decision_required_energy_mJ << ", ";
+           << exactDoubleString(observation.decision_required_energy_mJ)
+           << ", ";
         fd << "\"available_energy_mJ\": "
-           << observation.available_energy_mJ << ", ";
+           << exactDoubleString(observation.available_energy_mJ) << ", ";
         fd << "\"job_energy_affordable\": "
            << (observation.job_energy_affordable ? "true" : "false") << ", ";
         fd << "\"decision_energy_affordable\": "
            << (observation.decision_energy_affordable ? "true" : "false")
            << ", ";
         fd << "\"native_epsilon_mJ\": "
-           << observation.native_epsilon_mJ << ", ";
+           << exactDoubleString(observation.native_epsilon_mJ) << ", ";
         fd << "\"blocking_policy_reason\": \""
            << escapeJson(observation.blocking_policy_reason) << "\", ";
         fd << "\"actual_outcome\": \""
