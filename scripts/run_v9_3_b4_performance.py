@@ -32,6 +32,10 @@ def main() -> int:
     modes.add_argument("--freeze-tasksets", action="store_true")
     modes.add_argument("--execute", action="store_true")
     modes.add_argument("--analyze-only", action="store_true")
+    parser.add_argument(
+        "--resume", action="store_true",
+        help="resume an interrupted execution after validating existing terminal evidence",
+    )
     parser.add_argument("--output-root", type=Path)
     parser.add_argument("--taskset-store", type=Path)
     parser.add_argument("--simulator-bin", type=Path)
@@ -45,6 +49,10 @@ def main() -> int:
     )
     args = parser.parse_args()
     config = load_performance_config(args.config)
+    if args.resume and not args.execute:
+        parser.error("--resume requires --execute")
+    if args.resume:
+        config["execution"]["resume"] = True
     phase = args.calibration_phase.replace("-", "_")
     if args.calibration_confirmation:
         if args.calibration_phase != "initial":
