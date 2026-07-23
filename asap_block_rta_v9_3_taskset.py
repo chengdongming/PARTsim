@@ -59,6 +59,7 @@ class AnalysisVariant(str, Enum):
     LOC_THETA_CW = "LOC-Theta^cw"
     LOC_THETA_LOC = "LOC-Theta^loc"
     PH_THETA_PH = "PH-Theta^ph"
+    SEQ_THETA_SEQ = "SEQ-Theta^seq"
 
 
 class AnalysisMethodRole(str, Enum):
@@ -130,6 +131,8 @@ ROLE_BY_VARIANT = {
     # PH is exposed only through the directed mathematical API in this round;
     # it is deliberately not a formal CORE-1 experiment method.
     AnalysisVariant.PH_THETA_PH: AnalysisMethodRole.DIAGNOSTIC,
+    # SEQ likewise remains a directed mathematical/task-set diagnostic API.
+    AnalysisVariant.SEQ_THETA_SEQ: AnalysisMethodRole.DIAGNOSTIC,
 }
 MAIN_METHOD_VARIANTS = frozenset(
     variant
@@ -625,6 +628,85 @@ def solve_single_task_ph_v9_3(
     )
 
 
+def solve_single_task_seq_v9_3(
+    *,
+    task: core.V93Task,
+    hp_tasks: Sequence[core.V93Task],
+    lp_tasks: Sequence[core.V93Task],
+    carry_in_vector: Mapping[str, int],
+    window_mode: core.EnvelopeKind,
+    energy_input: TasksetAnalysisInput,
+    timeout_seconds: Optional[float],
+) -> SingleTaskSolverResult:
+    """Adapt the independent exact SEQ core without experiment wiring."""
+
+    import asap_block_rta_v9_3_seq as seq_core
+
+    if window_mode is not core.EnvelopeKind.LOCAL:
+        return SingleTaskSolverResult(
+            TaskSolverStatus.INTERNAL_CONFORMANCE_FAILURE,
+            failure_reason="SEQ requires local-window PH safety",
+        )
+    result = seq_core.seq_response_time_v9_3(
+        target=task,
+        hp_tasks=hp_tasks,
+        lp_tasks=lp_tasks,
+        processors=energy_input.processors,
+        theta_by_name=carry_in_vector,
+        e0=energy_input.e0,
+        beta=energy_input.beta,
+        timeout_seconds=timeout_seconds,
+    )
+    try:
+        result = seq_core.SEQSearchResult(
+            solver_status=result.solver_status,
+            candidate_response_time=result.candidate_response_time,
+            closing_w=result.closing_w,
+            processor_progress_a=result.processor_progress_a,
+            maximum_blocking_h=result.maximum_blocking_h,
+            witness_sequence=result.witness_sequence,
+            witness_h=result.witness_h,
+            checked_w_count=result.checked_w_count,
+            checked_h_count=result.checked_h_count,
+            checked_q_count=result.checked_q_count,
+            envelope_call_count=result.envelope_call_count,
+            impossible_prefix_count=result.impossible_prefix_count,
+            failure_reason=result.failure_reason,
+        )
+    except Exception as exc:
+        return SingleTaskSolverResult(
+            TaskSolverStatus.INTERNAL_CONFORMANCE_FAILURE,
+            failure_reason="malformed SEQ search certificate: {}".format(exc),
+        )
+    status = result.solver_status
+    if status is seq_core.SEQSearchStatus.CANDIDATE:
+        mapped = TaskSolverStatus.CANDIDATE_FOUND
+    elif status is seq_core.SEQSearchStatus.NO_CANDIDATE:
+        mapped = TaskSolverStatus.NO_CANDIDATE
+    elif status is seq_core.SEQSearchStatus.UNPROVEN_TIMEOUT:
+        mapped = TaskSolverStatus.TIMEOUT
+    elif status is seq_core.SEQSearchStatus.UNPROVEN_NUMERIC:
+        mapped = TaskSolverStatus.NUMERIC_ERROR
+    else:
+        mapped = TaskSolverStatus.INTERNAL_CONFORMANCE_FAILURE
+    candidate = (
+        result.candidate_response_time
+        if mapped is TaskSolverStatus.CANDIDATE_FOUND
+        else None
+    )
+    return SingleTaskSolverResult(
+        solver_status=mapped,
+        candidate_response_time=candidate,
+        closing_w=result.closing_w if candidate is not None else None,
+        witness_h=result.witness_h if candidate is not None else None,
+        checked_w_count=result.checked_w_count,
+        checked_h_count=result.checked_h_count,
+        checked_q_count=result.checked_q_count,
+        envelope_call_count=result.envelope_call_count,
+        failure_reason=result.failure_reason,
+    )
+
+
 def _record(
     task: core.V93Task,
     rank: int,
@@ -703,6 +785,7 @@ def _numeric_failure_result(
         AnalysisVariant.CW_THETA_CW,
         AnalysisVariant.LOC_THETA_LOC,
         AnalysisVariant.PH_THETA_PH,
+        AnalysisVariant.SEQ_THETA_SEQ,
     }
     return _make_result(
         analysis_id=analysis_id,
@@ -769,6 +852,7 @@ def validate_carry_in_trace(
         AnalysisVariant.CW_THETA_CW,
         AnalysisVariant.LOC_THETA_LOC,
         AnalysisVariant.PH_THETA_PH,
+        AnalysisVariant.SEQ_THETA_SEQ,
     }
     fixed = not recursive
     frozen: Optional[Tuple[Tuple[str, int], ...]] = None
@@ -907,6 +991,7 @@ def finalize_joint_certification(
         AnalysisVariant.CW_THETA_CW,
         AnalysisVariant.LOC_THETA_LOC,
         AnalysisVariant.PH_THETA_PH,
+        AnalysisVariant.SEQ_THETA_SEQ,
     }
     if recursive:
         if compatibility_vector is not None:
@@ -1095,8 +1180,8 @@ def analyze_taskset_v9_3(
 ) -> TasksetAnalysisResult:
     """Run a registered v9.3 task-set analysis.
 
-    PH is a directed mathematical API only; formal runners retain their
-    frozen five-configuration order and never call this variant implicitly.
+    PH and SEQ are directed mathematical APIs only; formal runners retain
+    their frozen five-configuration order and never call them implicitly.
     """
 
     if not isinstance(variant, AnalysisVariant):
@@ -1151,23 +1236,33 @@ def analyze_taskset_v9_3(
                 "non-LOC-Theta^cw dependency status must be NOT_CHECKED"
             )
     tasks = analysis_input.tasks
-    if variant is AnalysisVariant.PH_THETA_PH and any(
+    exact_phase_variant = variant in {
+        AnalysisVariant.PH_THETA_PH,
+        AnalysisVariant.SEQ_THETA_SEQ,
+    }
+    if exact_phase_variant and any(
         earlier.period > later.period
         for earlier, later in zip(tasks, tasks[1:])
     ):
         raise CertificationError(
-            "PH_THETA_PH tasks must be supplied in nondecreasing RM period order"
+            "PH/SEQ recursive tasks must be supplied in nondecreasing RM period order"
         )
     recursive = variant in {
         AnalysisVariant.CW_THETA_CW,
         AnalysisVariant.LOC_THETA_LOC,
         AnalysisVariant.PH_THETA_PH,
+        AnalysisVariant.SEQ_THETA_SEQ,
     }
     if (
         variant is AnalysisVariant.PH_THETA_PH
         and single_task_solver is solve_single_task_v9_3
     ):
         single_task_solver = solve_single_task_ph_v9_3
+    if (
+        variant is AnalysisVariant.SEQ_THETA_SEQ
+        and single_task_solver is solve_single_task_v9_3
+    ):
+        single_task_solver = solve_single_task_seq_v9_3
     if not _interface_active(analysis_input.dependency_context):
         return _numeric_failure_result(
             analysis_id=analysis_id,
@@ -1194,7 +1289,7 @@ def analyze_taskset_v9_3(
             planned_source_analysis_id=resolved_source_analysis_id,
         )
     exact_e0 = analysis_input.e0
-    if variant is AnalysisVariant.PH_THETA_PH:
+    if exact_phase_variant:
         try:
             exact_e0 = core.exact_fraction_v9_3(analysis_input.e0, "E0")
             if exact_e0 < 0:
@@ -1224,7 +1319,7 @@ def analyze_taskset_v9_3(
                 variant=variant,
                 tasks=tasks,
                 context=analysis_input.dependency_context,
-                reason="invalid exact PH input identity material: {}".format(exc),
+                reason="invalid exact PH/SEQ input identity material: {}".format(exc),
                 dependency_status=dependency_check_status,
                 planned_source_analysis_id=resolved_source_analysis_id,
             )
@@ -1237,7 +1332,7 @@ def analyze_taskset_v9_3(
                 variant=variant,
                 tasks=tasks,
                 context=analysis_input.dependency_context,
-                reason="exact PH input identity mismatch",
+                reason="exact PH/SEQ input identity mismatch",
                 dependency_status=dependency_check_status,
                 planned_source_analysis_id=resolved_source_analysis_id,
             )

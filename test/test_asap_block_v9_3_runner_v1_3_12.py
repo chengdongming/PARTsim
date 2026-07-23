@@ -216,6 +216,10 @@ def test_schema_binding_matches_frozen_v1_3_12_contract():
                 variant.value for variant in runner.VARIANT_ORDER
             ]
             assert taskset.AnalysisVariant.PH_THETA_PH not in runner.VARIANT_ORDER
+            assert (
+                taskset.AnalysisVariant.SEQ_THETA_SEQ
+                not in runner.VARIANT_ORDER
+            )
         else:
             binding.assert_python_enum(enum_type, enum_name)
 
