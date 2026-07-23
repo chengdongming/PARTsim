@@ -1,5 +1,6 @@
 import random
 from dataclasses import FrozenInstanceError, replace
+from fractions import Fraction
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -50,15 +51,51 @@ def tasks(count=3):
     )
 
 
-def analysis_input(items=None, ctx=None):
+def identity_for(items, e0, beta):
+    required = max(item.deadline for item in items) - 1
+    horizon = required if callable(beta) else len(beta) - 1
+    service_prefix = core.validate_service_curve_v9_3(beta, horizon)
+    return exact_energy.exact_input_identity(
+        task_powers=((item.name, item.power) for item in items),
+        e0=core.exact_fraction_v9_3(e0, "E0"),
+        service_prefix=service_prefix,
+    )
+
+
+def analysis_input(items=None, ctx=None, e0=1000, beta=None):
     items = items or tasks()
+    beta = beta or (lambda length: 0 if length == 0 else 1000)
     return ts.TasksetAnalysisInput(
         tasks=tuple(items),
         processors=max(1, len(items)),
-        e0=1000,
-        beta=lambda length: 0 if length == 0 else 1000,
+        e0=e0,
+        beta=beta,
         dependency_context=ctx or context(),
     )
+
+
+def bind_exact_identity(inp):
+    return replace(
+        inp,
+        dependency_context=replace(
+            inp.dependency_context,
+            exact_input_identity=identity_for(inp.tasks, inp.e0, inp.beta),
+        ),
+    )
+
+
+def exact_identity_input(items=None, e0=Fraction(3), beta=None, identity=None):
+    items = tuple(items or (
+        core.V93Task("tie-a", 1, 3, 5, Fraction(2)),
+        core.V93Task("tie-b", 1, 4, 5, Fraction(3)),
+    ))
+    beta = tuple(beta or (Fraction(0), Fraction(1), Fraction(2), Fraction(3), Fraction(4), Fraction(5)))
+    computed = identity_for(items, e0, beta)
+    ctx = replace(
+        context("exact-identity"),
+        exact_input_identity=computed if identity is None else identity,
+    )
+    return analysis_input(items, ctx=ctx, e0=e0, beta=beta), computed
 
 
 def candidate(value):
@@ -116,14 +153,250 @@ class ScriptedSolver:
 
 def run_scripted(variant, outcomes, **kwargs):
     solver = ScriptedSolver(outcomes)
+    inp = kwargs.pop("input", None)
+    if inp is None:
+        inp = analysis_input()
+        if variant is ts.AnalysisVariant.PH_THETA_PH:
+            inp = bind_exact_identity(inp)
     result = ts.analyze_taskset_v9_3(
         "analysis",
         variant,
-        kwargs.pop("input", analysis_input()),
+        inp,
         single_task_solver=solver,
         **kwargs
     )
     return result, solver
+
+
+class TestPHThetaPHDirectedRecursion:
+    def test_self_recursive_carry_trace_and_atomic_joint_certification(self):
+        observed = []
+        result, solver = run_scripted(
+            ts.AnalysisVariant.PH_THETA_PH,
+            {"t0": candidate(2), "t1": candidate(2), "t2": candidate(3)},
+            finalization_observer=lambda phase, records: observed.append(
+                (phase, tuple(record.certification_status for record in records))
+            ),
+        )
+        assert [call["carry"] for call in solver.calls] == [
+            {},
+            {"t0": 2},
+            {"t0": 2, "t1": 2},
+        ]
+        assert all(
+            call["window"] is core.EnvelopeKind.LOCAL for call in solver.calls
+        )
+        assert result.taskset_proven
+        assert result.certification_status is ts.AnalysisCertificationStatus.CERTIFIED_TASKSET
+        assert observed[0][0] == "before"
+        assert set(observed[0][1]) == {
+            ts.TaskCertificationStatus.PROVISIONAL_NOT_CERTIFIED
+        }
+        assert observed[1][0] == "after"
+        assert set(observed[1][1]) == {ts.TaskCertificationStatus.CERTIFIED}
+
+    def test_prefix_failure_stops_without_fallback(self):
+        result, solver = run_scripted(
+            ts.AnalysisVariant.PH_THETA_PH,
+            {
+                "t0": candidate(2),
+                "t1": failure(ts.TaskSolverStatus.NO_CANDIDATE),
+                "t2": candidate(3),
+            },
+        )
+        assert [call["task"] for call in solver.calls] == ["t0", "t1"]
+        assert solver.calls[1]["carry"] == {"t0": 2}
+        assert result.first_failed_priority == 1
+        assert result.task_records[2].solver_status is (
+            ts.TaskSolverStatus.NOT_EVALUATED_AFTER_PREFIX_FAILURE
+        )
+        assert result.task_records[2].carry_in_values_used == ()
+        assert not result.taskset_proven
+
+    @pytest.mark.parametrize(
+        "terminal",
+        [ts.TaskSolverStatus.TIMEOUT, ts.TaskSolverStatus.NUMERIC_ERROR],
+    )
+    def test_timeout_or_numeric_prefix_failure_never_certifies_later_tasks(
+        self, terminal
+    ):
+        result, solver = run_scripted(
+            ts.AnalysisVariant.PH_THETA_PH,
+            {
+                "t0": candidate(2),
+                "t1": failure(terminal),
+                "t2": candidate(3),
+            },
+        )
+        assert [call["task"] for call in solver.calls] == ["t0", "t1"]
+        assert result.task_records[2].solver_status is (
+            ts.TaskSolverStatus.NOT_EVALUATED_AFTER_PREFIX_FAILURE
+        )
+        assert not result.taskset_proven
+        assert result.solver_status is {
+            ts.TaskSolverStatus.TIMEOUT: ts.AnalysisSolverStatus.TIMEOUT,
+            ts.TaskSolverStatus.NUMERIC_ERROR: ts.AnalysisSolverStatus.NUMERIC_ERROR,
+        }[terminal]
+
+    def test_ph_rejects_non_rm_input_order(self):
+        items = (
+            core.V93Task("slow", 1, 3, 7, 1),
+            core.V93Task("fast", 1, 3, 4, 1),
+        )
+        with pytest.raises(ts.CertificationError, match="RM period order"):
+            ts.analyze_taskset_v9_3(
+                "ph-order",
+                ts.AnalysisVariant.PH_THETA_PH,
+                analysis_input(items),
+            )
+
+    def test_real_recursive_ph_candidates_do_not_exceed_recursive_loc(self):
+        inp = bind_exact_identity(analysis_input())
+        loc = ts.analyze_taskset_v9_3(
+            "loc-recursive", ts.AnalysisVariant.LOC_THETA_LOC, inp
+        )
+        phase = ts.analyze_taskset_v9_3(
+            "ph-recursive", ts.AnalysisVariant.PH_THETA_PH, inp
+        )
+        assert loc.taskset_proven and phase.taskset_proven
+        loc_vector = {
+            record.task_id: record.candidate_response_time
+            for record in loc.task_records
+        }
+        phase_vector = {
+            record.task_id: record.candidate_response_time
+            for record in phase.task_records
+        }
+        assert phase_vector.keys() == loc_vector.keys()
+        assert all(
+            phase_vector[task_id] <= loc_vector[task_id]
+            for task_id in phase_vector
+        )
+
+    def test_correct_exact_input_identity_is_accepted(self):
+        inp, identity = exact_identity_input()
+        result, solver = run_scripted(
+            ts.AnalysisVariant.PH_THETA_PH,
+            {item.name: candidate(item.wcet) for item in inp.tasks},
+            input=inp,
+        )
+        assert inp.dependency_context.exact_input_identity == identity
+        assert len(solver.calls) == len(inp.tasks)
+        assert result.taskset_proven
+
+    @pytest.mark.parametrize(
+        "mutation",
+        [
+            "nonempty-zero",
+            "other-power",
+            "other-e0",
+            "other-beta",
+            "other-order",
+            "missing",
+            "malformed",
+        ],
+    )
+    def test_wrong_exact_input_identity_fails_closed_before_ph_solver(
+        self, mutation
+    ):
+        inp, correct = exact_identity_input()
+        items = inp.tasks
+        beta = inp.beta
+        wrong = {
+            "nonempty-zero": "0" * 64,
+            "other-power": exact_energy.exact_input_identity(
+                task_powers=((items[0].name, items[0].power + 1), (items[1].name, items[1].power)),
+                e0=inp.e0,
+                service_prefix=beta,
+            ),
+            "other-e0": exact_energy.exact_input_identity(
+                task_powers=((item.name, item.power) for item in items),
+                e0=inp.e0 + 1,
+                service_prefix=beta,
+            ),
+            "other-beta": exact_energy.exact_input_identity(
+                task_powers=((item.name, item.power) for item in items),
+                e0=inp.e0,
+                service_prefix=beta[:-1] + (beta[-1] + 1,),
+            ),
+            "other-order": exact_energy.exact_input_identity(
+                task_powers=((item.name, item.power) for item in reversed(items)),
+                e0=inp.e0,
+                service_prefix=beta,
+            ),
+            "missing": "",
+            "malformed": "not-a-sha256",
+        }[mutation]
+        assert wrong != correct
+        bad_context = replace(inp.dependency_context, exact_input_identity=wrong)
+        bad_input = replace(inp, dependency_context=bad_context)
+        result, solver = run_scripted(
+            ts.AnalysisVariant.PH_THETA_PH,
+            {item.name: candidate(item.wcet) for item in items},
+            input=bad_input,
+        )
+        assert solver.calls == []
+        assert result.solver_status is ts.AnalysisSolverStatus.NUMERIC_ERROR
+        assert result.certification_status is ts.AnalysisCertificationStatus.NOT_CERTIFIED
+        assert result.n_tasks_candidate_found == 0
+        assert not result.taskset_proven
+
+    def test_full_service_prefix_tail_is_bound_by_exact_identity(self):
+        inp, original = exact_identity_input()
+        changed_beta = inp.beta[:-1] + (inp.beta[-1] + 1,)
+        changed = identity_for(inp.tasks, inp.e0, changed_beta)
+        assert changed != original
+        stale = replace(inp, beta=changed_beta)
+        result, solver = run_scripted(
+            ts.AnalysisVariant.PH_THETA_PH,
+            {item.name: candidate(item.wcet) for item in inp.tasks},
+            input=stale,
+        )
+        assert solver.calls == []
+        assert result.solver_status is ts.AnalysisSolverStatus.NUMERIC_ERROR
+
+    def test_direct_analyzer_accepts_execution_engine_canonical_identity(self):
+        from experiments.v9_3 import execution_engine
+
+        inp, expected = exact_identity_input()
+        stored = SimpleNamespace(
+            tasks=inp.tasks,
+            semantic_hash="a" * 64,
+            task_payload=[{"task_id": item.name} for item in inp.tasks],
+            priority_hash="b" * 64,
+            power_hash="c" * 64,
+        )
+        cell = SimpleNamespace(exact_e0=inp.e0, numerical_mode="EXACT_RATIONAL")
+        service = SimpleNamespace(values=inp.beta, identity="d" * 64)
+        produced = execution_engine._dependency_context(stored, cell, service)
+        assert produced.exact_input_identity == expected
+        direct_input = replace(inp, dependency_context=produced)
+        result, solver = run_scripted(
+            ts.AnalysisVariant.PH_THETA_PH,
+            {item.name: candidate(item.wcet) for item in inp.tasks},
+            input=direct_input,
+        )
+        assert len(solver.calls) == len(inp.tasks)
+        assert result.taskset_proven
+
+    def test_same_period_order_and_task_id_are_bound_but_ctd_are_not_numeric_material(self):
+        inp, original = exact_identity_input()
+        reversed_identity = identity_for(tuple(reversed(inp.tasks)), inp.e0, inp.beta)
+        renamed = (
+            replace(inp.tasks[0], name="renamed"),
+            inp.tasks[1],
+        )
+        renamed_identity = identity_for(renamed, inp.e0, inp.beta)
+        ctd_changed = (
+            replace(inp.tasks[0], deadline=4, period=5),
+            inp.tasks[1],
+        )
+        ctd_identity = identity_for(ctd_changed, inp.e0, inp.beta)
+        assert reversed_identity != original
+        assert renamed_identity != original
+        assert ctd_identity == original
+        assert inp.dependency_context.task_definitions_identity
+        assert inp.dependency_context.priority_order_identity
 
 
 def certified_cw(ctx=None, values=None):
@@ -137,18 +410,20 @@ def certified_cw(ctx=None, values=None):
 
 
 class TestMethodRolesAndSchema:
-    def test_five_roles_and_exact_main_method_set(self):
+    def test_formal_five_roles_ph_direct_role_and_exact_main_method_set(self):
         assert ts.ROLE_BY_VARIANT == {
             ts.AnalysisVariant.CW_D: ts.AnalysisMethodRole.AUXILIARY_ABLATION,
             ts.AnalysisVariant.LOC_D: ts.AnalysisMethodRole.AUXILIARY_ABLATION,
             ts.AnalysisVariant.CW_THETA_CW: ts.AnalysisMethodRole.MAIN_METHOD,
             ts.AnalysisVariant.LOC_THETA_CW: ts.AnalysisMethodRole.AUXILIARY_ABLATION,
             ts.AnalysisVariant.LOC_THETA_LOC: ts.AnalysisMethodRole.MAIN_METHOD,
+            ts.AnalysisVariant.PH_THETA_PH: ts.AnalysisMethodRole.DIAGNOSTIC,
         }
         assert ts.MAIN_METHOD_VARIANTS == {
             ts.AnalysisVariant.CW_THETA_CW,
             ts.AnalysisVariant.LOC_THETA_LOC,
         }
+        assert ts.AnalysisVariant.PH_THETA_PH not in ts.MAIN_METHOD_VARIANTS
 
     def test_schema_and_dictionary_enum_synchronization(self):
         schema = yaml.safe_load(SCHEMA.read_text(encoding="utf-8"))
@@ -165,9 +440,16 @@ class TestMethodRolesAndSchema:
             "fixed_carry_in_corollary_status": ts.FixedCarryInInterfaceStatus,
         }
         for schema_name, enum_type in pairs.items():
-            assert set(schema["enums"][schema_name]) == {
+            expected = {
                 member.value for member in enum_type
             }
+            if enum_type is ts.AnalysisVariant:
+                expected.remove(ts.AnalysisVariant.PH_THETA_PH.value)
+            assert set(schema["enums"][schema_name]) == expected
+        assert (
+            ts.AnalysisVariant.PH_THETA_PH.value
+            not in schema["enums"]["analysis_variant"]
+        )
         enum_refs = {
             spec.get("enum_ref")
             for table in dictionary["tables"].values()

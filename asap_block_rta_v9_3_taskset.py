@@ -58,6 +58,7 @@ class AnalysisVariant(str, Enum):
     CW_THETA_CW = "CW-Theta^cw"
     LOC_THETA_CW = "LOC-Theta^cw"
     LOC_THETA_LOC = "LOC-Theta^loc"
+    PH_THETA_PH = "PH-Theta^ph"
 
 
 class AnalysisMethodRole(str, Enum):
@@ -126,6 +127,9 @@ ROLE_BY_VARIANT = {
     AnalysisVariant.CW_THETA_CW: AnalysisMethodRole.MAIN_METHOD,
     AnalysisVariant.LOC_THETA_CW: AnalysisMethodRole.AUXILIARY_ABLATION,
     AnalysisVariant.LOC_THETA_LOC: AnalysisMethodRole.MAIN_METHOD,
+    # PH is exposed only through the directed mathematical API in this round;
+    # it is deliberately not a formal CORE-1 experiment method.
+    AnalysisVariant.PH_THETA_PH: AnalysisMethodRole.DIAGNOSTIC,
 }
 MAIN_METHOD_VARIANTS = frozenset(
     variant
@@ -561,6 +565,66 @@ def solve_single_task_v9_3(
     )
 
 
+def solve_single_task_ph_v9_3(
+    *,
+    task: core.V93Task,
+    hp_tasks: Sequence[core.V93Task],
+    lp_tasks: Sequence[core.V93Task],
+    carry_in_vector: Mapping[str, int],
+    window_mode: core.EnvelopeKind,
+    energy_input: TasksetAnalysisInput,
+    timeout_seconds: Optional[float],
+) -> SingleTaskSolverResult:
+    """Adapt the independent exact PH core without adding experiment wiring."""
+
+    # Keep the frozen CW/LOC evidence and mutation harness independent of the
+    # optional directed PH module unless PH is actually requested.
+    import asap_block_rta_v9_3_ph as ph_core
+
+    if window_mode is not core.EnvelopeKind.LOCAL:
+        return SingleTaskSolverResult(
+            TaskSolverStatus.INTERNAL_CONFORMANCE_FAILURE,
+            failure_reason="PH requires local-window coverage",
+        )
+    result = ph_core.ph_response_time_v9_3(
+        target=task,
+        hp_tasks=hp_tasks,
+        lp_tasks=lp_tasks,
+        processors=energy_input.processors,
+        theta_by_name=carry_in_vector,
+        e0=energy_input.e0,
+        beta=energy_input.beta,
+        timeout_seconds=timeout_seconds,
+    )
+    status = result.solver_status
+    if status is ph_core.PHSearchStatus.CANDIDATE:
+        mapped = TaskSolverStatus.CANDIDATE_FOUND
+    elif status is ph_core.PHSearchStatus.NO_CANDIDATE:
+        mapped = TaskSolverStatus.NO_CANDIDATE
+    elif status is ph_core.PHSearchStatus.UNPROVEN_TIMEOUT:
+        mapped = TaskSolverStatus.TIMEOUT
+    elif status is ph_core.PHSearchStatus.UNPROVEN_NUMERIC:
+        mapped = TaskSolverStatus.NUMERIC_ERROR
+    else:
+        mapped = TaskSolverStatus.INTERNAL_CONFORMANCE_FAILURE
+    candidate = (
+        result.candidate_response_time
+        if mapped is TaskSolverStatus.CANDIDATE_FOUND
+        else None
+    )
+    return SingleTaskSolverResult(
+        solver_status=mapped,
+        candidate_response_time=candidate,
+        closing_w=result.closing_w if candidate is not None else None,
+        witness_h=result.witness_h if candidate is not None else None,
+        checked_w_count=result.checked_w_count,
+        checked_h_count=result.checked_h_count,
+        checked_q_count=result.checked_q_count,
+        envelope_call_count=result.envelope_call_count,
+        failure_reason=result.failure_reason,
+    )
+
+
 def _record(
     task: core.V93Task,
     rank: int,
@@ -638,6 +702,7 @@ def _numeric_failure_result(
     recursive = variant in {
         AnalysisVariant.CW_THETA_CW,
         AnalysisVariant.LOC_THETA_LOC,
+        AnalysisVariant.PH_THETA_PH,
     }
     return _make_result(
         analysis_id=analysis_id,
@@ -703,6 +768,7 @@ def validate_carry_in_trace(
     recursive = variant in {
         AnalysisVariant.CW_THETA_CW,
         AnalysisVariant.LOC_THETA_LOC,
+        AnalysisVariant.PH_THETA_PH,
     }
     fixed = not recursive
     frozen: Optional[Tuple[Tuple[str, int], ...]] = None
@@ -840,6 +906,7 @@ def finalize_joint_certification(
     recursive = variant in {
         AnalysisVariant.CW_THETA_CW,
         AnalysisVariant.LOC_THETA_LOC,
+        AnalysisVariant.PH_THETA_PH,
     }
     if recursive:
         if compatibility_vector is not None:
@@ -1026,7 +1093,11 @@ def analyze_taskset_v9_3(
     single_task_solver: SingleTaskSolver = solve_single_task_v9_3,
     finalization_observer: Optional[Callable[[str, Tuple[TaskAnalysisRecord, ...]], None]] = None,
 ) -> TasksetAnalysisResult:
-    """Run one of the five v9.3 task-set configurations."""
+    """Run a registered v9.3 task-set analysis.
+
+    PH is a directed mathematical API only; formal runners retain their
+    frozen five-configuration order and never call this variant implicitly.
+    """
 
     if not isinstance(variant, AnalysisVariant):
         raise CertificationError("variant must be an AnalysisVariant")
@@ -1080,10 +1151,23 @@ def analyze_taskset_v9_3(
                 "non-LOC-Theta^cw dependency status must be NOT_CHECKED"
             )
     tasks = analysis_input.tasks
+    if variant is AnalysisVariant.PH_THETA_PH and any(
+        earlier.period > later.period
+        for earlier, later in zip(tasks, tasks[1:])
+    ):
+        raise CertificationError(
+            "PH_THETA_PH tasks must be supplied in nondecreasing RM period order"
+        )
     recursive = variant in {
         AnalysisVariant.CW_THETA_CW,
         AnalysisVariant.LOC_THETA_LOC,
+        AnalysisVariant.PH_THETA_PH,
     }
+    if (
+        variant is AnalysisVariant.PH_THETA_PH
+        and single_task_solver is solve_single_task_v9_3
+    ):
+        single_task_solver = solve_single_task_ph_v9_3
     if not _interface_active(analysis_input.dependency_context):
         return _numeric_failure_result(
             analysis_id=analysis_id,
@@ -1109,7 +1193,57 @@ def analyze_taskset_v9_3(
             dependency_status=dependency_check_status,
             planned_source_analysis_id=resolved_source_analysis_id,
         )
-    analysis_input = replace(analysis_input, beta=validated_beta)
+    exact_e0 = analysis_input.e0
+    if variant is AnalysisVariant.PH_THETA_PH:
+        try:
+            exact_e0 = core.exact_fraction_v9_3(analysis_input.e0, "E0")
+            if exact_e0 < 0:
+                raise core.V93NumericError("E0 must be non-negative")
+            if callable(analysis_input.beta):
+                identity_service_prefix = validated_beta
+            else:
+                identity_service_prefix = core.validate_service_curve_v9_3(
+                    analysis_input.beta, len(analysis_input.beta) - 1
+                )
+            expected_exact_input_identity = exact_energy.exact_input_identity(
+                task_powers=(
+                    (task.name, task.power) for task in analysis_input.tasks
+                ),
+                e0=exact_e0,
+                service_prefix=identity_service_prefix,
+            )
+        except (
+            core.V93NumericError,
+            exact_energy.ExactEnergyError,
+            ArithmeticError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            return _numeric_failure_result(
+                analysis_id=analysis_id,
+                variant=variant,
+                tasks=tasks,
+                context=analysis_input.dependency_context,
+                reason="invalid exact PH input identity material: {}".format(exc),
+                dependency_status=dependency_check_status,
+                planned_source_analysis_id=resolved_source_analysis_id,
+            )
+        if (
+            analysis_input.dependency_context.exact_input_identity
+            != expected_exact_input_identity
+        ):
+            return _numeric_failure_result(
+                analysis_id=analysis_id,
+                variant=variant,
+                tasks=tasks,
+                context=analysis_input.dependency_context,
+                reason="exact PH input identity mismatch",
+                dependency_status=dependency_check_status,
+                planned_source_analysis_id=resolved_source_analysis_id,
+            )
+    analysis_input = replace(
+        analysis_input, e0=exact_e0, beta=validated_beta
+    )
     if fixed_carry_in_interface_status is None:
         fixed_carry_in_interface_status = (
             FixedCarryInInterfaceStatus.NOT_APPLICABLE

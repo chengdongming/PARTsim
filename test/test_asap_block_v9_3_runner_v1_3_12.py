@@ -59,7 +59,8 @@ def analysis_input(e0=100, three_tasks=False):
 
 
 def analysis_ids(prefix="analysis"):
-    return {variant: "{}-{}".format(prefix, variant.name) for variant in taskset.AnalysisVariant}
+    # The frozen formal runner deliberately excludes the directed PH API.
+    return {variant: "{}-{}".format(prefix, variant.name) for variant in runner.VARIANT_ORDER}
 
 
 def test_runner_rejects_illegal_service_curve_before_dispatch(monkeypatch):
@@ -210,7 +211,13 @@ def test_schema_binding_matches_frozen_v1_3_12_contract():
         "fixed_carry_in_corollary_status": taskset.FixedCarryInInterfaceStatus,
     }
     for enum_name, enum_type in pairs.items():
-        binding.assert_python_enum(enum_type, enum_name)
+        if enum_name == "analysis_variant":
+            assert binding.enum_values(enum_name) == [
+                variant.value for variant in runner.VARIANT_ORDER
+            ]
+            assert taskset.AnalysisVariant.PH_THETA_PH not in runner.VARIANT_ORDER
+        else:
+            binding.assert_python_enum(enum_type, enum_name)
 
 
 def test_carry_in_source_certification_uses_analysis_enum():
