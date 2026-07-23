@@ -24,11 +24,13 @@ GENERATED_COLUMNS = (
     "utilization_error_total", "deadline_mode", "d_over_t_min_actual",
     "d_over_t_max_actual", "d_over_t_values_json", "taskset_hash",
     "priority_hash", "power_hash", "service_curve_reference",
+    "numeric_contract_sha256",
     "generation_seconds", "canonical_taskset_json", "task_input_json",
 )
 REQUEST_COLUMNS = (
     "request_id", "analysis_id", "cell_id", "taskset_id", "taskset_hash",
-    "exact_e0", "variant", "numerical_mode", "timeout_seconds",
+    "exact_e0", "variant", "numerical_mode", "theory_document_sha256",
+    "numeric_contract_sha256", "exact_input_identity", "timeout_seconds",
     "retry_timeout_seconds", "source_analysis_id", "request_status",
 )
 ATTEMPT_COLUMNS = (
@@ -44,6 +46,11 @@ TASKSET_RESULT_COLUMNS = (
     "analysis_id", "request_id", "cell_id", "taskset_id", "taskset_hash",
     "generation_seed", "M", "task_n", "utilization", "exact_e0",
     "deadline_mode", "analysis_variant", "method_role", "solver_status",
+    "theory_document_path", "theory_document_sha256",
+    "numeric_contract_name", "numeric_contract_version",
+    "numeric_contract_sha256", "source_numeric_model",
+    "demand_rounding_mode", "supply_rounding_mode", "e0_rounding_mode",
+    "exact_input_identity", "float_decision_path",
     "failure_origin", "certification_status", "taskset_proven",
     "first_failed_priority",
     "n_tasks_total", "n_tasks_evaluated", "n_tasks_candidate_found",

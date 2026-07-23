@@ -14,6 +14,8 @@ import yaml
 
 import asap_block_rta as legacy_rta
 
+from . import exact_energy
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 TASK_WORKLOAD_CONTRACT_VERSION = "REAL_TIME_TASK_WORKLOAD_CONTRACT_V2"
@@ -26,8 +28,6 @@ TASK_WORKLOAD_POWER_MODEL_DOMAIN = (
 TASK_WORKLOAD_CONTRACT_DOMAIN = (
     "ASAP_BLOCK:V9.3:REAL_TIME_TASK_WORKLOAD_CONTRACT:v2"
 )
-
-
 class ConfigError(ValueError):
     """Raised when an experiment configuration is unsafe or ambiguous."""
 
@@ -120,10 +120,32 @@ def task_workload_energy_model(
     ))
     if not names:
         raise ConfigError("actual non-idle task workload power model is empty")
+    # This V2 material is retained only as the frozen task-generation/seed
+    # contract.  It is never used as a schedulability input; per-task RTA
+    # demand is materialized by task_demand_for_wcet below.
     return tuple(
         (name, Fraction(str(system.task_energy_per_tick(name))))
         for name in names
     )
+
+
+def task_demand_for_wcet(
+    system: legacy_rta.SystemConfig,
+    workload: str,
+    wcet: int,
+    *,
+    label: str,
+) -> Fraction:
+    """Return the exact materialized C++ per-task unit energy."""
+
+    return exact_energy.materialize_task_demand_upper_bound(
+        base_power=system.base_power,
+        workload_coefficient=system.workload_coefficient(workload),
+        frequency_ratio=system.frequency_ratio(),
+        wcet=wcet,
+        energy_coefficient=1.0,
+        label=label,
+    ).exact_value
 
 
 def task_workload_contract_material(
@@ -258,6 +280,14 @@ def _validate_ratios(values: Iterable[Any], label: str) -> list[str]:
 
 def validate_config(raw: Mapping[str, Any], *, expected_core: str | None = None) -> Dict[str, Any]:
     config = deepcopy(dict(raw))
+    if "numeric_contract" in config:
+        raise ConfigError(
+            "numeric_contract is derived runtime metadata, not a config field"
+        )
+    try:
+        exact_energy.verify_theory_document(PROJECT_ROOT)
+    except exact_energy.ExactEnergyError as exc:
+        raise ConfigError(str(exc)) from exc
     experiment_id = config.get("experiment_id")
     if not isinstance(experiment_id, str) or not experiment_id.strip():
         raise ConfigError("experiment_id must be a non-empty string")
@@ -342,10 +372,18 @@ def validate_config(raw: Mapping[str, Any], *, expected_core: str | None = None)
             )
 
     energy = _require_mapping(config, "energy")
-    exact_values = [
-        fraction_text(exact_fraction(item, f"energy.initial_energy_values[{index}]"))
-        for index, item in enumerate(_as_list(energy.get("initial_energy_values"), "energy.initial_energy_values"))
-    ]
+    try:
+        exact_values = [
+            fraction_text(exact_energy.exact_e0_lower_bound(
+                item, f"energy.initial_energy_values[{index}]",
+            ))
+            for index, item in enumerate(_as_list(
+                energy.get("initial_energy_values"),
+                "energy.initial_energy_values",
+            ))
+        ]
+    except exact_energy.ExactEnergyError as exc:
+        raise ConfigError(str(exc)) from exc
     if len(exact_values) != len(set(exact_values)):
         raise ConfigError("energy.initial_energy_values contains duplicates")
     energy["initial_energy_values"] = exact_values

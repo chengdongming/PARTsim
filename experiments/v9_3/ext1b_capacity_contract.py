@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from fractions import Fraction
+from pathlib import Path
 from typing import Any, Dict, Mapping, Sequence, Tuple
 
 import asap_block_rta as legacy_rta
 
-from .config import canonical_json, domain_hash, fraction_text
+from . import exact_energy
+from .config import (
+    canonical_json, domain_hash, fraction_text, task_demand_for_wcet,
+)
 from .task_identity import runtime_task_name_for_source_id
 
 
@@ -45,6 +49,7 @@ def capacity_contract_material(config: Mapping[str, Any]) -> Dict[str, Any]:
         ),
         "workload_contract_version": workload["version"],
         "power_model_identity": workload["power_model_identity"],
+        "numeric_contract_sha256": exact_energy.NUMERIC_CONTRACT_SHA256,
     }
 
 
@@ -64,23 +69,35 @@ def capacity_feasibility_violations(
 
     capacity = Fraction(battery_capacity)
     workload_contract = config["generation"]["workload_contract"]
-    energy_by_workload = {
-        str(row["workload"]): Fraction(str(row["energy_per_tick"]))
+    known_workloads = {
+        str(row["workload"])
         for row in workload_contract["power_model"]
     }
+    system_path = (
+        Path(__file__).resolve().parents[2]
+        / config["energy"]["service_curve"]["system_template"]
+    )
+    system = legacy_rta.load_system_config(str(system_path))
     contract_identity = capacity_contract_identity(config)
     violations = []
     for row in tasks:
         workload = str(row.get("workload", ""))
-        if workload not in energy_by_workload:
+        if workload not in known_workloads:
             raise ValueError(
                 "capacity feasibility received workload outside the actual "
                 f"power model: {workload}"
             )
-        task_energy = energy_by_workload[workload]
+        task_energy = task_demand_for_wcet(
+            system,
+            workload,
+            int(row["C"]),
+            label=f"capacity task {row.get('task_id', '')} exact P",
+        )
         try:
-            frozen_energy = Fraction(str(row["P"]))
-        except (KeyError, ValueError, ZeroDivisionError) as exc:
+            frozen_energy = exact_energy.parse_persisted_fraction(
+                row["P"], f"capacity task {row.get('task_id', '')} frozen P",
+            )
+        except (KeyError, exact_energy.ExactEnergyError) as exc:
             raise ValueError(
                 "capacity feasibility received invalid materialized task P"
             ) from exc

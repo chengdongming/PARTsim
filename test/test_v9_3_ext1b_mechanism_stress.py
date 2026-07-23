@@ -10,7 +10,14 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from experiments.v9_3.config import ConfigError, validate_config
+import asap_block_rta as legacy_rta
+
+from experiments.v9_3.config import (
+    ConfigError,
+    fraction_text,
+    task_demand_for_wcet,
+    validate_config,
+)
 from experiments.v9_3.ext1_scheduler_comparison import Ext1Runner
 from experiments.v9_3.ext1b_aggregation import (
     _overall_relation,
@@ -23,9 +30,18 @@ from experiments.v9_3.ext1b_config import (
     validate_ext1b_config,
 )
 from experiments.v9_3.ext1b_engine import (
+    GENERATED_COLUMNS,
+    REQUEST_COLUMNS,
+    SCENARIO_INSTANCE_COLUMNS,
     Ext1BRunner,
     assert_ext1b_fair_pairing,
     verify_file_hashes,
+)
+from experiments.v9_3.ext1b_observation import (
+    B2_DECISION_COLUMNS,
+    B2_SUMMARY_COLUMNS,
+    B3_EVENT_COLUMNS,
+    B3_SUMMARY_COLUMNS,
 )
 from experiments.v9_3.ext1b_generation import (
     NATIVE_ENERGY_EPSILON_J,
@@ -531,6 +547,26 @@ def test_pairing_requires_exactly_nine_unique_schedulers():
         assert_ext1b_fair_pairing(_fair_rows()[:-1])
 
 
+def test_ext_observation_artifacts_never_claim_rta_certification():
+    forbidden = {
+        "certification_status",
+        "rta_certification_status",
+        "rta_taskset_proven",
+        "taskset_proven",
+        "soundness_class",
+    }
+    for columns in (
+        GENERATED_COLUMNS,
+        SCENARIO_INSTANCE_COLUMNS,
+        REQUEST_COLUMNS,
+        B2_DECISION_COLUMNS,
+        B2_SUMMARY_COLUMNS,
+        B3_EVENT_COLUMNS,
+        B3_SUMMARY_COLUMNS,
+    ):
+        assert forbidden.isdisjoint(columns)
+
+
 def test_scheduler_id_is_not_part_of_generation_seed():
     assert {row["generation_seed"] for row in _fair_rows()} == {17}
 
@@ -543,15 +579,40 @@ def test_b1_predicate_uses_actual_priority_and_power():
 
 
 def test_b1_power_profile_uses_priority_rank_not_input_order():
-    shuffled = [_payload()[2], _payload()[0], _payload()[1]]
+    system = legacy_rta.load_system_config(
+        str(ROOT / "system_config_unified_template.yml")
+    )
+    table = (
+        ("control", Fraction(1)),
+        ("bzip2", Fraction(2)),
+        ("encrypt", Fraction(3)),
+    )
+    payload = []
+    for rank, workload in enumerate(("hash", "decrypt", "control")):
+        payload.append({
+            "task_id": str(rank),
+            "priority_rank": rank,
+            "C": rank + 1,
+            "D": 5 + rank,
+            "T": 10 + rank,
+            "D_over_T": "1/2",
+            "workload": workload,
+            "P": fraction_text(task_demand_for_wcet(
+                system, workload, rank + 1,
+                label=f"priority-profile fixture {rank}",
+            )),
+            "arrival_offset": 0,
+        })
+    shuffled = [payload[2], payload[0], payload[1]]
     transformed = _apply_power_profile(
         shuffled,
-        (("low", Fraction(1)), ("middle", Fraction(2)), ("high", Fraction(3))),
+        table,
         "HIGH_PRIORITY_HIGH_POWER",
+        system=system,
     )
     by_rank = {row["priority_rank"]: row for row in transformed}
-    assert by_rank[0]["workload"] == "high"
-    assert by_rank[2]["workload"] == "low"
+    assert by_rank[0]["workload"] == "encrypt"
+    assert by_rank[2]["workload"] == "control"
 
 
 def test_exact_interpolation_never_rounds_to_upper_boundary():

@@ -149,7 +149,9 @@ def test_same_b3_source_identity_repeats_exactly_and_freezes_provenance(tmp_path
     assert {row["workload"] for row in first.task_payload} <= set(CANDIDATES)
 
     document = json.loads(first.canonical_path.read_text(encoding="utf-8"))
-    assert document["schema"] == "ASAP_BLOCK_V9_3_FROZEN_TASKSET_V3"
+    # V4 is the exact-binary64 taskset schema; generation dimensions and
+    # workload selections remain identical to the V3 preimage.
+    assert document["schema"] == "ASAP_BLOCK_V9_3_FROZEN_TASKSET_V4_EXACT_BINARY64"
     frozen = document["task_workload_contract"]
     assert tuple(frozen["ordered_candidates"]) == CANDIDATES
     assert frozen["candidate_identity"] == generation_dimensions(

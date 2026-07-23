@@ -12,12 +12,19 @@ from enum import Enum
 from typing import Callable, Mapping, Optional, Protocol, Sequence, Tuple
 
 import asap_block_rta_v9_3 as core
+from experiments.v9_3 import exact_energy
 
 
-THEORY_DOCUMENT_SHA256 = (
+THEORY_DOCUMENT_PATH = exact_energy.THEORY_DOCUMENT_PATH
+THEORY_DOCUMENT_SHA256 = exact_energy.THEORY_DOCUMENT_SHA256
+FIXED_CARRY_IN_INTERFACE_SHA256 = THEORY_DOCUMENT_SHA256
+LEGACY_THEORY_DOCUMENT_PATH = (
+    "asap_block_rta_multicore_complete_and_local_paper_ready_v9_3_"
+    "fixed_carry_in_interface(1).md"
+)
+LEGACY_THEORY_DOCUMENT_SHA256 = (
     "524d4f84b04185609735a2be3ff54984149be1478a111044494ec1f8ff65098e"
 )
-FIXED_CARRY_IN_INTERFACE_SHA256 = THEORY_DOCUMENT_SHA256
 
 
 class CertificationError(ValueError):
@@ -140,6 +147,13 @@ class DependencyContext:
     theory_document_sha256: str
     fixed_carry_in_interface_sha256: str
     formal_contract_identity: Optional[str] = None
+    numeric_contract_sha256: str = ""
+    source_numeric_model: str = ""
+    demand_rounding_mode: str = ""
+    supply_rounding_mode: str = ""
+    e0_rounding_mode: str = ""
+    exact_input_identity: str = ""
+    float_decision_path: bool = True
 
 
 @dataclass(frozen=True)
@@ -597,6 +611,55 @@ def _not_applicable(task: core.V93Task, rank: int) -> TaskAnalysisRecord:
     )
 
 
+def _numeric_failure_result(
+    *,
+    analysis_id: str,
+    variant: AnalysisVariant,
+    tasks: Sequence[core.V93Task],
+    context: DependencyContext,
+    reason: str,
+    dependency_status: DependencyVectorCheckStatus,
+    planned_source_analysis_id: Optional[str],
+) -> TasksetAnalysisResult:
+    first = _record(
+        tasks[0],
+        0,
+        SingleTaskSolverResult(
+            TaskSolverStatus.NUMERIC_ERROR,
+            failure_reason=reason,
+        ),
+        {},
+        TaskCertificationStatus.NOT_CERTIFIED,
+    )
+    records = (first,) + tuple(
+        _not_evaluated(task, rank)
+        for rank, task in enumerate(tasks[1:], start=1)
+    )
+    recursive = variant in {
+        AnalysisVariant.CW_THETA_CW,
+        AnalysisVariant.LOC_THETA_LOC,
+    }
+    return _make_result(
+        analysis_id=analysis_id,
+        variant=variant,
+        records=records,
+        solver_status=AnalysisSolverStatus.NUMERIC_ERROR,
+        certification_status=AnalysisCertificationStatus.NOT_CERTIFIED,
+        first_failed_priority=0,
+        source=None,
+        source_vector=(),
+        dependency_status=dependency_status,
+        interface_status=(
+            FixedCarryInInterfaceStatus.NOT_APPLICABLE
+            if recursive else FixedCarryInInterfaceStatus.HASH_MISMATCH
+        ),
+        dominance_status=DominanceInvariantStatus.NOT_CHECKED,
+        diagnostic_mode=False,
+        context=context,
+        planned_source_analysis_id=planned_source_analysis_id,
+    )
+
+
 def _validate_record_vector(
     tasks: Sequence[core.V93Task], records: Sequence[TaskAnalysisRecord]
 ) -> None:
@@ -866,6 +929,14 @@ def _interface_active(context: DependencyContext) -> bool:
         context.theory_document_sha256 == THEORY_DOCUMENT_SHA256
         and context.fixed_carry_in_interface_sha256
         == FIXED_CARRY_IN_INTERFACE_SHA256
+        and context.numeric_contract_sha256
+        == exact_energy.NUMERIC_CONTRACT_SHA256
+        and context.source_numeric_model == exact_energy.SOURCE_NUMERIC_MODEL
+        and context.demand_rounding_mode == exact_energy.DEMAND_ROUNDING_MODE
+        and context.supply_rounding_mode == exact_energy.SUPPLY_ROUNDING_MODE
+        and context.e0_rounding_mode == exact_energy.E0_ROUNDING_MODE
+        and bool(context.exact_input_identity)
+        and context.float_decision_path is False
     )
 
 
@@ -1008,19 +1079,37 @@ def analyze_taskset_v9_3(
             raise CertificationError(
                 "non-LOC-Theta^cw dependency status must be NOT_CHECKED"
             )
+    tasks = analysis_input.tasks
+    recursive = variant in {
+        AnalysisVariant.CW_THETA_CW,
+        AnalysisVariant.LOC_THETA_LOC,
+    }
+    if not _interface_active(analysis_input.dependency_context):
+        return _numeric_failure_result(
+            analysis_id=analysis_id,
+            variant=variant,
+            tasks=tasks,
+            context=analysis_input.dependency_context,
+            reason="numeric/theory contract mismatch",
+            dependency_status=dependency_check_status,
+            planned_source_analysis_id=resolved_source_analysis_id,
+        )
     try:
         validated_beta = core.validate_service_curve_v9_3(
             analysis_input.beta,
             max(task.deadline for task in analysis_input.tasks) - 1,
         )
     except core.V93NumericError as exc:
-        raise CertificationError("invalid theorem-backed service curve: {}".format(exc))
+        return _numeric_failure_result(
+            analysis_id=analysis_id,
+            variant=variant,
+            tasks=tasks,
+            context=analysis_input.dependency_context,
+            reason="invalid theorem-backed service curve: {}".format(exc),
+            dependency_status=dependency_check_status,
+            planned_source_analysis_id=resolved_source_analysis_id,
+        )
     analysis_input = replace(analysis_input, beta=validated_beta)
-    tasks = analysis_input.tasks
-    recursive = variant in {
-        AnalysisVariant.CW_THETA_CW,
-        AnalysisVariant.LOC_THETA_LOC,
-    }
     if fixed_carry_in_interface_status is None:
         fixed_carry_in_interface_status = (
             FixedCarryInInterfaceStatus.NOT_APPLICABLE

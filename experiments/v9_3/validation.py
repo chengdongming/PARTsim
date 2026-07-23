@@ -472,7 +472,7 @@ _TERMINAL_PLAIN_INTEGER_FIELDS = frozenset({
     "attempt_count",
 })
 _TERMINAL_BOOLEAN_FIELDS = frozenset({
-    "taskset_proven", "diagnostic_mode",
+    "taskset_proven", "diagnostic_mode", "float_decision_path",
 })
 
 
@@ -831,7 +831,13 @@ def _validate_experiment_status_fields(
     expected_interface = (
         taskset.FixedCarryInInterfaceStatus.NOT_APPLICABLE
         if recursive
-        else taskset.FixedCarryInInterfaceStatus.ACTIVE
+        else (
+            taskset.FixedCarryInInterfaceStatus.HASH_MISMATCH
+            if result.solver_status is taskset.AnalysisSolverStatus.NUMERIC_ERROR
+            and result.fixed_carry_in_interface_status
+            is taskset.FixedCarryInInterfaceStatus.HASH_MISMATCH
+            else taskset.FixedCarryInInterfaceStatus.ACTIVE
+        )
     )
     if result.fixed_carry_in_interface_status is not expected_interface:
         raise ConformanceFailure("fixed carry-in interface status mismatch")

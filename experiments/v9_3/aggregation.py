@@ -16,6 +16,7 @@ import asap_block_rta_v9_3_taskset as taskset
 
 from .cell_model import analysis_id as planned_analysis_id, expand_cells
 from .config import canonical_json, config_hash, domain_hash, load_config
+from . import exact_energy
 from .derived_outputs import (
     DerivedOutputBundle, build_core1_derived_outputs,
     build_core2_derived_outputs, validate_persisted_derived_bundle,
@@ -101,7 +102,9 @@ def _stored_from_generated(row: Mapping[str, str]) -> StoredTaskset:
             int(item["C"]),
             int(item["D"]),
             int(item["T"]),
-            Fraction(str(item["P"])),
+            exact_energy.parse_persisted_fraction(
+                item["P"], "aggregated task P",
+            ),
         )
         for item in payload
     )
@@ -148,6 +151,13 @@ def _expected_dependency_context(
             taskset.FIXED_CARRY_IN_INTERFACE_SHA256
         ),
         formal_contract_identity=None,
+        numeric_contract_sha256=request["numeric_contract_sha256"],
+        source_numeric_model=exact_energy.SOURCE_NUMERIC_MODEL,
+        demand_rounding_mode=exact_energy.DEMAND_ROUNDING_MODE,
+        supply_rounding_mode=exact_energy.SUPPLY_ROUNDING_MODE,
+        e0_rounding_mode=exact_energy.E0_ROUNDING_MODE,
+        exact_input_identity=request["exact_input_identity"],
+        float_decision_path=False,
     )
 
 
@@ -166,6 +176,9 @@ def validate_run_closure_read_only(
     checkpoint = _json(root / "checkpoint.json", "checkpoint")
     if metadata.get("core") != expected_core:
         raise AggregationError("run metadata core mismatch")
+    for key, expected in exact_energy.numeric_contract_metadata().items():
+        if metadata.get(key) != expected:
+            raise AggregationError(f"run numeric/theory metadata mismatch: {key}")
     if (
         metadata.get("formal_large_scale_run")
         != seal.get("formal_large_scale_run")

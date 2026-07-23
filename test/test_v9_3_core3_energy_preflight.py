@@ -34,8 +34,10 @@ R1_B20 = ROOT / "configs/v9_3_core3_formal_b20.yaml"
 R1_B100 = ROOT / "configs/v9_3_core3_formal_b100.yaml"
 R2_B20 = ROOT / "configs/v9_3_core3_formal_b20_r2.yaml"
 R2_B100 = ROOT / "configs/v9_3_core3_formal_b100_r2.yaml"
-H_RAW = Fraction(11666700000000003, 10000000000000)
-H_SCALED = Fraction(18229218750000003, 2000000000000000)
+# These identities intentionally follow the production EnergyConfig phase:
+# 21,975,000 ms is floored to minute 366 before tick advancement.
+H_RAW = Fraction(1313553644316084375, 1125899906842624)
+H_SCALED = Fraction(1313553644316084375, 144115188075855872)
 
 
 @pytest.mark.parametrize(("initial", "capacity", "harvest", "margin", "valid"), [

@@ -29,12 +29,13 @@ from .config import (
     domain_hash,
     fraction_text,
     prepare_task_workload_contract as prepare_config_workload_contract,
-    task_workload_energy_model,
+    task_demand_for_wcet,
 )
 from .ext1b_capacity_contract import (
     capacity_contract_identity,
     capacity_contract_material,
 )
+from . import exact_energy
 from .ext1b_b3_target_trace import (
     B3_V2_STORE_CONTRACT_DOMAIN,
     is_b3_target_trace_v2,
@@ -49,10 +50,10 @@ from .simulation_engine import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 TASK_GENERATOR = PROJECT_ROOT / "global_task_generator.py"
-FROZEN_TASKSET_SCHEMA = "ASAP_BLOCK_V9_3_FROZEN_TASKSET_V3"
-FROZEN_TASKSET_SEMANTIC_DOMAIN = "ASAP_BLOCK:V9.3:TASKSET_SEMANTIC:v3"
-PAIRING_MANIFEST_SCHEMA = "ASAP_BLOCK_V9_3_CORE12_PAIRING_MANIFEST_V2"
-PAIRING_CONTRACT_DOMAIN = "ASAP_BLOCK:V9.3:CORE12_PAIRING_CONTRACT:v2"
+FROZEN_TASKSET_SCHEMA = "ASAP_BLOCK_V9_3_FROZEN_TASKSET_V4_EXACT_BINARY64"
+FROZEN_TASKSET_SEMANTIC_DOMAIN = "ASAP_BLOCK:V9.3:TASKSET_SEMANTIC:v4"
+PAIRING_MANIFEST_SCHEMA = "ASAP_BLOCK_V9_3_CORE12_PAIRING_MANIFEST_V3_EXACT_BINARY64"
+PAIRING_CONTRACT_DOMAIN = "ASAP_BLOCK:V9.3:CORE12_PAIRING_CONTRACT:v3"
 B3_V2_PAIRING_MANIFEST_SCHEMA = (
     "ASAP_BLOCK_V9_3_EXT1B_B3_TARGET_TRACE_PAIRING_MANIFEST_V4"
 )
@@ -102,6 +103,7 @@ class StoredTaskset:
             "priority_hash": self.priority_hash,
             "power_hash": self.power_hash,
             "service_curve_reference": self.service_curve_reference,
+            "numeric_contract_sha256": exact_energy.NUMERIC_CONTRACT_SHA256,
             "generation_seconds": f"{self.generation_seconds:.9f}",
             "canonical_taskset_json": str(self.canonical_path),
             "task_input_json": canonical_json(self.task_payload),
@@ -149,7 +151,13 @@ def prepare_task_workload_contract(
         tuple(material["ordered_candidates"]),
         str(material["candidate_identity"]),
         tuple(
-            (str(row["workload"]), Fraction(str(row["energy_per_tick"])))
+            (
+                str(row["workload"]),
+                exact_energy.parse_persisted_fraction(
+                    row["energy_per_tick"],
+                    f"workload {row['workload']} energy_per_tick",
+                ),
+            )
             for row in material["power_model"]
         ),
         str(material["power_model_identity"]),
@@ -213,24 +221,34 @@ def prepare_service_curve(
         trace = construct_paired_harvest_trace(system_path, horizon)
     except SimulationConfigurationError as exc:
         raise TasksetStoreError(f"cannot construct service trace: {exc}") from exc
-    curve = legacy_rta.build_energy_service_curve(trace, horizon)
     required = max(config["generation"]["period_max"] - 1, 0)
-    if required >= len(curve):
+    if required > horizon:
         raise TasksetStoreError("service-curve horizon is shorter than required deadline horizon")
-    exact_scale = Fraction(str(spec.get("exact_scale", "1")))
+    try:
+        exact_scale = exact_energy.parse_persisted_fraction(
+            spec.get("exact_scale", "1"), "service-curve exact scale",
+        )
+    except exact_energy.ExactEnergyError as exc:
+        raise TasksetStoreError(str(exc)) from exc
     if exact_scale <= 0:
         raise TasksetStoreError("service-curve exact scale must be positive")
     material_horizon = horizon if "exact_scale" in spec else required
-    values = tuple(
-        Fraction(str(curve[index])) * exact_scale
-        for index in range(material_horizon + 1)
-    )
+    try:
+        values = tuple(
+            value * exact_scale
+            for value in exact_energy.service_curve_lower_bound(
+                trace, material_horizon,
+            )
+        )
+    except exact_energy.ExactEnergyError as exc:
+        raise TasksetStoreError(str(exc)) from exc
     values = rta_core.validate_service_curve_v9_3(values, material_horizon)
     raw = {
         "id": spec["id"],
         "horizon": horizon,
         "system_template": str(spec["system_template"]),
         "validated_prefix": [fraction_text(item) for item in values],
+        "numeric_contract": exact_energy.numeric_contract_metadata(),
     }
     if "exact_scale" in spec:
         raw.update({
@@ -250,9 +268,15 @@ def prepare_service_curve(
             "solar_data_sha256": hashlib.sha256(
                 solar_path.read_bytes()
             ).hexdigest(),
-            "solar_scale": fraction_text(Fraction(str(spec["solar_scale"]))),
+            "solar_scale": fraction_text(
+                exact_energy.parse_persisted_fraction(
+                    spec["solar_scale"], "service-curve solar scale",
+                )
+            ),
             "effective_pv_area_m2": fraction_text(
-                Fraction(str(system.pv_area_m2))
+                exact_energy.materialize_supply_lower_bound(
+                    system.pv_area_m2, "effective pv_area_m2",
+                ).exact_value
             ),
         })
     identity = domain_hash("ASAP_BLOCK:V9.3:SERVICE_CURVE:v1", raw)
@@ -571,12 +595,23 @@ class TasksetStore:
                 raise TasksetStoreError(
                     "generator workload representations disagree"
                 )
-            power = Fraction(str(system.task_energy_per_tick(workload)))
-            expected_power = dict(self.task_workload_contract.power_model)[workload]
-            if power != expected_power:
-                raise TasksetStoreError(
-                    "generator produced workload/P mismatch against actual power model"
+            try:
+                generation_reference = Fraction(str(
+                    system.task_energy_per_tick(workload)
+                ))
+                if generation_reference != dict(
+                    self.task_workload_contract.power_model
+                )[workload]:
+                    raise TasksetStoreError(
+                        "generator produced workload/P mismatch against "
+                        "the frozen generation model"
+                    )
+                power = task_demand_for_wcet(
+                    system, workload, legacy_task.wcet,
+                    label=f"task {legacy_task.name} energy per tick",
                 )
+            except (ConfigError, exact_energy.ExactEnergyError) as exc:
+                raise TasksetStoreError(str(exc)) from exc
             task_id_value = str(rank)
             if legacy_task.deadline > legacy_task.period:
                 raise TasksetStoreError("generator produced D > T")
@@ -619,6 +654,7 @@ class TasksetStore:
             "task_workload_contract": (
                 self.task_workload_contract.canonical_material()
             ),
+            "numeric_contract": exact_energy.numeric_contract_metadata(),
         }
         semantic_hash = domain_hash(
             FROZEN_TASKSET_SEMANTIC_DOMAIN, canonical_payload
@@ -673,7 +709,7 @@ class TasksetStore:
             "actual_total_utilization", "priority_policy", "power_mode",
             "deadline_mode", "service_curve_reference", "tasks",
         ]
-        preimage_keys.append("task_workload_contract")
+        preimage_keys.extend(("task_workload_contract", "numeric_contract"))
         preimage = {
             key: document[key]
             for key in preimage_keys
@@ -686,6 +722,7 @@ class TasksetStore:
     def _from_document(self, document: Mapping[str, Any], path: Path) -> StoredTaskset:
         payload = tuple(document["tasks"])
         energy_by_workload = dict(self.task_workload_contract.power_model)
+        system = legacy_rta.load_system_config(str(self.service.system_path))
         for item in payload:
             workload = item.get("workload")
             if workload == "idle":
@@ -702,17 +739,35 @@ class TasksetStore:
                     f"stored real-time task uses unknown workload: {workload}"
                 )
             try:
-                observed_power = Fraction(str(item["P"]))
-            except (KeyError, ValueError, ZeroDivisionError) as exc:
-                raise TasksetStoreError("stored real-time task has invalid P") from exc
-            if observed_power != energy_by_workload[workload]:
-                raise TasksetStoreError(
-                    "stored real-time task P does not match actual power model"
+                observed_power = exact_energy.parse_persisted_fraction(
+                    item["P"], "stored real-time task P",
                 )
-        tasks = tuple(rta_core.V93Task(
-            str(item["task_id"]), int(item["C"]), int(item["D"]),
-            int(item["T"]), Fraction(str(item["P"])),
-        ) for item in payload)
+            except (KeyError, exact_energy.ExactEnergyError) as exc:
+                raise TasksetStoreError("stored real-time task has invalid P") from exc
+            try:
+                expected_power = task_demand_for_wcet(
+                    system,
+                    workload,
+                    int(item["C"]),
+                    label=f"stored task {item.get('task_id')} energy per tick",
+                )
+            except (KeyError, ValueError, ConfigError, exact_energy.ExactEnergyError) as exc:
+                raise TasksetStoreError(
+                    "stored real-time task has invalid demand inputs"
+                ) from exc
+            if observed_power != expected_power:
+                raise TasksetStoreError(
+                    "stored real-time task P does not match materialized C++ demand"
+                )
+        try:
+            tasks = tuple(rta_core.V93Task(
+                str(item["task_id"]), int(item["C"]), int(item["D"]),
+                int(item["T"]), exact_energy.parse_persisted_fraction(
+                    item["P"], "stored real-time task P",
+                ),
+            ) for item in payload)
+        except exact_energy.ExactEnergyError as exc:
+            raise TasksetStoreError(str(exc)) from exc
         if any(task.deadline > task.period for task in tasks):
             raise TasksetStoreError("stored taskset violates D <= T")
         expected_priority_hash = domain_hash(

@@ -7,6 +7,7 @@ import pytest
 import asap_block_rta_v9_3 as core
 import asap_block_rta_v9_3_taskset as taskset
 import asap_block_v9_3_runner as runner
+from experiments.v9_3 import exact_energy
 from asap_block_v1_3_12_schema_binding import (
     CONTRACT_DIRECTORY_NAME,
     ContractBindingError,
@@ -31,6 +32,13 @@ def dependency_context():
         theory_document_sha256=taskset.THEORY_DOCUMENT_SHA256,
         fixed_carry_in_interface_sha256=taskset.FIXED_CARRY_IN_INTERFACE_SHA256,
         formal_contract_identity="1" * 64,
+        numeric_contract_sha256=exact_energy.NUMERIC_CONTRACT_SHA256,
+        source_numeric_model=exact_energy.SOURCE_NUMERIC_MODEL,
+        demand_rounding_mode=exact_energy.DEMAND_ROUNDING_MODE,
+        supply_rounding_mode=exact_energy.SUPPLY_ROUNDING_MODE,
+        e0_rounding_mode=exact_energy.E0_ROUNDING_MODE,
+        exact_input_identity="2" * 64,
+        float_decision_path=False,
     )
 
 

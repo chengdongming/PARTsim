@@ -19,6 +19,8 @@ from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Tuple
 
 import asap_block_rta_v9_3 as core
 import asap_block_rta_v9_3_taskset as taskset
+
+from . import exact_energy
 import asap_block_v9_3_runner as production_runner
 
 from .config import fraction_text
@@ -53,7 +55,9 @@ def _load_taskset(path: Path) -> DiagnosticTaskset:
     payload = tuple(document["tasks"])
     tasks = tuple(core.V93Task(
         str(item["task_id"]), int(item["C"]), int(item["D"]),
-        int(item["T"]), Fraction(str(item["P"])),
+        int(item["T"]), exact_energy.parse_persisted_fraction(
+            item["P"], "calibration task P",
+        ),
     ) for item in payload)
     return DiagnosticTaskset(
         str(document["taskset_id"]), str(document["taskset_hash"]),

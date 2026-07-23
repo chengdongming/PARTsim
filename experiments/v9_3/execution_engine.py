@@ -29,6 +29,7 @@ import asap_block_v9_3_runner as production_runner
 
 from .cell_model import Cell, analysis_id, expand_cells
 from .config import canonical_json, config_hash, domain_hash, dump_config, fraction_text
+from . import exact_energy
 from .formal_authorization import (
     FORMAL_PARAMETER_STATUS, FormalAuthorizationError,
     requires_formal_authorization, verify_authorization,
@@ -60,6 +61,7 @@ class ExecutionPlanItem:
     analysis_id: str
     request_id: str
     source_analysis_id: Optional[str]
+    exact_input_identity: str
 
 
 @dataclass(frozen=True)
@@ -717,6 +719,11 @@ def _dependency_context(
     cell: Cell,
     service: ServiceCurveMaterial,
 ) -> taskset.DependencyContext:
+    input_identity = exact_energy.exact_input_identity(
+        task_powers=((item.name, item.power) for item in stored.tasks),
+        e0=cell.exact_e0,
+        service_prefix=service.values,
+    )
     return taskset.DependencyContext(
         taskset_identity=stored.semantic_hash,
         task_definitions_identity=domain_hash(
@@ -733,6 +740,13 @@ def _dependency_context(
         theory_document_sha256=taskset.THEORY_DOCUMENT_SHA256,
         fixed_carry_in_interface_sha256=taskset.FIXED_CARRY_IN_INTERFACE_SHA256,
         formal_contract_identity=None,
+        numeric_contract_sha256=exact_energy.NUMERIC_CONTRACT_SHA256,
+        source_numeric_model=exact_energy.SOURCE_NUMERIC_MODEL,
+        demand_rounding_mode=exact_energy.DEMAND_ROUNDING_MODE,
+        supply_rounding_mode=exact_energy.SUPPLY_ROUNDING_MODE,
+        e0_rounding_mode=exact_energy.E0_ROUNDING_MODE,
+        exact_input_identity=input_identity,
+        float_decision_path=exact_energy.FLOAT_DECISION_PATH,
     )
 
 
@@ -863,6 +877,17 @@ def _terminal_payload(
         "utilization": fraction_text(item.cell.utilization),
         "exact_e0": fraction_text(item.cell.exact_e0),
         "deadline_mode": item.cell.deadline_mode,
+        "theory_document_path": exact_energy.THEORY_DOCUMENT_PATH,
+        "theory_document_sha256": exact_energy.THEORY_DOCUMENT_SHA256,
+        "numeric_contract_name": exact_energy.NUMERIC_CONTRACT_NAME,
+        "numeric_contract_version": exact_energy.NUMERIC_CONTRACT_VERSION,
+        "numeric_contract_sha256": exact_energy.NUMERIC_CONTRACT_SHA256,
+        "source_numeric_model": exact_energy.SOURCE_NUMERIC_MODEL,
+        "demand_rounding_mode": exact_energy.DEMAND_ROUNDING_MODE,
+        "supply_rounding_mode": exact_energy.SUPPLY_ROUNDING_MODE,
+        "e0_rounding_mode": exact_energy.E0_ROUNDING_MODE,
+        "exact_input_identity": item.exact_input_identity,
+        "float_decision_path": exact_energy.FLOAT_DECISION_PATH,
         **row,
         # Provenance is copied from the final persisted attempt.  It is not
         # inferred from solver status, timeout flags, or exception fields.
@@ -957,6 +982,11 @@ class ExecutionEngine:
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
             if metadata.get("config_hash") != self.config_identity:
                 raise ExecutionError("configuration hash mismatch; refusing to resume")
+            for key, expected in exact_energy.numeric_contract_metadata().items():
+                if metadata.get(key) != expected:
+                    raise ExecutionError(
+                        f"numeric/theory metadata mismatch; refusing to resume: {key}"
+                    )
             if not resume:
                 raise ExecutionError("run directory already exists; use --resume")
             if not seal_path.is_file():
@@ -1011,6 +1041,7 @@ class ExecutionEngine:
                 "production_entry": "asap_block_rta_v9_3_taskset.analyze_taskset_v9_3",
                 "formal_large_scale_run": seal["formal_large_scale_run"],
                 "formal_authorization_id": seal["authorization_id"],
+                **exact_energy.numeric_contract_metadata(),
             }
             atomic_write_json(metadata_path, metadata)
             dump_config(self.config, self.root / "run_config.yaml")
@@ -1069,6 +1100,13 @@ class ExecutionEngine:
                     variant_name: analysis_id(cell, stored.semantic_hash, variant_name)
                     for variant_name in self.config["analysis"]["variants"]
                 }
+                input_identity = exact_energy.exact_input_identity(
+                    task_powers=(
+                        (task.name, task.power) for task in stored.tasks
+                    ),
+                    e0=cell.exact_e0,
+                    service_prefix=self.service.values,
+                )
                 chain = []
                 for variant_name in self.config["analysis"]["variants"]:
                     variant = _variant(variant_name)
@@ -1081,7 +1119,8 @@ class ExecutionEngine:
                         "ASAP_BLOCK:V9.3:ANALYSIS_REQUEST:v1", aid
                     )
                     chain.append(ExecutionPlanItem(
-                        cell, index, stored, variant, aid, request_id, source_id
+                        cell, index, stored, variant, aid, request_id, source_id,
+                        input_identity,
                     ))
                     self._requests.append({
                         "request_id": request_id, "analysis_id": aid,
@@ -1090,6 +1129,13 @@ class ExecutionEngine:
                         "exact_e0": fraction_text(cell.exact_e0),
                         "variant": variant.name,
                         "numerical_mode": cell.numerical_mode,
+                        "theory_document_sha256": (
+                            exact_energy.THEORY_DOCUMENT_SHA256
+                        ),
+                        "numeric_contract_sha256": (
+                            exact_energy.NUMERIC_CONTRACT_SHA256
+                        ),
+                        "exact_input_identity": input_identity,
                         "timeout_seconds": self.config["analysis"]["timeout_seconds"],
                         "retry_timeout_seconds": self.config["analysis"].get("retry_timeout_seconds"),
                         "source_analysis_id": source_id,
@@ -1233,6 +1279,17 @@ class ExecutionEngine:
             "deadline_mode": item.cell.deadline_mode,
             "analysis_variant": item.variant.name,
             "method_role": taskset.ROLE_BY_VARIANT[item.variant].value,
+            "theory_document_path": exact_energy.THEORY_DOCUMENT_PATH,
+            "theory_document_sha256": exact_energy.THEORY_DOCUMENT_SHA256,
+            "numeric_contract_name": exact_energy.NUMERIC_CONTRACT_NAME,
+            "numeric_contract_version": exact_energy.NUMERIC_CONTRACT_VERSION,
+            "numeric_contract_sha256": exact_energy.NUMERIC_CONTRACT_SHA256,
+            "source_numeric_model": exact_energy.SOURCE_NUMERIC_MODEL,
+            "demand_rounding_mode": exact_energy.DEMAND_ROUNDING_MODE,
+            "supply_rounding_mode": exact_energy.SUPPLY_ROUNDING_MODE,
+            "e0_rounding_mode": exact_energy.E0_ROUNDING_MODE,
+            "exact_input_identity": item.exact_input_identity,
+            "float_decision_path": exact_energy.FLOAT_DECISION_PATH,
         }
         assert self.service is not None
         try:

@@ -14,13 +14,16 @@ from .config import (
     config_hash,
     domain_hash,
 )
+from . import exact_energy
 
 
 AUTHORIZATION_SCHEMA = "ASAP_BLOCK_V9_3_FORMAL_AUTHORIZATION_V1"
 SEAL_SCHEMA = "ASAP_BLOCK_V9_3_FORMAL_AUTHORIZATION_SEAL_V1"
 FORMAL_CONFIRMATION_TOKEN = "RUN_V9_3_FORMAL"
 FORMAL_PARAMETER_STATUS = "FROZEN_FOR_FORMAL_EXECUTION"
-FORMAL_TASKSET_STORE_SCHEMA = "ASAP_BLOCK_V9_3_CORE12_PAIRING_MANIFEST_V2"
+FORMAL_TASKSET_STORE_SCHEMA = (
+    "ASAP_BLOCK_V9_3_CORE12_PAIRING_MANIFEST_V3_EXACT_BINARY64"
+)
 CONFIG_BOUND_TASKSET_STORE_DOMAIN = (
     "ASAP_BLOCK:V9.3:CONFIG_BOUND_TASKSET_STORE_IDENTITY:v1"
 )
@@ -85,7 +88,7 @@ def taskset_store_identity(path: Path | str) -> str:
         or workload_contract.get("version") != TASK_WORKLOAD_CONTRACT_VERSION
     ):
         raise FormalAuthorizationError(
-            "formal taskset store requires the workload-contract-v2 schema"
+            "formal taskset store requires the exact-binary64 workload schema"
         )
     return domain_hash(
         "ASAP_BLOCK:V9.3:TASKSET_STORE_IDENTITY:v1",
@@ -169,7 +172,7 @@ def expected_binding(
     repository = _repository_identity(project_root)
     store = _project_path(config["execution"]["taskset_store"], project_root)
     if config.get("core") in {"CORE-1", "CORE-2"}:
-        store_binding_mode = "PREMATERIALIZED_MANIFEST_V2"
+        store_binding_mode = "PREMATERIALIZED_MANIFEST_V3_EXACT_BINARY64"
         store_identity = taskset_store_identity(store)
     else:
         store_binding_mode = "CONFIG_BOUND_RUNTIME_STORE_V1"
@@ -191,6 +194,10 @@ def expected_binding(
         "taskset_store": str(store),
         "taskset_store_binding_mode": store_binding_mode,
         "taskset_store_identity": store_identity,
+        "theory_document_path": exact_energy.THEORY_DOCUMENT_PATH,
+        "theory_document_sha256": exact_energy.THEORY_DOCUMENT_SHA256,
+        "numeric_contract_sha256": exact_energy.NUMERIC_CONTRACT_SHA256,
+        "source_numeric_model": exact_energy.SOURCE_NUMERIC_MODEL,
     }
     simulation = config.get("simulation")
     if config.get("core") == "CORE-3" and isinstance(simulation, Mapping):

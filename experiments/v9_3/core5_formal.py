@@ -14,6 +14,7 @@ import statistics
 import time
 from typing import Any, Dict, Mapping, Optional, Sequence
 
+from . import exact_energy
 from .config import (
     ConfigError, canonical_json, config_hash, domain_hash, dump_config,
     fraction_text, load_config,
@@ -794,7 +795,9 @@ class ExactTimeScaleStoreView:
         tasks = tuple(
             rta_core.V93Task(
                 str(row["task_id"]), int(row["C"]), int(row["D"]),
-                int(row["T"]), Fraction(str(row["P"])),
+                int(row["T"]), exact_energy.parse_persisted_fraction(
+                    row["P"], "CORE-5 source task P",
+                ),
             )
             for row in payload
         )
