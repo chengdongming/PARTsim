@@ -27,6 +27,12 @@ target_link_libraries(
     PRIVATE rtsim
 )
 
+target_compile_definitions(
+    test_librtsim
+    PRIVATE
+    PARTSIM_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+)
+
 include(GoogleTest)
 gtest_discover_tests(test_librtsim)
 
