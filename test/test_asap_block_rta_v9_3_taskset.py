@@ -8,6 +8,7 @@ import pytest
 import yaml
 
 import asap_block_rta_v9_3 as core
+import asap_block_rta_v9_3_seq as seq_core
 import asap_block_rta_v9_3_taskset as ts
 from experiments.v9_3 import exact_energy
 
@@ -156,7 +157,10 @@ def run_scripted(variant, outcomes, **kwargs):
     inp = kwargs.pop("input", None)
     if inp is None:
         inp = analysis_input()
-        if variant is ts.AnalysisVariant.PH_THETA_PH:
+        if variant in {
+            ts.AnalysisVariant.PH_THETA_PH,
+            ts.AnalysisVariant.SEQ_THETA_SEQ,
+        }:
             inp = bind_exact_identity(inp)
     result = ts.analyze_taskset_v9_3(
         "analysis",
@@ -399,6 +403,332 @@ class TestPHThetaPHDirectedRecursion:
         assert inp.dependency_context.priority_order_identity
 
 
+class TestSEQThetaSEQDirectedRecursion:
+    def test_self_recursive_carry_trace_and_atomic_joint_certification(self):
+        observed = []
+        result, solver = run_scripted(
+            ts.AnalysisVariant.SEQ_THETA_SEQ,
+            {"t0": candidate(2), "t1": candidate(2), "t2": candidate(3)},
+            finalization_observer=lambda phase, records: observed.append(
+                (phase, tuple(record.certification_status for record in records))
+            ),
+        )
+        assert [call["carry"] for call in solver.calls] == [
+            {},
+            {"t0": 2},
+            {"t0": 2, "t1": 2},
+        ]
+        assert all(
+            call["window"] is core.EnvelopeKind.LOCAL for call in solver.calls
+        )
+        assert result.taskset_proven
+        assert result.method_role is ts.AnalysisMethodRole.DIAGNOSTIC
+        assert observed[0][0] == "before"
+        assert set(observed[0][1]) == {
+            ts.TaskCertificationStatus.PROVISIONAL_NOT_CERTIFIED
+        }
+        assert observed[1][0] == "after"
+        assert set(observed[1][1]) == {ts.TaskCertificationStatus.CERTIFIED}
+
+    def test_middle_prefix_failure_stops_without_fallback(self):
+        result, solver = run_scripted(
+            ts.AnalysisVariant.SEQ_THETA_SEQ,
+            {
+                "t0": candidate(2),
+                "t1": failure(ts.TaskSolverStatus.NO_CANDIDATE),
+                "t2": candidate(3),
+            },
+        )
+        assert [call["task"] for call in solver.calls] == ["t0", "t1"]
+        assert solver.calls[1]["carry"] == {"t0": 2}
+        assert result.first_failed_priority == 1
+        assert result.task_records[2].solver_status is (
+            ts.TaskSolverStatus.NOT_EVALUATED_AFTER_PREFIX_FAILURE
+        )
+        assert result.task_records[2].carry_in_values_used == ()
+        assert not result.taskset_proven
+
+    def test_spoofed_closure_certificate_stops_taskset_prefix(self, monkeypatch):
+        original_response = seq_core.seq_response_time_v9_3
+        closure = object.__new__(seq_core.SEQClosureResult)
+        forged_fields = {
+            "status": seq_core.SEQClosureStatus.CLOSED,
+            "witness_sequence": (99,),
+            "witness_h": 99,
+            "processor_progress_a": 1,
+            "maximum_blocking_h": 99,
+            "checked_h_count": 1,
+            "checked_q_count": 1,
+            "envelope_call_count": 1,
+            "impossible_prefix_count": 0,
+            "failure_reason": None,
+        }
+        for name, value in forged_fields.items():
+            object.__setattr__(closure, name, value)
+
+        def spoofed_response(**kwargs):
+            return original_response(
+                **kwargs, _closure_checker=lambda **_closure_kwargs: closure
+            )
+
+        monkeypatch.setattr(seq_core, "seq_response_time_v9_3", spoofed_response)
+        inp = bind_exact_identity(analysis_input())
+        result = ts.analyze_taskset_v9_3(
+            "spoofed-seq-certificate",
+            ts.AnalysisVariant.SEQ_THETA_SEQ,
+            inp,
+        )
+        assert result.solver_status is (
+            ts.AnalysisSolverStatus.INTERNAL_CONFORMANCE_FAILURE
+        )
+        assert result.task_records[0].solver_status is (
+            ts.TaskSolverStatus.INTERNAL_CONFORMANCE_FAILURE
+        )
+        assert all(
+            record.solver_status
+            is ts.TaskSolverStatus.NOT_EVALUATED_AFTER_PREFIX_FAILURE
+            for record in result.task_records[1:]
+        )
+        assert not result.taskset_proven
+
+    def test_candidate_construction_timeout_stops_taskset_prefix(self, monkeypatch):
+        class ArmableClock:
+            def __init__(self):
+                self.armed = False
+
+            def __call__(self):
+                return 1 if self.armed else 0
+
+        clock = ArmableClock()
+        original_post_init = seq_core.SEQSearchResult.__post_init__
+        original_response = seq_core.seq_response_time_v9_3
+
+        def wrapped_post_init(search_result):
+            original_post_init(search_result)
+            if search_result.solver_status is seq_core.SEQSearchStatus.CANDIDATE:
+                clock.armed = True
+
+        def response_with_clock(**kwargs):
+            return original_response(**kwargs, clock=clock)
+
+        monkeypatch.setattr(
+            seq_core.SEQSearchResult, "__post_init__", wrapped_post_init
+        )
+        monkeypatch.setattr(
+            seq_core, "seq_response_time_v9_3", response_with_clock
+        )
+        inp = bind_exact_identity(
+            replace(analysis_input(), timeout_seconds=1)
+        )
+        result = ts.analyze_taskset_v9_3(
+            "candidate-construction-timeout",
+            ts.AnalysisVariant.SEQ_THETA_SEQ,
+            inp,
+        )
+        assert result.solver_status is ts.AnalysisSolverStatus.TIMEOUT
+        assert result.task_records[0].solver_status is ts.TaskSolverStatus.TIMEOUT
+        assert result.task_records[0].candidate_response_time is None
+        assert all(
+            record.solver_status
+            is ts.TaskSolverStatus.NOT_EVALUATED_AFTER_PREFIX_FAILURE
+            for record in result.task_records[1:]
+        )
+        assert result.certification_status is (
+            ts.AnalysisCertificationStatus.NOT_CERTIFIED
+        )
+        assert not result.taskset_proven
+
+    def test_period_decrease_is_rejected(self):
+        items = (
+            core.V93Task("slow", 1, 3, 7, 1),
+            core.V93Task("fast", 1, 3, 4, 1),
+        )
+        with pytest.raises(ts.CertificationError, match="RM period order"):
+            ts.analyze_taskset_v9_3(
+                "seq-order",
+                ts.AnalysisVariant.SEQ_THETA_SEQ,
+                analysis_input(items),
+            )
+
+    def test_same_period_preserves_caller_priority_order(self):
+        inp, _identity = exact_identity_input()
+        result, solver = run_scripted(
+            ts.AnalysisVariant.SEQ_THETA_SEQ,
+            {item.name: candidate(item.wcet) for item in inp.tasks},
+            input=inp,
+        )
+        assert [call["task"] for call in solver.calls] == ["tie-a", "tie-b"]
+        assert result.taskset_proven
+
+    def test_duplicate_task_id_is_rejected_before_analysis(self):
+        duplicate = (
+            core.V93Task("same", 1, 2, 3, 1),
+            core.V93Task("same", 1, 3, 4, 2),
+        )
+        with pytest.raises(ts.CertificationError, match="unique"):
+            analysis_input(duplicate)
+
+    def test_correct_exact_input_identity_is_accepted(self):
+        inp, identity = exact_identity_input()
+        result, solver = run_scripted(
+            ts.AnalysisVariant.SEQ_THETA_SEQ,
+            {item.name: candidate(item.wcet) for item in inp.tasks},
+            input=inp,
+        )
+        assert inp.dependency_context.exact_input_identity == identity
+        assert len(solver.calls) == len(inp.tasks)
+        assert result.taskset_proven
+
+    @pytest.mark.parametrize(
+        "mutation",
+        [
+            "nonempty-zero",
+            "other-power",
+            "other-e0",
+            "other-beta",
+            "other-order",
+            "missing",
+            "non-hex",
+            "wrong-length",
+        ],
+    )
+    def test_wrong_exact_identity_fails_before_seq_solver(self, mutation):
+        inp, correct = exact_identity_input()
+        items = inp.tasks
+        wrong = {
+            "nonempty-zero": "0" * 64,
+            "other-power": exact_energy.exact_input_identity(
+                task_powers=(
+                    (items[0].name, items[0].power + 1),
+                    (items[1].name, items[1].power),
+                ),
+                e0=inp.e0,
+                service_prefix=inp.beta,
+            ),
+            "other-e0": exact_energy.exact_input_identity(
+                task_powers=((item.name, item.power) for item in items),
+                e0=inp.e0 + 1,
+                service_prefix=inp.beta,
+            ),
+            "other-beta": exact_energy.exact_input_identity(
+                task_powers=((item.name, item.power) for item in items),
+                e0=inp.e0,
+                service_prefix=inp.beta[:-1] + (inp.beta[-1] + 1,),
+            ),
+            "other-order": exact_energy.exact_input_identity(
+                task_powers=((item.name, item.power) for item in reversed(items)),
+                e0=inp.e0,
+                service_prefix=inp.beta,
+            ),
+            "missing": "",
+            "non-hex": "g" * 64,
+            "wrong-length": "a" * 63,
+        }[mutation]
+        assert wrong != correct
+        bad_input = replace(
+            inp,
+            dependency_context=replace(
+                inp.dependency_context, exact_input_identity=wrong
+            ),
+        )
+        result, solver = run_scripted(
+            ts.AnalysisVariant.SEQ_THETA_SEQ,
+            {item.name: candidate(item.wcet) for item in items},
+            input=bad_input,
+        )
+        assert solver.calls == []
+        assert result.solver_status is ts.AnalysisSolverStatus.NUMERIC_ERROR
+        assert not result.taskset_proven
+        assert result.n_tasks_candidate_found == 0
+
+    @pytest.mark.parametrize(
+        ("seq_status", "task_status"),
+        [
+            (seq_core.SEQSearchStatus.CANDIDATE, ts.TaskSolverStatus.CANDIDATE_FOUND),
+            (seq_core.SEQSearchStatus.NO_CANDIDATE, ts.TaskSolverStatus.NO_CANDIDATE),
+            (seq_core.SEQSearchStatus.UNPROVEN_TIMEOUT, ts.TaskSolverStatus.TIMEOUT),
+            (seq_core.SEQSearchStatus.UNPROVEN_NUMERIC, ts.TaskSolverStatus.NUMERIC_ERROR),
+            (
+                seq_core.SEQSearchStatus.UNPROVEN_INTERNAL,
+                ts.TaskSolverStatus.INTERNAL_CONFORMANCE_FAILURE,
+            ),
+        ],
+    )
+    def test_single_task_adapter_maps_every_seq_terminal(
+        self, monkeypatch, seq_status, task_status
+    ):
+        success = seq_status is seq_core.SEQSearchStatus.CANDIDATE
+        fake = seq_core.SEQSearchResult(
+            solver_status=seq_status,
+            candidate_response_time=1 if success else None,
+            closing_w=1 if success else None,
+            processor_progress_a=1 if success else None,
+            maximum_blocking_h=0 if success else None,
+            witness_sequence=(0,) if success else (),
+            witness_h=0 if success else None,
+            checked_w_count=1,
+            checked_h_count=2,
+            checked_q_count=3,
+            envelope_call_count=2,
+            impossible_prefix_count=1,
+            failure_reason=None if success else seq_status.value,
+        )
+        monkeypatch.setattr(seq_core, "seq_response_time_v9_3", lambda **_kwargs: fake)
+        inp = bind_exact_identity(analysis_input((tasks(1)[0],)))
+        actual = ts.solve_single_task_seq_v9_3(
+            task=inp.tasks[0],
+            hp_tasks=(),
+            lp_tasks=(),
+            carry_in_vector={},
+            window_mode=core.EnvelopeKind.LOCAL,
+            energy_input=inp,
+            timeout_seconds=None,
+        )
+        assert actual.solver_status is task_status
+        assert actual.candidate_response_time == (1 if success else None)
+        assert actual.witness_h == (0 if success else None)
+
+    def test_single_task_adapter_rejects_bypassed_malformed_search_certificate(
+        self, monkeypatch
+    ):
+        fake = object.__new__(seq_core.SEQSearchResult)
+        fields = {
+            "solver_status": seq_core.SEQSearchStatus.CANDIDATE,
+            "candidate_response_time": 1,
+            "closing_w": 1,
+            "processor_progress_a": 1,
+            "maximum_blocking_h": 99,
+            "witness_sequence": (99,),
+            "witness_h": 99,
+            "checked_w_count": 1,
+            "checked_h_count": 1,
+            "checked_q_count": 1,
+            "envelope_call_count": 1,
+            "impossible_prefix_count": 0,
+            "failure_reason": None,
+        }
+        for name, value in fields.items():
+            object.__setattr__(fake, name, value)
+        monkeypatch.setattr(
+            seq_core, "seq_response_time_v9_3", lambda **_kwargs: fake
+        )
+        inp = bind_exact_identity(analysis_input((tasks(1)[0],)))
+        actual = ts.solve_single_task_seq_v9_3(
+            task=inp.tasks[0],
+            hp_tasks=(),
+            lp_tasks=(),
+            carry_in_vector={},
+            window_mode=core.EnvelopeKind.LOCAL,
+            energy_input=inp,
+            timeout_seconds=None,
+        )
+        assert actual.solver_status is (
+            ts.TaskSolverStatus.INTERNAL_CONFORMANCE_FAILURE
+        )
+        assert actual.candidate_response_time is None
+        assert "malformed SEQ search certificate" in actual.failure_reason
+
+
 def certified_cw(ctx=None, values=None):
     values = values or {"t0": 2, "t1": 2, "t2": 2}
     result, _ = run_scripted(
@@ -418,12 +748,14 @@ class TestMethodRolesAndSchema:
             ts.AnalysisVariant.LOC_THETA_CW: ts.AnalysisMethodRole.AUXILIARY_ABLATION,
             ts.AnalysisVariant.LOC_THETA_LOC: ts.AnalysisMethodRole.MAIN_METHOD,
             ts.AnalysisVariant.PH_THETA_PH: ts.AnalysisMethodRole.DIAGNOSTIC,
+            ts.AnalysisVariant.SEQ_THETA_SEQ: ts.AnalysisMethodRole.DIAGNOSTIC,
         }
         assert ts.MAIN_METHOD_VARIANTS == {
             ts.AnalysisVariant.CW_THETA_CW,
             ts.AnalysisVariant.LOC_THETA_LOC,
         }
         assert ts.AnalysisVariant.PH_THETA_PH not in ts.MAIN_METHOD_VARIANTS
+        assert ts.AnalysisVariant.SEQ_THETA_SEQ not in ts.MAIN_METHOD_VARIANTS
 
     def test_schema_and_dictionary_enum_synchronization(self):
         schema = yaml.safe_load(SCHEMA.read_text(encoding="utf-8"))
@@ -445,9 +777,14 @@ class TestMethodRolesAndSchema:
             }
             if enum_type is ts.AnalysisVariant:
                 expected.remove(ts.AnalysisVariant.PH_THETA_PH.value)
+                expected.remove(ts.AnalysisVariant.SEQ_THETA_SEQ.value)
             assert set(schema["enums"][schema_name]) == expected
         assert (
             ts.AnalysisVariant.PH_THETA_PH.value
+            not in schema["enums"]["analysis_variant"]
+        )
+        assert (
+            ts.AnalysisVariant.SEQ_THETA_SEQ.value
             not in schema["enums"]["analysis_variant"]
         )
         enum_refs = {
