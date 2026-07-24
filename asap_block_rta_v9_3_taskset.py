@@ -3247,6 +3247,10 @@ def _replace_last_candidate_with_timeout(
             "timeout replacement requires at least one task result"
         )
     previous = task_results[-1]
+    if previous.solver_status is not TaskSolverStatus.CANDIDATE_FOUND:
+        raise CertificationError(
+            "timeout replacement requires a final candidate result"
+        )
     timeout_result = _timeout_kernel_result(stage)
     cleared = replace(
         previous,
@@ -3637,14 +3641,22 @@ def analyze_method_taskset_v9_3(
     try:
         budget.checkpoint("before_taskset_result_return")
     except _AnalysisBudgetExpired as exc:
-        frozen_results = _replace_last_candidate_with_timeout(
-            task_results=frozen_results,
-            stage=exc.stage,
-        )
-        operational_terminal = AnalysisSolverStatus.TIMEOUT
-        if first_failed_task is None:
-            first_failed_task = frozen_results[-1].task_id
-            first_failure_reason = frozen_results[-1].failure_reason
+        # A terminal prefix failure has already frozen every unevaluated
+        # suffix record.  The final taskset-level checkpoint may withdraw a
+        # still-provisional final candidate, but it must never turn a suffix
+        # record (or an already-terminal task) into another TIMEOUT.
+        if (
+            frozen_results[-1].solver_status
+            is TaskSolverStatus.CANDIDATE_FOUND
+        ):
+            frozen_results = _replace_last_candidate_with_timeout(
+                task_results=frozen_results,
+                stage=exc.stage,
+            )
+            operational_terminal = AnalysisSolverStatus.TIMEOUT
+            if first_failed_task is None:
+                first_failed_task = frozen_results[-1].task_id
+                first_failure_reason = frozen_results[-1].failure_reason
     solver_status = operational_terminal or AnalysisSolverStatus.NO_CANDIDATE
     return _make_unified_taskset_result(
         analysis_id=analysis_id,

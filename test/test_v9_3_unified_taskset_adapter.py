@@ -677,11 +677,32 @@ def test_expired_request_budget_stops_before_third_kernel_for_both_policies(
     )
     assert calls == [("t0", 1.0), ("t1", 0.5)]
     assert result.solver_status is taskset.AnalysisSolverStatus.TIMEOUT
-    assert result.task_results[1].solver_status is (
-        taskset.TaskSolverStatus.TIMEOUT
+    assert tuple(task.solver_status for task in result.task_results) == (
+        taskset.TaskSolverStatus.CANDIDATE_FOUND,
+        taskset.TaskSolverStatus.TIMEOUT,
+        taskset.TaskSolverStatus.NOT_EVALUATED_AFTER_PREFIX_FAILURE,
     )
-    assert result.task_results[1].candidate_response_time is None
-    assert result.task_results[2].solver_call_count == 0
+    assert result.first_failed_task == "t1"
+    assert sum(
+        task.solver_status is taskset.TaskSolverStatus.TIMEOUT
+        for task in result.task_results
+    ) == 1
+
+    completed, timed_out, unevaluated = result.task_results
+    assert completed.candidate_response_time == 1
+    assert timed_out.candidate_response_time is None
+    assert timed_out.closing_w is None
+    assert timed_out.witness_h is None
+    assert timed_out.processor_progress_a is None
+    assert timed_out.maximum_blocking_h is None
+    assert timed_out.witness_sequence == ()
+    assert unevaluated.solver_call_count == 0
+    assert unevaluated.candidate_response_time is None
+    assert unevaluated.closing_w is None
+    assert unevaluated.witness_h is None
+    assert unevaluated.processor_progress_a is None
+    assert unevaluated.maximum_blocking_h is None
+    assert unevaluated.witness_sequence == ()
     assert not result.taskset_proven
 
 
