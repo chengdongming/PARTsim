@@ -6,6 +6,8 @@ import pytest
 
 import asap_block_rta_v9_3 as core
 import asap_block_rta_v9_3_methods as methods
+import asap_block_rta_v9_3_ph as ph_core
+import asap_block_rta_v9_3_seq as seq_core
 import asap_block_rta_v9_3_taskset as taskset
 from experiments.v9_3 import exact_energy
 
@@ -183,6 +185,17 @@ class ScriptedDispatcher:
         if callable(outcome):
             return outcome(kwargs)
         return scripted_result(kwargs, outcome)
+
+
+class ManualClock:
+    def __init__(self, current=0.0):
+        self.current = float(current)
+
+    def __call__(self):
+        return self.current
+
+    def advance(self, amount):
+        self.current += float(amount)
 
 
 def run_scripted(method_id, outcomes, *, inp=None, **kwargs):
@@ -377,6 +390,151 @@ def test_invalid_numeric_contract_calls_no_kernel(method_id):
 
 @pytest.mark.parametrize("method_id", tuple(methods.V93MethodId))
 @pytest.mark.parametrize(
+    "identity",
+    ("", "malformed-identity", "0" * 64),
+    ids=("missing", "malformed", "mismatch"),
+)
+def test_public_dispatcher_rejects_identity_before_every_kernel(
+    monkeypatch, method_id, identity
+):
+    inp = analysis_input()
+    bad = replace(
+        inp,
+        dependency_context=replace(
+            inp.dependency_context, exact_input_identity=identity
+        ),
+    )
+    calls = {"cw_loc": 0, "ph": 0, "seq": 0}
+    original_cw_loc = core.canonical_closure_search_v9_3
+    original_ph = ph_core.ph_response_time_v9_3
+    original_seq = seq_core.seq_response_time_v9_3
+
+    def count_cw_loc(*args, **kwargs):
+        calls["cw_loc"] += 1
+        return original_cw_loc(*args, **kwargs)
+
+    def count_ph(*args, **kwargs):
+        calls["ph"] += 1
+        return original_ph(*args, **kwargs)
+
+    def count_seq(*args, **kwargs):
+        calls["seq"] += 1
+        return original_seq(*args, **kwargs)
+
+    monkeypatch.setattr(
+        core, "canonical_closure_search_v9_3", count_cw_loc
+    )
+    monkeypatch.setattr(ph_core, "ph_response_time_v9_3", count_ph)
+    monkeypatch.setattr(seq_core, "seq_response_time_v9_3", count_seq)
+    result = taskset.dispatch_single_task_method_v9_3(
+        method_spec=method_id,
+        task=bad.tasks[0],
+        hp_tasks=(),
+        lp_tasks=bad.tasks[1:],
+        carry_in_vector={},
+        energy_input=bad,
+        timeout_seconds=None,
+    )
+    assert calls == {"cw_loc": 0, "ph": 0, "seq": 0}
+    assert result.solver_status is taskset.TaskSolverStatus.NUMERIC_ERROR
+    assert result.candidate_response_time is None
+    assert result.witness_h is None
+    assert result.processor_progress_a is None
+    assert result.maximum_blocking_h is None
+    assert result.witness_sequence == ()
+
+
+@pytest.mark.parametrize("method_id", tuple(methods.V93MethodId))
+def test_public_dispatcher_valid_identity_calls_only_registered_kernel_once(
+    monkeypatch, method_id
+):
+    inp = analysis_input()
+    calls = {"cw_loc": 0, "ph": 0, "seq": 0}
+    original_cw_loc = core.canonical_closure_search_v9_3
+    original_ph = ph_core.ph_response_time_v9_3
+    original_seq = seq_core.seq_response_time_v9_3
+
+    def count_cw_loc(*args, **kwargs):
+        calls["cw_loc"] += 1
+        return original_cw_loc(*args, **kwargs)
+
+    def count_ph(*args, **kwargs):
+        calls["ph"] += 1
+        return original_ph(*args, **kwargs)
+
+    def count_seq(*args, **kwargs):
+        calls["seq"] += 1
+        return original_seq(*args, **kwargs)
+
+    monkeypatch.setattr(
+        core, "canonical_closure_search_v9_3", count_cw_loc
+    )
+    monkeypatch.setattr(ph_core, "ph_response_time_v9_3", count_ph)
+    monkeypatch.setattr(seq_core, "seq_response_time_v9_3", count_seq)
+    result = taskset.dispatch_single_task_method_v9_3(
+        method_spec=method_id,
+        task=inp.tasks[0],
+        hp_tasks=(),
+        lp_tasks=inp.tasks[1:],
+        carry_in_vector={},
+        energy_input=inp,
+        timeout_seconds=None,
+    )
+    expected = {
+        methods.V93Kernel.CW: {"cw_loc": 1, "ph": 0, "seq": 0},
+        methods.V93Kernel.LOC: {"cw_loc": 1, "ph": 0, "seq": 0},
+        methods.V93Kernel.PH: {"cw_loc": 0, "ph": 1, "seq": 0},
+        methods.V93Kernel.SEQ: {"cw_loc": 0, "ph": 0, "seq": 1},
+    }[methods.method_spec_v9_3(method_id).kernel]
+    assert calls == expected
+    assert result.solver_status is taskset.TaskSolverStatus.CANDIDATE_FOUND
+    assert result.candidate_response_time is not None
+
+
+def test_public_dispatcher_unknown_method_and_boolean_capability_fail_closed(
+    monkeypatch,
+):
+    inp = analysis_input()
+    calls = []
+    original = core.canonical_closure_search_v9_3
+
+    def count_core(*args, **kwargs):
+        calls.append(args[0])
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(
+        core, "canonical_closure_search_v9_3", count_core
+    )
+    with pytest.raises(methods.V93MethodRegistryError):
+        taskset.dispatch_single_task_method_v9_3(
+            method_spec="UNKNOWN",
+            task=inp.tasks[0],
+            hp_tasks=(),
+            lp_tasks=inp.tasks[1:],
+            carry_in_vector={},
+            energy_input=inp,
+            timeout_seconds=None,
+        )
+    private_result = taskset._dispatch_validated_single_task_method_v9_3(
+        capability=True,
+        method_spec=methods.method_spec_v9_3("CW_D"),
+        task=inp.tasks[0],
+        hp_tasks=(),
+        lp_tasks=inp.tasks[1:],
+        carry_in_vector={},
+        energy_input=inp,
+        timeout_seconds=None,
+        budget=taskset._V93AnalysisBudget(None, ManualClock()),
+    )
+    assert calls == []
+    assert private_result.solver_status is (
+        taskset.TaskSolverStatus.INTERNAL_CONFORMANCE_FAILURE
+    )
+    assert private_result.candidate_response_time is None
+
+
+@pytest.mark.parametrize("method_id", tuple(methods.V93MethodId))
+@pytest.mark.parametrize(
     ("terminal", "analysis_status"),
     (
         (
@@ -428,6 +586,21 @@ def test_real_zero_timeout_propagates_without_candidate(method_id):
     )
 
 
+def test_negative_request_timeout_fails_closed_without_kernel_call():
+    inp = analysis_input(timeout_seconds=-0.1)
+    result, dispatcher = run_scripted(
+        methods.V93MethodId.CW_D,
+        {"t0": 1, "t1": 1, "t2": 1},
+        inp=inp,
+    )
+    assert dispatcher.calls == []
+    assert result.solver_status is taskset.AnalysisSolverStatus.NUMERIC_ERROR
+    assert all(
+        task.candidate_response_time is None
+        for task in result.task_results
+    )
+
+
 def test_dispatcher_exception_is_internal_and_stops_prefix():
     calls = []
 
@@ -448,17 +621,157 @@ def test_dispatcher_exception_is_internal_and_stops_prefix():
     assert "RuntimeError" in result.task_results[0].failure_reason
 
 
-def test_timeout_value_is_shared_unchanged_with_each_kernel_call():
-    inp = analysis_input(timeout_seconds=1.5)
-    result, dispatcher = run_scripted(
-        methods.V93MethodId.SEQ_D,
-        {"t0": 1, "t1": 1, "t2": 1},
-        inp=inp,
+@pytest.mark.parametrize("method_id", tuple(methods.V93MethodId))
+def test_request_budget_passes_monotone_remaining_to_every_kernel(method_id):
+    clock = ManualClock()
+    inp = analysis_input(timeout_seconds=1.0)
+    observed = []
+
+    def consuming_dispatcher(**kwargs):
+        observed.append(kwargs["timeout_seconds"])
+        clock.advance(0.4 if kwargs["task"].name != "t2" else 0.1)
+        return scripted_result(kwargs, 1)
+
+    result = taskset.analyze_method_taskset_v9_3(
+        analysis_id="remaining-" + method_id.value,
+        method_spec=method_id,
+        analysis_input=inp,
+        kernel_dispatcher=consuming_dispatcher,
+        _clock=clock,
     )
     assert result.taskset_proven
-    assert [call["timeout"] for call in dispatcher.calls] == [
-        1.5
-    ] * 3
+    assert observed == pytest.approx((1.0, 0.6, 0.2))
+    assert all(
+        later <= earlier for earlier, later in zip(observed, observed[1:])
+    )
+    assert clock.current == pytest.approx(0.9)
+
+
+@pytest.mark.parametrize(
+    "method_id",
+    (
+        methods.V93MethodId.CW_D,
+        methods.V93MethodId.CW_THETA_CW,
+    ),
+)
+def test_expired_request_budget_stops_before_third_kernel_for_both_policies(
+    method_id,
+):
+    clock = ManualClock()
+    inp = analysis_input(timeout_seconds=1.0)
+    calls = []
+
+    def consuming_dispatcher(**kwargs):
+        calls.append(
+            (kwargs["task"].name, kwargs["timeout_seconds"])
+        )
+        clock.advance(0.5)
+        return scripted_result(kwargs, 1)
+
+    result = taskset.analyze_method_taskset_v9_3(
+        analysis_id="expired-" + method_id.value,
+        method_spec=method_id,
+        analysis_input=inp,
+        kernel_dispatcher=consuming_dispatcher,
+        _clock=clock,
+    )
+    assert calls == [("t0", 1.0), ("t1", 0.5)]
+    assert result.solver_status is taskset.AnalysisSolverStatus.TIMEOUT
+    assert result.task_results[1].solver_status is (
+        taskset.TaskSolverStatus.TIMEOUT
+    )
+    assert result.task_results[1].candidate_response_time is None
+    assert result.task_results[2].solver_call_count == 0
+    assert not result.taskset_proven
+
+
+@pytest.mark.parametrize(
+    "method_id",
+    (
+        methods.V93MethodId.PH_D,
+        methods.V93MethodId.SEQ_D,
+    ),
+)
+def test_phase_certificate_revalidation_timeout_discards_candidate(method_id):
+    clock = ManualClock()
+    inp = analysis_input(items=simple_tasks()[:1], timeout_seconds=1.0)
+    calls = []
+
+    def candidate_dispatcher(**kwargs):
+        calls.append(kwargs["task"].name)
+        return scripted_result(kwargs, 1)
+
+    def expire_after_validation(stage):
+        if stage == "after_certificate_revalidation":
+            clock.current = 1.0
+
+    result = taskset.analyze_method_taskset_v9_3(
+        analysis_id="post-validation-" + method_id.value,
+        method_spec=method_id,
+        analysis_input=inp,
+        kernel_dispatcher=candidate_dispatcher,
+        _clock=clock,
+        _budget_checkpoint_observer=expire_after_validation,
+    )
+    task = result.task_results[0]
+    assert calls == ["t0"]
+    assert result.solver_status is taskset.AnalysisSolverStatus.TIMEOUT
+    assert task.solver_status is taskset.TaskSolverStatus.TIMEOUT
+    assert task.candidate_response_time is None
+    assert task.witness_h is None
+    assert task.processor_progress_a is None
+    assert task.maximum_blocking_h is None
+    assert task.witness_sequence == ()
+    assert not result.taskset_proven
+
+
+def test_candidate_publication_checkpoint_discards_valid_candidate():
+    clock = ManualClock()
+    inp = analysis_input(items=simple_tasks()[:1], timeout_seconds=1.0)
+
+    def expire_before_publication(stage):
+        if stage == "before_candidate_publication":
+            clock.current = 1.0
+
+    result, dispatcher = run_scripted(
+        methods.V93MethodId.CW_D,
+        {"t0": 1},
+        inp=inp,
+        _clock=clock,
+        _budget_checkpoint_observer=expire_before_publication,
+    )
+    assert len(dispatcher.calls) == 1
+    assert result.solver_status is taskset.AnalysisSolverStatus.TIMEOUT
+    assert result.task_results[0].candidate_response_time is None
+    assert result.task_results[0].witness_h is None
+    assert not result.taskset_proven
+
+
+def test_taskset_certification_checkpoint_discards_last_candidate():
+    clock = ManualClock()
+    inp = analysis_input(items=simple_tasks()[:1], timeout_seconds=1.0)
+
+    def expire_before_certification(stage):
+        if stage == "before_taskset_certification":
+            clock.current = 1.0
+
+    result, dispatcher = run_scripted(
+        methods.V93MethodId.SEQ_THETA_SEQ,
+        {"t0": 1},
+        inp=inp,
+        _clock=clock,
+        _budget_checkpoint_observer=expire_before_certification,
+    )
+    assert len(dispatcher.calls) == 1
+    task = result.task_results[0]
+    assert result.solver_status is taskset.AnalysisSolverStatus.TIMEOUT
+    assert task.solver_status is taskset.TaskSolverStatus.TIMEOUT
+    assert task.candidate_response_time is None
+    assert task.witness_sequence == ()
+    assert task.certification_status is (
+        taskset.TaskCertificationStatus.NOT_CERTIFIED
+    )
+    assert not result.taskset_proven
 
 
 def test_stable_rm_sort_preserves_equal_period_input_order():
