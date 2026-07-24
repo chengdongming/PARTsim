@@ -229,6 +229,49 @@ def test_all_eight_methods_have_real_taskset_entrypoints(spec):
         inp.dependency_context.exact_input_identity
     )
     assert all(task.solver_call_count == 1 for task in result.task_results)
+    assert tuple(
+        (entry.task_id, entry.priority_rank, entry.theta_by_task)
+        for entry in result.carry_trace
+    ) == tuple(
+        (
+            task.task_id,
+            task.priority_rank,
+            task.carry_in_values_used,
+        )
+        for task in result.task_results
+    )
+
+
+def test_carry_trace_invariant_rejects_duplicates_gaps_and_fatal_entries():
+    completed, _dispatcher = run_scripted(
+        methods.V93MethodId.CW_D,
+        {"t0": 1, "t1": 1, "t2": 1},
+    )
+    trace = completed.carry_trace
+    with pytest.raises(taskset.CertificationError, match="duplicate"):
+        replace(completed, carry_trace=(trace[0], trace[0], trace[2]))
+    with pytest.raises(taskset.CertificationError, match="completed nonfatal"):
+        replace(completed, carry_trace=(trace[0], trace[2]))
+
+    failed, _dispatcher = run_scripted(
+        methods.V93MethodId.CW_D,
+        {
+            "t0": 1,
+            "t1": taskset.TaskSolverStatus.NUMERIC_ERROR,
+            "t2": 1,
+        },
+    )
+    failed_task = failed.task_results[1]
+    forbidden = taskset.V93CarryTraceEntry(
+        failed_task.task_id,
+        failed_task.priority_rank,
+        failed_task.carry_in_values_used,
+    )
+    with pytest.raises(taskset.CertificationError, match="completed nonfatal"):
+        replace(
+            failed,
+            carry_trace=failed.carry_trace + (forbidden,),
+        )
 
 
 @pytest.mark.parametrize(
@@ -288,6 +331,11 @@ def test_fixed_d_continues_after_ordinary_no_candidate(method_id):
         is taskset.TaskCertificationStatus.CERTIFIED
         for task in result.task_results
     )
+    assert [entry.task_id for entry in result.carry_trace] == [
+        "t0",
+        "t1",
+        "t2",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -315,6 +363,7 @@ def test_recursive_prefix_failure_stops_without_deadline_fallback(method_id):
     )
     assert result.task_results[2].solver_call_count == 0
     assert result.task_results[2].carry_in_values_used == ()
+    assert [entry.task_id for entry in result.carry_trace] == ["t0", "t1"]
     assert not result.taskset_proven
 
 
@@ -343,6 +392,12 @@ def test_fixed_d_and_recursive_policy_diverge_on_same_prefix_failure():
     assert recursive.task_results[1].solver_status is (
         taskset.TaskSolverStatus.NOT_EVALUATED_AFTER_PREFIX_FAILURE
     )
+    assert [entry.task_id for entry in fixed.carry_trace] == [
+        "t0",
+        "t1",
+        "t2",
+    ]
+    assert [entry.task_id for entry in recursive.carry_trace] == ["t0"]
 
 
 @pytest.mark.parametrize("method_id", tuple(methods.V93MethodId))
@@ -367,6 +422,7 @@ def test_bad_exact_identity_calls_no_kernel(method_id, identity):
     assert result.solver_status is taskset.AnalysisSolverStatus.NUMERIC_ERROR
     assert result.task_results[0].solver_call_count == 0
     assert all(task.candidate_response_time is None for task in result.task_results)
+    assert result.carry_trace == ()
 
 
 @pytest.mark.parametrize("method_id", tuple(methods.V93MethodId))
@@ -386,6 +442,7 @@ def test_invalid_numeric_contract_calls_no_kernel(method_id):
     )
     assert dispatcher.calls == []
     assert result.solver_status is taskset.AnalysisSolverStatus.NUMERIC_ERROR
+    assert result.carry_trace == ()
 
 
 @pytest.mark.parametrize("method_id", tuple(methods.V93MethodId))
@@ -565,6 +622,27 @@ def test_operational_failures_stop_every_policy(
         is taskset.TaskSolverStatus.NOT_EVALUATED_AFTER_PREFIX_FAILURE
         for task in result.task_results[1:]
     )
+    assert result.carry_trace == ()
+
+
+@pytest.mark.parametrize("method_id", tuple(methods.V93MethodId))
+@pytest.mark.parametrize(
+    "terminal",
+    (
+        taskset.TaskSolverStatus.NUMERIC_ERROR,
+        taskset.TaskSolverStatus.INTERNAL_CONFORMANCE_FAILURE,
+    ),
+)
+def test_fatal_failure_preserves_only_completed_carry_prefix(
+    method_id, terminal
+):
+    result, dispatcher = run_scripted(
+        method_id,
+        {"t0": 1, "t1": terminal, "t2": 1},
+    )
+    assert [call["task"] for call in dispatcher.calls] == ["t0", "t1"]
+    assert [entry.task_id for entry in result.carry_trace] == ["t0"]
+    assert result.task_results[2].solver_call_count == 0
 
 
 @pytest.mark.parametrize("method_id", tuple(methods.V93MethodId))
@@ -584,6 +662,7 @@ def test_real_zero_timeout_propagates_without_candidate(method_id):
         is taskset.TaskSolverStatus.NOT_EVALUATED_AFTER_PREFIX_FAILURE
         for task in result.task_results[1:]
     )
+    assert result.carry_trace == ()
 
 
 def test_negative_request_timeout_fails_closed_without_kernel_call():
@@ -599,6 +678,7 @@ def test_negative_request_timeout_fails_closed_without_kernel_call():
         task.candidate_response_time is None
         for task in result.task_results
     )
+    assert result.carry_trace == ()
 
 
 def test_dispatcher_exception_is_internal_and_stops_prefix():
@@ -619,6 +699,7 @@ def test_dispatcher_exception_is_internal_and_stops_prefix():
         taskset.AnalysisSolverStatus.INTERNAL_CONFORMANCE_FAILURE
     )
     assert "RuntimeError" in result.task_results[0].failure_reason
+    assert result.carry_trace == ()
 
 
 @pytest.mark.parametrize("method_id", tuple(methods.V93MethodId))
@@ -647,13 +728,7 @@ def test_request_budget_passes_monotone_remaining_to_every_kernel(method_id):
     assert clock.current == pytest.approx(0.9)
 
 
-@pytest.mark.parametrize(
-    "method_id",
-    (
-        methods.V93MethodId.CW_D,
-        methods.V93MethodId.CW_THETA_CW,
-    ),
-)
+@pytest.mark.parametrize("method_id", tuple(methods.V93MethodId))
 def test_expired_request_budget_stops_before_third_kernel_for_both_policies(
     method_id,
 ):
@@ -703,6 +778,7 @@ def test_expired_request_budget_stops_before_third_kernel_for_both_policies(
     assert unevaluated.processor_progress_a is None
     assert unevaluated.maximum_blocking_h is None
     assert unevaluated.witness_sequence == ()
+    assert [entry.task_id for entry in result.carry_trace] == ["t0"]
     assert not result.taskset_proven
 
 
@@ -710,12 +786,14 @@ def test_expired_request_budget_stops_before_third_kernel_for_both_policies(
     "method_id",
     (
         methods.V93MethodId.PH_D,
+        methods.V93MethodId.PH_THETA_PH,
         methods.V93MethodId.SEQ_D,
+        methods.V93MethodId.SEQ_THETA_SEQ,
     ),
 )
 def test_phase_certificate_revalidation_timeout_discards_candidate(method_id):
     clock = ManualClock()
-    inp = analysis_input(items=simple_tasks()[:1], timeout_seconds=1.0)
+    inp = analysis_input(timeout_seconds=1.0)
     calls = []
 
     def candidate_dispatcher(**kwargs):
@@ -723,7 +801,10 @@ def test_phase_certificate_revalidation_timeout_discards_candidate(method_id):
         return scripted_result(kwargs, 1)
 
     def expire_after_validation(stage):
-        if stage == "after_certificate_revalidation":
+        if (
+            stage == "after_certificate_revalidation"
+            and calls == ["t0", "t1"]
+        ):
             clock.current = 1.0
 
     result = taskset.analyze_method_taskset_v9_3(
@@ -734,8 +815,8 @@ def test_phase_certificate_revalidation_timeout_discards_candidate(method_id):
         _clock=clock,
         _budget_checkpoint_observer=expire_after_validation,
     )
-    task = result.task_results[0]
-    assert calls == ["t0"]
+    task = result.task_results[1]
+    assert calls == ["t0", "t1"]
     assert result.solver_status is taskset.AnalysisSolverStatus.TIMEOUT
     assert task.solver_status is taskset.TaskSolverStatus.TIMEOUT
     assert task.candidate_response_time is None
@@ -743,48 +824,82 @@ def test_phase_certificate_revalidation_timeout_discards_candidate(method_id):
     assert task.processor_progress_a is None
     assert task.maximum_blocking_h is None
     assert task.witness_sequence == ()
+    assert result.task_results[2].solver_call_count == 0
+    assert [entry.task_id for entry in result.carry_trace] == ["t0"]
     assert not result.taskset_proven
 
 
-def test_candidate_publication_checkpoint_discards_valid_candidate():
+@pytest.mark.parametrize(
+    "method_id",
+    (
+        methods.V93MethodId.PH_D,
+        methods.V93MethodId.PH_THETA_PH,
+        methods.V93MethodId.SEQ_D,
+        methods.V93MethodId.SEQ_THETA_SEQ,
+    ),
+)
+def test_candidate_publication_checkpoint_discards_valid_candidate(method_id):
     clock = ManualClock()
-    inp = analysis_input(items=simple_tasks()[:1], timeout_seconds=1.0)
+    inp = analysis_input(timeout_seconds=1.0)
+    publication_count = 0
 
     def expire_before_publication(stage):
+        nonlocal publication_count
         if stage == "before_candidate_publication":
-            clock.current = 1.0
+            publication_count += 1
+            if publication_count == 2:
+                clock.current = 1.0
 
     result, dispatcher = run_scripted(
-        methods.V93MethodId.CW_D,
-        {"t0": 1},
+        method_id,
+        {"t0": 1, "t1": 1, "t2": 1},
         inp=inp,
         _clock=clock,
         _budget_checkpoint_observer=expire_before_publication,
     )
-    assert len(dispatcher.calls) == 1
+    assert [call["task"] for call in dispatcher.calls] == ["t0", "t1"]
     assert result.solver_status is taskset.AnalysisSolverStatus.TIMEOUT
-    assert result.task_results[0].candidate_response_time is None
-    assert result.task_results[0].witness_h is None
+    timed_out = result.task_results[1]
+    assert timed_out.candidate_response_time is None
+    assert timed_out.witness_h is None
+    assert timed_out.processor_progress_a is None
+    assert timed_out.maximum_blocking_h is None
+    assert timed_out.witness_sequence == ()
+    assert result.task_results[2].solver_call_count == 0
+    assert [entry.task_id for entry in result.carry_trace] == ["t0"]
     assert not result.taskset_proven
 
 
-def test_taskset_certification_checkpoint_discards_last_candidate():
+@pytest.mark.parametrize(
+    "method_id",
+    (
+        methods.V93MethodId.PH_D,
+        methods.V93MethodId.PH_THETA_PH,
+        methods.V93MethodId.SEQ_D,
+        methods.V93MethodId.SEQ_THETA_SEQ,
+    ),
+)
+def test_taskset_certification_checkpoint_discards_last_candidate(method_id):
     clock = ManualClock()
-    inp = analysis_input(items=simple_tasks()[:1], timeout_seconds=1.0)
+    inp = analysis_input(timeout_seconds=1.0)
 
     def expire_before_certification(stage):
         if stage == "before_taskset_certification":
             clock.current = 1.0
 
     result, dispatcher = run_scripted(
-        methods.V93MethodId.SEQ_THETA_SEQ,
-        {"t0": 1},
+        method_id,
+        {"t0": 1, "t1": 1, "t2": 1},
         inp=inp,
         _clock=clock,
         _budget_checkpoint_observer=expire_before_certification,
     )
-    assert len(dispatcher.calls) == 1
-    task = result.task_results[0]
+    assert [call["task"] for call in dispatcher.calls] == [
+        "t0",
+        "t1",
+        "t2",
+    ]
+    task = result.task_results[2]
     assert result.solver_status is taskset.AnalysisSolverStatus.TIMEOUT
     assert task.solver_status is taskset.TaskSolverStatus.TIMEOUT
     assert task.candidate_response_time is None
@@ -792,6 +907,10 @@ def test_taskset_certification_checkpoint_discards_last_candidate():
     assert task.certification_status is (
         taskset.TaskCertificationStatus.NOT_CERTIFIED
     )
+    assert task.witness_h is None
+    assert task.processor_progress_a is None
+    assert task.maximum_blocking_h is None
+    assert [entry.task_id for entry in result.carry_trace] == ["t0", "t1"]
     assert not result.taskset_proven
 
 

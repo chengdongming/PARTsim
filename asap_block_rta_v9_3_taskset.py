@@ -534,6 +534,36 @@ class V93MethodTaskResult:
             )
 
 
+_CARRY_TRACE_COMMIT_STATUSES = frozenset(
+    {
+        TaskSolverStatus.CANDIDATE_FOUND,
+        TaskSolverStatus.NO_CANDIDATE,
+    }
+)
+
+
+def _should_commit_carry_trace_entry(
+    task_result: V93MethodTaskResult,
+) -> bool:
+    """Return whether a completed, nonfatal solver call enters the trace."""
+
+    return (
+        task_result.solver_call_count == 1
+        and task_result.solver_status in _CARRY_TRACE_COMMIT_STATUSES
+    )
+
+
+def _carry_trace_source_prefix(
+    task_results: Sequence[V93MethodTaskResult],
+) -> Tuple[V93MethodTaskResult, ...]:
+    prefix = []
+    for task_result in task_results:
+        if not _should_commit_carry_trace_entry(task_result):
+            break
+        prefix.append(task_result)
+    return tuple(prefix)
+
+
 @dataclass(frozen=True)
 class V93MethodTasksetAnalysisResult:
     """In-memory result for one canonical method registry entry."""
@@ -580,9 +610,14 @@ class V93MethodTasksetAnalysisResult:
             raise CertificationError("task_results must be a non-empty tuple")
         if not isinstance(self.carry_trace, tuple):
             raise CertificationError("carry_trace must be a tuple")
-        if len(self.carry_trace) != len(self.task_results):
+        if len(self.carry_trace) > len(self.task_results):
             raise CertificationError(
-                "carry_trace must contain one entry per task"
+                "carry_trace cannot be longer than task_results"
+            )
+        trace_task_ids = tuple(entry.task_id for entry in self.carry_trace)
+        if len(trace_task_ids) != len(set(trace_task_ids)):
+            raise CertificationError(
+                "carry_trace may not contain duplicate task IDs"
             )
         expected_ranks = tuple(range(len(self.task_results)))
         if tuple(
@@ -591,6 +626,7 @@ class V93MethodTasksetAnalysisResult:
             raise CertificationError(
                 "unified priority ranks must be contiguous"
             )
+        trace_source = _carry_trace_source_prefix(self.task_results)
         if tuple(
             (entry.task_id, entry.priority_rank, entry.theta_by_task)
             for entry in self.carry_trace
@@ -600,10 +636,10 @@ class V93MethodTasksetAnalysisResult:
                 result.priority_rank,
                 result.carry_in_values_used,
             )
-            for result in self.task_results
+            for result in trace_source
         ):
             raise CertificationError(
-                "carry_trace does not match task result carry values"
+                "carry_trace must match the completed nonfatal task prefix"
             )
         if any(
             result.method_id is not self.method_id
@@ -3131,7 +3167,7 @@ def _make_unified_taskset_result(
                 task_result.priority_rank,
                 task_result.carry_in_values_used,
             )
-            for task_result in task_results
+            for task_result in _carry_trace_source_prefix(task_results)
         ),
         exact_input_identity=identity,
         _finalizer_token=_METHOD_FINALIZER_TOKEN,
