@@ -16,6 +16,7 @@ add_executable(
   scheduler/st_nonblock.cpp
   scheduler/st_sync.cpp
   scheduler/priority_energy_common.cpp
+  scheduler/priority_energy_runtime.cpp
   scheduler/semantics_families.cpp
   scheduler/repair_regressions.cpp
 )

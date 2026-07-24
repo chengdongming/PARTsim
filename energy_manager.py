@@ -15,6 +15,7 @@ import json
 import yaml
 import math
 import argparse
+import re
 import time
 import threading
 from typing import Dict, Any, Optional, List, Tuple
@@ -50,6 +51,239 @@ DEFAULT_FREQUENCY_POWER_RATIOS = {
     10000: 1.10,
     10500: 1.15,
 }
+
+
+class StrictSystemConfigError(ValueError):
+    """Stable public failure for strict system YAML configuration loading."""
+
+
+class StrictSystemConfigLoader(yaml.SafeLoader):
+    """SafeLoader variant that rejects semantic duplicate mapping keys."""
+
+
+# YAML 1.1's ``yes/no/on/off`` implicit booleans are too permissive for the
+# frozen configuration contract. Copy SafeLoader's resolver table, remove its
+# boolean resolver, and add only true/false (case-insensitive).
+StrictSystemConfigLoader.yaml_implicit_resolvers = {
+    initial: list(resolvers)
+    for initial, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
+}
+for initial, resolvers in (
+        StrictSystemConfigLoader.yaml_implicit_resolvers.items()):
+    StrictSystemConfigLoader.yaml_implicit_resolvers[initial] = [
+        (tag, expression)
+        for tag, expression in resolvers
+        if tag != "tag:yaml.org,2002:bool"
+    ]
+StrictSystemConfigLoader.add_implicit_resolver(
+    "tag:yaml.org,2002:bool",
+    re.compile(r"^(?:true|True|TRUE|false|False|FALSE)$"),
+    list("tTfF"),
+)
+
+
+def _construct_unique_mapping(
+        loader: StrictSystemConfigLoader,
+        node: yaml.MappingNode,
+        deep: bool = False) -> Dict[Any, Any]:
+    if not isinstance(node, yaml.MappingNode):
+        raise StrictSystemConfigError(
+            "system YAML: expected a mapping node")
+
+    explicit_keys = {}
+    for key_node, value_node in node.value:
+        if key_node.tag == "tag:yaml.org,2002:merge":
+            continue
+        key = loader.construct_object(key_node, deep=False)
+        try:
+            hash(key)
+        except TypeError as error:
+            raise StrictSystemConfigError(
+                "system YAML: mapping keys must be hashable at line "
+                f"{key_node.start_mark.line + 1}") from error
+        if key in explicit_keys:
+            raise StrictSystemConfigError(
+                f"system YAML: duplicate key {key!r} at line "
+                f"{key_node.start_mark.line + 1}")
+        explicit_keys[key] = key_node.start_mark.line
+
+        if key == "priority_energy" and isinstance(
+                value_node, yaml.MappingNode):
+            if any(
+                    nested_key.tag == "tag:yaml.org,2002:merge"
+                    for nested_key, _ in value_node.value):
+                raise StrictSystemConfigError(
+                    "system YAML: priority_energy: YAML merge is not allowed")
+
+    # Preserve SafeLoader's standard merge semantics outside priority_energy.
+    # Explicit duplicates are checked above, before flattening; therefore an
+    # explicit key may legally override a value inherited from ``<<``.
+    loader.flatten_mapping(node)
+    return yaml.constructor.BaseConstructor.construct_mapping(
+        loader,
+        node,
+        deep=deep,
+    )
+
+
+StrictSystemConfigLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+    _construct_unique_mapping,
+)
+
+# PyYAML 5.3 does not resolve plain values such as ``1e-3`` as floats.
+# Add only the missing finite scientific-notation form; quoted values remain
+# strings and the normal SafeLoader resolvers continue handling other numbers.
+StrictSystemConfigLoader.add_implicit_resolver(
+    "tag:yaml.org,2002:float",
+    re.compile(
+        r"^[-+]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)"
+        r"[eE][-+]?[0-9]+$"
+    ),
+    list("-+0123456789."),
+)
+
+
+def _strict_load_system_yaml(config_file: str) -> Dict[Any, Any]:
+    try:
+        with open(config_file, "r", encoding="utf-8") as stream:
+            try:
+                document = yaml.load(
+                    stream,
+                    Loader=StrictSystemConfigLoader,
+                )
+            except StrictSystemConfigError:
+                raise
+            except yaml.YAMLError as error:
+                raise StrictSystemConfigError(
+                    f"system YAML malformed: {error}") from error
+    except StrictSystemConfigError:
+        raise
+    except (OSError, UnicodeError) as error:
+        raise StrictSystemConfigError(
+            f"system YAML unreadable: {config_file}: {error}") from error
+
+    if not isinstance(document, dict):
+        raise StrictSystemConfigError(
+            "system YAML: root node must be a mapping")
+    return document
+
+
+def _priority_energy_error(field: str, reason: str) -> None:
+    prefix = "priority_energy"
+    if field:
+        prefix += f".{field}"
+    raise StrictSystemConfigError(f"system YAML: {prefix}: {reason}")
+
+
+def _parse_priority_energy(
+        system_config: Dict[Any, Any]) -> Dict[str, Any]:
+    result = {
+        "enabled": False,
+        "profile_id": "",
+        "alpha_w": 0.0,
+        "horizon_ms": 30000,
+        "tick_ms": 1,
+    }
+    if "priority_energy" not in system_config:
+        return result
+
+    section = system_config["priority_energy"]
+    if not isinstance(section, dict):
+        _priority_energy_error("", "must be a mapping")
+
+    allowed = {
+        "enabled",
+        "profile_id",
+        "alpha_w",
+        "horizon_ms",
+        "tick_ms",
+    }
+    for key in section:
+        if key not in allowed:
+            _priority_energy_error(str(key), "unknown field")
+
+    if "enabled" not in section:
+        _priority_energy_error(
+            "enabled",
+            "is required when subsection is present",
+        )
+    if type(section["enabled"]) is not bool:
+        _priority_energy_error(
+            "enabled",
+            "must be a boolean (true or false)",
+        )
+    result["enabled"] = section["enabled"]
+
+    if "profile_id" in section:
+        profile = section["profile_id"]
+        if not isinstance(profile, str) or not profile:
+            _priority_energy_error(
+                "profile_id",
+                "must be a non-empty string",
+            )
+        result["profile_id"] = profile
+
+    if "alpha_w" in section:
+        alpha = section["alpha_w"]
+        if type(alpha) not in (int, float):
+            _priority_energy_error(
+                "alpha_w",
+                "must be a finite double",
+            )
+        try:
+            alpha = float(alpha)
+        except (OverflowError, ValueError) as error:
+            raise StrictSystemConfigError(
+                "system YAML: priority_energy.alpha_w: "
+                "must be a finite double") from error
+        if not math.isfinite(alpha):
+            _priority_energy_error(
+                "alpha_w",
+                "must be a finite double",
+            )
+        result["alpha_w"] = alpha
+
+    for field in ("horizon_ms", "tick_ms"):
+        if field not in section:
+            continue
+        value = section[field]
+        if type(value) is not int or value < 0 or value > (1 << 64) - 1:
+            _priority_energy_error(
+                field,
+                "must be an unsigned integer",
+            )
+        result[field] = value
+
+    if result["enabled"]:
+        for field in ("profile_id", "alpha_w", "horizon_ms", "tick_ms"):
+            if field not in section:
+                _priority_energy_error(
+                    field,
+                    "is required when enabled is true",
+                )
+        if result["profile_id"] != "b4_pe_three_stage_v1":
+            _priority_energy_error(
+                "profile_id",
+                "must equal b4_pe_three_stage_v1",
+            )
+        if result["alpha_w"] < 0.0:
+            _priority_energy_error(
+                "alpha_w",
+                "must be non-negative",
+            )
+        if result["horizon_ms"] != 30000:
+            _priority_energy_error(
+                "horizon_ms",
+                "must equal 30000",
+            )
+        if result["tick_ms"] != 1:
+            _priority_energy_error(
+                "tick_ms",
+                "must equal 1",
+            )
+
+    return result
 
 
 def _normalise_energy_model(model: Dict[str, Any]) -> Dict[str, Any]:
@@ -90,18 +324,18 @@ def _resolve_scheduler_energy_model(energy_config: Dict[str, Any]) -> Dict[str, 
     return canonical or legacy or {}
 
 
-def _resolve_frequency_ratios(model: Dict[str, Any]) -> Dict[int, float]:
+def _resolve_frequency_ratios(model: Dict[str, Any]) -> Dict[Any, float]:
     """Prefer frequency_power_ratios and retain frequency_scaling fallback."""
     canonical = model.get("frequency_power_ratios")
     legacy = model.get("frequency_scaling")
 
     if canonical is not None:
         canonical_values = {
-            int(key): float(value) for key, value in canonical.items()
+            key: float(value) for key, value in canonical.items()
         }
         if legacy is not None:
             legacy_values = {
-                int(key): float(value) for key, value in legacy.items()
+                key: float(value) for key, value in legacy.items()
             }
             if canonical_values != legacy_values:
                 logger.warning(
@@ -112,7 +346,7 @@ def _resolve_frequency_ratios(model: Dict[str, Any]) -> Dict[int, float]:
 
     if legacy is not None:
         return {
-            int(key): float(value) for key, value in legacy.items()
+            key: float(value) for key, value in legacy.items()
         }
     return {}
 
@@ -123,6 +357,7 @@ class EnergyConfig:
     def __init__(self, config_file: str = None):
         self.config_file = config_file
         self.system_config = {}
+        self.last_load_error = None
         # 从环境变量获取调试级别
         debug_env = os.environ.get('RTSIM_ENERGY_DEBUG', '0')
         if debug_env == '2':
@@ -205,6 +440,15 @@ class EnergyConfig:
         # 能量恢复配置
         self.enable_energy_recovery = True
         self.max_recovery_wait_time_ms = 10000
+        self.periodic_collection_interval = 100
+
+        self.priority_energy = {
+            "enabled": False,
+            "profile_id": "",
+            "alpha_w": 0.0,
+            "horizon_ms": 30000,
+            "tick_ms": 1,
+        }
 
         # === 能量收集源配置 ===
         self.harvesting_sources = {
@@ -242,16 +486,11 @@ class EnergyConfig:
     def load_from_file(self, config_file: str) -> bool:
         """从YAML配置文件加载能量参数"""
         try:
-            if not os.path.exists(config_file):
-                logger.error(f"Config file does not exist: {config_file}")
-                return False
-                
-            with open(config_file, 'r') as f:
-                self.system_config = yaml.safe_load(f)
-            
-            if not self.system_config:
-                logger.warning(f"Config file is empty: {config_file}")
-                return False
+            system_config = _strict_load_system_yaml(config_file)
+            priority_energy = _parse_priority_energy(system_config)
+            self.system_config = system_config
+            self.priority_energy = priority_energy
+            self.last_load_error = None
             
             # 提取能量管理配置
             energy_config = self.system_config.get('energy_management', {})
@@ -265,6 +504,10 @@ class EnergyConfig:
             # 基本能量参数
             self.initial_energy = float(energy_config.get('initial_energy', self.initial_energy))
             self.max_energy = float(energy_config.get('max_energy', self.max_energy))
+            self.base_harvest_rate_per_ms = float(energy_config.get(
+                'base_harvesting_rate',
+                self.base_harvest_rate_per_ms,
+            ))
             harvesting_scale = float(energy_config.get(
                 'harvesting_scale', self.harvesting_scale
             ))
@@ -429,9 +672,11 @@ class EnergyConfig:
             return True
             
         except Exception as e:
+            self.last_load_error = e
             logger.error(f"Error loading energy config: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
+            if not isinstance(e, StrictSystemConfigError):
+                import traceback
+                logger.error(traceback.format_exc())
             return False
 
     def log_debug(self, level: int, message: str):
@@ -479,6 +724,70 @@ class EnergyConfig:
                         f"功率={total_power_watts:.3f}W, 能量={energy_joules:.6f}J")
         
         return energy_joules
+
+
+def _build_config_for_cpp(
+        config: EnergyConfig,
+        simulation_start_time: int) -> Dict[str, Any]:
+    num_cores = 4
+    base_frequency = config.base_frequency
+    scheduler_type = "gpfp_asap"
+
+    cpu_islands = config.system_config.get("cpu_islands", [])
+    if cpu_islands:
+        first_island = cpu_islands[0]
+        if "numcpus" in first_island:
+            num_cores = first_island["numcpus"]
+        if "base_freq" in first_island:
+            base_frequency = first_island["base_freq"]
+
+        kernel = first_island.get("kernel", {})
+        scheduler_type = kernel.get("scheduler", scheduler_type)
+        scheduler_params = kernel.get("scheduler_params", [])
+        for param in scheduler_params:
+            if isinstance(param, str) and param.startswith("num_cores="):
+                try:
+                    num_cores = int(param.split("=")[1])
+                except (ValueError, IndexError):
+                    pass
+            elif (isinstance(param, str) and
+                  param.startswith("base_frequency=")):
+                try:
+                    base_frequency = float(param.split("=")[1])
+                except (ValueError, IndexError):
+                    pass
+
+    solar_file = config.solar_data_file
+    if (not os.path.exists(solar_file) and
+            "rtsim" in os.getcwd().split(os.sep)):
+        solar_file = os.path.join("..", solar_file)
+
+    energy_config = config.system_config.get("energy_management", {})
+
+    return {
+        "num_cores": num_cores,
+        "scheduler_type": scheduler_type,
+        "base_frequency": base_frequency,
+        "unit_time": energy_config.get("unit_time", config.unit_time),
+        "initial_energy": float(config.initial_energy),
+        "max_energy": float(config.max_energy),
+        "base_harvest_rate": float(config.base_harvest_rate_per_ms),
+        "start_time_offset": int(simulation_start_time),
+        "enable_energy_recovery": bool(config.enable_energy_recovery),
+        "periodic_collection_interval": energy_config.get(
+            "periodic_collection_interval_ms",
+            config.periodic_collection_interval,
+        ),
+        "base_power": float(config.base_power),
+        "power_coefficients": dict(config.power_coefficients),
+        "frequency_power_ratios": dict(config.frequency_power_ratios),
+        "solar_data_file": solar_file,
+        "use_real_solar_data": bool(config.use_real_solar_data),
+        "pv_efficiency": float(config.pv_efficiency),
+        "pv_area_m2": float(config.pv_area_m2),
+        "priority_energy": dict(config.priority_energy),
+    }
+
 
 class EnergyHarvester:
     """能量收集器 - 基于绝对时间，修复了时间计算"""
@@ -786,52 +1095,81 @@ class EnergyHarvester:
 
 class EnergyManager:
     """完整的能量管理器 - 优化修复版"""
-    
+
     def __init__(self, config_file: str = None, verbose: bool = True):
-            logger.info(f"[EnergyManager] __init__ called with config_file: {config_file}")
-            self.config = EnergyConfig(config_file)
-            self.harvester = EnergyHarvester(self.config)
+        logger.info(
+            f"[EnergyManager] __init__ called with config_file: {config_file}"
+        )
+        self._initialize_from_config(EnergyConfig(config_file), verbose)
 
-            logger.info(f"[EnergyManager] self.config.initial_energy: {self.config.initial_energy}")
-            self.current_energy = self.config.initial_energy
-            logger.info(f"[EnergyManager] self.current_energy set to: {self.current_energy}")
-            self.total_consumed = 0.0
-            self.total_harvested = 0.0
-            self.energy_level_history = []
+    @classmethod
+    def _from_prepared_config(
+        cls, config: EnergyConfig, verbose: bool = False
+    ) -> "EnergyManager":
+        """Build a candidate from an already strictly parsed configuration."""
+        manager = cls.__new__(cls)
+        manager._initialize_from_config(config, verbose)
+        return manager
 
-            self.last_update_time = 0
-            # 修复：从配���文件读取start_offset_minutes并转换为毫秒
-            self.simulation_start_time = int(self.config.start_offset_minutes * 60 * 1000)
-            self.task_energy_records = {}
-            self.verbose = verbose
-            
-            # 修复：添加ASAP调度专用状态
-            self.asap_recovery_target = None
-            self.asap_recovery_start_time = 0
-            self.asap_recovery_required_energy = 0.0
-            
-            # === 关键修复：添加恢复状态标志 ===
-            self.recovery_in_progress = False
-            self.recovery_start_time = 0
-            self.recovery_end_time = 0
-            
-            # 修复：添加线程锁
-            self._lock = threading.RLock()
-            
-            # 添加调试日志控制
-            self._last_debug_log = 0
-            
-            if verbose:
-                logger.info(f"[Python] EnergyManager初始化完成")
-                logger.info(f"[Python] 初始能量: {self.current_energy:.1f}/{self.config.max_energy:.1f} J")
-                logger.info(f"[Python] 仿真开始时间偏移: {self.simulation_start_time}ms")
-                
-                # 显示开始时间的格式化
-                if self.simulation_start_time > 0:
-                    hour = int((self.simulation_start_time // 3600000) % 24)
-                    minute = int((self.simulation_start_time % 3600000) // 60000)
-                    second = int((self.simulation_start_time % 60000) // 1000)
-                    logger.info(f"[Python] 仿真开始时间: {hour:02d}:{minute:02d}:{second:02d}")
+    def _initialize_from_config(
+        self, config: EnergyConfig, verbose: bool
+    ) -> None:
+        self.config = config
+        self.config_generation = 0
+        self.harvester = EnergyHarvester(self.config)
+
+        logger.info(
+            f"[EnergyManager] self.config.initial_energy: "
+            f"{self.config.initial_energy}"
+        )
+        self.current_energy = self.config.initial_energy
+        logger.info(
+            f"[EnergyManager] self.current_energy set to: "
+            f"{self.current_energy}"
+        )
+        self.total_consumed = 0.0
+        self.total_harvested = 0.0
+        self.energy_level_history = []
+
+        self.last_update_time = 0
+        self.simulation_start_time = int(
+            self.config.start_offset_minutes * 60 * 1000
+        )
+        self.task_energy_records = {}
+        self.verbose = verbose
+
+        self.asap_recovery_target = None
+        self.asap_recovery_start_time = 0
+        self.asap_recovery_required_energy = 0.0
+        self.recovery_in_progress = False
+        self.recovery_start_time = 0
+        self.recovery_end_time = 0
+        self._lock = threading.RLock()
+        self._last_debug_log = 0
+
+        if verbose:
+            logger.info("[Python] EnergyManager初始化完成")
+            logger.info(
+                f"[Python] 初始能量: {self.current_energy:.1f}/"
+                f"{self.config.max_energy:.1f} J"
+            )
+            logger.info(
+                f"[Python] 仿真开始时间偏移: "
+                f"{self.simulation_start_time}ms"
+            )
+
+            if self.simulation_start_time > 0:
+                hour = int((self.simulation_start_time // 3600000) % 24)
+                minute = int(
+                    (self.simulation_start_time % 3600000) // 60000
+                )
+                second = int(
+                    (self.simulation_start_time % 60000) // 1000
+                )
+                logger.info(
+                    f"[Python] 仿真开始时间: "
+                    f"{hour:02d}:{minute:02d}:{second:02d}"
+                )
 
 
     def get_harvesting_rate_example(self, hour: int) -> float:
@@ -888,76 +1226,6 @@ class EnergyManager:
             # 修复：返回True，因为C++端期望布尔值
             return True
     
-    def load_system_config(self, config_file: str) -> bool:
-        """加载系统配置文件"""
-        with self._lock:
-            try:
-                if not config_file or not isinstance(config_file, str):
-                    logger.warning(f"警告: 无效的配置文件参数: {config_file}")
-                    return True
-                    
-                # 保存旧的配置状态
-                old_use_real_solar_data = getattr(self.config, 'use_real_solar_data', False)
-                
-                success = self.config.load_from_file(config_file)
-                
-                if success:
-                    logger.info(f"成功重新加载配置文件: {config_file}")
-
-                    # ========== 关键修复：更新仿真开始时间偏移 ==========
-                    new_start_time_offset = int(self.config.start_offset_minutes * 60 * 1000)
-                    if self.simulation_start_time != new_start_time_offset:
-                        self.simulation_start_time = new_start_time_offset
-                        hour = (self.simulation_start_time // 3600000) % 24
-                        minute = (self.simulation_start_time % 3600000) // 60000
-                        logger.info(f"更新仿真开始时间: {hour:02d}:{minute:02d} (偏移: {self.simulation_start_time}ms)")
-                        # 同时更新harvester的时间偏移
-                        if hasattr(self.harvester, 'set_start_time_offset'):
-                            self.harvester.set_start_time_offset(self.simulation_start_time)
-
-                    # ========== 关键修复：确保初始能量与配置一致 ==========
-                    # 方案：如果配置文件中的initial_energy不同，则强制更新
-                    # 注意：这会重置当前能量，适用于每次运行不同的测试场景
-                    config_initial_energy = self.config.initial_energy
-                    if abs(self.current_energy - config_initial_energy) > 0.01:  # 允许小的浮点误差
-                        old_energy = self.current_energy
-                        self.current_energy = config_initial_energy
-                        logger.info(f"强制更新初始能量: {old_energy:.1f}J -> {self.current_energy:.1f}J")
-                    else:
-                        logger.info(f"初始能量已是配置值: {self.current_energy:.1f} J")
-
-                    logger.info(f"当前能量: {self.current_energy:.1f}/{self.config.max_energy:.1f} J")
-                    
-                    # ========== 关键修复：如果启用了真实太阳能数据，重新初始化SolarDataLoader ==========
-                    new_use_real_solar_data = getattr(self.config, 'use_real_solar_data', False)
-                    if new_use_real_solar_data and (not old_use_real_solar_data or self.harvester.solar_loader is None):
-                        try:
-                            from solar_data_loader import SolarDataLoader
-
-                            # 智能路径处理：自动检测运行目录
-                            import os
-                            solar_file = self.config.solar_data_file
-                            if not os.path.exists(solar_file) and 'build' in os.getcwd().split(os.sep):
-                                solar_file = os.path.join('..', solar_file)
-
-                            self.harvester.solar_loader = SolarDataLoader(
-                                solar_file,
-                                start_offset_minutes=self.config.start_offset_minutes
-                            )
-                            logger.info(f"[EnergyManager] 重新初始化真实太阳能数据模型")
-                            logger.info(f"[EnergyManager] 使用数据文件: {self.config.solar_data_file}")
-                            logger.info(f"[EnergyManager] 光伏参数: 效率={self.config.pv_efficiency}, 面积={self.config.pv_area_m2}m²")
-                        except Exception as e:
-                            logger.error(f"[EnergyManager] 错误: 无法重新初始化太阳能数据加载器: {e}")
-                            self.harvester.solar_loader = None
-                
-                return bool(success)
-                
-            except Exception as e:
-                logger.error(f"加载配置文件异常: {e}")
-                import traceback
-                logger.error(traceback.format_exc())
-                return True
     def wait_for_energy_recovery_asap_simple(self, required_energy: float, 
                                        current_time_ms: int,
                                        max_wait_time_ms: int = 10000) -> bool:
@@ -1075,62 +1343,10 @@ class EnergyManager:
     def get_config_for_cpp(self) -> Dict[str, Any]:
         """获取配置供C++使用"""
         with self._lock:
-            # 从系统配置中读取核心数
-            num_cores = 4  # 默认值
-            base_frequency = self.config.base_frequency
-            
-            if hasattr(self.config, 'system_config') and self.config.system_config:
-                # 尝试从cpu_islands配置中读取核心数
-                cpu_islands = self.config.system_config.get('cpu_islands', [])
-                if cpu_islands:
-                    first_island = cpu_islands[0]
-                    # 尝试读取numcpus
-                    if 'numcpus' in first_island:
-                        num_cores = int(first_island['numcpus'])
-                    # 尝试读取base_freq
-                    if 'base_freq' in first_island:
-                        base_frequency = float(first_island['base_freq'])
-                    
-                    # 尝试从scheduler_params中读取num_cores
-                    kernel = first_island.get('kernel', {})
-                    scheduler_params = kernel.get('scheduler_params', [])
-                    for param in scheduler_params:
-                        if isinstance(param, str) and param.startswith('num_cores='):
-                            try:
-                                num_cores = int(param.split('=')[1])
-                            except (ValueError, IndexError):
-                                pass
-                        elif isinstance(param, str) and param.startswith('base_frequency='):
-                            try:
-                                base_frequency = float(param.split('=')[1])
-                            except (ValueError, IndexError):
-                                pass
-
-            # 智能路径处理：为C++提供太阳能数据文件路径
-            import os
-            solar_file = self.config.solar_data_file
-            if not os.path.exists(solar_file) and 'rtsim' in os.getcwd().split(os.sep):
-                solar_file = os.path.join('..', solar_file)
-
-            config_dict = {
-                "num_cores": num_cores,
-                "base_frequency": base_frequency,
-                "unit_time": int(self.config.unit_time),
-                "initial_energy": float(self.config.initial_energy),
-                "max_energy": float(self.config.max_energy),
-                "base_harvest_rate": float(self.config.base_harvest_rate_per_ms),
-                "start_time_offset": int(self.simulation_start_time),
-                "enable_energy_recovery": bool(self.config.enable_energy_recovery),
-                "periodic_collection_interval": int(self.config.periodic_collection_interval),
-                "base_power": float(self.config.base_power),
-                "power_coefficients": dict(self.config.power_coefficients),
-                "frequency_power_ratios": dict(self.config.frequency_power_ratios),
-                # 太阳能相关配置 - C++需要
-                "solar_data_file": solar_file,
-                "use_real_solar_data": bool(self.config.use_real_solar_data),
-                "pv_efficiency": float(self.config.pv_efficiency),
-                "pv_area_m2": float(self.config.pv_area_m2)
-            }
+            config_dict = _build_config_for_cpp(
+                self.config,
+                self.simulation_start_time,
+            )
             
             logger.info(f"[Python] 返回C++配置: 核心数={config_dict['num_cores']}, "
                        f"基础频率={config_dict['base_frequency']}MHz, "
@@ -2018,240 +2234,85 @@ ASAP Recovery: {'IN PROGRESS' if status['asap_recovery_in_progress'] else 'IDLE'
 
 # 全局实例管理
 _global_energy_manager = None
-_global_energy_manager_lock = threading.Lock()
+_global_config_generation = 0
+_next_config_generation = 0
+_global_energy_manager_lock = threading.RLock()
 
-def get_energy_manager(config_file: str = None, verbose: bool = True) -> EnergyManager:
-    """获取全局能量管理器实例 - 修复版，确保配置文件正确加载"""
-    global _global_energy_manager
-    
+def _invalidate_config_for_cpp(expected_generation: int = 0) -> None:
+    """Invalidate the committed manager after a failed C++ transaction."""
+    global _global_energy_manager, _global_config_generation
     with _global_energy_manager_lock:
-        # 如果已经存在全局实例，但需要重新加载配置
-        if _global_energy_manager is not None and config_file:
-            try:
-                # 检查是否需要重新加载配置
-                current_config_file = getattr(_global_energy_manager.config, 'config_file', None)
-                logger.info(f"[get_energy_manager] config_file={config_file}, current_config_file={current_config_file}")
-                if current_config_file != config_file:
-                    logger.info(f"重新加载配置文件: {current_config_file} -> {config_file}")
-                    success = _global_energy_manager.load_system_config(config_file)
-                    if not success:
-                        logger.warning(f"重新加载配置文件失败: {config_file}")
-                else:
-                    logger.info(f"配置文件相同，无需重新加载: {config_file}")
-            except Exception as e:
-                logger.error(f"重新加载配置文件异常: {e}")
-        
-        # 创建新的全局实例（如果不存在）
+        if (
+            expected_generation == 0
+            or _global_config_generation == expected_generation
+        ):
+            _global_energy_manager = None
+            _global_config_generation = 0
+
+
+def get_energy_manager(expected_generation: int) -> EnergyManager:
+    """Return only the manager committed for the exact C++ generation."""
+    if (
+        isinstance(expected_generation, bool)
+        or not isinstance(expected_generation, int)
+        or expected_generation <= 0
+    ):
+        raise StrictSystemConfigError(
+            "system YAML: expected config_generation must be a positive integer"
+        )
+
+    with _global_energy_manager_lock:
         if _global_energy_manager is None:
-            try:
-                _global_energy_manager = EnergyManager(config_file, verbose)
-                logger.info("全局EnergyManager实例创建成功")
-                
-                # 确保配置文件已加载
-                if config_file and not _global_energy_manager.config.system_config:
-                    logger.info(f"确保配置文件加载: {config_file}")
-                    success = _global_energy_manager.load_system_config(config_file)
-                    if not success:
-                        logger.warning(f"确保配置文件加载失败: {config_file}")
-                        
-            except Exception as e:
-                logger.error(f"创建EnergyManager失败: {e}")
-                import traceback
-                logger.error(traceback.format_exc())
-                # 创建简单的后备管理器
-                _global_energy_manager = create_fallback_manager()
-        
+            raise StrictSystemConfigError(
+                "system YAML: no authoritative energy manager is committed"
+            )
+        if _global_config_generation != expected_generation:
+            raise StrictSystemConfigError(
+                "system YAML: energy manager config_generation mismatch"
+            )
+        if _global_energy_manager.config_generation != expected_generation:
+            raise StrictSystemConfigError(
+                "system YAML: committed energy manager identity is invalid"
+            )
         return _global_energy_manager
 
-# C++兼容性接口 - 配置获取
-def get_config_for_cpp() -> Dict[str, Any]:
-    """C++兼容性接口：获取配置"""
-    manager = get_energy_manager()
+
+# The only authoritative entry that can create or replace the current manager.
+def load_config_for_cpp(config_file: str) -> Dict[str, Any]:
+    global _global_energy_manager
+    global _global_config_generation
+    global _next_config_generation
+
+    _invalidate_config_for_cpp()
+    if not isinstance(config_file, str) or not config_file:
+        raise StrictSystemConfigError(
+            "system YAML: configuration path must be a non-empty string"
+        )
+
     try:
-        if hasattr(manager, 'get_config_for_cpp'):
-            return manager.get_config_for_cpp()
-        else:
-            logger.error("EnergyManager实例没有get_config_for_cpp方法")
-            return {}
-    except Exception as e:
-        logger.error(f"获取配置异常: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-        return {}
+        config = EnergyConfig()
+        if not config.load_from_file(config_file):
+            error = config.last_load_error
+            if isinstance(error, StrictSystemConfigError):
+                raise error
+            raise StrictSystemConfigError(
+                f"system YAML configuration rejected: {config_file}: {error}"
+            ) from error
 
-def create_fallback_manager():
-    """创建简单的后备管理器"""
-    class SimpleFallbackManager:
-        def __init__(self):
-            self.current_energy = 200.0
-            self.max_energy = 600.0
-            self.start_time_offset = 0
-            self.last_update_time = 0
-            self.total_consumed = 0.0
-            self.total_harvested = 0.0
-            logger.warning("使用简单的后备能量管理器")
-        
-        def set_start_time_offset(self, offset_ms):
-            self.start_time_offset = offset_ms
-            self.last_update_time = offset_ms
-            # 修复：返回True，因为C++端期望布尔值
-            return True
-        
-        def get_current_energy_value(self):
-            return self.current_energy
-        
-        def consume_energy(self, energy, task_name):
-            if energy <= self.current_energy:
-                self.current_energy -= energy
-                return True
-            return False
-        
-        def update_energy_continuously_wrapper(self, current_time_ms):
-            if self.last_update_time == 0:
-                self.last_update_time = current_time_ms
-                return 0.0
-            
-            time_elapsed = current_time_ms - self.last_update_time
-            if time_elapsed > 0:
-                # 简单收集：每秒收集0.02J
-                harvested = 0.00002 * time_elapsed
-                self.current_energy = min(self.max_energy, self.current_energy + harvested)
-                self.last_update_time = current_time_ms
-                return harvested
-            return 0.0
-        
-        def get_harvesting_rate_wrapper(self, current_time_ms):
-            return 0.00002  # 固定收集率
-        
-        def wait_for_energy_recovery_wrapper(self, current_time_ms, required_energy, max_wait=10000):
-            # 简单实现：直接返回False，让调度器等待
-            return False
-    
-    return SimpleFallbackManager()
-
-# C++兼容性接口
-def load_system_config(config_file: str) -> bool:
-    manager = get_energy_manager()
-    return bool(manager.load_system_config(config_file))
-
-def set_start_time_offset(offset_ms: int):
-    manager = get_energy_manager()
-    result = manager.set_start_time_offset(int(offset_ms))
-    # 修复：返回布尔值，因为C++端期望布尔值
-    return bool(result) if result is not None else True
-
-def get_current_energy() -> float:
-    manager = get_energy_manager()
-    return float(manager.current_energy)
-
-def get_harvesting_rate(current_time_ms: int) -> float:
-    manager = get_energy_manager()
-    return float(manager.harvester.get_harvesting_rate(current_time_ms))
-
-def consume_energy(energy_joules: float, task_name: str) -> bool:
-    manager = get_energy_manager()
-    return bool(manager.consume_energy(energy_joules, task_name))
-
-def update_energy_harvesting(current_time_ms: int, duration_ms: int) -> float:
-    manager = get_energy_manager()
-    return float(manager.harvest_energy(current_time_ms, duration_ms))
-
-def update_energy_continuously(current_time_ms: int) -> float:
-    manager = get_energy_manager()
-    return float(manager.update_energy_continuously(current_time_ms))
-
-def wait_for_energy_recovery(required_energy: float, current_time_ms: int, 
-                           max_wait_time_ms: int = 10000) -> bool:
-    manager = get_energy_manager()
-    return bool(manager.wait_for_energy_recovery(required_energy, current_time_ms, max_wait_time_ms))
-
-def has_sufficient_energy_for_batch(task_workloads: List[str], 
-                                   execution_time_ms: float) -> bool:
-    manager = get_energy_manager()
-    return bool(manager.has_sufficient_energy_for_batch(task_workloads, execution_time_ms))
-
-# C++兼容性接口
-def update_energy_continuously_wrapper(current_time_ms: int) -> float:
-    """C++兼容性接口：连续更新能量收集（模块级）- 最终修复版"""
-    manager = get_energy_manager()
-    
-    try:
-        # === 关键修复：确保时间一致性 ===
-        # current_time_ms 是C++传来的绝对时间，直接使用
-        
-        if current_time_ms < 0:
-            logger.warning(f"[Python] 模块级：无效的绝对时间: {current_time_ms}ms")
-            return 0.0
-        
-        # 直接调用实例方法
-        result = float(manager.update_energy_continuously_wrapper(current_time_ms))
-        
-        return result
-    except Exception as e:
-        logger.error(f"[Python] 模块级 update_energy_continuously_wrapper 异常: {e}")
-        return 0.0
-
-def get_harvesting_rate_wrapper(current_time_ms: int) -> float:
-    """C++兼容性接口：获取收集率（模块级）- 最终修复版"""
-    manager = get_energy_manager()
-    
-    try:
-        # === 关键修复：直接使用传入的时间 ===
-        return float(manager.get_harvesting_rate_wrapper(current_time_ms))
-    except Exception as e:
-        logger.error(f"[Python] 模块级 get_harvesting_rate_wrapper 异常: {e}")
-        return manager.config.base_harvest_rate_per_ms
-
-def wait_for_energy_recovery_wrapper(current_time_ms: int, 
-                                   required_energy: float,
-                                   max_wait_time_ms: int = 10000) -> bool:
-    """C++兼容性接口：等待能量恢复"""
-    manager = get_energy_manager()
-    return bool(manager.wait_for_energy_recovery(required_energy, current_time_ms, max_wait_time_ms))
-
-def get_energy_status() -> str:
-    manager = get_energy_manager()
-    status = manager.get_energy_status_dict()
-    return (f"Energy: {status['current_energy']:.1f}/{status['max_energy']:.1f} J "
-            f"(Level: {status['energy_level']}, "
-            f"Used: {status['total_consumed']:.1f} J, "
-            f"Harvested: {status['total_harvested']:.1f} J)")
-
-def get_detailed_energy_status() -> str:
-    manager = get_energy_manager()
-    return str(manager.get_detailed_energy_status())
-
-def calculate_task_energy_cpp(workload_type: str, execution_time_ms: float, 
-                            frequency_mhz: Optional[float] = None) -> float:
-    manager = get_energy_manager()
-    return float(manager.calculate_task_energy(workload_type, execution_time_ms, frequency_mhz))
-
-# ASAP专用接口
-def check_asap_scheduling(required_energy: float) -> bool:
-    """ASAP调度专用：检查是否有足够能量"""
-    manager = get_energy_manager()
-    return bool(manager.check_asap_scheduling(required_energy))
-
-def wait_for_energy_recovery_asap(required_energy: float, current_time_ms: int,
-                                max_wait_time_ms: int = 10000) -> bool:
-    """ASAP调度专用：等待能量恢复"""
-    manager = get_energy_manager()
-    return bool(manager.wait_for_energy_recovery_asap(required_energy, current_time_ms, max_wait_time_ms))
-
-def set_recovery_state_wrapper(recovery_in_progress: bool, recovery_end_time_ms: int = 0) -> bool:
-    """C++兼容性接口：设置恢复状态"""
-    manager = get_energy_manager()
-    try:
-        manager.set_recovery_state(recovery_in_progress, recovery_end_time_ms)
-        return True
-    except Exception as e:
-        logger.error(f"[Python] 设置恢复状态异常: {e}")
-        return False
-
-if __name__ == "__main__":
-    # 简单测试
-    print("Energy Manager Test")
-    manager = get_energy_manager()
-    manager.set_start_time_offset(43200000)
-    print(f"Current energy: {manager.get_current_energy_value()} J")
-    print(f"Energy status: {manager.get_energy_status_string()}")
+        candidate = EnergyManager._from_prepared_config(
+            config, verbose=False
+        )
+        with _global_energy_manager_lock:
+            _next_config_generation += 1
+            generation = _next_config_generation
+            candidate.config_generation = generation
+            snapshot = _build_config_for_cpp(
+                candidate.config, candidate.simulation_start_time
+            )
+            snapshot["config_generation"] = generation
+            _global_energy_manager = candidate
+            _global_config_generation = generation
+            return snapshot
+    except Exception:
+        _invalidate_config_for_cpp()
+        raise

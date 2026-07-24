@@ -1,8 +1,12 @@
+#include <climits>
 #include <chrono>
+#include <cmath>
 #include <cstdarg>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <rtsim/scheduler/config_manager.hpp>
@@ -28,250 +32,418 @@ namespace RTSim {
     std::mutex EnergyBridge::_instance_mutex;
     EnergyBridge *EnergyBridge::_instance = nullptr;
 
-    bool pythonConfigCallback(const std::string &config_file,
-                              ConfigManager &config) {
+    namespace {
+        struct PyObjectDeleter {
+            void operator()(PyObject *object) const noexcept {
+                Py_XDECREF(object);
+            }
+        };
+        using PyObjectPtr = std::unique_ptr<PyObject, PyObjectDeleter>;
+
+        class PythonGilGuard {
+        public:
+            PythonGilGuard() : _state(PyGILState_Ensure()) {}
+            ~PythonGilGuard() {
+                PyGILState_Release(_state);
+            }
+
+            PythonGilGuard(const PythonGilGuard &) = delete;
+            PythonGilGuard &operator=(const PythonGilGuard &) = delete;
+
+        private:
+            PyGILState_STATE _state;
+        };
+
+        [[noreturn]] void pythonConfigError(const std::string &reason) {
+            if (Py_IsInitialized()) {
+                PyErr_Clear();
+            }
+            const std::string prefix = "system YAML";
+            throw PriorityEnergyConfigError(
+                reason.compare(0, prefix.size(), prefix) == 0
+                    ? reason
+                    : "system YAML: " + reason);
+        }
+
+        std::string consumePythonError(const std::string &context) {
+            if (!PyErr_Occurred()) {
+                return context;
+            }
+
+            PyObject *type = nullptr;
+            PyObject *value = nullptr;
+            PyObject *traceback = nullptr;
+            PyErr_Fetch(&type, &value, &traceback);
+            PyErr_NormalizeException(&type, &value, &traceback);
+
+            PyObjectPtr owned_type(type);
+            PyObjectPtr owned_value(value);
+            PyObjectPtr owned_traceback(traceback);
+            PyObjectPtr text(
+                PyObject_Str(value != nullptr ? value : type));
+            if (!text) {
+                PyErr_Clear();
+                return context;
+            }
+            const char *utf8 = PyUnicode_AsUTF8(text.get());
+            if (!utf8) {
+                PyErr_Clear();
+                return context;
+            }
+            const std::string result = context + ": " + utf8;
+            PyErr_Clear();
+            return result;
+        }
+
+        [[noreturn]] void failPythonCall(const std::string &context) {
+            pythonConfigError(consumePythonError(context));
+        }
+
+        void ensureEnergyManagerImportPath() {
+            PyObject *path = PySys_GetObject("path");
+            if (!path || !PyList_Check(path)) {
+                failPythonCall("cannot access Python sys.path");
+            }
+
+            const std::filesystem::path source_root =
+                std::filesystem::path(__FILE__)
+                    .parent_path()
+                    .parent_path()
+                    .parent_path();
+            PyObjectPtr root(
+                PyUnicode_FromString(source_root.string().c_str()));
+            if (!root) {
+                failPythonCall(
+                    "cannot construct energy_manager import path");
+            }
+            const int contains = PySequence_Contains(path, root.get());
+            if (contains < 0) {
+                failPythonCall(
+                    "cannot inspect energy_manager import path");
+            }
+            if (contains == 0 && PyList_Insert(path, 0, root.get()) != 0) {
+                failPythonCall(
+                    "cannot add energy_manager import path");
+            }
+        }
+
+        PyObject *requiredDictItem(PyObject *dictionary,
+                                   const char *key) {
+            PyObject *value = PyDict_GetItemString(dictionary, key);
+            if (!value) {
+                failPythonCall(
+                    "Python configuration result is missing '" +
+                    std::string(key) + "'");
+            }
+            return value;
+        }
+
+        int pythonCheckedInt(PyObject *value,
+                             const std::string &field,
+                             bool must_be_positive) {
+            if (!PyLong_Check(value) || PyBool_Check(value)) {
+                pythonConfigError(field + " must be an integer");
+            }
+            int overflow = 0;
+            const long long result =
+                PyLong_AsLongLongAndOverflow(value, &overflow);
+            if (overflow != 0 || PyErr_Occurred()) {
+                failPythonCall(
+                    field + " is outside the C++ int range");
+            }
+            if (result < INT_MIN || result > INT_MAX) {
+                pythonConfigError(
+                    field + " is outside the C++ int range");
+            }
+            if (must_be_positive && result <= 0) {
+                pythonConfigError(field + " must be greater than zero");
+            }
+            return static_cast<int>(result);
+        }
+
+        long long pythonLongLong(PyObject *value,
+                                 const std::string &field,
+                                 bool must_be_positive = false) {
+            if (!PyLong_Check(value) || PyBool_Check(value)) {
+                pythonConfigError(field + " must be an integer");
+            }
+            int overflow = 0;
+            const long long result =
+                PyLong_AsLongLongAndOverflow(value, &overflow);
+            if (overflow != 0 || PyErr_Occurred()) {
+                failPythonCall(
+                    field + " is outside the C++ integer range");
+            }
+            if (must_be_positive && result <= 0) {
+                pythonConfigError(field + " must be greater than zero");
+            }
+            return result;
+        }
+
+        std::uint64_t pythonUnsigned64(PyObject *value,
+                                       const std::string &field) {
+            if (!PyLong_Check(value) || PyBool_Check(value)) {
+                pythonConfigError(field + " must be an unsigned integer");
+            }
+            const unsigned long long result =
+                PyLong_AsUnsignedLongLong(value);
+            if (PyErr_Occurred()) {
+                failPythonCall(field + " must be an unsigned integer");
+            }
+            return static_cast<std::uint64_t>(result);
+        }
+
+        double pythonDouble(PyObject *value, const std::string &field) {
+            if (PyBool_Check(value) ||
+                (!PyFloat_Check(value) && !PyLong_Check(value))) {
+                pythonConfigError(field + " must be a finite double");
+            }
+            const double result = PyFloat_Check(value)
+                                      ? PyFloat_AsDouble(value)
+                                      : PyLong_AsDouble(value);
+            if (PyErr_Occurred()) {
+                failPythonCall(field + " must be a finite double");
+            }
+            if (!std::isfinite(result)) {
+                pythonConfigError(field + " must be a finite double");
+            }
+            return result;
+        }
+
+        bool pythonBool(PyObject *value, const std::string &field) {
+            if (!PyBool_Check(value)) {
+                pythonConfigError(field + " must be a boolean");
+            }
+            return value == Py_True;
+        }
+
+        std::string pythonString(PyObject *value,
+                                 const std::string &field) {
+            if (!PyUnicode_Check(value)) {
+                pythonConfigError(field + " must be a string");
+            }
+            const char *utf8 = PyUnicode_AsUTF8(value);
+            if (!utf8) {
+                failPythonCall(field + " must be a UTF-8 string");
+            }
+            return utf8;
+        }
+
+        std::uint64_t pythonManagerGeneration(PyObject *manager) {
+            PyObjectPtr value(
+                PyObject_GetAttrString(manager, "config_generation"));
+            if (!value) {
+                failPythonCall(
+                    "Python energy manager has no config_generation");
+            }
+            const std::uint64_t generation = pythonUnsigned64(
+                value.get(),
+                "energy manager config_generation");
+            if (generation == 0) {
+                pythonConfigError(
+                    "energy manager config_generation must be positive");
+            }
+            return generation;
+        }
+
+        void invalidatePythonConfiguration(
+            PyObject *module,
+            std::uint64_t expected_generation) noexcept {
+            PyObjectPtr invalidator(
+                PyObject_GetAttrString(module, "_invalidate_config_for_cpp"));
+            if (!invalidator || !PyCallable_Check(invalidator.get())) {
+                PyErr_Clear();
+                return;
+            }
+            PyObjectPtr generation(
+                PyLong_FromUnsignedLongLong(expected_generation));
+            if (!generation) {
+                PyErr_Clear();
+                return;
+            }
+            PyObjectPtr result(PyObject_CallFunctionObjArgs(
+                invalidator.get(), generation.get(), nullptr));
+            if (!result) {
+                PyErr_Clear();
+            }
+        }
+    } // namespace
+
+    bool pythonConfigCallback(
+        const std::string &config_file,
+        ConfigManager::ConfigurationState &pending) {
         SCHEDULER_LOG_INFO("调用Python配置回调，配置文件: " + config_file);
 
         if (!Py_IsInitialized()) {
-            SCHEDULER_LOG_ERROR("Python未初始化，无法调用配置回调");
-            return false;
+            Py_Initialize();
+            if (!Py_IsInitialized()) {
+                pythonConfigError("cannot initialize Python");
+            }
         }
 
+        PythonGilGuard gil;
+        if (PyErr_Occurred()) {
+            PyErr_Clear();
+        }
+        ensureEnergyManagerImportPath();
+
+        PyObjectPtr module(PyImport_ImportModule("energy_manager"));
+        if (!module) {
+            failPythonCall("cannot import energy_manager");
+        }
+        invalidatePythonConfiguration(module.get(), 0);
+        PyObjectPtr loader(
+            PyObject_GetAttrString(module.get(), "load_config_for_cpp"));
+        if (!loader) {
+            failPythonCall(
+                "energy_manager.load_config_for_cpp is unavailable");
+        }
+        if (!PyCallable_Check(loader.get())) {
+            pythonConfigError(
+                "energy_manager.load_config_for_cpp is not callable");
+        }
+        PyObjectPtr path(PyUnicode_FromString(config_file.c_str()));
+        if (!path) {
+            failPythonCall("configuration path is not valid UTF-8");
+        }
+        PyObjectPtr result(
+            PyObject_CallFunctionObjArgs(loader.get(), path.get(), nullptr));
+        if (!result) {
+            failPythonCall("cannot load system YAML");
+        }
+        std::uint64_t config_generation = 0;
         try {
-            // 关键修复：构建Python代码，传递配置文件名
-            std::string get_config_code_str =
-                "import sys\n"
-                "sys.path.append('.')\n"
-                "sys.path.append('./simconf/systems')\n"
-                "import energy_manager\n"
-                "\n"
-                "try:\n"
-                "    print(f'[Python] C++传递的配置文件: \\'' + '" + config_file + "' + '\\'')\n"
-                "    manager = energy_manager.get_energy_manager('" + config_file + "')\n"
-                "    config_dict = manager.get_config_for_cpp()\n"
-                "    print(f'[Python] 配置解析完成: {len(config_dict)} "
-                "个参数')\n"
-                "    result = config_dict\n"
-                "except Exception as e:\n"
-                "    print(f'[Python] 配置解析错误: {e}')\n"
-                "    result = {}\n"
-                "\n"
-                "result\n";
-
-            const char *get_config_code = get_config_code_str.c_str();
-
-            PyObject *main_module = PyImport_AddModule("__main__");
-            PyObject *globals = PyModule_GetDict(main_module);
-            PyObject *locals = PyDict_New();
-
-            PyObject *result =
-                PyRun_String(get_config_code, Py_file_input, globals, locals);
-
-            if (!result) {
-                PyErr_Print();
-                SCHEDULER_LOG_ERROR("Python代码执行失败");
-                Py_DECREF(locals);
-                return false;
+            if (!PyDict_Check(result.get())) {
+                pythonConfigError(
+                    "Python configuration result must be a mapping");
             }
-
-            Py_DECREF(result);
-
-            // 获取结果
-            PyObject *pResult = PyDict_GetItemString(locals, "result");
-            if (!pResult || !PyDict_Check(pResult)) {
-                SCHEDULER_LOG_ERROR("无法获取配置结果");
-                Py_DECREF(locals);
-                return false;
+            config_generation = pythonUnsigned64(
+                requiredDictItem(result.get(), "config_generation"),
+                "config_generation");
+            if (config_generation == 0) {
+                pythonConfigError(
+                    "config_generation must be greater than zero");
             }
+            pending.config_generation = config_generation;
 
-            // 解析配置字典
-            PyObject *key, *value;
-            Py_ssize_t pos = 0;
-
-            SCHEDULER_LOG_INFO("解析Python配置...");
-
-            // ========== 关键修复：确保所有配置都正确设置 ==========
-            // 先重置所有配置为默认值
-            config.setNumCores(4);
-            config.setBaseFrequency(1400.0);
-            // ⭐ 修复：删除硬编码的unit_time，让配置文件的值生效
-            // config.setUnitTime(50);  // 删除硬编码
-            config.setInitialEnergy(200.0); // 默认200J
-            config.setMaxEnergy(600.0);
-            // ⭐ 修复：不再硬编码base_harvest_rate，让Python配置文件的值生效
-            // config.setBaseHarvestRate(0.00002);  // 删除硬编码
-            config.setStartTimeOffset(0);
-            config.setEnableEnergyRecovery(true);
-            config.setBasePower(0.5);
-
-            // 修复：不调用不存在的方法，而是重新设置默认值
-            // ConfigManager已经设置了默认值，我们只需要覆盖它
-
-            // 先设置默认的工作负载系数
-            config.setPowerCoefficient("bzip2", 1.2);
-            config.setPowerCoefficient("hash", 0.8);
-            config.setPowerCoefficient("encrypt", 1.5);
-            config.setPowerCoefficient("decrypt", 1.5);
-            config.setPowerCoefficient("control", 0.1);
-
-            // 先设置默认的频率功率比
-            config.setFrequencyPowerRatio(1000, 0.7);
-            config.setFrequencyPowerRatio(1100, 0.75);
-            config.setFrequencyPowerRatio(1200, 0.8);
-            config.setFrequencyPowerRatio(1300, 0.85);
-            config.setFrequencyPowerRatio(1400, 0.9);
-            config.setFrequencyPowerRatio(1500, 0.95);
-            config.setFrequencyPowerRatio(1600, 1.0);
-            config.setFrequencyPowerRatio(1700, 1.05);
-            config.setFrequencyPowerRatio(1800, 1.1);
-            config.setFrequencyPowerRatio(1900, 1.15);
-            config.setFrequencyPowerRatio(2000, 1.2);
-            config.setFrequencyPowerRatio(2100, 1.25);
-
-            while (PyDict_Next(pResult, &pos, &key, &value)) {
-                std::string key_name;
-                if (PyUnicode_Check(key)) {
-                    PyObject *utf8_key = PyUnicode_AsUTF8String(key);
-                    if (utf8_key) {
-                        const char *key_cstr = PyBytes_AsString(utf8_key);
-                        if (key_cstr) {
-                            key_name = key_cstr;
-                        }
-                        Py_DECREF(utf8_key);
-                    }
-                }
-
-                if (key_name.empty())
-                    continue;
-
-                // 根据键名设置配置
-                if (key_name == "num_cores" && PyLong_Check(value)) {
-                    int num_cores = PyLong_AsLong(value);
-                    config.setNumCores(num_cores);
-                    SCHEDULER_LOG_INFO("  num_cores: " + std::to_string(num_cores));
-                } else if (key_name == "base_frequency" &&
-                           (PyLong_Check(value) || PyFloat_Check(value))) {
-                    double freq = PyFloat_Check(value) ? PyFloat_AsDouble(value)
-                                                        : PyLong_AsLong(value);
-                    config.setBaseFrequency(freq);
-                    SCHEDULER_LOG_INFO("  base_frequency: " + std::to_string(freq) + " MHz");
-                } else if (key_name == "unit_time" && PyLong_Check(value)) {
-                    int unit_time = PyLong_AsLong(value);
-                    config.setUnitTime(unit_time);
-                    SCHEDULER_LOG_INFO("  unit_time: " + std::to_string(unit_time) + " ms");
-                } else if (key_name == "expected_task_count" &&
-                           PyLong_Check(value)) {
-                    int task_count = PyLong_AsLong(value);
-                    if (config.getExpectedTaskCount() <= 0) {
-                        config.setExpectedTaskCount(task_count);
-                        SCHEDULER_LOG_INFO("  expected_task_count: " + std::to_string(task_count));
-                    } else {
-                        SCHEDULER_LOG_INFO("  expected_task_count ignored, keep loaded taskset count: " + std::to_string(config.getExpectedTaskCount()));
-                    }
-                } else if (key_name == "initial_energy" &&
-                           PyFloat_Check(value)) {
-                    double initial_energy = PyFloat_AsDouble(value);
-                    config.setInitialEnergy(initial_energy);
-                    SCHEDULER_LOG_INFO("  initial_energy: " + std::to_string(initial_energy) + " J");
-                } else if (key_name == "max_energy" && PyFloat_Check(value)) {
-                    double max_energy = PyFloat_AsDouble(value);
-                    config.setMaxEnergy(max_energy);
-                    SCHEDULER_LOG_INFO("  max_energy: " + std::to_string(max_energy) + " J");
-                } else if (key_name == "base_harvest_rate" &&
-                           PyFloat_Check(value)) {
-                    double harvest_rate = PyFloat_AsDouble(value);
-                    config.setBaseHarvestRate(harvest_rate);
-                    SCHEDULER_LOG_INFO("  base_harvest_rate: " + std::to_string(harvest_rate) + " J/ms");
-                } else if (key_name == "start_time_offset" &&
-                           PyLong_Check(value)) {
-                    int64_t offset = PyLong_AsLongLong(value);
-                    config.setStartTimeOffset(offset);
-                    // ⭐ 关键修复：同时设置EnergyBridge的_start_time_offset
-                    EnergyBridge::getInstance().setStartTimeOffset(offset);
-                    SCHEDULER_LOG_INFO("  start_time_offset: " + std::to_string(offset) + " ms");
-                } else if (key_name == "enable_energy_recovery") {
-                    bool enabled = false;
-                    if (PyBool_Check(value)) {
-                        enabled = (value == Py_True);
-                    } else if (PyLong_Check(value)) {
-                        enabled = (PyLong_AsLong(value) != 0);
-                    }
-                    config.setEnergyRecoveryEnabled(enabled);
-                    SCHEDULER_LOG_INFO("  enable_energy_recovery: " + std::string(enabled ? "true" : "false"));
-                } else if (key_name == "periodic_collection_interval" && PyLong_Check(value)) {
-                    int interval = PyLong_AsLong(value);
-                    config.setPeriodicCollectionInterval(interval);
-                    SCHEDULER_LOG_INFO("  periodic_collection_interval: " + std::to_string(interval) + " ms");
-                } else if (key_name == "base_power" && PyFloat_Check(value)) {
-                    double base_power = PyFloat_AsDouble(value);
-                    config.setBasePower(base_power);
-                    SCHEDULER_LOG_INFO("  base_power: " + std::to_string(base_power) + " W");
-                } else if (key_name == "power_coefficients" &&
-                           PyDict_Check(value)) {
-                    PyObject *coeff_key, *coeff_value;
-                    Py_ssize_t coeff_pos = 0;
-
-                    while (PyDict_Next(value, &coeff_pos, &coeff_key,
-                                       &coeff_value)) {
-                        std::string workload;
-                        if (PyUnicode_Check(coeff_key)) {
-                            PyObject *utf8_coeff_key =
-                                PyUnicode_AsUTF8String(coeff_key);
-                            if (utf8_coeff_key) {
-                                const char *coeff_cstr =
-                                    PyBytes_AsString(utf8_coeff_key);
-                                if (coeff_cstr) {
-                                    workload = coeff_cstr;
-                                }
-                                Py_DECREF(utf8_coeff_key);
-                            }
-                        }
-
-                        if (!workload.empty() && PyFloat_Check(coeff_value)) {
-                            double coefficient = PyFloat_AsDouble(coeff_value);
-                            config.setPowerCoefficient(workload, coefficient);
-                            SCHEDULER_LOG_INFO("  " + workload + " coefficient: " + std::to_string(coefficient));
-                        }
-                    }
-                } else if (key_name == "frequency_power_ratios" &&
-                           PyDict_Check(value)) {
-                    PyObject *freq_key, *freq_value;
-                    Py_ssize_t freq_pos = 0;
-
-                    while (
-                        PyDict_Next(value, &freq_pos, &freq_key, &freq_value)) {
-                        if (PyLong_Check(freq_key) &&
-                            PyFloat_Check(freq_value)) {
-                            int frequency = PyLong_AsLong(freq_key);
-                            double ratio = PyFloat_AsDouble(freq_value);
-                            config.setFrequencyPowerRatio(frequency, ratio);
-                            SCHEDULER_LOG_INFO("  " + std::to_string(frequency) + " MHz ratio: " + std::to_string(ratio));
-                        }
-                    }
-                }
-            }
-
-            Py_DECREF(locals);
-
-            // ========== 关键修复：验证配置一致性 ==========
-            SCHEDULER_LOG_INFO("Python配置已加载到C++ ConfigManager");
-
-            // 输出最终的配置状态
-            SCHEDULER_LOG_INFO("\n配置汇总:");
-            SCHEDULER_LOG_INFO("  初始能量: " + std::to_string(config.getInitialEnergy()) + " J");
-            SCHEDULER_LOG_INFO("  最大能量: " + std::to_string(config.getMaxEnergy()) + " J");
-            SCHEDULER_LOG_INFO("  基础功耗: " + std::to_string(config.getBasePower()) + " W");
-            SCHEDULER_LOG_INFO("  单位时间: " + std::to_string(config.getUnitTime()) + " ms");
-            SCHEDULER_LOG_INFO("  核心数: " + std::to_string(config.getNumCores()));
-
-            config.printConfig();
-
-            return true;
-
-        } catch (const std::exception &e) {
-            SCHEDULER_LOG_ERROR("配置回调异常: " + std::string(e.what()));
-            return false;
+            pending.num_cores = pythonCheckedInt(
+            requiredDictItem(result.get(), "num_cores"),
+            "num_cores",
+            true);
+        pending.scheduler_type = pythonString(
+            requiredDictItem(result.get(), "scheduler_type"),
+            "scheduler_type");
+        pending.base_frequency = pythonDouble(
+            requiredDictItem(result.get(), "base_frequency"),
+            "base_frequency");
+        if (pending.base_frequency <= 0.0) {
+            pythonConfigError(
+                "base_frequency must be greater than zero");
         }
+        pending.unit_time = pythonCheckedInt(
+            requiredDictItem(result.get(), "unit_time"),
+            "unit_time",
+            true);
+        pending.initial_energy = pythonDouble(
+            requiredDictItem(result.get(), "initial_energy"),
+            "initial_energy");
+        pending.max_energy = pythonDouble(
+            requiredDictItem(result.get(), "max_energy"),
+            "max_energy");
+        pending.base_harvest_rate = pythonDouble(
+            requiredDictItem(result.get(), "base_harvest_rate"),
+            "base_harvest_rate");
+        pending.start_time_offset =
+            static_cast<std::int64_t>(pythonLongLong(
+            requiredDictItem(result.get(), "start_time_offset"),
+            "start_time_offset"));
+        pending.enable_energy_recovery = pythonBool(
+            requiredDictItem(result.get(), "enable_energy_recovery"),
+            "enable_energy_recovery");
+        pending.periodic_collection_interval =
+            static_cast<std::int64_t>(pythonLongLong(
+                requiredDictItem(
+                    result.get(),
+                    "periodic_collection_interval"),
+                "periodic_collection_interval",
+                true));
+        pending.base_power = pythonDouble(
+            requiredDictItem(result.get(), "base_power"),
+            "base_power");
+
+        PyObject *coefficients =
+            requiredDictItem(result.get(), "power_coefficients");
+        if (!PyDict_Check(coefficients)) {
+            pythonConfigError("power_coefficients must be a mapping");
+        }
+        std::map<std::string, double> parsed_coefficients;
+        PyObject *key = nullptr;
+        PyObject *value = nullptr;
+        Py_ssize_t position = 0;
+        while (PyDict_Next(
+            coefficients,
+            &position,
+            &key,
+            &value)) {
+            const std::string workload =
+                pythonString(key, "power_coefficients key");
+            parsed_coefficients[workload] = pythonDouble(
+                value,
+                "power_coefficients." + workload);
+        }
+        pending.power_coefficients = std::move(parsed_coefficients);
+
+        PyObject *ratios =
+            requiredDictItem(result.get(), "frequency_power_ratios");
+        if (!PyDict_Check(ratios)) {
+            pythonConfigError("frequency_power_ratios must be a mapping");
+        }
+        std::map<int, double> parsed_ratios;
+        position = 0;
+        while (PyDict_Next(ratios, &position, &key, &value)) {
+            const int frequency = pythonCheckedInt(
+                key,
+                "frequency_power_ratios key",
+                true);
+            parsed_ratios[frequency] = pythonDouble(
+                value,
+                "frequency_power_ratios." +
+                    std::to_string(frequency));
+        }
+        pending.frequency_power_ratios = std::move(parsed_ratios);
+
+        PyObject *profile =
+            requiredDictItem(result.get(), "priority_energy");
+        if (!PyDict_Check(profile)) {
+            pythonConfigError("priority_energy must be a mapping");
+        }
+        PriorityEnergyProfileConfig parsed_profile;
+        parsed_profile.enabled = pythonBool(
+            requiredDictItem(profile, "enabled"),
+            "priority_energy.enabled");
+        parsed_profile.profile_id = pythonString(
+            requiredDictItem(profile, "profile_id"),
+            "priority_energy.profile_id");
+        parsed_profile.alpha_w = pythonDouble(
+            requiredDictItem(profile, "alpha_w"),
+            "priority_energy.alpha_w");
+        parsed_profile.horizon_ms = pythonUnsigned64(
+            requiredDictItem(profile, "horizon_ms"),
+            "priority_energy.horizon_ms");
+        parsed_profile.tick_ms = pythonUnsigned64(
+            requiredDictItem(profile, "tick_ms"),
+            "priority_energy.tick_ms");
+            validatePriorityEnergyProfileConfig(parsed_profile);
+            pending.priority_energy_profile = std::move(parsed_profile);
+        } catch (...) {
+            invalidatePythonConfiguration(
+                module.get(), config_generation);
+            throw;
+        }
+
+        SCHEDULER_LOG_INFO(
+            "严格PyYAML配置已完整暂存，等待ConfigManager原子提交");
+        return true;
     }
 
     // =====================================================
@@ -286,6 +458,10 @@ namespace RTSim {
         return *_instance;
     }
 
+    void EnergyBridge::ensureConfigCallbackRegistered() {
+        ConfigManager::setConfigCallback(pythonConfigCallback);
+    }
+
     // =====================================================
     // 构造函数和析构函数
     // =====================================================
@@ -293,13 +469,13 @@ namespace RTSim {
         _python_energy_manager(nullptr),
         _python_initialized(false),
         _initialized(false),
+        _config_generation(0),
         _start_time_offset(0),
         _energy_debug(false),
         _last_energy_check(0),
         _total_calls(0),
         _python_error_count(0), // 现在正确初始化
-        _use_fallback_mode(false), // 现在正确初始化
-        _config_file("") { // 初始化新添加的成员变量
+        _use_fallback_mode(false) {
 
         const char *env_debug = std::getenv("RTSIM_ENERGY_DEBUG");
         if (env_debug != nullptr && std::string(env_debug) == "1") {
@@ -328,118 +504,122 @@ namespace RTSim {
     // =====================================================
 
     bool EnergyBridge::initialize(const std::string &python_script_path) {
-        std::lock_guard<std::mutex> lock(_python_mutex);
-
-        // 🔑 保存配置文件路径
-        _config_file = python_script_path;
-
-        if (_initialized) {
-            if (_energy_debug) {
-                SCHEDULER_LOG_DEBUG("EnergyBridge: Already initialized");
+        (void)python_script_path;
+        ensureConfigCallbackRegistered();
+        ConfigManager &config = ConfigManager::getInstance();
+        const std::uint64_t expected_generation =
+            config.getConfigGeneration();
+        if (!config.isConfigLoaded() || expected_generation == 0) {
+            std::lock_guard<std::mutex> lock(_python_mutex);
+            if (Py_IsInitialized()) {
+                PythonGilGuard gil;
+                invalidateCurrentManagerLocked();
+            } else {
+                invalidateCurrentManagerLocked();
             }
-            return true;
+            SCHEDULER_LOG_ERROR(
+                "EnergyBridge: no authoritative ConfigManager "
+                "generation is loaded");
+            return false;
         }
 
         try {
-            if (_energy_debug) {
-                SCHEDULER_LOG_DEBUG("EnergyBridge: 初始化Python能量管理器...");
+            std::lock_guard<std::mutex> lock(_python_mutex);
+            if (_initialized && _python_energy_manager != nullptr &&
+                _config_generation == expected_generation &&
+                Py_IsInitialized()) {
+                PythonGilGuard gil;
+                if (validateCurrentManagerLocked()) {
+                    return true;
+                }
             }
 
-            // 检查Python是否已经初始化
             if (!Py_IsInitialized()) {
-                // 初始化Python
                 Py_Initialize();
                 if (!Py_IsInitialized()) {
-                    SCHEDULER_LOG_ERROR("EnergyBridge: Failed to initialize Python");
-                    return false;
-                }
-
-                // 添加Python路径 - 智能检测运行目录
-                PyRun_SimpleString("import sys");
-                PyRun_SimpleString("import os");
-                PyRun_SimpleString("sys.path.append('.')");
-                // 如果在build目录，添加父目录以访问energy_manager
-                PyRun_SimpleString("if 'build' in os.getcwd().split(os.sep): sys.path.append('..')");
-                PyRun_SimpleString("sys.path.append('./simconf/systems')");
-
-                if (_energy_debug) {
-                    SCHEDULER_LOG_DEBUG("EnergyBridge: Python初始化成功");
+                    throw PriorityEnergyConfigError(
+                        "system YAML: cannot initialize Python");
                 }
             }
 
-            // 设置配置回调
-            ConfigManager::setConfigCallback(pythonConfigCallback);
+            PythonGilGuard gil;
+            if (PyErr_Occurred()) {
+                PyErr_Clear();
+            }
+            ensureEnergyManagerImportPath();
 
-            // 导入energy_manager模块并创建实例
-            // 智能路径处理：自动检测运行目录
-            std::string python_code =
-                "import sys\n"
-                "import os\n"
-                "sys.path.append('.')\n"
-                // 如果在rtsim目录，添加父目录以访问energy_manager
-                "cwd_parts = os.getcwd().split(os.sep)\n"
-                "if len(cwd_parts) > 0 and cwd_parts[-1] == 'rtsim':\n"
-                "    sys.path.append('..')\n"
-                "sys.path.append('./simconf/systems')\n"
-                "import energy_manager\n"
-                "config_file = '" + python_script_path + "'\n"
-                "print(f'[Python] 使用配置文件: {config_file}')\n"
-                "manager = energy_manager.get_energy_manager(config_file)\n"
-                "print('[Python] 能量管理器加载成功')\n"
-                "manager\n";
-
-            PyObject *main_module = PyImport_AddModule("__main__");
-            PyObject *globals = PyModule_GetDict(main_module);
-            PyObject *locals = PyDict_New();
-
-            PyObject *result =
-                PyRun_String(python_code.c_str(), Py_file_input, globals, locals);
-            if (!result) {
-                PyErr_Print();
-                SCHEDULER_LOG_ERROR("EnergyBridge: 执行Python代码失败");
-                Py_DECREF(locals);
-                return false;
+            PyObjectPtr module(PyImport_ImportModule("energy_manager"));
+            if (!module) {
+                failPythonCall("cannot import energy_manager");
+            }
+            PyObjectPtr factory(
+                PyObject_GetAttrString(
+                    module.get(),
+                    "get_energy_manager"));
+            if (!factory) {
+                failPythonCall(
+                    "energy_manager.get_energy_manager is unavailable");
+            }
+            if (!PyCallable_Check(factory.get())) {
+                pythonConfigError(
+                    "energy_manager.get_energy_manager is not callable");
+            }
+            PyObjectPtr generation(
+                PyLong_FromUnsignedLongLong(expected_generation));
+            if (!generation) {
+                failPythonCall(
+                    "cannot construct expected config_generation");
+            }
+            PyObjectPtr manager(
+                PyObject_CallFunctionObjArgs(
+                    factory.get(),
+                    generation.get(),
+                    nullptr));
+            if (!manager) {
+                failPythonCall(
+                    "cannot access authoritative Python energy manager");
+            }
+            if (pythonManagerGeneration(manager.get()) !=
+                expected_generation) {
+                pythonConfigError(
+                    "Python energy manager generation does not match "
+                    "ConfigManager");
             }
 
-            Py_DECREF(result);
-
-            // 从locals获取manager对象
-            _python_energy_manager = PyDict_GetItemString(locals, "manager");
-            if (!_python_energy_manager) {
-                SCHEDULER_LOG_ERROR("EnergyBridge: 无法获取manager对象");
-                Py_DECREF(locals);
-                return false;
-            }
-
-            Py_INCREF(_python_energy_manager);
-            Py_DECREF(locals);
-
-            // === 修复：显式调用Python配置回调以更新ConfigManager ===
-            // 🔑 修复：使用传入的配置文件路径，而不是从环境变量读取
-            const char *config_file = python_script_path.c_str();
-            SCHEDULER_LOG_INFO("EnergyBridge: 调用Python配置回调更新ConfigManager，配置文件: " + std::string(config_file));
-            bool config_loaded = pythonConfigCallback(config_file, ConfigManager::getInstance());
-            if (config_loaded) {
-                SCHEDULER_LOG_INFO("EnergyBridge: ConfigManager已从Python配置更新");
-            } else {
-                SCHEDULER_LOG_WARNING("EnergyBridge: ConfigManager更新失败，使用默认配置");
-            }
-
+            Py_XDECREF(
+                reinterpret_cast<PyObject *>(_python_energy_manager));
+            _python_energy_manager = manager.release();
+            _config_generation = expected_generation;
+            _start_time_offset = config.getStartTimeOffset();
             _initialized = true;
             _python_initialized = true;
             _python_error_count = 0;
             _use_fallback_mode = false;
 
-            if (_energy_debug) {
-                SCHEDULER_LOG_DEBUG("EnergyBridge: Python能量管理器初始化成功");
-            }
-
+            SCHEDULER_LOG_INFO(
+                "EnergyBridge: connected to authoritative ConfigManager "
+                "configuration");
             return true;
-
         } catch (const std::exception &e) {
-            SCHEDULER_LOG_ERROR("EnergyBridge: 初始化异常: " + std::string(e.what()));
+            std::lock_guard<std::mutex> lock(_python_mutex);
+            if (Py_IsInitialized()) {
+                PythonGilGuard gil;
+                invalidateCurrentManagerLocked();
+            } else {
+                invalidateCurrentManagerLocked();
+            }
+            SCHEDULER_LOG_ERROR(
+                "EnergyBridge: initialization failed: " +
+                std::string(e.what()));
             return false;
         }
+    }
+
+    bool EnergyBridge::isInitialized() const {
+        const ConfigManager &config = ConfigManager::getInstance();
+        return _initialized && _python_energy_manager != nullptr &&
+               config.isConfigLoaded() && _config_generation != 0 &&
+               _config_generation == config.getConfigGeneration();
     }
 
     void EnergyBridge::finalizePython() {
@@ -461,83 +641,80 @@ namespace RTSim {
             return PyTuple_New(0);
         }
 
-        PyObject *pArgs = nullptr;
-        const char *fmt = format.c_str();
-
-        try {
-            // 修复：添加LdLd格式用于ASAP恢复
-            if (format == "LdL") {
-                long long value1 = va_arg(args, long long);
-                double value2 = va_arg(args, double);
-                long long value3 = va_arg(args, long long);
-                pArgs = PyTuple_New(3);
-                PyTuple_SetItem(pArgs, 0, PyLong_FromLongLong(value1));
-                PyTuple_SetItem(pArgs, 1, PyFloat_FromDouble(value2));
-                PyTuple_SetItem(pArgs, 2, PyLong_FromLongLong(value3));
-            } else if (format == "dLL") { // 新增：修复的能量恢复格式
-                double value1 = va_arg(args, double);
-                long long value2 = va_arg(args, long long);
-                long long value3 = va_arg(args, long long);
-                pArgs = PyTuple_New(3);
-                PyTuple_SetItem(pArgs, 0, PyFloat_FromDouble(value1));
-                PyTuple_SetItem(pArgs, 1, PyLong_FromLongLong(value2));
-                PyTuple_SetItem(pArgs, 2, PyLong_FromLongLong(value3));
-            }
-            // ====== 关键修复：添加"bL"格式支持（布尔值 + 长整型）=====
-            else if (format == "bL") {
-                bool value1 = static_cast<bool>(va_arg(args, int)); // va_arg for bool is int
-                long long value2 = va_arg(args, long long);
-                pArgs = PyTuple_New(2);
-                PyTuple_SetItem(pArgs, 0, value1 ? Py_True : Py_False);
-                Py_INCREF(value1 ? Py_True : Py_False);
-                PyTuple_SetItem(pArgs, 1, PyLong_FromLongLong(value2));
-            }
-            // ====== 关键修复：添加"ds"格式支持 ======
-            else if (format == "ds") {
-                double value1 = va_arg(args, double);
-                const char *value2 = va_arg(args, const char *);
-                pArgs = PyTuple_New(2);
-                PyTuple_SetItem(pArgs, 0, PyFloat_FromDouble(value1));
-                PyTuple_SetItem(pArgs, 1, PyUnicode_FromString(value2));
-            }
-            // ====== 关键修复：添加"dL"格式支持 ======
-            else if (format == "dL") {
-                double value1 = va_arg(args, double);
-                long long value2 = va_arg(args, long long);
-                pArgs = PyTuple_New(2);
-                PyTuple_SetItem(pArgs, 0, PyFloat_FromDouble(value1));
-                PyTuple_SetItem(pArgs, 1, PyLong_FromLongLong(value2));
-            }
-            // ====== 关键修复：添加"L"格式支持 ======
-            else if (format == "L") {
-                long long value = va_arg(args, long long);
-                pArgs = PyTuple_New(1);
-                PyTuple_SetItem(pArgs, 0, PyLong_FromLongLong(value));
-            }
-            // ====== 关键修复：添加"s"格式支持 ======
-            else if (format == "s") {
-                const char *value = va_arg(args, const char *);
-                pArgs = PyTuple_New(1);
-                PyTuple_SetItem(pArgs, 0, PyUnicode_FromString(value));
-            }
-            // ====== 关键修复：添加"d"格式支持 ======
-            else if (format == "d") {
-                double value = va_arg(args, double);
-                pArgs = PyTuple_New(1);
-                PyTuple_SetItem(pArgs, 0, PyFloat_FromDouble(value));
-            } else {
-                SCHEDULER_LOG_ERROR("EnergyBridge: Unsupported format string: " + format);
-                return PyTuple_New(0);
-            }
-        } catch (const std::exception &e) {
-            SCHEDULER_LOG_ERROR("EnergyBridge: Error building Python arguments: " + std::string(e.what()));
-            if (pArgs) {
-                Py_DECREF(pArgs);
-            }
-            return PyTuple_New(0);
+        if (format == "LdL") {
+            PyObjectPtr first(PyLong_FromLongLong(va_arg(args, long long)));
+            PyObjectPtr second(PyFloat_FromDouble(va_arg(args, double)));
+            PyObjectPtr third(PyLong_FromLongLong(va_arg(args, long long)));
+            return first && second && third
+                       ? PyTuple_Pack(
+                             3, first.get(), second.get(), third.get())
+                       : nullptr;
+        }
+        if (format == "dLL") {
+            PyObjectPtr first(PyFloat_FromDouble(va_arg(args, double)));
+            PyObjectPtr second(PyLong_FromLongLong(va_arg(args, long long)));
+            PyObjectPtr third(PyLong_FromLongLong(va_arg(args, long long)));
+            return first && second && third
+                       ? PyTuple_Pack(
+                             3, first.get(), second.get(), third.get())
+                       : nullptr;
+        }
+        if (format == "bL") {
+            PyObject *first = va_arg(args, int) != 0 ? Py_True : Py_False;
+            PyObjectPtr second(PyLong_FromLongLong(va_arg(args, long long)));
+            return second ? PyTuple_Pack(2, first, second.get()) : nullptr;
+        }
+        if (format == "ds") {
+            PyObjectPtr first(PyFloat_FromDouble(va_arg(args, double)));
+            PyObjectPtr second(
+                PyUnicode_FromString(va_arg(args, const char *)));
+            return first && second
+                       ? PyTuple_Pack(2, first.get(), second.get())
+                       : nullptr;
+        }
+        if (format == "dL") {
+            PyObjectPtr first(PyFloat_FromDouble(va_arg(args, double)));
+            PyObjectPtr second(PyLong_FromLongLong(va_arg(args, long long)));
+            return first && second
+                       ? PyTuple_Pack(2, first.get(), second.get())
+                       : nullptr;
+        }
+        if (format == "LL") {
+            PyObjectPtr first(PyLong_FromLongLong(va_arg(args, long long)));
+            PyObjectPtr second(PyLong_FromLongLong(va_arg(args, long long)));
+            return first && second
+                       ? PyTuple_Pack(2, first.get(), second.get())
+                       : nullptr;
+        }
+        if (format == "sdd") {
+            PyObjectPtr first(
+                PyUnicode_FromString(va_arg(args, const char *)));
+            PyObjectPtr second(PyFloat_FromDouble(va_arg(args, double)));
+            PyObjectPtr third(PyFloat_FromDouble(va_arg(args, double)));
+            return first && second && third
+                       ? PyTuple_Pack(
+                             3, first.get(), second.get(), third.get())
+                       : nullptr;
+        }
+        if (format == "L") {
+            PyObjectPtr value(PyLong_FromLongLong(va_arg(args, long long)));
+            return value ? PyTuple_Pack(1, value.get()) : nullptr;
+        }
+        if (format == "s") {
+            PyObjectPtr value(
+                PyUnicode_FromString(va_arg(args, const char *)));
+            return value ? PyTuple_Pack(1, value.get()) : nullptr;
+        }
+        if (format == "d") {
+            PyObjectPtr value(PyFloat_FromDouble(va_arg(args, double)));
+            return value ? PyTuple_Pack(1, value.get()) : nullptr;
         }
 
-        return pArgs;
+        PyErr_Format(
+            PyExc_ValueError,
+            "unsupported EnergyBridge argument format: %s",
+            format.c_str());
+        return nullptr;
     }
 
     // =====================================================
@@ -547,125 +724,79 @@ namespace RTSim {
                                                 const std::string &format,
                                                 ...) {
         _total_calls++;
-
-        if (!_initialized) {
-            SCHEDULER_LOG_ERROR("EnergyBridge: Not initialized when calling " + method_name);
+        std::lock_guard<std::mutex> lock(_python_mutex);
+        if (!Py_IsInitialized()) {
+            invalidateCurrentManagerLocked();
+            return 0.0;
+        }
+        PythonGilGuard gil;
+        if (!validateCurrentManagerLocked()) {
             return 0.0;
         }
 
-        std::lock_guard<std::mutex> lock(_python_mutex);
-
-        // 检查Python对象状态
-        if (!checkPythonObject()) {
-            SCHEDULER_LOG_WARNING("EnergyBridge: Python对象无效，尝试重新初始化...");
-            if (!reinitializePythonManager()) {
-                SCHEDULER_LOG_ERROR("EnergyBridge: 重新初始化失败，使用后备方案");
-                return getFallbackValue(method_name);
-            }
-        }
-
-        PyObject *pMethod = nullptr;
-        PyObject *pArgs = nullptr;
-        PyObject *pResult = nullptr;
-
-        try {
-            // 最多重试2次
-            int max_retries = 2;
-            for (int retry = 0; retry <= max_retries; retry++) {
-                pMethod = PyObject_GetAttrString(
-                    reinterpret_cast<PyObject *>(_python_energy_manager),
-                    method_name.c_str());
-
-                if (!pMethod || !PyCallable_Check(pMethod)) {
-                    Py_XDECREF(pMethod);
-                    if (retry < max_retries) {
-                        SCHEDULER_LOG_WARNING("EnergyBridge: 获取方法失败，重试 " + 
-                                              std::to_string(retry + 1) + "/" + 
-                                              std::to_string(max_retries) + " - " + 
-                                              method_name);
-                        reinitializePythonManager();
-                        continue;
-                    } else {
-                        SCHEDULER_LOG_ERROR("EnergyBridge: 获取方法失败: " + method_name);
-                        return getFallbackValue(method_name);
-                    }
-                }
-                break;
-            }
-
-            // 构建参数
-            va_list args;
-            va_start(args, format);
-            pArgs = reinterpret_cast<PyObject *>(buildPythonArgs(format, args));
-            va_end(args);
-
-            if (!pArgs) {
-                Py_DECREF(pMethod);
-                SCHEDULER_LOG_ERROR("EnergyBridge: 构建参数失败: " + method_name);
-                return getFallbackValue(method_name);
-            }
-
-            // 执行调用
-            pResult = PyObject_CallObject(pMethod, pArgs);
-
-            Py_DECREF(pMethod);
-            Py_DECREF(pArgs);
-
-            if (!pResult) {
-                if (PyErr_Occurred()) {
-                    PyErr_Print();
-                    SCHEDULER_LOG_ERROR("EnergyBridge: Python调用异常: " + method_name);
-                } else {
-                    SCHEDULER_LOG_ERROR("EnergyBridge: 调用失败，无结果: " + method_name);
-                }
-
-                _python_error_count++;
-                if (_python_error_count > 10) {
-                    SCHEDULER_LOG_WARNING("EnergyBridge: Python错误过多，切换到后备模式");
-                    _use_fallback_mode = true;
-                }
-
-                return getFallbackValue(method_name);
-            }
-
-            // 解析结果
-            double result = 0.0;
-            if (PyFloat_Check(pResult)) {
-                result = PyFloat_AsDouble(pResult);
-            } else if (PyLong_Check(pResult)) {
-                result = static_cast<double>(PyLong_AsLongLong(pResult));
-            } else if (PyNumber_Check(pResult)) {
-                PyObject *pFloat = PyNumber_Float(pResult);
-                if (pFloat) {
-                    result = PyFloat_AsDouble(pFloat);
-                    Py_DECREF(pFloat);
-                }
-            } else {
-                SCHEDULER_LOG_ERROR("EnergyBridge: 结果不是数字: " + method_name);
-                Py_DECREF(pResult);
-                return getFallbackValue(method_name);
-            }
-
-            Py_DECREF(pResult);
-
-            // 成功调用，重置错误计数
-            _python_error_count = 0;
-
-            if (_energy_debug && _total_calls % 100 == 0) {
-                SCHEDULER_LOG_DEBUG("EnergyBridge: Called " + method_name +
-                                    " (total calls: " + std::to_string(_total_calls) + ")" +
-                                    " result: " + std::to_string(result));
-            }
-
-            return result;
-
-        } catch (const std::exception &e) {
-            Py_XDECREF(pMethod);
-            Py_XDECREF(pArgs);
-            Py_XDECREF(pResult);
-            SCHEDULER_LOG_ERROR("EnergyBridge: 异常调用Python方法 " + method_name + ": " + std::string(e.what()));
+        PyObjectPtr method(PyObject_GetAttrString(
+            reinterpret_cast<PyObject *>(_python_energy_manager),
+            method_name.c_str()));
+        if (!method || !PyCallable_Check(method.get())) {
+            SCHEDULER_LOG_ERROR("EnergyBridge: " + consumePythonError(
+                "cannot access callable Python method " + method_name));
             return getFallbackValue(method_name);
         }
+
+        va_list args;
+        va_start(args, format);
+        PyObjectPtr arguments(reinterpret_cast<PyObject *>(
+            buildPythonArgs(format, args)));
+        va_end(args);
+        if (!arguments) {
+            SCHEDULER_LOG_ERROR("EnergyBridge: " + consumePythonError(
+                "cannot build arguments for " + method_name));
+            return getFallbackValue(method_name);
+        }
+
+        PyObjectPtr result(
+            PyObject_CallObject(method.get(), arguments.get()));
+        if (!result) {
+            SCHEDULER_LOG_ERROR("EnergyBridge: " + consumePythonError(
+                "Python method failed: " + method_name));
+            _python_error_count++;
+            if (_python_error_count > 10) {
+                _use_fallback_mode = true;
+            }
+            return getFallbackValue(method_name);
+        }
+
+        PyObjectPtr numeric;
+        PyObject *source = result.get();
+        if (!PyFloat_Check(source) && !PyLong_Check(source)) {
+            if (!PyNumber_Check(source)) {
+                SCHEDULER_LOG_ERROR(
+                    "EnergyBridge: Python result is not numeric: " +
+                    method_name);
+                return getFallbackValue(method_name);
+            }
+            numeric.reset(PyNumber_Float(source));
+            if (!numeric) {
+                SCHEDULER_LOG_ERROR("EnergyBridge: " + consumePythonError(
+                    "cannot convert Python result for " + method_name));
+                return getFallbackValue(method_name);
+            }
+            source = numeric.get();
+        }
+        const double converted = PyFloat_AsDouble(source);
+        if (PyErr_Occurred()) {
+            SCHEDULER_LOG_ERROR("EnergyBridge: " + consumePythonError(
+                "cannot read Python numeric result for " + method_name));
+            return getFallbackValue(method_name);
+        }
+
+        _python_error_count = 0;
+        if (_energy_debug && _total_calls % 100 == 0) {
+            SCHEDULER_LOG_DEBUG(
+                "EnergyBridge: Called " + method_name + " result: " +
+                std::to_string(converted));
+        }
+        return converted;
     }
 
     double EnergyBridge::getFallbackValue(const std::string &method_name) {
@@ -682,385 +813,203 @@ namespace RTSim {
         return 0.0;
     }
 
-    bool EnergyBridge::checkPythonObject() {
-        if (!_python_energy_manager) {
-            SCHEDULER_LOG_ERROR("EnergyBridge: Python对象为空");
-            return false;
+    void EnergyBridge::invalidateCurrentManagerLocked() noexcept {
+        if (_python_energy_manager != nullptr && Py_IsInitialized()) {
+            Py_DECREF(reinterpret_cast<PyObject *>(_python_energy_manager));
         }
-
-        // 检查Python对象是否仍然有效
-        PyObject *pType =
-            PyObject_Type(reinterpret_cast<PyObject *>(_python_energy_manager));
-        if (!pType) {
-            SCHEDULER_LOG_ERROR("EnergyBridge: 无法获取Python对象类型");
-            return false;
+        _python_energy_manager = nullptr;
+        _initialized = false;
+        _python_initialized = false;
+        _config_generation = 0;
+        if (Py_IsInitialized() && PyErr_Occurred()) {
+            PyErr_Clear();
         }
-
-        Py_DECREF(pType);
-        return true;
     }
 
-    // 重新初始化Python管理器
-    bool EnergyBridge::reinitializePythonManager() {
-        std::lock_guard<std::mutex> lock(_python_mutex);
-
-        try {
-            if (_energy_debug) {
-                SCHEDULER_LOG_DEBUG("EnergyBridge: 尝试重新初始化Python管理器...");
-            }
-
-            // 清理旧对象
-            if (_python_energy_manager) {
-                Py_DECREF(reinterpret_cast<PyObject *>(_python_energy_manager));
-                _python_energy_manager = nullptr;
-            }
-
-            // 重新导入模块
-            // 🔑 修复：使用保存的配置文件路径
-            std::string python_code =
-                "import sys\n"
-                "sys.path.append('.')\n"
-                "sys.path.append('..')\n"  // 修复：添加父目录以访问energy_manager.py
-                "sys.path.append('./simconf/systems')\n"
-                "import energy_manager\n"
-                "config_file = '" + _config_file + "'\n"
-                "print(f'[Python] 重新初始化使用配置文件: {config_file}')\n"
-                "manager = energy_manager.get_energy_manager(config_file)\n"
-                "print('[Python] 重新初始化能量管理器成功')\n"
-                "manager\n";
-
-            PyObject *main_module = PyImport_AddModule("__main__");
-            PyObject *globals = PyModule_GetDict(main_module);
-            PyObject *locals = PyDict_New();
-
-            PyObject *result =
-                PyRun_String(python_code.c_str(), Py_file_input, globals, locals);
-            if (!result) {
-                PyErr_Print();
-                SCHEDULER_LOG_ERROR("EnergyBridge: 重新初始化Python代码执行失败");
-                Py_DECREF(locals);
-                return false;
-            }
-
-            Py_DECREF(result);
-
-            // 获取新的manager对象
-            _python_energy_manager = PyDict_GetItemString(locals, "manager");
-            if (!_python_energy_manager) {
-                SCHEDULER_LOG_ERROR("EnergyBridge: 重新初始化后无法获取manager对象");
-                Py_DECREF(locals);
-                return false;
-            }
-
-            Py_INCREF(_python_energy_manager);
-            Py_DECREF(locals);
-
-            _initialized = true;
-            _python_initialized = true;
-            _python_error_count = 0;
-
-            // 重新设置时间偏移
-            setStartTimeOffset(_start_time_offset);
-
-            if (_energy_debug) {
-                SCHEDULER_LOG_DEBUG("EnergyBridge: Python管理器重新初始化成功");
-            }
-
-            return true;
-
-        } catch (const std::exception &e) {
-            SCHEDULER_LOG_ERROR("EnergyBridge: 重新初始化异常: " + std::string(e.what()));
+    bool EnergyBridge::validateCurrentManagerLocked() {
+        const ConfigManager &config = ConfigManager::getInstance();
+        const std::uint64_t current_generation =
+            config.getConfigGeneration();
+        if (!_initialized || _python_energy_manager == nullptr ||
+            !config.isConfigLoaded() || current_generation == 0 ||
+            _config_generation == 0 ||
+            _config_generation != current_generation) {
+            SCHEDULER_LOG_ERROR(
+                "EnergyBridge: Python manager generation is stale");
+            invalidateCurrentManagerLocked();
             return false;
         }
+
+        try {
+            if (pythonManagerGeneration(reinterpret_cast<PyObject *>(
+                    _python_energy_manager)) != current_generation) {
+                SCHEDULER_LOG_ERROR(
+                    "EnergyBridge: Python manager object generation is stale");
+                invalidateCurrentManagerLocked();
+                return false;
+            }
+        } catch (const std::exception &error) {
+            SCHEDULER_LOG_ERROR(
+                "EnergyBridge: cannot validate Python manager generation: " +
+                std::string(error.what()));
+            invalidateCurrentManagerLocked();
+            return false;
+        }
+        return true;
     }
 
     bool EnergyBridge::callPythonBoolMethod(const std::string &method_name,
                                             const std::string &format, ...) {
         _total_calls++;
-
-        if (!_initialized) {
-            SCHEDULER_LOG_ERROR("EnergyBridge: Not initialized when calling " + method_name);
-            return false;
-        }
-
         std::lock_guard<std::mutex> lock(_python_mutex);
-
-        // 检查Python对象状态
-        if (!checkPythonObject()) {
-            SCHEDULER_LOG_WARNING("EnergyBridge: Python对象无效，尝试重新初始化...");
-            if (!reinitializePythonManager()) {
-                SCHEDULER_LOG_ERROR("EnergyBridge: 重新初始化失败，使用后备方案");
-                return getFallbackBoolValue(method_name);
-            }
-        }
-
-        PyObject *pMethod = nullptr;
-        PyObject *pArgs = nullptr;
-        PyObject *pResult = nullptr;
-
-        try {
-            // 最多重试2次
-            int max_retries = 2;
-            for (int retry = 0; retry <= max_retries; retry++) {
-                pMethod = PyObject_GetAttrString(
-                    reinterpret_cast<PyObject *>(_python_energy_manager),
-                    method_name.c_str());
-
-                if (!pMethod || !PyCallable_Check(pMethod)) {
-                    Py_XDECREF(pMethod);
-                    if (retry < max_retries) {
-                        SCHEDULER_LOG_WARNING("EnergyBridge: 获取方法失败，重试 " + 
-                                              std::to_string(retry + 1) + "/" + 
-                                              std::to_string(max_retries) + " - " + 
-                                              method_name);
-                        reinitializePythonManager();
-                        continue;
-                    } else {
-                        SCHEDULER_LOG_ERROR("EnergyBridge: 获取方法失败: " + method_name);
-                        return getFallbackBoolValue(method_name);
-                    }
-                }
-                break;
-            }
-
-            // 构建参数
-            va_list args;
-            va_start(args, format);
-            pArgs = reinterpret_cast<PyObject *>(buildPythonArgs(format, args));
-            va_end(args);
-
-            if (!pArgs) {
-                Py_DECREF(pMethod);
-                SCHEDULER_LOG_ERROR("EnergyBridge: 构建参数失败: " + method_name);
-                return getFallbackBoolValue(method_name);
-            }
-
-            // 执行调用
-            pResult = PyObject_CallObject(pMethod, pArgs);
-
-            Py_DECREF(pMethod);
-            Py_DECREF(pArgs);
-
-            if (!pResult) {
-                if (PyErr_Occurred()) {
-                    PyErr_Print();
-                    SCHEDULER_LOG_ERROR("EnergyBridge: Python调用异常: " + method_name);
-                } else {
-                    SCHEDULER_LOG_ERROR("EnergyBridge: 调用失败，无结果: " + method_name);
-                }
-
-                _python_error_count++;
-                if (_python_error_count > 10) {
-                    SCHEDULER_LOG_WARNING("EnergyBridge: Python错误过多，切换到后备模式");
-                    _use_fallback_mode = true;
-                }
-
-                return getFallbackBoolValue(method_name);
-            }
-
-            // 解析结果
-            bool result = false;
-            if (PyBool_Check(pResult)) {
-                result = (pResult == Py_True);
-            } else if (PyLong_Check(pResult)) {
-                result = (PyLong_AsLongLong(pResult) != 0);
-            } else if (PyNumber_Check(pResult)) {
-                PyObject *pLong = PyNumber_Long(pResult);
-                if (pLong) {
-                    result = (PyLong_AsLongLong(pLong) != 0);
-                    Py_DECREF(pLong);
-                }
-            } else {
-                SCHEDULER_LOG_ERROR("EnergyBridge: 结果不是布尔值: " + method_name);
-                Py_DECREF(pResult);
-                return getFallbackBoolValue(method_name);
-            }
-
-            Py_DECREF(pResult);
-
-            // 成功调用，重置错误计数
-            _python_error_count = 0;
-
-            if (_energy_debug && _total_calls % 100 == 0) {
-                SCHEDULER_LOG_DEBUG("EnergyBridge: Called " + method_name +
-                                    " (total calls: " + std::to_string(_total_calls) + ")" +
-                                    " result: " + (result ? "true" : "false"));
-            }
-
-            return result;
-
-        } catch (const std::exception &e) {
-            Py_XDECREF(pMethod);
-            Py_XDECREF(pArgs);
-            Py_XDECREF(pResult);
-            SCHEDULER_LOG_ERROR("EnergyBridge: 异常调用Python方法 " + method_name + ": " + std::string(e.what()));
-            return getFallbackBoolValue(method_name);
-        }
-    }
-
-    bool EnergyBridge::getFallbackBoolValue(const std::string &method_name) {
-        // 根据不同方法返回不同的后备布尔值
-        if (method_name == "consume_energy") {
-            return true; // 假设能量消耗成功，避免死锁
-        } else if (method_name == "check_asap_scheduling") {
-            // 检查是否有足够能量 - 默认返回false，让调度器等待
+        if (!Py_IsInitialized()) {
+            invalidateCurrentManagerLocked();
             return false;
-        } else if (method_name == "wait_for_energy_recovery_wrapper") {
-            return false; // 恢复失败，让调度器处理
-        } else if (method_name == "has_sufficient_energy") {
-            return false; // 默认能量不足
-        } else if (method_name == "has_sufficient_energy_for_batch") {
-            return false; // 批量能量不足
-        } else if (method_name == "load_system_config") {
-            return true; // 假设配置加载成功
+        }
+        PythonGilGuard gil;
+        if (!validateCurrentManagerLocked()) {
+            return false;
         }
 
-        return false;
+        PyObjectPtr method(PyObject_GetAttrString(
+            reinterpret_cast<PyObject *>(_python_energy_manager),
+            method_name.c_str()));
+        if (!method || !PyCallable_Check(method.get())) {
+            SCHEDULER_LOG_ERROR("EnergyBridge: " + consumePythonError(
+                "cannot access callable Python method " + method_name));
+            return false;
+        }
+
+        va_list args;
+        va_start(args, format);
+        PyObjectPtr arguments(reinterpret_cast<PyObject *>(
+            buildPythonArgs(format, args)));
+        va_end(args);
+        if (!arguments) {
+            SCHEDULER_LOG_ERROR("EnergyBridge: " + consumePythonError(
+                "cannot build arguments for " + method_name));
+            return false;
+        }
+
+        PyObjectPtr result(
+            PyObject_CallObject(method.get(), arguments.get()));
+        if (!result) {
+            SCHEDULER_LOG_ERROR("EnergyBridge: " + consumePythonError(
+                "Python method failed: " + method_name));
+            _python_error_count++;
+            if (_python_error_count > 10) {
+                _use_fallback_mode = true;
+            }
+            return false;
+        }
+
+        bool converted = false;
+        if (PyBool_Check(result.get())) {
+            converted = result.get() == Py_True;
+        } else {
+            PyObjectPtr numeric;
+            PyObject *source = result.get();
+            if (!PyLong_Check(source)) {
+                if (!PyNumber_Check(source)) {
+                    SCHEDULER_LOG_ERROR(
+                        "EnergyBridge: Python result is not boolean: " +
+                        method_name);
+                    return false;
+                }
+                numeric.reset(PyNumber_Long(source));
+                if (!numeric) {
+                    SCHEDULER_LOG_ERROR("EnergyBridge: " +
+                        consumePythonError(
+                            "cannot convert Python result for " +
+                            method_name));
+                    return false;
+                }
+                source = numeric.get();
+            }
+            converted = PyLong_AsLongLong(source) != 0;
+            if (PyErr_Occurred()) {
+                SCHEDULER_LOG_ERROR("EnergyBridge: " + consumePythonError(
+                    "cannot read Python boolean result for " +
+                    method_name));
+                return false;
+            }
+        }
+
+        _python_error_count = 0;
+        if (_energy_debug && _total_calls % 100 == 0) {
+            SCHEDULER_LOG_DEBUG(
+                "EnergyBridge: Called " + method_name + " result: " +
+                (converted ? "true" : "false"));
+        }
+        return converted;
     }
 
     std::string
         EnergyBridge::callPythonStringMethod(const std::string &method_name,
                                              const std::string &format, ...) {
         _total_calls++;
-
-        if (!_initialized) {
-            SCHEDULER_LOG_ERROR("EnergyBridge: Not initialized when calling " + method_name);
+        std::lock_guard<std::mutex> lock(_python_mutex);
+        if (!Py_IsInitialized()) {
+            invalidateCurrentManagerLocked();
+            return "";
+        }
+        PythonGilGuard gil;
+        if (!validateCurrentManagerLocked()) {
             return "";
         }
 
-        std::lock_guard<std::mutex> lock(_python_mutex);
-
-        // 检查Python对象状态
-        if (!checkPythonObject()) {
-            SCHEDULER_LOG_WARNING("EnergyBridge: Python对象无效，尝试重新初始化...");
-            if (!reinitializePythonManager()) {
-                SCHEDULER_LOG_ERROR("EnergyBridge: 重新初始化失败，使用后备方案");
-                return getFallbackStringValue(method_name);
-            }
-        }
-
-        PyObject *pMethod = nullptr;
-        PyObject *pArgs = nullptr;
-        PyObject *pResult = nullptr;
-
-        try {
-            // 最多重试2次
-            int max_retries = 2;
-            for (int retry = 0; retry <= max_retries; retry++) {
-                pMethod = PyObject_GetAttrString(
-                    reinterpret_cast<PyObject *>(_python_energy_manager),
-                    method_name.c_str());
-
-                if (!pMethod || !PyCallable_Check(pMethod)) {
-                    Py_XDECREF(pMethod);
-                    if (retry < max_retries) {
-                        SCHEDULER_LOG_WARNING("EnergyBridge: 获取方法失败，重试 " + 
-                                              std::to_string(retry + 1) + "/" + 
-                                              std::to_string(max_retries) + " - " + 
-                                              method_name);
-                        reinitializePythonManager();
-                        continue;
-                    } else {
-                        SCHEDULER_LOG_ERROR("EnergyBridge: 获取方法失败: " + method_name);
-                        return getFallbackStringValue(method_name);
-                    }
-                }
-                break;
-            }
-
-            // 构建参数
-            va_list args;
-            va_start(args, format);
-            pArgs = reinterpret_cast<PyObject *>(buildPythonArgs(format, args));
-            va_end(args);
-
-            if (!pArgs) {
-                Py_DECREF(pMethod);
-                SCHEDULER_LOG_ERROR("EnergyBridge: 构建参数失败: " + method_name);
-                return getFallbackStringValue(method_name);
-            }
-
-            // 执行调用
-            pResult = PyObject_CallObject(pMethod, pArgs);
-
-            Py_DECREF(pMethod);
-            Py_DECREF(pArgs);
-
-            if (!pResult) {
-                if (PyErr_Occurred()) {
-                    PyErr_Print();
-                    SCHEDULER_LOG_ERROR("EnergyBridge: Python调用异常: " + method_name);
-                } else {
-                    SCHEDULER_LOG_ERROR("EnergyBridge: 调用失败，无结果: " + method_name);
-                }
-
-                _python_error_count++;
-                if (_python_error_count > 10) {
-                    SCHEDULER_LOG_WARNING("EnergyBridge: Python错误过多，切换到后备模式");
-                    _use_fallback_mode = true;
-                }
-
-                return getFallbackStringValue(method_name);
-            }
-
-            // 解析结果
-            std::string result;
-            if (PyUnicode_Check(pResult)) {
-                PyObject *pBytes =
-                    PyUnicode_AsEncodedString(pResult, "UTF-8", "strict");
-                if (pBytes) {
-                    result = std::string(PyBytes_AsString(pBytes));
-                    Py_DECREF(pBytes);
-                }
-            } else if (PyBytes_Check(pResult)) {
-                result = std::string(PyBytes_AsString(pResult));
-            } else if (PyBool_Check(pResult)) {
-                result = (pResult == Py_True) ? "True" : "False";
-            } else if (PyLong_Check(pResult) || PyFloat_Check(pResult)) {
-                PyObject *pStr = PyObject_Str(pResult);
-                if (pStr) {
-                    PyObject *pBytes =
-                        PyUnicode_AsEncodedString(pStr, "UTF-8", "strict");
-                    if (pBytes) {
-                        result = std::string(PyBytes_AsString(pBytes));
-                        Py_DECREF(pBytes);
-                    }
-                    Py_DECREF(pStr);
-                }
-            } else {
-                // 尝试转换为字符串
-                PyObject *pStr = PyObject_Str(pResult);
-                if (pStr) {
-                    PyObject *pBytes =
-                        PyUnicode_AsEncodedString(pStr, "UTF-8", "strict");
-                    if (pBytes) {
-                        result = std::string(PyBytes_AsString(pBytes));
-                        Py_DECREF(pBytes);
-                    }
-                    Py_DECREF(pStr);
-                }
-            }
-
-            Py_DECREF(pResult);
-
-            // 成功调用，重置错误计数
-            _python_error_count = 0;
-
-            if (_energy_debug && _total_calls % 100 == 0) {
-                SCHEDULER_LOG_DEBUG("EnergyBridge: Called " + method_name +
-                                    " (total calls: " + std::to_string(_total_calls) + ")" +
-                                    " result: " + result);
-            }
-
-            return result;
-
-        } catch (const std::exception &e) {
-            Py_XDECREF(pMethod);
-            Py_XDECREF(pArgs);
-            Py_XDECREF(pResult);
-            SCHEDULER_LOG_ERROR("EnergyBridge: 异常调用Python方法 " + method_name + ": " + std::string(e.what()));
+        PyObjectPtr method(PyObject_GetAttrString(
+            reinterpret_cast<PyObject *>(_python_energy_manager),
+            method_name.c_str()));
+        if (!method || !PyCallable_Check(method.get())) {
+            SCHEDULER_LOG_ERROR("EnergyBridge: " + consumePythonError(
+                "cannot access callable Python method " + method_name));
             return getFallbackStringValue(method_name);
         }
+
+        va_list args;
+        va_start(args, format);
+        PyObjectPtr arguments(reinterpret_cast<PyObject *>(
+            buildPythonArgs(format, args)));
+        va_end(args);
+        if (!arguments) {
+            SCHEDULER_LOG_ERROR("EnergyBridge: " + consumePythonError(
+                "cannot build arguments for " + method_name));
+            return getFallbackStringValue(method_name);
+        }
+
+        PyObjectPtr result(
+            PyObject_CallObject(method.get(), arguments.get()));
+        if (!result) {
+            SCHEDULER_LOG_ERROR("EnergyBridge: " + consumePythonError(
+                "Python method failed: " + method_name));
+            _python_error_count++;
+            if (_python_error_count > 10) {
+                _use_fallback_mode = true;
+            }
+            return getFallbackStringValue(method_name);
+        }
+
+        PyObjectPtr converted;
+        PyObject *text = result.get();
+        if (!PyUnicode_Check(text)) {
+            converted.reset(PyObject_Str(text));
+            if (!converted) {
+                SCHEDULER_LOG_ERROR("EnergyBridge: " + consumePythonError(
+                    "cannot convert Python result for " + method_name));
+                return getFallbackStringValue(method_name);
+            }
+            text = converted.get();
+        }
+        const char *utf8 = PyUnicode_AsUTF8(text);
+        if (!utf8) {
+            SCHEDULER_LOG_ERROR("EnergyBridge: " + consumePythonError(
+                "cannot read Python string result for " + method_name));
+            return getFallbackStringValue(method_name);
+        }
+
+        _python_error_count = 0;
+        return utf8;
     }
     std::string
         EnergyBridge::getFallbackStringValue(const std::string &method_name) {
@@ -1076,184 +1025,18 @@ namespace RTSim {
         return "";
     }
 
-    // =====================================================
-    // 创建后备管理器 - 修复版，添加ASAP支持
-    // =====================================================
-    bool EnergyBridge::createFallbackManager() {
-        if (_energy_debug) {
-            SCHEDULER_LOG_DEBUG("EnergyBridge: Creating fallback manager...");
-        }
-
-        // 创建简单的后备管理器
-        // 在 energy_bridge.cpp 的 createFallbackManager 函数中修改
-        std::string fallback_code =
-            "class SimpleFallbackEnergyManager:\n"
-            "    def __init__(self):\n"
-            "        self.current_energy = 200.0\n"
-            "        self.max_energy = 600.0\n"
-            "        self.start_time_offset = 0\n"
-            "        self.last_update_time = 0\n"
-            "        self.total_consumed = 0.0\n"
-            "        self.total_harvested = 0.0\n"
-            "        self.base_harvest_rate = 0.054  # 54W (300W/m² × 1m² × 0.18 = 54W = 0.054 J/ms)\n"
-            "        self.asap_recovery_target = None\n"
-            "        print('[SimpleFallback] 初始化完成，能量: 200J, 基础收集率: 0.054 J/ms')\n"
-            "    \n"
-            "    def load_system_config(self, config_file):\n"
-            "        print(f'[SimpleFallback] 加载配置: {config_file}')\n"
-            "        return True\n"
-            "    \n"
-            "    def set_start_time_offset(self, offset):\n"
-            "        self.start_time_offset = offset\n"
-            "        self.last_update_time = offset\n"
-            "        print(f'[SimpleFallback] 设置时间偏移: {offset}ms')\n"
-            "    \n"
-            "    def get_current_energy_value(self):\n"
-            "        return self.current_energy\n"
-            "    \n"
-            "    def consume_energy(self, energy, task_name):\n"
-            "        if energy <= self.current_energy:\n"
-            "            self.current_energy -= energy\n"
-            "            self.total_consumed += energy\n"
-            "            print(f'[SimpleFallback] 消耗能量: {energy}J, 任务: "
-            "{task_name}')\n"
-            "            return True\n"
-            "        print(f'[SimpleFallback] 能量不足: 需要{energy}J, "
-            "只有{self.current_energy}J')\n"
-            "        return False\n"
-            "    \n"
-            "    def update_energy_continuously_wrapper(self, "
-            "current_time_ms):  # 关键修复：添加self参数\n"
-            "        if self.last_update_time == 0:\n"
-            "            self.last_update_time = current_time_ms\n"
-            "            return 0.0\n"
-            "        \n"
-            "        time_elapsed = current_time_ms - self.last_update_time\n"
-            "        if time_elapsed > 0:\n"
-            "            # 基于时间的能量收集\n"
-            "            hour = ((current_time_ms + self.start_time_offset) // "
-            "3600000) % 24\n"
-            "            if hour == 12:  # 中午12点\n"
-            "                harvest_multiplier = 5.0\n"
-            "            elif 6 <= hour <= 18:  # 白天\n"
-            "                harvest_multiplier = 2.0\n"
-            "            else:  # 晚上\n"
-            "                harvest_multiplier = 0.5\n"
-            "            \n"
-            "            harvested = self.base_harvest_rate * time_elapsed * "
-            "harvest_multiplier\n"
-            "            \n"
-            "            self.current_energy = min(self.max_energy, "
-            "self.current_energy + harvested)\n"
-            "            self.total_harvested += harvested\n"
-            "            self.last_update_time = current_time_ms\n"
-            "            return harvested\n"
-            "        return 0.0\n"
-            "    \n"
-            "    def get_harvesting_rate_wrapper(self, current_time_ms):\n"
-            "        hour = ((current_time_ms + self.start_time_offset) // "
-            "3600000) % 24\n"
-            "        if hour == 12:\n"
-            "            return self.base_harvest_rate * 5.0\n"
-            "        elif 6 <= hour <= 18:\n"
-            "            return self.base_harvest_rate * 2.0\n"
-            "        else:\n"
-            "            return self.base_harvest_rate * 0.5\n"
-            "    \n"
-            "    def wait_for_energy_recovery_wrapper(self, current_time_ms, "
-            "required_energy, max_wait=10000):\n"
-            "        print(f'[SimpleFallback] ASAP恢复: "
-            "需要{required_energy}J, 当前{self.current_energy}J')\n"
-            "        self.asap_recovery_target = 'asap_task'\n"
-            "        \n"
-            "        # 简单模拟：等待3个时间单位\n"
-            "        for i in range(3):\n"
-            "            "
-            "self.update_energy_continuously_wrapper(current_time_ms + i * "
-            "1000)\n"
-            "            if self.current_energy >= required_energy:\n"
-            "                self.asap_recovery_target = None\n"
-            "                print(f'[SimpleFallback] 恢复成功: "
-            "{self.current_energy}J >= {required_energy}J')\n"
-            "                return True\n"
-            "        \n"
-            "        self.asap_recovery_target = None\n"
-            "        print(f'[SimpleFallback] 恢复失败: {self.current_energy}J "
-            "< {required_energy}J')\n"
-            "        return False\n"
-            "    \n"
-            "    def check_asap_scheduling(self, required_energy):\n"
-            "        result = self.current_energy >= required_energy\n"
-            "        print(f'[SimpleFallback] ASAP检查: "
-            "需要{required_energy}J, 当前{self.current_energy}J, 结果: "
-            "{result}')\n"
-            "        return result\n"
-            "    \n"
-            "    def get_energy_status_string(self):\n"
-            "        return f'Energy: "
-            "{self.current_energy:.1f}/{self.max_energy:.1f} J (Fallback)'\n"
-            "\n"
-            "_simple_fallback_manager = SimpleFallbackEnergyManager()\n"
-            "def get_energy_manager(*args, **kwargs):\n"
-            "    return _simple_fallback_manager\n";
-
-        PyRun_SimpleString(fallback_code.c_str());
-
-        // 获取后备管理器
-        PyObject *pMain = PyImport_AddModule("__main__");
-        PyObject *pFunc = PyObject_GetAttrString(pMain, "get_energy_manager");
-
-        if (pFunc && PyCallable_Check(pFunc)) {
-            _python_energy_manager = PyObject_CallObject(pFunc, nullptr);
-            if (_python_energy_manager) {
-                Py_INCREF(_python_energy_manager);
-                _initialized = true;
-                if (_energy_debug) {
-                    SCHEDULER_LOG_DEBUG("EnergyBridge: 使用简单后备energy管理器");
-                }
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     void EnergyBridge::shutdown() {
         std::lock_guard<std::mutex> lock(_python_mutex);
-
-        if (_initialized && _python_energy_manager) {
-            if (_energy_debug) {
-                SCHEDULER_LOG_DEBUG("EnergyBridge: 关闭Python energy管理器...");
-            }
-
-            Py_DECREF(reinterpret_cast<PyObject *>(_python_energy_manager));
-            _python_energy_manager = nullptr;
+        if (Py_IsInitialized()) {
+            PythonGilGuard gil;
+            invalidateCurrentManagerLocked();
+        } else {
+            invalidateCurrentManagerLocked();
         }
-
-        _initialized = false;
 
         if (_energy_debug) {
             SCHEDULER_LOG_DEBUG("EnergyBridge: 关闭完成 (总调用次数: " + std::to_string(_total_calls) + ")");
         }
-    }
-
-    // =====================================================
-    // 配置管理
-    // =====================================================
-    bool EnergyBridge::loadSystemConfig(const std::string &config_file) {
-        if (!_initialized) {
-            SCHEDULER_LOG_ERROR("EnergyBridge: Not initialized");
-            return false;
-        }
-
-        _config_file = config_file;
-
-        if (_energy_debug) {
-            SCHEDULER_LOG_DEBUG("EnergyBridge: Loading system config: " + config_file);
-        }
-
-        return callPythonBoolMethod("load_system_config", "s",
-                                    config_file.c_str());
     }
 
     void EnergyBridge::setStartTimeOffset(int64_t offset) {
@@ -1629,11 +1412,6 @@ const std::string &task_name) {
     // =====================================================
     bool EnergyBridge::hasSufficientEnergyForBatch(
         const std::vector<std::string> &task_workloads, double duration_ms) {
-        if (!_initialized) {
-            SCHEDULER_LOG_ERROR("EnergyBridge: Not initialized");
-            return false;
-        }
-
         if (_energy_debug) {
             SCHEDULER_LOG_DEBUG("EnergyBridge: hasSufficientEnergyForBatch - tasks=" + 
                                 std::to_string(task_workloads.size()) + ", duration=" + 
@@ -1641,40 +1419,76 @@ const std::string &task_name) {
         }
 
         std::lock_guard<std::mutex> lock(_python_mutex);
-
-        PyObject *pMethod = PyObject_GetAttrString(
-            reinterpret_cast<PyObject *>(_python_energy_manager),
-            "has_sufficient_energy_for_batch");
-
-        if (!pMethod || !PyCallable_Check(pMethod)) {
-            Py_XDECREF(pMethod);
-            SCHEDULER_LOG_ERROR("EnergyBridge: Failed to get has_sufficient_energy_for_batch method");
+        if (!Py_IsInitialized()) {
+            invalidateCurrentManagerLocked();
+            return false;
+        }
+        PythonGilGuard gil;
+        if (!validateCurrentManagerLocked()) {
             return false;
         }
 
-        // 创建工作负载列表
-        PyObject *pWorkloads = PyList_New(task_workloads.size());
+        PyObjectPtr method(PyObject_GetAttrString(
+            reinterpret_cast<PyObject *>(_python_energy_manager),
+            "has_sufficient_energy_for_batch"));
+        if (!method || !PyCallable_Check(method.get())) {
+            SCHEDULER_LOG_ERROR("EnergyBridge: " + consumePythonError(
+                "cannot access callable Python batch method"));
+            return false;
+        }
+
+        PyObjectPtr workloads(PyList_New(
+            static_cast<Py_ssize_t>(task_workloads.size())));
+        if (!workloads) {
+            SCHEDULER_LOG_ERROR("EnergyBridge: " + consumePythonError(
+                "cannot create Python batch workload list"));
+            return false;
+        }
         for (size_t i = 0; i < task_workloads.size(); ++i) {
-            PyList_SetItem(pWorkloads, i,
-                           PyUnicode_FromString(task_workloads[i].c_str()));
+            PyObjectPtr workload(
+                PyUnicode_FromString(task_workloads[i].c_str()));
+            if (!workload) {
+                SCHEDULER_LOG_ERROR("EnergyBridge: " + consumePythonError(
+                    "cannot create Python batch workload"));
+                return false;
+            }
+            PyList_SET_ITEM(
+                workloads.get(),
+                static_cast<Py_ssize_t>(i),
+                workload.release());
         }
 
-        // 创建参数元组
-        PyObject *pArgs =
-            PyTuple_Pack(2, pWorkloads, PyFloat_FromDouble(duration_ms));
-        PyObject *pResult = PyObject_CallObject(pMethod, pArgs);
-
-        Py_DECREF(pMethod);
-        Py_DECREF(pWorkloads);
-        Py_DECREF(pArgs);
-
-        bool result = false;
-        if (pResult && PyBool_Check(pResult)) {
-            result = (pResult == Py_True);
+        PyObjectPtr duration(PyFloat_FromDouble(duration_ms));
+        if (!duration) {
+            SCHEDULER_LOG_ERROR("EnergyBridge: " + consumePythonError(
+                "cannot create Python batch duration"));
+            return false;
+        }
+        PyObjectPtr arguments(
+            PyTuple_Pack(2, workloads.get(), duration.get()));
+        if (!arguments) {
+            SCHEDULER_LOG_ERROR("EnergyBridge: " + consumePythonError(
+                "cannot create Python batch arguments"));
+            return false;
+        }
+        PyObjectPtr result(
+            PyObject_CallObject(method.get(), arguments.get()));
+        if (!result) {
+            SCHEDULER_LOG_ERROR("EnergyBridge: " + consumePythonError(
+                "Python batch method failed"));
+            return false;
+        }
+        if (!PyBool_Check(result.get())) {
+            SCHEDULER_LOG_ERROR(
+                "EnergyBridge: Python batch method returned a non-bool");
+            if (PyErr_Occurred()) {
+                (void)consumePythonError(
+                    "invalid Python batch return type");
+            }
+            return false;
         }
 
-        Py_XDECREF(pResult);
-        return result;
+        return result.get() == Py_True;
     }
 
     // =====================================================

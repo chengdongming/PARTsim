@@ -1,44 +1,15 @@
-#include <fstream>
+#include <cmath>
+#include <cstdlib>
+#include <exception>
 #include <iostream>
 #include <memory>
-#include <regex>
 #include <rtsim/scheduler/config_manager.hpp>
-#include <sstream>
+#include <utility>
 
 // 统一日志系统
 #include "../../utils/unified_logger.hpp"
 
 namespace RTSim {
-
-    namespace {
-        struct ParsedEnergyModel {
-            bool present = false;
-            bool has_base_power = false;
-            double base_power = 0.5;
-            std::map<std::string, double> workload_coefficients;
-            bool has_frequency_power_ratios = false;
-            std::map<int, double> frequency_power_ratios;
-            bool has_frequency_scaling = false;
-            std::map<int, double> frequency_scaling;
-
-            const std::map<int, double> &selectedFrequencyRatios() const {
-                return has_frequency_power_ratios
-                           ? frequency_power_ratios
-                           : frequency_scaling;
-            }
-        };
-
-        bool energyModelsDiffer(const ParsedEnergyModel &left,
-                                const ParsedEnergyModel &right) {
-            return left.has_base_power != right.has_base_power ||
-                   (left.has_base_power &&
-                    left.base_power != right.base_power) ||
-                   left.workload_coefficients !=
-                       right.workload_coefficients ||
-                   left.selectedFrequencyRatios() !=
-                       right.selectedFrequencyRatios();
-        }
-    } // namespace
 
     // =====================================================
     // ConfigManager 的静态成员定义
@@ -55,6 +26,7 @@ namespace RTSim {
     ConfigManager::ConfigManager() :
         _config_loaded(false),
         _tasks_loaded(false),
+        _config_generation(0),
         _num_cores(4),
         _scheduler_type("gpfp_asap"),
         _base_frequency(8100.0),  // ⭐ 修复：从1400.0改为8100.0，匹配YAML配置
@@ -114,400 +86,91 @@ namespace RTSim {
         _config_callback = callback;
     }
 
+    ConfigManager::ConfigurationState
+    ConfigManager::makeSafeConfigurationState() {
+        return ConfigurationState{};
+    }
+
+    void ConfigManager::commitLoadedConfiguration(
+        ConfigurationState &&state) noexcept {
+        _config_generation = state.config_generation;
+        _num_cores = state.num_cores;
+        _scheduler_type = std::move(state.scheduler_type);
+        _base_frequency = state.base_frequency;
+        _unit_time = state.unit_time;
+        _initial_energy = state.initial_energy;
+        _max_energy = state.max_energy;
+        _base_harvest_rate = state.base_harvest_rate;
+        _start_time_offset = state.start_time_offset;
+        _enable_energy_recovery = state.enable_energy_recovery;
+        _periodic_collection_interval =
+            state.periodic_collection_interval;
+        _priority_energy_profile =
+            std::move(state.priority_energy_profile);
+        _base_power = state.base_power;
+        _power_coefficients = std::move(state.power_coefficients);
+        _frequency_power_ratios =
+            std::move(state.frequency_power_ratios);
+    }
+
     // =====================================================
     // 加载系统配置文件
     // =====================================================
 
     bool ConfigManager::loadSystemConfig(const std::string &config_file) {
+        _config_loaded = false;
+        _config_file_path = config_file;
+        _last_config_error.clear();
+        commitLoadedConfiguration(makeSafeConfigurationState());
+
+        SCHEDULER_LOG_INFO(
+            "ConfigManager: 保存配置文件路径: " + _config_file_path);
+
+        if (!_config_callback) {
+            _last_config_error =
+                "system YAML: strict Python configuration callback is "
+                "not registered";
+            SCHEDULER_LOG_ERROR(
+                "ConfigManager: strict Python system configuration "
+                "callback is not registered");
+            return false;
+        }
+
         try {
-            // 保存配置文件路径
-            _config_file_path = config_file;
-            SCHEDULER_LOG_INFO("ConfigManager: 保存配置文件路径: " + _config_file_path);
-
-            // 如果有配置回调，使用回调（Python端）
-            if (_config_callback) {
-                bool result = _config_callback(config_file, *this);
-                _config_loaded = result;
-                return result;
+            ConfigurationState pending = makeSafeConfigurationState();
+            if (!_config_callback(config_file, pending)) {
+                _last_config_error =
+                    "system YAML: strict configuration callback rejected " +
+                    config_file;
+                SCHEDULER_LOG_ERROR(
+                    "ConfigManager: strict system configuration callback "
+                    "rejected " +
+                    config_file);
+                return false;
             }
 
-            // ⭐ 新增：尝试解析YAML文件中的配置，包括energy_management和调度器类型
-            try {
-                _base_power = 0.5;
-                _power_coefficients = {{"bzip2", 1.2},
-                                       {"hash", 0.8},
-                                       {"encrypt", 1.5},
-                                       {"decrypt", 1.5},
-                                       {"control", 0.1},
-                                       {"idle", 0.1}};
-                _frequency_power_ratios = {
-                    {7000, 0.85},  {7500, 0.88}, {8000, 0.92},
-                    {8100, 0.93},  {8200, 0.94}, {8300, 0.95},
-                    {8400, 0.96},  {8500, 0.97}, {9000, 1.0},
-                    {9500, 1.05},  {10000, 1.1}, {10500, 1.15}
-                };
-
-                ParsedEnergyModel scheduler_energy_model;
-                ParsedEnergyModel consumption_model;
-                ParsedEnergyModel *current_energy_model = nullptr;
-                size_t energy_model_indent = 0;
-
-                std::ifstream yaml_file(config_file);
-                if (yaml_file.is_open()) {
-                    std::string line;
-                    bool in_workload_coeffs = false;
-                    bool in_frequency_power_ratios = false;
-                    bool in_frequency_scaling = false;
-                    bool in_energy_management = false;
-                    bool in_cpu_islands = false;
-                    bool in_kernel = false;
-
-                    while (std::getline(yaml_file, line)) {
-                        // 去除首尾空白
-                        size_t start = line.find_first_not_of(" \t");
-                        if (start == std::string::npos) continue;
-                        line = line.substr(start);
-
-                        // 跳过注释和空行
-                        if (line.empty() || line[0] == '#') continue;
-
-                        // 检测energy_management部分
-                        if (line.find("energy_management:") != std::string::npos) {
-                            in_energy_management = true;
-                            current_energy_model = nullptr;
-                            in_workload_coeffs = false;
-                            in_frequency_power_ratios = false;
-                            in_frequency_scaling = false;
-                            in_cpu_islands = false;
-                            in_kernel = false;
-                            SCHEDULER_LOG_INFO("ConfigManager: 找到energy_management配置");
-                            continue;
-                        }
-
-                        // 检测cpu_islands部分
-                        if (line.find("cpu_islands:") != std::string::npos) {
-                            in_cpu_islands = true;
-                            in_energy_management = false;
-                            current_energy_model = nullptr;
-                            in_workload_coeffs = false;
-                            in_frequency_power_ratios = false;
-                            in_frequency_scaling = false;
-                            in_kernel = false;
-                            SCHEDULER_LOG_INFO("ConfigManager: 找到cpu_islands配置");
-                            continue;
-                        }
-
-                        // 检测kernel部分（用于获取调度器类型）
-                        if (in_cpu_islands && line.find("kernel:") != std::string::npos) {
-                            in_kernel = true;
-                            SCHEDULER_LOG_INFO("ConfigManager: 找到kernel配置");
-                            continue;
-                        }
-
-                        // 解析调度器类型
-                        if (in_kernel && line.find("scheduler:") != std::string::npos) {
-                            size_t colon_pos = line.find(':');
-                            std::string value = line.substr(colon_pos + 1);
-                            size_t comment_pos = value.find('#');
-                            if (comment_pos != std::string::npos) {
-                                value = value.substr(0, comment_pos);
-                            }
-                            value.erase(0, value.find_first_not_of(" \t"));
-                            value.erase(value.find_last_not_of(" \t\r\n") + 1);
-                            _scheduler_type = value;
-                            SCHEDULER_LOG_INFO("ConfigManager: 调度器类型 = " + _scheduler_type);
-                            continue;
-                        }
-
-                        // 解析energy_management部分的参数
-                        if (in_energy_management) {
-                            // 解析initial_energy
-                            if (line.find("initial_energy:") != std::string::npos) {
-                                size_t colon_pos = line.find(':');
-                                std::string value = line.substr(colon_pos + 1);
-                                size_t comment_pos = value.find('#');
-                                if (comment_pos != std::string::npos) {
-                                    value = value.substr(0, comment_pos);
-                                }
-                                value.erase(0, value.find_first_not_of(" \t"));
-                                value.erase(value.find_last_not_of(" \t\r\n") + 1);
-                                _initial_energy = std::stod(value);
-                                SCHEDULER_LOG_INFO("ConfigManager: initial_energy = " + std::to_string(_initial_energy) + " J");
-                                continue;
-                            }
-
-                            // 解析max_energy
-                            if (line.find("max_energy:") != std::string::npos) {
-                                size_t colon_pos = line.find(':');
-                                std::string value = line.substr(colon_pos + 1);
-                                size_t comment_pos = value.find('#');
-                                if (comment_pos != std::string::npos) {
-                                    value = value.substr(0, comment_pos);
-                                }
-                                value.erase(0, value.find_first_not_of(" \t"));
-                                value.erase(value.find_last_not_of(" \t\r\n") + 1);
-                                _max_energy = std::stod(value);
-                                SCHEDULER_LOG_INFO("ConfigManager: max_energy = " + std::to_string(_max_energy) + " J");
-                                continue;
-                            }
-
-                            // 解析enable_energy_recovery
-                            if (line.find("enable_energy_recovery:") != std::string::npos) {
-                                size_t colon_pos = line.find(':');
-                                std::string value = line.substr(colon_pos + 1);
-                                size_t comment_pos = value.find('#');
-                                if (comment_pos != std::string::npos) {
-                                    value = value.substr(0, comment_pos);
-                                }
-                                value.erase(0, value.find_first_not_of(" \t"));
-                                value.erase(value.find_last_not_of(" \t\r\n") + 1);
-                                _enable_energy_recovery = (value == "true" || value == "1" || value == "yes");
-                                SCHEDULER_LOG_INFO("ConfigManager: enable_energy_recovery = " + std::string(_enable_energy_recovery ? "启用" : "禁用"));
-                                continue;
-                            }
-
-                            // 解析periodic_collection_interval_ms
-                            if (line.find("periodic_collection_interval_ms:") != std::string::npos) {
-                                size_t colon_pos = line.find(':');
-                                std::string value = line.substr(colon_pos + 1);
-                                size_t comment_pos = value.find('#');
-                                if (comment_pos != std::string::npos) {
-                                    value = value.substr(0, comment_pos);
-                                }
-                                value.erase(0, value.find_first_not_of(" \t"));
-                                value.erase(value.find_last_not_of(" \t\r\n") + 1);
-                                _periodic_collection_interval = std::stoi(value);
-                                SCHEDULER_LOG_INFO("ConfigManager: periodic_collection_interval = " + std::to_string(_periodic_collection_interval) + " ms");
-                                continue;
-                            }
-
-                            // ⭐ V73新增：解析time_of_day_ms（用于太阳能辐照度计算）
-                            if (line.find("time_of_day_ms:") != std::string::npos) {
-                                size_t colon_pos = line.find(':');
-                                std::string value = line.substr(colon_pos + 1);
-                                size_t comment_pos = value.find('#');
-                                if (comment_pos != std::string::npos) {
-                                    value = value.substr(0, comment_pos);
-                                }
-                                value.erase(0, value.find_first_not_of(" \t"));
-                                value.erase(value.find_last_not_of(" \t\r\n") + 1);
-                                _start_time_offset = std::stoll(value);
-                                SCHEDULER_LOG_INFO("ConfigManager: time_of_day_ms (start_time_offset) = " + std::to_string(_start_time_offset) + " ms");
-                                continue;
-                            }
-                        }
-
-                        // 检测scheduler_energy_model部分
-                        if (line.find("scheduler_energy_model:") != std::string::npos) {
-                            scheduler_energy_model.present = true;
-                            current_energy_model = &scheduler_energy_model;
-                            energy_model_indent = start;
-                            in_energy_management = false;
-                            in_workload_coeffs = false;
-                            in_frequency_power_ratios = false;
-                            in_frequency_scaling = false;
-                            in_cpu_islands = false;
-                            in_kernel = false;
-                            SCHEDULER_LOG_INFO("ConfigManager: 找到scheduler_energy_model配置");
-                            continue;
-                        }
-
-                        // 检测旧版consumption_model部分
-                        if (line.find("consumption_model:") != std::string::npos) {
-                            consumption_model.present = true;
-                            current_energy_model = &consumption_model;
-                            energy_model_indent = start;
-                            in_energy_management = false;
-                            in_workload_coeffs = false;
-                            in_frequency_power_ratios = false;
-                            in_frequency_scaling = false;
-                            in_cpu_islands = false;
-                            in_kernel = false;
-                            SCHEDULER_LOG_INFO("ConfigManager: 找到兼容consumption_model配置");
-                            continue;
-                        }
-
-                        if (current_energy_model != nullptr &&
-                            start <= energy_model_indent) {
-                            current_energy_model = nullptr;
-                            in_workload_coeffs = false;
-                            in_frequency_power_ratios = false;
-                            in_frequency_scaling = false;
-                        }
-
-                        if (current_energy_model != nullptr) {
-                            // 检测base_power
-                            if (line.find("base_power:") != std::string::npos) {
-                                size_t colon_pos = line.find(':');
-                                std::string value = line.substr(colon_pos + 1);
-                                // 去除注释
-                                size_t comment_pos = value.find('#');
-                                if (comment_pos != std::string::npos) {
-                                    value = value.substr(0, comment_pos);
-                                }
-                                // 去除空白
-                                value.erase(0, value.find_first_not_of(" \t"));
-                                value.erase(value.find_last_not_of(" \t\r\n") + 1);
-                                current_energy_model->has_base_power = true;
-                                current_energy_model->base_power =
-                                    std::stod(value);
-                                continue;
-                            }
-
-                            // 检测workload_coefficients
-                            if (line.find("workload_coefficients:") != std::string::npos) {
-                                in_workload_coeffs = true;
-                                in_frequency_power_ratios = false;
-                                in_frequency_scaling = false;
-                                continue;
-                            }
-
-                            if (line.find("frequency_power_ratios:") != std::string::npos) {
-                                current_energy_model
-                                    ->has_frequency_power_ratios = true;
-                                in_frequency_power_ratios = true;
-                                in_frequency_scaling = false;
-                                in_workload_coeffs = false;
-                                continue;
-                            }
-
-                            if (line.find("frequency_scaling:") !=
-                                std::string::npos) {
-                                current_energy_model->has_frequency_scaling =
-                                    true;
-                                in_frequency_scaling = true;
-                                in_frequency_power_ratios = false;
-                                in_workload_coeffs = false;
-                                continue;
-                            }
-
-                            // 解析工作负载系数
-                            if (in_workload_coeffs && line.find(':') != std::string::npos) {
-                                size_t colon_pos = line.find(':');
-                                std::string key = line.substr(0, colon_pos);
-                                std::string value = line.substr(colon_pos + 1);
-
-                                // 清理key
-                                key.erase(0, key.find_first_not_of(" \t"));
-                                key.erase(key.find_last_not_of(" \t\r\n:") + 1);
-
-                                // 清理value（去除注释）
-                                size_t comment_pos = value.find('#');
-                                if (comment_pos != std::string::npos) {
-                                    value = value.substr(0, comment_pos);
-                                }
-                                value.erase(0, value.find_first_not_of(" \t"));
-                                value.erase(value.find_last_not_of(" \t\r\n") + 1);
-
-                                current_energy_model
-                                    ->workload_coefficients[key] =
-                                    std::stod(value);
-                                continue;
-                            }
-
-                            // 解析频率功率比
-                            if ((in_frequency_power_ratios ||
-                                 in_frequency_scaling) &&
-                                line.find(':') != std::string::npos) {
-                                size_t colon_pos = line.find(':');
-                                std::string key = line.substr(0, colon_pos);
-                                std::string value = line.substr(colon_pos + 1);
-
-                                // 清理key（频率）
-                                key.erase(0, key.find_first_not_of(" \t"));
-                                key.erase(key.find_last_not_of(" \t\r\n:") + 1);
-                                int freq = std::stoi(key);
-
-                                // 清理value（功率比）
-                                size_t comment_pos = value.find('#');
-                                if (comment_pos != std::string::npos) {
-                                    value = value.substr(0, comment_pos);
-                                }
-                                value.erase(0, value.find_first_not_of(" \t"));
-                                value.erase(value.find_last_not_of(" \t\r\n") + 1);
-                                double ratio = std::stod(value);
-
-                                if (in_frequency_power_ratios) {
-                                    current_energy_model
-                                        ->frequency_power_ratios[freq] =
-                                        ratio;
-                                } else {
-                                    current_energy_model
-                                        ->frequency_scaling[freq] = ratio;
-                                }
-                                continue;
-                            }
-                        }
-                    }
-                    yaml_file.close();
-
-                    auto checkFrequencyConflict =
-                        [](const ParsedEnergyModel &model,
-                           const std::string &model_name) {
-                            if (model.has_frequency_power_ratios &&
-                                model.has_frequency_scaling &&
-                                model.frequency_power_ratios !=
-                                    model.frequency_scaling) {
-                                SCHEDULER_LOG_WARNING(
-                                    "ConfigManager: " + model_name +
-                                    "中的frequency_power_ratios与"
-                                    "frequency_scaling不同；使用"
-                                    "frequency_power_ratios");
-                            }
-                        };
-                    checkFrequencyConflict(
-                        scheduler_energy_model,
-                        "scheduler_energy_model");
-                    checkFrequencyConflict(
-                        consumption_model,
-                        "consumption_model");
-
-                    if (scheduler_energy_model.present &&
-                        consumption_model.present &&
-                        energyModelsDiffer(scheduler_energy_model,
-                                           consumption_model)) {
-                        SCHEDULER_LOG_WARNING(
-                            "ConfigManager: scheduler_energy_model与"
-                            "consumption_model不同；使用"
-                            "scheduler_energy_model");
-                    }
-
-                    const ParsedEnergyModel *selected_model = nullptr;
-                    if (scheduler_energy_model.present) {
-                        selected_model = &scheduler_energy_model;
-                    } else if (consumption_model.present) {
-                        selected_model = &consumption_model;
-                    }
-
-                    if (selected_model != nullptr) {
-                        if (selected_model->has_base_power) {
-                            _base_power = selected_model->base_power;
-                        }
-                        for (const auto &entry :
-                             selected_model->workload_coefficients) {
-                            _power_coefficients[entry.first] = entry.second;
-                        }
-                        for (const auto &entry :
-                             selected_model->selectedFrequencyRatios()) {
-                            _frequency_power_ratios[entry.first] =
-                                entry.second;
-                        }
-                    }
-
-                    SCHEDULER_LOG_INFO("ConfigManager: YAML解析完成");
-                }
-            } catch (const std::exception &e) {
-                SCHEDULER_LOG_WARNING("ConfigManager: YAML解析失败，使用默认值: " + std::string(e.what()));
-            }
-
-            // 否则使用默认配置
-            SCHEDULER_LOG_INFO("ConfigManager: 配置加载完成");
+            commitLoadedConfiguration(std::move(pending));
             _config_loaded = true;
+            SCHEDULER_LOG_INFO(
+                "ConfigManager: strict system configuration loaded");
             printConfig();
             return true;
-
         } catch (const std::exception &e) {
-            SCHEDULER_LOG_ERROR("配置加载错误: " + std::string(e.what()));
+            _config_loaded = false;
+            commitLoadedConfiguration(makeSafeConfigurationState());
+            _last_config_error = e.what();
+            SCHEDULER_LOG_ERROR(
+                "ConfigManager: strict system configuration failed for " +
+                config_file + ": " + e.what());
+            return false;
+        } catch (...) {
+            _config_loaded = false;
+            commitLoadedConfiguration(makeSafeConfigurationState());
+            _last_config_error =
+                "system YAML: unknown strict configuration error";
+            SCHEDULER_LOG_ERROR(
+                "ConfigManager: strict system configuration failed for " +
+                config_file + ": unknown error");
             return false;
         }
     }

@@ -3,6 +3,15 @@
 # The scheduler below is only a valid runtime default; v9.3 materialization
 # replaces it with each member of the nine-algorithm comparison.
 
+# Phase 2B1 defines the strict profile contract but does not connect it to any
+# scheduler. Later materialization must opt in and provide the requested alpha.
+priority_energy:
+  enabled: false
+  profile_id: b4_pe_three_stage_v1
+  alpha_w: 0.0
+  horizon_ms: 30000
+  tick_ms: 1
+
 # CPU cluster configuration
 cpu_islands:
   - name: energy_aware_cpus

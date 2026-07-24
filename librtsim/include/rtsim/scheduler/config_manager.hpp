@@ -2,25 +2,75 @@
 #define CONFIG_MANAGER_HPP
 
 #include <functional>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
-#include <cstdint>
+
+#include <rtsim/scheduler/priority_energy_runtime.hpp>
 
 namespace RTSim {
 
     class ConfigManager {
+    public:
+        struct ConfigurationState {
+            std::uint64_t config_generation = 0;
+            int num_cores = 4;
+            std::string scheduler_type = "gpfp_asap";
+            double base_frequency = 8100.0;
+            int unit_time = 50;
+
+            double initial_energy = 0.3;
+            double max_energy = 600.0;
+            double base_harvest_rate = 0.054;
+            std::int64_t start_time_offset = 0;
+            bool enable_energy_recovery = true;
+            std::int64_t periodic_collection_interval = 100;
+
+            PriorityEnergyProfileConfig priority_energy_profile;
+
+            double base_power = 0.5;
+            std::map<std::string, double> power_coefficients = {
+                {"bzip2", 1.2},
+                {"hash", 0.8},
+                {"encrypt", 1.5},
+                {"decrypt", 1.5},
+                {"control", 0.1},
+                {"idle", 0.1},
+            };
+            std::map<int, double> frequency_power_ratios = {
+                {7000, 0.85},
+                {7500, 0.88},
+                {8000, 0.92},
+                {8100, 0.93},
+                {8200, 0.94},
+                {8300, 0.95},
+                {8400, 0.96},
+                {8500, 0.97},
+                {9000, 1.0},
+                {9500, 1.05},
+                {10000, 1.1},
+                {10500, 1.15},
+            };
+        };
+
+        using ConfigCallback =
+            std::function<bool(const std::string &, ConfigurationState &)>;
+
     private:
         static std::mutex _instance_mutex;
         static std::unique_ptr<ConfigManager> _instance;
 
         bool _config_loaded;
         bool _tasks_loaded;
+        std::uint64_t _config_generation;
 
         // 配置文件路径
         std::string _config_file_path;
+        std::string _last_config_error;
 
         // CPU配置
         int _num_cores;
@@ -35,6 +85,10 @@ namespace RTSim {
         int64_t _start_time_offset;  // ⭐ 修复：改为int64_t支持大时间偏移
         bool _enable_energy_recovery;
         int64_t _periodic_collection_interval;  // ⭐ 新增：周期性能量收集间隔
+
+        // Optional B4-PE profile. The strict Python callback supplies it with
+        // the legacy fields in one atomic configuration update.
+        PriorityEnergyProfileConfig _priority_energy_profile;
 
         // 功率模型配置
         double _base_power;
@@ -64,12 +118,10 @@ namespace RTSim {
         std::vector<TaskConfig> _tasks;
         int _expected_task_count = 0;
 
-        // 回调函数类型（用于从Python获取配置）
-        using ConfigCallback =
-            std::function<bool(const std::string &, ConfigManager &)>;
         static ConfigCallback _config_callback;
 
-        
+        static ConfigurationState makeSafeConfigurationState();
+        void commitLoadedConfiguration(ConfigurationState &&state) noexcept;
 
     public:
         static ConfigManager &getInstance();
@@ -116,6 +168,24 @@ namespace RTSim {
         }
         int64_t getPeriodicCollectionInterval() const {
             return _periodic_collection_interval;
+        }
+        bool isPriorityEnergyProfileEnabled() const {
+            return _priority_energy_profile.enabled;
+        }
+        std::string getPriorityEnergyProfileId() const {
+            return _priority_energy_profile.profile_id;
+        }
+        double getPriorityEnergyAlphaW() const {
+            return _priority_energy_profile.alpha_w;
+        }
+        std::uint64_t getPriorityEnergyHorizonMs() const {
+            return _priority_energy_profile.horizon_ms;
+        }
+        std::uint64_t getPriorityEnergyTickMs() const {
+            return _priority_energy_profile.tick_ms;
+        }
+        PriorityEnergyProfileConfig getPriorityEnergyProfileConfig() const {
+            return _priority_energy_profile;
         }
         void setPeriodicCollectionInterval(int64_t interval) {
             _periodic_collection_interval = interval;
@@ -208,6 +278,9 @@ namespace RTSim {
         bool isConfigLoaded() const {
             return _config_loaded;
         }
+        std::uint64_t getConfigGeneration() const {
+            return _config_generation;
+        }
         bool areTasksLoaded() const {
             return _tasks_loaded;
         }
@@ -216,10 +289,17 @@ namespace RTSim {
         std::string getConfigFilePath() const {
             return _config_file_path;
         }
+        std::string getLastConfigError() const {
+            return _last_config_error;
+        }
 
         // 调试信息
         void printConfig() const;
     };
+
+    bool pythonConfigCallback(
+        const std::string &config_file,
+        ConfigManager::ConfigurationState &pending);
 
 } // namespace RTSim
 

@@ -9,23 +9,17 @@
 
               namespace RTSim {
 
-    class ConfigManager;
-
-    // Python兼容性函数声明
-    bool pythonConfigCallback(const std::string &config_file,
-                              ConfigManager &config);
-
     class EnergyBridge {
     public:
         // 单例模式
         static EnergyBridge &getInstance();
+        static void ensureConfigCallbackRegistered();
 
         // 初始化
         bool initialize(const std::string &python_script_path = ".");
         void shutdown();
 
         // 配置管理
-        bool loadSystemConfig(const std::string &config_file);
         void setStartTimeOffset(int64_t offset);
         int64_t getAdjustedTime(int64_t current_time_ms) const;
 
@@ -74,8 +68,9 @@
         int64_t getTotalCalls() const {
             return _total_calls;
         }
-        bool isInitialized() const {
-            return _initialized;
+        bool isInitialized() const;
+        std::uint64_t getConfigGeneration() const {
+            return _config_generation;
         }
 
         // 修复：添加Python错误处理相关方法
@@ -105,13 +100,11 @@
 
         // 后备方法
         double getFallbackValue(const std::string &method_name);
-        bool getFallbackBoolValue(const std::string &method_name);
         std::string getFallbackStringValue(const std::string &method_name);
 
         // 内部管理
-        bool checkPythonObject();
-        bool reinitializePythonManager();
-        bool createFallbackManager();
+        bool validateCurrentManagerLocked();
+        void invalidateCurrentManagerLocked() noexcept;
         void finalizePython();
 
         // 成员变量
@@ -122,6 +115,7 @@
         void *_python_energy_manager; // PyObject*，使用void*避免包含Python.h
         bool _python_initialized;
         bool _initialized;
+        std::uint64_t _config_generation;
         int64_t _start_time_offset;
         bool _energy_debug;
         int64_t _last_energy_check;
@@ -130,7 +124,6 @@
         // Python错误处理
         int _python_error_count;
         bool _use_fallback_mode;
-        std::string _config_file;
 
         // 时间转换常量
         static constexpr int64_t MS_PER_SECOND = 1000;
