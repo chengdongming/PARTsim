@@ -14,6 +14,7 @@
 #include <metasim/factory.hpp>
 #include <metasim/simul.hpp>
 #include <rtsim/scheduler/gpfp_st_sync_scheduler.hpp>
+#include <rtsim/scheduler/priority_energy_task_params.hpp>
 #include <rtsim/task.hpp>
 #include <rtsim/rttask.hpp>
 #include <rtsim/exeinstr.hpp>
@@ -1018,7 +1019,7 @@ namespace RTSim {
         int wcet = 20;
         MetaSim::Tick arrival_offset = 0;
         std::string workload = "bzip2";
-        double energy_coeff = 1.0;
+        const double energy_coeff = parsePriorityEnergyTaskFactor(params);
 
         size_t period_pos = params.find("period=");
         if (period_pos != std::string::npos) {

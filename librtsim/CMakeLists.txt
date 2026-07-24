@@ -56,6 +56,7 @@ set(LIBRARY_SOURCE_FILES
     scheduler/gpfp_st_block_scheduler.cpp
     scheduler/gpfp_st_nonblock_scheduler.cpp
     scheduler/gpfp_st_sync_scheduler.cpp
+    scheduler/priority_energy_task_params.cpp
     scheduler/energy_bridge.cpp
     scheduler/config_manager.cpp
     # # These two go together. If you want to compile against EnergyMRTKernel
