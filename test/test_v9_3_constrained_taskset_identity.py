@@ -4,15 +4,23 @@ from concurrent.futures import ProcessPoolExecutor
 from copy import deepcopy
 from dataclasses import replace
 from fractions import Fraction
+import json
 from pathlib import Path
 import random
 import subprocess
 import sys
+import unicodedata
 
 import pytest
 
 import asap_block_v9_3_runner as production_runner
-from experiments.v9_3.cell_model import expand_cells
+import experiments.v9_3.constrained_taskset_identity as identity_contract
+from experiments.v9_3.cell_model import (
+    GENERATION_DIMENSIONS_SEED_MODE,
+    TASKSET_SEED_DERIVATION_DOMAIN,
+    derive_seed,
+    expand_cells,
+)
 from experiments.v9_3.config import config_hash, domain_hash, fraction_text, load_config
 from experiments.v9_3.constrained_taskset_identity import (
     BASE_POWER_VARIANT,
@@ -43,8 +51,10 @@ from experiments.v9_3.constrained_taskset_identity import (
     deadline_from_slack_fraction,
     fixed_slack_deadline,
     fraction_from_canonical_material,
+    generation_request_id,
     power_vector_hash,
 )
+from experiments.v9_3.constrained_taskset_identity import _identity_hash
 from experiments.v9_3.execution_engine import ExecutionEngine
 from global_task_generator import EnergyAwareTaskGenerator
 
@@ -55,7 +65,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def _request(replicate_index=7, **changes):
     values = {
         "formal_master_seed": 930700,
-        "generator_seed": 117,
+        "formal_generation_id": "3" * 64,
         "processors": 4,
         "task_count": 3,
         "target_normalized_utilization": Fraction(1, 2),
@@ -73,7 +83,6 @@ def _request(replicate_index=7, **changes):
         "workload_candidate_identity": "2" * 64,
         "priority_policy": "RM",
         "dag_generation_mode": "disabled",
-        "arrival_offset_generation_mode": "disabled",
         "energy_aware_generation": False,
     }
     values.update(changes)
@@ -226,11 +235,22 @@ def test_fresh_python_process_produces_identical_certificate_bytes():
     script = """
 from fractions import Fraction
 from experiments.v9_3.constrained_taskset_identity import *
-r = GenerationRequest(930700,117,4,3,Fraction(1,2),7,40,200,
-    'uunifast_discard_v1',Fraction(1,100),Fraction(4,5),Fraction(1,100),
-    'compensated','global_task_generator_frozen_v1',
-    'generator_default_heterogeneous','1'*64,'2'*64,'RM','disabled',
-    'disabled',False)
+r = GenerationRequest(
+    formal_master_seed=930700, formal_generation_id='3'*64,
+    processors=4, task_count=3,
+    target_normalized_utilization=Fraction(1,2), replicate_index=7,
+    period_min=40, period_max=200,
+    utilization_allocation_mode='uunifast_discard_v1',
+    min_task_utilization=Fraction(1,100),
+    max_task_utilization=Fraction(4,5),
+    utilization_tolerance=Fraction(1,100),
+    wcet_rounding_mode='compensated',
+    generator_version='global_task_generator_frozen_v1',
+    power_generation_mode='generator_default_heterogeneous',
+    power_generation_contract_identity='1'*64,
+    workload_candidate_identity='2'*64,
+    priority_policy='RM', dag_generation_mode='disabled',
+    energy_aware_generation=False)
 s = (SkeletonTask('tau-a',0,3,11,Fraction(1,3)),
      SkeletonTask('tau-b',1,5,13,Fraction(2,5)),
      SkeletonTask('tau-c',2,7,17,Fraction(3,7)))
@@ -296,7 +316,7 @@ def test_generation_request_id_binds_every_skeleton_generation_input():
     baseline = _certificate()
     changes = {
         "formal_master_seed": 930701,
-        "generator_seed": 118,
+        "formal_generation_id": "4" * 64,
         "processors": 5,
         "task_count": 4,
         "target_normalized_utilization": Fraction(3, 5),
@@ -314,7 +334,6 @@ def test_generation_request_id_binds_every_skeleton_generation_input():
         "workload_candidate_identity": "4" * 64,
         "priority_policy": "different_priority",
         "dag_generation_mode": "enabled_v1",
-        "arrival_offset_generation_mode": "period_fraction_v1",
         "energy_aware_generation": True,
     }
     for field, value in changes.items():
@@ -323,8 +342,112 @@ def test_generation_request_id_binds_every_skeleton_generation_input():
         assert request != baseline.generation_request
         # task_count/processors changes cannot build against the fixture, but
         # generation identity itself remains directly auditable.
-        from experiments.v9_3.constrained_taskset_identity import generation_request_id
         assert generation_request_id(request) != baseline.generation_request_id
+
+
+@pytest.mark.parametrize(
+    "master_seed,formal_generation_id,replicate_index",
+    [
+        (0, "0" * 64, 0),
+        (930612, "1" * 64, 7),
+        (930700, "a" * 64, 199),
+        (2**63, "f" * 64, 1000),
+    ],
+)
+def test_generator_seed_is_a_read_only_existing_formal_derivation(
+    master_seed, formal_generation_id, replicate_index
+):
+    assert "generator_seed" not in GenerationRequest.__dataclass_fields__
+    request = _request(
+        replicate_index,
+        formal_master_seed=master_seed,
+        formal_generation_id=formal_generation_id,
+    )
+    assert request.generator_seed == derive_seed(
+        master_seed,
+        formal_generation_id,
+        replicate_index,
+        seed_mode=GENERATION_DIMENSIONS_SEED_MODE,
+    )
+    assert request.identity_material()["seed_derivation_contract"] == (
+        TASKSET_SEED_DERIVATION_DOMAIN
+    )
+    assert request.identity_material()["seed_derivation_mode"] == (
+        GENERATION_DIMENSIONS_SEED_MODE
+    )
+
+
+@pytest.mark.parametrize(
+    "config_name,expected_count",
+    [
+        ("v9_3_core1_formal.yaml", 1600),
+        ("v9_3_core2_formal.yaml", 1600),
+    ],
+)
+def test_all_formal_core12_generation_units_reuse_exact_runner_seed(
+    config_name, expected_count
+):
+    config = load_config(ROOT / "configs" / config_name)
+    assert config["grid"]["seed_mode"] == GENERATION_DIMENSIONS_SEED_MODE
+    cells_by_generation = {
+        cell.generation_id: cell for cell in expand_cells(config)
+    }
+    observed = 0
+    start = config["grid"].get("taskset_index_start", 0)
+    for cell in cells_by_generation.values():
+        for replicate_index in range(
+            start, start + config["grid"]["tasksets_per_cell"]
+        ):
+            request = _request(
+                replicate_index,
+                formal_master_seed=config["grid"]["base_seed"],
+                formal_generation_id=cell.generation_id,
+                processors=cell.processors,
+                task_count=cell.task_count,
+                target_normalized_utilization=cell.utilization,
+                period_min=config["generation"]["period_min"],
+                period_max=config["generation"]["period_max"],
+                min_task_utilization=Fraction(
+                    config["generation"]["min_task_util"]
+                ),
+                max_task_utilization=Fraction(
+                    config["generation"]["max_task_util"]
+                ),
+                utilization_tolerance=Fraction(
+                    config["generation"]["utilization_tolerance"]
+                ),
+                wcet_rounding_mode=config["generation"]["wcet_rounding"],
+                power_generation_mode=config["generation"]["power_mode"],
+                priority_policy=config["generation"]["priority_policy"],
+            )
+            assert request.generator_seed == derive_seed(
+                config["grid"]["base_seed"],
+                cell.generation_id,
+                replicate_index,
+                seed_mode=config["grid"]["seed_mode"],
+                utilization_index=cell.utilization_index,
+            )
+            observed += 1
+    assert observed == expected_count
+
+
+def test_inconsistent_serialized_generator_seed_fails_closed_even_after_rehash():
+    certificate = _certificate()
+    material = deepcopy(certificate.material())
+    material["generation_request"]["generator_seed"] += 1
+
+    with pytest.raises(TasksetIdentityError, match="derived generator_seed mismatch"):
+        TasksetIdentityCertificate.from_material(material)
+    with pytest.raises(TasksetIdentityError, match="derived generator_seed mismatch"):
+        TasksetIdentityCertificate.from_canonical_bytes(
+            canonical_identity_bytes(material)
+        )
+
+    material["generation_request_id"] = _identity_hash(
+        GENERATION_REQUEST_DOMAIN, material["generation_request"]
+    )
+    with pytest.raises(TasksetIdentityError, match="derived generator_seed mismatch"):
+        TasksetIdentityCertificate.from_material(material)
 
 
 def test_identity_relationships_for_deadline_and_power_changes():
@@ -348,6 +471,22 @@ def test_identity_relationships_for_deadline_and_power_changes():
     assert deadline_a.power_vector_hash != power_b.power_vector_hash
     assert deadline_a.power_variant.mode == BASE_POWER_VARIANT
     assert power_b.power_variant.mode == SCALED_POWER_VARIANT
+
+
+def test_implicit_and_fixed_one_share_content_but_preserve_variant_provenance():
+    implicit = _certificate(IMPLICIT_DEADLINE_MODE)
+    fixed_one = _certificate(
+        FIXED_SLACK_FRACTION_VARIANT, fixed=Fraction(1)
+    )
+    assert [task.relative_deadline for task in implicit.tasks] == [
+        task.relative_deadline for task in fixed_one.tasks
+    ]
+    assert [task.actual_power for task in implicit.tasks] == [
+        task.actual_power for task in fixed_one.tasks
+    ]
+    assert implicit.taskset_skeleton_id == fixed_one.taskset_skeleton_id
+    assert implicit.taskset_hash == fixed_one.taskset_hash
+    assert implicit.taskset_id != fixed_one.taskset_id
 
 
 def test_identity_relationships_for_c_t_and_priority_changes():
@@ -379,6 +518,60 @@ def test_non_taskset_axes_are_absent_from_all_taskset_identity_material():
         "plotting", "simulation_horizon",
     )
     assert all(value not in encoded for value in forbidden)
+
+
+def test_external_release_and_offset_metadata_are_absent_from_every_identity():
+    metadata_matrix = (
+        {"release_mode": "ASYNC", "offset_enabled": True,
+         "offset_vector": [1, 2, 3], "offset_label": "label-a"},
+        {"release_mode": "SYNC", "offset_enabled": False,
+         "offset_vector": [0, 0, 0], "offset_label": "label-b"},
+        {"release_mode": "ASYNC", "offset_enabled": False,
+         "offset_vector": [0, 0, 0], "offset_label": "disabled"},
+        {"release_mode": "SYNC", "offset_enabled": True,
+         "offset_vector": [7, 0, 11], "offset_label": "period-fraction"},
+    )
+
+    def build_in_external_context(metadata):
+        assert set(metadata) == {
+            "release_mode", "offset_enabled", "offset_vector", "offset_label",
+        }
+        return _certificate(CONSTRAINED_UNIFORM_SLACK_MODE)
+
+    certificates = [build_in_external_context(row) for row in metadata_matrix]
+    baseline = certificates[0]
+    for observed in certificates[1:]:
+        assert observed.generation_request.generator_seed == (
+            baseline.generation_request.generator_seed
+        )
+        assert observed.generation_request_id == baseline.generation_request_id
+        assert observed.taskset_skeleton_id == baseline.taskset_skeleton_id
+        assert observed.deadline_variant.lambda_numerators == (
+            baseline.deadline_variant.lambda_numerators
+        )
+        assert [task.relative_deadline for task in observed.tasks] == [
+            task.relative_deadline for task in baseline.tasks
+        ]
+        assert observed.taskset_hash == baseline.taskset_hash
+        assert observed.taskset_id == baseline.taskset_id
+        assert observed.canonical_bytes() == baseline.canonical_bytes()
+
+
+def test_external_method_energy_service_and_worker_metadata_do_not_change_identity():
+    external_contexts = (
+        {"method": "CW", "E0": "0", "service": "solar-a",
+         "battery": "20", "worker": 1, "timeout": 60},
+        {"method": "LOC", "E0": "1", "service": "solar-b",
+         "battery": "100", "worker": 8, "timeout": 120},
+    )
+    certificates = []
+    for context in external_contexts:
+        assert set(context) == {
+            "method", "E0", "service", "battery", "worker", "timeout",
+        }
+        certificates.append(_certificate(CONSTRAINED_UNIFORM_SLACK_MODE))
+    assert certificates[0] == certificates[1]
+    assert certificates[0].canonical_bytes() == certificates[1].canonical_bytes()
 
 
 def test_same_content_different_replicate_preserves_content_hash_not_provenance_ids():
@@ -587,6 +780,74 @@ def test_duplicate_ids_duplicate_ranks_and_noncanonical_order_are_rejected():
     for tasks in (duplicate_ids, duplicate_ranks, bad_order):
         with pytest.raises(TasksetIdentityError):
             _certificate(skeleton=tasks)
+
+
+@pytest.mark.parametrize("task_id", ["task-ascii", "任务一", "é"])
+def test_nfc_task_ids_are_stable_across_certificate_round_trip(task_id):
+    assert unicodedata.normalize("NFC", task_id) == task_id
+    tasks = (replace(_skeleton()[0], task_id=task_id), *_skeleton()[1:])
+    certificate = _certificate(skeleton=tasks)
+    restored = TasksetIdentityCertificate.from_canonical_bytes(
+        certificate.canonical_bytes()
+    )
+    assert restored == certificate
+    assert restored.canonical_bytes() == certificate.canonical_bytes()
+
+
+def test_all_fixed_identity_strings_are_nfc():
+    for name, value in vars(identity_contract).items():
+        if name.isupper() and type(value) is str:
+            assert unicodedata.normalize("NFC", value) == value
+
+
+def test_nfd_task_id_fails_closed_in_constructor_replace_material_and_bytes():
+    nfd = "e\u0301"
+    assert unicodedata.normalize("NFC", nfd) == "é"
+    with pytest.raises(TasksetIdentityError, match="NFC-normalized"):
+        SkeletonTask(nfd, 0, 1, 2, Fraction(1))
+    with pytest.raises(TasksetIdentityError, match="NFC-normalized"):
+        replace(_skeleton()[0], task_id=nfd)
+
+    material = deepcopy(_certificate().material())
+    material["skeleton_tasks"][0]["task_id"] = nfd
+    material["tasks"][0]["task_id"] = nfd
+    with pytest.raises(TasksetIdentityError, match="NFC-normalized"):
+        TasksetIdentityCertificate.from_material(material)
+
+    encoded = json.dumps(
+        material,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    with pytest.raises(TasksetIdentityError, match="NFC-normalized"):
+        TasksetIdentityCertificate.from_canonical_bytes(encoded)
+
+
+def test_nfd_mode_value_and_dict_key_fail_closed_without_silent_repair():
+    nfd = "mode-e\u0301"
+    with pytest.raises(TasksetIdentityError, match="NFC-normalized"):
+        replace(_request(), generator_version=nfd)
+    with pytest.raises(TasksetIdentityError, match="NFC-normalized"):
+        canonical_identity_bytes({"mode": nfd})
+    with pytest.raises(TasksetIdentityError, match="NFC-normalized"):
+        canonical_identity_bytes({nfd: "value"})
+
+    nfc_request = replace(_request(), generator_version="生成器版本-é")
+    restored = GenerationRequest.from_material(nfc_request.identity_material())
+    assert restored == nfc_request
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["\u0301", "task\x00id", "task\nid", "task\u200did"],
+)
+def test_leading_combining_mark_nul_and_control_characters_fail_closed(value):
+    with pytest.raises(TasksetIdentityError):
+        SkeletonTask(value, 0, 1, 2, Fraction(1))
+    with pytest.raises(TasksetIdentityError):
+        canonical_identity_bytes({"task_id": value})
 
 
 def test_noncanonical_sha_and_noncanonical_json_are_rejected():

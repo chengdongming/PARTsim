@@ -18,8 +18,14 @@ import hashlib
 import json
 import math
 import re
+import unicodedata
 from typing import Any, Dict, Optional, Sequence, Tuple
 
+from .cell_model import (
+    GENERATION_DIMENSIONS_SEED_MODE,
+    TASKSET_SEED_DERIVATION_DOMAIN,
+    derive_seed,
+)
 from .config import domain_hash as legacy_domain_hash
 from .config import fraction_text
 
@@ -80,6 +86,17 @@ def _canonical_string(value: Any, label: str) -> str:
         raise TasksetIdentityError(
             f"{label} must be a non-empty canonical string"
         )
+    if unicodedata.normalize("NFC", value) != value:
+        raise TasksetIdentityError(f"{label} must already be NFC-normalized")
+    if unicodedata.combining(value[0]):
+        raise TasksetIdentityError(
+            f"{label} must not start with a combining character"
+        )
+    if any(
+        unicodedata.category(character).startswith("C")
+        for character in value
+    ):
+        raise TasksetIdentityError(f"{label} must not contain control characters")
     return value
 
 
@@ -138,7 +155,10 @@ def fraction_from_canonical_material(value: Any, label: str) -> Fraction:
 
 
 def _validate_plain_identity_material(value: Any, path: str) -> None:
-    if type(value) in {str, int, bool}:
+    if type(value) is str:
+        _canonical_string(value, path)
+        return
+    if type(value) in {int, bool}:
         return
     if type(value) is list:
         for index, item in enumerate(value):
@@ -153,6 +173,7 @@ def _validate_plain_identity_material(value: Any, path: str) -> None:
                 raise TasksetIdentityError(
                     f"{path} contains a non-string object key"
                 )
+            _canonical_string(key, f"{path} object key")
             _validate_plain_identity_material(item, f"{path}.{key}")
         return
     if isinstance(value, float):
@@ -199,7 +220,7 @@ class GenerationRequest:
     """Every normalized input which can affect the generated C/T/base-P skeleton."""
 
     formal_master_seed: int
-    generator_seed: int
+    formal_generation_id: str
     processors: int
     task_count: int
     target_normalized_utilization: Fraction
@@ -217,12 +238,11 @@ class GenerationRequest:
     workload_candidate_identity: str
     priority_policy: str
     dag_generation_mode: str
-    arrival_offset_generation_mode: str
     energy_aware_generation: bool
 
     def __post_init__(self) -> None:
         _plain_int(self.formal_master_seed, "formal_master_seed", 0)
-        _plain_int(self.generator_seed, "generator_seed", 0)
+        _sha256(self.formal_generation_id, "formal_generation_id")
         _plain_int(self.processors, "processors", 1)
         _plain_int(self.task_count, "task_count", 1)
         _exact_fraction(
@@ -270,7 +290,6 @@ class GenerationRequest:
             "power_generation_mode",
             "priority_policy",
             "dag_generation_mode",
-            "arrival_offset_generation_mode",
         ):
             _canonical_string(getattr(self, label), label)
         _sha256(
@@ -284,10 +303,24 @@ class GenerationRequest:
         if type(self.energy_aware_generation) is not bool:
             raise TasksetIdentityError("energy_aware_generation must be bool")
 
+    @property
+    def generator_seed(self) -> int:
+        """Return the sole formal generator seed derived by the frozen helper."""
+
+        return derive_seed(
+            self.formal_master_seed,
+            self.formal_generation_id,
+            self.replicate_index,
+            seed_mode=GENERATION_DIMENSIONS_SEED_MODE,
+        )
+
     def identity_material(self) -> Dict[str, Any]:
         return {
             "generation_contract_version": GENERATION_REQUEST_CONTRACT_VERSION,
             "formal_master_seed": self.formal_master_seed,
+            "formal_generation_id": self.formal_generation_id,
+            "seed_derivation_contract": TASKSET_SEED_DERIVATION_DOMAIN,
+            "seed_derivation_mode": GENERATION_DIMENSIONS_SEED_MODE,
             "generator_seed": self.generator_seed,
             "processor_count": self.processors,
             "task_count": self.task_count,
@@ -320,9 +353,6 @@ class GenerationRequest:
             },
             "priority_policy": self.priority_policy,
             "dag_generation_mode": self.dag_generation_mode,
-            "arrival_offset_generation_mode": (
-                self.arrival_offset_generation_mode
-            ),
             "energy_aware_generation": self.energy_aware_generation,
         }
 
@@ -333,6 +363,9 @@ class GenerationRequest:
             (
                 "generation_contract_version",
                 "formal_master_seed",
+                "formal_generation_id",
+                "seed_derivation_contract",
+                "seed_derivation_mode",
                 "generator_seed",
                 "processor_count",
                 "task_count",
@@ -345,13 +378,16 @@ class GenerationRequest:
                 "power_generation",
                 "priority_policy",
                 "dag_generation_mode",
-                "arrival_offset_generation_mode",
                 "energy_aware_generation",
             ),
             "generation request",
         )
         if material["generation_contract_version"] != GENERATION_REQUEST_CONTRACT_VERSION:
             raise TasksetIdentityError("generation contract version mismatch")
+        if material["seed_derivation_contract"] != TASKSET_SEED_DERIVATION_DOMAIN:
+            raise TasksetIdentityError("seed derivation contract mismatch")
+        if material["seed_derivation_mode"] != GENERATION_DIMENSIONS_SEED_MODE:
+            raise TasksetIdentityError("seed derivation mode mismatch")
         period_range = _exact_keys(
             material["period_range"], ("minimum", "maximum"), "period range"
         )
@@ -370,9 +406,9 @@ class GenerationRequest:
             ("mode", "contract_identity", "workload_candidate_identity"),
             "power generation",
         )
-        return cls(
+        request = cls(
             material["formal_master_seed"],
-            material["generator_seed"],
+            material["formal_generation_id"],
             material["processor_count"],
             material["task_count"],
             fraction_from_canonical_material(
@@ -401,9 +437,14 @@ class GenerationRequest:
             power["workload_candidate_identity"],
             material["priority_policy"],
             material["dag_generation_mode"],
-            material["arrival_offset_generation_mode"],
             material["energy_aware_generation"],
         )
+        serialized_seed = _plain_int(
+            material["generator_seed"], "generator_seed", 0
+        )
+        if serialized_seed != request.generator_seed:
+            raise TasksetIdentityError("derived generator_seed mismatch")
+        return request
 
 
 def generation_request_id(request: GenerationRequest) -> str:

@@ -14,6 +14,11 @@ CORE1_VARIANTS = ("CW_THETA_CW", "LOC_THETA_LOC")
 CORE2_VARIANTS = (
     "CW_D", "LOC_D", "CW_THETA_CW", "LOC_THETA_CW", "LOC_THETA_LOC",
 )
+TASKSET_SEED_DERIVATION_DOMAIN = "ASAP_BLOCK:V9.3:TASKSET_SEED:v2"
+GENERATION_DIMENSIONS_SEED_MODE = "generation_dimensions"
+UTILIZATION_INDEX_TASKSET_INDEX_SEED_MODE = (
+    "utilization_index_taskset_index"
+)
 
 
 @dataclass(frozen=True)
@@ -140,15 +145,16 @@ def expand_cells(config: Mapping[str, Any]) -> Tuple[Cell, ...]:
 
 def derive_seed(
     base_seed: int, generation_id: str, taskset_index: int, *,
-    seed_mode: str = "generation_dimensions", utilization_index: int | None = None,
+    seed_mode: str = GENERATION_DIMENSIONS_SEED_MODE,
+    utilization_index: int | None = None,
 ) -> int:
-    if seed_mode == "generation_dimensions":
+    if seed_mode == GENERATION_DIMENSIONS_SEED_MODE:
         material = {
             "base_seed": base_seed,
             "generation_id": generation_id,
             "taskset_index": taskset_index,
         }
-    elif seed_mode == "utilization_index_taskset_index":
+    elif seed_mode == UTILIZATION_INDEX_TASKSET_INDEX_SEED_MODE:
         if utilization_index is None:
             raise ValueError("utilization-index seed mode requires utilization_index")
         material = {
@@ -158,7 +164,7 @@ def derive_seed(
         }
     else:
         raise ValueError(f"unknown seed mode: {seed_mode}")
-    digest = domain_hash("ASAP_BLOCK:V9.3:TASKSET_SEED:v2", material)
+    digest = domain_hash(TASKSET_SEED_DERIVATION_DOMAIN, material)
     return int(digest[:16], 16) % 2147483647
 
 
