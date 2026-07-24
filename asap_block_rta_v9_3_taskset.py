@@ -7,11 +7,14 @@ runner and it never writes result CSV files.
 
 from __future__ import annotations
 
+import math
+import time
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Callable, Mapping, Optional, Protocol, Sequence, Tuple
 
 import asap_block_rta_v9_3 as core
+import asap_block_rta_v9_3_methods as methods
 from experiments.v9_3 import exact_energy
 
 
@@ -219,6 +222,472 @@ class SingleTaskSolverResult:
 
 
 _FINALIZER_TOKEN = object()
+_METHOD_FINALIZER_TOKEN = object()
+
+
+def _require_optional_nonnegative_plain_int(
+    value: object, field_name: str
+) -> Optional[int]:
+    value = require_optional_plain_int(value, field_name)
+    if value is not None and value < 0:
+        raise CertificationError(
+            "{} must be nonnegative when available".format(field_name)
+        )
+    return value
+
+
+def _validate_optional_counter_fields(
+    value: object, field_name: str
+) -> None:
+    _require_optional_nonnegative_plain_int(value, field_name)
+
+
+@dataclass(frozen=True)
+class V93KernelTaskResult:
+    """Lossless internal result returned by one existing mathematical kernel."""
+
+    solver_status: TaskSolverStatus
+    kernel_solver_status: str
+    candidate_response_time: Optional[int]
+    closing_w: Optional[int]
+    witness_h: Optional[int]
+    processor_progress_a: Optional[int]
+    maximum_blocking_h: Optional[int]
+    witness_sequence: Tuple[int, ...]
+    checked_w_count: int
+    checked_h_count: int
+    checked_q_count: int
+    envelope_call_count: int
+    impossible_prefix_count: Optional[int]
+    phase_safe_calls: Optional[int]
+    flow_solver_calls: Optional[int]
+    flow_feasible_count: Optional[int]
+    flow_infeasible_count: Optional[int]
+    z_branch_count: Optional[int]
+    flow_node_count: Optional[int]
+    flow_edge_count: Optional[int]
+    flow_feasibility_augmentations: Optional[int]
+    flow_optimality_cycle_cancellations: Optional[int]
+    flow_optimality_units_augmented: Optional[int]
+    failure_reason: Optional[str]
+    unavailable_metrics: Tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.solver_status, TaskSolverStatus):
+            raise CertificationError(
+                "kernel result solver_status must be a TaskSolverStatus"
+            )
+        if (
+            not isinstance(self.kernel_solver_status, str)
+            or not self.kernel_solver_status
+        ):
+            raise CertificationError(
+                "kernel_solver_status must be a non-empty string"
+            )
+        for field_name in (
+            "candidate_response_time",
+            "closing_w",
+            "witness_h",
+            "processor_progress_a",
+            "maximum_blocking_h",
+        ):
+            _require_optional_nonnegative_plain_int(
+                getattr(self, field_name), field_name
+            )
+        for field_name in (
+            "checked_w_count",
+            "checked_h_count",
+            "checked_q_count",
+            "envelope_call_count",
+        ):
+            require_nonnegative_plain_int(
+                getattr(self, field_name), field_name
+            )
+        for field_name in (
+            "impossible_prefix_count",
+            "phase_safe_calls",
+            "flow_solver_calls",
+            "flow_feasible_count",
+            "flow_infeasible_count",
+            "z_branch_count",
+            "flow_node_count",
+            "flow_edge_count",
+            "flow_feasibility_augmentations",
+            "flow_optimality_cycle_cancellations",
+            "flow_optimality_units_augmented",
+        ):
+            _validate_optional_counter_fields(
+                getattr(self, field_name), field_name
+            )
+        try:
+            sequence = tuple(self.witness_sequence)
+        except TypeError as exc:
+            raise CertificationError(
+                "witness_sequence must be a tuple of integers"
+            ) from exc
+        if sequence != self.witness_sequence:
+            raise CertificationError("witness_sequence must be a tuple")
+        for index, value in enumerate(sequence):
+            _require_optional_nonnegative_plain_int(
+                value, "witness_sequence[{}]".format(index)
+            )
+        if not isinstance(self.unavailable_metrics, tuple):
+            raise CertificationError("unavailable_metrics must be a tuple")
+        if len(self.unavailable_metrics) != len(
+            set(self.unavailable_metrics)
+        ) or any(
+            not isinstance(item, str) or not item
+            for item in self.unavailable_metrics
+        ):
+            raise CertificationError(
+                "unavailable_metrics must contain unique non-empty names"
+            )
+
+        found = self.solver_status is TaskSolverStatus.CANDIDATE_FOUND
+        if found != (self.candidate_response_time is not None):
+            raise CertificationError(
+                "kernel candidate presence must match solver status"
+            )
+        if found:
+            if self.closing_w != self.candidate_response_time:
+                raise CertificationError(
+                    "kernel closing_w must equal its candidate"
+                )
+            if self.failure_reason is not None:
+                raise CertificationError(
+                    "kernel candidate may not carry a failure reason"
+                )
+        elif (
+            self.closing_w is not None
+            or self.witness_h is not None
+            or self.processor_progress_a is not None
+            or self.maximum_blocking_h is not None
+            or self.witness_sequence
+        ):
+            raise CertificationError(
+                "non-candidate kernel result may not carry a certificate"
+            )
+
+
+@dataclass(frozen=True)
+class V93CarryTraceEntry:
+    task_id: str
+    priority_rank: int
+    theta_by_task: Tuple[Tuple[str, int], ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.task_id, str) or not self.task_id:
+            raise CertificationError("carry trace task_id must be non-empty")
+        require_nonnegative_plain_int(self.priority_rank, "priority_rank")
+        if not isinstance(self.theta_by_task, tuple):
+            raise CertificationError("theta_by_task must be a tuple")
+        names = []
+        for task_id, value in self.theta_by_task:
+            if not isinstance(task_id, str) or not task_id:
+                raise CertificationError(
+                    "carry trace task names must be non-empty"
+                )
+            require_plain_int(value, "carry trace theta")
+            names.append(task_id)
+        if len(names) != len(set(names)):
+            raise CertificationError(
+                "carry trace may not contain duplicate task IDs"
+            )
+
+
+@dataclass(frozen=True)
+class V93MethodTaskResult:
+    """Task result used by the eight-method adapter, not by disk schemas."""
+
+    method_id: methods.V93MethodId
+    kernel: methods.V93Kernel
+    carry_policy: methods.V93CarryPolicy
+    task_id: str
+    priority_rank: int
+    solver_status: TaskSolverStatus
+    kernel_solver_status: str
+    certification_status: TaskCertificationStatus
+    candidate_response_time: Optional[int]
+    carry_in_values_used: Tuple[Tuple[str, int], ...]
+    closing_w: Optional[int]
+    witness_h: Optional[int]
+    processor_progress_a: Optional[int]
+    maximum_blocking_h: Optional[int]
+    witness_sequence: Tuple[int, ...]
+    checked_w_count: int
+    checked_h_count: int
+    checked_q_count: int
+    envelope_call_count: int
+    solver_call_count: int
+    impossible_prefix_count: Optional[int]
+    phase_safe_calls: Optional[int]
+    flow_solver_calls: Optional[int]
+    flow_feasible_count: Optional[int]
+    flow_infeasible_count: Optional[int]
+    z_branch_count: Optional[int]
+    flow_node_count: Optional[int]
+    flow_edge_count: Optional[int]
+    flow_feasibility_augmentations: Optional[int]
+    flow_optimality_cycle_cancellations: Optional[int]
+    flow_optimality_units_augmented: Optional[int]
+    runtime_wall: float
+    runtime_cpu: Optional[float]
+    failure_reason: Optional[str]
+    unavailable_metrics: Tuple[str, ...]
+    _certification_token: object = field(
+        default=None, repr=False, compare=False
+    )
+
+    def __post_init__(self) -> None:
+        spec = methods.method_spec_v9_3(self.method_id)
+        if self.kernel is not spec.kernel:
+            raise CertificationError("task result kernel/method mismatch")
+        if self.carry_policy is not spec.carry_policy:
+            raise CertificationError(
+                "task result carry policy/method mismatch"
+            )
+        if not isinstance(self.task_id, str) or not self.task_id:
+            raise CertificationError("task_id must be non-empty")
+        require_nonnegative_plain_int(self.priority_rank, "priority_rank")
+        if not isinstance(self.certification_status, TaskCertificationStatus):
+            raise CertificationError(
+                "certification_status must be a TaskCertificationStatus"
+            )
+        if type(self.solver_call_count) is not int:
+            raise CertificationError("solver_call_count must be a plain integer")
+        if self.solver_call_count not in {0, 1}:
+            raise CertificationError("solver_call_count must be zero or one")
+        if (
+            isinstance(self.runtime_wall, bool)
+            or not isinstance(self.runtime_wall, (int, float))
+            or not math.isfinite(self.runtime_wall)
+            or self.runtime_wall < 0
+        ):
+            raise CertificationError(
+                "runtime_wall must be finite and nonnegative"
+            )
+        if self.runtime_cpu is not None and (
+            isinstance(self.runtime_cpu, bool)
+            or not isinstance(self.runtime_cpu, (int, float))
+            or not math.isfinite(self.runtime_cpu)
+            or self.runtime_cpu < 0
+        ):
+            raise CertificationError(
+                "runtime_cpu must be finite and nonnegative when available"
+            )
+        kernel_result = V93KernelTaskResult(
+            solver_status=self.solver_status,
+            kernel_solver_status=self.kernel_solver_status,
+            candidate_response_time=self.candidate_response_time,
+            closing_w=self.closing_w,
+            witness_h=self.witness_h,
+            processor_progress_a=self.processor_progress_a,
+            maximum_blocking_h=self.maximum_blocking_h,
+            witness_sequence=self.witness_sequence,
+            checked_w_count=self.checked_w_count,
+            checked_h_count=self.checked_h_count,
+            checked_q_count=self.checked_q_count,
+            envelope_call_count=self.envelope_call_count,
+            impossible_prefix_count=self.impossible_prefix_count,
+            phase_safe_calls=self.phase_safe_calls,
+            flow_solver_calls=self.flow_solver_calls,
+            flow_feasible_count=self.flow_feasible_count,
+            flow_infeasible_count=self.flow_infeasible_count,
+            z_branch_count=self.z_branch_count,
+            flow_node_count=self.flow_node_count,
+            flow_edge_count=self.flow_edge_count,
+            flow_feasibility_augmentations=(
+                self.flow_feasibility_augmentations
+            ),
+            flow_optimality_cycle_cancellations=(
+                self.flow_optimality_cycle_cancellations
+            ),
+            flow_optimality_units_augmented=(
+                self.flow_optimality_units_augmented
+            ),
+            failure_reason=self.failure_reason,
+            unavailable_metrics=self.unavailable_metrics,
+        )
+        del kernel_result
+        V93CarryTraceEntry(
+            self.task_id,
+            self.priority_rank,
+            self.carry_in_values_used,
+        )
+        found = self.solver_status is TaskSolverStatus.CANDIDATE_FOUND
+        certified = (
+            self.certification_status is TaskCertificationStatus.CERTIFIED
+        )
+        if certified and (
+            self._certification_token is not _METHOD_FINALIZER_TOKEN
+            or not found
+        ):
+            raise CertificationError(
+                "unified CERTIFIED task requires atomic finalization"
+            )
+        if not found and self.certification_status in {
+            TaskCertificationStatus.CERTIFIED,
+            TaskCertificationStatus.PROVISIONAL_NOT_CERTIFIED,
+        }:
+            raise CertificationError(
+                "non-candidate task cannot be certified or provisional"
+            )
+
+
+_CARRY_TRACE_COMMIT_STATUSES = frozenset(
+    {
+        TaskSolverStatus.CANDIDATE_FOUND,
+        TaskSolverStatus.NO_CANDIDATE,
+    }
+)
+
+
+def _should_commit_carry_trace_entry(
+    task_result: V93MethodTaskResult,
+) -> bool:
+    """Return whether a completed, nonfatal solver call enters the trace."""
+
+    return (
+        task_result.solver_call_count == 1
+        and task_result.solver_status in _CARRY_TRACE_COMMIT_STATUSES
+    )
+
+
+def _carry_trace_source_prefix(
+    task_results: Sequence[V93MethodTaskResult],
+) -> Tuple[V93MethodTaskResult, ...]:
+    prefix = []
+    for task_result in task_results:
+        if not _should_commit_carry_trace_entry(task_result):
+            break
+        prefix.append(task_result)
+    return tuple(prefix)
+
+
+@dataclass(frozen=True)
+class V93MethodTasksetAnalysisResult:
+    """In-memory result for one canonical method registry entry."""
+
+    analysis_id: str
+    method_id: methods.V93MethodId
+    kernel: methods.V93Kernel
+    carry_policy: methods.V93CarryPolicy
+    solver_status: AnalysisSolverStatus
+    analysis_certification_status: AnalysisCertificationStatus
+    task_results: Tuple[V93MethodTaskResult, ...]
+    taskset_proven: bool
+    first_failed_task: Optional[str]
+    failure_reason: Optional[str]
+    carry_trace: Tuple[V93CarryTraceEntry, ...]
+    exact_input_identity: str
+    _finalizer_token: object = field(repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if self._finalizer_token is not _METHOD_FINALIZER_TOKEN:
+            raise CertificationError(
+                "unified task-set results require the internal finalizer"
+            )
+        spec = methods.method_spec_v9_3(self.method_id)
+        if self.kernel is not spec.kernel:
+            raise CertificationError("task-set kernel/method mismatch")
+        if self.carry_policy is not spec.carry_policy:
+            raise CertificationError("task-set carry policy/method mismatch")
+        if not isinstance(self.solver_status, AnalysisSolverStatus):
+            raise CertificationError(
+                "solver_status must be an AnalysisSolverStatus"
+            )
+        if not isinstance(
+            self.analysis_certification_status,
+            AnalysisCertificationStatus,
+        ):
+            raise CertificationError(
+                "analysis_certification_status must be an "
+                "AnalysisCertificationStatus"
+            )
+        if not isinstance(self.analysis_id, str) or not self.analysis_id:
+            raise CertificationError("analysis_id must be non-empty")
+        if not isinstance(self.task_results, tuple) or not self.task_results:
+            raise CertificationError("task_results must be a non-empty tuple")
+        if not isinstance(self.carry_trace, tuple):
+            raise CertificationError("carry_trace must be a tuple")
+        if len(self.carry_trace) > len(self.task_results):
+            raise CertificationError(
+                "carry_trace cannot be longer than task_results"
+            )
+        trace_task_ids = tuple(entry.task_id for entry in self.carry_trace)
+        if len(trace_task_ids) != len(set(trace_task_ids)):
+            raise CertificationError(
+                "carry_trace may not contain duplicate task IDs"
+            )
+        expected_ranks = tuple(range(len(self.task_results)))
+        if tuple(
+            result.priority_rank for result in self.task_results
+        ) != expected_ranks:
+            raise CertificationError(
+                "unified priority ranks must be contiguous"
+            )
+        trace_source = _carry_trace_source_prefix(self.task_results)
+        if tuple(
+            (entry.task_id, entry.priority_rank, entry.theta_by_task)
+            for entry in self.carry_trace
+        ) != tuple(
+            (
+                result.task_id,
+                result.priority_rank,
+                result.carry_in_values_used,
+            )
+            for result in trace_source
+        ):
+            raise CertificationError(
+                "carry_trace must match the completed nonfatal task prefix"
+            )
+        if any(
+            result.method_id is not self.method_id
+            or result.kernel is not self.kernel
+            or result.carry_policy is not self.carry_policy
+            for result in self.task_results
+        ):
+            raise CertificationError(
+                "task results do not match task-set method"
+            )
+        certified = (
+            self.analysis_certification_status
+            is AnalysisCertificationStatus.CERTIFIED_TASKSET
+        )
+        if self.taskset_proven is not certified:
+            raise CertificationError(
+                "taskset_proven must match analysis certification"
+            )
+        certified_tasks = tuple(
+            result.certification_status
+            is TaskCertificationStatus.CERTIFIED
+            for result in self.task_results
+        )
+        if certified:
+            if (
+                self.solver_status is not AnalysisSolverStatus.COMPLETED
+                or not all(certified_tasks)
+                or not all(
+                    result.solver_status
+                    is TaskSolverStatus.CANDIDATE_FOUND
+                    for result in self.task_results
+                )
+                or self.first_failed_task is not None
+                or self.failure_reason is not None
+            ):
+                raise CertificationError(
+                    "certified unified task set is internally inconsistent"
+                )
+        elif any(certified_tasks):
+            raise CertificationError(
+                "failed task set may not carry partial certification"
+            )
+        if self.first_failed_task is not None and self.first_failed_task not in {
+            result.task_id for result in self.task_results
+        }:
+            raise CertificationError("first_failed_task is not in task set")
+        if not isinstance(self.exact_input_identity, str):
+            raise CertificationError("exact_input_identity must be preserved")
 
 
 @dataclass(frozen=True)
@@ -1182,6 +1651,8 @@ def analyze_taskset_v9_3(
 
     PH and SEQ are directed mathematical APIs only; formal runners retain
     their frozen five-configuration order and never call them implicitly.
+    This compatibility entry preserves its historical per-task timeout
+    forwarding; the eight-method adapter below owns request-wide budgets.
     """
 
     if not isinstance(variant, AnalysisVariant):
@@ -1543,4 +2014,1695 @@ def analyze_taskset_v9_3(
         compatibility_vector=fixed_vector if not recursive else None,
         source=source,
         observer=finalization_observer,
+    )
+
+
+class MethodKernelDispatcher(Protocol):
+    def __call__(
+        self,
+        *,
+        method_spec: methods.V93MethodSpec,
+        task: core.V93Task,
+        hp_tasks: Sequence[core.V93Task],
+        lp_tasks: Sequence[core.V93Task],
+        carry_in_vector: Mapping[str, int],
+        energy_input: TasksetAnalysisInput,
+        timeout_seconds: Optional[float],
+    ) -> V93KernelTaskResult:
+        ...
+
+
+class _AnalysisBudgetExpired(TimeoutError):
+    def __init__(self, stage: str) -> None:
+        self.stage = stage
+        super().__init__(
+            "v9.3 unified request timeout at {}".format(stage)
+        )
+
+
+class _V93AnalysisBudget:
+    """One monotonic wall-clock budget for a taskset x method request."""
+
+    def __init__(
+        self,
+        timeout_seconds: Optional[float],
+        clock: Callable[[], float],
+        checkpoint_observer: Optional[Callable[[str], None]] = None,
+    ) -> None:
+        if not callable(clock):
+            raise CertificationError("analysis budget clock must be callable")
+        if checkpoint_observer is not None and not callable(
+            checkpoint_observer
+        ):
+            raise CertificationError(
+                "analysis budget checkpoint observer must be callable"
+            )
+        if timeout_seconds is not None and (
+            isinstance(timeout_seconds, bool)
+            or not isinstance(timeout_seconds, (int, float))
+            or not math.isfinite(timeout_seconds)
+            or timeout_seconds < 0
+        ):
+            raise CertificationError(
+                "timeout_seconds must be finite and non-negative"
+            )
+        self._clock = clock
+        self._checkpoint_observer = checkpoint_observer
+        self._last_read = self._read_clock()
+        self.start_time = self._last_read
+        self.absolute_deadline = (
+            None
+            if timeout_seconds is None
+            else self.start_time + float(timeout_seconds)
+        )
+        if (
+            self.absolute_deadline is not None
+            and not math.isfinite(self.absolute_deadline)
+        ):
+            raise CertificationError(
+                "analysis budget absolute deadline must be finite"
+            )
+
+    @property
+    def clock(self) -> Callable[[], float]:
+        return self._clock
+
+    def _read_clock(self) -> float:
+        value = self._clock()
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+        ):
+            raise CertificationError(
+                "analysis budget clock must return a finite number"
+            )
+        value = float(value)
+        if hasattr(self, "_last_read") and value < self._last_read:
+            raise CertificationError(
+                "analysis budget clock must be monotonic"
+            )
+        self._last_read = value
+        return value
+
+    def checkpoint(self, stage: str) -> None:
+        if not isinstance(stage, str) or not stage:
+            raise CertificationError(
+                "analysis budget stage must be non-empty"
+            )
+        if self._checkpoint_observer is not None:
+            self._checkpoint_observer(stage)
+        if self.absolute_deadline is None:
+            return
+        if self._read_clock() >= self.absolute_deadline:
+            raise _AnalysisBudgetExpired(stage)
+
+    def remaining_seconds(self) -> Optional[float]:
+        if self.absolute_deadline is None:
+            return None
+        return max(0.0, self.absolute_deadline - self._read_clock())
+
+    def elapsed_seconds(self) -> float:
+        return max(0.0, self._read_clock() - self.start_time)
+
+
+_VALIDATED_DISPATCH_ISSUER = object()
+
+
+@dataclass(frozen=True)
+class _ValidatedDispatchCapability:
+    """Module-private proof binding one kernel call to validated input."""
+
+    issuer: object
+    analysis_nonce: object
+    method_id: methods.V93MethodId
+    validated_input: TasksetAnalysisInput
+    task: core.V93Task
+    priority_rank: int
+    hp_tasks: Tuple[core.V93Task, ...]
+    lp_tasks: Tuple[core.V93Task, ...]
+    carry_items: Tuple[Tuple[str, int], ...]
+    exact_input_identity: str
+
+
+def _issue_dispatch_capability(
+    *,
+    analysis_nonce: object,
+    spec: methods.V93MethodSpec,
+    validated_input: TasksetAnalysisInput,
+    task: core.V93Task,
+    priority_rank: int,
+    hp_tasks: Sequence[core.V93Task],
+    lp_tasks: Sequence[core.V93Task],
+    carry_in_vector: Mapping[str, int],
+) -> _ValidatedDispatchCapability:
+    return _ValidatedDispatchCapability(
+        issuer=_VALIDATED_DISPATCH_ISSUER,
+        analysis_nonce=analysis_nonce,
+        method_id=spec.method_id,
+        validated_input=validated_input,
+        task=task,
+        priority_rank=priority_rank,
+        hp_tasks=tuple(hp_tasks),
+        lp_tasks=tuple(lp_tasks),
+        carry_items=tuple(carry_in_vector.items()),
+        exact_input_identity=(
+            validated_input.dependency_context.exact_input_identity
+        ),
+    )
+
+
+def _validate_dispatch_capability(
+    capability: object,
+    *,
+    spec: methods.V93MethodSpec,
+    task: core.V93Task,
+    hp_tasks: Sequence[core.V93Task],
+    lp_tasks: Sequence[core.V93Task],
+    carry_in_vector: Mapping[str, int],
+    energy_input: TasksetAnalysisInput,
+) -> None:
+    if (
+        not isinstance(capability, _ValidatedDispatchCapability)
+        or capability.issuer is not _VALIDATED_DISPATCH_ISSUER
+        or capability.method_id is not spec.method_id
+        or capability.validated_input is not energy_input
+        or capability.task is not task
+        or capability.hp_tasks != tuple(hp_tasks)
+        or capability.lp_tasks != tuple(lp_tasks)
+        or capability.carry_items != tuple(carry_in_vector.items())
+        or capability.exact_input_identity
+        != energy_input.dependency_context.exact_input_identity
+    ):
+        raise CertificationError(
+            "kernel dispatch requires a matching validated-input capability"
+        )
+    if capability.analysis_nonce is None:
+        raise CertificationError(
+            "validated-input capability is missing its analysis nonce"
+        )
+    ordered_tasks = energy_input.tasks
+    rank = capability.priority_rank
+    if (
+        rank < 0
+        or rank >= len(ordered_tasks)
+        or ordered_tasks[rank] is not task
+    ):
+        raise CertificationError(
+            "validated-input capability task binding mismatch"
+        )
+
+
+class _FlowTelemetry:
+    """Observe the existing PH flow hook without changing its decisions."""
+
+    def __init__(self, ph_core: object) -> None:
+        self._ph_core = ph_core
+        self.flow_solver_calls = 0
+        self.flow_feasible_count = 0
+        self.flow_infeasible_count = 0
+        self.flow_node_count = 0
+        self.flow_edge_count = 0
+        self.feasibility_augmentations = 0
+        self.optimality_cycle_cancellations = 0
+        self.optimality_units_augmented = 0
+
+    def __call__(self, nodes: Sequence[str], edges: Sequence[object], deadline: object):
+        self.flow_solver_calls += 1
+        self.flow_node_count += len(nodes)
+        self.flow_edge_count += len(edges)
+        result = self._ph_core._solve_min_cost_circulation(
+            nodes, edges, deadline
+        )
+        if result.status is self._ph_core._FlowStatus.OPTIMAL:
+            self.flow_feasible_count += 1
+        elif result.status is self._ph_core._FlowStatus.INFEASIBLE:
+            self.flow_infeasible_count += 1
+        statistics = result.statistics
+        if isinstance(statistics, self._ph_core.PHFlowStatistics):
+            self.feasibility_augmentations += (
+                statistics.feasibility_augmentations
+            )
+            self.optimality_cycle_cancellations += (
+                statistics.optimality_cycle_cancellations
+            )
+            self.optimality_units_augmented += (
+                statistics.optimality_units_augmented
+            )
+        return result
+
+    def fields(self) -> Mapping[str, int]:
+        return {
+            "flow_solver_calls": self.flow_solver_calls,
+            "flow_feasible_count": self.flow_feasible_count,
+            "flow_infeasible_count": self.flow_infeasible_count,
+            "z_branch_count": self.flow_solver_calls,
+            # Node/edge counts are totals over every invoked z-branch graph.
+            "flow_node_count": self.flow_node_count,
+            "flow_edge_count": self.flow_edge_count,
+            "flow_feasibility_augmentations": (
+                self.feasibility_augmentations
+            ),
+            "flow_optimality_cycle_cancellations": (
+                self.optimality_cycle_cancellations
+            ),
+            "flow_optimality_units_augmented": (
+                self.optimality_units_augmented
+            ),
+        }
+
+
+def _status_value(value: object) -> str:
+    raw = getattr(value, "value", None)
+    return raw if isinstance(raw, str) and raw else repr(value)
+
+
+def _internal_kernel_result(
+    reason: str,
+    *,
+    raw_status: str = "ADAPTER_INTERNAL_CONFORMANCE_FAILURE",
+    telemetry: Optional[_FlowTelemetry] = None,
+) -> V93KernelTaskResult:
+    flow = telemetry.fields() if telemetry is not None else {}
+    return V93KernelTaskResult(
+        solver_status=TaskSolverStatus.INTERNAL_CONFORMANCE_FAILURE,
+        kernel_solver_status=raw_status,
+        candidate_response_time=None,
+        closing_w=None,
+        witness_h=None,
+        processor_progress_a=None,
+        maximum_blocking_h=None,
+        witness_sequence=(),
+        checked_w_count=0,
+        checked_h_count=0,
+        checked_q_count=0,
+        envelope_call_count=0,
+        impossible_prefix_count=None,
+        phase_safe_calls=None,
+        flow_solver_calls=flow.get("flow_solver_calls"),
+        flow_feasible_count=flow.get("flow_feasible_count"),
+        flow_infeasible_count=flow.get("flow_infeasible_count"),
+        z_branch_count=flow.get("z_branch_count"),
+        flow_node_count=flow.get("flow_node_count"),
+        flow_edge_count=flow.get("flow_edge_count"),
+        flow_feasibility_augmentations=flow.get(
+            "flow_feasibility_augmentations"
+        ),
+        flow_optimality_cycle_cancellations=flow.get(
+            "flow_optimality_cycle_cancellations"
+        ),
+        flow_optimality_units_augmented=flow.get(
+            "flow_optimality_units_augmented"
+        ),
+        failure_reason=reason,
+        unavailable_metrics=("cache_hit_rate",),
+    )
+
+
+def _numeric_kernel_result(reason: str) -> V93KernelTaskResult:
+    return V93KernelTaskResult(
+        solver_status=TaskSolverStatus.NUMERIC_ERROR,
+        kernel_solver_status="ADAPTER_INPUT_VALIDATION",
+        candidate_response_time=None,
+        closing_w=None,
+        witness_h=None,
+        processor_progress_a=None,
+        maximum_blocking_h=None,
+        witness_sequence=(),
+        checked_w_count=0,
+        checked_h_count=0,
+        checked_q_count=0,
+        envelope_call_count=0,
+        impossible_prefix_count=None,
+        phase_safe_calls=None,
+        flow_solver_calls=None,
+        flow_feasible_count=None,
+        flow_infeasible_count=None,
+        z_branch_count=None,
+        flow_node_count=None,
+        flow_edge_count=None,
+        flow_feasibility_augmentations=None,
+        flow_optimality_cycle_cancellations=None,
+        flow_optimality_units_augmented=None,
+        failure_reason=reason,
+        unavailable_metrics=("solver_not_called",),
+    )
+
+
+def _timeout_kernel_result(
+    stage: str,
+    *,
+    telemetry: Optional[_FlowTelemetry] = None,
+) -> V93KernelTaskResult:
+    flow = telemetry.fields() if telemetry is not None else {}
+    return V93KernelTaskResult(
+        solver_status=TaskSolverStatus.TIMEOUT,
+        kernel_solver_status="ADAPTER_REQUEST_TIMEOUT",
+        candidate_response_time=None,
+        closing_w=None,
+        witness_h=None,
+        processor_progress_a=None,
+        maximum_blocking_h=None,
+        witness_sequence=(),
+        checked_w_count=0,
+        checked_h_count=0,
+        checked_q_count=0,
+        envelope_call_count=0,
+        impossible_prefix_count=None,
+        phase_safe_calls=None,
+        flow_solver_calls=flow.get("flow_solver_calls"),
+        flow_feasible_count=flow.get("flow_feasible_count"),
+        flow_infeasible_count=flow.get("flow_infeasible_count"),
+        z_branch_count=flow.get("z_branch_count"),
+        flow_node_count=flow.get("flow_node_count"),
+        flow_edge_count=flow.get("flow_edge_count"),
+        flow_feasibility_augmentations=flow.get(
+            "flow_feasibility_augmentations"
+        ),
+        flow_optimality_cycle_cancellations=flow.get(
+            "flow_optimality_cycle_cancellations"
+        ),
+        flow_optimality_units_augmented=flow.get(
+            "flow_optimality_units_augmented"
+        ),
+        failure_reason="v9.3 unified request timeout at {}".format(stage),
+        unavailable_metrics=("timeout_discarded_candidate",),
+    )
+
+
+def _common_raw_fields(raw: object) -> Mapping[str, object]:
+    return {
+        "candidate_response_time": getattr(
+            raw, "candidate_response_time"
+        ),
+        "closing_w": getattr(raw, "closing_w"),
+        "witness_h": getattr(raw, "witness_h"),
+        "checked_w_count": getattr(raw, "checked_w_count"),
+        "checked_h_count": getattr(raw, "checked_h_count"),
+        "checked_q_count": getattr(raw, "checked_q_count"),
+        "envelope_call_count": getattr(raw, "envelope_call_count"),
+        "failure_reason": getattr(raw, "failure_reason"),
+    }
+
+
+def _validate_raw_certificate_shape(
+    *,
+    found: bool,
+    fields: Mapping[str, object],
+) -> None:
+    if found:
+        if fields["candidate_response_time"] is None:
+            raise CertificationError(
+                "candidate kernel status is missing its candidate"
+            )
+        if fields["closing_w"] != fields["candidate_response_time"]:
+            raise CertificationError(
+                "candidate kernel status has inconsistent closing_w"
+            )
+        if fields["witness_h"] is None:
+            raise CertificationError(
+                "candidate kernel status is missing witness_h"
+            )
+        if fields["failure_reason"] is not None:
+            raise CertificationError(
+                "candidate kernel status carries a failure reason"
+            )
+    elif any(
+        fields[field_name] is not None
+        for field_name in (
+            "candidate_response_time",
+            "closing_w",
+            "witness_h",
+        )
+    ):
+        raise CertificationError(
+            "non-candidate kernel status carries a certificate"
+        )
+
+
+def _validate_candidate_for_task(
+    task: core.V93Task, result: V93KernelTaskResult
+) -> V93KernelTaskResult:
+    if result.solver_status is TaskSolverStatus.CANDIDATE_FOUND:
+        candidate = result.candidate_response_time
+        if not task.wcet <= candidate <= task.deadline:
+            raise CertificationError(
+                "kernel candidate must satisfy C_i <= R_i <= D_i"
+            )
+    return result
+
+
+def _validate_method_kernel_certificate(
+    *,
+    spec: methods.V93MethodSpec,
+    task: core.V93Task,
+    hp_tasks: Sequence[core.V93Task],
+    carry_in_vector: Mapping[str, int],
+    energy_input: TasksetAnalysisInput,
+    result: V93KernelTaskResult,
+) -> V93KernelTaskResult:
+    if result.solver_status is not TaskSolverStatus.CANDIDATE_FOUND:
+        return result
+    if result.witness_h is None:
+        raise CertificationError("candidate is missing witness_h")
+    if spec.kernel in {methods.V93Kernel.CW, methods.V93Kernel.LOC}:
+        if (
+            result.processor_progress_a is not None
+            or result.maximum_blocking_h is not None
+            or result.witness_sequence
+        ):
+            raise CertificationError(
+                "CW/LOC candidate carries a foreign certificate"
+            )
+        return result
+
+    expected_a = core.processor_progress_v9_3(
+        task,
+        hp_tasks,
+        result.candidate_response_time,
+        energy_input.processors,
+        carry_in_vector,
+    )
+    expected_h = result.candidate_response_time - expected_a
+    if (
+        result.processor_progress_a != expected_a
+        or result.maximum_blocking_h != expected_h
+    ):
+        raise CertificationError(
+            "phase candidate A/H does not match the existing core"
+        )
+    if spec.kernel is methods.V93Kernel.PH:
+        if result.witness_sequence:
+            raise CertificationError("PH candidate carries a SEQ witness")
+        if not 0 <= result.witness_h <= expected_h:
+            raise CertificationError("PH witness_h is outside A/H")
+        return result
+
+    import asap_block_rta_v9_3_seq as seq_core
+
+    seq_core._validate_seq_certificate(
+        w=result.candidate_response_time,
+        processor_progress_a=expected_a,
+        maximum_blocking_h=expected_h,
+        witness_sequence=result.witness_sequence,
+        witness_h=result.witness_h,
+    )
+    return result
+
+
+def _dispatch_validated_single_task_method_v9_3(
+    *,
+    capability: _ValidatedDispatchCapability,
+    method_spec: methods.V93MethodSpec,
+    task: core.V93Task,
+    hp_tasks: Sequence[core.V93Task],
+    lp_tasks: Sequence[core.V93Task],
+    carry_in_vector: Mapping[str, int],
+    energy_input: TasksetAnalysisInput,
+    timeout_seconds: Optional[float],
+    budget: _V93AnalysisBudget,
+) -> V93KernelTaskResult:
+    """Private capability-gated path to the four existing kernels."""
+
+    spec = methods.method_spec_v9_3(method_spec)
+    try:
+        _validate_dispatch_capability(
+            capability,
+            spec=spec,
+            task=task,
+            hp_tasks=hp_tasks,
+            lp_tasks=lp_tasks,
+            carry_in_vector=carry_in_vector,
+            energy_input=energy_input,
+        )
+        budget.checkpoint("before_validated_kernel_entry")
+        if spec.kernel in {methods.V93Kernel.CW, methods.V93Kernel.LOC}:
+            window = (
+                core.EnvelopeKind.COMPLETE
+                if spec.kernel is methods.V93Kernel.CW
+                else core.EnvelopeKind.LOCAL
+            )
+            raw = core.canonical_closure_search_v9_3(
+                window,
+                task,
+                hp_tasks,
+                lp_tasks,
+                energy_input.processors,
+                carry_in_vector,
+                energy_input.e0,
+                energy_input.beta,
+                timeout_seconds=timeout_seconds,
+                clock=budget.clock,
+            )
+            budget.checkpoint("after_cw_loc_kernel")
+            mapped = {
+                core.V93SolverStatus.CANDIDATE: (
+                    TaskSolverStatus.CANDIDATE_FOUND
+                ),
+                core.V93SolverStatus.NO_CANDIDATE: (
+                    TaskSolverStatus.NO_CANDIDATE
+                ),
+                core.V93SolverStatus.UNPROVEN_TIMEOUT: (
+                    TaskSolverStatus.TIMEOUT
+                ),
+                core.V93SolverStatus.UNPROVEN_NUMERIC: (
+                    TaskSolverStatus.NUMERIC_ERROR
+                ),
+                core.V93SolverStatus.UNPROVEN_OVERFLOW: (
+                    TaskSolverStatus.NUMERIC_ERROR
+                ),
+            }.get(
+                raw.solver_status,
+                TaskSolverStatus.INTERNAL_CONFORMANCE_FAILURE,
+            )
+            fields = _common_raw_fields(raw)
+            found = mapped is TaskSolverStatus.CANDIDATE_FOUND
+            _validate_raw_certificate_shape(found=found, fields=fields)
+            result = V93KernelTaskResult(
+                solver_status=mapped,
+                kernel_solver_status=_status_value(raw.solver_status),
+                candidate_response_time=(
+                    fields["candidate_response_time"] if found else None
+                ),
+                closing_w=fields["closing_w"] if found else None,
+                witness_h=fields["witness_h"] if found else None,
+                processor_progress_a=None,
+                maximum_blocking_h=None,
+                witness_sequence=(),
+                checked_w_count=fields["checked_w_count"],
+                checked_h_count=fields["checked_h_count"],
+                checked_q_count=fields["checked_q_count"],
+                envelope_call_count=fields["envelope_call_count"],
+                impossible_prefix_count=None,
+                phase_safe_calls=None,
+                flow_solver_calls=None,
+                flow_feasible_count=None,
+                flow_infeasible_count=None,
+                z_branch_count=None,
+                flow_node_count=None,
+                flow_edge_count=None,
+                flow_feasibility_augmentations=None,
+                flow_optimality_cycle_cancellations=None,
+                flow_optimality_units_augmented=None,
+                failure_reason=(
+                    None if found else fields["failure_reason"]
+                ),
+                unavailable_metrics=("cache_hit_rate",),
+            )
+            return _validate_candidate_for_task(task, result)
+
+        import asap_block_rta_v9_3_ph as ph_core
+
+        telemetry = _FlowTelemetry(ph_core)
+        if spec.kernel is methods.V93Kernel.PH:
+            raw = ph_core.ph_response_time_v9_3(
+                target=task,
+                hp_tasks=hp_tasks,
+                lp_tasks=lp_tasks,
+                processors=energy_input.processors,
+                theta_by_name=carry_in_vector,
+                e0=energy_input.e0,
+                beta=energy_input.beta,
+                timeout_seconds=timeout_seconds,
+                clock=budget.clock,
+                _flow_solver=telemetry,
+            )
+            budget.checkpoint("after_ph_kernel")
+            mapped = {
+                ph_core.PHSearchStatus.CANDIDATE: (
+                    TaskSolverStatus.CANDIDATE_FOUND
+                ),
+                ph_core.PHSearchStatus.NO_CANDIDATE: (
+                    TaskSolverStatus.NO_CANDIDATE
+                ),
+                ph_core.PHSearchStatus.UNPROVEN_TIMEOUT: (
+                    TaskSolverStatus.TIMEOUT
+                ),
+                ph_core.PHSearchStatus.UNPROVEN_NUMERIC: (
+                    TaskSolverStatus.NUMERIC_ERROR
+                ),
+                ph_core.PHSearchStatus.UNPROVEN_INTERNAL: (
+                    TaskSolverStatus.INTERNAL_CONFORMANCE_FAILURE
+                ),
+            }.get(
+                raw.solver_status,
+                TaskSolverStatus.INTERNAL_CONFORMANCE_FAILURE,
+            )
+            fields = _common_raw_fields(raw)
+            found = mapped is TaskSolverStatus.CANDIDATE_FOUND
+            _validate_raw_certificate_shape(found=found, fields=fields)
+            a_value = h_max = None
+            if found:
+                budget.checkpoint("before_ph_certificate_material")
+                a_value = core.processor_progress_v9_3(
+                    task,
+                    hp_tasks,
+                    fields["candidate_response_time"],
+                    energy_input.processors,
+                    carry_in_vector,
+                )
+                h_max = fields["candidate_response_time"] - a_value
+                if (
+                    type(fields["witness_h"]) is not int
+                    or not 0 <= fields["witness_h"] <= h_max
+                ):
+                    raise CertificationError(
+                        "PH witness_h is outside its recomputed A/H bound"
+                    )
+                budget.checkpoint("after_ph_certificate_material")
+            flow = telemetry.fields()
+            result = V93KernelTaskResult(
+                solver_status=mapped,
+                kernel_solver_status=_status_value(raw.solver_status),
+                candidate_response_time=(
+                    fields["candidate_response_time"] if found else None
+                ),
+                closing_w=fields["closing_w"] if found else None,
+                witness_h=fields["witness_h"] if found else None,
+                processor_progress_a=a_value,
+                maximum_blocking_h=h_max,
+                witness_sequence=(),
+                checked_w_count=fields["checked_w_count"],
+                checked_h_count=fields["checked_h_count"],
+                checked_q_count=fields["checked_q_count"],
+                envelope_call_count=fields["envelope_call_count"],
+                impossible_prefix_count=getattr(
+                    raw, "impossible_prefix_count"
+                ),
+                phase_safe_calls=fields["envelope_call_count"],
+                flow_solver_calls=flow["flow_solver_calls"],
+                flow_feasible_count=flow["flow_feasible_count"],
+                flow_infeasible_count=flow["flow_infeasible_count"],
+                z_branch_count=flow["z_branch_count"],
+                flow_node_count=flow["flow_node_count"],
+                flow_edge_count=flow["flow_edge_count"],
+                flow_feasibility_augmentations=flow[
+                    "flow_feasibility_augmentations"
+                ],
+                flow_optimality_cycle_cancellations=flow[
+                    "flow_optimality_cycle_cancellations"
+                ],
+                flow_optimality_units_augmented=flow[
+                    "flow_optimality_units_augmented"
+                ],
+                failure_reason=(
+                    None if found else fields["failure_reason"]
+                ),
+                unavailable_metrics=(
+                    "ph_stage_witness",
+                    "cache_hit_rate",
+                ),
+            )
+            return _validate_candidate_for_task(task, result)
+
+        if spec.kernel is not methods.V93Kernel.SEQ:
+            raise CertificationError("unregistered mathematical kernel")
+        import asap_block_rta_v9_3_seq as seq_core
+
+        raw = seq_core.seq_response_time_v9_3(
+            target=task,
+            hp_tasks=hp_tasks,
+            lp_tasks=lp_tasks,
+            processors=energy_input.processors,
+            theta_by_name=carry_in_vector,
+            e0=energy_input.e0,
+            beta=energy_input.beta,
+            timeout_seconds=timeout_seconds,
+            clock=budget.clock,
+            _flow_solver=telemetry,
+        )
+        budget.checkpoint("after_seq_kernel")
+        # Reconstruct to invoke the core's independent certificate validator
+        # even if an injected or deserialized object bypassed its dataclass.
+        raw = seq_core.SEQSearchResult(
+            solver_status=raw.solver_status,
+            candidate_response_time=raw.candidate_response_time,
+            closing_w=raw.closing_w,
+            processor_progress_a=raw.processor_progress_a,
+            maximum_blocking_h=raw.maximum_blocking_h,
+            witness_sequence=raw.witness_sequence,
+            witness_h=raw.witness_h,
+            checked_w_count=raw.checked_w_count,
+            checked_h_count=raw.checked_h_count,
+            checked_q_count=raw.checked_q_count,
+            envelope_call_count=raw.envelope_call_count,
+            impossible_prefix_count=raw.impossible_prefix_count,
+            failure_reason=raw.failure_reason,
+        )
+        budget.checkpoint("after_seq_result_revalidation")
+        mapped = {
+            seq_core.SEQSearchStatus.CANDIDATE: (
+                TaskSolverStatus.CANDIDATE_FOUND
+            ),
+            seq_core.SEQSearchStatus.NO_CANDIDATE: (
+                TaskSolverStatus.NO_CANDIDATE
+            ),
+            seq_core.SEQSearchStatus.UNPROVEN_TIMEOUT: (
+                TaskSolverStatus.TIMEOUT
+            ),
+            seq_core.SEQSearchStatus.UNPROVEN_NUMERIC: (
+                TaskSolverStatus.NUMERIC_ERROR
+            ),
+            seq_core.SEQSearchStatus.UNPROVEN_INTERNAL: (
+                TaskSolverStatus.INTERNAL_CONFORMANCE_FAILURE
+            ),
+        }.get(
+            raw.solver_status,
+            TaskSolverStatus.INTERNAL_CONFORMANCE_FAILURE,
+        )
+        found = mapped is TaskSolverStatus.CANDIDATE_FOUND
+        flow = telemetry.fields()
+        result = V93KernelTaskResult(
+            solver_status=mapped,
+            kernel_solver_status=_status_value(raw.solver_status),
+            candidate_response_time=(
+                raw.candidate_response_time if found else None
+            ),
+            closing_w=raw.closing_w if found else None,
+            witness_h=raw.witness_h if found else None,
+            processor_progress_a=(
+                raw.processor_progress_a if found else None
+            ),
+            maximum_blocking_h=(
+                raw.maximum_blocking_h if found else None
+            ),
+            witness_sequence=raw.witness_sequence if found else (),
+            checked_w_count=raw.checked_w_count,
+            checked_h_count=raw.checked_h_count,
+            checked_q_count=raw.checked_q_count,
+            envelope_call_count=raw.envelope_call_count,
+            impossible_prefix_count=raw.impossible_prefix_count,
+            phase_safe_calls=raw.envelope_call_count,
+            flow_solver_calls=flow["flow_solver_calls"],
+            flow_feasible_count=flow["flow_feasible_count"],
+            flow_infeasible_count=flow["flow_infeasible_count"],
+            z_branch_count=flow["z_branch_count"],
+            flow_node_count=flow["flow_node_count"],
+            flow_edge_count=flow["flow_edge_count"],
+            flow_feasibility_augmentations=flow[
+                "flow_feasibility_augmentations"
+            ],
+            flow_optimality_cycle_cancellations=flow[
+                "flow_optimality_cycle_cancellations"
+            ],
+            flow_optimality_units_augmented=flow[
+                "flow_optimality_units_augmented"
+            ],
+            failure_reason=None if found else raw.failure_reason,
+            unavailable_metrics=("cache_hit_rate",),
+        )
+        return _validate_candidate_for_task(task, result)
+    except _AnalysisBudgetExpired as exc:
+        return _timeout_kernel_result(
+            exc.stage,
+            telemetry=locals().get("telemetry"),
+        )
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except Exception as exc:
+        return _internal_kernel_result(
+            "unified kernel adapter rejected result: {}: {}".format(
+                type(exc).__name__, exc
+            ),
+            telemetry=locals().get("telemetry"),
+        )
+
+
+def _revalidate_kernel_result(result: object) -> V93KernelTaskResult:
+    """Reject hook objects that bypassed the frozen dataclass constructor."""
+
+    try:
+        return V93KernelTaskResult(
+            solver_status=result.solver_status,
+            kernel_solver_status=result.kernel_solver_status,
+            candidate_response_time=result.candidate_response_time,
+            closing_w=result.closing_w,
+            witness_h=result.witness_h,
+            processor_progress_a=result.processor_progress_a,
+            maximum_blocking_h=result.maximum_blocking_h,
+            witness_sequence=result.witness_sequence,
+            checked_w_count=result.checked_w_count,
+            checked_h_count=result.checked_h_count,
+            checked_q_count=result.checked_q_count,
+            envelope_call_count=result.envelope_call_count,
+            impossible_prefix_count=result.impossible_prefix_count,
+            phase_safe_calls=result.phase_safe_calls,
+            flow_solver_calls=result.flow_solver_calls,
+            flow_feasible_count=result.flow_feasible_count,
+            flow_infeasible_count=result.flow_infeasible_count,
+            z_branch_count=result.z_branch_count,
+            flow_node_count=result.flow_node_count,
+            flow_edge_count=result.flow_edge_count,
+            flow_feasibility_augmentations=(
+                result.flow_feasibility_augmentations
+            ),
+            flow_optimality_cycle_cancellations=(
+                result.flow_optimality_cycle_cancellations
+            ),
+            flow_optimality_units_augmented=(
+                result.flow_optimality_units_augmented
+            ),
+            failure_reason=result.failure_reason,
+            unavailable_metrics=result.unavailable_metrics,
+        )
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except Exception as exc:
+        return _internal_kernel_result(
+            "malformed unified kernel result: {}: {}".format(
+                type(exc).__name__, exc
+            )
+        )
+
+
+def _stable_rm_order(
+    task_items: Sequence[core.V93Task],
+) -> Tuple[core.V93Task, ...]:
+    """Sort by period while retaining caller order for equal periods."""
+
+    return tuple(
+        task
+        for _index, task in sorted(
+            enumerate(task_items),
+            key=lambda indexed: indexed[1].period,
+        )
+    )
+
+
+def _validated_unified_input(
+    analysis_input: TasksetAnalysisInput,
+    ordered_tasks: Tuple[core.V93Task, ...],
+) -> Tuple[Optional[TasksetAnalysisInput], Optional[str]]:
+    """Validate every global exact input before any solver dispatch."""
+
+    if not _interface_active(analysis_input.dependency_context):
+        return None, "numeric/theory contract mismatch"
+    try:
+        required_horizon = max(task.deadline for task in ordered_tasks) - 1
+        validated_beta = core.validate_service_curve_v9_3(
+            analysis_input.beta, required_horizon
+        )
+        exact_e0 = core.exact_fraction_v9_3(analysis_input.e0, "E0")
+        if exact_e0 < 0:
+            raise core.V93NumericError("E0 must be non-negative")
+        if callable(analysis_input.beta):
+            identity_service_prefix = validated_beta
+        else:
+            identity_service_prefix = core.validate_service_curve_v9_3(
+                analysis_input.beta, len(analysis_input.beta) - 1
+            )
+        expected_identity = exact_energy.exact_input_identity(
+            task_powers=(
+                (task.name, task.power) for task in ordered_tasks
+            ),
+            e0=exact_e0,
+            service_prefix=identity_service_prefix,
+        )
+    except (
+        core.V93NumericError,
+        exact_energy.ExactEnergyError,
+        ArithmeticError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        return None, "invalid exact method input material: {}".format(exc)
+    if (
+        analysis_input.dependency_context.exact_input_identity
+        != expected_identity
+    ):
+        return None, "exact method input identity mismatch"
+    return (
+        replace(
+            analysis_input,
+            tasks=ordered_tasks,
+            e0=exact_e0,
+            beta=validated_beta,
+        ),
+        None,
+    )
+
+
+def dispatch_single_task_method_v9_3(
+    *,
+    method_spec: methods.MethodReference,
+    task: core.V93Task,
+    hp_tasks: Sequence[core.V93Task],
+    lp_tasks: Sequence[core.V93Task],
+    carry_in_vector: Mapping[str, int],
+    energy_input: TasksetAnalysisInput,
+    timeout_seconds: Optional[float],
+    _clock: Callable[[], float] = time.monotonic,
+) -> V93KernelTaskResult:
+    """Validate exact identity before entering one existing kernel."""
+
+    spec = methods.method_spec_v9_3(method_spec)
+    if not isinstance(energy_input, TasksetAnalysisInput):
+        return _numeric_kernel_result(
+            "public dispatcher requires TasksetAnalysisInput"
+        )
+    try:
+        budget = _V93AnalysisBudget(timeout_seconds, _clock)
+    except CertificationError as exc:
+        return _numeric_kernel_result(str(exc))
+    try:
+        budget.checkpoint("single_task_analysis_start")
+        ordered_tasks = _stable_rm_order(energy_input.tasks)
+        validated_input, input_failure = _validated_unified_input(
+            energy_input, ordered_tasks
+        )
+        budget.checkpoint("single_task_identity_validated")
+        if validated_input is None:
+            return _numeric_kernel_result(input_failure)
+        matching_ranks = tuple(
+            rank
+            for rank, registered_task in enumerate(ordered_tasks)
+            if registered_task is task
+        )
+        if len(matching_ranks) != 1:
+            return _numeric_kernel_result(
+                "public dispatcher task is not the validated task object"
+            )
+        rank = matching_ranks[0]
+        analysis_nonce = object()
+        capability = _issue_dispatch_capability(
+            analysis_nonce=analysis_nonce,
+            spec=spec,
+            validated_input=validated_input,
+            task=task,
+            priority_rank=rank,
+            hp_tasks=hp_tasks,
+            lp_tasks=lp_tasks,
+            carry_in_vector=carry_in_vector,
+        )
+        budget.checkpoint("before_task_dispatch")
+        remaining = budget.remaining_seconds()
+        if remaining is not None and remaining <= 0:
+            raise _AnalysisBudgetExpired("before_task_dispatch")
+        result = _dispatch_validated_single_task_method_v9_3(
+            capability=capability,
+            method_spec=spec,
+            task=task,
+            hp_tasks=hp_tasks,
+            lp_tasks=lp_tasks,
+            carry_in_vector=carry_in_vector,
+            energy_input=validated_input,
+            timeout_seconds=remaining,
+            budget=budget,
+        )
+        budget.checkpoint("after_task_dispatch")
+        budget.checkpoint("before_candidate_publication")
+        return result
+    except _AnalysisBudgetExpired as exc:
+        return _timeout_kernel_result(exc.stage)
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except Exception as exc:
+        return _internal_kernel_result(
+            "public dispatcher rejected input: {}: {}".format(
+                type(exc).__name__, exc
+            )
+        )
+
+
+def _method_task_result(
+    *,
+    spec: methods.V93MethodSpec,
+    task: core.V93Task,
+    rank: int,
+    carry: Mapping[str, int],
+    result: V93KernelTaskResult,
+    runtime_wall: float,
+    runtime_cpu: Optional[float],
+    solver_call_count: int = 1,
+) -> V93MethodTaskResult:
+    certification = (
+        TaskCertificationStatus.PROVISIONAL_NOT_CERTIFIED
+        if result.solver_status is TaskSolverStatus.CANDIDATE_FOUND
+        else TaskCertificationStatus.NOT_CERTIFIED
+    )
+    return V93MethodTaskResult(
+        method_id=spec.method_id,
+        kernel=spec.kernel,
+        carry_policy=spec.carry_policy,
+        task_id=task.name,
+        priority_rank=rank,
+        solver_status=result.solver_status,
+        kernel_solver_status=result.kernel_solver_status,
+        certification_status=certification,
+        candidate_response_time=result.candidate_response_time,
+        carry_in_values_used=tuple(carry.items()),
+        closing_w=result.closing_w,
+        witness_h=result.witness_h,
+        processor_progress_a=result.processor_progress_a,
+        maximum_blocking_h=result.maximum_blocking_h,
+        witness_sequence=result.witness_sequence,
+        checked_w_count=result.checked_w_count,
+        checked_h_count=result.checked_h_count,
+        checked_q_count=result.checked_q_count,
+        envelope_call_count=result.envelope_call_count,
+        solver_call_count=solver_call_count,
+        impossible_prefix_count=result.impossible_prefix_count,
+        phase_safe_calls=result.phase_safe_calls,
+        flow_solver_calls=result.flow_solver_calls,
+        flow_feasible_count=result.flow_feasible_count,
+        flow_infeasible_count=result.flow_infeasible_count,
+        z_branch_count=result.z_branch_count,
+        flow_node_count=result.flow_node_count,
+        flow_edge_count=result.flow_edge_count,
+        flow_feasibility_augmentations=(
+            result.flow_feasibility_augmentations
+        ),
+        flow_optimality_cycle_cancellations=(
+            result.flow_optimality_cycle_cancellations
+        ),
+        flow_optimality_units_augmented=(
+            result.flow_optimality_units_augmented
+        ),
+        runtime_wall=runtime_wall,
+        runtime_cpu=runtime_cpu,
+        failure_reason=result.failure_reason,
+        unavailable_metrics=result.unavailable_metrics,
+    )
+
+
+def _not_evaluated_method_task(
+    spec: methods.V93MethodSpec,
+    task: core.V93Task,
+    rank: int,
+) -> V93MethodTaskResult:
+    result = V93KernelTaskResult(
+        solver_status=TaskSolverStatus.NOT_EVALUATED_AFTER_PREFIX_FAILURE,
+        kernel_solver_status=(
+            TaskSolverStatus.NOT_EVALUATED_AFTER_PREFIX_FAILURE.value
+        ),
+        candidate_response_time=None,
+        closing_w=None,
+        witness_h=None,
+        processor_progress_a=None,
+        maximum_blocking_h=None,
+        witness_sequence=(),
+        checked_w_count=0,
+        checked_h_count=0,
+        checked_q_count=0,
+        envelope_call_count=0,
+        impossible_prefix_count=None,
+        phase_safe_calls=None,
+        flow_solver_calls=None,
+        flow_feasible_count=None,
+        flow_infeasible_count=None,
+        z_branch_count=None,
+        flow_node_count=None,
+        flow_edge_count=None,
+        flow_feasibility_augmentations=None,
+        flow_optimality_cycle_cancellations=None,
+        flow_optimality_units_augmented=None,
+        failure_reason="not evaluated after prefix failure",
+        unavailable_metrics=("not_evaluated",),
+    )
+    return _method_task_result(
+        spec=spec,
+        task=task,
+        rank=rank,
+        carry={},
+        result=result,
+        runtime_wall=0.0,
+        runtime_cpu=0.0,
+        solver_call_count=0,
+    )
+
+
+def _make_unified_taskset_result(
+    *,
+    analysis_id: str,
+    spec: methods.V93MethodSpec,
+    task_results: Tuple[V93MethodTaskResult, ...],
+    solver_status: AnalysisSolverStatus,
+    certification_status: AnalysisCertificationStatus,
+    first_failed_task: Optional[str],
+    failure_reason: Optional[str],
+    exact_input_identity: object,
+) -> V93MethodTasksetAnalysisResult:
+    identity = (
+        exact_input_identity
+        if isinstance(exact_input_identity, str)
+        else repr(exact_input_identity)
+    )
+    return V93MethodTasksetAnalysisResult(
+        analysis_id=analysis_id,
+        method_id=spec.method_id,
+        kernel=spec.kernel,
+        carry_policy=spec.carry_policy,
+        solver_status=solver_status,
+        analysis_certification_status=certification_status,
+        task_results=task_results,
+        taskset_proven=(
+            certification_status
+            is AnalysisCertificationStatus.CERTIFIED_TASKSET
+        ),
+        first_failed_task=first_failed_task,
+        failure_reason=failure_reason,
+        carry_trace=tuple(
+            V93CarryTraceEntry(
+                task_result.task_id,
+                task_result.priority_rank,
+                task_result.carry_in_values_used,
+            )
+            for task_result in _carry_trace_source_prefix(task_results)
+        ),
+        exact_input_identity=identity,
+        _finalizer_token=_METHOD_FINALIZER_TOKEN,
+    )
+
+
+def _global_unified_numeric_failure(
+    *,
+    analysis_id: str,
+    spec: methods.V93MethodSpec,
+    tasks: Tuple[core.V93Task, ...],
+    exact_input_identity: object,
+    reason: str,
+) -> V93MethodTasksetAnalysisResult:
+    first_kernel = V93KernelTaskResult(
+        solver_status=TaskSolverStatus.NUMERIC_ERROR,
+        kernel_solver_status="ADAPTER_INPUT_VALIDATION",
+        candidate_response_time=None,
+        closing_w=None,
+        witness_h=None,
+        processor_progress_a=None,
+        maximum_blocking_h=None,
+        witness_sequence=(),
+        checked_w_count=0,
+        checked_h_count=0,
+        checked_q_count=0,
+        envelope_call_count=0,
+        impossible_prefix_count=None,
+        phase_safe_calls=None,
+        flow_solver_calls=None,
+        flow_feasible_count=None,
+        flow_infeasible_count=None,
+        z_branch_count=None,
+        flow_node_count=None,
+        flow_edge_count=None,
+        flow_feasibility_augmentations=None,
+        flow_optimality_cycle_cancellations=None,
+        flow_optimality_units_augmented=None,
+        failure_reason=reason,
+        unavailable_metrics=("solver_not_called",),
+    )
+    task_results = (
+        _method_task_result(
+            spec=spec,
+            task=tasks[0],
+            rank=0,
+            carry={},
+            result=first_kernel,
+            runtime_wall=0.0,
+            runtime_cpu=0.0,
+            solver_call_count=0,
+        ),
+    ) + tuple(
+        _not_evaluated_method_task(spec, task, rank)
+        for rank, task in enumerate(tasks[1:], start=1)
+    )
+    return _make_unified_taskset_result(
+        analysis_id=analysis_id,
+        spec=spec,
+        task_results=task_results,
+        solver_status=AnalysisSolverStatus.NUMERIC_ERROR,
+        certification_status=AnalysisCertificationStatus.NOT_CERTIFIED,
+        first_failed_task=tasks[0].name,
+        failure_reason=reason,
+        exact_input_identity=exact_input_identity,
+    )
+
+
+def _global_unified_timeout_failure(
+    *,
+    analysis_id: str,
+    spec: methods.V93MethodSpec,
+    tasks: Tuple[core.V93Task, ...],
+    exact_input_identity: object,
+    stage: str,
+    runtime_wall: float,
+) -> V93MethodTasksetAnalysisResult:
+    timeout_result = _timeout_kernel_result(stage)
+    task_results = (
+        _method_task_result(
+            spec=spec,
+            task=tasks[0],
+            rank=0,
+            carry={},
+            result=timeout_result,
+            runtime_wall=runtime_wall,
+            runtime_cpu=0.0,
+            solver_call_count=0,
+        ),
+    ) + tuple(
+        _not_evaluated_method_task(spec, task, rank)
+        for rank, task in enumerate(tasks[1:], start=1)
+    )
+    return _make_unified_taskset_result(
+        analysis_id=analysis_id,
+        spec=spec,
+        task_results=task_results,
+        solver_status=AnalysisSolverStatus.TIMEOUT,
+        certification_status=AnalysisCertificationStatus.NOT_CERTIFIED,
+        first_failed_task=tasks[0].name,
+        failure_reason=timeout_result.failure_reason,
+        exact_input_identity=exact_input_identity,
+    )
+
+
+def _replace_last_candidate_with_timeout(
+    *,
+    task_results: Tuple[V93MethodTaskResult, ...],
+    stage: str,
+) -> Tuple[V93MethodTaskResult, ...]:
+    if not task_results:
+        raise CertificationError(
+            "timeout replacement requires at least one task result"
+        )
+    previous = task_results[-1]
+    if previous.solver_status is not TaskSolverStatus.CANDIDATE_FOUND:
+        raise CertificationError(
+            "timeout replacement requires a final candidate result"
+        )
+    timeout_result = _timeout_kernel_result(stage)
+    cleared = replace(
+        previous,
+        solver_status=timeout_result.solver_status,
+        kernel_solver_status=timeout_result.kernel_solver_status,
+        certification_status=TaskCertificationStatus.NOT_CERTIFIED,
+        candidate_response_time=None,
+        closing_w=None,
+        witness_h=None,
+        processor_progress_a=None,
+        maximum_blocking_h=None,
+        witness_sequence=(),
+        checked_w_count=timeout_result.checked_w_count,
+        checked_h_count=timeout_result.checked_h_count,
+        checked_q_count=timeout_result.checked_q_count,
+        envelope_call_count=timeout_result.envelope_call_count,
+        impossible_prefix_count=timeout_result.impossible_prefix_count,
+        phase_safe_calls=timeout_result.phase_safe_calls,
+        flow_solver_calls=timeout_result.flow_solver_calls,
+        flow_feasible_count=timeout_result.flow_feasible_count,
+        flow_infeasible_count=timeout_result.flow_infeasible_count,
+        z_branch_count=timeout_result.z_branch_count,
+        flow_node_count=timeout_result.flow_node_count,
+        flow_edge_count=timeout_result.flow_edge_count,
+        flow_feasibility_augmentations=(
+            timeout_result.flow_feasibility_augmentations
+        ),
+        flow_optimality_cycle_cancellations=(
+            timeout_result.flow_optimality_cycle_cancellations
+        ),
+        flow_optimality_units_augmented=(
+            timeout_result.flow_optimality_units_augmented
+        ),
+        failure_reason=timeout_result.failure_reason,
+        unavailable_metrics=timeout_result.unavailable_metrics,
+        _certification_token=None,
+    )
+    return task_results[:-1] + (cleared,)
+
+
+def _finalize_unified_method_result(
+    *,
+    analysis_id: str,
+    spec: methods.V93MethodSpec,
+    tasks: Tuple[core.V93Task, ...],
+    task_results: Tuple[V93MethodTaskResult, ...],
+    exact_input_identity: str,
+    observer: Optional[
+        Callable[[str, Tuple[V93MethodTaskResult, ...]], None]
+    ] = None,
+) -> V93MethodTasksetAnalysisResult:
+    if len(tasks) != len(task_results) or any(
+        result.solver_status is not TaskSolverStatus.CANDIDATE_FOUND
+        for result in task_results
+    ):
+        raise CertificationError(
+            "unified finalizer requires one candidate per task"
+        )
+    recursive_candidates = {}
+    for rank, (task, result) in enumerate(zip(tasks, task_results)):
+        if (
+            result.task_id != task.name
+            or result.priority_rank != rank
+            or not task.wcet
+            <= result.candidate_response_time
+            <= task.deadline
+        ):
+            raise CertificationError(
+                "unified candidate vector failed task/rank/deadline validation"
+            )
+        hp_tasks = tasks[:rank]
+        expected_carry = (
+            {
+                hp_task.name: hp_task.deadline
+                for hp_task in hp_tasks
+            }
+            if spec.carry_policy is methods.V93CarryPolicy.FIXED_D
+            else {
+                hp_task.name: recursive_candidates[hp_task.name]
+                for hp_task in hp_tasks
+            }
+        )
+        if result.carry_in_values_used != tuple(expected_carry.items()):
+            raise CertificationError(
+                "unified carry trace does not match method policy"
+            )
+        recursive_candidates[task.name] = result.candidate_response_time
+    if observer is not None:
+        observer("before", task_results)
+    certified = tuple(
+        replace(
+            result,
+            certification_status=TaskCertificationStatus.CERTIFIED,
+            _certification_token=_METHOD_FINALIZER_TOKEN,
+        )
+        for result in task_results
+    )
+    if observer is not None:
+        observer("after", certified)
+    return _make_unified_taskset_result(
+        analysis_id=analysis_id,
+        spec=spec,
+        task_results=certified,
+        solver_status=AnalysisSolverStatus.COMPLETED,
+        certification_status=AnalysisCertificationStatus.CERTIFIED_TASKSET,
+        first_failed_task=None,
+        failure_reason=None,
+        exact_input_identity=exact_input_identity,
+    )
+
+
+def analyze_method_taskset_v9_3(
+    *,
+    analysis_id: str,
+    method_spec: methods.MethodReference,
+    analysis_input: TasksetAnalysisInput,
+    kernel_dispatcher: MethodKernelDispatcher = (
+        dispatch_single_task_method_v9_3
+    ),
+    finalization_observer: Optional[
+        Callable[[str, Tuple[V93MethodTaskResult, ...]], None]
+    ] = None,
+    _clock: Callable[[], float] = time.monotonic,
+    _budget_checkpoint_observer: Optional[
+        Callable[[str], None]
+    ] = None,
+) -> V93MethodTasksetAnalysisResult:
+    """Analyze one task set through any of the eight canonical methods.
+
+    The carry policy changes only the source of ``Theta``.  Every mathematical
+    decision is delegated to one of the four existing kernels.  The input
+    timeout is one request-wide wall-clock budget, not a per-task allowance.
+    """
+
+    if not isinstance(analysis_id, str) or not analysis_id:
+        raise CertificationError("analysis_id must be non-empty")
+    if not isinstance(analysis_input, TasksetAnalysisInput):
+        raise CertificationError(
+            "analysis_input must be a TasksetAnalysisInput"
+        )
+    if not callable(kernel_dispatcher):
+        raise CertificationError("kernel_dispatcher must be callable")
+    spec = methods.method_spec_v9_3(method_spec)
+    try:
+        budget = _V93AnalysisBudget(
+            analysis_input.timeout_seconds,
+            _clock,
+            _budget_checkpoint_observer,
+        )
+    except CertificationError as exc:
+        ordered_tasks = _stable_rm_order(analysis_input.tasks)
+        return _global_unified_numeric_failure(
+            analysis_id=analysis_id,
+            spec=spec,
+            tasks=ordered_tasks,
+            exact_input_identity=(
+                analysis_input.dependency_context.exact_input_identity
+            ),
+            reason="invalid request timeout budget: {}".format(exc),
+        )
+    try:
+        budget.checkpoint("taskset_analysis_start")
+    except _AnalysisBudgetExpired as exc:
+        ordered_tasks = _stable_rm_order(analysis_input.tasks)
+        return _global_unified_timeout_failure(
+            analysis_id=analysis_id,
+            spec=spec,
+            tasks=ordered_tasks,
+            exact_input_identity=(
+                analysis_input.dependency_context.exact_input_identity
+            ),
+            stage=exc.stage,
+            runtime_wall=budget.elapsed_seconds(),
+        )
+    ordered_tasks = _stable_rm_order(analysis_input.tasks)
+    validated_input, input_failure = _validated_unified_input(
+        analysis_input, ordered_tasks
+    )
+    try:
+        budget.checkpoint("after_identity_validation")
+    except _AnalysisBudgetExpired as exc:
+        return _global_unified_timeout_failure(
+            analysis_id=analysis_id,
+            spec=spec,
+            tasks=ordered_tasks,
+            exact_input_identity=(
+                analysis_input.dependency_context.exact_input_identity
+            ),
+            stage=exc.stage,
+            runtime_wall=budget.elapsed_seconds(),
+        )
+    if validated_input is None:
+        return _global_unified_numeric_failure(
+            analysis_id=analysis_id,
+            spec=spec,
+            tasks=ordered_tasks,
+            exact_input_identity=(
+                analysis_input.dependency_context.exact_input_identity
+            ),
+            reason=input_failure,
+        )
+
+    analysis_nonce = object()
+    task_results = []
+    recursive_candidates = {}
+    first_failed_task = None
+    first_failure_reason = None
+    operational_terminal = None
+    stop_prefix = False
+    for rank, task in enumerate(ordered_tasks):
+        if stop_prefix:
+            task_results.append(
+                _not_evaluated_method_task(spec, task, rank)
+            )
+            continue
+        hp_tasks = ordered_tasks[:rank]
+        lp_tasks = ordered_tasks[rank + 1 :]
+        carry = (
+            {
+                hp_task.name: hp_task.deadline
+                for hp_task in hp_tasks
+            }
+            if spec.carry_policy is methods.V93CarryPolicy.FIXED_D
+            else {
+                hp_task.name: recursive_candidates[hp_task.name]
+                for hp_task in hp_tasks
+            }
+        )
+        wall_started = time.perf_counter()
+        cpu_started = time.process_time()
+        solver_called = False
+        try:
+            budget.checkpoint("before_task_dispatch")
+            remaining = budget.remaining_seconds()
+            if remaining is not None and remaining <= 0:
+                raise _AnalysisBudgetExpired("before_task_dispatch")
+            solver_called = True
+            if kernel_dispatcher is dispatch_single_task_method_v9_3:
+                capability = _issue_dispatch_capability(
+                    analysis_nonce=analysis_nonce,
+                    spec=spec,
+                    validated_input=validated_input,
+                    task=task,
+                    priority_rank=rank,
+                    hp_tasks=hp_tasks,
+                    lp_tasks=lp_tasks,
+                    carry_in_vector=carry,
+                )
+                raw_result = _dispatch_validated_single_task_method_v9_3(
+                    capability=capability,
+                    method_spec=spec,
+                    task=task,
+                    hp_tasks=hp_tasks,
+                    lp_tasks=lp_tasks,
+                    carry_in_vector=carry,
+                    energy_input=validated_input,
+                    timeout_seconds=remaining,
+                    budget=budget,
+                )
+            else:
+                raw_result = kernel_dispatcher(
+                    method_spec=spec,
+                    task=task,
+                    hp_tasks=hp_tasks,
+                    lp_tasks=lp_tasks,
+                    carry_in_vector=carry,
+                    energy_input=validated_input,
+                    timeout_seconds=remaining,
+                )
+            budget.checkpoint("after_task_dispatch")
+            budget.checkpoint("before_certificate_revalidation")
+            kernel_result = _revalidate_kernel_result(raw_result)
+            kernel_result = _validate_candidate_for_task(
+                task, kernel_result
+            )
+            kernel_result = _validate_method_kernel_certificate(
+                spec=spec,
+                task=task,
+                hp_tasks=hp_tasks,
+                carry_in_vector=carry,
+                energy_input=validated_input,
+                result=kernel_result,
+            )
+            budget.checkpoint("after_certificate_revalidation")
+            budget.checkpoint("before_candidate_publication")
+        except _AnalysisBudgetExpired as exc:
+            kernel_result = _timeout_kernel_result(exc.stage)
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception as exc:
+            kernel_result = _internal_kernel_result(
+                "kernel dispatcher raised {}: {}".format(
+                    type(exc).__name__, exc
+                )
+            )
+        runtime_cpu = time.process_time() - cpu_started
+        runtime_wall = time.perf_counter() - wall_started
+        task_result = _method_task_result(
+            spec=spec,
+            task=task,
+            rank=rank,
+            carry=carry,
+            result=kernel_result,
+            runtime_wall=runtime_wall,
+            runtime_cpu=runtime_cpu,
+            solver_call_count=1 if solver_called else 0,
+        )
+        try:
+            budget.checkpoint("after_candidate_publication")
+        except _AnalysisBudgetExpired as exc:
+            timeout_result = _timeout_kernel_result(exc.stage)
+            runtime_cpu = time.process_time() - cpu_started
+            runtime_wall = time.perf_counter() - wall_started
+            task_result = _method_task_result(
+                spec=spec,
+                task=task,
+                rank=rank,
+                carry=carry,
+                result=timeout_result,
+                runtime_wall=runtime_wall,
+                runtime_cpu=runtime_cpu,
+                solver_call_count=1 if solver_called else 0,
+            )
+        task_results.append(task_result)
+        status = task_result.solver_status
+        if status is TaskSolverStatus.CANDIDATE_FOUND:
+            if spec.carry_policy is methods.V93CarryPolicy.SELF_RECURSIVE:
+                recursive_candidates[task.name] = (
+                    task_result.candidate_response_time
+                )
+            continue
+
+        if first_failed_task is None:
+            first_failed_task = task.name
+            first_failure_reason = task_result.failure_reason
+        if status is TaskSolverStatus.NO_CANDIDATE:
+            if spec.carry_policy is methods.V93CarryPolicy.SELF_RECURSIVE:
+                stop_prefix = True
+            continue
+        operational_terminal = {
+            TaskSolverStatus.TIMEOUT: AnalysisSolverStatus.TIMEOUT,
+            TaskSolverStatus.NUMERIC_ERROR: AnalysisSolverStatus.NUMERIC_ERROR,
+            TaskSolverStatus.INTERNAL_CONFORMANCE_FAILURE: (
+                AnalysisSolverStatus.INTERNAL_CONFORMANCE_FAILURE
+            ),
+        }.get(status, AnalysisSolverStatus.INTERNAL_CONFORMANCE_FAILURE)
+        stop_prefix = True
+
+    frozen_results = tuple(task_results)
+    if all(
+        result.solver_status is TaskSolverStatus.CANDIDATE_FOUND
+        for result in frozen_results
+    ):
+        try:
+            budget.checkpoint("before_taskset_certification")
+            finalized = _finalize_unified_method_result(
+                analysis_id=analysis_id,
+                spec=spec,
+                tasks=ordered_tasks,
+                task_results=frozen_results,
+                exact_input_identity=(
+                    validated_input.dependency_context.exact_input_identity
+                ),
+                observer=finalization_observer,
+            )
+            budget.checkpoint("after_taskset_certification")
+            return finalized
+        except _AnalysisBudgetExpired as exc:
+            timeout_results = _replace_last_candidate_with_timeout(
+                task_results=frozen_results,
+                stage=exc.stage,
+            )
+            return _make_unified_taskset_result(
+                analysis_id=analysis_id,
+                spec=spec,
+                task_results=timeout_results,
+                solver_status=AnalysisSolverStatus.TIMEOUT,
+                certification_status=(
+                    AnalysisCertificationStatus.NOT_CERTIFIED
+                ),
+                first_failed_task=timeout_results[-1].task_id,
+                failure_reason=timeout_results[-1].failure_reason,
+                exact_input_identity=(
+                    validated_input.dependency_context.exact_input_identity
+                ),
+            )
+
+    try:
+        budget.checkpoint("before_taskset_result_return")
+    except _AnalysisBudgetExpired as exc:
+        # A terminal prefix failure has already frozen every unevaluated
+        # suffix record.  The final taskset-level checkpoint may withdraw a
+        # still-provisional final candidate, but it must never turn a suffix
+        # record (or an already-terminal task) into another TIMEOUT.
+        if (
+            frozen_results[-1].solver_status
+            is TaskSolverStatus.CANDIDATE_FOUND
+        ):
+            frozen_results = _replace_last_candidate_with_timeout(
+                task_results=frozen_results,
+                stage=exc.stage,
+            )
+            operational_terminal = AnalysisSolverStatus.TIMEOUT
+            if first_failed_task is None:
+                first_failed_task = frozen_results[-1].task_id
+                first_failure_reason = frozen_results[-1].failure_reason
+    solver_status = operational_terminal or AnalysisSolverStatus.NO_CANDIDATE
+    return _make_unified_taskset_result(
+        analysis_id=analysis_id,
+        spec=spec,
+        task_results=frozen_results,
+        solver_status=solver_status,
+        certification_status=AnalysisCertificationStatus.NOT_CERTIFIED,
+        first_failed_task=first_failed_task,
+        failure_reason=first_failure_reason,
+        exact_input_identity=(
+            validated_input.dependency_context.exact_input_identity
+        ),
     )
