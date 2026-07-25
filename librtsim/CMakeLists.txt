@@ -32,6 +32,7 @@ set(LIBRARY_SOURCE_FILES
     harvesting/sampled_trace_source.cpp
     harvesting/scaled_piecewise_source.cpp
     harvesting/sha256.cpp
+    scheduler/scheduler_harvest_runtime.cpp
 
     resource/fcfsresmanager.cpp
     resource/resmanager.cpp

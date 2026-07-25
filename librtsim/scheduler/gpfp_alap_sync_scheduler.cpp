@@ -163,14 +163,6 @@ namespace RTSim {
           _current_energy(0.0),
           _initial_energy(0.0),
           _max_energy(1000.0),
-          _last_tick_time(0),
-          _last_collection_time(0),
-          _solar_data_file(""),
-          _pv_efficiency(0.18),
-          _pv_area_m2(1.0),
-          _use_real_solar_data(false),
-          _start_time_offset(0),
-          _base_harvest_rate(0.054),  // ⭐ V93修复：默认值 54 mW
           _tick_event(nullptr),
           _first_tick_scheduled(false),
           _kernel(nullptr),
@@ -210,107 +202,6 @@ namespace RTSim {
         if (bridge_initialized) {
             SCHEDULER_LOG_INFO("✅ [ALAP-Sync] EnergyBridge 初始化成功");
 
-            _start_time_offset = configMgr.getStartTimeOffset();
-            SCHEDULER_LOG_INFO(std::string("⏰ [ALAP-Sync] 开始时间偏移: ") +
-                              std::to_string(static_cast<int64_t>(_start_time_offset)) + "ms");
-
-            // 读取太阳能配置
-            try {
-                std::ifstream yaml_file(config_file);
-                if (yaml_file.good()) {
-                    std::string line;
-                    bool in_energy_section = false;
-
-                    while (std::getline(yaml_file, line)) {
-                        std::string original_line = line;
-                        line.erase(0, line.find_first_not_of(" \t"));
-                        line.erase(line.find_last_not_of(" \t") + 1);
-
-                        if (line.empty() || line[0] == '#') {
-                            continue;
-                        }
-
-                        if (line.find("energy_management:") != std::string::npos) {
-                            in_energy_section = true;
-                            continue;
-                        }
-
-                        if (in_energy_section && !line.empty() && line[0] != '-' && line[0] != '#') {
-                            size_t leading_spaces = original_line.find_first_not_of(" \t");
-                            if (leading_spaces == 0 && line.find(':') != std::string::npos &&
-                                line.find("energy_management:") == std::string::npos) {
-                                break;
-                            }
-                        }
-
-                        if (in_energy_section) {
-                            if (line.find("use_real_solar_data:") != std::string::npos) {
-                                std::string value = line.substr(line.find(":") + 1);
-                                size_t comment_pos = value.find('#');
-                                if (comment_pos != std::string::npos) {
-                                    value = value.substr(0, comment_pos);
-                                }
-                                value.erase(0, value.find_first_not_of(" \t"));
-                                value.erase(value.find_last_not_of(" \t") + 1);
-                                _use_real_solar_data = (value == "true");
-                            }
-                            else if (line.find("solar_data_file:") != std::string::npos) {
-                                std::string value = line.substr(line.find(":") + 1);
-                                size_t comment_pos = value.find('#');
-                                if (comment_pos != std::string::npos) {
-                                    value = value.substr(0, comment_pos);
-                                }
-                                value.erase(0, value.find_first_not_of(" \t\""));
-                                value.erase(value.find_last_not_of(" \t\"") + 1);
-                                _solar_data_file = value;
-                            }
-                            else if (line.find("pv_efficiency:") != std::string::npos) {
-                                std::string value = line.substr(line.find(":") + 1);
-                                size_t comment_pos = value.find('#');
-                                if (comment_pos != std::string::npos) {
-                                    value = value.substr(0, comment_pos);
-                                }
-                                value.erase(0, value.find_first_not_of(" \t"));
-                                value.erase(value.find_last_not_of(" \t") + 1);
-                                _pv_efficiency = std::stod(value);
-                            }
-                            else if (line.find("pv_area_m2:") != std::string::npos) {
-                                std::string value = line.substr(line.find(":") + 1);
-                                size_t comment_pos = value.find('#');
-                                if (comment_pos != std::string::npos) {
-                                    value = value.substr(0, comment_pos);
-                                }
-                                value.erase(0, value.find_first_not_of(" \t"));
-                                value.erase(value.find_last_not_of(" \t") + 1);
-                                _pv_area_m2 = std::stod(value);
-                            }
-                            // ⭐ V93修复：读取base_harvesting_rate配置
-                            else if (line.find("base_harvesting_rate:") != std::string::npos) {
-                                std::string value = line.substr(line.find(":") + 1);
-                                size_t comment_pos = value.find('#');
-                                if (comment_pos != std::string::npos) {
-                                    value = value.substr(0, comment_pos);
-                                }
-                                value.erase(0, value.find_first_not_of(" \t"));
-                                value.erase(value.find_last_not_of(" \t") + 1);
-                                _base_harvest_rate = std::stod(value);
-                                SCHEDULER_LOG_INFO(std::string("☀️ [ALAP-Sync] V93: base_harvesting_rate = ") +
-                                                  std::to_string(_base_harvest_rate) + " J/ms (" +
-                                                  std::to_string(_base_harvest_rate * 1000) + " mW)");
-                            }
-                        }
-                    }
-
-                    SCHEDULER_LOG_INFO(std::string("☀️ [ALAP-Sync] 太阳能配置: ") +
-                                      "use_real=" + (_use_real_solar_data ? "true" : "false") +
-                                      " file=" + _solar_data_file +
-                                      " eff=" + std::to_string(_pv_efficiency) +
-                                      " area=" + std::to_string(_pv_area_m2) + "m²" +
-                                      " harvest_rate=" + std::to_string(_base_harvest_rate * 1000) + "mW");
-                }
-            } catch (const std::exception &e) {
-                SCHEDULER_LOG_WARNING(std::string("⚠️ [ALAP-Sync] 解析太阳能配置失败: ") + e.what());
-            }
 
             // 读取初始能量
             double bridge_energy = EnergyBridge::getInstance().getCurrentEnergy();
@@ -322,7 +213,6 @@ namespace RTSim {
         } else {
             SCHEDULER_LOG_WARNING("⚠️ [ALAP-Sync] EnergyBridge 初始化失败，使用ConfigManager获取能量");
 
-            _start_time_offset = configMgr.getStartTimeOffset();
             double config_energy = configMgr.getInitialEnergy();
             if (config_energy >= 0) {  // ⭐ 修复：允许初始能量为0
                 _initial_energy = config_energy;
@@ -717,21 +607,17 @@ namespace RTSim {
                            " 能量=" + std::to_string(_current_energy) + "J");
         _stats.total_tick_count++;
 
-        Tick elapsed = current_time - _last_tick_time;
-        if (elapsed > 0) {
-            double harvested = collectSolarEnergy(current_time);
-            if (harvested > 0.000001) {
-                _current_energy += harvested;
-                _stats.total_energy_harvested += harvested;
-                SCHEDULER_LOG_INFO(std::string("☀️ [ALAP-Sync] Tick边界收集能量: ") +
-                                   std::to_string(harvested) + "J" +
-                                   " 当前能量: " + std::to_string(_current_energy) + "J" +
-                                   " 经过时间: " + std::to_string(static_cast<int64_t>(elapsed)) + "ms");
-            }
-        }
-        _last_tick_time = current_time;
-        if (_current_energy > _max_energy) {
-            _current_energy = _max_energy;
+        const HarvestResult harvest_result =
+            _harvest_runtime.applyAtDecisionTime(
+                static_cast<int64_t>(current_time),
+                _current_energy,
+                _max_energy);
+        _current_energy = harvest_result.battery_after_j;
+        if (harvest_result.offered_j > 0.000001) {
+            _stats.total_energy_harvested += harvest_result.offered_j;
+            SCHEDULER_LOG_INFO(std::string("☀️ [ALAP-Sync] Tick边界收集能量: ") +
+                               std::to_string(harvest_result.offered_j) + "J" +
+                               " 当前能量: " + std::to_string(_current_energy) + "J");
         }
 
         if (!_kernel) {
@@ -1437,134 +1323,6 @@ namespace RTSim {
     // 能量收集方法
     // =====================================================
 
-    double ALAPSyncScheduler::collectSolarEnergy(Tick current_time) {
-        int64_t current_ms = static_cast<int64_t>(current_time);
-
-        // 计算自上次收集以来的时间
-        Tick elapsed = current_time - _last_collection_time;
-
-        if (elapsed <= 0) {
-            return 0.0;
-        }
-
-        double energy = 0.0;
-
-        if (_use_real_solar_data) {
-            // ⭐ 使用真实NASA太阳能数据
-            double irradiance = getSolarIrradiance(current_ms);  // W/m²
-            double elapsed_seconds = static_cast<double>(elapsed) * 0.001;
-            energy = irradiance * _pv_area_m2 * _pv_efficiency * elapsed_seconds;
-        } else {
-            // ⭐ V95修复：线性函数模型也应该使用面积和效率
-            // 与真实太阳能模式使用相同的公式：energy = irradiance × area × efficiency × time
-            int64_t actual_time_ms = current_ms + static_cast<int64_t>(_start_time_offset);
-            int64_t ms_of_day = actual_time_ms % 86400000;
-            double hour_of_day = static_cast<double>(ms_of_day) / 3600000.0;  // 0.0-24.0
-
-            // 计算时间因子（线性函数）
-            double time_factor = 0.0;
-            if (hour_of_day < 6.0) {
-                // 夜晚 (0:00-6:00)
-                time_factor = 0.0;
-            } else if (hour_of_day < 11.0) {
-                // 日出阶段 (6:00-11:00): 线性增加
-                time_factor = (hour_of_day - 6.0) / 5.0;  // 0.0-1.0
-            } else if (hour_of_day < 13.0) {
-                // 白天峰值 (11:00-13:00): 保持峰值
-                time_factor = 1.0;
-            } else if (hour_of_day < 18.0) {
-                // 日落阶段 (13:00-18:00): 线性降低
-                time_factor = (18.0 - hour_of_day) / 5.0;  // 1.0-0.0
-            } else {
-                // 夜晚 (18:00-24:00)
-                time_factor = 0.0;
-            }
-
-            // 计算峰值辐照度 (W/m²)
-            // base_harvest_rate (W) = irradiance (W/m²) × area (m²) × efficiency
-            // 所以 peak_irradiance = base_harvest_rate / (area × efficiency)
-            const double PEAK_IRRADIANCE = _base_harvest_rate / (_pv_area_m2 * _pv_efficiency);
-            double irradiance = PEAK_IRRADIANCE * time_factor;  // W/m²
-
-            // 使用与真实太阳能模式相同的公式
-            double elapsed_seconds = static_cast<double>(elapsed) * 0.001;
-            energy = irradiance * _pv_area_m2 * _pv_efficiency * elapsed_seconds;
-        }
-
-        // 更新最后收集时间
-        _last_collection_time = current_time;
-
-        return energy;
-    }
-
-    double ALAPSyncScheduler::getSolarIrradiance(int64_t time_ms) {
-        if (!_use_real_solar_data) {
-            // ⭐ 分段函数模型：模拟真实太阳能曲线
-            int64_t actual_time_ms = time_ms + static_cast<int64_t>(_start_time_offset);
-
-            // 转换为小时（用于分段判断）
-            int64_t ms_of_day = actual_time_ms % 86400000;
-            double hour_of_day = static_cast<double>(ms_of_day) / 3600000.0;  // 0.0-24.0
-
-            // 分段函数定义（更真实的太阳能曲线）
-            // ⭐ V94修复：使用base_harvest_rate计算等效辐照度，而不是硬编码
-            // base_harvest_rate (J/ms) = irradiance (W/m²) * area (m²) * efficiency * 0.001 (s/ms)
-            // 所以 irradiance = base_harvest_rate / (area * efficiency * 0.001)
-            const double PEAK_IRRADIANCE = _base_harvest_rate / (_pv_area_m2 * _pv_efficiency * 0.001);
-
-            if (hour_of_day < 6.0) {
-                // 夜晚 (0:00-6:00)
-                return 0.0;
-            } else if (hour_of_day < 11.0) {
-                // 日出阶段 (6:00-11:00): 线性增加，5小时
-                double progress = (hour_of_day - 6.0) / 5.0;  // 0.0-1.0
-                return PEAK_IRRADIANCE * progress;
-            } else if (hour_of_day < 13.0) {
-                // 白天峰值 (11:00-13:00): 保持峰值，2小时
-                return PEAK_IRRADIANCE;
-            } else if (hour_of_day < 18.0) {
-                // 日落阶段 (13:00-18:00): 线性降低，5小时
-                double progress = (18.0 - hour_of_day) / 5.0;  // 1.0-0.0
-                return PEAK_IRRADIANCE * progress;
-            } else {
-                // 夜晚 (18:00-24:00)
-                return 0.0;
-            }
-        }
-
-        // 使用真实NASA太阳能数据
-        int64_t actual_time_ms = time_ms + static_cast<int64_t>(_start_time_offset);
-        // ⭐ Bug修复：计算从数据开始的总分钟数，而不是当天的分钟数
-        // 数据文件按分钟索引，包含多天的数据（370天 × 1440分钟/天 = 532800分钟）
-        int64_t total_minutes = actual_time_ms / 60000;  // 从数据开始的总分钟数
-
-        int line_number = total_minutes + 2;  // +2跳过标题行
-
-        std::ifstream file(_solar_data_file);
-        if (!file.is_open()) {
-            SCHEDULER_LOG_WARNING(std::string("⚠️ [ALAP-Sync] 无法打开太阳能数据文件: ") + _solar_data_file);
-            return 0.0;
-        }
-
-        std::string line;
-        int current_line = 1;
-        while (current_line < line_number && std::getline(file, line)) {
-            current_line++;
-        }
-
-        if (std::getline(file, line)) {
-            try {
-                double irradiance = std::stod(line);
-                return irradiance;
-            } catch (const std::exception &e) {
-                SCHEDULER_LOG_WARNING(std::string("⚠️ [ALAP-Sync] 解析辐照度失败: ") + e.what());
-                return 0.0;
-            }
-        }
-
-        return 0.0;
-    }
-
     // =====================================================
     // Tick事件调度
     // =====================================================
@@ -1655,21 +1413,6 @@ namespace RTSim {
     // 配置方法
     // =====================================================
 
-    void ALAPSyncScheduler::setPVConfig(double efficiency, double area, const std::string &solar_file) {
-        _pv_efficiency = efficiency;
-        _pv_area_m2 = area;
-        _solar_data_file = solar_file;
-
-        SCHEDULER_LOG_INFO(std::string("⚙️ [ALAP-Sync] 太阳能配置更新: ") +
-                          "效率=" + std::to_string(efficiency) +
-                          " 面积=" + std::to_string(area) + "m²" +
-                          " 数据文件=" + solar_file);
-    }
-
-    void ALAPSyncScheduler::setStartTimeOffset(Tick offset) {
-        _start_time_offset = offset;
-    }
-
     void ALAPSyncScheduler::setKernel(AbsKernel *kernel) {
         // ⭐ V96修复：重写基类方法，同时设置基类和派生类的_kernel成员
         Scheduler::setKernel(kernel);
@@ -1693,9 +1436,12 @@ namespace RTSim {
     void ALAPSyncScheduler::newRun() {
         SCHEDULER_LOG_INFO("🏁 [ALAP-Sync] newRun - 仿真开始");
 
+        EnergyBridge::getInstance().initialize();
+        const HarvestSourceConfig harvest_config =
+            ConfigManager::getInstance().getHarvestSourceConfig();
+        _harvest_runtime.beginRun(harvest_config);
+
         _current_energy = _initial_energy;
-        _last_tick_time = SIMUL.getTime();
-        _last_collection_time = SIMUL.getTime();
 
         _ready_queue.clear();
         _waiting_queue.clear();
@@ -1740,14 +1486,6 @@ namespace RTSim {
 
     void ALAPSyncScheduler::endRun() {
         SCHEDULER_LOG_INFO("🏁 [ALAP-Sync] endRun - 仿真结束");
-
-        // 仿真结束前，收集最后一次能量
-        Tick current_time = SIMUL.getTime();
-        double harvested = collectSolarEnergy(current_time);
-        if (harvested > 0.0001) {
-            _current_energy += harvested;
-            _stats.total_energy_harvested += harvested;
-        }
 
         // 打印统计信息
         SCHEDULER_LOG_INFO("📊 [ALAP-Sync] ===== ALAP-Sync批量调度统计 =====");

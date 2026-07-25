@@ -156,10 +156,6 @@ FamilyOutcome runAbundantEnergyPreemptionScenario() {
     scheduler._initial_energy = 20.0;
     scheduler._current_energy = 20.0;
     scheduler._max_energy = 100.0;
-    scheduler._base_harvest_rate = 0.0;
-    scheduler._use_real_solar_data = false;
-    scheduler._last_tick_time = MetaSim::SIMUL.getTime();
-    scheduler._last_collection_time = MetaSim::SIMUL.getTime();
 
     medium.releaseAt(Tick(0));
     low.releaseAt(Tick(0));

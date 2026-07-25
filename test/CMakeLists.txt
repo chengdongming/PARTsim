@@ -19,6 +19,7 @@ add_executable(
   scheduler/priority_energy_runtime.cpp
   scheduler/harvest_config.cpp
   scheduler/harvest_runtime.cpp
+  scheduler/scheduler_harvest_runtime.cpp
   scheduler/harvest_source_factory.cpp
   scheduler/legacy_solar_source.cpp
   scheduler/sampled_trace_source.cpp
