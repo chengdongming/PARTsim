@@ -19,8 +19,8 @@ from .result_writer import (
 from .rta4_formal_config import RTA4_FORMAL_SCHEMA_VERSION, canonical_json
 from .rta4_formal_config import validate_rta4_formal_config
 from .rta4_formal_manifest import (
-    NONFORMAL_TEST_FIXTURE, RTA4_CONFIG_CHECKPOINT, RTA4_PLAN_MANIFEST,
-    build_trusted_plan_manifest, config_checkpoint,
+    FORMAL_AUTHORIZED, NONFORMAL_TEST_FIXTURE, RTA4_CONFIG_CHECKPOINT,
+    RTA4_PLAN_MANIFEST, build_trusted_plan_manifest, config_checkpoint,
 )
 from .rta4_formal_rows import RTA4FormalRowError, normalize_formal_row
 from .rta4_formal_schema import (
@@ -31,6 +31,7 @@ from .rta4_formal_store import RTA4FormalTasksetStore
 
 
 FORMAL_RUN_METADATA = "formal_run_metadata.json"
+FORMAL_AUTHORIZATION_EVIDENCE = "formal_authorization_evidence.json"
 FORMAL_TERMINAL_DIRECTORY = "formal_terminal_results"
 FORMAL_FAILURE_SEVERITIES = frozenset({"P0", "P1", "P2", "P3"})
 
@@ -62,19 +63,82 @@ class RTA4FormalResultWriter:
         self, root: Path | str, *, config: Mapping[str, Any],
         fixture_ordinals: Iterable[int] = (),
         execution_class: str = NONFORMAL_TEST_FIXTURE,
+        authorization_document: Mapping[str, Any] | None = None,
+        prepared_config: Mapping[str, Any] | None = None,
+        allow_test_authorization: bool = False,
     ) -> None:
-        if execution_class != NONFORMAL_TEST_FIXTURE:
+        if execution_class not in {NONFORMAL_TEST_FIXTURE, FORMAL_AUTHORIZED}:
             raise RTA4FormalWriterError(
-                "PR-D refuses every FORMAL execution; PR-E authorization does not exist"
+                "unknown RTA4 execution class"
             )
         self.config = validate_rta4_formal_config(config)
         self.core = self.config["core"]
         self.config_checkpoint = config_checkpoint(self.config)
+        authorization_binding = None
+        self.authorization_document = None
+        self.prepared_config = None
+        if execution_class == FORMAL_AUTHORIZED:
+            from .rta4_formal_authorization import (
+                validate_authorization_document,
+            )
+            from .rta4_formal_freeze import (
+                prepared_scientific_config, validate_prepared_config,
+            )
+            if authorization_document is None or prepared_config is None:
+                raise RTA4FormalWriterError(
+                    "formal writer requires prepared config and authorization"
+                )
+            self.authorization_document = validate_authorization_document(
+                authorization_document, allow_test=allow_test_authorization,
+            )
+            self.prepared_config = validate_prepared_config(prepared_config)
+            if prepared_scientific_config(self.prepared_config) != self.config:
+                raise RTA4FormalWriterError(
+                    "prepared/scientific configuration mismatch"
+                )
+            if (
+                self.authorization_document["core"] != self.core
+                or self.authorization_document["prepared_config_id"]
+                != self.prepared_config["prepared_config_id"]
+            ):
+                raise RTA4FormalWriterError(
+                    "authorization does not bind this prepared core"
+                )
+            if tuple(fixture_ordinals):
+                raise RTA4FormalWriterError(
+                    "formal writer refuses fixture ordinals"
+                )
+            authorization_binding = {
+                "authorization_id": self.authorization_document[
+                    "authorization_id"
+                ],
+                "prepared_config_id": self.prepared_config[
+                    "prepared_config_id"
+                ],
+                "freeze_manifest_id": self.authorization_document[
+                    "freeze_manifest_id"
+                ],
+                "environment_manifest_id": self.authorization_document[
+                    "environment_manifest"
+                ]["manifest_id"],
+                "command_manifest_id": self.authorization_document[
+                    "command_manifest"
+                ]["manifest_id"],
+            }
+        elif authorization_document is not None or prepared_config is not None:
+            raise RTA4FormalWriterError(
+                "fixture writer refuses formal authorization material"
+            )
         self.plan_manifest = build_trusted_plan_manifest(
             self.config, execution_class=execution_class,
             fixture_ordinals=tuple(fixture_ordinals),
+            authorization_binding=authorization_binding,
         )
         self.root = Path(root)
+        if execution_class == FORMAL_AUTHORIZED and str(
+            self.root.resolve()
+        ) != self.authorization_document["output_root"]:
+            raise RTA4FormalWriterError("writer output root differs from authorization")
         self.plan_sha256 = self.plan_manifest["manifest_sha256"]
         self.config_semantic_hash = self.config_checkpoint["config_semantic_hash"]
         self.schema_sha256 = formal_schema_hash()
@@ -83,6 +147,7 @@ class RTA4FormalResultWriter:
         metadata_path = self.root / FORMAL_RUN_METADATA
         checkpoint_path = self.root / RTA4_CONFIG_CHECKPOINT
         plan_manifest_path = self.root / RTA4_PLAN_MANIFEST
+        authorization_path = self.root / FORMAL_AUTHORIZATION_EVIDENCE
         existing_names = _root_files(self.root)
         if existing_names.intersection(LEGACY_TABLES):
             raise RTA4FormalWriterError(
@@ -99,17 +164,48 @@ class RTA4FormalResultWriter:
             raise RTA4FormalWriterError("trusted config checkpoint mismatch; refusing resume")
         if plan_manifest_path.is_file() and dict(_strict_json(plan_manifest_path)) != self.plan_manifest:
             raise RTA4FormalWriterError("trusted plan manifest mismatch; refusing resume")
-        metadata = {
+        metadata: Dict[str, Any] = {
             "schema_version": RTA4_FORMAL_SCHEMA_VERSION,
             "schema_sha256": self.schema_sha256,
             "plan_sha256": self.plan_sha256,
             "full_plan_sha256": self.plan_manifest["full_plan_sha256"],
             "config_semantic_hash": self.config_semantic_hash,
             "core": self.core,
-            "parameter_status": self.config["experiment_contract"]["parameter_status"],
+            "parameter_status": (
+                self.prepared_config["parameter_status"]
+                if execution_class == FORMAL_AUTHORIZED
+                else self.config["experiment_contract"]["parameter_status"]
+            ),
             "execution_class": execution_class,
-            "formal_authorized": False,
+            "formal_authorized": execution_class == FORMAL_AUTHORIZED,
         }
+        if execution_class == FORMAL_AUTHORIZED:
+            metadata.update({
+                "authorization_id": self.authorization_document[
+                    "authorization_id"
+                ],
+                "authorization_schema": self.authorization_document[
+                    "authorization_schema"
+                ],
+                "prepared_config_id": self.prepared_config[
+                    "prepared_config_id"
+                ],
+                "freeze_manifest_id": self.authorization_document[
+                    "freeze_manifest_id"
+                ],
+                "environment_manifest_id": self.authorization_document[
+                    "environment_manifest"
+                ]["manifest_id"],
+                "command_manifest_id": self.authorization_document[
+                    "command_manifest"
+                ]["manifest_id"],
+            })
+            if authorization_path.is_file() and dict(
+                _strict_json(authorization_path)
+            ) != self.authorization_document:
+                raise RTA4FormalWriterError(
+                    "authorization evidence mismatch; refusing resume"
+                )
         if metadata_path.is_file() and dict(_strict_json(metadata_path)) != metadata:
             raise RTA4FormalWriterError("plan/config/run metadata mismatch; refusing resume")
         for name, columns in FORMAL_TABLES.items():
@@ -126,6 +222,11 @@ class RTA4FormalResultWriter:
             atomic_write_json(plan_manifest_path, self.plan_manifest)
         if not metadata_path.is_file():
             atomic_write_json(metadata_path, metadata)
+        if (
+            execution_class == FORMAL_AUTHORIZED
+            and not authorization_path.is_file()
+        ):
+            atomic_write_json(authorization_path, self.authorization_document)
         for name, columns in FORMAL_TABLES.items():
             path = self.root / name
             if not path.exists():
@@ -300,7 +401,8 @@ def write_formal_file_hashes(root: Path | str) -> Path:
 
 
 __all__ = [
-    "FORMAL_RUN_METADATA", "FORMAL_TERMINAL_DIRECTORY",
+    "FORMAL_AUTHORIZATION_EVIDENCE", "FORMAL_RUN_METADATA",
+    "FORMAL_TERMINAL_DIRECTORY",
     "RTA4FormalResultWriter", "RTA4FormalWriterError",
     "write_formal_file_hashes",
 ]

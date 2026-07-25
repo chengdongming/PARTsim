@@ -23,10 +23,14 @@ from .rta4_formal_plan import (
 RTA4_CONFIG_CHECKPOINT = "formal_config_checkpoint.json"
 RTA4_PLAN_MANIFEST = "formal_plan_manifest.json"
 RTA4_PLAN_MANIFEST_VERSION = "ASAP_BLOCK_V9_3_RTA4_TRUSTED_PLAN_MANIFEST_V1"
+RTA4_FORMAL_PLAN_MANIFEST_VERSION = (
+    "ASAP_BLOCK_V9_3_RTA4_TRUSTED_FORMAL_PLAN_MANIFEST_V1"
+)
 RTA4_PLAN_MANIFEST_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_TRUSTED_PLAN_MANIFEST:v1"
 RTA4_SOURCE_RELATION_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_SOURCE_RELATION:v1"
 RTA4_COMPARISON_PLAN_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_COMPARISON_PLAN:v1"
 NONFORMAL_TEST_FIXTURE = "NONFORMAL_TEST_FIXTURE"
+FORMAL_AUTHORIZED = "FORMAL_AUTHORIZED"
 RTA4_FIXTURE_LIMIT = 100
 
 
@@ -146,13 +150,41 @@ def _comparison_rows(
 def build_trusted_plan_manifest(
     config: Mapping[str, Any], *, execution_class: str,
     fixture_ordinals: Sequence[int] = (),
+    authorization_binding: Mapping[str, Any] | None = None,
 ) -> Dict[str, Any]:
     normalized = validate_rta4_formal_config(config)
-    if execution_class != NONFORMAL_TEST_FIXTURE:
+    if execution_class not in {NONFORMAL_TEST_FIXTURE, FORMAL_AUTHORIZED}:
         raise RTA4FormalManifestError(
-            "PR-D permits only NONFORMAL_TEST_FIXTURE plan manifests"
+            "unknown RTA4 execution class"
         )
-    records = _records_at_ordinals(normalized, fixture_ordinals)
+    if execution_class == FORMAL_AUTHORIZED:
+        if tuple(fixture_ordinals):
+            raise RTA4FormalManifestError(
+                "FORMAL_AUTHORIZED requires empty fixture ordinals"
+            )
+        if not isinstance(authorization_binding, Mapping) or set(
+            authorization_binding
+        ) != {
+            "authorization_id", "prepared_config_id", "freeze_manifest_id",
+            "environment_manifest_id", "command_manifest_id",
+        }:
+            raise RTA4FormalManifestError(
+                "FORMAL_AUTHORIZED requires its exact authorization binding"
+            )
+        if any(
+            not isinstance(value, str) or len(value) != 64
+            for value in authorization_binding.values()
+        ):
+            raise RTA4FormalManifestError(
+                "formal authorization bindings must be SHA-256 identities"
+            )
+        records = tuple(iter_formal_plan(normalized))
+    else:
+        if authorization_binding is not None:
+            raise RTA4FormalManifestError(
+                "fixture manifest must not carry formal authorization"
+            )
+        records = _records_at_ordinals(normalized, fixture_ordinals)
     core = normalized["core"]
     description = _trusted_description(core)
     stream = ordered_stream_digest(iter(records))
@@ -165,7 +197,11 @@ def build_trusted_plan_manifest(
         if record.mathematical_request_id in selected_math_ids
     )
     material = {
-        "manifest_version": RTA4_PLAN_MANIFEST_VERSION,
+        "manifest_version": (
+            RTA4_FORMAL_PLAN_MANIFEST_VERSION
+            if execution_class == FORMAL_AUTHORIZED
+            else RTA4_PLAN_MANIFEST_VERSION
+        ),
         "profile": RTA4_FORMAL_PROFILE,
         "plan_version": RTA4_FORMAL_PLAN_VERSION,
         "parameter_status": RTA4_FORMAL_PARAMETER_STATUS,
@@ -212,6 +248,13 @@ def build_trusted_plan_manifest(
             for row in selected_references
         ],
     }
+    if execution_class == FORMAL_AUTHORIZED:
+        material.update({
+            "formal_authorization_binding": dict(authorization_binding),
+            "complete_plan_membership": True,
+            "formal_ordered_stream_count": stream.count,
+            "formal_ordered_stream_digest": stream.sha256,
+        })
     return {
         **material,
         "manifest_sha256": domain_hash(RTA4_PLAN_MANIFEST_DOMAIN, material),
@@ -227,6 +270,7 @@ def validate_trusted_plan_manifest(
         config,
         execution_class=str(manifest.get("execution_class", "")),
         fixture_ordinals=manifest.get("fixture_ordinals", ()),
+        authorization_binding=manifest.get("formal_authorization_binding"),
     )
     if dict(manifest) != expected:
         raise RTA4FormalManifestError("trusted plan manifest mismatch")
@@ -239,11 +283,14 @@ def trusted_plan_records(
     """Re-enumerate the exact records selected by a validated manifest."""
 
     validate_trusted_plan_manifest(manifest, config)
+    if manifest["execution_class"] == FORMAL_AUTHORIZED:
+        return tuple(iter_formal_plan(validate_rta4_formal_config(config)))
     return _records_at_ordinals(config, manifest["fixture_ordinals"])
 
 
 __all__ = [
-    "NONFORMAL_TEST_FIXTURE", "RTA4_CONFIG_CHECKPOINT", "RTA4_FIXTURE_LIMIT",
+    "FORMAL_AUTHORIZED", "NONFORMAL_TEST_FIXTURE", "RTA4_CONFIG_CHECKPOINT",
+    "RTA4_FIXTURE_LIMIT", "RTA4_FORMAL_PLAN_MANIFEST_VERSION",
     "RTA4_PLAN_MANIFEST", "RTA4_PLAN_MANIFEST_VERSION",
     "RTA4FormalManifestError", "build_trusted_plan_manifest",
     "config_checkpoint", "plan_comparison_id", "plan_relation_id",

@@ -492,13 +492,13 @@ def aggregate_formal_run(
 ) -> Mapping[str, Any]:
     sources = source_closures or {}
     closure = validate_formal_run_closure(
-        root, require_complete=True, require_authorized_formal=True,
+        root, require_complete=True,
         source_closures=sources,
     )
     if type(bootstrap_replicates) is not int or bootstrap_replicates < 1:
         raise RTA4FormalAggregationError("bootstrap replicates must be positive")
     if (
-        closure.metadata.get("execution_class") == "FORMAL"
+        closure.metadata.get("execution_class") == "FORMAL_AUTHORIZED"
         and bootstrap_replicates != RTA4_BOOTSTRAP_REPLICATES
     ):
         raise RTA4FormalAggregationError("formal profile fixes bootstrap at 10,000 replicates")
