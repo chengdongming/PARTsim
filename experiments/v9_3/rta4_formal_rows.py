@@ -5,7 +5,8 @@ from __future__ import annotations
 from fractions import Fraction
 import math
 import re
-from typing import Any, Dict, Mapping
+from dataclasses import dataclass
+from typing import Any, Dict, FrozenSet, Mapping
 import unicodedata
 
 from .rta4_formal_schema import FORMAL_TABLES
@@ -85,16 +86,6 @@ SHA_FIELDS = frozenset({
     "reference_math_result_hash", "compared_math_result_hash", "failure_id",
 })
 
-NULLABLE = frozenset({
-    "source_analysis_id", "parent_attempt_id", "failure_origin",
-    "runtime_cpu_seconds", "first_failed_priority", "failure_reason",
-    "candidate_response_time", "witness_hash", "left_candidate", "right_candidate",
-    "trace_path", "completion_time", "observed_response_time",
-    "analysis_id", "simulation_id", "taskset_skeleton_id", "taskset_id",
-    "battery_capacity", "physical_initial_energy", "no_overflow_evidence_id",
-    "failure_severity",
-})
-
 ENUMS = {
     "core": {"CORE-1", "CORE-2", "CORE-3", "CORE-4", "CORE-5A", "CORE-5B"},
     "generation_status": {"GENERATED_AND_CERTIFIED"},
@@ -148,6 +139,138 @@ TABLE_ENUMS = {
     "formal_simulation_job_results.csv": {
         "observation_status": {"COMPLETED", "DEADLINE_MISSED", "INCOMPLETE"},
     },
+}
+
+
+@dataclass(frozen=True)
+class TableRowContract:
+    """Fully resolved semantic contract for one exact formal table."""
+
+    required_fields: FrozenSet[str]
+    nullable_fields: FrozenSet[str]
+    sha256_fields: FrozenSet[str]
+    domain_identity_fields: FrozenSet[str]
+    exact_fields: FrozenSet[str]
+    integer_fields: FrozenSet[str]
+    measurement_fields: FrozenSet[str]
+    boolean_fields: FrozenSet[str]
+    enums: Mapping[str, FrozenSet[str]]
+    status_contract: str | None = None
+
+
+# Nullable semantics are deliberately table-local.  In particular, the sparse
+# failure table must not make analysis/taskset identities nullable elsewhere.
+TABLE_NULLABLE_FIELDS: Mapping[str, FrozenSet[str]] = {
+    "formal_cells.csv": frozenset(),
+    "formal_taskset_skeletons.csv": frozenset(),
+    "formal_tasksets.csv": frozenset(),
+    "formal_tasks.csv": frozenset(),
+    "formal_rta_requests.csv": frozenset({"source_analysis_id"}),
+    "formal_rta_attempts.csv": frozenset({
+        "parent_attempt_id", "failure_origin", "runtime_cpu_seconds",
+    }),
+    "formal_rta_taskset_results.csv": frozenset({
+        "first_failed_priority", "failure_reason", "runtime_cpu_seconds",
+        "source_analysis_id",
+    }),
+    "formal_rta_task_results.csv": frozenset({
+        "candidate_response_time", "failure_reason", "witness_hash",
+    }),
+    "formal_rta_mechanisms.csv": frozenset({
+        "impossible_prefix_count", "empty_phase_set_count",
+        "strict_ph_lt_loc_checkpoints", "flow_call_count", "flow_node_count",
+        "flow_edge_count", "z_branch_count", "flow_optimal_count",
+        "flow_infeasible_count", "flow_timeout_count", "flow_internal_count",
+        "ph_no_common_h_but_seq_exists", "sequence_kind", "sequence_length",
+        "distinct_h_count", "last_h", "strict_seq_lt_ph",
+        "safety_predicate_calls", "cache_hits", "cache_misses",
+        "cache_hit_rate",
+    }),
+    "formal_dependencies.csv": frozenset(),
+    "formal_dominance_checks.csv": frozenset({
+        "left_candidate", "right_candidate", "failure_severity",
+    }),
+    "formal_monotonicity_checks.csv": frozenset({"failure_severity"}),
+    "formal_simulation_runs.csv": frozenset({"battery_capacity"}),
+    "formal_simulation_task_results.csv": frozenset(),
+    "formal_simulation_job_results.csv": frozenset({
+        "completion_time", "observed_response_time",
+    }),
+    "formal_applicability.csv": frozenset({
+        "candidate_response_time", "observed_response_time",
+    }),
+    "formal_worker_consistency.csv": frozenset({"failure_severity"}),
+    "formal_failures.csv": frozenset({
+        "analysis_id", "simulation_id", "taskset_skeleton_id", "taskset_id",
+    }),
+}
+
+
+# These fields are versioned domain identities in addition to being SHA-256
+# text.  Keeping the classification in the resolved per-table contract makes
+# it available to writer/closure audits without changing the CSV schema.
+DOMAIN_IDENTITY_FIELDS = frozenset({
+    "cell_id", "plan_record_id", "generation_request_id",
+    "taskset_skeleton_id", "taskset_id", "priority_identity",
+    "base_power_vector_identity", "analysis_id", "request_id",
+    "execution_run_id", "service_identity", "exact_input_identity",
+    "source_analysis_id", "attempt_id", "parent_attempt_id",
+    "task_result_id", "plan_relation_id", "source_request_id", "check_id",
+    "weaker_analysis_id", "stronger_analysis_id", "plan_simulation_id",
+    "simulation_id", "simulation_task_result_id", "simulation_job_result_id",
+    "release_projection_id", "service_harvest_identity", "release_audit_id",
+    "no_overflow_evidence_id", "validated_simulation_evidence_id",
+    "plan_comparison_id", "comparison_id", "e0_evaluation_id",
+    "mathematical_request_id", "reference_execution_id",
+    "compared_execution_id", "failure_id", "taskset_skeleton_slot_id",
+    "taskset_slot_id",
+})
+
+
+TABLE_SHA256_ADDITIONS: Mapping[str, FrozenSet[str]] = {
+    name: frozenset({"cell_id"}) & frozenset(columns)
+    for name, columns in FORMAL_TABLES.items()
+}
+
+
+TABLE_STATUS_CONTRACTS: Mapping[str, str | None] = {
+    name: (
+        "RTA_TASKSET_RESULT_V1" if name == "formal_rta_taskset_results.csv"
+        else "RTA_TASK_RESULT_V1" if name == "formal_rta_task_results.csv"
+        else None
+    )
+    for name in FORMAL_TABLES
+}
+
+
+def _resolved_contract(table: str) -> TableRowContract:
+    fields = frozenset(FORMAL_TABLES[table])
+    nullable = TABLE_NULLABLE_FIELDS[table]
+    if not nullable <= fields:
+        raise RuntimeError(f"nullable row contract drift for {table}")
+    enums = {
+        field: frozenset(allowed)
+        for field in fields
+        if (allowed := TABLE_ENUMS.get(table, {}).get(field, ENUMS.get(field)))
+        is not None
+    }
+    sha_fields = frozenset((fields & SHA_FIELDS) | TABLE_SHA256_ADDITIONS[table])
+    return TableRowContract(
+        required_fields=frozenset(fields - nullable),
+        nullable_fields=nullable,
+        sha256_fields=sha_fields,
+        domain_identity_fields=frozenset(fields & DOMAIN_IDENTITY_FIELDS),
+        exact_fields=frozenset(fields & EXACT_FIELDS),
+        integer_fields=frozenset(fields & INTEGER_FIELDS),
+        measurement_fields=frozenset(fields & MEASUREMENT_FIELDS),
+        boolean_fields=frozenset(fields & BOOLEAN_FIELDS),
+        enums=enums,
+        status_contract=TABLE_STATUS_CONTRACTS[table],
+    )
+
+
+TABLE_ROW_CONTRACTS: Mapping[str, TableRowContract] = {
+    name: _resolved_contract(name) for name in FORMAL_TABLES
 }
 
 
@@ -206,7 +329,11 @@ def _measurement_text(value: Any, field: str, *, nullable: bool) -> str:
     return format(number, ".17g")
 
 
-def _boolean_text(value: Any, field: str) -> str:
+def _boolean_text(value: Any, field: str, *, nullable: bool) -> str:
+    if value is None or value == "" or value == NA:
+        if nullable:
+            return NA
+        raise RTA4FormalRowError(f"{field} is required")
     if value is True or value in {"true", "True", "1", 1}:
         return "true"
     if value is False or value in {"false", "False", "0", 0}:
@@ -232,6 +359,7 @@ def normalize_formal_row(
 ) -> Dict[str, str]:
     if table not in FORMAL_TABLES:
         raise RTA4FormalRowError(f"unknown formal table: {table}")
+    contract = TABLE_ROW_CONTRACTS[table]
     expected = set(FORMAL_TABLES[table])
     supplied = {**dict(common), **dict(row)}
     extra = set(supplied) - expected
@@ -243,20 +371,20 @@ def normalize_formal_row(
     result: Dict[str, str] = {}
     for field in FORMAL_TABLES[table]:
         value = supplied[field]
-        nullable = field in NULLABLE
-        if field in EXACT_FIELDS and not (field == "axis_value" and str(value) in {"baseline", "ALL", "NA"}):
+        nullable = field in contract.nullable_fields
+        if field in contract.exact_fields and not (field == "axis_value" and str(value) in {"baseline", "ALL", "NA"}):
             text = _fraction_text(value, field, nullable=nullable)
-        elif field in INTEGER_FIELDS:
+        elif field in contract.integer_fields:
             text = _integer_text(value, field, nullable=nullable)
-        elif field in MEASUREMENT_FIELDS:
+        elif field in contract.measurement_fields:
             text = _measurement_text(value, field, nullable=nullable)
-        elif field in BOOLEAN_FIELDS:
-            text = _boolean_text(value, field)
+        elif field in contract.boolean_fields:
+            text = _boolean_text(value, field, nullable=nullable)
         else:
             text = _string(value, field, nullable=nullable)
-        if field in SHA_FIELDS and text != NA and _SHA256.fullmatch(text) is None:
+        if field in contract.sha256_fields and text != NA and _SHA256.fullmatch(text) is None:
             raise RTA4FormalRowError(f"{field} must be canonical lowercase SHA-256")
-        allowed = TABLE_ENUMS.get(table, {}).get(field, ENUMS.get(field))
+        allowed = contract.enums.get(field)
         if allowed is not None and text != NA and text not in allowed:
             raise RTA4FormalRowError(f"unknown {field}: {text!r}")
         result[field] = text
@@ -276,7 +404,91 @@ def normalize_formal_row(
                 raise RTA4FormalRowError("certified task requires a found candidate")
             if int(candidate) > int(result["D"]):
                 raise RTA4FormalRowError("certified candidate must not exceed D")
+        certification = result["task_certification_status"]
+        expected_certification = {
+            "NO_CANDIDATE": "NOT_CERTIFIED",
+            "TIMEOUT": "TIMEOUT",
+            "NUMERIC_ERROR": "ERROR",
+            "INTERNAL_ERROR": "ERROR",
+        }.get(status)
+        if expected_certification is not None and certification != expected_certification:
+            raise RTA4FormalRowError(
+                "task solver/certification status combination is inconsistent"
+            )
+        if status in {"NO_CANDIDATE", "TIMEOUT", "NUMERIC_ERROR", "INTERNAL_ERROR"}:
+            if result["failure_reason"] == NA:
+                raise RTA4FormalRowError("failed task result requires failure_reason")
+        if status == "CANDIDATE_FOUND" and certification not in {
+            "CERTIFIED", "NOT_CERTIFIED",
+        }:
+            raise RTA4FormalRowError(
+                "candidate-found task has an inconsistent certification status"
+            )
+    if table == "formal_rta_taskset_results.csv":
+        solver = result["solver_status"]
+        certification = result["taskset_certification_status"]
+        proven = result["taskset_proven"] == "true"
+        timeout = result["timeout"] == "true"
+        failed_priority = result["first_failed_priority"]
+        failure_reason = result["failure_reason"]
+        if proven:
+            if solver != "COMPLETED" or certification != "CERTIFIED_TASKSET" or timeout:
+                raise RTA4FormalRowError(
+                    "proven taskset requires completed/non-timeout certified status"
+                )
+            if failed_priority != NA or failure_reason != NA:
+                raise RTA4FormalRowError(
+                    "proven taskset cannot carry failure evidence"
+                )
+        elif solver == "TIMEOUT":
+            if not timeout or certification != "TIMEOUT":
+                raise RTA4FormalRowError(
+                    "timeout taskset requires timeout=true and TIMEOUT certification"
+                )
+            if failed_priority == NA or failure_reason == NA:
+                raise RTA4FormalRowError(
+                    "timeout taskset requires failed priority and failure reason"
+                )
+        elif solver == "NO_CANDIDATE":
+            if timeout or certification != "NOT_CERTIFIED":
+                raise RTA4FormalRowError(
+                    "no-candidate taskset status is inconsistent"
+                )
+            if failed_priority == NA or failure_reason == NA:
+                raise RTA4FormalRowError(
+                    "no-candidate taskset requires failed priority and failure reason"
+                )
+        elif solver in {"NUMERIC_ERROR", "INTERNAL_ERROR"}:
+            if timeout or certification != "ERROR":
+                raise RTA4FormalRowError("error taskset status is inconsistent")
+            if failed_priority == NA or failure_reason == NA:
+                raise RTA4FormalRowError(
+                    "error taskset requires failed priority and failure reason"
+                )
+        elif solver == "COMPLETED":
+            if timeout or certification != "NOT_CERTIFIED":
+                raise RTA4FormalRowError(
+                    "non-proven completed taskset must be NOT_CERTIFIED"
+                )
+            if failed_priority == NA or failure_reason == NA:
+                raise RTA4FormalRowError(
+                    "non-proven completed taskset requires failure evidence"
+                )
+        else:
+            raise RTA4FormalRowError("unknown taskset solver state")
+    if table == "formal_rta_attempts.csv":
+        error_solver = result["solver_status"] in {
+            "NUMERIC_ERROR", "INTERNAL_ERROR",
+        }
+        has_origin = result["failure_origin"] != NA
+        if error_solver != has_origin:
+            raise RTA4FormalRowError(
+                "attempt failure origin/solver status combination is inconsistent"
+            )
     return result
 
 
-__all__ = ["NA", "RTA4FormalRowError", "normalize_formal_row"]
+__all__ = [
+    "NA", "RTA4FormalRowError", "TABLE_ROW_CONTRACTS", "TableRowContract",
+    "normalize_formal_row",
+]

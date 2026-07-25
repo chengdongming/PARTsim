@@ -16,7 +16,8 @@ from typing import Any, Dict, Mapping, Sequence
 from .result_writer import atomic_write_json, write_csv
 from .rta4_formal_config import canonical_json
 from .rta4_formal_validation import (
-    ValidatedFormalClosure, validate_formal_run_closure,
+    ValidatedFormalClosure, refresh_validated_closure,
+    validate_formal_run_closure,
 )
 
 
@@ -240,10 +241,6 @@ def _figure2(
     closure: ValidatedFormalClosure,
     source: ValidatedFormalClosure,
 ) -> list[Dict[str, Any]]:
-    results = (
-        closure.table("formal_rta_taskset_results.csv")
-        + source.table("formal_rta_taskset_results.csv")
-    )
     mechanisms = closure.table("formal_rta_mechanisms.csv")
     output: list[Dict[str, Any]] = []
     bundle_identity = (
@@ -251,29 +248,54 @@ def _figure2(
         closure.closure_sha256, source.metadata["plan_sha256"],
         source.closure_sha256,
     )
-    index = {
-        bundle_identity + (
-            row["taskset_skeleton_id"], row["taskset_id"], row["exact_e0"],
-            row["service_identity"], row["power_vector_hash"], row["deadline_variant"],
-            row["scenario"], row["axis"], row["axis_value"], row["method"],
-        ): row
-        for row in results
+    target_methods = {
+        "CW_D", "LOC_D", "PH_D", "SEQ_D", "CW_THETA_CW", "SEQ_THETA_SEQ",
     }
-    relations = (
-        ("LOC_D_MINUS_CW_D", "CW_D", "LOC_D"),
-        ("PH_D_MINUS_LOC_D", "LOC_D", "PH_D"),
-        ("SEQ_D_MINUS_PH_D", "PH_D", "SEQ_D"),
-        ("LOC_THETA_MINUS_CW_THETA", "CW_THETA_CW", "LOC_THETA_LOC"),
-        ("PH_THETA_MINUS_LOC_THETA", "LOC_THETA_LOC", "PH_THETA_PH"),
-        ("SEQ_THETA_MINUS_PH_THETA", "PH_THETA_PH", "SEQ_THETA_SEQ"),
+    source_methods = {"LOC_THETA_LOC", "PH_THETA_PH"}
+
+    def provenance_index(
+        rows: Sequence[Mapping[str, str]], *, allowed: set[str], origin: str,
+    ) -> Dict[tuple[str, ...], Mapping[str, str]]:
+        index: Dict[tuple[str, ...], Mapping[str, str]] = {}
+        for row in rows:
+            if row["method"] not in allowed:
+                continue
+            domain = bundle_identity + (
+                row["taskset_skeleton_id"], row["taskset_id"], row["exact_e0"],
+                row["service_identity"], row["power_vector_hash"],
+                row["deadline_variant"], row["scenario"], row["axis"],
+                row["axis_value"], row["method"],
+            )
+            if domain in index:
+                raise RTA4FormalAggregationError(
+                    f"duplicate {origin} Figure 2 pairing domain"
+                )
+            index[domain] = row
+        return index
+
+    target_index = provenance_index(
+        closure.table("formal_rta_taskset_results.csv"),
+        allowed=target_methods, origin="TARGET_CORE2",
     )
-    for relation, weak, strong in relations:
+    source_index = provenance_index(
+        source.table("formal_rta_taskset_results.csv"),
+        allowed=source_methods, origin="SOURCE_CORE1",
+    )
+    relations = (
+        ("LOC_D_MINUS_CW_D", target_index, "CW_D", target_index, "LOC_D"),
+        ("PH_D_MINUS_LOC_D", target_index, "LOC_D", target_index, "PH_D"),
+        ("SEQ_D_MINUS_PH_D", target_index, "PH_D", target_index, "SEQ_D"),
+        ("LOC_THETA_MINUS_CW_THETA", target_index, "CW_THETA_CW", source_index, "LOC_THETA_LOC"),
+        ("PH_THETA_MINUS_LOC_THETA", source_index, "LOC_THETA_LOC", source_index, "PH_THETA_PH"),
+        ("SEQ_THETA_MINUS_PH_THETA", source_index, "PH_THETA_PH", target_index, "SEQ_THETA_SEQ"),
+    )
+    for relation, left_index, weak, right_index, strong in relations:
         groups: Dict[tuple[str, str], list[float]] = defaultdict(list)
-        for key in index:
+        for key in sorted(left_index):
             if key[-1] != weak:
                 continue
-            left = index[key]
-            right = index.get((*key[:-1], strong))
+            left = left_index[key]
+            right = right_index.get((*key[:-1], strong))
             if right is None:
                 continue
             groups[(left["normalized_utilization"], left["exact_e0"])].append(
@@ -492,10 +514,7 @@ def aggregate_formal_run(
             raise RTA4FormalAggregationError(
                 f"{core} aggregation requires the validated CORE-1 source bundle"
             )
-        source = (
-            raw_source if isinstance(raw_source, ValidatedFormalClosure)
-            else validate_formal_run_closure(raw_source, require_complete=True)
-        )
+        source = refresh_validated_closure(raw_source, require_complete=True)
         if source.metadata["core"] != "CORE-1":
             raise RTA4FormalAggregationError("aggregate source bundle is not CORE-1")
     data: Dict[str, list[Dict[str, Any]]] = {

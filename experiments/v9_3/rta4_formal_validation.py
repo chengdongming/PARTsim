@@ -260,10 +260,22 @@ def validate_monotonicity(
             if _truth(weaker.get("taskset_proven")) and not _truth(stronger.get("taskset_proven")):
                 findings.append(FormalFinding(P0, "MONOTONICITY_CERTIFICATION_VIOLATION", f"stronger {key[2]} condition lost certification", key[0]))
             weak_tasks, strong_tasks = task_by_analysis.get(str(weaker.get("analysis_id")), {}), task_by_analysis.get(str(stronger.get("analysis_id")), {})
-            for task_id in sorted(set(weak_tasks) & set(strong_tasks)):
+            task_ids = sorted(set(weak_tasks) | set(strong_tasks))
+            missing_evidence = not task_ids
+            for task_id in task_ids:
+                if task_id not in weak_tasks or task_id not in strong_tasks:
+                    missing_evidence = True
+                    continue
                 wc, sc = _optional_int(weak_tasks[task_id].get("candidate_response_time")), _optional_int(strong_tasks[task_id].get("candidate_response_time"))
-                if wc is not None and sc is not None and sc > wc:
+                if wc is None or sc is None:
+                    missing_evidence = True
+                elif sc > wc:
                     findings.append(FormalFinding(P0, "MONOTONICITY_CANDIDATE_VIOLATION", f"stronger {key[2]} condition worsened candidate", f"{key[0]}:{task_id}"))
+            if missing_evidence:
+                findings.append(FormalFinding(
+                    P0, "MONOTONICITY_CANDIDATE_EVIDENCE_MISSING",
+                    f"{key[2]} pair lacks comparable candidate evidence", key[0],
+                ))
     return tuple(findings)
 
 
@@ -376,10 +388,17 @@ def recompute_monotonicity_rows(
                 and not _truth(stronger["taskset_proven"])
             )
             comparable = 0
+            missing_evidence = False
             candidate_valid = True
             weak_tasks = tasks_by_analysis.get(str(weaker["analysis_id"]), {})
             strong_tasks = tasks_by_analysis.get(str(stronger["analysis_id"]), {})
-            for task_id in sorted(set(weak_tasks) & set(strong_tasks)):
+            task_ids = sorted(set(weak_tasks) | set(strong_tasks))
+            if not task_ids:
+                missing_evidence = True
+            for task_id in task_ids:
+                if task_id not in weak_tasks or task_id not in strong_tasks:
+                    missing_evidence = True
+                    continue
                 weak_candidate = _optional_int(
                     weak_tasks[task_id]["candidate_response_time"]
                 )
@@ -387,17 +406,21 @@ def recompute_monotonicity_rows(
                     strong_tasks[task_id]["candidate_response_time"]
                 )
                 if weak_candidate is None or strong_candidate is None:
+                    missing_evidence = True
                     continue
                 comparable += 1
                 candidate_valid = candidate_valid and strong_candidate <= weak_candidate
             candidate_status = (
-                "NOT_COMPARABLE" if comparable == 0
+                "NOT_COMPARABLE" if missing_evidence or comparable == 0
                 else "PASS" if candidate_valid else "P0_VIOLATION"
             )
             certification_status = (
                 "PASS" if certification_valid else "P0_VIOLATION"
             )
-            valid = candidate_valid and certification_valid
+            valid = (
+                not missing_evidence and comparable > 0
+                and candidate_valid and certification_valid
+            )
             identity = {
                 "weaker_analysis_id": weaker["analysis_id"],
                 "stronger_analysis_id": stronger["analysis_id"],
@@ -477,6 +500,48 @@ def _closure_digest(root: Path) -> str:
     return digest.hexdigest()
 
 
+def refresh_validated_closure(
+    source: Path | str | ValidatedFormalClosure, *, require_complete: bool = True,
+    source_closures: Mapping[str, Path | str | ValidatedFormalClosure] | None = None,
+) -> ValidatedFormalClosure:
+    """Revalidate the current on-disk source even when passed an old object.
+
+    A ``ValidatedFormalClosure`` is evidence about one inventory snapshot, not
+    a permanent capability for its mutable root.  Refreshing closes the stale
+    object path and returns a new snapshot only when every bound identity and
+    the canonical closure inventory hash remain unchanged.
+    """
+
+    previous = source if isinstance(source, ValidatedFormalClosure) else None
+    root = previous.root if previous is not None else Path(source)
+    refreshed = validate_formal_run_closure(
+        root, require_complete=require_complete,
+        source_closures=source_closures,
+    )
+    if previous is None:
+        return refreshed
+    identity_keys = (
+        "schema_version", "schema_sha256", "plan_sha256",
+        "config_semantic_hash", "core", "execution_class",
+    )
+    if any(
+        refreshed.metadata.get(key) != previous.metadata.get(key)
+        for key in identity_keys
+    ):
+        raise RTA4FormalValidationError(
+            "refreshed closure identity differs from validated source object"
+        )
+    if (
+        dict(refreshed.plan_manifest) != dict(previous.plan_manifest)
+        or dict(refreshed.config) != dict(previous.config)
+        or refreshed.closure_sha256 != previous.closure_sha256
+    ):
+        raise RTA4FormalValidationError(
+            "validated source object is stale relative to its current root"
+        )
+    return refreshed
+
+
 def _config_from_checkpoint(checkpoint: Mapping[str, Any]) -> Mapping[str, Any]:
     try:
         core = checkpoint["core"]
@@ -501,6 +566,49 @@ def _comparison_status(e0_status: str, rta: str, simulation: str) -> str:
         (RTA_FAIL, SIM_DEADLINE_MISS): "RTA_FAIL_SIM_FAIL",
         (RTA_FAIL, SIM_NO_DEADLINE_MISS): "RTA_FAIL_SIM_PASS",
     }[(rta, simulation)]
+
+
+def _validate_taskset_result_vector(
+    result: Mapping[str, str], rows: Sequence[Mapping[str, str]],
+) -> None:
+    """Bind the taskset solver state to its complete raw task-status vector."""
+
+    solver = result["solver_status"]
+    task_solvers = [row["task_solver_status"] for row in rows]
+    task_certifications = [row["task_certification_status"] for row in rows]
+    candidates = [_optional_int(row["candidate_response_time"]) for row in rows]
+    if solver == "TIMEOUT":
+        if "TIMEOUT" not in task_solvers:
+            raise RTA4FormalValidationError(
+                "timeout taskset lacks a timeout raw task result"
+            )
+        if any(status == "CERTIFIED" for status in task_certifications) or any(
+            candidate is not None for candidate in candidates
+        ):
+            raise RTA4FormalValidationError(
+                "timeout taskset carries certified candidate evidence"
+            )
+    elif solver == "NO_CANDIDATE":
+        if "NO_CANDIDATE" not in task_solvers:
+            raise RTA4FormalValidationError(
+                "no-candidate taskset lacks a no-candidate raw task result"
+            )
+        if any(status in {"TIMEOUT", "NUMERIC_ERROR", "INTERNAL_ERROR"} for status in task_solvers):
+            raise RTA4FormalValidationError(
+                "no-candidate taskset carries a conflicting task solver state"
+            )
+    elif solver in {"NUMERIC_ERROR", "INTERNAL_ERROR"}:
+        if solver not in task_solvers:
+            raise RTA4FormalValidationError(
+                "error taskset lacks a matching raw task error"
+            )
+    elif solver == "COMPLETED":
+        if any(status != "CANDIDATE_FOUND" for status in task_solvers):
+            raise RTA4FormalValidationError(
+                "completed taskset carries an incomplete task solver state"
+            )
+    else:
+        raise RTA4FormalValidationError("unknown taskset solver state")
 
 
 def _validate_certificate_plan_binding(
@@ -871,6 +979,7 @@ def validate_formal_run_closure(
         )
         if _truth(result["taskset_proven"]) != expected_proven:
             raise RTA4FormalValidationError("taskset certification/raw-task mismatch")
+        _validate_taskset_result_vector(result, rows)
     mechanism_keys = set()
     raw_task_index = {
         (row["analysis_id"], row["task_id"]): row
@@ -931,8 +1040,13 @@ def validate_formal_run_closure(
         if attempt["worker_count"] != request["worker_count"]:
             raise RTA4FormalValidationError("attempt worker count/request mismatch")
         result = results.get(attempt["execution_run_id"])
-        if result is None or attempt["solver_status"] != result["solver_status"] or attempt["parent_attempt_id"] != NA or attempt["timeout_budget_seconds"] != "0" or attempt["failure_origin"] != NA or attempt["started_at_utc"] != NONFORMAL_TEST_FIXTURE:
+        if result is None or attempt["solver_status"] != result["solver_status"] or attempt["parent_attempt_id"] != NA or attempt["timeout_budget_seconds"] != "0" or attempt["started_at_utc"] != NONFORMAL_TEST_FIXTURE:
             raise RTA4FormalValidationError("attempt/result fixture-state mismatch")
+        error_solver = result["solver_status"] in {"NUMERIC_ERROR", "INTERNAL_ERROR"}
+        if (attempt["failure_origin"] == NA) == error_solver:
+            raise RTA4FormalValidationError(
+                "attempt failure origin/result solver state mismatch"
+            )
         attempts_by_execution.setdefault(attempt["execution_run_id"], []).append(attempt)
     if require_complete and set(attempts_by_execution) != set(request_exec):
         raise RTA4FormalValidationError("request/attempt execution set mismatch")
@@ -951,7 +1065,9 @@ def validate_formal_run_closure(
     source_closure = None
     if expected_relations:
         if source_core1 is None: raise RTA4FormalValidationError("required CORE-1 source closure is missing")
-        source_closure = source_core1 if isinstance(source_core1, ValidatedFormalClosure) else validate_formal_run_closure(source_core1, require_complete=True)
+        source_closure = refresh_validated_closure(
+            source_core1, require_complete=True,
+        )
         if source_closure.metadata["core"] != "CORE-1": raise RTA4FormalValidationError("source closure is not CORE-1")
     if source_closure is not None:
         source_requests = {row["request_id"]: row for row in source_closure.table("formal_rta_requests.csv")}
@@ -1201,6 +1317,7 @@ def validate_formal_run_closure(
 
 __all__ = ["FIXED_D_CHAIN", "FormalFinding", "P0", "P1", "P2", "P3", "RECURSIVE_CHAIN",
            "RTA4FormalValidationError", "ValidatedFormalClosure", "validate_dominance",
+           "refresh_validated_closure",
            "recompute_dominance_rows", "recompute_monotonicity_rows",
            "recompute_worker_consistency_rows",
            "validate_formal_run_closure", "validate_monotonicity", "validate_soundness",

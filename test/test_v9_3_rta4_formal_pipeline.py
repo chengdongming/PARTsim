@@ -40,7 +40,7 @@ from experiments.v9_3.rta4_formal_pipeline import (
     RTA4FixtureInterruption, RTA4FormalAuthorizationError,
     RTA4FormalRunner, SimulationDeduplicator,
     build_formal_release_projection, formal_analysis_identity,
-    formal_execution_identity,
+    formal_execution_identity, recompute_rta_result_hashes,
 )
 from experiments.v9_3.rta4_formal_plan import (
     FormalPlanRecord, RTA4FormalPlanError, describe_all_formal_plans,
@@ -57,12 +57,14 @@ from experiments.v9_3.rta4_formal_schema import (
     FORMAL_TABLES, formal_schema_hash, formal_schema_manifest,
     legacy_table_overlap,
 )
+from experiments.v9_3.rta4_formal_rows import TABLE_ROW_CONTRACTS
 from experiments.v9_3.rta4_formal_store import (
     RTA4FormalTasksetStore, build_ofat_taskset_variant,
     scale_taskset_time_exact,
 )
 from experiments.v9_3.rta4_formal_validation import (
-    P0, validate_dominance, validate_formal_run_closure,
+    P0, recompute_monotonicity_rows, validate_dominance,
+    validate_formal_run_closure,
     validate_monotonicity, validate_soundness, validate_worker_consistency,
 )
 from experiments.v9_3.rta4_formal_writer import (
@@ -353,6 +355,13 @@ def test_schema_has_exact_18_table_independent_manifest_and_hash():
             "schema_version", "schema_sha256", "plan_sha256", "config_semantic_hash",
         )
         assert len(columns) == len(set(columns))
+    assert set(TABLE_ROW_CONTRACTS) == set(FORMAL_TABLES)
+    for name, columns in FORMAL_TABLES.items():
+        contract = TABLE_ROW_CONTRACTS[name]
+        assert contract.required_fields | contract.nullable_fields == set(columns)
+        assert not contract.required_fields & contract.nullable_fields
+        assert contract.sha256_fields <= set(columns)
+        assert contract.domain_identity_fields <= contract.sha256_fields
 
 
 def test_taskset_store_and_writer_persist_pr_b_certificate_with_exact_identity(tmp_path):
@@ -640,6 +649,174 @@ def test_writer_rejects_missing_float_and_negative_semantic_rows(tmp_path):
         writer.append("formal_rta_task_results.csv", negative)
 
 
+def test_per_table_row_contracts_and_taskset_result_state_machine_fail_closed(tmp_path):
+    config, _records, root, _closure = _run_core1_fixture(tmp_path, 1)
+    request = read_csv(root / "formal_rta_requests.csv")[0]
+    request_body = {
+        key: value for key, value in request.items()
+        if key not in FORMAL_TABLES["formal_rta_requests.csv"][:4]
+    }
+    assert "analysis_id" in TABLE_ROW_CONTRACTS["formal_rta_requests.csv"].required_fields
+    assert "analysis_id" not in TABLE_ROW_CONTRACTS["formal_rta_requests.csv"].nullable_fields
+    assert "analysis_id" in TABLE_ROW_CONTRACTS["formal_failures.csv"].nullable_fields
+    assert "cell_id" in TABLE_ROW_CONTRACTS["formal_cells.csv"].sha256_fields
+
+    empty_analysis = RTA4FormalResultWriter(
+        tmp_path / "empty-analysis", config=config, fixture_ordinals=(0,),
+    )
+    with pytest.raises(RTA4FormalWriterError, match="analysis_id is required"):
+        empty_analysis.append(
+            "formal_rta_requests.csv", {**request_body, "analysis_id": ""},
+        )
+
+    cell = read_csv(root / "formal_cells.csv")[0]
+    cell_body = {
+        key: value for key, value in cell.items()
+        if key not in FORMAL_TABLES["formal_cells.csv"][:4]
+    }
+    invalid_cell = RTA4FormalResultWriter(
+        tmp_path / "invalid-cell", config=config, fixture_ordinals=(0,),
+    )
+    with pytest.raises(RTA4FormalWriterError, match="cell_id.*SHA-256"):
+        invalid_cell.append("formal_cells.csv", {**cell_body, "cell_id": "x"})
+
+    full_result = read_csv(root / "formal_rta_taskset_results.csv")[0]
+    result_body = {
+        key: value for key, value in full_result.items()
+        if key not in FORMAL_TABLES["formal_rta_taskset_results.csv"][:4]
+    }
+    contradictions = (
+        {
+            "solver_status": "TIMEOUT", "timeout": "false",
+            "taskset_proven": "false", "taskset_certification_status": "TIMEOUT",
+            "first_failed_priority": "0", "failure_reason": "timeout",
+        },
+        {
+            "solver_status": "TIMEOUT", "timeout": "true",
+            "taskset_proven": "true", "taskset_certification_status": "TIMEOUT",
+            "first_failed_priority": "0", "failure_reason": "timeout",
+        },
+        {"solver_status": "COMPLETED", "timeout": "true"},
+        {
+            "solver_status": "NO_CANDIDATE", "timeout": "false",
+            "taskset_proven": "true", "taskset_certification_status": "NOT_CERTIFIED",
+            "first_failed_priority": "0", "failure_reason": "none",
+        },
+        {
+            "solver_status": "INTERNAL_ERROR", "timeout": "false",
+            "taskset_proven": "true", "taskset_certification_status": "ERROR",
+            "first_failed_priority": "0", "failure_reason": "internal",
+        },
+    )
+    for index, changes in enumerate(contradictions):
+        writer = RTA4FormalResultWriter(
+            tmp_path / f"bad-state-{index}", config=config,
+            fixture_ordinals=(0,),
+        )
+        with pytest.raises(RTA4FormalWriterError):
+            writer.append(
+                "formal_rta_taskset_results.csv", {**result_body, **changes},
+            )
+
+    # Preserve a row-valid TIMEOUT summary, recompute every task/result hash and
+    # terminal/attempt field, but leave later tasks certified.  Closure must
+    # reject the contradictory raw candidate vector rather than trust hashes.
+    timeout_root = tmp_path / "timeout-certified-vector"
+    shutil.copytree(root, timeout_root)
+    results = read_csv(timeout_root / "formal_rta_taskset_results.csv")
+    tasks = read_csv(timeout_root / "formal_rta_task_results.csv")
+    failed_rank = tasks[0]["priority_rank"]
+    tasks[0].update({
+        "task_solver_status": "TIMEOUT",
+        "task_certification_status": "TIMEOUT",
+        "candidate_response_time": "NA", "failure_reason": "timeout",
+    })
+    results[0].update({
+        "solver_status": "TIMEOUT", "timeout": "true",
+        "taskset_proven": "false", "taskset_certification_status": "TIMEOUT",
+        "first_failed_priority": failed_rank, "failure_reason": "timeout",
+    })
+    hashes = recompute_rta_result_hashes(results[0], tasks)
+    for task, task_hash in zip(tasks, hashes["task_hashes"]):
+        task["exact_task_result_hash"] = task_hash
+    for field in (
+        "exact_result_hash", "candidate_vector_hash", "witness_vector_hash",
+        "certification_vector_hash", "failure_reason_vector_hash",
+    ):
+        results[0][field] = hashes[field]
+    write_csv(
+        timeout_root / "formal_rta_task_results.csv",
+        FORMAL_TABLES["formal_rta_task_results.csv"], tasks,
+    )
+    write_csv(
+        timeout_root / "formal_rta_taskset_results.csv",
+        FORMAL_TABLES["formal_rta_taskset_results.csv"], results,
+    )
+    attempts = read_csv(timeout_root / "formal_rta_attempts.csv")
+    attempts[0]["solver_status"] = "TIMEOUT"
+    write_csv(
+        timeout_root / "formal_rta_attempts.csv",
+        FORMAL_TABLES["formal_rta_attempts.csv"], attempts,
+    )
+    terminal_path = next((timeout_root / "formal_terminal_results").glob("*.json"))
+    terminal = json.loads(terminal_path.read_text(encoding="utf-8"))
+    terminal["solver_status"] = "TIMEOUT"
+    for field in (
+        "exact_result_hash", "candidate_vector_hash", "witness_vector_hash",
+        "certification_vector_hash", "failure_reason_vector_hash",
+    ):
+        terminal[field] = hashes[field]
+    terminal_path.write_text(
+        json.dumps(terminal, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(Exception, match="timeout taskset carries"):
+        validate_formal_run_closure(timeout_root)
+
+
+def test_core4_monotonicity_missing_candidate_evidence_is_p0():
+    base_results = [
+        {
+            "analysis_id": "a", "taskset_skeleton_id": "s",
+            "method": "SEQ_THETA_SEQ", "axis": "e0", "axis_value": "0",
+            "scenario": "MAIN", "taskset_proven": "true",
+        },
+        {
+            "analysis_id": "b", "taskset_skeleton_id": "s",
+            "method": "SEQ_THETA_SEQ", "axis": "e0", "axis_value": "1",
+            "scenario": "MAIN", "taskset_proven": "true",
+        },
+    ]
+
+    def check(weak, strong):
+        return recompute_monotonicity_rows(base_results, (
+            {"analysis_id": "a", "task_id": "x", "candidate_response_time": weak},
+            {"analysis_id": "b", "task_id": "x", "candidate_response_time": strong},
+        ))[0]
+
+    for weak, strong in (("NA", "NA"), ("NA", "1"), ("1", "NA")):
+        row = check(weak, strong)
+        assert row["candidate_status"] == "NOT_COMPARABLE"
+        assert row["check_status"] == "P0_VIOLATION"
+        assert row["failure_severity"] == "P0"
+    assert check("1", "2")["check_status"] == "P0_VIOLATION"
+    assert check("2", "1")["check_status"] == "PASS"
+
+    certification = recompute_monotonicity_rows(
+        (base_results[0], {**base_results[1], "taskset_proven": "false"}),
+        (
+            {"analysis_id": "a", "task_id": "x", "candidate_response_time": "1"},
+            {"analysis_id": "b", "task_id": "x", "candidate_response_time": "1"},
+        ),
+    )[0]
+    assert certification["certification_status"] == "P0_VIOLATION"
+    assert certification["check_status"] == "P0_VIOLATION"
+    deadline_results = tuple(
+        {**row, "axis": "deadline_slack_fraction"} for row in base_results
+    )
+    assert recompute_monotonicity_rows(deadline_results, ()) == ()
+
+
 def test_core2_source_closure_is_exact_and_has_no_fallback(tmp_path):
     configs = _configs()
     source_records = tuple(islice(iter_formal_plan(configs["CORE-1"]), 1, 3))
@@ -669,6 +846,62 @@ def test_core2_source_closure_is_exact_and_has_no_fallback(tmp_path):
         validate_formal_run_closure(
             target_root, source_closures={"CORE-1": source},
         )
+
+
+def test_validated_source_object_is_refreshed_for_validation_runner_and_aggregation(tmp_path):
+    configs = _configs()
+    source_records = tuple(islice(iter_formal_plan(configs["CORE-1"]), 1, 3))
+    source_root = tmp_path / "source"
+    source = RTA4FormalRunner(configs["CORE-1"]).run_nonformal_fixture(
+        source_records, root=source_root, taskset_store=tmp_path / "store",
+        certificate_provider=_plan_certificate, rta_executor=_fake_rta,
+    )
+    target_records = (next(iter_formal_plan(configs["CORE-2"])),)
+    target_root = tmp_path / "target"
+    runner = RTA4FormalRunner(configs["CORE-2"])
+    target = runner.run_nonformal_fixture(
+        target_records, root=target_root, taskset_store=tmp_path / "store",
+        certificate_provider=_plan_certificate, rta_executor=_fake_rta,
+        source_closures={"CORE-1": source},
+    )
+
+    unchanged_object = validate_formal_run_closure(
+        target_root, source_closures={"CORE-1": source},
+    )
+    unchanged_path = validate_formal_run_closure(
+        target_root, source_closures={"CORE-1": source_root},
+    )
+    assert unchanged_object.closure_sha256 == target.closure_sha256
+    assert unchanged_path.closure_sha256 == target.closure_sha256
+
+    drift = source_root / "post_validation_drift.txt"
+    drift.write_text("drift\n", encoding="utf-8")
+    with pytest.raises(Exception, match="source closure|stale"):
+        validate_formal_run_closure(
+            target_root, source_closures={"CORE-1": source_root},
+        )
+    with pytest.raises(Exception, match="stale"):
+        validate_formal_run_closure(
+            target_root, source_closures={"CORE-1": source},
+        )
+    with pytest.raises(Exception, match="stale"):
+        aggregate_formal_run(
+            target_root, tmp_path / "aggregate-stale",
+            bootstrap_replicates=5, source_closures={"CORE-1": source},
+        )
+
+    resumed_calls = []
+    with pytest.raises(Exception, match="stale"):
+        runner.run_nonformal_fixture(
+            target_records, root=target_root, taskset_store=tmp_path / "store",
+            certificate_provider=_plan_certificate,
+            rta_executor=lambda record, certificate: (
+                resumed_calls.append(record.execution_id)
+                or _fake_rta(record, certificate)
+            ),
+            source_closures={"CORE-1": source},
+        )
+    assert resumed_calls == []
 
 
 def test_core3_projection_and_applicability_are_reconstructed(tmp_path):
@@ -847,6 +1080,68 @@ def test_pairing_uses_complete_axes_and_is_input_order_invariant():
         "median": "0.5", "p95": "NA", "iqr_lower": "0.5",
         "iqr_upper": "0.5",
     }]
+
+
+def test_figure2_pairing_has_explicit_target_source_provenance():
+    def result(method, proven, analysis):
+        return {
+            "analysis_id": analysis, "taskset_skeleton_id": "c" * 64,
+            "taskset_id": "d" * 64, "exact_e0": "0",
+            "service_identity": "e" * 64, "power_vector_hash": "f" * 64,
+            "deadline_variant": "constrained_uniform_slack_v1",
+            "scenario": "MAIN", "axis": "baseline", "axis_value": "baseline",
+            "method": method, "normalized_utilization": "1/2",
+            "taskset_proven": proven,
+        }
+
+    class Closure:
+        def __init__(self, core, closure_sha, rows, reverse=False):
+            self.metadata = {
+                "core": core,
+                "plan_sha256": hashlib.sha256(core.encode()).hexdigest(),
+            }
+            self.closure_sha256 = closure_sha
+            self.rows = tuple(reversed(rows)) if reverse else tuple(rows)
+
+        def table(self, name):
+            if name == "formal_rta_taskset_results.csv":
+                return self.rows
+            if name == "formal_rta_mechanisms.csv":
+                return ()
+            raise AssertionError(name)
+
+    target_rows = (
+        result("CW_THETA_CW", "false", "target-cw"),
+        result("SEQ_THETA_SEQ", "false", "target-seq"),
+    )
+    source_rows = (
+        result("CW_THETA_CW", "true", "source-cw-must-be-ignored"),
+        result("LOC_THETA_LOC", "true", "source-loc"),
+        result("PH_THETA_PH", "true", "source-ph"),
+        result("SEQ_THETA_SEQ", "true", "source-seq-must-be-ignored"),
+    )
+    target = Closure("CORE-2", "1" * 64, target_rows)
+    source = Closure("CORE-1", "2" * 64, source_rows)
+    forward = formal_aggregation._figure2(target, source)
+    backward = formal_aggregation._figure2(
+        Closure("CORE-2", "1" * 64, target_rows, reverse=True),
+        Closure("CORE-1", "2" * 64, source_rows, reverse=True),
+    )
+    assert forward == backward
+    gains = {row["relation"]: row["estimate"] for row in forward}
+    assert gains["LOC_THETA_MINUS_CW_THETA"] == "1"
+    assert gains["SEQ_THETA_MINUS_PH_THETA"] == "-1"
+
+    with pytest.raises(Exception, match="duplicate TARGET_CORE2"):
+        formal_aggregation._figure2(
+            Closure("CORE-2", "1" * 64, target_rows + (target_rows[0],)),
+            source,
+        )
+    with pytest.raises(Exception, match="duplicate SOURCE_CORE1"):
+        formal_aggregation._figure2(
+            target,
+            Closure("CORE-1", "2" * 64, source_rows + (source_rows[1],)),
+        )
 
 
 def test_core3_release_projection_reuses_pr_c_and_simulation_is_deduplicated():

@@ -701,13 +701,20 @@ class RTA4FormalRunner:
         attempt_id = domain_hash("ASAP_BLOCK:V9.3:RTA4_ATTEMPT:v1", {
             "execution_run_id": record.execution_id, "attempt_number": attempt_number,
         })
+        failure_origin = result.get("failure_origin")
+        if failure_origin is None:
+            failure_origin = (
+                "RTA_EXECUTOR" if solver_status in {"NUMERIC_ERROR", "INTERNAL_ERROR"}
+                else "NA"
+            )
         writer.append_attempt({
             "attempt_id": attempt_id, "plan_record_id": record.record_id,
             "analysis_id": analysis_id, "request_id": record.mathematical_request_id,
             "execution_run_id": record.execution_id, "attempt_number": attempt_number,
             "parent_attempt_id": "NA", "worker_count": record.material.get("worker_count", 1),
             "timeout_budget_seconds": 0, "solver_status": solver_status,
-            "failure_origin": "NA", "runtime_wall_seconds": result.get("runtime_wall_seconds", "0"),
+            "failure_origin": failure_origin,
+            "runtime_wall_seconds": result.get("runtime_wall_seconds", "0"),
             "runtime_cpu_seconds": result.get("runtime_cpu_seconds", "0"),
             "peak_rss_bytes": result.get("peak_rss_bytes", 0),
             "started_at_utc": "NONFORMAL_TEST_FIXTURE",
@@ -1007,11 +1014,11 @@ class RTA4FormalRunner:
     def _persist_source_dependencies(self, writer: Any, source_closures: Mapping[str, Any]) -> None:
         if not writer.plan_manifest["source_relations"]:
             return
-        from .rta4_formal_validation import ValidatedFormalClosure, validate_formal_run_closure
+        from .rta4_formal_validation import refresh_validated_closure
         source = source_closures.get("CORE-1")
         if source is None:
             raise RTA4FormalPipelineError("fixture requires validated CORE-1 source closure")
-        closure = source if isinstance(source, ValidatedFormalClosure) else validate_formal_run_closure(source)
+        closure = refresh_validated_closure(source, require_complete=True)
         source_requests = {row["request_id"]: row for row in closure.table("formal_rta_requests.csv")}
         source_results = {row["request_id"]: row for row in closure.table("formal_rta_taskset_results.csv")}
         local = __import__("experiments.v9_3.result_writer", fromlist=["read_csv"]).read_csv(writer.root / "formal_rta_requests.csv")
@@ -1048,19 +1055,14 @@ class RTA4FormalRunner:
         if not writer.plan_manifest["applicability_rows"]:
             return
         from .result_writer import read_csv
-        from .rta4_formal_validation import (
-            ValidatedFormalClosure, validate_formal_run_closure,
-        )
+        from .rta4_formal_validation import refresh_validated_closure
 
         source = source_closures.get("CORE-1")
         if source is None:
             raise RTA4FormalPipelineError(
                 "applicability fixture requires a validated CORE-1 closure"
             )
-        closure = (
-            source if isinstance(source, ValidatedFormalClosure)
-            else validate_formal_run_closure(source, require_complete=True)
-        )
+        closure = refresh_validated_closure(source, require_complete=True)
         source_requests = {
             row["request_id"]: row
             for row in closure.table("formal_rta_requests.csv")
