@@ -82,6 +82,18 @@ StrictSystemConfigLoader.add_implicit_resolver(
 )
 
 
+def _mapping_contains_yaml_merge(node: yaml.Node) -> bool:
+    if isinstance(node, yaml.MappingNode):
+        for key_node, value_node in node.value:
+            if key_node.tag == "tag:yaml.org,2002:merge":
+                return True
+            if _mapping_contains_yaml_merge(value_node):
+                return True
+    elif isinstance(node, yaml.SequenceNode):
+        return any(_mapping_contains_yaml_merge(child) for child in node.value)
+    return False
+
+
 def _construct_unique_mapping(
         loader: StrictSystemConfigLoader,
         node: yaml.MappingNode,
@@ -107,11 +119,18 @@ def _construct_unique_mapping(
                 f"{key_node.start_mark.line + 1}")
         explicit_keys[key] = key_node.start_mark.line
 
-        if key == "priority_energy" and isinstance(
+        if key in ("priority_energy", "harvesting") and isinstance(
                 value_node, yaml.MappingNode):
-            if any(
-                    nested_key.tag == "tag:yaml.org,2002:merge"
-                    for nested_key, _ in value_node.value):
+            if (
+                    key == "harvesting"
+                    and _mapping_contains_yaml_merge(value_node)):
+                raise StrictSystemConfigError(
+                    "system YAML: harvesting: YAML merge is not allowed")
+            if (
+                    key == "priority_energy"
+                    and any(
+                        nested_key.tag == "tag:yaml.org,2002:merge"
+                        for nested_key, _ in value_node.value)):
                 raise StrictSystemConfigError(
                     "system YAML: priority_energy: YAML merge is not allowed")
 
@@ -286,6 +305,487 @@ def _parse_priority_energy(
     return result
 
 
+_UINT64_MAX = (1 << 64) - 1
+_DEFAULT_TRACE_MAX_FILE_SIZE_BYTES = 268435456
+_DEFAULT_TRACE_MAX_ROWS = 5000000
+_LEGACY_SOURCE_FIELDS = {
+    "base_harvesting_rate",
+    "day_of_year",
+    "time_of_day_ms",
+    "start_offset_minutes",
+    "harvesting_scale",
+    "use_real_solar_data",
+    "solar_data_file",
+    "pv_efficiency",
+    "pv_area_m2",
+    "harvesting_sources",
+}
+
+
+def _harvesting_error(field: str, reason: str) -> None:
+    prefix = "harvesting"
+    if field:
+        prefix += f".{field}"
+    raise StrictSystemConfigError(f"system YAML: {prefix}: {reason}")
+
+
+def _strict_mapping(value: Any, field: str) -> Dict[Any, Any]:
+    if not isinstance(value, dict):
+        _harvesting_error(field, "must be a mapping")
+    return value
+
+
+def _reject_unknown_fields(
+        section: Dict[Any, Any],
+        allowed: set,
+        field: str) -> None:
+    for key in section:
+        if not isinstance(key, str) or key not in allowed:
+            child = str(key)
+            _harvesting_error(
+                f"{field}.{child}" if field else child,
+                "unknown field",
+            )
+
+
+def _required_field(
+        section: Dict[Any, Any],
+        key: str,
+        field: str) -> Any:
+    if key not in section:
+        child = f"{field}.{key}" if field else key
+        _harvesting_error(child, "is required")
+    return section[key]
+
+
+def _strict_non_empty_string(value: Any, field: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        _harvesting_error(field, "must be a non-empty string")
+    return value
+
+
+def _strict_bool(value: Any, field: str) -> bool:
+    if type(value) is not bool:
+        _harvesting_error(field, "must be a boolean (true or false)")
+    return value
+
+
+def _strict_double(
+        value: Any,
+        field: str,
+        *,
+        non_negative: bool = False,
+        positive: bool = False) -> float:
+    if type(value) not in (int, float):
+        _harvesting_error(field, "must be a finite double")
+    try:
+        result = float(value)
+    except (OverflowError, ValueError) as error:
+        raise StrictSystemConfigError(
+            f"system YAML: harvesting.{field}: "
+            "must be a finite double") from error
+    if not math.isfinite(result):
+        _harvesting_error(field, "must be a finite double")
+    if positive and result <= 0.0:
+        _harvesting_error(field, "must be greater than zero")
+    if non_negative and result < 0.0:
+        _harvesting_error(field, "must be non-negative")
+    return result
+
+
+def _strict_uint64(
+        value: Any,
+        field: str,
+        *,
+        positive: bool = False) -> int:
+    if type(value) is not int or value < 0 or value > _UINT64_MAX:
+        _harvesting_error(field, "must be an unsigned 64-bit integer")
+    if positive and value == 0:
+        _harvesting_error(field, "must be greater than zero")
+    return value
+
+
+def _checked_multiply_uint64(left: int, right: int, field: str) -> int:
+    if left != 0 and right > _UINT64_MAX // left:
+        _harvesting_error(field, "is outside the unsigned 64-bit range")
+    return left * right
+
+
+def _legacy_solar_from_energy_management(
+        energy_config: Dict[Any, Any]) -> Dict[str, Any]:
+    base_power = _strict_double(
+        energy_config.get("base_harvesting_rate", 0.00002),
+        "legacy_solar.base_harvesting_power_w",
+        non_negative=True,
+    )
+
+    if "start_offset_minutes" in energy_config:
+        offset_minutes = _strict_uint64(
+            energy_config["start_offset_minutes"],
+            "legacy_solar.start_offset_minutes",
+        )
+        start_offset_ms = _checked_multiply_uint64(
+            offset_minutes,
+            60000,
+            "legacy_solar.start_offset_ms",
+        )
+    else:
+        day_of_year = _strict_uint64(
+            energy_config.get("day_of_year", 187),
+            "legacy_solar.day_of_year",
+            positive=True,
+        )
+        if day_of_year > 366:
+            _harvesting_error(
+                "legacy_solar.day_of_year",
+                "must be in the range [1, 366]",
+            )
+        time_of_day_ms = _strict_uint64(
+            energy_config.get("time_of_day_ms", 0),
+            "legacy_solar.time_of_day_ms",
+        )
+        if time_of_day_ms >= 86400000:
+            _harvesting_error(
+                "legacy_solar.time_of_day_ms",
+                "must be less than 86400000",
+            )
+        # Preserve the current legacy minute-resolution offset.
+        offset_minutes = (
+            (day_of_year - 1) * 1440 + time_of_day_ms // 60000
+        )
+        start_offset_ms = _checked_multiply_uint64(
+            offset_minutes,
+            60000,
+            "legacy_solar.start_offset_ms",
+        )
+
+    use_real = _strict_bool(
+        energy_config.get("use_real_solar_data", False),
+        "legacy_solar.use_real_solar_data",
+    )
+    solar_file = _strict_non_empty_string(
+        energy_config.get(
+            "solar_data_file",
+            "data/processed/shenyang_solar_minute.csv",
+        ),
+        "legacy_solar.solar_data_file",
+    )
+    efficiency = _strict_double(
+        energy_config.get("pv_efficiency", 0.18),
+        "legacy_solar.pv_efficiency",
+        positive=True,
+    )
+    area = _strict_double(
+        energy_config.get("pv_area_m2", 1.0),
+        "legacy_solar.pv_area_m2",
+        positive=True,
+    )
+    return {
+        "kind": "legacy_solar",
+        "base_harvesting_power_w": base_power,
+        "start_offset_ms": start_offset_ms,
+        "use_real_solar_data": use_real,
+        "solar_data_file": solar_file,
+        "pv_efficiency": efficiency,
+        "pv_area_m2": area,
+    }
+
+
+def _parse_explicit_legacy(section: Dict[Any, Any]) -> Dict[str, Any]:
+    field = "legacy_solar"
+    allowed = {
+        "base_harvesting_power_w",
+        "start_offset_ms",
+        "use_real_solar_data",
+        "solar_data_file",
+        "pv_efficiency",
+        "pv_area_m2",
+    }
+    _reject_unknown_fields(section, allowed, field)
+    for key in allowed:
+        _required_field(section, key, field)
+    return {
+        "kind": "legacy_solar",
+        "base_harvesting_power_w": _strict_double(
+            section["base_harvesting_power_w"],
+            f"{field}.base_harvesting_power_w",
+            non_negative=True,
+        ),
+        "start_offset_ms": _strict_uint64(
+            section["start_offset_ms"],
+            f"{field}.start_offset_ms",
+        ),
+        "use_real_solar_data": _strict_bool(
+            section["use_real_solar_data"],
+            f"{field}.use_real_solar_data",
+        ),
+        "solar_data_file": _strict_non_empty_string(
+            section["solar_data_file"],
+            f"{field}.solar_data_file",
+        ),
+        "pv_efficiency": _strict_double(
+            section["pv_efficiency"],
+            f"{field}.pv_efficiency",
+            positive=True,
+        ),
+        "pv_area_m2": _strict_double(
+            section["pv_area_m2"],
+            f"{field}.pv_area_m2",
+            positive=True,
+        ),
+    }
+
+
+def _parse_piecewise(section: Dict[Any, Any]) -> Dict[str, Any]:
+    field = "scaled_piecewise"
+    _reject_unknown_fields(section, {"scale_w", "segments"}, field)
+    scale_w = _strict_double(
+        _required_field(section, "scale_w", field),
+        f"{field}.scale_w",
+        non_negative=True,
+    )
+    raw_segments = _required_field(section, "segments", field)
+    if not isinstance(raw_segments, list) or not raw_segments:
+        _harvesting_error(f"{field}.segments", "must be a non-empty sequence")
+
+    parsed_segments = []
+    previous_start = None
+    previous_end = None
+    for index, raw_segment in enumerate(raw_segments):
+        segment_field = f"{field}.segments[{index}]"
+        segment = _strict_mapping(raw_segment, segment_field)
+        _reject_unknown_fields(
+            segment,
+            {"start_ms", "end_ms", "multiplier"},
+            segment_field,
+        )
+        start = _strict_uint64(
+            _required_field(segment, "start_ms", segment_field),
+            f"{segment_field}.start_ms",
+        )
+        end = _strict_uint64(
+            _required_field(segment, "end_ms", segment_field),
+            f"{segment_field}.end_ms",
+        )
+        multiplier = _strict_double(
+            _required_field(segment, "multiplier", segment_field),
+            f"{segment_field}.multiplier",
+            non_negative=True,
+        )
+        if start >= end:
+            _harvesting_error(
+                segment_field,
+                "start_ms must be less than end_ms",
+            )
+        if previous_start is not None and start <= previous_start:
+            _harvesting_error(
+                segment_field,
+                "segments must be strictly ordered by start_ms",
+            )
+        if previous_end is not None and start < previous_end:
+            _harvesting_error(segment_field, "segments must not overlap")
+        parsed_segments.append({
+            "start_time_ms": start,
+            "end_time_ms": end,
+            "multiplier": multiplier,
+        })
+        previous_start = start
+        previous_end = end
+
+    return {
+        "kind": "scaled_piecewise",
+        "scale_w": scale_w,
+        "segments": parsed_segments,
+    }
+
+
+def _b4_piecewise_from_priority(
+        priority_energy: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "kind": "scaled_piecewise",
+        "scale_w": float(priority_energy["alpha_w"]),
+        "segments": [
+            {
+                "start_time_ms": 0,
+                "end_time_ms": 5000,
+                "multiplier": 1.0,
+            },
+            {
+                "start_time_ms": 5000,
+                "end_time_ms": 15000,
+                "multiplier": 0.2,
+            },
+            {
+                "start_time_ms": 15000,
+                "end_time_ms": 30000,
+                "multiplier": 1.0,
+            },
+        ],
+    }
+
+
+def _parse_sampled_trace(section: Dict[Any, Any]) -> Dict[str, Any]:
+    field = "sampled_trace"
+    allowed = {
+        "file",
+        "time_column",
+        "value_column",
+        "value_type",
+        "interpolation",
+        "after_trace",
+        "panel_area_m2",
+        "conversion_efficiency",
+        "max_file_size_bytes",
+        "max_rows",
+    }
+    _reject_unknown_fields(section, allowed, field)
+    for key in ("file", "time_column", "value_column", "value_type"):
+        _required_field(section, key, field)
+
+    value_type = _strict_non_empty_string(
+        section["value_type"],
+        f"{field}.value_type",
+    )
+    if value_type not in ("electrical_power", "irradiance"):
+        _harvesting_error(
+            f"{field}.value_type",
+            "must be electrical_power or irradiance",
+        )
+    interpolation = _strict_non_empty_string(
+        section.get("interpolation", "zero_order_hold"),
+        f"{field}.interpolation",
+    )
+    if interpolation != "zero_order_hold":
+        _harvesting_error(
+            f"{field}.interpolation",
+            "must equal zero_order_hold",
+        )
+    after_trace = _strict_non_empty_string(
+        section.get("after_trace", "zero"),
+        f"{field}.after_trace",
+    )
+    if after_trace != "zero":
+        _harvesting_error(f"{field}.after_trace", "must equal zero")
+
+    area = 0.0
+    efficiency = 0.0
+    if value_type == "irradiance":
+        area = _strict_double(
+            _required_field(section, "panel_area_m2", field),
+            f"{field}.panel_area_m2",
+            positive=True,
+        )
+        efficiency = _strict_double(
+            _required_field(section, "conversion_efficiency", field),
+            f"{field}.conversion_efficiency",
+            positive=True,
+        )
+        if efficiency > 1.0:
+            _harvesting_error(
+                f"{field}.conversion_efficiency",
+                "must not exceed 1.0",
+            )
+    elif (
+            "panel_area_m2" in section
+            or "conversion_efficiency" in section):
+        _harvesting_error(
+            field,
+            "electrical_power must not provide irradiance-only parameters",
+        )
+
+    return {
+        "kind": "sampled_trace",
+        "file": _strict_non_empty_string(
+            section["file"],
+            f"{field}.file",
+        ),
+        "time_column": _strict_non_empty_string(
+            section["time_column"],
+            f"{field}.time_column",
+        ),
+        "value_column": _strict_non_empty_string(
+            section["value_column"],
+            f"{field}.value_column",
+        ),
+        "value_type": value_type,
+        "interpolation": interpolation,
+        "after_trace": after_trace,
+        "panel_area_m2": area,
+        "conversion_efficiency": efficiency,
+        "max_file_size_bytes": _strict_uint64(
+            section.get(
+                "max_file_size_bytes",
+                _DEFAULT_TRACE_MAX_FILE_SIZE_BYTES,
+            ),
+            f"{field}.max_file_size_bytes",
+            positive=True,
+        ),
+        "max_rows": _strict_uint64(
+            section.get("max_rows", _DEFAULT_TRACE_MAX_ROWS),
+            f"{field}.max_rows",
+            positive=True,
+        ),
+    }
+
+
+def _normalise_harvest_source(
+        system_config: Dict[Any, Any],
+        priority_energy: Dict[str, Any]) -> Dict[str, Any]:
+    energy_config = system_config.get("energy_management", {})
+    if not isinstance(energy_config, dict):
+        raise StrictSystemConfigError(
+            "system YAML: energy_management must be a mapping")
+
+    if "harvesting" not in system_config:
+        if priority_energy["enabled"]:
+            return _b4_piecewise_from_priority(priority_energy)
+        return _legacy_solar_from_energy_management(energy_config)
+
+    if "priority_energy" in system_config:
+        _harvesting_error(
+            "",
+            "must not appear together with priority_energy",
+        )
+    conflicting = sorted(_LEGACY_SOURCE_FIELDS.intersection(energy_config))
+    if conflicting:
+        _harvesting_error(
+            "",
+            "explicit harvesting conflicts with legacy source fields: " +
+            ", ".join(conflicting),
+        )
+
+    harvesting = _strict_mapping(system_config["harvesting"], "")
+    allowed = {
+        "source",
+        "legacy_solar",
+        "scaled_piecewise",
+        "sampled_trace",
+    }
+    _reject_unknown_fields(harvesting, allowed, "")
+    source = _strict_non_empty_string(
+        _required_field(harvesting, "source", ""),
+        "source",
+    )
+    parsers = {
+        "legacy_solar": _parse_explicit_legacy,
+        "scaled_piecewise": _parse_piecewise,
+        "sampled_trace": _parse_sampled_trace,
+    }
+    if source not in parsers:
+        _harvesting_error("source", "unknown source")
+
+    configured_subtrees = {
+        key for key in parsers if key in harvesting
+    }
+    if configured_subtrees != {source}:
+        _harvesting_error(
+            "",
+            "must contain exactly the subsection selected by source",
+        )
+    subsection = _strict_mapping(harvesting[source], source)
+    return parsers[source](subsection)
+
+
 def _normalise_energy_model(model: Dict[str, Any]) -> Dict[str, Any]:
     """Normalise canonical and legacy models for conflict detection."""
     if not isinstance(model, dict):
@@ -449,6 +949,16 @@ class EnergyConfig:
             "horizon_ms": 30000,
             "tick_ms": 1,
         }
+        self.harvest_source = {
+            "kind": "legacy_solar",
+            "base_harvesting_power_w": 0.054,
+            "start_offset_ms": 0,
+            "use_real_solar_data": False,
+            "solar_data_file":
+                "data/processed/shenyang_solar_minute.csv",
+            "pv_efficiency": 0.18,
+            "pv_area_m2": 1.0,
+        }
 
         # === 能量收集源配置 ===
         self.harvesting_sources = {
@@ -488,8 +998,13 @@ class EnergyConfig:
         try:
             system_config = _strict_load_system_yaml(config_file)
             priority_energy = _parse_priority_energy(system_config)
+            harvest_source = _normalise_harvest_source(
+                system_config,
+                priority_energy,
+            )
             self.system_config = system_config
             self.priority_energy = priority_energy
+            self.harvest_source = harvest_source
             self.last_load_error = None
             
             # 提取能量管理配置
@@ -786,6 +1301,7 @@ def _build_config_for_cpp(
         "pv_efficiency": float(config.pv_efficiency),
         "pv_area_m2": float(config.pv_area_m2),
         "priority_energy": dict(config.priority_energy),
+        "harvest_source": dict(config.harvest_source),
     }
 
 

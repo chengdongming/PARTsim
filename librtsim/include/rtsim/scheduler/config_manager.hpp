@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include <rtsim/harvesting/harvest_types.hpp>
 #include <rtsim/scheduler/priority_energy_runtime.hpp>
 
 namespace RTSim {
@@ -31,6 +32,7 @@ namespace RTSim {
             std::int64_t periodic_collection_interval = 100;
 
             PriorityEnergyProfileConfig priority_energy_profile;
+            HarvestSourceConfig harvest_source_config;
 
             double base_power = 0.5;
             std::map<std::string, double> power_coefficients = {
@@ -89,6 +91,7 @@ namespace RTSim {
         // Optional B4-PE profile. The strict Python callback supplies it with
         // the legacy fields in one atomic configuration update.
         PriorityEnergyProfileConfig _priority_energy_profile;
+        HarvestSourceConfig _harvest_source_config;
 
         // 功率模型配置
         double _base_power;
@@ -186,6 +189,12 @@ namespace RTSim {
         }
         PriorityEnergyProfileConfig getPriorityEnergyProfileConfig() const {
             return _priority_energy_profile;
+        }
+        HarvestSourceKind getHarvestSourceKind() const {
+            return sourceKind(_harvest_source_config);
+        }
+        HarvestSourceConfig getHarvestSourceConfig() const {
+            return _harvest_source_config;
         }
         void setPeriodicCollectionInterval(int64_t interval) {
             _periodic_collection_interval = interval;

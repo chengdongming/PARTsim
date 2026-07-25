@@ -37,6 +37,7 @@ namespace RTSim {
         _start_time_offset(0),
         _enable_energy_recovery(true),
         _periodic_collection_interval(100),  // ⭐ 默认100ms周期性能量收集
+        _harvest_source_config(LegacySolarConfig{}),
         _base_power(0.5) {
         // === 修复：从环境变量读取核心数（如果设置了的话） ===
         const char *env_cores = std::getenv("RTSIM_NUM_CORES");
@@ -107,6 +108,8 @@ namespace RTSim {
             state.periodic_collection_interval;
         _priority_energy_profile =
             std::move(state.priority_energy_profile);
+        _harvest_source_config =
+            std::move(state.harvest_source_config);
         _base_power = state.base_power;
         _power_coefficients = std::move(state.power_coefficients);
         _frequency_power_ratios =
@@ -260,7 +263,7 @@ namespace RTSim {
         SCHEDULER_LOG_INFO("\n能量配置:");
         SCHEDULER_LOG_INFO("  初始能量: " + std::to_string(_initial_energy) + " J");
         SCHEDULER_LOG_INFO("  最大能量: " + std::to_string(_max_energy) + " J");
-        SCHEDULER_LOG_INFO("  基础收集率: " + std::to_string(_base_harvest_rate) + " J/ms");
+        SCHEDULER_LOG_INFO("  基础收集功率: " + std::to_string(_base_harvest_rate) + " W");
         SCHEDULER_LOG_INFO("  开始时间偏移: " + std::to_string(_start_time_offset) + " ms");
         SCHEDULER_LOG_INFO("  能量恢复: " + std::string(_enable_energy_recovery ? "启用" : "禁用"));
 

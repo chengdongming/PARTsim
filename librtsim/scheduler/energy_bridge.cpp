@@ -12,6 +12,7 @@
 #include <rtsim/scheduler/config_manager.hpp>
 #include <rtsim/scheduler/energy_bridge.hpp>
 #include <stdexcept>
+#include <type_traits>
 #include <vector>
 
 // 统一日志系统
@@ -246,6 +247,225 @@ namespace RTSim {
             return generation;
         }
 
+        HarvestSourceConfig parseHarvestSourceConfig(PyObject *root) {
+            if (!PyDict_Check(root)) {
+                pythonConfigError("harvest_source must be a mapping");
+            }
+            const std::string kind = pythonString(
+                requiredDictItem(root, "kind"),
+                "harvest_source.kind");
+
+            if (kind == "legacy_solar") {
+                LegacySolarConfig config;
+                config.base_harvesting_power_w = pythonDouble(
+                    requiredDictItem(
+                        root, "base_harvesting_power_w"),
+                    "harvest_source.base_harvesting_power_w");
+                if (config.base_harvesting_power_w < 0.0) {
+                    pythonConfigError(
+                        "harvest_source.base_harvesting_power_w "
+                        "must be non-negative");
+                }
+                config.start_offset_ms = pythonUnsigned64(
+                    requiredDictItem(root, "start_offset_ms"),
+                    "harvest_source.start_offset_ms");
+                config.use_real_solar_data = pythonBool(
+                    requiredDictItem(root, "use_real_solar_data"),
+                    "harvest_source.use_real_solar_data");
+                config.solar_data_file = pythonString(
+                    requiredDictItem(root, "solar_data_file"),
+                    "harvest_source.solar_data_file");
+                if (config.solar_data_file.empty()) {
+                    pythonConfigError(
+                        "harvest_source.solar_data_file "
+                        "must be non-empty");
+                }
+                config.pv_efficiency = pythonDouble(
+                    requiredDictItem(root, "pv_efficiency"),
+                    "harvest_source.pv_efficiency");
+                config.pv_area_m2 = pythonDouble(
+                    requiredDictItem(root, "pv_area_m2"),
+                    "harvest_source.pv_area_m2");
+                if (config.pv_efficiency <= 0.0 ||
+                    config.pv_area_m2 <= 0.0) {
+                    pythonConfigError(
+                        "harvest_source legacy photovoltaic parameters "
+                        "must be greater than zero");
+                }
+                return config;
+            }
+
+            if (kind == "scaled_piecewise") {
+                ScaledPiecewiseConfig config;
+                config.scale_w = pythonDouble(
+                    requiredDictItem(root, "scale_w"),
+                    "harvest_source.scale_w");
+                if (config.scale_w < 0.0) {
+                    pythonConfigError(
+                        "harvest_source.scale_w must be non-negative");
+                }
+                if (config.scale_w == 0.0) {
+                    config.scale_w = 0.0;
+                }
+                PyObject *segments =
+                    requiredDictItem(root, "segments");
+                if (!PyList_Check(segments) ||
+                    PyList_Size(segments) <= 0) {
+                    pythonConfigError(
+                        "harvest_source.segments must be a "
+                        "non-empty sequence");
+                }
+
+                std::uint64_t previous_start = 0;
+                std::uint64_t previous_end = 0;
+                bool has_previous = false;
+                const Py_ssize_t count = PyList_Size(segments);
+                config.segments.reserve(
+                    static_cast<std::size_t>(count));
+                for (Py_ssize_t index = 0; index < count; ++index) {
+                    PyObject *entry = PyList_GetItem(segments, index);
+                    if (!entry) {
+                        failPythonCall(
+                            "cannot read harvest_source segment");
+                    }
+                    if (!PyDict_Check(entry)) {
+                        pythonConfigError(
+                            "harvest_source segment must be a mapping");
+                    }
+                    PiecewiseSegment segment;
+                    const std::string prefix =
+                        "harvest_source.segments[" +
+                        std::to_string(index) + "]";
+                    segment.start_time_ms = pythonUnsigned64(
+                        requiredDictItem(entry, "start_time_ms"),
+                        prefix + ".start_time_ms");
+                    segment.end_time_ms = pythonUnsigned64(
+                        requiredDictItem(entry, "end_time_ms"),
+                        prefix + ".end_time_ms");
+                    segment.multiplier = pythonDouble(
+                        requiredDictItem(entry, "multiplier"),
+                        prefix + ".multiplier");
+                    if (segment.start_time_ms >=
+                        segment.end_time_ms) {
+                        pythonConfigError(
+                            prefix + " must have start < end");
+                    }
+                    if (segment.multiplier < 0.0) {
+                        pythonConfigError(
+                            prefix +
+                            ".multiplier must be non-negative");
+                    }
+                    if (segment.multiplier == 0.0) {
+                        segment.multiplier = 0.0;
+                    }
+                    if (has_previous &&
+                        segment.start_time_ms <= previous_start) {
+                        pythonConfigError(
+                            prefix +
+                            " is not strictly ordered by start");
+                    }
+                    if (has_previous &&
+                        segment.start_time_ms < previous_end) {
+                        pythonConfigError(
+                            prefix + " overlaps the previous segment");
+                    }
+                    previous_start = segment.start_time_ms;
+                    previous_end = segment.end_time_ms;
+                    has_previous = true;
+                    config.segments.push_back(segment);
+                }
+                return config;
+            }
+
+            if (kind == "sampled_trace") {
+                SampledTraceConfig config;
+                config.file = pythonString(
+                    requiredDictItem(root, "file"),
+                    "harvest_source.file");
+                config.time_column = pythonString(
+                    requiredDictItem(root, "time_column"),
+                    "harvest_source.time_column");
+                config.value_column = pythonString(
+                    requiredDictItem(root, "value_column"),
+                    "harvest_source.value_column");
+                if (config.file.empty() ||
+                    config.time_column.empty() ||
+                    config.value_column.empty()) {
+                    pythonConfigError(
+                        "harvest_source trace file and columns "
+                        "must be non-empty");
+                }
+
+                const std::string value_type = pythonString(
+                    requiredDictItem(root, "value_type"),
+                    "harvest_source.value_type");
+                if (value_type == "electrical_power") {
+                    config.value_type =
+                        TraceValueType::ElectricalPower;
+                } else if (value_type == "irradiance") {
+                    config.value_type = TraceValueType::Irradiance;
+                } else {
+                    pythonConfigError(
+                        "harvest_source.value_type is unknown");
+                }
+
+                const std::string interpolation = pythonString(
+                    requiredDictItem(root, "interpolation"),
+                    "harvest_source.interpolation");
+                if (interpolation != "zero_order_hold") {
+                    pythonConfigError(
+                        "harvest_source.interpolation is unknown");
+                }
+                config.interpolation =
+                    TraceInterpolation::ZeroOrderHold;
+
+                const std::string after_trace = pythonString(
+                    requiredDictItem(root, "after_trace"),
+                    "harvest_source.after_trace");
+                if (after_trace != "zero") {
+                    pythonConfigError(
+                        "harvest_source.after_trace is unknown");
+                }
+                config.after_trace = TraceAfterEnd::Zero;
+
+                config.panel_area_m2 = pythonDouble(
+                    requiredDictItem(root, "panel_area_m2"),
+                    "harvest_source.panel_area_m2");
+                config.conversion_efficiency = pythonDouble(
+                    requiredDictItem(root, "conversion_efficiency"),
+                    "harvest_source.conversion_efficiency");
+                if (config.value_type == TraceValueType::Irradiance) {
+                    if (config.panel_area_m2 <= 0.0 ||
+                        config.conversion_efficiency <= 0.0 ||
+                        config.conversion_efficiency > 1.0) {
+                        pythonConfigError(
+                            "harvest_source irradiance conversion "
+                            "parameters are invalid");
+                    }
+                } else if (config.panel_area_m2 != 0.0 ||
+                           config.conversion_efficiency != 0.0) {
+                    pythonConfigError(
+                        "harvest_source electrical power must not "
+                        "provide irradiance conversion parameters");
+                }
+                config.max_file_size_bytes = pythonUnsigned64(
+                    requiredDictItem(root, "max_file_size_bytes"),
+                    "harvest_source.max_file_size_bytes");
+                config.max_rows = pythonUnsigned64(
+                    requiredDictItem(root, "max_rows"),
+                    "harvest_source.max_rows");
+                if (config.max_file_size_bytes == 0 ||
+                    config.max_rows == 0) {
+                    pythonConfigError(
+                        "harvest_source trace limits "
+                        "must be greater than zero");
+                }
+                return config;
+            }
+
+            pythonConfigError("harvest_source.kind is unknown");
+        }
+
         void invalidatePythonConfiguration(
             PyObject *module,
             std::uint64_t expected_generation) noexcept {
@@ -269,10 +489,17 @@ namespace RTSim {
         }
     } // namespace
 
+    static_assert(
+        std::is_nothrow_move_assignable_v<
+            ConfigManager::ConfigurationState>,
+        "ConfigurationState commit must not throw after pending changes");
+
     bool pythonConfigCallback(
         const std::string &config_file,
         ConfigManager::ConfigurationState &pending) {
         SCHEDULER_LOG_INFO("调用Python配置回调，配置文件: " + config_file);
+
+        ConfigManager::ConfigurationState candidate = pending;
 
         if (!Py_IsInitialized()) {
             Py_Initialize();
@@ -324,50 +551,50 @@ namespace RTSim {
                 pythonConfigError(
                     "config_generation must be greater than zero");
             }
-            pending.config_generation = config_generation;
+            candidate.config_generation = config_generation;
 
-            pending.num_cores = pythonCheckedInt(
+            candidate.num_cores = pythonCheckedInt(
             requiredDictItem(result.get(), "num_cores"),
             "num_cores",
             true);
-        pending.scheduler_type = pythonString(
+        candidate.scheduler_type = pythonString(
             requiredDictItem(result.get(), "scheduler_type"),
             "scheduler_type");
-        pending.base_frequency = pythonDouble(
+        candidate.base_frequency = pythonDouble(
             requiredDictItem(result.get(), "base_frequency"),
             "base_frequency");
-        if (pending.base_frequency <= 0.0) {
+        if (candidate.base_frequency <= 0.0) {
             pythonConfigError(
                 "base_frequency must be greater than zero");
         }
-        pending.unit_time = pythonCheckedInt(
+        candidate.unit_time = pythonCheckedInt(
             requiredDictItem(result.get(), "unit_time"),
             "unit_time",
             true);
-        pending.initial_energy = pythonDouble(
+        candidate.initial_energy = pythonDouble(
             requiredDictItem(result.get(), "initial_energy"),
             "initial_energy");
-        pending.max_energy = pythonDouble(
+        candidate.max_energy = pythonDouble(
             requiredDictItem(result.get(), "max_energy"),
             "max_energy");
-        pending.base_harvest_rate = pythonDouble(
+        candidate.base_harvest_rate = pythonDouble(
             requiredDictItem(result.get(), "base_harvest_rate"),
             "base_harvest_rate");
-        pending.start_time_offset =
+        candidate.start_time_offset =
             static_cast<std::int64_t>(pythonLongLong(
             requiredDictItem(result.get(), "start_time_offset"),
             "start_time_offset"));
-        pending.enable_energy_recovery = pythonBool(
+        candidate.enable_energy_recovery = pythonBool(
             requiredDictItem(result.get(), "enable_energy_recovery"),
             "enable_energy_recovery");
-        pending.periodic_collection_interval =
+        candidate.periodic_collection_interval =
             static_cast<std::int64_t>(pythonLongLong(
                 requiredDictItem(
                     result.get(),
                     "periodic_collection_interval"),
                 "periodic_collection_interval",
                 true));
-        pending.base_power = pythonDouble(
+        candidate.base_power = pythonDouble(
             requiredDictItem(result.get(), "base_power"),
             "base_power");
 
@@ -391,7 +618,7 @@ namespace RTSim {
                 value,
                 "power_coefficients." + workload);
         }
-        pending.power_coefficients = std::move(parsed_coefficients);
+        candidate.power_coefficients = std::move(parsed_coefficients);
 
         PyObject *ratios =
             requiredDictItem(result.get(), "frequency_power_ratios");
@@ -410,7 +637,7 @@ namespace RTSim {
                 "frequency_power_ratios." +
                     std::to_string(frequency));
         }
-        pending.frequency_power_ratios = std::move(parsed_ratios);
+        candidate.frequency_power_ratios = std::move(parsed_ratios);
 
         PyObject *profile =
             requiredDictItem(result.get(), "priority_energy");
@@ -434,7 +661,12 @@ namespace RTSim {
             requiredDictItem(profile, "tick_ms"),
             "priority_energy.tick_ms");
             validatePriorityEnergyProfileConfig(parsed_profile);
-            pending.priority_energy_profile = std::move(parsed_profile);
+            candidate.priority_energy_profile = std::move(parsed_profile);
+            HarvestSourceConfig parsed_harvest_source =
+                parseHarvestSourceConfig(requiredDictItem(
+                    result.get(), "harvest_source"));
+            candidate.harvest_source_config =
+                std::move(parsed_harvest_source);
         } catch (...) {
             invalidatePythonConfiguration(
                 module.get(), config_generation);
@@ -443,6 +675,7 @@ namespace RTSim {
 
         SCHEDULER_LOG_INFO(
             "严格PyYAML配置已完整暂存，等待ConfigManager原子提交");
+        pending = std::move(candidate);
         return true;
     }
 
@@ -804,7 +1037,7 @@ namespace RTSim {
         if (method_name == "get_current_energy_value") {
             return 3.0; // 返回初始能量3J
         } else if (method_name == "get_harvesting_rate_wrapper") {
-            return 0.054; // 基础收集率：54W (0.054 J/ms)
+            return 0.054; // Legacy fallback value; normalized power is 0.054 W.
         } else if (method_name == "update_energy_continuously_wrapper") {
             return 0.0; // 不收集能量
         } else if (method_name == "calculate_task_energy_cpp") {
