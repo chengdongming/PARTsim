@@ -42,6 +42,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", action="append", required=True)
     parser.add_argument("--pilot-manifest", type=Path, required=True)
+    parser.add_argument("--pilot-observations", type=Path, required=True)
     parser.add_argument("--pilot-report", type=Path, required=True)
     parser.add_argument("--timeout-contract", type=Path, required=True)
     parser.add_argument("--operational-contract", type=Path, required=True)
@@ -56,6 +57,7 @@ def main() -> int:
         prepared = prepare_formal_configs(
             configs,
             pilot_manifest=_json(args.pilot_manifest),
+            pilot_observations=_json(args.pilot_observations),
             pilot_report=_json(args.pilot_report),
             timeout_contract=_json(args.timeout_contract),
             operational=_json(args.operational_contract),

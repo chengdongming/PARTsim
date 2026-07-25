@@ -67,7 +67,12 @@ class RTA4FormalResultWriter:
         authorization_document: Mapping[str, Any] | None = None,
         prepared_config: Mapping[str, Any] | None = None,
         allow_test_authorization: bool = False,
+        require_existing_namespace: bool = False,
     ) -> None:
+        if type(require_existing_namespace) is not bool:
+            raise RTA4FormalWriterError(
+                "require_existing_namespace must be a strict boolean"
+            )
         if execution_class not in {
             NONFORMAL_TEST_FIXTURE, FORMAL_AUTHORIZED, SYNTHETIC_AUTHORIZED,
         }:
@@ -171,6 +176,21 @@ class RTA4FormalResultWriter:
         plan_manifest_path = self.root / RTA4_PLAN_MANIFEST
         authorization_path = self.root / FORMAL_AUTHORIZATION_EVIDENCE
         existing_names = _root_files(self.root)
+        if require_existing_namespace:
+            required_files = {
+                RTA4_FORMAL_SCHEMA_MANIFEST, RTA4_CONFIG_CHECKPOINT,
+                RTA4_PLAN_MANIFEST, FORMAL_RUN_METADATA, *FORMAL_TABLES,
+            }
+            if execution_class in {FORMAL_AUTHORIZED, SYNTHETIC_AUTHORIZED}:
+                required_files.add(FORMAL_AUTHORIZATION_EVIDENCE)
+            missing = sorted(
+                name for name in required_files
+                if not (self.root / name).is_file()
+            )
+            if missing or not self.terminals.is_dir():
+                raise RTA4FormalWriterError(
+                    "resume writer refuses an incomplete existing namespace"
+                )
         if existing_names.intersection(LEGACY_TABLES):
             raise RTA4FormalWriterError(
                 "legacy ResultWriter tables cannot be opened as the RTA4 schema"

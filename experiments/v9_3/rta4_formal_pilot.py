@@ -16,13 +16,23 @@ from .rta4_formal_config import (
 from .rta4_formal_plan import FormalPlanRecord, iter_formal_plan
 
 
-RTA4_PILOT_VERSION = "ASAP_BLOCK_V9_3_RTA4_PILOT_V1"
-RTA4_PILOT_CONFIG_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_PILOT_CONFIG:v1"
-RTA4_PILOT_MANIFEST_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_PILOT_MANIFEST:v1"
-RTA4_PILOT_CLOSURE_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_PILOT_CLOSURE:v1"
-RTA4_PILOT_REPORT_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_PILOT_REPORT:v1"
+RTA4_PILOT_VERSION = "ASAP_BLOCK_V9_3_RTA4_PILOT_V2"
+RTA4_PILOT_CONFIG_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_PILOT_CONFIG:v2"
+RTA4_PILOT_MANIFEST_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_PILOT_MANIFEST:v2"
+RTA4_PILOT_CLOSURE_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_PILOT_CLOSURE:v2"
+RTA4_PILOT_REPORT_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_PILOT_REPORT:v2"
+RTA4_PILOT_OBSERVATION_VERSION = (
+    "ASAP_BLOCK_V9_3_RTA4_PILOT_OBSERVATIONS_V1"
+)
+RTA4_PILOT_OBSERVATION_DOMAIN = (
+    "ASAP_BLOCK:V9.3:RTA4_PILOT_OBSERVATION:v1"
+)
+RTA4_PILOT_OBSERVATIONS_DOMAIN = (
+    "ASAP_BLOCK:V9.3:RTA4_PILOT_OBSERVATIONS:v1"
+)
 RTA4_PILOT_EXECUTION_CLASS = "ENGINEERING_PILOT"
 RTA4_PILOT_OUTPUT_MARKER = "rta4_pilot_manifest.json"
+RTA4_PILOT_OBSERVATIONS = "rta4_pilot_observations.json"
 RTA4_PILOT_REPORT = "rta4_pilot_report.json"
 
 
@@ -59,7 +69,7 @@ def source_config_evidence(
 
 
 def _selection_key(record: FormalPlanRecord, seed: str) -> str:
-    return domain_hash("ASAP_BLOCK:V9.3:RTA4_PILOT_SELECTION:v1", {
+    return domain_hash("ASAP_BLOCK:V9.3:RTA4_PILOT_SELECTION:v2", {
         "pilot_version": RTA4_PILOT_VERSION,
         "seed": seed,
         "core": record.core,
@@ -131,6 +141,9 @@ def build_pilot_manifest(
                 "mathematical_request_id": row.mathematical_request_id,
                 "execution_id": row.execution_id,
                 "method": str(row.material.get("method", "NA")),
+                "taskset_skeleton_slot_id": row.taskset_skeleton_slot_id,
+                "taskset_slot_id": row.taskset_slot_id,
+                "worker_count": int(row.material.get("worker_count", 1)),
                 "selection_key": _selection_key(row, selection_seed),
             }
             for row in rows
@@ -206,14 +219,31 @@ def _percentile(values: Sequence[int], numerator: int, denominator: int) -> int:
     return ordered[index]
 
 
-def build_pilot_report(
+_PILOT_METRIC_FIELDS = frozenset({
+    "runtime_wall_milliseconds", "runtime_cpu_milliseconds",
+    "peak_rss_bytes", "timed_out", "attempt_count",
+    "worker_throughput_milli_records_per_second",
+    "checkpoint_overhead_milliseconds", "resume_overhead_milliseconds",
+    "simulation_wall_milliseconds", "trace_size_bytes",
+    "output_io_bytes", "engineering_error",
+    "ci_width_engineering_warning",
+})
+_PILOT_OBSERVATION_INPUT_FIELDS = frozenset({
+    "plan_record_id", "mathematical_request_id", "execution_id",
+    "worker_count", *_PILOT_METRIC_FIELDS,
+})
+
+
+def build_pilot_observations(
     manifest: Mapping[str, Any],
     observations: Sequence[Mapping[str, Any]],
 ) -> Dict[str, Any]:
-    """Summarize runtime/memory/timeout evidence without result statistics."""
+    """Build independently reconstructable raw engineering observations."""
 
     expected = {
-        row["plan_record_id"]
+        row["plan_record_id"]: {
+            **row, "core": core,
+        }
         for core in RTA4_CORES
         for row in manifest["selected_records"][core]
     }
@@ -221,21 +251,28 @@ def build_pilot_report(
         raise RTA4PilotError("pilot observation count mismatch")
     seen: set[str] = set()
     normalized = []
-    exact_fields = {
-        "plan_record_id", "runtime_wall_milliseconds",
-        "runtime_cpu_milliseconds", "peak_rss_bytes", "timed_out",
-        "attempt_count", "worker_throughput_milli_records_per_second",
-        "checkpoint_overhead_milliseconds", "resume_overhead_milliseconds",
-        "simulation_wall_milliseconds", "trace_size_bytes",
-        "output_io_bytes", "engineering_error",
-        "ci_width_engineering_warning",
-    }
     for raw in observations:
-        if set(raw) != exact_fields:
+        if not isinstance(raw, Mapping) or set(raw) != (
+            _PILOT_OBSERVATION_INPUT_FIELDS
+        ):
             raise RTA4PilotError("pilot observation has an unexpected field set")
         record_id = raw["plan_record_id"]
         if record_id not in expected or record_id in seen:
             raise RTA4PilotError("pilot observation membership mismatch")
+        selected = expected[record_id]
+        if (
+            raw["mathematical_request_id"]
+            != selected["mathematical_request_id"]
+            or raw["execution_id"] != selected["execution_id"]
+            or raw["worker_count"] != selected["worker_count"]
+        ):
+            raise RTA4PilotError(
+                "pilot observation execution identity mismatch"
+            )
+        if type(raw["worker_count"]) is not int or raw["worker_count"] < 1:
+            raise RTA4PilotError(
+                "pilot observation worker count must be positive"
+            )
         for name in (
             "runtime_wall_milliseconds", "runtime_cpu_milliseconds",
             "peak_rss_bytes", "attempt_count",
@@ -255,14 +292,99 @@ def build_pilot_report(
         ):
             raise RTA4PilotError("pilot engineering flags must be strict booleans")
         seen.add(record_id)
-        normalized.append(dict(raw))
+        material = {
+            "pilot_manifest_id": manifest["pilot_manifest_id"],
+            "selection_key": selected["selection_key"],
+            "core": selected["core"],
+            "method": selected["method"],
+            "taskset_skeleton_slot_id": selected[
+                "taskset_skeleton_slot_id"
+            ],
+            "taskset_slot_id": selected["taskset_slot_id"],
+            **dict(raw),
+        }
+        normalized.append({
+            **material,
+            "observation_id": domain_hash(
+                RTA4_PILOT_OBSERVATION_DOMAIN, material,
+            ),
+        })
     normalized.sort(key=lambda row: row["plan_record_id"])
+    observations_sha256 = hashlib.sha256(
+        canonical_json(normalized).encode("utf-8")
+    ).hexdigest()
+    material = {
+        "pilot_observation_version": RTA4_PILOT_OBSERVATION_VERSION,
+        "pilot_manifest_id": manifest["pilot_manifest_id"],
+        "observation_count": len(normalized),
+        "observations": normalized,
+        "observations_sha256": observations_sha256,
+    }
+    return {
+        **material,
+        "pilot_observations_id": domain_hash(
+            RTA4_PILOT_OBSERVATIONS_DOMAIN, material,
+        ),
+    }
+
+
+def validate_pilot_observations(
+    document: Mapping[str, Any], manifest: Mapping[str, Any],
+) -> Dict[str, Any]:
+    if not isinstance(document, Mapping) or set(document) != {
+        "pilot_observation_version", "pilot_manifest_id",
+        "observation_count", "observations", "observations_sha256",
+        "pilot_observations_id",
+    }:
+        raise RTA4PilotError(
+            "pilot observation document has an unexpected field set"
+        )
+    if (
+        document["pilot_observation_version"]
+        != RTA4_PILOT_OBSERVATION_VERSION
+        or document["pilot_manifest_id"] != manifest.get("pilot_manifest_id")
+        or not isinstance(document["observations"], Sequence)
+        or isinstance(document["observations"], (str, bytes))
+    ):
+        raise RTA4PilotError("pilot observation document binding mismatch")
+    inputs = []
+    wrapper_fields = {
+        "observation_id", "pilot_manifest_id", "selection_key", "core",
+        "method", "taskset_skeleton_slot_id", "taskset_slot_id",
+    }
+    for row in document["observations"]:
+        if not isinstance(row, Mapping) or set(row) != (
+            _PILOT_OBSERVATION_INPUT_FIELDS | wrapper_fields
+        ):
+            raise RTA4PilotError(
+                "pilot raw observation has an unexpected field set"
+            )
+        inputs.append({
+            key: value for key, value in row.items()
+            if key not in wrapper_fields
+        })
+    expected = build_pilot_observations(manifest, inputs)
+    if dict(document) != expected:
+        raise RTA4PilotError(
+            "pilot observations cannot be reconstructed from raw evidence"
+        )
+    return expected
+
+
+def build_pilot_report(
+    manifest: Mapping[str, Any],
+    observation_document: Mapping[str, Any],
+) -> Dict[str, Any]:
+    """Summarize validated raw runtime/memory/timeout evidence."""
+
+    observations = validate_pilot_observations(
+        observation_document, manifest,
+    )
+    normalized = observations["observations"]
     runtimes = [row["runtime_wall_milliseconds"] for row in normalized]
     cpu = [row["runtime_cpu_milliseconds"] for row in normalized]
     rss = [row["peak_rss_bytes"] for row in normalized]
-    observation_sha256 = hashlib.sha256(
-        canonical_json(normalized).encode("utf-8")
-    ).hexdigest()
+    observation_sha256 = observations["observations_sha256"]
     method_for = {
         row["plan_record_id"]: row["method"]
         for core in RTA4_CORES
@@ -285,12 +407,14 @@ def build_pilot_report(
         }
     pilot_closure_id = domain_hash(RTA4_PILOT_CLOSURE_DOMAIN, {
         "pilot_manifest_id": manifest["pilot_manifest_id"],
+        "pilot_observations_id": observations["pilot_observations_id"],
         "observation_sha256": observation_sha256,
         "observation_count": len(normalized),
     })
     material = {
         "pilot_version": RTA4_PILOT_VERSION,
         "pilot_manifest_id": manifest["pilot_manifest_id"],
+        "pilot_observations_id": observations["pilot_observations_id"],
         "pilot_status": "PILOT_COMPLETE_ENGINEERING_ONLY",
         "pilot_closure_id": pilot_closure_id,
         "observation_count": len(normalized),
@@ -345,58 +469,28 @@ def build_pilot_report(
 
 def validate_pilot_report(
     report: Mapping[str, Any], manifest: Mapping[str, Any],
+    observation_document: Mapping[str, Any],
 ) -> Dict[str, Any]:
     if not isinstance(report, Mapping):
         raise RTA4PilotError("pilot report must be a mapping")
-    if set(report) != {
-        "pilot_version", "pilot_manifest_id", "pilot_status",
-        "pilot_closure_id", "observation_count", "engineering_metrics",
-        "observation_sha256", "scientific_results_included",
-        "pilot_report_id",
-    }:
-        raise RTA4PilotError("pilot report has an unexpected field set")
-    material = dict(report)
-    observed = material.pop("pilot_report_id", None)
-    if material.get("pilot_version") != RTA4_PILOT_VERSION:
-        raise RTA4PilotError("pilot report version mismatch")
-    if material.get("pilot_manifest_id") != manifest.get("pilot_manifest_id"):
-        raise RTA4PilotError("pilot report belongs to another pilot manifest")
-    if material.get("pilot_status") != "PILOT_COMPLETE_ENGINEERING_ONLY":
-        raise RTA4PilotError("pilot is not complete")
-    if material.get("scientific_results_included") is not False:
-        raise RTA4PilotError("pilot report must not contain scientific results")
-    if (
-        not isinstance(material.get("pilot_closure_id"), str)
-        or len(material["pilot_closure_id"]) != 64
-    ):
-        raise RTA4PilotError("pilot closure identity is missing")
-    metrics = material.get("engineering_metrics")
-    if not isinstance(metrics, Mapping) or set(metrics) != {
-        "runtime_wall_milliseconds_p50",
-        "runtime_wall_milliseconds_p95",
-        "runtime_wall_milliseconds_max",
-        "runtime_cpu_milliseconds_max", "peak_rss_bytes_max",
-        "timeout_count", "attempt_count_max",
-        "worker_throughput_milli_records_per_second_max",
-        "checkpoint_overhead_milliseconds_total",
-        "resume_overhead_milliseconds_total",
-        "simulation_wall_milliseconds_total", "trace_size_bytes_total",
-        "output_io_bytes_total", "engineering_error_count",
-        "ci_width_engineering_warning_count", "per_method",
-    }:
-        raise RTA4PilotError("pilot engineering metric field set mismatch")
-    if observed != domain_hash(RTA4_PILOT_REPORT_DOMAIN, material):
-        raise RTA4PilotError("pilot report identity mismatch")
-    return dict(report)
+    expected = build_pilot_report(manifest, observation_document)
+    if dict(report) != expected:
+        raise RTA4PilotError(
+            "pilot report cannot be reconstructed from raw observations"
+        )
+    return expected
 
 
 __all__ = [
     "RTA4_PILOT_CLOSURE_DOMAIN", "RTA4_PILOT_CONFIG_DOMAIN",
     "RTA4_PILOT_EXECUTION_CLASS",
     "RTA4_PILOT_MANIFEST_DOMAIN",
+    "RTA4_PILOT_OBSERVATION_DOMAIN", "RTA4_PILOT_OBSERVATION_VERSION",
+    "RTA4_PILOT_OBSERVATIONS", "RTA4_PILOT_OBSERVATIONS_DOMAIN",
     "RTA4_PILOT_OUTPUT_MARKER", "RTA4_PILOT_REPORT",
     "RTA4_PILOT_REPORT_DOMAIN", "RTA4_PILOT_VERSION",
-    "RTA4PilotError", "build_pilot_manifest", "build_pilot_report",
+    "RTA4PilotError", "build_pilot_manifest", "build_pilot_observations",
+    "build_pilot_report",
     "source_config_evidence", "validate_pilot_manifest",
-    "validate_pilot_report",
+    "validate_pilot_observations", "validate_pilot_report",
 ]

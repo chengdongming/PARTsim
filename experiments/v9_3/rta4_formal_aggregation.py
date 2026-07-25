@@ -396,13 +396,18 @@ def _figure4(closure: ValidatedFormalClosure, replicates: int) -> list[Dict[str,
 
 
 def _figure5(closure: ValidatedFormalClosure) -> list[Dict[str, Any]]:
+    if closure.metadata["core"] == "CORE-5B":
+        return _core5b_scalability_rows(closure)
     output = []
     groups: Dict[tuple[str, str, str], list[float]] = defaultdict(list)
     for row in closure.table("formal_rta_taskset_results.csv"):
         if row["axis"] in {"task_count", "processor_count", "integer_time_scale"}:
             runtime = _float(row["runtime_wall_seconds"])
-            if runtime is not None and runtime > 0:
-                groups[(row["axis"], row["axis_value"], row["method"])].append(runtime)
+            if runtime is None or runtime <= 0:
+                raise RTA4FormalAggregationError(
+                    "CORE-5A scalability rows require positive runtime evidence"
+                )
+            groups[(row["axis"], row["axis_value"], row["method"])].append(runtime)
     for (axis, value, method), runtimes in sorted(groups.items()):
         output.append({
             "row_type": "ALGORITHMIC_SCALING", "axis": axis, "axis_value": value,
@@ -411,18 +416,143 @@ def _figure5(closure: ValidatedFormalClosure) -> list[Dict[str, Any]]:
             "runtime_p95": _number(_quantile(runtimes, .95)), "speedup": "NA",
             "parallel_efficiency": "NA", "mathematical_mismatch_count": 0,
         })
-    worker_groups: Dict[tuple[str, str], list[Mapping[str, str]]] = defaultdict(list)
-    for row in closure.table("formal_worker_consistency.csv"):
-        worker_groups[(row["compared_worker_count"], row["check_status"])].append(row)
-    for (workers, status), rows in sorted(worker_groups.items()):
-        mismatches = sum(row["math_hash_match"].lower() != "true" for row in rows)
+    return output
+
+
+def _core5b_scalability_rows(
+    closure: ValidatedFormalClosure,
+) -> list[Dict[str, Any]]:
+    """Pair exact CORE-5B worker executions and compute measured scaling."""
+
+    requests = {
+        row["execution_run_id"]: row
+        for row in closure.table("formal_rta_requests.csv")
+    }
+    results = {
+        row["execution_run_id"]: row
+        for row in closure.table("formal_rta_taskset_results.csv")
+    }
+    if len(requests) != len(closure.table("formal_rta_requests.csv")):
+        raise RTA4FormalAggregationError(
+            "CORE-5B request execution identity is not unique"
+        )
+    if set(requests) != set(results):
+        raise RTA4FormalAggregationError(
+            "CORE-5B request/result execution inventories differ"
+        )
+    dependency_rows = closure.table("formal_dependencies.csv")
+    dependencies: Dict[str, Mapping[str, str]] = {}
+    for row in dependency_rows:
+        analysis_id = row["analysis_id"]
+        if analysis_id in dependencies:
+            raise RTA4FormalAggregationError(
+                "CORE-5B source pairing identity is duplicated"
+            )
+        dependencies[analysis_id] = row
+    groups: Dict[str, Dict[int, tuple[Mapping[str, str], Mapping[str, str]]]] = (
+        defaultdict(dict)
+    )
+    for execution_id, request in requests.items():
+        worker = int(request["worker_count"])
+        group = groups[request["request_id"]]
+        if worker in group:
+            raise RTA4FormalAggregationError(
+                "CORE-5B mathematical request has a duplicate worker execution"
+            )
+        group[worker] = (request, results[execution_id])
+
+    identity_fields = (
+        "analysis_id", "request_id", "taskset_skeleton_slot_id",
+        "taskset_slot_id", "taskset_skeleton_id", "taskset_id",
+        "taskset_hash", "method", "method_role", "carry_policy", "exact_e0",
+        "service_identity", "power_vector_hash", "theory_document_sha256",
+        "numeric_contract_sha256", "exact_input_identity", "timeout_contract",
+        "source_analysis_id", "scenario", "axis", "service_scale",
+        "power_scale", "deadline_variant",
+    )
+    mathematical_fields = (
+        "solver_status", "taskset_certification_status", "taskset_proven",
+        "first_failed_priority", "failure_reason", "timeout",
+        "checked_w_count", "checked_q_count", "checked_h_count",
+        "exact_result_hash", "candidate_vector_hash", "witness_vector_hash",
+        "certification_vector_hash", "failure_reason_vector_hash",
+        "fallback_used", "normalized_utilization",
+    )
+    metrics: Dict[tuple[int, str], Dict[str, list[float]]] = defaultdict(
+        lambda: {"runtime": [], "speedup": [], "efficiency": []}
+    )
+    for request_id, worker_rows in sorted(groups.items()):
+        if set(worker_rows) != {1, 2, 4, 8}:
+            raise RTA4FormalAggregationError(
+                "CORE-5B mathematical request lacks the exact 1/2/4/8 worker set"
+            )
+        reference_request, reference_result = worker_rows[1]
+        dependency = dependencies.get(reference_request["analysis_id"])
+        if dependency is None or any(
+            dependency[field] != reference_request[field]
+            for field in (
+                "taskset_skeleton_id", "taskset_id", "taskset_hash",
+                "method", "exact_e0", "service_identity",
+                "power_vector_hash", "theory_document_sha256",
+                "numeric_contract_sha256",
+            )
+        ) or any(
+            not dependency.get(field)
+            for field in ("source_plan_sha256", "source_closure_sha256")
+        ):
+            raise RTA4FormalAggregationError(
+                "CORE-5B mathematical request lacks its exact source closure pair"
+            )
+        reference_runtime = _float(reference_result["runtime_wall_seconds"])
+        if reference_runtime is None or reference_runtime <= 0:
+            raise RTA4FormalAggregationError(
+                "CORE-5B requires positive finite runtime evidence"
+            )
+        for worker in (1, 2, 4, 8):
+            request, result = worker_rows[worker]
+            if any(
+                request[field] != reference_request[field]
+                for field in identity_fields
+            ):
+                raise RTA4FormalAggregationError(
+                    "CORE-5B worker pair changed scientific input identity"
+                )
+            if any(
+                result[field] != reference_result[field]
+                for field in mathematical_fields
+            ):
+                raise RTA4FormalAggregationError(
+                    "CORE-5B worker pair changed mathematical output"
+                )
+            runtime = _float(result["runtime_wall_seconds"])
+            if runtime is None or runtime <= 0:
+                raise RTA4FormalAggregationError(
+                    "CORE-5B requires positive finite runtime evidence"
+                )
+            speedup = reference_runtime / runtime
+            bucket = metrics[(worker, result["method"])]
+            bucket["runtime"].append(runtime)
+            bucket["speedup"].append(speedup)
+            bucket["efficiency"].append(speedup / worker)
+
+    output = []
+    for (worker, method), values in sorted(metrics.items()):
         output.append({
             "row_type": "WORKER_CONSISTENCY", "axis": "worker_count",
-            "axis_value": workers, "method": "ALL", "worker_count": workers,
-            "sample_count": len(rows), "runtime_median": "NA", "runtime_p95": "NA",
-            "speedup": "NA", "parallel_efficiency": "NA",
-            "mathematical_mismatch_count": mismatches,
+            "axis_value": worker, "method": method, "worker_count": worker,
+            "sample_count": len(values["runtime"]),
+            "runtime_median": _number(_quantile(values["runtime"], .5)),
+            "runtime_p95": _number(_quantile(values["runtime"], .95)),
+            "speedup": _number(_quantile(values["speedup"], .5)),
+            "parallel_efficiency": _number(
+                _quantile(values["efficiency"], .5)
+            ),
+            "mathematical_mismatch_count": 0,
         })
+    if not output:
+        raise RTA4FormalAggregationError(
+            "CORE-5B aggregate has no paired mathematical requests"
+        )
     return output
 
 

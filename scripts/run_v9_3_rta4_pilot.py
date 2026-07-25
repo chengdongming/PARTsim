@@ -17,8 +17,8 @@ from experiments.v9_3.rta4_formal_config import (
     RTA4_CORES, load_rta4_formal_config,
 )
 from experiments.v9_3.rta4_formal_pilot import (
-    RTA4_PILOT_OUTPUT_MARKER, RTA4_PILOT_REPORT,
-    build_pilot_manifest, build_pilot_report,
+    RTA4_PILOT_OBSERVATIONS, RTA4_PILOT_OUTPUT_MARKER, RTA4_PILOT_REPORT,
+    build_pilot_manifest, build_pilot_observations, build_pilot_report,
 )
 from experiments.v9_3.rta4_formal_environment import load_strict_json
 
@@ -74,9 +74,15 @@ def main() -> int:
         atomic_write_json(root / RTA4_PILOT_OUTPUT_MARKER, manifest)
         result = {"pilot_manifest": str(root / RTA4_PILOT_OUTPUT_MARKER)}
         if args.observations is not None:
-            observations = load_strict_json(args.observations)
+            observations = build_pilot_observations(
+                manifest, load_strict_json(args.observations),
+            )
             report = build_pilot_report(manifest, observations)
+            atomic_write_json(root / RTA4_PILOT_OBSERVATIONS, observations)
             atomic_write_json(root / RTA4_PILOT_REPORT, report)
+            result["pilot_observations"] = str(
+                root / RTA4_PILOT_OBSERVATIONS
+            )
             result["pilot_report"] = str(root / RTA4_PILOT_REPORT)
         print(json.dumps(result, ensure_ascii=False, sort_keys=True, indent=2))
     except Exception as exc:

@@ -9,15 +9,18 @@ import subprocess
 
 import pytest
 
-from experiments.v9_3.result_writer import atomic_write_json
+from experiments.v9_3.result_writer import atomic_write_json, read_csv
 from experiments.v9_3.rta4_formal_authorization import (
     RTA4AuthorizationError, authorize_candidate,
     build_authorization_candidate, validate_authorization_document,
     verify_live_authorization,
 )
-from experiments.v9_3.rta4_formal_aggregation import aggregate_formal_run
+from experiments.v9_3.rta4_formal_aggregation import (
+    RTA4FormalAggregationError, _core5b_scalability_rows,
+    _figure5, aggregate_formal_run,
+)
 from experiments.v9_3.rta4_formal_config import (
-    RTA4_CORES, load_rta4_formal_config,
+    RTA4_CORES, domain_hash, load_rta4_formal_config,
 )
 from experiments.v9_3.rta4_formal_environment import (
     RTA4EnvironmentError, build_command_chain_manifest,
@@ -33,18 +36,24 @@ from experiments.v9_3.rta4_formal_freeze import (
     validate_prepared_config,
 )
 from experiments.v9_3.rta4_formal_execution import (
-    AuthorizedRTA4Runner, ProductionTasksetProvider, RTA4ExecutionError,
-    _bounded_execution_batches,
+    AuthorizedRTA4Runner, ProductionRTAExecutor, ProductionTasksetProvider,
+    RTA4ExecutionError, _bounded_execution_batches,
 )
+import experiments.v9_3.rta4_formal_execution as rta4_execution
 from experiments.v9_3.rta4_formal_plan import (
     FormalPlanRecord, iter_core4_plan, iter_core5b_plan, iter_formal_plan,
 )
 from experiments.v9_3.rta4_formal_plotting import (
     render_formal_publication_figures,
 )
+from experiments.v9_3.rta4_formal_pipeline import (
+    RTA4FormalPipelineError, _execution_peak_rss, _execution_seconds,
+    mathematical_result_hash,
+)
+from experiments.v9_3.rta4_formal_validation import RTA4_CHECKPOINT_DOMAIN
 from experiments.v9_3.rta4_formal_pilot import (
-    RTA4PilotError, build_pilot_manifest, build_pilot_report,
-    validate_pilot_report,
+    RTA4PilotError, build_pilot_manifest, build_pilot_observations,
+    build_pilot_report, validate_pilot_observations, validate_pilot_report,
 )
 from experiments.v9_3.constrained_taskset_identity import (
     CONSTRAINED_UNIFORM_SLACK_MODE, FIXED_SLACK_FRACTION_VARIANT,
@@ -82,6 +91,9 @@ def frozen_contract(tmp_path_factory):
     observations = [
         {
             "plan_record_id": row["plan_record_id"],
+            "mathematical_request_id": row["mathematical_request_id"],
+            "execution_id": row["execution_id"],
+            "worker_count": row["worker_count"],
             "runtime_wall_milliseconds": index + 1,
             "runtime_cpu_milliseconds": index + 1,
             "peak_rss_bytes": 1024 + index,
@@ -99,7 +111,8 @@ def frozen_contract(tmp_path_factory):
         for index, core in enumerate(RTA4_CORES)
         for row in pilot["selected_records"][core]
     ]
-    report = build_pilot_report(pilot, observations)
+    pilot_observations = build_pilot_observations(pilot, observations)
+    report = build_pilot_report(pilot, pilot_observations)
     timeout = {
         "contract_version": "ASAP_BLOCK_V9_3_RTA4_TIMEOUT_V1",
         "pilot_report_id": report["pilot_report_id"],
@@ -139,17 +152,20 @@ def frozen_contract(tmp_path_factory):
             "resume_policy": "REVALIDATE_ALL_BINDINGS_SKIP_TERMINALS_V1",
         }
     prepared = prepare_formal_configs(
-        configs, pilot_manifest=pilot, pilot_report=report,
+        configs, pilot_manifest=pilot,
+        pilot_observations=pilot_observations, pilot_report=report,
         timeout_contract=timeout, operational=operational,
         config_paths=paths,
     )
     freeze = build_freeze_manifest(prepared)
     documents = {
         "pilot": root / "pilot.json",
+        "observations": root / "observations.json",
         "report": root / "report.json",
         "freeze": root / "freeze.json",
     }
     atomic_write_json(documents["pilot"], pilot)
+    atomic_write_json(documents["observations"], pilot_observations)
     atomic_write_json(documents["report"], report)
     atomic_write_json(documents["freeze"], freeze)
     for core in RTA4_CORES:
@@ -157,7 +173,8 @@ def frozen_contract(tmp_path_factory):
         atomic_write_json(path, prepared[core])
         documents[f"prepared-{core}"] = path
     return {
-        "root": root, "configs": configs, "pilot": pilot, "report": report,
+        "root": root, "configs": configs, "pilot": pilot,
+        "observations": pilot_observations, "report": report,
         "timeout": timeout, "prepared": prepared, "freeze": freeze,
         "documents": documents,
     }
@@ -207,6 +224,7 @@ def _candidate(frozen_contract, source, *, test_mode=False):
         freeze_manifest=frozen_contract["freeze"],
         all_prepared_configs=frozen_contract["prepared"],
         pilot_manifest=frozen_contract["pilot"],
+        pilot_observations=frozen_contract["observations"],
         pilot_report=frozen_contract["report"],
         source_manifest=source,
         dependency_manifest=dependencies,
@@ -217,6 +235,7 @@ def _candidate(frozen_contract, source, *, test_mode=False):
         prepared_config_path=frozen_contract["documents"]["prepared-CORE-1"],
         freeze_manifest_path=frozen_contract["documents"]["freeze"],
         pilot_manifest_path=frozen_contract["documents"]["pilot"],
+        pilot_observations_path=frozen_contract["documents"]["observations"],
         pilot_report_path=frozen_contract["documents"]["report"],
         authorization_path=frozen_contract["root"] / (
             "test-auth.json" if test_mode else "production-auth.json"
@@ -233,11 +252,15 @@ def test_pilot_is_result_independent_and_report_is_engineering_only(
     assert all(
         len(pilot["selected_records"][core]) == 1 for core in RTA4_CORES
     )
-    validate_pilot_report(frozen_contract["report"], pilot)
+    validate_pilot_report(
+        frozen_contract["report"], pilot, frozen_contract["observations"],
+    )
     contaminated = deepcopy(frozen_contract["report"])
     contaminated["scientific_results_included"] = True
     with pytest.raises(RTA4PilotError):
-        validate_pilot_report(contaminated, pilot)
+        validate_pilot_report(
+            contaminated, pilot, frozen_contract["observations"],
+        )
 
 
 def test_freeze_preserves_scientific_identity_and_rejects_timeout_drift(
@@ -385,7 +408,9 @@ def test_freeze_requires_complete_pilot(frozen_contract):
     stale = deepcopy(frozen_contract["report"])
     stale["pilot_status"] = "PILOT_PARTIAL"
     with pytest.raises(RTA4PilotError):
-        validate_pilot_report(stale, frozen_contract["pilot"])
+        validate_pilot_report(
+            stale, frozen_contract["pilot"], frozen_contract["observations"],
+        )
 
 
 def _synthetic_certificate(record: FormalPlanRecord):
@@ -437,7 +462,7 @@ def _synthetic_certificate(record: FormalPlanRecord):
 
 
 def _synthetic_rta(_record, certificate):
-    return {
+    result = {
         "solver_status": "COMPLETED",
         "taskset_certification_status": "CERTIFIED_TASKSET",
         "taskset_proven": True, "failure_reason": "NA",
@@ -453,6 +478,16 @@ def _synthetic_rta(_record, certificate):
             }
             for _task in certificate.tasks
         ],
+    }
+    attempt = {
+        "solver_status": "COMPLETED", "failure_origin": "NA",
+        "runtime_wall_seconds": "0.25",
+        "runtime_cpu_seconds": "0.125", "peak_rss_bytes": 4096,
+    }
+    return {
+        **result, "attempts": [attempt],
+        "runtime_wall_seconds": "0.25",
+        "runtime_cpu_seconds": "0.125", "peak_rss_bytes": 4096,
     }
 
 
@@ -547,6 +582,7 @@ def _test_authorization(
         freeze_manifest=frozen_contract["freeze"],
         all_prepared_configs=frozen_contract["prepared"],
         pilot_manifest=frozen_contract["pilot"],
+        pilot_observations=frozen_contract["observations"],
         pilot_report=frozen_contract["report"],
         source_manifest=source_manifest,
         dependency_manifest=dependencies,
@@ -559,6 +595,7 @@ def _test_authorization(
         prepared_config_path=frozen_contract["documents"][f"prepared-{core}"],
         freeze_manifest_path=frozen_contract["documents"]["freeze"],
         pilot_manifest_path=frozen_contract["documents"]["pilot"],
+        pilot_observations_path=frozen_contract["documents"]["observations"],
         pilot_report_path=frozen_contract["documents"]["report"],
         authorization_path=frozen_contract["root"] / f"auth-{core}.json",
         source_closure_bindings=source_bindings,
@@ -718,16 +755,22 @@ def _variant_contract(frozen_contract, suffix):
     prepared = prepare_formal_configs(
         frozen_contract["configs"],
         pilot_manifest=frozen_contract["pilot"],
+        pilot_observations=frozen_contract["observations"],
         pilot_report=frozen_contract["report"],
         timeout_contract=frozen_contract["timeout"],
         operational=operational, config_paths=paths,
     )
     freeze = build_freeze_manifest(prepared)
     documents = {
-        "pilot": root / "pilot.json", "report": root / "report.json",
+        "pilot": root / "pilot.json",
+        "observations": root / "observations.json",
+        "report": root / "report.json",
         "freeze": root / "freeze.json",
     }
     atomic_write_json(documents["pilot"], frozen_contract["pilot"])
+    atomic_write_json(
+        documents["observations"], frozen_contract["observations"],
+    )
     atomic_write_json(documents["report"], frozen_contract["report"])
     atomic_write_json(documents["freeze"], freeze)
     for core in RTA4_CORES:
@@ -775,6 +818,13 @@ def test_authorized_checkpoint_resume_skips_terminals_and_rejects_inventory_drif
             rta_executor=counted,
         )
     checkpoint = json.loads(first.checkpoint_path.read_text(encoding="utf-8"))
+    first_terminal = next(
+        (
+            Path(contract["prepared"]["CORE-1"]["operational"]["output_root"])
+            / "formal_terminal_results"
+        ).glob("*.json")
+    )
+    first_terminal_bytes = first_terminal.read_bytes()
     damaged = deepcopy(checkpoint)
     damaged["completed_count"] = 99
     atomic_write_json(first.checkpoint_path, damaged)
@@ -791,6 +841,35 @@ def test_authorized_checkpoint_resume_skips_terminals_and_rejects_inventory_drif
         rta_executor=counted,
     )
     assert final.complete and len(calls) == 3
+    assert first_terminal.read_bytes() == first_terminal_bytes
+    complete_checkpoint = json.loads(
+        final.checkpoint_path.read_text(encoding="utf-8")
+    )
+    incomplete = deepcopy(complete_checkpoint)
+    incomplete.pop("checkpoint_id")
+    incomplete["checkpoint_status"] = "INCOMPLETE_CHECKPOINT"
+    incomplete["checkpoint_id"] = domain_hash(
+        RTA4_CHECKPOINT_DOMAIN, incomplete,
+    )
+    atomic_write_json(final.checkpoint_path, incomplete)
+    with pytest.raises(Exception):
+        aggregate_formal_run(
+            Path(contract["prepared"]["CORE-1"]["operational"]["output_root"]),
+            contract["root"] / "incomplete-checkpoint-aggregate",
+            bootstrap_replicates=10, allow_test_authorization=True,
+        )
+    atomic_write_json(final.checkpoint_path, complete_checkpoint)
+
+    removed_payload = json.loads(first_terminal.read_text(encoding="utf-8"))
+    first_terminal.unlink()
+    with pytest.raises(Exception):
+        aggregate_formal_run(
+            Path(contract["prepared"]["CORE-1"]["operational"]["output_root"]),
+            contract["root"] / "missing-terminal-aggregate",
+            bootstrap_replicates=10, allow_test_authorization=True,
+        )
+    atomic_write_json(first_terminal, removed_payload)
+    assert first_terminal.read_bytes() == first_terminal_bytes
     extra = (
         Path(contract["prepared"]["CORE-1"]["operational"]["output_root"])
         / "formal_terminal_results" / f"{'f' * 64}.json"
@@ -816,3 +895,462 @@ def test_production_provider_uses_public_generator_once_per_slot(
     assert first is second
     assert first.canonical_bytes() == second.canonical_bytes()
     assert first.generation_request.generator_seed >= 0
+
+
+def _pilot_observation_inputs(document):
+    wrapper = {
+        "observation_id", "pilot_manifest_id", "selection_key", "core",
+        "method", "taskset_skeleton_slot_id", "taskset_slot_id",
+    }
+    return [
+        {
+            key: value for key, value in row.items()
+            if key not in wrapper
+        }
+        for row in document["observations"]
+    ]
+
+
+def test_pilot_raw_observations_reconstruct_report_and_reject_drift(
+    frozen_contract,
+):
+    pilot = frozen_contract["pilot"]
+    observed = frozen_contract["observations"]
+    report = frozen_contract["report"]
+    assert validate_pilot_observations(observed, pilot) == observed
+    assert build_pilot_observations(
+        pilot, list(reversed(_pilot_observation_inputs(observed))),
+    ) == observed
+    assert build_pilot_report(pilot, observed) == report
+
+    for mutation in (
+        "missing", "extra", "duplicate", "selection", "timing", "timeout",
+    ):
+        raw = _pilot_observation_inputs(observed)
+        if mutation == "missing":
+            raw.pop()
+        elif mutation == "extra":
+            raw.append(deepcopy(raw[0]))
+        elif mutation == "duplicate":
+            raw[-1] = deepcopy(raw[0])
+        elif mutation == "selection":
+            raw[0]["mathematical_request_id"] = "f" * 64
+        elif mutation == "timing":
+            raw[0]["runtime_wall_milliseconds"] += 1
+        else:
+            raw[0]["timed_out"] = not raw[0]["timed_out"]
+        if mutation in {"timing", "timeout"}:
+            changed = build_pilot_observations(pilot, raw)
+            changed_report = build_pilot_report(pilot, changed)
+            with pytest.raises(RTA4PilotError, match="reconstructed"):
+                validate_pilot_report(changed_report, pilot, observed)
+        else:
+            with pytest.raises(RTA4PilotError):
+                build_pilot_observations(pilot, raw)
+
+    for field in (
+        "runtime_wall_milliseconds_p50",
+        "runtime_wall_milliseconds_p95",
+    ):
+        drifted_report = deepcopy(report)
+        drifted_report["engineering_metrics"][field] += 1
+        with pytest.raises(RTA4PilotError, match="reconstructed"):
+            validate_pilot_report(drifted_report, pilot, observed)
+
+
+class _AggregateClosure:
+    def __init__(self, core, requests=(), results=(), dependencies=None):
+        self.metadata = {"core": core}
+        if dependencies is None and core == "CORE-5B" and requests:
+            reference = requests[0]
+            dependencies = ({
+                key: reference[key]
+                for key in (
+                    "analysis_id", "taskset_skeleton_id", "taskset_id",
+                    "taskset_hash", "method", "exact_e0",
+                    "service_identity", "power_vector_hash",
+                    "theory_document_sha256",
+                    "numeric_contract_sha256",
+                )
+            },)
+            dependencies[0].update({
+                "source_plan_sha256": "d" * 64,
+                "source_closure_sha256": "e" * 64,
+            })
+        self._tables = {
+            "formal_rta_requests.csv": tuple(requests),
+            "formal_rta_taskset_results.csv": tuple(results),
+            "formal_dependencies.csv": tuple(dependencies or ()),
+        }
+
+    def table(self, name):
+        return self._tables.get(name, ())
+
+
+def _core5b_rows(runtimes=("8", "4", "2", "1")):
+    request_identity = {
+        "analysis_id": "a" * 64, "request_id": "b" * 64,
+        "taskset_skeleton_slot_id": "c" * 64,
+        "taskset_slot_id": "d" * 64,
+        "taskset_skeleton_id": "e" * 64, "taskset_id": "1" * 64,
+        "taskset_hash": "2" * 64, "method": "CW_D",
+        "method_role": "WORKER_CONSISTENCY", "carry_policy": "FIXED_D",
+        "exact_e0": "1/20", "service_identity": "3" * 64,
+        "power_vector_hash": "4" * 64,
+        "theory_document_sha256": "5" * 64,
+        "numeric_contract_sha256": "6" * 64,
+        "exact_input_identity": "7" * 64,
+        "timeout_contract": "ASAP_BLOCK_V9_3_RTA4_TIMEOUT_V1",
+        "source_analysis_id": "NA",
+        "scenario": "CORE5B_WORKER_CONSISTENCY",
+        "axis": "worker_count", "service_scale": "1",
+        "power_scale": "1",
+        "deadline_variant": "fixed_slack_fraction_v1:3/4",
+    }
+    result_identity = {
+        "method": "CW_D", "solver_status": "COMPLETED",
+        "taskset_certification_status": "CERTIFIED_TASKSET",
+        "taskset_proven": "true", "first_failed_priority": "NA",
+        "failure_reason": "NA", "timeout": "false",
+        "checked_w_count": "10", "checked_q_count": "0",
+        "checked_h_count": "0", "exact_result_hash": "8" * 64,
+        "candidate_vector_hash": "9" * 64,
+        "witness_vector_hash": "a" * 64,
+        "certification_vector_hash": "b" * 64,
+        "failure_reason_vector_hash": "c" * 64,
+        "fallback_used": "false", "normalized_utilization": "1/2",
+    }
+    requests, results = [], []
+    for worker, runtime in zip((1, 2, 4, 8), runtimes):
+        execution_id = format(worker, "064x")
+        requests.append({
+            **request_identity, "execution_run_id": execution_id,
+            "worker_count": str(worker),
+        })
+        results.append({
+            **result_identity, "execution_run_id": execution_id,
+            "runtime_wall_seconds": runtime,
+        })
+    return requests, results
+
+
+def test_core5b_scalability_is_strictly_paired_and_order_independent():
+    requests, results = _core5b_rows()
+    rows = _core5b_scalability_rows(
+        _AggregateClosure("CORE-5B", requests, results)
+    )
+    assert rows == _core5b_scalability_rows(
+        _AggregateClosure(
+            "CORE-5B", list(reversed(requests)), list(reversed(results)),
+        )
+    )
+    assert [row["worker_count"] for row in rows] == [1, 2, 4, 8]
+    assert [row["runtime_median"] for row in rows] == ["8", "4", "2", "1"]
+    assert [row["speedup"] for row in rows] == ["1", "2", "4", "8"]
+    assert [row["parallel_efficiency"] for row in rows] == [
+        "1", "1", "1", "1",
+    ]
+    assert not any(
+        row[field] == "NA"
+        for row in rows
+        for field in (
+            "runtime_median", "runtime_p95", "speedup",
+            "parallel_efficiency",
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    ("mutation", "value"),
+    (
+        ("missing", 1), ("missing", 4), ("duplicate", 2),
+        ("runtime", "0"), ("runtime", "-1"), ("runtime", "NaN"),
+        ("runtime", "Inf"), ("math", "f" * 64),
+    ),
+)
+def test_core5b_scalability_rejects_incomplete_or_invalid_pairs(
+    mutation, value,
+):
+    requests, results = _core5b_rows()
+    if mutation == "missing":
+        index = (1, 2, 4, 8).index(value)
+        requests.pop(index)
+        results.pop(index)
+    elif mutation == "duplicate":
+        duplicate_request = deepcopy(requests[1])
+        duplicate_result = deepcopy(results[1])
+        duplicate_request["execution_run_id"] = "f" * 64
+        duplicate_result["execution_run_id"] = "f" * 64
+        requests.append(duplicate_request)
+        results.append(duplicate_result)
+    elif mutation == "runtime":
+        results[2]["runtime_wall_seconds"] = value
+    else:
+        results[2]["exact_result_hash"] = value
+    with pytest.raises(RTA4FormalAggregationError):
+        _core5b_scalability_rows(
+            _AggregateClosure("CORE-5B", requests, results)
+        )
+
+
+def test_core5a_figure5_requires_measured_positive_runtime():
+    valid = _AggregateClosure("CORE-5A", results=({
+        "axis": "task_count", "axis_value": "10", "method": "CW_D",
+        "runtime_wall_seconds": "0.25",
+    },))
+    rows = _figure5(valid)
+    assert rows[0]["runtime_median"] == "0.25"
+    invalid = _AggregateClosure("CORE-5A", results=({
+        "axis": "task_count", "axis_value": "10", "method": "CW_D",
+        "runtime_wall_seconds": "0",
+    },))
+    with pytest.raises(RTA4FormalAggregationError, match="positive"):
+        _figure5(invalid)
+
+
+@pytest.mark.parametrize(
+    "value", ("-1", "NaN", "Inf", True, 0.5, object()),
+)
+def test_parent_rejects_forged_timing_types(value):
+    with pytest.raises(RTA4FormalPipelineError):
+        _execution_seconds(value, "runtime_wall_seconds")
+    with pytest.raises(RTA4FormalPipelineError):
+        _execution_peak_rss(value)
+
+
+def test_execution_measurements_do_not_change_mathematical_identity():
+    mathematical = {
+        "solver_status": "COMPLETED", "task_results": [{"candidate": "1"}],
+        "runtime_wall_seconds": "1", "runtime_cpu_seconds": "0.5",
+        "peak_rss_bytes": 100, "worker_count": 1,
+        "attempt_count": 1, "attempts": [{
+            "attempt_number": 1, "runtime_wall_seconds": "1",
+        }],
+    }
+    changed = deepcopy(mathematical)
+    changed.update({
+        "runtime_wall_seconds": "99", "runtime_cpu_seconds": "88",
+        "peak_rss_bytes": 9999, "worker_count": 8, "attempt_count": 2,
+        "attempts": [{"attempt_number": 2, "runtime_wall_seconds": "99"}],
+    })
+    assert mathematical_result_hash(mathematical) == (
+        mathematical_result_hash(changed)
+    )
+
+
+def test_production_executor_retains_measured_retry_and_error_time(
+    frozen_contract, monkeypatch,
+):
+    record = next(iter_formal_plan(frozen_contract["configs"]["CORE-1"]))
+    certificate = _synthetic_certificate(record)
+    completed = _synthetic_rta(record, certificate)
+    responses = [
+        ({**completed, "solver_status": "TIMEOUT"}, object()),
+        (completed, object()),
+    ]
+    monkeypatch.setattr(
+        rta4_execution, "_adapter_result",
+        lambda *_args: responses.pop(0),
+    )
+    wall = iter((1.0, 1.5, 2.0, 2.25))
+    cpu = iter((3.0, 3.2, 4.0, 4.1))
+    rss = iter((100, 200, 300, 400))
+    monkeypatch.setattr(
+        rta4_execution.time, "perf_counter", lambda: next(wall),
+    )
+    monkeypatch.setattr(
+        rta4_execution.time, "process_time", lambda: next(cpu),
+    )
+    monkeypatch.setattr(rta4_execution, "_rss_bytes", lambda: next(rss))
+    result = ProductionRTAExecutor(
+        frozen_contract["prepared"]["CORE-1"]
+    )(record, certificate)
+    assert [row["solver_status"] for row in result["attempts"]] == [
+        "TIMEOUT", "COMPLETED",
+    ]
+    assert all(
+        float(row["runtime_wall_seconds"]) > 0
+        and float(row["runtime_cpu_seconds"]) > 0
+        for row in result["attempts"]
+    )
+    assert result["peak_rss_bytes"] == 400
+
+    monkeypatch.setattr(
+        rta4_execution, "_adapter_result",
+        lambda *_args: (_ for _ in ()).throw(RuntimeError("boundary")),
+    )
+    wall = iter((10.0, 10.75))
+    cpu = iter((20.0, 20.25))
+    rss = iter((500, 600))
+    monkeypatch.setattr(
+        rta4_execution.time, "perf_counter", lambda: next(wall),
+    )
+    monkeypatch.setattr(
+        rta4_execution.time, "process_time", lambda: next(cpu),
+    )
+    monkeypatch.setattr(rta4_execution, "_rss_bytes", lambda: next(rss))
+    failed = ProductionRTAExecutor(
+        frozen_contract["prepared"]["CORE-1"]
+    )(record, certificate)
+    assert failed["solver_status"] == "INTERNAL_ERROR"
+    assert failed["attempts"][0]["runtime_wall_seconds"] == "0.75"
+    assert failed["attempts"][0]["runtime_cpu_seconds"] == "0.25"
+
+
+def test_parent_persists_attempt_timing_rss_and_resume_preserves_terminal(
+    frozen_contract,
+):
+    contract = _variant_contract(frozen_contract, "timing-contract")
+    source_root = contract["root"] / "source"
+    source_root.mkdir()
+    _, source = _source_repo(source_root)
+    authorization = _test_authorization(
+        contract, "CORE-1", source, {},
+    )
+    calls = []
+
+    def measured(record, certificate):
+        calls.append(record.execution_id)
+        result = _synthetic_rta(record, certificate)
+        result["attempts"] = [
+            {
+                "solver_status": "TIMEOUT",
+                "failure_origin": "UNIFIED_RTA_ADAPTER",
+                "runtime_wall_seconds": "0.1",
+                "runtime_cpu_seconds": "0.3",
+                "peak_rss_bytes": 8192,
+            },
+            {
+                "solver_status": "COMPLETED", "failure_origin": "NA",
+                "runtime_wall_seconds": "0.2",
+                "runtime_cpu_seconds": "0.4",
+                "peak_rss_bytes": 12288,
+            },
+        ]
+        result.update({
+            "runtime_wall_seconds": "0.30000000000000004",
+            "runtime_cpu_seconds": "0.69999999999999996",
+            "peak_rss_bytes": 12288,
+        })
+        return result
+
+    runner = AuthorizedRTA4Runner(
+        contract["prepared"]["CORE-1"], authorization,
+    )
+    summary = runner.run(
+        synthetic_ordinals=(0,),
+        certificate_provider=_synthetic_certificate,
+        rta_executor=measured,
+    )
+    output = summary.checkpoint_path.parent
+    attempts = read_csv(output / "formal_rta_attempts.csv")
+    results = read_csv(
+        output / "formal_rta_taskset_results.csv"
+    )
+    assert [row["solver_status"] for row in attempts] == [
+        "TIMEOUT", "COMPLETED",
+    ]
+    assert [row["runtime_wall_seconds"] for row in attempts] == [
+        "0.10000000000000001", "0.20000000000000001",
+    ]
+    assert [row["runtime_cpu_seconds"] for row in attempts] == [
+        "0.29999999999999999", "0.40000000000000002",
+    ]
+    assert [row["peak_rss_bytes"] for row in attempts] == [
+        "8192", "12288",
+    ]
+    assert results[0]["runtime_wall_seconds"] == "0.30000000000000004"
+    assert results[0]["runtime_cpu_seconds"] == "0.69999999999999996"
+    assert results[0]["peak_rss_bytes"] == "12288"
+    terminal = next(
+        (output / "formal_terminal_results").glob("*.json")
+    )
+    before = terminal.read_bytes()
+    terminal_payload = json.loads(before)
+    assert terminal_payload["attempt_count"] == 2
+    assert terminal_payload["runtime_wall_seconds"] == (
+        "0.30000000000000004"
+    )
+    assert terminal_payload["runtime_cpu_seconds"] == (
+        "0.69999999999999996"
+    )
+    assert terminal_payload["peak_rss_bytes"] == 12288
+    resumed = runner.run(
+        resume=True, synthetic_ordinals=(0,),
+        certificate_provider=_synthetic_certificate,
+        rta_executor=measured,
+    )
+    assert resumed.complete and calls == [calls[0]]
+    assert terminal.read_bytes() == before
+
+
+def _tree_hashes(root):
+    if not root.exists():
+        return None
+    return {
+        path.relative_to(root).as_posix(): hashlib.sha256(
+            path.read_bytes()
+        ).hexdigest()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
+
+
+def test_resume_and_validate_only_preflight_are_zero_write(
+    frozen_contract,
+):
+    contract = _variant_contract(frozen_contract, "readonly-resume-contract")
+    source_root = contract["root"] / "source"
+    source_root.mkdir()
+    _, source = _source_repo(source_root)
+    authorization = _test_authorization(
+        contract, "CORE-1", source, {},
+    )
+    runner = AuthorizedRTA4Runner(
+        contract["prepared"]["CORE-1"], authorization,
+    )
+    output = Path(
+        contract["prepared"]["CORE-1"]["operational"]["output_root"]
+    )
+    with pytest.raises(RTA4ExecutionError, match="existing"):
+        runner.run(
+            resume=True, synthetic_ordinals=(0, 1),
+            certificate_provider=_synthetic_certificate,
+            rta_executor=_synthetic_rta,
+        )
+    assert not output.exists()
+    output.mkdir()
+    with pytest.raises(RTA4ExecutionError, match="empty"):
+        runner.run(
+            resume=True, synthetic_ordinals=(0, 1),
+            certificate_provider=_synthetic_certificate,
+            rta_executor=_synthetic_rta,
+        )
+    assert _tree_hashes(output) == {}
+    output.rmdir()
+
+    partial = runner.run(
+        synthetic_ordinals=(0, 1), max_records=1,
+        certificate_provider=_synthetic_certificate,
+        rta_executor=_synthetic_rta,
+    )
+    before_validate = _tree_hashes(output)
+    validated = runner.run(
+        validate_only=True, synthetic_ordinals=(0, 1),
+        certificate_provider=_synthetic_certificate,
+        rta_executor=_synthetic_rta,
+    )
+    assert not validated.complete
+    assert _tree_hashes(output) == before_validate
+
+    metadata = output / "formal_run_metadata.json"
+    metadata.unlink()
+    damaged = _tree_hashes(output)
+    with pytest.raises(RTA4ExecutionError, match="missing required"):
+        runner.run(
+            resume=True, synthetic_ordinals=(0, 1),
+            certificate_provider=_synthetic_certificate,
+            rta_executor=_synthetic_rta,
+        )
+    assert _tree_hashes(output) == damaged
+    assert partial.processed_records == 1

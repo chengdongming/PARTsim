@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass
+from decimal import Decimal
 from fractions import Fraction
 import hashlib
 from pathlib import Path
 import resource
+import time
 from typing import Any, Callable, Dict, Iterable, Mapping, Sequence
 
 import asap_block_rta_v9_3 as rta_core
@@ -32,7 +34,8 @@ from .rta4_formal_environment import (
     load_strict_json, validate_bound_source_file, validate_command_invocation,
 )
 from .rta4_formal_manifest import (
-    FORMAL_AUTHORIZED, SYNTHETIC_AUTHORIZED,
+    FORMAL_AUTHORIZED, RTA4_CONFIG_CHECKPOINT, RTA4_PLAN_MANIFEST,
+    SYNTHETIC_AUTHORIZED,
 )
 from .rta4_formal_pipeline import (
     RTA4FormalRunner, dispatch_formal_rta,
@@ -42,16 +45,22 @@ from .rta4_formal_plan import (
     FormalPlanRecord, formal_service_identity, iter_formal_plan,
 )
 from .rta4_formal_store import RTA4FormalTasksetStore
-from .rta4_formal_validation import (
-    ValidatedFormalClosure, refresh_validated_closure,
-    validate_formal_run_closure,
+from .rta4_formal_schema import FORMAL_TABLES, RTA4_FORMAL_SCHEMA_MANIFEST
+from .rta4_formal_store import (
+    FORMAL_TASKSET_STORE_MANIFEST, formal_taskset_store_identity,
 )
-from .rta4_formal_writer import RTA4FormalResultWriter
+from .rta4_formal_validation import (
+    RTA4_CHECKPOINT_DOMAIN, RTA4_CHECKPOINT_FILENAME,
+    RTA4_CHECKPOINT_VERSION,
+    ValidatedFormalClosure, refresh_validated_closure,
+    validate_formal_checkpoint, validate_formal_run_closure,
+)
+from .rta4_formal_writer import (
+    FORMAL_AUTHORIZATION_EVIDENCE, FORMAL_RUN_METADATA,
+    FORMAL_TERMINAL_DIRECTORY, RTA4FormalResultWriter,
+)
 
 
-RTA4_CHECKPOINT_VERSION = "ASAP_BLOCK_V9_3_RTA4_FORMAL_CHECKPOINT_V1"
-RTA4_CHECKPOINT_FILENAME = "formal_checkpoint.json"
-RTA4_CHECKPOINT_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_FORMAL_CHECKPOINT:v1"
 RTA4_GENERATION_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_PRODUCTION_GENERATION:v1"
 
 
@@ -435,16 +444,14 @@ class ProductionRTAExecutor:
         )[:timeout["maximum_attempts"]]
         for budget in budgets:
             before_rss = _rss_bytes()
+            wall_started = time.perf_counter()
+            cpu_started = time.process_time()
             try:
                 mapped, raw = _adapter_result(
                     record, certificate, self.config, budget,
                 )
-                runtime_wall = sum(
-                    float(row.runtime_wall) for row in raw.task_results
-                )
-                runtime_cpu = sum(
-                    float(row.runtime_cpu or 0) for row in raw.task_results
-                )
+                runtime_wall = time.perf_counter() - wall_started
+                runtime_cpu = time.process_time() - cpu_started
                 peak_rss = max(before_rss, _rss_bytes())
                 attempts.append({
                     "solver_status": mapped["solver_status"],
@@ -478,14 +485,38 @@ class ProductionRTAExecutor:
                 attempts.append({
                     "solver_status": "INTERNAL_ERROR",
                     "failure_origin": "RTA_EXECUTOR_BOUNDARY",
-                    "runtime_wall_seconds": "0",
-                    "runtime_cpu_seconds": "0",
+                    "runtime_wall_seconds": format(
+                        time.perf_counter() - wall_started, ".17g"
+                    ),
+                    "runtime_cpu_seconds": format(
+                        time.process_time() - cpu_started, ".17g"
+                    ),
                     "peak_rss_bytes": max(before_rss, _rss_bytes()),
                 })
             if mapped["solver_status"] != "TIMEOUT":
                 break
         assert mapped is not None
-        return {**mapped, "attempts": attempts}
+        return {
+            **mapped,
+            "attempts": attempts,
+            "runtime_wall_seconds": format(
+                sum(
+                    (Decimal(row["runtime_wall_seconds"]) for row in attempts),
+                    Decimal(),
+                ),
+                "f",
+            ),
+            "runtime_cpu_seconds": format(
+                sum(
+                    (Decimal(row["runtime_cpu_seconds"]) for row in attempts),
+                    Decimal(),
+                ),
+                "f",
+            ),
+            "peak_rss_bytes": max(
+                int(row["peak_rss_bytes"]) for row in attempts
+            ),
+        }
 
     @staticmethod
     def _internal_result(
@@ -653,6 +684,68 @@ class ExecutionSummary:
     closure: ValidatedFormalClosure | None
 
 
+def _resume_required_inventory(root: Path) -> None:
+    """Reject an incomplete namespace without creating or repairing anything."""
+
+    if not root.is_dir():
+        raise RTA4ExecutionError("resume requires an existing output root")
+    if not any(root.iterdir()):
+        raise RTA4ExecutionError("resume refuses an empty output root")
+    required_files = {
+        RTA4_FORMAL_SCHEMA_MANIFEST, RTA4_CONFIG_CHECKPOINT,
+        RTA4_PLAN_MANIFEST, FORMAL_RUN_METADATA,
+        FORMAL_AUTHORIZATION_EVIDENCE, RTA4_CHECKPOINT_FILENAME,
+        *FORMAL_TABLES,
+    }
+    missing = sorted(
+        name for name in required_files if not (root / name).is_file()
+    )
+    if missing:
+        raise RTA4ExecutionError(
+            f"resume namespace is missing required files: {missing}"
+        )
+    terminal_root = root / FORMAL_TERMINAL_DIRECTORY
+    if not terminal_root.is_dir():
+        raise RTA4ExecutionError(
+            "resume namespace is missing the terminal directory"
+        )
+
+
+def _preflight_taskset_store(
+    root: Path, closure: ValidatedFormalClosure,
+) -> None:
+    """Validate the existing store and every completed run-local certificate."""
+
+    marker = root / FORMAL_TASKSET_STORE_MANIFEST
+    certificates = root / "certificates"
+    if not root.is_dir() or not marker.is_file() or not certificates.is_dir():
+        raise RTA4ExecutionError(
+            "resume requires an existing canonical taskset store"
+        )
+    try:
+        observed = load_strict_json(marker)
+    except Exception as exc:
+        raise RTA4ExecutionError(
+            "cannot read resume taskset store manifest"
+        ) from exc
+    if (
+        not isinstance(observed, Mapping)
+        or observed.get("store_identity") != formal_taskset_store_identity()
+    ):
+        raise RTA4ExecutionError("resume taskset store identity mismatch")
+    for row in closure.table("formal_tasksets.csv"):
+        store_path = certificates / f"{row['taskset_id']}.json"
+        run_path = closure.root / row["certificate_path"]
+        if (
+            not store_path.is_file()
+            or not run_path.is_file()
+            or store_path.read_bytes() != run_path.read_bytes()
+        ):
+            raise RTA4ExecutionError(
+                "resume taskset store certificate inventory mismatch"
+            )
+
+
 class AuthorizedRTA4Runner:
     """Preflight all bindings, execute bounded work, and persist in the parent."""
 
@@ -744,6 +837,8 @@ class AuthorizedRTA4Runner:
             "authorization_id": authorization_id,
             "plan_sha256": writer.plan_sha256,
             "core": writer.core,
+            "execution_class": writer.execution_class,
+            "output_root": str(writer.root.resolve()),
             "checkpoint_status": (
                 "COMPLETE"
                 if len(completed_ids) == planned_count
@@ -813,21 +908,61 @@ class AuthorizedRTA4Runner:
         )
         sources = self._preflight(operation)
         output = Path(self.prepared["operational"]["output_root"])
-        if validate_only:
-            closure = validate_formal_run_closure(
-                output, require_complete=False,
-                source_closures=sources,
-                allow_test_authorization=self.is_test,
+        preflight_closure = None
+        if resume or validate_only:
+            _resume_required_inventory(output)
+            try:
+                checkpoint_document = load_strict_json(
+                    output / RTA4_CHECKPOINT_FILENAME
+                )
+            except Exception as exc:
+                raise RTA4ExecutionError(
+                    "cannot read existing formal checkpoint"
+                ) from exc
+            claimed_complete = (
+                isinstance(checkpoint_document, Mapping)
+                and checkpoint_document.get("checkpoint_status") == "COMPLETE"
             )
-            planned = len(closure.plan_manifest["plan_records"])
-            remaining = planned - len(closure.terminal_payloads)
-            if remaining == 0:
-                closure = validate_formal_run_closure(
-                    output, require_complete=True,
-                    require_authorized_formal=not self.is_test,
+            try:
+                preflight_closure = validate_formal_run_closure(
+                    output, require_complete=claimed_complete,
                     source_closures=sources,
                     allow_test_authorization=self.is_test,
                 )
+            except Exception as exc:
+                raise RTA4ExecutionError(
+                    "resume closure validation failed; terminal inventory "
+                    "may be outside the plan"
+                ) from exc
+            try:
+                validate_formal_checkpoint(
+                    output, metadata=preflight_closure.metadata,
+                    plan_manifest=preflight_closure.plan_manifest,
+                    terminal_payloads=preflight_closure.terminal_payloads,
+                    require_complete=False,
+                )
+            except Exception as exc:
+                raise RTA4ExecutionError(
+                    "resume checkpoint validation failed"
+                ) from exc
+            if (
+                preflight_closure.metadata.get("authorization_id")
+                != self.authorization["authorization_id"]
+                or preflight_closure.metadata.get("prepared_config_id")
+                != self.prepared["prepared_config_id"]
+            ):
+                raise RTA4ExecutionError(
+                    "resume namespace belongs to another authorization"
+                )
+            _preflight_taskset_store(
+                Path(self.prepared["operational"]["taskset_store"]),
+                preflight_closure,
+            )
+        if validate_only:
+            assert preflight_closure is not None
+            closure = preflight_closure
+            planned = len(closure.plan_manifest["plan_records"])
+            remaining = planned - len(closure.terminal_payloads)
             return ExecutionSummary(
                 closure.metadata["core"], execution_class,
                 self.authorization["authorization_id"], 0,
@@ -842,6 +977,7 @@ class AuthorizedRTA4Runner:
             authorization_document=self.authorization,
             prepared_config=self.prepared,
             allow_test_authorization=self.is_test,
+            require_existing_namespace=resume,
         )
         records = (
             tuple(iter_formal_plan(self.config))
@@ -867,12 +1003,8 @@ class AuthorizedRTA4Runner:
             )
         checkpoint_path = output / RTA4_CHECKPOINT_FILENAME
         if resume:
-            if not checkpoint_path.is_file():
-                raise RTA4ExecutionError("resume requires a canonical checkpoint")
-            try:
-                observed_checkpoint = load_strict_json(checkpoint_path)
-            except Exception as exc:
-                raise RTA4ExecutionError("cannot read resume checkpoint") from exc
+            assert preflight_closure is not None
+            observed_checkpoint = load_strict_json(checkpoint_path)
             expected_checkpoint = self._checkpoint(
                 writer,
                 authorization_id=self.authorization["authorization_id"],
@@ -883,10 +1015,6 @@ class AuthorizedRTA4Runner:
                 raise RTA4ExecutionError(
                     "checkpoint/terminal inventory mismatch"
                 )
-            validate_formal_run_closure(
-                output, require_complete=False, source_closures=sources,
-                allow_test_authorization=self.is_test,
-            )
         pending = [
             record for record in records if record.execution_id not in terminal_ids
         ]

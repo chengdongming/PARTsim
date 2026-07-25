@@ -25,29 +25,32 @@ from .rta4_formal_freeze import (
     RTA4_FROZEN_PARAMETER_STATUS, validate_freeze_manifest,
     validate_prepared_config,
 )
-from .rta4_formal_pilot import validate_pilot_manifest, validate_pilot_report
+from .rta4_formal_pilot import (
+    validate_pilot_manifest, validate_pilot_observations,
+    validate_pilot_report,
+)
 
 
 RTA4_PRODUCTION_AUTHORIZATION_SCHEMA = (
-    "ASAP_BLOCK_V9_3_RTA4_FORMAL_AUTHORIZATION_V1"
+    "ASAP_BLOCK_V9_3_RTA4_FORMAL_AUTHORIZATION_V2"
 )
 RTA4_TEST_AUTHORIZATION_SCHEMA = (
-    "ASAP_BLOCK_V9_3_RTA4_SYNTHETIC_TEST_AUTHORIZATION_V1"
+    "ASAP_BLOCK_V9_3_RTA4_SYNTHETIC_TEST_AUTHORIZATION_V2"
 )
 RTA4_PRODUCTION_AUTHORIZATION_DOMAIN = (
-    "ASAP_BLOCK:V9.3:RTA4_FORMAL_AUTHORIZATION:v1"
+    "ASAP_BLOCK:V9.3:RTA4_FORMAL_AUTHORIZATION:v2"
 )
 RTA4_TEST_AUTHORIZATION_DOMAIN = (
-    "ASAP_BLOCK:V9.3:RTA4_SYNTHETIC_TEST_AUTHORIZATION:v1"
+    "ASAP_BLOCK:V9.3:RTA4_SYNTHETIC_TEST_AUTHORIZATION:v2"
 )
-RTA4_PRODUCTION_SEAL_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_FORMAL_AUTHORIZATION_SEAL:v1"
-RTA4_TEST_SEAL_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_SYNTHETIC_TEST_SEAL:v1"
+RTA4_PRODUCTION_SEAL_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_FORMAL_AUTHORIZATION_SEAL:v2"
+RTA4_TEST_SEAL_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_SYNTHETIC_TEST_SEAL:v2"
 RTA4_AUTHORIZATION_FILENAME = "rta4_formal_authorization.json"
 RTA4_AUTHORIZATION_BINDING_FIELDS = frozenset({
     "authorization_schema", "profile", "parameter_status",
     "authorization_domain", "core", "prepared_config_id",
     "freeze_manifest_id", "pilot_manifest_id", "pilot_report_id",
-    "pilot_closure_id",
+    "pilot_observations_id", "pilot_closure_id",
     "documents", "authorization_absolute_path", "output_root",
     "taskset_store", "timeout_contract_id", "worker_contract",
     "checkpoint_contract", "source_manifest", "dependency_manifest",
@@ -194,6 +197,7 @@ def build_authorization_candidate(
     freeze_manifest: Mapping[str, Any],
     all_prepared_configs: Mapping[str, Mapping[str, Any]],
     pilot_manifest: Mapping[str, Any],
+    pilot_observations: Mapping[str, Any],
     pilot_report: Mapping[str, Any],
     source_manifest: Mapping[str, Any],
     dependency_manifest: Mapping[str, Any],
@@ -204,6 +208,7 @@ def build_authorization_candidate(
     prepared_config_path: Path | str,
     freeze_manifest_path: Path | str,
     pilot_manifest_path: Path | str,
+    pilot_observations_path: Path | str,
     pilot_report_path: Path | str,
     authorization_path: Path | str,
     source_closure_bindings: Mapping[str, Any] | None = None,
@@ -221,13 +226,18 @@ def build_authorization_candidate(
             for core, row in all_prepared_configs.items()
         },
     )
-    validate_pilot_report(pilot_report, pilot_manifest)
+    observations = validate_pilot_observations(
+        pilot_observations, pilot_manifest,
+    )
+    validate_pilot_report(pilot_report, pilot_manifest, observations)
     if prepared["prepared_config_id"] != freeze_manifest[
         "prepared_config_ids"
     ].get(prepared["core"]):
         raise RTA4AuthorizationError("prepared config is absent from the freeze")
     if (
         prepared["pilot_manifest_id"] != pilot_manifest["pilot_manifest_id"]
+        or prepared["pilot_observations_id"]
+        != observations["pilot_observations_id"]
         or prepared["pilot_report_id"] != pilot_report["pilot_report_id"]
         or prepared["pilot_closure_id"] != pilot_report["pilot_closure_id"]
     ):
@@ -295,6 +305,9 @@ def build_authorization_candidate(
         "pilot_manifest": _document_binding(
             pilot_manifest_path, pilot_manifest, "pilot_manifest_id",
         ),
+        "pilot_observations": _document_binding(
+            pilot_observations_path, observations, "pilot_observations_id",
+        ),
         "pilot_report": _document_binding(
             pilot_report_path, pilot_report, "pilot_report_id",
         ),
@@ -327,6 +340,7 @@ def build_authorization_candidate(
         "prepared_config_id": prepared["prepared_config_id"],
         "freeze_manifest_id": freeze_manifest["freeze_manifest_id"],
         "pilot_manifest_id": pilot_manifest["pilot_manifest_id"],
+        "pilot_observations_id": observations["pilot_observations_id"],
         "pilot_report_id": pilot_report["pilot_report_id"],
         "pilot_closure_id": pilot_report["pilot_closure_id"],
         "documents": documents,
@@ -493,6 +507,8 @@ def verify_live_authorization(
         prepared["prepared_config_id"] != normalized["prepared_config_id"]
         or prepared["core"] != normalized["core"]
         or prepared["pilot_manifest_id"] != normalized["pilot_manifest_id"]
+        or prepared["pilot_observations_id"]
+        != normalized["pilot_observations_id"]
         or prepared["pilot_report_id"] != normalized["pilot_report_id"]
         or prepared["pilot_closure_id"] != normalized["pilot_closure_id"]
         or prepared["timeout_contract_id"] != normalized["timeout_contract_id"]

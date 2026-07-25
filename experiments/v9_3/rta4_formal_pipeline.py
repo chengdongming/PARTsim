@@ -8,9 +8,11 @@ they do not reinterpret either mathematical contract.
 from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
+from decimal import Decimal, InvalidOperation
 from fractions import Fraction
 import hashlib
 import json
+import math
 from pathlib import Path
 from typing import Any, Callable, Dict, Mapping, MutableMapping, Sequence
 
@@ -299,7 +301,9 @@ def mathematical_result_hash(result: Any) -> str:
     execution_keys = {
         "runtime_wall", "runtime_wall_seconds", "runtime_cpu",
         "runtime_cpu_seconds", "peak_rss", "peak_rss_bytes", "worker_count",
-        "execution_run_id", "started_at_utc", "output_path",
+        "attempt_number", "attempt_count", "attempts", "failure_origin",
+        "timeout_budget_seconds", "execution_run_id", "started_at_utc",
+        "output_path",
     }
 
     def strip(value: Any) -> Any:
@@ -316,6 +320,46 @@ def mathematical_result_hash(result: Any) -> str:
 
     encoded = canonical_json(strip(material)).encode("utf-8")
     return hashlib.sha256(RTA4_MATH_RESULT_DOMAIN + encoded).hexdigest()
+
+
+def _execution_seconds(value: Any, field: str) -> str:
+    """Canonicalize one trusted, finite, non-negative duration."""
+
+    if isinstance(value, bool) or isinstance(value, float):
+        raise RTA4FormalPipelineError(
+            f"{field} must be exact finite non-negative decimal data"
+        )
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, ValueError) as exc:
+        raise RTA4FormalPipelineError(
+            f"{field} must be exact finite non-negative decimal data"
+        ) from exc
+    if not number.is_finite() or number < 0:
+        raise RTA4FormalPipelineError(
+            f"{field} must be exact finite non-negative decimal data"
+        )
+    binary = float(number)
+    if not math.isfinite(binary):
+        raise RTA4FormalPipelineError(
+            f"{field} is outside the persisted finite measurement range"
+        )
+    return format(binary, ".17g")
+
+
+def _execution_peak_rss(value: Any) -> int:
+    """Accept only canonical non-negative integer RSS evidence."""
+
+    if isinstance(value, bool) or isinstance(value, float):
+        raise RTA4FormalPipelineError(
+            "peak_rss_bytes must be a canonical non-negative integer"
+        )
+    text = str(value)
+    if not text.isdigit() or (len(text) > 1 and text.startswith("0")):
+        raise RTA4FormalPipelineError(
+            "peak_rss_bytes must be a canonical non-negative integer"
+        )
+    return int(text)
 
 
 def mechanism_telemetry_rows(result: V93MethodTasksetAnalysisResult) -> tuple[Dict[str, Any], ...]:
@@ -710,8 +754,81 @@ class RTA4FormalRunner:
             raise RTA4FormalPipelineError(
                 "RTA result attempts must be a non-empty mapping sequence"
             )
+        production = writer.execution_class == "FORMAL_AUTHORIZED"
+        canonical_attempts = []
+        for attempt in raw_attempts:
+            missing_evidence = {
+                "runtime_wall_seconds", "runtime_cpu_seconds", "peak_rss_bytes",
+            } - set(attempt)
+            if production and missing_evidence:
+                raise RTA4FormalPipelineError(
+                    "production RTA attempt lacks execution evidence: "
+                    f"{sorted(missing_evidence)}"
+                )
+            canonical_attempts.append({
+                **dict(attempt),
+                "runtime_wall_seconds": _execution_seconds(
+                    attempt.get("runtime_wall_seconds", "0"),
+                    "runtime_wall_seconds",
+                ),
+                "runtime_cpu_seconds": _execution_seconds(
+                    attempt.get("runtime_cpu_seconds", "0"),
+                    "runtime_cpu_seconds",
+                ),
+                "peak_rss_bytes": _execution_peak_rss(
+                    attempt.get("peak_rss_bytes", 0)
+                ),
+            })
+        try:
+            runtime_wall = format(math.fsum(
+                float(attempt["runtime_wall_seconds"])
+                for attempt in canonical_attempts
+            ), ".17g")
+            runtime_cpu = format(math.fsum(
+                float(attempt["runtime_cpu_seconds"])
+                for attempt in canonical_attempts
+            ), ".17g")
+        except OverflowError as exc:
+            raise RTA4FormalPipelineError(
+                "RTA execution summary overflows the persisted timing range"
+            ) from exc
+        peak_rss = max(
+            attempt["peak_rss_bytes"] for attempt in canonical_attempts
+        )
+        execution_summary = {
+            "runtime_wall_seconds": _execution_seconds(
+                runtime_wall, "runtime_wall_seconds"
+            ),
+            "runtime_cpu_seconds": _execution_seconds(
+                runtime_cpu, "runtime_cpu_seconds"
+            ),
+            "peak_rss_bytes": peak_rss,
+        }
+        missing_summary = set(execution_summary) - set(result)
+        if production and missing_summary:
+            raise RTA4FormalPipelineError(
+                "production RTA result lacks execution summary: "
+                f"{sorted(missing_summary)}"
+            )
+        reported_summary = {}
+        for field in ("runtime_wall_seconds", "runtime_cpu_seconds"):
+            if field in result:
+                reported_summary[field] = _execution_seconds(
+                    result[field], field,
+                )
+        if "peak_rss_bytes" in result:
+            reported_summary["peak_rss_bytes"] = _execution_peak_rss(
+                result["peak_rss_bytes"]
+            )
+        if any(
+            reported_summary[field] != execution_summary[field]
+            for field in reported_summary
+        ):
+            raise RTA4FormalPipelineError(
+                "RTA execution summary does not match raw attempts"
+            )
         parent_attempt_id = "NA"
-        for offset, attempt in enumerate(raw_attempts, start=1):
+        for offset, attempt in enumerate(canonical_attempts, start=1):
             attempt_number = prior_attempt_count + offset
             attempt_id = domain_hash("ASAP_BLOCK:V9.3:RTA4_ATTEMPT:v1", {
                 "execution_run_id": record.execution_id,
@@ -751,13 +868,9 @@ class RTA4FormalRunner:
                 "timeout_budget_seconds": timeout_budget,
                 "solver_status": attempt_solver,
                 "failure_origin": failure_origin,
-                "runtime_wall_seconds": attempt.get(
-                    "runtime_wall_seconds", "0"
-                ),
-                "runtime_cpu_seconds": attempt.get(
-                    "runtime_cpu_seconds", "0"
-                ),
-                "peak_rss_bytes": attempt.get("peak_rss_bytes", 0),
+                "runtime_wall_seconds": attempt["runtime_wall_seconds"],
+                "runtime_cpu_seconds": attempt["runtime_cpu_seconds"],
+                "peak_rss_bytes": attempt["peak_rss_bytes"],
                 "started_at_utc": started_at,
             })
             parent_attempt_id = attempt_id
@@ -780,9 +893,7 @@ class RTA4FormalRunner:
             "first_failed_priority": "NA" if failed is None else failed,
             "failure_reason": mathematical["failure_reason"],
             "timeout": solver_status == "TIMEOUT",
-            "runtime_wall_seconds": result.get("runtime_wall_seconds", "0"),
-            "runtime_cpu_seconds": result.get("runtime_cpu_seconds", "0"),
-            "peak_rss_bytes": result.get("peak_rss_bytes", 0),
+            **execution_summary,
             "checked_w_count": sum(int(row.get("checked_w_count", 0)) for row in task_results),
             "checked_q_count": sum(int(row.get("checked_q_count", 0)) for row in task_results),
             "checked_h_count": sum(int(row.get("checked_h_count", 0)) for row in task_results),
@@ -818,6 +929,8 @@ class RTA4FormalRunner:
             "candidate_vector_hash": candidate_hash, "witness_vector_hash": witness_hash,
             "certification_vector_hash": certification_hash,
             "failure_reason_vector_hash": failure_hash,
+            "attempt_count": len(canonical_attempts),
+            **execution_summary,
         })
 
     def _execute_simulation(self, writer: Any, record: FormalPlanRecord,

@@ -17,7 +17,8 @@ from experiments.v9_3.rta4_formal_config import (
 )
 from experiments.v9_3.rta4_formal_environment import load_strict_json
 from experiments.v9_3.rta4_formal_pilot import (
-    validate_pilot_manifest, validate_pilot_report,
+    validate_pilot_manifest, validate_pilot_observations,
+    validate_pilot_report,
 )
 
 
@@ -37,6 +38,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", action="append", required=True)
     parser.add_argument("--pilot-manifest", type=Path, required=True)
+    parser.add_argument("--pilot-observations", type=Path, required=True)
     parser.add_argument("--pilot-report", type=Path, required=True)
     args = parser.parse_args()
     try:
@@ -48,11 +50,15 @@ def main() -> int:
         manifest = validate_pilot_manifest(
             load_strict_json(args.pilot_manifest), configs,
         )
+        observations = validate_pilot_observations(
+            load_strict_json(args.pilot_observations), manifest,
+        )
         report = validate_pilot_report(
-            load_strict_json(args.pilot_report), manifest,
+            load_strict_json(args.pilot_report), manifest, observations,
         )
         print(json.dumps({
             "pilot_manifest_id": manifest["pilot_manifest_id"],
+            "pilot_observations_id": observations["pilot_observations_id"],
             "pilot_closure_id": report["pilot_closure_id"],
             "pilot_report_id": report["pilot_report_id"],
             "pilot_status": report["pilot_status"],

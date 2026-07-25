@@ -43,6 +43,7 @@ def main() -> int:
     parser.add_argument("--prepared-root", type=Path, required=True)
     parser.add_argument("--freeze-manifest", type=Path, required=True)
     parser.add_argument("--pilot-manifest", type=Path, required=True)
+    parser.add_argument("--pilot-observations", type=Path, required=True)
     parser.add_argument("--pilot-report", type=Path, required=True)
     parser.add_argument("--repository-root", type=Path, default=ROOT)
     parser.add_argument("--source", action="append", required=True)
@@ -60,6 +61,7 @@ def main() -> int:
         all_prepared = _prepared(args.prepared_root)
         freeze = _json(args.freeze_manifest)
         pilot = _json(args.pilot_manifest)
+        observations = _json(args.pilot_observations)
         report = _json(args.pilot_report)
         dependencies = build_dependency_manifest()
         environment = build_environment_manifest(dependencies)
@@ -82,13 +84,15 @@ def main() -> int:
         candidate = build_authorization_candidate(
             prepared_config=prepared, freeze_manifest=freeze,
             all_prepared_configs=all_prepared, pilot_manifest=pilot,
-            pilot_report=report, source_manifest=source,
+            pilot_observations=observations, pilot_report=report,
+            source_manifest=source,
             dependency_manifest=dependencies, environment_manifest=environment,
             hardware_manifest=hardware, command_manifest=command,
             simulator_manifest=simulator,
             prepared_config_path=args.prepared_config,
             freeze_manifest_path=args.freeze_manifest,
             pilot_manifest_path=args.pilot_manifest,
+            pilot_observations_path=args.pilot_observations,
             pilot_report_path=args.pilot_report,
             authorization_path=args.authorization_output.resolve(),
             source_closure_bindings=(
