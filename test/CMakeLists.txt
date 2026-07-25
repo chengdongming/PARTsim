@@ -19,6 +19,7 @@ add_executable(
   scheduler/priority_energy_runtime.cpp
   scheduler/harvest_config.cpp
   scheduler/legacy_solar_source.cpp
+  scheduler/scaled_piecewise_source.cpp
   scheduler/semantics_families.cpp
   scheduler/repair_regressions.cpp
 )

@@ -27,6 +27,7 @@ add_definitions(-DPYTHON_VERSION=${Python3_VERSION})
 
 set(LIBRARY_SOURCE_FILES
     harvesting/legacy_solar_source.cpp
+    harvesting/scaled_piecewise_source.cpp
 
     resource/fcfsresmanager.cpp
     resource/resmanager.cpp
