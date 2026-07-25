@@ -198,6 +198,10 @@ def validate_csv_header(
 class ResultWriter:
     def __init__(self, root: Path) -> None:
         self.root = Path(root)
+        if (self.root / "formal_schema_manifest.json").exists():
+            raise ResultWriterError(
+                "RTA4 formal output cannot be opened by the legacy ResultWriter"
+            )
         self.finals = self.root / "terminal_results"
         self.states = self.root / "result_state"
         self.fail_inputs = self.root / "failure_inputs"
