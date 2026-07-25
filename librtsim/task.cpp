@@ -13,6 +13,7 @@
  ***************************************************************************/
 #include <cstdlib>
 #include <cstring>
+#include <stdexcept>
 
 #include <metasim/factory.hpp>
 #include <metasim/regvar.hpp>
@@ -58,6 +59,7 @@ namespace RTSim {
         _lastSched(0),
         _dl(0),
         _rdl(rdl),
+        _releaseCutoff(Tick(-1)),
         feedback(nullptr),
         arrEvt(this),
         endEvt(this),
@@ -100,7 +102,8 @@ namespace RTSim {
             unbuffArrival();
 
         lastArrival = arrival = phase;
-        if (int_time != nullptr)
+        if (int_time != nullptr &&
+            (!hasReleaseCutoff() || arrival < _releaseCutoff))
             arrEvt.post(arrival);
         _dl = 0;
     }
@@ -172,8 +175,10 @@ namespace RTSim {
 
         if (int_time != nullptr) {
             v = (Tick) int_time->get();
-            if (v > 0)
-                arrEvt.post(SIMUL.getTime() + v);
+            const Tick next = SIMUL.getTime() + v;
+            if (v > 0 &&
+                (!hasReleaseCutoff() || next < _releaseCutoff))
+                arrEvt.post(next);
         }
     }
 
@@ -651,7 +656,15 @@ namespace RTSim {
 
     void Task::activate(Tick t) {
         arrEvt.drop();
-        arrEvt.post(t);
+        if (!hasReleaseCutoff() || t < _releaseCutoff)
+            arrEvt.post(t);
+    }
+
+    void Task::setReleaseCutoff(Tick cutoff) {
+        if (cutoff <= Tick(0))
+            throw std::invalid_argument(
+                "release cutoff must be a positive absolute tick");
+        _releaseCutoff = cutoff;
     }
 
     Tick Task::getWCET() const {

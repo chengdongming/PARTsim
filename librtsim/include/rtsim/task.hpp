@@ -101,6 +101,10 @@ namespace RTSim {
         MetaSim::Tick _lastSched;
         MetaSim::Tick _dl;
         MetaSim::Tick _rdl;
+        // Disabled by default.  When enabled, no arrival is posted at or
+        // after this absolute simulation tick; already released jobs are
+        // unaffected.
+        MetaSim::Tick _releaseCutoff;
 
         AbstractFeedbackModule *feedback;
 
@@ -309,6 +313,19 @@ namespace RTSim {
             what if the arrival event is already posted?
         */
         virtual void activate(Tick t);
+
+        /** Enable an absolute, exclusive release horizon for this task. */
+        void setReleaseCutoff(Tick cutoff);
+
+        /** Return true only when the opt-in release cutoff is enabled. */
+        bool hasReleaseCutoff() const {
+            return _releaseCutoff >= Tick(0);
+        }
+
+        /** Return the configured exclusive release horizon, or -1. */
+        Tick getReleaseCutoff() const {
+            return _releaseCutoff;
+        }
 
         /**
             This method permits to kill a task instance that is currently

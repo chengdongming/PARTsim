@@ -94,6 +94,9 @@ namespace RTSim {
         std::string _scheduler_rtti_name;
         std::string _run_id;
         std::string _taskset_semantic_hash;
+        bool _release_cutoff_enabled;
+        MetaSim::Tick _release_horizon;
+        MetaSim::Tick _observation_horizon;
         std::uint64_t _run_generation;
         std::set<std::uint64_t> _run_generations_seen;
 
@@ -170,6 +173,10 @@ namespace RTSim {
         void setTasksetSemanticHash(const std::string &value) {
             _taskset_semantic_hash = value;
         }
+
+        void setReleaseObservationWindow(
+            MetaSim::Tick release_horizon,
+            MetaSim::Tick observation_horizon);
 
         void logSchedulerDecision(
             const std::string &scheduler,

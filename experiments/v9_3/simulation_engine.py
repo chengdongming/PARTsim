@@ -112,7 +112,19 @@ def shared_e0_simulation_identity(
     )
 
 
-def _taskset_document(task_payload: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
+def _taskset_document(
+    task_payload: Sequence[Mapping[str, Any]],
+    *,
+    release_horizon: Optional[int] = None,
+) -> Dict[str, Any]:
+    if release_horizon is not None and (
+        isinstance(release_horizon, bool)
+        or not isinstance(release_horizon, int)
+        or release_horizon <= 0
+    ):
+        raise SimulationConfigurationError(
+            "release_horizon must be a positive integer"
+        )
     tasks = []
     expected_ranks = list(range(len(task_payload)))
     ranks = [int(row["priority_rank"]) for row in task_payload]
@@ -127,6 +139,22 @@ def _taskset_document(task_payload: Sequence[Mapping[str, Any]]) -> Dict[str, An
             raise SimulationConfigurationError("frozen task violates 0 < C <= D <= T")
         workload = str(row["workload"])
         offset = int(row.get("arrival_offset", 0))
+        if "ph" in row and (
+            isinstance(row["ph"], bool)
+            or not isinstance(row["ph"], int)
+            or row["ph"] != offset
+        ):
+            raise SimulationConfigurationError(
+                "simulation ph/arrival_offset projection mismatch"
+            )
+        if offset < 0 or offset >= t_value:
+            raise SimulationConfigurationError(
+                "simulation arrival_offset must satisfy 0 <= O_i < T_i"
+            )
+        if release_horizon is not None and offset >= release_horizon:
+            raise SimulationConfigurationError(
+                "simulation arrival_offset must precede release_horizon"
+            )
         tasks.append({
             "name": runtime_task_name_for_source_id(task_id),
             "iat": t_value,
@@ -140,14 +168,26 @@ def _taskset_document(task_payload: Sequence[Mapping[str, Any]]) -> Dict[str, An
                 f"arrival_offset={offset},workload={workload}"
             ),
         })
-    return {"taskset": tasks, "resources": []}
+    document: Dict[str, Any] = {"taskset": tasks, "resources": []}
+    if release_horizon is not None:
+        document["release_horizon"] = release_horizon
+    return document
 
 
-def _render_taskset_yaml(task_payload: Sequence[Mapping[str, Any]]) -> str:
+def _render_taskset_yaml(
+    task_payload: Sequence[Mapping[str, Any]],
+    *,
+    release_horizon: Optional[int] = None,
+) -> str:
     """Render the conservative YAML subset consumed by RTSim's C++ parser."""
 
-    document = _taskset_document(task_payload)
-    lines = ["taskset:"]
+    document = _taskset_document(
+        task_payload, release_horizon=release_horizon
+    )
+    lines = []
+    if release_horizon is not None:
+        lines.append(f"release_horizon: {document['release_horizon']}")
+    lines.append("taskset:")
     for task in document["taskset"]:
         lines.extend([
             f"  - name: {task['name']}",
@@ -320,6 +360,7 @@ def materialize_simulation_inputs(
     battery_capacity: Fraction,
     scheduler_id: str = "gpfp_asap_block",
     service_curve: Optional[Mapping[str, Any]] = None,
+    release_horizon: Optional[int] = None,
 ) -> tuple[Path, Path]:
     """Write a scheduler-only projection without changing frozen semantics."""
 
@@ -341,7 +382,9 @@ def materialize_simulation_inputs(
     )
     atomic_write_text(
         taskset_path,
-        _render_taskset_yaml(task_payload),
+        _render_taskset_yaml(
+            task_payload, release_horizon=release_horizon
+        ),
     )
     return system_path, taskset_path
 

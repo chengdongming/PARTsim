@@ -1139,4 +1139,93 @@ TEST(DeadlineTrace, AcceptedThenMissAndMissThenAcceptedDoNotLeakState) {
     }
 }
 
+class ReleaseCutoffProbeTask : public PeriodicTask {
+public:
+    std::vector<MetaSim::Tick> observed_arrivals;
+
+    explicit ReleaseCutoffProbeTask(const std::string &name)
+        : PeriodicTask(
+              MetaSim::Tick(10), MetaSim::Tick(10), MetaSim::Tick(0),
+              name) {
+        insertCode("fixed(1,bzip2);");
+    }
+
+protected:
+    void handleArrival(MetaSim::Tick arrival) override {
+        observed_arrivals.push_back(arrival);
+    }
+};
+
+TEST(ReleaseCutoff, OptInSuppressesOnlyArrivalsAtOrAfterHorizon) {
+    {
+        ReleaseCutoffProbeTask task("release-cutoff-enabled");
+        task.setReleaseCutoff(MetaSim::Tick(30));
+        MetaSim::SIMUL.run(MetaSim::Tick(35));
+        EXPECT_EQ(
+            task.observed_arrivals,
+            (std::vector<MetaSim::Tick>{
+                MetaSim::Tick(0), MetaSim::Tick(10), MetaSim::Tick(20)}));
+    }
+    {
+        ReleaseCutoffProbeTask task("release-cutoff-disabled");
+        MetaSim::SIMUL.run(MetaSim::Tick(35));
+        EXPECT_EQ(
+            task.observed_arrivals,
+            (std::vector<MetaSim::Tick>{
+                MetaSim::Tick(0), MetaSim::Tick(10), MetaSim::Tick(20),
+                MetaSim::Tick(30)}));
+    }
+}
+
+TEST(ReleaseCutoffTrace, MetadataIsOptInAndRecordsCompletedWindow) {
+    const std::string enabled_path =
+        "/tmp/partsim_release_cutoff_trace_enabled.json";
+    {
+        JSONTrace trace(enabled_path, MetaSim::Tick(35));
+        trace.setReleaseObservationWindow(
+            MetaSim::Tick(30), MetaSim::Tick(35));
+        trace.setSimulationOutcome(
+            MetaSim::Tick(35), true, "reached_horizon");
+    }
+    std::ifstream enabled_input(enabled_path);
+    const std::string enabled(
+        (std::istreambuf_iterator<char>(enabled_input)),
+        std::istreambuf_iterator<char>());
+    EXPECT_NE(
+        enabled.find(
+            "\"simulator_trace_contract_version\": "
+            "\"ASAP_BLOCK_V9_3_RELEASE_CUTOFF_TRACE_V1\""),
+        std::string::npos);
+    EXPECT_NE(
+        enabled.find("\"release_horizon_ms\": 30"),
+        std::string::npos);
+    EXPECT_NE(
+        enabled.find("\"observation_horizon_ms\": 35"),
+        std::string::npos);
+    EXPECT_NE(
+        enabled.find("\"release_cutoff_enabled\": true"),
+        std::string::npos);
+    EXPECT_NE(
+        enabled.find("\"observation_horizon_reached\": true"),
+        std::string::npos);
+
+    const std::string legacy_path =
+        "/tmp/partsim_release_cutoff_trace_legacy.json";
+    {
+        JSONTrace trace(legacy_path, MetaSim::Tick(35));
+        trace.setSimulationOutcome(
+            MetaSim::Tick(35), true, "reached_horizon");
+    }
+    std::ifstream legacy_input(legacy_path);
+    const std::string legacy(
+        (std::istreambuf_iterator<char>(legacy_input)),
+        std::istreambuf_iterator<char>());
+    EXPECT_EQ(
+        legacy.find("\"release_cutoff_enabled\""),
+        std::string::npos);
+    EXPECT_EQ(
+        legacy.find("\"simulator_trace_contract_version\""),
+        std::string::npos);
+}
+
 } // namespace RTSim
