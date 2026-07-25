@@ -28,8 +28,8 @@ from .rta4_formal_config import (
 )
 from .rta4_formal_manifest import (
     FORMAL_AUTHORIZED, NONFORMAL_TEST_FIXTURE, RTA4_CONFIG_CHECKPOINT,
-    RTA4_PLAN_MANIFEST, config_checkpoint, trusted_plan_records,
-    validate_trusted_plan_manifest,
+    RTA4_PLAN_MANIFEST, SYNTHETIC_AUTHORIZED, config_checkpoint,
+    trusted_plan_records, validate_trusted_plan_manifest,
 )
 from .rta4_formal_plan import FormalPlanRecord, formal_service_identity
 from .rta4_formal_rows import NA, RTA4FormalRowError, normalize_formal_row
@@ -806,7 +806,9 @@ def validate_formal_run_closure(
     try: validate_trusted_plan_manifest(plan_manifest, config)
     except Exception as exc: raise RTA4FormalValidationError("trusted plan manifest mismatch") from exc
     execution_class = plan_manifest["execution_class"]
-    if execution_class not in {NONFORMAL_TEST_FIXTURE, FORMAL_AUTHORIZED}:
+    if execution_class not in {
+        NONFORMAL_TEST_FIXTURE, FORMAL_AUTHORIZED, SYNTHETIC_AUTHORIZED,
+    }:
         raise RTA4FormalValidationError("unknown RTA4 execution class")
     if require_authorized_formal and execution_class != FORMAL_AUTHORIZED:
         raise RTA4FormalValidationError(
@@ -814,7 +816,7 @@ def validate_formal_run_closure(
         )
     authorization = None
     prepared = None
-    if execution_class == FORMAL_AUTHORIZED:
+    if execution_class in {FORMAL_AUTHORIZED, SYNTHETIC_AUTHORIZED}:
         try:
             from .rta4_formal_authorization import verify_live_authorization
             from .rta4_formal_freeze import validate_prepared_config
@@ -854,13 +856,13 @@ def validate_formal_run_closure(
         "config_semantic_hash": checkpoint["config_semantic_hash"], "core": config["core"],
         "parameter_status": (
             prepared["parameter_status"]
-            if execution_class == FORMAL_AUTHORIZED
+            if execution_class in {FORMAL_AUTHORIZED, SYNTHETIC_AUTHORIZED}
             else config["experiment_contract"]["parameter_status"]
         ),
         "execution_class": execution_class,
         "formal_authorized": execution_class == FORMAL_AUTHORIZED,
     }
-    if execution_class == FORMAL_AUTHORIZED:
+    if execution_class in {FORMAL_AUTHORIZED, SYNTHETIC_AUTHORIZED}:
         expected_metadata.update({
             "authorization_id": authorization["authorization_id"],
             "authorization_schema": authorization["authorization_schema"],
@@ -873,6 +875,8 @@ def validate_formal_run_closure(
                 "command_manifest"
             ]["manifest_id"],
         })
+        if execution_class == SYNTHETIC_AUTHORIZED:
+            expected_metadata["synthetic_authorized"] = True
     if dict(metadata) != expected_metadata:
         raise RTA4FormalValidationError("run metadata is not the trusted plan checkpoint")
     tables = {name: _read_exact_csv(root / name, columns) for name, columns in FORMAL_TABLES.items()}
@@ -1138,10 +1142,14 @@ def validate_formal_run_closure(
                 raise RTA4FormalValidationError(
                     "attempt violates frozen timeout contract"
                 )
-        error_solver = attempt["solver_status"] in {
-            "NUMERIC_ERROR", "INTERNAL_ERROR",
+        failure_solver = attempt["solver_status"] in {
+            "TIMEOUT", "NUMERIC_ERROR", "INTERNAL_ERROR",
         }
-        if (attempt["failure_origin"] == NA) == error_solver:
+        if failure_solver and attempt["failure_origin"] == NA:
+            raise RTA4FormalValidationError(
+                "attempt failure origin/result solver state mismatch"
+            )
+        if not failure_solver and attempt["failure_origin"] != NA:
             raise RTA4FormalValidationError(
                 "attempt failure origin/result solver state mismatch"
             )
@@ -1184,7 +1192,7 @@ def validate_formal_run_closure(
     if require_complete and set(dependencies) != set(expected_relations):
         raise RTA4FormalValidationError("trusted source relation membership mismatch")
     sources = source_closures or {}
-    if execution_class == FORMAL_AUTHORIZED:
+    if execution_class in {FORMAL_AUTHORIZED, SYNTHETIC_AUTHORIZED}:
         authorized_sources = authorization["source_closure_bindings"]
         if set(sources) != set(authorized_sources):
             raise RTA4FormalValidationError(
@@ -1202,18 +1210,38 @@ def validate_formal_run_closure(
                 raise RTA4FormalValidationError(
                     "live source closure path differs from authorization"
                 )
-    source_core1 = sources.get("CORE-1")
+    relation_source_core = (
+        expected_relations[next(iter(expected_relations))]["source_core"]
+        if expected_relations else None
+    )
+    source_input = (
+        sources.get(relation_source_core)
+        if relation_source_core is not None else None
+    )
     source_closure = None
     if expected_relations:
-        if source_core1 is None: raise RTA4FormalValidationError("required CORE-1 source closure is missing")
+        if source_input is None:
+            raise RTA4FormalValidationError(
+                f"required {relation_source_core} source closure is missing"
+            )
+        if any(
+            row["source_core"] != relation_source_core
+            for row in expected_relations.values()
+        ):
+            raise RTA4FormalValidationError(
+                "trusted plan mixes source closure domains"
+            )
         source_closure = refresh_validated_closure(
-            source_core1, require_complete=True,
+            source_input, require_complete=True,
             allow_test_authorization=allow_test_authorization,
         )
-        if source_closure.metadata["core"] != "CORE-1": raise RTA4FormalValidationError("source closure is not CORE-1")
+        if source_closure.metadata["core"] != relation_source_core:
+            raise RTA4FormalValidationError("source closure core mismatch")
     if source_closure is not None:
-        if execution_class == FORMAL_AUTHORIZED:
-            binding = authorization["source_closure_bindings"]["CORE-1"]
+        if execution_class in {FORMAL_AUTHORIZED, SYNTHETIC_AUTHORIZED}:
+            binding = authorization["source_closure_bindings"][
+                relation_source_core
+            ]
             if (
                 source_closure.metadata["plan_sha256"]
                 != binding["plan_sha256"]
@@ -1255,7 +1283,9 @@ def validate_formal_run_closure(
                 )
             expected = {
                 "analysis_id": target["analysis_id"], "source_analysis_id": source_request["analysis_id"],
-                "source_request_id": source_request["request_id"], "source_core": "CORE-1", "target_core": config["core"],
+                "source_request_id": source_request["request_id"],
+                "source_core": relation_source_core,
+                "target_core": config["core"],
                 "taskset_skeleton_id": target["taskset_skeleton_id"], "taskset_id": target["taskset_id"], "taskset_hash": target["taskset_hash"],
                 "method": plan["method"], "exact_e0": plan["exact_e0"], "service_identity": source_request["service_identity"],
                 "power_vector_hash": source_request["power_vector_hash"], "theory_document_sha256": source_request["theory_document_sha256"],
@@ -1443,9 +1473,15 @@ def validate_formal_run_closure(
             tuple(results.values()), tables["formal_rta_task_results.csv"]
         )
     )
-    if tables["formal_dominance_checks.csv"] != expected_dominance:
+    if require_complete and tables[
+        "formal_dominance_checks.csv"
+    ] != expected_dominance:
         raise RTA4FormalValidationError(
             "dominance evidence does not match canonical raw task results"
+        )
+    if not require_complete and tables["formal_dominance_checks.csv"]:
+        raise RTA4FormalValidationError(
+            "partial closure must not publish final dominance evidence"
         )
     expected_monotonicity = tuple(
         _stringify_expected("formal_monotonicity_checks.csv", row, common)
@@ -1453,14 +1489,27 @@ def validate_formal_run_closure(
             tuple(results.values()), tables["formal_rta_task_results.csv"]
         )
     )
-    if tables["formal_monotonicity_checks.csv"] != expected_monotonicity:
+    if require_complete and tables[
+        "formal_monotonicity_checks.csv"
+    ] != expected_monotonicity:
         raise RTA4FormalValidationError(
             "monotonicity evidence does not match canonical raw task results"
+        )
+    if not require_complete and tables["formal_monotonicity_checks.csv"]:
+        raise RTA4FormalValidationError(
+            "partial closure must not publish final monotonicity evidence"
         )
     expected_worker = recompute_worker_consistency_rows(tuple(results.values()), terminal_map)
     actual_worker = tables["formal_worker_consistency.csv"]
     expected_normalized = tuple(_stringify_expected("formal_worker_consistency.csv", row, common) for row in expected_worker)
-    if actual_worker != expected_normalized: raise RTA4FormalValidationError("worker consistency rows do not match raw execution results")
+    if require_complete and actual_worker != expected_normalized:
+        raise RTA4FormalValidationError(
+            "worker consistency rows do not match raw execution results"
+        )
+    if not require_complete and actual_worker:
+        raise RTA4FormalValidationError(
+            "partial closure must not publish final worker evidence"
+        )
     findings = (*validate_dominance(tuple(results.values()), tables["formal_rta_task_results.csv"]),
                 *validate_monotonicity(tuple(results.values()), tables["formal_rta_task_results.csv"]),
                 *validate_soundness(tuple(applicability.values())), *validate_worker_consistency(actual_worker))

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import csv
 import hashlib
-import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping
 
@@ -18,9 +17,11 @@ from .result_writer import (
 )
 from .rta4_formal_config import RTA4_FORMAL_SCHEMA_VERSION, canonical_json
 from .rta4_formal_config import validate_rta4_formal_config
+from .rta4_formal_environment import load_strict_json
 from .rta4_formal_manifest import (
     FORMAL_AUTHORIZED, NONFORMAL_TEST_FIXTURE, RTA4_CONFIG_CHECKPOINT,
-    RTA4_PLAN_MANIFEST, build_trusted_plan_manifest, config_checkpoint,
+    RTA4_PLAN_MANIFEST, SYNTHETIC_AUTHORIZED, build_trusted_plan_manifest,
+    config_checkpoint,
 )
 from .rta4_formal_rows import RTA4FormalRowError, normalize_formal_row
 from .rta4_formal_schema import (
@@ -42,7 +43,7 @@ class RTA4FormalWriterError(RuntimeError):
 
 def _strict_json(path: Path) -> Mapping[str, Any]:
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
+        value = load_strict_json(path)
     except Exception as exc:
         raise RTA4FormalWriterError(f"cannot read canonical JSON: {path.name}") from exc
     if not isinstance(value, Mapping):
@@ -67,17 +68,20 @@ class RTA4FormalResultWriter:
         prepared_config: Mapping[str, Any] | None = None,
         allow_test_authorization: bool = False,
     ) -> None:
-        if execution_class not in {NONFORMAL_TEST_FIXTURE, FORMAL_AUTHORIZED}:
+        if execution_class not in {
+            NONFORMAL_TEST_FIXTURE, FORMAL_AUTHORIZED, SYNTHETIC_AUTHORIZED,
+        }:
             raise RTA4FormalWriterError(
                 "unknown RTA4 execution class"
             )
         self.config = validate_rta4_formal_config(config)
         self.core = self.config["core"]
+        self.execution_class = execution_class
         self.config_checkpoint = config_checkpoint(self.config)
         authorization_binding = None
         self.authorization_document = None
         self.prepared_config = None
-        if execution_class == FORMAL_AUTHORIZED:
+        if execution_class in {FORMAL_AUTHORIZED, SYNTHETIC_AUTHORIZED}:
             from .rta4_formal_authorization import (
                 validate_authorization_document,
             )
@@ -91,6 +95,17 @@ class RTA4FormalResultWriter:
             self.authorization_document = validate_authorization_document(
                 authorization_document, allow_test=allow_test_authorization,
             )
+            is_test = self.authorization_document[
+                "authorization_domain"
+            ] == "SYNTHETIC_TEST"
+            if (
+                execution_class == FORMAL_AUTHORIZED and is_test
+            ) or (
+                execution_class == SYNTHETIC_AUTHORIZED and not is_test
+            ):
+                raise RTA4FormalWriterError(
+                    "execution class and authorization domain are disjoint"
+                )
             self.prepared_config = validate_prepared_config(prepared_config)
             if prepared_scientific_config(self.prepared_config) != self.config:
                 raise RTA4FormalWriterError(
@@ -104,9 +119,16 @@ class RTA4FormalResultWriter:
                 raise RTA4FormalWriterError(
                     "authorization does not bind this prepared core"
                 )
-            if tuple(fixture_ordinals):
+            if execution_class == FORMAL_AUTHORIZED and tuple(fixture_ordinals):
                 raise RTA4FormalWriterError(
                     "formal writer refuses fixture ordinals"
+                )
+            if (
+                execution_class == SYNTHETIC_AUTHORIZED
+                and not tuple(fixture_ordinals)
+            ):
+                raise RTA4FormalWriterError(
+                    "synthetic writer requires bounded ordinals"
                 )
             authorization_binding = {
                 "authorization_id": self.authorization_document[
@@ -135,7 +157,7 @@ class RTA4FormalResultWriter:
             authorization_binding=authorization_binding,
         )
         self.root = Path(root)
-        if execution_class == FORMAL_AUTHORIZED and str(
+        if execution_class in {FORMAL_AUTHORIZED, SYNTHETIC_AUTHORIZED} and str(
             self.root.resolve()
         ) != self.authorization_document["output_root"]:
             raise RTA4FormalWriterError("writer output root differs from authorization")
@@ -173,13 +195,15 @@ class RTA4FormalResultWriter:
             "core": self.core,
             "parameter_status": (
                 self.prepared_config["parameter_status"]
-                if execution_class == FORMAL_AUTHORIZED
+                if execution_class in {
+                    FORMAL_AUTHORIZED, SYNTHETIC_AUTHORIZED,
+                }
                 else self.config["experiment_contract"]["parameter_status"]
             ),
             "execution_class": execution_class,
             "formal_authorized": execution_class == FORMAL_AUTHORIZED,
         }
-        if execution_class == FORMAL_AUTHORIZED:
+        if execution_class in {FORMAL_AUTHORIZED, SYNTHETIC_AUTHORIZED}:
             metadata.update({
                 "authorization_id": self.authorization_document[
                     "authorization_id"
@@ -200,6 +224,8 @@ class RTA4FormalResultWriter:
                     "command_manifest"
                 ]["manifest_id"],
             })
+            if execution_class == SYNTHETIC_AUTHORIZED:
+                metadata["synthetic_authorized"] = True
             if authorization_path.is_file() and dict(
                 _strict_json(authorization_path)
             ) != self.authorization_document:
@@ -223,7 +249,7 @@ class RTA4FormalResultWriter:
         if not metadata_path.is_file():
             atomic_write_json(metadata_path, metadata)
         if (
-            execution_class == FORMAL_AUTHORIZED
+            execution_class in {FORMAL_AUTHORIZED, SYNTHETIC_AUTHORIZED}
             and not authorization_path.is_file()
         ):
             atomic_write_json(authorization_path, self.authorization_document)

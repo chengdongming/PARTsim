@@ -123,7 +123,10 @@ ENUMS = {
 
 TABLE_ENUMS = {
     "formal_dependencies.csv": {
-        "relation": {"CORE2_REUSE", "CORE3_APPLICABILITY_SOURCE"},
+        "relation": {
+            "CORE2_REUSE", "CORE3_APPLICABILITY_SOURCE",
+            "CORE5B_CORE4_RESULT_REUSE",
+        },
     },
     "formal_dominance_checks.csv": {
         "check_status": {"PASS", "P0_VIOLATION", "NOT_COMPARABLE"},

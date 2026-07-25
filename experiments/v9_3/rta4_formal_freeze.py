@@ -5,7 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 import hashlib
 from pathlib import Path
-from typing import Any, Dict, Mapping, Sequence
+from typing import Any, Dict, Mapping
 
 from .rta4_formal_config import (
     RTA4_CORES, RTA4_FORMAL_PARAMETER_STATUS, RTA4_FORMAL_PLAN_VERSION,
@@ -14,6 +14,13 @@ from .rta4_formal_config import (
 )
 from .rta4_formal_pilot import (
     validate_pilot_manifest, validate_pilot_report,
+)
+from .rta4_formal_environment import (
+    RTA4_DEPENDENCY_DOMAIN, RTA4_DEPENDENCY_MANIFEST_VERSION,
+    RTA4_ENVIRONMENT_DOMAIN, RTA4_ENVIRONMENT_MANIFEST_VERSION,
+    RTA4_HARDWARE_DOMAIN, RTA4_HARDWARE_MANIFEST_VERSION,
+    build_dependency_manifest, build_environment_manifest,
+    build_hardware_manifest, validate_identity_manifest,
 )
 from .rta4_formal_schema import formal_schema_hash
 
@@ -37,6 +44,38 @@ RTA4_TOTAL_UNIQUE_RTA_REQUESTS = 124_400
 RTA4_TOTAL_SIMULATIONS = 6_400
 RTA4_CORE5B_MATHEMATICAL_REQUESTS = 3_000
 RTA4_CORE5B_EXECUTIONS = 12_000
+RTA4_FROZEN_CORE_PLANS = {
+    "CORE-1": {
+        "count": 19_200,
+        "ordered_digest": "5e33d6cdb14a67cac08299b3a2bc988b3e1628132293954b2d8acdb532fc1c8b",
+        "plan_sha256": "5451288b09c118eae9c8e7e0bbe875ebf15c5e7a3991c1b78fb683075da3812b",
+    },
+    "CORE-2": {
+        "count": 28_800,
+        "ordered_digest": "7f11a0ad3a412495e14b29f09f38d952fe3af346aa0374049d56691532f55f12",
+        "plan_sha256": "1c4e9b675095c845cdf68dbaf9523242bc2e29b2a702951556c082e6ea5a86d5",
+    },
+    "CORE-3": {
+        "count": 6_400,
+        "ordered_digest": "41148a135d8ca99dd6f545afbf39f9b8bee4e26749764f7b72a2b3ae8e45f153",
+        "plan_sha256": "8619e4f2c7602f45e2d312a379c1d0d3c6af3f81864da50ec3ef14a272c9809e",
+    },
+    "CORE-4": {
+        "count": 72_000,
+        "ordered_digest": "098db8c6680153549cd2b35ff105a196d1093fc8d6139e6190bc751a8da8f4e6",
+        "plan_sha256": "f18d2eb044852d1806926ff28ac0dbe652b2b6ad87dddab14cb46f0ea0938c66",
+    },
+    "CORE-5A": {
+        "count": 4_400,
+        "ordered_digest": "966429bcbf41f1f15b1f849a02cc9c9c4c9dd3353655868db3c83e5cce7fb521",
+        "plan_sha256": "54614447fc2a05b39f7577304a079f96d18dc166984de7a2f5ea2a4aadd748b7",
+    },
+    "CORE-5B": {
+        "count": 12_000,
+        "ordered_digest": "85ed2de830f2f239d91d760067cebe25caf7b564518d9eed95ce9a3fee3408cf",
+        "plan_sha256": "243fc6bc411d16e9f3e052e204e7da035bd5516ec43a72637ffa36e22a5df18f",
+    },
+}
 
 RTA4_TIMEOUT_METHODS = (
     "CW_D", "LOC_D", "PH_D", "SEQ_D",
@@ -66,12 +105,12 @@ def _absolute_path(value: Any, label: str) -> str:
     path = Path(value)
     if not path.is_absolute():
         raise RTA4FreezeError(f"{label} must be absolute")
-    return str(path)
+    return str(path.resolve())
 
 
 def validate_timeout_contract(contract: Mapping[str, Any]) -> Dict[str, Any]:
     if not isinstance(contract, Mapping) or set(contract) != {
-        "contract_version", "pilot_report_id", "methods",
+        "contract_version", "pilot_report_id", "method_order", "methods",
     }:
         raise RTA4FreezeError("timeout contract has an unexpected field set")
     if contract["contract_version"] != "ASAP_BLOCK_V9_3_RTA4_TIMEOUT_V1":
@@ -82,7 +121,11 @@ def validate_timeout_contract(contract: Mapping[str, Any]) -> Dict[str, Any]:
     ):
         raise RTA4FreezeError("timeout contract requires pilot evidence")
     methods = contract["methods"]
-    if not isinstance(methods, Mapping) or tuple(methods) != RTA4_TIMEOUT_METHODS:
+    if (
+        contract["method_order"] != list(RTA4_TIMEOUT_METHODS)
+        or not isinstance(methods, Mapping)
+        or set(methods) != set(RTA4_TIMEOUT_METHODS)
+    ):
         raise RTA4FreezeError("timeout methods/order mismatch")
     for method, row in methods.items():
         if not isinstance(row, Mapping) or set(row) != {
@@ -149,7 +192,19 @@ def _validate_operational(core: str, value: Mapping[str, Any]) -> Dict[str, Any]
         raise RTA4FreezeError("execution order violates the frozen DAG")
     if value["resume_policy"] != "REVALIDATE_ALL_BINDINGS_SKIP_TERMINALS_V1":
         raise RTA4FreezeError("resume policy mismatch")
-    return deepcopy(dict(value))
+    normalized = deepcopy(dict(value))
+    normalized["output_root"] = output
+    normalized["taskset_store"] = store
+    normalized["source_closures"] = {
+        source: _absolute_path(path, f"source_closures.{source}")
+        for source, path in sources.items()
+    }
+    normalized["simulator_binary"] = (
+        None
+        if simulator is None
+        else _absolute_path(simulator, "simulator_binary")
+    )
+    return normalized
 
 
 def _frozen_scientific_assertions() -> Dict[str, Any]:
@@ -164,6 +219,7 @@ def _frozen_scientific_assertions() -> Dict[str, Any]:
         "total_simulations": RTA4_TOTAL_SIMULATIONS,
         "core5b_mathematical_requests": RTA4_CORE5B_MATHEMATICAL_REQUESTS,
         "core5b_executions": RTA4_CORE5B_EXECUTIONS,
+        "core_plans": deepcopy(RTA4_FROZEN_CORE_PLANS),
     }
     expected = {
         "profile": RTA4_FORMAL_PROFILE,
@@ -176,6 +232,7 @@ def _frozen_scientific_assertions() -> Dict[str, Any]:
         "total_simulations": RTA4_TOTAL_SIMULATIONS,
         "core5b_mathematical_requests": RTA4_CORE5B_MATHEMATICAL_REQUESTS,
         "core5b_executions": RTA4_CORE5B_EXECUTIONS,
+        "core_plans": deepcopy(RTA4_FROZEN_CORE_PLANS),
     }
     if checks != expected:
         raise RTA4FreezeError("scientific plan/schema assertions drifted")
@@ -210,6 +267,14 @@ def prepare_formal_configs(
     if timeout["pilot_report_id"] != pilot_report["pilot_report_id"]:
         raise RTA4FreezeError("timeout contract was not derived from this pilot")
     scientific = _scientific_assertions(configs)
+    dependency_manifest = build_dependency_manifest()
+    environment_manifest = build_environment_manifest(dependency_manifest)
+    hardware_manifest = build_hardware_manifest()
+    runtime_environment = {
+        "dependency_manifest": dependency_manifest,
+        "environment_manifest": environment_manifest,
+        "hardware_manifest": hardware_manifest,
+    }
     prepared: Dict[str, Dict[str, Any]] = {}
     for core in RTA4_CORES:
         source = validate_rta4_formal_config(configs[core], expected_core=core)
@@ -241,9 +306,11 @@ def prepare_formal_configs(
             },
             "pilot_manifest_id": pilot_manifest["pilot_manifest_id"],
             "pilot_report_id": pilot_report["pilot_report_id"],
+            "pilot_closure_id": pilot_report["pilot_closure_id"],
             "timeout_contract": timeout,
             "timeout_contract_id": timeout_contract_identity(timeout),
             "operational": operations,
+            "runtime_environment": runtime_environment,
             "scientific_assertions": scientific,
         }
         prepared[core] = {
@@ -261,8 +328,8 @@ def validate_prepared_config(document: Mapping[str, Any]) -> Dict[str, Any]:
     exact = {
         "prepared_config_version", "profile", "parameter_status", "core",
         "source_config", "pilot_manifest_id", "pilot_report_id",
-        "timeout_contract", "timeout_contract_id", "operational",
-        "scientific_assertions", "prepared_config_id",
+        "pilot_closure_id", "timeout_contract", "timeout_contract_id", "operational",
+        "runtime_environment", "scientific_assertions", "prepared_config_id",
     }
     if set(document) != exact:
         raise RTA4FreezeError("prepared config field set mismatch")
@@ -279,6 +346,17 @@ def validate_prepared_config(document: Mapping[str, Any]) -> Dict[str, Any]:
         "validated_pre_pilot_config", "pre_pilot_parameter_status",
     }:
         raise RTA4FreezeError("prepared source config evidence mismatch")
+    try:
+        source_path = Path(source["absolute_path"]).resolve(strict=True)
+    except OSError as exc:
+        raise RTA4FreezeError("prepared source config path is stale") from exc
+    if (
+        not source_path.is_file()
+        or str(source_path) != source["absolute_path"]
+        or hashlib.sha256(source_path.read_bytes()).hexdigest()
+        != source["file_sha256"]
+    ):
+        raise RTA4FreezeError("prepared source config byte binding drift")
     normalized = validate_rta4_formal_config(
         source["validated_pre_pilot_config"],
         expected_core=document["core"],
@@ -287,13 +365,42 @@ def validate_prepared_config(document: Mapping[str, Any]) -> Dict[str, Any]:
         raise RTA4FreezeError("prepared source did not come from pre-pilot")
     if source["config_semantic_hash"] != rta4_formal_config_hash(normalized):
         raise RTA4FreezeError("prepared source semantic identity mismatch")
+    if (
+        not isinstance(document["pilot_closure_id"], str)
+        or len(document["pilot_closure_id"]) != 64
+    ):
+        raise RTA4FreezeError("prepared config lacks pilot closure identity")
     timeout = validate_timeout_contract(document["timeout_contract"])
     if (
         document["timeout_contract_id"] != timeout_contract_identity(timeout)
         or timeout["pilot_report_id"] != document["pilot_report_id"]
     ):
         raise RTA4FreezeError("prepared timeout identity mismatch")
+    if document["scientific_assertions"] != _frozen_scientific_assertions():
+        raise RTA4FreezeError("prepared scientific assertions drifted")
     _validate_operational(document["core"], document["operational"])
+    runtime = document["runtime_environment"]
+    if not isinstance(runtime, Mapping) or set(runtime) != {
+        "dependency_manifest", "environment_manifest", "hardware_manifest",
+    }:
+        raise RTA4FreezeError("prepared runtime environment field mismatch")
+    dependency = validate_identity_manifest(
+        runtime["dependency_manifest"],
+        version=RTA4_DEPENDENCY_MANIFEST_VERSION,
+        domain=RTA4_DEPENDENCY_DOMAIN,
+    )
+    environment = validate_identity_manifest(
+        runtime["environment_manifest"],
+        version=RTA4_ENVIRONMENT_MANIFEST_VERSION,
+        domain=RTA4_ENVIRONMENT_DOMAIN,
+    )
+    validate_identity_manifest(
+        runtime["hardware_manifest"],
+        version=RTA4_HARDWARE_MANIFEST_VERSION,
+        domain=RTA4_HARDWARE_DOMAIN,
+    )
+    if environment.get("dependency_manifest_id") != dependency.get("manifest_id"):
+        raise RTA4FreezeError("prepared runtime dependency binding mismatch")
     material = dict(document)
     observed = material.pop("prepared_config_id")
     if observed != domain_hash(RTA4_PREPARED_CONFIG_DOMAIN, material):
@@ -310,7 +417,10 @@ def build_freeze_manifest(
         core: validate_prepared_config(prepared[core]) for core in RTA4_CORES
     }
     pilot_ids = {
-        (row["pilot_manifest_id"], row["pilot_report_id"])
+        (
+            row["pilot_manifest_id"], row["pilot_closure_id"],
+            row["pilot_report_id"],
+        )
         for row in normalized.values()
     }
     scientific = {
@@ -327,10 +437,23 @@ def build_freeze_manifest(
         },
         "pilot_manifest_id": normalized["CORE-1"]["pilot_manifest_id"],
         "pilot_report_id": normalized["CORE-1"]["pilot_report_id"],
+        "pilot_closure_id": normalized["CORE-1"]["pilot_closure_id"],
         "scientific_assertions": normalized["CORE-1"]["scientific_assertions"],
         "execution_dag": {
             "CORE-1": [], "CORE-2": ["CORE-1"], "CORE-3": ["CORE-1"],
             "CORE-4": [], "CORE-5A": [], "CORE-5B": ["CORE-4"],
+        },
+        "runtime_manifest_ids": {
+            core: {
+                name: normalized[core]["runtime_environment"][name][
+                    "manifest_id"
+                ]
+                for name in (
+                    "dependency_manifest", "environment_manifest",
+                    "hardware_manifest",
+                )
+            }
+            for core in RTA4_CORES
         },
     }
     return {
@@ -360,7 +483,8 @@ __all__ = [
     "RTA4_CORE5B_EXECUTIONS", "RTA4_CORE5B_MATHEMATICAL_REQUESTS",
     "RTA4_FREEZE_MANIFEST_DOMAIN", "RTA4_FREEZE_MANIFEST_VERSION",
     "RTA4_FROZEN_ALL_PLAN_DIGEST", "RTA4_FROZEN_PARAMETER_STATUS",
-    "RTA4_FROZEN_SCHEMA_SHA256", "RTA4_LEGACY_TABLE_DIGEST",
+    "RTA4_FROZEN_CORE_PLANS", "RTA4_FROZEN_SCHEMA_SHA256",
+    "RTA4_LEGACY_TABLE_DIGEST",
     "RTA4_OPERATIONAL_FIELDS", "RTA4_PREPARED_CONFIG_DOMAIN",
     "RTA4_PREPARED_CONFIG_VERSION", "RTA4_TIMEOUT_METHODS",
     "RTA4_TOTAL_SIMULATIONS", "RTA4_TOTAL_UNIQUE_RTA_REQUESTS",

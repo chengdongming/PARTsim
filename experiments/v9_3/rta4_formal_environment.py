@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 from importlib import metadata
+import json
 import os
 from pathlib import Path
 import platform
@@ -16,7 +17,7 @@ import subprocess
 import sys
 from typing import Any, Dict, Iterable, Mapping, Sequence
 
-from .rta4_formal_config import canonical_json, domain_hash
+from .rta4_formal_config import domain_hash
 
 
 RTA4_SOURCE_MANIFEST_VERSION = "ASAP_BLOCK_V9_3_RTA4_SOURCE_MANIFEST_V1"
@@ -50,6 +51,36 @@ def _sha256(path: Path) -> str:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def load_strict_json(path: Path | str) -> Any:
+    """Load JSON while rejecting duplicate keys and non-finite constants."""
+
+    source = Path(path)
+
+    def pairs(values: Sequence[tuple[str, Any]]) -> Dict[str, Any]:
+        result: Dict[str, Any] = {}
+        for key, value in values:
+            if key in result:
+                raise RTA4EnvironmentError(f"duplicate JSON key: {key}")
+            result[key] = value
+        return result
+
+    def constant(value: str) -> Any:
+        raise RTA4EnvironmentError(f"non-finite JSON constant: {value}")
+
+    try:
+        return json.loads(
+            source.read_text(encoding="utf-8"),
+            object_pairs_hook=pairs,
+            parse_constant=constant,
+        )
+    except RTA4EnvironmentError:
+        raise
+    except Exception as exc:
+        raise RTA4EnvironmentError(
+            f"cannot parse strict JSON: {source}"
+        ) from exc
 
 
 def _identity(version: str, domain: str, material: Mapping[str, Any]) -> Dict[str, Any]:
@@ -218,6 +249,134 @@ def build_command_manifest(
     })
 
 
+def build_command_chain_manifest(
+    commands: Mapping[str, Sequence[str]], *, cwd: Path | str, core: str,
+) -> Dict[str, Any]:
+    required = ("execute", "resume", "validate-only", "audit", "aggregate", "plot")
+    if not isinstance(commands, Mapping) or set(commands) != set(required):
+        raise RTA4EnvironmentError(
+            "formal command chain must cover execute/resume/validate/audit/aggregate/plot"
+        )
+    normalized = {}
+    for operation in required:
+        argv = commands[operation]
+        if (
+            not isinstance(argv, (tuple, list))
+            or not argv
+            or any(not isinstance(value, str) or not value for value in argv)
+        ):
+            raise RTA4EnvironmentError(
+                f"command chain {operation} argv is invalid"
+            )
+        normalized[operation] = list(argv)
+    return _identity(RTA4_COMMAND_MANIFEST_VERSION, RTA4_COMMAND_DOMAIN, {
+        "command_order": list(required),
+        "commands": normalized,
+        "cwd": str(Path(cwd).resolve(strict=True)),
+        "core": core,
+    })
+
+
+def validate_command_invocation(
+    manifest: Mapping[str, Any], *, argv: Sequence[str],
+    cwd: Path | str, operation: str, core: str,
+) -> None:
+    validate_command_manifest(manifest)
+    expected_cwd = str(Path(cwd).resolve(strict=True))
+    if manifest.get("core") != core or manifest.get("cwd") != expected_cwd:
+        raise RTA4EnvironmentError("command invocation core/cwd drift")
+    if "commands" in manifest:
+        expected = manifest["commands"].get(operation)
+    else:
+        expected = (
+            manifest.get("argv")
+            if manifest.get("operation") == operation else None
+        )
+    if list(argv) != expected:
+        raise RTA4EnvironmentError("command invocation argv/operation drift")
+
+
+def validate_command_manifest(manifest: Mapping[str, Any]) -> Dict[str, Any]:
+    """Validate either the legacy single operation or the complete command chain."""
+
+    normalized = validate_identity_manifest(
+        manifest, version=RTA4_COMMAND_MANIFEST_VERSION,
+        domain=RTA4_COMMAND_DOMAIN,
+    )
+    if not isinstance(normalized.get("core"), str) or not normalized["core"]:
+        raise RTA4EnvironmentError("command manifest core is invalid")
+    cwd = normalized.get("cwd")
+    if (
+        not isinstance(cwd, str)
+        or not Path(cwd).is_absolute()
+        or str(Path(cwd).resolve()) != cwd
+    ):
+        raise RTA4EnvironmentError("command manifest cwd is not canonical")
+    if "commands" in normalized:
+        required = (
+            "execute", "resume", "validate-only", "audit", "aggregate", "plot",
+        )
+        if (
+            set(normalized) != {
+                "manifest_version", "command_order", "commands", "cwd",
+                "core", "manifest_id",
+            }
+            or normalized.get("command_order") != list(required)
+            or not isinstance(normalized["commands"], Mapping)
+            or set(normalized["commands"]) != set(required)
+        ):
+            raise RTA4EnvironmentError("command chain structure is invalid")
+        vectors = normalized["commands"].values()
+    else:
+        if (
+            set(normalized) != {
+                "manifest_version", "argv", "cwd", "operation", "core",
+                "manifest_id",
+            }
+            or normalized.get("operation")
+            not in {"execute", "resume", "validate-only"}
+        ):
+            raise RTA4EnvironmentError("single command structure is invalid")
+        vectors = (normalized.get("argv"),)
+    if any(
+        not isinstance(vector, (tuple, list))
+        or not vector
+        or any(not isinstance(value, str) or not value for value in vector)
+        for vector in vectors
+    ):
+        raise RTA4EnvironmentError("command manifest argv is invalid")
+    return normalized
+
+
+def validate_bound_source_file(
+    manifest: Mapping[str, Any], path: Path | str,
+) -> Dict[str, Any]:
+    """Require a runtime support file to be present byte-for-byte in source closure."""
+
+    normalized = validate_source_manifest(manifest)
+    root = Path(normalized["repository_root"])
+    try:
+        resolved = Path(path).resolve(strict=True)
+        relative = resolved.relative_to(root).as_posix()
+    except (OSError, ValueError) as exc:
+        raise RTA4EnvironmentError(
+            "runtime support file is outside the authorized source closure"
+        ) from exc
+    matches = [row for row in normalized["files"] if row["path"] == relative]
+    if len(matches) != 1:
+        raise RTA4EnvironmentError(
+            "runtime support file is absent from the authorized source closure"
+        )
+    row = matches[0]
+    if (
+        not resolved.is_file()
+        or resolved.stat().st_size != row["size_bytes"]
+        or _sha256(resolved) != row["sha256"]
+    ):
+        raise RTA4EnvironmentError("runtime support file byte identity drift")
+    return dict(row)
+
+
 def build_simulator_manifest(binary: Path | str | None) -> Dict[str, Any]:
     if binary is None:
         return _identity(RTA4_SIMULATOR_MANIFEST_VERSION, RTA4_SIMULATOR_DOMAIN, {
@@ -259,8 +418,10 @@ __all__ = [
     "RTA4_SIMULATOR_MANIFEST_VERSION", "RTA4_SOURCE_DOMAIN",
     "RTA4_SOURCE_MANIFEST_VERSION", "RTA4EnvironmentError",
     "SAFE_ENVIRONMENT_VARIABLES", "build_command_manifest",
+    "build_command_chain_manifest",
     "build_dependency_manifest", "build_environment_manifest",
     "build_hardware_manifest", "build_simulator_manifest",
-    "build_source_manifest", "validate_identity_manifest",
-    "validate_source_manifest",
+    "build_source_manifest", "load_strict_json", "validate_identity_manifest",
+    "validate_bound_source_file", "validate_command_invocation",
+    "validate_command_manifest", "validate_source_manifest",
 ]

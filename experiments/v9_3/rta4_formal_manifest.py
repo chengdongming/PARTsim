@@ -31,6 +31,7 @@ RTA4_SOURCE_RELATION_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_SOURCE_RELATION:v1"
 RTA4_COMPARISON_PLAN_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_COMPARISON_PLAN:v1"
 NONFORMAL_TEST_FIXTURE = "NONFORMAL_TEST_FIXTURE"
 FORMAL_AUTHORIZED = "FORMAL_AUTHORIZED"
+SYNTHETIC_AUTHORIZED = "SYNTHETIC_AUTHORIZED"
 RTA4_FIXTURE_LIMIT = 100
 
 
@@ -132,6 +133,19 @@ def _source_relations(
                 }
                 unique[plan_relation_id(source)] = source
         return tuple(unique[key] for key in sorted(unique))
+    if core == "CORE-5B":
+        unique = {}
+        for record in records:
+            row = {
+                "source_core": "CORE-4",
+                "target_core": "CORE-5B",
+                "taskset_slot_id": record.taskset_slot_id,
+                "method": record.material["method"],
+                "exact_e0": record.material["exact_e0"],
+                "source_analysis_id": record.mathematical_request_id,
+            }
+            unique[record.mathematical_request_id] = row
+        return tuple(unique[key] for key in sorted(unique))
     return ()
 
 
@@ -153,7 +167,9 @@ def build_trusted_plan_manifest(
     authorization_binding: Mapping[str, Any] | None = None,
 ) -> Dict[str, Any]:
     normalized = validate_rta4_formal_config(config)
-    if execution_class not in {NONFORMAL_TEST_FIXTURE, FORMAL_AUTHORIZED}:
+    if execution_class not in {
+        NONFORMAL_TEST_FIXTURE, FORMAL_AUTHORIZED, SYNTHETIC_AUTHORIZED,
+    }:
         raise RTA4FormalManifestError(
             "unknown RTA4 execution class"
         )
@@ -179,6 +195,26 @@ def build_trusted_plan_manifest(
                 "formal authorization bindings must be SHA-256 identities"
             )
         records = tuple(iter_formal_plan(normalized))
+    elif execution_class == SYNTHETIC_AUTHORIZED:
+        if authorization_binding is None:
+            raise RTA4FormalManifestError(
+                "synthetic execution requires TEST authorization binding"
+            )
+        if not tuple(fixture_ordinals):
+            raise RTA4FormalManifestError(
+                "synthetic execution requires bounded trusted ordinals"
+            )
+        if set(authorization_binding) != {
+            "authorization_id", "prepared_config_id", "freeze_manifest_id",
+            "environment_manifest_id", "command_manifest_id",
+        } or any(
+            not isinstance(value, str) or len(value) != 64
+            for value in authorization_binding.values()
+        ):
+            raise RTA4FormalManifestError(
+                "synthetic authorization binding mismatch"
+            )
+        records = _records_at_ordinals(normalized, fixture_ordinals)
     else:
         if authorization_binding is not None:
             raise RTA4FormalManifestError(
@@ -188,7 +224,11 @@ def build_trusted_plan_manifest(
     core = normalized["core"]
     description = _trusted_description(core)
     stream = ordered_stream_digest(iter(records))
-    relations = _source_relations(core, records)
+    relations = (
+        ()
+        if core == "CORE-5B" and execution_class == NONFORMAL_TEST_FIXTURE
+        else _source_relations(core, records)
+    )
     comparisons = _comparison_rows(core, records)
     selected_math = tuple(iter_core5b_math_references()) if core == "CORE-5B" else ()
     selected_math_ids = {record.mathematical_request_id for record in records}
@@ -199,12 +239,16 @@ def build_trusted_plan_manifest(
     material = {
         "manifest_version": (
             RTA4_FORMAL_PLAN_MANIFEST_VERSION
-            if execution_class == FORMAL_AUTHORIZED
+            if execution_class in {FORMAL_AUTHORIZED, SYNTHETIC_AUTHORIZED}
             else RTA4_PLAN_MANIFEST_VERSION
         ),
         "profile": RTA4_FORMAL_PROFILE,
         "plan_version": RTA4_FORMAL_PLAN_VERSION,
-        "parameter_status": RTA4_FORMAL_PARAMETER_STATUS,
+        "parameter_status": (
+            "FROZEN_FOR_FORMAL_EXECUTION"
+            if execution_class in {FORMAL_AUTHORIZED, SYNTHETIC_AUTHORIZED}
+            else RTA4_FORMAL_PARAMETER_STATUS
+        ),
         "execution_class": execution_class,
         "core": core,
         "fixture_ordinals": list(fixture_ordinals),
@@ -248,10 +292,10 @@ def build_trusted_plan_manifest(
             for row in selected_references
         ],
     }
-    if execution_class == FORMAL_AUTHORIZED:
+    if execution_class in {FORMAL_AUTHORIZED, SYNTHETIC_AUTHORIZED}:
         material.update({
             "formal_authorization_binding": dict(authorization_binding),
-            "complete_plan_membership": True,
+            "complete_plan_membership": execution_class == FORMAL_AUTHORIZED,
             "formal_ordered_stream_count": stream.count,
             "formal_ordered_stream_digest": stream.sha256,
         })
@@ -289,7 +333,8 @@ def trusted_plan_records(
 
 
 __all__ = [
-    "FORMAL_AUTHORIZED", "NONFORMAL_TEST_FIXTURE", "RTA4_CONFIG_CHECKPOINT",
+    "FORMAL_AUTHORIZED", "NONFORMAL_TEST_FIXTURE", "SYNTHETIC_AUTHORIZED",
+    "RTA4_CONFIG_CHECKPOINT",
     "RTA4_FIXTURE_LIMIT", "RTA4_FORMAL_PLAN_MANIFEST_VERSION",
     "RTA4_PLAN_MANIFEST", "RTA4_PLAN_MANIFEST_VERSION",
     "RTA4FormalManifestError", "build_trusted_plan_manifest",

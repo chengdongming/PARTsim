@@ -6,7 +6,6 @@ from collections import defaultdict
 import csv
 from fractions import Fraction
 import hashlib
-import json
 import math
 from pathlib import Path
 import random
@@ -15,10 +14,12 @@ from typing import Any, Dict, Mapping, Sequence
 
 from .result_writer import atomic_write_json, write_csv
 from .rta4_formal_config import canonical_json
+from .rta4_formal_environment import load_strict_json
 from .rta4_formal_validation import (
     ValidatedFormalClosure, refresh_validated_closure,
     validate_formal_run_closure,
 )
+from .rta4_formal_writer import FORMAL_AUTHORIZATION_EVIDENCE
 
 
 RTA4_AGGREGATE_VERSION = "ASAP_BLOCK_V9_3_RTA4_AGGREGATE_V1"
@@ -489,11 +490,15 @@ def aggregate_formal_run(
     root: Path | str, output_root: Path | str, *,
     bootstrap_replicates: int = RTA4_BOOTSTRAP_REPLICATES,
     source_closures: Mapping[str, Path | str | Any] | None = None,
+    require_authorized_formal: bool = False,
+    allow_test_authorization: bool = False,
 ) -> Mapping[str, Any]:
     sources = source_closures or {}
     closure = validate_formal_run_closure(
         root, require_complete=True,
+        require_authorized_formal=require_authorized_formal,
         source_closures=sources,
+        allow_test_authorization=allow_test_authorization,
     )
     if type(bootstrap_replicates) is not int or bootstrap_replicates < 1:
         raise RTA4FormalAggregationError("bootstrap replicates must be positive")
@@ -508,15 +513,25 @@ def aggregate_formal_run(
     output_root.mkdir(parents=True, exist_ok=True)
     core = str(closure.metadata["core"])
     source = None
-    if core in {"CORE-2", "CORE-3"}:
-        raw_source = sources.get("CORE-1")
+    source_core = (
+        "CORE-1" if core in {"CORE-2", "CORE-3"}
+        else "CORE-4" if core == "CORE-5B"
+        else None
+    )
+    if source_core is not None:
+        raw_source = sources.get(source_core)
         if raw_source is None:
             raise RTA4FormalAggregationError(
-                f"{core} aggregation requires the validated CORE-1 source bundle"
+                f"{core} aggregation requires the validated {source_core} source bundle"
             )
-        source = refresh_validated_closure(raw_source, require_complete=True)
-        if source.metadata["core"] != "CORE-1":
-            raise RTA4FormalAggregationError("aggregate source bundle is not CORE-1")
+        source = refresh_validated_closure(
+            raw_source, require_complete=True,
+            allow_test_authorization=allow_test_authorization,
+        )
+        if source.metadata["core"] != source_core:
+            raise RTA4FormalAggregationError(
+                f"aggregate source bundle is not {source_core}"
+            )
     data: Dict[str, list[Dict[str, Any]]] = {
         "table_1_parameters.csv": _table1(closure),
     }
@@ -552,10 +567,18 @@ def aggregate_formal_run(
         "aggregate_version": RTA4_AGGREGATE_VERSION,
         "core": core,
         "execution_class": closure.metadata["execution_class"],
+        "authorization_id": closure.metadata.get("authorization_id"),
+        "command_manifest": (
+            None
+            if closure.metadata.get("authorization_id") is None
+            else load_strict_json(
+                Path(root) / FORMAL_AUTHORIZATION_EVIDENCE
+            )["command_manifest"]
+        ),
         "input_closure_sha256": closure.closure_sha256,
         "trusted_source_bundles": (
             {} if source is None else {
-                "CORE-1": {
+                str(source_core): {
                     "closure_sha256": source.closure_sha256,
                     "plan_sha256": source.metadata["plan_sha256"],
                     "config_semantic_hash": source.metadata["config_semantic_hash"],
@@ -581,7 +604,7 @@ def aggregate_formal_run(
 def validate_aggregate_bundle(root: Path | str) -> Mapping[str, Any]:
     root = Path(root)
     try:
-        manifest = json.loads((root / RTA4_AGGREGATE_MANIFEST).read_text(encoding="utf-8"))
+        manifest = load_strict_json(root / RTA4_AGGREGATE_MANIFEST)
     except Exception as exc:
         raise RTA4FormalAggregationError("cannot read aggregate manifest") from exc
     if not isinstance(manifest, Mapping) or manifest.get("aggregate_version") != RTA4_AGGREGATE_VERSION:

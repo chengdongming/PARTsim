@@ -692,33 +692,75 @@ class RTA4FormalRunner:
         witness_hash = hashes["witness_vector_hash"]
         certification_hash = hashes["certification_vector_hash"]
         failure_hash = hashes["failure_reason_vector_hash"]
-        attempt_number = sum(
+        prior_attempt_count = sum(
             row.get("execution_run_id") == record.execution_id
             for row in __import__("experiments.v9_3.result_writer", fromlist=["read_csv"]).read_csv(
                 writer.root / "formal_rta_attempts.csv"
             )
-        ) + 1
-        attempt_id = domain_hash("ASAP_BLOCK:V9.3:RTA4_ATTEMPT:v1", {
-            "execution_run_id": record.execution_id, "attempt_number": attempt_number,
-        })
-        failure_origin = result.get("failure_origin")
-        if failure_origin is None:
-            failure_origin = (
-                "RTA_EXECUTOR" if solver_status in {"NUMERIC_ERROR", "INTERNAL_ERROR"}
-                else "NA"
+        )
+        raw_attempts = result.get("attempts")
+        if raw_attempts is None:
+            raw_attempts = (result,)
+        if (
+            not isinstance(raw_attempts, Sequence)
+            or isinstance(raw_attempts, (str, bytes))
+            or not raw_attempts
+            or any(not isinstance(row, Mapping) for row in raw_attempts)
+        ):
+            raise RTA4FormalPipelineError(
+                "RTA result attempts must be a non-empty mapping sequence"
             )
-        writer.append_attempt({
-            "attempt_id": attempt_id, "plan_record_id": record.record_id,
-            "analysis_id": analysis_id, "request_id": record.mathematical_request_id,
-            "execution_run_id": record.execution_id, "attempt_number": attempt_number,
-            "parent_attempt_id": "NA", "worker_count": record.material.get("worker_count", 1),
-            "timeout_budget_seconds": 0, "solver_status": solver_status,
-            "failure_origin": failure_origin,
-            "runtime_wall_seconds": result.get("runtime_wall_seconds", "0"),
-            "runtime_cpu_seconds": result.get("runtime_cpu_seconds", "0"),
-            "peak_rss_bytes": result.get("peak_rss_bytes", 0),
-            "started_at_utc": "NONFORMAL_TEST_FIXTURE",
-        })
+        parent_attempt_id = "NA"
+        for offset, attempt in enumerate(raw_attempts, start=1):
+            attempt_number = prior_attempt_count + offset
+            attempt_id = domain_hash("ASAP_BLOCK:V9.3:RTA4_ATTEMPT:v1", {
+                "execution_run_id": record.execution_id,
+                "attempt_number": attempt_number,
+            })
+            attempt_solver = str(attempt.get("solver_status", solver_status))
+            failure_origin = attempt.get("failure_origin")
+            if failure_origin is None:
+                failure_origin = (
+                    "RTA_EXECUTOR"
+                    if attempt_solver in {
+                        "TIMEOUT", "NUMERIC_ERROR", "INTERNAL_ERROR",
+                    }
+                    else "NA"
+                )
+            if writer.execution_class == "NONFORMAL_TEST_FIXTURE":
+                timeout_budget = 0
+                started_at = "NONFORMAL_TEST_FIXTURE"
+            else:
+                timeout_row = writer.prepared_config["timeout_contract"][
+                    "methods"
+                ][record.material["method"]]
+                timeout_budget = (
+                    timeout_row["initial_timeout_seconds"]
+                    if attempt_number == 1
+                    else timeout_row["retry_timeout_seconds"]
+                )
+                started_at = "FORMAL_AUTHORIZED"
+            writer.append_attempt({
+                "attempt_id": attempt_id, "plan_record_id": record.record_id,
+                "analysis_id": analysis_id,
+                "request_id": record.mathematical_request_id,
+                "execution_run_id": record.execution_id,
+                "attempt_number": attempt_number,
+                "parent_attempt_id": parent_attempt_id,
+                "worker_count": record.material.get("worker_count", 1),
+                "timeout_budget_seconds": timeout_budget,
+                "solver_status": attempt_solver,
+                "failure_origin": failure_origin,
+                "runtime_wall_seconds": attempt.get(
+                    "runtime_wall_seconds", "0"
+                ),
+                "runtime_cpu_seconds": attempt.get(
+                    "runtime_cpu_seconds", "0"
+                ),
+                "peak_rss_bytes": attempt.get("peak_rss_bytes", 0),
+                "started_at_utc": started_at,
+            })
+            parent_attempt_id = attempt_id
         failed = next((task.priority_rank for task, raw in zip(certificate.tasks, canonical_tasks)
                        if raw["task_certification_status"] != "CERTIFIED"), None)
         utilization = sum((Fraction(task.wcet, task.period) for task in certificate.tasks), Fraction()) / certificate.processors
@@ -753,6 +795,22 @@ class RTA4FormalRunner:
         writer.append_unique("formal_rta_taskset_results.csv", "execution_run_id", result_row)
         for row in persisted_tasks:
             writer.append_unique("formal_rta_task_results.csv", "task_result_id", row)
+        mechanism_rows = result.get("mechanism_rows", ())
+        if (
+            not isinstance(mechanism_rows, Sequence)
+            or isinstance(mechanism_rows, (str, bytes))
+        ):
+            raise RTA4FormalPipelineError(
+                "mechanism_rows must be an ordered sequence"
+            )
+        for row in mechanism_rows:
+            if not isinstance(row, Mapping):
+                raise RTA4FormalPipelineError(
+                    "mechanism telemetry rows must be mappings"
+                )
+            writer.append("formal_rta_mechanisms.csv", {
+                **dict(row), "taskset_id": certificate.taskset_id,
+            })
         writer.write_terminal(record.execution_id, {
             "plan_record_id": record.record_id, "analysis_id": analysis_id,
             "request_id": record.mathematical_request_id, "worker_count": record.material.get("worker_count", 1),
@@ -1015,10 +1073,27 @@ class RTA4FormalRunner:
         if not writer.plan_manifest["source_relations"]:
             return
         from .rta4_formal_validation import refresh_validated_closure
-        source = source_closures.get("CORE-1")
+        source_core = writer.plan_manifest["source_relations"][0]["source_core"]
+        if any(
+            row["source_core"] != source_core
+            for row in writer.plan_manifest["source_relations"]
+        ):
+            raise RTA4FormalPipelineError(
+                "plan source relations cross closure domains"
+            )
+        source = source_closures.get(source_core)
         if source is None:
-            raise RTA4FormalPipelineError("fixture requires validated CORE-1 source closure")
-        closure = refresh_validated_closure(source, require_complete=True)
+            raise RTA4FormalPipelineError(
+                f"execution requires validated {source_core} source closure"
+            )
+        closure = refresh_validated_closure(
+            source, require_complete=True,
+            allow_test_authorization=(
+                writer.execution_class == "SYNTHETIC_AUTHORIZED"
+            ),
+        )
+        if closure.metadata["core"] != source_core:
+            raise RTA4FormalPipelineError("source closure core mismatch")
         source_requests = {row["request_id"]: row for row in closure.table("formal_rta_requests.csv")}
         source_results = {row["request_id"]: row for row in closure.table("formal_rta_taskset_results.csv")}
         local = __import__("experiments.v9_3.result_writer", fromlist=["read_csv"]).read_csv(writer.root / "formal_rta_requests.csv")
@@ -1028,12 +1103,18 @@ class RTA4FormalRunner:
             source_result = source_results.get(plan["source_analysis_id"])
             if source_request is None or source_result is None:
                 raise RTA4FormalPipelineError("source closure lacks a trusted source request")
-            target = local_by_slot_e0.get((plan["taskset_slot_id"], plan["exact_e0"]), source_request)
+            target = local_by_slot_e0.get(
+                (plan["taskset_slot_id"], plan["exact_e0"]), source_request,
+            )
             writer.append_unique("formal_dependencies.csv", "plan_relation_id", {
                 "plan_relation_id": plan["plan_relation_id"], "analysis_id": target["analysis_id"],
                 "source_analysis_id": source_request["analysis_id"], "source_request_id": source_request["request_id"],
-                "relation": "CORE2_REUSE" if writer.core == "CORE-2" else "CORE3_APPLICABILITY_SOURCE",
-                "source_core": "CORE-1", "target_core": writer.core,
+                "relation": (
+                    "CORE2_REUSE" if writer.core == "CORE-2"
+                    else "CORE3_APPLICABILITY_SOURCE" if writer.core == "CORE-3"
+                    else "CORE5B_CORE4_RESULT_REUSE"
+                ),
+                "source_core": source_core, "target_core": writer.core,
                 "taskset_skeleton_id": source_request["taskset_skeleton_id"],
                 "taskset_id": source_request["taskset_id"], "taskset_hash": source_request["taskset_hash"],
                 "method": plan["method"], "exact_e0": plan["exact_e0"],
@@ -1062,7 +1143,12 @@ class RTA4FormalRunner:
             raise RTA4FormalPipelineError(
                 "applicability fixture requires a validated CORE-1 closure"
             )
-        closure = refresh_validated_closure(source, require_complete=True)
+        closure = refresh_validated_closure(
+            source, require_complete=True,
+            allow_test_authorization=(
+                writer.execution_class == "SYNTHETIC_AUTHORIZED"
+            ),
+        )
         source_requests = {
             row["request_id"]: row
             for row in closure.table("formal_rta_requests.csv")

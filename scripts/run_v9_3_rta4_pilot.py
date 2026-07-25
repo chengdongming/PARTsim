@@ -20,6 +20,7 @@ from experiments.v9_3.rta4_formal_pilot import (
     RTA4_PILOT_OUTPUT_MARKER, RTA4_PILOT_REPORT,
     build_pilot_manifest, build_pilot_report,
 )
+from experiments.v9_3.rta4_formal_environment import load_strict_json
 
 
 def _pairs(values: list[str], label: str) -> dict[str, str]:
@@ -42,6 +43,7 @@ def main() -> int:
     parser.add_argument("--scale", action="append", required=True)
     parser.add_argument("--selection-seed", required=True)
     parser.add_argument("--output-root", type=Path, required=True)
+    parser.add_argument("--taskset-store", type=Path, required=True)
     parser.add_argument(
         "--observations",
         type=Path,
@@ -66,14 +68,13 @@ def main() -> int:
         manifest = build_pilot_manifest(
             configs, core_record_counts=scale,
             selection_seed=args.selection_seed, output_root=root,
+            taskset_store=args.taskset_store.resolve(),
             config_paths=paths,
         )
         atomic_write_json(root / RTA4_PILOT_OUTPUT_MARKER, manifest)
         result = {"pilot_manifest": str(root / RTA4_PILOT_OUTPUT_MARKER)}
         if args.observations is not None:
-            observations = json.loads(
-                args.observations.read_text(encoding="utf-8")
-            )
+            observations = load_strict_json(args.observations)
             report = build_pilot_report(manifest, observations)
             atomic_write_json(root / RTA4_PILOT_REPORT, report)
             result["pilot_report"] = str(root / RTA4_PILOT_REPORT)

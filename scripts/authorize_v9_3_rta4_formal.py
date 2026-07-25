@@ -18,14 +18,15 @@ from experiments.v9_3.rta4_formal_authorization import (
 )
 from experiments.v9_3.rta4_formal_config import RTA4_CORES
 from experiments.v9_3.rta4_formal_environment import (
-    build_command_manifest, build_dependency_manifest,
+    build_command_chain_manifest, build_command_manifest,
+    build_dependency_manifest,
     build_environment_manifest, build_hardware_manifest,
-    build_simulator_manifest, build_source_manifest,
+    build_simulator_manifest, build_source_manifest, load_strict_json,
 )
 
 
 def _json(path: Path):
-    return json.loads(path.read_text(encoding="utf-8"))
+    return load_strict_json(path)
 
 
 def _prepared(directory: Path):
@@ -63,11 +64,16 @@ def main() -> int:
         dependencies = build_dependency_manifest()
         environment = build_environment_manifest(dependencies)
         hardware = build_hardware_manifest()
-        operation = "execute"
         command_argv = _json(args.execution_argv_json)
-        command = build_command_manifest(
-            command_argv, cwd=Path.cwd(), operation=operation,
-            core=prepared["core"],
+        command = (
+            build_command_chain_manifest(
+                command_argv, cwd=Path.cwd(), core=prepared["core"],
+            )
+            if isinstance(command_argv, dict)
+            else build_command_manifest(
+                command_argv, cwd=Path.cwd(), operation="execute",
+                core=prepared["core"],
+            )
         )
         simulator = build_simulator_manifest(
             prepared["operational"]["simulator_binary"]

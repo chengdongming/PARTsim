@@ -13,6 +13,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from experiments.v9_3.rta4_formal_authorization import verify_live_authorization
+from experiments.v9_3.rta4_formal_environment import (
+    load_strict_json, validate_command_invocation,
+)
 from experiments.v9_3.rta4_formal_validation import validate_formal_run_closure
 
 
@@ -24,11 +27,13 @@ def main() -> int:
     parser.add_argument("--allow-test-authorization", action="store_true")
     args = parser.parse_args()
     try:
-        authorization = json.loads(
-            args.authorization.read_text(encoding="utf-8")
-        )
+        authorization = load_strict_json(args.authorization)
         verified = verify_live_authorization(
             authorization, allow_test=args.allow_test_authorization,
+        )
+        validate_command_invocation(
+            verified["command_manifest"], argv=sys.argv,
+            cwd=Path.cwd(), operation="audit", core=verified["core"],
         )
         result = {
             "authorization_id": verified["authorization_id"],
