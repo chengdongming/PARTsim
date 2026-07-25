@@ -473,6 +473,98 @@ namespace RTSim {
     }
 
     TEST(SchedulerHarvestRuntimeIntegration,
+         FirstBeginRunFailureAllowsCleanRecovery) {
+        TemporaryHarvestDirectory directory;
+        const std::filesystem::path missing_trace = directory.write(
+            "missing_on_first_begin.csv",
+            "timestamp_ms,power_w\n0,1\n1,0\n");
+        ASSERT_TRUE(std::filesystem::remove(missing_trace));
+
+        SchedulerHarvestRuntime runtime;
+        EXPECT_THROW(
+            runtime.beginRun(sampledConfig(missing_trace)),
+            std::runtime_error);
+        EXPECT_FALSE(runtime.isInitialized());
+        EXPECT_THROW((void)runtime.runtime(), std::logic_error);
+        EXPECT_THROW(
+            (void)runtime.applyAtDecisionTime(1, 0.0, 10.0),
+            std::logic_error);
+
+        runtime.beginRun(constantConfig(1000.0, 2));
+        ASSERT_TRUE(runtime.isInitialized());
+        EXPECT_FALSE(runtime.runtime().hasAppliedInterval());
+
+        const HarvestResult time_zero =
+            runtime.applyAtDecisionTime(0, 0.0, 10.0);
+        EXPECT_EQ(binary64Bits(time_zero.offered_j),
+                  binary64Bits(0.0));
+        EXPECT_EQ(binary64Bits(time_zero.actual_j),
+                  binary64Bits(0.0));
+        EXPECT_EQ(binary64Bits(time_zero.clipped_j),
+                  binary64Bits(0.0));
+        EXPECT_EQ(binary64Bits(time_zero.battery_before_j),
+                  binary64Bits(0.0));
+        EXPECT_EQ(binary64Bits(time_zero.battery_after_j),
+                  binary64Bits(0.0));
+        EXPECT_FALSE(runtime.runtime().hasAppliedInterval());
+
+        const HarvestResult interval_zero =
+            runtime.applyAtDecisionTime(1, 0.0, 10.0);
+        EXPECT_EQ(binary64Bits(interval_zero.offered_j),
+                  binary64Bits(1.0));
+        EXPECT_EQ(binary64Bits(interval_zero.actual_j),
+                  binary64Bits(1.0));
+        EXPECT_EQ(binary64Bits(interval_zero.clipped_j),
+                  binary64Bits(0.0));
+        EXPECT_EQ(binary64Bits(interval_zero.battery_before_j),
+                  binary64Bits(0.0));
+        EXPECT_EQ(binary64Bits(interval_zero.battery_after_j),
+                  binary64Bits(1.0));
+        EXPECT_EQ(runtime.runtime().lastAppliedIndex(), 0u);
+
+        const HarvestResult interval_one =
+            runtime.applyAtDecisionTime(
+                2, interval_zero.battery_after_j, 10.0);
+        EXPECT_EQ(binary64Bits(interval_one.offered_j),
+                  binary64Bits(1.0));
+        EXPECT_EQ(runtime.runtime().lastAppliedIndex(), 1u);
+    }
+
+    TEST(SchedulerHarvestRuntimeIntegration,
+         BeginRunConstructionFailureClearsPreviousRuntimeAndCanRecover) {
+        TemporaryHarvestDirectory directory;
+        const std::filesystem::path missing_trace = directory.write(
+            "missing_after_write.csv",
+            "timestamp_ms,power_w\n0,1\n1,0\n");
+        ASSERT_TRUE(std::filesystem::remove(missing_trace));
+
+        SchedulerHarvestRuntime runtime;
+        runtime.beginRun(constantConfig(1.0, 2));
+        const HarvestResult first =
+            runtime.applyAtDecisionTime(1, 0.0, 1.0);
+        ASSERT_TRUE(runtime.isInitialized());
+        ASSERT_TRUE(runtime.runtime().hasAppliedInterval());
+        ASSERT_EQ(runtime.runtime().lastAppliedIndex(), 0u);
+
+        EXPECT_ANY_THROW(runtime.beginRun(sampledConfig(missing_trace)));
+        EXPECT_FALSE(runtime.isInitialized());
+        EXPECT_THROW((void)runtime.runtime(), std::logic_error);
+        EXPECT_THROW(
+            (void)runtime.applyAtDecisionTime(
+                2, first.battery_after_j, 1.0),
+            std::logic_error);
+
+        runtime.beginRun(constantConfig(2.0, 2));
+        ASSERT_TRUE(runtime.isInitialized());
+        EXPECT_FALSE(runtime.runtime().hasAppliedInterval());
+        const HarvestResult recovered =
+            runtime.applyAtDecisionTime(1, 0.0, 1.0);
+        EXPECT_EQ(runtime.runtime().lastAppliedIndex(), 0u);
+        EXPECT_NE(binary64Bits(first.offered_j),
+                  binary64Bits(recovered.offered_j));
+    }
+
+    TEST(SchedulerHarvestRuntimeIntegration,
          BeginRunReplacesSourceAndResetsLedgerBetweenRuns) {
         SchedulerHarvestRuntime runtime;
         runtime.beginRun(constantConfig(1.0, 2));

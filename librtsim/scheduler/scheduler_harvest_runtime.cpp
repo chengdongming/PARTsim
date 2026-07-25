@@ -31,6 +31,7 @@ namespace RTSim {
 
     void SchedulerHarvestRuntime::beginRun(
         const HarvestSourceConfig &config) {
+        _runtime.reset();
         auto next_runtime = std::make_unique<HarvestRuntime>(
             makeHarvestSource(config));
         _runtime = std::move(next_runtime);
