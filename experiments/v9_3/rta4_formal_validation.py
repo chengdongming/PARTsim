@@ -8,6 +8,7 @@ from fractions import Fraction
 import csv
 import hashlib
 import json
+import math
 from pathlib import Path, PurePosixPath
 from typing import Any, Dict, Iterable, Mapping, Sequence, Tuple
 
@@ -27,8 +28,9 @@ from .rta4_formal_config import (
     validate_rta4_formal_config,
 )
 from .rta4_formal_manifest import (
-    NONFORMAL_TEST_FIXTURE, RTA4_CONFIG_CHECKPOINT, RTA4_PLAN_MANIFEST,
-    config_checkpoint, trusted_plan_records, validate_trusted_plan_manifest,
+    FORMAL_AUTHORIZED, NONFORMAL_TEST_FIXTURE, RTA4_CONFIG_CHECKPOINT,
+    RTA4_PLAN_MANIFEST, SYNTHETIC_AUTHORIZED, config_checkpoint,
+    trusted_plan_records, validate_trusted_plan_manifest,
 )
 from .rta4_formal_plan import FormalPlanRecord, formal_service_identity
 from .rta4_formal_rows import NA, RTA4FormalRowError, normalize_formal_row
@@ -37,7 +39,10 @@ from .rta4_formal_schema import (
     formal_schema_manifest,
 )
 from .rta4_formal_store import certificate_rows
-from .rta4_formal_writer import FORMAL_RUN_METADATA, FORMAL_TERMINAL_DIRECTORY
+from .rta4_formal_writer import (
+    FORMAL_AUTHORIZATION_EVIDENCE, FORMAL_RUN_METADATA,
+    FORMAL_TERMINAL_DIRECTORY,
+)
 from .task_identity import runtime_task_name_for_source_id
 
 
@@ -45,6 +50,9 @@ P0, P1, P2, P3 = "P0", "P1", "P2", "P3"
 SEVERITIES = (P0, P1, P2, P3)
 RECURSIVE_CHAIN = ("CW_THETA_CW", "LOC_THETA_LOC", "PH_THETA_PH", "SEQ_THETA_SEQ")
 FIXED_D_CHAIN = ("CW_D", "LOC_D", "PH_D", "SEQ_D")
+RTA4_CHECKPOINT_VERSION = "ASAP_BLOCK_V9_3_RTA4_FORMAL_CHECKPOINT_V2"
+RTA4_CHECKPOINT_FILENAME = "formal_checkpoint.json"
+RTA4_CHECKPOINT_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_FORMAL_CHECKPOINT:v2"
 
 
 class RTA4FormalValidationError(RuntimeError):
@@ -500,9 +508,75 @@ def _closure_digest(root: Path) -> str:
     return digest.hexdigest()
 
 
+def validate_formal_checkpoint(
+    root: Path | str, *, metadata: Mapping[str, Any],
+    plan_manifest: Mapping[str, Any],
+    terminal_payloads: Sequence[Mapping[str, Any]],
+    require_complete: bool,
+    require_formal_authorized: bool = False,
+) -> Mapping[str, Any]:
+    """Bind one checkpoint to the exact plan and terminal inventory."""
+
+    root = Path(root)
+    checkpoint = _strict_json(root / RTA4_CHECKPOINT_FILENAME)
+    planned_ids = {
+        str(row["execution_id"]) for row in plan_manifest["plan_records"]
+    }
+    completed_ids = sorted(
+        str(payload.get("execution_run_id", ""))
+        for payload in terminal_payloads
+    )
+    if (
+        any(not value for value in completed_ids)
+        or len(completed_ids) != len(set(completed_ids))
+        or not set(completed_ids).issubset(planned_ids)
+    ):
+        raise RTA4FormalValidationError(
+            "checkpoint terminal inventory is not an exact plan subset"
+        )
+    complete = set(completed_ids) == planned_ids
+    if require_complete and not complete:
+        raise RTA4FormalValidationError(
+            "formal aggregation requires a complete terminal inventory"
+        )
+    expected_status = "COMPLETE" if complete else "INCOMPLETE_CHECKPOINT"
+    material = {
+        "checkpoint_version": RTA4_CHECKPOINT_VERSION,
+        "authorization_id": metadata.get("authorization_id"),
+        "plan_sha256": plan_manifest["manifest_sha256"],
+        "core": metadata["core"],
+        "execution_class": metadata["execution_class"],
+        "output_root": str(root.resolve()),
+        "checkpoint_status": expected_status,
+        "planned_count": len(planned_ids),
+        "completed_count": len(completed_ids),
+        "completed_execution_ids_sha256": hashlib.sha256(
+            canonical_json(completed_ids).encode("utf-8")
+        ).hexdigest(),
+    }
+    expected = {
+        **material,
+        "checkpoint_id": domain_hash(RTA4_CHECKPOINT_DOMAIN, material),
+    }
+    if dict(checkpoint) != expected:
+        raise RTA4FormalValidationError(
+            "formal checkpoint does not match plan/terminal inventory"
+        )
+    if require_formal_authorized and (
+        checkpoint["checkpoint_status"] != "COMPLETE"
+        or checkpoint["execution_class"] != FORMAL_AUTHORIZED
+        or not checkpoint["authorization_id"]
+    ):
+        raise RTA4FormalValidationError(
+            "formal aggregation requires a production COMPLETE checkpoint"
+        )
+    return expected
+
+
 def refresh_validated_closure(
     source: Path | str | ValidatedFormalClosure, *, require_complete: bool = True,
     source_closures: Mapping[str, Path | str | ValidatedFormalClosure] | None = None,
+    allow_test_authorization: bool = False,
 ) -> ValidatedFormalClosure:
     """Revalidate the current on-disk source even when passed an old object.
 
@@ -517,6 +591,7 @@ def refresh_validated_closure(
     refreshed = validate_formal_run_closure(
         root, require_complete=require_complete,
         source_closures=source_closures,
+        allow_test_authorization=allow_test_authorization,
     )
     if previous is None:
         return refreshed
@@ -788,6 +863,7 @@ def validate_formal_run_closure(
     root: Path | str, *, require_complete: bool = True,
     require_authorized_formal: bool = False,
     source_closures: Mapping[str, Path | str | ValidatedFormalClosure] | None = None,
+    allow_test_authorization: bool = False,
 ) -> ValidatedFormalClosure:
     root = Path(root)
     marker = _strict_json(root / RTA4_FORMAL_SCHEMA_MANIFEST)
@@ -798,17 +874,78 @@ def validate_formal_run_closure(
     plan_manifest = _strict_json(root / RTA4_PLAN_MANIFEST)
     try: validate_trusted_plan_manifest(plan_manifest, config)
     except Exception as exc: raise RTA4FormalValidationError("trusted plan manifest mismatch") from exc
-    if plan_manifest["execution_class"] != NONFORMAL_TEST_FIXTURE:
-        raise RTA4FormalValidationError("PR-D rejects FORMAL closure unconditionally")
+    execution_class = plan_manifest["execution_class"]
+    if execution_class not in {
+        NONFORMAL_TEST_FIXTURE, FORMAL_AUTHORIZED, SYNTHETIC_AUTHORIZED,
+    }:
+        raise RTA4FormalValidationError("unknown RTA4 execution class")
+    if require_authorized_formal and execution_class != FORMAL_AUTHORIZED:
+        raise RTA4FormalValidationError(
+            "aggregation requires FORMAL_AUTHORIZED closure"
+        )
+    authorization = None
+    prepared = None
+    if execution_class in {FORMAL_AUTHORIZED, SYNTHETIC_AUTHORIZED}:
+        try:
+            from .rta4_formal_authorization import verify_live_authorization
+            from .rta4_formal_freeze import validate_prepared_config
+            authorization = verify_live_authorization(
+                _strict_json(root / FORMAL_AUTHORIZATION_EVIDENCE),
+                allow_test=allow_test_authorization,
+            )
+            prepared_path = Path(
+                authorization["documents"]["prepared_config"]["absolute_path"]
+            )
+            prepared = validate_prepared_config(_strict_json(prepared_path))
+        except Exception as exc:
+            raise RTA4FormalValidationError(
+                "formal authorization/prepared evidence is invalid"
+            ) from exc
+        binding = plan_manifest.get("formal_authorization_binding")
+        expected_binding = {
+            "authorization_id": authorization["authorization_id"],
+            "prepared_config_id": prepared["prepared_config_id"],
+            "freeze_manifest_id": authorization["freeze_manifest_id"],
+            "environment_manifest_id": authorization[
+                "environment_manifest"
+            ]["manifest_id"],
+            "command_manifest_id": authorization[
+                "command_manifest"
+            ]["manifest_id"],
+        }
+        if binding != expected_binding:
+            raise RTA4FormalValidationError(
+                "plan manifest authorization binding mismatch"
+            )
     metadata = _strict_json(root / FORMAL_RUN_METADATA)
     expected_metadata = {
         "schema_version": config["experiment_contract"]["schema_version"],
         "schema_sha256": formal_schema_hash(), "plan_sha256": plan_manifest["manifest_sha256"],
         "full_plan_sha256": plan_manifest["full_plan_sha256"],
         "config_semantic_hash": checkpoint["config_semantic_hash"], "core": config["core"],
-        "parameter_status": config["experiment_contract"]["parameter_status"],
-        "execution_class": NONFORMAL_TEST_FIXTURE, "formal_authorized": False,
+        "parameter_status": (
+            prepared["parameter_status"]
+            if execution_class in {FORMAL_AUTHORIZED, SYNTHETIC_AUTHORIZED}
+            else config["experiment_contract"]["parameter_status"]
+        ),
+        "execution_class": execution_class,
+        "formal_authorized": execution_class == FORMAL_AUTHORIZED,
     }
+    if execution_class in {FORMAL_AUTHORIZED, SYNTHETIC_AUTHORIZED}:
+        expected_metadata.update({
+            "authorization_id": authorization["authorization_id"],
+            "authorization_schema": authorization["authorization_schema"],
+            "prepared_config_id": prepared["prepared_config_id"],
+            "freeze_manifest_id": authorization["freeze_manifest_id"],
+            "environment_manifest_id": authorization[
+                "environment_manifest"
+            ]["manifest_id"],
+            "command_manifest_id": authorization[
+                "command_manifest"
+            ]["manifest_id"],
+        })
+        if execution_class == SYNTHETIC_AUTHORIZED:
+            expected_metadata["synthetic_authorized"] = True
     if dict(metadata) != expected_metadata:
         raise RTA4FormalValidationError("run metadata is not the trusted plan checkpoint")
     tables = {name: _read_exact_csv(root / name, columns) for name, columns in FORMAL_TABLES.items()}
@@ -1019,6 +1156,15 @@ def validate_formal_run_closure(
     expected_terminal_ids.update(str(record.execution_id) for record in simulation_records.values())
     if require_complete and set(terminal_map) != expected_terminal_ids:
         raise RTA4FormalValidationError("trusted execution/terminal set mismatch")
+    if (
+        require_complete
+        and execution_class in {FORMAL_AUTHORIZED, SYNTHETIC_AUTHORIZED}
+    ):
+        validate_formal_checkpoint(
+            root, metadata=metadata, plan_manifest=plan_manifest,
+            terminal_payloads=terminal_payloads, require_complete=True,
+            require_formal_authorized=require_authorized_formal,
+        )
     for execution_id, result in results.items():
         payload = terminal_map.get(execution_id)
         expected_terminal_keys = {
@@ -1027,9 +1173,11 @@ def validate_formal_run_closure(
             "analysis_id", "request_id", "worker_count", "solver_status",
             "exact_result_hash", "candidate_vector_hash", "witness_vector_hash",
             "certification_vector_hash", "failure_reason_vector_hash",
+            "attempt_count", "runtime_wall_seconds", "runtime_cpu_seconds",
+            "peak_rss_bytes",
         }
         request = request_exec[execution_id]
-        if payload is None or set(payload) != expected_terminal_keys or payload.get("plan_record_id") != result["plan_record_id"] or payload.get("request_id") != result["request_id"] or payload.get("analysis_id") != result["analysis_id"] or payload.get("worker_count") != int(request["worker_count"]) or payload.get("solver_status") != result["solver_status"] or any(payload.get(field) != result[field] for field in ("exact_result_hash", "candidate_vector_hash", "witness_vector_hash", "certification_vector_hash", "failure_reason_vector_hash")):
+        if payload is None or set(payload) != expected_terminal_keys or payload.get("plan_record_id") != result["plan_record_id"] or payload.get("request_id") != result["request_id"] or payload.get("analysis_id") != result["analysis_id"] or payload.get("worker_count") != int(request["worker_count"]) or payload.get("solver_status") != result["solver_status"] or any(payload.get(field) != result[field] for field in ("exact_result_hash", "candidate_vector_hash", "witness_vector_hash", "certification_vector_hash", "failure_reason_vector_hash", "runtime_wall_seconds", "runtime_cpu_seconds")) or payload.get("peak_rss_bytes") != int(result["peak_rss_bytes"]):
             raise RTA4FormalValidationError("terminal/result mathematical summary mismatch")
     attempts = _unique(tables["formal_rta_attempts.csv"], "attempt_id", "attempt")
     attempts_by_execution: Dict[str, list[Mapping[str, str]]] = {}
@@ -1040,36 +1188,188 @@ def validate_formal_run_closure(
         if attempt["worker_count"] != request["worker_count"]:
             raise RTA4FormalValidationError("attempt worker count/request mismatch")
         result = results.get(attempt["execution_run_id"])
-        if result is None or attempt["solver_status"] != result["solver_status"] or attempt["parent_attempt_id"] != NA or attempt["timeout_budget_seconds"] != "0" or attempt["started_at_utc"] != NONFORMAL_TEST_FIXTURE:
-            raise RTA4FormalValidationError("attempt/result fixture-state mismatch")
-        error_solver = result["solver_status"] in {"NUMERIC_ERROR", "INTERNAL_ERROR"}
-        if (attempt["failure_origin"] == NA) == error_solver:
+        if result is None:
+            raise RTA4FormalValidationError("attempt/result state mismatch")
+        if (
+            execution_class == NONFORMAL_TEST_FIXTURE
+            and attempt["solver_status"] != result["solver_status"]
+        ):
+            raise RTA4FormalValidationError("attempt/result state mismatch")
+        if execution_class == NONFORMAL_TEST_FIXTURE:
+            if (
+                attempt["parent_attempt_id"] != NA
+                or attempt["timeout_budget_seconds"] != "0"
+                or attempt["started_at_utc"] != NONFORMAL_TEST_FIXTURE
+            ):
+                raise RTA4FormalValidationError(
+                    "attempt/result fixture-state mismatch"
+                )
+        else:
+            method_timeout = prepared["timeout_contract"]["methods"][
+                request["method"]
+            ]
+            number = int(attempt["attempt_number"])
+            expected_budget = (
+                method_timeout["initial_timeout_seconds"]
+                if number == 1
+                else method_timeout["retry_timeout_seconds"]
+            )
+            if (
+                attempt["timeout_budget_seconds"] != str(expected_budget)
+                or attempt["started_at_utc"] != FORMAL_AUTHORIZED
+                or not 1 <= number <= method_timeout["maximum_attempts"]
+            ):
+                raise RTA4FormalValidationError(
+                    "attempt violates frozen timeout contract"
+                )
+        failure_solver = attempt["solver_status"] in {
+            "TIMEOUT", "NUMERIC_ERROR", "INTERNAL_ERROR",
+        }
+        if failure_solver and attempt["failure_origin"] == NA:
+            raise RTA4FormalValidationError(
+                "attempt failure origin/result solver state mismatch"
+            )
+        if not failure_solver and attempt["failure_origin"] != NA:
             raise RTA4FormalValidationError(
                 "attempt failure origin/result solver state mismatch"
             )
         attempts_by_execution.setdefault(attempt["execution_run_id"], []).append(attempt)
     if require_complete and set(attempts_by_execution) != set(request_exec):
         raise RTA4FormalValidationError("request/attempt execution set mismatch")
-    if any(
-        len(rows) != 1 or rows[0]["attempt_number"] != "1"
-        for rows in attempts_by_execution.values()
-    ):
-        raise RTA4FormalValidationError("bounded fixture requires exactly one canonical attempt")
+    for execution_id, rows in attempts_by_execution.items():
+        result = results[execution_id]
+        try:
+            runtime_wall = format(math.fsum(
+                float(row["runtime_wall_seconds"]) for row in rows
+            ), ".17g")
+            runtime_cpu = format(math.fsum(
+                float(row["runtime_cpu_seconds"]) for row in rows
+            ), ".17g")
+        except (OverflowError, ValueError) as exc:
+            raise RTA4FormalValidationError(
+                "execution timing evidence is not canonical decimal data"
+            ) from exc
+        if (
+            runtime_wall != result["runtime_wall_seconds"]
+            or runtime_cpu != result["runtime_cpu_seconds"]
+            or max(int(row["peak_rss_bytes"]) for row in rows)
+            != int(result["peak_rss_bytes"])
+        ):
+            raise RTA4FormalValidationError(
+                "taskset execution summary is not derived from raw attempts"
+            )
+        terminal = terminal_map.get(execution_id)
+        if (
+            terminal is None
+            or terminal["attempt_count"] != len(rows)
+        ):
+            raise RTA4FormalValidationError(
+                "terminal execution summary does not match raw attempts"
+            )
+        if (
+            require_authorized_formal
+            and metadata["core"] in {"CORE-5A", "CORE-5B"}
+            and float(result["runtime_wall_seconds"]) <= 0
+        ):
+            raise RTA4FormalValidationError(
+                "formal scalability closure requires positive runtime evidence"
+            )
+    if execution_class == NONFORMAL_TEST_FIXTURE:
+        if any(
+            len(rows) != 1 or rows[0]["attempt_number"] != "1"
+            for rows in attempts_by_execution.values()
+        ):
+            raise RTA4FormalValidationError(
+                "bounded fixture requires exactly one canonical attempt"
+            )
+    else:
+        for rows in attempts_by_execution.values():
+            ordered = sorted(rows, key=lambda row: int(row["attempt_number"]))
+            if [int(row["attempt_number"]) for row in ordered] != list(
+                range(1, len(ordered) + 1)
+            ):
+                raise RTA4FormalValidationError("attempt sequence is not contiguous")
+            for index, row in enumerate(ordered):
+                expected_parent = NA if index == 0 else ordered[index - 1]["attempt_id"]
+                if row["parent_attempt_id"] != expected_parent:
+                    raise RTA4FormalValidationError("attempt parent chain mismatch")
+            result = results[ordered[-1]["execution_run_id"]]
+            if ordered[-1]["solver_status"] != result["solver_status"]:
+                raise RTA4FormalValidationError(
+                    "terminal result does not match final attempt"
+                )
+            if any(
+                row["solver_status"] != "TIMEOUT" for row in ordered[:-1]
+            ):
+                raise RTA4FormalValidationError(
+                    "only timeouts may precede a retry"
+                )
     # External source relations are exact trusted-plan members and exact joins.
     expected_relations = {row["plan_relation_id"]: row for row in plan_manifest["source_relations"]}
     dependencies = _unique(tables["formal_dependencies.csv"], "plan_relation_id", "dependency")
     if require_complete and set(dependencies) != set(expected_relations):
         raise RTA4FormalValidationError("trusted source relation membership mismatch")
     sources = source_closures or {}
-    source_core1 = sources.get("CORE-1")
+    if execution_class in {FORMAL_AUTHORIZED, SYNTHETIC_AUTHORIZED}:
+        authorized_sources = authorization["source_closure_bindings"]
+        if set(sources) != set(authorized_sources):
+            raise RTA4FormalValidationError(
+                "live source closure set differs from authorization"
+            )
+        for source_core, source in sources.items():
+            live_root = (
+                source.root
+                if isinstance(source, ValidatedFormalClosure)
+                else Path(source)
+            )
+            if str(live_root.resolve()) != authorized_sources[source_core][
+                "absolute_root"
+            ]:
+                raise RTA4FormalValidationError(
+                    "live source closure path differs from authorization"
+                )
+    relation_source_core = (
+        expected_relations[next(iter(expected_relations))]["source_core"]
+        if expected_relations else None
+    )
+    source_input = (
+        sources.get(relation_source_core)
+        if relation_source_core is not None else None
+    )
     source_closure = None
     if expected_relations:
-        if source_core1 is None: raise RTA4FormalValidationError("required CORE-1 source closure is missing")
+        if source_input is None:
+            raise RTA4FormalValidationError(
+                f"required {relation_source_core} source closure is missing"
+            )
+        if any(
+            row["source_core"] != relation_source_core
+            for row in expected_relations.values()
+        ):
+            raise RTA4FormalValidationError(
+                "trusted plan mixes source closure domains"
+            )
         source_closure = refresh_validated_closure(
-            source_core1, require_complete=True,
+            source_input, require_complete=True,
+            allow_test_authorization=allow_test_authorization,
         )
-        if source_closure.metadata["core"] != "CORE-1": raise RTA4FormalValidationError("source closure is not CORE-1")
+        if source_closure.metadata["core"] != relation_source_core:
+            raise RTA4FormalValidationError("source closure core mismatch")
     if source_closure is not None:
+        if execution_class in {FORMAL_AUTHORIZED, SYNTHETIC_AUTHORIZED}:
+            binding = authorization["source_closure_bindings"][
+                relation_source_core
+            ]
+            if (
+                source_closure.metadata["plan_sha256"]
+                != binding["plan_sha256"]
+                or source_closure.closure_sha256 != binding["closure_sha256"]
+                or source_closure.metadata.get("authorization_id")
+                != binding["authorization_id"]
+            ):
+                raise RTA4FormalValidationError(
+                    "source closure identity differs from authorization"
+                )
         source_requests = {row["request_id"]: row for row in source_closure.table("formal_rta_requests.csv")}
         source_results = {row["request_id"]: row for row in source_closure.table("formal_rta_taskset_results.csv")}
         local_by_slot_e0: Dict[tuple[str, str], Mapping[str, str]] = {}
@@ -1101,7 +1401,9 @@ def validate_formal_run_closure(
                 )
             expected = {
                 "analysis_id": target["analysis_id"], "source_analysis_id": source_request["analysis_id"],
-                "source_request_id": source_request["request_id"], "source_core": "CORE-1", "target_core": config["core"],
+                "source_request_id": source_request["request_id"],
+                "source_core": relation_source_core,
+                "target_core": config["core"],
                 "taskset_skeleton_id": target["taskset_skeleton_id"], "taskset_id": target["taskset_id"], "taskset_hash": target["taskset_hash"],
                 "method": plan["method"], "exact_e0": plan["exact_e0"], "service_identity": source_request["service_identity"],
                 "power_vector_hash": source_request["power_vector_hash"], "theory_document_sha256": source_request["theory_document_sha256"],
@@ -1289,9 +1591,15 @@ def validate_formal_run_closure(
             tuple(results.values()), tables["formal_rta_task_results.csv"]
         )
     )
-    if tables["formal_dominance_checks.csv"] != expected_dominance:
+    if require_complete and tables[
+        "formal_dominance_checks.csv"
+    ] != expected_dominance:
         raise RTA4FormalValidationError(
             "dominance evidence does not match canonical raw task results"
+        )
+    if not require_complete and tables["formal_dominance_checks.csv"]:
+        raise RTA4FormalValidationError(
+            "partial closure must not publish final dominance evidence"
         )
     expected_monotonicity = tuple(
         _stringify_expected("formal_monotonicity_checks.csv", row, common)
@@ -1299,14 +1607,27 @@ def validate_formal_run_closure(
             tuple(results.values()), tables["formal_rta_task_results.csv"]
         )
     )
-    if tables["formal_monotonicity_checks.csv"] != expected_monotonicity:
+    if require_complete and tables[
+        "formal_monotonicity_checks.csv"
+    ] != expected_monotonicity:
         raise RTA4FormalValidationError(
             "monotonicity evidence does not match canonical raw task results"
+        )
+    if not require_complete and tables["formal_monotonicity_checks.csv"]:
+        raise RTA4FormalValidationError(
+            "partial closure must not publish final monotonicity evidence"
         )
     expected_worker = recompute_worker_consistency_rows(tuple(results.values()), terminal_map)
     actual_worker = tables["formal_worker_consistency.csv"]
     expected_normalized = tuple(_stringify_expected("formal_worker_consistency.csv", row, common) for row in expected_worker)
-    if actual_worker != expected_normalized: raise RTA4FormalValidationError("worker consistency rows do not match raw execution results")
+    if require_complete and actual_worker != expected_normalized:
+        raise RTA4FormalValidationError(
+            "worker consistency rows do not match raw execution results"
+        )
+    if not require_complete and actual_worker:
+        raise RTA4FormalValidationError(
+            "partial closure must not publish final worker evidence"
+        )
     findings = (*validate_dominance(tuple(results.values()), tables["formal_rta_task_results.csv"]),
                 *validate_monotonicity(tuple(results.values()), tables["formal_rta_task_results.csv"]),
                 *validate_soundness(tuple(applicability.values())), *validate_worker_consistency(actual_worker))
@@ -1316,9 +1637,12 @@ def validate_formal_run_closure(
 
 
 __all__ = ["FIXED_D_CHAIN", "FormalFinding", "P0", "P1", "P2", "P3", "RECURSIVE_CHAIN",
+           "RTA4_CHECKPOINT_DOMAIN", "RTA4_CHECKPOINT_FILENAME",
+           "RTA4_CHECKPOINT_VERSION",
            "RTA4FormalValidationError", "ValidatedFormalClosure", "validate_dominance",
            "refresh_validated_closure",
            "recompute_dominance_rows", "recompute_monotonicity_rows",
            "recompute_worker_consistency_rows",
-           "validate_formal_run_closure", "validate_monotonicity", "validate_soundness",
+           "validate_formal_checkpoint", "validate_formal_run_closure",
+           "validate_monotonicity", "validate_soundness",
            "validate_worker_consistency"]

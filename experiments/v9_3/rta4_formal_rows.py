@@ -123,7 +123,10 @@ ENUMS = {
 
 TABLE_ENUMS = {
     "formal_dependencies.csv": {
-        "relation": {"CORE2_REUSE", "CORE3_APPLICABILITY_SOURCE"},
+        "relation": {
+            "CORE2_REUSE", "CORE3_APPLICABILITY_SOURCE",
+            "CORE5B_CORE4_RESULT_REUSE",
+        },
     },
     "formal_dominance_checks.csv": {
         "check_status": {"PASS", "P0_VIOLATION", "NOT_COMPARABLE"},
@@ -477,11 +480,14 @@ def normalize_formal_row(
         else:
             raise RTA4FormalRowError("unknown taskset solver state")
     if table == "formal_rta_attempts.csv":
-        error_solver = result["solver_status"] in {
-            "NUMERIC_ERROR", "INTERNAL_ERROR",
-        }
+        solver = result["solver_status"]
+        error_solver = solver in {"NUMERIC_ERROR", "INTERNAL_ERROR"}
         has_origin = result["failure_origin"] != NA
-        if error_solver != has_origin:
+        if (
+            error_solver and not has_origin
+            or solver not in {"TIMEOUT", "NUMERIC_ERROR", "INTERNAL_ERROR"}
+            and has_origin
+        ):
             raise RTA4FormalRowError(
                 "attempt failure origin/solver status combination is inconsistent"
             )
