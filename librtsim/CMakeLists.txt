@@ -26,6 +26,8 @@ add_definitions(-DPYTHON_VERSION=${Python3_VERSION})
 
 
 set(LIBRARY_SOURCE_FILES
+    harvesting/harvest_runtime.cpp
+    harvesting/harvest_source_factory.cpp
     harvesting/legacy_solar_source.cpp
     harvesting/sampled_trace_source.cpp
     harvesting/scaled_piecewise_source.cpp
