@@ -3,6 +3,7 @@
 #include <cmath>
 #include <limits>
 #include <sstream>
+#include <stdexcept>
 
 namespace RTSim {
 
@@ -24,6 +25,9 @@ namespace RTSim {
         _observed_simulation_end = MetaSim::Tick(-1);
         _simulation_completed = false;
         _simulation_completion_reason = "not_completed";
+        _release_cutoff_enabled = false;
+        _release_horizon = MetaSim::Tick(-1);
+        _observation_horizon = MetaSim::Tick(-1);
         _run_generation = std::numeric_limits<std::uint64_t>::max();
         _energy_provider = nullptr;
         _semantic_trace_enabled = false;
@@ -38,6 +42,9 @@ namespace RTSim {
         _observed_simulation_end = MetaSim::Tick(-1);
         _simulation_completed = false;
         _simulation_completion_reason = "not_completed";
+        _release_cutoff_enabled = false;
+        _release_horizon = MetaSim::Tick(-1);
+        _observation_horizon = MetaSim::Tick(-1);
         _run_generation = std::numeric_limits<std::uint64_t>::max();
         _energy_provider = nullptr;
         _semantic_trace_enabled = false;
@@ -73,6 +80,26 @@ namespace RTSim {
         fd << "    \"simulation_completed\": "
            << (_simulation_completed ? "true" : "false") << ","
            << std::endl;
+        if (_release_cutoff_enabled) {
+            fd << "    \"simulator_trace_contract_version\": "
+                  "\"ASAP_BLOCK_V9_3_RELEASE_CUTOFF_TRACE_V2\","
+               << std::endl;
+            fd << "    \"release_horizon_ms\": " << _release_horizon
+               << "," << std::endl;
+            fd << "    \"observation_horizon_ms\": "
+               << _observation_horizon << "," << std::endl;
+            fd << "    \"release_cutoff_enabled\": true,"
+               << std::endl;
+            fd << "    \"observation_horizon_reached\": "
+               << (
+                      _simulation_completed &&
+                              _observed_simulation_end ==
+                                  _observation_horizon
+                      ? "true"
+                      : "false"
+                  )
+               << "," << std::endl;
+        }
         fd << "    \"simulation_completion_reason\": \""
            << escapeJson(_simulation_completion_reason) << "\"" << std::endl;
         fd << "}" << std::endl;
@@ -90,9 +117,80 @@ namespace RTSim {
     // ⭐ 写入全局能量信息
     void JSONTrace::writeEnergyInfo() {
         if (_energy_provider) {
-            fd << ", \"current_energy_mJ\": " << (_energy_provider->getCurrentEnergy() * 1000.0);
-            fd << ", \"total_consumed_mJ\": " << (_energy_provider->getTotalEnergyConsumed() * 1000.0);
-            fd << ", \"total_harvested_mJ\": " << (_energy_provider->getTotalEnergyHarvested() * 1000.0);
+            const double current =
+                _energy_provider->getCurrentEnergy() * 1000.0;
+            const double consumed =
+                _energy_provider->getTotalEnergyConsumed() * 1000.0;
+            const double harvested =
+                _energy_provider->getTotalEnergyHarvested() * 1000.0;
+            if (_release_cutoff_enabled) {
+                fd << ", \"current_energy_mJ\": "
+                   << exactDoubleString(current);
+                fd << ", \"total_consumed_mJ\": "
+                   << exactDoubleString(consumed);
+                fd << ", \"total_harvested_mJ\": "
+                   << exactDoubleString(harvested);
+            } else {
+                fd << ", \"current_energy_mJ\": " << current;
+                fd << ", \"total_consumed_mJ\": " << consumed;
+                fd << ", \"total_harvested_mJ\": " << harvested;
+            }
+        }
+    }
+
+    void JSONTrace::setReleaseObservationWindow(
+        MetaSim::Tick release_horizon,
+        MetaSim::Tick observation_horizon) {
+        if (release_horizon <= MetaSim::Tick(0) ||
+            observation_horizon <= release_horizon ||
+            (max_time >= MetaSim::Tick(0) &&
+             max_time != observation_horizon)) {
+            throw std::invalid_argument(
+                "invalid release/observation trace window");
+        }
+        _release_cutoff_enabled = true;
+        _release_horizon = release_horizon;
+        _observation_horizon = observation_horizon;
+    }
+
+    void JSONTrace::logReleaseEnergySnapshots(
+        const std::string &scheduler,
+        double available_energy_mJ,
+        const std::vector<ReleaseEnergySnapshotJob> &released_jobs) {
+        if (!_release_cutoff_enabled || released_jobs.empty())
+            return;
+        if (scheduler.empty() ||
+            (!_configured_scheduler.empty() &&
+             scheduler != _configured_scheduler) ||
+            !std::isfinite(available_energy_mJ) ||
+            available_energy_mJ < 0.0) {
+            throw std::invalid_argument(
+                "invalid release energy snapshot material");
+        }
+
+        std::set<std::pair<std::string, MetaSim::Tick::impl_t>> seen;
+        for (const auto &job : released_jobs) {
+            const auto arrival =
+                static_cast<MetaSim::Tick::impl_t>(job.arrival_time);
+            if (job.task_name.empty() ||
+                job.arrival_time != SIMUL.getTime() ||
+                !seen.emplace(job.task_name, arrival).second) {
+                throw std::invalid_argument(
+                    "invalid release energy snapshot job");
+            }
+            beginEvent();
+            fd << "\"time\": \"" << SIMUL.getTime() << "\", ";
+            fd << "\"event_type\": \"release_energy_snapshot\", ";
+            fd << "\"task_name\": \"" << escapeJson(job.task_name)
+               << "\", ";
+            fd << "\"arrival_time\": \"" << job.arrival_time << "\", ";
+            fd << "\"available_energy_mJ\": "
+               << exactDoubleString(available_energy_mJ) << ", ";
+            fd << "\"sampling_stage\": "
+                  "\"post_harvest_pre_consumption\", ";
+            fd << "\"scheduler\": \"" << escapeJson(scheduler) << "\", ";
+            fd << "\"trace_contract_version\": "
+                  "\"ASAP_BLOCK_V9_3_RELEASE_CUTOFF_TRACE_V2\"}";
         }
     }
 

@@ -132,6 +132,23 @@ TaskSet read_taskset(const std::string &tset_file) {
     yaml::Object_ptr tset_spec = yaml::parse(tset_file);
 
     TaskSet taskset;
+    MetaSim::Tick release_horizon(-1);
+    if (tset_spec->has("release_horizon")) {
+        const auto node = tset_spec->get("release_horizon");
+        if (!node || node->getType() != yaml::ObjType::Scalar) {
+            throw RTSim::InvalidTaskModel(
+                "invalid_task_model: invalid_numeric_task_field "
+                "task=<taskset> field=release_horizon raw=<non-scalar>");
+        }
+        const long parsed = RTSim::parseStrictTaskInteger(
+            "<taskset>", "release_horizon", node->get());
+        if (parsed <= 0) {
+            throw RTSim::InvalidTaskModel(
+                "invalid_task_model: invalid_numeric_task_field "
+                "task=<taskset> field=release_horizon raw=" + node->get());
+        }
+        release_horizon = MetaSim::Tick(parsed);
+    }
 
     int i = 0;
 
@@ -212,6 +229,14 @@ TaskSet read_taskset(const std::string &tset_file) {
 
         auto task_ptr = std::make_shared<RTSim::PeriodicTask>(iat, deadline, ph,
                                                               str_name, qs);
+        if (release_horizon >= Tick(0)) {
+            if (ph >= release_horizon) {
+                throw RTSim::InvalidTaskModel(
+                    "invalid_task_model: phase_not_before_release_horizon "
+                    "task=" + str_name);
+            }
+            task_ptr->setReleaseCutoff(release_horizon);
+        }
 
         for (const auto &instr : (*code)) {
             auto str_instr = instr->get();
@@ -745,6 +770,35 @@ int main(int argc, char *argv[]) {
         std::cerr << error.what() << std::endl;
         return EXIT_FAILURE;
     }
+    MetaSim::Tick release_horizon(-1);
+    for (auto &[tasksrv, cpu, params] : taskset) {
+        (void) cpu;
+        (void) params;
+        auto *task = dynamic_cast<RTSim::Task *>(&tasksrv.getTask());
+        if (!task) {
+            std::cerr << "PRE-FLIGHT ERROR: non-Task task model cannot "
+                         "enforce release horizon"
+                      << std::endl;
+            return EXIT_FAILURE;
+        }
+        if (!task->hasReleaseCutoff())
+            continue;
+        if (release_horizon < MetaSim::Tick(0))
+            release_horizon = task->getReleaseCutoff();
+        else if (release_horizon != task->getReleaseCutoff()) {
+            std::cerr << "PRE-FLIGHT ERROR: inconsistent task release "
+                         "horizons"
+                      << std::endl;
+            return EXIT_FAILURE;
+        }
+    }
+    if (release_horizon >= MetaSim::Tick(0) &&
+        duration <= release_horizon) {
+        std::cerr << "PRE-FLIGHT ERROR: observation horizon must exceed "
+                     "release horizon"
+                  << std::endl;
+        return EXIT_FAILURE;
+    }
     RTSim::ConfigManager::getInstance().setExpectedTaskCount(static_cast<int>(taskset.size()));
 
     // Complete all input/system/factory preflight before opening any trace.
@@ -812,6 +866,10 @@ int main(int argc, char *argv[]) {
     for (auto &tracer : tracers) {
         if (tracer.jtrace) {
             tracer.jtrace->setSemanticTraceEnabled(semantic_traces);
+            if (release_horizon >= MetaSim::Tick(0)) {
+                tracer.jtrace->setReleaseObservationWindow(
+                    release_horizon, duration);
+            }
             tracer.jtrace->setRunId(opts["run-id"]);
             tracer.jtrace->setTasksetSemanticHash(
                 opts["taskset-semantic-hash"]);
