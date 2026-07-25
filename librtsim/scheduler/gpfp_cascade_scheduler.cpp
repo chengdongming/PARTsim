@@ -251,7 +251,7 @@ namespace RTSim {
         SCHEDULER_LOG_INFO("  设置环境变量 ENERGY_CONFIG_FILE=" + config_file);
 
         // 3. 初始化EnergyBridge - 修复：传递实际的配置文件路径
-        bool bridge_initialized = EnergyBridge::getInstance().initialize(config_file);
+        bool bridge_initialized = EnergyBridge::getInstance().initialize();
         if (bridge_initialized) {
             SCHEDULER_LOG_INFO("EnergyBridge 初始化成功");
             EnergyBridge::getInstance().setStartTimeOffset(_start_time_offset);
@@ -479,7 +479,7 @@ namespace RTSim {
         initializePowerModel();
 
         // 7. 初始化EnergyBridge - 修复：传递实际的配置文件路径
-        bool bridge_initialized = EnergyBridge::getInstance().initialize(config_file);
+        bool bridge_initialized = EnergyBridge::getInstance().initialize();
         if (bridge_initialized) {
             SCHEDULER_LOG_INFO("EnergyBridge 初始化成功");
 

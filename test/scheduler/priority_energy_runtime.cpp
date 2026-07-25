@@ -865,7 +865,7 @@ namespace RTSim {
 
         EXPECT_TRUE(pythonEmptyAuthoritativeLoadFails());
         EXPECT_TRUE(pythonManagerLookupFails(generation));
-        EXPECT_FALSE(EnergyBridge::getInstance().initialize(""));
+        EXPECT_FALSE(EnergyBridge::getInstance().initialize());
         EXPECT_FALSE(EnergyBridge::getInstance().isInitialized());
         EXPECT_EQ(
             EnergyBridge::getInstance().getConfigGeneration(),
@@ -1841,12 +1841,12 @@ namespace RTSim {
                 "2.5") +
             "broken: [\n");
 
-        EXPECT_FALSE(bridge.initialize(valid.path()));
+        EXPECT_FALSE(bridge.initialize());
         EXPECT_FALSE(bridge.isInitialized());
 
         EnergyBridge::ensureConfigCallbackRegistered();
         ASSERT_TRUE(config.loadSystemConfig(valid.path()));
-        ASSERT_TRUE(bridge.initialize(valid.path()));
+        ASSERT_TRUE(bridge.initialize());
         EXPECT_TRUE(config.isConfigLoaded());
         EXPECT_EQ(config.getNumCores(), 3);
         EXPECT_DOUBLE_EQ(config.getBaseFrequency(), 7003.0);
@@ -1856,7 +1856,7 @@ namespace RTSim {
 
         EXPECT_FALSE(config.loadSystemConfig(malformed.path()));
         expectSafeConfiguration(config);
-        EXPECT_FALSE(bridge.initialize(malformed.path()));
+        EXPECT_FALSE(bridge.initialize());
         EXPECT_FALSE(bridge.isInitialized());
         bridge.shutdown();
         ConfigManager::setConfigCallback(nullptr);

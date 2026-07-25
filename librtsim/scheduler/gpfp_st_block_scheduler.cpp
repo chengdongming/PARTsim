@@ -321,7 +321,7 @@ namespace RTSim {
         }
 
         // 初始化EnergyBridge并获取初始能量
-        bool bridge_initialized = EnergyBridge::getInstance().initialize(config_file);
+        bool bridge_initialized = EnergyBridge::getInstance().initialize();
         if (bridge_initialized) {
             SCHEDULER_LOG_INFO("✅ [ST-Block] EnergyBridge 初始化成功");
 

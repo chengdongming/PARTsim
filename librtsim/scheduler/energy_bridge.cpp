@@ -736,8 +736,7 @@ namespace RTSim {
     // Python初始化管理 - 修复版
     // =====================================================
 
-    bool EnergyBridge::initialize(const std::string &python_script_path) {
-        (void)python_script_path;
+    bool EnergyBridge::initialize() {
         ensureConfigCallbackRegistered();
         ConfigManager &config = ConfigManager::getInstance();
         const std::uint64_t expected_generation =

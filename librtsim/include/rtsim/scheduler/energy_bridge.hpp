@@ -16,7 +16,7 @@
         static void ensureConfigCallbackRegistered();
 
         // 初始化
-        bool initialize(const std::string &python_script_path = ".");
+        bool initialize();
         void shutdown();
 
         // 配置管理

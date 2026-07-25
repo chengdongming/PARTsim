@@ -145,7 +145,7 @@ namespace RTSim {
         SCHEDULER_LOG_INFO("  配置文件: " + config_file);
 
         // 2. 初始化EnergyBridge
-        bool bridge_initialized = EnergyBridge::getInstance().initialize(".");
+        bool bridge_initialized = EnergyBridge::getInstance().initialize();
         if (!bridge_initialized) {
             SCHEDULER_LOG_ERROR("EnergyBridge 初始化失败");
         }
@@ -335,7 +335,7 @@ namespace RTSim {
         initializePowerModel();
 
         // 6. 初始化EnergyBridge
-        bool bridge_initialized = EnergyBridge::getInstance().initialize(".");
+        bool bridge_initialized = EnergyBridge::getInstance().initialize();
         if (bridge_initialized) {
             SCHEDULER_LOG_INFO("EnergyBridge 初始化成功");
             EnergyBridge::getInstance().setStartTimeOffset(_start_time_offset);
