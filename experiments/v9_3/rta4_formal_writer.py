@@ -17,6 +17,12 @@ from .result_writer import (
     write_csv,
 )
 from .rta4_formal_config import RTA4_FORMAL_SCHEMA_VERSION, canonical_json
+from .rta4_formal_config import validate_rta4_formal_config
+from .rta4_formal_manifest import (
+    NONFORMAL_TEST_FIXTURE, RTA4_CONFIG_CHECKPOINT, RTA4_PLAN_MANIFEST,
+    build_trusted_plan_manifest, config_checkpoint,
+)
+from .rta4_formal_rows import RTA4FormalRowError, normalize_formal_row
 from .rta4_formal_schema import (
     FORMAL_TABLES, RTA4_FORMAL_SCHEMA_MANIFEST, formal_schema_hash,
     formal_schema_manifest,
@@ -53,17 +59,30 @@ class RTA4FormalResultWriter:
     """Exact-header CSV writer plus atomic, idempotent terminal JSONs."""
 
     def __init__(
-        self, root: Path | str, *, plan_sha256: str, config_semantic_hash: str,
-        parameter_status: str, execution_class: str = "FORMAL",
-        authorized: bool = False,
+        self, root: Path | str, *, config: Mapping[str, Any],
+        fixture_ordinals: Iterable[int] = (),
+        execution_class: str = NONFORMAL_TEST_FIXTURE,
     ) -> None:
+        if execution_class != NONFORMAL_TEST_FIXTURE:
+            raise RTA4FormalWriterError(
+                "PR-D refuses every FORMAL execution; PR-E authorization does not exist"
+            )
+        self.config = validate_rta4_formal_config(config)
+        self.core = self.config["core"]
+        self.config_checkpoint = config_checkpoint(self.config)
+        self.plan_manifest = build_trusted_plan_manifest(
+            self.config, execution_class=execution_class,
+            fixture_ordinals=tuple(fixture_ordinals),
+        )
         self.root = Path(root)
-        self.plan_sha256 = plan_sha256
-        self.config_semantic_hash = config_semantic_hash
+        self.plan_sha256 = self.plan_manifest["manifest_sha256"]
+        self.config_semantic_hash = self.config_checkpoint["config_semantic_hash"]
         self.schema_sha256 = formal_schema_hash()
         self.terminals = self.root / FORMAL_TERMINAL_DIRECTORY
         marker = self.root / RTA4_FORMAL_SCHEMA_MANIFEST
         metadata_path = self.root / FORMAL_RUN_METADATA
+        checkpoint_path = self.root / RTA4_CONFIG_CHECKPOINT
+        plan_manifest_path = self.root / RTA4_PLAN_MANIFEST
         existing_names = _root_files(self.root)
         if existing_names.intersection(LEGACY_TABLES):
             raise RTA4FormalWriterError(
@@ -76,14 +95,20 @@ class RTA4FormalResultWriter:
         expected_manifest = formal_schema_manifest()
         if marker.is_file() and dict(_strict_json(marker)) != expected_manifest:
             raise RTA4FormalWriterError("formal schema mismatch; refusing resume")
+        if checkpoint_path.is_file() and dict(_strict_json(checkpoint_path)) != self.config_checkpoint:
+            raise RTA4FormalWriterError("trusted config checkpoint mismatch; refusing resume")
+        if plan_manifest_path.is_file() and dict(_strict_json(plan_manifest_path)) != self.plan_manifest:
+            raise RTA4FormalWriterError("trusted plan manifest mismatch; refusing resume")
         metadata = {
             "schema_version": RTA4_FORMAL_SCHEMA_VERSION,
             "schema_sha256": self.schema_sha256,
-            "plan_sha256": plan_sha256,
-            "config_semantic_hash": config_semantic_hash,
-            "parameter_status": parameter_status,
+            "plan_sha256": self.plan_sha256,
+            "full_plan_sha256": self.plan_manifest["full_plan_sha256"],
+            "config_semantic_hash": self.config_semantic_hash,
+            "core": self.core,
+            "parameter_status": self.config["experiment_contract"]["parameter_status"],
             "execution_class": execution_class,
-            "formal_authorized": authorized,
+            "formal_authorized": False,
         }
         if metadata_path.is_file() and dict(_strict_json(metadata_path)) != metadata:
             raise RTA4FormalWriterError("plan/config/run metadata mismatch; refusing resume")
@@ -95,6 +120,10 @@ class RTA4FormalResultWriter:
         self.terminals.mkdir(parents=True, exist_ok=True)
         if not marker.is_file():
             atomic_write_json(marker, expected_manifest)
+        if not checkpoint_path.is_file():
+            atomic_write_json(checkpoint_path, self.config_checkpoint)
+        if not plan_manifest_path.is_file():
+            atomic_write_json(plan_manifest_path, self.plan_manifest)
         if not metadata_path.is_file():
             atomic_write_json(metadata_path, metadata)
         for name, columns in FORMAL_TABLES.items():
@@ -106,21 +135,16 @@ class RTA4FormalResultWriter:
         }
 
     def _complete_row(self, table: str, row: Mapping[str, Any]) -> Dict[str, Any]:
-        if table not in FORMAL_TABLES:
-            raise RTA4FormalWriterError(f"unknown formal table: {table}")
-        completed = {
+        common = {
             "schema_version": RTA4_FORMAL_SCHEMA_VERSION,
             "schema_sha256": self.schema_sha256,
             "plan_sha256": self.plan_sha256,
             "config_semantic_hash": self.config_semantic_hash,
-            **dict(row),
         }
-        extra = set(completed) - set(FORMAL_TABLES[table])
-        if extra:
-            raise RTA4FormalWriterError(
-                f"unexpected columns for {table}: {sorted(extra)}"
-            )
-        return completed
+        try:
+            return normalize_formal_row(table, row, common)
+        except RTA4FormalRowError as exc:
+            raise RTA4FormalWriterError(str(exc)) from exc
 
     def append(self, table: str, row: Mapping[str, Any]) -> None:
         completed = self._complete_row(table, row)
@@ -128,6 +152,22 @@ class RTA4FormalResultWriter:
             severity = completed.get("severity")
             if severity not in FORMAL_FAILURE_SEVERITIES:
                 raise RTA4FormalWriterError("unknown failure severity")
+        append_csv_row(self.root / table, FORMAL_TABLES[table], completed)
+
+    def append_unique(self, table: str, identity_column: str, row: Mapping[str, Any]) -> None:
+        """Idempotently append one canonical identity row or reject conflict."""
+
+        if identity_column not in FORMAL_TABLES.get(table, ()):
+            raise RTA4FormalWriterError("unique identity column is not in table schema")
+        completed = self._complete_row(table, row)
+        existing = {
+            item[identity_column]: item for item in read_csv(self.root / table)
+        }
+        identity = completed[identity_column]
+        if identity in existing:
+            if existing[identity] != completed:
+                raise RTA4FormalWriterError(f"{table} identity conflict")
+            return
         append_csv_row(self.root / table, FORMAL_TABLES[table], completed)
 
     def append_attempt(self, row: Mapping[str, Any]) -> None:
@@ -139,22 +179,27 @@ class RTA4FormalResultWriter:
         self.append("formal_rta_attempts.csv", row)
         self._attempt_ids.add(attempt_id)
 
-    def write_terminal(self, request_id: str, payload: Mapping[str, Any]) -> None:
-        if not isinstance(request_id, str) or len(request_id) != 64:
-            raise RTA4FormalWriterError("request_id must be a SHA-256 identity")
+    def write_terminal(self, execution_run_id: str, payload: Mapping[str, Any]) -> None:
+        if not isinstance(execution_run_id, str) or len(execution_run_id) != 64:
+            raise RTA4FormalWriterError("execution_run_id must be a SHA-256 identity")
+        required = {"plan_record_id", "analysis_id", "request_id", "solver_status", "exact_result_hash"}
+        if not required.issubset(payload):
+            raise RTA4FormalWriterError(
+                f"terminal payload lacks required fields: {sorted(required - set(payload))}"
+            )
         completed = {
             "schema_version": RTA4_FORMAL_SCHEMA_VERSION,
             "schema_sha256": self.schema_sha256,
             "plan_sha256": self.plan_sha256,
             "config_semantic_hash": self.config_semantic_hash,
-            "request_id": request_id,
+            "execution_run_id": execution_run_id,
             **dict(payload),
         }
-        path = self.terminals / f"{request_id}.json"
+        path = self.terminals / f"{execution_run_id}.json"
         if path.is_file():
             existing = _strict_json(path)
             if canonical_json(existing) != canonical_json(completed):
-                raise RTA4FormalWriterError(f"terminal result conflict for {request_id}")
+                raise RTA4FormalWriterError(f"terminal result conflict for {execution_run_id}")
             return
         atomic_write_json(path, completed)
 
@@ -183,9 +228,7 @@ class RTA4FormalResultWriter:
             "certificate_path": local_path,
             "certificate_sha256": payload_hash,
         }
-        self._append_identity_unique(
-            "formal_taskset_skeletons.csv", "taskset_skeleton_id", skeleton_row,
-        )
+        self._append_skeleton_unique(skeleton_row)
         self._append_identity_unique(
             "formal_tasksets.csv", "taskset_id", taskset_row,
         )
@@ -222,6 +265,22 @@ class RTA4FormalResultWriter:
                 raise RTA4FormalWriterError(f"{table} identity conflict")
             return
         self.append(table, row)
+
+    def _append_skeleton_unique(self, row: Mapping[str, Any]) -> None:
+        """Keep one canonical certificate witness for a shared skeleton."""
+
+        table = "formal_taskset_skeletons.csv"
+        existing = {
+            item["taskset_skeleton_id"]: item for item in read_csv(self.root / table)
+        }
+        identity = str(row["taskset_skeleton_id"])
+        if identity not in existing:
+            self.append(table, row)
+            return
+        comparable = self._complete_row(table, row)
+        stable = set(FORMAL_TABLES[table]) - {"certificate_path", "certificate_sha256"}
+        if any(existing[identity][key] != comparable[key] for key in stable):
+            raise RTA4FormalWriterError("formal skeleton identity conflict")
 
 
 def write_formal_file_hashes(root: Path | str) -> Path:

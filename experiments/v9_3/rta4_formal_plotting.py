@@ -70,6 +70,8 @@ def validate_plot_data(root: Path | str) -> Mapping[str, Any]:
     root = Path(root)
     manifest = validate_aggregate_bundle(root)
     for name, filename in FIGURE_FILES.items():
+        if filename not in manifest["data_file_sha256"]:
+            continue
         rows = _read_rows(root, filename)
         for row in rows:
             method = row.get("method", "NA")
@@ -152,6 +154,8 @@ def render_formal_publication_figures(
     output_hashes: Dict[str, str] = {}
     figure_metadata = {}
     for figure_name, filename in FIGURE_FILES.items():
+        if filename not in manifest["data_file_sha256"]:
+            continue
         rows = _read_rows(aggregate_root, filename)
         labels, values = _series(rows, figure_name)
         fig, axis = plt.subplots(figsize=(7.2, 3.8), constrained_layout=True)

@@ -47,6 +47,10 @@ RTA4_PLAN_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_FORMAL_PLAN:v1"
 RTA4_STREAM_DIGEST_DOMAIN = b"ASAP_BLOCK:V9.3:RTA4_ORDERED_STREAM:v1\0"
 RTA4_CORE5B_SELECTION_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_CORE5B_SELECTION:v1"
 RTA4_SERVICE_SCALE_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_SERVICE_SCALE:v1"
+RTA4_BASE_SERVICE_IDENTITY = domain_hash(
+    "ASAP_BLOCK:V9.3:RTA4_BASE_SERVICE:v1",
+    {"profile": RTA4_FORMAL_PROFILE, "service_contract": "FROZEN_BASE_SERVICE_V1"},
+)
 
 
 class RTA4FormalPlanError(ValueError):
@@ -168,6 +172,18 @@ def exact_service_scale_identity(base_service_identity: str, scale: Fraction) ->
     })
 
 
+def formal_service_identity(scale: Any) -> str:
+    """Return the exact frozen service identity for one plan scale."""
+
+    if isinstance(scale, bool) or isinstance(scale, float):
+        raise RTA4FormalPlanError("service scale must be exact rational data")
+    try:
+        exact = scale if type(scale) is Fraction else Fraction(scale)
+    except (TypeError, ValueError, ZeroDivisionError) as exc:
+        raise RTA4FormalPlanError("invalid service scale") from exc
+    return exact_service_scale_identity(RTA4_BASE_SERVICE_IDENTITY, exact)
+
+
 def _rta_record(
     *, core: str, ordinal: int, skeleton: str, taskset: str, method: str,
     e0: str, service_scale: str = "1", power_scale: str = "1",
@@ -175,6 +191,8 @@ def _rta_record(
     scenario: str = "MAIN", axis: str = "baseline", axis_value: str = "baseline",
     timeout_contract: str = "UNFROZEN_PRE_PILOT",
     source_analysis_id: str | None = None,
+    normalized_utilization: str = "1/2", processor_count: int = 4,
+    task_count: int = 10, replicate_index: int = 0,
 ) -> FormalPlanRecord:
     mathematical = {
         "profile": RTA4_FORMAL_PROFILE,
@@ -191,6 +209,10 @@ def _rta_record(
         "axis_value": axis_value,
         "timeout_contract": timeout_contract,
         "source_analysis_id": source_analysis_id,
+        "normalized_utilization": normalized_utilization,
+        "processor_count": processor_count,
+        "task_count": task_count,
+        "replicate_index": replicate_index,
     }
     request_id = domain_hash(RTA4_MATH_REQUEST_DOMAIN, mathematical)
     execution_id = domain_hash(RTA4_EXECUTION_DOMAIN, {
@@ -218,6 +240,8 @@ def iter_core1_plan() -> Iterator[FormalPlanRecord]:
                     yield _rta_record(
                         core="CORE-1", ordinal=ordinal, skeleton=skeleton,
                         taskset=taskset, method=method, e0=e0,
+                        normalized_utilization=utilization,
+                        replicate_index=replicate,
                     )
                     ordinal += 1
 
@@ -232,6 +256,8 @@ def iter_core2_plan() -> Iterator[FormalPlanRecord]:
                     yield _rta_record(
                         core="CORE-2", ordinal=ordinal, skeleton=skeleton,
                         taskset=taskset, method=method, e0=e0,
+                        normalized_utilization=utilization,
+                        replicate_index=replicate,
                     )
                     ordinal += 1
 
@@ -247,6 +273,8 @@ def iter_core2_source_references() -> Iterator[Dict[str, Any]]:
                     source = _rta_record(
                         core="CORE-1", ordinal=0, skeleton=skeleton,
                         taskset=taskset, method=method, e0=e0,
+                        normalized_utilization=utilization,
+                        replicate_index=replicate,
                     )
                     yield {
                         "source_core": "CORE-1",
@@ -277,10 +305,21 @@ def iter_core3_plan() -> Iterator[FormalPlanRecord]:
                     "taskset_slot_id": taskset,
                     "release_mode": release_mode,
                     "applicability_track": track,
-                    "battery_capacity": battery_capacity,
+                    "battery_model": (
+                        "FINITE_CAPACITY_EXACT"
+                        if track == FINITE_BATTERY_EMPIRICAL
+                        else "THEOREM_NO_OVERFLOW_EXACT"
+                    ),
+                    "battery_capacity": battery_capacity or "1000000000",
+                    "physical_initial_energy": "0",
+                    "service_scale": "1",
                     "release_horizon": RELEASE_HORIZON,
                     "observation_horizon": "release_horizon_plus_dmax",
                     "scheduler": "gpfp_asap_block",
+                    "normalized_utilization": utilization,
+                    "processor_count": 4,
+                    "task_count": 10,
+                    "replicate_index": replicate,
                 }
                 simulation_id = domain_hash(RTA4_SIMULATION_PLAN_DOMAIN, material)
                 yield FormalPlanRecord(
@@ -290,25 +329,39 @@ def iter_core3_plan() -> Iterator[FormalPlanRecord]:
                 ordinal += 1
 
 
+def core3_comparisons_for_simulation(
+    simulation: FormalPlanRecord,
+) -> Iterator[Dict[str, Any]]:
+    if simulation.kind != "simulation" or simulation.core != "CORE-3":
+        raise RTA4FormalPlanError("CORE-3 comparison requires a CORE-3 simulation")
+    for method in RTA4_RECURSIVE_METHODS:
+        for e0 in ("0", "1/20", "1"):
+            source = _rta_record(
+                core="CORE-1", ordinal=0,
+                skeleton=str(simulation.taskset_skeleton_slot_id),
+                taskset=str(simulation.taskset_slot_id),
+                method=method, e0=e0,
+                normalized_utilization=str(
+                    simulation.material["normalized_utilization"]
+                ),
+                processor_count=int(simulation.material["processor_count"]),
+                task_count=int(simulation.material["task_count"]),
+                replicate_index=int(simulation.material["replicate_index"]),
+            )
+            yield {
+                "simulation_id": simulation.execution_id,
+                "source_analysis_id": source.mathematical_request_id,
+                "taskset_slot_id": simulation.taskset_slot_id,
+                "method": method,
+                "exact_e0": e0,
+            }
+
+
 def iter_core3_comparison_plan() -> Iterator[Dict[str, Any]]:
     """Stream the complete 6,400 x 4 x 3 applicability projection."""
 
     for simulation in iter_core3_plan():
-        for method in RTA4_RECURSIVE_METHODS:
-            for e0 in ("0", "1/20", "1"):
-                source = _rta_record(
-                    core="CORE-1", ordinal=0,
-                    skeleton=str(simulation.taskset_skeleton_slot_id),
-                    taskset=str(simulation.taskset_slot_id),
-                    method=method, e0=e0,
-                )
-                yield {
-                    "simulation_id": simulation.execution_id,
-                    "source_analysis_id": source.mathematical_request_id,
-                    "taskset_slot_id": simulation.taskset_slot_id,
-                    "method": method,
-                    "exact_e0": e0,
-                }
+        yield from core3_comparisons_for_simulation(simulation)
 
 
 def _core4_conditions() -> tuple[tuple[str, str, str, str, str, str], ...]:
@@ -344,6 +397,7 @@ def _core4_record(
         method=method, e0=e0, service_scale=service, power_scale=power,
         deadline_variant=deadline_material, scenario="CORE4_OFAT",
         axis=axis, axis_value=value,
+        normalized_utilization=utilization, replicate_index=replicate,
     )
 
 
@@ -375,6 +429,8 @@ def iter_core5a_plan() -> Iterator[FormalPlanRecord]:
                     deadline_variant="fixed_slack_fraction_v1:3/4",
                     scenario="TASK_COUNT", axis="task_count",
                     axis_value=str(task_count),
+                    normalized_utilization="1/2", processor_count=4,
+                    task_count=task_count, replicate_index=replicate,
                 )
                 ordinal += 1
     for processors in (2, 4, 8):
@@ -391,6 +447,8 @@ def iter_core5a_plan() -> Iterator[FormalPlanRecord]:
                     deadline_variant="fixed_slack_fraction_v1:3/4",
                     scenario="PROCESSORS", axis="processor_count",
                     axis_value=str(processors),
+                    normalized_utilization="1/2", processor_count=processors,
+                    task_count=10, replicate_index=replicate,
                 )
                 ordinal += 1
     for time_scale in (1, 2, 4, 8):
@@ -407,6 +465,8 @@ def iter_core5a_plan() -> Iterator[FormalPlanRecord]:
                     deadline_variant="fixed_slack_fraction_v1:3/4",
                     scenario="INTEGER_TIME_SCALE", axis="integer_time_scale",
                     axis_value=str(time_scale),
+                    normalized_utilization="1/2", processor_count=4,
+                    task_count=10, replicate_index=replicate,
                 )
                 ordinal += 1
 
@@ -436,6 +496,10 @@ def iter_core5b_math_references() -> Iterator[FormalPlanRecord]:
             "method": source.material["method"],
             "taskset_slot_id": source.taskset_slot_id,
             "taskset_skeleton_slot_id": source.taskset_skeleton_slot_id,
+            "normalized_utilization": source.material["normalized_utilization"],
+            "processor_count": source.material["processor_count"],
+            "task_count": source.material["task_count"],
+            "replicate_index": source.material["replicate_index"],
         }
         yield FormalPlanRecord(
             "math_reference", "CORE-5B", ordinal,
@@ -453,6 +517,18 @@ def iter_core5b_plan() -> Iterator[FormalPlanRecord]:
                 "worker_count": worker_count,
                 "selection_hash": reference.material["selection_hash"],
                 "execution_role": "WORKER_CONSISTENCY",
+                "method": reference.material["method"],
+                "exact_e0": "1/20",
+                "scenario": "CORE5B_WORKER_CONSISTENCY",
+                "axis": "worker_count",
+                "axis_value": str(worker_count),
+                "service_scale": "1",
+                "power_scale": "1",
+                "deadline_variant": "fixed_slack_fraction_v1:3/4",
+                "normalized_utilization": reference.material["normalized_utilization"],
+                "processor_count": reference.material["processor_count"],
+                "task_count": reference.material["task_count"],
+                "replicate_index": reference.material["replicate_index"],
             }
             execution_id = domain_hash(RTA4_EXECUTION_DOMAIN, execution)
             yield FormalPlanRecord(
@@ -610,8 +686,10 @@ def _taskset_store_identity() -> str:
 
 __all__ = [
     "FormalPlanRecord", "PLAN_ITERATORS", "RTA4FormalPlanError",
-    "StreamDigest", "describe_all_formal_plans", "describe_formal_plan",
+    "StreamDigest", "core3_comparisons_for_simulation",
+    "describe_all_formal_plans", "describe_formal_plan",
     "exact_service_scale_identity",
+    "formal_service_identity",
     "iter_core1_plan", "iter_core2_plan", "iter_core2_source_references",
     "iter_core3_comparison_plan", "iter_core3_plan", "iter_core4_plan",
     "iter_core5a_plan", "iter_core5b_math_references", "iter_core5b_plan",

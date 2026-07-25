@@ -11,7 +11,7 @@ import math
 from pathlib import Path
 import random
 import statistics
-from typing import Any, Dict, Iterable, Mapping, MutableMapping, Sequence
+from typing import Any, Dict, Mapping, Sequence
 
 from .result_writer import atomic_write_json, write_csv
 from .rta4_formal_config import canonical_json
@@ -70,6 +70,15 @@ AGGREGATE_TABLES = {
     "table_1_parameters.csv": TABLE_1_COLUMNS,
     "table_2_rta_summary.csv": TABLE_2_COLUMNS,
     "table_3_simulation_audit.csv": TABLE_3_COLUMNS,
+}
+
+CORE_AGGREGATE_TABLES = {
+    "CORE-1": ("figure_1_rta_comparison.csv", "table_1_parameters.csv", "table_2_rta_summary.csv"),
+    "CORE-2": ("figure_2_ablation_mechanisms.csv", "table_1_parameters.csv"),
+    "CORE-3": ("figure_3_rta_simulation_audit.csv", "table_1_parameters.csv", "table_3_simulation_audit.csv"),
+    "CORE-4": ("figure_4_sensitivity.csv", "table_1_parameters.csv"),
+    "CORE-5A": ("figure_5_scalability.csv", "table_1_parameters.csv"),
+    "CORE-5B": ("figure_5_scalability.csv", "table_1_parameters.csv"),
 }
 
 
@@ -172,31 +181,47 @@ def _figure1(
             "p95": _number(_quantile(runtimes, .95)),
             "iqr_lower": "NA", "iqr_upper": "NA",
         })
-    task_index = {
-        (row["taskset_id"], row["exact_e0"], row["task_id"], row["method"]): row
-        for row in tasks
-    }
+    tasks_by_analysis: Dict[str, Dict[str, Mapping[str, str]]] = defaultdict(dict)
+    for row in tasks:
+        tasks_by_analysis[row["analysis_id"]][row["task_id"]] = row
     relations = (
         ("CW_TO_LOC", "CW_THETA_CW", "LOC_THETA_LOC"),
         ("LOC_TO_PH", "LOC_THETA_LOC", "PH_THETA_PH"),
         ("PH_TO_SEQ", "PH_THETA_PH", "SEQ_THETA_SEQ"),
         ("CW_TO_SEQ", "CW_THETA_CW", "SEQ_THETA_SEQ"),
     )
-    result_by_analysis = {row["analysis_id"]: row for row in results}
-    keys = {(key[0], key[1], key[2]) for key in task_index}
+    result_index = {}
+    bundle_identity = (
+        closure.metadata["core"], closure.metadata["plan_sha256"],
+        closure.closure_sha256,
+    )
+    for row in results:
+        domain = bundle_identity + (
+            row["taskset_skeleton_id"], row["taskset_id"], row["exact_e0"],
+            row["service_identity"], row["power_vector_hash"], row["deadline_variant"],
+            row["scenario"], row["axis"], row["axis_value"], row["method"],
+        )
+        if domain in result_index:
+            raise RTA4FormalAggregationError("duplicate complete pairing domain")
+        result_index[domain] = row
     for relation, weak, strong in relations:
         reductions: Dict[tuple[str, str], list[float]] = defaultdict(list)
-        for taskset_id, e0, task_id in keys:
-            left = task_index.get((taskset_id, e0, task_id, weak))
-            right = task_index.get((taskset_id, e0, task_id, strong))
-            if left is None or right is None:
+        for key, left_result in sorted(result_index.items()):
+            if key[-1] != weak:
                 continue
-            left_candidate = _float(left["candidate_response_time"])
-            right_candidate = _float(right["candidate_response_time"])
-            if left_candidate is None or right_candidate is None or left_candidate <= 0:
+            right_result = result_index.get((*key[:-1], strong))
+            if right_result is None:
                 continue
-            utilization = result_by_analysis[left["analysis_id"]]["normalized_utilization"]
-            reductions[(utilization, e0)].append((left_candidate - right_candidate) / left_candidate)
+            left_tasks = tasks_by_analysis[left_result["analysis_id"]]
+            right_tasks = tasks_by_analysis[right_result["analysis_id"]]
+            for task_id in sorted(set(left_tasks) & set(right_tasks)):
+                left_candidate = _float(left_tasks[task_id]["candidate_response_time"])
+                right_candidate = _float(right_tasks[task_id]["candidate_response_time"])
+                if left_candidate is None or right_candidate is None or left_candidate <= 0:
+                    continue
+                reductions[(left_result["normalized_utilization"], left_result["exact_e0"])].append(
+                    (left_candidate - right_candidate) / left_candidate
+                )
         for (utilization, e0), values in sorted(reductions.items()):
             output.append({
                 "row_type": "PAIRED_RESPONSE_REDUCTION", "method": "NA",
@@ -211,29 +236,47 @@ def _figure1(
     return output
 
 
-def _figure2(closure: ValidatedFormalClosure) -> list[Dict[str, Any]]:
-    results = closure.table("formal_rta_taskset_results.csv")
+def _figure2(
+    closure: ValidatedFormalClosure,
+    source: ValidatedFormalClosure,
+) -> list[Dict[str, Any]]:
+    results = (
+        closure.table("formal_rta_taskset_results.csv")
+        + source.table("formal_rta_taskset_results.csv")
+    )
     mechanisms = closure.table("formal_rta_mechanisms.csv")
     output: list[Dict[str, Any]] = []
+    bundle_identity = (
+        closure.metadata["core"], closure.metadata["plan_sha256"],
+        closure.closure_sha256, source.metadata["plan_sha256"],
+        source.closure_sha256,
+    )
     index = {
-        (row["taskset_id"], row["exact_e0"], row["method"]): row
+        bundle_identity + (
+            row["taskset_skeleton_id"], row["taskset_id"], row["exact_e0"],
+            row["service_identity"], row["power_vector_hash"], row["deadline_variant"],
+            row["scenario"], row["axis"], row["axis_value"], row["method"],
+        ): row
         for row in results
     }
     relations = (
         ("LOC_D_MINUS_CW_D", "CW_D", "LOC_D"),
         ("PH_D_MINUS_LOC_D", "LOC_D", "PH_D"),
         ("SEQ_D_MINUS_PH_D", "PH_D", "SEQ_D"),
+        ("LOC_THETA_MINUS_CW_THETA", "CW_THETA_CW", "LOC_THETA_LOC"),
+        ("PH_THETA_MINUS_LOC_THETA", "LOC_THETA_LOC", "PH_THETA_PH"),
+        ("SEQ_THETA_MINUS_PH_THETA", "PH_THETA_PH", "SEQ_THETA_SEQ"),
     )
     for relation, weak, strong in relations:
         groups: Dict[tuple[str, str], list[float]] = defaultdict(list)
-        for taskset_id, e0, method in index:
-            if method != weak:
+        for key in index:
+            if key[-1] != weak:
                 continue
-            left = index[(taskset_id, e0, weak)]
-            right = index.get((taskset_id, e0, strong))
+            left = index[key]
+            right = index.get((*key[:-1], strong))
             if right is None:
                 continue
-            groups[(left["normalized_utilization"], e0)].append(
+            groups[(left["normalized_utilization"], left["exact_e0"])].append(
                 float(_truth(right["taskset_proven"])) - float(_truth(left["taskset_proven"]))
             )
         for (utilization, e0), values in sorted(groups.items()):
@@ -266,10 +309,16 @@ def _figure2(closure: ValidatedFormalClosure) -> list[Dict[str, Any]]:
     return output
 
 
-def _figure3(closure: ValidatedFormalClosure) -> list[Dict[str, Any]]:
+def _figure3(
+    closure: ValidatedFormalClosure,
+    source: ValidatedFormalClosure,
+) -> list[Dict[str, Any]]:
     simulations = {row["simulation_id"]: row for row in closure.table("formal_simulation_runs.csv")}
     applicability = closure.table("formal_applicability.csv")
-    results = {row["analysis_id"]: row for row in closure.table("formal_rta_taskset_results.csv")}
+    results = {
+        row["analysis_id"]: row
+        for row in source.table("formal_rta_taskset_results.csv")
+    }
     output: list[Dict[str, Any]] = []
     groups: Dict[tuple[str, ...], list[Mapping[str, str]]] = defaultdict(list)
     for row in applicability:
@@ -417,9 +466,12 @@ def _table3(closure: ValidatedFormalClosure) -> list[Dict[str, Any]]:
 def aggregate_formal_run(
     root: Path | str, output_root: Path | str, *,
     bootstrap_replicates: int = RTA4_BOOTSTRAP_REPLICATES,
+    source_closures: Mapping[str, Path | str | Any] | None = None,
 ) -> Mapping[str, Any]:
+    sources = source_closures or {}
     closure = validate_formal_run_closure(
         root, require_complete=True, require_authorized_formal=True,
+        source_closures=sources,
     )
     if type(bootstrap_replicates) is not int or bootstrap_replicates < 1:
         raise RTA4FormalAggregationError("bootstrap replicates must be positive")
@@ -432,23 +484,65 @@ def aggregate_formal_run(
     if output_root.exists() and any(output_root.iterdir()):
         raise RTA4FormalAggregationError("aggregate output root must be empty")
     output_root.mkdir(parents=True, exist_ok=True)
-    data = {
-        "figure_1_rta_comparison.csv": _figure1(closure, bootstrap_replicates),
-        "figure_2_ablation_mechanisms.csv": _figure2(closure),
-        "figure_3_rta_simulation_audit.csv": _figure3(closure),
-        "figure_4_sensitivity.csv": _figure4(closure, bootstrap_replicates),
-        "figure_5_scalability.csv": _figure5(closure),
+    core = str(closure.metadata["core"])
+    source = None
+    if core in {"CORE-2", "CORE-3"}:
+        raw_source = sources.get("CORE-1")
+        if raw_source is None:
+            raise RTA4FormalAggregationError(
+                f"{core} aggregation requires the validated CORE-1 source bundle"
+            )
+        source = (
+            raw_source if isinstance(raw_source, ValidatedFormalClosure)
+            else validate_formal_run_closure(raw_source, require_complete=True)
+        )
+        if source.metadata["core"] != "CORE-1":
+            raise RTA4FormalAggregationError("aggregate source bundle is not CORE-1")
+    data: Dict[str, list[Dict[str, Any]]] = {
         "table_1_parameters.csv": _table1(closure),
-        "table_2_rta_summary.csv": _table2(closure),
-        "table_3_simulation_audit.csv": _table3(closure),
     }
+    if core == "CORE-1":
+        data.update({
+            "figure_1_rta_comparison.csv": _figure1(
+                closure, bootstrap_replicates
+            ),
+            "table_2_rta_summary.csv": _table2(closure),
+        })
+    elif core == "CORE-2":
+        assert source is not None
+        data["figure_2_ablation_mechanisms.csv"] = _figure2(closure, source)
+    elif core == "CORE-3":
+        assert source is not None
+        data.update({
+            "figure_3_rta_simulation_audit.csv": _figure3(closure, source),
+            "table_3_simulation_audit.csv": _table3(closure),
+        })
+    elif core == "CORE-4":
+        data["figure_4_sensitivity.csv"] = _figure4(
+            closure, bootstrap_replicates
+        )
+    else:
+        data["figure_5_scalability.csv"] = _figure5(closure)
+    if set(data) != set(CORE_AGGREGATE_TABLES[core]):
+        raise RTA4FormalAggregationError("core-specific aggregate routing drift")
     file_hashes = {}
     for filename, rows in data.items():
         write_csv(output_root / filename, AGGREGATE_TABLES[filename], rows)
         file_hashes[filename] = hashlib.sha256((output_root / filename).read_bytes()).hexdigest()
     manifest = {
         "aggregate_version": RTA4_AGGREGATE_VERSION,
-        "source_closure_sha256": closure.closure_sha256,
+        "core": core,
+        "execution_class": closure.metadata["execution_class"],
+        "input_closure_sha256": closure.closure_sha256,
+        "trusted_source_bundles": (
+            {} if source is None else {
+                "CORE-1": {
+                    "closure_sha256": source.closure_sha256,
+                    "plan_sha256": source.metadata["plan_sha256"],
+                    "config_semantic_hash": source.metadata["config_semantic_hash"],
+                }
+            }
+        ),
         "schema_sha256": closure.metadata["schema_sha256"],
         "plan_sha256": closure.metadata["plan_sha256"],
         "config_semantic_hash": closure.metadata["config_semantic_hash"],
@@ -473,10 +567,15 @@ def validate_aggregate_bundle(root: Path | str) -> Mapping[str, Any]:
         raise RTA4FormalAggregationError("cannot read aggregate manifest") from exc
     if not isinstance(manifest, Mapping) or manifest.get("aggregate_version") != RTA4_AGGREGATE_VERSION:
         raise RTA4FormalAggregationError("aggregate version mismatch")
+    core = manifest.get("core")
+    if core not in CORE_AGGREGATE_TABLES:
+        raise RTA4FormalAggregationError("aggregate core/domain mismatch")
     hashes = manifest.get("data_file_sha256")
-    if not isinstance(hashes, Mapping) or set(hashes) != set(AGGREGATE_TABLES):
+    expected_files = set(CORE_AGGREGATE_TABLES[str(core)])
+    if not isinstance(hashes, Mapping) or set(hashes) != expected_files:
         raise RTA4FormalAggregationError("aggregate file set mismatch")
-    for filename, columns in AGGREGATE_TABLES.items():
+    for filename in CORE_AGGREGATE_TABLES[str(core)]:
+        columns = AGGREGATE_TABLES[filename]
         path = root / filename
         if hashlib.sha256(path.read_bytes()).hexdigest() != hashes[filename]:
             raise RTA4FormalAggregationError(f"aggregate data hash mismatch: {filename}")
@@ -491,7 +590,7 @@ def validate_aggregate_bundle(root: Path | str) -> Mapping[str, Any]:
 
 
 __all__ = [
-    "AGGREGATE_TABLES", "RTA4_AGGREGATE_MANIFEST", "RTA4_AGGREGATE_VERSION",
+    "AGGREGATE_TABLES", "CORE_AGGREGATE_TABLES", "RTA4_AGGREGATE_MANIFEST", "RTA4_AGGREGATE_VERSION",
     "RTA4FormalAggregationError", "aggregate_formal_run",
     "cluster_bootstrap_binary", "validate_aggregate_bundle",
 ]

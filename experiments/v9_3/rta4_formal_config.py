@@ -303,9 +303,11 @@ def validate_rta4_formal_config(
     }
     if set(execution) != required_execution:
         raise RTA4FormalConfigError("execution does not have its exact field set")
-    for key in ("mode", "timeout_contract", "resume", "fail_fast_on_p0", "preserve_attempt_history"):
+    for key in ("mode", "timeout_contract", "fail_fast_on_p0", "preserve_attempt_history"):
         if execution[key] != expected["execution"][key]:
             raise RTA4FormalConfigError(f"execution.{key} violates the pre-pilot contract")
+    if type(execution["resume"]) is not bool:
+        raise RTA4FormalConfigError("execution.resume must be a strict boolean")
     for key in ("output_root", "taskset_store"):
         if not isinstance(execution[key], str) or not execution[key].strip():
             raise RTA4FormalConfigError(f"execution.{key} must be a non-empty path")

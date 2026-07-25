@@ -6,6 +6,7 @@ import hashlib
 from itertools import islice
 import json
 from pathlib import Path
+import shutil
 import tracemalloc
 
 import pytest
@@ -19,18 +20,25 @@ from experiments.v9_3.constrained_taskset_identity import (
 )
 from experiments.v9_3 import exact_energy
 from experiments.v9_3.execution_engine import ExecutionEngine
-from experiments.v9_3.release_applicability import ASYNC_HASH_PHASE_V1
-from experiments.v9_3.result_writer import ResultWriter, ResultWriterError, TABLES
+from experiments.v9_3.release_applicability import (
+    ASYNC_HASH_PHASE_V1, RELEASE_SNAPSHOT_STAGE,
+    SIMULATOR_TRACE_CONTRACT_VERSION,
+)
+from experiments.v9_3.result_writer import (
+    ResultWriter, ResultWriterError, TABLES, read_csv, write_csv,
+)
 from experiments.v9_3.rta4_formal_aggregation import (
     aggregate_formal_run, validate_aggregate_bundle,
 )
+from experiments.v9_3 import rta4_formal_aggregation as formal_aggregation
 from experiments.v9_3.rta4_formal_config import (
     RTA4_CORE2_METHODS, RTA4_FORMAL_PARAMETER_STATUS,
     RTA4_FORMAL_PROFILE, RTA4_RECURSIVE_METHODS,
     load_rta4_formal_config,
 )
 from experiments.v9_3.rta4_formal_pipeline import (
-    RTA4FormalAuthorizationError, RTA4FormalRunner, SimulationDeduplicator,
+    RTA4FixtureInterruption, RTA4FormalAuthorizationError,
+    RTA4FormalRunner, SimulationDeduplicator,
     build_formal_release_projection, formal_analysis_identity,
     formal_execution_identity,
 )
@@ -40,7 +48,7 @@ from experiments.v9_3.rta4_formal_plan import (
     exact_service_scale_identity,
     iter_core3_comparison_plan, iter_core4_plan,
     iter_core5a_plan, iter_core5b_math_references, iter_core5b_plan,
-    ordered_stream_digest,
+    iter_formal_plan, ordered_stream_digest,
 )
 from experiments.v9_3.rta4_formal_plotting import (
     render_formal_publication_figures, validate_plot_data,
@@ -60,6 +68,7 @@ from experiments.v9_3.rta4_formal_validation import (
 from experiments.v9_3.rta4_formal_writer import (
     RTA4FormalResultWriter, RTA4FormalWriterError,
 )
+from experiments.v9_3.task_identity import runtime_task_name_for_source_id
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -107,6 +116,132 @@ def _certificate():
     return build_taskset_identity_certificate(
         _request(), skeleton, deadline_mode=CONSTRAINED_UNIFORM_SLACK_MODE,
     )
+
+
+def _plan_certificate(record: FormalPlanRecord):
+    material = record.material
+    task_count = int(material.get("task_count", 10))
+    request = GenerationRequest(
+        formal_master_seed=930612,
+        formal_generation_id=hashlib.sha256(
+            f"RTA4-PLAN-CERTIFICATE:{record.taskset_skeleton_slot_id}".encode()
+        ).hexdigest(),
+        processors=int(material.get("processor_count", 4)),
+        task_count=task_count,
+        target_normalized_utilization=Fraction(
+            str(material.get("normalized_utilization", "1/2"))
+        ),
+        replicate_index=int(material.get("replicate_index", 0)),
+        period_min=40,
+        period_max=200,
+        utilization_allocation_mode="frozen_v9_3_generator_v1",
+        min_task_utilization=Fraction(1, 100),
+        max_task_utilization=Fraction(4, 5),
+        utilization_tolerance=Fraction(1, 100),
+        wcet_rounding_mode="compensated",
+        generator_version="ASAP_BLOCK_V9_3_GENERATOR_V1",
+        power_generation_mode="generator_default_heterogeneous",
+        power_generation_contract_identity="1" * 64,
+        workload_candidate_identity="2" * 64,
+        priority_policy="RM",
+        dag_generation_mode="disabled",
+        energy_aware_generation=False,
+    )
+    skeleton = tuple(
+        SkeletonTask(f"tau-{index:02d}", index, 1, 170 + index, Fraction(index + 1, 10))
+        for index in range(task_count)
+    )
+    deadline = str(material.get("deadline_variant", CONSTRAINED_UNIFORM_SLACK_MODE))
+    kwargs = {}
+    mode = deadline
+    if deadline.startswith("fixed_slack_fraction_v1:"):
+        mode = FIXED_SLACK_FRACTION_VARIANT
+        kwargs["fixed_slack_fraction"] = Fraction(deadline.split(":", 1)[1])
+    return build_taskset_identity_certificate(
+        request, skeleton, deadline_mode=mode,
+        power_scale=Fraction(str(material.get("power_scale", "1"))),
+        **kwargs,
+    )
+
+
+def _fake_rta(_record, certificate):
+    return {
+        "solver_status": "COMPLETED",
+        "taskset_certification_status": "CERTIFIED_TASKSET",
+        "taskset_proven": True,
+        "task_results": [
+            {
+                "task_solver_status": "CANDIDATE_FOUND",
+                "task_certification_status": "CERTIFIED",
+                "candidate_response_time": task.wcet,
+                "witness": [task.wcet],
+                "checked_w_count": 1,
+            }
+            for task in certificate.tasks
+        ],
+    }
+
+
+def _fake_simulator_factory(trace_root: Path, calls: list[str]):
+    def execute(_record, certificate, projection, window, payload, simulation_id):
+        calls.append(simulation_id)
+        releases = {}
+        for task in payload:
+            for release in range(task["arrival_offset"], window.release_horizon, task["T"]):
+                releases.setdefault(release, []).append(task)
+        events = []
+        for release, tasks in sorted(releases.items()):
+            for task in tasks:
+                events.append({
+                    "time": str(release), "event_type": "arrival",
+                    "task_name": runtime_task_name_for_source_id(task["task_id"]),
+                    "arrival_time": str(release),
+                })
+            for task in tasks:
+                events.append({
+                    "time": str(release),
+                    "event_type": "release_energy_snapshot",
+                    "task_name": runtime_task_name_for_source_id(task["task_id"]),
+                    "arrival_time": str(release), "available_energy_mJ": 1000,
+                    "sampling_stage": RELEASE_SNAPSHOT_STAGE,
+                    "scheduler": "gpfp_asap_block",
+                    "trace_contract_version": SIMULATOR_TRACE_CONTRACT_VERSION,
+                })
+        document = {
+            "events": events, "trace_schema_version": 2,
+            "run_id": simulation_id,
+            "taskset_semantic_hash": certificate.taskset_hash,
+            "configured_scheduler": "gpfp_asap_block",
+            "expected_simulation_horizon_ms": window.observation_horizon,
+            "observed_simulation_end_ms": window.observation_horizon,
+            "simulation_completed": True,
+            "simulator_trace_contract_version": SIMULATOR_TRACE_CONTRACT_VERSION,
+            "release_horizon_ms": window.release_horizon,
+            "observation_horizon_ms": window.observation_horizon,
+            "release_cutoff_enabled": True,
+            "observation_horizon_reached": True,
+            "simulation_completion_reason": "reached_horizon",
+        }
+        path = trace_root / f"{simulation_id}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(document, separators=(",", ":")), encoding="utf-8")
+        job_results = [
+            {
+                "task_id": task["task_id"], "release_time": release,
+                "completion_time": release + 1, "deadline_missed": False,
+            }
+            for task in payload
+            for release in range(
+                task["arrival_offset"], window.release_horizon, task["T"]
+            )
+        ]
+        return {
+            "trace_path": path, "simulation_status": "COMPLETED",
+            "deadline_miss_count": 0, "max_observed_response": 1,
+            "offered_harvest": "0", "required_margin": "0",
+            "job_results": job_results,
+        }
+    return execute
 
 
 def test_opt_in_configs_freeze_profile_status_and_unified_method_orders():
@@ -221,13 +356,12 @@ def test_schema_has_exact_18_table_independent_manifest_and_hash():
 
 
 def test_taskset_store_and_writer_persist_pr_b_certificate_with_exact_identity(tmp_path):
-    certificate = _certificate()
+    config = _configs()["CORE-1"]
+    record = next(iter_formal_plan(config))
+    certificate = _plan_certificate(record)
     store = RTA4FormalTasksetStore(tmp_path / "store")
     writer = RTA4FormalResultWriter(
-        tmp_path / "run", plan_sha256="a" * 64,
-        config_semantic_hash="b" * 64,
-        parameter_status=RTA4_FORMAL_PARAMETER_STATUS,
-        execution_class="NONFORMAL_TEST_FIXTURE",
+        tmp_path / "run", config=config, fixture_ordinals=(0,),
     )
     writer.persist_taskset(store, certificate)
     assert store.load(certificate.taskset_id) == certificate
@@ -292,50 +426,427 @@ def test_math_identity_excludes_worker_but_execution_identity_includes_it():
 
 
 def test_old_and_new_writer_namespaces_refuse_each_other(tmp_path):
+    config = _configs()["CORE-1"]
     old_root = tmp_path / "old"
     ResultWriter(old_root)
     with pytest.raises(RTA4FormalWriterError, match="legacy"):
         RTA4FormalResultWriter(
-            old_root, plan_sha256="a" * 64, config_semantic_hash="b" * 64,
-            parameter_status=RTA4_FORMAL_PARAMETER_STATUS,
+            old_root, config=config, fixture_ordinals=(0,),
         )
     new_root = tmp_path / "new"
     RTA4FormalResultWriter(
-        new_root, plan_sha256="a" * 64, config_semantic_hash="b" * 64,
-        parameter_status=RTA4_FORMAL_PARAMETER_STATUS,
+        new_root, config=config, fixture_ordinals=(0,),
     )
     with pytest.raises(ResultWriterError, match="RTA4 formal"):
         ResultWriter(new_root)
 
 
 def test_schema_plan_resume_and_terminal_conflicts_fail_closed(tmp_path):
+    config = _configs()["CORE-1"]
     root = tmp_path / "run"
     writer = RTA4FormalResultWriter(
-        root, plan_sha256="a" * 64, config_semantic_hash="b" * 64,
-        parameter_status=RTA4_FORMAL_PARAMETER_STATUS,
+        root, config=config, fixture_ordinals=(0,),
     )
-    with pytest.raises(RTA4FormalWriterError, match="plan/config"):
+    with pytest.raises(RTA4FormalWriterError, match="plan manifest"):
         RTA4FormalResultWriter(
-            root, plan_sha256="c" * 64, config_semantic_hash="b" * 64,
-            parameter_status=RTA4_FORMAL_PARAMETER_STATUS,
+            root, config=config, fixture_ordinals=(1,),
         )
-    writer.write_terminal("d" * 64, {"solver_status": "COMPLETED"})
-    writer.write_terminal("d" * 64, {"solver_status": "COMPLETED"})
+    with pytest.raises(RTA4FormalWriterError, match="config checkpoint"):
+        RTA4FormalResultWriter(
+            root, config=_configs()["CORE-2"], fixture_ordinals=(0,),
+        )
+    payload = {
+        "plan_record_id": "a" * 64, "analysis_id": "b" * 64,
+        "request_id": "c" * 64, "solver_status": "COMPLETED",
+        "exact_result_hash": "e" * 64,
+    }
+    writer.write_terminal("d" * 64, payload)
+    writer.write_terminal("d" * 64, payload)
     with pytest.raises(RTA4FormalWriterError, match="terminal result conflict"):
-        writer.write_terminal("d" * 64, {"solver_status": "TIMEOUT"})
+        writer.write_terminal("d" * 64, {**payload, "solver_status": "TIMEOUT"})
+    marker_path = root / "formal_schema_manifest.json"
+    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    marker["schema_sha256"] = "0" * 64
+    marker_path.write_text(json.dumps(marker), encoding="utf-8")
+    with pytest.raises(RTA4FormalWriterError, match="schema mismatch"):
+        RTA4FormalResultWriter(root, config=config, fixture_ordinals=(0,))
 
 
-def test_pre_pilot_runner_allows_dry_run_and_bounded_fixture_but_rejects_formal():
+def test_pre_pilot_runner_executes_bounded_fixture_and_rejects_formal(tmp_path):
     runner = RTA4FormalRunner(_configs()["CORE-1"])
     assert runner.describe()["counts"]["rta_requests"] == 19200
     with pytest.raises(RTA4FormalAuthorizationError, match="PR-E"):
         runner.run()
-    records = tuple(islice(iter_core4_plan(), 2))
-    assert runner.run_nonformal_fixture(records, lambda record: record.record_id) == tuple(
-        record.record_id for record in records
+    records = tuple(islice(iter_formal_plan(_configs()["CORE-1"]), 2))
+    closure = runner.run_nonformal_fixture(
+        records, root=tmp_path / "run", taskset_store=tmp_path / "store",
+        certificate_provider=_plan_certificate, rta_executor=_fake_rta,
     )
+    assert len(closure.table("formal_rta_requests.csv")) == 2
     with pytest.raises(RTA4FormalAuthorizationError, match="100-request"):
-        runner.run_nonformal_fixture(tuple(islice(iter_core4_plan(), 101)), lambda record: None)
+        runner.run_nonformal_fixture(
+            tuple(islice(iter_formal_plan(_configs()["CORE-1"]), 101)),
+            root=tmp_path / "too-many", taskset_store=tmp_path / "too-many-store",
+            certificate_provider=_plan_certificate, rta_executor=_fake_rta,
+        )
+
+
+def _run_core1_fixture(tmp_path: Path, count: int = 2):
+    config = _configs()["CORE-1"]
+    records = tuple(islice(iter_formal_plan(config), count))
+    root = tmp_path / "run"
+    closure = RTA4FormalRunner(config).run_nonformal_fixture(
+        records, root=root, taskset_store=tmp_path / "store",
+        certificate_provider=_plan_certificate, rta_executor=_fake_rta,
+    )
+    return config, records, root, closure
+
+
+def _rewrite_row(root: Path, table: str, row_index: int, **changes):
+    rows = read_csv(root / table)
+    rows[row_index].update({key: str(value) for key, value in changes.items()})
+    write_csv(root / table, FORMAL_TABLES[table], rows)
+
+
+def test_trusted_plan_rejects_partial_extra_and_metadata_formal(tmp_path):
+    _config, _records, root, _closure = _run_core1_fixture(tmp_path)
+    partial = tmp_path / "partial"
+    shutil.copytree(root, partial)
+    rows = read_csv(partial / "formal_rta_requests.csv")[:-1]
+    write_csv(partial / "formal_rta_requests.csv", FORMAL_TABLES["formal_rta_requests.csv"], rows)
+    with pytest.raises(Exception, match="membership"):
+        validate_formal_run_closure(partial)
+
+    extra = tmp_path / "extra"
+    shutil.copytree(root, extra)
+    rows = read_csv(extra / "formal_rta_requests.csv")
+    rows.append({**rows[0], "plan_record_id": "a" * 64, "execution_run_id": "b" * 64})
+    write_csv(extra / "formal_rta_requests.csv", FORMAL_TABLES["formal_rta_requests.csv"], rows)
+    with pytest.raises(Exception, match="membership"):
+        validate_formal_run_closure(extra)
+
+    claimed = tmp_path / "claimed-formal"
+    shutil.copytree(root, claimed)
+    metadata_path = claimed / "formal_run_metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["execution_class"] = "FORMAL"
+    metadata["formal_authorized"] = True
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    with pytest.raises(Exception, match="metadata"):
+        validate_formal_run_closure(claimed)
+
+    wrong_plan = tmp_path / "wrong-plan"
+    shutil.copytree(root, wrong_plan)
+    manifest_path = wrong_plan / "formal_plan_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["selection_manifest_digest"] = "f" * 64
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(Exception, match="trusted plan"):
+        validate_formal_run_closure(wrong_plan)
+
+
+def test_certificate_rows_and_request_result_cross_binding_are_exact(tmp_path):
+    _config, _records, root, _closure = _run_core1_fixture(tmp_path, 1)
+    mutated = tmp_path / "mutated-task"
+    shutil.copytree(root, mutated)
+    task = read_csv(mutated / "formal_tasks.csv")[0]
+    _rewrite_row(mutated, "formal_tasks.csv", 0, C=int(task["C"]) + 1)
+    with pytest.raises(Exception, match="certificate"):
+        validate_formal_run_closure(mutated)
+
+    reordered = tmp_path / "reordered-task"
+    shutil.copytree(root, reordered)
+    tasks = read_csv(reordered / "formal_tasks.csv")
+    write_csv(reordered / "formal_tasks.csv", FORMAL_TABLES["formal_tasks.csv"], list(reversed(tasks)))
+    with pytest.raises(Exception, match="canonical"):
+        validate_formal_run_closure(reordered)
+
+    rebound = tmp_path / "rebound-result"
+    shutil.copytree(root, rebound)
+    _rewrite_row(rebound, "formal_rta_taskset_results.csv", 0, method="LOC_THETA_LOC")
+    with pytest.raises(Exception, match="request/taskset-result"):
+        validate_formal_run_closure(rebound)
+
+
+def test_bounded_runner_resume_is_idempotent_and_certificate_drift_fails(tmp_path):
+    config = _configs()["CORE-1"]
+    records = tuple(islice(iter_formal_plan(config), 2))
+    calls = []
+
+    def counted(record, certificate):
+        calls.append(record.execution_id)
+        return _fake_rta(record, certificate)
+
+    runner = RTA4FormalRunner(config)
+    with pytest.raises(RTA4FixtureInterruption):
+        runner.run_nonformal_fixture(
+            records, root=tmp_path / "resume", taskset_store=tmp_path / "store",
+            certificate_provider=_plan_certificate, rta_executor=counted,
+            interrupt_after=1,
+        )
+    closure = runner.run_nonformal_fixture(
+        records, root=tmp_path / "resume", taskset_store=tmp_path / "store",
+        certificate_provider=_plan_certificate, rta_executor=counted,
+    )
+    resumed_hash = closure.closure_sha256
+    assert len(calls) == 2
+    assert runner.run_nonformal_fixture(
+        records, root=tmp_path / "resume", taskset_store=tmp_path / "store",
+        certificate_provider=_plan_certificate, rta_executor=counted,
+    ).closure_sha256 == resumed_hash
+    assert len(calls) == 2
+
+    def drifted(record):
+        certificate = _plan_certificate(record)
+        changed = replace(
+            certificate.generation_request,
+            formal_generation_id="9" * 64,
+        )
+        return build_taskset_identity_certificate(
+            changed, certificate.skeleton_tasks,
+            deadline_mode=certificate.deadline_variant.mode,
+        )
+
+    with pytest.raises(Exception, match="resume certificate"):
+        runner.run_nonformal_fixture(
+            records, root=tmp_path / "resume", taskset_store=tmp_path / "store",
+            certificate_provider=drifted, rta_executor=counted,
+        )
+
+
+def test_writer_rejects_missing_float_and_negative_semantic_rows(tmp_path):
+    config, _records, root, _closure = _run_core1_fixture(tmp_path, 1)
+    writer = RTA4FormalResultWriter(root, config=config, fixture_ordinals=(0,))
+    attempt = read_csv(root / "formal_rta_attempts.csv")[0]
+    attempt_body = {
+        key: value for key, value in attempt.items()
+        if key not in FORMAL_TABLES["formal_rta_attempts.csv"][:4]
+    }
+    with pytest.raises(RTA4FormalWriterError, match="duplicate attempt"):
+        writer.append_attempt(attempt_body)
+    full = read_csv(root / "formal_rta_task_results.csv")[0]
+    body = {key: value for key, value in full.items() if key not in FORMAL_TABLES["formal_rta_task_results.csv"][:4]}
+    missing = dict(body)
+    missing.pop("task_id")
+    with pytest.raises(RTA4FormalWriterError, match="missing required"):
+        writer.append("formal_rta_task_results.csv", missing)
+    floating = dict(body)
+    floating["candidate_response_time"] = 0.1
+    with pytest.raises(RTA4FormalWriterError, match="integer"):
+        writer.append("formal_rta_task_results.csv", floating)
+    negative = dict(body)
+    negative["candidate_response_time"] = "-1"
+    with pytest.raises(RTA4FormalWriterError, match="non-negative"):
+        writer.append("formal_rta_task_results.csv", negative)
+
+
+def test_core2_source_closure_is_exact_and_has_no_fallback(tmp_path):
+    configs = _configs()
+    source_records = tuple(islice(iter_formal_plan(configs["CORE-1"]), 1, 3))
+    source = RTA4FormalRunner(configs["CORE-1"]).run_nonformal_fixture(
+        source_records, root=tmp_path / "source", taskset_store=tmp_path / "store",
+        certificate_provider=_plan_certificate, rta_executor=_fake_rta,
+    )
+    target_record = (next(iter_formal_plan(configs["CORE-2"])),)
+    target_root = tmp_path / "target"
+    target = RTA4FormalRunner(configs["CORE-2"]).run_nonformal_fixture(
+        target_record, root=target_root, taskset_store=tmp_path / "store",
+        certificate_provider=_plan_certificate, rta_executor=_fake_rta,
+        source_closures={"CORE-1": source},
+    )
+    dependencies = target.table("formal_dependencies.csv")
+    assert len(dependencies) == 2
+    assert all(row["fallback_used"] == "false" for row in dependencies)
+    manifest = aggregate_formal_run(
+        target_root, tmp_path / "aggregate-core2", bootstrap_replicates=5,
+        source_closures={"CORE-1": source},
+    )
+    assert set(manifest["data_file_sha256"]) == {
+        "figure_2_ablation_mechanisms.csv", "table_1_parameters.csv",
+    }
+    _rewrite_row(target_root, "formal_dependencies.csv", 0, source_result_hash="a" * 64)
+    with pytest.raises(Exception, match="source closure"):
+        validate_formal_run_closure(
+            target_root, source_closures={"CORE-1": source},
+        )
+
+
+def test_core3_projection_and_applicability_are_reconstructed(tmp_path):
+    configs = _configs()
+    source_records = tuple(islice(iter_formal_plan(configs["CORE-1"]), 12))
+    source = RTA4FormalRunner(configs["CORE-1"]).run_nonformal_fixture(
+        source_records, root=tmp_path / "source", taskset_store=tmp_path / "store",
+        certificate_provider=_plan_certificate, rta_executor=_fake_rta,
+    )
+    simulation_record = (next(iter_formal_plan(configs["CORE-3"])),)
+    simulation_root = tmp_path / "simulation"
+    calls = []
+    closure = RTA4FormalRunner(configs["CORE-3"]).run_nonformal_fixture(
+        simulation_record, root=simulation_root,
+        taskset_store=tmp_path / "store",
+        certificate_provider=_plan_certificate,
+        simulator_executor=_fake_simulator_factory(tmp_path / "traces", calls),
+        source_closures={"CORE-1": source},
+    )
+    assert len(calls) == 1
+    assert len(closure.table("formal_applicability.csv")) == 12
+    manifest = aggregate_formal_run(
+        simulation_root, tmp_path / "aggregate-core3", bootstrap_replicates=5,
+        source_closures={"CORE-1": source},
+    )
+    assert set(manifest["data_file_sha256"]) == {
+        "figure_3_rta_simulation_audit.csv", "table_1_parameters.csv",
+        "table_3_simulation_audit.csv",
+    }
+    assert RTA4FormalRunner(configs["CORE-3"]).run_nonformal_fixture(
+        simulation_record, root=simulation_root,
+        taskset_store=tmp_path / "store",
+        certificate_provider=_plan_certificate,
+        simulator_executor=_fake_simulator_factory(tmp_path / "traces", calls),
+        source_closures={"CORE-1": source},
+    ).closure_sha256 == closure.closure_sha256
+    assert len(calls) == 1
+
+    cache_drift = tmp_path / "cache-drift"
+    shutil.copytree(simulation_root, cache_drift)
+    cached_simulation = read_csv(cache_drift / "formal_simulation_runs.csv")[0]
+    cached_trace = cache_drift / cached_simulation["trace_path"]
+    cached_trace.write_text(
+        cached_trace.read_text(encoding="utf-8") + "\n", encoding="utf-8"
+    )
+    with pytest.raises(Exception, match="trace hash"):
+        RTA4FormalRunner(configs["CORE-3"]).run_nonformal_fixture(
+            simulation_record, root=cache_drift,
+            taskset_store=tmp_path / "store",
+            certificate_provider=_plan_certificate,
+            simulator_executor=_fake_simulator_factory(tmp_path / "traces", calls),
+            source_closures={"CORE-1": source},
+        )
+    assert len(calls) == 1
+
+    bad_projection = tmp_path / "bad-projection"
+    shutil.copytree(simulation_root, bad_projection)
+    _rewrite_row(bad_projection, "formal_simulation_runs.csv", 0, scheduler="wrong")
+    with pytest.raises(Exception, match="projection"):
+        validate_formal_run_closure(
+            bad_projection, source_closures={"CORE-1": source},
+        )
+
+    bad_join = tmp_path / "bad-applicability"
+    shutil.copytree(simulation_root, bad_join)
+    _rewrite_row(bad_join, "formal_applicability.csv", 0, method="LOC_THETA_LOC")
+    with pytest.raises(Exception, match="classification"):
+        validate_formal_run_closure(
+            bad_join, source_closures={"CORE-1": source},
+        )
+
+    bad_jobs = tmp_path / "bad-jobs"
+    shutil.copytree(simulation_root, bad_jobs)
+    first_job = read_csv(bad_jobs / "formal_simulation_job_results.csv")[0]
+    _rewrite_row(
+        bad_jobs, "formal_simulation_job_results.csv", 0,
+        completion_time=int(first_job["completion_time"]) + 1,
+        observed_response_time=int(first_job["observed_response_time"]) + 1,
+    )
+    with pytest.raises(Exception, match="raw job|task rows"):
+        validate_formal_run_closure(
+            bad_jobs, source_closures={"CORE-1": source},
+        )
+
+
+def test_worker_consistency_and_core4_monotonicity_use_raw_task_results(tmp_path):
+    configs = _configs()
+    worker_records = tuple(islice(iter_formal_plan(configs["CORE-5B"]), 4))
+
+    def worker_sensitive(record, certificate):
+        result = _fake_rta(record, certificate)
+        if record.material["worker_count"] == 8:
+            result["task_results"][0]["candidate_response_time"] = 2
+        return result
+
+    with pytest.raises(Exception, match="P0 hard validator"):
+        RTA4FormalRunner(configs["CORE-5B"]).run_nonformal_fixture(
+            worker_records, root=tmp_path / "workers",
+            taskset_store=tmp_path / "store-workers",
+            certificate_provider=_plan_certificate,
+            rta_executor=worker_sensitive,
+        )
+    checks = read_csv(tmp_path / "workers" / "formal_worker_consistency.csv")
+    assert any(row["candidate_match"] == "false" for row in checks)
+    assert any(row["check_status"] == "P0_MISMATCH" for row in checks)
+
+    core4_stream = iter_formal_plan(configs["CORE-4"])
+    selected = tuple(
+        record for index, record in enumerate(islice(core4_stream, 9))
+        if index in {4, 8}
+    )
+
+    def monotonicity_violation(record, certificate):
+        result = _fake_rta(record, certificate)
+        result["task_results"][0]["candidate_response_time"] = (
+            1 if record.material["axis_value"] == "0" else 2
+        )
+        return result
+
+    with pytest.raises(Exception, match="P0 hard validator"):
+        RTA4FormalRunner(configs["CORE-4"]).run_nonformal_fixture(
+            selected, root=tmp_path / "monotonicity",
+            taskset_store=tmp_path / "store-monotonicity",
+            certificate_provider=_plan_certificate,
+            rta_executor=monotonicity_violation,
+        )
+
+
+def test_pairing_uses_complete_axes_and_is_input_order_invariant():
+    results = []
+    tasks = []
+    for service_index, service in enumerate(("a" * 64, "b" * 64)):
+        for method, candidate in (("CW_THETA_CW", "4"), ("LOC_THETA_LOC", "2")):
+            analysis_id = hashlib.sha256(
+                f"{service_index}:{method}".encode()
+            ).hexdigest()
+            results.append({
+                "analysis_id": analysis_id, "taskset_skeleton_id": "c" * 64,
+                "taskset_id": "d" * 64, "exact_e0": "0",
+                "service_identity": service, "power_vector_hash": "e" * 64,
+                "deadline_variant": "constrained_uniform_slack_v1",
+                "scenario": "MAIN", "axis": "baseline",
+                "axis_value": "baseline", "method": method,
+                "normalized_utilization": "1/2", "taskset_proven": "true",
+                "runtime_wall_seconds": "1",
+            })
+            tasks.append({
+                "analysis_id": analysis_id, "task_id": "tau",
+                "candidate_response_time": candidate,
+            })
+
+    class Closure:
+        metadata = {"core": "CORE-1", "plan_sha256": "f" * 64}
+        closure_sha256 = "0" * 64
+
+        def __init__(self, reverse=False):
+            self._results = tuple(reversed(results)) if reverse else tuple(results)
+            self._tasks = tuple(reversed(tasks)) if reverse else tuple(tasks)
+
+        def table(self, name):
+            if name == "formal_rta_taskset_results.csv":
+                return self._results
+            if name == "formal_rta_task_results.csv":
+                return self._tasks
+            raise AssertionError(name)
+
+    forward = formal_aggregation._figure1(Closure(), 5)
+    backward = formal_aggregation._figure1(Closure(True), 5)
+    assert forward == backward
+    paired = [row for row in forward if row["relation"] == "CW_TO_LOC"]
+    assert paired == [{
+        "row_type": "PAIRED_RESPONSE_REDUCTION", "method": "NA",
+        "normalized_utilization": "1/2", "exact_e0": "0",
+        "relation": "CW_TO_LOC", "sample_count": 2, "denominator": 2,
+        "estimate": "0.5", "ci_lower": "NA", "ci_upper": "NA",
+        "median": "0.5", "p95": "NA", "iqr_lower": "0.5",
+        "iqr_upper": "0.5",
+    }]
 
 
 def test_core3_release_projection_reuses_pr_c_and_simulation_is_deduplicated():
@@ -371,11 +882,15 @@ def test_hard_validators_detect_dominance_monotonicity_soundness_and_worker_p0()
     ]
     assert all(finding.severity == P0 for finding in validate_dominance(tasksets, tasks))
     monotonic = [
-        {"taskset_skeleton_id": "s", "method": "SEQ_THETA_SEQ", "axis": "e0", "axis_value": "0", "taskset_proven": "true", "candidate_response_time": "5"},
-        {"taskset_skeleton_id": "s", "method": "SEQ_THETA_SEQ", "axis": "e0", "axis_value": "1", "taskset_proven": "false", "candidate_response_time": "6"},
-        {"taskset_skeleton_id": "s", "method": "SEQ_THETA_SEQ", "axis": "deadline_slack_fraction", "axis_value": "1/4", "taskset_proven": "true", "candidate_response_time": "5"},
+        {"analysis_id": "a", "taskset_skeleton_id": "s", "method": "SEQ_THETA_SEQ", "axis": "e0", "axis_value": "0", "taskset_proven": "true"},
+        {"analysis_id": "b", "taskset_skeleton_id": "s", "method": "SEQ_THETA_SEQ", "axis": "e0", "axis_value": "1", "taskset_proven": "false"},
+        {"analysis_id": "c", "taskset_skeleton_id": "s", "method": "SEQ_THETA_SEQ", "axis": "deadline_slack_fraction", "axis_value": "1/4", "taskset_proven": "true"},
     ]
-    assert len(validate_monotonicity(monotonic)) == 2
+    monotonic_tasks = [
+        {"analysis_id": "a", "task_id": "x", "candidate_response_time": "5"},
+        {"analysis_id": "b", "task_id": "x", "candidate_response_time": "6"},
+    ]
+    assert len(validate_monotonicity(monotonic, monotonic_tasks)) == 2
     soundness = [{
         "comparison_id": "c", "theorem_comparison_eligible": "true",
         "soundness_counterexample": "false", "comparison_status": "RTA_PASS_SIM_FAIL",
@@ -394,59 +909,13 @@ def test_hard_validators_detect_dominance_monotonicity_soundness_and_worker_p0()
 
 def _fixture_run(tmp_path: Path) -> tuple[Path, Path]:
     root = tmp_path / "fixture-run"
-    store = RTA4FormalTasksetStore(tmp_path / "fixture-store")
-    writer = RTA4FormalResultWriter(
-        root, plan_sha256="a" * 64, config_semantic_hash="b" * 64,
-        parameter_status=RTA4_FORMAL_PARAMETER_STATUS,
-        execution_class="NONFORMAL_TEST_FIXTURE",
+    config = _configs()["CORE-1"]
+    records = tuple(islice(iter_formal_plan(config), 4))
+    RTA4FormalRunner(config).run_nonformal_fixture(
+        records, root=root, taskset_store=tmp_path / "fixture-store",
+        certificate_provider=_plan_certificate, rta_executor=_fake_rta,
     )
-    certificate = _certificate()
-    writer.persist_taskset(store, certificate)
-    request_id = "c" * 64
-    analysis_id = "d" * 64
-    writer.append("formal_rta_requests.csv", {
-        "analysis_id": analysis_id, "request_id": request_id,
-        "execution_run_id": "e" * 64, "cell_id": "fixture-cell",
-        "taskset_skeleton_id": certificate.taskset_skeleton_id,
-        "taskset_id": certificate.taskset_id, "taskset_hash": certificate.taskset_hash,
-        "method": "SEQ_THETA_SEQ", "method_role": "MAIN_METHOD",
-        "carry_policy": "SELF_RECURSIVE", "exact_e0": "0",
-        "service_identity": "f" * 64, "power_vector_hash": certificate.power_vector_hash,
-        "theory_document_sha256": "1" * 64, "numeric_contract_sha256": "2" * 64,
-        "exact_input_identity": "3" * 64, "timeout_contract": "FIXTURE",
-        "source_analysis_id": "", "request_status": "PLANNED",
-    })
-    writer.append("formal_rta_taskset_results.csv", {
-        "analysis_id": analysis_id, "request_id": request_id,
-        "execution_run_id": "e" * 64, "cell_id": "fixture-cell",
-        "taskset_skeleton_id": certificate.taskset_skeleton_id,
-        "taskset_id": certificate.taskset_id, "taskset_hash": certificate.taskset_hash,
-        "method": "SEQ_THETA_SEQ", "method_role": "MAIN_METHOD",
-        "carry_policy": "SELF_RECURSIVE", "exact_e0": "0",
-        "service_identity": "f" * 64, "power_vector_hash": certificate.power_vector_hash,
-        "solver_status": "COMPLETED", "taskset_certification_status": "CERTIFIED_TASKSET",
-        "taskset_proven": "true", "first_failed_priority": "", "failure_reason": "",
-        "timeout": "false", "runtime_wall_seconds": "0.5",
-        "runtime_cpu_seconds": "0.4", "peak_rss_bytes": "1000",
-        "checked_w_count": "1", "checked_q_count": "0", "checked_h_count": "1",
-        "exact_result_hash": "4" * 64, "source_analysis_id": "",
-        "fallback_used": "false", "axis": "baseline", "axis_value": "baseline",
-        "normalized_utilization": "1/2",
-    })
-    writer.append("formal_rta_task_results.csv", {
-        "analysis_id": analysis_id,
-        "taskset_skeleton_id": certificate.taskset_skeleton_id,
-        "taskset_id": certificate.taskset_id, "method": "SEQ_THETA_SEQ",
-        "exact_e0": "0", "task_id": "tau-a", "priority_rank": "0",
-        "task_solver_status": "CANDIDATE_FOUND",
-        "task_certification_status": "CERTIFIED",
-        "candidate_response_time": "3", "D": str(certificate.tasks[0].relative_deadline),
-        "checked_w_count": "1", "checked_q_count": "0", "checked_h_count": "1",
-        "failure_reason": "", "exact_task_result_hash": "5" * 64,
-    })
-    writer.write_terminal(request_id, {"analysis_id": analysis_id, "solver_status": "COMPLETED"})
-    aggregate_root = tmp_path / "aggregate"
-    return root, aggregate_root
+    return root, tmp_path / "aggregate"
 
 
 def test_complete_fixture_closure_aggregation_and_plotting_are_validated(tmp_path):
@@ -459,8 +928,8 @@ def test_complete_fixture_closure_aggregation_and_plotting_are_validated(tmp_pat
     assert validate_plot_data(aggregate_root)["aggregate_sha256"] == manifest["aggregate_sha256"]
     plot_root = tmp_path / "plots"
     plot_manifest = render_formal_publication_figures(aggregate_root, plot_root)
-    assert len([name for name in plot_manifest["output_sha256"] if name.endswith(".png")]) == 5
-    assert len([name for name in plot_manifest["output_sha256"] if name.endswith(".pdf")]) == 5
+    assert len([name for name in plot_manifest["output_sha256"] if name.endswith(".png")]) == 1
+    assert len([name for name in plot_manifest["output_sha256"] if name.endswith(".pdf")]) == 1
 
 
 def test_legacy_profile_digests_counts_headers_and_allowlist_remain_exact():
