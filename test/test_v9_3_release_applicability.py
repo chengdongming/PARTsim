@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ProcessPoolExecutor
 from copy import deepcopy
+from dataclasses import replace
 from fractions import Fraction
 import json
 from pathlib import Path
@@ -21,23 +22,32 @@ from experiments.v9_3.constrained_taskset_identity import (
 )
 from experiments.v9_3.release_applicability import (
     ASYNC_HASH_PHASE_V1,
+    E0Evaluation,
     E0_CONDITION_NOT_SATISFIED,
     E0_CONDITION_SATISFIED,
     FINITE_BATTERY_EMPIRICAL,
     RELEASE_HORIZON,
+    RELEASE_SNAPSHOT_STAGE,
+    RTA_FAIL,
+    RTA_PASS,
+    SIM_DEADLINE_MISS,
+    SIM_NO_DEADLINE_MISS,
     SIMULATOR_TRACE_CONTRACT_VERSION,
     SYNC_V1,
     THEOREM_ALIGNED,
     ReleaseApplicabilityError,
     ReleaseObservationWindow,
     ReleaseProjection,
+    ReleaseTraceAudit,
     apply_release_projection,
     assess_applicability,
+    build_no_overflow_evidence,
     build_release_projection,
     evaluate_e0_condition,
     evaluate_e0_grid,
     parse_release_trace,
     simulation_applicability_identity,
+    validate_simulation_evidence,
 )
 from experiments.v9_3.simulation_engine import (
     SimulationConfigurationError,
@@ -108,36 +118,94 @@ def _process_projection(mode: str) -> bytes:
     ).canonical_bytes()
 
 
-def _trace_document(certificate, window, projection):
+SERVICE_ID = "d" * 64
+INITIAL_BATTERY = Fraction(1)
+BATTERY_CAPACITY = Fraction(10)
+
+
+def _trace_document(
+    certificate,
+    window,
+    projection,
+    *,
+    track=THEOREM_ALIGNED,
+    scheduler="gpfp_asap_block",
+    deadline_miss=False,
+):
     payload = apply_release_projection(
         certificate, projection, _base_payload(certificate)
     )
-    events = [
-        {
-            "time": "0",
-            "event_type": "arrival",
-            "task_name": runtime_task_name_for_source_id(
-                payload[0]["task_id"]
+    expected = sorted(
+        (
+            release,
+            row["priority_rank"],
+            row["task_id"],
+        )
+        for row in payload
+        for release in range(
+            row["arrival_offset"], RELEASE_HORIZON, row["T"]
+        )
+    )
+    releases = {}
+    for row in expected:
+        releases.setdefault(row[0], []).append(row)
+    events = []
+    for release, rows in sorted(releases.items()):
+        snapshot_energy = 50 if release == 0 else 1000
+        for _release, _rank, task_id in rows:
+            events.append({
+                "time": str(release),
+                "event_type": "arrival",
+                "task_name": runtime_task_name_for_source_id(task_id),
+                "arrival_time": str(release),
+                # Deliberately not the E0 evidence source.
+                "current_energy_mJ": -999,
+            })
+        for _release, _rank, task_id in rows:
+            events.append({
+                "time": str(release),
+                "event_type": "release_energy_snapshot",
+                "task_name": runtime_task_name_for_source_id(task_id),
+                "arrival_time": str(release),
+                "available_energy_mJ": snapshot_energy,
+                "sampling_stage": RELEASE_SNAPSHOT_STAGE,
+                "scheduler": scheduler,
+                "trace_contract_version": (
+                    SIMULATOR_TRACE_CONTRACT_VERSION
+                ),
+            })
+    if deadline_miss:
+        task = payload[0]
+        release = task["arrival_offset"]
+        deadline = release + task["D"]
+        events.append({
+            "time": str(deadline),
+            "event_type": "dline_miss",
+            "task_name": runtime_task_name_for_source_id(task["task_id"]),
+            "job_id": (
+                f"{runtime_task_name_for_source_id(task['task_id'])}@"
+                f"{release}"
             ),
-            "arrival_time": "0",
-            "current_energy_mJ": 50,
-        },
-        {
-            "time": "10",
-            "event_type": "arrival",
-            "task_name": runtime_task_name_for_source_id(
-                payload[1]["task_id"]
-            ),
-            "arrival_time": "10",
-            "current_energy_mJ": 1000,
-        },
-    ]
+            "arrival_time": str(release),
+            "deadline": str(deadline),
+            "remaining_execution_ms": 1,
+        })
+    simulation_id = simulation_applicability_identity(
+        taskset_id=certificate.taskset_id,
+        release_projection_id=projection.release_projection_id,
+        scheduler=scheduler,
+        service_identity=SERVICE_ID,
+        initial_battery=INITIAL_BATTERY,
+        battery_capacity=BATTERY_CAPACITY,
+        window=window,
+        applicability_track=track,
+    )
     return payload, {
         "events": events,
         "trace_schema_version": 2,
-        "run_id": "a" * 64,
+        "run_id": simulation_id,
         "taskset_semantic_hash": certificate.taskset_hash,
-        "configured_scheduler": "gpfp_asap_block",
+        "configured_scheduler": scheduler,
         "expected_simulation_horizon_ms": window.observation_horizon,
         "observed_simulation_end_ms": window.observation_horizon,
         "simulation_completed": True,
@@ -159,23 +227,113 @@ def _write_trace(path: Path, value) -> Path:
     return path
 
 
-def _parse_synthetic_trace(tmp_path):
+def _parse_synthetic_trace(
+    tmp_path,
+    *,
+    track=THEOREM_ALIGNED,
+    scheduler="gpfp_asap_block",
+    deadline_miss=False,
+):
+    tmp_path.mkdir(parents=True, exist_ok=True)
     certificate = _certificate()
     projection = build_release_projection(
         certificate, release_mode=SYNC_V1
     )
     window = ReleaseObservationWindow.for_certificate(certificate)
     payload, document = _trace_document(
-        certificate, window, projection
+        certificate,
+        window,
+        projection,
+        track=track,
+        scheduler=scheduler,
+        deadline_miss=deadline_miss,
     )
     audit = parse_release_trace(
         _write_trace(tmp_path / "trace.json", document),
         payload,
-        expected_simulation_id="a" * 64,
+        expected_simulation_id=document["run_id"],
         expected_taskset_hash=certificate.taskset_hash,
+        expected_certificate=certificate,
+        expected_projection=projection,
         window=window,
+        expected_scheduler=scheduler,
     )
     return certificate, projection, window, payload, document, audit
+
+
+def _small_certificate():
+    request = replace(
+        _request(),
+        replicate_index=8,
+        period_max=20_000,
+    )
+    skeleton = (
+        SkeletonTask("tau-a", 0, 3, 10_000, Fraction(1, 3)),
+        SkeletonTask("tau-b", 1, 5, 10_000, Fraction(2, 5)),
+        SkeletonTask("tau-c", 2, 7, 15_000, Fraction(3, 7)),
+    )
+    return build_taskset_identity_certificate(
+        request,
+        skeleton,
+        deadline_mode=CONSTRAINED_UNIFORM_SLACK_MODE,
+    )
+
+
+def _trace_fixture(
+    tmp_path,
+    *,
+    certificate=None,
+    release_mode=SYNC_V1,
+    track=THEOREM_ALIGNED,
+    scheduler="gpfp_asap_block",
+    deadline_miss=False,
+):
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    certificate = certificate or _small_certificate()
+    projection = build_release_projection(
+        certificate, release_mode=release_mode
+    )
+    window = ReleaseObservationWindow.for_certificate(certificate)
+    payload, document = _trace_document(
+        certificate,
+        window,
+        projection,
+        track=track,
+        scheduler=scheduler,
+        deadline_miss=deadline_miss,
+    )
+    return certificate, projection, window, payload, document
+
+
+def _parse_fixture(
+    tmp_path,
+    *,
+    certificate=None,
+    release_mode=SYNC_V1,
+    track=THEOREM_ALIGNED,
+    scheduler="gpfp_asap_block",
+    deadline_miss=False,
+):
+    values = _trace_fixture(
+        tmp_path,
+        certificate=certificate,
+        release_mode=release_mode,
+        track=track,
+        scheduler=scheduler,
+        deadline_miss=deadline_miss,
+    )
+    cert, projection, window, payload, document = values
+    audit = parse_release_trace(
+        _write_trace(tmp_path / "trace.json", document),
+        payload,
+        expected_simulation_id=document["run_id"],
+        expected_taskset_hash=cert.taskset_hash,
+        expected_certificate=cert,
+        expected_projection=projection,
+        window=window,
+        expected_scheduler=scheduler,
+    )
+    return (*values, audit)
 
 
 def test_sync_offsets_are_zero_and_async_is_deterministic_and_in_range():
@@ -286,55 +444,111 @@ def test_trace_energy_uses_exact_binary64_materialization_and_e0_grid(tmp_path):
     assert below.status == E0_CONDITION_NOT_SATISFIED
     assert below.first_violating_task_id == "tau-a"
     assert below.first_violating_release == 0
-    assert all(row.evaluated_release_count == 2 for row in evaluations)
+    assert all(row.evaluated_release_count == 6801 for row in evaluations)
 
 
 def test_applicability_tracks_and_e0_failure_precedence(tmp_path):
-    *_unused, audit = _parse_synthetic_trace(tmp_path)
-    valid_e0 = evaluate_e0_condition(audit, Fraction(1, 20))
-    invalid_e0 = evaluate_e0_condition(audit, Fraction(1))
-    theorem = assess_applicability(
-        requested_track=THEOREM_ALIGNED,
-        e0_evaluation=valid_e0,
-        release_cutoff_valid=True,
-        observation_horizon_complete=True,
-        no_overflow_valid=True,
-        identity_match=True,
-        scheduler_is_target=True,
-        rta_pass=True,
-        simulation_deadline_miss=True,
+    def evidence(audit, track, *, overflow=True):
+        simulation = validate_simulation_evidence(
+            audit,
+            service_identity=SERVICE_ID,
+            initial_battery=INITIAL_BATTERY,
+            battery_capacity=BATTERY_CAPACITY,
+            applicability_track=track,
+        )
+        no_overflow = build_no_overflow_evidence(
+            initial_battery=INITIAL_BATTERY,
+            battery_capacity=BATTERY_CAPACITY,
+            offered_harvest=Fraction(1 if overflow else 10),
+            required_margin=Fraction(0),
+            service_identity=SERVICE_ID,
+            observation_horizon=audit.observation_horizon,
+        )
+        return simulation, no_overflow
+
+    def classify(
+        audit,
+        track,
+        requested_e0,
+        *,
+        overflow=True,
+        rta_outcome=RTA_PASS,
+    ):
+        simulation, no_overflow = evidence(
+            audit, track, overflow=overflow
+        )
+        evaluation = evaluate_e0_condition(audit, requested_e0)
+        return assess_applicability(
+            requested_track=track,
+            release_trace_audit=audit,
+            requested_e0=requested_e0,
+            e0_evaluation=evaluation,
+            no_overflow_evidence=no_overflow,
+            simulation_evidence=simulation,
+            expected_taskset_id=audit.taskset_id,
+            expected_taskset_hash=audit.taskset_hash,
+            expected_release_projection_id=(
+                audit.release_projection_id
+            ),
+            expected_simulation_id=audit.simulation_id,
+            rta_outcome=rta_outcome,
+            simulation_outcome=audit.simulation_outcome,
+        )
+
+    *_unused, theorem_audit = _parse_synthetic_trace(tmp_path / "theorem")
+    theorem = classify(
+        theorem_audit, THEOREM_ALIGNED, Fraction(1, 20)
     )
     assert theorem.theorem_comparison_eligible
-    assert theorem.theorem_applicable_soundness_counterexample
-    assert not theorem.empirical_difference
-    empirical = assess_applicability(
-        requested_track=FINITE_BATTERY_EMPIRICAL,
-        e0_evaluation=valid_e0,
-        release_cutoff_valid=True,
-        observation_horizon_complete=True,
-        no_overflow_valid=False,
-        identity_match=True,
-        scheduler_is_target=True,
-        rta_pass=True,
-        simulation_deadline_miss=True,
+    assert not theorem.theorem_applicable_soundness_counterexample
+
+    *_unused, miss_audit = _parse_synthetic_trace(
+        tmp_path / "miss", deadline_miss=True
+    )
+    counterexample = classify(
+        miss_audit, THEOREM_ALIGNED, Fraction(1, 20)
+    )
+    assert counterexample.theorem_applicable_soundness_counterexample
+    assert not counterexample.empirical_difference
+    rta_failure = classify(
+        miss_audit,
+        THEOREM_ALIGNED,
+        Fraction(1, 20),
+        rta_outcome=RTA_FAIL,
+    )
+    assert not rta_failure.theorem_applicable_soundness_counterexample
+
+    *_unused, empirical_audit = _parse_synthetic_trace(
+        tmp_path / "empirical",
+        track=FINITE_BATTERY_EMPIRICAL,
+        deadline_miss=True,
+    )
+    empirical = classify(
+        empirical_audit,
+        FINITE_BATTERY_EMPIRICAL,
+        Fraction(1, 20),
+        overflow=False,
     )
     assert empirical.category == FINITE_BATTERY_EMPIRICAL
     assert not empirical.theorem_applicable_soundness_counterexample
     assert empirical.empirical_difference
-    inapplicable = assess_applicability(
-        requested_track=THEOREM_ALIGNED,
-        e0_evaluation=invalid_e0,
-        release_cutoff_valid=False,
-        observation_horizon_complete=False,
-        no_overflow_valid=False,
-        identity_match=False,
-        scheduler_is_target=False,
-        rta_pass=True,
-        simulation_deadline_miss=True,
+
+    inapplicable = classify(
+        theorem_audit, THEOREM_ALIGNED, Fraction(1)
     )
     assert inapplicable.category == E0_CONDITION_NOT_SATISFIED
     assert not inapplicable.theorem_comparison_eligible
     assert not inapplicable.theorem_applicable_soundness_counterexample
+
+    with pytest.raises(
+        ReleaseApplicabilityError, match="no_overflow"
+    ):
+        classify(
+            theorem_audit,
+            THEOREM_ALIGNED,
+            Fraction(1, 20),
+            overflow=False,
+        )
 
 
 @pytest.mark.parametrize(
@@ -377,13 +591,16 @@ def test_trace_horizon_cutoff_and_identity_fail_closed(
     payload, document = _trace_document(
         certificate, window, projection
     )
+    expected_simulation_id = document["run_id"]
     mutation(document)
     with pytest.raises(ReleaseApplicabilityError, match=error):
         parse_release_trace(
             _write_trace(tmp_path / "malformed.json", document),
             payload,
-            expected_simulation_id="a" * 64,
+            expected_simulation_id=expected_simulation_id,
             expected_taskset_hash=certificate.taskset_hash,
+            expected_certificate=certificate,
+            expected_projection=projection,
             window=window,
         )
 
@@ -607,7 +824,535 @@ def test_projection_and_trace_material_reject_tampering(tmp_path):
         parse_release_trace(
             _write_trace(tmp_path / "wrong-contract.json", document),
             payload,
-            expected_simulation_id="a" * 64,
+            expected_simulation_id=document["run_id"],
             expected_taskset_hash=certificate.taskset_hash,
+            expected_certificate=certificate,
+            expected_projection=_projection_value,
             window=window,
+        )
+
+
+def test_complete_expected_set_and_v2_snapshots_are_bound(tmp_path):
+    *_unused, audit = _parse_fixture(tmp_path)
+    assert audit.expected_release_count == 8
+    assert audit.evaluated_release_count == 8
+    assert len(audit.samples) == 8
+    at_zero = [
+        row.energy_exact for row in audit.samples if row.release == 0
+    ]
+    assert len(at_zero) == 3
+    assert at_zero == [Fraction(1, 20)] * 3
+    assert audit.minimum_release_energy_exact == Fraction(1, 20)
+    assert audit.trace_contract_version == (
+        "ASAP_BLOCK_V9_3_RELEASE_CUTOFF_TRACE_V2"
+    )
+    assert audit.expected_arrival_set_digest
+    assert audit.observed_arrival_set_digest
+    assert audit.samples_digest
+    assert audit.release_trace_audit_id
+
+
+def test_frozen_6801_release_case_rejects_one_or_two_arrivals(tmp_path):
+    (
+        certificate,
+        projection,
+        window,
+        payload,
+        document,
+        audit,
+    ) = _parse_synthetic_trace(tmp_path / "complete")
+    assert audit.expected_release_count == 6801
+    assert audit.evaluated_release_count == 6801
+
+    for retained in (1, 2):
+        candidate = deepcopy(document)
+        arrivals = [
+            event for event in candidate["events"]
+            if event.get("event_type") == "arrival"
+        ][:retained]
+        snapshots = [
+            event for event in candidate["events"]
+            if event.get("event_type") == "release_energy_snapshot"
+        ][:retained]
+        candidate["events"] = arrivals + snapshots
+        with pytest.raises(
+            ReleaseApplicabilityError, match="missing arrivals"
+        ):
+            parse_release_trace(
+                _write_trace(
+                    tmp_path / f"incomplete-{retained}.json",
+                    candidate,
+                ),
+                payload,
+                expected_simulation_id=document["run_id"],
+                expected_taskset_hash=certificate.taskset_hash,
+                expected_certificate=certificate,
+                expected_projection=projection,
+                window=window,
+            )
+
+
+def test_arrival_and_snapshot_counterexamples_fail_closed(tmp_path):
+    (
+        certificate,
+        projection,
+        window,
+        payload,
+        document,
+    ) = _trace_fixture(tmp_path)
+
+    def parse_candidate(name, candidate, candidate_payload=None):
+        return parse_release_trace(
+            _write_trace(tmp_path / f"{name}.json", candidate),
+            payload if candidate_payload is None else candidate_payload,
+            expected_simulation_id=document["run_id"],
+            expected_taskset_hash=certificate.taskset_hash,
+            expected_certificate=certificate,
+            expected_projection=projection,
+            window=window,
+        )
+
+    def first_index(candidate, event_type, *, release=None):
+        return next(
+            index for index, event in enumerate(candidate["events"])
+            if event.get("event_type") == event_type
+            and (
+                release is None
+                or int(event.get("arrival_time")) == release
+            )
+        )
+
+    candidate = deepcopy(document)
+    candidate["events"].pop(first_index(candidate, "arrival"))
+    with pytest.raises(ReleaseApplicabilityError, match="missing arrivals"):
+        parse_candidate("missing-arrival", candidate)
+
+    candidate = deepcopy(document)
+    arrival = deepcopy(
+        candidate["events"][first_index(candidate, "arrival")]
+    )
+    candidate["events"].append(arrival)
+    with pytest.raises(ReleaseApplicabilityError, match="duplicate arrivals"):
+        parse_candidate("duplicate-arrival", candidate)
+
+    candidate = deepcopy(document)
+    off_grid = deepcopy(
+        candidate["events"][first_index(candidate, "arrival")]
+    )
+    off_grid.update(time="1", arrival_time="1")
+    candidate["events"].append(off_grid)
+    with pytest.raises(ReleaseApplicabilityError, match="off-grid"):
+        parse_candidate("off-grid-arrival", candidate)
+
+    candidate = deepcopy(document)
+    at_cutoff = deepcopy(
+        candidate["events"][first_index(candidate, "arrival")]
+    )
+    at_cutoff.update(time="30000", arrival_time="30000")
+    candidate["events"].append(at_cutoff)
+    with pytest.raises(
+        ReleaseApplicabilityError, match="at/after release horizon"
+    ):
+        parse_candidate("at-cutoff-arrival", candidate)
+
+    candidate = deepcopy(document)
+    candidate["events"][first_index(candidate, "arrival")][
+        "task_name"
+    ] = "unknown-runtime-task"
+    with pytest.raises(
+        ReleaseApplicabilityError, match="unknown runtime task"
+    ):
+        parse_candidate("unknown-arrival", candidate)
+
+    candidate = deepcopy(document)
+    candidate["events"][first_index(candidate, "arrival")][
+        "arrival_time"
+    ] = "1"
+    with pytest.raises(
+        ReleaseApplicabilityError, match="time/release mismatch"
+    ):
+        parse_candidate("arrival-time-mismatch", candidate)
+
+    malformed_payload = [dict(row) for row in payload]
+    malformed_payload[0]["ph"] = 1
+    with pytest.raises(
+        ReleaseApplicabilityError, match="offset/ph mismatch"
+    ):
+        parse_candidate(
+            "payload-ph-mismatch", deepcopy(document), malformed_payload
+        )
+
+    malformed_payload = [dict(row) for row in payload]
+    malformed_payload[0]["arrival_offset"] = 1
+    malformed_payload[0]["ph"] = 1
+    with pytest.raises(
+        ReleaseApplicabilityError, match="projection mismatch"
+    ):
+        parse_candidate(
+            "payload-projection-mismatch",
+            deepcopy(document),
+            malformed_payload,
+        )
+
+    malformed_payload = [dict(row) for row in payload]
+    malformed_payload[0]["C"] += 1
+    with pytest.raises(
+        ReleaseApplicabilityError, match="taskset certificate mismatch"
+    ):
+        parse_candidate(
+            "payload-certificate-mismatch",
+            deepcopy(document),
+            malformed_payload,
+        )
+
+    candidate = deepcopy(document)
+    candidate["events"].pop(
+        first_index(candidate, "release_energy_snapshot")
+    )
+    with pytest.raises(
+        ReleaseApplicabilityError, match="missing release energy snapshots"
+    ):
+        parse_candidate("missing-snapshot", candidate)
+
+    candidate = deepcopy(document)
+    snapshot = deepcopy(
+        candidate["events"][
+            first_index(candidate, "release_energy_snapshot")
+        ]
+    )
+    candidate["events"].append(snapshot)
+    with pytest.raises(
+        ReleaseApplicabilityError, match="duplicate release energy"
+    ):
+        parse_candidate("duplicate-snapshot", candidate)
+
+    candidate = deepcopy(document)
+    snapshot = deepcopy(
+        candidate["events"][
+            first_index(candidate, "release_energy_snapshot")
+        ]
+    )
+    snapshot.update(time="1", arrival_time="1")
+    candidate["events"].append(snapshot)
+    with pytest.raises(
+        ReleaseApplicabilityError, match="snapshot without arrival"
+    ):
+        parse_candidate("snapshot-without-arrival", candidate)
+
+    for field, value, error in (
+        ("sampling_stage", "post_consumption", "stage mismatch"),
+        ("scheduler", "gpfp_asap_sync", "scheduler mismatch"),
+        ("trace_contract_version", "V1", "contract mismatch"),
+    ):
+        candidate = deepcopy(document)
+        candidate["events"][
+            first_index(candidate, "release_energy_snapshot")
+        ][field] = value
+        with pytest.raises(ReleaseApplicabilityError, match=error):
+            parse_candidate(f"snapshot-{field}", candidate)
+
+    candidate = deepcopy(document)
+    candidate["events"][
+        first_index(candidate, "release_energy_snapshot")
+    ]["time"] = "1"
+    with pytest.raises(
+        ReleaseApplicabilityError, match="time/release mismatch"
+    ):
+        parse_candidate("snapshot-time", candidate)
+
+    candidate = deepcopy(document)
+    second_snapshot = [
+        index for index, event in enumerate(candidate["events"])
+        if event.get("event_type") == "release_energy_snapshot"
+        and event.get("arrival_time") == "0"
+    ][1]
+    candidate["events"][second_snapshot]["available_energy_mJ"] = 51
+    with pytest.raises(
+        ReleaseApplicabilityError, match="same-tick"
+    ):
+        parse_candidate("same-tick-energy", candidate)
+
+    candidate = deepcopy(document)
+    snapshot_position = first_index(
+        candidate, "release_energy_snapshot", release=0
+    )
+    candidate["events"].insert(snapshot_position, {
+        "time": "0",
+        "event_type": "scheduled",
+        "task_name": runtime_task_name_for_source_id("tau-a"),
+        "arrival_time": "0",
+    })
+    with pytest.raises(
+        ReleaseApplicabilityError, match="after consumption"
+    ):
+        parse_candidate("snapshot-after-consumption", candidate)
+
+    candidate = deepcopy(document)
+    for event in candidate["events"]:
+        if event.get("event_type") == "arrival":
+            event["current_energy_mJ"] = "ignored-not-energy"
+    parsed = parse_candidate("legacy-arrival-energy-ignored", candidate)
+    assert parsed.minimum_release_energy_exact == Fraction(1, 20)
+
+    candidate = deepcopy(document)
+    candidate["simulator_trace_contract_version"] = (
+        "ASAP_BLOCK_V9_3_RELEASE_CUTOFF_TRACE_V1"
+    )
+    with pytest.raises(
+        ReleaseApplicabilityError, match="contract version mismatch"
+    ):
+        parse_candidate("v1-trace", candidate)
+
+    candidate = deepcopy(document)
+    candidate["simulation_completed"] = False
+    with pytest.raises(
+        ReleaseApplicabilityError, match="horizon is incomplete"
+    ):
+        parse_candidate("invalid-status", candidate)
+
+
+def test_release_audit_and_evidence_reject_direct_tampering(tmp_path):
+    *_unused, audit = _parse_fixture(tmp_path)
+    mutations = (
+        {"expected_release_count": 999},
+        {"expected_arrival_set_digest": "0" * 64},
+        {"samples": audit.samples[1:]},
+        {
+            "samples": (
+                replace(audit.samples[0], release=1),
+                *audit.samples[1:],
+            )
+        },
+        {
+            "minimum_release_energy_exact":
+                audit.minimum_release_energy_exact + 1
+        },
+    )
+    for mutation in mutations:
+        with pytest.raises(
+            ReleaseApplicabilityError,
+            match="validated trace parsing",
+        ):
+            replace(audit, **mutation)
+
+    no_overflow = build_no_overflow_evidence(
+        initial_battery=INITIAL_BATTERY,
+        battery_capacity=BATTERY_CAPACITY,
+        offered_harvest=Fraction(1),
+        required_margin=Fraction(0),
+        service_identity=SERVICE_ID,
+        observation_horizon=audit.observation_horizon,
+    )
+    with pytest.raises(
+        ReleaseApplicabilityError, match="derivation mismatch"
+    ):
+        replace(no_overflow, valid=False)
+
+    simulation = validate_simulation_evidence(
+        audit,
+        service_identity=SERVICE_ID,
+        initial_battery=INITIAL_BATTERY,
+        battery_capacity=BATTERY_CAPACITY,
+        applicability_track=THEOREM_ALIGNED,
+    )
+    with pytest.raises(
+        ReleaseApplicabilityError, match="validated trace"
+    ):
+        replace(simulation, release_projection_id="f" * 64)
+
+
+def test_forged_or_cross_chain_evidence_cannot_be_theorem_aligned(
+    tmp_path,
+):
+    (
+        certificate,
+        projection,
+        window,
+        payload,
+        document,
+        audit,
+    ) = _parse_fixture(tmp_path / "primary")
+    evaluation = evaluate_e0_condition(audit, Fraction(1, 20))
+    no_overflow = build_no_overflow_evidence(
+        initial_battery=INITIAL_BATTERY,
+        battery_capacity=BATTERY_CAPACITY,
+        offered_harvest=Fraction(1),
+        required_margin=Fraction(0),
+        service_identity=SERVICE_ID,
+        observation_horizon=audit.observation_horizon,
+    )
+    simulation = validate_simulation_evidence(
+        audit,
+        service_identity=SERVICE_ID,
+        initial_battery=INITIAL_BATTERY,
+        battery_capacity=BATTERY_CAPACITY,
+        applicability_track=THEOREM_ALIGNED,
+    )
+    base = {
+        "requested_track": THEOREM_ALIGNED,
+        "release_trace_audit": audit,
+        "requested_e0": Fraction(1, 20),
+        "e0_evaluation": evaluation,
+        "no_overflow_evidence": no_overflow,
+        "simulation_evidence": simulation,
+        "expected_taskset_id": audit.taskset_id,
+        "expected_taskset_hash": audit.taskset_hash,
+        "expected_release_projection_id": (
+            audit.release_projection_id
+        ),
+        "expected_simulation_id": audit.simulation_id,
+        "rta_outcome": RTA_PASS,
+        "simulation_outcome": audit.simulation_outcome,
+    }
+    result = assess_applicability(**base)
+    assert result.category == THEOREM_ALIGNED
+
+    with pytest.raises(TypeError):
+        assess_applicability(
+            requested_track=THEOREM_ALIGNED,
+            e0_evaluation=evaluation,
+            release_cutoff_valid=True,
+            observation_horizon_complete=True,
+            no_overflow_valid=True,
+            identity_match=True,
+            scheduler_is_target=True,
+            rta_pass=True,
+            simulation_deadline_miss=True,
+        )
+
+    forged = object.__new__(E0Evaluation)
+    for name in evaluation.__dataclass_fields__:
+        object.__setattr__(forged, name, getattr(evaluation, name))
+    object.__setattr__(
+        forged, "minimum_release_energy_exact", Fraction(10**9)
+    )
+    object.__setattr__(forged, "expected_release_count", 999)
+    object.__setattr__(
+        forged, "first_violating_task_id", "not-in-trace"
+    )
+    object.__setattr__(forged, "first_violating_release", 29_999)
+    object.__setattr__(forged, "e0_condition_satisfied", False)
+    object.__setattr__(
+        forged, "status", E0_CONDITION_NOT_SATISFIED
+    )
+    forged_values = dict(base)
+    forged_values["e0_evaluation"] = forged
+    with pytest.raises(
+        ReleaseApplicabilityError, match="E0 evaluation/release audit"
+    ):
+        assess_applicability(**forged_values)
+
+    other_document = deepcopy(document)
+    for event in other_document["events"]:
+        if (
+            event.get("event_type") == "release_energy_snapshot"
+            and event.get("arrival_time") == "0"
+        ):
+            event["available_energy_mJ"] = 60
+    other_audit = parse_release_trace(
+        _write_trace(tmp_path / "other-audit.json", other_document),
+        payload,
+        expected_simulation_id=document["run_id"],
+        expected_taskset_hash=certificate.taskset_hash,
+        expected_certificate=certificate,
+        expected_projection=projection,
+        window=window,
+    )
+    other_evaluation = evaluate_e0_condition(
+        other_audit, Fraction(1, 20)
+    )
+    cross_e0 = dict(base)
+    cross_e0["e0_evaluation"] = other_evaluation
+    with pytest.raises(
+        ReleaseApplicabilityError, match="E0 evaluation/release audit"
+    ):
+        assess_applicability(**cross_e0)
+
+    wrong_service = build_no_overflow_evidence(
+        initial_battery=INITIAL_BATTERY,
+        battery_capacity=BATTERY_CAPACITY,
+        offered_harvest=Fraction(1),
+        required_margin=Fraction(0),
+        service_identity="e" * 64,
+        observation_horizon=audit.observation_horizon,
+    )
+    cross_service = dict(base)
+    cross_service["no_overflow_evidence"] = wrong_service
+    with pytest.raises(
+        ReleaseApplicabilityError,
+        match="no-overflow/simulation evidence mismatch",
+    ):
+        assess_applicability(**cross_service)
+
+    *_values, other_projection_audit = _parse_fixture(
+        tmp_path / "other-projection",
+        release_mode=ASYNC_HASH_PHASE_V1,
+    )
+    other_simulation = validate_simulation_evidence(
+        other_projection_audit,
+        service_identity=SERVICE_ID,
+        initial_battery=INITIAL_BATTERY,
+        battery_capacity=BATTERY_CAPACITY,
+        applicability_track=THEOREM_ALIGNED,
+    )
+    cross_projection = dict(base)
+    cross_projection["simulation_evidence"] = other_simulation
+    with pytest.raises(
+        ReleaseApplicabilityError,
+        match="simulation evidence/release audit mismatch",
+    ):
+        assess_applicability(**cross_projection)
+
+    identity_mismatch = dict(base)
+    identity_mismatch["expected_taskset_id"] = "f" * 64
+    with pytest.raises(
+        ReleaseApplicabilityError,
+        match="expected applicability identity mismatch",
+    ):
+        assess_applicability(**identity_mismatch)
+
+    *_values, wrong_scheduler_audit = _parse_fixture(
+        tmp_path / "wrong-scheduler",
+        scheduler="gpfp_asap_sync",
+    )
+    wrong_scheduler_simulation = validate_simulation_evidence(
+        wrong_scheduler_audit,
+        service_identity=SERVICE_ID,
+        initial_battery=INITIAL_BATTERY,
+        battery_capacity=BATTERY_CAPACITY,
+        applicability_track=THEOREM_ALIGNED,
+    )
+    wrong_scheduler_overflow = build_no_overflow_evidence(
+        initial_battery=INITIAL_BATTERY,
+        battery_capacity=BATTERY_CAPACITY,
+        offered_harvest=Fraction(1),
+        required_margin=Fraction(0),
+        service_identity=SERVICE_ID,
+        observation_horizon=(
+            wrong_scheduler_audit.observation_horizon
+        ),
+    )
+    wrong_scheduler_e0 = evaluate_e0_condition(
+        wrong_scheduler_audit, Fraction(1, 20)
+    )
+    with pytest.raises(
+        ReleaseApplicabilityError, match="scheduler mismatch"
+    ):
+        assess_applicability(
+            requested_track=THEOREM_ALIGNED,
+            release_trace_audit=wrong_scheduler_audit,
+            requested_e0=Fraction(1, 20),
+            e0_evaluation=wrong_scheduler_e0,
+            no_overflow_evidence=wrong_scheduler_overflow,
+            simulation_evidence=wrong_scheduler_simulation,
+            expected_taskset_id=wrong_scheduler_audit.taskset_id,
+            expected_taskset_hash=wrong_scheduler_audit.taskset_hash,
+            expected_release_projection_id=(
+                wrong_scheduler_audit.release_projection_id
+            ),
+            expected_simulation_id=wrong_scheduler_audit.simulation_id,
+            rta_outcome=RTA_PASS,
+            simulation_outcome=(
+                wrong_scheduler_audit.simulation_outcome
+            ),
         )

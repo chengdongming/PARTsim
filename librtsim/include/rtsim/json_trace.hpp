@@ -43,6 +43,11 @@ namespace RTSim {
         double absolute_deadline;
     };
 
+    struct ReleaseEnergySnapshotJob {
+        std::string task_name;
+        MetaSim::Tick arrival_time;
+    };
+
     // EXT-1B/B3 read-only timing evidence.  Schedulers populate this only
     // after their native selection decision has been finalized; no field is
     // consumed by scheduling code.
@@ -177,6 +182,11 @@ namespace RTSim {
         void setReleaseObservationWindow(
             MetaSim::Tick release_horizon,
             MetaSim::Tick observation_horizon);
+
+        void logReleaseEnergySnapshots(
+            const std::string &scheduler,
+            double available_energy_mJ,
+            const std::vector<ReleaseEnergySnapshotJob> &released_jobs);
 
         void logSchedulerDecision(
             const std::string &scheduler,

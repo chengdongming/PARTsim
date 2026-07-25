@@ -12,6 +12,7 @@
 #include <iostream>
 #include <memory>
 #include <stdexcept>
+#include <tuple>
 #include <metasim/factory.hpp>
 #include <metasim/simul.hpp>
 #include <rtsim/json_trace.hpp>
@@ -360,6 +361,34 @@ namespace RTSim {
         const double harvested = collectEnergyAtTickBoundary();
         const double available_energy =
             std::min(_max_energy, _current_energy + harvested);
+
+        if (_trace_logger) {
+            std::vector<ReleaseEnergySnapshotJob> released_jobs;
+            for (const auto &[task, arrival_tick] : _pending_arrivals) {
+                if (task && arrival_tick == current_time) {
+                    Task *concrete_task =
+                        dynamic_cast<Task *>(task);
+                    released_jobs.push_back(
+                        {
+                            concrete_task
+                                ? concrete_task->getName()
+                                : getTaskName(task),
+                            arrival_tick,
+                        });
+                }
+            }
+            std::sort(
+                released_jobs.begin(), released_jobs.end(),
+                [](const ReleaseEnergySnapshotJob &left,
+                   const ReleaseEnergySnapshotJob &right) {
+                    return std::tie(left.arrival_time, left.task_name) <
+                           std::tie(right.arrival_time, right.task_name);
+                });
+            _trace_logger->logReleaseEnergySnapshots(
+                "gpfp_asap_block",
+                available_energy * 1000.0,
+                released_jobs);
+        }
 
         std::vector<AbsRTTask *> active_jobs =
             collectActiveJobs(current_time);

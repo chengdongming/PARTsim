@@ -82,7 +82,7 @@ namespace RTSim {
            << std::endl;
         if (_release_cutoff_enabled) {
             fd << "    \"simulator_trace_contract_version\": "
-                  "\"ASAP_BLOCK_V9_3_RELEASE_CUTOFF_TRACE_V1\","
+                  "\"ASAP_BLOCK_V9_3_RELEASE_CUTOFF_TRACE_V2\","
                << std::endl;
             fd << "    \"release_horizon_ms\": " << _release_horizon
                << "," << std::endl;
@@ -151,6 +151,47 @@ namespace RTSim {
         _release_cutoff_enabled = true;
         _release_horizon = release_horizon;
         _observation_horizon = observation_horizon;
+    }
+
+    void JSONTrace::logReleaseEnergySnapshots(
+        const std::string &scheduler,
+        double available_energy_mJ,
+        const std::vector<ReleaseEnergySnapshotJob> &released_jobs) {
+        if (!_release_cutoff_enabled || released_jobs.empty())
+            return;
+        if (scheduler.empty() ||
+            (!_configured_scheduler.empty() &&
+             scheduler != _configured_scheduler) ||
+            !std::isfinite(available_energy_mJ) ||
+            available_energy_mJ < 0.0) {
+            throw std::invalid_argument(
+                "invalid release energy snapshot material");
+        }
+
+        std::set<std::pair<std::string, MetaSim::Tick::impl_t>> seen;
+        for (const auto &job : released_jobs) {
+            const auto arrival =
+                static_cast<MetaSim::Tick::impl_t>(job.arrival_time);
+            if (job.task_name.empty() ||
+                job.arrival_time != SIMUL.getTime() ||
+                !seen.emplace(job.task_name, arrival).second) {
+                throw std::invalid_argument(
+                    "invalid release energy snapshot job");
+            }
+            beginEvent();
+            fd << "\"time\": \"" << SIMUL.getTime() << "\", ";
+            fd << "\"event_type\": \"release_energy_snapshot\", ";
+            fd << "\"task_name\": \"" << escapeJson(job.task_name)
+               << "\", ";
+            fd << "\"arrival_time\": \"" << job.arrival_time << "\", ";
+            fd << "\"available_energy_mJ\": "
+               << exactDoubleString(available_energy_mJ) << ", ";
+            fd << "\"sampling_stage\": "
+                  "\"post_harvest_pre_consumption\", ";
+            fd << "\"scheduler\": \"" << escapeJson(scheduler) << "\", ";
+            fd << "\"trace_contract_version\": "
+                  "\"ASAP_BLOCK_V9_3_RELEASE_CUTOFF_TRACE_V2\"}";
+        }
     }
 
     // ⭐ 写入任务能量信息

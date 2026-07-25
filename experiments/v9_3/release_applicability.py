@@ -7,7 +7,7 @@ never enter the task-set or RTA identities.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from fractions import Fraction
 import hashlib
 import json
@@ -42,7 +42,26 @@ SIMULATION_APPLICABILITY_CONTRACT_VERSION = (
 )
 SIMULATION_ID_DOMAIN = "ASAP_BLOCK:V9.3:SIMULATION_APPLICABILITY:v1"
 SIMULATOR_TRACE_CONTRACT_VERSION = (
-    "ASAP_BLOCK_V9_3_RELEASE_CUTOFF_TRACE_V1"
+    "ASAP_BLOCK_V9_3_RELEASE_CUTOFF_TRACE_V2"
+)
+RELEASE_SNAPSHOT_STAGE = "post_harvest_pre_consumption"
+
+EXPECTED_ARRIVAL_SET_DOMAIN = (
+    "ASAP_BLOCK:V9.3:EXPECTED_ARRIVAL_SET:v1"
+)
+OBSERVED_ARRIVAL_SET_DOMAIN = (
+    "ASAP_BLOCK:V9.3:OBSERVED_ARRIVAL_SET:v1"
+)
+RELEASE_SAMPLES_DOMAIN = "ASAP_BLOCK:V9.3:RELEASE_SAMPLES:v1"
+RELEASE_TRACE_AUDIT_DOMAIN = (
+    "ASAP_BLOCK:V9.3:RELEASE_TRACE_AUDIT:v1"
+)
+E0_EVALUATION_DOMAIN = "ASAP_BLOCK:V9.3:E0_EVALUATION:v1"
+NO_OVERFLOW_EVIDENCE_DOMAIN = (
+    "ASAP_BLOCK:V9.3:NO_OVERFLOW_EVIDENCE:v1"
+)
+VALIDATED_SIMULATION_EVIDENCE_DOMAIN = (
+    "ASAP_BLOCK:V9.3:VALIDATED_SIMULATION_EVIDENCE:v1"
 )
 
 THEOREM_ALIGNED = "THEOREM_ALIGNED"
@@ -54,6 +73,10 @@ APPLICABILITY_TRACKS = frozenset({
     FINITE_BATTERY_EMPIRICAL,
 })
 TARGET_SCHEDULER = "gpfp_asap_block"
+RTA_PASS = "RTA_PASS"
+RTA_FAIL = "RTA_FAIL"
+SIM_DEADLINE_MISS = "SIM_DEADLINE_MISS"
+SIM_NO_DEADLINE_MISS = "SIM_NO_DEADLINE_MISS"
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
@@ -607,6 +630,57 @@ def simulation_applicability_identity(**kwargs: Any) -> str:
     )
 
 
+def _fraction_material(value: Fraction) -> Dict[str, int]:
+    if type(value) is not Fraction:
+        raise ReleaseApplicabilityError(
+            "identity energy must be an exact Fraction"
+        )
+    return {
+        "numerator": value.numerator,
+        "denominator": value.denominator,
+    }
+
+
+@dataclass(frozen=True)
+class ReleaseTaskParameters:
+    task_id: str
+    priority_rank: int
+    wcet: int
+    relative_deadline: int
+    period: int
+    arrival_offset: int
+
+    def __post_init__(self) -> None:
+        _canonical_string(self.task_id, "release task task_id")
+        _plain_int(self.priority_rank, "release task priority_rank")
+        wcet = _plain_int(self.wcet, "release task C", 1)
+        deadline = _plain_int(
+            self.relative_deadline, "release task D", 1
+        )
+        period = _plain_int(self.period, "release task T", 1)
+        offset = _plain_int(
+            self.arrival_offset, "release task arrival_offset"
+        )
+        if not wcet <= deadline <= period:
+            raise ReleaseApplicabilityError(
+                "release task must satisfy 1 <= C <= D <= T"
+            )
+        if offset >= period:
+            raise ReleaseApplicabilityError(
+                "release task must satisfy 0 <= O_i < T_i"
+            )
+
+    def material(self) -> Dict[str, Any]:
+        return {
+            "task_id": self.task_id,
+            "priority_rank": self.priority_rank,
+            "C": self.wcet,
+            "D": self.relative_deadline,
+            "T": self.period,
+            "arrival_offset": self.arrival_offset,
+        }
+
+
 @dataclass(frozen=True)
 class ReleaseEnergySample:
     task_id: str
@@ -628,43 +702,170 @@ class ReleaseEnergySample:
             "task_id": self.task_id,
             "priority_rank": self.priority_rank,
             "release": self.release,
-            "energy_exact": fraction_text(self.energy_exact),
+            "energy_exact": _fraction_material(self.energy_exact),
         }
+
+
+def _expected_arrivals(
+    tasks: Tuple[ReleaseTaskParameters, ...],
+    release_horizon: int,
+) -> Tuple[Tuple[str, int], ...]:
+    # ``tasks`` is already in canonical contiguous priority order.  Keeping
+    # each task's releases in increasing order gives a canonical sequence
+    # without sorting the full release set, so reconstruction remains O(N).
+    return tuple(
+        (task.task_id, release)
+        for task in tasks
+        for release in range(
+            task.arrival_offset, release_horizon, task.period
+        )
+    )
+
+
+def _arrival_set_digest(
+    domain: str, arrivals: Sequence[Tuple[str, int]]
+) -> str:
+    seen = set()
+    material = []
+    for task_id, release in arrivals:
+        if (task_id, release) in seen:
+            raise ReleaseApplicabilityError(
+                "arrival set digest cannot contain duplicates"
+            )
+        seen.add((task_id, release))
+        material.append({"task_id": task_id, "release": release})
+    return _identity_hash(
+        domain,
+        material,
+    )
+
+
+def _samples_digest(samples: Sequence[ReleaseEnergySample]) -> str:
+    return _identity_hash(
+        RELEASE_SAMPLES_DOMAIN,
+        [row.material() for row in samples],
+    )
+
+
+_RELEASE_TRACE_AUDIT_TOKEN = object()
 
 
 @dataclass(frozen=True)
 class ReleaseTraceAudit:
     simulation_id: str
+    taskset_id: str
     taskset_hash: str
+    release_projection_id: str
+    release_vector_hash: str
     scheduler: str
+    trace_contract_version: str
     release_horizon: int
     observation_horizon: int
     release_cutoff_enabled: bool
     observation_horizon_reached: bool
+    observed_simulation_end: int
+    simulation_completion_reason: str
+    simulation_outcome: str
+    tasks: Tuple[ReleaseTaskParameters, ...]
+    expected_release_count: int
+    expected_arrival_set_digest: str
     samples: Tuple[ReleaseEnergySample, ...]
+    observed_arrival_set_digest: str
+    samples_digest: str
     minimum_release_energy_exact: Fraction
+    release_trace_audit_id: str
+    _validation_token: Any = field(
+        default=None, init=False, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
-        _sha256(self.simulation_id, "simulation_id")
-        _sha256(self.taskset_hash, "taskset_hash")
+        if self._validation_token is not _RELEASE_TRACE_AUDIT_TOKEN:
+            raise ReleaseApplicabilityError(
+                "ReleaseTraceAudit must come from validated trace parsing"
+            )
+        for value, label in (
+            (self.simulation_id, "simulation_id"),
+            (self.taskset_id, "taskset_id"),
+            (self.taskset_hash, "taskset_hash"),
+            (self.release_projection_id, "release_projection_id"),
+            (self.release_vector_hash, "release_vector_hash"),
+            (self.expected_arrival_set_digest, "expected arrival digest"),
+            (self.observed_arrival_set_digest, "observed arrival digest"),
+            (self.samples_digest, "samples digest"),
+            (self.release_trace_audit_id, "release_trace_audit_id"),
+        ):
+            _sha256(value, label)
         _canonical_string(self.scheduler, "scheduler")
+        if self.trace_contract_version != SIMULATOR_TRACE_CONTRACT_VERSION:
+            raise ReleaseApplicabilityError(
+                "release audit trace contract version mismatch"
+            )
         _plain_int(self.release_horizon, "release_horizon", 1)
         _plain_int(self.observation_horizon, "observation_horizon", 1)
         if self.observation_horizon <= self.release_horizon:
             raise ReleaseApplicabilityError(
                 "observation_horizon must exceed release_horizon"
             )
-        if (
-            type(self.release_cutoff_enabled) is not bool
-            or not self.release_cutoff_enabled
-        ):
+        if self.release_cutoff_enabled is not True:
             raise ReleaseApplicabilityError("release cutoff is not enabled")
-        if (
-            type(self.observation_horizon_reached) is not bool
-            or not self.observation_horizon_reached
-        ):
+        if self.observation_horizon_reached is not True:
             raise ReleaseApplicabilityError(
                 "observation horizon was not reached"
+            )
+        if (
+            self.observed_simulation_end != self.observation_horizon
+            or self.simulation_completion_reason != "reached_horizon"
+        ):
+            raise ReleaseApplicabilityError(
+                "simulation observation horizon is incomplete"
+            )
+        if self.simulation_outcome not in {
+            SIM_DEADLINE_MISS,
+            SIM_NO_DEADLINE_MISS,
+        }:
+            raise ReleaseApplicabilityError(
+                "invalid simulation outcome"
+            )
+        if type(self.tasks) is not tuple or not self.tasks:
+            raise ReleaseApplicabilityError(
+                "release audit has no canonical task parameters"
+            )
+        if any(type(row) is not ReleaseTaskParameters for row in self.tasks):
+            raise ReleaseApplicabilityError(
+                "release audit contains invalid task parameters"
+            )
+        ranks = [row.priority_rank for row in self.tasks]
+        task_ids = [row.task_id for row in self.tasks]
+        if ranks != list(range(len(self.tasks))):
+            raise ReleaseApplicabilityError(
+                "release task ranks are not contiguous/canonical"
+            )
+        if len(set(task_ids)) != len(task_ids):
+            raise ReleaseApplicabilityError(
+                "duplicate release task ID"
+            )
+        if self.observation_horizon != (
+            self.release_horizon
+            + max(row.relative_deadline for row in self.tasks)
+        ):
+            raise ReleaseApplicabilityError(
+                "release audit observation horizon/D_max mismatch"
+            )
+        expected = _expected_arrivals(
+            self.tasks, self.release_horizon
+        )
+        if (
+            self.expected_release_count != len(expected)
+            or self.expected_release_count != len(self.samples)
+        ):
+            raise ReleaseApplicabilityError(
+                "expected release count/sample count mismatch"
+            )
+        if self.expected_arrival_set_digest != _arrival_set_digest(
+            EXPECTED_ARRIVAL_SET_DOMAIN, expected
+        ):
+            raise ReleaseApplicabilityError(
+                "expected arrival set digest mismatch"
             )
         if type(self.samples) is not tuple or not self.samples:
             raise ReleaseApplicabilityError(
@@ -674,27 +875,56 @@ class ReleaseTraceAudit:
             raise ReleaseApplicabilityError(
                 "release trace contains invalid samples"
             )
-        if any(row.release >= self.release_horizon for row in self.samples):
+        rank_by_task = {
+            row.task_id: row.priority_rank for row in self.tasks
+        }
+        if any(
+            row.task_id not in rank_by_task
+            or row.priority_rank != rank_by_task[row.task_id]
+            for row in self.samples
+        ):
             raise ReleaseApplicabilityError(
-                "release trace contains release at/after cutoff"
+                "release sample task/rank mismatch"
+            )
+        observed = tuple(
+            (row.task_id, row.release) for row in self.samples
+        )
+        if observed != expected:
+            raise ReleaseApplicabilityError(
+                "release samples are not the canonical expected arrivals"
+            )
+        if self.observed_arrival_set_digest != _arrival_set_digest(
+            OBSERVED_ARRIVAL_SET_DOMAIN, observed
+        ):
+            raise ReleaseApplicabilityError(
+                "observed arrival set digest mismatch"
+            )
+        if self.samples_digest != _samples_digest(self.samples):
+            raise ReleaseApplicabilityError(
+                "release samples digest mismatch"
             )
         minimum = min(row.energy_exact for row in self.samples)
         if self.minimum_release_energy_exact != minimum:
             raise ReleaseApplicabilityError(
                 "minimum release energy mismatch"
             )
+        expected_audit_id = _identity_hash(
+            RELEASE_TRACE_AUDIT_DOMAIN,
+            self._identity_material(),
+        )
+        if self.release_trace_audit_id != expected_audit_id:
+            raise ReleaseApplicabilityError(
+                "release trace audit identity mismatch"
+            )
 
-    @property
-    def evaluated_release_count(self) -> int:
-        return len(self.samples)
-
-    def material(self) -> Dict[str, Any]:
+    def _identity_material(self) -> Dict[str, Any]:
         return {
-            "simulator_trace_contract_version": (
-                SIMULATOR_TRACE_CONTRACT_VERSION
-            ),
+            "trace_contract_version": self.trace_contract_version,
             "simulation_id": self.simulation_id,
+            "taskset_id": self.taskset_id,
             "taskset_hash": self.taskset_hash,
+            "release_projection_id": self.release_projection_id,
+            "release_vector_hash": self.release_vector_hash,
             "scheduler": self.scheduler,
             "release_horizon": self.release_horizon,
             "observation_horizon": self.observation_horizon,
@@ -702,12 +932,46 @@ class ReleaseTraceAudit:
             "observation_horizon_reached": (
                 self.observation_horizon_reached
             ),
-            "minimum_release_energy_exact": fraction_text(
+            "observed_simulation_end": self.observed_simulation_end,
+            "simulation_completion_reason": (
+                self.simulation_completion_reason
+            ),
+            "simulation_outcome": self.simulation_outcome,
+            "tasks": [row.material() for row in self.tasks],
+            "expected_release_count": self.expected_release_count,
+            "expected_arrival_set_digest": (
+                self.expected_arrival_set_digest
+            ),
+            "observed_arrival_set_digest": (
+                self.observed_arrival_set_digest
+            ),
+            "samples_digest": self.samples_digest,
+            "minimum_release_energy_exact": _fraction_material(
                 self.minimum_release_energy_exact
             ),
-            "evaluated_release_count": self.evaluated_release_count,
-            "release_samples": [row.material() for row in self.samples],
         }
+
+    @property
+    def evaluated_release_count(self) -> int:
+        return len(self.samples)
+
+    def material(self) -> Dict[str, Any]:
+        return {
+            **self._identity_material(),
+            "evaluated_release_count": self.evaluated_release_count,
+            "release_trace_audit_id": self.release_trace_audit_id,
+        }
+
+    @classmethod
+    def _validated(cls, **values: Any) -> "ReleaseTraceAudit":
+        result = object.__new__(cls)
+        for name, value in values.items():
+            object.__setattr__(result, name, value)
+        object.__setattr__(
+            result, "_validation_token", _RELEASE_TRACE_AUDIT_TOKEN
+        )
+        result.__post_init__()
+        return result
 
 
 def _strict_trace(path: Path) -> Mapping[str, Any]:
@@ -775,13 +1039,7 @@ def _exact_trace_energy_j(value: Any, label: str) -> Fraction:
         raise ReleaseApplicabilityError(
             f"{label} must be a finite binary64 number"
         )
-    try:
-        exact_millijoules = exact_energy.materialize_supply_lower_bound(
-            binary64, label
-        ).exact_value
-    except exact_energy.ExactEnergyError as exc:
-        raise ReleaseApplicabilityError(str(exc)) from exc
-    exact_joules = exact_millijoules / 1000
+    exact_joules = Fraction.from_float(binary64) / 1000
     if exact_joules < 0:
         raise ReleaseApplicabilityError(
             f"{label} must be non-negative"
@@ -795,10 +1053,12 @@ def parse_release_trace(
     *,
     expected_simulation_id: str,
     expected_taskset_hash: str,
+    expected_certificate: TasksetIdentityCertificate,
+    expected_projection: ReleaseProjection,
     window: ReleaseObservationWindow,
     expected_scheduler: str = TARGET_SCHEDULER,
 ) -> ReleaseTraceAudit:
-    """Validate cutoff metadata and capture exact energy at every release."""
+    """Validate V2 cutoff, complete arrivals, and exact release snapshots."""
 
     simulation_id = _sha256(
         expected_simulation_id, "expected_simulation_id"
@@ -806,6 +1066,21 @@ def parse_release_trace(
     taskset_hash = _sha256(
         expected_taskset_hash, "expected_taskset_hash"
     )
+    if type(expected_certificate) is not TasksetIdentityCertificate:
+        raise ReleaseApplicabilityError(
+            "expected_certificate must be a TasksetIdentityCertificate"
+        )
+    if type(expected_projection) is not ReleaseProjection:
+        raise ReleaseApplicabilityError(
+            "expected_projection must be a ReleaseProjection"
+        )
+    _validate_projection_binding(
+        expected_certificate, expected_projection
+    )
+    if expected_certificate.taskset_hash != taskset_hash:
+        raise ReleaseApplicabilityError(
+            "expected taskset certificate/hash mismatch"
+        )
     scheduler = _canonical_string(
         expected_scheduler, "expected_scheduler"
     )
@@ -850,51 +1125,118 @@ def parse_release_trace(
         raise ReleaseApplicabilityError(
             "trace did not reach observation horizon"
         )
+    observed_end = _trace_tick(
+        data.get("observed_simulation_end_ms"),
+        "observed simulation horizon",
+    )
+    completion_reason = data.get("simulation_completion_reason")
     if (
         data.get("simulation_completed") is not True
-        or data.get("simulation_completion_reason") != "reached_horizon"
+        or completion_reason != "reached_horizon"
         or _trace_tick(
             data.get("expected_simulation_horizon_ms"),
             "expected simulation horizon",
         )
         != window.observation_horizon
-        or _trace_tick(
-            data.get("observed_simulation_end_ms"),
-            "observed simulation horizon",
-        )
-        != window.observation_horizon
+        or observed_end != window.observation_horizon
     ):
         raise ReleaseApplicabilityError(
             "simulation observation horizon is incomplete"
         )
 
-    definitions: Dict[str, Mapping[str, Any]] = {}
+    tasks = []
     runtime_names: Dict[str, str] = {}
-    ranks: Dict[str, int] = {}
     for index, row in enumerate(task_payload):
         if not isinstance(row, Mapping):
             raise ReleaseApplicabilityError(
                 f"task payload {index} is not a mapping"
-            )
+        )
         task_id = _canonical_string(row.get("task_id"), "task_id")
         rank = _plain_int(row.get("priority_rank"), "priority_rank")
+        wcet = _plain_int(row.get("C"), "wcet", 1)
         deadline = _plain_int(row.get("D"), "relative deadline", 1)
-        if task_id in definitions or rank in ranks.values():
+        period = _plain_int(row.get("T"), "period", 1)
+        offset = _plain_int(
+            row.get("arrival_offset"), "arrival_offset"
+        )
+        if "ph" in row:
+            phase = _plain_int(row.get("ph"), "ph")
+            if phase != offset:
+                raise ReleaseApplicabilityError(
+                    "payload offset/ph mismatch"
+                )
+        task = ReleaseTaskParameters(
+            task_id, rank, wcet, deadline, period, offset
+        )
+        if index >= len(expected_projection.offsets):
             raise ReleaseApplicabilityError(
-                "duplicate task identity in payload"
+                "payload/projection task count mismatch"
+            )
+        certificate_task = expected_certificate.tasks[index]
+        if (
+            certificate_task.task_id != task_id
+            or certificate_task.priority_rank != rank
+            or certificate_task.wcet != wcet
+            or certificate_task.relative_deadline != deadline
+            or certificate_task.period != period
+        ):
+            raise ReleaseApplicabilityError(
+                "simulation payload/taskset certificate mismatch"
             )
         if window.release_horizon - 1 + deadline > window.observation_horizon:
             raise ReleaseApplicabilityError(
                 "observation horizon does not cover a pre-cutoff deadline"
             )
-        definitions[task_id] = row
-        ranks[task_id] = rank
-        runtime_names[runtime_task_name_for_source_id(task_id)] = task_id
-    if len(runtime_names) != len(definitions):
-        raise ReleaseApplicabilityError("duplicate runtime task name")
+        projected = expected_projection.offsets[index]
+        if (
+            projected.task_id != task_id
+            or projected.priority_rank != rank
+            or projected.period != period
+            or projected.arrival_offset != offset
+        ):
+            raise ReleaseApplicabilityError(
+                "payload offset with projection mismatch"
+            )
+        name = runtime_task_name_for_source_id(task_id)
+        if name in runtime_names:
+            raise ReleaseApplicabilityError(
+                "duplicate runtime task name"
+            )
+        runtime_names[name] = task_id
+        tasks.append(task)
+    canonical_tasks = tuple(tasks)
+    if len(canonical_tasks) != len(expected_projection.offsets):
+        raise ReleaseApplicabilityError(
+            "payload/projection task count mismatch"
+        )
+    ranks = [row.priority_rank for row in canonical_tasks]
+    task_ids = [row.task_id for row in canonical_tasks]
+    if ranks != list(range(len(canonical_tasks))):
+        raise ReleaseApplicabilityError(
+            "payload ranks are not contiguous/canonical"
+        )
+    if len(set(task_ids)) != len(task_ids):
+        raise ReleaseApplicabilityError(
+            "duplicate task identity in payload"
+        )
+    expected = _expected_arrivals(
+        canonical_tasks, window.release_horizon
+    )
+    expected_set = set(expected)
+    rank_by_task = {
+        row.task_id: row.priority_rank for row in canonical_tasks
+    }
+    task_by_id = {
+        row.task_id: row for row in canonical_tasks
+    }
 
-    samples = []
-    seen = set()
+    observed = set()
+    arrival_positions: Dict[Tuple[str, int], int] = {}
+    snapshots: Dict[Tuple[str, int], Fraction] = {}
+    snapshot_positions: Dict[Tuple[str, int], int] = {}
+    first_consumption_position: Dict[int, int] = {}
+    deadline_miss = False
+    deadline_miss_keys = set()
     for position, event in enumerate(data["events"]):
         if type(event) is not dict:
             raise ReleaseApplicabilityError(
@@ -907,72 +1249,233 @@ def parse_release_trace(
             raise ReleaseApplicabilityError(
                 "trace event lies outside observation horizon"
             )
-        if event.get("event_type") != "arrival":
+        event_type = event.get("event_type")
+        if event_type in {"scheduled", "energy_consumption"}:
+            first_consumption_position.setdefault(event_time, position)
+        if event_type == "dline_miss":
+            name = event.get("task_name")
+            if name not in runtime_names:
+                raise ReleaseApplicabilityError(
+                    "deadline miss has unknown runtime task name"
+                )
+            release = _trace_tick(
+                event.get("arrival_time"),
+                "deadline miss release",
+            )
+            task_id = runtime_names[str(name)]
+            key = (task_id, release)
+            task = task_by_id[task_id]
+            deadline = _trace_tick(
+                event.get("deadline"),
+                "deadline miss deadline",
+            )
+            remaining = event.get("remaining_execution_ms")
+            if (
+                key not in expected_set
+                or deadline != release + task.relative_deadline
+                or event_time < deadline
+                or type(remaining) not in {int, float}
+                or not math.isfinite(float(remaining))
+                or float(remaining) <= 0
+                or event.get("job_id")
+                != f"{name}@{release}"
+                or key in deadline_miss_keys
+            ):
+                raise ReleaseApplicabilityError(
+                    "invalid simulation deadline miss evidence"
+                )
+            deadline_miss_keys.add(key)
+            deadline_miss = True
+        if event_type not in {"arrival", "release_energy_snapshot"}:
             continue
         name = event.get("task_name")
         if name not in runtime_names:
+            label = (
+                "arrival"
+                if event_type == "arrival"
+                else "snapshot"
+            )
             raise ReleaseApplicabilityError(
-                "arrival has unknown runtime task name"
+                f"{label} has unknown runtime task name"
             )
         release = _trace_tick(
-            event.get("arrival_time"), "arrival release"
+            event.get("arrival_time"),
+            f"{event_type} release",
         )
         if release != event_time:
             raise ReleaseApplicabilityError(
-                "arrival event time/release mismatch"
+                f"{event_type} event time/release mismatch"
             )
         if release >= window.release_horizon:
             raise ReleaseApplicabilityError(
                 "trace contains release at/after release horizon"
-            )
+        )
         task_id = runtime_names[str(name)]
         key = (task_id, release)
-        if key in seen:
+        if event_type == "arrival":
+            if key in observed:
+                raise ReleaseApplicabilityError(
+                    "duplicate arrivals"
+                )
+            if key not in expected_set:
+                raise ReleaseApplicabilityError(
+                    "extra arrivals: off-grid arrivals"
+                )
+            observed.add(key)
+            arrival_positions[key] = position
+            continue
+        if event.get("sampling_stage") != RELEASE_SNAPSHOT_STAGE:
             raise ReleaseApplicabilityError(
-                "duplicate arrival energy observation"
+                "release energy snapshot stage mismatch"
             )
-        seen.add(key)
-        samples.append(ReleaseEnergySample(
-            task_id,
-            ranks[task_id],
-            release,
-            _exact_trace_energy_j(
-                event.get("current_energy_mJ"),
-                "arrival current_energy_mJ",
-            ),
-        ))
-    if not samples:
-        raise ReleaseApplicabilityError(
-            "trace contains no pre-cutoff arrivals"
+        if event.get("scheduler") != scheduler:
+            raise ReleaseApplicabilityError(
+                "release energy snapshot scheduler mismatch"
+            )
+        if (
+            event.get("trace_contract_version")
+            != SIMULATOR_TRACE_CONTRACT_VERSION
+        ):
+            raise ReleaseApplicabilityError(
+                "release energy snapshot contract mismatch"
+            )
+        if key not in expected_set:
+            raise ReleaseApplicabilityError(
+                "release energy snapshot without arrival"
+            )
+        if key in snapshots:
+            raise ReleaseApplicabilityError(
+                "duplicate release energy snapshots"
+            )
+        snapshots[key] = _exact_trace_energy_j(
+            event.get("available_energy_mJ"),
+            "release snapshot available_energy_mJ",
         )
-    ordered = tuple(sorted(
-        samples,
-        key=lambda row: (row.release, row.priority_rank, row.task_id),
-    ))
-    return ReleaseTraceAudit(
-        simulation_id,
-        taskset_hash,
-        scheduler,
-        window.release_horizon,
-        window.observation_horizon,
-        True,
-        True,
-        ordered,
-        min(row.energy_exact for row in ordered),
+        snapshot_positions[key] = position
+
+    missing = expected_set - observed
+    if missing:
+        raise ReleaseApplicabilityError(
+            f"missing arrivals: {len(missing)}"
+        )
+    extra = observed - expected_set
+    if extra:
+        raise ReleaseApplicabilityError(
+            f"extra arrivals: {len(extra)}"
+        )
+    snapshot_keys = set(snapshots)
+    without_arrival = snapshot_keys - observed
+    if without_arrival:
+        raise ReleaseApplicabilityError(
+            "release energy snapshot without arrival"
+        )
+    missing_snapshots = expected_set - snapshot_keys
+    if missing_snapshots:
+        raise ReleaseApplicabilityError(
+            f"missing release energy snapshots: {len(missing_snapshots)}"
+        )
+    for key in expected:
+        if snapshot_positions[key] <= arrival_positions[key]:
+            raise ReleaseApplicabilityError(
+                "release energy snapshot precedes its arrival"
+            )
+        consumption = first_consumption_position.get(key[1])
+        if (
+            consumption is not None
+            and snapshot_positions[key] >= consumption
+        ):
+            raise ReleaseApplicabilityError(
+                "release energy snapshot appears after consumption"
+            )
+    energies_by_time: Dict[int, Fraction] = {}
+    for key, energy in snapshots.items():
+        prior = energies_by_time.setdefault(key[1], energy)
+        if prior != energy:
+            raise ReleaseApplicabilityError(
+                "same-tick release energy snapshots differ"
+            )
+
+    samples = tuple(
+        ReleaseEnergySample(
+            task_id,
+            rank_by_task[task_id],
+            release,
+            snapshots[(task_id, release)],
+        )
+        for task_id, release in expected
+    )
+    expected_digest = _arrival_set_digest(
+        EXPECTED_ARRIVAL_SET_DOMAIN, expected
+    )
+    observed_keys = tuple(
+        (row.task_id, row.release) for row in samples
+    )
+    observed_digest = _arrival_set_digest(
+        OBSERVED_ARRIVAL_SET_DOMAIN, observed_keys
+    )
+    sample_digest = _samples_digest(samples)
+    minimum = min(row.energy_exact for row in samples)
+    values = {
+        "simulation_id": simulation_id,
+        "taskset_id": expected_certificate.taskset_id,
+        "taskset_hash": taskset_hash,
+        "release_projection_id": (
+            expected_projection.release_projection_id
+        ),
+        "release_vector_hash": expected_projection.release_vector_hash,
+        "scheduler": scheduler,
+        "trace_contract_version": SIMULATOR_TRACE_CONTRACT_VERSION,
+        "release_horizon": window.release_horizon,
+        "observation_horizon": window.observation_horizon,
+        "release_cutoff_enabled": True,
+        "observation_horizon_reached": True,
+        "observed_simulation_end": observed_end,
+        "simulation_completion_reason": str(completion_reason),
+        "simulation_outcome": (
+            SIM_DEADLINE_MISS
+            if deadline_miss
+            else SIM_NO_DEADLINE_MISS
+        ),
+        "tasks": canonical_tasks,
+        "expected_release_count": len(expected),
+        "expected_arrival_set_digest": expected_digest,
+        "samples": samples,
+        "observed_arrival_set_digest": observed_digest,
+        "samples_digest": sample_digest,
+        "minimum_release_energy_exact": minimum,
+    }
+    provisional = object.__new__(ReleaseTraceAudit)
+    for name, value in values.items():
+        object.__setattr__(provisional, name, value)
+    audit_id = _identity_hash(
+        RELEASE_TRACE_AUDIT_DOMAIN,
+        provisional._identity_material(),
+    )
+    return ReleaseTraceAudit._validated(
+        **values, release_trace_audit_id=audit_id
     )
 
 
 @dataclass(frozen=True)
 class E0Evaluation:
+    release_trace_audit_id: str
+    expected_release_count: int
+    samples_digest: str
     minimum_release_energy_exact: Fraction
-    evaluated_release_count: int
     first_violating_task_id: Optional[str]
     first_violating_release: Optional[int]
     requested_e0: Fraction
     e0_condition_satisfied: bool
     status: str
+    evaluation_id: str
 
     def __post_init__(self) -> None:
+        _sha256(
+            self.release_trace_audit_id,
+            "release_trace_audit_id",
+        )
+        _sha256(self.samples_digest, "samples_digest")
+        _sha256(self.evaluation_id, "evaluation_id")
         if (
             type(self.minimum_release_energy_exact) is not Fraction
             or self.minimum_release_energy_exact < 0
@@ -983,8 +1486,8 @@ class E0Evaluation:
                 "E0 evaluation energies must be non-negative exact Fractions"
             )
         _plain_int(
-            self.evaluated_release_count,
-            "evaluated_release_count",
+            self.expected_release_count,
+            "expected_release_count",
             1,
         )
         if type(self.e0_condition_satisfied) is not bool:
@@ -1015,29 +1518,59 @@ class E0Evaluation:
                 self.first_violating_release,
                 "first_violating_release",
             )
+        if self.evaluation_id != _identity_hash(
+            E0_EVALUATION_DOMAIN, self._identity_material()
+        ):
+            raise ReleaseApplicabilityError(
+                "E0 evaluation identity mismatch"
+            )
 
-    def row(self) -> Dict[str, Any]:
+    def _identity_material(self) -> Dict[str, Any]:
         return {
-            "minimum_release_energy_exact": fraction_text(
+            "release_trace_audit_id": self.release_trace_audit_id,
+            "expected_release_count": self.expected_release_count,
+            "samples_digest": self.samples_digest,
+            "minimum_release_energy_exact": _fraction_material(
                 self.minimum_release_energy_exact
             ),
-            "evaluated_release_count": self.evaluated_release_count,
-            "first_violating_task_id": self.first_violating_task_id,
-            "first_violating_release": self.first_violating_release,
-            "requested_e0": fraction_text(self.requested_e0),
+            "first_violation": (
+                []
+                if self.first_violating_task_id is None
+                else [{
+                    "task_id": self.first_violating_task_id,
+                    "release": self.first_violating_release,
+                }]
+            ),
+            "requested_e0": _fraction_material(self.requested_e0),
             "e0_condition_satisfied": self.e0_condition_satisfied,
             "status": self.status,
         }
 
+    def row(self) -> Dict[str, Any]:
+        return {
+            **self._identity_material(),
+            "evaluated_release_count": self.expected_release_count,
+            "first_violating_task_id": self.first_violating_task_id,
+            "first_violating_release": self.first_violating_release,
+            "evaluation_id": self.evaluation_id,
+        }
+
     material = row
+
+    @property
+    def evaluated_release_count(self) -> int:
+        return self.expected_release_count
 
 
 def evaluate_e0_condition(
     audit: ReleaseTraceAudit, requested_e0: Any
 ) -> E0Evaluation:
-    if type(audit) is not ReleaseTraceAudit:
+    if (
+        type(audit) is not ReleaseTraceAudit
+        or audit._validation_token is not _RELEASE_TRACE_AUDIT_TOKEN
+    ):
         raise ReleaseApplicabilityError(
-            "audit must be a ReleaseTraceAudit"
+            "audit must be a validated ReleaseTraceAudit"
         )
     try:
         exact_e0 = exact_energy.exact_e0_lower_bound(
@@ -1050,17 +1583,35 @@ def evaluate_e0_condition(
         None,
     )
     satisfied = violating is None
-    return E0Evaluation(
-        audit.minimum_release_energy_exact,
-        audit.evaluated_release_count,
-        None if violating is None else violating.task_id,
-        None if violating is None else violating.release,
-        exact_e0,
-        satisfied,
-        (
+    values = {
+        "release_trace_audit_id": audit.release_trace_audit_id,
+        "expected_release_count": audit.expected_release_count,
+        "samples_digest": audit.samples_digest,
+        "minimum_release_energy_exact": (
+            audit.minimum_release_energy_exact
+        ),
+        "first_violating_task_id": (
+            None if violating is None else violating.task_id
+        ),
+        "first_violating_release": (
+            None if violating is None else violating.release
+        ),
+        "requested_e0": exact_e0,
+        "e0_condition_satisfied": satisfied,
+        "status": (
             E0_CONDITION_SATISFIED
             if satisfied
             else E0_CONDITION_NOT_SATISFIED
+        ),
+    }
+    provisional = object.__new__(E0Evaluation)
+    for name, value in values.items():
+        object.__setattr__(provisional, name, value)
+    return E0Evaluation(
+        **values,
+        evaluation_id=_identity_hash(
+            E0_EVALUATION_DOMAIN,
+            provisional._identity_material(),
         ),
     )
 
@@ -1075,6 +1626,370 @@ def evaluate_e0_grid(
     return tuple(
         evaluate_e0_condition(audit, value)
         for value in requested_e0_values
+    )
+
+
+@dataclass(frozen=True)
+class NoOverflowEvidence:
+    initial_battery: Fraction
+    battery_capacity: Fraction
+    offered_harvest: Fraction
+    required_margin: Fraction
+    required_capacity: Fraction
+    remaining_headroom: Fraction
+    valid: bool
+    service_identity: str
+    observation_horizon: int
+    evidence_id: str
+
+    def __post_init__(self) -> None:
+        for value, label in (
+            (self.initial_battery, "initial battery"),
+            (self.battery_capacity, "battery capacity"),
+            (self.offered_harvest, "offered harvest"),
+            (self.required_margin, "required margin"),
+        ):
+            if type(value) is not Fraction or value < 0:
+                raise ReleaseApplicabilityError(
+                    f"{label} must be a non-negative exact Fraction"
+                )
+        if (
+            self.battery_capacity <= 0
+            or self.initial_battery > self.battery_capacity
+        ):
+            raise ReleaseApplicabilityError(
+                "no-overflow battery values are invalid"
+            )
+        if type(self.required_capacity) is not Fraction:
+            raise ReleaseApplicabilityError(
+                "required capacity must be an exact Fraction"
+            )
+        if type(self.remaining_headroom) is not Fraction:
+            raise ReleaseApplicabilityError(
+                "remaining headroom must be an exact Fraction"
+            )
+        expected_required = self.initial_battery + self.offered_harvest
+        expected_headroom = self.battery_capacity - expected_required
+        expected_valid = expected_headroom >= self.required_margin
+        if (
+            self.required_capacity != expected_required
+            or self.remaining_headroom != expected_headroom
+            or self.valid is not expected_valid
+        ):
+            raise ReleaseApplicabilityError(
+                "no-overflow evidence derivation mismatch"
+            )
+        _sha256(self.service_identity, "service_identity")
+        _plain_int(
+            self.observation_horizon,
+            "no-overflow observation_horizon",
+            1,
+        )
+        _sha256(self.evidence_id, "no-overflow evidence_id")
+        if self.evidence_id != _identity_hash(
+            NO_OVERFLOW_EVIDENCE_DOMAIN,
+            self._identity_material(),
+        ):
+            raise ReleaseApplicabilityError(
+                "no-overflow evidence identity mismatch"
+            )
+
+    def _identity_material(self) -> Dict[str, Any]:
+        return {
+            "initial_battery": _fraction_material(
+                self.initial_battery
+            ),
+            "battery_capacity": _fraction_material(
+                self.battery_capacity
+            ),
+            "offered_harvest": _fraction_material(
+                self.offered_harvest
+            ),
+            "required_margin": _fraction_material(
+                self.required_margin
+            ),
+            "required_capacity": _fraction_material(
+                self.required_capacity
+            ),
+            "remaining_headroom": _fraction_material(
+                self.remaining_headroom
+            ),
+            "valid": self.valid,
+            "service_identity": self.service_identity,
+            "observation_horizon": self.observation_horizon,
+        }
+
+    def material(self) -> Dict[str, Any]:
+        return {
+            **self._identity_material(),
+            "evidence_id": self.evidence_id,
+        }
+
+
+def _exact_evidence_energy(value: Any, label: str) -> Fraction:
+    try:
+        return exact_energy.exact_e0_lower_bound(value, label)
+    except exact_energy.ExactEnergyError as exc:
+        raise ReleaseApplicabilityError(str(exc)) from exc
+
+
+def build_no_overflow_evidence(
+    *,
+    initial_battery: Any,
+    battery_capacity: Any,
+    offered_harvest: Any,
+    required_margin: Any,
+    service_identity: str,
+    observation_horizon: int,
+) -> NoOverflowEvidence:
+    initial = _exact_evidence_energy(
+        initial_battery, "initial battery"
+    )
+    capacity = _exact_evidence_energy(
+        battery_capacity, "battery capacity"
+    )
+    harvest = _exact_evidence_energy(
+        offered_harvest, "offered harvest"
+    )
+    margin = _exact_evidence_energy(
+        required_margin, "required margin"
+    )
+    service = _sha256(service_identity, "service_identity")
+    horizon = _plain_int(
+        observation_horizon, "no-overflow observation_horizon", 1
+    )
+    required = initial + harvest
+    headroom = capacity - required
+    values = {
+        "initial_battery": initial,
+        "battery_capacity": capacity,
+        "offered_harvest": harvest,
+        "required_margin": margin,
+        "required_capacity": required,
+        "remaining_headroom": headroom,
+        "valid": headroom >= margin,
+        "service_identity": service,
+        "observation_horizon": horizon,
+    }
+    provisional = object.__new__(NoOverflowEvidence)
+    for name, value in values.items():
+        object.__setattr__(provisional, name, value)
+    return NoOverflowEvidence(
+        **values,
+        evidence_id=_identity_hash(
+            NO_OVERFLOW_EVIDENCE_DOMAIN,
+            provisional._identity_material(),
+        ),
+    )
+
+
+_VALIDATED_SIMULATION_EVIDENCE_TOKEN = object()
+
+
+@dataclass(frozen=True)
+class ValidatedSimulationEvidence:
+    simulation_id: str
+    taskset_id: str
+    taskset_hash: str
+    release_projection_id: str
+    release_vector_hash: str
+    scheduler: str
+    service_identity: str
+    initial_battery: Fraction
+    battery_capacity: Fraction
+    release_horizon: int
+    observation_horizon: int
+    applicability_track: str
+    trace_contract_version: str
+    release_cutoff_enabled: bool
+    observed_simulation_end: int
+    completion_reason: str
+    simulation_outcome: str
+    release_trace_audit_id: str
+    evidence_id: str
+    _validation_token: Any = field(
+        default=None, init=False, repr=False, compare=False
+    )
+
+    def __post_init__(self) -> None:
+        if (
+            self._validation_token
+            is not _VALIDATED_SIMULATION_EVIDENCE_TOKEN
+        ):
+            raise ReleaseApplicabilityError(
+                "ValidatedSimulationEvidence must come from validated trace"
+            )
+        for value, label in (
+            (self.simulation_id, "simulation_id"),
+            (self.taskset_id, "taskset_id"),
+            (self.taskset_hash, "taskset_hash"),
+            (self.release_projection_id, "release_projection_id"),
+            (self.release_vector_hash, "release_vector_hash"),
+            (self.service_identity, "service_identity"),
+            (self.release_trace_audit_id, "release_trace_audit_id"),
+            (self.evidence_id, "simulation evidence_id"),
+        ):
+            _sha256(value, label)
+        _canonical_string(self.scheduler, "scheduler")
+        if (
+            type(self.initial_battery) is not Fraction
+            or self.initial_battery < 0
+            or type(self.battery_capacity) is not Fraction
+            or self.battery_capacity <= 0
+            or self.initial_battery > self.battery_capacity
+        ):
+            raise ReleaseApplicabilityError(
+                "validated simulation battery values are invalid"
+            )
+        window = ReleaseObservationWindow(
+            self.release_horizon,
+            self.observation_horizon - self.release_horizon,
+            self.observation_horizon,
+        )
+        if self.applicability_track not in APPLICABILITY_TRACKS:
+            raise ReleaseApplicabilityError(
+                "unknown applicability track"
+            )
+        if self.trace_contract_version != SIMULATOR_TRACE_CONTRACT_VERSION:
+            raise ReleaseApplicabilityError(
+                "validated simulation requires trace V2"
+            )
+        if (
+            self.release_cutoff_enabled is not True
+            or self.observed_simulation_end != self.observation_horizon
+            or self.completion_reason != "reached_horizon"
+        ):
+            raise ReleaseApplicabilityError(
+                "validated simulation is incomplete"
+            )
+        if self.simulation_outcome not in {
+            SIM_DEADLINE_MISS,
+            SIM_NO_DEADLINE_MISS,
+        }:
+            raise ReleaseApplicabilityError(
+                "invalid simulation outcome"
+            )
+        expected_simulation_id = simulation_applicability_identity(
+            taskset_id=self.taskset_id,
+            release_projection_id=self.release_projection_id,
+            scheduler=self.scheduler,
+            service_identity=self.service_identity,
+            initial_battery=self.initial_battery,
+            battery_capacity=self.battery_capacity,
+            window=window,
+            applicability_track=self.applicability_track,
+        )
+        if self.simulation_id != expected_simulation_id:
+            raise ReleaseApplicabilityError(
+                "validated simulation identity derivation mismatch"
+            )
+        if self.evidence_id != _identity_hash(
+            VALIDATED_SIMULATION_EVIDENCE_DOMAIN,
+            self._identity_material(),
+        ):
+            raise ReleaseApplicabilityError(
+                "validated simulation evidence identity mismatch"
+            )
+
+    def _identity_material(self) -> Dict[str, Any]:
+        return {
+            "simulation_id": self.simulation_id,
+            "taskset_id": self.taskset_id,
+            "taskset_hash": self.taskset_hash,
+            "release_projection_id": self.release_projection_id,
+            "release_vector_hash": self.release_vector_hash,
+            "scheduler": self.scheduler,
+            "service_identity": self.service_identity,
+            "initial_battery": _fraction_material(
+                self.initial_battery
+            ),
+            "battery_capacity": _fraction_material(
+                self.battery_capacity
+            ),
+            "release_horizon": self.release_horizon,
+            "observation_horizon": self.observation_horizon,
+            "applicability_track": self.applicability_track,
+            "trace_contract_version": self.trace_contract_version,
+            "release_cutoff_enabled": self.release_cutoff_enabled,
+            "observed_simulation_end": self.observed_simulation_end,
+            "completion_reason": self.completion_reason,
+            "simulation_outcome": self.simulation_outcome,
+            "release_trace_audit_id": self.release_trace_audit_id,
+        }
+
+    def material(self) -> Dict[str, Any]:
+        return {
+            **self._identity_material(),
+            "evidence_id": self.evidence_id,
+        }
+
+    @classmethod
+    def _validated(
+        cls, **values: Any
+    ) -> "ValidatedSimulationEvidence":
+        result = object.__new__(cls)
+        for name, value in values.items():
+            object.__setattr__(result, name, value)
+        object.__setattr__(
+            result,
+            "_validation_token",
+            _VALIDATED_SIMULATION_EVIDENCE_TOKEN,
+        )
+        result.__post_init__()
+        return result
+
+
+def validate_simulation_evidence(
+    audit: ReleaseTraceAudit,
+    *,
+    service_identity: str,
+    initial_battery: Any,
+    battery_capacity: Any,
+    applicability_track: str,
+) -> ValidatedSimulationEvidence:
+    if (
+        type(audit) is not ReleaseTraceAudit
+        or audit._validation_token is not _RELEASE_TRACE_AUDIT_TOKEN
+    ):
+        raise ReleaseApplicabilityError(
+            "simulation evidence requires a validated release audit"
+        )
+    service = _sha256(service_identity, "service_identity")
+    initial = _exact_evidence_energy(
+        initial_battery, "initial battery"
+    )
+    capacity = _exact_evidence_energy(
+        battery_capacity, "battery capacity"
+    )
+    values = {
+        "simulation_id": audit.simulation_id,
+        "taskset_id": audit.taskset_id,
+        "taskset_hash": audit.taskset_hash,
+        "release_projection_id": audit.release_projection_id,
+        "release_vector_hash": audit.release_vector_hash,
+        "scheduler": audit.scheduler,
+        "service_identity": service,
+        "initial_battery": initial,
+        "battery_capacity": capacity,
+        "release_horizon": audit.release_horizon,
+        "observation_horizon": audit.observation_horizon,
+        "applicability_track": applicability_track,
+        "trace_contract_version": audit.trace_contract_version,
+        "release_cutoff_enabled": audit.release_cutoff_enabled,
+        "observed_simulation_end": audit.observed_simulation_end,
+        "completion_reason": audit.simulation_completion_reason,
+        "simulation_outcome": audit.simulation_outcome,
+        "release_trace_audit_id": audit.release_trace_audit_id,
+    }
+    provisional = object.__new__(ValidatedSimulationEvidence)
+    for name, value in values.items():
+        object.__setattr__(provisional, name, value)
+    return ValidatedSimulationEvidence._validated(
+        **values,
+        evidence_id=_identity_hash(
+            VALIDATED_SIMULATION_EVIDENCE_DOMAIN,
+            provisional._identity_material(),
+        ),
     )
 
 
@@ -1127,35 +2042,121 @@ class ApplicabilityAssessment:
 def assess_applicability(
     *,
     requested_track: str,
+    release_trace_audit: ReleaseTraceAudit,
+    requested_e0: Any,
     e0_evaluation: E0Evaluation,
-    release_cutoff_valid: bool,
-    observation_horizon_complete: bool,
-    no_overflow_valid: bool,
-    identity_match: bool,
-    scheduler_is_target: bool,
-    rta_pass: bool,
-    simulation_deadline_miss: bool,
+    no_overflow_evidence: NoOverflowEvidence,
+    simulation_evidence: ValidatedSimulationEvidence,
+    expected_taskset_id: str,
+    expected_taskset_hash: str,
+    expected_release_projection_id: str,
+    expected_simulation_id: str,
+    rta_outcome: str,
+    simulation_outcome: str,
 ) -> ApplicabilityAssessment:
     if requested_track not in APPLICABILITY_TRACKS:
         raise ReleaseApplicabilityError("unknown applicability track")
-    values = {
-        "release_cutoff_valid": release_cutoff_valid,
-        "observation_horizon_complete": observation_horizon_complete,
-        "no_overflow_valid": no_overflow_valid,
-        "identity_match": identity_match,
-        "scheduler_is_target": scheduler_is_target,
-        "rta_pass": rta_pass,
-        "simulation_deadline_miss": simulation_deadline_miss,
-    }
-    if any(type(value) is not bool for value in values.values()):
+    if (
+        type(release_trace_audit) is not ReleaseTraceAudit
+        or release_trace_audit._validation_token
+        is not _RELEASE_TRACE_AUDIT_TOKEN
+    ):
         raise ReleaseApplicabilityError(
-            "applicability gates must be strict booleans"
+            "applicability requires a validated ReleaseTraceAudit"
         )
     if type(e0_evaluation) is not E0Evaluation:
         raise ReleaseApplicabilityError(
             "e0_evaluation must be an E0Evaluation"
         )
-    if not e0_evaluation.e0_condition_satisfied:
+    if type(no_overflow_evidence) is not NoOverflowEvidence:
+        raise ReleaseApplicabilityError(
+            "no_overflow_evidence must be strict evidence"
+        )
+    if (
+        type(simulation_evidence) is not ValidatedSimulationEvidence
+        or simulation_evidence._validation_token
+        is not _VALIDATED_SIMULATION_EVIDENCE_TOKEN
+    ):
+        raise ReleaseApplicabilityError(
+            "simulation_evidence must come from validated trace"
+        )
+    taskset_id = _sha256(expected_taskset_id, "expected_taskset_id")
+    taskset_hash = _sha256(
+        expected_taskset_hash, "expected_taskset_hash"
+    )
+    projection_id = _sha256(
+        expected_release_projection_id,
+        "expected_release_projection_id",
+    )
+    simulation_id = _sha256(
+        expected_simulation_id, "expected_simulation_id"
+    )
+    if rta_outcome not in {RTA_PASS, RTA_FAIL}:
+        raise ReleaseApplicabilityError("invalid RTA outcome")
+    if simulation_outcome not in {
+        SIM_DEADLINE_MISS,
+        SIM_NO_DEADLINE_MISS,
+    }:
+        raise ReleaseApplicabilityError("invalid simulation outcome")
+    audit = release_trace_audit
+    evidence = simulation_evidence
+    if (
+        evidence.release_trace_audit_id != audit.release_trace_audit_id
+        or evidence.simulation_id != audit.simulation_id
+        or evidence.taskset_id != audit.taskset_id
+        or evidence.taskset_hash != audit.taskset_hash
+        or evidence.release_projection_id
+        != audit.release_projection_id
+        or evidence.release_vector_hash != audit.release_vector_hash
+        or evidence.scheduler != audit.scheduler
+        or evidence.release_horizon != audit.release_horizon
+        or evidence.observation_horizon != audit.observation_horizon
+        or evidence.trace_contract_version != audit.trace_contract_version
+        or evidence.simulation_outcome != audit.simulation_outcome
+    ):
+        raise ReleaseApplicabilityError(
+            "simulation evidence/release audit mismatch"
+        )
+    if (
+        audit.taskset_id != taskset_id
+        or audit.taskset_hash != taskset_hash
+        or audit.release_projection_id != projection_id
+        or audit.simulation_id != simulation_id
+    ):
+        raise ReleaseApplicabilityError(
+            "expected applicability identity mismatch"
+        )
+    if evidence.applicability_track != requested_track:
+        raise ReleaseApplicabilityError(
+            "simulation evidence applicability track mismatch"
+        )
+    if evidence.scheduler != TARGET_SCHEDULER:
+        raise ReleaseApplicabilityError(
+            "applicability scheduler mismatch"
+        )
+    if simulation_outcome != evidence.simulation_outcome:
+        raise ReleaseApplicabilityError(
+            "simulation outcome/evidence mismatch"
+        )
+    if (
+        no_overflow_evidence.service_identity
+        != evidence.service_identity
+        or no_overflow_evidence.initial_battery
+        != evidence.initial_battery
+        or no_overflow_evidence.battery_capacity
+        != evidence.battery_capacity
+        or no_overflow_evidence.observation_horizon
+        != evidence.observation_horizon
+    ):
+        raise ReleaseApplicabilityError(
+            "no-overflow/simulation evidence mismatch"
+        )
+    recomputed_e0 = evaluate_e0_condition(audit, requested_e0)
+    if e0_evaluation != recomputed_e0:
+        raise ReleaseApplicabilityError(
+            "E0 evaluation/release audit mismatch"
+        )
+    if not recomputed_e0.e0_condition_satisfied:
         return ApplicabilityAssessment(
             E0_CONDITION_NOT_SATISFIED,
             False,
@@ -1163,7 +2164,10 @@ def assess_applicability(
             False,
             "release_energy_below_requested_e0",
         )
-    observed_difference = rta_pass and simulation_deadline_miss
+    observed_difference = (
+        rta_outcome == RTA_PASS
+        and simulation_outcome == SIM_DEADLINE_MISS
+    )
     if requested_track == FINITE_BATTERY_EMPIRICAL:
         return ApplicabilityAssessment(
             FINITE_BATTERY_EMPIRICAL,
@@ -1172,19 +2176,9 @@ def assess_applicability(
             observed_difference,
             "finite_battery_empirical_comparison",
         )
-    prerequisites = {
-        "release_cutoff": release_cutoff_valid,
-        "observation_horizon": observation_horizon_complete,
-        "no_overflow": no_overflow_valid,
-        "identity": identity_match,
-        "scheduler": scheduler_is_target,
-    }
-    missing = sorted(
-        name for name, satisfied in prerequisites.items() if not satisfied
-    )
-    if missing:
+    if not no_overflow_evidence.valid:
         raise ReleaseApplicabilityError(
-            "THEOREM_ALIGNED prerequisites failed: " + ",".join(missing)
+            "THEOREM_ALIGNED prerequisites failed: no_overflow"
         )
     return ApplicabilityAssessment(
         THEOREM_ALIGNED,
@@ -1203,26 +2197,35 @@ __all__ = [
     "E0_CONDITION_SATISFIED",
     "E0_CONDITION_NOT_SATISFIED",
     "FINITE_BATTERY_EMPIRICAL",
+    "NoOverflowEvidence",
     "RELEASE_HORIZON",
     "RELEASE_MODES",
     "RELEASE_OFFSET_DOMAIN",
     "RELEASE_PROJECTION_CONTRACT_VERSION",
     "RELEASE_PROJECTION_DOMAIN",
     "RELEASE_VECTOR_DOMAIN",
+    "RELEASE_SNAPSHOT_STAGE",
+    "RTA_FAIL",
+    "RTA_PASS",
     "ReleaseApplicabilityError",
     "ReleaseEnergySample",
     "ReleaseObservationWindow",
     "ReleaseOffset",
     "ReleaseProjection",
+    "ReleaseTaskParameters",
     "ReleaseTraceAudit",
+    "SIM_DEADLINE_MISS",
+    "SIM_NO_DEADLINE_MISS",
     "SIMULATION_APPLICABILITY_CONTRACT_VERSION",
     "SIMULATION_ID_DOMAIN",
     "SIMULATOR_TRACE_CONTRACT_VERSION",
     "SYNC_V1",
     "TARGET_SCHEDULER",
     "THEOREM_ALIGNED",
+    "ValidatedSimulationEvidence",
     "apply_release_projection",
     "assess_applicability",
+    "build_no_overflow_evidence",
     "build_release_projection",
     "derive_release_offset",
     "evaluate_e0_condition",
@@ -1231,4 +2234,5 @@ __all__ = [
     "project_certificate_for_simulation",
     "simulation_applicability_identity",
     "simulation_identity_material",
+    "validate_simulation_evidence",
 ]

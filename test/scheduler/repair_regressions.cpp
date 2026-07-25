@@ -1194,7 +1194,7 @@ TEST(ReleaseCutoffTrace, MetadataIsOptInAndRecordsCompletedWindow) {
     EXPECT_NE(
         enabled.find(
             "\"simulator_trace_contract_version\": "
-            "\"ASAP_BLOCK_V9_3_RELEASE_CUTOFF_TRACE_V1\""),
+            "\"ASAP_BLOCK_V9_3_RELEASE_CUTOFF_TRACE_V2\""),
         std::string::npos);
     EXPECT_NE(
         enabled.find("\"release_horizon_ms\": 30"),
@@ -1226,6 +1226,66 @@ TEST(ReleaseCutoffTrace, MetadataIsOptInAndRecordsCompletedWindow) {
     EXPECT_EQ(
         legacy.find("\"simulator_trace_contract_version\""),
         std::string::npos);
+    EXPECT_EQ(
+        legacy.find("\"event_type\": \"release_energy_snapshot\""),
+        std::string::npos);
+}
+
+TEST(ReleaseEnergySnapshot,
+     RecordsExactPostHarvestPreConsumptionValueForEveryReleasedJob) {
+    const std::string path =
+        "/tmp/partsim_release_energy_snapshot_v2.json";
+    const double available =
+        std::nextafter(19999.962500164998, 20000.0);
+    {
+        JSONTrace trace(path, MetaSim::Tick(35));
+        trace.setSchedulerIdentity(
+            "gpfp_asap_block",
+            "ASAP-Block",
+            "GPFPASAPBlockScheduler");
+        trace.setReleaseObservationWindow(
+            MetaSim::Tick(30), MetaSim::Tick(35));
+        MetaSim::SIMUL.initSingleRun();
+        trace.logReleaseEnergySnapshots(
+            "gpfp_asap_block",
+            available,
+            {
+                {"v93_task_0", MetaSim::Tick(0)},
+                {"v93_task_1", MetaSim::Tick(0)},
+            });
+        trace.setSimulationOutcome(
+            MetaSim::Tick(35), true, "reached_horizon");
+        MetaSim::SIMUL.endSingleRun();
+    }
+    std::ifstream input(path);
+    const std::string contents(
+        (std::istreambuf_iterator<char>(input)),
+        std::istreambuf_iterator<char>());
+    EXPECT_EQ(
+        countMarker(
+            contents,
+            "\"event_type\": \"release_energy_snapshot\""),
+        2);
+    EXPECT_EQ(
+        countMarker(
+            contents,
+            "\"sampling_stage\": "
+            "\"post_harvest_pre_consumption\""),
+        2);
+    EXPECT_EQ(
+        countMarker(
+            contents,
+            "\"scheduler\": \"gpfp_asap_block\""),
+        2);
+    EXPECT_EQ(
+        countMarker(
+            contents,
+            "\"trace_contract_version\": "
+            "\"ASAP_BLOCK_V9_3_RELEASE_CUTOFF_TRACE_V2\""),
+        2);
+    const std::string token =
+        readJsonScalar(contents, "available_energy_mJ");
+    EXPECT_EQ(std::stod(token), available);
 }
 
 } // namespace RTSim
