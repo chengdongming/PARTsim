@@ -576,6 +576,60 @@ class ProductionSimulationExecutor:
             raise RTA4ExecutionError("simulation energy config must be a mapping")
         self.energy_config = dict(energy_config)
 
+    @classmethod
+    def execute_bound(
+        cls, *, simulator_binary: Path | str,
+        simulation_timeout_seconds: int, output_root: Path | str,
+        base_system_path: Path | str, energy_config_path: Path | str,
+        energy_config: Mapping[str, Any], record: FormalPlanRecord,
+        certificate: TasksetIdentityCertificate, projection: Any,
+        window: Any, payload: Sequence[Mapping[str, Any]],
+        simulation_id: str,
+    ) -> Mapping[str, Any]:
+        """Reuse the production simulator path for a pre-freeze pilot binding.
+
+        The caller is responsible for validating the pilot-specific source and
+        binary manifests before invoking this method.  No formal prepared
+        configuration or authorization is synthesized.
+        """
+
+        binary = Path(simulator_binary).resolve(strict=True)
+        system = Path(base_system_path).resolve(strict=True)
+        energy_path = Path(energy_config_path).resolve(strict=True)
+        if (
+            not binary.is_file() or not system.is_file()
+            or not energy_path.is_file()
+        ):
+            raise RTA4ExecutionError(
+                "pilot simulator binding contains a non-file path"
+            )
+        if (
+            type(simulation_timeout_seconds) is not int
+            or isinstance(simulation_timeout_seconds, bool)
+            or simulation_timeout_seconds < 1
+        ):
+            raise RTA4ExecutionError(
+                "pilot simulator timeout must be a positive integer"
+            )
+        if not isinstance(energy_config, Mapping):
+            raise RTA4ExecutionError(
+                "pilot simulator energy config must be a mapping"
+            )
+        instance = object.__new__(cls)
+        instance.prepared = {
+            "operational": {
+                "simulator_binary": str(binary),
+                "simulation_timeout_seconds": simulation_timeout_seconds,
+                "output_root": str(Path(output_root).resolve()),
+            },
+        }
+        instance.base_system_path = system
+        instance.energy_config_path = energy_path
+        instance.energy_config = dict(energy_config)
+        return instance(
+            record, certificate, projection, window, payload, simulation_id,
+        )
+
     def __call__(
         self, record: FormalPlanRecord,
         certificate: TasksetIdentityCertificate,

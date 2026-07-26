@@ -41,9 +41,11 @@ def _configs(values: list[str]):
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", action="append", required=True)
+    parser.add_argument("--pilot-root", type=Path, required=True)
     parser.add_argument("--pilot-manifest", type=Path, required=True)
     parser.add_argument("--pilot-observations", type=Path, required=True)
     parser.add_argument("--pilot-report", type=Path, required=True)
+    parser.add_argument("--pilot-audit", type=Path, required=True)
     parser.add_argument("--timeout-contract", type=Path, required=True)
     parser.add_argument("--operational-contract", type=Path, required=True)
     parser.add_argument("--output-root", type=Path, required=True)
@@ -59,9 +61,11 @@ def main() -> int:
             pilot_manifest=_json(args.pilot_manifest),
             pilot_observations=_json(args.pilot_observations),
             pilot_report=_json(args.pilot_report),
+            pilot_audit=_json(args.pilot_audit),
             timeout_contract=_json(args.timeout_contract),
             operational=_json(args.operational_contract),
             config_paths=paths,
+            pilot_root=args.pilot_root,
         )
         freeze = build_freeze_manifest(prepared)
         output = args.output_root.resolve()
