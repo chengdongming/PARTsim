@@ -30,15 +30,21 @@ from experiments.v9_3.rta4_formal_plan import (
 from experiments.v9_3.rta4_formal_validation import (
     RTA4FormalValidationError, validate_formal_run_closure,
 )
+from experiments.v9_3.rta4_formal_store import RTA4FormalTasksetStore
+import experiments.v9_3.rta4_pilot_execution as pilot_execution
 from experiments.v9_3.rta4_pilot_execution import (
     PilotExecutionRunner, PilotTasksetProvider, RTA4_PILOT_CHECKPOINT,
+    RTA4_PILOT_AUDIT, RTA4_PILOT_COMPLETION_SEAL,
     RTA4_PILOT_EXECUTION_CONFIG, RTA4_PILOT_EXECUTION_MANIFEST,
+    RTA4_PILOT_FINAL_TERMINAL_DIRECTORY,
     RTA4_PILOT_RAW_TERMINAL_DIRECTORY,
     RTA4_PILOT_TERMINAL_DIRECTORY, RTA4_PILOT_TEST_EXECUTION_CLASS,
     RTA4PilotExecutionError, RTA4PilotExecutionInterrupted,
     _execution_batches,
     audit_pilot_namespace, build_pilot_execution_config,
-    compute_pilot_output_io_bytes, runtime_ci_engineering_warnings,
+    build_pilot_final_terminal, compute_pilot_output_io_bytes,
+    pilot_final_terminal_preimage, runtime_ci_engineering_warnings,
+    validate_pilot_phase_inventory,
     validate_pilot_execution_config,
 )
 TEST_ROOT = Path(__file__).resolve().parent
@@ -248,6 +254,14 @@ def test_shared_provider_reuses_cross_core_slot_certificates_without_generation(
     independently_generated = PilotTasksetProvider(CONFIGS)(core1)
     assert generated_from_dependent.canonical_bytes() == (
         independently_generated.canonical_bytes()
+    )
+
+    core5b_dependent_first = PilotTasksetProvider(CONFIGS)
+    generated_from_core5b = core5b_dependent_first(core5b)
+    assert core5b_dependent_first(core4) is generated_from_core5b
+    independently_generated_core4 = PilotTasksetProvider(CONFIGS)(core4)
+    assert generated_from_core5b.canonical_bytes() == (
+        independently_generated_core4.canonical_bytes()
     )
 
 
@@ -715,24 +729,58 @@ def test_runner_rejects_foreign_config_before_namespace_write(tmp_path):
     assert _file_bytes(context["output"]) == before
 
 
-@pytest.mark.parametrize("boundary", [10, 100, 1000, 10000])
-def test_output_io_preimage_is_unique_across_decimal_boundaries(boundary):
-    padding = ""
-    while True:
-        preimage = {"padding": padding}
-        size = len(json.dumps(
-            preimage, ensure_ascii=False, sort_keys=True,
-            separators=(",", ":"), allow_nan=False,
-        ).encode("utf-8"))
-        if size >= boundary - 1:
-            break
-        padding += "x"
-    first = compute_pilot_output_io_bytes(preimage, 7)
-    second = compute_pilot_output_io_bytes(
-        {"padding": padding}, 7,
+@pytest.mark.parametrize(
+    "lower,upper", [(9, 10), (99, 100), (999, 1000), (9999, 10000)],
+)
+def test_output_io_preimage_is_unique_across_decimal_boundaries(
+    completed_context, lower, upper,
+):
+    raw_path = next(
+        (
+            completed_context["output"]
+            / RTA4_PILOT_RAW_TERMINAL_DIRECTORY
+        ).glob("*.json")
     )
-    assert first == second == size + 7
-    assert compute_pilot_output_io_bytes(preimage, 13) == first + 6
+    raw = json.loads(raw_path.read_text())
+    lower_preimage = pilot_final_terminal_preimage(
+        raw, checkpoint_overhead_milliseconds=lower,
+        resume_overhead_milliseconds=0,
+        ci_width_engineering_warning=True,
+    )
+    upper_preimage = pilot_final_terminal_preimage(
+        raw, checkpoint_overhead_milliseconds=upper,
+        resume_overhead_milliseconds=0,
+        ci_width_engineering_warning=True,
+    )
+    lower_bytes = pilot_execution.canonical_json(
+        lower_preimage,
+    ).encode("utf-8")
+    upper_bytes = pilot_execution.canonical_json(
+        upper_preimage,
+    ).encode("utf-8")
+    assert len(upper_bytes) == len(lower_bytes) + 1
+    reordered = dict(reversed(tuple(upper_preimage.items())))
+    assert compute_pilot_output_io_bytes(
+        reordered, raw["trace_size_bytes"],
+    ) == compute_pilot_output_io_bytes(
+        upper_preimage, raw["trace_size_bytes"],
+    )
+    first = build_pilot_final_terminal(
+        raw, checkpoint_overhead_milliseconds=upper,
+        resume_overhead_milliseconds=0,
+        ci_width_engineering_warning=True,
+    )
+    second = build_pilot_final_terminal(
+        raw, checkpoint_overhead_milliseconds=upper,
+        resume_overhead_milliseconds=0,
+        ci_width_engineering_warning=True,
+    )
+    assert pilot_execution._canonical_json_bytes(first) == (
+        pilot_execution._canonical_json_bytes(second)
+    )
+    assert compute_pilot_output_io_bytes(
+        upper_preimage, raw["trace_size_bytes"] + 6,
+    ) == first["output_io_bytes"] + 6
 
 
 @pytest.mark.parametrize(
@@ -841,6 +889,20 @@ def test_hard_child_exit_is_parent_canonicalized_and_temp_is_cleaned(
     audit_pilot_namespace(
         context["output"], CONFIGS, require_complete=False,
     )
+    resumed = PilotExecutionRunner(
+        CONFIGS, context["manifest"], context["execution"],
+    ).run(
+        resume=True, certificate_provider=_synthetic_certificate,
+        rta_callback=_synthetic_rta,
+        simulation_callback=_synthetic_simulator(
+            context["root"] / "hard-exit-resume-traces"
+        ),
+        use_processes=False,
+    )
+    assert resumed.complete
+    assert audit_pilot_namespace(
+        context["output"], CONFIGS,
+    )["checkpoint_state"] == "PILOT_COMPLETE"
 
 
 def test_cli_plan_resume_validate_and_error_modes(
@@ -897,3 +959,630 @@ def test_cli_plan_resume_validate_and_error_modes(
     )
     assert rejected.returncode != 0
     assert _file_bytes(completed_context["output"]) == before
+
+
+@pytest.mark.parametrize(
+    "phase,overrides",
+    [
+        ("EXECUTING", {
+            "raw_execution_order": ["e1", "e2"],
+            "final_execution_order": ["e1"],
+        }),
+        ("FINALIZING", {
+            "raw_execution_order": ["e1"],
+        }),
+        ("FINALIZING", {
+            "trace_execution_ids": [],
+            "required_trace_execution_ids": ["e2"],
+        }),
+        ("FINALIZING", {
+            "final_execution_order": ["e2"],
+        }),
+        ("PILOT_COMPLETE", {
+            "audit_present": False,
+        }),
+        ("PILOT_COMPLETE", {
+            "completion_seal_present": False,
+        }),
+        ("PILOT_COMPLETE", {
+            "worker_active_count": 1,
+        }),
+        ("PREPARING_STORE", {
+            "completed_store_slot_order": [],
+            "store_manifest_present": False,
+            "raw_execution_order": ["e1"],
+            "final_execution_order": [],
+            "trace_execution_ids": [],
+            "required_trace_execution_ids": [],
+            "observations_present": False,
+            "report_present": False,
+            "audit_present": False,
+            "completion_seal_present": False,
+        }),
+    ],
+)
+def test_phase_inventory_negative_combinations_fail_closed(
+    phase, overrides,
+):
+    values = {
+        "phase": phase,
+        "expected_store_slot_order": ["s1", "s2"],
+        "completed_store_slot_order": ["s1", "s2"],
+        "store_manifest_present": True,
+        "selected_execution_order": ["e1", "e2"],
+        "raw_execution_order": ["e1", "e2"],
+        "final_execution_order": (
+            ["e1", "e2"] if phase in {"FINALIZING", "PILOT_COMPLETE"}
+            else []
+        ),
+        "trace_execution_ids": ["e2"],
+        "required_trace_execution_ids": ["e2"],
+        "observations_present": phase == "PILOT_COMPLETE",
+        "report_present": phase == "PILOT_COMPLETE",
+        "audit_present": phase == "PILOT_COMPLETE",
+        "completion_seal_present": phase == "PILOT_COMPLETE",
+        "worker_active_count": 0,
+        "recovery_artifact_count": 0,
+    }
+    values.update(overrides)
+    with pytest.raises(RTA4PilotExecutionError):
+        validate_pilot_phase_inventory(**values)
+
+
+@pytest.mark.parametrize(
+    "stage,expected_extra_generation",
+    [
+        ("after_preparing_store_pointer", 0),
+        ("after_store_certificate", 1),
+        ("after_store_slot_checkpoint", 0),
+        ("after_store_manifest", 0),
+    ],
+)
+def test_preparing_store_crash_windows_resume_without_manual_cleanup(
+    tmp_path, stage, expected_extra_generation,
+):
+    context = _context(tmp_path)
+    calls = []
+
+    def provider(record):
+        calls.append(str(record.taskset_slot_id))
+        return _synthetic_certificate(record)
+
+    fired = False
+
+    def hook(observed):
+        nonlocal fired
+        if observed == stage and not fired:
+            fired = True
+            raise RTA4PilotExecutionInterrupted(stage)
+
+    runner = PilotExecutionRunner(
+        CONFIGS, context["manifest"], context["execution"],
+    )
+    with pytest.raises(RTA4PilotExecutionInterrupted, match=stage):
+        runner.run(
+            max_records=0, certificate_provider=provider,
+            use_processes=False, transaction_hook=hook,
+        )
+    partial = audit_pilot_namespace(
+        context["output"], CONFIGS, require_complete=False,
+        reconstruct_store=False, allow_recovery_artifacts=True,
+    )
+    assert partial["audited_checkpoint_phase"] == "PREPARING_STORE"
+    resumed = runner.run(
+        resume=True, max_records=0, certificate_provider=provider,
+        use_processes=False,
+    )
+    assert not resumed.complete
+    audit = audit_pilot_namespace(
+        context["output"], CONFIGS, require_complete=False,
+        reconstruct_store=False,
+    )
+    assert audit["audited_checkpoint_phase"] == "EXECUTING"
+    expected_slots = len({
+        row["taskset_slot_id"]
+        for core in RTA4_CORES
+        for row in context["manifest"]["selected_records"][core]
+    })
+    assert len(calls) == expected_slots + expected_extra_generation
+
+
+def test_preparing_store_unknown_certificate_fails_without_deletion(
+    tmp_path,
+):
+    context = _context(tmp_path)
+    runner = PilotExecutionRunner(
+        CONFIGS, context["manifest"], context["execution"],
+    )
+
+    def stop(stage):
+        if stage == "after_preparing_store_pointer":
+            raise RTA4PilotExecutionInterrupted(stage)
+
+    with pytest.raises(RTA4PilotExecutionInterrupted):
+        runner.run(
+            max_records=0,
+            certificate_provider=_synthetic_certificate,
+            use_processes=False, transaction_hook=stop,
+        )
+    store = RTA4FormalTasksetStore(context["store"])
+    foreign_record = runner.records[-1]
+    store.put(_synthetic_certificate(foreign_record))
+    certificate_path = next(
+        (context["store"] / "certificates").iterdir()
+    )
+    before = certificate_path.read_bytes()
+    with pytest.raises(
+        RTA4PilotExecutionError, match="next-slot|unknown",
+    ):
+        runner.run(
+            resume=True, max_records=0,
+            certificate_provider=_synthetic_certificate,
+            use_processes=False,
+        )
+    assert certificate_path.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "stage",
+    [
+        "after_completion_audit",
+        "after_completion_seal",
+        "after_pilot_complete_checkpoint_generation",
+        "after_pilot_complete_checkpoint_event",
+        "after_pilot_complete_checkpoint_pointer",
+    ],
+)
+def test_completion_transaction_crash_windows_are_resumable(
+    tmp_path, stage,
+):
+    context = _context(tmp_path)
+    calls = []
+
+    def rta(record, certificate):
+        calls.append(record.execution_id)
+        return _synthetic_rta(record, certificate)
+
+    simulator_impl = _synthetic_simulator(
+        context["root"] / "completion-traces"
+    )
+
+    def simulation(*args):
+        calls.append(args[0].execution_id)
+        return simulator_impl(*args)
+
+    fired = False
+
+    def hook(observed):
+        nonlocal fired
+        if observed == stage and not fired:
+            fired = True
+            raise RTA4PilotExecutionInterrupted(stage)
+
+    runner = PilotExecutionRunner(
+        CONFIGS, context["manifest"], context["execution"],
+    )
+    with pytest.raises(RTA4PilotExecutionInterrupted, match=stage):
+        runner.run(
+            certificate_provider=_synthetic_certificate,
+            rta_callback=rta, simulation_callback=simulation,
+            use_processes=False, transaction_hook=hook,
+        )
+    final_before = {
+        path.name: path.read_bytes()
+        for path in (
+            context["output"] / RTA4_PILOT_FINAL_TERMINAL_DIRECTORY
+        ).glob("*.json")
+    }
+    audit_pilot_namespace(
+        context["output"], CONFIGS, require_complete=False,
+        reconstruct_store=False, allow_recovery_artifacts=True,
+    )
+    resumed = runner.run(
+        resume=True, certificate_provider=_synthetic_certificate,
+        rta_callback=rta, simulation_callback=simulation,
+        use_processes=False,
+    )
+    assert resumed.complete
+    assert len(calls) == len(set(calls)) == 9
+    assert final_before == {
+        path.name: path.read_bytes()
+        for path in (
+            context["output"] / RTA4_PILOT_FINAL_TERMINAL_DIRECTORY
+        ).glob("*.json")
+    }
+    assert (context["output"] / RTA4_PILOT_AUDIT).is_file()
+    assert (context["output"] / RTA4_PILOT_COMPLETION_SEAL).is_file()
+    audit_pilot_namespace(context["output"], CONFIGS)
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [
+        "generation", "event", "gap", "previous_link",
+        "phase_rollback", "unknown_filename",
+    ],
+)
+def test_historical_checkpoint_damage_and_gaps_fail_closed(
+    tmp_path, damage,
+):
+    context = _context(tmp_path)
+    PilotExecutionRunner(
+        CONFIGS, context["manifest"], context["execution"],
+    ).run(
+        max_records=1, certificate_provider=_synthetic_certificate,
+        rta_callback=_synthetic_rta, use_processes=False,
+    )
+    generation_root = context["output"] / "rta4_pilot_checkpoints"
+    event_root = context["output"] / "rta4_pilot_checkpoint_events"
+    if damage == "generation":
+        target = generation_root / "00000000.json"
+        document = json.loads(target.read_text())
+        document["unexpected"] = True
+        atomic_write_json(target, document)
+    elif damage == "event":
+        target = event_root / "00000000.json"
+        document = json.loads(target.read_text())
+        document["unexpected"] = True
+        atomic_write_json(target, document)
+    elif damage == "gap":
+        target = generation_root / "00000001.json"
+        target.unlink()
+    elif damage == "unknown_filename":
+        target = generation_root / "0000000a.json"
+        target.write_text("{}\n", encoding="utf-8")
+    else:
+        target = max(generation_root.glob("*.json"))
+        document = json.loads(target.read_text())
+        if damage == "previous_link":
+            document["previous_checkpoint_id"] = "0" * 64
+        else:
+            empty_digest = hashlib.sha256(
+                pilot_execution.canonical_json({}).encode("utf-8")
+            ).hexdigest()
+            document.update({
+                "phase": "PREPARING_STORE",
+                "store_manifest_id": None,
+                "completed_raw_count": 0,
+                "completed_raw_execution_order": [],
+                "completed_raw_terminal_digests": {},
+                "completed_raw_ordered_digest": empty_digest,
+                "final_terminal_execution_order": [],
+                "final_terminal_digests": {},
+                "final_terminal_ordered_digest": empty_digest,
+                "trace_digests": {},
+                "trace_ordered_digest": empty_digest,
+            })
+        material = deepcopy(document)
+        material.pop("checkpoint_id")
+        document["checkpoint_id"] = pilot_execution.domain_hash(
+            pilot_execution.RTA4_PILOT_CHECKPOINT_DOMAIN, material,
+        )
+        atomic_write_json(target, document)
+    before = target.read_bytes() if target.exists() else None
+    with pytest.raises(RTA4PilotExecutionError, match="checkpoint|event"):
+        audit_pilot_namespace(
+            context["output"], CONFIGS, require_complete=False,
+        )
+    if before is not None:
+        assert target.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "stage,event_only",
+    [
+        ("after_executing_checkpoint_generation", False),
+        ("after_executing_checkpoint_event", False),
+        ("after_executing_checkpoint_event", True),
+    ],
+)
+def test_known_next_checkpoint_orphans_recover_only_after_preflight(
+    tmp_path, stage, event_only,
+):
+    context = _context(tmp_path)
+    hits = 0
+
+    def hook(observed):
+        nonlocal hits
+        if observed == stage:
+            hits += 1
+            if hits == 2:
+                raise RTA4PilotExecutionInterrupted(stage)
+
+    runner = PilotExecutionRunner(
+        CONFIGS, context["manifest"], context["execution"],
+    )
+    with pytest.raises(RTA4PilotExecutionInterrupted):
+        runner.run(
+            max_records=1,
+            certificate_provider=_synthetic_certificate,
+            rta_callback=_synthetic_rta, use_processes=False,
+            transaction_hook=hook,
+        )
+    pointer = json.loads(
+        (context["output"] / RTA4_PILOT_CHECKPOINT).read_text()
+    )
+    orphan_generation = pointer["checkpoint_generation"] + 1
+    generation_path = (
+        context["output"] / "rta4_pilot_checkpoints"
+        / f"{orphan_generation:08d}.json"
+    )
+    event_path = (
+        context["output"] / "rta4_pilot_checkpoint_events"
+        / f"{orphan_generation:08d}.json"
+    )
+    if event_only:
+        generation_path.unlink()
+    before = {
+        path: path.read_bytes()
+        for path in (generation_path, event_path) if path.exists()
+    }
+    audit_pilot_namespace(
+        context["output"], CONFIGS, require_complete=False,
+        reconstruct_store=False, allow_recovery_artifacts=True,
+    )
+    assert {
+        path: path.read_bytes()
+        for path in before
+    } == before
+    resumed = runner.run(
+        resume=True, max_records=0,
+        certificate_provider=_synthetic_certificate,
+        rta_callback=_synthetic_rta, use_processes=False,
+    )
+    assert resumed.processed_count == 0
+    audit_pilot_namespace(
+        context["output"], CONFIGS, require_complete=False,
+    )
+
+
+def test_unknown_checkpoint_artifact_is_not_deleted(
+    tmp_path,
+):
+    context = _context(tmp_path)
+    runner = PilotExecutionRunner(
+        CONFIGS, context["manifest"], context["execution"],
+    )
+    runner.run(
+        max_records=1, certificate_provider=_synthetic_certificate,
+        rta_callback=_synthetic_rta, use_processes=False,
+    )
+    pointer = json.loads(
+        (context["output"] / RTA4_PILOT_CHECKPOINT).read_text()
+    )
+    unknown_generation = (
+        context["output"] / "rta4_pilot_checkpoints"
+        / f"{pointer['checkpoint_generation'] + 2:08d}.json"
+    )
+    unknown_generation.write_text("{}\n", encoding="utf-8")
+    before_generation = unknown_generation.read_bytes()
+    with pytest.raises(RTA4PilotExecutionError):
+        runner.run(
+            resume=True, max_records=0,
+            certificate_provider=_synthetic_certificate,
+            use_processes=False,
+        )
+    assert unknown_generation.read_bytes() == before_generation
+
+
+@pytest.mark.parametrize("kind", ["directory", "symlink"])
+def test_unregistered_worker_child_is_rejected_without_deletion(
+    tmp_path, kind,
+):
+    context = _context(tmp_path)
+    runner = PilotExecutionRunner(
+        CONFIGS, context["manifest"], context["execution"],
+    )
+    runner.run(
+        max_records=0, certificate_provider=_synthetic_certificate,
+        use_processes=False,
+    )
+    external = tmp_path / "external-worker-evidence"
+    external.mkdir()
+    unknown = (
+        context["output"] / "rta4_pilot_worker_tmp" / "unregistered"
+    )
+    if kind == "directory":
+        unknown.mkdir()
+    else:
+        unknown.symlink_to(external, target_is_directory=True)
+    with pytest.raises(RTA4PilotExecutionError, match="worker temporary"):
+        runner.run(
+            resume=True, max_records=0,
+            certificate_provider=_synthetic_certificate,
+            use_processes=False,
+        )
+    assert unknown.exists()
+    assert external.is_dir()
+
+
+def test_batch_parent_persistence_exception_cleans_all_registered_roots(
+    tmp_path, monkeypatch,
+):
+    context = _context(tmp_path, counts=2, workers=2)
+    original_write = pilot_execution._write_json_once
+    failed = False
+
+    def fail_first_raw_write(path, document):
+        nonlocal failed
+        if (
+            path.parent.name == RTA4_PILOT_RAW_TERMINAL_DIRECTORY
+            and not failed
+        ):
+            failed = True
+            raise RTA4PilotExecutionError(
+                "injected parent raw persistence failure"
+            )
+        return original_write(path, document)
+
+    runner = PilotExecutionRunner(
+        CONFIGS, context["manifest"], context["execution"],
+    )
+    monkeypatch.setattr(
+        pilot_execution, "_write_json_once", fail_first_raw_write,
+    )
+    with pytest.raises(
+        RTA4PilotExecutionError, match="parent raw persistence",
+    ):
+        runner.run(
+            max_records=2,
+            certificate_provider=_synthetic_certificate,
+            rta_callback=_synthetic_rta, use_processes=False,
+        )
+    assert list(
+        (context["output"] / "rta4_pilot_worker_tmp").iterdir()
+    ) == []
+    registry = json.loads(
+        (
+            context["output"]
+            / "rta4_pilot_worker_temp_registry.json"
+        ).read_text()
+    )
+    assert all(
+        batch["batch_status"] == "CLEANED"
+        for batch in registry["batches"]
+    )
+
+
+def test_worker_registry_rejects_path_escape_and_cleanup_failure(
+    tmp_path, monkeypatch,
+):
+    context = _context(tmp_path)
+    runner = PilotExecutionRunner(
+        CONFIGS, context["manifest"], context["execution"],
+    )
+    runner.run(
+        max_records=0,
+        certificate_provider=_synthetic_certificate,
+        use_processes=False,
+    )
+    batch_id, (worker_root,) = runner._register_worker_batch(
+        (runner.records[0],),
+    )
+    monkeypatch.setattr(
+        pilot_execution.shutil, "rmtree",
+        lambda _path: (_ for _ in ()).throw(PermissionError("denied")),
+    )
+    with pytest.raises(
+        RTA4PilotExecutionError, match="could not clean",
+    ):
+        runner._cleanup_worker_batch(batch_id)
+    assert worker_root.is_dir()
+    monkeypatch.undo()
+    runner._cleanup_worker_batch(batch_id)
+
+    registry_path = (
+        context["output"] / "rta4_pilot_worker_temp_registry.json"
+    )
+    registry = json.loads(registry_path.read_text())
+    batch = deepcopy(registry["batches"][-1])
+    batch["batch_status"] = "ACTIVE"
+    batch["entries"][0]["cleanup_status"] = "PENDING"
+    escape = tmp_path / "must-not-delete"
+    escape.mkdir()
+    batch["entries"][0]["temp_root"] = str(escape)
+    damaged = pilot_execution._build_worker_temp_registry(
+        context["execution"], runner.execution_manifest,
+        [*registry["batches"][:-1], batch],
+    )
+    atomic_write_json(registry_path, damaged)
+    with pytest.raises(RTA4PilotExecutionError, match="worker temporary"):
+        runner.run(
+            resume=True, max_records=0,
+            certificate_provider=_synthetic_certificate,
+            use_processes=False,
+        )
+    assert escape.is_dir()
+
+
+def test_cli_test_execute_partial_resume_second_resume_and_errors(
+    tmp_path,
+):
+    context = _context(tmp_path / "execute")
+    script = str(ROOT / "scripts" / "run_v9_3_rta4_pilot.py")
+    common = [
+        "--output-root", str(context["output"]),
+    ]
+    for core in RTA4_CORES:
+        common.extend(("--config", f"{core}={CONFIG_PATHS[core]}"))
+
+    executed = subprocess.run(
+        [
+            sys.executable, script, "--execute", *common,
+            "--execution-config",
+            str(context["output"] / RTA4_PILOT_EXECUTION_CONFIG),
+            "--simulator-binary", str(context["root"] / "fake-simulator"),
+            "--max-records", "1",
+        ],
+        cwd=ROOT, check=False, text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    assert executed.returncode == 0, executed.stderr
+    first = json.loads(executed.stdout)
+    assert first["processed_count"] == 1
+    assert first["complete"] is False
+
+    resumed = subprocess.run(
+        [sys.executable, script, "--resume", *common],
+        cwd=ROOT, check=False, text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    assert resumed.returncode == 0, resumed.stderr
+    assert json.loads(resumed.stdout)["complete"] is True
+    before = _file_bytes(context["output"])
+    for mode in ("--resume", "--validate-only"):
+        repeated = subprocess.run(
+            [sys.executable, script, mode, *common],
+            cwd=ROOT, check=False, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        assert repeated.returncode == 0, repeated.stderr
+        assert _file_bytes(context["output"]) == before
+
+    missing_context = _context(tmp_path / "missing-simulator")
+    missing_common = [
+        "--output-root", str(missing_context["output"]),
+    ]
+    for core in RTA4_CORES:
+        missing_common.extend(
+            ("--config", f"{core}={CONFIG_PATHS[core]}")
+        )
+    missing_before = _file_bytes(missing_context["output"])
+    missing = subprocess.run(
+        [
+            sys.executable, script, "--execute", *missing_common,
+            "--execution-config",
+            str(
+                missing_context["output"]
+                / RTA4_PILOT_EXECUTION_CONFIG
+            ),
+        ],
+        cwd=ROOT, check=False, text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    assert missing.returncode != 0
+    assert _file_bytes(missing_context["output"]) == missing_before
+
+    foreign = deepcopy(missing_context["execution"])
+    foreign["provisional_rta_attempt_timeout_seconds"] += 1
+    foreign_material = deepcopy(foreign)
+    foreign_material.pop("execution_config_id")
+    foreign["execution_config_id"] = pilot_execution.domain_hash(
+        pilot_execution.RTA4_PILOT_EXECUTION_CONFIG_DOMAIN,
+        foreign_material,
+    )
+    foreign_path = tmp_path / "foreign-execution-config.json"
+    atomic_write_json(foreign_path, foreign)
+    mismatch_before = _file_bytes(missing_context["output"])
+    mismatch = subprocess.run(
+        [
+            sys.executable, script, "--execute", *missing_common,
+            "--execution-config", str(foreign_path),
+            "--simulator-binary",
+            str(missing_context["root"] / "fake-simulator"),
+        ],
+        cwd=ROOT, check=False, text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    assert mismatch.returncode != 0
+    assert _file_bytes(missing_context["output"]) == mismatch_before

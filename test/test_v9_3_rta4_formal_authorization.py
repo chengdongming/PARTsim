@@ -6,7 +6,6 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
-import tempfile
 
 import pytest
 
@@ -142,42 +141,48 @@ def _real_domain_pilot_filesystem(root, configs, config_paths):
         certificate = pilot_execution._certificate_for_record(
             record, certificates,
         )
-        worker_root = Path(tempfile.mkdtemp(
-            prefix=f"{record.execution_id}.",
-            dir=output / pilot_execution.RTA4_PILOT_WORKER_TRACE_DIRECTORY,
-        ))
-        callback = simulator if record.kind == "simulation" else _synthetic_rta
-        result = pilot_execution._worker_execute(
-            record, certificate, configs[record.core], execution,
-            callback, str(worker_root),
+        batch_id, (worker_root,) = runner._register_worker_batch(
+            (record,),
         )
-        metrics = pilot_execution._validate_metrics(
-            result["metrics"], final=False,
-        )
-        metrics["worker_throughput_milli_records_per_second"] = 1000
-        if record.kind == "simulation":
-            simulation_id = pilot_execution._simulation_identity(
-                record, certificate,
-            )[3]
-            trace_size, trace_sha = runner._persist_trace(
-                record, certificate, result["trace_payload"],
-                simulation_id, worker_root,
+        try:
+            callback = (
+                simulator if record.kind == "simulation"
+                else _synthetic_rta
             )
-        else:
-            simulation_id = None
-            trace_size, trace_sha = 0, None
-        metrics["trace_size_bytes"] = trace_size
-        raw = build_pilot_raw_terminal(
-            runner.selected[str(record.execution_id)],
-            execution, certificate, metrics,
-            trace_sha256=trace_sha, simulation_id=simulation_id,
-        )
-        pilot_execution._write_json_once(
-            output / pilot_execution.RTA4_PILOT_RAW_TERMINAL_DIRECTORY
-            / f"{record.execution_id}.json",
-            raw,
-        )
-        runner._safe_cleanup_worker_root(worker_root)
+            result = pilot_execution._worker_execute(
+                record, certificate, configs[record.core], execution,
+                callback, str(worker_root),
+            )
+            metrics = pilot_execution._validate_metrics(
+                result["metrics"], final=False,
+            )
+            metrics[
+                "worker_throughput_milli_records_per_second"
+            ] = 1000
+            if record.kind == "simulation":
+                simulation_id = pilot_execution._simulation_identity(
+                    record, certificate,
+                )[3]
+                trace_size, trace_sha = runner._persist_trace(
+                    record, certificate, result["trace_payload"],
+                    simulation_id, worker_root,
+                )
+            else:
+                simulation_id = None
+                trace_size, trace_sha = 0, None
+            metrics["trace_size_bytes"] = trace_size
+            raw = build_pilot_raw_terminal(
+                runner.selected[str(record.execution_id)],
+                execution, certificate, metrics,
+                trace_sha256=trace_sha, simulation_id=simulation_id,
+            )
+            pilot_execution._write_json_once(
+                output / pilot_execution.RTA4_PILOT_RAW_TERMINAL_DIRECTORY
+                / f"{record.execution_id}.json",
+                raw,
+            )
+        finally:
+            runner._cleanup_worker_batch(batch_id)
         last_execution_id = str(record.execution_id)
     runner._commit_checkpoint(
         store_manifest, certificates, phase="EXECUTING",
@@ -325,10 +330,10 @@ def _candidate(frozen_contract, source, *, test_mode=False):
         prepared_config=prepared,
         freeze_manifest=frozen_contract["freeze"],
         all_prepared_configs=frozen_contract["prepared"],
-            pilot_manifest=frozen_contract["pilot"],
-            pilot_observations=frozen_contract["observations"],
-            pilot_report=frozen_contract["report"],
-            source_manifest=source,
+        pilot_manifest=frozen_contract["pilot"],
+        pilot_observations=frozen_contract["observations"],
+        pilot_report=frozen_contract["report"],
+        source_manifest=source,
         dependency_manifest=dependencies,
         environment_manifest=environment,
         hardware_manifest=build_hardware_manifest(),
