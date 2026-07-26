@@ -134,6 +134,118 @@ def _file_bytes(root: Path) -> dict[str, bytes]:
     }
 
 
+def _rehash_checkpoint_document(document: dict) -> dict:
+    document["completed_raw_count"] = len(
+        document["completed_raw_execution_order"]
+    )
+    for field, ordered in (
+        (
+            "completed_raw_terminal_digests",
+            "completed_raw_ordered_digest",
+        ),
+        ("checkpoint_event_digests", "checkpoint_event_ordered_digest"),
+        ("resume_event_digests", "resume_event_ordered_digest"),
+        ("final_terminal_digests", "final_terminal_ordered_digest"),
+        ("trace_digests", "trace_ordered_digest"),
+    ):
+        document[ordered] = hashlib.sha256(
+            pilot_execution.canonical_json({
+                key: document[field][key]
+                for key in sorted(document[field])
+            }).encode("utf-8")
+        ).hexdigest()
+    document["expected_store_slot_set_sha256"] = hashlib.sha256(
+        pilot_execution.canonical_json(sorted(
+            document["expected_store_slot_order"]
+        )).encode("utf-8")
+    ).hexdigest()
+    material = deepcopy(document)
+    material.pop("checkpoint_id", None)
+    document["checkpoint_id"] = pilot_execution.domain_hash(
+        pilot_execution.RTA4_PILOT_CHECKPOINT_DOMAIN, material,
+    )
+    return document
+
+
+def _rewrite_checkpoint_suffix(
+    output: Path, target_generation: int, mutate,
+) -> Path:
+    """Keep a damaged historical suffix internally hash/link consistent."""
+
+    generation_root = output / "rta4_pilot_checkpoints"
+    event_root = output / "rta4_pilot_checkpoint_events"
+    pointer_path = output / RTA4_PILOT_CHECKPOINT
+    pointer = json.loads(pointer_path.read_text())
+    current = pointer["checkpoint_generation"]
+    prior_events = [
+        json.loads((event_root / f"{generation:08d}.json").read_text())
+        for generation in range(target_generation)
+    ]
+    previous = (
+        None if target_generation == 0 else
+        json.loads(
+            (
+                generation_root
+                / f"{target_generation - 1:08d}.json"
+            ).read_text()
+        )
+    )
+    previous_path = (
+        None if previous is None else
+        generation_root / f"{target_generation - 1:08d}.json"
+    )
+    final_checkpoint = None
+    final_event = None
+    final_path = None
+    final_event_path = None
+    for generation in range(target_generation, current + 1):
+        path = generation_root / f"{generation:08d}.json"
+        event_path = event_root / f"{generation:08d}.json"
+        document = json.loads(path.read_text())
+        old_event = json.loads(event_path.read_text())
+        if previous is not None:
+            document["previous_checkpoint_id"] = previous["checkpoint_id"]
+            document["previous_checkpoint_payload_sha256"] = (
+                pilot_execution._sha256(previous_path)
+            )
+        if generation == target_generation:
+            mutate(document)
+        document["checkpoint_event_digests"] = {
+            event["checkpoint_event_id"]: event["checkpoint_event_sha256"]
+            for event in prior_events
+        }
+        document["checkpoint_event_digests"] = {
+            key: document["checkpoint_event_digests"][key]
+            for key in sorted(document["checkpoint_event_digests"])
+        }
+        document = _rehash_checkpoint_document(document)
+        atomic_write_json(path, document)
+        event = pilot_execution._build_checkpoint_event(
+            document, path,
+            triggering_execution_id=old_event[
+                "triggering_execution_id"
+            ],
+            write_milliseconds=old_event[
+                "checkpoint_write_milliseconds"
+            ],
+        )
+        atomic_write_json(event_path, event)
+        prior_events.append(event)
+        previous = document
+        previous_path = path
+        final_checkpoint = document
+        final_event = event
+        final_path = path
+        final_event_path = event_path
+    atomic_write_json(
+        pointer_path,
+        pilot_execution._checkpoint_pointer(
+            final_checkpoint, final_path, final_event, final_event_path,
+        ),
+    )
+    return generation_root / f"{target_generation:08d}.json"
+
+
 def _hard_exit_rta(_record, _certificate):
     os._exit(37)
 
@@ -687,8 +799,12 @@ def test_partial_store_inventory_is_exact_before_resume(
     PilotExecutionRunner(
         CONFIGS, context["manifest"], context["execution"],
     ).run(
-        max_records=1, certificate_provider=_synthetic_certificate,
-        rta_callback=_synthetic_rta, use_processes=False,
+        max_records=3, certificate_provider=_synthetic_certificate,
+        rta_callback=_synthetic_rta,
+        simulation_callback=_synthetic_simulator(
+            context["root"] / "historical-damage-traces"
+        ),
+        use_processes=False,
     )
     certificate_root = context["store"] / "certificates"
     target = next(certificate_root.glob("*.json"))
@@ -905,6 +1021,122 @@ def test_hard_child_exit_is_parent_canonicalized_and_temp_is_cleaned(
     )["checkpoint_state"] == "PILOT_COMPLETE"
 
 
+def test_timeout_result_cleans_registered_worker_batch(tmp_path):
+    context = _context(tmp_path, workers=1)
+
+    def timeout(_record, _certificate):
+        return {"solver_status": "TIMEOUT"}
+
+    summary = PilotExecutionRunner(
+        CONFIGS, context["manifest"], context["execution"],
+    ).run(
+        max_records=1, certificate_provider=_synthetic_certificate,
+        rta_callback=timeout, use_processes=False,
+    )
+    assert summary.processed_count == 1 and not summary.complete
+    raw = json.loads(next(
+        (
+            context["output"] / RTA4_PILOT_RAW_TERMINAL_DIRECTORY
+        ).glob("*.json")
+    ).read_text())
+    assert raw["timed_out"] is True
+    registry = json.loads(
+        (
+            context["output"]
+            / "rta4_pilot_worker_temp_registry.json"
+        ).read_text()
+    )
+    assert registry["batches"]
+    assert all(
+        batch["batch_status"] == "CLEANED"
+        and all(
+            entry["cleanup_status"] == "CLEANED"
+            for entry in batch["entries"]
+        )
+        for batch in registry["batches"]
+    )
+    assert list(
+        (context["output"] / "rta4_pilot_worker_tmp").iterdir()
+    ) == []
+
+
+def test_multiflight_checkpoint_exception_cleans_every_registry_entry(
+    tmp_path,
+):
+    context = _context(tmp_path, workers=2)
+    hits = 0
+
+    def hook(stage):
+        nonlocal hits
+        if stage == "after_executing_checkpoint_generation":
+            hits += 1
+            if hits == 2:
+                raise RTA4PilotExecutionInterrupted(stage)
+
+    with pytest.raises(RTA4PilotExecutionInterrupted):
+        PilotExecutionRunner(
+            CONFIGS, context["manifest"], context["execution"],
+        ).run(
+            max_records=3,
+            certificate_provider=_synthetic_certificate,
+            rta_callback=_synthetic_rta,
+            simulation_callback=_synthetic_simulator(
+                context["root"] / "checkpoint-cleanup-traces"
+            ),
+            use_processes=False, transaction_hook=hook,
+        )
+    registry = json.loads(
+        (
+            context["output"]
+            / "rta4_pilot_worker_temp_registry.json"
+        ).read_text()
+    )
+    assert registry["batches"]
+    assert all(
+        batch["batch_status"] == "CLEANED"
+        and all(
+            entry["cleanup_status"] == "CLEANED"
+            for entry in batch["entries"]
+        )
+        for batch in registry["batches"]
+    )
+    assert list(
+        (context["output"] / "rta4_pilot_worker_tmp").iterdir()
+    ) == []
+
+
+def test_active_all_cleaned_worker_registry_is_rejected(tmp_path):
+    context = _context(tmp_path)
+    runner = PilotExecutionRunner(
+        CONFIGS, context["manifest"], context["execution"],
+    )
+    runner.run(
+        max_records=0, certificate_provider=_synthetic_certificate,
+        use_processes=False,
+    )
+    batch_id, _paths = runner._register_worker_batch(
+        (runner.records[0],)
+    )
+    runner._cleanup_worker_batch(batch_id)
+    registry_path = (
+        context["output"] / "rta4_pilot_worker_temp_registry.json"
+    )
+    registry = json.loads(registry_path.read_text())
+    batches = deepcopy(registry["batches"])
+    batches[-1]["batch_status"] = "ACTIVE"
+    damaged = pilot_execution._build_worker_temp_registry(
+        context["execution"], runner.execution_manifest, batches,
+    )
+    atomic_write_json(registry_path, damaged)
+    before = registry_path.read_bytes()
+    with pytest.raises(
+        RTA4PilotExecutionError,
+        match="ACTIVE worker batch",
+    ):
+        runner._load_worker_registry()
+    assert registry_path.read_bytes() == before
+
+
 def test_cli_plan_resume_validate_and_error_modes(
     tmp_path, completed_context,
 ):
@@ -994,6 +1226,19 @@ def test_cli_plan_resume_validate_and_error_modes(
             "final_execution_order": [],
             "trace_execution_ids": [],
             "required_trace_execution_ids": [],
+            "observations_present": False,
+            "report_present": False,
+            "audit_present": False,
+            "completion_seal_present": False,
+        }),
+        ("PREPARING_STORE", {
+            "completed_store_slot_order": [],
+            "store_manifest_present": False,
+            "raw_execution_order": [],
+            "final_execution_order": [],
+            "trace_execution_ids": [],
+            "required_trace_execution_ids": [],
+            "resume_event_ids": ["resume-event"],
             "observations_present": False,
             "report_present": False,
             "audit_present": False,
@@ -1123,6 +1368,47 @@ def test_preparing_store_unknown_certificate_fails_without_deletion(
     assert certificate_path.read_bytes() == before
 
 
+def test_preparing_store_resume_event_fails_closed_without_deletion(
+    tmp_path,
+):
+    context = _context(tmp_path)
+    runner = PilotExecutionRunner(
+        CONFIGS, context["manifest"], context["execution"],
+    )
+
+    def stop(stage):
+        if stage == "after_preparing_store_pointer":
+            raise RTA4PilotExecutionInterrupted(stage)
+
+    with pytest.raises(RTA4PilotExecutionInterrupted):
+        runner.run(
+            max_records=0,
+            certificate_provider=_synthetic_certificate,
+            use_processes=False, transaction_hook=stop,
+        )
+    event = pilot_execution._build_resume_event(
+        context["execution"], generation=1,
+        preflight_started_ns=1, preflight_finished_ns=2,
+        initialization_milliseconds=0,
+        first_pending_execution_id=str(runner.records[0].execution_id),
+    )
+    path = (
+        context["output"] / "rta4_pilot_resume_events"
+        / "00000001.json"
+    )
+    atomic_write_json(path, event)
+    before = path.read_bytes()
+    with pytest.raises(
+        RTA4PilotExecutionError,
+        match="PREPARING_STORE|resume",
+    ):
+        audit_pilot_namespace(
+            context["output"], CONFIGS, require_complete=False,
+            reconstruct_store=False, allow_recovery_artifacts=True,
+        )
+    assert path.read_bytes() == before
+
+
 @pytest.mark.parametrize(
     "stage",
     [
@@ -1232,11 +1518,13 @@ def test_historical_checkpoint_damage_and_gaps_fail_closed(
         target = generation_root / "0000000a.json"
         target.write_text("{}\n", encoding="utf-8")
     else:
-        target = max(generation_root.glob("*.json"))
-        document = json.loads(target.read_text())
-        if damage == "previous_link":
-            document["previous_checkpoint_id"] = "0" * 64
-        else:
+        generation_paths = sorted(generation_root.glob("*.json"))
+        target_generation = int(generation_paths[-2].stem)
+
+        def mutate(document):
+            if damage == "previous_link":
+                document["previous_checkpoint_id"] = "0" * 64
+                return
             empty_digest = hashlib.sha256(
                 pilot_execution.canonical_json({}).encode("utf-8")
             ).hexdigest()
@@ -1253,19 +1541,184 @@ def test_historical_checkpoint_damage_and_gaps_fail_closed(
                 "trace_digests": {},
                 "trace_ordered_digest": empty_digest,
             })
-        material = deepcopy(document)
-        material.pop("checkpoint_id")
-        document["checkpoint_id"] = pilot_execution.domain_hash(
-            pilot_execution.RTA4_PILOT_CHECKPOINT_DOMAIN, material,
+        target = _rewrite_checkpoint_suffix(
+            context["output"], target_generation, mutate,
         )
-        atomic_write_json(target, document)
     before = target.read_bytes() if target.exists() else None
-    with pytest.raises(RTA4PilotExecutionError, match="checkpoint|event"):
+    with pytest.raises(
+        RTA4PilotExecutionError,
+        match="checkpoint|event|transition",
+    ):
         audit_pilot_namespace(
             context["output"], CONFIGS, require_complete=False,
         )
     if before is not None:
         assert target.read_bytes() == before
+
+
+def test_noncurrent_canonical_static_and_monotonic_damage_is_rejected(
+    tmp_path,
+):
+    context = _context(tmp_path)
+    runner = PilotExecutionRunner(
+        CONFIGS, context["manifest"], context["execution"],
+    )
+    first = runner.run(
+        max_records=1, certificate_provider=_synthetic_certificate,
+        rta_callback=_synthetic_rta, use_processes=False,
+    )
+    assert not first.complete
+    resumed = runner.run(
+        resume=True, certificate_provider=_synthetic_certificate,
+        rta_callback=_synthetic_rta,
+        simulation_callback=_synthetic_simulator(
+            context["root"] / "historical-monotonic-traces"
+        ),
+        use_processes=False,
+    )
+    assert resumed.complete
+    generation_root = context["output"] / "rta4_pilot_checkpoints"
+    original = _file_bytes(context["output"])
+
+    def documents():
+        return [
+            json.loads(path.read_text())
+            for path in sorted(generation_root.glob("*.json"))
+        ]
+
+    def restore():
+        for relative, payload in original.items():
+            (context["output"] / relative).write_bytes(payload)
+
+    static_cases = {
+        "output_root": lambda row: row.__setitem__(
+            "output_root", str(tmp_path / "foreign-output"),
+        ),
+        "taskset_store": lambda row: row.__setitem__(
+            "taskset_store", str(tmp_path / "foreign-store"),
+        ),
+        "planned_record_count": lambda row: row.__setitem__(
+            "planned_record_count", row["planned_record_count"] + 1,
+        ),
+        "expected_store_slot_order": lambda row: row[
+            "expected_store_slot_order"
+        ].append("foreign-store-slot"),
+        "execution_class": lambda row: row.__setitem__(
+            "execution_class", "ENGINEERING_PILOT",
+        ),
+        "execution_config_id": lambda row: row.__setitem__(
+            "execution_config_id", "0" * 64,
+        ),
+    }
+    for label, mutate in static_cases.items():
+        rows = documents()
+        target = next(
+            row["checkpoint_generation"] for row in rows[1:-1]
+            if row["phase"] == "PREPARING_STORE"
+        )
+        damaged = _rewrite_checkpoint_suffix(
+            context["output"], target, mutate,
+        )
+        before = damaged.read_bytes()
+        with pytest.raises(
+            RTA4PilotExecutionError,
+            match="canonical static|static binding",
+        ):
+            audit_pilot_namespace(context["output"], CONFIGS)
+        assert damaged.read_bytes() == before, label
+        restore()
+
+    def drop_store(row):
+        slot = row["completed_store_slot_order"].pop()
+        row["completed_store_slot_digests"].pop(slot)
+
+    def drop_raw(row):
+        execution_id = row["completed_raw_execution_order"].pop()
+        row["completed_raw_terminal_digests"].pop(execution_id)
+
+    def reorder_raw(row):
+        row["completed_raw_execution_order"][:2] = reversed(
+            row["completed_raw_execution_order"][:2]
+        )
+
+    def drop_trace(row):
+        row["trace_digests"].pop(next(iter(row["trace_digests"])))
+
+    def drop_final(row):
+        execution_id = row["final_terminal_execution_order"].pop()
+        row["final_terminal_digests"].pop(execution_id)
+
+    def drop_resume(row):
+        row["resume_event_digests"].clear()
+
+    rows = documents()
+    current_generation = rows[-1]["checkpoint_generation"]
+    monotonic_cases = (
+        (
+            "store",
+            next(
+                row["checkpoint_generation"] for row in rows
+                if row["phase"] == "PREPARING_STORE"
+                and len(row["completed_store_slot_order"]) >= 2
+            ),
+            drop_store,
+        ),
+        (
+            "raw",
+            next(
+                row["checkpoint_generation"] for row in rows
+                if row["phase"] == "EXECUTING"
+                and len(row["completed_raw_execution_order"]) >= 1
+                and row["checkpoint_generation"] < current_generation
+            ),
+            drop_raw,
+        ),
+        (
+            "raw-order",
+            next(
+                row["checkpoint_generation"] for row in rows
+                if len(row["completed_raw_execution_order"]) >= 2
+                and row["checkpoint_generation"] < current_generation
+            ),
+            reorder_raw,
+        ),
+        (
+            "trace",
+            next(
+                row["checkpoint_generation"] for row in rows
+                if row["trace_digests"]
+                and row["checkpoint_generation"] < current_generation
+            ),
+            drop_trace,
+        ),
+        (
+            "final",
+            next(
+                row["checkpoint_generation"] for row in rows
+                if len(row["final_terminal_execution_order"]) >= 2
+                and row["checkpoint_generation"] < current_generation
+            ),
+            drop_final,
+        ),
+        (
+            "resume",
+            next(
+                row["checkpoint_generation"] for row in rows
+                if row["resume_event_digests"]
+                and row["checkpoint_generation"] < current_generation
+            ),
+            drop_resume,
+        ),
+    )
+    for label, target, mutate in monotonic_cases:
+        damaged = _rewrite_checkpoint_suffix(
+            context["output"], target, mutate,
+        )
+        before = damaged.read_bytes()
+        with pytest.raises(RTA4PilotExecutionError):
+            audit_pilot_namespace(context["output"], CONFIGS)
+        assert damaged.read_bytes() == before, label
+        restore()
 
 
 @pytest.mark.parametrize(
@@ -1274,6 +1727,7 @@ def test_historical_checkpoint_damage_and_gaps_fail_closed(
         ("after_executing_checkpoint_generation", False),
         ("after_executing_checkpoint_event", False),
         ("after_executing_checkpoint_event", True),
+        ("after_executing_checkpoint_event", "malformed"),
     ],
 )
 def test_known_next_checkpoint_orphans_recover_only_after_preflight(
@@ -1313,10 +1767,35 @@ def test_known_next_checkpoint_orphans_recover_only_after_preflight(
     )
     if event_only:
         generation_path.unlink()
+        if event_only == "malformed":
+            malformed = json.loads(event_path.read_text())
+            malformed["unexpected"] = True
+            atomic_write_json(event_path, malformed)
     before = {
         path: path.read_bytes()
         for path in (generation_path, event_path) if path.exists()
     }
+    if event_only:
+        with pytest.raises(
+            RTA4PilotExecutionError,
+            match="event-only|incomplete transaction",
+        ):
+            audit_pilot_namespace(
+                context["output"], CONFIGS, require_complete=False,
+                reconstruct_store=False,
+                allow_recovery_artifacts=True,
+            )
+        with pytest.raises(RTA4PilotExecutionError):
+            runner.run(
+                resume=True, max_records=0,
+                certificate_provider=_synthetic_certificate,
+                rta_callback=_synthetic_rta, use_processes=False,
+            )
+        assert {
+            path: path.read_bytes()
+            for path in before
+        } == before
+        return
     audit_pilot_namespace(
         context["output"], CONFIGS, require_complete=False,
         reconstruct_store=False, allow_recovery_artifacts=True,
@@ -1334,6 +1813,79 @@ def test_known_next_checkpoint_orphans_recover_only_after_preflight(
     audit_pilot_namespace(
         context["output"], CONFIGS, require_complete=False,
     )
+
+
+def test_current_plus_one_orphan_requires_full_canonical_transition(
+    tmp_path,
+):
+    context = _context(tmp_path)
+    hits = 0
+
+    def hook(stage):
+        nonlocal hits
+        if stage == "after_executing_checkpoint_generation":
+            hits += 1
+            if hits == 3:
+                raise RTA4PilotExecutionInterrupted(stage)
+
+    runner = PilotExecutionRunner(
+        CONFIGS, context["manifest"], context["execution"],
+    )
+    with pytest.raises(RTA4PilotExecutionInterrupted):
+        runner.run(
+            max_records=3,
+            certificate_provider=_synthetic_certificate,
+            rta_callback=_synthetic_rta,
+            simulation_callback=_synthetic_simulator(
+                context["root"] / "orphan-canonical-traces"
+            ),
+            use_processes=False, transaction_hook=hook,
+        )
+    pointer = json.loads(
+        (context["output"] / RTA4_PILOT_CHECKPOINT).read_text()
+    )
+    generation = pointer["checkpoint_generation"] + 1
+    path = (
+        context["output"] / "rta4_pilot_checkpoints"
+        / f"{generation:08d}.json"
+    )
+    original = path.read_bytes()
+
+    def foreign_output(row):
+        row["output_root"] = str(tmp_path / "foreign-output")
+
+    def foreign_count(row):
+        row["planned_record_count"] += 1
+
+    def raw_rollback(row):
+        execution_id = row["completed_raw_execution_order"].pop()
+        row["completed_raw_terminal_digests"].pop(execution_id)
+        row["trace_digests"].pop(execution_id, None)
+
+    def missing_trace(row):
+        row["trace_digests"].clear()
+
+    def foreign_resume(row):
+        row["resume_event_digests"] = {"f" * 64: "e" * 64}
+
+    for label, mutate in (
+        ("foreign-output", foreign_output),
+        ("foreign-count", foreign_count),
+        ("raw-rollback", raw_rollback),
+        ("missing-trace", missing_trace),
+        ("foreign-resume", foreign_resume),
+    ):
+        document = json.loads(original)
+        mutate(document)
+        atomic_write_json(path, _rehash_checkpoint_document(document))
+        damaged = path.read_bytes()
+        with pytest.raises(RTA4PilotExecutionError):
+            audit_pilot_namespace(
+                context["output"], CONFIGS, require_complete=False,
+                reconstruct_store=False, allow_recovery_artifacts=True,
+            )
+        assert path.read_bytes() == damaged, label
+        path.write_bytes(original)
 
 
 def test_unknown_checkpoint_artifact_is_not_deleted(

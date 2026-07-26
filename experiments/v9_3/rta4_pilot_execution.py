@@ -1423,6 +1423,9 @@ _PILOT_PHASE_TRANSITIONS = frozenset({
 })
 _GENERATION_FILENAME = re.compile(r"^[0-9]{8}\.json$")
 _STORE_SLOT_PROVENANCE = "TRUSTED_FORMAL_PLAN_SLOT_RECONSTRUCTION"
+_RESUME_EVENT_ORDER_RULE = (
+    "CONTIGUOUS_GENERATION_APPEND_ONLY_FIRST_PENDING_EXECUTION"
+)
 
 
 def _is_prefix(values: Sequence[str], expected: Sequence[str]) -> bool:
@@ -1440,6 +1443,156 @@ def _expected_store_slot_order(
             seen.add(slot)
             result.append(slot)
     return tuple(result)
+
+
+@dataclass(frozen=True)
+class PilotCheckpointValidationContext:
+    """Canonical checkpoint facts reconstructed outside checkpoint evidence."""
+
+    manifest: Mapping[str, Any]
+    execution_config: Mapping[str, Any]
+    execution_manifest: Mapping[str, Any]
+    records: tuple[FormalPlanRecord, ...]
+    execution_class: str
+    pilot_manifest_id: str
+    execution_config_id: str
+    execution_manifest_id: str
+    output_root: str
+    taskset_store_root: str
+    planned_record_count: int
+    selected_execution_order: tuple[str, ...]
+    selected_execution_set: frozenset[str]
+    selected_plan_record_mapping: tuple[tuple[str, str], ...]
+    expected_store_slot_order: tuple[str, ...]
+    expected_store_slot_set_sha256: str
+    required_simulation_execution_ids: frozenset[str]
+    required_trace_mapping: tuple[tuple[str, str], ...]
+    source_manifest_id: str
+    source_git_commit: str
+    source_git_tree: str
+    simulator_manifest_id: str
+    execution_config_version: str
+    execution_manifest_version: str
+    execution_profile: str
+    allowed_phase_transitions: frozenset[tuple[str, str]]
+    resume_event_order_rule: str
+
+
+def _build_checkpoint_validation_context(
+    manifest: Mapping[str, Any],
+    execution_config: Mapping[str, Any],
+    execution_manifest: Mapping[str, Any],
+    records: Sequence[FormalPlanRecord],
+    *,
+    root: Path | str,
+) -> PilotCheckpointValidationContext:
+    """Build trusted checkpoint expectations from validated root contracts."""
+
+    output = str(Path(root).resolve())
+    ordered_records = tuple(records)
+    selected_order = tuple(
+        str(record.execution_id) for record in ordered_records
+    )
+    plan_mapping = tuple(
+        (str(record.execution_id), str(record.record_id))
+        for record in ordered_records
+    )
+    expected_slots = _expected_store_slot_order(ordered_records)
+    source = execution_config["source_manifest"]
+    simulator = execution_config["simulator_manifest"]
+    if (
+        execution_config["execution_class"]
+        != execution_manifest["execution_class"]
+        or execution_config["execution_class"]
+        not in {
+            RTA4_PILOT_EXECUTION_CLASS, RTA4_PILOT_TEST_EXECUTION_CLASS,
+        }
+        or manifest["pilot_manifest_id"]
+        != execution_config["pilot_manifest"]["pilot_manifest_id"]
+        or manifest["pilot_manifest_id"]
+        != execution_manifest["pilot_manifest_id"]
+        or execution_config["execution_config_id"]
+        != execution_manifest["execution_config_id"]
+        or execution_config["output_root"] != output
+        or execution_manifest["planned_record_count"] != len(ordered_records)
+        or tuple(execution_manifest["ordered_execution_ids"])
+        != selected_order
+        or tuple(execution_manifest["ordered_plan_record_ids"])
+        != tuple(value for _, value in plan_mapping)
+    ):
+        raise RTA4PilotExecutionError(
+            "canonical checkpoint context cannot be reconstructed"
+        )
+    required_trace_mapping = tuple(
+        (str(record.execution_id), str(record.record_id))
+        for record in ordered_records if record.kind == "simulation"
+    )
+    return PilotCheckpointValidationContext(
+        manifest=dict(manifest),
+        execution_config=dict(execution_config),
+        execution_manifest=dict(execution_manifest),
+        records=ordered_records,
+        execution_class=str(execution_config["execution_class"]),
+        pilot_manifest_id=str(manifest["pilot_manifest_id"]),
+        execution_config_id=str(execution_config["execution_config_id"]),
+        execution_manifest_id=str(
+            execution_manifest["execution_manifest_id"]
+        ),
+        output_root=output,
+        taskset_store_root=str(execution_config["taskset_store"]),
+        planned_record_count=len(ordered_records),
+        selected_execution_order=selected_order,
+        selected_execution_set=frozenset(selected_order),
+        selected_plan_record_mapping=plan_mapping,
+        expected_store_slot_order=expected_slots,
+        expected_store_slot_set_sha256=hashlib.sha256(
+            canonical_json(sorted(expected_slots)).encode("utf-8")
+        ).hexdigest(),
+        required_simulation_execution_ids=frozenset(
+            value for value, _ in required_trace_mapping
+        ),
+        required_trace_mapping=required_trace_mapping,
+        source_manifest_id=str(source["manifest_id"]),
+        source_git_commit=str(source["git_commit"]),
+        source_git_tree=str(source["git_tree"]),
+        simulator_manifest_id=str(simulator["manifest_id"]),
+        execution_config_version=str(
+            execution_config["execution_config_version"]
+        ),
+        execution_manifest_version=str(
+            execution_manifest["execution_manifest_version"]
+        ),
+        execution_profile=str(execution_config["resume_policy"]),
+        allowed_phase_transitions=_PILOT_PHASE_TRANSITIONS,
+        resume_event_order_rule=_RESUME_EVENT_ORDER_RULE,
+    )
+
+
+def _checkpoint_static_bindings(
+    context: PilotCheckpointValidationContext,
+) -> Dict[str, Any]:
+    return {
+        "execution_class": context.execution_class,
+        "pilot_manifest_id": context.pilot_manifest_id,
+        "execution_config_id": context.execution_config_id,
+        "execution_manifest_id": context.execution_manifest_id,
+        "output_root": context.output_root,
+        "taskset_store": context.taskset_store_root,
+        "planned_record_count": context.planned_record_count,
+        "expected_store_slot_order": list(
+            context.expected_store_slot_order
+        ),
+        "expected_store_slot_set_sha256": (
+            context.expected_store_slot_set_sha256
+        ),
+        "source_manifest_id": context.source_manifest_id,
+        "source_git_commit": context.source_git_commit,
+        "source_git_tree": context.source_git_tree,
+        "simulator_manifest_id": context.simulator_manifest_id,
+        "execution_config_version": context.execution_config_version,
+        "execution_manifest_version": context.execution_manifest_version,
+        "execution_profile": context.execution_profile,
+    }
 
 
 def _store_slot_digest_map(
@@ -1469,6 +1622,8 @@ def validate_pilot_phase_inventory(
     final_execution_order: Sequence[str],
     trace_execution_ids: Iterable[str],
     required_trace_execution_ids: Iterable[str] | None = None,
+    optional_trace_execution_ids: Iterable[str] = (),
+    resume_event_ids: Iterable[str] = (),
     observations_present: bool = False,
     report_present: bool = False,
     audit_present: bool = False,
@@ -1487,11 +1642,17 @@ def validate_pilot_phase_inventory(
     raw = [str(value) for value in raw_execution_order]
     final = [str(value) for value in final_execution_order]
     traces = {str(value) for value in trace_execution_ids}
-    required_traces = (
-        traces
-        if required_trace_execution_ids is None
-        else {str(value) for value in required_trace_execution_ids}
-    )
+    if required_trace_execution_ids is None:
+        raise RTA4PilotExecutionError(
+            "phase validation requires canonical simulation trace context"
+        )
+    required_traces = {
+        str(value) for value in required_trace_execution_ids
+    }
+    optional_traces = {
+        str(value) for value in optional_trace_execution_ids
+    }
+    resume_ids = [str(value) for value in resume_event_ids]
     if (
         len(expected_slots) != len(set(expected_slots))
         or len(selected) != len(set(selected))
@@ -1500,6 +1661,8 @@ def validate_pilot_phase_inventory(
         or not _is_prefix(final, selected)
         or not set(final).issubset(raw)
         or not traces.issubset(raw)
+        or len(resume_ids) != len(set(resume_ids))
+        or not optional_traces.issubset(required_traces)
         or type(worker_active_count) is not int
         or worker_active_count < 0
         or type(recovery_artifact_count) is not int
@@ -1512,12 +1675,21 @@ def validate_pilot_phase_inventory(
     store_complete = completed_slots == expected_slots
     raw_complete = raw == selected
     final_complete = final == selected
-    trace_complete = traces == required_traces
+    expected_current_traces = set(raw).intersection(required_traces)
+    trace_complete = (
+        traces.issubset(expected_current_traces)
+        and expected_current_traces - optional_traces <= traces
+    )
+    all_required_traces_complete = (
+        traces.issubset(required_traces)
+        and required_traces - optional_traces <= traces
+    )
     final_documents = observations_present and report_present
 
     if phase == "PREPARING_STORE":
         if (
-            raw or final or traces or final_documents or audit_present
+            raw or final or traces or resume_ids or final_documents
+            or audit_present
             or completion_seal_present or worker_active_count
             or store_manifest_present
             and not (
@@ -1542,6 +1714,7 @@ def validate_pilot_phase_inventory(
         if (
             not store_complete or not store_manifest_present
             or not raw_complete or not trace_complete
+            or not all_required_traces_complete
             or worker_active_count and not allow_transition_artifacts
             or final_documents and not final_complete
             or (audit_present or completion_seal_present)
@@ -1553,7 +1726,8 @@ def validate_pilot_phase_inventory(
     else:
         if (
             not store_complete or not store_manifest_present
-            or not raw_complete or not trace_complete or not final_complete
+            or not raw_complete or not trace_complete
+            or not all_required_traces_complete or not final_complete
             or not final_documents or not audit_present
             or not completion_seal_present or worker_active_count
             or recovery_artifact_count
@@ -1563,42 +1737,75 @@ def validate_pilot_phase_inventory(
             )
 
 
+def _test_trace_exemptions(
+    context: PilotCheckpointValidationContext,
+    raw_terminals: Iterable[Mapping[str, Any]],
+) -> frozenset[str]:
+    if context.execution_class != RTA4_PILOT_TEST_EXECUTION_CLASS:
+        return frozenset()
+    return frozenset(
+        str(row["execution_id"]) for row in raw_terminals
+        if (
+            str(row.get("execution_id"))
+            in context.required_simulation_execution_ids
+            and row.get("engineering_error") is True
+            and row.get("trace_filename") is None
+        )
+    )
+
+
 def _validate_checkpoint_phase_inventory(
     document: Mapping[str, Any],
+    context: PilotCheckpointValidationContext,
+    resume_events: Sequence[Mapping[str, Any]],
 ) -> None:
     """Apply the shared phase predicate to a standalone generation."""
 
     raw_order = list(document["completed_raw_execution_order"])
-    planned = document["planned_record_count"]
-    if type(planned) is not int or planned < len(raw_order):
-        raise RTA4PilotExecutionError(
-            "checkpoint planned execution inventory is invalid"
-        )
-    selected_order = list(raw_order)
-    for index in range(planned - len(raw_order)):
-        placeholder = f"__pending_execution_{index:08d}"
-        while placeholder in selected_order:
-            placeholder = f"_{placeholder}"
-        selected_order.append(placeholder)
     complete = document["phase"] == "PILOT_COMPLETE"
+    raw_documents = []
+    raw_root = (
+        Path(document["output_root"])
+        / RTA4_PILOT_RAW_TERMINAL_DIRECTORY
+    )
+    for execution_id in raw_order:
+        raw = _load_json(raw_root / f"{execution_id}.json")
+        if (
+            raw.get("execution_id") != execution_id
+            or raw.get("raw_terminal_sha256")
+            != document["completed_raw_terminal_digests"][execution_id]
+        ):
+            raise RTA4PilotExecutionError(
+                "checkpoint raw evidence cannot supply trace context"
+            )
+        raw_documents.append(raw)
     validate_pilot_phase_inventory(
         phase=document["phase"],
-        expected_store_slot_order=document[
-            "expected_store_slot_order"
-        ],
+        expected_store_slot_order=context.expected_store_slot_order,
         completed_store_slot_order=document[
             "completed_store_slot_order"
         ],
         store_manifest_present=(
             document["store_manifest_id"] is not None
         ),
-        selected_execution_order=selected_order,
+        selected_execution_order=context.selected_execution_order,
         raw_execution_order=raw_order,
         final_execution_order=document[
             "final_terminal_execution_order"
         ],
         trace_execution_ids=document["trace_digests"],
-        required_trace_execution_ids=document["trace_digests"],
+        required_trace_execution_ids=(
+            context.required_simulation_execution_ids
+        ),
+        optional_trace_execution_ids=(
+            _test_trace_exemptions(context, raw_documents)
+        ),
+        resume_event_ids=(
+            event["resume_event_id"] for event in resume_events
+            if event["resume_event_id"] in document[
+                "resume_event_digests"
+            ]
+        ),
         observations_present=complete,
         report_present=complete,
         audit_present=document["audit_id"] is not None,
@@ -1612,7 +1819,7 @@ def build_pilot_checkpoint(
     manifest: Mapping[str, Any],
     execution_config: Mapping[str, Any],
     execution_manifest: Mapping[str, Any], *,
-    expected_store_slot_order: Sequence[str],
+    context: PilotCheckpointValidationContext,
     completed_store_certificates: Mapping[
         str, TasksetIdentityCertificate
     ],
@@ -1657,7 +1864,15 @@ def build_pilot_checkpoint(
             )
         previous_generation = generation - 1
         previous_id = previous_checkpoint["checkpoint_id"]
-    slot_order = [str(value) for value in expected_store_slot_order]
+    if (
+        dict(manifest) != dict(context.manifest)
+        or dict(execution_config) != dict(context.execution_config)
+        or dict(execution_manifest) != dict(context.execution_manifest)
+    ):
+        raise RTA4PilotExecutionError(
+            "checkpoint builder received a foreign canonical context"
+        )
+    slot_order = list(context.expected_store_slot_order)
     completed_slots = list(completed_store_certificates)
     if not _is_prefix(completed_slots, slot_order):
         raise RTA4PilotExecutionError(
@@ -1680,11 +1895,8 @@ def build_pilot_checkpoint(
         digest_field="resume_event_sha256",
     )
     traces = {str(key): str(value) for key, value in trace_digests.items()}
-    planned = execution_manifest["planned_record_count"]
-    selected_order = [
-        str(value)
-        for value in execution_manifest["ordered_execution_ids"]
-    ]
+    planned = context.planned_record_count
+    selected_order = list(context.selected_execution_order)
     raw_order = [str(row["execution_id"]) for row in raw_terminals]
     final_order = [str(row["execution_id"]) for row in final_terminals]
     if (
@@ -1702,6 +1914,13 @@ def build_pilot_checkpoint(
         raw_execution_order=raw_order,
         final_execution_order=final_order,
         trace_execution_ids=traces,
+        required_trace_execution_ids=(
+            context.required_simulation_execution_ids
+        ),
+        optional_trace_execution_ids=(
+            _test_trace_exemptions(context, raw_terminals)
+        ),
+        resume_event_ids=resume_map,
         observations_present=observations_present,
         report_present=report_present,
         audit_present=audit_document is not None,
@@ -1721,19 +1940,7 @@ def build_pilot_checkpoint(
             "PILOT_COMPLETE"
             if phase == "PILOT_COMPLETE" else "INCOMPLETE_PILOT"
         ),
-        "execution_class": execution_config["execution_class"],
-        "pilot_manifest_id": manifest["pilot_manifest_id"],
-        "execution_config_id": execution_config["execution_config_id"],
-        "execution_manifest_id": execution_manifest[
-            "execution_manifest_id"
-        ],
-        "output_root": execution_config["output_root"],
-        "taskset_store": execution_config["taskset_store"],
-        "planned_record_count": planned,
-        "expected_store_slot_order": slot_order,
-        "expected_store_slot_set_sha256": hashlib.sha256(
-            canonical_json(sorted(slot_order)).encode("utf-8")
-        ).hexdigest(),
+        **_checkpoint_static_bindings(context),
         "completed_store_slot_order": completed_slots,
         "completed_store_slot_digests": _store_slot_digest_map(
             completed_slots, completed_store_certificates,
@@ -1806,10 +2013,13 @@ def build_pilot_checkpoint(
 def validate_pilot_checkpoint(
     document: Mapping[str, Any], manifest: Mapping[str, Any],
     execution_config: Mapping[str, Any],
-    execution_manifest: Mapping[str, Any], **inventory: Any,
+    execution_manifest: Mapping[str, Any], *,
+    context: PilotCheckpointValidationContext,
+    **inventory: Any,
 ) -> Dict[str, Any]:
     expected = build_pilot_checkpoint(
-        manifest, execution_config, execution_manifest, **inventory,
+        manifest, execution_config, execution_manifest,
+        context=context, **inventory,
     )
     if dict(document) != expected:
         raise RTA4PilotExecutionError(
@@ -2104,6 +2314,16 @@ def _validate_worker_temp_registry(
         if batch_id != expected_batch_id:
             raise RTA4PilotExecutionError(
                 "worker temporary batch ID mismatch"
+            )
+        if (
+            batch["batch_status"] == "ACTIVE"
+            and all(
+                entry["cleanup_status"] == "CLEANED"
+                for entry in normalized_entries
+            )
+        ):
+            raise RTA4PilotExecutionError(
+                "ACTIVE worker batch cannot contain only CLEANED entries"
             )
         normalized_batches.append({
             **dict(batch), "entries": normalized_entries,
@@ -2800,6 +3020,9 @@ _CHECKPOINT_FIELDS = frozenset({
     "execution_manifest_id", "output_root", "taskset_store",
     "planned_record_count", "expected_store_slot_order",
     "expected_store_slot_set_sha256", "completed_store_slot_order",
+    "source_manifest_id", "source_git_commit", "source_git_tree",
+    "simulator_manifest_id", "execution_config_version",
+    "execution_manifest_version", "execution_profile",
     "completed_store_slot_digests", "store_manifest_id",
     "previous_checkpoint_generation", "previous_checkpoint_id",
     "previous_checkpoint_payload_sha256", "completed_raw_count",
@@ -2839,6 +3062,8 @@ def _validate_digest_inventory(
 
 def _validate_checkpoint_document(
     document: Mapping[str, Any], path: Path,
+    context: PilotCheckpointValidationContext,
+    resume_events: Sequence[Mapping[str, Any]],
 ) -> Dict[str, Any]:
     if not isinstance(document, Mapping) or set(document) != (
         _CHECKPOINT_FIELDS
@@ -2860,6 +3085,14 @@ def _validate_checkpoint_document(
     ):
         raise RTA4PilotExecutionError(
             "checkpoint generation header is invalid"
+        )
+    static_bindings = _checkpoint_static_bindings(context)
+    if any(
+        document.get(field) != value
+        for field, value in static_bindings.items()
+    ):
+        raise RTA4PilotExecutionError(
+            "checkpoint generation canonical static binding mismatch"
         )
     slots = document["expected_store_slot_order"]
     completed_slots = document["completed_store_slot_order"]
@@ -2924,6 +3157,18 @@ def _validate_checkpoint_document(
         raise RTA4PilotExecutionError(
             "checkpoint execution inventory is invalid"
         )
+    resume_map = document["resume_event_digests"]
+    expected_resume_map = {
+        event["resume_event_id"]: event["resume_event_sha256"]
+        for event in resume_events[:len(resume_map)]
+    }
+    expected_resume_map = {
+        key: expected_resume_map[key] for key in sorted(expected_resume_map)
+    }
+    if resume_map != expected_resume_map:
+        raise RTA4PilotExecutionError(
+            "checkpoint resume-event inventory is not a canonical prefix"
+        )
     if generation == 0:
         previous_valid = (
             document["previous_checkpoint_generation"] is None
@@ -2977,63 +3222,190 @@ def _validate_checkpoint_document(
         raise RTA4PilotExecutionError(
             "checkpoint generation identity mismatch"
         )
-    _validate_checkpoint_phase_inventory(document)
+    _validate_checkpoint_phase_inventory(document, context, resume_events)
     return dict(document)
 
 
-def _validate_orphan_event_shape(
-    document: Mapping[str, Any], *,
-    generation: int, current: Mapping[str, Any],
-) -> Dict[str, Any]:
-    expected_fields = {
-        "checkpoint_event_version", "checkpoint_generation",
-        "pilot_manifest_id", "execution_config_id",
-        "execution_manifest_id", "previous_checkpoint_id",
-        "triggering_execution_id", "completed_raw_id_set_sha256",
-        "checkpoint_filename", "checkpoint_payload_sha256",
-        "checkpoint_id", "checkpoint_write_milliseconds",
-        "checkpoint_event_id", "checkpoint_event_sha256",
-    }
+def _resume_event_inventory(
+    root: Path,
+    context: PilotCheckpointValidationContext,
+) -> tuple[Dict[str, Any], ...]:
+    """Validate the unique canonical file order for resume evidence."""
+
+    rows: list[Dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for index, path in enumerate(_evidence_paths(
+        root, RTA4_PILOT_RESUME_EVENT_DIRECTORY, stem_length=8,
+    ), start=1):
+        event = _validate_resume_event(
+            _load_json(path), context.execution_config,
+        )
+        if (
+            path.name != f"{index:08d}.json"
+            or event["resume_generation"] != index
+            or event["resume_event_id"] in seen_ids
+            or event["first_pending_execution_id"]
+            not in context.selected_execution_set
+        ):
+            raise RTA4PilotExecutionError(
+                "resume-event canonical order is invalid"
+            )
+        seen_ids.add(event["resume_event_id"])
+        rows.append(event)
+    return tuple(rows)
+
+
+def _mapping_extends_immutably(
+    previous: Mapping[str, Any], current: Mapping[str, Any],
+) -> bool:
+    return all(current.get(key) == value for key, value in previous.items())
+
+
+def validate_pilot_checkpoint_transition(
+    previous: Mapping[str, Any],
+    current: Mapping[str, Any],
+    context: PilotCheckpointValidationContext,
+    resume_events: Sequence[Mapping[str, Any]],
+) -> None:
+    """Validate one canonical, monotonic checkpoint transition."""
+
+    previous_generation = previous["checkpoint_generation"]
     if (
-        not isinstance(document, Mapping)
-        or set(document) != expected_fields
-        or document["checkpoint_event_version"]
-        != RTA4_PILOT_CHECKPOINT_EVENT_VERSION
-        or document["checkpoint_generation"] != generation
-        or document["checkpoint_filename"] != f"{generation:08d}.json"
-        or document["pilot_manifest_id"] != current["pilot_manifest_id"]
-        or document["execution_config_id"]
-        != current["execution_config_id"]
-        or document["execution_manifest_id"]
-        != current["execution_manifest_id"]
-        or document["previous_checkpoint_id"] != current["checkpoint_id"]
-        or type(document["checkpoint_write_milliseconds"]) is not int
-        or document["checkpoint_write_milliseconds"] < 0
+        current["checkpoint_generation"] != previous_generation + 1
+        or current["previous_checkpoint_generation"] != previous_generation
+        or current["previous_checkpoint_id"] != previous["checkpoint_id"]
+        or (previous["phase"], current["phase"])
+        not in context.allowed_phase_transitions
     ):
         raise RTA4PilotExecutionError(
-            "unpaired orphan checkpoint event is not recoverable"
+            "checkpoint historical transition link/phase is invalid"
         )
-    material = dict(document)
-    event_sha = material.pop("checkpoint_event_sha256", None)
-    if event_sha != hashlib.sha256(
-        canonical_json(material).encode("utf-8")
-    ).hexdigest():
-        raise RTA4PilotExecutionError(
-            "orphan checkpoint event SHA is invalid"
-        )
-    event_id_material = dict(material)
-    observed_id = event_id_material.pop("checkpoint_event_id", None)
-    if observed_id != domain_hash(
-        RTA4_PILOT_CHECKPOINT_EVENT_DOMAIN, event_id_material,
+    for field in _checkpoint_static_bindings(context):
+        if previous[field] != current[field]:
+            raise RTA4PilotExecutionError(
+                "checkpoint historical static binding changed"
+            )
+    for field in (
+        "completed_store_slot_digests",
+        "completed_raw_terminal_digests",
+        "checkpoint_event_digests",
+        "resume_event_digests",
+        "final_terminal_digests",
+        "trace_digests",
+    ):
+        if not _mapping_extends_immutably(previous[field], current[field]):
+            raise RTA4PilotExecutionError(
+                f"checkpoint historical {field} evidence rolled back"
+            )
+    previous_store = previous["completed_store_slot_order"]
+    current_store = current["completed_store_slot_order"]
+    previous_raw = previous["completed_raw_execution_order"]
+    current_raw = current["completed_raw_execution_order"]
+    previous_final = previous["final_terminal_execution_order"]
+    current_final = current["final_terminal_execution_order"]
+    if (
+        not _is_prefix(previous_store, current_store)
+        or not _is_prefix(current_store, context.expected_store_slot_order)
+        or not _is_prefix(previous_raw, current_raw)
+        or not _is_prefix(current_raw, context.selected_execution_order)
+        or not _is_prefix(previous_final, current_final)
+        or not _is_prefix(current_final, context.selected_execution_order)
     ):
         raise RTA4PilotExecutionError(
-            "orphan checkpoint event identity is invalid"
+            "checkpoint historical ordered evidence rolled back"
         )
-    return dict(document)
+    previous_resume_count = len(previous["resume_event_digests"])
+    current_resume_count = len(current["resume_event_digests"])
+    if current_resume_count > previous_resume_count:
+        if previous["phase"] == "PREPARING_STORE":
+            raise RTA4PilotExecutionError(
+                "PREPARING_STORE cannot append resume evidence"
+            )
+        expected_pending_index = len(previous_raw)
+        if expected_pending_index >= len(context.selected_execution_order):
+            raise RTA4PilotExecutionError(
+                "zero-work resume event is forbidden"
+            )
+        expected_pending = context.selected_execution_order[
+            expected_pending_index
+        ]
+        for event in resume_events[
+            previous_resume_count:current_resume_count
+        ]:
+            if event["first_pending_execution_id"] != expected_pending:
+                raise RTA4PilotExecutionError(
+                    "resume event does not bind the canonical first pending "
+                    "execution"
+                )
+    phase_pair = (previous["phase"], current["phase"])
+    if phase_pair == ("PREPARING_STORE", "PREPARING_STORE"):
+        if (
+            previous_raw or current_raw
+            or previous_final or current_final
+            or previous["trace_digests"] or current["trace_digests"]
+            or previous["resume_event_digests"]
+            or current["resume_event_digests"]
+            or len(current_store) - len(previous_store) not in {0, 1}
+        ):
+            raise RTA4PilotExecutionError(
+                "PREPARING_STORE transition evidence is invalid"
+            )
+    elif phase_pair == ("PREPARING_STORE", "EXECUTING"):
+        if (
+            current_store != list(context.expected_store_slot_order)
+            or current_raw or current_final or current["trace_digests"]
+            or current["resume_event_digests"]
+        ):
+            raise RTA4PilotExecutionError(
+                "PREPARING_STORE to EXECUTING transition is incomplete"
+            )
+    elif phase_pair == ("EXECUTING", "EXECUTING"):
+        if (
+            current_store != previous_store
+            or current_final or previous_final
+            or len(current_raw) - len(previous_raw) < 0
+        ):
+            raise RTA4PilotExecutionError(
+                "EXECUTING transition evidence is invalid"
+            )
+    elif phase_pair == ("EXECUTING", "FINALIZING"):
+        if (
+            current_store != previous_store
+            or current_raw != list(context.selected_execution_order)
+            or current_final
+        ):
+            raise RTA4PilotExecutionError(
+                "EXECUTING to FINALIZING transition is incomplete"
+            )
+    elif phase_pair == ("FINALIZING", "FINALIZING"):
+        if (
+            current_store != previous_store
+            or current_raw != previous_raw
+            or current["trace_digests"] != previous["trace_digests"]
+            or len(current_final) - len(previous_final) not in {0, 1}
+        ):
+            raise RTA4PilotExecutionError(
+                "FINALIZING transition evidence is invalid"
+            )
+    elif phase_pair == ("FINALIZING", "PILOT_COMPLETE"):
+        if (
+            current_store != previous_store
+            or current_raw != previous_raw
+            or current_final != previous_final
+            or current["trace_digests"] != previous["trace_digests"]
+            or current["resume_event_digests"]
+            != previous["resume_event_digests"]
+            or current["audit_id"] is None
+            or current["completion_seal_id"] is None
+        ):
+            raise RTA4PilotExecutionError(
+                "PILOT_COMPLETE transition evidence is incomplete"
+            )
 
 
 def _load_checkpoint_transaction(
     root: Path,
+    context: PilotCheckpointValidationContext,
 ) -> tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any],
            tuple[Dict[str, Any], ...], tuple[Path, ...]]:
     pointer = _load_json(root / RTA4_PILOT_CHECKPOINT)
@@ -3049,6 +3421,7 @@ def _load_checkpoint_transaction(
     )
     generations = {int(path.stem): path for path in generation_paths}
     events = {int(path.stem): path for path in event_paths}
+    resume_events = _resume_event_inventory(root, context)
     current_generation = pointer.get("checkpoint_generation")
     if (
         type(current_generation) is not int
@@ -3081,6 +3454,7 @@ def _load_checkpoint_transaction(
         checkpoint_path = generations[generation]
         checkpoint = _validate_checkpoint_document(
             _load_json(checkpoint_path), checkpoint_path,
+            context, resume_events,
         )
         if previous is None:
             if generation != 0:
@@ -3088,17 +3462,15 @@ def _load_checkpoint_transaction(
                     "checkpoint chain does not start at generation zero"
                 )
         else:
-            if (
-                checkpoint["previous_checkpoint_id"]
-                != previous["checkpoint_id"]
-                or checkpoint["previous_checkpoint_payload_sha256"]
-                != _sha256(previous_path)
-                or (previous["phase"], checkpoint["phase"])
-                not in _PILOT_PHASE_TRANSITIONS
+            if checkpoint["previous_checkpoint_payload_sha256"] != (
+                _sha256(previous_path)
             ):
                 raise RTA4PilotExecutionError(
-                    "checkpoint historical chain link/phase is invalid"
+                    "checkpoint historical payload link is invalid"
                 )
+            validate_pilot_checkpoint_transition(
+                previous, checkpoint, context, resume_events,
+            )
         expected_prior_events = {
             row["checkpoint_event_id"]: row["checkpoint_event_sha256"]
             for row in committed_events
@@ -3113,6 +3485,20 @@ def _load_checkpoint_transaction(
         event = _validate_checkpoint_event(
             _load_json(events[generation]), checkpoint_path, checkpoint,
         )
+        triggering_execution_id = event["triggering_execution_id"]
+        if (
+            triggering_execution_id is not None
+            and (
+                triggering_execution_id
+                not in context.selected_execution_set
+                or triggering_execution_id
+                not in checkpoint["completed_raw_terminal_digests"]
+            )
+        ):
+            raise RTA4PilotExecutionError(
+                "checkpoint event trigger is outside committed execution "
+                "evidence"
+            )
         committed_checkpoints.append(checkpoint)
         committed_events.append(event)
         previous = checkpoint
@@ -3127,7 +3513,9 @@ def _load_checkpoint_transaction(
         raise RTA4PilotExecutionError(
             "canonical checkpoint pointer mismatch"
         )
-    _validate_checkpoint_phase_inventory(checkpoint)
+    _validate_checkpoint_phase_inventory(
+        checkpoint, context, resume_events,
+    )
     if checkpoint["phase"] == "PILOT_COMPLETE":
         for filename, digest, identity in (
             (
@@ -3155,28 +3543,29 @@ def _load_checkpoint_transaction(
     orphan_paths: list[Path] = []
     orphan_generation = current_generation + 1
     orphan_checkpoint = None
+    if (
+        orphan_generation in events
+        and orphan_generation not in generations
+    ):
+        raise RTA4PilotExecutionError(
+            "event-only orphan is an unknown incomplete transaction"
+        )
     if orphan_generation in generations:
         orphan_path = generations[orphan_generation]
         orphan_checkpoint = _validate_checkpoint_document(
             _load_json(orphan_path), orphan_path,
+            context, resume_events,
         )
         if (
-            orphan_checkpoint["previous_checkpoint_id"]
-            != checkpoint["checkpoint_id"]
-            or orphan_checkpoint["previous_checkpoint_payload_sha256"]
+            orphan_checkpoint["previous_checkpoint_payload_sha256"]
             != _sha256(checkpoint_path)
-            or (checkpoint["phase"], orphan_checkpoint["phase"])
-            not in _PILOT_PHASE_TRANSITIONS
-            or orphan_checkpoint["pilot_manifest_id"]
-            != checkpoint["pilot_manifest_id"]
-            or orphan_checkpoint["execution_config_id"]
-            != checkpoint["execution_config_id"]
-            or orphan_checkpoint["execution_manifest_id"]
-            != checkpoint["execution_manifest_id"]
         ):
             raise RTA4PilotExecutionError(
                 "next checkpoint generation is not a recoverable orphan"
             )
+        validate_pilot_checkpoint_transition(
+            checkpoint, orphan_checkpoint, context, resume_events,
+        )
         orphan_paths.append(orphan_path)
     if orphan_generation in events:
         orphan_event_path = events[orphan_generation]
@@ -3188,9 +3577,8 @@ def _load_checkpoint_transaction(
                 orphan_checkpoint,
             )
         else:
-            _validate_orphan_event_shape(
-                orphan_event_document,
-                generation=orphan_generation, current=checkpoint,
+            raise RTA4PilotExecutionError(
+                "event-only orphan is an unknown incomplete transaction"
             )
         orphan_paths.append(orphan_event_path)
     orphans = tuple(sorted(orphan_paths))
@@ -3423,6 +3811,105 @@ def validate_pilot_audit_document(
     return dict(document)
 
 
+def _load_checkpoint_validation_context(
+    output: Path,
+    configs: Mapping[str, Mapping[str, Any]],
+) -> tuple[
+    Dict[str, Any], Dict[str, Any], Dict[str, Any],
+    tuple[FormalPlanRecord, ...], PilotCheckpointValidationContext,
+]:
+    """Load and validate the only canonical checkpoint context for a root."""
+
+    manifest = validate_pilot_manifest(
+        _load_json(output / RTA4_PILOT_OUTPUT_MARKER), configs,
+    )
+    execution_config = validate_pilot_execution_config(
+        _load_json(output / RTA4_PILOT_EXECUTION_CONFIG),
+        manifest, validate_live_source=True,
+    )
+    execution_manifest = validate_pilot_execution_manifest(
+        _load_json(output / RTA4_PILOT_EXECUTION_MANIFEST),
+        manifest, execution_config,
+    )
+    records = reconstruct_selected_records(configs, manifest)
+    context = _build_checkpoint_validation_context(
+        manifest, execution_config, execution_manifest, records,
+        root=output,
+    )
+    return (
+        manifest, execution_config, execution_manifest, records, context,
+    )
+
+
+def _validate_recoverable_orphan_file_inventory(
+    orphan_paths: Sequence[Path],
+    *,
+    context: PilotCheckpointValidationContext,
+    certificates: Mapping[str, TasksetIdentityCertificate],
+    raw_terminal_digests: Mapping[str, str],
+    final_terminal_digests: Mapping[str, str],
+    trace_digests: Mapping[str, str],
+    resume_event_digests: Mapping[str, str],
+) -> None:
+    """Bind a recoverable next generation to validated file evidence."""
+
+    generation_paths = [
+        path for path in orphan_paths
+        if path.parent.name == RTA4_PILOT_CHECKPOINT_DIRECTORY
+    ]
+    if not generation_paths:
+        return
+    if len(generation_paths) != 1:
+        raise RTA4PilotExecutionError(
+            "recoverable transaction has multiple generation candidates"
+        )
+    candidate = _load_json(generation_paths[0])
+    completed_slots = candidate["completed_store_slot_order"]
+    if any(slot not in certificates for slot in completed_slots):
+        raise RTA4PilotExecutionError(
+            "orphan checkpoint binds absent store evidence"
+        )
+    expected_store_digests = _store_slot_digest_map(
+        completed_slots, certificates,
+    )
+    expected_raw_order = [
+        execution_id for execution_id in context.selected_execution_order
+        if execution_id in raw_terminal_digests
+    ]
+    expected_final_order = [
+        execution_id for execution_id in context.selected_execution_order
+        if execution_id in final_terminal_digests
+    ]
+    if (
+        candidate["completed_store_slot_digests"]
+        != expected_store_digests
+        or candidate["completed_raw_execution_order"]
+        != expected_raw_order
+        or candidate["completed_raw_terminal_digests"]
+        != {
+            key: raw_terminal_digests[key]
+            for key in sorted(raw_terminal_digests)
+        }
+        or candidate["final_terminal_execution_order"]
+        != expected_final_order
+        or candidate["final_terminal_digests"]
+        != {
+            key: final_terminal_digests[key]
+            for key in sorted(final_terminal_digests)
+        }
+        or candidate["trace_digests"] != {
+            key: trace_digests[key] for key in sorted(trace_digests)
+        }
+        or candidate["resume_event_digests"] != {
+            key: resume_event_digests[key]
+            for key in sorted(resume_event_digests)
+        }
+    ):
+        raise RTA4PilotExecutionError(
+            "orphan checkpoint differs from validated file evidence"
+        )
+
+
 def audit_pilot_namespace(
     root: Path | str,
     configs: Mapping[str, Mapping[str, Any]], *,
@@ -3455,28 +3942,20 @@ def audit_pilot_namespace(
         raise RTA4PilotExecutionError(
             "pilot output root contains an unexpected entry"
         )
-    manifest = validate_pilot_manifest(
-        _load_json(output / RTA4_PILOT_OUTPUT_MARKER), configs,
-    )
-    execution_config = validate_pilot_execution_config(
-        _load_json(output / RTA4_PILOT_EXECUTION_CONFIG),
-        manifest, validate_live_source=True,
-    )
-    execution_manifest = validate_pilot_execution_manifest(
-        _load_json(output / RTA4_PILOT_EXECUTION_MANIFEST),
-        manifest, execution_config,
-    )
-    records = reconstruct_selected_records(configs, manifest)
+    (
+        manifest, execution_config, execution_manifest, records,
+        checkpoint_context,
+    ) = _load_checkpoint_validation_context(output, configs)
     selected = {
         row["execution_id"]: row for row in _selected_rows(manifest)
     }
     records_by_execution = {
         str(record.execution_id): record for record in records
     }
-    selected_order = [
-        str(record.execution_id) for record in records
-    ]
-    expected_slots = _expected_store_slot_order(records)
+    selected_order = list(
+        checkpoint_context.selected_execution_order
+    )
+    expected_slots = checkpoint_context.expected_store_slot_order
     registry = _validate_worker_temp_registry(
         _load_json(output / RTA4_PILOT_WORKER_TEMP_REGISTRY),
         execution_config, execution_manifest,
@@ -3484,22 +3963,7 @@ def audit_pilot_namespace(
     (
         pointer, checkpoint, _current_event,
         checkpoint_events, orphan_paths,
-    ) = _load_checkpoint_transaction(output)
-    if (
-        checkpoint["pilot_manifest_id"] != manifest["pilot_manifest_id"]
-        or checkpoint["execution_config_id"]
-        != execution_config["execution_config_id"]
-        or checkpoint["execution_manifest_id"]
-        != execution_manifest["execution_manifest_id"]
-        or checkpoint["output_root"] != str(output)
-        or checkpoint["taskset_store"]
-        != execution_config["taskset_store"]
-        or checkpoint["planned_record_count"] != len(records)
-        or checkpoint["expected_store_slot_order"] != list(expected_slots)
-    ):
-        raise RTA4PilotExecutionError(
-            "checkpoint generation binding mismatch"
-        )
+    ) = _load_checkpoint_transaction(output, checkpoint_context)
     store_candidate = None
     if checkpoint["phase"] == "PREPARING_STORE":
         (
@@ -3625,24 +4089,9 @@ def audit_pilot_namespace(
         raise RTA4PilotExecutionError(
             "checkpoint/raw terminal inventory is not exact"
         )
-    resume_paths = _evidence_paths(
-        output, RTA4_PILOT_RESUME_EVENT_DIRECTORY, stem_length=8,
+    resume_events = _resume_event_inventory(
+        output, checkpoint_context,
     )
-    resume_events = []
-    for path in resume_paths:
-        event = _validate_resume_event(
-            _load_json(path), execution_config,
-        )
-        if path.name != f"{event['resume_generation']:08d}.json":
-            raise RTA4PilotExecutionError(
-                "resume event filename/generation mismatch"
-            )
-        resume_events.append(event)
-    resume_events = tuple(resume_events)
-    if len({
-        event["resume_generation"] for event in resume_events
-    }) != len(resume_events):
-        raise RTA4PilotExecutionError("duplicate resume event generation")
     resume_map = _digest_map(
         resume_events, id_field="resume_event_id",
         digest_field="resume_event_sha256",
@@ -3723,6 +4172,18 @@ def audit_pilot_namespace(
         row["execution_id"]: row["final_terminal_sha256"]
         for row in final_terminals
     }
+    orphan_certificates = dict(certificates)
+    if store_candidate is not None:
+        orphan_certificates[store_candidate[0]] = store_candidate[1]
+    _validate_recoverable_orphan_file_inventory(
+        orphan_paths,
+        context=checkpoint_context,
+        certificates=orphan_certificates,
+        raw_terminal_digests=raw_digest_map,
+        final_terminal_digests=final_digest_map,
+        trace_digests=trace_digests,
+        resume_event_digests=resume_map,
+    )
     if (
         not _is_prefix(
             checkpoint["final_terminal_execution_order"], final_order,
@@ -3860,11 +4321,17 @@ def audit_pilot_namespace(
         raw_execution_order=raw_order,
         final_execution_order=final_order,
         trace_execution_ids=trace_digests,
-        required_trace_execution_ids={
-            execution_id
-            for execution_id, raw in raw_by_execution.items()
-            if raw["trace_filename"] is not None
-        },
+        required_trace_execution_ids=(
+            checkpoint_context.required_simulation_execution_ids
+        ),
+        optional_trace_execution_ids=(
+            _test_trace_exemptions(
+                checkpoint_context, raw_by_execution.values(),
+            )
+        ),
+        resume_event_ids=(
+            event["resume_event_id"] for event in resume_events
+        ),
         observations_present=observations is not None,
         report_present=report is not None,
         audit_present=audit_present,
@@ -3934,6 +4401,7 @@ def audit_pilot_namespace(
         )
         base_checkpoint = _validate_checkpoint_document(
             _load_json(base_checkpoint_path), base_checkpoint_path,
+            checkpoint_context, resume_events,
         )
         base_event = _validate_checkpoint_event(
             _load_json(base_event_path),
@@ -4053,6 +4521,11 @@ class PilotExecutionRunner:
         self.records = reconstruct_selected_records(
             self.configs, self.manifest,
         )
+        self.checkpoint_context = _build_checkpoint_validation_context(
+            self.manifest, self.execution_config,
+            self.execution_manifest, self.records,
+            root=self.execution_config["output_root"],
+        )
         self.selected = {
             row["execution_id"]: row for row in _selected_rows(self.manifest)
         }
@@ -4133,7 +4606,7 @@ class PilotExecutionRunner:
     ) -> tuple[Dict[str, Any], Dict[str, TasksetIdentityCertificate]]:
         root = Path(self.execution_config["output_root"])
         _pointer, checkpoint, _event, _events, orphans = (
-            _load_checkpoint_transaction(root)
+            _load_checkpoint_transaction(root, self.checkpoint_context)
         )
         if checkpoint["phase"] != "PREPARING_STORE" or orphans:
             raise RTA4PilotExecutionError(
@@ -4215,9 +4688,16 @@ class PilotExecutionRunner:
         self, *, allow_recovery_artifacts: bool,
     ) -> Mapping[str, Any]:
         checkpoint = _load_checkpoint_transaction(
-            Path(self.execution_config["output_root"])
+            Path(self.execution_config["output_root"]),
+            self.checkpoint_context,
         )[1]
-        _validate_checkpoint_phase_inventory(checkpoint)
+        _validate_checkpoint_phase_inventory(
+            checkpoint, self.checkpoint_context,
+            _resume_event_inventory(
+                Path(self.execution_config["output_root"]),
+                self.checkpoint_context,
+            ),
+        )
         return audit_pilot_namespace(
             self.execution_config["output_root"], self.configs,
             require_complete=False, reconstruct_store=False,
@@ -4378,7 +4858,9 @@ class PilotExecutionRunner:
 
     def _cleanup_recovery_artifacts(self) -> None:
         root = Path(self.execution_config["output_root"])
-        *_transaction, orphan_paths = _load_checkpoint_transaction(root)
+        *_transaction, orphan_paths = _load_checkpoint_transaction(
+            root, self.checkpoint_context,
+        )
         for path in orphan_paths:
             if (
                 path.is_symlink() or not path.is_file()
@@ -4543,7 +5025,9 @@ class PilotExecutionRunner:
             (
                 _pointer, _checkpoint, _event,
                 committed_events, orphan_paths,
-            ) = _load_checkpoint_transaction(root)
+            ) = _load_checkpoint_transaction(
+                root, self.checkpoint_context,
+            )
             if orphan_paths:
                 raise RTA4PilotExecutionError(
                     "checkpoint transaction has unresolved orphan evidence"
@@ -4579,9 +5063,7 @@ class PilotExecutionRunner:
         checkpoint = build_pilot_checkpoint(
             self.manifest, self.execution_config,
             self.execution_manifest,
-            expected_store_slot_order=_expected_store_slot_order(
-                self.records
-            ),
+            context=self.checkpoint_context,
             completed_store_certificates=certificates,
             store_manifest=store_manifest,
             raw_terminals=raw, checkpoint_events=committed_events,
@@ -4686,9 +5168,12 @@ class PilotExecutionRunner:
                 "finalization requires every immutable raw terminal"
             )
         pointer, checkpoint, _event, checkpoint_events, _orphans = (
-            _load_checkpoint_transaction(root)
+            _load_checkpoint_transaction(root, self.checkpoint_context)
         )
-        _validate_checkpoint_phase_inventory(checkpoint)
+        _validate_checkpoint_phase_inventory(
+            checkpoint, self.checkpoint_context,
+            _resume_event_inventory(root, self.checkpoint_context),
+        )
         if checkpoint["phase"] == "PILOT_COMPLETE":
             return audit_pilot_namespace(root, self.configs)
         if checkpoint["phase"] != "FINALIZING":
@@ -4698,7 +5183,9 @@ class PilotExecutionRunner:
                 transaction_hook=transaction_hook,
             )
             pointer, checkpoint, _event, checkpoint_events, _orphans = (
-                _load_checkpoint_transaction(root)
+                _load_checkpoint_transaction(
+                    root, self.checkpoint_context,
+                )
             )
         warnings = runtime_ci_engineering_warnings(
             self.manifest["pilot_manifest_id"], raw,
@@ -4746,7 +5233,9 @@ class PilotExecutionRunner:
             (
                 _pointer, current_checkpoint, _event,
                 _events, current_orphans,
-            ) = _load_checkpoint_transaction(root)
+            ) = _load_checkpoint_transaction(
+                root, self.checkpoint_context,
+            )
             if current_orphans:
                 raise RTA4PilotExecutionError(
                     "finalization has unresolved checkpoint evidence"
@@ -4787,7 +5276,9 @@ class PilotExecutionRunner:
         (
             finalizing_pointer, finalizing_checkpoint, _event,
             _events, finalizing_orphans,
-        ) = _load_checkpoint_transaction(root)
+        ) = _load_checkpoint_transaction(
+            root, self.checkpoint_context,
+        )
         if (
             finalizing_checkpoint["phase"] != "FINALIZING"
             or finalizing_orphans
@@ -4874,7 +5365,9 @@ class PilotExecutionRunner:
             )
             root = Path(self.execution_config["output_root"])
             if validate_only:
-                actual_phase = _load_checkpoint_transaction(root)[1][
+                actual_phase = _load_checkpoint_transaction(
+                    root, self.checkpoint_context,
+                )[1][
                     "phase"
                 ]
                 remaining = (
@@ -4891,7 +5384,9 @@ class PilotExecutionRunner:
                 )
             self._cleanup_recovery_artifacts()
             _pointer, resume_checkpoint, _event, _events, _orphans = (
-                _load_checkpoint_transaction(root)
+                _load_checkpoint_transaction(
+                    root, self.checkpoint_context,
+                )
             )
             if resume_checkpoint["phase"] == "PREPARING_STORE":
                 provider = certificate_provider or PilotTasksetProvider(
@@ -4981,7 +5476,9 @@ class PilotExecutionRunner:
             pending = pending[:max_records]
         if (
             resume and not all_pending
-            and _load_checkpoint_transaction(root)[1]["phase"]
+            and _load_checkpoint_transaction(
+                root, self.checkpoint_context,
+            )[1]["phase"]
             == "PILOT_COMPLETE"
         ):
             audit_path = root / RTA4_PILOT_AUDIT
@@ -5155,7 +5652,9 @@ class PilotExecutionRunner:
                 self._cleanup_worker_batch(batch_id)
         if processed:
             _pointer, checkpoint, _event, _events, _orphans = (
-                _load_checkpoint_transaction(root)
+                _load_checkpoint_transaction(
+                    root, self.checkpoint_context,
+                )
             )
             if checkpoint["completed_raw_count"] != len(completed):
                 self._commit_checkpoint(
@@ -5181,7 +5680,8 @@ class PilotExecutionRunner:
 
 __all__ = [
     "PILOT_OUTPUT_IO_DEFINITION", "PILOT_RESUME_POLICY",
-    "PILOT_THROUGHPUT_DEFINITION", "PilotExecutionRunner",
+    "PILOT_THROUGHPUT_DEFINITION", "PilotCheckpointValidationContext",
+    "PilotExecutionRunner",
     "PilotExecutionSummary", "PilotTasksetProvider", "RTA4_PILOT_AUDIT",
     "RTA4_PILOT_AUDIT_DOMAIN", "RTA4_PILOT_AUDIT_VERSION",
     "RTA4_PILOT_CHECKPOINT", "RTA4_PILOT_CHECKPOINT_DOMAIN",
@@ -5224,5 +5724,6 @@ __all__ = [
     "validate_pilot_completion_seal",
     "validate_pilot_execution_config", "validate_pilot_execution_manifest",
     "validate_pilot_final_terminal", "validate_pilot_raw_terminal",
+    "validate_pilot_checkpoint_transition",
     "validate_pilot_phase_inventory", "validate_pilot_terminal",
 ]

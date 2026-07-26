@@ -18,7 +18,6 @@ from .rta4_formal_pilot import (
 )
 from .rta4_pilot_execution import (
     audit_pilot_namespace, validate_pilot_audit_document,
-    validate_pilot_phase_inventory,
 )
 from .rta4_formal_environment import (
     RTA4_DEPENDENCY_DOMAIN, RTA4_DEPENDENCY_MANIFEST_VERSION,
@@ -286,25 +285,6 @@ def prepare_formal_configs(
         raise RTA4FreezeError(
             "persisted/supplied pilot audit differs from fresh reconstruction"
         )
-    audited_order = [
-        f"freeze-audited-execution-{index:08d}"
-        for index in range(audit["raw_terminal_count"])
-    ]
-    validate_pilot_phase_inventory(
-        phase="PILOT_COMPLETE",
-        expected_store_slot_order=("freeze-audited-store",),
-        completed_store_slot_order=("freeze-audited-store",),
-        store_manifest_present=True,
-        selected_execution_order=audited_order,
-        raw_execution_order=audited_order,
-        final_execution_order=audited_order,
-        trace_execution_ids=(),
-        required_trace_execution_ids=(),
-        observations_present=True,
-        report_present=True,
-        audit_present=True,
-        completion_seal_present=True,
-    )
     pilot_path = Path(pilot_root).resolve(strict=True)
     try:
         from .rta4_formal_environment import load_strict_json
