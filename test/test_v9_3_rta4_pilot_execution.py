@@ -19,7 +19,8 @@ from experiments.v9_3.rta4_formal_environment import (
     build_simulator_manifest, build_source_manifest,
 )
 from experiments.v9_3.rta4_formal_pilot import (
-    RTA4_PILOT_OBSERVATIONS, RTA4_PILOT_OUTPUT_MARKER,
+    RTA4_PILOT_EXECUTION_CLASS, RTA4_PILOT_OBSERVATIONS,
+    RTA4_PILOT_OUTPUT_MARKER,
     RTA4_PILOT_REPORT, RTA4PilotError, build_pilot_manifest,
     build_pilot_observations, build_pilot_report,
 )
@@ -42,7 +43,8 @@ from experiments.v9_3.rta4_pilot_execution import (
     RTA4PilotExecutionError, RTA4PilotExecutionInterrupted,
     _execution_batches,
     audit_pilot_namespace, build_pilot_execution_config,
-    build_pilot_final_terminal, compute_pilot_output_io_bytes,
+    build_pilot_final_terminal, build_simulation_support,
+    compute_pilot_output_io_bytes,
     pilot_final_terminal_preimage, runtime_ci_engineering_warnings,
     validate_pilot_phase_inventory,
     validate_pilot_execution_config,
@@ -70,13 +72,20 @@ CONFIGS = {
 }
 
 
-def _source_repo(root: Path) -> dict:
+def _source_repo(root: Path) -> tuple[dict, Path, Path]:
     repo = root / "source"
     repo.mkdir()
     source = repo / "entry.txt"
+    base_system = repo / "base-system.yml"
+    energy_config = repo / "energy.yml"
     source.write_text("pilot-source-v1\n", encoding="utf-8")
+    base_system.write_text("system: synthetic-fixture\n", encoding="utf-8")
+    energy_config.write_text("{}\n", encoding="utf-8")
     subprocess.run(("git", "init", "-q"), cwd=repo, check=True)
-    subprocess.run(("git", "add", "entry.txt"), cwd=repo, check=True)
+    subprocess.run(
+        ("git", "add", "entry.txt", "base-system.yml", "energy.yml"),
+        cwd=repo, check=True,
+    )
     subprocess.run(
         (
             "git", "-c", "user.name=RTA4 Test",
@@ -85,10 +94,16 @@ def _source_repo(root: Path) -> dict:
         ),
         cwd=repo, check=True,
     )
-    return build_source_manifest(repo, (source,))
+    return (
+        build_source_manifest(repo, (source, base_system, energy_config)),
+        base_system, energy_config,
+    )
 
 
-def _context(root: Path, *, counts: int = 1, workers: int = 2):
+def _context(
+    root: Path, *, counts: int = 1, workers: int = 2,
+    execution_class: str = RTA4_PILOT_TEST_EXECUTION_CLASS,
+):
     output = root / "pilot"
     store = root / "store"
     manifest = build_pilot_manifest(
@@ -107,17 +122,25 @@ def _context(root: Path, *, counts: int = 1, workers: int = 2):
     simulator = root / "fake-simulator"
     simulator.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     simulator.chmod(0o755)
+    source_manifest, base_system, energy_config = _source_repo(root)
     execution = build_pilot_execution_config(
         manifest_path, manifest,
-        source_manifest=_source_repo(root),
+        source_manifest=source_manifest,
         output_root=output, taskset_store=store,
         simulator_manifest=build_simulator_manifest(simulator),
+        simulation_support=(
+            build_simulation_support(
+                base_system_path=base_system,
+                energy_config_path=energy_config,
+            )
+            if execution_class == RTA4_PILOT_EXECUTION_CLASS else None
+        ),
         default_worker_count=workers, max_in_flight=max(3, workers),
         provisional_rta_attempt_timeout_seconds=2,
         provisional_simulation_timeout_seconds=2,
         memory_soft_limit_bytes=1 << 60,
         checkpoint_interval_records=2, maximum_attempts=2,
-        execution_class=RTA4_PILOT_TEST_EXECUTION_CLASS,
+        execution_class=execution_class,
     )
     atomic_write_json(output / RTA4_PILOT_EXECUTION_CONFIG, execution)
     return {
@@ -169,6 +192,7 @@ def _rehash_checkpoint_document(document: dict) -> dict:
 
 def _rewrite_checkpoint_suffix(
     output: Path, target_generation: int, mutate,
+    mutate_event=None,
 ) -> Path:
     """Keep a damaged historical suffix internally hash/link consistent."""
 
@@ -220,12 +244,16 @@ def _rewrite_checkpoint_suffix(
         }
         document = _rehash_checkpoint_document(document)
         atomic_write_json(path, document)
+        event_source = deepcopy(old_event)
+        if generation == target_generation and mutate_event is not None:
+            mutate_event(event_source)
         event = pilot_execution._build_checkpoint_event(
             document, path,
-            triggering_execution_id=old_event[
+            event_kind=event_source["event_kind"],
+            triggering_execution_id=event_source[
                 "triggering_execution_id"
             ],
-            write_milliseconds=old_event[
+            write_milliseconds=event_source[
                 "checkpoint_write_milliseconds"
             ],
         )
@@ -1063,7 +1091,7 @@ def test_timeout_result_cleans_registered_worker_batch(tmp_path):
 def test_multiflight_checkpoint_exception_cleans_every_registry_entry(
     tmp_path,
 ):
-    context = _context(tmp_path, workers=2)
+    context = _context(tmp_path, counts=2, workers=2)
     hits = 0
 
     def hook(stage):
@@ -1092,6 +1120,7 @@ def test_multiflight_checkpoint_exception_cleans_every_registry_entry(
         ).read_text()
     )
     assert registry["batches"]
+    assert any(len(batch["entries"]) >= 2 for batch in registry["batches"])
     assert all(
         batch["batch_status"] == "CLEANED"
         and all(
@@ -1103,6 +1132,18 @@ def test_multiflight_checkpoint_exception_cleans_every_registry_entry(
     assert list(
         (context["output"] / "rta4_pilot_worker_tmp").iterdir()
     ) == []
+    resumed = PilotExecutionRunner(
+        CONFIGS, context["manifest"], context["execution"],
+    ).run(
+        resume=True,
+        certificate_provider=_synthetic_certificate,
+        rta_callback=_synthetic_rta,
+        simulation_callback=_synthetic_simulator(
+            context["root"] / "multiflight-resume-traces"
+        ),
+        use_processes=False,
+    )
+    assert resumed.complete
 
 
 def test_active_all_cleaned_worker_registry_is_rejected(tmp_path):
@@ -1193,85 +1234,186 @@ def test_cli_plan_resume_validate_and_error_modes(
     assert _file_bytes(completed_context["output"]) == before
 
 
-@pytest.mark.parametrize(
-    "phase,overrides",
-    [
-        ("EXECUTING", {
-            "raw_execution_order": ["e1", "e2"],
-            "final_execution_order": ["e1"],
-        }),
-        ("FINALIZING", {
-            "raw_execution_order": ["e1"],
-        }),
-        ("FINALIZING", {
-            "trace_execution_ids": [],
-            "required_trace_execution_ids": ["e2"],
-        }),
-        ("FINALIZING", {
-            "final_execution_order": ["e2"],
-        }),
-        ("PILOT_COMPLETE", {
-            "audit_present": False,
-        }),
-        ("PILOT_COMPLETE", {
-            "completion_seal_present": False,
-        }),
-        ("PILOT_COMPLETE", {
-            "worker_active_count": 1,
-        }),
-        ("PREPARING_STORE", {
-            "completed_store_slot_order": [],
-            "store_manifest_present": False,
-            "raw_execution_order": ["e1"],
-            "final_execution_order": [],
-            "trace_execution_ids": [],
-            "required_trace_execution_ids": [],
-            "observations_present": False,
-            "report_present": False,
-            "audit_present": False,
-            "completion_seal_present": False,
-        }),
-        ("PREPARING_STORE", {
-            "completed_store_slot_order": [],
-            "store_manifest_present": False,
-            "raw_execution_order": [],
-            "final_execution_order": [],
-            "trace_execution_ids": [],
-            "required_trace_execution_ids": [],
-            "resume_event_ids": ["resume-event"],
-            "observations_present": False,
-            "report_present": False,
-            "audit_present": False,
-            "completion_seal_present": False,
-        }),
-    ],
-)
-def test_phase_inventory_negative_combinations_fail_closed(
-    phase, overrides,
+def test_phase_inventory_requires_context_and_rejects_observed_facts(
+    completed_context,
 ):
-    values = {
-        "phase": phase,
-        "expected_store_slot_order": ["s1", "s2"],
-        "completed_store_slot_order": ["s1", "s2"],
-        "store_manifest_present": True,
-        "selected_execution_order": ["e1", "e2"],
-        "raw_execution_order": ["e1", "e2"],
-        "final_execution_order": (
-            ["e1", "e2"] if phase in {"FINALIZING", "PILOT_COMPLETE"}
-            else []
-        ),
-        "trace_execution_ids": ["e2"],
-        "required_trace_execution_ids": ["e2"],
-        "observations_present": phase == "PILOT_COMPLETE",
-        "report_present": phase == "PILOT_COMPLETE",
-        "audit_present": phase == "PILOT_COMPLETE",
-        "completion_seal_present": phase == "PILOT_COMPLETE",
+    runner = PilotExecutionRunner(
+        CONFIGS, completed_context["manifest"],
+        completed_context["execution"],
+    )
+    canonical = runner.checkpoint_context
+    raw_documents = [
+        json.loads((
+            completed_context["output"]
+            / RTA4_PILOT_RAW_TERMINAL_DIRECTORY
+            / f"{execution_id}.json"
+        ).read_text())
+        for execution_id in canonical.selected_execution_order
+    ]
+    raw_order = list(canonical.selected_execution_order)
+    final_order = list(canonical.selected_execution_order)
+    slots = list(canonical.expected_store_slot_order)
+    traces = {
+        row["execution_id"] for row in raw_documents
+        if row["trace_filename"] is not None
+    }
+
+    preparing = {
+        "phase": "PREPARING_STORE",
+        "completed_store_slot_order": [],
+        "store_manifest_present": False,
+        "raw_execution_order": [],
+        "validated_raw_documents": [],
+        "final_execution_order": [],
+        "trace_execution_ids": [],
+        "resume_event_ids": [],
+        "observations_present": False,
+        "report_present": False,
+        "audit_present": False,
+        "completion_seal_present": False,
         "worker_active_count": 0,
         "recovery_artifact_count": 0,
     }
-    values.update(overrides)
-    with pytest.raises(RTA4PilotExecutionError):
-        validate_pilot_phase_inventory(**values)
+    with pytest.raises(TypeError):
+        validate_pilot_phase_inventory(**preparing)
+    validate_pilot_phase_inventory(canonical, **preparing)
+
+    executing = {
+        **preparing,
+        "phase": "EXECUTING",
+        "completed_store_slot_order": slots,
+        "store_manifest_present": True,
+        "raw_execution_order": raw_order,
+        "validated_raw_documents": raw_documents,
+        "trace_execution_ids": traces,
+    }
+    finalizing = {
+        **executing,
+        "phase": "FINALIZING",
+        "final_execution_order": final_order,
+    }
+    complete = {
+        **finalizing,
+        "phase": "PILOT_COMPLETE",
+        "observations_present": True,
+        "report_present": True,
+        "audit_present": True,
+        "completion_seal_present": True,
+    }
+    validate_pilot_phase_inventory(canonical, **executing)
+    validate_pilot_phase_inventory(canonical, **finalizing)
+    validate_pilot_phase_inventory(canonical, **complete)
+
+    cases = []
+    cases.append({**preparing, "completed_store_slot_order": ["foreign"]})
+    cases.append({
+        **executing,
+        "raw_execution_order": list(reversed(raw_order)),
+        "validated_raw_documents": list(reversed(raw_documents)),
+    })
+    cases.append({**executing, "final_execution_order": [raw_order[0]]})
+    cases.append({
+        **finalizing,
+        "trace_execution_ids": traces - {
+            next(iter(canonical.required_simulation_execution_ids))
+        },
+    })
+    cases.append({**finalizing, "final_execution_order": [raw_order[1]]})
+    cases.append({**complete, "audit_present": False})
+    cases.append({**complete, "completion_seal_present": False})
+    cases.append({**complete, "worker_active_count": 1})
+    cases.append({
+        **preparing,
+        "raw_execution_order": [raw_order[0]],
+        "validated_raw_documents": [raw_documents[0]],
+    })
+    cases.append({**preparing, "resume_event_ids": ["resume-event"]})
+    for values in cases:
+        with pytest.raises(RTA4PilotExecutionError):
+            validate_pilot_phase_inventory(canonical, **values)
+
+
+@pytest.mark.parametrize(
+    "execution_class",
+    [RTA4_PILOT_EXECUTION_CLASS, RTA4_PILOT_TEST_EXECUTION_CLASS],
+)
+def test_trace_exemption_is_raw_bound_and_domain_independent(
+    tmp_path, execution_class,
+):
+    context = _context(
+        tmp_path, execution_class=execution_class,
+    )
+    runner = PilotExecutionRunner(
+        CONFIGS, context["manifest"], context["execution"],
+    )
+    record = next(row for row in runner.records if row.kind == "simulation")
+    certificate = _synthetic_certificate(record)
+    simulation_id = pilot_execution._simulation_identity(
+        record, certificate,
+    )[3]
+
+    def raw(*, engineering_error, timed_out, with_trace=False):
+        payload = b"{}" if with_trace else b""
+        metrics = {
+            "runtime_wall_milliseconds": 1,
+            "runtime_cpu_milliseconds": 1,
+            "peak_rss_bytes": 1,
+            "timed_out": timed_out,
+            "attempt_count": 1,
+            "worker_throughput_milli_records_per_second": 1,
+            "simulation_wall_milliseconds": 1,
+            "trace_size_bytes": len(payload),
+            "engineering_error": engineering_error,
+        }
+        return pilot_execution.build_pilot_raw_terminal(
+            runner.selected[str(record.execution_id)],
+            context["execution"], certificate, metrics,
+            trace_sha256=(
+                hashlib.sha256(payload).hexdigest() if with_trace else None
+            ),
+            simulation_id=simulation_id,
+        )
+
+    execution_id = str(record.execution_id)
+    for document in (
+        raw(engineering_error=True, timed_out=False),
+        raw(engineering_error=False, timed_out=True),
+        raw(engineering_error=True, timed_out=True),
+    ):
+        assert pilot_execution._trace_exemptions_from_validated_raw(
+            runner.checkpoint_context, [document], (),
+        ) == frozenset({execution_id})
+
+    successful = raw(engineering_error=False, timed_out=False)
+    with pytest.raises(
+        RTA4PilotExecutionError, match="successful simulation",
+    ):
+        pilot_execution._trace_exemptions_from_validated_raw(
+            runner.checkpoint_context, [successful], (),
+        )
+
+    trace_bound = raw(
+        engineering_error=True, timed_out=True, with_trace=True,
+    )
+    assert pilot_execution._trace_exemptions_from_validated_raw(
+        runner.checkpoint_context, [trace_bound], (execution_id,),
+    ) == frozenset()
+    with pytest.raises(RTA4PilotExecutionError, match="lacks observed trace"):
+        pilot_execution._trace_exemptions_from_validated_raw(
+            runner.checkpoint_context, [trace_bound], (),
+        )
+
+    foreign = deepcopy(successful)
+    foreign["execution_id"] = "f" * 64
+    material = deepcopy(foreign)
+    material.pop("raw_terminal_sha256")
+    foreign["raw_terminal_sha256"] = pilot_execution.domain_hash(
+        pilot_execution.RTA4_PILOT_RAW_TERMINAL_DOMAIN, material,
+    )
+    with pytest.raises(RTA4PilotExecutionError, match="outside canonical"):
+        pilot_execution._trace_exemptions_from_validated_raw(
+            runner.checkpoint_context, [foreign], (),
+        )
 
 
 @pytest.mark.parametrize(
@@ -1721,6 +1863,115 @@ def test_noncurrent_canonical_static_and_monotonic_damage_is_rejected(
         restore()
 
 
+def test_noncurrent_store_identity_and_raw_event_causality_reject_rehash(
+    tmp_path,
+):
+    context = _context(tmp_path)
+    PilotExecutionRunner(
+        CONFIGS, context["manifest"], context["execution"],
+    ).run(
+        certificate_provider=_synthetic_certificate,
+        rta_callback=_synthetic_rta,
+        simulation_callback=_synthetic_simulator(
+            context["root"] / "history-causality-traces"
+        ),
+        use_processes=False,
+    )
+    root = context["output"]
+    generation_root = root / "rta4_pilot_checkpoints"
+    original = _file_bytes(root)
+
+    def rows():
+        return [
+            json.loads(path.read_text())
+            for path in sorted(generation_root.glob("*.json"))
+        ]
+
+    def restore():
+        for relative, payload in original.items():
+            (root / relative).write_bytes(payload)
+
+    documents = rows()
+    store_target = next(
+        row["checkpoint_generation"] for row in documents[1:-1]
+        if row["phase"] == "EXECUTING"
+        and row["completed_raw_count"] >= 1
+    )
+    damaged = _rewrite_checkpoint_suffix(
+        root, store_target,
+        lambda row: row.__setitem__("store_manifest_id", "f" * 64),
+    )
+    before = damaged.read_bytes()
+    with pytest.raises(RTA4PilotExecutionError, match="store manifest"):
+        audit_pilot_namespace(root, CONFIGS)
+    assert damaged.read_bytes() == before
+    restore()
+
+    documents = rows()
+    raw_target_row = next(
+        row for row in documents[1:-1]
+        if row["phase"] == "EXECUTING"
+        and row["completed_raw_count"] == 1
+    )
+    next_execution = raw_target_row["completed_raw_execution_order"][0]
+    canonical_next = next(
+        execution_id
+        for execution_id in PilotExecutionRunner(
+            CONFIGS, context["manifest"], context["execution"],
+        ).checkpoint_context.selected_execution_order
+        if execution_id not in raw_target_row[
+            "completed_raw_terminal_digests"
+        ]
+    )
+    next_raw = json.loads((
+        root / RTA4_PILOT_RAW_TERMINAL_DIRECTORY
+        / f"{canonical_next}.json"
+    ).read_text())
+
+    def append_two_raw(row):
+        row["completed_raw_execution_order"].append(canonical_next)
+        row["completed_raw_terminal_digests"][canonical_next] = next_raw[
+            "raw_terminal_sha256"
+        ]
+
+    damaged = _rewrite_checkpoint_suffix(
+        root, raw_target_row["checkpoint_generation"], append_two_raw,
+    )
+    before = damaged.read_bytes()
+    with pytest.raises(RTA4PilotExecutionError, match="EXECUTING transition"):
+        audit_pilot_namespace(root, CONFIGS)
+    assert damaged.read_bytes() == before
+    restore()
+
+    documents = rows()
+    trigger_target = next(
+        row["checkpoint_generation"] for row in documents[1:-1]
+        if row["phase"] == "EXECUTING"
+        and row["completed_raw_count"] == 2
+    )
+    damaged = _rewrite_checkpoint_suffix(
+        root, trigger_target, lambda _row: None,
+        mutate_event=lambda event: event.__setitem__(
+            "triggering_execution_id", next_execution,
+        ),
+    )
+    before = damaged.read_bytes()
+    with pytest.raises(RTA4PilotExecutionError, match="causality"):
+        audit_pilot_namespace(root, CONFIGS)
+    assert damaged.read_bytes() == before
+    restore()
+
+    damaged = _rewrite_checkpoint_suffix(
+        root, trigger_target, lambda _row: None,
+        mutate_event=lambda event: event.__setitem__(
+            "event_kind", "PHASE_TRANSITION",
+        ),
+    )
+    before = damaged.read_bytes()
+    with pytest.raises(RTA4PilotExecutionError, match="causality"):
+        audit_pilot_namespace(root, CONFIGS)
+    assert damaged.read_bytes() == before
+
 @pytest.mark.parametrize(
     "stage,event_only",
     [
@@ -1825,7 +2076,7 @@ def test_current_plus_one_orphan_requires_full_canonical_transition(
         nonlocal hits
         if stage == "after_executing_checkpoint_generation":
             hits += 1
-            if hits == 3:
+            if hits == 4:
                 raise RTA4PilotExecutionInterrupted(stage)
 
     runner = PilotExecutionRunner(
@@ -1857,6 +2108,18 @@ def test_current_plus_one_orphan_requires_full_canonical_transition(
     def foreign_count(row):
         row["planned_record_count"] += 1
 
+    def foreign_store(row):
+        row["taskset_store"] = str(tmp_path / "foreign-store")
+
+    def foreign_config(row):
+        row["execution_config_id"] = "d" * 64
+
+    def foreign_slots(row):
+        row["expected_store_slot_order"][-1] = "foreign-slot"
+
+    def foreign_store_manifest(row):
+        row["store_manifest_id"] = "c" * 64
+
     def raw_rollback(row):
         execution_id = row["completed_raw_execution_order"].pop()
         row["completed_raw_terminal_digests"].pop(execution_id)
@@ -1871,6 +2134,10 @@ def test_current_plus_one_orphan_requires_full_canonical_transition(
     for label, mutate in (
         ("foreign-output", foreign_output),
         ("foreign-count", foreign_count),
+        ("foreign-store", foreign_store),
+        ("foreign-config", foreign_config),
+        ("foreign-slots", foreign_slots),
+        ("foreign-store-manifest", foreign_store_manifest),
         ("raw-rollback", raw_rollback),
         ("missing-trace", missing_trace),
         ("foreign-resume", foreign_resume),
@@ -1886,6 +2153,167 @@ def test_current_plus_one_orphan_requires_full_canonical_transition(
             )
         assert path.read_bytes() == damaged, label
         path.write_bytes(original)
+
+
+@pytest.mark.parametrize(
+    "damage", ["trigger", "event-kind"],
+)
+def test_current_plus_one_event_pair_requires_canonical_causality(
+    tmp_path, damage,
+):
+    context = _context(tmp_path)
+    hits = 0
+
+    def hook(stage):
+        nonlocal hits
+        if stage == "after_executing_checkpoint_event":
+            hits += 1
+            if hits == 2:
+                raise RTA4PilotExecutionInterrupted(stage)
+
+    runner = PilotExecutionRunner(
+        CONFIGS, context["manifest"], context["execution"],
+    )
+    with pytest.raises(RTA4PilotExecutionInterrupted):
+        runner.run(
+            max_records=1,
+            certificate_provider=_synthetic_certificate,
+            rta_callback=_synthetic_rta, use_processes=False,
+            transaction_hook=hook,
+        )
+    pointer = json.loads(
+        (context["output"] / RTA4_PILOT_CHECKPOINT).read_text()
+    )
+    generation = pointer["checkpoint_generation"] + 1
+    generation_path = (
+        context["output"] / "rta4_pilot_checkpoints"
+        / f"{generation:08d}.json"
+    )
+    event_path = (
+        context["output"] / "rta4_pilot_checkpoint_events"
+        / f"{generation:08d}.json"
+    )
+    checkpoint = json.loads(generation_path.read_text())
+    event = json.loads(event_path.read_text())
+    if damage == "trigger":
+        trigger = checkpoint["completed_raw_execution_order"][0]
+        event["triggering_execution_id"] = (
+            "f" * 64 if event["triggering_execution_id"] == trigger
+            else trigger
+        )
+    else:
+        event["event_kind"] = "PHASE_TRANSITION"
+    damaged = pilot_execution._build_checkpoint_event(
+        checkpoint, generation_path,
+        event_kind=event["event_kind"],
+        triggering_execution_id=event["triggering_execution_id"],
+        write_milliseconds=event["checkpoint_write_milliseconds"],
+    )
+    atomic_write_json(event_path, damaged)
+    before = event_path.read_bytes()
+    with pytest.raises(RTA4PilotExecutionError, match="causality"):
+        audit_pilot_namespace(
+            context["output"], CONFIGS, require_complete=False,
+            reconstruct_store=False, allow_recovery_artifacts=True,
+        )
+    assert event_path.read_bytes() == before
+
+
+@pytest.mark.parametrize("damage", ["generation", "event", "raw"])
+def test_recovery_cleanup_revalidates_authorized_bytes(
+    tmp_path, damage,
+):
+    context = _context(tmp_path)
+    hits = 0
+
+    def hook(stage):
+        nonlocal hits
+        if stage == "after_executing_checkpoint_event":
+            hits += 1
+            if hits == 2:
+                raise RTA4PilotExecutionInterrupted(stage)
+
+    runner = PilotExecutionRunner(
+        CONFIGS, context["manifest"], context["execution"],
+    )
+    with pytest.raises(RTA4PilotExecutionInterrupted):
+        runner.run(
+            max_records=1,
+            certificate_provider=_synthetic_certificate,
+            rta_callback=_synthetic_rta, use_processes=False,
+            transaction_hook=hook,
+        )
+    preflight = runner._resume_preflight(allow_recovery_artifacts=True)
+    authorization = preflight.recovery_candidate
+    assert isinstance(
+        authorization, pilot_execution.AuthorizedRecoveryCandidate,
+    )
+    if damage == "generation":
+        target = authorization.generation_path
+    elif damage == "event":
+        target = authorization.event_path
+        assert target is not None
+    else:
+        target = next((
+            context["output"] / RTA4_PILOT_RAW_TERMINAL_DIRECTORY
+        ).glob("*.json"))
+    original = target.read_bytes()
+    target.write_bytes(original + b" ")
+    damaged_bytes = target.read_bytes()
+    with pytest.raises(RTA4PilotExecutionError):
+        runner._cleanup_recovery_artifacts(authorization)
+    assert target.read_bytes() == damaged_bytes
+    assert authorization.generation_path.exists()
+    if authorization.event_path is not None:
+        assert authorization.event_path.exists()
+    target.write_bytes(original)
+    fresh = runner._resume_preflight(allow_recovery_artifacts=True)
+    assert fresh.recovery_candidate == authorization
+    runner._cleanup_recovery_artifacts(authorization)
+    assert not authorization.generation_path.exists()
+    if authorization.event_path is not None:
+        assert not authorization.event_path.exists()
+
+
+@pytest.mark.parametrize("field", ["audit_id", "completion_seal_id"])
+def test_complete_orphan_requires_exact_audit_and_seal_binding(
+    tmp_path, field,
+):
+    context = _context(tmp_path)
+
+    def hook(stage):
+        if stage == "after_pilot_complete_checkpoint_generation":
+            raise RTA4PilotExecutionInterrupted(stage)
+
+    with pytest.raises(RTA4PilotExecutionInterrupted):
+        PilotExecutionRunner(
+            CONFIGS, context["manifest"], context["execution"],
+        ).run(
+            certificate_provider=_synthetic_certificate,
+            rta_callback=_synthetic_rta,
+            simulation_callback=_synthetic_simulator(
+                context["root"] / "complete-orphan-traces"
+            ),
+            use_processes=False, transaction_hook=hook,
+        )
+    pointer = json.loads(
+        (context["output"] / RTA4_PILOT_CHECKPOINT).read_text()
+    )
+    generation = pointer["checkpoint_generation"] + 1
+    path = (
+        context["output"] / "rta4_pilot_checkpoints"
+        / f"{generation:08d}.json"
+    )
+    document = json.loads(path.read_text())
+    document[field] = "f" * 64
+    atomic_write_json(path, _rehash_checkpoint_document(document))
+    before = path.read_bytes()
+    with pytest.raises(RTA4PilotExecutionError, match="audit/seal"):
+        audit_pilot_namespace(
+            context["output"], CONFIGS, require_complete=False,
+            reconstruct_store=False, allow_recovery_artifacts=True,
+        )
+    assert path.read_bytes() == before
 
 
 def test_unknown_checkpoint_artifact_is_not_deleted(

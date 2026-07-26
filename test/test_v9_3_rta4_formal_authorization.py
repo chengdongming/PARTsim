@@ -136,7 +136,6 @@ def _real_domain_pilot_filesystem(root, configs, config_paths):
         PilotTasksetProvider(configs), None,
     )
     simulator = _synthetic_simulator(root / "pilot-fixture-traces")
-    last_execution_id = None
     for record in runner.records:
         certificate = pilot_execution._certificate_for_record(
             record, certificates,
@@ -181,14 +180,13 @@ def _real_domain_pilot_filesystem(root, configs, config_paths):
                 / f"{record.execution_id}.json",
                 raw,
             )
+            runner._commit_checkpoint(
+                store_manifest, certificates, phase="EXECUTING",
+                triggering_execution_id=str(record.execution_id),
+                transaction_hook=None,
+            )
         finally:
             runner._cleanup_worker_batch(batch_id)
-        last_execution_id = str(record.execution_id)
-    runner._commit_checkpoint(
-        store_manifest, certificates, phase="EXECUTING",
-        triggering_execution_id=last_execution_id,
-        transaction_hook=None,
-    )
     audit = runner._finalize(store_manifest, certificates, None)
     return (
         pilot,
