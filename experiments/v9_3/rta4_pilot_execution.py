@@ -71,7 +71,7 @@ RTA4_PILOT_FINAL_TERMINAL_VERSION = (
 )
 RTA4_PILOT_TERMINAL_VERSION = RTA4_PILOT_FINAL_TERMINAL_VERSION
 RTA4_PILOT_CHECKPOINT_EVENT_VERSION = (
-    "ASAP_BLOCK_V9_3_RTA4_PILOT_CHECKPOINT_EVENT_V2"
+    "ASAP_BLOCK_V9_3_RTA4_PILOT_CHECKPOINT_EVENT_V3"
 )
 RTA4_PILOT_RESUME_EVENT_VERSION = (
     "ASAP_BLOCK_V9_3_RTA4_PILOT_RESUME_EVENT_V1"
@@ -107,7 +107,7 @@ RTA4_PILOT_FINAL_TERMINAL_DOMAIN = (
 )
 RTA4_PILOT_TERMINAL_DOMAIN = RTA4_PILOT_FINAL_TERMINAL_DOMAIN
 RTA4_PILOT_CHECKPOINT_EVENT_DOMAIN = (
-    "ASAP_BLOCK:V9.3:RTA4_PILOT_CHECKPOINT_EVENT:v2"
+    "ASAP_BLOCK:V9.3:RTA4_PILOT_CHECKPOINT_EVENT:v3"
 )
 RTA4_PILOT_RESUME_EVENT_DOMAIN = (
     "ASAP_BLOCK:V9.3:RTA4_PILOT_RESUME_EVENT:v1"
@@ -156,6 +156,11 @@ PILOT_OUTPUT_IO_DEFINITION = (
 _CHECKPOINT_EVENT_KINDS = frozenset({
     "STORE_SLOT_COMMIT", "EXECUTION_RAW_COMMIT", "PHASE_TRANSITION",
     "FINAL_TERMINAL_COMMIT", "COMPLETION_COMMIT", "EVIDENCE_SYNC",
+})
+_CHECKPOINT_EVENT_MEASURED = "MEASURED_AT_WRITE"
+_CHECKPOINT_EVENT_RECOVERED = "RECOVERY_RECONSTRUCTED"
+_CHECKPOINT_EVENT_MEASUREMENT_ORIGINS = frozenset({
+    _CHECKPOINT_EVENT_MEASURED, _CHECKPOINT_EVENT_RECOVERED,
 })
 
 _CONFIG_FIELDS = frozenset({
@@ -1485,7 +1490,7 @@ class PilotCheckpointValidationContext:
 
 @dataclass(frozen=True)
 class _PendingRecoveryCandidate:
-    """Schema/context-valid current+1 evidence; never sufficient for deletion."""
+    """Schema/context-valid current+1 evidence; not adoption authority."""
 
     generation_number: int
     generation_path: Path
@@ -1504,7 +1509,7 @@ class _PendingRecoveryCandidate:
 
 @dataclass(frozen=True)
 class AuthorizedRecoveryCandidate:
-    """Immutable authorization for deleting one exact current+1 transaction."""
+    """Immutable authorization to adopt one exact current+1 transaction."""
 
     generation_number: int
     generation_path: Path
@@ -3039,15 +3044,19 @@ def _build_checkpoint_event(
     checkpoint: Mapping[str, Any], checkpoint_path: Path, *,
     event_kind: str,
     triggering_execution_id: str | None,
+    measurement_origin: str,
     write_milliseconds: int,
 ) -> Dict[str, Any]:
     if (
         event_kind not in _CHECKPOINT_EVENT_KINDS
+        or measurement_origin not in _CHECKPOINT_EVENT_MEASUREMENT_ORIGINS
         or type(write_milliseconds) is not int
         or write_milliseconds < 0
+        or measurement_origin == _CHECKPOINT_EVENT_RECOVERED
+        and write_milliseconds != 0
     ):
         raise RTA4PilotExecutionError(
-            "checkpoint event kind/duration is invalid"
+            "checkpoint event kind/measurement origin/duration is invalid"
         )
     material = {
         "checkpoint_event_version": RTA4_PILOT_CHECKPOINT_EVENT_VERSION,
@@ -3058,6 +3067,7 @@ def _build_checkpoint_event(
         "previous_checkpoint_id": checkpoint["previous_checkpoint_id"],
         "event_kind": event_kind,
         "triggering_execution_id": triggering_execution_id,
+        "measurement_origin": measurement_origin,
         "completed_raw_id_set_sha256": hashlib.sha256(
             canonical_json(sorted(
                 checkpoint["completed_raw_terminal_digests"]
@@ -3094,6 +3104,7 @@ def _validate_checkpoint_event(
         checkpoint, checkpoint_path,
         event_kind=document.get("event_kind"),
         triggering_execution_id=document.get("triggering_execution_id"),
+        measurement_origin=document.get("measurement_origin"),
         write_milliseconds=document.get("checkpoint_write_milliseconds"),
     )
     if dict(document) != expected:
@@ -4358,7 +4369,7 @@ def _authorize_recovery_candidate(
     audit_document: Mapping[str, Any],
     completion_seal: Mapping[str, Any] | None,
 ) -> AuthorizedRecoveryCandidate | None:
-    """Issue deletion authority only after every file-backed check succeeds."""
+    """Authorize adoption only after every file-backed check succeeds."""
 
     if pending is None:
         return None
@@ -4671,7 +4682,11 @@ def audit_pilot_namespace(
     checkpoint_overhead: Dict[str, int] = {}
     for event in checkpoint_events:
         trigger = event["triggering_execution_id"]
-        if event["event_kind"] == "EXECUTION_RAW_COMMIT":
+        if (
+            event["event_kind"] == "EXECUTION_RAW_COMMIT"
+            and event["measurement_origin"]
+            == _CHECKPOINT_EVENT_MEASURED
+        ):
             if trigger is None:
                 raise RTA4PilotExecutionError(
                     "raw checkpoint event lacks execution trigger"
@@ -5416,12 +5431,42 @@ class PilotExecutionRunner:
         }
         self._write_worker_registry(batches)
 
-    def _cleanup_recovery_artifacts(
-        self,
-        candidate: AuthorizedRecoveryCandidate | None,
-    ) -> None:
-        """Delete only the exact bytes authorized by a fresh full preflight."""
+    def _recover_worker_temporaries(self) -> None:
+        """Recover only registered worker roots, before checkpoint adoption."""
 
+        registry = self._load_worker_registry()
+        active_batch_ids = tuple(
+            str(batch["batch_id"]) for batch in registry["batches"]
+            if batch["batch_status"] == "ACTIVE"
+        )
+        for batch_id in active_batch_ids:
+            self._cleanup_worker_batch(batch_id)
+        recovered = self._load_worker_registry()
+        worker_root = (
+            Path(self.execution_config["output_root"])
+            / RTA4_PILOT_WORKER_TRACE_DIRECTORY
+        )
+        if (
+            _worker_registry_active_entries(recovered)
+            or not worker_root.is_dir() or worker_root.is_symlink()
+            or tuple(worker_root.iterdir())
+        ):
+            raise RTA4PilotExecutionError(
+                "worker temporary recovery did not reach a clean state"
+            )
+
+    def _adopt_recovery_candidate(
+        self,
+        candidate: AuthorizedRecoveryCandidate,
+        *,
+        transaction_hook: Callable[[str], None] | None,
+    ) -> Mapping[str, Any]:
+        """Adopt one exact current+1 transaction without deleting evidence."""
+
+        if not isinstance(candidate, AuthorizedRecoveryCandidate):
+            raise RTA4PilotExecutionError(
+                "checkpoint adoption requires typed recovery authorization"
+            )
         root = Path(self.execution_config["output_root"])
         fresh = audit_pilot_namespace(
             root, self.configs, require_complete=False,
@@ -5431,66 +5476,222 @@ class PilotExecutionRunner:
         if (
             not isinstance(fresh, _PilotRecoveryPreflight)
             or fresh.recovery_candidate != candidate
+            or candidate.canonical_context_id
+            != _checkpoint_context_id(self.checkpoint_context)
+            or candidate.evidence_snapshot
+            != _namespace_evidence_snapshot(
+                root, self.checkpoint_context,
+            )
         ):
             raise RTA4PilotExecutionError(
-                "recovery candidate bytes changed after authorization"
+                "recovery candidate bytes changed before adoption"
             )
-        committed_checkpoint_id = str(fresh.audit["checkpoint_id"])
-        if candidate is not None:
-            if (
-                candidate.canonical_context_id
-                != _checkpoint_context_id(self.checkpoint_context)
-                or candidate.evidence_snapshot
-                != _namespace_evidence_snapshot(
-                    root, self.checkpoint_context,
-                )
-            ):
-                raise RTA4PilotExecutionError(
-                    "recovery authorization context/snapshot changed"
-                )
-            paths = tuple(
-                path for path in (
-                    candidate.event_path, candidate.generation_path,
-                ) if path is not None
-            )
-        else:
-            paths = ()
-        for path in paths:
-            expected_sha = (
-                candidate.generation_sha256
-                if path == candidate.generation_path
-                else candidate.event_sha256
-            )
-            if (
-                path.is_symlink() or not path.is_file()
-                or path.parent not in {
-                    root / RTA4_PILOT_CHECKPOINT_DIRECTORY,
-                    root / RTA4_PILOT_CHECKPOINT_EVENT_DIRECTORY,
-                }
-                or _sha256(path) != expected_sha
-            ):
-                raise RTA4PilotExecutionError(
-                    "refusing unsafe orphan transaction cleanup"
-                )
-            path.unlink()
+        (
+            pointer, previous, _current_event, _committed_events, pending,
+        ) = _load_checkpoint_transaction(root, self.checkpoint_context)
+        previous_path = (
+            root / RTA4_PILOT_CHECKPOINT_DIRECTORY
+            / f"{previous['checkpoint_generation']:08d}.json"
+        )
+        generation_root = root / RTA4_PILOT_CHECKPOINT_DIRECTORY
+        event_root = root / RTA4_PILOT_CHECKPOINT_EVENT_DIRECTORY
+        worker_root = root / RTA4_PILOT_WORKER_TRACE_DIRECTORY
         registry = self._load_worker_registry()
-        for batch in registry["batches"]:
-            if batch["batch_status"] == "ACTIVE":
-                self._cleanup_worker_batch(batch["batch_id"])
-        post = audit_pilot_namespace(
+        if (
+            pending is None
+            or pending.generation_number != candidate.generation_number
+            or pending.generation_path != candidate.generation_path
+            or pending.generation_sha256 != candidate.generation_sha256
+            or pending.checkpoint["checkpoint_id"]
+            != candidate.generation_id
+            or pending.previous_checkpoint_id
+            != candidate.previous_checkpoint_id
+            or pending.previous_checkpoint_sha256
+            != candidate.previous_checkpoint_sha256
+            or previous["checkpoint_id"]
+            != candidate.previous_checkpoint_id
+            or _sha256(previous_path)
+            != candidate.previous_checkpoint_sha256
+            or pointer["checkpoint_id"]
+            != candidate.previous_checkpoint_id
+            or _worker_registry_active_entries(registry)
+            or tuple(worker_root.iterdir())
+        ):
+            raise RTA4PilotExecutionError(
+                "recovery adoption precondition changed"
+            )
+        generation_path = candidate.generation_path
+        if (
+            generation_path.parent != generation_root
+            or generation_path.is_symlink()
+            or not generation_path.is_file()
+            or generation_path.resolve(strict=True).parent
+            != generation_root.resolve(strict=True)
+            or _sha256(generation_path) != candidate.generation_sha256
+        ):
+            raise RTA4PilotExecutionError(
+                "recovery generation is not a safe authorized child"
+            )
+        checkpoint = dict(pending.checkpoint)
+        event_path = event_root / generation_path.name
+        event = None if pending.event is None else dict(pending.event)
+        if candidate.event_path is None:
+            if (
+                pending.event_path is not None
+                or candidate.event_sha256 is not None
+                or candidate.event_id is not None
+                or event_path.exists()
+                or event_path.is_symlink()
+                or event_path.parent != event_root
+            ):
+                raise RTA4PilotExecutionError(
+                    "generation-only recovery event state changed"
+                )
+            if transaction_hook is not None:
+                transaction_hook("before_recovery_event")
+            unchanged = audit_pilot_namespace(
+                root, self.configs, require_complete=False,
+                reconstruct_store=False, allow_recovery_artifacts=True,
+                _return_recovery_authorization=True,
+            )
+            if (
+                not isinstance(unchanged, _PilotRecoveryPreflight)
+                or unchanged.recovery_candidate != candidate
+            ):
+                raise RTA4PilotExecutionError(
+                    "generation-only evidence changed before event recovery"
+                )
+            event_kind, trigger = _expected_checkpoint_event_causality(
+                previous, checkpoint,
+            )
+            event = _build_checkpoint_event(
+                checkpoint, generation_path,
+                event_kind=event_kind,
+                triggering_execution_id=trigger,
+                measurement_origin=_CHECKPOINT_EVENT_RECOVERED,
+                write_milliseconds=0,
+            )
+            _write_json_once(event_path, event)
+            if transaction_hook is not None:
+                transaction_hook("after_recovery_event")
+            pair_preflight = audit_pilot_namespace(
+                root, self.configs, require_complete=False,
+                reconstruct_store=False, allow_recovery_artifacts=True,
+                _return_recovery_authorization=True,
+            )
+            if (
+                not isinstance(pair_preflight, _PilotRecoveryPreflight)
+                or pair_preflight.recovery_candidate is None
+                or pair_preflight.recovery_candidate.generation_id
+                != candidate.generation_id
+                or pair_preflight.recovery_candidate.previous_checkpoint_id
+                != candidate.previous_checkpoint_id
+                or pair_preflight.recovery_candidate.event_path != event_path
+                or pair_preflight.recovery_candidate.event_id
+                != event["checkpoint_event_id"]
+                or pair_preflight.recovery_candidate.event_sha256
+                != _sha256(event_path)
+            ):
+                raise RTA4PilotExecutionError(
+                    "reconstructed recovery event was not fully authorized"
+                )
+            candidate = pair_preflight.recovery_candidate
+            (
+                pointer, previous, _current_event,
+                _committed_events, pending,
+            ) = _load_checkpoint_transaction(root, self.checkpoint_context)
+            if pending is None or pending.event is None:
+                raise RTA4PilotExecutionError(
+                    "reconstructed recovery event is not a canonical pair"
+                )
+            checkpoint = dict(pending.checkpoint)
+            event = dict(pending.event)
+        else:
+            if (
+                pending.event_path != candidate.event_path
+                or pending.event_sha256 != candidate.event_sha256
+                or event is None
+                or event["checkpoint_event_id"] != candidate.event_id
+                or candidate.event_path.parent != event_root
+                or candidate.event_path.is_symlink()
+                or not candidate.event_path.is_file()
+                or candidate.event_path.resolve(strict=True).parent
+                != event_root.resolve(strict=True)
+                or _sha256(candidate.event_path) != candidate.event_sha256
+            ):
+                raise RTA4PilotExecutionError(
+                    "recovery event is not a safe authorized child"
+                )
+            event_path = candidate.event_path
+        _validate_checkpoint_event_causality(previous, checkpoint, event)
+        if transaction_hook is not None:
+            transaction_hook("before_recovery_pointer")
+        ready = audit_pilot_namespace(
             root, self.configs, require_complete=False,
             reconstruct_store=False, allow_recovery_artifacts=True,
+            _return_recovery_authorization=True,
         )
         if (
-            not isinstance(post, Mapping)
-            or post["checkpoint_id"] != committed_checkpoint_id
-            or _load_checkpoint_transaction(
+            not isinstance(ready, _PilotRecoveryPreflight)
+            or ready.recovery_candidate != candidate
+            or candidate.evidence_snapshot
+            != _namespace_evidence_snapshot(
                 root, self.checkpoint_context,
-            )[4] is not None
+            )
         ):
             raise RTA4PilotExecutionError(
-                "recovery cleanup changed the committed checkpoint chain"
+                "recovery evidence changed before pointer adoption"
             )
+        (
+            _pointer, ready_previous, _current_event,
+            _committed_events, ready_pending,
+        ) = _load_checkpoint_transaction(root, self.checkpoint_context)
+        if (
+            ready_pending is None or ready_pending.event is None
+            or ready_pending.checkpoint["checkpoint_id"]
+            != candidate.generation_id
+            or ready_previous["checkpoint_id"]
+            != candidate.previous_checkpoint_id
+        ):
+            raise RTA4PilotExecutionError(
+                "recovery pair changed before pointer adoption"
+            )
+        checkpoint = dict(ready_pending.checkpoint)
+        event = dict(ready_pending.event)
+        generation_path = ready_pending.generation_path
+        event_path = ready_pending.event_path
+        if event_path is None:
+            raise RTA4PilotExecutionError(
+                "recovery pair lost its event before pointer adoption"
+            )
+        _validate_checkpoint_event_causality(
+            ready_previous, checkpoint, event,
+        )
+        atomic_write_json(
+            root / RTA4_PILOT_CHECKPOINT,
+            _checkpoint_pointer(
+                checkpoint, generation_path, event, event_path,
+            ),
+        )
+        if transaction_hook is not None:
+            transaction_hook("after_recovery_pointer")
+        adopted = audit_pilot_namespace(
+            root, self.configs, require_complete=False,
+            reconstruct_store=False, allow_recovery_artifacts=False,
+        )
+        post_transaction = _load_checkpoint_transaction(
+            root, self.checkpoint_context,
+        )
+        if (
+            not isinstance(adopted, Mapping)
+            or post_transaction[1]["checkpoint_id"]
+            != candidate.generation_id
+            or post_transaction[4] is not None
+        ):
+            raise RTA4PilotExecutionError(
+                "recovery adoption did not commit the authorized transaction"
+            )
+        return adopted
 
     def _load_store(
         self,
@@ -5716,6 +5917,7 @@ class PilotExecutionRunner:
             checkpoint, checkpoint_path,
             event_kind=event_kind,
             triggering_execution_id=triggering_execution_id,
+            measurement_origin=_CHECKPOINT_EVENT_MEASURED,
             write_milliseconds=elapsed,
         )
         event_path = (
@@ -5815,7 +6017,11 @@ class PilotExecutionRunner:
         checkpoint_overhead: Dict[str, int] = {}
         for event in checkpoint_events:
             execution_id = event["triggering_execution_id"]
-            if event["event_kind"] == "EXECUTION_RAW_COMMIT":
+            if (
+                event["event_kind"] == "EXECUTION_RAW_COMMIT"
+                and event["measurement_origin"]
+                == _CHECKPOINT_EVENT_MEASURED
+            ):
                 if execution_id is None:
                     raise RTA4PilotExecutionError(
                         "raw checkpoint event lacks execution trigger"
@@ -6009,9 +6215,15 @@ class PilotExecutionRunner:
                     root / RTA4_PILOT_CHECKPOINT,
                     preflight_audit,
                 )
-            self._cleanup_recovery_artifacts(
-                preflight.recovery_candidate,
+            self._recover_worker_temporaries()
+            adoption_preflight = self._resume_preflight(
+                allow_recovery_artifacts=True,
             )
+            if adoption_preflight.recovery_candidate is not None:
+                self._adopt_recovery_candidate(
+                    adoption_preflight.recovery_candidate,
+                    transaction_hook=transaction_hook,
+                )
             _pointer, resume_checkpoint, _event, _events, _orphans = (
                 _load_checkpoint_transaction(
                     root, self.checkpoint_context,

@@ -253,6 +253,7 @@ def _rewrite_checkpoint_suffix(
             triggering_execution_id=event_source[
                 "triggering_execution_id"
             ],
+            measurement_origin=event_source["measurement_origin"],
             write_milliseconds=event_source[
                 "checkpoint_write_milliseconds"
             ],
@@ -1971,6 +1972,26 @@ def test_noncurrent_store_identity_and_raw_event_causality_reject_rehash(
     with pytest.raises(RTA4PilotExecutionError, match="causality"):
         audit_pilot_namespace(root, CONFIGS)
     assert damaged.read_bytes() == before
+    restore()
+
+    documents = rows()
+    phase_target = next(
+        row["checkpoint_generation"] for row in documents[1:-1]
+        if row["phase"] == "FINALIZING"
+        and row["final_terminal_execution_order"] == []
+    )
+    historical_trigger = next_execution
+    damaged = _rewrite_checkpoint_suffix(
+        root, phase_target, lambda _row: None,
+        mutate_event=lambda event: event.update({
+            "event_kind": "EXECUTION_RAW_COMMIT",
+            "triggering_execution_id": historical_trigger,
+        }),
+    )
+    before = damaged.read_bytes()
+    with pytest.raises(RTA4PilotExecutionError, match="causality"):
+        audit_pilot_namespace(root, CONFIGS)
+    assert damaged.read_bytes() == before
 
 @pytest.mark.parametrize(
     "stage,event_only",
@@ -2061,6 +2082,20 @@ def test_known_next_checkpoint_orphans_recover_only_after_preflight(
         rta_callback=_synthetic_rta, use_processes=False,
     )
     assert resumed.processed_count == 0
+    assert generation_path.is_file()
+    assert event_path.is_file()
+    adopted_pointer = json.loads(
+        (context["output"] / RTA4_PILOT_CHECKPOINT).read_text()
+    )
+    assert adopted_pointer["checkpoint_generation"] == orphan_generation
+    adopted_event = json.loads(event_path.read_text())
+    assert adopted_event["measurement_origin"] == (
+        "RECOVERY_RECONSTRUCTED"
+        if stage == "after_executing_checkpoint_generation"
+        else "MEASURED_AT_WRITE"
+    )
+    if adopted_event["measurement_origin"] == "RECOVERY_RECONSTRUCTED":
+        assert adopted_event["checkpoint_write_milliseconds"] == 0
     audit_pilot_namespace(
         context["output"], CONFIGS, require_complete=False,
     )
@@ -2120,6 +2155,10 @@ def test_current_plus_one_orphan_requires_full_canonical_transition(
     def foreign_store_manifest(row):
         row["store_manifest_id"] = "c" * 64
 
+    def store_rollback(row):
+        slot = row["completed_store_slot_order"].pop()
+        row["completed_store_slot_digests"].pop(slot)
+
     def raw_rollback(row):
         execution_id = row["completed_raw_execution_order"].pop()
         row["completed_raw_terminal_digests"].pop(execution_id)
@@ -2127,6 +2166,10 @@ def test_current_plus_one_orphan_requires_full_canonical_transition(
 
     def missing_trace(row):
         row["trace_digests"].clear()
+
+    def foreign_trace(row):
+        execution_id = next(iter(row["trace_digests"]))
+        row["trace_digests"][execution_id] = "b" * 64
 
     def foreign_resume(row):
         row["resume_event_digests"] = {"f" * 64: "e" * 64}
@@ -2138,8 +2181,10 @@ def test_current_plus_one_orphan_requires_full_canonical_transition(
         ("foreign-config", foreign_config),
         ("foreign-slots", foreign_slots),
         ("foreign-store-manifest", foreign_store_manifest),
+        ("store-rollback", store_rollback),
         ("raw-rollback", raw_rollback),
         ("missing-trace", missing_trace),
+        ("foreign-trace", foreign_trace),
         ("foreign-resume", foreign_resume),
     ):
         document = json.loads(original)
@@ -2155,9 +2200,7 @@ def test_current_plus_one_orphan_requires_full_canonical_transition(
         path.write_bytes(original)
 
 
-@pytest.mark.parametrize(
-    "damage", ["trigger", "event-kind"],
-)
+@pytest.mark.parametrize("damage", ["next-trigger", "event-kind"])
 def test_current_plus_one_event_pair_requires_canonical_causality(
     tmp_path, damage,
 ):
@@ -2195,18 +2238,20 @@ def test_current_plus_one_event_pair_requires_canonical_causality(
     )
     checkpoint = json.loads(generation_path.read_text())
     event = json.loads(event_path.read_text())
-    if damage == "trigger":
-        trigger = checkpoint["completed_raw_execution_order"][0]
-        event["triggering_execution_id"] = (
-            "f" * 64 if event["triggering_execution_id"] == trigger
-            else trigger
-        )
+    if damage == "next-trigger":
+        canonical_order = PilotExecutionRunner(
+            CONFIGS, context["manifest"], context["execution"],
+        ).checkpoint_context.selected_execution_order
+        event["triggering_execution_id"] = canonical_order[
+            len(checkpoint["completed_raw_execution_order"])
+        ]
     else:
         event["event_kind"] = "PHASE_TRANSITION"
     damaged = pilot_execution._build_checkpoint_event(
         checkpoint, generation_path,
         event_kind=event["event_kind"],
         triggering_execution_id=event["triggering_execution_id"],
+        measurement_origin=event["measurement_origin"],
         write_milliseconds=event["checkpoint_write_milliseconds"],
     )
     atomic_write_json(event_path, damaged)
@@ -2220,7 +2265,7 @@ def test_current_plus_one_event_pair_requires_canonical_causality(
 
 
 @pytest.mark.parametrize("damage", ["generation", "event", "raw"])
-def test_recovery_cleanup_revalidates_authorized_bytes(
+def test_recovery_adoption_revalidates_authorized_bytes(
     tmp_path, damage,
 ):
     context = _context(tmp_path)
@@ -2257,27 +2302,476 @@ def test_recovery_cleanup_revalidates_authorized_bytes(
         target = next((
             context["output"] / RTA4_PILOT_RAW_TERMINAL_DIRECTORY
         ).glob("*.json"))
+    pointer_path = context["output"] / RTA4_PILOT_CHECKPOINT
+    pointer_before = pointer_path.read_bytes()
     original = target.read_bytes()
     target.write_bytes(original + b" ")
     damaged_bytes = target.read_bytes()
     with pytest.raises(RTA4PilotExecutionError):
-        runner._cleanup_recovery_artifacts(authorization)
+        runner._adopt_recovery_candidate(
+            authorization, transaction_hook=None,
+        )
     assert target.read_bytes() == damaged_bytes
+    assert pointer_path.read_bytes() == pointer_before
     assert authorization.generation_path.exists()
     if authorization.event_path is not None:
         assert authorization.event_path.exists()
     target.write_bytes(original)
     fresh = runner._resume_preflight(allow_recovery_artifacts=True)
     assert fresh.recovery_candidate == authorization
-    runner._cleanup_recovery_artifacts(authorization)
-    assert not authorization.generation_path.exists()
+    runner._adopt_recovery_candidate(
+        authorization, transaction_hook=None,
+    )
+    assert authorization.generation_path.exists()
     if authorization.event_path is not None:
-        assert not authorization.event_path.exists()
+        assert authorization.event_path.exists()
+    assert json.loads(pointer_path.read_text())[
+        "checkpoint_generation"
+    ] == authorization.generation_number
 
 
-@pytest.mark.parametrize("field", ["audit_id", "completion_seal_id"])
+def _interrupted_raw_recovery_context(tmp_path, *, event_pair):
+    context = _context(tmp_path)
+    stage = (
+        "after_executing_checkpoint_event"
+        if event_pair else "after_executing_checkpoint_generation"
+    )
+    hits = 0
+
+    def hook(observed):
+        nonlocal hits
+        if observed == stage:
+            hits += 1
+            if hits == 2:
+                raise RTA4PilotExecutionInterrupted(stage)
+
+    runner = PilotExecutionRunner(
+        CONFIGS, context["manifest"], context["execution"],
+    )
+    with pytest.raises(RTA4PilotExecutionInterrupted):
+        runner.run(
+            max_records=1,
+            certificate_provider=_synthetic_certificate,
+            rta_callback=_synthetic_rta, use_processes=False,
+            transaction_hook=hook,
+        )
+    authorization = runner._resume_preflight(
+        allow_recovery_artifacts=True,
+    ).recovery_candidate
+    assert isinstance(
+        authorization, pilot_execution.AuthorizedRecoveryCandidate,
+    )
+    assert (authorization.event_path is not None) is event_pair
+    return context, runner, authorization
+
+
+def _interrupted_complete_recovery_context(tmp_path):
+    context = _context(tmp_path)
+
+    def hook(stage):
+        if stage == "after_pilot_complete_checkpoint_generation":
+            raise RTA4PilotExecutionInterrupted(stage)
+
+    runner = PilotExecutionRunner(
+        CONFIGS, context["manifest"], context["execution"],
+    )
+    with pytest.raises(RTA4PilotExecutionInterrupted):
+        runner.run(
+            certificate_provider=_synthetic_certificate,
+            rta_callback=_synthetic_rta,
+            simulation_callback=_synthetic_simulator(
+                context["root"] / "complete-recovery-traces"
+            ),
+            use_processes=False, transaction_hook=hook,
+        )
+    authorization = runner._resume_preflight(
+        allow_recovery_artifacts=True,
+    ).recovery_candidate
+    assert isinstance(
+        authorization, pilot_execution.AuthorizedRecoveryCandidate,
+    )
+    assert authorization.event_path is None
+    return context, runner, authorization
+
+
+def test_generation_only_adoption_does_not_repeat_execution_or_overhead(
+    tmp_path,
+):
+    context, runner, authorization = _interrupted_raw_recovery_context(
+        tmp_path, event_pair=False,
+    )
+    rta_calls = []
+    simulation_calls = []
+
+    def rta(record, certificate):
+        rta_calls.append(str(record.execution_id))
+        return _synthetic_rta(record, certificate)
+
+    simulator = _synthetic_simulator(
+        context["root"] / "reconstructed-resume-traces"
+    )
+
+    def simulation(*args):
+        simulation_calls.append(str(args[0].execution_id))
+        return simulator(*args)
+
+    resumed = runner.run(
+        resume=True,
+        certificate_provider=_synthetic_certificate,
+        rta_callback=rta, simulation_callback=simulation,
+        use_processes=False,
+    )
+    assert resumed.complete
+    assert len(rta_calls) + len(simulation_calls) == len(runner.records) - 1
+    event_path = (
+        context["output"] / "rta4_pilot_checkpoint_events"
+        / f"{authorization.generation_number:08d}.json"
+    )
+    event = json.loads(event_path.read_text())
+    assert event["measurement_origin"] == "RECOVERY_RECONSTRUCTED"
+    assert event["checkpoint_write_milliseconds"] == 0
+    adopted_execution = json.loads(
+        authorization.generation_path.read_text()
+    )["completed_raw_execution_order"][-1]
+    final = json.loads((
+        context["output"] / RTA4_PILOT_FINAL_TERMINAL_DIRECTORY
+        / f"{adopted_execution}.json"
+    ).read_text())
+    assert final["checkpoint_overhead_milliseconds"] == 0
+    assert audit_pilot_namespace(
+        context["output"], CONFIGS,
+    )["checkpoint_state"] == "PILOT_COMPLETE"
+
+
+@pytest.mark.parametrize(
+    "crash_stage",
+    [
+        "before_recovery_event",
+        "after_recovery_event",
+        "after_recovery_pointer",
+    ],
+)
+def test_recovery_adoption_crash_windows_resume_deterministically(
+    tmp_path, crash_stage,
+):
+    context, runner, authorization = _interrupted_raw_recovery_context(
+        tmp_path, event_pair=False,
+    )
+    pointer_path = context["output"] / RTA4_PILOT_CHECKPOINT
+    previous_pointer = pointer_path.read_bytes()
+    callback_calls = []
+
+    def hook(stage):
+        if stage == crash_stage:
+            raise RTA4PilotExecutionInterrupted(stage)
+
+    with pytest.raises(RTA4PilotExecutionInterrupted):
+        runner.run(
+            resume=True, max_records=0,
+            certificate_provider=_synthetic_certificate,
+            rta_callback=lambda *args: callback_calls.append(args),
+            use_processes=False, transaction_hook=hook,
+        )
+    event_path = (
+        context["output"] / "rta4_pilot_checkpoint_events"
+        / f"{authorization.generation_number:08d}.json"
+    )
+    if crash_stage == "before_recovery_event":
+        assert not event_path.exists()
+        assert pointer_path.read_bytes() == previous_pointer
+    else:
+        assert event_path.is_file()
+    if crash_stage != "after_recovery_pointer":
+        assert pointer_path.read_bytes() == previous_pointer
+    resumed = runner.run(
+        resume=True, max_records=0,
+        certificate_provider=_synthetic_certificate,
+        rta_callback=lambda *args: callback_calls.append(args),
+        use_processes=False,
+    )
+    assert resumed.processed_count == 0
+    assert callback_calls == []
+    assert authorization.generation_path.is_file()
+    assert event_path.is_file()
+    assert json.loads(pointer_path.read_text())[
+        "checkpoint_generation"
+    ] == authorization.generation_number
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [
+        "store-manifest", "certificate", "raw",
+        "worker-registry", "root-inventory",
+    ],
+)
+def test_pair_adoption_rejects_namespace_changes_without_mutation(
+    tmp_path, damage,
+):
+    context, runner, authorization = _interrupted_raw_recovery_context(
+        tmp_path, event_pair=True,
+    )
+    pointer_path = context["output"] / RTA4_PILOT_CHECKPOINT
+    if damage == "store-manifest":
+        target = context["store"] / pilot_execution.RTA4_PILOT_STORE_MANIFEST
+    elif damage == "certificate":
+        target = next(
+            path for path in context["store"].glob("*.json")
+            if path.name != pilot_execution.RTA4_PILOT_STORE_MANIFEST
+        )
+    elif damage == "raw":
+        target = next((
+            context["output"] / RTA4_PILOT_RAW_TERMINAL_DIRECTORY
+        ).glob("*.json"))
+    elif damage == "worker-registry":
+        target = (
+            context["output"]
+            / pilot_execution.RTA4_PILOT_WORKER_TEMP_REGISTRY
+        )
+    else:
+        target = context["output"] / "unexpected-recovery-evidence"
+        target.write_text("foreign\n", encoding="utf-8")
+    if damage != "root-inventory":
+        target.write_bytes(target.read_bytes() + b" ")
+    pointer_before = pointer_path.read_bytes()
+    output_before = _file_bytes(context["output"])
+    store_before = _file_bytes(context["store"])
+    with pytest.raises(RTA4PilotExecutionError):
+        runner._adopt_recovery_candidate(
+            authorization, transaction_hook=None,
+        )
+    assert pointer_path.read_bytes() == pointer_before
+    assert _file_bytes(context["output"]) == output_before
+    assert _file_bytes(context["store"]) == store_before
+    assert authorization.generation_path.is_file()
+    assert authorization.event_path is not None
+    assert authorization.event_path.is_file()
+
+
+@pytest.mark.parametrize("damage", ["final", "trace", "audit", "seal"])
+def test_complete_adoption_rejects_file_evidence_changes(
+    tmp_path, damage,
+):
+    context, runner, authorization = (
+        _interrupted_complete_recovery_context(tmp_path)
+    )
+    if damage == "final":
+        target = next((
+            context["output"] / RTA4_PILOT_FINAL_TERMINAL_DIRECTORY
+        ).glob("*.json"))
+    elif damage == "trace":
+        target = next((
+            context["output"] / pilot_execution.RTA4_PILOT_TRACE_DIRECTORY
+        ).glob("*.json"))
+    elif damage == "audit":
+        target = context["output"] / RTA4_PILOT_AUDIT
+    else:
+        target = context["output"] / RTA4_PILOT_COMPLETION_SEAL
+    target.write_bytes(target.read_bytes() + b" ")
+    pointer_path = context["output"] / RTA4_PILOT_CHECKPOINT
+    pointer_before = pointer_path.read_bytes()
+    output_before = _file_bytes(context["output"])
+    store_before = _file_bytes(context["store"])
+    with pytest.raises(RTA4PilotExecutionError):
+        runner._adopt_recovery_candidate(
+            authorization, transaction_hook=None,
+        )
+    assert pointer_path.read_bytes() == pointer_before
+    assert _file_bytes(context["output"]) == output_before
+    assert _file_bytes(context["store"]) == store_before
+    assert authorization.generation_path.is_file()
+    event_path = (
+        context["output"] / "rta4_pilot_checkpoint_events"
+        / f"{authorization.generation_number:08d}.json"
+    )
+    assert not event_path.exists()
+
+
+def test_final_prewrite_revalidation_rejects_injected_change(
+    tmp_path,
+):
+    context, runner, authorization = _interrupted_raw_recovery_context(
+        tmp_path, event_pair=True,
+    )
+    pointer_path = context["output"] / RTA4_PILOT_CHECKPOINT
+    pointer_before = pointer_path.read_bytes()
+    generation_before = authorization.generation_path.read_bytes()
+    event_before = authorization.event_path.read_bytes()
+
+    def mutate_before_pointer(stage):
+        if stage == "before_recovery_pointer":
+            authorization.generation_path.write_bytes(
+                generation_before + b" "
+            )
+
+    with pytest.raises(RTA4PilotExecutionError):
+        runner._adopt_recovery_candidate(
+            authorization, transaction_hook=mutate_before_pointer,
+        )
+    assert pointer_path.read_bytes() == pointer_before
+    assert authorization.generation_path.read_bytes() == (
+        generation_before + b" "
+    )
+    assert authorization.event_path.read_bytes() == event_before
+
+
+def test_worker_recovery_failure_does_not_adopt_candidate(
+    tmp_path, monkeypatch,
+):
+    context, runner, authorization = _interrupted_raw_recovery_context(
+        tmp_path, event_pair=True,
+    )
+    runner._register_worker_batch((runner.records[0],))
+    pointer_path = context["output"] / RTA4_PILOT_CHECKPOINT
+    pointer_before = pointer_path.read_bytes()
+    generation_before = authorization.generation_path.read_bytes()
+    event_before = authorization.event_path.read_bytes()
+    monkeypatch.setattr(
+        pilot_execution.shutil, "rmtree",
+        lambda _path: (_ for _ in ()).throw(PermissionError("denied")),
+    )
+    with pytest.raises(RTA4PilotExecutionError, match="could not clean"):
+        runner.run(
+            resume=True, max_records=0,
+            certificate_provider=_synthetic_certificate,
+            rta_callback=_synthetic_rta, use_processes=False,
+        )
+    assert pointer_path.read_bytes() == pointer_before
+    assert authorization.generation_path.read_bytes() == generation_before
+    assert authorization.event_path.read_bytes() == event_before
+
+
+def test_candidate_change_after_worker_recovery_blocks_adoption(
+    tmp_path, monkeypatch,
+):
+    context, runner, authorization = _interrupted_raw_recovery_context(
+        tmp_path, event_pair=True,
+    )
+    runner._register_worker_batch((runner.records[0],))
+    pointer_path = context["output"] / RTA4_PILOT_CHECKPOINT
+    pointer_before = pointer_path.read_bytes()
+    generation_before = authorization.generation_path.read_bytes()
+    event_before = authorization.event_path.read_bytes()
+    recover = runner._recover_worker_temporaries
+
+    def recover_then_change():
+        recover()
+        authorization.generation_path.write_bytes(
+            generation_before + b" "
+        )
+
+    monkeypatch.setattr(
+        runner, "_recover_worker_temporaries", recover_then_change,
+    )
+    with pytest.raises(RTA4PilotExecutionError):
+        runner.run(
+            resume=True, max_records=0,
+            certificate_provider=_synthetic_certificate,
+            rta_callback=_synthetic_rta, use_processes=False,
+        )
+    assert pointer_path.read_bytes() == pointer_before
+    assert authorization.generation_path.read_bytes() == (
+        generation_before + b" "
+    )
+    assert authorization.event_path.read_bytes() == event_before
+    registry = runner._load_worker_registry()
+    assert not pilot_execution._worker_registry_active_entries(registry)
+    assert list((
+        context["output"] / pilot_execution.RTA4_PILOT_WORKER_TRACE_DIRECTORY
+    ).iterdir()) == []
+
+
+def test_error_timeout_trace_rules_use_file_backed_audit(tmp_path):
+    error_context = _context(tmp_path / "error")
+    error_runner = PilotExecutionRunner(
+        CONFIGS, error_context["manifest"], error_context["execution"],
+    )
+    simulation_index = next(
+        index for index, record in enumerate(error_runner.records, 1)
+        if record.kind == "simulation"
+    )
+    simulator = _synthetic_simulator(
+        error_context["root"] / "error-bound-traces"
+    )
+
+    def error_with_trace(*args):
+        result = dict(simulator(*args))
+        result["__pilot_metric_overrides__"] = {
+            "engineering_error": True,
+        }
+        return result
+
+    error_runner.run(
+        max_records=simulation_index,
+        certificate_provider=_synthetic_certificate,
+        rta_callback=_synthetic_rta,
+        simulation_callback=error_with_trace,
+        use_processes=False,
+    )
+    error_raw = next(
+        json.loads(path.read_text())
+        for path in (
+            error_context["output"] / RTA4_PILOT_RAW_TERMINAL_DIRECTORY
+        ).glob("*.json")
+        if json.loads(path.read_text())["kind"] == "simulation"
+    )
+    assert error_raw["engineering_error"] is True
+    assert error_raw["trace_filename"] is not None
+    audit_pilot_namespace(
+        error_context["output"], CONFIGS, require_complete=False,
+    )
+    trace_path = (
+        error_context["output"] / pilot_execution.RTA4_PILOT_TRACE_DIRECTORY
+        / error_raw["trace_filename"]
+    )
+    trace_path.write_bytes(trace_path.read_bytes() + b" ")
+    with pytest.raises(RTA4PilotExecutionError, match="trace"):
+        audit_pilot_namespace(
+            error_context["output"], CONFIGS, require_complete=False,
+        )
+
+    timeout_context = _context(tmp_path / "timeout")
+    timeout_runner = PilotExecutionRunner(
+        CONFIGS, timeout_context["manifest"], timeout_context["execution"],
+    )
+    timeout_index = next(
+        index for index, record in enumerate(timeout_runner.records, 1)
+        if record.kind == "simulation"
+    )
+
+    def timeout_without_trace(*_args):
+        return {
+            "trace_path": None,
+            "__pilot_metric_overrides__": {
+                "engineering_error": False,
+                "timed_out": True,
+            },
+        }
+
+    timeout_runner.run(
+        max_records=timeout_index,
+        certificate_provider=_synthetic_certificate,
+        rta_callback=_synthetic_rta,
+        simulation_callback=timeout_without_trace,
+        use_processes=False,
+    )
+    timeout_raw = next(
+        json.loads(path.read_text())
+        for path in (
+            timeout_context["output"] / RTA4_PILOT_RAW_TERMINAL_DIRECTORY
+        ).glob("*.json")
+        if json.loads(path.read_text())["kind"] == "simulation"
+    )
+    assert timeout_raw["engineering_error"] is False
+    assert timeout_raw["timed_out"] is True
+    assert timeout_raw["trace_filename"] is None
+    audit_pilot_namespace(
+        timeout_context["output"], CONFIGS, require_complete=False,
+    )
+
+
 def test_complete_orphan_requires_exact_audit_and_seal_binding(
-    tmp_path, field,
+    tmp_path,
 ):
     context = _context(tmp_path)
 
@@ -2304,16 +2798,46 @@ def test_complete_orphan_requires_exact_audit_and_seal_binding(
         context["output"] / "rta4_pilot_checkpoints"
         / f"{generation:08d}.json"
     )
-    document = json.loads(path.read_text())
-    document[field] = "f" * 64
-    atomic_write_json(path, _rehash_checkpoint_document(document))
-    before = path.read_bytes()
-    with pytest.raises(RTA4PilotExecutionError, match="audit/seal"):
-        audit_pilot_namespace(
-            context["output"], CONFIGS, require_complete=False,
-            reconstruct_store=False, allow_recovery_artifacts=True,
-        )
-    assert path.read_bytes() == before
+    original = path.read_bytes()
+
+    def final_rollback(document):
+        execution_id = document["final_terminal_execution_order"].pop()
+        document["final_terminal_digests"].pop(execution_id)
+
+    cases = (
+        ("audit-id", lambda row: row.__setitem__("audit_id", "f" * 64)),
+        (
+            "audit-sha",
+            lambda row: row.__setitem__(
+                "audit_document_sha256", "e" * 64,
+            ),
+        ),
+        (
+            "seal-id",
+            lambda row: row.__setitem__(
+                "completion_seal_id", "d" * 64,
+            ),
+        ),
+        (
+            "seal-sha",
+            lambda row: row.__setitem__(
+                "completion_seal_sha256", "c" * 64,
+            ),
+        ),
+        ("final-rollback", final_rollback),
+    )
+    for label, mutate in cases:
+        document = json.loads(original)
+        mutate(document)
+        atomic_write_json(path, _rehash_checkpoint_document(document))
+        before = path.read_bytes()
+        with pytest.raises(RTA4PilotExecutionError):
+            audit_pilot_namespace(
+                context["output"], CONFIGS, require_complete=False,
+                reconstruct_store=False, allow_recovery_artifacts=True,
+            )
+        assert path.read_bytes() == before, label
+        path.write_bytes(original)
 
 
 def test_unknown_checkpoint_artifact_is_not_deleted(
