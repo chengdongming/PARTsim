@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reconstruct and audit one complete engineering-only RTA4 pilot."""
+"""Independently audit one executed engineering-only RTA4 pilot namespace."""
 
 from __future__ import annotations
 
@@ -12,13 +12,12 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from experiments.v9_3.result_writer import atomic_write_json
 from experiments.v9_3.rta4_formal_config import (
     RTA4_CORES, load_rta4_formal_config,
 )
-from experiments.v9_3.rta4_formal_environment import load_strict_json
-from experiments.v9_3.rta4_formal_pilot import (
-    validate_pilot_manifest, validate_pilot_observations,
-    validate_pilot_report,
+from experiments.v9_3.rta4_pilot_execution import (
+    RTA4_PILOT_AUDIT, audit_pilot_namespace,
 )
 
 
@@ -37,9 +36,12 @@ def _configs(values: list[str]) -> dict[str, Path]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", action="append", required=True)
-    parser.add_argument("--pilot-manifest", type=Path, required=True)
-    parser.add_argument("--pilot-observations", type=Path, required=True)
-    parser.add_argument("--pilot-report", type=Path, required=True)
+    parser.add_argument("--pilot-root", type=Path, required=True)
+    parser.add_argument("--output-audit", type=Path)
+    parser.add_argument(
+        "--allow-partial", action="store_true",
+        help="audit an incomplete checkpoint without granting freeze eligibility",
+    )
     args = parser.parse_args()
     try:
         paths = _configs(args.config)
@@ -47,23 +49,27 @@ def main() -> int:
             core: load_rta4_formal_config(path, expected_core=core)
             for core, path in paths.items()
         }
-        manifest = validate_pilot_manifest(
-            load_strict_json(args.pilot_manifest), configs,
+        audit = audit_pilot_namespace(
+            args.pilot_root, configs,
+            require_complete=not args.allow_partial,
         )
-        observations = validate_pilot_observations(
-            load_strict_json(args.pilot_observations), manifest,
-        )
-        report = validate_pilot_report(
-            load_strict_json(args.pilot_report), manifest, observations,
-        )
-        print(json.dumps({
-            "pilot_manifest_id": manifest["pilot_manifest_id"],
-            "pilot_observations_id": observations["pilot_observations_id"],
-            "pilot_closure_id": report["pilot_closure_id"],
-            "pilot_report_id": report["pilot_report_id"],
-            "pilot_status": report["pilot_status"],
-            "scientific_results_included": False,
-        }, ensure_ascii=False, sort_keys=True, indent=2))
+        if args.output_audit is not None:
+            target = args.output_audit.resolve()
+            pilot_root = args.pilot_root.resolve(strict=True)
+            try:
+                relative = target.relative_to(pilot_root)
+            except ValueError:
+                relative = None
+            if relative is not None and relative.as_posix() != (
+                RTA4_PILOT_AUDIT
+            ):
+                raise ValueError(
+                    "audit inside pilot root must use the canonical filename"
+                )
+            if target.exists():
+                raise ValueError("audit output already exists")
+            atomic_write_json(target, audit)
+        print(json.dumps(audit, ensure_ascii=False, sort_keys=True, indent=2))
     except Exception as exc:
         print(str(exc), file=sys.stderr)
         return 2

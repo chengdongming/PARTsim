@@ -55,6 +55,9 @@ from experiments.v9_3.rta4_formal_pilot import (
     RTA4PilotError, build_pilot_manifest, build_pilot_observations,
     build_pilot_report, validate_pilot_observations, validate_pilot_report,
 )
+from experiments.v9_3.rta4_pilot_execution import (
+    RTA4_PILOT_AUDIT_DOMAIN, RTA4_PILOT_AUDIT_VERSION,
+)
 from experiments.v9_3.constrained_taskset_identity import (
     CONSTRAINED_UNIFORM_SLACK_MODE, FIXED_SLACK_FRACTION_VARIANT,
     GenerationRequest, SkeletonTask, build_taskset_identity_certificate,
@@ -66,6 +69,37 @@ from experiments.v9_3.task_identity import runtime_task_name_for_source_id
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _audited_pilot_contract(root, pilot, observations, report):
+    material = {
+        "audit_version": RTA4_PILOT_AUDIT_VERSION,
+        "audit_status": "ENGINEERING_PILOT_AUDIT_COMPLETE",
+        "execution_class": "ENGINEERING_PILOT",
+        "freeze_eligible": True,
+        "pilot_root": str((root / "pilot").resolve()),
+        "pilot_manifest_id": pilot["pilot_manifest_id"],
+        "execution_config_id": "1" * 64,
+        "execution_manifest_id": "2" * 64,
+        "checkpoint_id": "3" * 64,
+        "checkpoint_state": "PILOT_COMPLETE",
+        "terminal_count": observations["observation_count"],
+        "terminal_set_sha256": "4" * 64,
+        "taskset_certificate_set_sha256": "5" * 64,
+        "source_manifest_id": "6" * 64,
+        "dependency_manifest_id": "7" * 64,
+        "environment_manifest_id": "8" * 64,
+        "hardware_manifest_id": "9" * 64,
+        "simulator_manifest_id": "a" * 64,
+        "pilot_observations_id": observations["pilot_observations_id"],
+        "pilot_report_id": report["pilot_report_id"],
+        "pilot_closure_id": report["pilot_closure_id"],
+        "scientific_results_included": False,
+    }
+    return {
+        **material,
+        "audit_id": domain_hash(RTA4_PILOT_AUDIT_DOMAIN, material),
+    }
 
 
 @pytest.fixture(scope="module")
@@ -113,6 +147,9 @@ def frozen_contract(tmp_path_factory):
     ]
     pilot_observations = build_pilot_observations(pilot, observations)
     report = build_pilot_report(pilot, pilot_observations)
+    audit = _audited_pilot_contract(
+        root, pilot, pilot_observations, report,
+    )
     timeout = {
         "contract_version": "ASAP_BLOCK_V9_3_RTA4_TIMEOUT_V1",
         "pilot_report_id": report["pilot_report_id"],
@@ -154,6 +191,7 @@ def frozen_contract(tmp_path_factory):
     prepared = prepare_formal_configs(
         configs, pilot_manifest=pilot,
         pilot_observations=pilot_observations, pilot_report=report,
+        pilot_audit=audit,
         timeout_contract=timeout, operational=operational,
         config_paths=paths,
     )
@@ -175,6 +213,7 @@ def frozen_contract(tmp_path_factory):
     return {
         "root": root, "configs": configs, "pilot": pilot,
         "observations": pilot_observations, "report": report,
+        "audit": audit,
         "timeout": timeout, "prepared": prepared, "freeze": freeze,
         "documents": documents,
     }
@@ -223,10 +262,10 @@ def _candidate(frozen_contract, source, *, test_mode=False):
         prepared_config=prepared,
         freeze_manifest=frozen_contract["freeze"],
         all_prepared_configs=frozen_contract["prepared"],
-        pilot_manifest=frozen_contract["pilot"],
-        pilot_observations=frozen_contract["observations"],
-        pilot_report=frozen_contract["report"],
-        source_manifest=source,
+            pilot_manifest=frozen_contract["pilot"],
+            pilot_observations=frozen_contract["observations"],
+            pilot_report=frozen_contract["report"],
+            source_manifest=source,
         dependency_manifest=dependencies,
         environment_manifest=environment,
         hardware_manifest=build_hardware_manifest(),
@@ -757,6 +796,7 @@ def _variant_contract(frozen_contract, suffix):
         pilot_manifest=frozen_contract["pilot"],
         pilot_observations=frozen_contract["observations"],
         pilot_report=frozen_contract["report"],
+        pilot_audit=frozen_contract["audit"],
         timeout_contract=frozen_contract["timeout"],
         operational=operational, config_paths=paths,
     )
@@ -780,6 +820,41 @@ def _variant_contract(frozen_contract, suffix):
         **frozen_contract, "root": root, "prepared": prepared,
         "freeze": freeze, "documents": documents,
     }
+
+
+def test_freeze_rejects_test_execution_audit(frozen_contract):
+    audit = deepcopy(frozen_contract["audit"])
+    material = dict(audit)
+    material.pop("audit_id")
+    material["execution_class"] = "ENGINEERING_PILOT_TEST"
+    material["freeze_eligible"] = False
+    audit = {
+        **material,
+        "audit_id": domain_hash(RTA4_PILOT_AUDIT_DOMAIN, material),
+    }
+    with pytest.raises(RTA4FreezeError, match="audited real"):
+        prepare_formal_configs(
+            frozen_contract["configs"],
+            pilot_manifest=frozen_contract["pilot"],
+            pilot_observations=frozen_contract["observations"],
+            pilot_report=frozen_contract["report"],
+            pilot_audit=audit,
+            timeout_contract=frozen_contract["timeout"],
+            operational={
+                core: deepcopy(
+                    frozen_contract["prepared"][core]["operational"]
+                )
+                for core in RTA4_CORES
+            },
+            config_paths={
+                    core: Path(
+                        frozen_contract["prepared"][core]["source_config"][
+                            "absolute_path"
+                        ]
+                    )
+                for core in RTA4_CORES
+            },
+        )
 
 
 def test_authorized_checkpoint_resume_skips_terminals_and_rejects_inventory_drift(

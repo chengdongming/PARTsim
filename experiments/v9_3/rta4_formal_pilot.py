@@ -20,7 +20,8 @@ RTA4_PILOT_VERSION = "ASAP_BLOCK_V9_3_RTA4_PILOT_V2"
 RTA4_PILOT_CONFIG_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_PILOT_CONFIG:v2"
 RTA4_PILOT_MANIFEST_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_PILOT_MANIFEST:v2"
 RTA4_PILOT_CLOSURE_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_PILOT_CLOSURE:v2"
-RTA4_PILOT_REPORT_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_PILOT_REPORT:v2"
+RTA4_PILOT_REPORT_VERSION = "ASAP_BLOCK_V9_3_RTA4_PILOT_REPORT_V3"
+RTA4_PILOT_REPORT_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_PILOT_REPORT:v3"
 RTA4_PILOT_OBSERVATION_VERSION = (
     "ASAP_BLOCK_V9_3_RTA4_PILOT_OBSERVATIONS_V1"
 )
@@ -385,16 +386,18 @@ def build_pilot_report(
     cpu = [row["runtime_cpu_milliseconds"] for row in normalized]
     rss = [row["peak_rss_bytes"] for row in normalized]
     observation_sha256 = observations["observations_sha256"]
-    method_for = {
-        row["plan_record_id"]: row["method"]
+    selected_for = {
+        row["plan_record_id"]: {**row, "core": core}
         for core in RTA4_CORES
         for row in manifest["selected_records"][core]
     }
     per_method = {}
-    for method in sorted(set(method_for.values())):
+    for method in sorted({
+        row["method"] for row in selected_for.values()
+    }):
         method_rows = [
             row for row in normalized
-            if method_for[row["plan_record_id"]] == method
+            if selected_for[row["plan_record_id"]]["method"] == method
         ]
         per_method[method] = {
             "observation_count": len(method_rows),
@@ -405,6 +408,73 @@ def build_pilot_report(
                 row["runtime_cpu_milliseconds"] for row in method_rows
             ),
         }
+    strata = []
+    group_keys = sorted({
+        (
+            selected_for[row["plan_record_id"]]["core"],
+            selected_for[row["plan_record_id"]]["method"],
+            row["worker_count"],
+        )
+        for row in normalized
+    })
+    for core, method, worker_count in group_keys:
+        rows = [
+            row for row in normalized
+            if (
+                selected_for[row["plan_record_id"]]["core"],
+                selected_for[row["plan_record_id"]]["method"],
+                row["worker_count"],
+            ) == (core, method, worker_count)
+        ]
+        group_runtimes = [
+            row["runtime_wall_milliseconds"] for row in rows
+        ]
+        group_cpu = [row["runtime_cpu_milliseconds"] for row in rows]
+        group_rss = [row["peak_rss_bytes"] for row in rows]
+        group_throughput = [
+            row["worker_throughput_milli_records_per_second"]
+            for row in rows
+        ]
+        group_simulation = [
+            row["simulation_wall_milliseconds"] for row in rows
+        ]
+        group_trace = [row["trace_size_bytes"] for row in rows]
+        warnings = {
+            row["ci_width_engineering_warning"] for row in rows
+        }
+        if len(warnings) != 1:
+            raise RTA4PilotError(
+                "runtime CI warning must be constant within one stratum"
+            )
+        strata.append({
+            "core": core,
+            "method": method,
+            "worker_count": worker_count,
+            "observation_count": len(rows),
+            "runtime_wall_milliseconds_p50": _percentile(
+                group_runtimes, 1, 2,
+            ),
+            "runtime_wall_milliseconds_p95": _percentile(
+                group_runtimes, 19, 20,
+            ),
+            "runtime_wall_milliseconds_max": max(
+                group_runtimes, default=0,
+            ),
+            "runtime_cpu_milliseconds_max": max(group_cpu, default=0),
+            "peak_rss_bytes_max": max(group_rss, default=0),
+            "timeout_count": sum(row["timed_out"] for row in rows),
+            "engineering_error_count": sum(
+                row["engineering_error"] for row in rows
+            ),
+            "worker_throughput_milli_records_per_second_p50": _percentile(
+                group_throughput, 1, 2,
+            ),
+            "simulation_wall_milliseconds_p95": _percentile(
+                group_simulation, 19, 20,
+            ),
+            "trace_size_bytes_max": max(group_trace, default=0),
+            "runtime_ci_engineering_warning": next(iter(warnings)),
+        })
     pilot_closure_id = domain_hash(RTA4_PILOT_CLOSURE_DOMAIN, {
         "pilot_manifest_id": manifest["pilot_manifest_id"],
         "pilot_observations_id": observations["pilot_observations_id"],
@@ -412,6 +482,7 @@ def build_pilot_report(
         "observation_count": len(normalized),
     })
     material = {
+        "pilot_report_version": RTA4_PILOT_REPORT_VERSION,
         "pilot_version": RTA4_PILOT_VERSION,
         "pilot_manifest_id": manifest["pilot_manifest_id"],
         "pilot_observations_id": observations["pilot_observations_id"],
@@ -457,6 +528,7 @@ def build_pilot_report(
                 row["ci_width_engineering_warning"] for row in normalized
             ),
             "per_method": per_method,
+            "strata": strata,
         },
         "observation_sha256": observation_sha256,
         "scientific_results_included": False,
@@ -488,7 +560,8 @@ __all__ = [
     "RTA4_PILOT_OBSERVATION_DOMAIN", "RTA4_PILOT_OBSERVATION_VERSION",
     "RTA4_PILOT_OBSERVATIONS", "RTA4_PILOT_OBSERVATIONS_DOMAIN",
     "RTA4_PILOT_OUTPUT_MARKER", "RTA4_PILOT_REPORT",
-    "RTA4_PILOT_REPORT_DOMAIN", "RTA4_PILOT_VERSION",
+    "RTA4_PILOT_REPORT_DOMAIN", "RTA4_PILOT_REPORT_VERSION",
+    "RTA4_PILOT_VERSION",
     "RTA4PilotError", "build_pilot_manifest", "build_pilot_observations",
     "build_pilot_report",
     "source_config_evidence", "validate_pilot_manifest",

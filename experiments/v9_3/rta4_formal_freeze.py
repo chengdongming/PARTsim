@@ -16,6 +16,7 @@ from .rta4_formal_pilot import (
     validate_pilot_manifest, validate_pilot_observations,
     validate_pilot_report,
 )
+from .rta4_pilot_execution import validate_pilot_audit_document
 from .rta4_formal_environment import (
     RTA4_DEPENDENCY_DOMAIN, RTA4_DEPENDENCY_MANIFEST_VERSION,
     RTA4_ENVIRONMENT_DOMAIN, RTA4_ENVIRONMENT_MANIFEST_VERSION,
@@ -26,10 +27,10 @@ from .rta4_formal_environment import (
 from .rta4_formal_schema import formal_schema_hash
 
 
-RTA4_PREPARED_CONFIG_VERSION = "ASAP_BLOCK_V9_3_RTA4_PREPARED_CONFIG_V2"
-RTA4_FREEZE_MANIFEST_VERSION = "ASAP_BLOCK_V9_3_RTA4_FORMAL_FREEZE_V2"
-RTA4_PREPARED_CONFIG_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_PREPARED_CONFIG:v2"
-RTA4_FREEZE_MANIFEST_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_FORMAL_FREEZE:v2"
+RTA4_PREPARED_CONFIG_VERSION = "ASAP_BLOCK_V9_3_RTA4_PREPARED_CONFIG_V3"
+RTA4_FREEZE_MANIFEST_VERSION = "ASAP_BLOCK_V9_3_RTA4_FORMAL_FREEZE_V3"
+RTA4_PREPARED_CONFIG_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_PREPARED_CONFIG:v3"
+RTA4_FREEZE_MANIFEST_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_FORMAL_FREEZE:v3"
 RTA4_FROZEN_PARAMETER_STATUS = "FROZEN_FOR_FORMAL_EXECUTION"
 
 RTA4_FROZEN_SCHEMA_SHA256 = (
@@ -253,6 +254,7 @@ def prepare_formal_configs(
     pilot_manifest: Mapping[str, Any],
     pilot_observations: Mapping[str, Any],
     pilot_report: Mapping[str, Any],
+    pilot_audit: Mapping[str, Any],
     timeout_contract: Mapping[str, Any],
     operational: Mapping[str, Mapping[str, Any]],
     config_paths: Mapping[str, Path | str],
@@ -268,6 +270,21 @@ def prepare_formal_configs(
         pilot_observations, pilot_manifest,
     )
     validate_pilot_report(pilot_report, pilot_manifest, observations)
+    audit = validate_pilot_audit_document(pilot_audit)
+    if (
+        audit["freeze_eligible"] is not True
+        or audit["execution_class"] != "ENGINEERING_PILOT"
+        or audit["checkpoint_state"] != "PILOT_COMPLETE"
+        or audit["pilot_manifest_id"] != pilot_manifest["pilot_manifest_id"]
+        or audit["terminal_count"] != observations["observation_count"]
+        or audit["pilot_observations_id"]
+        != observations["pilot_observations_id"]
+        or audit["pilot_report_id"] != pilot_report["pilot_report_id"]
+        or audit["pilot_closure_id"] != pilot_report["pilot_closure_id"]
+    ):
+        raise RTA4FreezeError(
+            "freeze requires one independently audited real engineering pilot"
+        )
     timeout = validate_timeout_contract(timeout_contract)
     if timeout["pilot_report_id"] != pilot_report["pilot_report_id"]:
         raise RTA4FreezeError("timeout contract was not derived from this pilot")
@@ -313,6 +330,10 @@ def prepare_formal_configs(
             "pilot_observations_id": observations["pilot_observations_id"],
             "pilot_report_id": pilot_report["pilot_report_id"],
             "pilot_closure_id": pilot_report["pilot_closure_id"],
+            "pilot_audit_id": audit["audit_id"],
+            "pilot_execution_config_id": audit["execution_config_id"],
+            "pilot_execution_manifest_id": audit["execution_manifest_id"],
+            "pilot_checkpoint_id": audit["checkpoint_id"],
             "timeout_contract": timeout,
             "timeout_contract_id": timeout_contract_identity(timeout),
             "operational": operations,
@@ -335,6 +356,8 @@ def validate_prepared_config(document: Mapping[str, Any]) -> Dict[str, Any]:
         "prepared_config_version", "profile", "parameter_status", "core",
         "source_config", "pilot_manifest_id", "pilot_report_id",
         "pilot_observations_id", "pilot_closure_id", "timeout_contract",
+        "pilot_audit_id", "pilot_execution_config_id",
+        "pilot_execution_manifest_id", "pilot_checkpoint_id",
         "timeout_contract_id", "operational",
         "runtime_environment", "scientific_assertions", "prepared_config_id",
     }
@@ -378,7 +401,9 @@ def validate_prepared_config(document: Mapping[str, Any]) -> Dict[str, Any]:
             or len(document[field]) != 64
             for field in (
                 "pilot_manifest_id", "pilot_observations_id",
-                "pilot_report_id", "pilot_closure_id",
+                "pilot_report_id", "pilot_closure_id", "pilot_audit_id",
+                "pilot_execution_config_id",
+                "pilot_execution_manifest_id", "pilot_checkpoint_id",
             )
         )
     ):
@@ -433,6 +458,8 @@ def build_freeze_manifest(
         (
             row["pilot_manifest_id"], row["pilot_observations_id"],
             row["pilot_closure_id"], row["pilot_report_id"],
+            row["pilot_audit_id"], row["pilot_execution_config_id"],
+            row["pilot_execution_manifest_id"], row["pilot_checkpoint_id"],
         )
         for row in normalized.values()
     }
@@ -454,6 +481,16 @@ def build_freeze_manifest(
         ],
         "pilot_report_id": normalized["CORE-1"]["pilot_report_id"],
         "pilot_closure_id": normalized["CORE-1"]["pilot_closure_id"],
+        "pilot_audit_id": normalized["CORE-1"]["pilot_audit_id"],
+        "pilot_execution_config_id": normalized["CORE-1"][
+            "pilot_execution_config_id"
+        ],
+        "pilot_execution_manifest_id": normalized["CORE-1"][
+            "pilot_execution_manifest_id"
+        ],
+        "pilot_checkpoint_id": normalized["CORE-1"][
+            "pilot_checkpoint_id"
+        ],
         "scientific_assertions": normalized["CORE-1"]["scientific_assertions"],
         "execution_dag": {
             "CORE-1": [], "CORE-2": ["CORE-1"], "CORE-3": ["CORE-1"],
