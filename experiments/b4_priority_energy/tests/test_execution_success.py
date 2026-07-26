@@ -156,11 +156,18 @@ class ExecutionSuccessTests(unittest.TestCase):
             "attempt_index", "timeout_seconds", "started_at", "ended_at",
             "exit_code", "termination_reason", "stdout_sha256", "stderr_sha256",
             "temporary_result_path", "final_result_sha256",
+            "staging_directory_relpath", "staging_trace_basename",
+            "staging_trace_sha256",
             "publication",
             "snapshot_execution",
         }
         self.assertEqual(set(attempt), required)
         self.assertEqual(attempt["termination_reason"], "succeeded")
+        self.assertEqual(attempt["staging_trace_basename"], "trace.txt")
+        self.assertRegex(
+            attempt["staging_directory_relpath"],
+            rf"^\.b4pe/attempt-results/{self.fx.record['case_id']}/attempt-0001-[0-9a-f]{{24}}$",
+        )
 
     def test_taskset_and_source_sha_are_correct(self):
         self.assertEqual(self.fx.run_cli()[0], 0)
@@ -189,6 +196,79 @@ class ExecutionSuccessTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertIs(calls[0]["shell"], False)
         self.assertIs(calls[0]["start_new_session"], True)
+
+    def test_manifest_without_semantic_hash_is_not_augmented(self):
+        self.assertNotIn(
+            "--taskset-semantic-hash", self.fx.record["command_argv"]
+        )
+        real_popen = execution.subprocess.Popen
+        observed = []
+
+        def recording_popen(argv, **kwargs):
+            observed.append(list(argv))
+            return real_popen(argv, **kwargs)
+
+        with mock.patch.object(
+            execution.subprocess, "Popen", side_effect=recording_popen
+        ):
+            self.assertEqual(
+                execution.execute_records(
+                    [self.fx.record], self.fx.context()
+                )["succeeded"],
+                1,
+            )
+        self.assertEqual(len(observed), 1)
+        self.assertNotIn("--taskset-semantic-hash", observed[0])
+
+    def test_manifest_semantic_arguments_are_preserved_without_append(self):
+        record = copy.deepcopy(self.fx.record)
+        semantic_hash = "a" * 64
+        record["command_argv"].extend(
+            ["--taskset-semantic-hash", semantic_hash, "--semantic-traces"]
+        )
+        self.fx.write_inputs(
+            {"mode": "success", "result_text": "semantic-plan\n"},
+            record=record,
+        )
+        real_popen = execution.subprocess.Popen
+        observed = []
+
+        def recording_popen(argv, **kwargs):
+            observed.append(list(argv))
+            return real_popen(argv, **kwargs)
+
+        with mock.patch.object(
+            execution.subprocess, "Popen", side_effect=recording_popen
+        ):
+            self.assertEqual(
+                execution.execute_records([record], self.fx.context())[
+                    "succeeded"
+                ],
+                1,
+            )
+        self.assertEqual(len(observed), 1)
+        actual = observed[0]
+        self.assertEqual(len(actual), len(record["command_argv"]))
+        self.assertEqual(
+            actual[-3:],
+            ["--taskset-semantic-hash", semantic_hash, "--semantic-traces"],
+        )
+        replacements = {
+            record["system_config_artifact_relpath"],
+            record["taskset_artifact_relpath"],
+            record["result_relpath"],
+            record["command_argv"][0],
+        }
+        for planned, executed in zip(record["command_argv"], actual):
+            if planned not in replacements:
+                self.assertEqual(executed, planned)
+
+    def test_production_argv_builder_has_no_test_override_hook(self):
+        source = (B4_DIR / "execution_common.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("_execution_argv_hook", source)
+        self.assertNotIn('"--taskset-semantic-hash"', source)
 
     def test_success_closes_snapshot_file_descriptors_without_leak(self):
         context = self.fx.context()

@@ -22,6 +22,7 @@ B4_DIR = Path(__file__).resolve().parent
 EXECUTION_PROTOCOL_PATH = B4_DIR / "execution_protocol_v1.json"
 PROC_FD_ROOT = "/proc/self/fd"
 SNAPSHOT_ROLES = ("simulator", "system", "taskset", "source")
+TRACE_SUFFIXES = (".txt", ".json")
 PUBLICATION_ACTIVE = {"prepared", "result_published", "logs_published"}
 PUBLICATION_STATUSES = [
     "none",
@@ -44,6 +45,10 @@ class InputIntegrityError(ExecutionError):
     pass
 
 
+class PublicationIntegrityError(InputIntegrityError):
+    pass
+
+
 class InfrastructureError(ExecutionError):
     pass
 
@@ -54,6 +59,21 @@ class LockConflictError(ExecutionError):
 
 class ResumeError(ExecutionError):
     pass
+
+
+class StagingTraceError(InputIntegrityError):
+    def __init__(
+        self,
+        reason,
+        message,
+        *,
+        observed_final_sha256=None,
+        preserve_publication=False,
+    ):
+        super().__init__(message)
+        self.reason = reason
+        self.observed_final_sha256 = observed_final_sha256
+        self.preserve_publication = preserve_publication
 
 
 def _require(condition, message, error_type=ExecutionError):
@@ -85,6 +105,7 @@ def load_execution_protocol(path=EXECUTION_PROTOCOL_PATH):
         "identity_protocol_ref",
         "identity_protocol_sha256",
         "input_snapshot_rules",
+        "inspection_rules",
         "lock_rules",
         "manifest_protocol_ref",
         "manifest_protocol_sha256",
@@ -102,6 +123,7 @@ def load_execution_protocol(path=EXECUTION_PROTOCOL_PATH):
         "summary_fields",
         "summary_rules",
         "timeout_retry_rules",
+        "trace_staging_rules",
     }
     _require(set(protocol) == required, "execution protocol fields mismatch")
     _require(protocol["schema_version"] == 1, "execution protocol schema mismatch")
@@ -149,16 +171,46 @@ def load_execution_protocol(path=EXECUTION_PROTOCOL_PATH):
     _require(
         protocol["subprocess_rules"]
         == {
+            "attempt_trace_path": "direct_/proc/self/fd/<attempt-directory-fd>/<trace-basename>",
             "argv_source": "manifest_command_argv_with_snapshot_substitution",
+            "inherited_attempt_directory_descriptors": 1,
             "output_root_rootfd_inherited": False,
             "os_system": False,
+            "real_rtsim_end_to_end_validation": "i4b2_first_gate",
             "shell": False,
             "shell_expansion": False,
             "simulator_argv0_source": "direct_inherited_snapshot_file_descriptor",
             "snapshot_input_paths": "direct_/proc/self/fd/<snapshot-file-fd>",
             "snapshot_transport": "inherited_final_file_descriptors",
+            "taskset_semantic_hash_source": "upstream_manifest_command_bridge_i4b2",
+            "test_argument_hook": False,
+            "trace_target_precreated": False,
+            "unit_test_campaign_execution": False,
         },
         "subprocess safety rules mismatch",
+    )
+    _require(
+        protocol["trace_staging_rules"]
+        == {
+            "attempt_directory": ".b4pe/attempt-results/<case-id>/attempt-<index>-<runtime-token>",
+            "attempt_directory_mode": "0700",
+            "attempt_directory_reuse": False,
+            "executor_existing_target_policy": "require_absent_fail_closed_without_popen",
+            "orphan_adoption": False,
+            "producer": "rtsim_internal_temporary_validate_atomic_publish",
+            "publication_boundary": "rtsim_staging_atomic_then_i4b1_final_atomic",
+            "retry": "fresh_attempt_directory_and_absent_target",
+            "rtsim_existing_target_contract": "absent_or_byte_identical",
+            "successful_handoff": "open_O_RDONLY_O_NOFOLLOW_regular_nonempty_sha256",
+            "successful_staging_retention": "retain_as_attempt_evidence",
+            "target_basename_by_result_suffix": {
+                ".json": "trace.json",
+                ".txt": "trace.txt",
+            },
+            "target_must_not_exist_before_popen": True,
+            "target_precreation": False,
+        },
+        "trace staging rules mismatch",
     )
     expected_summary = [
         "manifest_sha256",
@@ -303,6 +355,158 @@ def _proc_fd_child_path(descriptor, filename):
     return f"{_proc_fd_path(descriptor)}/{filename}"
 
 
+def _trace_basename(result_relative):
+    suffix = PurePosixPath(result_relative).suffix
+    _require(
+        suffix in TRACE_SUFFIXES,
+        "result trace path must end with .txt or .json",
+        SafetyError,
+    )
+    return f"trace{suffix}"
+
+
+def _create_attempt_staging(context, case_id, attempt_index, trace_basename):
+    _require(
+        trace_basename in {"trace.txt", "trace.json"},
+        "invalid staging trace basename",
+        SafetyError,
+    )
+    parent_relative = f".b4pe/attempt-results/{case_id}"
+    parent_parts = _relative_parts(parent_relative)
+    parent = _open_directory_at(context["root_fd"], parent_parts, create=True)
+    attempt_name = (
+        f"attempt-{attempt_index:04d}-{secrets.token_hex(12)}"
+    )
+    descriptor = None
+    try:
+        os.mkdir(attempt_name, 0o700, dir_fd=parent)
+        os.fsync(parent)
+        descriptor = os.open(
+            attempt_name,
+            os.O_RDONLY
+            | getattr(os, "O_DIRECTORY", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=parent,
+        )
+        metadata = os.fstat(descriptor)
+        _require(
+            stat.S_ISDIR(metadata.st_mode) and stat.S_IMODE(metadata.st_mode) == 0o700,
+            "attempt staging directory is not a private directory",
+            SafetyError,
+        )
+    except BaseException:
+        if descriptor is not None:
+            os.close(descriptor)
+        raise
+    finally:
+        os.close(parent)
+    relative = f"{parent_relative}/{attempt_name}"
+    return descriptor, relative
+
+
+def _require_trace_target_absent(directory_fd, trace_basename):
+    _require(
+        trace_basename in {"trace.txt", "trace.json"},
+        "invalid staging trace basename",
+        SafetyError,
+    )
+    try:
+        os.stat(trace_basename, dir_fd=directory_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    raise SafetyError("staging trace target already exists before Popen")
+
+
+def _validate_staging_trace(directory_fd, trace_basename):
+    _require(
+        trace_basename in {"trace.txt", "trace.json"},
+        "invalid staging trace basename",
+        SafetyError,
+    )
+    entries = os.listdir(directory_fd)
+    if trace_basename not in entries:
+        reason = "missing_result" if not entries else "invalid_result"
+        raise StagingTraceError(reason, "staging trace is missing")
+    if entries != [trace_basename] and set(entries) != {trace_basename}:
+        raise StagingTraceError(
+            "invalid_result", "attempt staging directory contains extra targets"
+        )
+    before = os.stat(trace_basename, dir_fd=directory_fd, follow_symlinks=False)
+    if not stat.S_ISREG(before.st_mode):
+        raise StagingTraceError(
+            "invalid_result", "staging trace is not a regular file"
+        )
+    try:
+        descriptor = os.open(
+            trace_basename,
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=directory_fd,
+        )
+    except OSError as exc:
+        raise StagingTraceError(
+            "invalid_result", "staging trace cannot be opened without following links"
+        ) from exc
+    try:
+        opened = os.fstat(descriptor)
+        if (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
+            raise StagingTraceError(
+                "invalid_result", "staging trace changed while opening"
+            )
+        if opened.st_size == 0:
+            raise StagingTraceError("empty_result", "staging trace is empty")
+        digest = _sha_from_fd(descriptor)
+        after = os.fstat(descriptor)
+        if (
+            after.st_size != opened.st_size
+            or after.st_mtime_ns != opened.st_mtime_ns
+            or after.st_ctime_ns != opened.st_ctime_ns
+        ):
+            raise StagingTraceError(
+                "invalid_result", "staging trace changed while hashing"
+            )
+        current = os.stat(
+            trace_basename, dir_fd=directory_fd, follow_symlinks=False
+        )
+        if (current.st_dev, current.st_ino) != (opened.st_dev, opened.st_ino):
+            raise StagingTraceError(
+                "invalid_result", "staging trace namespace changed while hashing"
+            )
+        return {
+            "sha256": digest,
+            "st_dev": opened.st_dev,
+            "st_ino": opened.st_ino,
+            "st_size": opened.st_size,
+            "st_mtime_ns": opened.st_mtime_ns,
+            "st_ctime_ns": opened.st_ctime_ns,
+        }
+    finally:
+        os.close(descriptor)
+
+
+def _require_staging_trace_identity(context, attempt, expected_identity):
+    staging_parts = _relative_parts(attempt["staging_directory_relpath"])
+    directory = None
+    try:
+        directory = _open_directory_at(context["root_fd"], staging_parts)
+        observed = _validate_staging_trace(
+            directory, attempt["staging_trace_basename"]
+        )
+    except (ExecutionError, OSError) as exc:
+        raise StagingTraceError(
+            "trace_integrity_error",
+            "staging trace cannot be revalidated",
+        ) from exc
+    finally:
+        if directory is not None:
+            os.close(directory)
+    if observed != expected_identity:
+        raise StagingTraceError(
+            "trace_integrity_error",
+            "staging trace identity changed after child exit",
+        )
+    return observed
+
+
 def _sha_from_fd(descriptor):
     os.lseek(descriptor, 0, os.SEEK_SET)
     digest = hashlib.sha256()
@@ -419,29 +623,85 @@ def _atomic_write_json_at(context, relative, value):
     _atomic_write_at(context, relative, manifest.compact_json(value).encode("utf-8") + b"\n")
 
 
-def _replace_at(context, temporary_relative, final_relative, allow_existing=False):
+def _replace_at(
+    context,
+    temporary_relative,
+    final_relative,
+    allow_existing=False,
+    expected_sha256=None,
+    post_replace_verifier=None,
+):
     temporary_parts = _relative_parts(temporary_relative)
     final_parts = _relative_parts(final_relative)
     _require(
         temporary_parts[:-1] == final_parts[:-1],
-        "publication must stay in one directory",
+        "publication replace must stay in one directory",
         SafetyError,
     )
     parent = _open_directory_at(context["root_fd"], temporary_parts[:-1])
+    source_descriptor = None
     try:
-        source = os.stat(temporary_parts[-1], dir_fd=parent, follow_symlinks=False)
-        _require(stat.S_ISREG(source.st_mode), "publication source is not regular", InputIntegrityError)
-        _destination_is_safe(parent, final_parts[-1], allow_existing=allow_existing)
-        _before_replace_hook(context, temporary_relative, final_relative, parent)
-        os.replace(
-            temporary_parts[-1],
-            final_parts[-1],
-            src_dir_fd=parent,
-            dst_dir_fd=parent,
+        try:
+            source_descriptor = os.open(
+                temporary_parts[-1],
+                os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=parent,
+            )
+        except OSError as exc:
+            raise PublicationIntegrityError(
+                "publication source cannot be opened"
+            ) from exc
+        source = os.fstat(source_descriptor)
+        _require(
+            stat.S_ISREG(source.st_mode),
+            "publication source is not regular",
+            PublicationIntegrityError,
         )
+        if expected_sha256 is not None:
+            _require(
+                _sha_from_fd(source_descriptor) == expected_sha256,
+                "publication source SHA mismatch",
+                PublicationIntegrityError,
+            )
+        _destination_is_safe(
+            parent, final_parts[-1], allow_existing=allow_existing
+        )
+        _before_replace_hook(
+            context, temporary_relative, final_relative, parent
+        )
+        try:
+            current = os.stat(
+                temporary_parts[-1],
+                dir_fd=parent,
+                follow_symlinks=False,
+            )
+        except OSError as exc:
+            raise PublicationIntegrityError(
+                "publication source disappeared during operation"
+            ) from exc
+        _require(
+            (current.st_dev, current.st_ino) == (source.st_dev, source.st_ino),
+            "publication source changed during operation",
+            PublicationIntegrityError,
+        )
+        try:
+            os.replace(
+                temporary_parts[-1],
+                final_parts[-1],
+                src_dir_fd=parent,
+                dst_dir_fd=parent,
+            )
+        except OSError as exc:
+            raise PublicationIntegrityError(
+                "publication source could not be replaced"
+            ) from exc
         os.fsync(parent)
         _verify_parent_binding(context, temporary_parts[:-1], parent)
+        if post_replace_verifier is not None:
+            return post_replace_verifier(parent, final_parts[-1])
     finally:
+        if source_descriptor is not None:
+            os.close(source_descriptor)
         os.close(parent)
 
 
@@ -520,6 +780,10 @@ def _before_replace_hook(context, temporary_relative, final_relative, parent_fd)
     """Test hook invoked with the trusted publication parent still open."""
 
 
+def _publication_integrity_hook(stage, record, context, attempt, publication):
+    """Test hook around the post-exit trace-integrity checkpoints."""
+
+
 def _snapshot_copy_hook(role, stage, original_path):
     """Test hook for deterministic input mutation fault injection."""
 
@@ -547,6 +811,7 @@ def ensure_layout(root_or_context):
             ".b4pe/state",
             ".b4pe/locks",
             ".b4pe/logs",
+            ".b4pe/attempt-results",
             ".b4pe/tmp",
             ".b4pe/summaries",
             ".b4pe/snapshots/simulator",
@@ -1043,6 +1308,7 @@ def new_state(provenance):
 def _new_publication():
     return {
         "publication_status": "none",
+        "staging_result_relpath": None,
         "temporary_result_relpath": None,
         "temporary_stdout_relpath": None,
         "temporary_stderr_relpath": None,
@@ -1052,6 +1318,8 @@ def _new_publication():
         "attempt_stdout_relpath": None,
         "attempt_stderr_relpath": None,
         "expected_result_sha256": None,
+        "observed_final_result_sha256": None,
+        "integrity_failure_reason": None,
         "expected_stdout_sha256": None,
         "expected_stderr_sha256": None,
     }
@@ -1078,10 +1346,44 @@ def _validate_state_shape(state):
             ResumeError,
         )
     for attempt in attempts:
+        staging_directory = attempt.get("staging_directory_relpath")
+        staging_basename = attempt.get("staging_trace_basename")
+        staging_sha = attempt.get("staging_trace_sha256")
+        _relative_parts(staging_directory)
+        _require(
+            staging_directory.startswith(
+                f".b4pe/attempt-results/{state.get('case_id')}/attempt-"
+            ),
+            "attempt staging directory mismatch",
+            ResumeError,
+        )
+        _require(
+            staging_basename in {"trace.txt", "trace.json"},
+            "attempt staging trace basename invalid",
+            ResumeError,
+        )
+        _require(
+            attempt.get("temporary_result_path")
+            == f"{staging_directory}/{staging_basename}",
+            "attempt staging trace path mismatch",
+            ResumeError,
+        )
+        _require(
+            staging_sha is None
+            or (isinstance(staging_sha, str) and len(staging_sha) == 64),
+            "attempt staging trace SHA invalid",
+            ResumeError,
+        )
         publication = attempt.get("publication")
         _require(isinstance(publication, dict), "attempt publication missing", ResumeError)
         _require(set(publication) == set(_new_publication()), "attempt publication fields mismatch", ResumeError)
         _require(publication["publication_status"] in PUBLICATION_STATUSES, "publication status invalid", ResumeError)
+        _require(
+            publication["staging_result_relpath"]
+            == attempt.get("temporary_result_path"),
+            "publication staging trace path mismatch",
+            ResumeError,
+        )
     return state
 
 
@@ -1194,6 +1496,17 @@ def _verify_succeeded_state(context, state):
         _require(expected and actual == expected, f"succeeded {label} SHA mismatch", InputIntegrityError)
     attempt = state["attempts"][-1]
     _require(attempt["publication"]["publication_status"] == "committed", "succeeded publication is not committed", InputIntegrityError)
+    _require(
+        attempt["publication"].get("observed_final_result_sha256")
+        == attempt["publication"].get("expected_result_sha256"),
+        "succeeded publication final verification mismatch",
+        InputIntegrityError,
+    )
+    _require(
+        attempt["publication"].get("integrity_failure_reason") is None,
+        "succeeded publication records an integrity failure",
+        InputIntegrityError,
+    )
 
 
 def _create_temp_file(context, relative, initial=b""):
@@ -1214,7 +1527,12 @@ def _create_temp_file(context, relative, initial=b""):
 
 
 def build_execution_argv(
-    record, context, attempt_index, result_parent_fd, result_name, execution_snapshots
+    record,
+    context,
+    attempt_index,
+    attempt_directory_fd,
+    trace_basename,
+    execution_snapshots,
 ):
     argv = record["command_argv"]
     _require(
@@ -1231,11 +1549,12 @@ def build_execution_argv(
         record["taskset_artifact_relpath"]: execution_snapshots["taskset"][
             "proc_fd_path"
         ],
-        result_relative: _proc_fd_child_path(result_parent_fd, result_name),
+        result_relative: _proc_fd_child_path(
+            attempt_directory_fd, trace_basename
+        ),
     }
     replaced = [replacements.get(item, item) for item in argv]
     replaced[0] = execution_snapshots["simulator"]["proc_fd_path"]
-    _require(all(isinstance(item, str) for item in replaced), "resolved argv invalid", SafetyError)
     return replaced
 
 
@@ -1292,14 +1611,130 @@ def _publish_failure_logs(context, attempt, publication):
         temporary = publication[f"temporary_{stream}_relpath"]
         final = publication[f"final_{stream}_relpath"]
         attempt_final = publication[f"attempt_{stream}_relpath"]
-        sha = _file_sha_at(context, temporary, f"temporary {stream}", allow_empty=True)
-        _publish_log(context, temporary, final, attempt_final)
+        if _exists_at(context, temporary):
+            sha = _file_sha_at(
+                context, temporary, f"temporary {stream}", allow_empty=True
+            )
+            _replace_at(
+                context,
+                temporary,
+                final,
+                allow_existing=True,
+                expected_sha256=sha,
+            )
+        else:
+            sha = _file_sha_at(
+                context, final, f"published {stream}", allow_empty=True
+            )
+        if _exists_at(context, attempt_final):
+            _require(
+                _file_sha_at(
+                    context,
+                    attempt_final,
+                    f"attempt {stream}",
+                    allow_empty=True,
+                )
+                == sha,
+                f"attempt {stream} SHA mismatch",
+                InputIntegrityError,
+            )
+        else:
+            _copy_file_at(context, final, attempt_final, allow_existing=False)
         attempt[f"{stream}_sha256"] = sha
     return attempt["stdout_sha256"], attempt["stderr_sha256"]
 
 
-def _prepare_publication(record, context, state, attempt, publication):
-    result_sha = _file_sha_at(context, publication["temporary_result_relpath"], "temporary result")
+def _result_publication_temp_relpath(record, attempt_index):
+    final_parts = _relative_parts(record["result_relpath"])
+    temporary_name = (
+        f".{final_parts[-1]}.attempt-{attempt_index:04d}-"
+        f"{secrets.token_hex(12)}.publication.tmp"
+    )
+    return "/".join(final_parts[:-1] + (temporary_name,))
+
+
+def _discard_result_publication_temp(context, publication):
+    temporary = publication["temporary_result_relpath"]
+    try:
+        if temporary is not None and _exists_at(context, temporary):
+            _unlink_at(context, temporary)
+    except (ExecutionError, OSError):
+        pass
+
+
+def _copy_verified_staging_for_publication(
+    record,
+    context,
+    attempt,
+    publication,
+    validated_result_identity,
+):
+    staging = publication["staging_result_relpath"]
+    temporary = publication["temporary_result_relpath"]
+    expected_sha = validated_result_identity["sha256"]
+    try:
+        _publication_integrity_hook(
+            "after_initial_validation",
+            record,
+            context,
+            attempt,
+            publication,
+        )
+        _require_staging_trace_identity(
+            context, attempt, validated_result_identity
+        )
+        _copy_file_at(context, staging, temporary, allow_existing=False)
+        _publication_integrity_hook(
+            "after_result_temp_fsync",
+            record,
+            context,
+            attempt,
+            publication,
+        )
+        _require_staging_trace_identity(
+            context, attempt, validated_result_identity
+        )
+        copied_sha = _file_sha_at(
+            context, temporary, "result publication temporary"
+        )
+        if copied_sha != expected_sha:
+            raise StagingTraceError(
+                "trace_integrity_error",
+                "result publication temporary SHA differs from staging trace",
+            )
+        return copied_sha
+    except (ExecutionError, OSError) as exc:
+        _discard_result_publication_temp(context, publication)
+        if isinstance(exc, StagingTraceError):
+            raise
+        raise StagingTraceError(
+            "trace_integrity_error",
+            "staging trace changed before publication preparation",
+        ) from exc
+
+
+def _prepare_publication(
+    record,
+    context,
+    state,
+    attempt,
+    publication,
+    validated_result_identity=None,
+):
+    _require(
+        isinstance(validated_result_identity, dict)
+        and isinstance(validated_result_identity.get("sha256"), str)
+        and len(validated_result_identity["sha256"]) == 64,
+        "validated staging trace identity missing",
+        InfrastructureError,
+    )
+    result_sha = _copy_verified_staging_for_publication(
+        record,
+        context,
+        attempt,
+        publication,
+        validated_result_identity,
+    )
     stdout_sha = _file_sha_at(context, publication["temporary_stdout_relpath"], "temporary stdout", allow_empty=True)
     stderr_sha = _file_sha_at(context, publication["temporary_stderr_relpath"], "temporary stderr", allow_empty=True)
     publication.update(
@@ -1316,14 +1751,153 @@ def _prepare_publication(record, context, state, attempt, publication):
     _write_state(context, state)
 
 
-def _commit_publication(context, state, attempt):
+def _verify_published_result(
+    context,
+    attempt,
+    publication,
+    *,
+    final_parent_fd=None,
+    final_name=None,
+):
+    relative = publication["final_result_relpath"]
+    expected_sha = publication["expected_result_sha256"]
+    owns_parent = final_parent_fd is None
+    if owns_parent:
+        parent, name = _open_parent_at(context, relative)
+    else:
+        parent = final_parent_fd
+        name = final_name
+    descriptor = None
+    try:
+        try:
+            descriptor = os.open(
+                name,
+                os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=parent,
+            )
+        except OSError as exc:
+            raise PublicationIntegrityError(
+                "published result cannot be reopened"
+            ) from exc
+        before = os.fstat(descriptor)
+        _require(
+            stat.S_ISREG(before.st_mode),
+            "published result is not a regular file",
+            PublicationIntegrityError,
+        )
+        _require(
+            before.st_size > 0,
+            "published result is empty",
+            PublicationIntegrityError,
+        )
+        _publication_integrity_hook(
+            "after_final_reopen_before_hash",
+            None,
+            context,
+            attempt,
+            publication,
+        )
+        first_sha = _sha_from_fd(descriptor)
+        _publication_integrity_hook(
+            "after_final_first_hash",
+            None,
+            context,
+            attempt,
+            publication,
+        )
+        middle = os.fstat(descriptor)
+        second_sha = _sha_from_fd(descriptor)
+        after = os.fstat(descriptor)
+        publication["observed_final_result_sha256"] = second_sha
+        identity = lambda value: (
+            value.st_dev,
+            value.st_ino,
+            value.st_mode,
+            value.st_size,
+            value.st_mtime_ns,
+            value.st_ctime_ns,
+        )
+        _require(
+            identity(before) == identity(middle) == identity(after)
+            and first_sha == second_sha,
+            "published result changed while hashing",
+            PublicationIntegrityError,
+        )
+        current = os.stat(name, dir_fd=parent, follow_symlinks=False)
+        _require(
+            (current.st_dev, current.st_ino) == (after.st_dev, after.st_ino)
+            and stat.S_ISREG(current.st_mode),
+            "published result namespace changed while hashing",
+            PublicationIntegrityError,
+        )
+        _require(
+            second_sha == expected_sha,
+            "published result SHA mismatch",
+            PublicationIntegrityError,
+        )
+        return second_sha
+    except StagingTraceError:
+        raise
+    except (ExecutionError, OSError) as exc:
+        observed = publication.get("observed_final_result_sha256")
+        raise StagingTraceError(
+            "trace_integrity_error",
+            str(exc),
+            observed_final_sha256=observed,
+            preserve_publication=True,
+        ) from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        if owns_parent:
+            os.close(parent)
+
+
+def _commit_publication(
+    context, state, attempt, validated_result_identity
+):
     publication = attempt["publication"]
-    _replace_at(
+    _publication_integrity_hook(
+        "before_result_replace",
+        None,
         context,
-        publication["temporary_result_relpath"],
-        publication["final_result_relpath"],
-        allow_existing=False,
+        attempt,
+        publication,
     )
+    _require_staging_trace_identity(
+        context, attempt, validated_result_identity
+    )
+    def verify_replaced_result(parent, name):
+        _publication_integrity_hook(
+            "after_result_replace_before_final_reopen",
+            None,
+            context,
+            attempt,
+            publication,
+        )
+        return _verify_published_result(
+            context,
+            attempt,
+            publication,
+            final_parent_fd=parent,
+            final_name=name,
+        )
+
+    try:
+        _replace_at(
+            context,
+            publication["temporary_result_relpath"],
+            publication["final_result_relpath"],
+            allow_existing=False,
+            expected_sha256=publication["expected_result_sha256"],
+            post_replace_verifier=verify_replaced_result,
+        )
+    except PublicationIntegrityError as exc:
+        raise StagingTraceError(
+            "trace_integrity_error",
+            str(exc),
+            preserve_publication=True,
+        ) from exc
     publication["publication_status"] = "result_published"
     _write_state(context, state)
     for stream in ("stdout", "stderr"):
@@ -1343,6 +1917,30 @@ def _commit_publication(context, state, attempt):
     _write_state(context, state)
 
 
+def _record_trace_integrity_failure(context, state, attempt, error):
+    publication = attempt["publication"]
+    publication["integrity_failure_reason"] = str(error)
+    publication["observed_final_result_sha256"] = (
+        error.observed_final_sha256
+    )
+    if not error.preserve_publication:
+        _discard_result_publication_temp(context, publication)
+        publication["publication_status"] = "none"
+        publication["expected_result_sha256"] = None
+        publication["expected_stdout_sha256"] = None
+        publication["expected_stderr_sha256"] = None
+        attempt["final_result_sha256"] = None
+    stdout_sha, stderr_sha = _publish_failure_logs(
+        context, attempt, publication
+    )
+    state["stdout_sha256"] = stdout_sha
+    state["stderr_sha256"] = stderr_sha
+    attempt["termination_reason"] = error.reason
+    state["current_status"] = "failed"
+    _write_state(context, state)
+    return "failed"
+
+
 def run_attempt(record, context, state, attempt_index):
     timeout_seconds = _attempt_timeout(record, attempt_index)
     _require(
@@ -1353,15 +1951,21 @@ def run_attempt(record, context, state, attempt_index):
         SafetyError,
     )
     case_id = record["case_id"]
-    result_parts = _relative_parts(record["result_relpath"])
-    result_name = f".{case_id}.attempt-{attempt_index}.{secrets.token_hex(12)}.result.tmp"
-    result_relative = "/".join(result_parts[:-1] + (result_name,))
+    trace_basename = _trace_basename(record["result_relpath"])
     stdout_relative = _unique_temp_relpath(".b4pe/logs", f"{case_id}.attempt-{attempt_index}", "stdout")
     stderr_relative = _unique_temp_relpath(".b4pe/logs", f"{case_id}.attempt-{attempt_index}", "stderr")
+    attempt_directory_fd, attempt_directory_relative = _create_attempt_staging(
+        context, case_id, attempt_index, trace_basename
+    )
+    trace_relative = f"{attempt_directory_relative}/{trace_basename}"
+    result_publication_temporary = _result_publication_temp_relpath(
+        record, attempt_index
+    )
     publication = _new_publication()
     publication.update(
         {
-            "temporary_result_relpath": result_relative,
+            "staging_result_relpath": trace_relative,
+            "temporary_result_relpath": result_publication_temporary,
             "temporary_stdout_relpath": stdout_relative,
             "temporary_stderr_relpath": stderr_relative,
             "final_result_relpath": record["result_relpath"],
@@ -1380,7 +1984,10 @@ def run_attempt(record, context, state, attempt_index):
         "termination_reason": None,
         "stdout_sha256": None,
         "stderr_sha256": None,
-        "temporary_result_path": result_relative,
+        "temporary_result_path": trace_relative,
+        "staging_directory_relpath": attempt_directory_relative,
+        "staging_trace_basename": trace_basename,
+        "staging_trace_sha256": None,
         "final_result_sha256": None,
         "publication": publication,
         "snapshot_execution": {},
@@ -1389,15 +1996,12 @@ def run_attempt(record, context, state, attempt_index):
     timed_out = False
     interrupted = False
     popen_error = None
+    staging_trace_error = None
+    staging_trace_identity = None
     resources = ExitStack()
+    resources.callback(os.close, attempt_directory_fd)
     try:
-        result_parent = _open_directory_at(
-            context["root_fd"], result_parts[:-1], create=True
-        )
-        resources.callback(os.close, result_parent)
-        result_fd = _create_temp_file(context, result_relative)
-        resources.callback(os.close, result_fd)
-        result_initial = os.fstat(result_fd)
+        _require_trace_target_absent(attempt_directory_fd, trace_basename)
         stdout_fd = _create_temp_file(context, stdout_relative)
         resources.callback(os.close, stdout_fd)
         stderr_fd = _create_temp_file(context, stderr_relative)
@@ -1413,21 +2017,33 @@ def run_attempt(record, context, state, attempt_index):
         )
         resources.callback(_close_execution_snapshots, execution_snapshots)
         context["active_snapshot_execution"] = execution_snapshots
+        context["active_attempt_staging"] = {
+            "directory_fd": attempt_directory_fd,
+            "directory_relpath": attempt_directory_relative,
+            "trace_basename": trace_basename,
+            "trace_relpath": trace_relative,
+        }
         _record_snapshot_execution(state, attempt, execution_snapshots)
         _write_state(context, state)
         argv = build_execution_argv(
             record,
             context,
             attempt_index,
-            result_parent,
-            result_name,
+            attempt_directory_fd,
+            trace_basename,
             execution_snapshots,
         )
-        _before_popen_hook(record, context)
+        try:
+            _before_popen_hook(record, context)
+            _require_trace_target_absent(
+                attempt_directory_fd, trace_basename
+            )
+        except (ExecutionError, OSError) as exc:
+            popen_error = exc
         snapshot_fds = tuple(
             execution_snapshots[role]["fd"] for role in SNAPSHOT_ROLES
         )
-        pass_fds = snapshot_fds + (result_parent,)
+        pass_fds = snapshot_fds + (attempt_directory_fd,)
         _require(
             context["root_fd"] not in pass_fds,
             "output-root rootfd must not be inherited",
@@ -1437,6 +2053,8 @@ def run_attempt(record, context, state, attempt_index):
             os.dup(stderr_fd), "wb"
         ) as stderr_handle:
             try:
+                if popen_error is not None:
+                    raise popen_error
                 process = subprocess.Popen(
                     argv,
                     shell=False,
@@ -1461,7 +2079,7 @@ def run_attempt(record, context, state, attempt_index):
                 except KeyboardInterrupt:
                     interrupted = True
                     _terminate_process_group(process, PROTOCOL["process_group_rules"]["grace_seconds"])
-            except OSError as exc:
+            except (ExecutionError, OSError) as exc:
                 popen_error = exc
                 if process is not None and process.poll() is None:
                     _terminate_process_group(process, PROTOCOL["process_group_rules"]["grace_seconds"])
@@ -1470,8 +2088,28 @@ def run_attempt(record, context, state, attempt_index):
                 stderr_handle.flush()
                 os.fsync(stdout_handle.fileno())
                 os.fsync(stderr_handle.fileno())
+        if (
+            popen_error is None
+            and not interrupted
+            and not timed_out
+            and process.returncode == 0
+        ):
+            try:
+                staging_trace_identity = _validate_staging_trace(
+                    attempt_directory_fd, trace_basename
+                )
+            except (StagingTraceError, OSError) as exc:
+                staging_trace_error = (
+                    exc
+                    if isinstance(exc, StagingTraceError)
+                    else StagingTraceError(
+                        "trace_integrity_error",
+                        "staging trace changed during post-exit validation",
+                    )
+                )
     finally:
         context.pop("active_snapshot_execution", None)
+        context.pop("active_attempt_staging", None)
         resources.close()
     attempt["ended_at"] = utc_now()
     if popen_error is not None:
@@ -1481,7 +2119,9 @@ def run_attempt(record, context, state, attempt_index):
         attempt["termination_reason"] = "infrastructure_error"
         state["current_status"] = "failed"
         _write_state(context, state)
-        raise InfrastructureError(f"cannot start simulator: {popen_error}") from popen_error
+        raise InfrastructureError(
+            f"cannot start simulator safely: {popen_error}"
+        ) from popen_error
     attempt["exit_code"] = process.returncode
     if interrupted or timed_out or process.returncode != 0:
         stdout_sha, stderr_sha = _publish_failure_logs(context, attempt, publication)
@@ -1497,32 +2137,39 @@ def run_attempt(record, context, state, attempt_index):
         state["current_status"] = outcome
         _write_state(context, state)
         return outcome
-    result_after = _lstat_at(context, result_relative)
-    if (
-        result_after.st_size == result_initial.st_size
-        and result_after.st_mtime_ns == result_initial.st_mtime_ns
-        and result_after.st_ctime_ns == result_initial.st_ctime_ns
-    ):
+    if staging_trace_error is not None:
         stdout_sha, stderr_sha = _publish_failure_logs(context, attempt, publication)
         state["stdout_sha256"] = stdout_sha
         state["stderr_sha256"] = stderr_sha
-        attempt["termination_reason"] = "missing_result"
+        attempt["termination_reason"] = staging_trace_error.reason
         state["current_status"] = "failed"
         _write_state(context, state)
         return "failed"
-    try:
-        _file_sha_at(context, result_relative, "temporary result")
-    except InputIntegrityError as exc:
-        stdout_sha, stderr_sha = _publish_failure_logs(context, attempt, publication)
-        state["stdout_sha256"] = stdout_sha
-        state["stderr_sha256"] = stderr_sha
-        attempt["termination_reason"] = "empty_result" if "empty" in str(exc) else "invalid_result"
-        state["current_status"] = "failed"
-        _write_state(context, state)
-        return "failed"
+    _require(
+        isinstance(staging_trace_identity, dict)
+        and isinstance(staging_trace_identity.get("sha256"), str)
+        and len(staging_trace_identity["sha256"]) == 64,
+        "validated staging trace identity missing",
+        InfrastructureError,
+    )
+    attempt["staging_trace_sha256"] = staging_trace_identity["sha256"]
     attempt["termination_reason"] = "succeeded"
-    _prepare_publication(record, context, state, attempt, publication)
-    _commit_publication(context, state, attempt)
+    try:
+        _prepare_publication(
+            record,
+            context,
+            state,
+            attempt,
+            publication,
+            validated_result_identity=staging_trace_identity,
+        )
+        _commit_publication(
+            context, state, attempt, staging_trace_identity
+        )
+    except StagingTraceError as exc:
+        return _record_trace_integrity_failure(
+            context, state, attempt, exc
+        )
     return "succeeded"
 
 
@@ -1531,7 +2178,10 @@ def _active_publication(state):
         return None
     attempt = state["attempts"][-1]
     publication = attempt["publication"]
-    if publication["publication_status"] in PUBLICATION_ACTIVE:
+    if (
+        publication["publication_status"] in PUBLICATION_ACTIVE
+        and publication.get("integrity_failure_reason") is None
+    ):
         return attempt
     return None
 
@@ -1548,11 +2198,48 @@ def _validate_publication(record, state, attempt):
     }
     for field, expected in expected_paths.items():
         _require(publication.get(field) == expected, f"publication path mismatch: {field}", InputIntegrityError)
-    for field in ("temporary_result_relpath", "temporary_stdout_relpath", "temporary_stderr_relpath"):
+    expected_staging_trace = (
+        f"{attempt['staging_directory_relpath']}/"
+        f"{attempt['staging_trace_basename']}"
+    )
+    _require(
+        publication.get("staging_result_relpath") == expected_staging_trace,
+        "publication staging trace path mismatch",
+        InputIntegrityError,
+    )
+    final_result_parts = _relative_parts(publication["final_result_relpath"])
+    temporary_result_parts = _relative_parts(
+        publication["temporary_result_relpath"]
+    )
+    _require(
+        temporary_result_parts[:-1] == final_result_parts[:-1],
+        "result publication temporary is not in the final parent",
+        InputIntegrityError,
+    )
+    _require(
+        temporary_result_parts[-1].startswith(
+            f".{final_result_parts[-1]}.attempt-{attempt_index:04d}-"
+        )
+        and temporary_result_parts[-1].endswith(".publication.tmp"),
+        "result publication temporary name mismatch",
+        InputIntegrityError,
+    )
+    for field in (
+        "staging_result_relpath",
+        "temporary_result_relpath",
+        "temporary_stdout_relpath",
+        "temporary_stderr_relpath",
+    ):
         _relative_parts(publication.get(field))
     for field in ("expected_result_sha256", "expected_stdout_sha256", "expected_stderr_sha256"):
         value = publication.get(field)
         _require(isinstance(value, str) and len(value) == 64, f"publication SHA missing: {field}", InputIntegrityError)
+    _require(
+        attempt.get("staging_trace_sha256")
+        == publication["expected_result_sha256"],
+        "prepared staging trace SHA mismatch",
+        InputIntegrityError,
+    )
     _require(state["attempt_count"] == len(state["attempts"]), "publication attempt count mismatch", ResumeError)
 
 
@@ -1569,20 +2256,91 @@ def _recover_one_file(context, temporary, final, expected, label, allow_empty):
     _require(temporary_exists, f"missing temporary and final {label}", InputIntegrityError)
     temporary_sha = _file_sha_at(context, temporary, f"temporary {label}", allow_empty=allow_empty)
     _require(temporary_sha == expected, f"temporary {label} SHA mismatch", InputIntegrityError)
-    _replace_at(context, temporary, final, allow_existing=False)
+    _replace_at(
+        context,
+        temporary,
+        final,
+        allow_existing=False,
+        expected_sha256=expected,
+    )
+
+
+def _recover_result_publication(context, attempt, publication):
+    temporary = publication["temporary_result_relpath"]
+    final = publication["final_result_relpath"]
+    expected = publication["expected_result_sha256"]
+    final_exists = _exists_at(context, final)
+    temporary_exists = _exists_at(context, temporary)
+    if final_exists:
+        if temporary_exists:
+            temporary_sha = _file_sha_at(
+                context, temporary, "temporary result"
+            )
+            if temporary_sha != expected:
+                raise StagingTraceError(
+                    "trace_integrity_error",
+                    "temporary result SHA mismatch",
+                    preserve_publication=True,
+                )
+        return _verify_published_result(context, attempt, publication)
+    _require(
+        temporary_exists,
+        "missing temporary and final result",
+        InputIntegrityError,
+    )
+    def verify_replaced_result(parent, name):
+        _publication_integrity_hook(
+            "after_result_replace_before_final_reopen",
+            None,
+            context,
+            attempt,
+            publication,
+        )
+        return _verify_published_result(
+            context,
+            attempt,
+            publication,
+            final_parent_fd=parent,
+            final_name=name,
+        )
+
+    try:
+        _replace_at(
+            context,
+            temporary,
+            final,
+            allow_existing=False,
+            expected_sha256=expected,
+            post_replace_verifier=verify_replaced_result,
+        )
+    except PublicationIntegrityError as exc:
+        raise StagingTraceError(
+            "trace_integrity_error",
+            str(exc),
+            preserve_publication=True,
+        ) from exc
+    return publication["observed_final_result_sha256"]
 
 
 def _recover_publication(record, context, state, attempt):
     _validate_publication(record, state, attempt)
     publication = attempt["publication"]
-    _recover_one_file(
+    staging_sha = _file_sha_at(
         context,
-        publication["temporary_result_relpath"],
-        publication["final_result_relpath"],
-        publication["expected_result_sha256"],
-        "result",
-        False,
+        publication["staging_result_relpath"],
+        "prepared staging trace",
     )
+    _require(
+        staging_sha == publication["expected_result_sha256"],
+        "prepared staging trace SHA mismatch",
+        InputIntegrityError,
+    )
+    try:
+        _recover_result_publication(context, attempt, publication)
+    except StagingTraceError as exc:
+        return _record_trace_integrity_failure(
+            context, state, attempt, exc
+        )
     publication["publication_status"] = "result_published"
     _write_state(context, state)
     for stream in ("stdout", "stderr"):

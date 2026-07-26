@@ -154,7 +154,42 @@ class ExecutionProtocolTests(unittest.TestCase):
         )
         self.assertEqual(
             execution.PROTOCOL["publication_rules"]["commit_order"][0],
-            "prepared_state",
+            "result_parent_temporary_fsync",
+        )
+        self.assertEqual(
+            execution.PROTOCOL["dirfd_safety_rules"]["replace"],
+            "same_parent_src_dir_fd_and_dst_dir_fd",
+        )
+        self.assertEqual(
+            execution.PROTOCOL["publication_rules"]["staging_retention"],
+            "retain_attempt_trace_evidence_after_success",
+        )
+        self.assertIn(
+            "result_post_replace_reopen_verify",
+            execution.PROTOCOL["publication_rules"]["commit_order"],
+        )
+        self.assertIn(
+            "stable_fstat_and_repeated_sha256",
+            execution.PROTOCOL["result_integrity_rules"]["after_replace"],
+        )
+
+    def test_production_argv_and_i4b2_boundary_are_explicit(self):
+        rules = execution.PROTOCOL["subprocess_rules"]
+        self.assertFalse(rules["test_argument_hook"])
+        self.assertFalse(rules["unit_test_campaign_execution"])
+        self.assertEqual(
+            rules["taskset_semantic_hash_source"],
+            "upstream_manifest_command_bridge_i4b2",
+        )
+        self.assertEqual(
+            rules["real_rtsim_end_to_end_validation"],
+            "i4b2_first_gate",
+        )
+        self.assertEqual(
+            execution.PROTOCOL["inspection_rules"][
+                "cli_integrity_error_exit_code"
+            ],
+            1,
         )
 
     def test_dirfd_and_snapshot_contracts_are_explicit(self):
@@ -179,6 +214,18 @@ class ExecutionProtocolTests(unittest.TestCase):
             execution.PROTOCOL["subprocess_rules"][
                 "output_root_rootfd_inherited"
             ]
+        )
+        self.assertFalse(
+            execution.PROTOCOL["subprocess_rules"]["trace_target_precreated"]
+        )
+        self.assertEqual(
+            execution.PROTOCOL["trace_staging_rules"][
+                "target_basename_by_result_suffix"
+            ],
+            {".json": "trace.json", ".txt": "trace.txt"},
+        )
+        self.assertFalse(
+            execution.PROTOCOL["trace_staging_rules"]["orphan_adoption"]
         )
 
     def test_summary_contract_is_content_addressed(self):

@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 
-SIMULATOR_VERSION = "b4pe-fake-simulator-r2-file-fd"
+SIMULATOR_VERSION = "b4pe-fake-simulator-r3-trace-contract"
 
 
 def parse_args(argv):
@@ -29,6 +29,47 @@ def write_result(path, text):
     path.write_text(text, encoding="utf-8")
 
 
+def publish_trace_atomically(path, text):
+    if path.suffix not in {".txt", ".json"}:
+        print("invalid trace extension", file=sys.stderr)
+        return 31
+    payload = text.encode("utf-8")
+    if path.exists() or path.is_symlink():
+        try:
+            existing = path.read_bytes()
+        except OSError:
+            existing = None
+        if existing != payload:
+            print(
+                "trace_target_exists_with_different_content",
+                file=sys.stderr,
+            )
+            return 32
+        return 0
+    temporary = path.with_name(
+        f".{path.name}.partial.{os.getpid()}"
+    )
+    descriptor = os.open(
+        temporary,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+        0o600,
+    )
+    try:
+        view = memoryview(payload)
+        while view:
+            view = view[os.write(descriptor, view):]
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    os.replace(temporary, path)
+    parent = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(parent)
+    finally:
+        os.close(parent)
+    return 0
+
+
 def main(argv=None):
     system, taskset, result, run_id = parse_args(sys.argv[1:] if argv is None else argv)
     if not taskset.is_file():
@@ -36,7 +77,8 @@ def main(argv=None):
         return 9
     config = json.loads(system.read_text(encoding="utf-8"))
     mode = config.get("mode", "success")
-    attempt_one = ".attempt-1." in result.name
+    attempt_directory_name = result.parent.resolve().name
+    attempt_one = attempt_directory_name.startswith("attempt-0001-")
     if config.get("stdout"):
         print(config["stdout"], flush=True)
     if config.get("stderr"):
@@ -77,6 +119,21 @@ def main(argv=None):
         result.parent.mkdir(parents=True, exist_ok=True)
         result.write_bytes(b"")
         return 0
+    if mode == "symlink_result":
+        result.symlink_to(system)
+        return 0
+    if mode == "directory_result":
+        result.mkdir()
+        return 0
+    if mode == "extra_result":
+        write_result(result, config.get("result_text", f"result {run_id}\n"))
+        write_result(result.parent / "unexpected.trace", "unexpected\n")
+        return 0
+    if mode == "rtsim-trace-contract":
+        return publish_trace_atomically(
+            result,
+            config.get("result_text", f"result {run_id}\n"),
+        )
     if mode == "snapshot_digest":
         source = Path(os.environ["B4PE_SOURCE_SNAPSHOT"])
         simulator_bytes = Path(sys.argv[0]).read_bytes()

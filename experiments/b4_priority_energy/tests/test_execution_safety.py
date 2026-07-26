@@ -432,7 +432,7 @@ class ExecutionSafetyTests(unittest.TestCase):
             )
         self.assertEqual(
             payload["simulator_version"],
-            "b4pe-fake-simulator-r2-file-fd",
+            "b4pe-fake-simulator-r3-trace-contract",
         )
         self.assertNotEqual(
             external_sha["value"], state[f"{role}_snapshot_sha256"]
@@ -476,7 +476,7 @@ class ExecutionSafetyTests(unittest.TestCase):
             )
         self.assertEqual(
             payload["simulator_version"],
-            "b4pe-fake-simulator-r2-file-fd",
+            "b4pe-fake-simulator-r3-trace-contract",
         )
 
     def test_proc_fd_unavailable_fails_without_fallback(self):

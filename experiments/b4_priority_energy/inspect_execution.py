@@ -5,6 +5,7 @@ import argparse
 import fcntl
 import json
 import os
+import stat
 from collections import Counter
 from pathlib import Path
 
@@ -13,7 +14,6 @@ from execution_common import (
     EXECUTION_PROTOCOL_SHA256,
     ExecutionError,
     InputIntegrityError,
-    PUBLICATION_ACTIVE,
     PUBLICATION_STATUSES,
     PROTOCOL,
     _is_within,
@@ -24,6 +24,29 @@ from execution_common import (
     safe_output_path,
     validate_output_root,
     validate_simulator_binary,
+)
+
+
+INTEGRITY_ERROR_COUNTERS = (
+    "input_fingerprint_drift",
+    "invalid_states",
+    "lock_conflicts",
+    "missing_results",
+    "orphan_results",
+    "publication_integrity_errors",
+    "sha_mismatches",
+    "snapshot_missing",
+    "snapshot_provenance_drift",
+    "snapshot_sha_mismatches",
+    "staging_directory_missing",
+    "staging_trace_missing",
+    "staging_traces_without_prepared_metadata",
+    "staging_trace_sha_mismatches",
+    "illegal_staging_suffixes",
+    "multiple_staging_trace_targets",
+    "summary_sha_mismatches",
+    "unfinished_attempts",
+    "unfinished_publication_transactions",
 )
 
 
@@ -71,6 +94,15 @@ def inspect_output(output_root, manifest_path=None, simulator_binary=None):
     snapshot_missing = 0
     snapshot_sha_mismatches = 0
     snapshot_provenance_drift = 0
+    attempt_staging_directories = 0
+    staging_directory_missing = 0
+    staging_trace_missing = 0
+    staging_traces_without_prepared_metadata = 0
+    staging_trace_sha_mismatches = 0
+    illegal_staging_suffixes = 0
+    multiple_staging_trace_targets = 0
+    failed_staging_evidence = 0
+    timed_out_staging_evidence = 0
     seen_cases = set()
     for path in state_paths:
         try:
@@ -147,7 +179,109 @@ def inspect_output(output_root, manifest_path=None, simulator_binary=None):
             if publication_status not in PUBLICATION_STATUSES:
                 raise InputIntegrityError("invalid publication status")
             publication_statuses[publication_status] += 1
-            if publication_status in PUBLICATION_ACTIVE:
+            if isinstance(publication, dict):
+                if publication.get("integrity_failure_reason") is not None:
+                    publication_integrity_errors += 1
+                if publication_status in {
+                    "result_published",
+                    "logs_published",
+                    "committed",
+                } and publication.get("observed_final_result_sha256") != publication.get(
+                    "expected_result_sha256"
+                ):
+                    publication_integrity_errors += 1
+
+            for attempt in attempts:
+                staging_relative = attempt.get("staging_directory_relpath")
+                staging_basename = attempt.get("staging_trace_basename")
+                attempt_staging_directories += 1
+                if staging_basename not in {"trace.txt", "trace.json"}:
+                    illegal_staging_suffixes += 1
+                    continue
+                try:
+                    staging_directory = safe_output_path(root, staging_relative)
+                    metadata = staging_directory.lstat()
+                    if staging_directory.is_symlink() or not stat.S_ISDIR(
+                        metadata.st_mode
+                    ):
+                        raise InputIntegrityError(
+                            "attempt staging path is not a directory"
+                        )
+                    entries = sorted(staging_directory.iterdir())
+                except FileNotFoundError:
+                    staging_directory_missing += 1
+                    continue
+                except (ExecutionError, OSError, TypeError):
+                    publication_integrity_errors += 1
+                    continue
+                entry_names = [entry.name for entry in entries]
+                if len(entries) > 1 or any(
+                    name != staging_basename for name in entry_names
+                ):
+                    multiple_staging_trace_targets += 1
+                trace = staging_directory / staging_basename
+                attempt_publication = attempt.get("publication", {})
+                attempt_publication_status = attempt_publication.get(
+                    "publication_status", "none"
+                )
+                publication_sha_recorded = (
+                    attempt_publication_status != "none"
+                )
+                attempt_staging_sha = attempt.get(
+                    "staging_trace_sha256"
+                )
+                publication_staging_sha = attempt_publication.get(
+                    "expected_result_sha256"
+                )
+                staging_integrity_mismatch = bool(
+                    publication_sha_recorded
+                    and attempt_staging_sha != publication_staging_sha
+                )
+                if not trace.exists() and not trace.is_symlink():
+                    if (
+                        attempt.get("termination_reason") == "succeeded"
+                    ):
+                        staging_trace_missing += 1
+                    if staging_integrity_mismatch:
+                        staging_trace_sha_mismatches += 1
+                        publication_integrity_errors += 1
+                    continue
+                if attempt_publication_status == "none":
+                    staging_traces_without_prepared_metadata += 1
+                termination_reason = attempt.get("termination_reason")
+                if termination_reason == "timeout":
+                    timed_out_staging_evidence += 1
+                elif termination_reason not in {
+                    None,
+                    "succeeded",
+                    "interrupted",
+                }:
+                    failed_staging_evidence += 1
+                try:
+                    actual_staging_sha = _regular_file_sha(
+                        trace, "attempt staging trace"
+                    )
+                except (ExecutionError, OSError):
+                    publication_integrity_errors += 1
+                else:
+                    staging_integrity_mismatch = bool(
+                        staging_integrity_mismatch
+                        or (
+                            attempt_staging_sha is not None
+                            and actual_staging_sha != attempt_staging_sha
+                        )
+                        or (
+                            publication_sha_recorded
+                            and actual_staging_sha
+                            != publication_staging_sha
+                        )
+                    )
+                if staging_integrity_mismatch:
+                    staging_trace_sha_mismatches += 1
+                    if publication_sha_recorded:
+                        publication_integrity_errors += 1
+
+            if publication_status != "none":
                 for stream, allow_empty in (
                     ("result", False),
                     ("stdout", True),
@@ -235,6 +369,10 @@ def inspect_output(output_root, manifest_path=None, simulator_binary=None):
                 summary_sha_mismatches += 1
 
     status_counts = {state: statuses.get(state, 0) for state in PROTOCOL["states"]}
+    unfinished_publication_transactions = sum(
+        publication_statuses.get(name, 0)
+        for name in ("prepared", "result_published", "logs_published")
+    )
     return {
         "input_fingerprint_drift": fingerprint_drift,
         "invalid_states": invalid_states,
@@ -249,11 +387,25 @@ def inspect_output(output_root, manifest_path=None, simulator_binary=None):
         "snapshot_missing": snapshot_missing,
         "snapshot_provenance_drift": snapshot_provenance_drift,
         "snapshot_sha_mismatches": snapshot_sha_mismatches,
+        "attempt_staging_directories": attempt_staging_directories,
+        "staging_directory_missing": staging_directory_missing,
+        "staging_trace_missing": staging_trace_missing,
+        "staging_traces_without_prepared_metadata": staging_traces_without_prepared_metadata,
+        "staging_trace_sha_mismatches": staging_trace_sha_mismatches,
+        "illegal_staging_suffixes": illegal_staging_suffixes,
+        "multiple_staging_trace_targets": multiple_staging_trace_targets,
+        "failed_staging_evidence": failed_staging_evidence,
+        "timed_out_staging_evidence": timed_out_staging_evidence,
         "state_count": len(state_paths),
         "status_counts": status_counts,
         "summary_sha_mismatches": summary_sha_mismatches,
         "unfinished_attempts": unfinished_attempts,
+        "unfinished_publication_transactions": unfinished_publication_transactions,
     }
+
+
+def inspection_has_integrity_errors(summary):
+    return any(summary.get(name, 0) > 0 for name in INTEGRITY_ERROR_COUNTERS)
 
 
 def build_parser():
@@ -281,7 +433,7 @@ def main(argv=None):
     else:
         for name, value in summary.items():
             print(f"{name}: {manifest.compact_json(value)}")
-    return 0
+    return 1 if inspection_has_integrity_errors(summary) else 0
 
 
 if __name__ == "__main__":

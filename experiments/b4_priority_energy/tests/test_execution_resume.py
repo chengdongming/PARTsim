@@ -14,8 +14,11 @@ import execution_common as execution
 from test_execution_success import ExecutionFixture
 
 
-def attempt_record(index, reason=None, running=False):
-    return {
+def attempt_record(case_id, index, reason=None, running=False):
+    staging_directory = (
+        f".b4pe/attempt-results/{case_id}/attempt-{index:04d}-persisted"
+    )
+    attempt = {
         "attempt_index": index,
         "timeout_seconds": 0.1,
         "started_at": "2026-01-01T00:00:00+00:00",
@@ -24,11 +27,18 @@ def attempt_record(index, reason=None, running=False):
         "termination_reason": None if running else reason,
         "stdout_sha256": None,
         "stderr_sha256": None,
-        "temporary_result_path": f".b4pe/tmp/prior-attempt-{index}.tmp",
+        "temporary_result_path": f"{staging_directory}/trace.txt",
+        "staging_directory_relpath": staging_directory,
+        "staging_trace_basename": "trace.txt",
+        "staging_trace_sha256": None,
         "final_result_sha256": None,
         "publication": execution._new_publication(),
         "snapshot_execution": {},
     }
+    attempt["publication"]["staging_result_relpath"] = attempt[
+        "temporary_result_path"
+    ]
+    return attempt
 
 
 class ExecutionResumeTests(unittest.TestCase):
@@ -44,7 +54,12 @@ class ExecutionResumeTests(unittest.TestCase):
         provenance = execution.build_provenance(record, context)
         state = execution.new_state(provenance)
         state["attempts"] = [
-            attempt_record(index, reason, running=status == "running" and index == len(reasons))
+            attempt_record(
+                record["case_id"],
+                index,
+                reason,
+                running=status == "running" and index == len(reasons),
+            )
             for index, reason in enumerate(reasons, 1)
         ]
         state["attempt_count"] = len(state["attempts"])
@@ -160,17 +175,141 @@ class ExecutionResumeTests(unittest.TestCase):
         observed = []
         real_replace = execution._replace_at
 
-        def inspect_before_replace(ctx, temporary, final, allow_existing=False):
+        def inspect_before_replace(
+            ctx,
+            temporary,
+            final,
+            allow_existing=False,
+            expected_sha256=None,
+            post_replace_verifier=None,
+        ):
             if final == self.fx.record["result_relpath"]:
                 observed.append(self.fx.state()["attempts"][-1]["publication"]["publication_status"])
                 raise OSError("stop after prepared")
-            return real_replace(ctx, temporary, final, allow_existing)
+            return real_replace(
+                ctx,
+                temporary,
+                final,
+                allow_existing,
+                expected_sha256,
+                post_replace_verifier,
+            )
 
         with mock.patch.object(execution, "_replace_at", side_effect=inspect_before_replace):
             summary = execution.execute_records([self.fx.record], context)
         self.assertEqual(summary["infrastructure_errors"], 1)
         self.assertEqual(observed, ["prepared"])
         self.assertFalse(self.fx.path(self.fx.record["result_relpath"]).exists())
+
+    def test_prepared_temporary_recovers_with_zero_execution_setup(self):
+        context = self.fx.context()
+        real_replace = execution._replace_at
+
+        def stop_before_result(
+            ctx,
+            temporary,
+            final,
+            allow_existing=False,
+            expected_sha256=None,
+            post_replace_verifier=None,
+        ):
+            if final == self.fx.record["result_relpath"]:
+                raise OSError("crash before result replace")
+            return real_replace(
+                ctx,
+                temporary,
+                final,
+                allow_existing,
+                expected_sha256,
+                post_replace_verifier,
+            )
+
+        with mock.patch.object(
+            execution, "_replace_at", side_effect=stop_before_result
+        ):
+            first = execution.execute_records([self.fx.record], context)
+        self.assertEqual(first["infrastructure_errors"], 1)
+        before = self.fx.state()
+        publication = before["attempts"][0]["publication"]
+        self.assertEqual(publication["publication_status"], "prepared")
+        self.assertTrue(
+            self.fx.path(publication["temporary_result_relpath"]).is_file()
+        )
+        self.assertFalse(
+            self.fx.path(publication["final_result_relpath"]).exists()
+        )
+        with mock.patch.object(
+            execution.subprocess, "Popen"
+        ) as popen, mock.patch.object(
+            execution, "_open_execution_snapshots"
+        ) as open_snapshots, mock.patch.object(
+            execution, "_create_attempt_staging"
+        ) as create_staging:
+            second = execution.execute_records(
+                [self.fx.record], context, resume=True
+            )
+        self.assertEqual(second["succeeded"], 1)
+        popen.assert_not_called()
+        open_snapshots.assert_not_called()
+        create_staging.assert_not_called()
+        state = self.fx.state()
+        self.assertEqual(state["attempt_count"], 1)
+        publication = state["attempts"][0]["publication"]
+        self.assertEqual(publication["publication_status"], "committed")
+        self.assertEqual(
+            publication["observed_final_result_sha256"],
+            publication["expected_result_sha256"],
+        )
+
+    def test_tampered_prepared_temporary_persists_failed_state(self):
+        context = self.fx.context()
+        real_replace = execution._replace_at
+
+        def stop_before_result(
+            ctx,
+            temporary,
+            final,
+            allow_existing=False,
+            expected_sha256=None,
+            post_replace_verifier=None,
+        ):
+            if final == self.fx.record["result_relpath"]:
+                raise OSError("crash before result replace")
+            return real_replace(
+                ctx,
+                temporary,
+                final,
+                allow_existing,
+                expected_sha256,
+                post_replace_verifier,
+            )
+
+        with mock.patch.object(
+            execution, "_replace_at", side_effect=stop_before_result
+        ):
+            execution.execute_records([self.fx.record], context)
+        publication = self.fx.state()["attempts"][0]["publication"]
+        temporary = self.fx.path(publication["temporary_result_relpath"])
+        temporary.write_text("tampered temporary\n", encoding="utf-8")
+        with mock.patch.object(execution.subprocess, "Popen") as popen:
+            summary = execution.execute_records(
+                [self.fx.record], context, resume=True
+            )
+        self.assertEqual(summary["failed"], 1)
+        self.assertEqual(summary["infrastructure_errors"], 0)
+        popen.assert_not_called()
+        state = self.fx.state()
+        attempt = state["attempts"][0]
+        self.assertEqual(state["current_status"], "failed")
+        self.assertEqual(state["attempt_count"], 1)
+        self.assertEqual(attempt["termination_reason"], "trace_integrity_error")
+        self.assertEqual(
+            attempt["publication"]["publication_status"], "prepared"
+        )
+        self.assertTrue(temporary.is_file())
+        self.assertFalse(
+            self.fx.path(self.fx.record["result_relpath"]).exists()
+        )
 
     def test_result_published_state_failure_resumes_without_subprocess(self):
         context = self.fx.context()
@@ -234,6 +373,43 @@ class ExecutionResumeTests(unittest.TestCase):
         self.assertEqual(resumed["succeeded"], 1)
         self.assertEqual(self.fx.state()["attempt_count"], 1)
         popen.assert_not_called()
+
+    def test_logs_published_tampered_result_persists_failed_state(self):
+        context = self.fx.context()
+        with mock.patch.object(
+            execution,
+            "_write_state",
+            side_effect=self.fail_state_update("committed"),
+        ):
+            first = execution.execute_records([self.fx.record], context)
+        self.assertEqual(first["infrastructure_errors"], 1)
+        before = self.fx.state()
+        self.assertEqual(
+            before["attempts"][0]["publication"]["publication_status"],
+            "logs_published",
+        )
+        result = self.fx.path(self.fx.record["result_relpath"])
+        result.write_text("tampered after logs\n", encoding="utf-8")
+        with mock.patch.object(execution.subprocess, "Popen") as popen:
+            second = execution.execute_records(
+                [self.fx.record], context, resume=True
+            )
+        self.assertEqual(second["failed"], 1)
+        self.assertEqual(second["infrastructure_errors"], 0)
+        popen.assert_not_called()
+        state = self.fx.state()
+        attempt = state["attempts"][0]
+        self.assertEqual(state["current_status"], "failed")
+        self.assertEqual(state["attempt_count"], 1)
+        self.assertEqual(attempt["termination_reason"], "trace_integrity_error")
+        self.assertEqual(
+            attempt["publication"]["publication_status"],
+            "logs_published",
+        )
+        self.assertNotEqual(
+            attempt["publication"]["observed_final_result_sha256"],
+            attempt["publication"]["expected_result_sha256"],
+        )
 
     def test_publication_resume_is_independent_of_root_fd_number(self):
         first_context = self.fx.context()
@@ -315,9 +491,21 @@ class ExecutionResumeTests(unittest.TestCase):
         result.write_text("tampered\n", encoding="utf-8")
         with mock.patch.object(execution.subprocess, "Popen") as popen:
             summary = execution.execute_records([self.fx.record], context, resume=True)
-        self.assertEqual(summary["infrastructure_errors"], 1)
+        self.assertEqual(summary["failed"], 1)
+        self.assertEqual(summary["infrastructure_errors"], 0)
         self.assertEqual(result.read_text(encoding="utf-8"), "tampered\n")
-        self.assertEqual(self.fx.state()["attempt_count"], 1)
+        state = self.fx.state()
+        self.assertEqual(state["attempt_count"], 1)
+        self.assertEqual(state["current_status"], "failed")
+        attempt = state["attempts"][0]
+        self.assertEqual(attempt["termination_reason"], "trace_integrity_error")
+        self.assertEqual(
+            attempt["publication"]["publication_status"], "prepared"
+        )
+        self.assertNotEqual(
+            attempt["publication"]["observed_final_result_sha256"],
+            attempt["publication"]["expected_result_sha256"],
+        )
         popen.assert_not_called()
 
     def test_partial_publication_without_resume_does_not_mutate_state(self):
