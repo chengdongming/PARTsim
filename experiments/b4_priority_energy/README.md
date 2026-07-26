@@ -166,3 +166,21 @@ The earlier bounded suffix/absent-target diagnostic is not automated campaign
 evidence. A compliant real-artifact, real-command `rtsim` case, including its
 taskset semantic hash and complete provenance assertions, is the first I4B-2
 gate.
+
+I4B-2A uses a second, fixed validation gateway for exactly one non-campaign
+record. `execute_manifest.py --integration-smoke-record /absolute/record.json
+--execute` accepts only `b4-pe-integration-smoke-v1`: the record file and its
+absolute output root must be outside the repository, its case id is in the
+`smoke-` namespace, and its result is below `integration-smoke/results/`.
+The record fixes `campaign_started=false`, `campaign_result_count=0`, and
+`not_for_paper=true`. It cannot select a validator, name a Python module, use a
+formal phase, or target Pilot/Formal/Negative paths.
+
+The formal `--manifest` path still calls only the frozen I4A Manifest validator.
+The smoke path calls only `validate_integration_smoke_record()`. After either
+fixed validator succeeds, both paths enter the same I4B-1 execution kernel and
+therefore share its snapshots, staging, retry, recovery, locks, publication,
+state, and execution-summary rules. No second subprocess or publication state
+machine exists. The smoke command remains the sole semantic argv plan; source
+descriptor bytes use the existing `B4PE_SOURCE_SNAPSHOT` file-descriptor
+transport, and no semantic-hash argument is appended by the gateway.

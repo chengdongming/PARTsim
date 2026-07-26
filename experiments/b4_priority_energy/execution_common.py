@@ -2495,7 +2495,31 @@ def prepare_and_execute(
     if limit is not None:
         _require(type(limit) is int and limit >= 0, "limit must be non-negative", SafetyError)
     records = manifest.validate_manifest(manifest_path)
-    context = build_context(manifest_path, output_root, simulator_binary)
+    return execute_validated_cases(
+        records,
+        manifest_path,
+        output_root,
+        simulator_binary,
+        limit=limit,
+        resume=resume,
+        retry_failed=retry_failed,
+    )
+
+
+def execute_validated_cases(
+    records,
+    record_source_path,
+    output_root,
+    simulator_binary,
+    limit=None,
+    resume=False,
+    retry_failed=False,
+):
+    """Run cases already accepted by one of the two fixed validators."""
+    _require(isinstance(records, list) and records, "validated cases missing", SafetyError)
+    if limit is not None:
+        _require(type(limit) is int and limit >= 0, "limit must be non-negative", SafetyError)
+    context = build_context(record_source_path, output_root, simulator_binary)
     try:
         selected = records if limit is None else records[:limit]
         return execute_records(selected, context, resume=resume, retry_failed=retry_failed)
