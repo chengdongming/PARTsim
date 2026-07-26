@@ -291,15 +291,74 @@ class IntegrationSmokeGatewayTests(unittest.TestCase):
 
     def test_changed_paths_remain_below_experiment_directory(self):
         import subprocess
-        changed = subprocess.run(
-            ["git", "diff", "--name-only", "HEAD"],
-            cwd=REPO_ROOT,
-            check=True,
-            text=True,
-            stdout=subprocess.PIPE,
-        ).stdout.splitlines()
-        self.assertTrue(changed)
-        self.assertTrue(all(path.startswith("experiments/b4_priority_energy/") for path in changed))
+        with tempfile.TemporaryDirectory(prefix="b4pe-scope-git-") as temporary:
+            repository = Path(temporary)
+            allowed = repository / "experiments/b4_priority_energy/smoke.py"
+            forbidden = repository / "outside_experiment.py"
+            allowed.parent.mkdir(parents=True)
+            allowed.write_text("baseline = True\n", encoding="utf-8")
+            forbidden.write_text("baseline = True\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "init", "--quiet"],
+                cwd=repository,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "add", "."],
+                cwd=repository,
+                check=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-c",
+                    "user.name=B4 PE Test",
+                    "-c",
+                    "user.email=b4-pe-test@example.invalid",
+                    "commit",
+                    "--quiet",
+                    "-m",
+                    "fixture baseline",
+                ],
+                cwd=repository,
+                check=True,
+            )
+
+            def changed_paths():
+                return subprocess.run(
+                    ["git", "diff", "--name-only", "HEAD"],
+                    cwd=repository,
+                    check=True,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                ).stdout.splitlines()
+
+            allowed.write_text("baseline = False\n", encoding="utf-8")
+            changed = changed_paths()
+            self.assertEqual(
+                changed,
+                ["experiments/b4_priority_energy/smoke.py"],
+            )
+            self.assertTrue(
+                all(
+                    path.startswith("experiments/b4_priority_energy/")
+                    for path in changed
+                )
+            )
+
+            forbidden.write_text("baseline = False\n", encoding="utf-8")
+            changed = changed_paths()
+            self.assertIn(
+                "experiments/b4_priority_energy/smoke.py",
+                changed,
+            )
+            self.assertIn("outside_experiment.py", changed)
+            self.assertFalse(
+                all(
+                    path.startswith("experiments/b4_priority_energy/")
+                    for path in changed
+                )
+            )
 
 
 if __name__ == "__main__":
