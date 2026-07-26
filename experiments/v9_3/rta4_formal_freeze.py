@@ -16,7 +16,9 @@ from .rta4_formal_pilot import (
     validate_pilot_manifest, validate_pilot_observations,
     validate_pilot_report,
 )
-from .rta4_pilot_execution import validate_pilot_audit_document
+from .rta4_pilot_execution import (
+    audit_pilot_namespace, validate_pilot_audit_document,
+)
 from .rta4_formal_environment import (
     RTA4_DEPENDENCY_DOMAIN, RTA4_DEPENDENCY_MANIFEST_VERSION,
     RTA4_ENVIRONMENT_DOMAIN, RTA4_ENVIRONMENT_MANIFEST_VERSION,
@@ -27,10 +29,10 @@ from .rta4_formal_environment import (
 from .rta4_formal_schema import formal_schema_hash
 
 
-RTA4_PREPARED_CONFIG_VERSION = "ASAP_BLOCK_V9_3_RTA4_PREPARED_CONFIG_V3"
-RTA4_FREEZE_MANIFEST_VERSION = "ASAP_BLOCK_V9_3_RTA4_FORMAL_FREEZE_V3"
-RTA4_PREPARED_CONFIG_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_PREPARED_CONFIG:v3"
-RTA4_FREEZE_MANIFEST_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_FORMAL_FREEZE:v3"
+RTA4_PREPARED_CONFIG_VERSION = "ASAP_BLOCK_V9_3_RTA4_PREPARED_CONFIG_V4"
+RTA4_FREEZE_MANIFEST_VERSION = "ASAP_BLOCK_V9_3_RTA4_FORMAL_FREEZE_V4"
+RTA4_PREPARED_CONFIG_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_PREPARED_CONFIG:v4"
+RTA4_FREEZE_MANIFEST_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_FORMAL_FREEZE:v4"
 RTA4_FROZEN_PARAMETER_STATUS = "FROZEN_FOR_FORMAL_EXECUTION"
 
 RTA4_FROZEN_SCHEMA_SHA256 = (
@@ -258,6 +260,7 @@ def prepare_formal_configs(
     timeout_contract: Mapping[str, Any],
     operational: Mapping[str, Mapping[str, Any]],
     config_paths: Mapping[str, Path | str],
+    pilot_root: Path | str,
 ) -> Dict[str, Dict[str, Any]]:
     """Prepare all cores without altering the embedded scientific config."""
 
@@ -270,7 +273,40 @@ def prepare_formal_configs(
         pilot_observations, pilot_manifest,
     )
     validate_pilot_report(pilot_report, pilot_manifest, observations)
-    audit = validate_pilot_audit_document(pilot_audit)
+    try:
+        audit = audit_pilot_namespace(
+            pilot_root, configs, require_complete=True,
+        )
+    except Exception as exc:
+        raise RTA4FreezeError(
+            "freeze requires a fresh file-backed pilot audit"
+        ) from exc
+    if validate_pilot_audit_document(pilot_audit) != audit:
+        raise RTA4FreezeError(
+            "persisted/supplied pilot audit differs from fresh reconstruction"
+        )
+    pilot_path = Path(pilot_root).resolve(strict=True)
+    try:
+        from .rta4_formal_environment import load_strict_json
+        from .rta4_formal_pilot import (
+            RTA4_PILOT_OBSERVATIONS, RTA4_PILOT_OUTPUT_MARKER,
+            RTA4_PILOT_REPORT,
+        )
+        file_documents = (
+            load_strict_json(pilot_path / RTA4_PILOT_OUTPUT_MARKER),
+            load_strict_json(pilot_path / RTA4_PILOT_OBSERVATIONS),
+            load_strict_json(pilot_path / RTA4_PILOT_REPORT),
+        )
+    except Exception as exc:
+        raise RTA4FreezeError(
+            "pilot root lacks canonical final evidence"
+        ) from exc
+    if file_documents != (
+        dict(pilot_manifest), dict(pilot_observations), dict(pilot_report),
+    ):
+        raise RTA4FreezeError(
+            "freeze inputs differ from canonical pilot-root evidence"
+        )
     if (
         audit["freeze_eligible"] is not True
         or audit["execution_class"] != "ENGINEERING_PILOT"
@@ -333,6 +369,7 @@ def prepare_formal_configs(
             "pilot_audit_id": audit["audit_id"],
             "pilot_execution_config_id": audit["execution_config_id"],
             "pilot_execution_manifest_id": audit["execution_manifest_id"],
+            "pilot_store_manifest_id": audit["store_manifest_id"],
             "pilot_checkpoint_id": audit["checkpoint_id"],
             "timeout_contract": timeout,
             "timeout_contract_id": timeout_contract_identity(timeout),
@@ -358,6 +395,7 @@ def validate_prepared_config(document: Mapping[str, Any]) -> Dict[str, Any]:
         "pilot_observations_id", "pilot_closure_id", "timeout_contract",
         "pilot_audit_id", "pilot_execution_config_id",
         "pilot_execution_manifest_id", "pilot_checkpoint_id",
+        "pilot_store_manifest_id",
         "timeout_contract_id", "operational",
         "runtime_environment", "scientific_assertions", "prepared_config_id",
     }
@@ -404,6 +442,7 @@ def validate_prepared_config(document: Mapping[str, Any]) -> Dict[str, Any]:
                 "pilot_report_id", "pilot_closure_id", "pilot_audit_id",
                 "pilot_execution_config_id",
                 "pilot_execution_manifest_id", "pilot_checkpoint_id",
+                "pilot_store_manifest_id",
             )
         )
     ):
@@ -460,6 +499,7 @@ def build_freeze_manifest(
             row["pilot_closure_id"], row["pilot_report_id"],
             row["pilot_audit_id"], row["pilot_execution_config_id"],
             row["pilot_execution_manifest_id"], row["pilot_checkpoint_id"],
+            row["pilot_store_manifest_id"],
         )
         for row in normalized.values()
     }
@@ -487,6 +527,9 @@ def build_freeze_manifest(
         ],
         "pilot_execution_manifest_id": normalized["CORE-1"][
             "pilot_execution_manifest_id"
+        ],
+        "pilot_store_manifest_id": normalized["CORE-1"][
+            "pilot_store_manifest_id"
         ],
         "pilot_checkpoint_id": normalized["CORE-1"][
             "pilot_checkpoint_id"

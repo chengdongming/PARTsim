@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import tempfile
 
 import pytest
 
@@ -52,12 +53,18 @@ from experiments.v9_3.rta4_formal_pipeline import (
 )
 from experiments.v9_3.rta4_formal_validation import RTA4_CHECKPOINT_DOMAIN
 from experiments.v9_3.rta4_formal_pilot import (
-    RTA4PilotError, build_pilot_manifest, build_pilot_observations,
-    build_pilot_report, validate_pilot_observations, validate_pilot_report,
+    RTA4_PILOT_OBSERVATIONS, RTA4_PILOT_OUTPUT_MARKER,
+    RTA4_PILOT_REPORT, RTA4PilotError, build_pilot_manifest,
+    build_pilot_observations, build_pilot_report,
+    validate_pilot_observations, validate_pilot_report,
 )
 from experiments.v9_3.rta4_pilot_execution import (
-    RTA4_PILOT_AUDIT_DOMAIN, RTA4_PILOT_AUDIT_VERSION,
+    PilotExecutionRunner, PilotTasksetProvider,
+    RTA4_PILOT_AUDIT_DOMAIN,
+    RTA4_PILOT_EXECUTION_CONFIG, build_pilot_execution_config,
+    build_pilot_raw_terminal, build_simulation_support,
 )
+import experiments.v9_3.rta4_pilot_execution as pilot_execution
 from experiments.v9_3.constrained_taskset_identity import (
     CONSTRAINED_UNIFORM_SLACK_MODE, FIXED_SLACK_FRACTION_VARIANT,
     GenerationRequest, SkeletonTask, build_taskset_identity_certificate,
@@ -71,35 +78,119 @@ from experiments.v9_3.task_identity import runtime_task_name_for_source_id
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _audited_pilot_contract(root, pilot, observations, report):
-    material = {
-        "audit_version": RTA4_PILOT_AUDIT_VERSION,
-        "audit_status": "ENGINEERING_PILOT_AUDIT_COMPLETE",
-        "execution_class": "ENGINEERING_PILOT",
-        "freeze_eligible": True,
-        "pilot_root": str((root / "pilot").resolve()),
-        "pilot_manifest_id": pilot["pilot_manifest_id"],
-        "execution_config_id": "1" * 64,
-        "execution_manifest_id": "2" * 64,
-        "checkpoint_id": "3" * 64,
-        "checkpoint_state": "PILOT_COMPLETE",
-        "terminal_count": observations["observation_count"],
-        "terminal_set_sha256": "4" * 64,
-        "taskset_certificate_set_sha256": "5" * 64,
-        "source_manifest_id": "6" * 64,
-        "dependency_manifest_id": "7" * 64,
-        "environment_manifest_id": "8" * 64,
-        "hardware_manifest_id": "9" * 64,
-        "simulator_manifest_id": "a" * 64,
-        "pilot_observations_id": observations["pilot_observations_id"],
-        "pilot_report_id": report["pilot_report_id"],
-        "pilot_closure_id": report["pilot_closure_id"],
-        "scientific_results_included": False,
-    }
-    return {
-        **material,
-        "audit_id": domain_hash(RTA4_PILOT_AUDIT_DOMAIN, material),
-    }
+def _real_domain_pilot_filesystem(root, configs, config_paths):
+    output = root / "pilot"
+    store = root / "pilot-taskset-store"
+    pilot = build_pilot_manifest(
+        configs,
+        core_record_counts={
+            core: (4 if core == "CORE-5B" else 1)
+            for core in RTA4_CORES
+        },
+        selection_seed="RTA4-TEST-PILOT-V2",
+        output_root=output, taskset_store=store,
+        config_paths=config_paths,
+    )
+    output.mkdir()
+    manifest_path = output / RTA4_PILOT_OUTPUT_MARKER
+    atomic_write_json(manifest_path, pilot)
+
+    source_repo = root / "pilot-source"
+    source_repo.mkdir()
+    base_system = source_repo / "base-system.yml"
+    energy_config = source_repo / "energy.yml"
+    base_system.write_text("system: synthetic-fixture\n", encoding="utf-8")
+    energy_config.write_text("{}\n", encoding="utf-8")
+    subprocess.run(("git", "init", "-q"), cwd=source_repo, check=True)
+    subprocess.run(
+        ("git", "add", "base-system.yml", "energy.yml"),
+        cwd=source_repo, check=True,
+    )
+    subprocess.run(
+        (
+            "git", "-c", "user.name=RTA4 Test",
+            "-c", "user.email=rta4@example.invalid",
+            "commit", "-qm", "pilot fixture",
+        ),
+        cwd=source_repo, check=True,
+    )
+    source_manifest = build_source_manifest(
+        source_repo, (base_system, energy_config),
+    )
+    execution = build_pilot_execution_config(
+        manifest_path, pilot, source_manifest=source_manifest,
+        output_root=output, taskset_store=store,
+        simulator_manifest=build_simulator_manifest("/bin/true"),
+        simulation_support=build_simulation_support(
+            base_system_path=base_system,
+            energy_config_path=energy_config,
+        ),
+        default_worker_count=2, max_in_flight=4,
+        provisional_rta_attempt_timeout_seconds=2,
+        provisional_simulation_timeout_seconds=2,
+        memory_soft_limit_bytes=1 << 60,
+        checkpoint_interval_records=2, maximum_attempts=2,
+    )
+    atomic_write_json(output / RTA4_PILOT_EXECUTION_CONFIG, execution)
+    runner = PilotExecutionRunner(configs, pilot, execution)
+    store_manifest, certificates = runner._write_initial_namespace(
+        PilotTasksetProvider(configs), None,
+    )
+    simulator = _synthetic_simulator(root / "pilot-fixture-traces")
+    last_execution_id = None
+    for record in runner.records:
+        certificate = pilot_execution._certificate_for_record(
+            record, certificates,
+        )
+        worker_root = Path(tempfile.mkdtemp(
+            prefix=f"{record.execution_id}.",
+            dir=output / pilot_execution.RTA4_PILOT_WORKER_TRACE_DIRECTORY,
+        ))
+        callback = simulator if record.kind == "simulation" else _synthetic_rta
+        result = pilot_execution._worker_execute(
+            record, certificate, configs[record.core], execution,
+            callback, str(worker_root),
+        )
+        metrics = pilot_execution._validate_metrics(
+            result["metrics"], final=False,
+        )
+        metrics["worker_throughput_milli_records_per_second"] = 1000
+        if record.kind == "simulation":
+            simulation_id = pilot_execution._simulation_identity(
+                record, certificate,
+            )[3]
+            trace_size, trace_sha = runner._persist_trace(
+                record, certificate, result["trace_payload"],
+                simulation_id, worker_root,
+            )
+        else:
+            simulation_id = None
+            trace_size, trace_sha = 0, None
+        metrics["trace_size_bytes"] = trace_size
+        raw = build_pilot_raw_terminal(
+            runner.selected[str(record.execution_id)],
+            execution, certificate, metrics,
+            trace_sha256=trace_sha, simulation_id=simulation_id,
+        )
+        pilot_execution._write_json_once(
+            output / pilot_execution.RTA4_PILOT_RAW_TERMINAL_DIRECTORY
+            / f"{record.execution_id}.json",
+            raw,
+        )
+        runner._safe_cleanup_worker_root(worker_root)
+        last_execution_id = str(record.execution_id)
+    runner._commit_checkpoint(
+        store_manifest, certificates, phase="EXECUTING",
+        triggering_execution_id=last_execution_id,
+        transaction_hook=None,
+    )
+    audit = runner._finalize(store_manifest, certificates, None)
+    return (
+        pilot,
+        load_strict_json(output / RTA4_PILOT_OBSERVATIONS),
+        load_strict_json(output / RTA4_PILOT_REPORT),
+        audit,
+    )
 
 
 @pytest.fixture(scope="module")
@@ -116,39 +207,10 @@ def frozen_contract(tmp_path_factory):
         core: load_rta4_formal_config(path, expected_core=core)
         for core, path in paths.items()
     }
-    pilot = build_pilot_manifest(
-        configs, core_record_counts={core: 1 for core in RTA4_CORES},
-        selection_seed="RTA4-TEST-PILOT-V1", output_root=root / "pilot",
-        taskset_store=root / "pilot-taskset-store",
-        config_paths=paths,
-    )
-    observations = [
-        {
-            "plan_record_id": row["plan_record_id"],
-            "mathematical_request_id": row["mathematical_request_id"],
-            "execution_id": row["execution_id"],
-            "worker_count": row["worker_count"],
-            "runtime_wall_milliseconds": index + 1,
-            "runtime_cpu_milliseconds": index + 1,
-            "peak_rss_bytes": 1024 + index,
-            "timed_out": False,
-            "attempt_count": 1,
-            "worker_throughput_milli_records_per_second": 1000,
-            "checkpoint_overhead_milliseconds": 0,
-            "resume_overhead_milliseconds": 0,
-            "simulation_wall_milliseconds": 0,
-            "trace_size_bytes": 0,
-            "output_io_bytes": 0,
-            "engineering_error": False,
-            "ci_width_engineering_warning": False,
-        }
-        for index, core in enumerate(RTA4_CORES)
-        for row in pilot["selected_records"][core]
-    ]
-    pilot_observations = build_pilot_observations(pilot, observations)
-    report = build_pilot_report(pilot, pilot_observations)
-    audit = _audited_pilot_contract(
-        root, pilot, pilot_observations, report,
+    (
+        pilot, pilot_observations, report, audit,
+    ) = _real_domain_pilot_filesystem(
+        root, configs, paths,
     )
     timeout = {
         "contract_version": "ASAP_BLOCK_V9_3_RTA4_TIMEOUT_V1",
@@ -194,6 +256,7 @@ def frozen_contract(tmp_path_factory):
         pilot_audit=audit,
         timeout_contract=timeout, operational=operational,
         config_paths=paths,
+        pilot_root=root / "pilot",
     )
     freeze = build_freeze_manifest(prepared)
     documents = {
@@ -289,7 +352,9 @@ def test_pilot_is_result_independent_and_report_is_engineering_only(
     pilot = frozen_contract["pilot"]
     assert pilot["scientific_interpretation"].startswith("FORBIDDEN")
     assert all(
-        len(pilot["selected_records"][core]) == 1 for core in RTA4_CORES
+        len(pilot["selected_records"][core])
+        == (4 if core == "CORE-5B" else 1)
+        for core in RTA4_CORES
     )
     validate_pilot_report(
         frozen_contract["report"], pilot, frozen_contract["observations"],
@@ -799,6 +864,7 @@ def _variant_contract(frozen_contract, suffix):
         pilot_audit=frozen_contract["audit"],
         timeout_contract=frozen_contract["timeout"],
         operational=operational, config_paths=paths,
+        pilot_root=frozen_contract["audit"]["pilot_root"],
     )
     freeze = build_freeze_manifest(prepared)
     documents = {
@@ -832,7 +898,7 @@ def test_freeze_rejects_test_execution_audit(frozen_contract):
         **material,
         "audit_id": domain_hash(RTA4_PILOT_AUDIT_DOMAIN, material),
     }
-    with pytest.raises(RTA4FreezeError, match="audited real"):
+    with pytest.raises(RTA4FreezeError, match="differs|audited real"):
         prepare_formal_configs(
             frozen_contract["configs"],
             pilot_manifest=frozen_contract["pilot"],
@@ -847,13 +913,14 @@ def test_freeze_rejects_test_execution_audit(frozen_contract):
                 for core in RTA4_CORES
             },
             config_paths={
-                    core: Path(
-                        frozen_contract["prepared"][core]["source_config"][
-                            "absolute_path"
-                        ]
-                    )
+                core: Path(
+                    frozen_contract["prepared"][core]["source_config"][
+                        "absolute_path"
+                    ]
+                )
                 for core in RTA4_CORES
             },
+            pilot_root=frozen_contract["audit"]["pilot_root"],
         )
 
 

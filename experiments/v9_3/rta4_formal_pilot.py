@@ -16,10 +16,10 @@ from .rta4_formal_config import (
 from .rta4_formal_plan import FormalPlanRecord, iter_formal_plan
 
 
-RTA4_PILOT_VERSION = "ASAP_BLOCK_V9_3_RTA4_PILOT_V2"
-RTA4_PILOT_CONFIG_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_PILOT_CONFIG:v2"
-RTA4_PILOT_MANIFEST_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_PILOT_MANIFEST:v2"
-RTA4_PILOT_CLOSURE_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_PILOT_CLOSURE:v2"
+RTA4_PILOT_VERSION = "ASAP_BLOCK_V9_3_RTA4_PILOT_V4"
+RTA4_PILOT_CONFIG_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_PILOT_CONFIG:v4"
+RTA4_PILOT_MANIFEST_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_PILOT_MANIFEST:v4"
+RTA4_PILOT_CLOSURE_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_PILOT_CLOSURE:v4"
 RTA4_PILOT_REPORT_VERSION = "ASAP_BLOCK_V9_3_RTA4_PILOT_REPORT_V3"
 RTA4_PILOT_REPORT_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_PILOT_REPORT:v3"
 RTA4_PILOT_OBSERVATION_VERSION = (
@@ -70,11 +70,20 @@ def source_config_evidence(
 
 
 def _selection_key(record: FormalPlanRecord, seed: str) -> str:
-    return domain_hash("ASAP_BLOCK:V9.3:RTA4_PILOT_SELECTION:v2", {
+    return domain_hash("ASAP_BLOCK:V9.3:RTA4_PILOT_SELECTION:v4", {
         "pilot_version": RTA4_PILOT_VERSION,
         "seed": seed,
         "core": record.core,
         "plan_record_id": record.record_id,
+    })
+
+
+def _group_selection_key(mathematical_request_id: str, seed: str) -> str:
+    return domain_hash("ASAP_BLOCK:V9.3:RTA4_PILOT_GROUP_SELECTION:v1", {
+        "pilot_version": RTA4_PILOT_VERSION,
+        "seed": seed,
+        "core": "CORE-5B",
+        "mathematical_request_id": mathematical_request_id,
     })
 
 
@@ -96,13 +105,92 @@ def _select(
     return tuple(sorted((item[2] for item in heap), key=lambda row: row.ordinal))
 
 
+def _select_core5b(
+    records: Iterable[FormalPlanRecord], count: int, seed: str,
+) -> Tuple[FormalPlanRecord, ...]:
+    if count % 4:
+        raise RTA4PilotError(
+            "CORE-5B pilot scale must be a positive multiple of four "
+            "execution records"
+        )
+    group_count = count // 4
+    heap: list[tuple[int, int, tuple[FormalPlanRecord, ...]]] = []
+    group: list[FormalPlanRecord] = []
+    for record in records:
+        if group and (
+            record.mathematical_request_id
+            != group[0].mathematical_request_id
+        ):
+            if len(group) != 4:
+                raise RTA4PilotError(
+                    "trusted CORE-5B plan contains an incomplete request group"
+                )
+            rows = tuple(group)
+            rank = int(_group_selection_key(
+                str(rows[0].mathematical_request_id), seed,
+            ), 16)
+            item = (-rank, -rows[0].ordinal, rows)
+            if len(heap) < group_count:
+                heapq.heappush(heap, item)
+            elif item > heap[0]:
+                heapq.heapreplace(heap, item)
+            group = []
+        group.append(record)
+    if group:
+        if len(group) != 4:
+            raise RTA4PilotError(
+                "trusted CORE-5B plan contains an incomplete request group"
+            )
+        rows = tuple(group)
+        rank = int(_group_selection_key(
+            str(rows[0].mathematical_request_id), seed,
+        ), 16)
+        item = (-rank, -rows[0].ordinal, rows)
+        if len(heap) < group_count:
+            heapq.heappush(heap, item)
+        elif item > heap[0]:
+            heapq.heapreplace(heap, item)
+    if len(heap) != group_count:
+        raise RTA4PilotError("pilot scale exceeds the trusted CORE-5B plan")
+    selected = tuple(
+        record
+        for item in sorted(
+            heap, key=lambda value: value[2][0].ordinal,
+        )
+        for record in item[2]
+    )
+    for offset in range(0, len(selected), 4):
+        rows = selected[offset:offset + 4]
+        workers = tuple(
+            int(row.material.get("worker_count", 1)) for row in rows
+        )
+        if (
+            workers != (1, 2, 4, 8)
+            or len({row.mathematical_request_id for row in rows}) != 1
+            or len({row.execution_id for row in rows}) != 4
+            or len({
+                canonical_json({
+                    key: value
+                    for key, value in row.material.items()
+                    if key not in {"worker_count", "axis_value"}
+                })
+                for row in rows
+            }) != 1
+        ):
+            raise RTA4PilotError(
+                "trusted CORE-5B request group violates the 1/2/4/8 contract"
+            )
+    return selected
+
+
 @lru_cache(maxsize=48)
 def _default_selection(
     core: str, count: int, seed: str,
 ) -> Tuple[FormalPlanRecord, ...]:
-    return _select(
-        iter_formal_plan(default_rta4_formal_config(core)), count, seed,
-    )
+    records = iter_formal_plan(default_rta4_formal_config(core))
+    if core == "CORE-5B":
+        return _select_core5b(records, count, seed)
+    return _select(records, count, seed)
 
 
 def build_pilot_manifest(
@@ -128,9 +216,7 @@ def build_pilot_manifest(
         count = core_record_counts[core]
         if type(count) is not int or isinstance(count, bool) or count < 1:
             raise RTA4PilotError("pilot record counts must be positive integers")
-        normalized = validate_rta4_formal_config(
-            configs[core], expected_core=core,
-        )
+        validate_rta4_formal_config(configs[core], expected_core=core)
         # Every path/resume variant has the same exact scientific plan.  The
         # validator above proves that contract before this cached selection.
         rows = _default_selection(core, count, selection_seed)
@@ -145,7 +231,13 @@ def build_pilot_manifest(
                 "taskset_skeleton_slot_id": row.taskset_skeleton_slot_id,
                 "taskset_slot_id": row.taskset_slot_id,
                 "worker_count": int(row.material.get("worker_count", 1)),
-                "selection_key": _selection_key(row, selection_seed),
+                "selection_key": (
+                    _group_selection_key(
+                        str(row.mathematical_request_id), selection_seed,
+                    )
+                    if core == "CORE-5B"
+                    else _selection_key(row, selection_seed)
+                ),
             }
             for row in rows
         ]
@@ -154,6 +246,18 @@ def build_pilot_manifest(
         "profile": RTA4_FORMAL_PROFILE,
         "execution_class": RTA4_PILOT_EXECUTION_CLASS,
         "selection_rule": "DOMAIN_HASH_LOWEST_RESULT_INDEPENDENT_V1",
+        "scale_unit": "EXECUTION_RECORDS",
+        "selection_unit": {
+            core: (
+                "MATHEMATICAL_REQUEST_GROUP"
+                if core == "CORE-5B" else "PLAN_RECORD"
+            )
+            for core in RTA4_CORES
+        },
+        "required_group_workers": {
+            core: ([1, 2, 4, 8] if core == "CORE-5B" else [])
+            for core in RTA4_CORES
+        },
         "selection_seed": selection_seed,
         "pilot_scale": {
             core: core_record_counts[core] for core in RTA4_CORES

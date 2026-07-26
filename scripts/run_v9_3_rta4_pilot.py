@@ -123,36 +123,58 @@ def main() -> int:
                 "pilot_manifest_id": manifest["pilot_manifest_id"],
             }, ensure_ascii=False, sort_keys=True, indent=2))
             return 0
-        if args.execution_config is None:
-            raise ValueError(
-                "--execution-config is required for execute/resume/validate"
-            )
         if args.validate_only and args.max_records is not None:
             raise ValueError(
                 "validate-only does not accept --max-records"
             )
+        if args.execute and args.execution_config is None:
+            raise ValueError("--execution-config is required for execute")
+        if (
+            (args.resume or args.validate_only)
+            and args.execution_config is not None
+        ):
+            raise ValueError(
+                "resume/validate-only use only the canonical root execution "
+                "config"
+            )
+        config_copy = root / RTA4_PILOT_EXECUTION_CONFIG
+        execution_config_path = (
+            args.execution_config.resolve(strict=True)
+            if args.execute else config_copy
+        )
         execution_config = validate_pilot_execution_config(
-            load_strict_json(args.execution_config), manifest,
+            load_strict_json(execution_config_path), manifest,
             validate_live_source=True,
         )
         if args.taskset_store is not None and str(
             args.taskset_store.resolve()
         ) != execution_config["taskset_store"]:
             raise ValueError("--taskset-store differs from execution config")
-        if args.simulator_binary is None:
+        if args.execute and args.simulator_binary is None:
             raise ValueError(
                 "CORE-3 selection requires --simulator-binary"
             )
-        simulator = args.simulator_binary.resolve(strict=True)
-        if str(simulator) != execution_config[
-            "simulator_manifest"
-        ]["absolute_path"]:
+        if args.execute:
+            simulator = args.simulator_binary.resolve(strict=True)
+            if str(simulator) != execution_config[
+                "simulator_manifest"
+            ]["absolute_path"]:
+                raise ValueError(
+                    "--simulator-binary differs from execution config"
+                )
+            if config_copy.exists():
+                if load_strict_json(config_copy) != execution_config:
+                    raise ValueError(
+                        "canonical root execution config conflicts with "
+                        "the execute input"
+                    )
+            else:
+                atomic_write_json(config_copy, execution_config)
+        elif args.simulator_binary is not None:
             raise ValueError(
-                "--simulator-binary differs from execution config"
+                "resume/validate-only use the simulator binding from the "
+                "canonical root config"
             )
-        config_copy = root / RTA4_PILOT_EXECUTION_CONFIG
-        if args.execute and not config_copy.exists():
-            atomic_write_json(config_copy, execution_config)
         runner = PilotExecutionRunner(configs, manifest, execution_config)
         summary = runner.run(
             resume=args.resume or args.validate_only,

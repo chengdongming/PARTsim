@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -19,8 +20,8 @@ from experiments.v9_3.rta4_formal_environment import (
 )
 from experiments.v9_3.rta4_formal_pilot import (
     RTA4_PILOT_OBSERVATIONS, RTA4_PILOT_OUTPUT_MARKER,
-    RTA4_PILOT_REPORT, build_pilot_manifest, build_pilot_observations,
-    build_pilot_report,
+    RTA4_PILOT_REPORT, RTA4PilotError, build_pilot_manifest,
+    build_pilot_observations, build_pilot_report,
 )
 from experiments.v9_3.rta4_formal_plan import (
     iter_core1_plan, iter_core2_plan, iter_core3_plan, iter_core4_plan,
@@ -32,11 +33,13 @@ from experiments.v9_3.rta4_formal_validation import (
 from experiments.v9_3.rta4_pilot_execution import (
     PilotExecutionRunner, PilotTasksetProvider, RTA4_PILOT_CHECKPOINT,
     RTA4_PILOT_EXECUTION_CONFIG, RTA4_PILOT_EXECUTION_MANIFEST,
+    RTA4_PILOT_RAW_TERMINAL_DIRECTORY,
     RTA4_PILOT_TERMINAL_DIRECTORY, RTA4_PILOT_TEST_EXECUTION_CLASS,
     RTA4PilotExecutionError, RTA4PilotExecutionInterrupted,
     _execution_batches,
     audit_pilot_namespace, build_pilot_execution_config,
-    runtime_ci_engineering_warnings, validate_pilot_execution_config,
+    compute_pilot_output_io_bytes, runtime_ci_engineering_warnings,
+    validate_pilot_execution_config,
 )
 TEST_ROOT = Path(__file__).resolve().parent
 if str(TEST_ROOT) not in sys.path:
@@ -84,7 +87,10 @@ def _context(root: Path, *, counts: int = 1, workers: int = 2):
     store = root / "store"
     manifest = build_pilot_manifest(
         CONFIGS,
-        core_record_counts={core: counts for core in RTA4_CORES},
+        core_record_counts={
+            core: (counts * 4 if core == "CORE-5B" else counts)
+            for core in RTA4_CORES
+        },
         selection_seed="RTA4-PILOT-EXECUTION-TEST-V1",
         output_root=output, taskset_store=store,
         config_paths=CONFIG_PATHS,
@@ -120,6 +126,10 @@ def _file_bytes(root: Path) -> dict[str, bytes]:
         for path in sorted(root.rglob("*"))
         if path.is_file()
     }
+
+
+def _hard_exit_rta(_record, _certificate):
+    os._exit(37)
 
 
 @pytest.fixture(scope="module")
@@ -178,20 +188,28 @@ def completed_context(tmp_path_factory):
 
 def test_plan_only_selection_is_deterministic_and_exact(tmp_path):
     left = build_pilot_manifest(
-        CONFIGS, core_record_counts={core: 2 for core in RTA4_CORES},
+        CONFIGS, core_record_counts={
+            core: (8 if core == "CORE-5B" else 2)
+            for core in RTA4_CORES
+        },
         selection_seed="RTA4-PLAN-ONLY-V1",
         output_root=tmp_path / "output", taskset_store=tmp_path / "store",
         config_paths=CONFIG_PATHS,
     )
     right = build_pilot_manifest(
-        CONFIGS, core_record_counts={core: 2 for core in RTA4_CORES},
+        CONFIGS, core_record_counts={
+            core: (8 if core == "CORE-5B" else 2)
+            for core in RTA4_CORES
+        },
         selection_seed="RTA4-PLAN-ONLY-V1",
         output_root=tmp_path / "output", taskset_store=tmp_path / "store",
         config_paths=CONFIG_PATHS,
     )
     assert left == right
     for core in RTA4_CORES:
-        assert len(left["selected_records"][core]) == 2
+        assert len(left["selected_records"][core]) == (
+            8 if core == "CORE-5B" else 2
+        )
         for row in left["selected_records"][core]:
             assert set(row) == {
                 "ordinal", "plan_record_id", "kind",
@@ -224,6 +242,14 @@ def test_shared_provider_reuses_cross_core_slot_certificates_without_generation(
     assert provider(core4) is certificate4
     assert provider(core5b) is certificate4
 
+    dependent_first = PilotTasksetProvider(CONFIGS)
+    generated_from_dependent = dependent_first(core2)
+    assert dependent_first(core1) is generated_from_dependent
+    independently_generated = PilotTasksetProvider(CONFIGS)(core1)
+    assert generated_from_dependent.canonical_bytes() == (
+        independently_generated.canonical_bytes()
+    )
+
 
 def test_core5b_batches_honor_manifest_worker_conditions_in_order():
     records = list(iter_core5b_plan())[:4]
@@ -251,7 +277,9 @@ def test_process_worker_and_parent_only_partial_persistence(tmp_path):
     )
     assert not summary.complete
     terminals = tuple(
-        (context["output"] / RTA4_PILOT_TERMINAL_DIRECTORY).glob("*.json")
+        (
+            context["output"] / RTA4_PILOT_RAW_TERMINAL_DIRECTORY
+        ).glob("*.json")
     )
     assert len(terminals) == 1
     assert not (context["output"] / RTA4_PILOT_OBSERVATIONS).exists()
@@ -260,7 +288,13 @@ def test_process_worker_and_parent_only_partial_persistence(tmp_path):
         (context["output"] / RTA4_PILOT_CHECKPOINT).read_text()
     )
     assert checkpoint["state"] == "INCOMPLETE_PILOT"
-    assert checkpoint["completed_record_count"] == 1
+    generation = json.loads(
+        (
+            context["output"] / "rta4_pilot_checkpoints"
+            / checkpoint["checkpoint_filename"]
+        ).read_text()
+    )
+    assert generation["completed_raw_count"] == 1
     assert audit_pilot_namespace(
         context["output"], CONFIGS, require_complete=False,
     )["freeze_eligible"] is False
@@ -278,7 +312,7 @@ def test_process_transport_failure_becomes_engineering_error(tmp_path):
     assert not summary.complete and summary.processed_count == 1
     terminal_path = next(
         (
-            context["output"] / RTA4_PILOT_TERMINAL_DIRECTORY
+            context["output"] / RTA4_PILOT_RAW_TERMINAL_DIRECTORY
         ).glob("*.json")
     )
     terminal = json.loads(terminal_path.read_text())
@@ -290,7 +324,7 @@ def test_all_core_callbacks_resume_and_engineering_only_report(
     completed_context,
 ):
     output = completed_context["output"]
-    assert completed_context["callback_count"] == 6
+    assert completed_context["callback_count"] == 9
     audit = audit_pilot_namespace(output, CONFIGS)
     assert audit["checkpoint_state"] == "PILOT_COMPLETE"
     assert audit["execution_class"] == RTA4_PILOT_TEST_EXECUTION_CLASS
@@ -299,7 +333,7 @@ def test_all_core_callbacks_resume_and_engineering_only_report(
     observations = json.loads(
         (output / RTA4_PILOT_OBSERVATIONS).read_text()
     )
-    assert observations["observation_count"] == 6
+    assert observations["observation_count"] == 9
     assert {row["core"] for row in observations["observations"]} == set(
         RTA4_CORES
     )
@@ -309,7 +343,7 @@ def test_all_core_callbacks_resume_and_engineering_only_report(
     )
     report = json.loads((output / RTA4_PILOT_REPORT).read_text())
     assert report["scientific_results_included"] is False
-    assert len(report["engineering_metrics"]["strata"]) == 6
+    assert len(report["engineering_metrics"]["strata"]) == 9
     forbidden = {
         "schedulability", "candidate", "witness", "response_time",
         "proven_count", "method_rank", "scientific_result",
@@ -345,12 +379,6 @@ def test_validate_only_is_byte_for_byte_read_only(completed_context):
         sys.executable, str(ROOT / "scripts" / "run_v9_3_rta4_pilot.py"),
         "--validate-only",
         "--output-root", str(completed_context["output"]),
-        "--execution-config", str(
-            completed_context["output"] / RTA4_PILOT_EXECUTION_CONFIG
-        ),
-        "--simulator-binary", str(
-            completed_context["root"] / "fake-simulator"
-        ),
     ]
     for core in RTA4_CORES:
         command.extend(("--config", f"{core}={CONFIG_PATHS[core]}"))
@@ -389,7 +417,7 @@ def test_audit_rejects_missing_extra_or_damaged_evidence(
             atomic_write_json(terminals[0], payload)
         else:
             payload = json.loads(checkpoint.read_text())
-            payload["completed_record_count"] -= 1
+            payload["checkpoint_pointer_sha256"] = "0" * 64
             atomic_write_json(checkpoint, payload)
         with pytest.raises(RTA4PilotExecutionError):
             audit_pilot_namespace(output, CONFIGS)
@@ -526,7 +554,7 @@ def test_interruption_checkpoint_is_resumable(tmp_path):
         ),
         use_processes=False,
     )
-    assert resumed.complete and resumed.processed_count == 4
+    assert resumed.complete and resumed.processed_count == 7
 
 
 def test_imported_or_test_observations_are_not_freeze_eligible(
@@ -564,3 +592,308 @@ def test_execution_config_has_no_hidden_operational_defaults(tmp_path):
     damaged.pop("maximum_attempts")
     with pytest.raises(RTA4PilotExecutionError, match="field set"):
         validate_pilot_execution_config(damaged, context["manifest"])
+
+
+@pytest.mark.parametrize("count", [1, 2, 3, 5])
+def test_core5b_selection_rejects_incomplete_execution_groups(
+    tmp_path, count,
+):
+    scale = {core: 1 for core in RTA4_CORES}
+    scale["CORE-5B"] = count
+    with pytest.raises(RTA4PilotError, match="multiple of four"):
+        build_pilot_manifest(
+            CONFIGS, core_record_counts=scale,
+            selection_seed="RTA4-CORE5B-GROUP-REJECT-V1",
+            output_root=tmp_path / "output",
+            taskset_store=tmp_path / "store",
+            config_paths=CONFIG_PATHS,
+        )
+
+
+@pytest.mark.parametrize("count,group_count", [(4, 1), (8, 2)])
+def test_core5b_selection_expands_complete_mathematical_groups(
+    tmp_path, count, group_count,
+):
+    scale = {core: 1 for core in RTA4_CORES}
+    scale["CORE-5B"] = count
+    manifest = build_pilot_manifest(
+        CONFIGS, core_record_counts=scale,
+        selection_seed="RTA4-CORE5B-GROUP-V1",
+        output_root=tmp_path / "output",
+        taskset_store=tmp_path / "store",
+        config_paths=CONFIG_PATHS,
+    )
+    rows = manifest["selected_records"]["CORE-5B"]
+    assert manifest["scale_unit"] == "EXECUTION_RECORDS"
+    assert manifest["selection_unit"]["CORE-5B"] == (
+        "MATHEMATICAL_REQUEST_GROUP"
+    )
+    assert manifest["required_group_workers"]["CORE-5B"] == [1, 2, 4, 8]
+    assert len(rows) == group_count * 4
+    for offset in range(0, len(rows), 4):
+        group = rows[offset:offset + 4]
+        assert [row["worker_count"] for row in group] == [1, 2, 4, 8]
+        assert len({row["mathematical_request_id"] for row in group}) == 1
+        assert len({row["selection_key"] for row in group}) == 1
+        assert len({row["execution_id"] for row in group}) == 4
+
+
+def test_resume_hydrates_complete_store_without_provider_calls(tmp_path):
+    context = _context(tmp_path)
+    runner = PilotExecutionRunner(
+        CONFIGS, context["manifest"], context["execution"],
+    )
+    runner.run(
+        max_records=1, certificate_provider=_synthetic_certificate,
+        rta_callback=_synthetic_rta, use_processes=False,
+    )
+    calls = []
+
+    def forbidden_provider(record):
+        calls.append(record.execution_id)
+        raise AssertionError("resume regenerated a pre-materialized slot")
+
+    resumed = runner.run(
+        resume=True, certificate_provider=forbidden_provider,
+        rta_callback=_synthetic_rta,
+        simulation_callback=_synthetic_simulator(
+            context["root"] / "resume-hydration-traces"
+        ),
+        use_processes=False,
+    )
+    assert resumed.complete
+    assert calls == []
+
+
+@pytest.mark.parametrize("damage", ["missing", "extra", "conflict"])
+def test_partial_store_inventory_is_exact_before_resume(
+    tmp_path, damage,
+):
+    context = _context(tmp_path)
+    PilotExecutionRunner(
+        CONFIGS, context["manifest"], context["execution"],
+    ).run(
+        max_records=1, certificate_provider=_synthetic_certificate,
+        rta_callback=_synthetic_rta, use_processes=False,
+    )
+    certificate_root = context["store"] / "certificates"
+    target = next(certificate_root.glob("*.json"))
+    saved = target.read_bytes()
+    extra = certificate_root / f"{'f' * 64}.json"
+    try:
+        if damage == "missing":
+            target.unlink()
+        elif damage == "extra":
+            extra.write_bytes(saved)
+        else:
+            target.write_bytes(saved + b" ")
+        with pytest.raises(RTA4PilotExecutionError, match="certificate|store"):
+            audit_pilot_namespace(
+                context["output"], CONFIGS, require_complete=False,
+            )
+    finally:
+        extra.unlink(missing_ok=True)
+        target.write_bytes(saved)
+
+
+def test_runner_rejects_foreign_config_before_namespace_write(tmp_path):
+    context = _context(tmp_path)
+    before = _file_bytes(context["output"])
+    foreign = deepcopy(context["execution"])
+    foreign["provisional_rta_attempt_timeout_seconds"] += 1
+    material = dict(foreign)
+    material.pop("execution_config_id")
+    from experiments.v9_3.rta4_pilot_execution import (
+        RTA4_PILOT_EXECUTION_CONFIG_DOMAIN,
+    )
+    from experiments.v9_3.rta4_formal_config import domain_hash
+    foreign["execution_config_id"] = domain_hash(
+        RTA4_PILOT_EXECUTION_CONFIG_DOMAIN, material,
+    )
+    with pytest.raises(RTA4PilotExecutionError, match="canonical root"):
+        PilotExecutionRunner(CONFIGS, context["manifest"], foreign)
+    assert _file_bytes(context["output"]) == before
+
+
+@pytest.mark.parametrize("boundary", [10, 100, 1000, 10000])
+def test_output_io_preimage_is_unique_across_decimal_boundaries(boundary):
+    padding = ""
+    while True:
+        preimage = {"padding": padding}
+        size = len(json.dumps(
+            preimage, ensure_ascii=False, sort_keys=True,
+            separators=(",", ":"), allow_nan=False,
+        ).encode("utf-8"))
+        if size >= boundary - 1:
+            break
+        padding += "x"
+    first = compute_pilot_output_io_bytes(preimage, 7)
+    second = compute_pilot_output_io_bytes(
+        {"padding": padding}, 7,
+    )
+    assert first == second == size + 7
+    assert compute_pilot_output_io_bytes(preimage, 13) == first + 6
+
+
+@pytest.mark.parametrize(
+    "stage,occurrence",
+    [
+        ("after_raw_terminal", 1),
+        ("after_checkpoint_generation", 2),
+        ("after_checkpoint_event", 2),
+        ("after_checkpoint_pointer", 2),
+        ("during_finalization", 1),
+    ],
+)
+def test_transaction_crash_windows_resume_without_duplicate_raw_execution(
+    tmp_path, stage, occurrence,
+):
+    context = _context(tmp_path)
+    calls = []
+
+    def rta(record, certificate):
+        calls.append(record.execution_id)
+        return _synthetic_rta(record, certificate)
+
+    simulator_impl = _synthetic_simulator(
+        context["root"] / "transaction-traces"
+    )
+
+    def simulation(*args):
+        calls.append(args[0].execution_id)
+        return simulator_impl(*args)
+
+    hits = 0
+
+    def hook(observed):
+        nonlocal hits
+        if observed == stage:
+            hits += 1
+            if hits == occurrence:
+                raise RTA4PilotExecutionInterrupted(stage)
+
+    runner = PilotExecutionRunner(
+        CONFIGS, context["manifest"], context["execution"],
+    )
+    with pytest.raises(RTA4PilotExecutionInterrupted):
+        runner.run(
+            certificate_provider=_synthetic_certificate,
+            rta_callback=rta, simulation_callback=simulation,
+            use_processes=False, transaction_hook=hook,
+        )
+    audit_pilot_namespace(
+        context["output"], CONFIGS, require_complete=False,
+        allow_recovery_artifacts=True,
+    )
+    resumed = runner.run(
+        resume=True, certificate_provider=_synthetic_certificate,
+        rta_callback=rta, simulation_callback=simulation,
+        use_processes=False,
+    )
+    assert resumed.complete
+    assert len(calls) == len(set(calls)) == 9
+    assert audit_pilot_namespace(
+        context["output"], CONFIGS,
+    )["recovery_orphan_count"] == 0
+
+
+def test_same_size_trace_replacement_and_damaged_store_marker_fail_audit(
+    completed_context,
+):
+    output = completed_context["output"]
+    trace = next((output / "rta4_pilot_traces").glob("*.json"))
+    marker = (
+        completed_context["store"] / "formal_taskset_store_manifest.json"
+    )
+    trace_bytes = trace.read_bytes()
+    marker_bytes = marker.read_bytes()
+    try:
+        replacement = bytearray(trace_bytes)
+        replacement[-2] = ord(" ")
+        trace.write_bytes(bytes(replacement))
+        assert trace.stat().st_size == len(trace_bytes)
+        with pytest.raises(RTA4PilotExecutionError, match="trace"):
+            audit_pilot_namespace(output, CONFIGS)
+        trace.write_bytes(trace_bytes)
+        marker.write_text("{}\n", encoding="utf-8")
+        with pytest.raises(RTA4PilotExecutionError, match="marker"):
+            audit_pilot_namespace(output, CONFIGS)
+    finally:
+        trace.write_bytes(trace_bytes)
+        marker.write_bytes(marker_bytes)
+
+
+def test_hard_child_exit_is_parent_canonicalized_and_temp_is_cleaned(
+    tmp_path,
+):
+    context = _context(tmp_path, workers=1)
+    summary = PilotExecutionRunner(
+        CONFIGS, context["manifest"], context["execution"],
+    ).run(
+        max_records=1, certificate_provider=_synthetic_certificate,
+        rta_callback=_hard_exit_rta, use_processes=True,
+    )
+    assert not summary.complete and summary.processed_count == 1
+    worker_root = (
+        context["output"] / "rta4_pilot_worker_tmp"
+    )
+    assert list(worker_root.iterdir()) == []
+    audit_pilot_namespace(
+        context["output"], CONFIGS, require_complete=False,
+    )
+
+
+def test_cli_plan_resume_validate_and_error_modes(
+    tmp_path, completed_context,
+):
+    plan_root = tmp_path / "cli-plan"
+    command = [
+        sys.executable, str(ROOT / "scripts" / "run_v9_3_rta4_pilot.py"),
+        "--plan-only", "--output-root", str(plan_root),
+        "--taskset-store", str(tmp_path / "cli-store"),
+        "--selection-seed", "RTA4-CLI-PLAN-V1",
+    ]
+    for core in RTA4_CORES:
+        command.extend(("--config", f"{core}={CONFIG_PATHS[core]}"))
+        command.extend((
+            "--scale", f"{core}={'4' if core == 'CORE-5B' else '1'}",
+        ))
+    planned = subprocess.run(
+        command, cwd=ROOT, check=False, text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    assert planned.returncode == 0, planned.stderr
+    assert json.loads(planned.stdout)["mode"] == "plan-only"
+
+    before = _file_bytes(completed_context["output"])
+    common = [
+        "--output-root", str(completed_context["output"]),
+    ]
+    for core in RTA4_CORES:
+        common.extend(("--config", f"{core}={CONFIG_PATHS[core]}"))
+    for mode in ("--resume", "--validate-only"):
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "scripts" / "run_v9_3_rta4_pilot.py"),
+                mode, *common,
+            ],
+            cwd=ROOT, check=False, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        assert result.returncode == 0, result.stderr
+    rejected = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "run_v9_3_rta4_pilot.py"),
+            "--resume", *common, "--execution-config",
+            str(
+                completed_context["output"]
+                / RTA4_PILOT_EXECUTION_CONFIG
+            ),
+        ],
+        cwd=ROOT, check=False, text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    assert rejected.returncode != 0
+    assert _file_bytes(completed_context["output"]) == before

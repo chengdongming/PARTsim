@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass
+from functools import lru_cache
 import hashlib
 import json
 import os
@@ -17,6 +18,7 @@ from pathlib import Path
 import random
 import resource
 import shutil
+import tempfile
 import time
 from typing import Any, Callable, Dict, Iterable, Mapping, Sequence
 
@@ -25,7 +27,8 @@ import yaml
 from .constrained_taskset_identity import TasksetIdentityCertificate
 from .result_writer import atomic_write_json, atomic_write_text
 from .rta4_formal_config import (
-    RTA4_CORES, canonical_json, domain_hash, validate_rta4_formal_config,
+    RTA4_CORES, canonical_json, default_rta4_formal_config, domain_hash,
+    validate_rta4_formal_config,
 )
 from .rta4_formal_environment import (
     RTA4_DEPENDENCY_DOMAIN, RTA4_DEPENDENCY_MANIFEST_VERSION,
@@ -47,57 +50,91 @@ from .rta4_formal_plan import FormalPlanRecord, iter_formal_plan
 from .rta4_formal_pipeline import RTA4FormalRunner
 from .rta4_formal_store import (
     FORMAL_TASKSET_STORE_MANIFEST, RTA4FormalTasksetStore,
+    _store_manifest as _formal_store_manifest,
 )
 
 
 RTA4_PILOT_EXECUTION_CONFIG_VERSION = (
-    "ASAP_BLOCK_V9_3_RTA4_PILOT_EXECUTION_CONFIG_V1"
+    "ASAP_BLOCK_V9_3_RTA4_PILOT_EXECUTION_CONFIG_V2"
 )
 RTA4_PILOT_EXECUTION_MANIFEST_VERSION = (
-    "ASAP_BLOCK_V9_3_RTA4_PILOT_EXECUTION_MANIFEST_V1"
+    "ASAP_BLOCK_V9_3_RTA4_PILOT_EXECUTION_MANIFEST_V2"
 )
 RTA4_PILOT_CHECKPOINT_VERSION = (
-    "ASAP_BLOCK_V9_3_RTA4_PILOT_CHECKPOINT_V1"
+    "ASAP_BLOCK_V9_3_RTA4_PILOT_CHECKPOINT_V2"
 )
-RTA4_PILOT_TERMINAL_VERSION = (
-    "ASAP_BLOCK_V9_3_RTA4_PILOT_TERMINAL_V1"
+RTA4_PILOT_RAW_TERMINAL_VERSION = (
+    "ASAP_BLOCK_V9_3_RTA4_PILOT_RAW_TERMINAL_V1"
 )
-RTA4_PILOT_AUDIT_VERSION = "ASAP_BLOCK_V9_3_RTA4_PILOT_AUDIT_V1"
+RTA4_PILOT_FINAL_TERMINAL_VERSION = (
+    "ASAP_BLOCK_V9_3_RTA4_PILOT_FINAL_TERMINAL_V2"
+)
+RTA4_PILOT_TERMINAL_VERSION = RTA4_PILOT_FINAL_TERMINAL_VERSION
+RTA4_PILOT_CHECKPOINT_EVENT_VERSION = (
+    "ASAP_BLOCK_V9_3_RTA4_PILOT_CHECKPOINT_EVENT_V1"
+)
+RTA4_PILOT_RESUME_EVENT_VERSION = (
+    "ASAP_BLOCK_V9_3_RTA4_PILOT_RESUME_EVENT_V1"
+)
+RTA4_PILOT_STORE_MANIFEST_VERSION = (
+    "ASAP_BLOCK_V9_3_RTA4_PILOT_TASKSET_STORE_V1"
+)
+RTA4_PILOT_AUDIT_VERSION = "ASAP_BLOCK_V9_3_RTA4_PILOT_AUDIT_V2"
 RTA4_PILOT_RUNTIME_CI_RULE_VERSION = (
     "ASAP_BLOCK_V9_3_RTA4_PILOT_RUNTIME_CI_RULE_V1"
 )
 
 RTA4_PILOT_EXECUTION_CONFIG_DOMAIN = (
-    "ASAP_BLOCK:V9.3:RTA4_PILOT_EXECUTION_CONFIG:v1"
+    "ASAP_BLOCK:V9.3:RTA4_PILOT_EXECUTION_CONFIG:v2"
 )
 RTA4_PILOT_EXECUTION_MANIFEST_DOMAIN = (
-    "ASAP_BLOCK:V9.3:RTA4_PILOT_EXECUTION_MANIFEST:v1"
+    "ASAP_BLOCK:V9.3:RTA4_PILOT_EXECUTION_MANIFEST:v2"
 )
 RTA4_PILOT_CHECKPOINT_DOMAIN = (
-    "ASAP_BLOCK:V9.3:RTA4_PILOT_CHECKPOINT:v1"
+    "ASAP_BLOCK:V9.3:RTA4_PILOT_CHECKPOINT:v2"
 )
-RTA4_PILOT_TERMINAL_DOMAIN = (
-    "ASAP_BLOCK:V9.3:RTA4_PILOT_TERMINAL:v1"
+RTA4_PILOT_RAW_TERMINAL_DOMAIN = (
+    "ASAP_BLOCK:V9.3:RTA4_PILOT_RAW_TERMINAL:v1"
 )
-RTA4_PILOT_AUDIT_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_PILOT_AUDIT:v1"
+RTA4_PILOT_FINAL_TERMINAL_DOMAIN = (
+    "ASAP_BLOCK:V9.3:RTA4_PILOT_FINAL_TERMINAL:v2"
+)
+RTA4_PILOT_TERMINAL_DOMAIN = RTA4_PILOT_FINAL_TERMINAL_DOMAIN
+RTA4_PILOT_CHECKPOINT_EVENT_DOMAIN = (
+    "ASAP_BLOCK:V9.3:RTA4_PILOT_CHECKPOINT_EVENT:v1"
+)
+RTA4_PILOT_RESUME_EVENT_DOMAIN = (
+    "ASAP_BLOCK:V9.3:RTA4_PILOT_RESUME_EVENT:v1"
+)
+RTA4_PILOT_STORE_MANIFEST_DOMAIN = (
+    "ASAP_BLOCK:V9.3:RTA4_PILOT_TASKSET_STORE:v1"
+)
+RTA4_PILOT_AUDIT_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_PILOT_AUDIT:v2"
 
 RTA4_PILOT_TEST_EXECUTION_CLASS = "ENGINEERING_PILOT_TEST"
 RTA4_PILOT_EXECUTION_CONFIG = "rta4_pilot_execution_config.json"
 RTA4_PILOT_EXECUTION_MANIFEST = "rta4_pilot_execution_manifest.json"
 RTA4_PILOT_CHECKPOINT = "rta4_pilot_checkpoint.json"
 RTA4_PILOT_AUDIT = "rta4_pilot_audit.json"
-RTA4_PILOT_TERMINAL_DIRECTORY = "rta4_pilot_terminals"
+RTA4_PILOT_RAW_TERMINAL_DIRECTORY = "rta4_pilot_raw_terminals"
+RTA4_PILOT_FINAL_TERMINAL_DIRECTORY = "rta4_pilot_final_terminals"
+RTA4_PILOT_TERMINAL_DIRECTORY = RTA4_PILOT_FINAL_TERMINAL_DIRECTORY
 RTA4_PILOT_TRACE_DIRECTORY = "rta4_pilot_traces"
-RTA4_PILOT_WORKER_TRACE_DIRECTORY = ".rta4_pilot_worker_traces"
+RTA4_PILOT_CHECKPOINT_DIRECTORY = "rta4_pilot_checkpoints"
+RTA4_PILOT_CHECKPOINT_EVENT_DIRECTORY = "rta4_pilot_checkpoint_events"
+RTA4_PILOT_RESUME_EVENT_DIRECTORY = "rta4_pilot_resume_events"
+RTA4_PILOT_WORKER_TRACE_DIRECTORY = "rta4_pilot_worker_tmp"
+RTA4_PILOT_STORE_MANIFEST = "rta4_pilot_taskset_store_manifest.json"
 
-PILOT_RESUME_POLICY = "REVALIDATE_PILOT_BINDINGS_SKIP_TERMINALS_V1"
+PILOT_RESUME_POLICY = "TRANSACTIONAL_RAW_EVIDENCE_RESUME_V2"
 PILOT_THROUGHPUT_DEFINITION = (
     "floor(1000*completed_batch_records/batch_wall_seconds);"
     "zero_if_nonpositive_elapsed"
 )
 PILOT_OUTPUT_IO_DEFINITION = (
-    "canonical_terminal_bytes_plus_record_trace_bytes;"
-    "shared_certificates_checkpoints_observations_reports_excluded"
+    "ASAP_BLOCK_V9_3_RTA4_PILOT_OUTPUT_IO_DEFINITION_V2:"
+    "canonical_json(final_terminal_preimage)_utf8_bytes_plus_trace_bytes;"
+    "output_io_bytes_and_final_terminal_sha256_excluded"
 )
 
 _CONFIG_FIELDS = frozenset({
@@ -114,35 +151,28 @@ _CONFIG_FIELDS = frozenset({
     "execution_config_id",
 })
 
-_METRIC_FIELDS = frozenset({
+_RAW_METRIC_FIELDS = frozenset({
     "runtime_wall_milliseconds", "runtime_cpu_milliseconds",
     "peak_rss_bytes", "timed_out", "attempt_count",
     "worker_throughput_milli_records_per_second",
-    "checkpoint_overhead_milliseconds", "resume_overhead_milliseconds",
     "simulation_wall_milliseconds", "trace_size_bytes",
-    "output_io_bytes", "engineering_error",
+    "engineering_error",
+})
+_FINAL_METRIC_FIELDS = frozenset({
+    *_RAW_METRIC_FIELDS,
+    "checkpoint_overhead_milliseconds", "resume_overhead_milliseconds",
+    "output_io_bytes",
     "ci_width_engineering_warning",
 })
+_METRIC_FIELDS = _FINAL_METRIC_FIELDS
 
 _TERMINAL_IDENTITY_FIELDS = frozenset({
-    "terminal_version", "execution_class", "pilot_manifest_id",
+    "execution_class", "pilot_manifest_id",
     "execution_config_id", "core", "ordinal", "kind", "plan_record_id",
     "mathematical_request_id", "execution_id", "method",
     "taskset_skeleton_slot_id", "taskset_slot_id", "worker_count",
     "selection_key", "generation_request_id", "taskset_skeleton_id",
     "taskset_id", "taskset_hash", "power_vector_hash",
-})
-
-_AUDIT_FIELDS = frozenset({
-    "audit_version", "audit_status", "execution_class", "freeze_eligible",
-    "pilot_root", "pilot_manifest_id", "execution_config_id",
-    "execution_manifest_id", "checkpoint_id", "checkpoint_state",
-    "terminal_count", "terminal_set_sha256",
-    "taskset_certificate_set_sha256", "source_manifest_id",
-    "dependency_manifest_id", "environment_manifest_id",
-    "hardware_manifest_id", "simulator_manifest_id",
-    "pilot_observations_id", "pilot_report_id", "pilot_closure_id",
-    "scientific_results_included", "audit_id",
 })
 
 
@@ -565,6 +595,25 @@ def _selected_rows(manifest: Mapping[str, Any]) -> tuple[Dict[str, Any], ...]:
     return tuple(rows)
 
 
+@lru_cache(maxsize=96)
+def _trusted_records_at_ordinals(
+    core: str, ordinals: tuple[int, ...],
+) -> tuple[FormalPlanRecord, ...]:
+    pending = set(ordinals)
+    records = []
+    for record in iter_formal_plan(default_rta4_formal_config(core)):
+        if record.ordinal in pending:
+            records.append(record)
+            pending.remove(record.ordinal)
+            if not pending:
+                break
+    if pending:
+        raise RTA4PilotExecutionError(
+            "selected ordinal is absent from trusted plan"
+        )
+    return tuple(records)
+
+
 def reconstruct_selected_records(
     configs: Mapping[str, Mapping[str, Any]],
     manifest: Mapping[str, Any],
@@ -575,9 +624,7 @@ def reconstruct_selected_records(
         raise RTA4PilotExecutionError("all six configs are required")
     records = []
     for core in RTA4_CORES:
-        config = validate_rta4_formal_config(
-            configs[core], expected_core=core,
-        )
+        validate_rta4_formal_config(configs[core], expected_core=core)
         selected = manifest["selected_records"][core]
         by_ordinal = {int(row["ordinal"]): row for row in selected}
         if len(by_ordinal) != len(selected):
@@ -585,9 +632,9 @@ def reconstruct_selected_records(
                 "pilot selection contains duplicate ordinals"
             )
         pending = set(by_ordinal)
-        for record in iter_formal_plan(config):
-            if record.ordinal not in pending:
-                continue
+        for record in _trusted_records_at_ordinals(
+            core, tuple(sorted(pending)),
+        ):
             row = by_ordinal[record.ordinal]
             expected = {
                 "ordinal": record.ordinal,
@@ -609,8 +656,6 @@ def reconstruct_selected_records(
                 )
             records.append(record)
             pending.remove(record.ordinal)
-            if not pending:
-                break
         if pending:
             raise RTA4PilotExecutionError(
                 "selected ordinal is absent from trusted plan"
@@ -713,6 +758,25 @@ class PilotTasksetProvider:
     ) -> TasksetIdentityCertificate:
         return self._provider(record)
 
+    def hydrate(
+        self, taskset_slot_id: str,
+        certificate: TasksetIdentityCertificate,
+    ) -> None:
+        if type(certificate) is not TasksetIdentityCertificate:
+            raise RTA4PilotExecutionError(
+                "pilot store hydration requires a PR-B certificate"
+            )
+        certificate.validate()
+        slot = str(taskset_slot_id)
+        existing = self._provider._tasksets.get(slot)
+        if existing is not None and existing.canonical_bytes() != (
+            certificate.canonical_bytes()
+        ):
+            raise RTA4PilotExecutionError(
+                "pilot store hydration conflicts with cached slot"
+            )
+        self._provider._tasksets[slot] = certificate
+
 
 def _rss_bytes() -> int:
     value = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
@@ -733,6 +797,7 @@ def _worker_execute(
     config: Mapping[str, Any],
     execution_config: Mapping[str, Any],
     callback: Callable[..., Mapping[str, Any]] | None,
+    worker_temp_root: str | None,
 ) -> Dict[str, Any]:
     """Worker-only computation; no terminal/certificate/checkpoint writes."""
 
@@ -744,6 +809,7 @@ def _worker_execute(
     engineering_error = False
     trace_payload: bytes | None = None
     simulation_wall = 0
+    simulation_id: str | None = None
     overrides: Mapping[str, Any] = {}
     worker_trace_root: Path | None = None
     try:
@@ -781,11 +847,11 @@ def _worker_execute(
                     ProductionSimulationExecutor,
                 )
                 support = execution_config["simulation_support"]
-                worker_trace_root = (
-                    Path(execution_config["output_root"])
-                    / RTA4_PILOT_WORKER_TRACE_DIRECTORY
-                    / str(record.execution_id)
-                )
+                if worker_temp_root is None:
+                    raise RTA4PilotExecutionError(
+                        "real simulation worker lacks a parent-owned temp root"
+                    )
+                worker_trace_root = Path(worker_temp_root)
                 result = ProductionSimulationExecutor.execute_bound(
                     simulator_binary=execution_config[
                         "simulator_manifest"
@@ -862,14 +928,6 @@ def _worker_execute(
     except Exception:
         engineering_error = True
         trace_payload = None
-    finally:
-        if worker_trace_root is not None:
-            shutil.rmtree(worker_trace_root, ignore_errors=True)
-            worker_parent = worker_trace_root.parent
-            try:
-                worker_parent.rmdir()
-            except OSError:
-                pass
     runtime_wall = _nonnegative_milliseconds(
         time.monotonic_ns() - wall_started
     )
@@ -886,13 +944,9 @@ def _worker_execute(
         "timed_out": timed_out,
         "attempt_count": attempts,
         "worker_throughput_milli_records_per_second": 0,
-        "checkpoint_overhead_milliseconds": 0,
-        "resume_overhead_milliseconds": 0,
         "simulation_wall_milliseconds": simulation_wall,
         "trace_size_bytes": 0,
-        "output_io_bytes": 0,
         "engineering_error": engineering_error,
-        "ci_width_engineering_warning": True,
     }
     if (
         execution_config["execution_class"]
@@ -900,7 +954,7 @@ def _worker_execute(
         and isinstance(overrides, Mapping)
     ):
         for name, value in overrides.items():
-            if name not in _METRIC_FIELDS:
+            if name not in _RAW_METRIC_FIELDS:
                 raise RTA4PilotExecutionError(
                     "test metric override contains an unknown field"
                 )
@@ -909,6 +963,7 @@ def _worker_execute(
         "plan_record_id": record.record_id,
         "execution_id": record.execution_id,
         "taskset_id": certificate.taskset_id,
+        "simulation_id": simulation_id,
         "trace_payload": trace_payload,
         "metrics": metrics,
     }
@@ -967,19 +1022,20 @@ def _parent_worker_failure(
             "timed_out": False,
             "attempt_count": 0,
             "worker_throughput_milli_records_per_second": 0,
-            "checkpoint_overhead_milliseconds": 0,
-            "resume_overhead_milliseconds": 0,
             "simulation_wall_milliseconds": 0,
             "trace_size_bytes": 0,
-            "output_io_bytes": 0,
             "engineering_error": True,
-            "ci_width_engineering_warning": True,
         },
+        "simulation_id": None,
     }
 
 
-def _validate_metrics(metrics: Mapping[str, Any]) -> Dict[str, Any]:
-    if not isinstance(metrics, Mapping) or set(metrics) != _METRIC_FIELDS:
+def _validate_metrics(
+    metrics: Mapping[str, Any], *,
+    final: bool = True,
+) -> Dict[str, Any]:
+    fields = _FINAL_METRIC_FIELDS if final else _RAW_METRIC_FIELDS
+    if not isinstance(metrics, Mapping) or set(metrics) != fields:
         raise RTA4PilotExecutionError(
             "pilot worker metrics have an unexpected field set"
         )
@@ -987,9 +1043,14 @@ def _validate_metrics(metrics: Mapping[str, Any]) -> Dict[str, Any]:
         "runtime_wall_milliseconds", "runtime_cpu_milliseconds",
         "peak_rss_bytes", "attempt_count",
         "worker_throughput_milli_records_per_second",
-        "checkpoint_overhead_milliseconds", "resume_overhead_milliseconds",
         "simulation_wall_milliseconds", "trace_size_bytes",
-        "output_io_bytes",
+        *(
+            (
+                "checkpoint_overhead_milliseconds",
+                "resume_overhead_milliseconds", "output_io_bytes",
+            )
+            if final else ()
+        ),
     ):
         if type(metrics[field]) is not int or metrics[field] < 0:
             raise RTA4PilotExecutionError(
@@ -997,7 +1058,7 @@ def _validate_metrics(metrics: Mapping[str, Any]) -> Dict[str, Any]:
             )
     for field in (
         "timed_out", "engineering_error",
-        "ci_width_engineering_warning",
+        *(("ci_width_engineering_warning",) if final else ()),
     ):
         if type(metrics[field]) is not bool:
             raise RTA4PilotExecutionError(
@@ -1006,15 +1067,31 @@ def _validate_metrics(metrics: Mapping[str, Any]) -> Dict[str, Any]:
     return dict(metrics)
 
 
-def build_pilot_terminal(
+PILOT_TRACE_PARSER_IDENTITY = domain_hash(
+    "ASAP_BLOCK:V9.3:RTA4_PILOT_TRACE_PARSER:v1", {
+        "parser": "release_applicability.parse_release_trace",
+        "trace_schema_version": 2,
+        "simulator_trace_contract_version": (
+            "ASAP_BLOCK_V9_3_RELEASE_CUTOFF_TRACE_V2"
+        ),
+    },
+)
+PILOT_TRACE_COMPLETENESS_IDENTITY = domain_hash(
+    "ASAP_BLOCK:V9.3:RTA4_PILOT_TRACE_COMPLETENESS:v1", {
+        "simulation_completed": True,
+        "completion_reason": "reached_horizon",
+        "release_cutoff": True,
+        "observation_horizon_reached": True,
+    },
+)
+
+
+def _terminal_identity(
     selected: Mapping[str, Any],
     execution_config: Mapping[str, Any],
     certificate: TasksetIdentityCertificate,
-    metrics: Mapping[str, Any],
 ) -> Dict[str, Any]:
-    normalized = _validate_metrics(metrics)
-    material = {
-        "terminal_version": RTA4_PILOT_TERMINAL_VERSION,
+    return {
         "execution_class": execution_config["execution_class"],
         "pilot_manifest_id": execution_config["pilot_manifest"][
             "pilot_manifest_id"
@@ -1038,120 +1115,365 @@ def build_pilot_terminal(
         "taskset_id": certificate.taskset_id,
         "taskset_hash": certificate.taskset_hash,
         "power_vector_hash": certificate.power_vector_hash,
+    }
+
+
+def _trace_binding(
+    *, execution_id: str, kind: str, trace_size_bytes: int,
+    trace_sha256: str | None, simulation_id: str | None,
+) -> Dict[str, Any]:
+    if kind == "simulation":
+        if (
+            not isinstance(simulation_id, str)
+            or len(simulation_id) != 64
+        ):
+            raise RTA4PilotExecutionError(
+                "simulation raw evidence lacks a complete trace binding"
+            )
+        if trace_size_bytes == 0 and trace_sha256 is None:
+            filename = None
+        elif (
+            trace_size_bytes > 0
+            and isinstance(trace_sha256, str)
+            and len(trace_sha256) == 64
+        ):
+            filename = f"{execution_id}.json"
+        else:
+            raise RTA4PilotExecutionError(
+                "simulation trace size/hash binding is inconsistent"
+            )
+        return {
+            "trace_filename": filename,
+            "trace_sha256": trace_sha256,
+            "trace_schema_version": 2,
+            "simulation_id": simulation_id,
+            "trace_parser_identity": PILOT_TRACE_PARSER_IDENTITY,
+            "trace_completeness_identity": (
+                PILOT_TRACE_COMPLETENESS_IDENTITY
+            ),
+        }
+    if (
+        trace_size_bytes != 0
+        or trace_sha256 is not None
+        or simulation_id is not None
+    ):
+        raise RTA4PilotExecutionError(
+            "RTA raw evidence must not bind a simulator trace"
+        )
+    return {
+        "trace_filename": None,
+        "trace_sha256": None,
+        "trace_schema_version": None,
+        "simulation_id": None,
+        "trace_parser_identity": None,
+        "trace_completeness_identity": None,
+    }
+
+
+def build_pilot_raw_terminal(
+    selected: Mapping[str, Any],
+    execution_config: Mapping[str, Any],
+    certificate: TasksetIdentityCertificate,
+    metrics: Mapping[str, Any], *,
+    trace_sha256: str | None = None,
+    simulation_id: str | None = None,
+) -> Dict[str, Any]:
+    normalized = _validate_metrics(metrics, final=False)
+    material = {
+        "raw_terminal_version": RTA4_PILOT_RAW_TERMINAL_VERSION,
+        **_terminal_identity(selected, execution_config, certificate),
+        **_trace_binding(
+            execution_id=str(selected["execution_id"]),
+            kind=str(selected["kind"]),
+            trace_size_bytes=normalized["trace_size_bytes"],
+            trace_sha256=trace_sha256,
+            simulation_id=simulation_id,
+        ),
         **normalized,
     }
     return {
         **material,
-        "terminal_hash": domain_hash(RTA4_PILOT_TERMINAL_DOMAIN, material),
+        "raw_terminal_sha256": domain_hash(
+            RTA4_PILOT_RAW_TERMINAL_DOMAIN, material,
+        ),
     }
 
 
-def validate_pilot_terminal(
+def validate_pilot_raw_terminal(
     document: Mapping[str, Any], selected: Mapping[str, Any],
     execution_config: Mapping[str, Any],
+    certificate: TasksetIdentityCertificate,
 ) -> Dict[str, Any]:
-    if (
-        not isinstance(document, Mapping)
-        or set(document) != (
-            _TERMINAL_IDENTITY_FIELDS | _METRIC_FIELDS | {"terminal_hash"}
-        )
+    expected_identity = _terminal_identity(
+        selected, execution_config, certificate,
+    )
+    if not isinstance(document, Mapping):
+        raise RTA4PilotExecutionError("pilot raw terminal must be a mapping")
+    for field, value in expected_identity.items():
+        if document.get(field) != value:
+            raise RTA4PilotExecutionError(
+                "pilot raw terminal identity mismatch"
+            )
+    if document.get("raw_terminal_version") != (
+        RTA4_PILOT_RAW_TERMINAL_VERSION
     ):
+        raise RTA4PilotExecutionError("pilot raw terminal version mismatch")
+    metrics = {
+        field: document.get(field) for field in _RAW_METRIC_FIELDS
+    }
+    _validate_metrics(metrics, final=False)
+    trace = _trace_binding(
+        execution_id=str(selected["execution_id"]),
+        kind=str(selected["kind"]),
+        trace_size_bytes=metrics["trace_size_bytes"],
+        trace_sha256=document.get("trace_sha256"),
+        simulation_id=document.get("simulation_id"),
+    )
+    if any(document.get(field) != value for field, value in trace.items()):
         raise RTA4PilotExecutionError(
-            "pilot terminal has an unexpected field set"
+            "pilot raw terminal trace binding mismatch"
         )
-    for field in (
-        "core", "ordinal", "kind", "plan_record_id",
-        "mathematical_request_id", "execution_id", "method",
-        "taskset_skeleton_slot_id", "taskset_slot_id", "worker_count",
-        "selection_key",
-    ):
-        if document[field] != selected[field]:
-            raise RTA4PilotExecutionError(
-                "pilot terminal selection identity mismatch"
-            )
-    if (
-        document["terminal_version"] != RTA4_PILOT_TERMINAL_VERSION
-        or document["execution_class"] != execution_config["execution_class"]
-        or document["pilot_manifest_id"]
-        != execution_config["pilot_manifest"]["pilot_manifest_id"]
-        or document["execution_config_id"]
-        != execution_config["execution_config_id"]
-    ):
-        raise RTA4PilotExecutionError("pilot terminal binding mismatch")
-    _validate_metrics({
-        field: document[field] for field in _METRIC_FIELDS
-    })
-    for field in (
-        "generation_request_id", "taskset_skeleton_id", "taskset_id",
-        "taskset_hash", "power_vector_hash", "terminal_hash",
-    ):
-        if not isinstance(document[field], str) or len(document[field]) != 64:
-            raise RTA4PilotExecutionError(
-                "pilot terminal identity is not SHA-256 material"
-            )
+    expected_fields = {
+        "raw_terminal_version", "raw_terminal_sha256",
+        *_TERMINAL_IDENTITY_FIELDS, *_RAW_METRIC_FIELDS, *trace,
+    }
+    if set(document) != expected_fields:
+        raise RTA4PilotExecutionError(
+            "pilot raw terminal has an unexpected field set"
+        )
     material = dict(document)
-    observed = material.pop("terminal_hash")
-    if observed != domain_hash(RTA4_PILOT_TERMINAL_DOMAIN, material):
-        raise RTA4PilotExecutionError("pilot terminal hash mismatch")
+    observed = material.pop("raw_terminal_sha256")
+    if observed != domain_hash(RTA4_PILOT_RAW_TERMINAL_DOMAIN, material):
+        raise RTA4PilotExecutionError("pilot raw terminal hash mismatch")
     return dict(document)
 
 
-def _terminal_with_io_size(
-    selected: Mapping[str, Any],
-    execution_config: Mapping[str, Any],
-    certificate: TasksetIdentityCertificate,
-    metrics: Mapping[str, Any],
+def pilot_final_terminal_preimage(
+    raw_terminal: Mapping[str, Any], *,
+    checkpoint_overhead_milliseconds: int,
+    resume_overhead_milliseconds: int,
+    ci_width_engineering_warning: bool,
 ) -> Dict[str, Any]:
-    adjusted = dict(metrics)
-    trace_size = int(adjusted["trace_size_bytes"])
-    for _ in range(16):
-        terminal = build_pilot_terminal(
-            selected, execution_config, certificate, adjusted,
+    for value, label in (
+        (checkpoint_overhead_milliseconds, "checkpoint overhead"),
+        (resume_overhead_milliseconds, "resume overhead"),
+    ):
+        if type(value) is not int or value < 0:
+            raise RTA4PilotExecutionError(
+                f"{label} must be a non-negative plain integer"
+            )
+    if type(ci_width_engineering_warning) is not bool:
+        raise RTA4PilotExecutionError(
+            "runtime CI warning must be a strict boolean"
         )
-        size = len(_canonical_json_bytes(terminal)) + trace_size
-        if adjusted["output_io_bytes"] == size:
-            return terminal
-        adjusted["output_io_bytes"] = size
-    raise RTA4PilotExecutionError(
-        "pilot terminal output byte definition did not converge"
+    return {
+        "final_terminal_version": RTA4_PILOT_FINAL_TERMINAL_VERSION,
+        "raw_terminal_sha256": raw_terminal["raw_terminal_sha256"],
+        **{
+            field: raw_terminal[field]
+            for field in (
+                *_TERMINAL_IDENTITY_FIELDS,
+                "trace_filename", "trace_sha256", "trace_schema_version",
+                "simulation_id", "trace_parser_identity",
+                "trace_completeness_identity", *_RAW_METRIC_FIELDS,
+            )
+        },
+        "checkpoint_overhead_milliseconds": (
+            checkpoint_overhead_milliseconds
+        ),
+        "resume_overhead_milliseconds": resume_overhead_milliseconds,
+        "ci_width_engineering_warning": ci_width_engineering_warning,
+        "output_io_definition": PILOT_OUTPUT_IO_DEFINITION,
+    }
+
+
+def compute_pilot_output_io_bytes(
+    final_terminal_preimage: Mapping[str, Any],
+    trace_size_bytes: int,
+) -> int:
+    if type(trace_size_bytes) is not int or trace_size_bytes < 0:
+        raise RTA4PilotExecutionError(
+            "trace size must be a non-negative plain integer"
+        )
+    if (
+        "output_io_bytes" in final_terminal_preimage
+        or "final_terminal_sha256" in final_terminal_preimage
+    ):
+        raise RTA4PilotExecutionError(
+            "final terminal preimage contains a self-referential field"
+        )
+    return len(
+        canonical_json(dict(final_terminal_preimage)).encode("utf-8")
+    ) + trace_size_bytes
+
+
+def build_pilot_final_terminal(
+    raw_terminal: Mapping[str, Any], *,
+    checkpoint_overhead_milliseconds: int,
+    resume_overhead_milliseconds: int,
+    ci_width_engineering_warning: bool,
+) -> Dict[str, Any]:
+    preimage = pilot_final_terminal_preimage(
+        raw_terminal,
+        checkpoint_overhead_milliseconds=(
+            checkpoint_overhead_milliseconds
+        ),
+        resume_overhead_milliseconds=resume_overhead_milliseconds,
+        ci_width_engineering_warning=ci_width_engineering_warning,
     )
+    material = {
+        **preimage,
+        "output_io_bytes": compute_pilot_output_io_bytes(
+            preimage, int(raw_terminal["trace_size_bytes"]),
+        ),
+    }
+    return {
+        **material,
+        "final_terminal_sha256": domain_hash(
+            RTA4_PILOT_FINAL_TERMINAL_DOMAIN, material,
+        ),
+    }
+
+
+def validate_pilot_final_terminal(
+    document: Mapping[str, Any],
+    raw_terminal: Mapping[str, Any], *,
+    checkpoint_overhead_milliseconds: int,
+    resume_overhead_milliseconds: int,
+    ci_width_engineering_warning: bool,
+) -> Dict[str, Any]:
+    expected = build_pilot_final_terminal(
+        raw_terminal,
+        checkpoint_overhead_milliseconds=(
+            checkpoint_overhead_milliseconds
+        ),
+        resume_overhead_milliseconds=resume_overhead_milliseconds,
+        ci_width_engineering_warning=ci_width_engineering_warning,
+    )
+    if dict(document) != expected:
+        raise RTA4PilotExecutionError(
+            "pilot final terminal cannot be reconstructed"
+        )
+    return expected
+
+
+def build_pilot_terminal(*args: Any, **kwargs: Any) -> Dict[str, Any]:
+    """Compatibility name for the immutable V2 final-terminal constructor."""
+
+    return build_pilot_final_terminal(*args, **kwargs)
+
+
+def validate_pilot_terminal(*args: Any, **kwargs: Any) -> Dict[str, Any]:
+    """Compatibility name for the immutable V2 final-terminal validator."""
+
+    return validate_pilot_final_terminal(*args, **kwargs)
+
+
+def _digest_map(
+    documents: Sequence[Mapping[str, Any]], *,
+    id_field: str, digest_field: str,
+) -> Dict[str, str]:
+    result: Dict[str, str] = {}
+    for document in documents:
+        identity = str(document[id_field])
+        digest = str(document[digest_field])
+        if identity in result or len(identity) != 64 or len(digest) != 64:
+            raise RTA4PilotExecutionError(
+                "checkpoint inventory identity is invalid or duplicated"
+            )
+        result[identity] = digest
+    return {key: result[key] for key in sorted(result)}
 
 
 def build_pilot_checkpoint(
     manifest: Mapping[str, Any],
     execution_config: Mapping[str, Any],
-    execution_manifest: Mapping[str, Any],
-    completed_execution_ids: Iterable[str],
+    execution_manifest: Mapping[str, Any], *,
+    store_manifest: Mapping[str, Any],
+    raw_terminals: Sequence[Mapping[str, Any]],
+    checkpoint_events: Sequence[Mapping[str, Any]],
+    resume_events: Sequence[Mapping[str, Any]],
+    final_terminals: Sequence[Mapping[str, Any]],
+    trace_digests: Mapping[str, str],
+    phase: str,
+    generation: int,
 ) -> Dict[str, Any]:
-    completed = sorted(completed_execution_ids)
+    if phase not in {
+        "PREPARING_STORE", "EXECUTING", "FINALIZING", "PILOT_COMPLETE",
+    }:
+        raise RTA4PilotExecutionError("unknown pilot checkpoint phase")
+    _plain_positive_int(generation, "checkpoint generation")
+    raw_map = _digest_map(
+        raw_terminals, id_field="execution_id",
+        digest_field="raw_terminal_sha256",
+    )
+    final_map = _digest_map(
+        final_terminals, id_field="execution_id",
+        digest_field="final_terminal_sha256",
+    )
+    event_map = _digest_map(
+        checkpoint_events, id_field="checkpoint_event_id",
+        digest_field="checkpoint_event_sha256",
+    )
+    resume_map = _digest_map(
+        resume_events, id_field="resume_event_id",
+        digest_field="resume_event_sha256",
+    )
+    traces = {str(key): str(value) for key, value in trace_digests.items()}
     planned = execution_manifest["planned_record_count"]
-    if len(completed) > planned or len(set(completed)) != len(completed):
-        raise RTA4PilotExecutionError("invalid completed execution ID set")
+    if (
+        len(raw_map) > planned
+        or not set(final_map).issubset(raw_map)
+        or not set(traces).issubset(raw_map)
+    ):
+        raise RTA4PilotExecutionError("invalid checkpoint evidence inventory")
+    if phase == "PILOT_COMPLETE" and (
+        len(raw_map) != planned or len(final_map) != planned
+    ):
+        raise RTA4PilotExecutionError(
+            "complete checkpoint lacks complete raw/final evidence"
+        )
     material = {
         "checkpoint_version": RTA4_PILOT_CHECKPOINT_VERSION,
+        "checkpoint_generation": generation,
+        "phase": phase,
+        "state": (
+            "PILOT_COMPLETE"
+            if phase == "PILOT_COMPLETE" else "INCOMPLETE_PILOT"
+        ),
         "execution_class": execution_config["execution_class"],
         "pilot_manifest_id": manifest["pilot_manifest_id"],
         "execution_config_id": execution_config["execution_config_id"],
         "execution_manifest_id": execution_manifest[
             "execution_manifest_id"
         ],
-        "output_root": execution_config["output_root"],
-        "taskset_store": execution_config["taskset_store"],
-        "source_commit": execution_config["source_manifest"]["git_commit"],
-        "source_tree": execution_config["source_manifest"]["git_tree"],
-        "simulator_manifest_id": execution_config["simulator_manifest"][
-            "manifest_id"
-        ],
+        "store_manifest_id": store_manifest["store_manifest_id"],
         "planned_record_count": planned,
-        "completed_record_count": len(completed),
-        "completed_execution_ids": completed,
-        "completed_set_sha256": hashlib.sha256(
-            canonical_json(completed).encode("utf-8")
+        "completed_raw_count": len(raw_map),
+        "completed_raw_terminal_digests": raw_map,
+        "completed_raw_ordered_digest": hashlib.sha256(
+            canonical_json(raw_map).encode("utf-8")
         ).hexdigest(),
-        "state": (
-            "PILOT_COMPLETE"
-            if len(completed) == planned else "INCOMPLETE_PILOT"
-        ),
+        "checkpoint_event_digests": event_map,
+        "checkpoint_event_ordered_digest": hashlib.sha256(
+            canonical_json(event_map).encode("utf-8")
+        ).hexdigest(),
+        "resume_event_digests": resume_map,
+        "resume_event_ordered_digest": hashlib.sha256(
+            canonical_json(resume_map).encode("utf-8")
+        ).hexdigest(),
+        "final_terminal_digests": final_map,
+        "final_terminal_ordered_digest": hashlib.sha256(
+            canonical_json(final_map).encode("utf-8")
+        ).hexdigest(),
+        "trace_digests": {
+            key: traces[key] for key in sorted(traces)
+        },
+        "trace_ordered_digest": hashlib.sha256(
+            canonical_json({
+                key: traces[key] for key in sorted(traces)
+            }).encode("utf-8")
+        ).hexdigest(),
     }
     return {
         **material,
@@ -1164,16 +1486,14 @@ def build_pilot_checkpoint(
 def validate_pilot_checkpoint(
     document: Mapping[str, Any], manifest: Mapping[str, Any],
     execution_config: Mapping[str, Any],
-    execution_manifest: Mapping[str, Any],
-    completed_execution_ids: Iterable[str],
+    execution_manifest: Mapping[str, Any], **inventory: Any,
 ) -> Dict[str, Any]:
     expected = build_pilot_checkpoint(
-        manifest, execution_config, execution_manifest,
-        completed_execution_ids,
+        manifest, execution_config, execution_manifest, **inventory,
     )
     if dict(document) != expected:
         raise RTA4PilotExecutionError(
-            "pilot checkpoint/terminal inventory mismatch"
+            "pilot checkpoint evidence inventory mismatch"
         )
     return expected
 
@@ -1263,38 +1583,546 @@ def _load_json(path: Path) -> Any:
         raise RTA4PilotExecutionError(f"cannot read {path.name}") from exc
 
 
-def _terminal_paths(root: Path) -> tuple[Path, ...]:
-    terminal_root = root / RTA4_PILOT_TERMINAL_DIRECTORY
-    if not terminal_root.is_dir():
+def _evidence_paths(
+    root: Path, directory: str, *,
+    stem_length: int = 64,
+) -> tuple[Path, ...]:
+    evidence_root = root / directory
+    if not evidence_root.is_dir():
         return ()
-    entries = tuple(sorted(terminal_root.iterdir()))
+    entries = tuple(sorted(evidence_root.iterdir()))
     if any(
         not path.is_file()
+        or path.is_symlink()
         or path.suffix != ".json"
-        or len(path.stem) != 64
+        or len(path.stem) != stem_length
         for path in entries
     ):
         raise RTA4PilotExecutionError(
-            "pilot terminal directory contains an unexpected entry"
+            f"{directory} contains an unexpected entry"
         )
     return entries
+
+
+def _terminal_paths(root: Path) -> tuple[Path, ...]:
+    return _evidence_paths(root, RTA4_PILOT_FINAL_TERMINAL_DIRECTORY)
+
+
+def _write_json_once(path: Path, document: Mapping[str, Any]) -> None:
+    expected = _canonical_json_bytes(document)
+    if path.exists():
+        if not path.is_file() or path.read_bytes() != expected:
+            raise RTA4PilotExecutionError(
+                f"immutable evidence conflict: {path.name}"
+            )
+        return
+    atomic_write_json(path, document)
+    if path.read_bytes() != expected:
+        raise RTA4PilotExecutionError(
+            f"immutable evidence write verification failed: {path.name}"
+        )
+
+
+def _write_text_once(path: Path, text: str) -> None:
+    expected = text.encode("utf-8")
+    if path.exists():
+        if not path.is_file() or path.read_bytes() != expected:
+            raise RTA4PilotExecutionError(
+                f"immutable evidence conflict: {path.name}"
+            )
+        return
+    atomic_write_text(path, text)
+    if path.read_bytes() != expected:
+        raise RTA4PilotExecutionError(
+            f"immutable evidence write verification failed: {path.name}"
+        )
+
+
+def _certificate_for_record(
+    record: FormalPlanRecord,
+    certificates_by_slot: Mapping[str, TasksetIdentityCertificate],
+) -> TasksetIdentityCertificate:
+    try:
+        certificate = certificates_by_slot[str(record.taskset_slot_id)]
+    except KeyError as exc:
+        raise RTA4PilotExecutionError(
+            "pilot store lacks a selected taskset slot"
+        ) from exc
+    certificate.validate()
+    return certificate
+
+
+def build_pilot_store_manifest(
+    records: Sequence[FormalPlanRecord],
+    certificates_by_slot: Mapping[str, TasksetIdentityCertificate],
+    manifest: Mapping[str, Any],
+    execution_config: Mapping[str, Any],
+) -> Dict[str, Any]:
+    references: Dict[str, list[FormalPlanRecord]] = {}
+    for record in records:
+        references.setdefault(str(record.taskset_slot_id), []).append(record)
+    rows = []
+    for slot in sorted(
+        references,
+        key=lambda value: min(row.ordinal for row in references[value]),
+    ):
+        certificate = certificates_by_slot[slot]
+        payload = certificate.canonical_bytes()
+        for record in references[slot]:
+            certificate.validate()
+        rows.append({
+            "taskset_slot_id": slot,
+            "taskset_skeleton_slot_id": str(
+                references[slot][0].taskset_skeleton_slot_id
+            ),
+            "taskset_id": certificate.taskset_id,
+            "generation_request_id": certificate.generation_request_id,
+            "taskset_skeleton_id": certificate.taskset_skeleton_id,
+            "certificate_filename": (
+                f"certificates/{certificate.taskset_id}.json"
+            ),
+            "certificate_sha256": hashlib.sha256(payload).hexdigest(),
+            "source_provenance": "TRUSTED_FORMAL_PLAN_SLOT_RECONSTRUCTION",
+            "referenced_cores": sorted({
+                record.core for record in references[slot]
+            }),
+            "referenced_execution_ids": sorted(
+                str(record.execution_id) for record in references[slot]
+            ),
+        })
+    material = {
+        "store_manifest_version": RTA4_PILOT_STORE_MANIFEST_VERSION,
+        "execution_class": execution_config["execution_class"],
+        "pilot_manifest_id": manifest["pilot_manifest_id"],
+        "execution_config_id": execution_config["execution_config_id"],
+        "slot_count": len(rows),
+        "slots": rows,
+    }
+    return {
+        **material,
+        "store_manifest_id": domain_hash(
+            RTA4_PILOT_STORE_MANIFEST_DOMAIN, material,
+        ),
+    }
+
+
+def _load_pilot_store(
+    store_root: Path,
+    records: Sequence[FormalPlanRecord],
+    manifest: Mapping[str, Any],
+    execution_config: Mapping[str, Any], *,
+    configs: Mapping[str, Mapping[str, Any]],
+    reconstruct_expected: bool,
+) -> tuple[Dict[str, Any], Dict[str, TasksetIdentityCertificate]]:
+    if not store_root.is_dir() or store_root.is_symlink():
+        raise RTA4PilotExecutionError("pilot taskset store is missing")
+    if {path.name for path in store_root.iterdir()} != {
+        FORMAL_TASKSET_STORE_MANIFEST, RTA4_PILOT_STORE_MANIFEST,
+        "certificates",
+    }:
+        raise RTA4PilotExecutionError(
+            "pilot taskset store inventory is not exact"
+        )
+    if _load_json(store_root / FORMAL_TASKSET_STORE_MANIFEST) != (
+        _formal_store_manifest()
+    ):
+        raise RTA4PilotExecutionError(
+            "pilot taskset store marker is damaged"
+        )
+    observed = _load_json(store_root / RTA4_PILOT_STORE_MANIFEST)
+    if (
+        not isinstance(observed, Mapping)
+        or observed.get("store_manifest_version")
+        != RTA4_PILOT_STORE_MANIFEST_VERSION
+        or observed.get("execution_class")
+        != execution_config["execution_class"]
+        or observed.get("pilot_manifest_id") != manifest["pilot_manifest_id"]
+        or observed.get("execution_config_id")
+        != execution_config["execution_config_id"]
+    ):
+        raise RTA4PilotExecutionError(
+            "pilot taskset store manifest binding mismatch"
+        )
+    certificate_root = store_root / "certificates"
+    entries = tuple(sorted(certificate_root.iterdir()))
+    if any(
+        not path.is_file() or path.is_symlink()
+        or path.suffix != ".json" or len(path.stem) != 64
+        for path in entries
+    ):
+        raise RTA4PilotExecutionError(
+            "pilot certificate directory contains an unexpected entry"
+        )
+    rows = observed.get("slots")
+    if not isinstance(rows, list):
+        raise RTA4PilotExecutionError("pilot store slot index is invalid")
+    by_slot: Dict[str, TasksetIdentityCertificate] = {}
+    expected_files: set[str] = set()
+    for row in rows:
+        if not isinstance(row, Mapping):
+            raise RTA4PilotExecutionError("pilot store slot row is invalid")
+        slot = str(row.get("taskset_slot_id"))
+        if slot in by_slot:
+            raise RTA4PilotExecutionError("duplicate pilot store slot")
+        path = store_root / str(row.get("certificate_filename"))
+        try:
+            if (
+                path.parent != certificate_root
+                or path.name != f"{row['taskset_id']}.json"
+            ):
+                raise ValueError("certificate path escape")
+            payload = path.read_bytes()
+            if hashlib.sha256(payload).hexdigest() != (
+                row["certificate_sha256"]
+            ):
+                raise ValueError("certificate SHA drift")
+            certificate = (
+                TasksetIdentityCertificate.from_canonical_bytes(payload)
+            )
+            certificate.validate()
+        except Exception as exc:
+            raise RTA4PilotExecutionError(
+                "pilot store certificate bytes are missing or damaged"
+            ) from exc
+        by_slot[slot] = certificate
+        expected_files.add(path.name)
+    if {path.name for path in entries} != expected_files:
+        raise RTA4PilotExecutionError(
+            "pilot certificate inventory differs from the slot manifest"
+        )
+    expected = build_pilot_store_manifest(
+        records, by_slot, manifest, execution_config,
+    )
+    if dict(observed) != expected:
+        raise RTA4PilotExecutionError(
+            "pilot store manifest cannot be reconstructed"
+        )
+    for record in records:
+        certificate = _certificate_for_record(record, by_slot)
+        RTA4FormalRunner(
+            configs[record.core]
+        )._validate_plan_certificate(record, certificate)
+    if (
+        reconstruct_expected
+        and execution_config["execution_class"]
+        == RTA4_PILOT_EXECUTION_CLASS
+    ):
+        provider = PilotTasksetProvider(configs)
+        reconstructed: Dict[str, TasksetIdentityCertificate] = {}
+        for record in records:
+            slot = str(record.taskset_slot_id)
+            if slot not in reconstructed:
+                reconstructed[slot] = provider(record)
+            if reconstructed[slot].canonical_bytes() != (
+                by_slot[slot].canonical_bytes()
+            ):
+                raise RTA4PilotExecutionError(
+                    "pilot certificate differs from trusted slot generation"
+                )
+    return dict(observed), by_slot
+
+
+def _simulation_identity(
+    record: FormalPlanRecord,
+    certificate: TasksetIdentityCertificate,
+) -> tuple[Any, Any, Sequence[Mapping[str, Any]], str]:
+    from .rta4_formal_pipeline import (
+        build_formal_release_projection, formal_service_identity,
+    )
+    from .release_applicability import (
+        TARGET_SCHEDULER, simulation_applicability_identity,
+    )
+
+    projection, window, payload = build_formal_release_projection(
+        certificate, record.material["release_mode"],
+    )
+    simulation_id = simulation_applicability_identity(
+        taskset_id=certificate.taskset_id,
+        release_projection_id=projection.release_projection_id,
+        scheduler=TARGET_SCHEDULER,
+        service_identity=formal_service_identity(
+            record.material["service_scale"]
+        ),
+        initial_battery=record.material["physical_initial_energy"],
+        battery_capacity=record.material["battery_capacity"],
+        window=window,
+        applicability_track=record.material["applicability_track"],
+    )
+    return projection, window, payload, simulation_id
+
+
+def _validate_trace(
+    path: Path, record: FormalPlanRecord,
+    certificate: TasksetIdentityCertificate,
+    expected_simulation_id: str,
+) -> None:
+    from .release_applicability import parse_release_trace
+
+    projection, window, payload, simulation_id = _simulation_identity(
+        record, certificate,
+    )
+    if simulation_id != expected_simulation_id:
+        raise RTA4PilotExecutionError(
+            "simulation trace identity differs from trusted plan"
+        )
+    try:
+        parse_release_trace(
+            path, payload, expected_simulation_id=simulation_id,
+            expected_taskset_hash=certificate.taskset_hash,
+            expected_certificate=certificate,
+            expected_projection=projection, window=window,
+        )
+    except Exception as exc:
+        raise RTA4PilotExecutionError(
+            "pilot trace parser/completeness audit failed"
+        ) from exc
+
+
+def _build_checkpoint_event(
+    checkpoint: Mapping[str, Any], checkpoint_path: Path, *,
+    triggering_execution_id: str | None,
+    write_milliseconds: int,
+) -> Dict[str, Any]:
+    material = {
+        "checkpoint_event_version": RTA4_PILOT_CHECKPOINT_EVENT_VERSION,
+        "checkpoint_generation": checkpoint["checkpoint_generation"],
+        "triggering_execution_id": triggering_execution_id,
+        "completed_raw_id_set_sha256": hashlib.sha256(
+            canonical_json(sorted(
+                checkpoint["completed_raw_terminal_digests"]
+            )).encode("utf-8")
+        ).hexdigest(),
+        "checkpoint_filename": checkpoint_path.name,
+        "checkpoint_payload_sha256": _sha256(checkpoint_path),
+        "checkpoint_id": checkpoint["checkpoint_id"],
+        "checkpoint_write_milliseconds": write_milliseconds,
+    }
+    identity = domain_hash(RTA4_PILOT_CHECKPOINT_EVENT_DOMAIN, material)
+    document = {**material, "checkpoint_event_id": identity}
+    return {
+        **document,
+        "checkpoint_event_sha256": hashlib.sha256(
+            canonical_json(document).encode("utf-8")
+        ).hexdigest(),
+    }
+
+
+def _validate_checkpoint_event(
+    document: Mapping[str, Any], checkpoint_path: Path,
+    checkpoint: Mapping[str, Any],
+) -> Dict[str, Any]:
+    expected = _build_checkpoint_event(
+        checkpoint, checkpoint_path,
+        triggering_execution_id=document.get("triggering_execution_id"),
+        write_milliseconds=document.get("checkpoint_write_milliseconds"),
+    )
+    if dict(document) != expected:
+        raise RTA4PilotExecutionError(
+            "checkpoint event cannot be reconstructed"
+        )
+    return expected
+
+
+def _build_resume_event(
+    execution_config: Mapping[str, Any], *,
+    generation: int, preflight_started_ns: int,
+    preflight_finished_ns: int, initialization_milliseconds: int,
+    first_pending_execution_id: str,
+) -> Dict[str, Any]:
+    material = {
+        "resume_event_version": RTA4_PILOT_RESUME_EVENT_VERSION,
+        "execution_config_id": execution_config["execution_config_id"],
+        "resume_generation": generation,
+        "preflight_started_monotonic_ns": preflight_started_ns,
+        "preflight_finished_monotonic_ns": preflight_finished_ns,
+        "resume_initialization_milliseconds": initialization_milliseconds,
+        "first_pending_execution_id": first_pending_execution_id,
+    }
+    identity = domain_hash(RTA4_PILOT_RESUME_EVENT_DOMAIN, material)
+    document = {**material, "resume_event_id": identity}
+    return {
+        **document,
+        "resume_event_sha256": hashlib.sha256(
+            canonical_json(document).encode("utf-8")
+        ).hexdigest(),
+    }
+
+
+def _validate_resume_event(
+    document: Mapping[str, Any],
+    execution_config: Mapping[str, Any],
+) -> Dict[str, Any]:
+    expected = _build_resume_event(
+        execution_config,
+        generation=document.get("resume_generation"),
+        preflight_started_ns=document.get("preflight_started_monotonic_ns"),
+        preflight_finished_ns=document.get(
+            "preflight_finished_monotonic_ns"
+        ),
+        initialization_milliseconds=document.get(
+            "resume_initialization_milliseconds"
+        ),
+        first_pending_execution_id=document.get(
+            "first_pending_execution_id"
+        ),
+    )
+    if dict(document) != expected:
+        raise RTA4PilotExecutionError(
+            "resume event cannot be reconstructed"
+        )
+    return expected
+
+
+def _checkpoint_pointer(
+    checkpoint: Mapping[str, Any], checkpoint_path: Path,
+    event: Mapping[str, Any], event_path: Path,
+) -> Dict[str, Any]:
+    material = {
+        "checkpoint_pointer_version": (
+            "ASAP_BLOCK_V9_3_RTA4_PILOT_CHECKPOINT_POINTER_V1"
+        ),
+        "checkpoint_generation": checkpoint["checkpoint_generation"],
+        "phase": checkpoint["phase"],
+        "state": checkpoint["state"],
+        "checkpoint_filename": checkpoint_path.name,
+        "checkpoint_payload_sha256": _sha256(checkpoint_path),
+        "checkpoint_id": checkpoint["checkpoint_id"],
+        "checkpoint_event_filename": event_path.name,
+        "checkpoint_event_sha256": event["checkpoint_event_sha256"],
+        "checkpoint_event_id": event["checkpoint_event_id"],
+    }
+    return {
+        **material,
+        "checkpoint_pointer_sha256": domain_hash(
+            "ASAP_BLOCK:V9.3:RTA4_PILOT_CHECKPOINT_POINTER:v1",
+            material,
+        ),
+    }
+
+
+def _load_checkpoint_transaction(
+    root: Path,
+) -> tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any],
+           tuple[Dict[str, Any], ...], tuple[Path, ...]]:
+    pointer = _load_json(root / RTA4_PILOT_CHECKPOINT)
+    if not isinstance(pointer, Mapping):
+        raise RTA4PilotExecutionError("checkpoint pointer is invalid")
+    generation_root = root / RTA4_PILOT_CHECKPOINT_DIRECTORY
+    event_root = root / RTA4_PILOT_CHECKPOINT_EVENT_DIRECTORY
+    generations = _evidence_paths(
+        root, RTA4_PILOT_CHECKPOINT_DIRECTORY, stem_length=8,
+    )
+    events = _evidence_paths(
+        root, RTA4_PILOT_CHECKPOINT_EVENT_DIRECTORY, stem_length=8,
+    )
+    checkpoint_path = generation_root / str(pointer.get(
+        "checkpoint_filename"
+    ))
+    event_path = event_root / str(pointer.get(
+        "checkpoint_event_filename"
+    ))
+    if checkpoint_path not in generations or event_path not in events:
+        raise RTA4PilotExecutionError(
+            "checkpoint pointer references absent transaction evidence"
+        )
+    checkpoint = _load_json(checkpoint_path)
+    material = dict(checkpoint)
+    observed_id = material.pop("checkpoint_id", None)
+    if (
+        checkpoint.get("checkpoint_version")
+        != RTA4_PILOT_CHECKPOINT_VERSION
+        or observed_id != domain_hash(
+            RTA4_PILOT_CHECKPOINT_DOMAIN, material,
+        )
+    ):
+        raise RTA4PilotExecutionError(
+            "checkpoint generation identity mismatch"
+        )
+    event = _validate_checkpoint_event(
+        _load_json(event_path), checkpoint_path, checkpoint,
+    )
+    if dict(pointer) != _checkpoint_pointer(
+        checkpoint, checkpoint_path, event, event_path,
+    ):
+        raise RTA4PilotExecutionError(
+            "canonical checkpoint pointer mismatch"
+        )
+    by_id: Dict[str, Dict[str, Any]] = {}
+    committed_paths = {checkpoint_path, event_path}
+    for path in events:
+        document = _load_json(path)
+        event_id = document.get("checkpoint_event_id")
+        event_sha = document.get("checkpoint_event_sha256")
+        if (
+            event_id in checkpoint["checkpoint_event_digests"]
+            and checkpoint["checkpoint_event_digests"][event_id]
+            == event_sha
+        ):
+            referenced_generation = generation_root / str(
+                document.get("checkpoint_filename")
+            )
+            if not referenced_generation.is_file():
+                raise RTA4PilotExecutionError(
+                    "committed checkpoint event lacks its generation"
+                )
+            referenced_checkpoint = _load_json(referenced_generation)
+            _validate_checkpoint_event(
+                document, referenced_generation, referenced_checkpoint,
+            )
+            by_id[event_id] = document
+            committed_paths.update({path, referenced_generation})
+    if set(by_id) != set(checkpoint["checkpoint_event_digests"]):
+        raise RTA4PilotExecutionError(
+            "checkpoint generation event inventory is incomplete"
+        )
+    by_id[event["checkpoint_event_id"]] = event
+    orphans = tuple(sorted(
+        (set(generations) | set(events)) - committed_paths
+    ))
+    return (
+        dict(pointer), dict(checkpoint), dict(event),
+        tuple(by_id[key] for key in sorted(by_id)), orphans,
+    )
 
 
 def _audit_material(
     *, root: Path, manifest: Mapping[str, Any],
     execution_config: Mapping[str, Any],
     execution_manifest: Mapping[str, Any],
-    checkpoint: Mapping[str, Any],
-    terminals: Sequence[Mapping[str, Any]],
+    store_manifest: Mapping[str, Any],
+    pointer: Mapping[str, Any], checkpoint: Mapping[str, Any],
+    raw_terminals: Sequence[Mapping[str, Any]],
+    final_terminals: Sequence[Mapping[str, Any]],
+    checkpoint_events: Sequence[Mapping[str, Any]],
+    resume_events: Sequence[Mapping[str, Any]],
+    trace_digests: Mapping[str, str],
     observations: Mapping[str, Any] | None,
     report: Mapping[str, Any] | None,
+    recovery_orphan_count: int,
 ) -> Dict[str, Any]:
-    complete = checkpoint["state"] == "PILOT_COMPLETE"
+    complete = checkpoint["phase"] == "PILOT_COMPLETE"
     eligible = (
         complete
+        and recovery_orphan_count == 0
         and execution_config["execution_class"]
         == RTA4_PILOT_EXECUTION_CLASS
         and observations is not None and report is not None
+    )
+    raw_map = _digest_map(
+        raw_terminals, id_field="execution_id",
+        digest_field="raw_terminal_sha256",
+    )
+    final_map = _digest_map(
+        final_terminals, id_field="execution_id",
+        digest_field="final_terminal_sha256",
+    )
+    event_map = _digest_map(
+        checkpoint_events, id_field="checkpoint_event_id",
+        digest_field="checkpoint_event_sha256",
+    )
+    resume_map = _digest_map(
+        resume_events, id_field="resume_event_id",
+        digest_field="resume_event_sha256",
     )
     return {
         "audit_version": RTA4_PILOT_AUDIT_VERSION,
@@ -1310,19 +2138,48 @@ def _audit_material(
         "execution_manifest_id": execution_manifest[
             "execution_manifest_id"
         ],
+        "store_manifest_id": store_manifest["store_manifest_id"],
+        "store_marker_sha256": hashlib.sha256(
+            _canonical_json_bytes(_formal_store_manifest())
+        ).hexdigest(),
         "checkpoint_id": checkpoint["checkpoint_id"],
+        "checkpoint_pointer_sha256": pointer[
+            "checkpoint_pointer_sha256"
+        ],
+        "checkpoint_phase": checkpoint["phase"],
         "checkpoint_state": checkpoint["state"],
-        "terminal_count": len(terminals),
+        "raw_terminal_count": len(raw_map),
+        "raw_terminal_set_sha256": hashlib.sha256(
+            canonical_json(raw_map).encode("utf-8")
+        ).hexdigest(),
+        "terminal_count": len(final_map),
         "terminal_set_sha256": hashlib.sha256(
-            canonical_json(sorted(
-                terminal["terminal_hash"] for terminal in terminals
-            )).encode("utf-8")
+            canonical_json(final_map).encode("utf-8")
         ).hexdigest(),
         "taskset_certificate_set_sha256": hashlib.sha256(
-            canonical_json(sorted({
-                terminal["taskset_id"] for terminal in terminals
-            })).encode("utf-8")
+            canonical_json([
+                {
+                    "slot": row["taskset_slot_id"],
+                    "sha256": row["certificate_sha256"],
+                }
+                for row in store_manifest["slots"]
+            ]).encode("utf-8")
         ).hexdigest(),
+        "checkpoint_event_set_sha256": hashlib.sha256(
+            canonical_json(event_map).encode("utf-8")
+        ).hexdigest(),
+        "resume_event_set_sha256": hashlib.sha256(
+            canonical_json(resume_map).encode("utf-8")
+        ).hexdigest(),
+        "trace_set_sha256": hashlib.sha256(
+            canonical_json({
+                key: trace_digests[key] for key in sorted(trace_digests)
+            }).encode("utf-8")
+        ).hexdigest(),
+        "trace_parser_identity": PILOT_TRACE_PARSER_IDENTITY,
+        "trace_completeness_identity": (
+            PILOT_TRACE_COMPLETENESS_IDENTITY
+        ),
         "source_manifest_id": execution_config["source_manifest"][
             "manifest_id"
         ],
@@ -1348,6 +2205,7 @@ def _audit_material(
         "pilot_closure_id": (
             None if report is None else report["pilot_closure_id"]
         ),
+        "recovery_orphan_count": recovery_orphan_count,
         "scientific_results_included": False,
     }
 
@@ -1355,13 +2213,8 @@ def _audit_material(
 def validate_pilot_audit_document(
     document: Mapping[str, Any],
 ) -> Dict[str, Any]:
-    if (
-        not isinstance(document, Mapping)
-        or set(document) != _AUDIT_FIELDS
-    ):
-        raise RTA4PilotExecutionError(
-            "pilot audit has an unexpected field set"
-        )
+    if not isinstance(document, Mapping):
+        raise RTA4PilotExecutionError("pilot audit must be a mapping")
     material = dict(document)
     observed = material.pop("audit_id", None)
     if (
@@ -1370,82 +2223,60 @@ def validate_pilot_audit_document(
         or material.get("execution_class") not in {
             RTA4_PILOT_EXECUTION_CLASS, RTA4_PILOT_TEST_EXECUTION_CLASS,
         }
+        or observed != domain_hash(RTA4_PILOT_AUDIT_DOMAIN, material)
     ):
         raise RTA4PilotExecutionError("pilot audit contract mismatch")
+    complete = material.get("checkpoint_phase") == "PILOT_COMPLETE"
     if (
-        type(material["freeze_eligible"]) is not bool
-        or type(material["terminal_count"]) is not int
-        or material["terminal_count"] < 0
-        or material["checkpoint_state"] not in {
-            "INCOMPLETE_PILOT", "PILOT_COMPLETE",
-        }
-        or material["audit_status"] not in {
-            "ENGINEERING_PILOT_AUDIT_PARTIAL",
-            "ENGINEERING_PILOT_AUDIT_COMPLETE",
-        }
+        material.get("checkpoint_state")
+        != ("PILOT_COMPLETE" if complete else "INCOMPLETE_PILOT")
+        or material.get("audit_status")
+        != (
+            "ENGINEERING_PILOT_AUDIT_COMPLETE"
+            if complete else "ENGINEERING_PILOT_AUDIT_PARTIAL"
+        )
+        or type(material.get("freeze_eligible")) is not bool
+        or type(material.get("recovery_orphan_count")) is not int
+        or material["recovery_orphan_count"] < 0
     ):
-        raise RTA4PilotExecutionError("pilot audit state is invalid")
-    expected_status = (
-        "ENGINEERING_PILOT_AUDIT_COMPLETE"
-        if material["checkpoint_state"] == "PILOT_COMPLETE"
-        else "ENGINEERING_PILOT_AUDIT_PARTIAL"
-    )
-    if material["audit_status"] != expected_status:
-        raise RTA4PilotExecutionError(
-            "pilot audit status/checkpoint state mismatch"
-        )
-    try:
-        pilot_root = Path(material["pilot_root"])
-    except TypeError as exc:
-        raise RTA4PilotExecutionError(
-            "pilot audit root is invalid"
-        ) from exc
-    if not pilot_root.is_absolute():
-        raise RTA4PilotExecutionError(
-            "pilot audit root must be absolute"
-        )
-    required_ids = (
-        "pilot_manifest_id", "execution_config_id",
-        "execution_manifest_id", "checkpoint_id",
-        "terminal_set_sha256", "taskset_certificate_set_sha256",
-        "source_manifest_id", "dependency_manifest_id",
-        "environment_manifest_id", "hardware_manifest_id",
-        "simulator_manifest_id",
-    )
-    optional_ids = (
+        raise RTA4PilotExecutionError("pilot audit state mismatch")
+    final_fields = (
         "pilot_observations_id", "pilot_report_id", "pilot_closure_id",
     )
-    if any(
-        not isinstance(material[field], str)
-        or len(material[field]) != 64
-        for field in required_ids
-    ) or any(
-        value is not None
-        and (not isinstance(value, str) or len(value) != 64)
-        for value in (material[field] for field in optional_ids)
+    final_present = all(
+        material.get(field) is not None for field in final_fields
+    )
+    if (
+        complete and not final_present
+        or final_present
+        and material.get("checkpoint_phase") not in {
+            "FINALIZING", "PILOT_COMPLETE",
+        }
     ):
         raise RTA4PilotExecutionError(
-            "pilot audit identity is not SHA-256 material"
+            "pilot audit final evidence/state mismatch"
         )
-    if observed != domain_hash(RTA4_PILOT_AUDIT_DOMAIN, material):
-        raise RTA4PilotExecutionError("pilot audit ID mismatch")
-    complete = material["checkpoint_state"] == "PILOT_COMPLETE"
-    final_ids_present = all(
-        material[field] is not None for field in optional_ids
-    )
-    if complete != final_ids_present:
-        raise RTA4PilotExecutionError(
-            "pilot audit final evidence/checkpoint state mismatch"
-        )
-    expected_eligibility = (
+    expected_eligible = (
         complete
         and material["execution_class"] == RTA4_PILOT_EXECUTION_CLASS
-        and final_ids_present
+        and material["recovery_orphan_count"] == 0
     )
-    if material["freeze_eligible"] is not expected_eligibility:
+    if material["freeze_eligible"] is not expected_eligible:
         raise RTA4PilotExecutionError(
-            "pilot audit freeze eligibility is inconsistent"
+            "pilot audit freeze eligibility mismatch"
         )
+    for field, value in material.items():
+        if (
+            field.endswith(("_id", "_sha256"))
+            and value is not None
+            and (
+                not isinstance(value, str)
+                or len(value) != 64
+            )
+        ):
+            raise RTA4PilotExecutionError(
+                "pilot audit contains a malformed identity"
+            )
     return dict(document)
 
 
@@ -1453,20 +2284,24 @@ def audit_pilot_namespace(
     root: Path | str,
     configs: Mapping[str, Mapping[str, Any]], *,
     require_complete: bool = True,
+    reconstruct_store: bool = True,
+    allow_recovery_artifacts: bool = False,
 ) -> Dict[str, Any]:
-    """Independently rebuild manifest, terminal, store, checkpoint and report."""
+    """Independently reconstruct every file-backed pilot evidence layer."""
 
     output = Path(root).resolve(strict=True)
     allowed_root_entries = {
         RTA4_PILOT_OUTPUT_MARKER, RTA4_PILOT_EXECUTION_CONFIG,
         RTA4_PILOT_EXECUTION_MANIFEST, RTA4_PILOT_CHECKPOINT,
-        RTA4_PILOT_TERMINAL_DIRECTORY, RTA4_PILOT_TRACE_DIRECTORY,
+        RTA4_PILOT_RAW_TERMINAL_DIRECTORY,
+        RTA4_PILOT_FINAL_TERMINAL_DIRECTORY,
+        RTA4_PILOT_TRACE_DIRECTORY, RTA4_PILOT_CHECKPOINT_DIRECTORY,
+        RTA4_PILOT_CHECKPOINT_EVENT_DIRECTORY,
+        RTA4_PILOT_RESUME_EVENT_DIRECTORY,
+        RTA4_PILOT_WORKER_TRACE_DIRECTORY,
         RTA4_PILOT_OBSERVATIONS, RTA4_PILOT_REPORT, RTA4_PILOT_AUDIT,
     }
-    extras = {
-        path.name for path in output.iterdir()
-    } - allowed_root_entries
-    if extras:
+    if {path.name for path in output.iterdir()} - allowed_root_entries:
         raise RTA4PilotExecutionError(
             "pilot output root contains an unexpected entry"
         )
@@ -1481,186 +2316,272 @@ def audit_pilot_namespace(
         _load_json(output / RTA4_PILOT_EXECUTION_MANIFEST),
         manifest, execution_config,
     )
+    records = reconstruct_selected_records(configs, manifest)
     selected = {
         row["execution_id"]: row for row in _selected_rows(manifest)
     }
-    paths = _terminal_paths(output)
-    if any(path.stem not in selected for path in paths):
-        raise RTA4PilotExecutionError(
-            "pilot terminal filename is outside selection"
-        )
-    terminals = []
-    seen: set[str] = set()
-    store = Path(execution_config["taskset_store"])
-    marker = store / FORMAL_TASKSET_STORE_MANIFEST
-    if not marker.is_file():
-        raise RTA4PilotExecutionError("pilot taskset store marker is missing")
-    store_entries = {path.name for path in store.iterdir()}
-    if store_entries != {
-        FORMAL_TASKSET_STORE_MANIFEST, "certificates",
-    }:
-        raise RTA4PilotExecutionError(
-            "pilot taskset store contains an unexpected entry"
-        )
-    for path in paths:
-        if path.stem in seen:
-            raise RTA4PilotExecutionError("duplicate pilot terminal")
-        terminal = validate_pilot_terminal(
-            _load_json(path), selected[path.stem], execution_config,
-        )
-        if terminal["execution_id"] != path.stem:
-            raise RTA4PilotExecutionError(
-                "pilot terminal filename/payload mismatch"
-            )
-        certificate_path = (
-            store / "certificates" / f"{terminal['taskset_id']}.json"
-        )
-        try:
-            certificate = TasksetIdentityCertificate.from_canonical_bytes(
-                certificate_path.read_bytes()
-            )
-            certificate.validate()
-        except Exception as exc:
-            raise RTA4PilotExecutionError(
-                "pilot taskset certificate is missing or damaged"
-            ) from exc
-        for field in (
-            "generation_request_id", "taskset_skeleton_id", "taskset_id",
-            "taskset_hash", "power_vector_hash",
-        ):
-            if getattr(certificate, field) != terminal[field]:
-                raise RTA4PilotExecutionError(
-                    "terminal/taskset certificate identity mismatch"
-                )
-        terminals.append(terminal)
-        seen.add(path.stem)
-    trace_root = output / RTA4_PILOT_TRACE_DIRECTORY
-    worker_trace_root = output / RTA4_PILOT_WORKER_TRACE_DIRECTORY
-    if worker_trace_root.exists():
-        raise RTA4PilotExecutionError(
-            "pilot namespace contains worker-side temporary evidence"
-        )
-    if trace_root.is_dir() and any(
-        not path.is_file()
-        or path.suffix != ".json"
-        or len(path.stem) != 64
-        for path in trace_root.iterdir()
-    ):
-        raise RTA4PilotExecutionError(
-            "pilot trace directory contains an unexpected entry"
-        )
-    trace_paths = (
-        {path.stem: path for path in trace_root.glob("*.json")}
-        if trace_root.is_dir() else {}
+    records_by_execution = {
+        str(record.execution_id): record for record in records
+    }
+    store_manifest, certificates = _load_pilot_store(
+        Path(execution_config["taskset_store"]), records,
+        manifest, execution_config, configs=configs,
+        reconstruct_expected=reconstruct_store,
     )
+    raw_paths = _evidence_paths(
+        output, RTA4_PILOT_RAW_TERMINAL_DIRECTORY,
+    )
+    if any(path.stem not in selected for path in raw_paths):
+        raise RTA4PilotExecutionError(
+            "raw terminal filename is outside the selected plan"
+        )
+    raw_terminals = []
+    raw_by_execution: Dict[str, Dict[str, Any]] = {}
+    for path in raw_paths:
+        record = records_by_execution[path.stem]
+        raw = validate_pilot_raw_terminal(
+            _load_json(path), selected[path.stem], execution_config,
+            _certificate_for_record(record, certificates),
+        )
+        if raw["execution_id"] != path.stem:
+            raise RTA4PilotExecutionError(
+                "raw terminal filename/payload mismatch"
+            )
+        raw_by_execution[path.stem] = raw
+        raw_terminals.append(raw)
+    trace_paths = {
+        path.stem: path for path in _evidence_paths(
+            output, RTA4_PILOT_TRACE_DIRECTORY,
+        )
+    }
     expected_trace_ids = {
-        terminal["execution_id"]
-        for terminal in terminals if terminal["kind"] == "simulation"
+        execution_id for execution_id, raw in raw_by_execution.items()
+        if raw["trace_filename"] is not None
     }
     if set(trace_paths) != expected_trace_ids:
         raise RTA4PilotExecutionError(
-            "pilot trace inventory differs from simulation terminals"
+            "pilot trace inventory differs from raw terminals"
         )
-    for terminal in terminals:
-        trace_size = (
-            trace_paths[terminal["execution_id"]].stat().st_size
-            if terminal["kind"] == "simulation" else 0
-        )
-        if terminal["trace_size_bytes"] != trace_size:
-            raise RTA4PilotExecutionError(
-                "pilot terminal trace byte count mismatch"
-            )
-        if terminal["output_io_bytes"] != (
-            len(_canonical_json_bytes(terminal)) + trace_size
+    trace_digests: Dict[str, str] = {}
+    for execution_id, path in trace_paths.items():
+        raw = raw_by_execution[execution_id]
+        digest = _sha256(path)
+        if (
+            raw["trace_filename"] != path.name
+            or raw["trace_size_bytes"] != path.stat().st_size
+            or raw["trace_sha256"] != digest
+            or raw["trace_schema_version"] != 2
+            or raw["trace_parser_identity"] != PILOT_TRACE_PARSER_IDENTITY
+            or raw["trace_completeness_identity"]
+            != PILOT_TRACE_COMPLETENESS_IDENTITY
         ):
             raise RTA4PilotExecutionError(
-                "pilot terminal output I/O byte definition mismatch"
+                "pilot trace bytes/bindings differ from raw evidence"
             )
-    checkpoint = validate_pilot_checkpoint(
-        _load_json(output / RTA4_PILOT_CHECKPOINT),
-        manifest, execution_config, execution_manifest, seen,
+        _validate_trace(
+            path, records_by_execution[execution_id],
+            _certificate_for_record(
+                records_by_execution[execution_id], certificates,
+            ),
+            raw["simulation_id"],
+        )
+        trace_digests[execution_id] = digest
+    (
+        pointer, checkpoint, _current_event,
+        checkpoint_events, orphan_paths,
+    ) = _load_checkpoint_transaction(output)
+    if (
+        checkpoint["pilot_manifest_id"] != manifest["pilot_manifest_id"]
+        or checkpoint["execution_config_id"]
+        != execution_config["execution_config_id"]
+        or checkpoint["execution_manifest_id"]
+        != execution_manifest["execution_manifest_id"]
+        or checkpoint["store_manifest_id"]
+        != store_manifest["store_manifest_id"]
+        or checkpoint["planned_record_count"] != len(records)
+    ):
+        raise RTA4PilotExecutionError(
+            "checkpoint generation binding mismatch"
+        )
+    raw_digest_map = {
+        key: value["raw_terminal_sha256"]
+        for key, value in raw_by_execution.items()
+    }
+    if any(
+        raw_digest_map.get(key) != value
+        for key, value in checkpoint[
+            "completed_raw_terminal_digests"
+        ].items()
+    ):
+        raise RTA4PilotExecutionError(
+            "checkpoint binds absent or changed raw terminal"
+        )
+    resume_events = tuple(
+        _validate_resume_event(_load_json(path), execution_config)
+        for path in _evidence_paths(
+            output, RTA4_PILOT_RESUME_EVENT_DIRECTORY, stem_length=8,
+        )
     )
-    complete = checkpoint["state"] == "PILOT_COMPLETE"
+    if len({
+        event["resume_generation"] for event in resume_events
+    }) != len(resume_events):
+        raise RTA4PilotExecutionError("duplicate resume event generation")
+    final_paths = _evidence_paths(
+        output, RTA4_PILOT_FINAL_TERMINAL_DIRECTORY,
+    )
+    if any(path.stem not in raw_by_execution for path in final_paths):
+        raise RTA4PilotExecutionError(
+            "final terminal lacks immutable raw evidence"
+        )
+    warnings = runtime_ci_engineering_warnings(
+        manifest["pilot_manifest_id"], raw_terminals,
+    ) if len(raw_terminals) == len(records) else {}
+    checkpoint_overhead: Dict[str, int] = {}
+    for event in checkpoint_events:
+        trigger = event["triggering_execution_id"]
+        if trigger is not None:
+            checkpoint_overhead[trigger] = (
+                checkpoint_overhead.get(trigger, 0)
+                + event["checkpoint_write_milliseconds"]
+            )
+    resume_overhead: Dict[str, int] = {}
+    for event in resume_events:
+        trigger = event["first_pending_execution_id"]
+        if trigger in resume_overhead:
+            raise RTA4PilotExecutionError(
+                "multiple resume events target one execution"
+            )
+        resume_overhead[trigger] = event[
+            "resume_initialization_milliseconds"
+        ]
+    final_terminals = []
+    for path in final_paths:
+        execution_id = path.stem
+        if not warnings:
+            raise RTA4PilotExecutionError(
+                "final evidence exists before all raw terminals"
+            )
+        final = validate_pilot_final_terminal(
+            _load_json(path), raw_by_execution[execution_id],
+            checkpoint_overhead_milliseconds=checkpoint_overhead.get(
+                execution_id, 0,
+            ),
+            resume_overhead_milliseconds=resume_overhead.get(
+                execution_id, 0,
+            ),
+            ci_width_engineering_warning=warnings[
+                raw_by_execution[execution_id]["plan_record_id"]
+            ],
+        )
+        final_terminals.append(final)
+    final_digest_map = {
+        row["execution_id"]: row["final_terminal_sha256"]
+        for row in final_terminals
+    }
+    if any(
+        final_digest_map.get(key) != value
+        for key, value in checkpoint["final_terminal_digests"].items()
+    ) or any(
+        trace_digests.get(key) != value
+        for key, value in checkpoint["trace_digests"].items()
+    ):
+        raise RTA4PilotExecutionError(
+            "checkpoint binds absent or changed final/trace evidence"
+        )
+    worker_root = output / RTA4_PILOT_WORKER_TRACE_DIRECTORY
+    stale_worker_entries = (
+        tuple(worker_root.iterdir()) if worker_root.is_dir() else ()
+    )
+    if any(
+        not path.is_dir() or path.is_symlink()
+        or path.parent != worker_root
+        for path in stale_worker_entries
+    ):
+        raise RTA4PilotExecutionError(
+            "worker temporary namespace contains an unsafe entry"
+        )
+    recovery_count = len(orphan_paths) + len(stale_worker_entries)
+    complete = checkpoint["phase"] == "PILOT_COMPLETE"
+    if complete and (
+        set(raw_by_execution) != set(selected)
+        or set(final_digest_map) != set(selected)
+        or checkpoint["completed_raw_terminal_digests"] != raw_digest_map
+        or checkpoint["final_terminal_digests"] != final_digest_map
+        or checkpoint["trace_digests"] != trace_digests
+        or recovery_count
+    ):
+        raise RTA4PilotExecutionError(
+            "complete checkpoint inventory is not exact"
+        )
     if require_complete and not complete:
         raise RTA4PilotExecutionError("partial pilot cannot pass final audit")
+    if require_complete and recovery_count:
+        raise RTA4PilotExecutionError(
+            "pilot has uncommitted recovery artifacts"
+        )
+    if recovery_count and not allow_recovery_artifacts:
+        raise RTA4PilotExecutionError(
+            "pilot has uncommitted recovery artifacts"
+        )
     observations = None
     report = None
-    if complete:
-        if set(seen) != set(selected):
-            raise RTA4PilotExecutionError(
-                "complete pilot terminal inventory is incomplete"
-            )
-        certificate_root = store / "certificates"
-        certificate_entries = (
-            tuple(sorted(certificate_root.iterdir()))
-            if certificate_root.is_dir() else ()
+    observations_path = output / RTA4_PILOT_OBSERVATIONS
+    report_path = output / RTA4_PILOT_REPORT
+    final_documents_present = (
+        observations_path.is_file() and report_path.is_file()
+    )
+    if (
+        observations_path.exists() != report_path.exists()
+        or final_documents_present and (
+            checkpoint["phase"] not in {"FINALIZING", "PILOT_COMPLETE"}
+            or set(final_digest_map) != set(selected)
         )
-        if any(
-            not path.is_file()
-            or path.suffix != ".json"
-            or len(path.stem) != 64
-            for path in certificate_entries
-        ) or {path.stem for path in certificate_entries} != {
-            terminal["taskset_id"] for terminal in terminals
-        }:
-            raise RTA4PilotExecutionError(
-                "complete pilot taskset certificate inventory differs"
-            )
-        warnings = runtime_ci_engineering_warnings(
-            manifest["pilot_manifest_id"], terminals,
+    ):
+        raise RTA4PilotExecutionError(
+            "pilot final document state is not transactional"
         )
-        if any(
-            terminal["ci_width_engineering_warning"]
-            != warnings[terminal["plan_record_id"]]
-            for terminal in terminals
-        ):
-            raise RTA4PilotExecutionError(
-                "terminal runtime CI warning cannot be reconstructed"
-            )
+    if final_documents_present:
         observations = validate_pilot_observations(
-            _load_json(output / RTA4_PILOT_OBSERVATIONS), manifest,
+            _load_json(observations_path), manifest,
         )
         rebuilt = build_pilot_observations(
             manifest,
-            [_terminal_observation_input(row) for row in terminals],
+            [_terminal_observation_input(row) for row in final_terminals],
         )
         if observations != rebuilt:
             raise RTA4PilotExecutionError(
-                "pilot observations differ from terminal reconstruction"
+                "pilot observations differ from final terminals"
             )
         report = validate_pilot_report(
-            _load_json(output / RTA4_PILOT_REPORT),
+            _load_json(report_path),
             manifest, observations,
         )
-    else:
-        if (
-            (output / RTA4_PILOT_OBSERVATIONS).exists()
-            or (output / RTA4_PILOT_REPORT).exists()
-        ):
-            raise RTA4PilotExecutionError(
-                "partial pilot published final observations/report"
-            )
     material = _audit_material(
         root=output, manifest=manifest,
         execution_config=execution_config,
-        execution_manifest=execution_manifest, checkpoint=checkpoint,
-        terminals=terminals, observations=observations, report=report,
+        execution_manifest=execution_manifest,
+        store_manifest=store_manifest, pointer=pointer,
+        checkpoint=checkpoint, raw_terminals=raw_terminals,
+        final_terminals=final_terminals,
+        checkpoint_events=checkpoint_events,
+        resume_events=resume_events, trace_digests=trace_digests,
+        observations=observations, report=report,
+        recovery_orphan_count=recovery_count,
     )
-    audit = {
+    audit = validate_pilot_audit_document({
         **material,
         "audit_id": domain_hash(RTA4_PILOT_AUDIT_DOMAIN, material),
-    }
-    normalized_audit = validate_pilot_audit_document(audit)
+    })
     audit_path = output / RTA4_PILOT_AUDIT
-    if audit_path.is_file() and _load_json(audit_path) != normalized_audit:
+    if audit_path.is_file() and _load_json(audit_path) != audit:
         raise RTA4PilotExecutionError(
-            "persisted pilot audit differs from reconstruction"
+            "persisted pilot audit differs from fresh reconstruction"
         )
-    return normalized_audit
+    return audit
 
 
 class PilotExecutionRunner:
-    """Bounded process execution with deterministic parent persistence."""
+    """Parent-owned transactional engineering-pilot execution."""
 
     def __init__(
         self, configs: Mapping[str, Mapping[str, Any]],
@@ -1677,6 +2598,18 @@ class PilotExecutionRunner:
         self.execution_config = validate_pilot_execution_config(
             execution_config, self.manifest, validate_live_source=True,
         )
+        canonical_config_path = (
+            Path(self.execution_config["output_root"])
+            / RTA4_PILOT_EXECUTION_CONFIG
+        )
+        if (
+            not canonical_config_path.is_file()
+            or canonical_config_path.read_bytes()
+            != _canonical_json_bytes(self.execution_config)
+        ):
+            raise RTA4PilotExecutionError(
+                "runner execution config differs from the canonical root copy"
+            )
         self.execution_manifest = build_pilot_execution_manifest(
             self.manifest, self.execution_config,
         )
@@ -1693,9 +2626,14 @@ class PilotExecutionRunner:
                 "execution order differs from selection manifest"
             )
 
-    def _write_initial_namespace(self) -> None:
+    def _write_initial_namespace(
+        self,
+        provider: Callable[
+            [FormalPlanRecord], TasksetIdentityCertificate
+        ],
+        transaction_hook: Callable[[str], None] | None,
+    ) -> tuple[Dict[str, Any], Dict[str, TasksetIdentityCertificate]]:
         root = Path(self.execution_config["output_root"])
-        root.mkdir(parents=True, exist_ok=True)
         allowed = {
             RTA4_PILOT_OUTPUT_MARKER,
             RTA4_PILOT_EXECUTION_CONFIG,
@@ -1712,35 +2650,119 @@ class PilotExecutionRunner:
             raise RTA4PilotExecutionError(
                 "fresh pilot namespace lacks the bound selection manifest"
             )
-        config_path = root / RTA4_PILOT_EXECUTION_CONFIG
-        if config_path.is_file():
-            if _load_json(config_path) != self.execution_config:
-                raise RTA4PilotExecutionError(
-                    "pilot execution config copy differs"
-                )
-        else:
-            atomic_write_json(config_path, self.execution_config)
-        atomic_write_json(
+        _write_json_once(
             root / RTA4_PILOT_EXECUTION_MANIFEST,
             self.execution_manifest,
         )
-        (root / RTA4_PILOT_TERMINAL_DIRECTORY).mkdir(
-            parents=True, exist_ok=True,
+        for directory in (
+            RTA4_PILOT_RAW_TERMINAL_DIRECTORY,
+            RTA4_PILOT_FINAL_TERMINAL_DIRECTORY,
+            RTA4_PILOT_TRACE_DIRECTORY,
+            RTA4_PILOT_CHECKPOINT_DIRECTORY,
+            RTA4_PILOT_CHECKPOINT_EVENT_DIRECTORY,
+            RTA4_PILOT_RESUME_EVENT_DIRECTORY,
+            RTA4_PILOT_WORKER_TRACE_DIRECTORY,
+        ):
+            (root / directory).mkdir(parents=True, exist_ok=False)
+        store = RTA4FormalTasksetStore(
+            self.execution_config["taskset_store"]
         )
-        checkpoint = build_pilot_checkpoint(
-            self.manifest, self.execution_config,
-            self.execution_manifest, (),
+        certificates: Dict[str, TasksetIdentityCertificate] = {}
+        for record in self.records:
+            slot = str(record.taskset_slot_id)
+            if slot in certificates:
+                certificate = certificates[slot]
+            else:
+                certificate = provider(record)
+                if type(certificate) is not TasksetIdentityCertificate:
+                    raise RTA4PilotExecutionError(
+                        "pilot provider must return a PR-B certificate"
+                    )
+                certificates[slot] = certificate
+            RTA4FormalRunner(
+                self.configs[record.core]
+            )._validate_plan_certificate(
+                record, certificate,
+            )
+            store.put(certificate)
+        store_manifest = build_pilot_store_manifest(
+            self.records, certificates, self.manifest,
+            self.execution_config,
         )
-        atomic_write_json(root / RTA4_PILOT_CHECKPOINT, checkpoint)
+        _write_json_once(
+            Path(self.execution_config["taskset_store"])
+            / RTA4_PILOT_STORE_MANIFEST,
+            store_manifest,
+        )
+        self._commit_checkpoint(
+            store_manifest, certificates, phase="EXECUTING",
+            triggering_execution_id=None,
+            transaction_hook=transaction_hook,
+        )
+        return store_manifest, certificates
 
-    def _resume_preflight(self) -> Mapping[str, Any]:
+    def _resume_preflight(
+        self, *, allow_recovery_artifacts: bool,
+    ) -> Mapping[str, Any]:
         return audit_pilot_namespace(
             self.execution_config["output_root"], self.configs,
-            require_complete=False,
+            require_complete=False, reconstruct_store=False,
+            allow_recovery_artifacts=allow_recovery_artifacts,
+        )
+
+    def _safe_cleanup_worker_root(self, path: Path) -> None:
+        canonical = (
+            Path(self.execution_config["output_root"])
+            / RTA4_PILOT_WORKER_TRACE_DIRECTORY
+        ).resolve(strict=True)
+        if (
+            path.is_symlink()
+            or path.parent.resolve(strict=True) != canonical
+            or path.resolve(strict=True).parent != canonical
+        ):
+            raise RTA4PilotExecutionError(
+                "refusing unsafe worker temporary cleanup"
+            )
+        try:
+            shutil.rmtree(path)
+        except OSError as exc:
+            raise RTA4PilotExecutionError(
+                "parent could not clean worker temporary evidence"
+            ) from exc
+
+    def _cleanup_recovery_artifacts(self) -> None:
+        root = Path(self.execution_config["output_root"])
+        *_transaction, orphan_paths = _load_checkpoint_transaction(root)
+        for path in orphan_paths:
+            if (
+                path.is_symlink() or not path.is_file()
+                or path.parent not in {
+                    root / RTA4_PILOT_CHECKPOINT_DIRECTORY,
+                    root / RTA4_PILOT_CHECKPOINT_EVENT_DIRECTORY,
+                }
+            ):
+                raise RTA4PilotExecutionError(
+                    "refusing unsafe orphan transaction cleanup"
+                )
+            path.unlink()
+        worker_root = root / RTA4_PILOT_WORKER_TRACE_DIRECTORY
+        for path in tuple(worker_root.iterdir()):
+            self._safe_cleanup_worker_root(path)
+
+    def _load_store(
+        self,
+    ) -> tuple[Dict[str, Any], Dict[str, TasksetIdentityCertificate]]:
+        return _load_pilot_store(
+            Path(self.execution_config["taskset_store"]),
+            self.records, self.manifest, self.execution_config,
+            configs=self.configs, reconstruct_expected=False,
         )
 
     def _persist_trace(
-        self, execution_id: str, payload: bytes | None,
+        self, record: FormalPlanRecord,
+        certificate: TasksetIdentityCertificate,
+        payload: bytes | None, simulation_id: str,
+        worker_temp_root: Path,
     ) -> tuple[int, str | None]:
         if payload is None:
             return 0, None
@@ -1762,31 +2784,260 @@ class PilotExecutionRunner:
             raise RTA4PilotExecutionError(
                 "worker trace payload is not strict UTF-8 JSON"
             ) from exc
-        trace_root = (
+        candidate = worker_temp_root / "trace_candidate.json"
+        atomic_write_text(candidate, text)
+        _validate_trace(candidate, record, certificate, simulation_id)
+        target = (
             Path(self.execution_config["output_root"])
-            / RTA4_PILOT_TRACE_DIRECTORY
+            / RTA4_PILOT_TRACE_DIRECTORY / f"{record.execution_id}.json"
         )
-        trace_root.mkdir(parents=True, exist_ok=True)
-        target = trace_root / f"{execution_id}.json"
-        atomic_write_text(target, text)
+        _write_text_once(target, text)
         size = target.stat().st_size
-        return size, str(target)
+        return size, _sha256(target)
 
-    def _rewrite_terminal(
-        self, execution_id: str,
-        certificate: TasksetIdentityCertificate,
-        metrics: Mapping[str, Any],
+    def _load_raw_terminals(
+        self,
+        certificates: Mapping[str, TasksetIdentityCertificate],
+    ) -> list[Dict[str, Any]]:
+        root = Path(self.execution_config["output_root"])
+        records = {
+            str(record.execution_id): record for record in self.records
+        }
+        rows = []
+        for path in _evidence_paths(
+            root, RTA4_PILOT_RAW_TERMINAL_DIRECTORY,
+        ):
+            record = records.get(path.stem)
+            if record is None:
+                raise RTA4PilotExecutionError(
+                    "raw terminal is outside selected execution inventory"
+                )
+            rows.append(validate_pilot_raw_terminal(
+                _load_json(path), self.selected[path.stem],
+                self.execution_config,
+                _certificate_for_record(record, certificates),
+            ))
+        return rows
+
+    def _load_resume_events(self) -> list[Dict[str, Any]]:
+        root = Path(self.execution_config["output_root"])
+        return [
+            _validate_resume_event(_load_json(path), self.execution_config)
+            for path in _evidence_paths(
+                root, RTA4_PILOT_RESUME_EVENT_DIRECTORY, stem_length=8,
+            )
+        ]
+
+    def _load_final_terminals(self) -> list[Dict[str, Any]]:
+        root = Path(self.execution_config["output_root"])
+        return [
+            _load_json(path) for path in _evidence_paths(
+                root, RTA4_PILOT_FINAL_TERMINAL_DIRECTORY,
+            )
+        ]
+
+    def _trace_digests(self) -> Dict[str, str]:
+        root = Path(self.execution_config["output_root"])
+        return {
+            path.stem: _sha256(path)
+            for path in _evidence_paths(
+                root, RTA4_PILOT_TRACE_DIRECTORY,
+            )
+        }
+
+    def _commit_checkpoint(
+        self,
+        store_manifest: Mapping[str, Any],
+        certificates: Mapping[str, TasksetIdentityCertificate],
+        *, phase: str, triggering_execution_id: str | None,
+        transaction_hook: Callable[[str], None] | None,
+    ) -> tuple[Dict[str, Any], Dict[str, Any]]:
+        root = Path(self.execution_config["output_root"])
+        pointer_path = root / RTA4_PILOT_CHECKPOINT
+        if pointer_path.is_file():
+            (
+                _pointer, _checkpoint, _event,
+                committed_events, orphan_paths,
+            ) = _load_checkpoint_transaction(root)
+            if orphan_paths:
+                raise RTA4PilotExecutionError(
+                    "checkpoint transaction has unresolved orphan evidence"
+                )
+            generation = _checkpoint["checkpoint_generation"] + 1
+        else:
+            committed_events = ()
+            generation = 1
+        raw = self._load_raw_terminals(certificates)
+        final = self._load_final_terminals()
+        resume_events = self._load_resume_events()
+        checkpoint = build_pilot_checkpoint(
+            self.manifest, self.execution_config,
+            self.execution_manifest, store_manifest=store_manifest,
+            raw_terminals=raw, checkpoint_events=committed_events,
+            resume_events=resume_events, final_terminals=final,
+            trace_digests=self._trace_digests(), phase=phase,
+            generation=generation,
+        )
+        filename = f"{generation:08d}.json"
+        checkpoint_path = (
+            root / RTA4_PILOT_CHECKPOINT_DIRECTORY / filename
+        )
+        started = time.monotonic_ns()
+        _write_json_once(checkpoint_path, checkpoint)
+        elapsed = _nonnegative_milliseconds(
+            time.monotonic_ns() - started
+        )
+        if transaction_hook is not None:
+            transaction_hook("after_checkpoint_generation")
+        event = _build_checkpoint_event(
+            checkpoint, checkpoint_path,
+            triggering_execution_id=triggering_execution_id,
+            write_milliseconds=elapsed,
+        )
+        event_path = (
+            root / RTA4_PILOT_CHECKPOINT_EVENT_DIRECTORY / filename
+        )
+        _write_json_once(event_path, event)
+        if transaction_hook is not None:
+            transaction_hook("after_checkpoint_event")
+        atomic_write_json(
+            pointer_path,
+            _checkpoint_pointer(
+                checkpoint, checkpoint_path, event, event_path,
+            ),
+        )
+        if transaction_hook is not None:
+            transaction_hook("after_checkpoint_pointer")
+        return checkpoint, event
+
+    def _ensure_resume_event(
+        self, first_pending_execution_id: str, *,
+        preflight_started_ns: int, preflight_finished_ns: int,
     ) -> Dict[str, Any]:
-        terminal = _terminal_with_io_size(
-            self.selected[execution_id], self.execution_config,
-            certificate, metrics,
+        events = self._load_resume_events()
+        matching = [
+            event for event in events
+            if event["first_pending_execution_id"]
+            == first_pending_execution_id
+        ]
+        if len(matching) > 1:
+            raise RTA4PilotExecutionError(
+                "multiple resume events bind the same pending execution"
+            )
+        if matching:
+            return matching[0]
+        generation = 1 + max(
+            (event["resume_generation"] for event in events),
+            default=0,
         )
-        path = (
+        event = _build_resume_event(
+            self.execution_config, generation=generation,
+            preflight_started_ns=preflight_started_ns,
+            preflight_finished_ns=preflight_finished_ns,
+            initialization_milliseconds=_nonnegative_milliseconds(
+                preflight_finished_ns - preflight_started_ns
+            ),
+            first_pending_execution_id=first_pending_execution_id,
+        )
+        _write_json_once(
             Path(self.execution_config["output_root"])
-            / RTA4_PILOT_TERMINAL_DIRECTORY / f"{execution_id}.json"
+            / RTA4_PILOT_RESUME_EVENT_DIRECTORY
+            / f"{generation:08d}.json",
+            event,
         )
-        atomic_write_json(path, terminal)
-        return terminal
+        return event
+
+    def _finalize(
+        self,
+        store_manifest: Mapping[str, Any],
+        certificates: Mapping[str, TasksetIdentityCertificate],
+        transaction_hook: Callable[[str], None] | None,
+    ) -> Mapping[str, Any]:
+        root = Path(self.execution_config["output_root"])
+        raw = self._load_raw_terminals(certificates)
+        if len(raw) != len(self.records):
+            raise RTA4PilotExecutionError(
+                "finalization requires every immutable raw terminal"
+            )
+        pointer, checkpoint, _event, checkpoint_events, _orphans = (
+            _load_checkpoint_transaction(root)
+        )
+        if checkpoint["phase"] == "PILOT_COMPLETE":
+            return audit_pilot_namespace(root, self.configs)
+        if checkpoint["phase"] != "FINALIZING":
+            self._commit_checkpoint(
+                store_manifest, certificates, phase="FINALIZING",
+                triggering_execution_id=raw[-1]["execution_id"],
+                transaction_hook=transaction_hook,
+            )
+            pointer, checkpoint, _event, checkpoint_events, _orphans = (
+                _load_checkpoint_transaction(root)
+            )
+        warnings = runtime_ci_engineering_warnings(
+            self.manifest["pilot_manifest_id"], raw,
+        )
+        checkpoint_overhead: Dict[str, int] = {}
+        for event in checkpoint_events:
+            execution_id = event["triggering_execution_id"]
+            if execution_id is not None:
+                checkpoint_overhead[execution_id] = (
+                    checkpoint_overhead.get(execution_id, 0)
+                    + event["checkpoint_write_milliseconds"]
+                )
+        resume_overhead = {
+            event["first_pending_execution_id"]: event[
+                "resume_initialization_milliseconds"
+            ]
+            for event in self._load_resume_events()
+        }
+        by_execution = {
+            row["execution_id"]: row for row in raw
+        }
+        finalized = []
+        for record in self.records:
+            execution_id = str(record.execution_id)
+            final = build_pilot_final_terminal(
+                by_execution[execution_id],
+                checkpoint_overhead_milliseconds=(
+                    checkpoint_overhead.get(execution_id, 0)
+                ),
+                resume_overhead_milliseconds=resume_overhead.get(
+                    execution_id, 0,
+                ),
+                ci_width_engineering_warning=warnings[
+                    record.record_id
+                ],
+            )
+            _write_json_once(
+                root / RTA4_PILOT_FINAL_TERMINAL_DIRECTORY
+                / f"{execution_id}.json",
+                final,
+            )
+            finalized.append(final)
+            if transaction_hook is not None:
+                transaction_hook("during_finalization")
+        observations = build_pilot_observations(
+            self.manifest,
+            [_terminal_observation_input(row) for row in finalized],
+        )
+        report = build_pilot_report(self.manifest, observations)
+        _write_json_once(root / RTA4_PILOT_OBSERVATIONS, observations)
+        _write_json_once(root / RTA4_PILOT_REPORT, report)
+        audit_pilot_namespace(
+            root, self.configs, require_complete=False,
+            reconstruct_store=False,
+        )
+        self._commit_checkpoint(
+            store_manifest, certificates, phase="PILOT_COMPLETE",
+            triggering_execution_id=None,
+            transaction_hook=transaction_hook,
+        )
+        audit = audit_pilot_namespace(
+            root, self.configs, require_complete=True,
+            reconstruct_store=False,
+        )
+        _write_json_once(root / RTA4_PILOT_AUDIT, audit)
+        return audit
 
     def run(
         self, *, resume: bool = False, validate_only: bool = False,
@@ -1798,6 +3049,7 @@ class PilotExecutionRunner:
         simulation_callback: Callable[..., Mapping[str, Any]] | None = None,
         use_processes: bool | None = None,
         interrupt_after: int | None = None,
+        transaction_hook: Callable[[str], None] | None = None,
     ) -> PilotExecutionSummary:
         is_test = self.execution_config["execution_class"] == (
             RTA4_PILOT_TEST_EXECUTION_CLASS
@@ -1805,7 +3057,7 @@ class PilotExecutionRunner:
         if not is_test and any(
             value is not None for value in (
                 certificate_provider, rta_callback, simulation_callback,
-                interrupt_after,
+                interrupt_after, transaction_hook,
             )
         ):
             raise RTA4PilotExecutionError(
@@ -1815,17 +3067,28 @@ class PilotExecutionRunner:
             resume = True
         resume_started = time.monotonic_ns()
         if resume:
-            preflight_audit = self._resume_preflight()
+            preflight_audit = self._resume_preflight(
+                allow_recovery_artifacts=True,
+            )
+            self._cleanup_recovery_artifacts()
+            preflight_audit = self._resume_preflight(
+                allow_recovery_artifacts=False,
+            )
+            store_manifest, certificates = self._load_store()
         else:
-            self._write_initial_namespace()
+            provider = certificate_provider or PilotTasksetProvider(
+                self.configs,
+            )
+            store_manifest, certificates = self._write_initial_namespace(
+                provider, transaction_hook,
+            )
             preflight_audit = None
-        resume_overhead = (
-            _nonnegative_milliseconds(time.monotonic_ns() - resume_started)
-            if resume else 0
-        )
+        preflight_finished = time.monotonic_ns()
         root = Path(self.execution_config["output_root"])
-        terminal_paths = _terminal_paths(root)
-        completed = {path.stem for path in terminal_paths}
+        raw_terminals = self._load_raw_terminals(certificates)
+        completed = {
+            row["execution_id"] for row in raw_terminals
+        }
         if validate_only:
             remaining = len(self.records) - len(completed)
             return PilotExecutionSummary(
@@ -1840,18 +3103,31 @@ class PilotExecutionRunner:
             raise RTA4PilotExecutionError(
                 "max_records must be a non-negative plain integer"
             )
-        pending = [
+        all_pending = [
             record for record in self.records
             if record.execution_id not in completed
         ]
+        pending = list(all_pending)
         if max_records is not None:
             pending = pending[:max_records]
-        if resume and not pending and len(completed) == len(self.records):
+        if (
+            resume and not all_pending
+            and preflight_audit["checkpoint_phase"] == "PILOT_COMPLETE"
+        ):
+            audit_path = root / RTA4_PILOT_AUDIT
+            if not audit_path.is_file():
+                _write_json_once(audit_path, preflight_audit)
             return PilotExecutionSummary(
                 self.execution_config["execution_class"],
                 self.execution_config["execution_config_id"],
                 0, 0, True, root / RTA4_PILOT_CHECKPOINT,
                 preflight_audit,
+            )
+        if resume and pending:
+            self._ensure_resume_event(
+                str(pending[0].execution_id),
+                preflight_started_ns=resume_started,
+                preflight_finished_ns=preflight_finished,
             )
         if use_processes is None:
             use_processes = not is_test
@@ -1861,13 +3137,7 @@ class PilotExecutionRunner:
             raise RTA4PilotExecutionError(
                 "real pilot requires process workers"
             )
-        provider = certificate_provider or PilotTasksetProvider(self.configs)
-        store = RTA4FormalTasksetStore(
-            self.execution_config["taskset_store"]
-        )
-        certificates: Dict[str, TasksetIdentityCertificate] = {}
         processed = 0
-        first_pending = True
         pool_type = ProcessPoolExecutor if use_processes else ThreadPoolExecutor
         max_in_flight = self.execution_config["max_in_flight"]
         for condition_workers, batch in _execution_batches(
@@ -1875,206 +3145,175 @@ class PilotExecutionRunner:
             default_workers=self.execution_config["default_worker_count"],
         ):
             batch_certificates = []
+            worker_roots = []
             for record in batch:
-                certificate = provider(record)
-                if type(certificate) is not TasksetIdentityCertificate:
-                    raise RTA4PilotExecutionError(
-                        "pilot provider must return a PR-B certificate"
-                    )
-                RTA4FormalRunner(
-                    self.configs[record.core]
-                )._validate_plan_certificate(record, certificate)
-                store.put(certificate)
-                certificates[str(record.execution_id)] = certificate
+                certificate = _certificate_for_record(
+                    record, certificates,
+                )
                 batch_certificates.append(certificate)
+                worker_root = Path(tempfile.mkdtemp(
+                    prefix=f"{record.execution_id}.",
+                    dir=(
+                        root / RTA4_PILOT_WORKER_TRACE_DIRECTORY
+                    ),
+                ))
+                if worker_root.is_symlink():
+                    raise RTA4PilotExecutionError(
+                        "worker temporary root is a symlink"
+                    )
+                worker_roots.append(worker_root)
             worker_count = condition_workers
             batch_started = time.monotonic_ns()
             futures: list[Future[Any]] = []
-            with pool_type(max_workers=max(1, worker_count)) as pool:
-                for record, certificate in zip(
-                    batch, batch_certificates,
-                ):
-                    callback = (
-                        simulation_callback
-                        if record.kind == "simulation" else rta_callback
-                    )
-                    futures.append(pool.submit(
-                        _worker_execute, record, certificate,
-                        self.configs[record.core],
-                        self.execution_config, callback,
-                    ))
-                results = []
-                for record, certificate, future in zip(
-                    batch, batch_certificates, futures,
-                ):
-                    try:
-                        result = future.result()
-                    except (KeyboardInterrupt, SystemExit):
-                        raise
-                    except Exception:
-                        result = _parent_worker_failure(
-                            record, certificate,
-                            time.monotonic_ns() - batch_started,
+            try:
+                with pool_type(max_workers=max(1, worker_count)) as pool:
+                    for record, certificate, worker_root in zip(
+                        batch, batch_certificates, worker_roots,
+                    ):
+                        callback = (
+                            simulation_callback
+                            if record.kind == "simulation" else rta_callback
                         )
-                    results.append(result)
+                        futures.append(pool.submit(
+                            _worker_execute, record, certificate,
+                            self.configs[record.core],
+                            self.execution_config, callback,
+                            str(worker_root),
+                        ))
+                    results = []
+                    for record, certificate, future in zip(
+                        batch, batch_certificates, futures,
+                    ):
+                        try:
+                            result = future.result()
+                        except (KeyboardInterrupt, SystemExit):
+                            raise
+                        except Exception:
+                            result = _parent_worker_failure(
+                                record, certificate,
+                                time.monotonic_ns() - batch_started,
+                            )
+                        results.append(result)
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except Exception:
+                results = [
+                    _parent_worker_failure(
+                        record, certificate,
+                        time.monotonic_ns() - batch_started,
+                    )
+                    for record, certificate in zip(
+                        batch, batch_certificates,
+                    )
+                ]
             elapsed_ns = time.monotonic_ns() - batch_started
             throughput = (
                 0 if elapsed_ns <= 0 else
                 (1000 * len(batch) * 1_000_000_000) // elapsed_ns
             )
-            for record, certificate, result in zip(
-                batch, batch_certificates, results,
+            for record, certificate, result, worker_root in zip(
+                batch, batch_certificates, results, worker_roots,
             ):
-                if (
-                    result.get("plan_record_id") != record.record_id
-                    or result.get("execution_id") != record.execution_id
-                    or result.get("taskset_id") != certificate.taskset_id
-                ):
-                    raise RTA4PilotExecutionError(
-                        "worker result identity mismatch"
-                    )
-                metrics = _validate_metrics(result["metrics"])
-                metrics["worker_throughput_milli_records_per_second"] = (
-                    throughput
-                )
-                if first_pending:
-                    metrics["resume_overhead_milliseconds"] = (
-                        resume_overhead
-                    )
-                    first_pending = False
-                trace_size, _trace_path = self._persist_trace(
-                    str(record.execution_id), result.get("trace_payload"),
-                )
-                metrics["trace_size_bytes"] = trace_size
-                terminal = self._rewrite_terminal(
-                    str(record.execution_id), certificate, metrics,
-                )
-                completed.add(str(record.execution_id))
-                processed += 1
-                should_checkpoint = (
-                    len(completed)
-                    % self.execution_config[
-                        "checkpoint_interval_records"
-                    ] == 0
-                )
-                if should_checkpoint:
-                    checkpoint = build_pilot_checkpoint(
-                        self.manifest, self.execution_config,
-                        self.execution_manifest, completed,
-                    )
-                    checkpoint_started = time.monotonic_ns()
-                    atomic_write_json(
-                        root / RTA4_PILOT_CHECKPOINT, checkpoint,
-                    )
-                    metrics["checkpoint_overhead_milliseconds"] += (
-                        _nonnegative_milliseconds(
-                            time.monotonic_ns() - checkpoint_started
+                try:
+                    if (
+                        result.get("plan_record_id") != record.record_id
+                        or result.get("execution_id") != record.execution_id
+                        or result.get("taskset_id") != certificate.taskset_id
+                    ):
+                        raise RTA4PilotExecutionError(
+                            "worker result identity mismatch"
                         )
+                    metrics = _validate_metrics(
+                        result["metrics"], final=False,
                     )
-                    terminal = self._rewrite_terminal(
-                        str(record.execution_id), certificate, metrics,
+                    metrics[
+                        "worker_throughput_milli_records_per_second"
+                    ] = throughput
+                    simulation_id = result.get("simulation_id")
+                    if record.kind == "simulation":
+                        _projection, _window, _payload, expected_id = (
+                            _simulation_identity(record, certificate)
+                        )
+                        if simulation_id not in {None, expected_id}:
+                            raise RTA4PilotExecutionError(
+                                "worker returned a foreign simulation ID"
+                            )
+                        simulation_id = expected_id
+                    trace_size, trace_sha = self._persist_trace(
+                        record, certificate,
+                        result.get("trace_payload"),
+                        simulation_id, worker_root,
+                    ) if record.kind == "simulation" else (0, None)
+                    metrics["trace_size_bytes"] = trace_size
+                    raw = build_pilot_raw_terminal(
+                        self.selected[str(record.execution_id)],
+                        self.execution_config, certificate, metrics,
+                        trace_sha256=trace_sha,
+                        simulation_id=simulation_id,
                     )
-                if (
-                    interrupt_after is not None
-                    and processed >= interrupt_after
-                ):
-                    if not should_checkpoint:
-                        checkpoint = build_pilot_checkpoint(
-                            self.manifest, self.execution_config,
-                            self.execution_manifest, completed,
-                        )
-                        checkpoint_started = time.monotonic_ns()
-                        atomic_write_json(
-                            root / RTA4_PILOT_CHECKPOINT, checkpoint,
-                        )
-                        metrics[
-                            "checkpoint_overhead_milliseconds"
-                        ] += _nonnegative_milliseconds(
-                            time.monotonic_ns() - checkpoint_started
-                        )
-                        self._rewrite_terminal(
-                            str(record.execution_id),
-                            certificate, metrics,
-                        )
-                    raise RTA4PilotExecutionInterrupted(
-                        "deterministic pilot interruption"
+                    _write_json_once(
+                        root / RTA4_PILOT_RAW_TERMINAL_DIRECTORY
+                        / f"{record.execution_id}.json",
+                        raw,
                     )
-        checkpoint = build_pilot_checkpoint(
-            self.manifest, self.execution_config,
-            self.execution_manifest, completed,
-        )
-        checkpoint_is_current = (
-            processed > 0
-            and len(completed) % self.execution_config[
-                "checkpoint_interval_records"
-            ] == 0
-        )
-        if processed and not checkpoint_is_current:
-            last_id = str(pending[processed - 1].execution_id)
-            last_path = (
-                root / RTA4_PILOT_TERMINAL_DIRECTORY / f"{last_id}.json"
+                    completed.add(str(record.execution_id))
+                    processed += 1
+                    if transaction_hook is not None:
+                        transaction_hook("after_raw_terminal")
+                    should_checkpoint = (
+                        len(completed)
+                        % self.execution_config[
+                            "checkpoint_interval_records"
+                        ] == 0
+                    )
+                    if should_checkpoint:
+                        self._commit_checkpoint(
+                            store_manifest, certificates,
+                            phase="EXECUTING",
+                            triggering_execution_id=str(
+                                record.execution_id
+                            ),
+                            transaction_hook=transaction_hook,
+                        )
+                    if (
+                        interrupt_after is not None
+                        and processed >= interrupt_after
+                    ):
+                        if not should_checkpoint:
+                            self._commit_checkpoint(
+                                store_manifest, certificates,
+                                phase="EXECUTING",
+                                triggering_execution_id=str(
+                                    record.execution_id
+                                ),
+                                transaction_hook=transaction_hook,
+                            )
+                        raise RTA4PilotExecutionInterrupted(
+                            "deterministic pilot interruption"
+                        )
+                finally:
+                    if worker_root.exists():
+                        self._safe_cleanup_worker_root(worker_root)
+            for worker_root in worker_roots:
+                if worker_root.exists():
+                    self._safe_cleanup_worker_root(worker_root)
+        if processed:
+            _pointer, checkpoint, _event, _events, _orphans = (
+                _load_checkpoint_transaction(root)
             )
-            last = validate_pilot_terminal(
-                _load_json(last_path), self.selected[last_id],
-                self.execution_config,
-            )
-            last_metrics = {
-                field: last[field] for field in _METRIC_FIELDS
-            }
-            checkpoint_started = time.monotonic_ns()
-            atomic_write_json(root / RTA4_PILOT_CHECKPOINT, checkpoint)
-            last_metrics["checkpoint_overhead_milliseconds"] += (
-                _nonnegative_milliseconds(
-                    time.monotonic_ns() - checkpoint_started
+            if checkpoint["completed_raw_count"] != len(completed):
+                self._commit_checkpoint(
+                    store_manifest, certificates, phase="EXECUTING",
+                    triggering_execution_id=str(
+                        pending[processed - 1].execution_id
+                    ),
+                    transaction_hook=transaction_hook,
                 )
-            )
-            self._rewrite_terminal(
-                last_id, certificates[last_id], last_metrics,
-            )
         remaining = len(self.records) - len(completed)
         audit = None
         if remaining == 0:
-            terminal_documents = [
-                validate_pilot_terminal(
-                    _load_json(path), self.selected[path.stem],
-                    self.execution_config,
-                )
-                for path in _terminal_paths(root)
-            ]
-            warnings = runtime_ci_engineering_warnings(
-                self.manifest["pilot_manifest_id"], terminal_documents,
-            )
-            finalized = []
-            for terminal in terminal_documents:
-                execution_id = terminal["execution_id"]
-                certificate = (
-                    certificates.get(execution_id)
-                    or TasksetIdentityCertificate.from_canonical_bytes(
-                        (
-                            Path(self.execution_config["taskset_store"])
-                            / "certificates"
-                            / f"{terminal['taskset_id']}.json"
-                        ).read_bytes()
-                    )
-                )
-                metrics = {
-                    field: terminal[field] for field in _METRIC_FIELDS
-                }
-                metrics["ci_width_engineering_warning"] = warnings[
-                    terminal["plan_record_id"]
-                ]
-                finalized.append(self._rewrite_terminal(
-                    execution_id, certificate, metrics,
-                ))
-            observations = build_pilot_observations(
-                self.manifest,
-                [_terminal_observation_input(row) for row in finalized],
-            )
-            report = build_pilot_report(self.manifest, observations)
-            atomic_write_json(root / RTA4_PILOT_OBSERVATIONS, observations)
-            atomic_write_json(root / RTA4_PILOT_REPORT, report)
-            audit = audit_pilot_namespace(
-                root, self.configs, require_complete=True,
+            audit = self._finalize(
+                store_manifest, certificates, transaction_hook,
             )
         return PilotExecutionSummary(
             self.execution_config["execution_class"],
@@ -2090,21 +3329,36 @@ __all__ = [
     "PilotExecutionSummary", "PilotTasksetProvider", "RTA4_PILOT_AUDIT",
     "RTA4_PILOT_AUDIT_DOMAIN", "RTA4_PILOT_AUDIT_VERSION",
     "RTA4_PILOT_CHECKPOINT", "RTA4_PILOT_CHECKPOINT_DOMAIN",
+    "RTA4_PILOT_CHECKPOINT_DIRECTORY",
+    "RTA4_PILOT_CHECKPOINT_EVENT_DIRECTORY",
+    "RTA4_PILOT_CHECKPOINT_EVENT_VERSION",
     "RTA4_PILOT_CHECKPOINT_VERSION", "RTA4_PILOT_EXECUTION_CONFIG",
     "RTA4_PILOT_EXECUTION_CONFIG_DOMAIN",
     "RTA4_PILOT_EXECUTION_CONFIG_VERSION",
     "RTA4_PILOT_EXECUTION_MANIFEST",
     "RTA4_PILOT_EXECUTION_MANIFEST_DOMAIN",
     "RTA4_PILOT_EXECUTION_MANIFEST_VERSION",
+    "RTA4_PILOT_FINAL_TERMINAL_DIRECTORY",
+    "RTA4_PILOT_FINAL_TERMINAL_DOMAIN",
+    "RTA4_PILOT_FINAL_TERMINAL_VERSION",
+    "RTA4_PILOT_RAW_TERMINAL_DIRECTORY",
+    "RTA4_PILOT_RAW_TERMINAL_DOMAIN",
+    "RTA4_PILOT_RAW_TERMINAL_VERSION",
+    "RTA4_PILOT_RESUME_EVENT_DIRECTORY",
     "RTA4_PILOT_RUNTIME_CI_RULE_VERSION",
+    "RTA4_PILOT_STORE_MANIFEST", "RTA4_PILOT_STORE_MANIFEST_VERSION",
     "RTA4_PILOT_TERMINAL_DIRECTORY", "RTA4_PILOT_TERMINAL_DOMAIN",
     "RTA4_PILOT_TERMINAL_VERSION", "RTA4_PILOT_TEST_EXECUTION_CLASS",
     "RTA4PilotExecutionError", "RTA4PilotExecutionInterrupted",
     "audit_pilot_namespace", "build_pilot_checkpoint",
     "build_pilot_execution_config", "build_pilot_execution_manifest",
-    "build_pilot_terminal", "build_simulation_support",
+    "build_pilot_final_terminal", "build_pilot_raw_terminal",
+    "build_pilot_store_manifest", "build_pilot_terminal",
+    "build_simulation_support", "compute_pilot_output_io_bytes",
+    "pilot_final_terminal_preimage",
     "reconstruct_selected_records", "runtime_ci_engineering_warnings",
     "validate_pilot_audit_document", "validate_pilot_checkpoint",
     "validate_pilot_execution_config", "validate_pilot_execution_manifest",
+    "validate_pilot_final_terminal", "validate_pilot_raw_terminal",
     "validate_pilot_terminal",
 ]
