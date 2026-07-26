@@ -59,6 +59,12 @@ SYSTEM_RELPATH = "integration-smoke/artifacts/system.yml"
 SOURCE_RELPATH = "integration-smoke/artifacts/source.json"
 RESULT_PREFIX = "integration-smoke/results"
 
+SMOKE_ALGORITHMS = tuple(
+    manifest.IDENTITY.RESOLUTION["phase_algorithms"]["formal_main"]
+)
+ALGORITHM_CLI_MAPPING = dict(manifest.PROTOCOL["algorithm_cli_mapping"])
+DEFAULT_ALGORITHM = "ASAP-BLOCK"
+
 LEGACY_SOURCE_FIELDS = {
     "base_harvesting_rate",
     "day_of_year",
@@ -100,6 +106,7 @@ SYSTEM_INLINE_VOLTS_LINE = (
     "    volts: [0.92, 0.94, 0.96, 0.98, 1.00, 1.02, 1.04, 1.06, "
     "1.08, 1.10, 1.12, 1.14]"
 )
+SYSTEM_SCHEDULER_PLACEHOLDER = "      scheduler: gpfp_asap_block\n"
 
 
 class RealSmokeCaseError(RuntimeError):
@@ -109,6 +116,31 @@ class RealSmokeCaseError(RuntimeError):
 def _require(condition, message):
     if not condition:
         raise RealSmokeCaseError(message)
+
+
+def scheduler_cli_name(algorithm):
+    _require(
+        algorithm in SMOKE_ALGORITHMS
+        and algorithm in ALGORITHM_CLI_MAPPING,
+        f"unknown formal scheduler algorithm: {algorithm}",
+    )
+    return ALGORITHM_CLI_MAPPING[algorithm]
+
+
+def _normalised_utilization(value):
+    try:
+        exact = value if isinstance(value, Fraction) else Fraction(str(value))
+    except (ValueError, ZeroDivisionError) as exc:
+        raise RealSmokeCaseError("normalized utilization is not exact") from exc
+    _require(
+        0 < exact <= 1,
+        "normalized utilization must be in (0,1]",
+    )
+    return exact
+
+
+def _fraction_cli_text(value):
+    return format(float(value), ".17g")
 
 
 def file_sha256(path):
@@ -146,8 +178,15 @@ def _artifact_path(output_root, relative):
     return Path(output_root).joinpath(*Path(relative).parts)
 
 
-def generator_argv(raw_taskset_path, python_executable=None):
+def generator_argv(
+    raw_taskset_path,
+    python_executable=None,
+    seed=GENERATOR_SEED,
+    normalized_utilization=TARGET_NORMALIZED_UTILIZATION,
+):
     """Return the exact public task-generator CLI for this smoke case."""
+    _require(type(seed) is int and seed >= 0, "generator seed must be a nonnegative integer")
+    normalized = _normalised_utilization(normalized_utilization)
     executable = Path(python_executable or sys.executable)
     return [
         str(executable),
@@ -155,7 +194,7 @@ def generator_argv(raw_taskset_path, python_executable=None):
         "--num-tasks",
         str(TASK_COUNT),
         "--utilization",
-        "1.2",
+        _fraction_cli_text(normalized * PROCESSORS),
         "--min-period",
         str(PERIOD_MIN_MS),
         "--max-period",
@@ -167,7 +206,7 @@ def generator_argv(raw_taskset_path, python_executable=None):
         "--system-config",
         str(SYSTEM_TEMPLATE_PATH),
         "--seed",
-        str(GENERATOR_SEED),
+        str(seed),
         "--min-task-util",
         "0.01",
         "--max-task-util",
@@ -183,8 +222,16 @@ def generator_argv(raw_taskset_path, python_executable=None):
     ]
 
 
-def run_generator(raw_taskset_path):
-    command = generator_argv(raw_taskset_path)
+def run_generator(
+    raw_taskset_path,
+    seed=GENERATOR_SEED,
+    normalized_utilization=TARGET_NORMALIZED_UTILIZATION,
+):
+    command = generator_argv(
+        raw_taskset_path,
+        seed=seed,
+        normalized_utilization=normalized_utilization,
+    )
     log_directory = Path(raw_taskset_path).parent / "generator-logs"
     completed = subprocess.run(
         command,
@@ -234,8 +281,14 @@ def _params_mapping(value):
     return result
 
 
-def validate_generated_taskset(path):
+def validate_generated_taskset(
+    path,
+    normalized_utilization=TARGET_NORMALIZED_UTILIZATION,
+):
     """Validate the real generator output before bridge materialization."""
+    target_total_utilization = (
+        _normalised_utilization(normalized_utilization) * PROCESSORS
+    )
     document = _load_yaml_mapping(path, "generated taskset")
     tasks = document.get("taskset")
     _require(
@@ -278,7 +331,7 @@ def validate_generated_taskset(path):
         _require(params.get("workload") == "hash", f"task {name} workload is not hash")
         actual += utilization
     _require(
-        abs(actual - TARGET_TOTAL_UTILIZATION) <= UTILIZATION_TOLERANCE,
+        abs(actual - target_total_utilization) <= UTILIZATION_TOLERANCE,
         "actual total utilization is outside the frozen tolerance",
     )
     return document, actual
@@ -313,10 +366,17 @@ def _release_count(period, horizon=FROZEN_HORIZON_MS):
     return (horizon - 1) // period + 1
 
 
-def materialize_taskset(raw_path, destination):
+def materialize_taskset(
+    raw_path,
+    destination,
+    normalized_utilization=TARGET_NORMALIZED_UTILIZATION,
+):
     """Copy the public generator taskset byte-for-byte into the smoke artifact."""
     raw_path = _require_regular_nonempty(raw_path, "raw taskset")
-    raw, actual = validate_generated_taskset(raw_path)
+    raw, actual = validate_generated_taskset(
+        raw_path,
+        normalized_utilization=normalized_utilization,
+    )
     tasks = raw["taskset"]
     ranked = sorted(
         enumerate(tasks),
@@ -432,8 +492,14 @@ def _replace_system_placeholder(source, placeholder, replacement, label):
     return source.replace(placeholder, replacement, 1)
 
 
-def render_system_and_source(system_path, source_path, energy):
+def render_system_and_source(
+    system_path,
+    source_path,
+    energy,
+    algorithm=DEFAULT_ALGORITHM,
+):
     """Render only declared smoke placeholders in the frozen template text."""
+    scheduler_cli = scheduler_cli_name(algorithm)
     _require(
         file_sha256(SYSTEM_TEMPLATE_PATH)
         == manifest.PROTOCOL["system_template_sha256"],
@@ -445,7 +511,7 @@ def render_system_and_source(system_path, source_path, energy):
         "system template processor placeholder is not the frozen value",
     )
     _require(
-        template_text.count("      scheduler: gpfp_asap_block") == 1,
+        template_text.count(SYSTEM_SCHEDULER_PLACEHOLDER) == 1,
         "system template scheduler placeholder is not ASAP-BLOCK",
     )
     _require(
@@ -483,6 +549,12 @@ def render_system_and_source(system_path, source_path, energy):
         "",
         "legacy-source",
     )
+    rendered = _replace_system_placeholder(
+        rendered,
+        SYSTEM_SCHEDULER_PLACEHOLDER,
+        f"      scheduler: {scheduler_cli}\n",
+        "scheduler",
+    )
     _require(
         SYSTEM_PRIORITY_ENERGY_PLACEHOLDER not in rendered
         and SYSTEM_ENERGY_BOUNDS_PLACEHOLDER not in rendered
@@ -512,7 +584,7 @@ def render_system_and_source(system_path, source_path, energy):
     island = system.get("cpu_islands", [{}])[0]
     _require(
         island.get("numcpus") == PROCESSORS
-        and island.get("kernel", {}).get("scheduler") == "gpfp_asap_block",
+        and island.get("kernel", {}).get("scheduler") == scheduler_cli,
         "materialized processor/scheduler mismatch",
     )
     energy_management = system.get("energy_management", {})
@@ -533,10 +605,23 @@ def render_system_and_source(system_path, source_path, energy):
     return system, descriptor
 
 
-def build_record(output_root, simulator_path, generator_command, raw_sha, semantic_hash):
+def build_record(
+    output_root,
+    simulator_path,
+    generator_command,
+    raw_sha,
+    semantic_hash,
+    algorithm=DEFAULT_ALGORITHM,
+):
     output_root = Path(output_root).resolve()
     simulator_path = Path(simulator_path).resolve(strict=True)
-    case_id = "smoke-b4-pe-i4b2a-" + semantic_hash[:16]
+    scheduler_cli_name(algorithm)
+    case_id = (
+        "smoke-b4-pe-i4b2b-"
+        + semantic_hash[:16]
+        + "-"
+        + algorithm.lower()
+    )
     result_relpath = f"{RESULT_PREFIX}/{case_id}.json"
     record = {
         "schema_version": "b4-pe-integration-smoke-v1",
@@ -548,7 +633,7 @@ def build_record(output_root, simulator_path, generator_command, raw_sha, semant
         "campaign_result_count": 0,
         "not_for_paper": True,
         "case_id": case_id,
-        "algorithm": "ASAP-BLOCK",
+        "algorithm": algorithm,
         "simulator_path": str(simulator_path),
         "output_root": str(output_root),
         "system_config_path": SYSTEM_RELPATH,
@@ -694,8 +779,17 @@ def preflight(record_path):
     }
 
 
-def prepare_case(output_root, record_path, simulator_path=SIMULATOR_DEFAULT):
+def prepare_case(
+    output_root,
+    record_path,
+    simulator_path=SIMULATOR_DEFAULT,
+    algorithm=DEFAULT_ALGORITHM,
+    seed=GENERATOR_SEED,
+    normalized_utilization=TARGET_NORMALIZED_UTILIZATION,
+):
     output_root = Path(output_root).resolve()
+    normalized = _normalised_utilization(normalized_utilization)
+    scheduler_cli_name(algorithm)
     _require(
         not (output_root == REPO_ROOT or REPO_ROOT in output_root.parents),
         "output root must be outside the repository",
@@ -706,9 +800,17 @@ def prepare_case(output_root, record_path, simulator_path=SIMULATOR_DEFAULT):
     system_path = _artifact_path(output_root, SYSTEM_RELPATH)
     source_path = _artifact_path(output_root, SOURCE_RELPATH)
     raw_path.parent.mkdir(parents=True, exist_ok=True)
-    command = run_generator(raw_path)
+    command = run_generator(
+        raw_path,
+        seed=seed,
+        normalized_utilization=normalized,
+    )
     raw_sha = file_sha256(raw_path)
-    energy = materialize_taskset(raw_path, taskset_path)
+    energy = materialize_taskset(
+        raw_path,
+        taskset_path,
+        normalized_utilization=normalized,
+    )
     _require(
         raw_sha
         == energy["raw_taskset_sha256"]
@@ -723,13 +825,19 @@ def prepare_case(output_root, record_path, simulator_path=SIMULATOR_DEFAULT):
         == formal_semantic_hash(taskset_path),
         "raw/materialized formal semantic hash mismatch",
     )
-    render_system_and_source(system_path, source_path, energy)
+    render_system_and_source(
+        system_path,
+        source_path,
+        energy,
+        algorithm=algorithm,
+    )
     record = build_record(
         output_root,
         simulator_path,
         command,
         raw_sha,
         semantic_hash,
+        algorithm=algorithm,
     )
     record_path = write_record(record_path, record)
     gate = preflight(record_path)
@@ -739,7 +847,10 @@ def prepare_case(output_root, record_path, simulator_path=SIMULATOR_DEFAULT):
         "generator_path": str(TASK_GENERATOR_PATH),
         "generator_sha256": file_sha256(TASK_GENERATOR_PATH),
         "generator_argv": command,
-        "seed": GENERATOR_SEED,
+        "seed": seed,
+        "normalized_utilization": float(normalized),
+        "algorithm": algorithm,
+        "scheduler": scheduler_cli_name(algorithm),
         "taskset_raw_sha256": raw_sha,
         "taskset_sha256": file_sha256(taskset_path),
         "raw_materialized_sha_match": (
@@ -781,7 +892,13 @@ def _walk_numeric_energy(value, path="trace"):
     yield value
 
 
-def validate_result_document(document, case_id, semantic_hash, emax_j):
+def validate_result_document(
+    document,
+    case_id,
+    semantic_hash,
+    emax_j,
+    expected_scheduler="gpfp_asap_block",
+):
     _require(isinstance(document, dict), "result is not a JSON object")
     _require(document.get("run_id") == case_id, "result run-id mismatch")
     _require(
@@ -789,8 +906,8 @@ def validate_result_document(document, case_id, semantic_hash, emax_j):
         "result semantic hash mismatch",
     )
     _require(
-        document.get("configured_scheduler") == "gpfp_asap_block",
-        "result scheduler is not ASAP-BLOCK",
+        document.get("configured_scheduler") == expected_scheduler,
+        "result scheduler does not match the smoke record",
     )
     _require(
         float(document.get("expected_simulation_horizon_ms")) == SMOKE_HORIZON_MS
@@ -850,7 +967,7 @@ def validate_result_document(document, case_id, semantic_hash, emax_j):
     )
     return {
         "run_id": case_id,
-        "scheduler": "gpfp_asap_block",
+        "scheduler": expected_scheduler,
         "task_count": len(task_names),
         "horizon_ms": SMOKE_HORIZON_MS,
         "battery_bounds_valid": True,
@@ -946,6 +1063,7 @@ def validate_execution(record_path):
         record["case_id"],
         record["provenance"]["taskset_semantic_hash"],
         descriptor["Emax_j"],
+        scheduler_cli_name(record["algorithm"]),
     )
 
     raw_path = _artifact_path(root, RAW_TASKSET_RELPATH)
@@ -1085,6 +1203,16 @@ def build_parser():
     prepare.add_argument("--output-root", required=True)
     prepare.add_argument("--record", required=True)
     prepare.add_argument("--simulator", default=str(SIMULATOR_DEFAULT))
+    prepare.add_argument(
+        "--algorithm",
+        choices=SMOKE_ALGORITHMS,
+        default=DEFAULT_ALGORITHM,
+    )
+    prepare.add_argument("--seed", type=int, default=GENERATOR_SEED)
+    prepare.add_argument(
+        "--normalized-utilization",
+        default=str(float(TARGET_NORMALIZED_UTILIZATION)),
+    )
     validate = subparsers.add_parser("validate")
     validate.add_argument("--record", required=True)
     return parser
@@ -1094,7 +1222,14 @@ def main(argv=None):
     args = build_parser().parse_args(argv)
     try:
         if args.action == "prepare":
-            report = prepare_case(args.output_root, args.record, args.simulator)
+            report = prepare_case(
+                args.output_root,
+                args.record,
+                args.simulator,
+                algorithm=args.algorithm,
+                seed=args.seed,
+                normalized_utilization=args.normalized_utilization,
+            )
         else:
             report = validate_execution(args.record)
     except (

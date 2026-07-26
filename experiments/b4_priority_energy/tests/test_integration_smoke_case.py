@@ -3,6 +3,7 @@ import stat
 import sys
 import tempfile
 import unittest
+from fractions import Fraction
 from pathlib import Path
 from unittest import mock
 
@@ -108,6 +109,13 @@ class RealSmokeCaseTests(unittest.TestCase):
             self.assertEqual(command[command.index(option) + 1], value)
         self.assertIn("--constrained-deadlines", command)
         self.assertIn("--no-arrival-offset", command)
+        second = real_case.generator_argv(
+            self.base / "generated-b.yml",
+            seed=424243,
+            normalized_utilization=Fraction(1, 2),
+        )
+        self.assertEqual(second[second.index("--seed") + 1], "424243")
+        self.assertEqual(second[second.index("--utilization") + 1], "2")
 
     def test_semantic_hash_calls_only_the_formal_function(self):
         expected = "a" * 64
@@ -232,6 +240,34 @@ class RealSmokeCaseTests(unittest.TestCase):
         )
         self.assertGreater(descriptor["E0_j"], 0)
         self.assertEqual(descriptor["Emax_j"], 2 * descriptor["E0_j"])
+        scheduler_normalized = set()
+        source_payloads = set()
+        for algorithm in real_case.SMOKE_ALGORITHMS:
+            system_path = self.base / f"{algorithm.lower()}-system.yml"
+            source_path = self.base / f"{algorithm.lower()}-source.json"
+            real_case.render_system_and_source(
+                system_path,
+                source_path,
+                self.energy,
+                algorithm=algorithm,
+            )
+            scheduler_cli = real_case.scheduler_cli_name(algorithm)
+            algorithm_system = system_path.read_text(encoding="utf-8")
+            self.assertEqual(
+                yaml.safe_load(algorithm_system)["cpu_islands"][0]["kernel"][
+                    "scheduler"
+                ],
+                scheduler_cli,
+            )
+            scheduler_normalized.add(
+                algorithm_system.replace(
+                    f"      scheduler: {scheduler_cli}\n",
+                    "      scheduler: <paired>\n",
+                )
+            )
+            source_payloads.add(source_path.read_bytes())
+        self.assertEqual(len(scheduler_normalized), 1)
+        self.assertEqual(len(source_payloads), 1)
 
     def test_smoke_record_command_contains_the_semantic_hash(self):
         record_path, record = self.make_record()
@@ -255,6 +291,17 @@ class RealSmokeCaseTests(unittest.TestCase):
                 "integration-smoke/results/"
             )
         )
+        paired = real_case.build_record(
+            self.output_root,
+            self.simulator,
+            real_case.generator_argv(self.raw),
+            real_case.file_sha256(self.raw),
+            record["provenance"]["taskset_semantic_hash"],
+            algorithm="ST-SYNC",
+        )
+        self.assertEqual(paired["algorithm"], "ST-SYNC")
+        self.assertIn("-st-sync", paired["case_id"])
+        self.assertNotEqual(paired["result_relpath"], record["result_relpath"])
 
     def test_execute_argv_only_substitutes_transport_paths(self):
         _record_path, record = self.make_record()
@@ -321,6 +368,15 @@ class RealSmokeCaseTests(unittest.TestCase):
         self.assertEqual(report["task_count"], 10)
         self.assertTrue(report["battery_bounds_valid"])
         self.assertTrue(report["harvest_relation_valid_when_present"])
+        document["configured_scheduler"] = "gpfp_st_sync"
+        paired_report = real_case.validate_result_document(
+            document,
+            "smoke-result",
+            semantic_hash,
+            1.0,
+            expected_scheduler="gpfp_st_sync",
+        )
+        self.assertEqual(paired_report["scheduler"], "gpfp_st_sync")
 
     def test_preflight_closes_artifact_and_provenance_hashes(self):
         record_path, _record = self.make_record()
