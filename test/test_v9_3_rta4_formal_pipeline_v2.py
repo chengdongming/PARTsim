@@ -92,7 +92,9 @@ def _context(record, task_energy, service, *, formal_ready=True):
 
 def _prepared(tmp_path, config, record):
     manifest = tmp_path / "manifest.json"
-    manifest.write_text("{}\n", encoding="utf-8")
+    manifest.write_text(
+        canonical_json({"manifest_id": BUILD_ID}) + "\n", encoding="utf-8",
+    )
     method = str(record.material.get("method", "CW_THETA_CW"))
     return build_test_prepared_config_v2(
         config, output_root=tmp_path / "out-v2",

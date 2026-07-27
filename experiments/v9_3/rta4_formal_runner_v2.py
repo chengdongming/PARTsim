@@ -279,6 +279,10 @@ class AuthorizedRTA4RunnerV2:
         )
         if manifest["repository"]["source_root"] != operation["source_root"]:
             raise RTA4ExecutionError("V2 manifest/source root mismatch")
+        if manifest["manifest_id"] != self.prepared[
+            "production_build_manifest_identity"
+        ]:
+            raise RTA4ExecutionError("V2 prepared/manifest identity drift")
         output = Path(operation["output_root"])
         if not resume and not validate_only and output.exists() and any(output.iterdir()):
             raise RTA4ExecutionError("non-resume V2 execution refuses a non-empty root")

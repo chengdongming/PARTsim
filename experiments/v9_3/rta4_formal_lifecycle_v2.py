@@ -161,6 +161,18 @@ def build_test_prepared_config_v2(
     if type(in_flight) is not int or in_flight < worker_count or in_flight > 32:
         raise RTA4FormalLifecycleV2Error("TEST_ONLY max_in_flight is invalid")
     timeouts = _normalize_timeout_contract(timeout_contract)
+    manifest_path = _absolute(
+        str(production_manifest_path), "production manifest", existing_file=True,
+    )
+    try:
+        manifest_identity = _sha(
+            load_strict_json(manifest_path).get("manifest_id"),
+            "production manifest identity",
+        )
+    except Exception as exc:
+        raise RTA4FormalLifecycleV2Error(
+            "prepared V2 artifact cannot bind the production manifest identity"
+        ) from exc
     material: Dict[str, Any] = {
         "prepared_schema": RTA4_PREPARED_CONFIG_SCHEMA_V2,
         "profile": RTA4_FORMAL_PROFILE_V2,
@@ -170,14 +182,13 @@ def build_test_prepared_config_v2(
         "scientific_config": normalized,
         "config_identity": rta4_formal_config_hash_v2(normalized),
         "plan_identity": describe_formal_plan_v2(normalized)["plan_sha256"],
+        "production_build_manifest_identity": manifest_identity,
         "selected_ordinals": list(ordinals),
         "timeout_contract": timeouts,
         "operational": {
             "output_root": str(Path(output_root).resolve()),
             "taskset_store": str(Path(taskset_store).resolve()),
-            "production_manifest_path": _absolute(
-                str(production_manifest_path), "production manifest", existing_file=True,
-            ),
+            "production_manifest_path": manifest_path,
             "source_root": str(root),
             "system_config_path": str(root / "system_config_unified_template.yml"),
             "energy_support_path": str(root / "configs/v9_3_rta4_shared_energy_support_v2.yaml"),
@@ -196,6 +207,7 @@ def validate_prepared_config_v2(value: Mapping[str, Any]) -> Dict[str, Any]:
     exact = {
         "prepared_schema", "profile", "parameter_status", "formal_authorization",
         "core", "scientific_config", "config_identity", "plan_identity",
+        "production_build_manifest_identity",
         "selected_ordinals", "timeout_contract", "operational", "prepared_config_id",
     }
     if set(value) != exact or value.get("prepared_schema") != RTA4_PREPARED_CONFIG_SCHEMA_V2:
@@ -214,6 +226,10 @@ def validate_prepared_config_v2(value: Mapping[str, Any]) -> Dict[str, Any]:
         or value["plan_identity"] != describe_formal_plan_v2(config)["plan_sha256"]
     ):
         raise RTA4FormalLifecycleV2Error("V2 prepared scientific identity mismatch")
+    _sha(
+        value["production_build_manifest_identity"],
+        "prepared production manifest identity",
+    )
     ordinals = value["selected_ordinals"]
     if (
         type(ordinals) is not list or not ordinals or len(ordinals) > 32
