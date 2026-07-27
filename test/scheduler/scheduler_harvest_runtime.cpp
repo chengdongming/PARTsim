@@ -587,4 +587,137 @@ namespace RTSim {
         EXPECT_EQ(runtime.runtime().lastAppliedIndex(), 0u);
     }
 
+    TEST(SchedulerHarvestSummary,
+         ReconcilesOfferedCreditedClippedConsumedAndFinalBattery) {
+        SchedulerHarvestRuntime runtime;
+        runtime.beginRun(constantConfig(1000.0, 2));
+        (void)runtime.applyAtDecisionTime(0, 1.0, 2.0);
+
+        const HarvestResult first =
+            runtime.applyAtDecisionTime(1, 0.5, 2.0);
+        ASSERT_DOUBLE_EQ(first.battery_after_j, 1.5);
+        const HarvestResult second =
+            runtime.applyAtDecisionTime(2, 0.0, 2.0);
+        ASSERT_DOUBLE_EQ(second.battery_after_j, 1.0);
+
+        const EnergySummary &summary =
+            runtime.finalizeEnergySummary(2);
+        EXPECT_DOUBLE_EQ(summary.offered_energy_j, 2.0);
+        EXPECT_DOUBLE_EQ(summary.credited_energy_j, 2.0);
+        EXPECT_DOUBLE_EQ(summary.clipped_energy_j, 0.0);
+        EXPECT_DOUBLE_EQ(summary.consumed_energy_j, 2.0);
+        EXPECT_DOUBLE_EQ(summary.battery_min_j, 0.0);
+        EXPECT_DOUBLE_EQ(summary.battery_max_j, 1.5);
+        EXPECT_DOUBLE_EQ(summary.battery_final_j, 1.0);
+        EXPECT_EQ(summary.battery_empty_ticks, 1u);
+        EXPECT_EQ(summary.battery_full_ticks, 0u);
+        EXPECT_EQ(summary.observed_energy_intervals, 2u);
+    }
+
+    TEST(SchedulerHarvestSummary,
+         CountsFullIntervalsAndClippingButNotTimeZero) {
+        SchedulerHarvestRuntime runtime;
+        runtime.beginRun(constantConfig(1000.0, 1));
+        (void)runtime.applyAtDecisionTime(0, 2.0, 2.0);
+        (void)runtime.applyAtDecisionTime(1, 2.0, 2.0);
+
+        const EnergySummary &summary =
+            runtime.finalizeEnergySummary(1);
+        EXPECT_DOUBLE_EQ(summary.offered_energy_j, 1.0);
+        EXPECT_DOUBLE_EQ(summary.credited_energy_j, 0.0);
+        EXPECT_DOUBLE_EQ(summary.clipped_energy_j, 1.0);
+        EXPECT_DOUBLE_EQ(summary.consumed_energy_j, 0.0);
+        EXPECT_DOUBLE_EQ(summary.battery_final_j, 2.0);
+        EXPECT_EQ(summary.battery_empty_ticks, 0u);
+        EXPECT_EQ(summary.battery_full_ticks, 1u);
+        EXPECT_EQ(summary.observed_energy_intervals, 1u);
+    }
+
+    TEST(SchedulerHarvestSummary,
+         TimeZeroEmptyStateIsNotAnObservedInterval) {
+        SchedulerHarvestRuntime runtime;
+        runtime.beginRun(constantConfig(0.0, 1));
+        (void)runtime.applyAtDecisionTime(0, 0.0, 1.0);
+        EXPECT_EQ(runtime.energySummary().battery_empty_ticks, 0u);
+        EXPECT_EQ(runtime.energySummary().observed_energy_intervals, 0u);
+
+        (void)runtime.applyAtDecisionTime(1, 0.0, 1.0);
+        const EnergySummary &summary =
+            runtime.finalizeEnergySummary(1);
+        EXPECT_EQ(summary.battery_empty_ticks, 1u);
+        EXPECT_EQ(summary.observed_energy_intervals, 1u);
+    }
+
+    TEST(SchedulerHarvestSummary,
+         RejectsInvalidNumericInputsWithoutAdvancingIntervals) {
+        SchedulerHarvestRuntime runtime;
+        runtime.beginRun(constantConfig(0.0, 1));
+        EXPECT_THROW(
+            (void)runtime.applyAtDecisionTime(
+                0, std::numeric_limits<double>::quiet_NaN(), 1.0),
+            std::invalid_argument);
+        EXPECT_THROW(
+            (void)runtime.applyAtDecisionTime(
+                0, 0.0, std::numeric_limits<double>::infinity()),
+            std::invalid_argument);
+        EXPECT_THROW(
+            (void)runtime.applyAtDecisionTime(0, -1.0, 1.0),
+            std::invalid_argument);
+        EXPECT_EQ(runtime.energySummary().observed_energy_intervals, 0u);
+    }
+
+    TEST(SchedulerHarvestSummary,
+         FinalizeFailsClosedForMissingInitialStateOrIntervals) {
+        SchedulerHarvestRuntime missing_initial;
+        missing_initial.beginRun(constantConfig(0.0, 1));
+        (void)missing_initial.applyAtDecisionTime(1, 0.0, 1.0);
+        EXPECT_THROW(
+            (void)missing_initial.finalizeEnergySummary(1),
+            std::logic_error);
+
+        SchedulerHarvestRuntime missing_interval;
+        missing_interval.beginRun(constantConfig(0.0, 2));
+        (void)missing_interval.applyAtDecisionTime(0, 0.0, 1.0);
+        (void)missing_interval.applyAtDecisionTime(1, 0.0, 1.0);
+        EXPECT_THROW(
+            (void)missing_interval.finalizeEnergySummary(2),
+            std::logic_error);
+    }
+
+    TEST(SchedulerHarvestSummary,
+         OutOfBandBatteryGainInvalidatesOnlyTheSummary) {
+        SchedulerHarvestRuntime runtime;
+        runtime.beginRun(constantConfig(0.0, 1));
+        (void)runtime.applyAtDecisionTime(0, 0.25, 1.0);
+        const HarvestResult physical_result =
+            runtime.applyAtDecisionTime(1, 0.5, 1.0);
+
+        EXPECT_DOUBLE_EQ(physical_result.battery_before_j, 0.5);
+        EXPECT_DOUBLE_EQ(physical_result.battery_after_j, 0.5);
+        EXPECT_EQ(runtime.runtime().lastAppliedIndex(), 0u);
+        EXPECT_THROW(
+            (void)runtime.finalizeEnergySummary(1),
+            std::logic_error);
+    }
+
+    TEST(SchedulerHarvestSummary,
+         ObservationCannotChangeHarvestResultBitsOrLegacyRuntimeLedger) {
+        SchedulerHarvestRuntime runtime;
+        runtime.beginRun(constantConfig(1000.0, 1));
+        (void)runtime.applyAtDecisionTime(0, 0.25, 1.0);
+        const HarvestResult result =
+            runtime.applyAtDecisionTime(1, 0.25, 1.0);
+
+        EXPECT_EQ(binary64Bits(result.offered_j),
+                  binary64Bits(1.0));
+        EXPECT_EQ(binary64Bits(result.actual_j),
+                  binary64Bits(0.75));
+        EXPECT_EQ(binary64Bits(result.clipped_j),
+                  binary64Bits(0.25));
+        EXPECT_EQ(binary64Bits(result.battery_after_j),
+                  binary64Bits(1.0));
+        EXPECT_EQ(runtime.runtime().lastAppliedIndex(), 0u);
+        EXPECT_NO_THROW((void)runtime.finalizeEnergySummary(1));
+    }
+
 } // namespace RTSim

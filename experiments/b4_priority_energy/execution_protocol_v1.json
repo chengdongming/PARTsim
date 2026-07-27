@@ -1,0 +1,230 @@
+{
+  "atomic_write_rules": {
+    "publish": "flush_fsync_replace_with_parent_dirfd_fsync_parent",
+    "result_writer": "rtsim_attempt_staging_then_same_parent_execution_copy_publication",
+    "targets": [
+      "result",
+      "stdout",
+      "stderr",
+      "state",
+      "summary"
+    ]
+  },
+  "dirfd_safety_rules": {
+    "attempt_directory": "exclusive_0700_opened_O_DIRECTORY_O_NOFOLLOW",
+    "attempt_trace_child": "single_safe_basename_below_inherited_attempt_directory_fd",
+    "component_open": "O_DIRECTORY_and_O_NOFOLLOW",
+    "final_parent": "trusted_open_directory_descriptor",
+    "output_root": "absolute_outside_repository_O_DIRECTORY_O_NOFOLLOW",
+    "replace": "same_parent_src_dir_fd_and_dst_dir_fd",
+    "temporary_create": "same_parent_O_CREAT_O_EXCL_O_NOFOLLOW"
+  },
+  "identity_protocol_ref": "protocol_resolution_v1.json",
+  "identity_protocol_sha256": "941d754e27e1cf599127550561a14a92f46e3605df26dca3c9a97e0325eecd93",
+  "input_snapshot_rules": {
+    "artifacts": [
+      "simulator",
+      "system",
+      "taskset",
+      "source"
+    ],
+    "copy_stability": "fstat_before_after_and_second_sha256_read",
+    "execution_source": "content_addressed_read_only_snapshots_via_inherited_final_file_descriptors",
+    "execution_transport": "inherited_file_descriptor",
+    "original_open": "O_NOFOLLOW",
+    "proc_fd_fallback": false,
+    "snapshot_directory_descriptors_inherited": false,
+    "snapshot_proc_path": "/proc/self/fd/<snapshot-file-fd>",
+    "snapshot_root": ".b4pe/snapshots"
+  },
+  "inspection_rules": {
+    "cli_integrity_error_exit_code": 1,
+    "integrity_failure_exit": "nonzero",
+    "mode": "strict_read_only"
+  },
+  "lock_rules": {
+    "acquisition": "fcntl_flock_LOCK_EX_LOCK_NB",
+    "conflict": "fail_closed_without_wait",
+    "persistence": "lock_file_may_remain",
+    "release": "file_descriptor_close_or_process_exit",
+    "scope": [
+      "input_snapshot",
+      "provenance_validation",
+      "state_validation",
+      "publication_recovery",
+      "subprocess",
+      "publication_commit",
+      "final_state"
+    ]
+  },
+  "manifest_protocol_ref": "manifest_protocol_v1.json",
+  "manifest_protocol_sha256": "e00a1fe5ccc4713a9b6b211dde8d6682919d0f599b16424deaf06661c17e148f",
+  "process_group_rules": {
+    "grace_seconds": 1,
+    "start_new_session": true,
+    "timeout_sequence": [
+      "SIGTERM_process_group",
+      "bounded_wait",
+      "SIGKILL_process_group",
+      "wait_reap"
+    ]
+  },
+  "protocol_name": "B4-PE-I4B-1-execution-v1",
+  "publication_rules": {
+    "commit_order": [
+      "result_parent_temporary_fsync",
+      "prepared_state",
+      "result",
+      "result_post_replace_reopen_verify",
+      "result_published_state",
+      "logs",
+      "logs_published_state",
+      "committed_succeeded_state"
+    ],
+    "producer_boundary": "rtsim_atomically_publishes_only_inside_attempt_staging",
+    "recovery": "explicit_resume_same_attempt_zero_subprocess",
+    "result_boundary": "i4b1_copies_verified_staging_trace_to_same_final_parent_temporary_then_replaces",
+    "result_commit_gate": "post_replace_final_O_NOFOLLOW_reopen_stable_double_sha256_matches_expected",
+    "result_temporary": "unique_same_final_parent_copy_fsync_before_prepared",
+    "staging_retention": "retain_attempt_trace_evidence_after_success",
+    "statuses": [
+      "none",
+      "prepared",
+      "result_published",
+      "logs_published",
+      "committed"
+    ]
+  },
+  "result_integrity_rules": {
+    "before_publish": [
+      "legal_txt_or_json_suffix",
+      "single_staging_target",
+      "exists",
+      "regular_file",
+      "non_empty",
+      "O_NOFOLLOW_open",
+      "sha256",
+      "staging_identity_revalidated_after_copy_and_before_replace"
+    ],
+    "after_replace": [
+      "reopen_from_final_parent_dirfd_O_RDONLY_O_NOFOLLOW",
+      "regular_file",
+      "non_empty",
+      "stable_fstat_and_repeated_sha256",
+      "final_namespace_inode_match",
+      "sha256_matches_prepared_expected"
+    ],
+    "resume": [
+      "input_fingerprint_match",
+      "result_exists",
+      "result_sha256_match",
+      "stdout_sha256_match",
+      "stderr_sha256_match"
+    ]
+  },
+  "resume_rules": {
+    "failed_or_timed_out": "retry_failed_and_contract_attempt_remaining",
+    "force_overwrite": false,
+    "running_without_lock": "mark_interrupted_then_require_resume",
+    "succeeded": "verify_then_skip"
+  },
+  "schema_version": 1,
+  "state_schema_version": 1,
+  "state_transitions": {
+    "failed": [
+      "running"
+    ],
+    "interrupted": [
+      "running"
+    ],
+    "planned": [
+      "running"
+    ],
+    "running": [
+      "failed",
+      "interrupted",
+      "succeeded",
+      "timed_out"
+    ],
+    "succeeded": [],
+    "timed_out": [
+      "running"
+    ]
+  },
+  "states": [
+    "planned",
+    "running",
+    "succeeded",
+    "failed",
+    "timed_out",
+    "interrupted"
+  ],
+  "stdout_stderr_rules": {
+    "capture": "attempt_temporary_files",
+    "canonical_logs": "latest_completed_attempt",
+    "memory_capture": false,
+    "per_attempt_logs": true
+  },
+  "subprocess_rules": {
+    "attempt_trace_path": "direct_/proc/self/fd/<attempt-directory-fd>/<trace-basename>",
+    "argv_source": "manifest_command_argv_with_snapshot_substitution",
+    "inherited_attempt_directory_descriptors": 1,
+    "output_root_rootfd_inherited": false,
+    "os_system": false,
+    "real_rtsim_end_to_end_validation": "i4b2_first_gate",
+    "shell": false,
+    "shell_expansion": false,
+    "simulator_argv0_source": "direct_inherited_snapshot_file_descriptor",
+    "snapshot_input_paths": "direct_/proc/self/fd/<snapshot-file-fd>",
+    "snapshot_transport": "inherited_final_file_descriptors",
+    "taskset_semantic_hash_source": "upstream_manifest_command_bridge_i4b2",
+    "test_argument_hook": false,
+    "trace_target_precreated": false,
+    "unit_test_campaign_execution": false
+  },
+  "summary_fields": [
+    "manifest_sha256",
+    "selected_cases",
+    "executed_cases",
+    "succeeded",
+    "failed",
+    "timed_out",
+    "interrupted",
+    "skipped_succeeded",
+    "skipped_failed",
+    "lock_conflicts",
+    "infrastructure_errors"
+  ],
+  "summary_rules": {
+    "canonical_bytes": "compact_json_utf8_newline",
+    "latest_pointer": false,
+    "path": ".b4pe/summaries/<sha256>.json",
+    "publication": "safe_dirfd_atomic_idempotent"
+  },
+  "timeout_retry_rules": {
+    "attempt_1_timeout": "manifest.timeout_seconds",
+    "attempt_2_timeout": "manifest.retry_policy.retry_timeout_seconds",
+    "maximum_attempts": "manifest.retry_policy.max_attempts",
+    "retry_reasons": "manifest.retry_policy.retry_on",
+    "staging_reuse": false
+  },
+  "trace_staging_rules": {
+    "attempt_directory": ".b4pe/attempt-results/<case-id>/attempt-<index>-<runtime-token>",
+    "attempt_directory_mode": "0700",
+    "attempt_directory_reuse": false,
+    "executor_existing_target_policy": "require_absent_fail_closed_without_popen",
+    "orphan_adoption": false,
+    "producer": "rtsim_internal_temporary_validate_atomic_publish",
+    "publication_boundary": "rtsim_staging_atomic_then_i4b1_final_atomic",
+    "retry": "fresh_attempt_directory_and_absent_target",
+    "rtsim_existing_target_contract": "absent_or_byte_identical",
+    "successful_handoff": "open_O_RDONLY_O_NOFOLLOW_regular_nonempty_sha256",
+    "successful_staging_retention": "retain_as_attempt_evidence",
+    "target_basename_by_result_suffix": {
+      ".json": "trace.json",
+      ".txt": "trace.txt"
+    },
+    "target_must_not_exist_before_popen": true,
+    "target_precreation": false
+  }
+}
