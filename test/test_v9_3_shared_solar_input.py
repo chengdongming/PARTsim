@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from copy import deepcopy
 from fractions import Fraction
+import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 
@@ -12,8 +14,11 @@ import yaml
 import asap_block_rta as legacy_rta
 from experiments.v9_3.config import canonical_json
 from experiments.v9_3.exact_energy import ExactEnergyError
+from experiments.v9_3 import simulation_engine
+from experiments.v9_3 import solar_parse_proof as proof_module
 from experiments.v9_3.solar_parse_proof import (
     build_solar_stod_parse_proof,
+    thaw_material,
     write_solar_stod_parse_proof,
 )
 from experiments.v9_3.simulation_engine import (
@@ -120,7 +125,7 @@ def _direct_support(
 
 
 @pytest.fixture
-def verified_shared(tmp_path, rta4_solar_stod_verifier):
+def verified_shared():
     def construct(
         system_path,
         support,
@@ -128,31 +133,37 @@ def verified_shared(tmp_path, rta4_solar_stod_verifier):
         horizon,
         source_root,
     ):
-        system = legacy_rta.load_system_config(str(system_path))
-        solar = Path(legacy_rta._resolve_solar_path(system)).resolve(strict=True)
-        proof = build_solar_stod_parse_proof(
-            source_root=source_root,
-            base_system_path=system_path,
-            energy_support=support,
-            solar_csv_path=solar,
-            day_of_year=system.day_of_year,
-            time_of_day_ms=system.time_of_day_ms,
-            horizon=horizon,
-            verifier_binary=rta4_solar_stod_verifier,
-            build_verifier=False,
-        )
-        proof_path = tmp_path / f"{proof['proof_id']}.json"
-        write_solar_stod_parse_proof(proof_path, proof)
         return construct_shared_solar_input(
             system_path,
             support,
             horizon=horizon,
             source_root=source_root,
-            solar_parse_proof=proof_path,
-            solar_parse_verifier_binary=rta4_solar_stod_verifier,
         )
 
     return construct
+
+
+def _expected_proof(
+    tmp_path: Path,
+    system_path: Path,
+    support_path: Path,
+    *,
+    horizon: int,
+) -> Path:
+    system = legacy_rta.load_system_config(str(system_path))
+    solar = Path(legacy_rta._resolve_solar_path(system)).resolve(strict=True)
+    proof = build_solar_stod_parse_proof(
+        source_root=tmp_path,
+        base_system_path=system_path,
+        energy_support=support_path,
+        solar_csv_path=solar,
+        day_of_year=system.day_of_year,
+        time_of_day_ms=system.time_of_day_ms,
+        horizon=horizon,
+    )
+    path = tmp_path / f"{proof['proof_id']}.json"
+    write_solar_stod_parse_proof(path, proof)
+    return path
 
 
 def test_repository_solar_input_is_tracked_stable_and_production_identical(
@@ -617,6 +628,244 @@ def test_direct_mapping_is_not_a_formal_safe_energy_support(
             horizon=1,
             source_root=tmp_path,
         )
+
+
+def test_csv_aba_between_proof_and_real_replay_uses_only_snapshot_a(
+    tmp_path, monkeypatch,
+):
+    solar = tmp_path / "solar.csv"
+    replacement = tmp_path / "replacement.csv"
+    backup = tmp_path / "solar-a-backup.csv"
+    _write_solar(solar, (1,))
+    _write_solar(replacement, (900,))
+    system = tmp_path / "system.yml"
+    alternate_system = tmp_path / "alternate-system.yml"
+    _write_system(system, solar)
+    _write_system(alternate_system, replacement)
+    support = _direct_support(system)
+    expected_a = construct_paired_harvest_trace(system, 1)
+    expected_b = construct_paired_harvest_trace(alternate_system, 1)
+    assert expected_a != expected_b
+    a_bytes = solar.read_bytes()
+    production_replay = simulation_engine.construct_paired_harvest_trace
+
+    def aba_replay(snapshot_system_path, horizon):
+        os.replace(solar, backup)
+        os.replace(replacement, solar)
+        try:
+            return production_replay(snapshot_system_path, horizon)
+        finally:
+            os.replace(solar, replacement)
+            os.replace(backup, solar)
+
+    monkeypatch.setattr(
+        simulation_engine, "construct_paired_harvest_trace", aba_replay,
+    )
+    shared = construct_shared_solar_input(
+        system, support, horizon=1, source_root=tmp_path,
+    )
+    assert solar.read_bytes() == a_bytes
+    assert shared.harvest_j_per_tick == expected_a
+    assert shared.harvest_j_per_tick != expected_b
+    assert shared.provenance["solar_csv"]["sha256"] == hashlib.sha256(
+        a_bytes
+    ).hexdigest()
+
+
+def test_permanent_original_csv_replacement_cannot_enter_current_trace(
+    tmp_path, monkeypatch,
+):
+    solar = tmp_path / "solar.csv"
+    replacement = tmp_path / "replacement.csv"
+    original_after_replace = tmp_path / "original-after-replace.csv"
+    _write_solar(solar, (2,))
+    _write_solar(replacement, (700,))
+    system = tmp_path / "system.yml"
+    alternate_system = tmp_path / "alternate-system.yml"
+    _write_system(system, solar)
+    _write_system(alternate_system, replacement)
+    support = _direct_support(system)
+    expected_a = construct_paired_harvest_trace(system, 1)
+    expected_b = construct_paired_harvest_trace(alternate_system, 1)
+    a_bytes = solar.read_bytes()
+    b_bytes = replacement.read_bytes()
+    production_replay = simulation_engine.construct_paired_harvest_trace
+
+    def replace_original_permanently(snapshot_system_path, horizon):
+        os.replace(solar, original_after_replace)
+        os.replace(replacement, solar)
+        return production_replay(snapshot_system_path, horizon)
+
+    monkeypatch.setattr(
+        simulation_engine,
+        "construct_paired_harvest_trace",
+        replace_original_permanently,
+    )
+    shared = construct_shared_solar_input(
+        system, support, horizon=1, source_root=tmp_path,
+    )
+    assert solar.read_bytes() == b_bytes
+    assert shared.harvest_j_per_tick == expected_a
+    assert shared.harvest_j_per_tick != expected_b
+    assert shared.provenance["solar_csv"]["sha256"] == hashlib.sha256(
+        a_bytes
+    ).hexdigest()
+
+
+def test_system_support_expected_proof_and_verifier_changes_after_snapshot(
+    tmp_path, monkeypatch,
+):
+    solar = tmp_path / "solar.csv"
+    _write_solar(solar, (3,))
+    system = tmp_path / "system.yml"
+    _write_system(system, solar)
+    support = _direct_support(system, support_id="support-a")
+    expected_path = _expected_proof(
+        tmp_path, system, support, horizon=1,
+    )
+    expected_trace = construct_paired_harvest_trace(system, 1)
+    source_path = ROOT / "tools/rta4_solar_stod_verifier.cpp"
+    originals = {
+        system: system.read_bytes(),
+        support: support.read_bytes(),
+        expected_path: expected_path.read_bytes(),
+        source_path: source_path.read_bytes(),
+    }
+    changed_system = originals[system].replace(b"NASA", b"NASB", 1)
+    changed_support = originals[support].replace(
+        b"support-a", b"support-b", 1,
+    )
+    changed_expected = originals[expected_path].replace(b'"proof_id":"', b'"proof_id":"0', 1)
+    changed_source = originals[source_path].replace(
+        b"std::stod", b"std::stoe", 1,
+    )
+    assert changed_system != originals[system]
+    assert changed_support != originals[support]
+    assert changed_expected != originals[expected_path]
+    assert changed_source != originals[source_path]
+    production_replay = simulation_engine.construct_paired_harvest_trace
+
+    def mutate_all_originals(snapshot_system_path, horizon):
+        system.write_bytes(changed_system)
+        support.write_bytes(changed_support)
+        expected_path.write_bytes(changed_expected)
+        source_path.write_bytes(changed_source)
+        try:
+            return production_replay(snapshot_system_path, horizon)
+        finally:
+            for path, payload in originals.items():
+                path.write_bytes(payload)
+
+    monkeypatch.setattr(
+        simulation_engine,
+        "construct_paired_harvest_trace",
+        mutate_all_originals,
+    )
+    shared = construct_shared_solar_input(
+        system,
+        support,
+        horizon=1,
+        source_root=tmp_path,
+        solar_parse_proof=expected_path,
+    )
+    assert shared.harvest_j_per_tick == expected_trace
+    assert all(path.read_bytes() == payload for path, payload in originals.items())
+    assert shared.provenance[
+        "expected_solar_stod_parse_proof"
+    ]["sha256"] == hashlib.sha256(originals[expected_path]).hexdigest()
+    assert shared.provenance[
+        "live_solar_stod_parse_proof"
+    ]["parser_environment"]["verifier_source"]["sha256"] == hashlib.sha256(
+        originals[source_path]
+    ).hexdigest()
+
+
+def test_validator_verifier_and_production_replay_share_snapshot_csv_inode(
+    tmp_path, monkeypatch,
+):
+    solar = tmp_path / "solar.csv"
+    _write_solar(solar, (4,))
+    system = tmp_path / "system.yml"
+    _write_system(system, solar)
+    support = _direct_support(system)
+    observed = {}
+    real_validator = proof_module.validate_solar_csv_domain
+    real_inspector = proof_module._inspect_internal_verified_rows
+    real_replay = simulation_engine.construct_paired_harvest_trace
+
+    def inode(path):
+        value = os.stat(path)
+        return value.st_dev, value.st_ino
+
+    def record_validator(path, **kwargs):
+        observed["python"] = inode(path)
+        return real_validator(path, **kwargs)
+
+    def record_verifier(snapshot, verifier_binary, **kwargs):
+        value = os.fstat(snapshot.csv_descriptor)
+        observed["verifier"] = (value.st_dev, value.st_ino)
+        return real_inspector(snapshot, verifier_binary, **kwargs)
+
+    def record_replay(snapshot_system_path, horizon):
+        loaded = legacy_rta.load_system_config(str(snapshot_system_path))
+        replay_csv = legacy_rta._resolve_solar_path(loaded)
+        observed["replay"] = inode(replay_csv)
+        observed["replay_path"] = str(replay_csv)
+        return real_replay(snapshot_system_path, horizon)
+
+    monkeypatch.setattr(
+        proof_module, "validate_solar_csv_domain", record_validator,
+    )
+    monkeypatch.setattr(
+        proof_module, "_inspect_internal_verified_rows", record_verifier,
+    )
+    monkeypatch.setattr(
+        simulation_engine, "construct_paired_harvest_trace", record_replay,
+    )
+    shared = construct_shared_solar_input(
+        system, support, horizon=1, source_root=tmp_path,
+    )
+    assert observed["python"] == observed["verifier"] == observed["replay"]
+    assert observed["replay_path"].startswith("/proc/self/fd/")
+    assert str(solar) != observed["replay_path"]
+    assert len(shared.harvest_j_per_tick) == 1
+
+
+def test_verified_material_is_deeply_immutable_and_beta_is_memory_only(
+    tmp_path,
+):
+    solar = tmp_path / "solar.csv"
+    _write_solar(solar, (1, 2))
+    system = tmp_path / "system.yml"
+    _write_system(system, solar)
+    support = _direct_support(system)
+    shared = construct_shared_solar_input(
+        system, support, horizon=2, source_root=tmp_path,
+    )
+    expected_beta = shared.beta(2)
+
+    with pytest.raises(TypeError):
+        shared.provenance["classification"] = "changed"
+    with pytest.raises(TypeError):
+        shared.provenance["solar_csv"]["sha256"] = "changed"
+    with pytest.raises(TypeError):
+        shared.provenance[
+            "live_solar_stod_parse_proof"
+        ]["parser_environment"]["compiler"]["sha256"] = "changed"
+    with pytest.raises(AttributeError):
+        shared.provenance[
+            "live_solar_stod_parse_proof"
+        ]["semantic_service_source"]["rows"].append({})
+    with pytest.raises(TypeError):
+        shared.harvest_j_per_tick[0] = Fraction(0)
+
+    solar.rename(tmp_path / "solar-moved.csv")
+    system.rename(tmp_path / "system-moved.yml")
+    support.rename(tmp_path / "support-moved.yml")
+    assert shared.beta(2) == expected_beta
+    thawed = thaw_material(shared.provenance)
+    thawed["classification"] = "copy-only"
+    assert shared.provenance["classification"] != "copy-only"
 
 
 def test_beta_is_the_exact_arbitrary_window_minimum_with_optional_starts():

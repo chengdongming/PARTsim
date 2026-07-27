@@ -16,7 +16,6 @@ from experiments.v9_3.config import canonical_json  # noqa: E402
 from experiments.v9_3.solar_parse_proof import (  # noqa: E402
     SolarParseProofError,
     build_solar_stod_parse_proof,
-    validate_solar_stod_parse_proof,
     write_solar_stod_parse_proof,
 )
 
@@ -30,7 +29,6 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--day-of-year", required=True, type=int)
     parser.add_argument("--time-of-day-ms", required=True, type=int)
     parser.add_argument("--horizon", required=True, type=int)
-    parser.add_argument("--verifier-binary", required=True)
     parser.add_argument("--compiler", default="c++")
     parser.add_argument("--output", required=True)
     parser.add_argument("--check", action="store_true")
@@ -49,38 +47,24 @@ def main(argv: list[str] | None = None) -> int:
             day_of_year=args.day_of_year,
             time_of_day_ms=args.time_of_day_ms,
             horizon=args.horizon,
-            verifier_binary=args.verifier_binary,
             compiler=args.compiler,
-            build_verifier=not args.check,
+            expected_proof_path=output if args.check else None,
         )
-        expected = (canonical_json(proof) + "\n").encode("utf-8")
-        if args.check:
-            if not output.is_file() or output.read_bytes() != expected:
-                raise SolarParseProofError(
-                    "parse proof bytes are stale or non-canonical"
-                )
-        else:
+        if not args.check:
             write_solar_stod_parse_proof(output, proof)
-        validated = validate_solar_stod_parse_proof(
-            output,
-            verifier_binary=args.verifier_binary,
-            source_root=args.source_root,
-            base_system_path=args.base_system,
-            energy_support=args.energy_support,
-            solar_csv_path=args.solar_csv,
-            day_of_year=args.day_of_year,
-            time_of_day_ms=args.time_of_day_ms,
-            horizon=args.horizon,
-        )
     except (OSError, SolarParseProofError) as exc:
         print(f"solar parse proof error: {exc}", file=sys.stderr)
         return 1
     print(canonical_json({
         "checked": bool(args.check),
         "output": str(output),
-        "proof_id": validated["proof_id"],
+        "proof_id": proof["proof_id"],
+        "semantic_service_source_identity": (
+            proof["semantic_service_source_identity"]
+        ),
+        "parser_environment_identity": proof["parser_environment_identity"],
         "verifier_binary_sha256": (
-            validated["parser"]["verifier_binary"]["sha256"]
+            proof["parser_environment"]["verifier_binary"]["sha256"]
         ),
     }))
     return 0
