@@ -110,7 +110,7 @@ def _prepared(tmp_path, config, record):
 def _manifest():
     return {
         "manifest_id": BUILD_ID,
-        "repository": {"git_commit": "a" * 64, "git_tree": "9" * 64},
+        "repository": {"git_commit": "a" * 40, "git_tree": "9" * 40},
     }
 
 
@@ -272,7 +272,7 @@ def test_v2_store_writer_resume_and_bidirectional_isolation(tmp_path):
         "plan_record_identity": record.record_id,
         "execution_identity": record.execution_id,
         "production_build_manifest_identity": BUILD_ID,
-        "source_commit": "a" * 64, "source_tree": "9" * 64,
+        "source_commit": "a" * 40, "source_tree": "9" * 40,
         "taskset_source_sha256": certificate.taskset_source_sha256,
         "taskset_identity": certificate.taskset_id,
         "task_energy_material_identity": task_energy.task_energy_material_identity,

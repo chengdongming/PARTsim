@@ -75,6 +75,17 @@ def _sha(value: Any, label: str) -> str:
     return value
 
 
+def _git_oid(value: Any, label: str) -> str:
+    if (
+        type(value) is not str or len(value) not in {40, 64}
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise RTA4FormalLifecycleV2Error(
+            f"{label} must be a lowercase Git object identity"
+        )
+    return value
+
+
 def _forbidden_key(value: Any) -> str | None:
     forbidden = {
         "actual_power", "P_exact", "watts", "power_w",
@@ -476,12 +487,14 @@ def validate_result_row_v2(value: Mapping[str, Any]) -> Dict[str, Any]:
     for key in (
         "config_identity", "plan_identity", "plan_record_identity",
         "execution_identity",
-        "production_build_manifest_identity", "source_commit", "source_tree",
+        "production_build_manifest_identity",
         "taskset_source_sha256", "taskset_identity",
         "task_energy_material_identity", "service_material_identity",
         "beta_material_identity", "retry_resume_identity", "result_identity",
     ):
         _sha(row[key], key)
+    _git_oid(row["source_commit"], "source_commit")
+    _git_oid(row["source_tree"], "source_tree")
     attempts = row["attempts"]
     if type(attempts) is not list or not attempts:
         raise RTA4FormalLifecycleV2Error("V2 result requires attempt evidence")
@@ -541,8 +554,8 @@ class RTA4FormalResultWriterV2:
         repository = production_manifest.get("repository")
         if not isinstance(repository, Mapping):
             raise RTA4FormalLifecycleV2Error("V2 writer manifest repository is absent")
-        source_commit = _sha(repository.get("git_commit"), "source commit")
-        source_tree = _sha(repository.get("git_tree"), "source tree")
+        source_commit = _git_oid(repository.get("git_commit"), "source commit")
+        source_tree = _git_oid(repository.get("git_tree"), "source tree")
         plan_rows = [
             {"ordinal": record.ordinal, "plan_record_identity": record.record_id,
              "execution_identity": record.execution_id, "kind": record.kind}
