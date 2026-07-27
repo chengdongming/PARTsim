@@ -10,6 +10,123 @@ namespace RTSim {
 
     using namespace MetaSim;
 
+    DecisionRecord makeOwnedDecisionRecord(
+        std::int64_t tick,
+        std::size_t processor_count,
+        double available_energy_j,
+        double energy_epsilon_j,
+        const std::vector<AbsRTTask *> &priority_universe,
+        const std::vector<AbsRTTask *> &observed_jobs,
+        const std::set<AbsRTTask *> &candidates,
+        const std::set<AbsRTTask *> &infinite_energy_dispatch_demand,
+        const std::set<AbsRTTask *> &actual_dispatch,
+        const std::map<AbsRTTask *, double> &incremental_energy_costs_j,
+        const std::map<AbsRTTask *, DecisionExclusionReason>
+            &exclusion_reasons) {
+        std::vector<AbsRTTask *> ranked_tasks = priority_universe;
+        std::set<AbsRTTask *> unique_universe;
+        for (AbsRTTask *task : ranked_tasks) {
+            if (!task || !unique_universe.insert(task).second) {
+                throw std::invalid_argument(
+                    "decision priority universe must contain unique non-null tasks");
+            }
+        }
+        std::stable_sort(
+            ranked_tasks.begin(), ranked_tasks.end(),
+            [](AbsRTTask *lhs, AbsRTTask *rhs) {
+                if (lhs->getPeriod() != rhs->getPeriod()) {
+                    return lhs->getPeriod() < rhs->getPeriod();
+                }
+                return lhs->getTaskNumber() < rhs->getTaskNumber();
+            });
+
+        std::map<AbsRTTask *, std::uint32_t> ranks;
+        for (std::size_t i = 0; i < ranked_tasks.size(); ++i) {
+            if (i > static_cast<std::size_t>(
+                        std::numeric_limits<std::uint32_t>::max())) {
+                throw std::overflow_error(
+                    "decision priority rank exceeds uint32 range");
+            }
+            if (i > 0 &&
+                ranked_tasks[i - 1]->getPeriod() ==
+                    ranked_tasks[i]->getPeriod() &&
+                ranked_tasks[i - 1]->getTaskNumber() ==
+                    ranked_tasks[i]->getTaskNumber()) {
+                throw std::invalid_argument(
+                    "decision priority universe has a duplicate RM key");
+            }
+            ranks.emplace(ranked_tasks[i], static_cast<std::uint32_t>(i));
+        }
+
+        std::set<AbsRTTask *> observed_set;
+        for (AbsRTTask *task : observed_jobs) {
+            if (!task || !observed_set.insert(task).second ||
+                ranks.find(task) == ranks.end()) {
+                throw std::invalid_argument(
+                    "observed decision jobs must be unique members of the priority universe");
+            }
+        }
+        const auto require_observed_membership =
+            [&observed_set](const std::set<AbsRTTask *> &members,
+                            const char *name) {
+                for (AbsRTTask *task : members) {
+                    if (!task || observed_set.find(task) == observed_set.end()) {
+                        throw std::invalid_argument(
+                            std::string(name) +
+                            " must be a subset of observed decision jobs");
+                    }
+                }
+            };
+        require_observed_membership(candidates, "candidate set");
+        require_observed_membership(
+            infinite_energy_dispatch_demand,
+            "infinite-energy dispatch demand");
+        require_observed_membership(actual_dispatch, "actual dispatch");
+
+        DecisionRecord record;
+        record.tick = tick;
+        record.processor_count = processor_count;
+        record.available_energy_j = available_energy_j;
+        record.energy_epsilon_j = energy_epsilon_j;
+        record.jobs.reserve(observed_jobs.size());
+        for (AbsRTTask *task : observed_jobs) {
+            const auto cost_it = incremental_energy_costs_j.find(task);
+            const auto reason_it = exclusion_reasons.find(task);
+            if (cost_it == incremental_energy_costs_j.end() ||
+                reason_it == exclusion_reasons.end()) {
+                throw std::invalid_argument(
+                    "every observed decision job requires cost and exclusion metadata");
+            }
+
+            Task *concrete_task = dynamic_cast<Task *>(task);
+            const std::string task_name = concrete_task
+                ? concrete_task->getName()
+                : std::string("task_") +
+                    std::to_string(task->getTaskNumber());
+            const std::int64_t release_time = concrete_task
+                ? static_cast<std::int64_t>(concrete_task->getLastArrival())
+                : static_cast<std::int64_t>(task->getArrival());
+            const std::uint32_t rank = ranks.at(task);
+
+            DecisionJobRecord job;
+            job.job_id = task_name + "@" + std::to_string(release_time);
+            job.task_name = task_name;
+            job.priority_rank = rank;
+            job.candidate = candidates.find(task) != candidates.end();
+            job.infinite_energy_dispatch_demand =
+                infinite_energy_dispatch_demand.find(task) !=
+                infinite_energy_dispatch_demand.end();
+            job.actual_dispatch =
+                actual_dispatch.find(task) != actual_dispatch.end();
+            job.is_top4 = rank < 4;
+            job.is_bottom6 = rank >= 4;
+            job.incremental_energy_cost_j = cost_it->second;
+            job.exclusion_reason = reason_it->second;
+            record.jobs.push_back(std::move(job));
+        }
+        return record;
+    }
+
     namespace {
         bool isKnownExclusionReason(DecisionExclusionReason reason) {
             switch (reason) {

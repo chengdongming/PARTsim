@@ -511,6 +511,11 @@ namespace RTSim {
                 std::to_string(static_cast<int64_t>(current_time)) + "ms");
             return;
         }
+        const bool observe_summary_this_tick =
+            _trace_logger &&
+            _trace_logger->observabilitySummariesEnabled() &&
+            _trace_logger->observabilitySummaryAcceptsDecisionTick(
+                current_time);
 
         SCHEDULER_LOG_INFO(std::string("🔄 [ASAP-NonBlock] ===== Tick ") +
                            std::to_string(static_cast<int64_t>(current_time)) + "ms =====");
@@ -538,6 +543,13 @@ namespace RTSim {
             _kernel = getKernel();
         }
         if (!_kernel) {
+            if (observe_summary_this_tick) {
+                const std::size_t processors = std::max<std::size_t>(
+                    1, ConfigManager::getInstance().getNumCores());
+                _trace_logger->observeDecision(makeOwnedDecisionRecord(
+                    static_cast<std::int64_t>(current_time), processors,
+                    _current_energy, 1e-9, {}, {}, {}, {}, {}, {}, {}));
+            }
             SCHEDULER_LOG_WARNING("⚠️ [ASAP-NonBlock] _kernel为nullptr，跳过调度");
             return;
         }
@@ -565,6 +577,7 @@ namespace RTSim {
         double first_blocked_residual_energy = 0.0;
         const int total_cpus = static_cast<int>(running_tasks_map.size());
         const double epsilon = 1e-9;
+        std::set<AbsRTTask *> energy_blocked_tasks;
         for (AbsRTTask *task : active_tasks) {
             if (static_cast<int>(_dispatch_selection_order.size()) >= total_cpus) {
                 break;
@@ -572,6 +585,9 @@ namespace RTSim {
 
             const double unit_energy = getConfiguredUnitEnergyForTask(task);
             if (reserved_energy + unit_energy > _current_energy + epsilon) {
+                if (observe_summary_this_tick) {
+                    energy_blocked_tasks.insert(task);
+                }
                 if (!highest_priority_energy_blocked_task) {
                     highest_priority_energy_blocked_task = task;
                     first_blocked_residual_energy =
@@ -598,6 +614,53 @@ namespace RTSim {
         _selection_generation++;
         _selection_frozen = true;
         _energy_depleted = _dispatch_selection_order.empty() && !active_tasks.empty();
+
+        if (observe_summary_this_tick) {
+            std::vector<AbsRTTask *> priority_universe;
+            for (const auto &[task, model] : _task_models) {
+                if (task && model) priority_universe.push_back(task);
+            }
+            const std::set<AbsRTTask *> candidates(
+                active_tasks.begin(), active_tasks.end());
+            std::set<AbsRTTask *> infinite_demand;
+            for (std::size_t i = 0;
+                 i < active_tasks.size() &&
+                 i < static_cast<std::size_t>(std::max(0, total_cpus)); ++i) {
+                infinite_demand.insert(active_tasks[i]);
+            }
+            const std::set<AbsRTTask *> actual(
+                _dispatch_selection_order.begin(),
+                _dispatch_selection_order.end());
+            std::map<AbsRTTask *, double> costs;
+            std::map<AbsRTTask *, DecisionExclusionReason> reasons;
+            for (AbsRTTask *task : active_tasks) {
+                costs[task] = getConfiguredUnitEnergyForTask(task);
+                if (actual.count(task) > 0) {
+                    reasons[task] = DecisionExclusionReason::None;
+                } else if (energy_blocked_tasks.count(task) > 0) {
+                    reasons[task] =
+                        DecisionExclusionReason::DirectEnergyShortage;
+                } else {
+                    reasons[task] = DecisionExclusionReason::CpuCapacity;
+                }
+            }
+            const std::size_t observed_processors = total_cpus > 0
+                ? static_cast<std::size_t>(total_cpus)
+                : std::max<std::size_t>(
+                    1, ConfigManager::getInstance().getNumCores());
+            _trace_logger->observeDecision(makeOwnedDecisionRecord(
+                static_cast<std::int64_t>(current_time),
+                observed_processors,
+                _current_energy,
+                epsilon,
+                priority_universe,
+                active_tasks,
+                candidates,
+                infinite_demand,
+                actual,
+                costs,
+                reasons));
+        }
 
         if (_trace_logger && _semantic_trace_enabled && !active_tasks.empty()) {
             AbsRTTask *bypassed_task = nullptr;

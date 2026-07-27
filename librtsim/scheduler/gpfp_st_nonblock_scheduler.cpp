@@ -456,6 +456,11 @@ namespace RTSim {
                 std::to_string(static_cast<int64_t>(current_time)) + "ms");
             return;
         }
+        const bool observe_summary_this_tick =
+            _trace_logger &&
+            _trace_logger->observabilitySummariesEnabled() &&
+            _trace_logger->observabilitySummaryAcceptsDecisionTick(
+                current_time);
 
         SCHEDULER_LOG_INFO(std::string("🔄 [ST-NonBlock] ===== Tick ") +
                            std::to_string(static_cast<int64_t>(current_time)) + "ms =====");
@@ -508,6 +513,47 @@ namespace RTSim {
 
         // ⭐ Bug修复3：能量耗尽时跳过任务调度（但已经收集了太阳能）
         if (_energy_depleted && _current_energy < 0.000001) {
+            if (observe_summary_this_tick) {
+                std::vector<AbsRTTask *> active_tasks =
+                    collectActiveJobs(current_time);
+                sortByRMPriority(active_tasks);
+                std::vector<AbsRTTask *> priority_universe;
+                for (const auto &[task, model] : _task_models) {
+                    if (task && model) priority_universe.push_back(task);
+                }
+                const std::set<AbsRTTask *> candidates(
+                    active_tasks.begin(), active_tasks.end());
+                const std::size_t native_processors = _kernel
+                    ? _kernel->getCurrentExecutingTasks().size() : 0;
+                const std::size_t observed_processors = native_processors > 0
+                    ? native_processors
+                    : std::max<std::size_t>(
+                        1, ConfigManager::getInstance().getNumCores());
+                std::set<AbsRTTask *> infinite_demand;
+                for (std::size_t i = 0;
+                     i < active_tasks.size() && i < native_processors; ++i) {
+                    infinite_demand.insert(active_tasks[i]);
+                }
+                std::map<AbsRTTask *, double> costs;
+                std::map<AbsRTTask *, DecisionExclusionReason> reasons;
+                for (AbsRTTask *task : active_tasks) {
+                    costs[task] = getConfiguredUnitEnergyForTask(task);
+                    reasons[task] =
+                        DecisionExclusionReason::DirectEnergyShortage;
+                }
+                _trace_logger->observeDecision(makeOwnedDecisionRecord(
+                    static_cast<std::int64_t>(current_time),
+                    observed_processors,
+                    _current_energy,
+                    1e-9,
+                    priority_universe,
+                    active_tasks,
+                    candidates,
+                    infinite_demand,
+                    {},
+                    costs,
+                    reasons));
+            }
             SCHEDULER_LOG_INFO(std::string("💀 [ST-NonBlock] 能量已耗尽，跳过任务调度"));
             return;
         }
@@ -516,6 +562,13 @@ namespace RTSim {
             _kernel = getKernel();
         }
         if (!_kernel) {
+            if (observe_summary_this_tick) {
+                const std::size_t processors = std::max<std::size_t>(
+                    1, ConfigManager::getInstance().getNumCores());
+                _trace_logger->observeDecision(makeOwnedDecisionRecord(
+                    static_cast<std::int64_t>(current_time), processors,
+                    _current_energy, 1e-9, {}, {}, {}, {}, {}, {}, {}));
+            }
             SCHEDULER_LOG_WARNING("⚠️ [ST-NonBlock] _kernel为nullptr，跳过本tick调度");
             return;
         }
@@ -543,6 +596,7 @@ namespace RTSim {
         const size_t processor_count = running_tasks_map.size();
         AbsRTTask *waiting_task = nullptr;
         std::vector<AbsRTTask *> timing_wait_tasks;
+        std::set<AbsRTTask *> direct_energy_shortage_tasks;
 
         for (AbsRTTask *task : active_tasks) {
             if (_dispatch_selection_order.size() >= processor_count) {
@@ -612,6 +666,9 @@ namespace RTSim {
             // ST-NonBlock: slack 已用尽时才允许 NonBlock 旁路。
             clearSkippedWakeState(task);
             clearPendingWakeIfMatches(task);
+            if (observe_summary_this_tick) {
+                direct_energy_shortage_tasks.insert(task);
+            }
             SCHEDULER_LOG_INFO(std::string("⚠️ [ST-NonBlock] 高优任务缺电且Slack<=0，允许继续扫描低优先级: ") +
                                getTaskName(task));
         }
@@ -625,6 +682,57 @@ namespace RTSim {
                             _current_energy < epsilon;
         _deep_charging = (waiting_task != nullptr);
         _is_charging_sleep = false;
+
+        if (observe_summary_this_tick) {
+            std::vector<AbsRTTask *> priority_universe;
+            for (const auto &[task, model] : _task_models) {
+                if (task && model) priority_universe.push_back(task);
+            }
+            const std::set<AbsRTTask *> candidates(
+                active_tasks.begin(), active_tasks.end());
+            std::set<AbsRTTask *> infinite_demand;
+            for (std::size_t i = 0;
+                 i < active_tasks.size() && i < processor_count; ++i) {
+                infinite_demand.insert(active_tasks[i]);
+            }
+            const std::set<AbsRTTask *> actual(
+                _dispatch_selection_order.begin(),
+                _dispatch_selection_order.end());
+            const std::set<AbsRTTask *> charge_wait_tasks(
+                timing_wait_tasks.begin(), timing_wait_tasks.end());
+            std::map<AbsRTTask *, double> costs;
+            std::map<AbsRTTask *, DecisionExclusionReason> reasons;
+            for (AbsRTTask *task : active_tasks) {
+                costs[task] = getConfiguredUnitEnergyForTask(task);
+                if (actual.count(task) > 0) {
+                    reasons[task] = DecisionExclusionReason::None;
+                } else if (charge_wait_tasks.count(task) > 0) {
+                    reasons[task] =
+                        DecisionExclusionReason::StEnergyChargeWait;
+                } else if (direct_energy_shortage_tasks.count(task) > 0) {
+                    reasons[task] =
+                        DecisionExclusionReason::DirectEnergyShortage;
+                } else {
+                    reasons[task] = DecisionExclusionReason::CpuCapacity;
+                }
+            }
+            const std::size_t observed_processors = processor_count > 0
+                ? processor_count
+                : std::max<std::size_t>(
+                    1, ConfigManager::getInstance().getNumCores());
+            _trace_logger->observeDecision(makeOwnedDecisionRecord(
+                static_cast<std::int64_t>(current_time),
+                observed_processors,
+                _current_energy,
+                epsilon,
+                priority_universe,
+                active_tasks,
+                candidates,
+                infinite_demand,
+                actual,
+                costs,
+                reasons));
+        }
 
         if (_trace_logger && _semantic_trace_enabled &&
             !active_tasks.empty()) {
