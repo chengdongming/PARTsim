@@ -135,10 +135,6 @@ public:
         scheduler._initial_energy = current_energy;
         scheduler._current_energy = current_energy;
         scheduler._max_energy = 100.0;
-        scheduler._base_harvest_rate = 0.0;
-        scheduler._use_real_solar_data = false;
-        scheduler._last_tick_time = MetaSim::SIMUL.getTime();
-        scheduler._last_collection_time = MetaSim::SIMUL.getTime();
         scheduler._energy_depleted = false;
         scheduler._deep_charging = false;
         scheduler._is_charging_sleep = false;
@@ -171,6 +167,11 @@ public:
 
     static void tick(STSyncScheduler &scheduler) {
         scheduler.performTickScheduling();
+    }
+
+    static void setHarvestConfig(STSyncScheduler &scheduler,
+                                 const HarvestSourceConfig &config) {
+        scheduler._harvest_runtime.beginRun(config);
     }
 
     static Tick slack(STSyncScheduler &scheduler, AbsRTTask *task) {
@@ -220,40 +221,53 @@ public:
 
     static Tick estimateGroupWakeTime(STSyncScheduler &scheduler,
                                       Tick slack) {
-        return scheduler.calculateGroupWakeTime(slack, 0.0);
+        return scheduler.calculateGroupWakeTime(slack);
     }
 };
 
-TEST(STSyncScheduler, GroupWakeEstimateUsesPhysicalPowerUnits) {
+class ScopedSTSyncBaseHarvestRate {
+public:
+    explicit ScopedSTSyncBaseHarvestRate(double rate)
+        : _original(ConfigManager::getInstance().getBaseHarvestRate()) {
+        ConfigManager::getInstance().setBaseHarvestRate(rate);
+    }
+
+    ~ScopedSTSyncBaseHarvestRate() {
+        ConfigManager::getInstance().setBaseHarvestRate(_original);
+    }
+
+private:
+    double _original;
+};
+
+static ScaledPiecewiseConfig STSyncDelayedSurgeConfig() {
+    ScaledPiecewiseConfig config;
+    config.scale_w = 100000.0;
+    config.segments = {
+        {0, 2, 0.0},
+        {2, 4, 1.0},
+    };
+    return config;
+}
+
+TEST(STSyncScheduler, GroupWakeIsSlackBoundAndIgnoresLegacyRate) {
     auto &simulation = MetaSim::Simulation::getInstance();
     TestSTSyncScheduler scheduler;
 
     simulation.initSingleRun();
     STSyncSchedulerTestPeer::cancelAutomaticTick(scheduler);
-    scheduler._use_real_solar_data = false;
-    scheduler._start_time_offset = Tick(43200000);
-
-    scheduler._current_energy = 0.0;
-    scheduler._max_energy = 0.1;
-    scheduler._base_harvest_rate = 0.1;
-    EXPECT_EQ(STSyncSchedulerTestPeer::estimateGroupWakeTime(
-                  scheduler, Tick(5000)),
-              Tick(1000));
-
-    scheduler._max_energy = 1.0;
-    EXPECT_EQ(STSyncSchedulerTestPeer::estimateGroupWakeTime(
-                  scheduler, Tick(20000)),
-              Tick(10000));
-
-    scheduler._base_harvest_rate = 1.0;
-    EXPECT_EQ(STSyncSchedulerTestPeer::estimateGroupWakeTime(
-                  scheduler, Tick(5000)),
-              Tick(1000));
-
-    scheduler._base_harvest_rate = 0.1;
-    EXPECT_EQ(STSyncSchedulerTestPeer::estimateGroupWakeTime(
-                  scheduler, Tick(5000)),
-              Tick(5000));
+    {
+        ScopedSTSyncBaseHarvestRate high_rate(1.0e9);
+        EXPECT_EQ(STSyncSchedulerTestPeer::estimateGroupWakeTime(
+                      scheduler, Tick(5000)),
+                  Tick(5000));
+    }
+    {
+        ScopedSTSyncBaseHarvestRate zero_rate(0.0);
+        EXPECT_EQ(STSyncSchedulerTestPeer::estimateGroupWakeTime(
+                      scheduler, Tick(5000)),
+                  Tick(5000));
+    }
 
     simulation.endSingleRun();
 }
@@ -373,6 +387,70 @@ TEST(STSyncScheduler, ChargingBatchHoldsUntilBatteryFullOrSlackExhausted) {
     EXPECT_EQ(first.getScheduleCount(), 1);
     EXPECT_EQ(second.getScheduleCount(), 1);
     EXPECT_FALSE(scheduler.isChargingSleepActive());
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 98.0);
+
+    simulation.endSingleRun();
+}
+
+TEST(STSyncScheduler,
+     PiecewiseSurgeReleasesWholeBatchDespiteZeroLegacyRate) {
+    ScopedSTSyncBaseHarvestRate misleading_rate(0.0);
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTSyncScheduler scheduler;
+    CPU cpu0("st-sync-piecewise-wake-cpu0", nullptr);
+    CPU cpu1("st-sync-piecewise-wake-cpu1", nullptr);
+    TestSTSyncMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu0, &cpu1});
+    FakeSTSyncTask first(1, 20, 20, 1.0);
+    FakeSTSyncTask second(2, 30, 30, 1.0);
+
+    STSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &first, 20, 1, 1.0);
+    STSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &second, 30, 1, 1.0);
+
+    simulation.initSingleRun();
+    STSyncSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STSyncSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    STSyncSchedulerTestPeer::setHarvestConfig(
+        scheduler, HarvestSourceConfig{STSyncDelayedSurgeConfig()});
+    first.releaseAt(Tick(0));
+    second.releaseAt(Tick(0));
+    STSyncSchedulerTestPeer::enqueue(scheduler, &first);
+    STSyncSchedulerTestPeer::enqueue(scheduler, &second);
+
+    STSyncSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+    ASSERT_TRUE(scheduler.isChargingSleepActive());
+    EXPECT_EQ(first.getScheduleCount(), 0);
+    EXPECT_EQ(second.getScheduleCount(), 0);
+
+    for (int time_ms = 1; time_ms <= 2; ++time_ms) {
+        STSyncTestActionEvent zero_power_tick([&]() {
+            STSyncSchedulerTestPeer::tick(scheduler);
+        });
+        zero_power_tick.post(Tick(time_ms));
+        simulation.run_to(Tick(time_ms));
+        EXPECT_TRUE(scheduler.isChargingSleepActive())
+            << "time_ms=" << time_ms;
+        EXPECT_EQ(first.getScheduleCount(), 0)
+            << "time_ms=" << time_ms;
+        EXPECT_EQ(second.getScheduleCount(), 0)
+            << "time_ms=" << time_ms;
+        EXPECT_TRUE(scheduler.getCurrentBatchTasks().empty())
+            << "time_ms=" << time_ms;
+        EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.0)
+            << "time_ms=" << time_ms;
+    }
+
+    STSyncTestActionEvent surge_tick([&]() {
+        STSyncSchedulerTestPeer::tick(scheduler);
+    });
+    surge_tick.post(Tick(3));
+    simulation.run_to(Tick(3));
+
+    EXPECT_FALSE(scheduler.isChargingSleepActive());
+    EXPECT_EQ(first.getScheduleCount(), 1);
+    EXPECT_EQ(second.getScheduleCount(), 1);
     EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 98.0);
 
     simulation.endSingleRun();

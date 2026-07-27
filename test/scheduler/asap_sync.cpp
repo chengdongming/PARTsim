@@ -139,10 +139,6 @@ public:
         scheduler._initial_energy = current_energy;
         scheduler._current_energy = current_energy;
         scheduler._max_energy = 100.0;
-        scheduler._base_harvest_rate = 0.0;
-        scheduler._use_real_solar_data = false;
-        scheduler._last_tick_time = MetaSim::SIMUL.getTime();
-        scheduler._last_collection_time = MetaSim::SIMUL.getTime();
         scheduler._energy_depleted = false;
         scheduler._batch_scheduled_this_tick = false;
         scheduler._current_batch_tasks.clear();
@@ -174,7 +170,6 @@ public:
     static void setCurrentEnergy(ASAPSyncScheduler &scheduler,
                                  double current_energy) {
         scheduler._current_energy = current_energy;
-        scheduler._last_tick_time = MetaSim::SIMUL.getTime();
     }
 };
 
@@ -1034,8 +1029,14 @@ TEST(ASAPSyncScheduler, UsesRelativeDeadlineForDeadlineMiss) {
     ASAPSyncSchedulerTestPeer::enqueue(scheduler, &task);
 
     ASAPSyncSchedulerTestPeer::tick(scheduler);
+    ASAPSyncTestActionEvent tick_one(
+        [&scheduler]() { ASAPSyncSchedulerTestPeer::tick(scheduler); });
+    ASAPSyncTestActionEvent tick_two(
+        [&scheduler]() { ASAPSyncSchedulerTestPeer::tick(scheduler); });
     ASAPSyncTestActionEvent late_tick(
         [&scheduler]() { ASAPSyncSchedulerTestPeer::tick(scheduler); });
+    tick_one.post(Tick(1));
+    tick_two.post(Tick(2));
     late_tick.post(Tick(3));
     simulation.run_to(Tick(3));
 

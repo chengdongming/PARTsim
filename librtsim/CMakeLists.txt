@@ -26,6 +26,14 @@ add_definitions(-DPYTHON_VERSION=${Python3_VERSION})
 
 
 set(LIBRARY_SOURCE_FILES
+    harvesting/harvest_runtime.cpp
+    harvesting/harvest_source_factory.cpp
+    harvesting/legacy_solar_source.cpp
+    harvesting/sampled_trace_source.cpp
+    harvesting/scaled_piecewise_source.cpp
+    harvesting/sha256.cpp
+    scheduler/scheduler_harvest_runtime.cpp
+
     resource/fcfsresmanager.cpp
     resource/resmanager.cpp
     resource/resource.cpp
@@ -56,6 +64,8 @@ set(LIBRARY_SOURCE_FILES
     scheduler/gpfp_st_block_scheduler.cpp
     scheduler/gpfp_st_nonblock_scheduler.cpp
     scheduler/gpfp_st_sync_scheduler.cpp
+    scheduler/priority_energy_task_params.cpp
+    scheduler/priority_energy_runtime.cpp
     scheduler/energy_bridge.cpp
     scheduler/config_manager.cpp
     # # These two go together. If you want to compile against EnergyMRTKernel

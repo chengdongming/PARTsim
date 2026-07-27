@@ -4,6 +4,7 @@
 #include "config_manager.hpp"
 #include "energy_bridge.hpp"
 #include "scheduler.hpp"
+#include <rtsim/scheduler/scheduler_harvest_runtime.hpp>
 #include <rtsim/abstask.hpp>
 #include <rtsim/rttask.hpp>
 #include <rtsim/energy_info_provider.hpp>
@@ -123,16 +124,7 @@ namespace RTSim {
         MetaSim::Tick _energy_commit_tick;   // 最近一次能量提交tick
         uint64_t _energy_commit_generation;  // 最近一次能量提交generation
         bool _energy_commit_valid;           // 是否已有能量提交记录
-        MetaSim::Tick _last_tick_time;       // 上次tick时间
-        MetaSim::Tick _last_collection_time; // 上次能量收集时间
-
-        // ========== 太阳能配置 ==========
-        std::string _solar_data_file;
-        double _pv_efficiency;
-        double _pv_area_m2;
-        bool _use_real_solar_data;
-        MetaSim::Tick _start_time_offset;
-        double _base_harvest_rate;  // ⭐ V93修复：从配置读取基础收集率 (J/ms)
+        SchedulerHarvestRuntime _harvest_runtime;
 
         // ========== Tick事件 ==========
         ASAPNonBlockTickEvent *_tick_event;
@@ -180,7 +172,6 @@ namespace RTSim {
 
         // 核心调度逻辑
         void performTickScheduling();
-        void collectEnergyAtTickBoundary();
 
         // ⭐ 运行时能量检查和任务中断（V28.15新增）
         void checkAndInterruptRunningTasks();  // 检查所有运行中的任务，能量不足时中断
@@ -188,8 +179,6 @@ namespace RTSim {
         // 能量计算
         double calculateTotalEnergyForTask(AbsRTTask *task); // 计算任务总能耗
         double calculatePowerForWorkload(const std::string &workload, double frequency);
-        double collectSolarEnergy(MetaSim::Tick current_time);
-        double getSolarIrradiance(int64_t time_ms);
 
         // 任务管理
         ASAPNonBlockTaskModel *getTaskModel(AbsRTTask *task);
@@ -292,8 +281,6 @@ namespace RTSim {
         MRTKernel *getKernel();
 
         // 配置接口
-        void setPVConfig(double efficiency, double area, const std::string &solar_file);
-        void setStartTimeOffset(MetaSim::Tick offset);
 
         // 统计和调试
         void printStats() const;

@@ -15,6 +15,16 @@ add_executable(
   scheduler/st_block.cpp
   scheduler/st_nonblock.cpp
   scheduler/st_sync.cpp
+  scheduler/priority_energy_common.cpp
+  scheduler/priority_energy_runtime.cpp
+  scheduler/harvest_config.cpp
+  scheduler/harvest_runtime.cpp
+  scheduler/scheduler_harvest_runtime.cpp
+  scheduler/harvest_source_factory.cpp
+  scheduler/legacy_solar_source.cpp
+  scheduler/sampled_trace_source.cpp
+  scheduler/scaled_piecewise_source.cpp
+  scheduler/sha256.cpp
   scheduler/semantics_families.cpp
   scheduler/repair_regressions.cpp
 )
@@ -24,6 +34,12 @@ target_link_libraries(
     PRIVATE GTest::gtest_main
     PRIVATE GTest::gmock
     PRIVATE rtsim
+)
+
+target_compile_definitions(
+    test_librtsim
+    PRIVATE
+    PARTSIM_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
 )
 
 include(GoogleTest)

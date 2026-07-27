@@ -134,10 +134,6 @@ public:
         scheduler._initial_energy = current_energy;
         scheduler._current_energy = current_energy;
         scheduler._max_energy = 100.0;
-        scheduler._base_harvest_rate = 0.0;
-        scheduler._use_real_solar_data = false;
-        scheduler._last_tick_time = MetaSim::SIMUL.getTime();
-        scheduler._last_collection_time = MetaSim::SIMUL.getTime();
         scheduler._energy_depleted = false;
         scheduler._dispatching_tasks_total_energy = 0.0;
         scheduler._counted_tasks_in_dispatch.clear();
@@ -596,8 +592,14 @@ TEST(ASAPNonBlockScheduler, UsesRelativeDeadlineForDeadlineMiss) {
     ASAPNonBlockSchedulerTestPeer::enqueue(scheduler, &task);
 
     ASAPNonBlockSchedulerTestPeer::tick(scheduler);
+    ASAPNonBlockTestActionEvent tick_one(
+        [&scheduler]() { ASAPNonBlockSchedulerTestPeer::tick(scheduler); });
+    ASAPNonBlockTestActionEvent tick_two(
+        [&scheduler]() { ASAPNonBlockSchedulerTestPeer::tick(scheduler); });
     ASAPNonBlockTestActionEvent late_tick(
         [&scheduler]() { ASAPNonBlockSchedulerTestPeer::tick(scheduler); });
+    tick_one.post(Tick(1));
+    tick_two.post(Tick(2));
     late_tick.post(Tick(3));
     simulation.run_to(Tick(3));
 
