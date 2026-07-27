@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import dataclass
 from fractions import Fraction
 import hashlib
 import json
@@ -129,23 +130,96 @@ def task_workload_energy_model(
     )
 
 
+@dataclass(frozen=True)
+class SharedTaskEnergyInput:
+    """One production-materialized scheduler demand in joules per tick."""
+
+    workload: str
+    wcet: int
+    source_identity: str
+    base_power_binary64: str
+    workload_coefficient_binary64: str
+    frequency_ratio_binary64: str
+    energy_coefficient_binary64: str
+    energy_j_per_tick: Fraction
+    energy_j_per_tick_binary64: str
+    unit: str = "J/tick"
+
+    def provenance_material(self) -> Dict[str, Any]:
+        return {
+            "source_identity": self.source_identity,
+            "workload": self.workload,
+            "wcet": self.wcet,
+            "base_power_binary64": self.base_power_binary64,
+            "workload_coefficient_binary64": (
+                self.workload_coefficient_binary64
+            ),
+            "frequency_ratio_binary64": self.frequency_ratio_binary64,
+            "energy_coefficient_binary64": self.energy_coefficient_binary64,
+            "energy_j_per_tick": fraction_text(self.energy_j_per_tick),
+            "energy_j_per_tick_binary64": self.energy_j_per_tick_binary64,
+            "unit": self.unit,
+            "operation_order_version": (
+                exact_energy.NUMERIC_CONTRACT_VERSION
+            ),
+        }
+
+
+def shared_task_energy_input(
+    system: legacy_rta.RTASystemConfig,
+    workload: str,
+    wcet: int,
+    *,
+    label: str,
+    source_identity: str,
+    energy_coefficient: float = 1.0,
+) -> SharedTaskEnergyInput:
+    """Extract canonical system/task operands and call the C++ fact source."""
+
+    if not isinstance(source_identity, str) or not source_identity:
+        raise ConfigError("task energy source_identity must be non-empty")
+    if not isinstance(workload, str) or not workload:
+        raise ConfigError("task energy workload must be non-empty")
+    base_power = system.base_power
+    workload_coefficient = system.workload_coefficient(workload)
+    frequency_ratio = system.frequency_ratio()
+    materialized = exact_energy.materialize_task_demand_upper_bound(
+        base_power=base_power,
+        workload_coefficient=workload_coefficient,
+        frequency_ratio=frequency_ratio,
+        wcet=wcet,
+        energy_coefficient=energy_coefficient,
+        label=label,
+    )
+    return SharedTaskEnergyInput(
+        workload=workload,
+        wcet=wcet,
+        source_identity=source_identity,
+        base_power_binary64=base_power.hex(),
+        workload_coefficient_binary64=workload_coefficient.hex(),
+        frequency_ratio_binary64=frequency_ratio.hex(),
+        energy_coefficient_binary64=energy_coefficient.hex(),
+        energy_j_per_tick=materialized.exact_value,
+        energy_j_per_tick_binary64=materialized.binary64_hex,
+    )
+
+
 def task_demand_for_wcet(
-    system: legacy_rta.SystemConfig,
+    system: legacy_rta.RTASystemConfig,
     workload: str,
     wcet: int,
     *,
     label: str,
 ) -> Fraction:
-    """Return the exact materialized C++ per-task unit energy."""
+    """Compatibility wrapper around the shared J/tick production adapter."""
 
-    return exact_energy.materialize_task_demand_upper_bound(
-        base_power=system.base_power,
-        workload_coefficient=system.workload_coefficient(workload),
-        frequency_ratio=system.frequency_ratio(),
+    return shared_task_energy_input(
+        system,
+        workload,
         wcet=wcet,
-        energy_coefficient=1.0,
         label=label,
-    ).exact_value
+        source_identity="V9_3_SYSTEM_TASK_DEMAND_ADAPTER",
+    ).energy_j_per_tick
 
 
 def task_workload_contract_material(

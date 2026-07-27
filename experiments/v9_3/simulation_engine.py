@@ -37,10 +37,266 @@ from .task_identity import runtime_task_name_for_source_id
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SUPPORTED_TRACE_SCHEMA_VERSION = 2
 CORE3_ENERGY_PREFLIGHT_SCHEMA = "ASAP_BLOCK_V9_3_CORE3_ENERGY_PREFLIGHT_V1"
+SHARED_SOLAR_INPUT_SCHEMA = "ASAP_BLOCK_V9_3_SHARED_SOLAR_INPUT_V1"
+SHARED_SOLAR_INPUT_CLASSIFICATION = "DETERMINISTIC_CANONICAL_REPLAY_INPUT"
+SHARED_SOLAR_SAMPLING_RULE = (
+    "PRODUCTION_WHOLE_MINUTE_PHASE_THEN_TOTAL_MINUTE_INDEX_V1"
+)
+SHARED_SOLAR_OPERATION_ORDER_VERSION = (
+    "ASAP_BLOCK_REAL_SOLAR_BINARY64_TICK_ORDER_V1"
+)
 
 
 class SimulationConfigurationError(RuntimeError):
     """Raised before execution when RTA/simulation inputs cannot be paired."""
+
+
+@dataclass(frozen=True)
+class SharedSolarInput:
+    """Side-effect-free replay of production per-tick solar input."""
+
+    harvest_j_per_tick: tuple[Fraction, ...]
+    provenance: Mapping[str, Any]
+
+    @property
+    def offered_harvest_j(self) -> Fraction:
+        return sum(self.harvest_j_per_tick, Fraction(0))
+
+    def beta(
+        self,
+        max_length: int,
+        *,
+        valid_start_range: range | None = None,
+    ) -> tuple[Fraction, ...]:
+        return exact_energy.service_curve_lower_bound(
+            self.harvest_j_per_tick,
+            max_length,
+            valid_start_range=valid_start_range,
+        )
+
+
+def _source_file_material(path: Path, source_root: Path) -> Dict[str, Any]:
+    resolved = path.resolve(strict=True)
+    if not resolved.is_file():
+        raise SimulationConfigurationError(
+            f"shared energy input source is not a file: {resolved}"
+        )
+    return {
+        "source_relative_path": os.path.relpath(resolved, source_root),
+        "sha256": _sha256(resolved),
+        "size": resolved.stat().st_size,
+    }
+
+
+def _load_shared_energy_support(
+    value: Mapping[str, Any] | Path | str,
+    *,
+    source_root: Path,
+) -> tuple[Dict[str, Any], Dict[str, Any], Optional[Path]]:
+    support_path: Optional[Path] = None
+    if isinstance(value, Mapping):
+        document = dict(value)
+        payload = canonical_json(document).encode("utf-8")
+        source = {
+            "source_relative_path": "<direct-mapping>",
+            "sha256": hashlib.sha256(payload).hexdigest(),
+            "size": len(payload),
+        }
+    else:
+        support_path = Path(value)
+        if not support_path.is_absolute():
+            support_path = source_root / support_path
+        try:
+            support_path = support_path.resolve(strict=True)
+            payload = support_path.read_bytes()
+            document = yaml.safe_load(payload)
+        except (OSError, yaml.YAMLError) as exc:
+            raise SimulationConfigurationError(
+                f"cannot load direct energy support: {exc}"
+            ) from exc
+        if not isinstance(document, dict):
+            raise SimulationConfigurationError(
+                "direct energy support must contain a mapping"
+            )
+        source = _source_file_material(support_path, source_root)
+    energy = document.get("energy", document)
+    if not isinstance(energy, dict):
+        raise SimulationConfigurationError(
+            "direct energy support has no energy mapping"
+        )
+    return dict(energy), source, support_path
+
+
+def construct_shared_solar_input(
+    base_system_path: Path | str,
+    energy_support: Mapping[str, Any] | Path | str,
+    *,
+    horizon: int,
+    source_root: Path | str | None = None,
+) -> SharedSolarInput:
+    """Replay the existing production solar constructor without simulation.
+
+    The system template and direct energy-support material are caller-owned
+    inputs.  This adapter only projects the existing solar scale and delegates
+    every tick to ``construct_paired_harvest_trace``.
+    """
+
+    base_path = Path(base_system_path).resolve(strict=True)
+    if not base_path.is_file():
+        raise SimulationConfigurationError(
+            f"base simulator system is not a file: {base_path}"
+        )
+    root = (
+        base_path.parent
+        if source_root is None
+        else Path(source_root).resolve(strict=True)
+    )
+    if not root.is_dir():
+        raise SimulationConfigurationError(
+            f"shared energy source root is not a directory: {root}"
+        )
+    if isinstance(horizon, bool) or not isinstance(horizon, int) or horizon <= 0:
+        raise SimulationConfigurationError(
+            "shared solar horizon must be a positive integer"
+        )
+
+    energy, support_source, support_path = _load_shared_energy_support(
+        energy_support,
+        source_root=root,
+    )
+    service = energy.get("service_curve")
+    if not isinstance(service, Mapping):
+        raise SimulationConfigurationError(
+            "direct energy support service_curve must be a mapping"
+        )
+    template_value = service.get("system_template")
+    if not isinstance(template_value, str) or not template_value:
+        raise SimulationConfigurationError(
+            "direct energy support has no system template"
+        )
+    declared = Path(template_value)
+    candidates = (
+        {declared.resolve()}
+        if declared.is_absolute()
+        else {
+            (root / declared).resolve(),
+            *(
+                {(support_path.parent / declared).resolve()}
+                if support_path is not None
+                else set()
+            ),
+        }
+    )
+    if base_path not in candidates:
+        raise SimulationConfigurationError(
+            "direct energy support system template does not match "
+            "the caller-provided base system"
+        )
+    declared_horizon = service.get("horizon")
+    if declared_horizon is not None and (
+        isinstance(declared_horizon, bool)
+        or not isinstance(declared_horizon, int)
+        or horizon > declared_horizon
+    ):
+        raise SimulationConfigurationError(
+            "shared solar horizon exceeds direct energy support"
+        )
+
+    try:
+        base_system = legacy_rta.load_system_config(str(base_path))
+    except Exception as exc:
+        raise SimulationConfigurationError(
+            f"cannot load base simulator system: {exc}"
+        ) from exc
+    initial = _system_fraction(
+        energy.get("simulation_initial_battery", energy.get("initial_energy")),
+        "shared solar initial battery",
+    )
+    capacity = _system_fraction(
+        energy.get("battery_capacity"),
+        "shared solar battery capacity",
+        positive=True,
+    )
+    scale = _system_fraction(
+        service.get("solar_scale", "1"),
+        "shared solar scale",
+        positive=True,
+    )
+    with tempfile.TemporaryDirectory(
+        prefix="v9_3_shared_solar_input_"
+    ) as temp:
+        projected_path = Path(temp) / "system_config.yaml"
+        atomic_write_text(
+            projected_path,
+            render_system_projection(
+                base_path,
+                processors=base_system.num_cores,
+                initial_battery=initial,
+                battery_capacity=capacity,
+                service_curve=service,
+            ),
+        )
+        try:
+            projected = legacy_rta.load_system_config(str(projected_path))
+        except Exception as exc:
+            raise SimulationConfigurationError(
+                f"cannot load projected shared solar system: {exc}"
+            ) from exc
+        if not projected.use_real_solar_data:
+            raise SimulationConfigurationError(
+                "shared production solar input requires real solar data"
+            )
+        trace = construct_paired_harvest_trace(projected_path, horizon)
+        solar_path = Path(legacy_rta._resolve_solar_path(projected)).resolve(
+            strict=True
+        )
+
+    tick = exact_energy.materialize_supply_lower_bound(
+        legacy_rta.TICK_SECONDS,
+        "production tick duration seconds",
+    )
+    trace_payload = canonical_json(
+        [fraction_text(value) for value in trace]
+    ).encode("utf-8")
+    provenance: Dict[str, Any] = {
+        "schema": SHARED_SOLAR_INPUT_SCHEMA,
+        "classification": SHARED_SOLAR_INPUT_CLASSIFICATION,
+        "system_template": _source_file_material(base_path, root),
+        "energy_support": support_source,
+        "solar_csv": _source_file_material(solar_path, root),
+        "use_real_solar_data": True,
+        "day_of_year": projected.day_of_year,
+        "time_of_day_ms": projected.time_of_day_ms,
+        "materialized_start_offset_ms": (
+            legacy_rta.materialize_runtime_start_offset_ms(
+                projected.day_of_year,
+                projected.time_of_day_ms,
+            )
+        ),
+        "solar_scale": fraction_text(scale),
+        "pv_area_m2": fraction_text(
+            exact_energy.materialize_supply_lower_bound(
+                projected.pv_area_m2,
+                "shared solar projected pv area",
+            ).exact_value
+        ),
+        "pv_efficiency": fraction_text(
+            exact_energy.materialize_supply_lower_bound(
+                projected.pv_efficiency,
+                "shared solar pv efficiency",
+            ).exact_value
+        ),
+        "tick_duration_seconds": fraction_text(tick.exact_value),
+        "tick_duration_binary64": tick.binary64_hex,
+        "sampling_rule": SHARED_SOLAR_SAMPLING_RULE,
+        "operation_order_version": SHARED_SOLAR_OPERATION_ORDER_VERSION,
+        "horizon": horizon,
+        "harvest_trace_sha256": hashlib.sha256(trace_payload).hexdigest(),
+    }
+    provenance["replay_input_sha256"] = hashlib.sha256(
+        canonical_json(provenance).encode("utf-8")
+    ).hexdigest()
+    return SharedSolarInput(trace, provenance)
 
 
 def trace_retention_statuses(

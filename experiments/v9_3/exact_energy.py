@@ -253,14 +253,20 @@ def parse_persisted_fraction(value: Any, label: str) -> Fraction:
 
 
 def service_curve_lower_bound(
-    trace: Sequence[Fraction], maximum_delta: int,
+    trace: Sequence[Fraction],
+    maximum_delta: int,
+    *,
+    valid_start_range: range | None = None,
 ) -> tuple[Fraction, ...]:
     """Build beta_l from the simulator's binary64 interval accumulation.
 
     Each candidate interval is accumulated from binary64 zero in chronological
     order, exactly matching the simulator's ``total += harvested`` operation.
     The resulting binary64 value is then represented without loss as a
-    ``Fraction``.  All later service-curve and RTA arithmetic is rational.
+    ``Fraction``.  All later service-curve and RTA arithmetic is rational.  If
+    ``valid_start_range`` is supplied, the same caller-selected starts are
+    considered for every positive interval length; every selected start must
+    admit a complete ``maximum_delta`` window.
     """
 
     if isinstance(maximum_delta, bool) or not isinstance(maximum_delta, int):
@@ -271,6 +277,27 @@ def service_curve_lower_bound(
         raise ExactEnergyError(
             "service trace must contain non-negative exact Fractions"
         )
+    selected_starts: tuple[int, ...] | None = None
+    if valid_start_range is not None:
+        if (
+            type(valid_start_range) is not range
+            or valid_start_range.step != 1
+        ):
+            raise ExactEnergyError(
+                "service valid_start_range must be a unit-step range"
+            )
+        selected_starts = tuple(valid_start_range)
+        if maximum_delta > 0 and not selected_starts:
+            raise ExactEnergyError(
+                "service valid_start_range must not be empty"
+            )
+        if any(
+            start < 0 or start + maximum_delta > len(trace)
+            for start in selected_starts
+        ):
+            raise ExactEnergyError(
+                "service valid_start_range contains an incomplete window"
+            )
 
     binary64_trace: list[float] = []
     for index, value in enumerate(trace):
@@ -292,7 +319,12 @@ def service_curve_lower_bound(
                 raise ExactEnergyError("service interval accumulation overflowed")
         return Fraction.from_float(total)
 
-    if all(left <= right for left, right in zip(trace, trace[1:])):
+    if selected_starts is not None:
+        result = (Fraction(0),) + tuple(
+            min(interval_sum(start, delta) for start in selected_starts)
+            for delta in range(1, maximum_delta + 1)
+        )
+    elif all(left <= right for left, right in zip(trace, trace[1:])):
         result = tuple(
             interval_sum(0, delta)
             for delta in range(0, maximum_delta + 1)
