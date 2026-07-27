@@ -1,18 +1,504 @@
 #include <rtsim/json_trace.hpp>
+#include <algorithm>
 #include <iomanip>
 #include <cmath>
 #include <limits>
 #include <sstream>
+#include <stdexcept>
 
 namespace RTSim {
 
     using namespace MetaSim;
+
+    namespace {
+        bool isKnownExclusionReason(DecisionExclusionReason reason) {
+            switch (reason) {
+                case DecisionExclusionReason::None:
+                case DecisionExclusionReason::CpuCapacity:
+                case DecisionExclusionReason::TimingDefer:
+                case DecisionExclusionReason::DirectEnergyShortage:
+                case DecisionExclusionReason::BlockHeadOfLine:
+                case DecisionExclusionReason::SyncAtomicUnaffordable:
+                case DecisionExclusionReason::StEnergyChargeWait:
+                    return true;
+            }
+            return false;
+        }
+
+        bool isEnergyExclusionReason(DecisionExclusionReason reason) {
+            switch (reason) {
+                case DecisionExclusionReason::DirectEnergyShortage:
+                case DecisionExclusionReason::BlockHeadOfLine:
+                case DecisionExclusionReason::SyncAtomicUnaffordable:
+                case DecisionExclusionReason::StEnergyChargeWait:
+                    return true;
+                case DecisionExclusionReason::None:
+                case DecisionExclusionReason::CpuCapacity:
+                case DecisionExclusionReason::TimingDefer:
+                    return false;
+            }
+            throw std::invalid_argument("unknown decision exclusion reason");
+        }
+
+        std::int64_t tickValue(MetaSim::Tick value) {
+            return static_cast<std::int64_t>(value);
+        }
+    } // namespace
 
     static std::string exactDoubleString(double value) {
         std::ostringstream out;
         out << std::setprecision(std::numeric_limits<double>::max_digits10)
             << value;
         return out.str();
+    }
+
+    MechanismSummaryAccumulator::MechanismSummaryAccumulator(
+        std::uint64_t horizon_ticks) {
+        reset(horizon_ticks);
+    }
+
+    void MechanismSummaryAccumulator::reset(
+        std::uint64_t horizon_ticks) {
+        _configured = true;
+        _finalized = false;
+        _horizon_ticks = horizon_ticks;
+        _next_tick = 0;
+        _processor_count = 0;
+        _summary = MechanismSummary{};
+    }
+
+    void MechanismSummaryAccumulator::observe(
+        const DecisionRecord &record) {
+        if (!_configured) {
+            throw std::logic_error(
+                "mechanism summary has not been configured");
+        }
+        if (_finalized) {
+            throw std::logic_error(
+                "mechanism summary has already been finalized");
+        }
+        if (record.tick < 0 ||
+            static_cast<std::uint64_t>(record.tick) >= _horizon_ticks) {
+            throw std::out_of_range(
+                "decision tick must be within [0, horizon)");
+        }
+        if (static_cast<std::uint64_t>(record.tick) != _next_tick) {
+            throw std::logic_error(
+                "decision ticks must be complete and strictly increasing");
+        }
+        if (record.processor_count == 0) {
+            throw std::invalid_argument(
+                "decision processor count must be positive");
+        }
+        if (_processor_count == 0) {
+            _processor_count = record.processor_count;
+        } else if (_processor_count != record.processor_count) {
+            throw std::invalid_argument(
+                "decision processor count changed within one run");
+        }
+        if (!std::isfinite(record.available_energy_j) ||
+            record.available_energy_j < 0.0 ||
+            !std::isfinite(record.energy_epsilon_j) ||
+            record.energy_epsilon_j < 0.0) {
+            throw std::invalid_argument(
+                "decision energy values must be finite and non-negative");
+        }
+
+        std::set<std::string> job_ids;
+        std::set<std::uint32_t> priority_ranks;
+        std::size_t actual_dispatch_count = 0;
+        std::size_t infinite_demand_count = 0;
+        std::vector<const DecisionJobRecord *> candidates;
+
+        for (const DecisionJobRecord &job : record.jobs) {
+            if (job.job_id.empty() || job.task_name.empty()) {
+                throw std::invalid_argument(
+                    "decision jobs require owned non-empty identities");
+            }
+            if (!job_ids.insert(job.job_id).second ||
+                !priority_ranks.insert(job.priority_rank).second) {
+                throw std::invalid_argument(
+                    "decision job identities and priority ranks must be unique");
+            }
+            if (!std::isfinite(job.incremental_energy_cost_j) ||
+                job.incremental_energy_cost_j < 0.0) {
+                throw std::invalid_argument(
+                    "decision job energy cost must be finite and non-negative");
+            }
+            if (!isKnownExclusionReason(job.exclusion_reason)) {
+                throw std::invalid_argument(
+                    "unknown decision exclusion reason");
+            }
+            if (job.is_top4 == job.is_bottom6) {
+                throw std::invalid_argument(
+                    "decision job must belong to exactly one frozen priority group");
+            }
+            if ((job.infinite_energy_dispatch_demand ||
+                 job.actual_dispatch) &&
+                !job.candidate) {
+                throw std::invalid_argument(
+                    "dispatch membership requires candidate membership");
+            }
+            if (job.actual_dispatch) {
+                if (job.exclusion_reason != DecisionExclusionReason::None) {
+                    throw std::invalid_argument(
+                        "actually dispatched jobs cannot have an exclusion reason");
+                }
+                ++actual_dispatch_count;
+            } else if (job.candidate) {
+                if (job.exclusion_reason == DecisionExclusionReason::None ||
+                    job.exclusion_reason ==
+                        DecisionExclusionReason::TimingDefer) {
+                    throw std::invalid_argument(
+                        "excluded candidates require a non-timing reason");
+                }
+            } else if (job.exclusion_reason !=
+                       DecisionExclusionReason::TimingDefer) {
+                throw std::invalid_argument(
+                    "non-candidates must be explicitly timing-deferred");
+            }
+            if (job.infinite_energy_dispatch_demand) {
+                ++infinite_demand_count;
+                if (!job.actual_dispatch &&
+                    !isEnergyExclusionReason(job.exclusion_reason)) {
+                    throw std::invalid_argument(
+                        "infinite-energy demand may only be removed by energy");
+                }
+            }
+            if (job.candidate) {
+                candidates.push_back(&job);
+            }
+        }
+        if (actual_dispatch_count > record.processor_count ||
+            infinite_demand_count > record.processor_count) {
+            throw std::invalid_argument(
+                "decision dispatch count exceeds processor capacity");
+        }
+
+        std::sort(
+            candidates.begin(), candidates.end(),
+            [](const DecisionJobRecord *lhs,
+               const DecisionJobRecord *rhs) {
+                return lhs->priority_rank < rhs->priority_rank;
+            });
+        for (std::size_t i = 0; i < candidates.size(); ++i) {
+            const bool expected_infinite_demand =
+                i < record.processor_count;
+            if (candidates[i]->infinite_energy_dispatch_demand !=
+                expected_infinite_demand) {
+                throw std::invalid_argument(
+                    "infinite-energy demand must be the native top-M candidate set");
+            }
+        }
+
+        const DecisionJobRecord *blocked_anchor = nullptr;
+        bool bypass_opportunity = false;
+        double residual_energy = record.available_energy_j;
+        std::size_t counterfactual_dispatch_count = 0;
+        for (std::size_t i = 0;
+             i < candidates.size() &&
+             counterfactual_dispatch_count < record.processor_count;
+             ++i) {
+            const DecisionJobRecord &job = *candidates[i];
+            if (job.incremental_energy_cost_j <=
+                residual_energy + record.energy_epsilon_j) {
+                residual_energy = std::max(
+                    0.0, residual_energy - job.incremental_energy_cost_j);
+                ++counterfactual_dispatch_count;
+                continue;
+            }
+
+            blocked_anchor = &job;
+            for (std::size_t j = i + 1; j < candidates.size(); ++j) {
+                if (candidates[j]->incremental_energy_cost_j <=
+                    residual_energy + record.energy_epsilon_j) {
+                    bypass_opportunity = true;
+                    break;
+                }
+            }
+            break;
+        }
+
+        bool actual_bypass = false;
+        std::uint64_t low_priority_bypass_cores = 0;
+        if (bypass_opportunity && blocked_anchor != nullptr &&
+            !blocked_anchor->actual_dispatch &&
+            isEnergyExclusionReason(blocked_anchor->exclusion_reason)) {
+            for (const DecisionJobRecord *job : candidates) {
+                if (job->priority_rank <= blocked_anchor->priority_rank ||
+                    !job->actual_dispatch) {
+                    continue;
+                }
+                actual_bypass = true;
+                if (job->is_bottom6) {
+                    ++low_priority_bypass_cores;
+                }
+            }
+        }
+
+        bool hp_dispatch_demand = false;
+        std::uint64_t hp_energy_blocked_jobs = 0;
+        for (const DecisionJobRecord &job : record.jobs) {
+            if (job.is_top4 &&
+                job.infinite_energy_dispatch_demand) {
+                hp_dispatch_demand = true;
+                if (!job.actual_dispatch &&
+                    isEnergyExclusionReason(job.exclusion_reason)) {
+                    ++hp_energy_blocked_jobs;
+                }
+            }
+        }
+
+        if (bypass_opportunity) {
+            ++_summary.bypass_opportunity_ticks;
+        }
+        if (actual_bypass) {
+            ++_summary.actual_bypass_ticks;
+            _summary.low_priority_bypass_core_ticks +=
+                low_priority_bypass_cores;
+        }
+        if (hp_dispatch_demand) {
+            ++_summary.hp_dispatch_demand_ticks;
+        }
+        if (hp_energy_blocked_jobs > 0) {
+            ++_summary.hp_energy_blocked_ticks;
+            _summary.hp_energy_blocked_job_ticks +=
+                hp_energy_blocked_jobs;
+        }
+        ++_summary.observed_decision_ticks;
+        ++_next_tick;
+    }
+
+    const MechanismSummary &MechanismSummaryAccumulator::finalize() {
+        if (!_configured) {
+            throw std::logic_error(
+                "mechanism summary has not been configured");
+        }
+        if (_summary.observed_decision_ticks != _horizon_ticks ||
+            _next_tick != _horizon_ticks) {
+            throw std::logic_error(
+                "mechanism summary is missing decision ticks");
+        }
+        if (_summary.bypass_opportunity_ticks > _horizon_ticks ||
+            _summary.actual_bypass_ticks >
+                _summary.bypass_opportunity_ticks ||
+            _summary.hp_dispatch_demand_ticks > _horizon_ticks ||
+            _summary.hp_energy_blocked_ticks >
+                _summary.hp_dispatch_demand_ticks ||
+            (_processor_count > 0 &&
+             _summary.low_priority_bypass_core_ticks >
+                 _summary.actual_bypass_ticks * _processor_count) ||
+            (_processor_count > 0 &&
+             _summary.hp_energy_blocked_job_ticks >
+                 _summary.hp_energy_blocked_ticks *
+                     std::min<std::size_t>(_processor_count, 4))) {
+            throw std::logic_error(
+                "mechanism summary counter bounds are inconsistent");
+        }
+        _finalized = true;
+        return _summary;
+    }
+
+    void PerTaskLifecycleAccumulator::reset(std::int64_t horizon_ms) {
+        if (horizon_ms < 0) {
+            throw std::invalid_argument(
+                "lifecycle horizon must be non-negative");
+        }
+        _configured = true;
+        _finalized = false;
+        _horizon_ms = horizon_ms;
+        _task_summaries.clear();
+        _active_jobs.clear();
+    }
+
+    void PerTaskLifecycleAccumulator::validateEvent(
+        const std::string &task_name,
+        std::int64_t release_time_ms,
+        std::int64_t event_time_ms) const {
+        if (!_configured) {
+            throw std::logic_error(
+                "lifecycle summary has not been configured");
+        }
+        if (_finalized) {
+            throw std::logic_error(
+                "lifecycle summary has already been finalized");
+        }
+        if (task_name.empty() || release_time_ms < 0 ||
+            event_time_ms < release_time_ms ||
+            event_time_ms > _horizon_ms) {
+            throw std::invalid_argument(
+                "invalid bounded lifecycle event");
+        }
+    }
+
+    void PerTaskLifecycleAccumulator::closeRunning(
+        const JobIdentity &job,
+        ActiveJobState &state,
+        std::int64_t close_time_ms) {
+        if (!state.running) return;
+        if (close_time_ms < state.running_since_ms) {
+            throw std::logic_error(
+                "lifecycle running interval closes before it starts");
+        }
+        auto summary_it = _task_summaries.find(job.first);
+        if (summary_it == _task_summaries.end()) {
+            throw std::logic_error(
+                "lifecycle running job has no task summary");
+        }
+        summary_it->second.executed_core_ticks +=
+            static_cast<std::uint64_t>(
+                close_time_ms - state.running_since_ms);
+        state.running = false;
+    }
+
+    void PerTaskLifecycleAccumulator::onRelease(
+        const std::string &task_name,
+        std::int64_t release_time_ms) {
+        validateEvent(task_name, release_time_ms, release_time_ms);
+        if (release_time_ms == _horizon_ms) return;
+
+        const JobIdentity job{task_name, release_time_ms};
+        if (!_active_jobs.emplace(job, ActiveJobState{}).second) {
+            throw std::logic_error("duplicate lifecycle release");
+        }
+        auto &summary = _task_summaries[task_name];
+        summary.task_name = task_name;
+        ++summary.released_jobs;
+    }
+
+    void PerTaskLifecycleAccumulator::onSchedule(
+        const std::string &task_name,
+        std::int64_t release_time_ms,
+        std::int64_t schedule_time_ms) {
+        validateEvent(task_name, release_time_ms, schedule_time_ms);
+        if (release_time_ms == _horizon_ms ||
+            schedule_time_ms == _horizon_ms) {
+            return;
+        }
+        const JobIdentity job{task_name, release_time_ms};
+        auto active_it = _active_jobs.find(job);
+        if (active_it == _active_jobs.end()) {
+            throw std::logic_error(
+                "scheduled lifecycle job is not active");
+        }
+        // A migration may expose a second schedule callback at the same
+        // instant.  Keeping the original opening time prevents double count.
+        if (!active_it->second.running) {
+            active_it->second.running = true;
+            active_it->second.running_since_ms = schedule_time_ms;
+        }
+    }
+
+    void PerTaskLifecycleAccumulator::onDeschedule(
+        const std::string &task_name,
+        std::int64_t release_time_ms,
+        std::int64_t deschedule_time_ms) {
+        validateEvent(task_name, release_time_ms, deschedule_time_ms);
+        if (release_time_ms == _horizon_ms) return;
+        const JobIdentity job{task_name, release_time_ms};
+        auto active_it = _active_jobs.find(job);
+        if (active_it == _active_jobs.end()) {
+            throw std::logic_error(
+                "descheduled lifecycle job is not active");
+        }
+        closeRunning(job, active_it->second, deschedule_time_ms);
+    }
+
+    void PerTaskLifecycleAccumulator::onCompletion(
+        const std::string &task_name,
+        std::int64_t release_time_ms,
+        std::int64_t completion_time_ms) {
+        validateEvent(task_name, release_time_ms, completion_time_ms);
+        if (release_time_ms == _horizon_ms) return;
+        const JobIdentity job{task_name, release_time_ms};
+        auto active_it = _active_jobs.find(job);
+        if (active_it == _active_jobs.end()) {
+            throw std::logic_error(
+                "completed lifecycle job is not active");
+        }
+        closeRunning(job, active_it->second, completion_time_ms);
+
+        auto &summary = _task_summaries.at(task_name);
+        const auto response_time = static_cast<std::uint64_t>(
+            completion_time_ms - release_time_ms);
+        ++summary.completed_jobs;
+        ++summary.completed_response_time_count;
+        summary.completed_response_time_sum_ms += response_time;
+        summary.completed_response_time_max_ms = std::max(
+            summary.completed_response_time_max_ms, response_time);
+        _active_jobs.erase(active_it);
+    }
+
+    void PerTaskLifecycleAccumulator::onDeadlineMiss(
+        const std::string &task_name,
+        std::int64_t release_time_ms,
+        std::int64_t miss_time_ms) {
+        validateEvent(task_name, release_time_ms, miss_time_ms);
+        if (release_time_ms == _horizon_ms) return;
+        const JobIdentity job{task_name, release_time_ms};
+        auto active_it = _active_jobs.find(job);
+        if (active_it == _active_jobs.end()) {
+            throw std::logic_error(
+                "deadline-missed lifecycle job is not active");
+        }
+        if (active_it->second.deadline_miss_recorded) return;
+        active_it->second.deadline_miss_recorded = true;
+        ++_task_summaries.at(task_name).deadline_miss_jobs;
+    }
+
+    void PerTaskLifecycleAccumulator::onKill(
+        const std::string &task_name,
+        std::int64_t release_time_ms,
+        std::int64_t kill_time_ms) {
+        validateEvent(task_name, release_time_ms, kill_time_ms);
+        if (release_time_ms == _horizon_ms) return;
+        const JobIdentity job{task_name, release_time_ms};
+        auto active_it = _active_jobs.find(job);
+        if (active_it == _active_jobs.end()) {
+            throw std::logic_error(
+                "killed lifecycle job is not active");
+        }
+        closeRunning(job, active_it->second, kill_time_ms);
+        _active_jobs.erase(active_it);
+    }
+
+    void PerTaskLifecycleAccumulator::finalize(
+        std::int64_t horizon_ms) {
+        if (!_configured) {
+            throw std::logic_error(
+                "lifecycle summary has not been configured");
+        }
+        if (horizon_ms != _horizon_ms) {
+            throw std::invalid_argument(
+                "lifecycle summary must finalize at its horizon");
+        }
+        if (_finalized) return;
+
+        for (auto &entry : _active_jobs) {
+            closeRunning(entry.first, entry.second, _horizon_ms);
+            ++_task_summaries.at(
+                entry.first.first).unfinished_at_horizon_jobs;
+        }
+        _active_jobs.clear();
+        _finalized = true;
+    }
+
+    std::vector<PerTaskLifecycleSummary>
+    PerTaskLifecycleAccumulator::summaries() const {
+        std::vector<PerTaskLifecycleSummary> result;
+        result.reserve(_task_summaries.size());
+        for (const auto &entry : _task_summaries) {
+            result.push_back(entry.second);
+        }
+        return result;
+    }
+
+    bool PerTaskLifecycleAccumulator::hasActiveJob(
+        const std::string &task_name,
+        std::int64_t release_time_ms) const {
+        return _active_jobs.find(
+            JobIdentity{task_name, release_time_ms}) !=
+            _active_jobs.end();
     }
 
     JSONTrace::JSONTrace(const string &name) {
@@ -27,6 +513,9 @@ namespace RTSim {
         _run_generation = std::numeric_limits<std::uint64_t>::max();
         _energy_provider = nullptr;
         _semantic_trace_enabled = false;
+        _observability_summary_state =
+            ObservabilitySummaryState::Disabled;
+        _observability_summary_horizon = MetaSim::Tick(-1);
     }
 
     JSONTrace::JSONTrace(const string &name, MetaSim::Tick max) {
@@ -41,6 +530,9 @@ namespace RTSim {
         _run_generation = std::numeric_limits<std::uint64_t>::max();
         _energy_provider = nullptr;
         _semantic_trace_enabled = false;
+        _observability_summary_state =
+            ObservabilitySummaryState::Disabled;
+        _observability_summary_horizon = MetaSim::Tick(-1);
     }
 
     // V98修复：显式清空容器，避免析构顺序问题
@@ -120,10 +612,24 @@ namespace RTSim {
         // is not a miss and would violate the formal miss-payload contract.
         if (remaining_execution <= 0.0) return;
 
+        const bool observe_lifecycle =
+            shouldAccumulateLifecycleSummary();
         const auto job_key = std::make_pair(
             task,
             static_cast<MetaSim::Tick::impl_t>(release_time));
         if (!_logged_deadline_misses.insert(job_key).second) return;
+
+        if (observe_lifecycle) {
+            if (!_lifecycle_summary.hasActiveJob(
+                    tt.getName(), tickValue(release_time))) {
+                _lifecycle_summary.onRelease(
+                    tt.getName(), tickValue(release_time));
+            }
+            _lifecycle_summary.onDeadlineMiss(
+                tt.getName(),
+                tickValue(release_time),
+                tickValue(SIMUL.getTime()));
+        }
 
         _deadline_missed_tasks.insert(task);
         _task_start_times.erase(task);
@@ -173,6 +679,14 @@ namespace RTSim {
         _deadline_missed_tasks.clear();
         _logged_deadline_misses.clear();
         _pending_forced_dline_miss.clear();
+        if (_observability_summary_state ==
+            ObservabilitySummaryState::Enabled) {
+            _mechanism_summary.reset(
+                static_cast<std::uint64_t>(
+                    tickValue(_observability_summary_horizon)));
+            _lifecycle_summary.reset(
+                tickValue(_observability_summary_horizon));
+        }
         _observed_simulation_end = MetaSim::Tick(-1);
         _simulation_completed = false;
         _simulation_completion_reason = "not_completed";
@@ -180,6 +694,20 @@ namespace RTSim {
 
     void JSONTrace::ensureCurrentRun() {
         beginRun(SIMUL.getRunGeneration());
+    }
+
+    bool JSONTrace::shouldAccumulateLifecycleSummary() const {
+        switch (_observability_summary_state) {
+            case ObservabilitySummaryState::Disabled:
+                return false;
+            case ObservabilitySummaryState::Enabled:
+                return true;
+            case ObservabilitySummaryState::Finalized:
+                throw std::logic_error(
+                    "observability summaries have already been finalized");
+        }
+        throw std::logic_error(
+            "observability summary lifecycle state is invalid");
     }
 
     void JSONTrace::setSimulationOutcome(MetaSim::Tick end_time,
@@ -196,6 +724,61 @@ namespace RTSim {
            << (completed ? "true" : "false") << ", ";
         fd << "\"simulation_completion_reason\": \""
            << escapeJson(reason) << "\"}";
+    }
+
+    void JSONTrace::enableObservabilitySummaries(MetaSim::Tick horizon) {
+        if (_observability_summary_state !=
+            ObservabilitySummaryState::Disabled) {
+            throw std::logic_error(
+                "observability summaries may only be enabled once");
+        }
+        if (horizon < 0 || max_time < 0 || horizon != max_time) {
+            throw std::invalid_argument(
+                "observability summary horizon must match the trace horizon");
+        }
+        ensureCurrentRun();
+        _observability_summary_horizon = horizon;
+        _mechanism_summary.reset(
+            static_cast<std::uint64_t>(tickValue(horizon)));
+        _lifecycle_summary.reset(tickValue(horizon));
+        _observability_summary_state =
+            ObservabilitySummaryState::Enabled;
+    }
+
+    void JSONTrace::finalizeObservabilitySummaries(
+        MetaSim::Tick horizon) {
+        if (_observability_summary_state ==
+            ObservabilitySummaryState::Disabled) {
+            throw std::logic_error(
+                "observability summaries have not been enabled");
+        }
+        if (_observability_summary_state ==
+            ObservabilitySummaryState::Finalized) {
+            throw std::logic_error(
+                "observability summaries have already been finalized");
+        }
+        if (horizon != _observability_summary_horizon) {
+            throw std::invalid_argument(
+                "observability summary finalize horizon changed");
+        }
+        ensureCurrentRun();
+        (void)_mechanism_summary.finalize();
+        _lifecycle_summary.finalize(tickValue(horizon));
+        _observability_summary_state =
+            ObservabilitySummaryState::Finalized;
+    }
+
+    void JSONTrace::observeDecision(const DecisionRecord &record) {
+        if (_observability_summary_state !=
+            ObservabilitySummaryState::Enabled) {
+            throw std::logic_error(
+                _observability_summary_state ==
+                        ObservabilitySummaryState::Finalized
+                    ? "observability summaries have already been finalized"
+                    : "observability summaries have not been enabled");
+        }
+        ensureCurrentRun();
+        _mechanism_summary.observe(record);
     }
 
     std::string JSONTrace::escapeJson(const std::string &value) {
@@ -934,6 +1517,16 @@ namespace RTSim {
 
     void JSONTrace::probe(ArrEvt &e) {
         Task &tt = *(e.getTask());
+        ensureCurrentRun();
+        if (shouldAccumulateLifecycleSummary() &&
+            SIMUL.getTime() <= max_time) {
+            const auto release_time = tickValue(SIMUL.getTime());
+            if (!_lifecycle_summary.hasActiveJob(
+                    tt.getName(), release_time)) {
+                _lifecycle_summary.onRelease(
+                    tt.getName(), release_time);
+            }
+        }
 
         // ⭐ 修复：arrival事件应该使用当前时间作为arrival_time
         // 因为在ArrEvt触发时，task->getLastArrival()还没有更新
@@ -956,6 +1549,20 @@ namespace RTSim {
     void JSONTrace::probe(EndEvt &e) {
         Task &tt = *(e.getTask());
         AbsRTTask *task = dynamic_cast<AbsRTTask*>(&tt);
+        ensureCurrentRun();
+        if (shouldAccumulateLifecycleSummary() &&
+            SIMUL.getTime() <= max_time) {
+            const auto release_time = tickValue(tt.getLastArrival());
+            if (!_lifecycle_summary.hasActiveJob(
+                    tt.getName(), release_time)) {
+                _lifecycle_summary.onRelease(
+                    tt.getName(), release_time);
+            }
+            _lifecycle_summary.onCompletion(
+                tt.getName(),
+                release_time,
+                tickValue(SIMUL.getTime()));
+        }
 
         // 检查当前时间是否超过最大时间
         if (max_time >= 0 && SIMUL.getTime() >= max_time) {
@@ -1001,6 +1608,20 @@ namespace RTSim {
     void JSONTrace::probe(SchedEvt &e) {
         Task &tt = *(e.getTask());
         AbsRTTask *task = dynamic_cast<AbsRTTask*>(&tt);
+        ensureCurrentRun();
+        if (shouldAccumulateLifecycleSummary() &&
+            SIMUL.getTime() <= max_time) {
+            const auto release_time = tickValue(tt.getLastArrival());
+            if (!_lifecycle_summary.hasActiveJob(
+                    tt.getName(), release_time)) {
+                _lifecycle_summary.onRelease(
+                    tt.getName(), release_time);
+            }
+            _lifecycle_summary.onSchedule(
+                tt.getName(),
+                release_time,
+                tickValue(SIMUL.getTime()));
+        }
 
         // 检查当前时间是否超过最大时间
         if (max_time >= 0 && SIMUL.getTime() >= max_time) {
@@ -1045,6 +1666,20 @@ namespace RTSim {
     void JSONTrace::probe(DeschedEvt &e) {
         Task &tt = *(e.getTask());
         AbsRTTask *task = dynamic_cast<AbsRTTask*>(&tt);
+        ensureCurrentRun();
+        if (shouldAccumulateLifecycleSummary() &&
+            SIMUL.getTime() <= max_time) {
+            const auto release_time = tickValue(tt.getLastArrival());
+            if (!_lifecycle_summary.hasActiveJob(
+                    tt.getName(), release_time)) {
+                _lifecycle_summary.onRelease(
+                    tt.getName(), release_time);
+            }
+            _lifecycle_summary.onDeschedule(
+                tt.getName(),
+                release_time,
+                tickValue(SIMUL.getTime()));
+        }
 
         // 检查当前时间是否超过最大时间
         if (max_time >= 0 && SIMUL.getTime() >= max_time) {
@@ -1149,6 +1784,19 @@ namespace RTSim {
         ensureCurrentRun();
         Task &tt = *(e.getTask());
         AbsRTTask *task = dynamic_cast<AbsRTTask*>(&tt);
+        if (shouldAccumulateLifecycleSummary() &&
+            SIMUL.getTime() <= max_time) {
+            const auto release_time = tickValue(tt.getLastArrival());
+            if (!_lifecycle_summary.hasActiveJob(
+                    tt.getName(), release_time)) {
+                _lifecycle_summary.onRelease(
+                    tt.getName(), release_time);
+            }
+            _lifecycle_summary.onKill(
+                tt.getName(),
+                release_time,
+                tickValue(SIMUL.getTime()));
+        }
 
         // ⭐ V109修复：在任务被kill时，清理所有相关的指针
         // 避免在JSONTrace析构时访问无效指针导致崩溃

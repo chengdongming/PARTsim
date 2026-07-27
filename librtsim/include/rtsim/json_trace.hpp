@@ -16,8 +16,12 @@
 
 #include <fstream>
 #include <iosfwd>
+#include <cstddef>
 #include <cstdint>
+#include <map>
+#include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <metasim/baseexc.hpp>
@@ -29,10 +33,148 @@
 #include <rtsim/rttask.hpp>
 #include <rtsim/taskevt.hpp>
 #include <rtsim/energy_info_provider.hpp>
-#include <map>
-#include <set>
 
 namespace RTSim {
+    enum class DecisionExclusionReason : std::uint8_t {
+        None = 0,
+        CpuCapacity,
+        TimingDefer,
+        DirectEnergyShortage,
+        BlockHeadOfLine,
+        SyncAtomicUnaffordable,
+        StEnergyChargeWait,
+    };
+
+    // Data-only snapshot of one job at a scheduler decision.  All strings
+    // and values are owned by the record; no scheduler containers or task
+    // pointers are retained.
+    struct DecisionJobRecord {
+        std::string job_id;
+        std::string task_name;
+        std::uint32_t priority_rank = 0;
+        bool candidate = false;
+        bool infinite_energy_dispatch_demand = false;
+        bool actual_dispatch = false;
+        bool is_top4 = false;
+        bool is_bottom6 = false;
+        double incremental_energy_cost_j = 0.0;
+        DecisionExclusionReason exclusion_reason =
+            DecisionExclusionReason::None;
+    };
+
+    struct DecisionRecord {
+        std::int64_t tick = -1;
+        std::size_t processor_count = 0;
+        double available_energy_j = 0.0;
+        double energy_epsilon_j = 1e-9;
+        std::vector<DecisionJobRecord> jobs;
+    };
+
+    struct MechanismSummary {
+        std::uint64_t bypass_opportunity_ticks = 0;
+        std::uint64_t actual_bypass_ticks = 0;
+        std::uint64_t low_priority_bypass_core_ticks = 0;
+        std::uint64_t hp_dispatch_demand_ticks = 0;
+        std::uint64_t hp_energy_blocked_ticks = 0;
+        std::uint64_t hp_energy_blocked_job_ticks = 0;
+        std::uint64_t observed_decision_ticks = 0;
+    };
+
+    enum class ObservabilitySummaryState : std::uint8_t {
+        Disabled = 0,
+        Enabled,
+        Finalized,
+    };
+
+    class MechanismSummaryAccumulator {
+    public:
+        MechanismSummaryAccumulator() = default;
+        explicit MechanismSummaryAccumulator(std::uint64_t horizon_ticks);
+
+        void reset(std::uint64_t horizon_ticks);
+        void observe(const DecisionRecord &record);
+        const MechanismSummary &finalize();
+
+        bool isConfigured() const noexcept { return _configured; }
+        bool isFinalized() const noexcept { return _finalized; }
+        const MechanismSummary &summary() const noexcept { return _summary; }
+
+    private:
+        bool _configured = false;
+        bool _finalized = false;
+        std::uint64_t _horizon_ticks = 0;
+        std::uint64_t _next_tick = 0;
+        std::size_t _processor_count = 0;
+        MechanismSummary _summary;
+    };
+
+    struct PerTaskLifecycleSummary {
+        std::string task_name;
+        std::uint64_t released_jobs = 0;
+        std::uint64_t completed_jobs = 0;
+        std::uint64_t deadline_miss_jobs = 0;
+        std::uint64_t unfinished_at_horizon_jobs = 0;
+        std::uint64_t executed_core_ticks = 0;
+        std::uint64_t completed_response_time_count = 0;
+        std::uint64_t completed_response_time_sum_ms = 0;
+        std::uint64_t completed_response_time_max_ms = 0;
+    };
+
+    class PerTaskLifecycleAccumulator {
+    public:
+        void reset(std::int64_t horizon_ms);
+
+        void onRelease(const std::string &task_name,
+                       std::int64_t release_time_ms);
+        void onSchedule(const std::string &task_name,
+                        std::int64_t release_time_ms,
+                        std::int64_t schedule_time_ms);
+        void onDeschedule(const std::string &task_name,
+                          std::int64_t release_time_ms,
+                          std::int64_t deschedule_time_ms);
+        void onCompletion(const std::string &task_name,
+                          std::int64_t release_time_ms,
+                          std::int64_t completion_time_ms);
+        void onDeadlineMiss(const std::string &task_name,
+                            std::int64_t release_time_ms,
+                            std::int64_t miss_time_ms);
+        void onKill(const std::string &task_name,
+                    std::int64_t release_time_ms,
+                    std::int64_t kill_time_ms);
+        void finalize(std::int64_t horizon_ms);
+
+        bool isConfigured() const noexcept { return _configured; }
+        bool isFinalized() const noexcept { return _finalized; }
+        bool hasActiveJob(const std::string &task_name,
+                          std::int64_t release_time_ms) const;
+        std::size_t retainedJobIdentityCount() const noexcept {
+            return _active_jobs.size();
+        }
+        std::vector<PerTaskLifecycleSummary> summaries() const;
+
+    private:
+        using JobIdentity = std::pair<std::string, std::int64_t>;
+
+        struct ActiveJobState {
+            bool running = false;
+            std::int64_t running_since_ms = 0;
+            bool deadline_miss_recorded = false;
+        };
+
+        void validateEvent(const std::string &task_name,
+                           std::int64_t release_time_ms,
+                           std::int64_t event_time_ms) const;
+        void closeRunning(const JobIdentity &job,
+                          ActiveJobState &state,
+                          std::int64_t close_time_ms);
+
+        bool _configured = false;
+        bool _finalized = false;
+        std::int64_t _horizon_ms = -1;
+        std::map<std::string, PerTaskLifecycleSummary> _task_summaries;
+        std::map<JobIdentity, ActiveJobState> _active_jobs;
+    };
+
     struct SchedulerTraceJob {
         std::string task_name;
         double arrival_time;
@@ -109,6 +251,11 @@ namespace RTSim {
         // Early Abort专用：等待在descheduled之后补记的dline_miss
         std::map<AbsRTTask*, std::string> _pending_forced_dline_miss;
 
+        ObservabilitySummaryState _observability_summary_state;
+        MetaSim::Tick _observability_summary_horizon;
+        MechanismSummaryAccumulator _mechanism_summary;
+        PerTaskLifecycleAccumulator _lifecycle_summary;
+
         // V98: fd 放在最后，确保先被销毁，避免缓冲区问题影响其他成员
         std::ofstream fd;
 
@@ -122,6 +269,7 @@ namespace RTSim {
                                   const std::string &reason);
         void beginEvent();
         void ensureCurrentRun();
+        bool shouldAccumulateLifecycleSummary() const;
         static std::string escapeJson(const std::string &value);
         void writeSchedulerJob(const SchedulerTraceJob &job);
         void writeSchedulerJobArray(const std::vector<SchedulerTraceJob> &jobs);
@@ -169,6 +317,27 @@ namespace RTSim {
         void setRunId(const std::string &run_id) { _run_id = run_id; }
         void setTasksetSemanticHash(const std::string &value) {
             _taskset_semantic_hash = value;
+        }
+
+        void enableObservabilitySummaries(MetaSim::Tick horizon);
+        void finalizeObservabilitySummaries(MetaSim::Tick horizon);
+        bool observabilitySummariesEnabled() const noexcept {
+            return _observability_summary_state ==
+                ObservabilitySummaryState::Enabled;
+        }
+        bool observabilitySummariesFinalized() const noexcept {
+            return _observability_summary_state ==
+                ObservabilitySummaryState::Finalized;
+        }
+        ObservabilitySummaryState observabilitySummaryState() const noexcept {
+            return _observability_summary_state;
+        }
+        void observeDecision(const DecisionRecord &record);
+        const MechanismSummary &mechanismSummary() const noexcept {
+            return _mechanism_summary.summary();
+        }
+        std::vector<PerTaskLifecycleSummary> perTaskLifecycleSummary() const {
+            return _lifecycle_summary.summaries();
         }
 
         void logSchedulerDecision(

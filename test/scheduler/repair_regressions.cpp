@@ -652,6 +652,8 @@ TEST(DeadlineTrace, CompletionAtDeadlineSuppressesMiss) {
         Round2OutcomeEntity keeper("round2-boundary-keeper",
                                    MetaSim::Tick(4));
         JSONTrace trace(path, MetaSim::Tick(3));
+        trace.enableObservabilitySummaries(MetaSim::Tick(3));
+        trace.setSemanticTraceEnabled(false);
         trace.attachToTask(task);
         MetaSim::SIMUL.run(MetaSim::Tick(3));
         const auto &outcome = MetaSim::SIMUL.getLastRunOutcome();
@@ -659,6 +661,21 @@ TEST(DeadlineTrace, CompletionAtDeadlineSuppressesMiss) {
             outcome.actual_end_time,
             outcome.reached_requested_horizon,
             MetaSim::simulationCompletionReasonName(outcome.reason));
+        for (std::int64_t tick = 0; tick < 3; ++tick) {
+            DecisionRecord record;
+            record.tick = tick;
+            record.processor_count = 1;
+            record.available_energy_j = 0.0;
+            trace.observeDecision(record);
+        }
+        trace.finalizeObservabilitySummaries(MetaSim::Tick(3));
+        const auto summaries = trace.perTaskLifecycleSummary();
+        ASSERT_EQ(summaries.size(), 1u);
+        EXPECT_EQ(summaries[0].task_name, "round2-boundary-task");
+        EXPECT_EQ(summaries[0].released_jobs, 1u);
+        EXPECT_EQ(summaries[0].completed_jobs, 1u);
+        EXPECT_EQ(summaries[0].deadline_miss_jobs, 0u);
+        EXPECT_EQ(summaries[0].completed_response_time_count, 1u);
     }
 
     std::ifstream input(path);
@@ -1137,6 +1154,500 @@ TEST(DeadlineTrace, AcceptedThenMissAndMissThenAcceptedDoNotLeakState) {
                       "\"event_type\": \"simulation_run_outcome\""),
                   2);
     }
+}
+
+static DecisionJobRecord summaryDecisionJob(
+    const std::string &job_id,
+    std::uint32_t priority_rank,
+    bool top4,
+    bool candidate,
+    bool infinite_demand,
+    bool actual_dispatch,
+    double incremental_energy_j,
+    DecisionExclusionReason exclusion_reason) {
+    DecisionJobRecord job;
+    job.job_id = job_id;
+    job.task_name = job_id.substr(0, job_id.find('@'));
+    job.priority_rank = priority_rank;
+    job.candidate = candidate;
+    job.infinite_energy_dispatch_demand = infinite_demand;
+    job.actual_dispatch = actual_dispatch;
+    job.is_top4 = top4;
+    job.is_bottom6 = !top4;
+    job.incremental_energy_cost_j = incremental_energy_j;
+    job.exclusion_reason = exclusion_reason;
+    return job;
+}
+
+static DecisionRecord summaryDecision(
+    std::int64_t tick,
+    std::size_t processor_count,
+    double available_energy_j,
+    std::vector<DecisionJobRecord> jobs) {
+    DecisionRecord record;
+    record.tick = tick;
+    record.processor_count = processor_count;
+    record.available_energy_j = available_energy_j;
+    record.energy_epsilon_j = 1e-9;
+    record.jobs = std::move(jobs);
+    return record;
+}
+
+TEST(MechanismSummaryCore, OpportunityWithoutActualBypass) {
+    MechanismSummaryAccumulator accumulator(1);
+    accumulator.observe(summaryDecision(
+        0, 1, 1.0,
+        {
+            summaryDecisionJob(
+                "high@0", 0, true, true, true, false, 2.0,
+                DecisionExclusionReason::DirectEnergyShortage),
+            summaryDecisionJob(
+                "low@0", 1, false, true, false, false, 1.0,
+                DecisionExclusionReason::BlockHeadOfLine),
+        }));
+
+    const MechanismSummary &summary = accumulator.finalize();
+    EXPECT_EQ(summary.bypass_opportunity_ticks, 1u);
+    EXPECT_EQ(summary.actual_bypass_ticks, 0u);
+    EXPECT_EQ(summary.low_priority_bypass_core_ticks, 0u);
+    EXPECT_EQ(summary.hp_dispatch_demand_ticks, 1u);
+    EXPECT_EQ(summary.hp_energy_blocked_ticks, 1u);
+    EXPECT_EQ(summary.hp_energy_blocked_job_ticks, 1u);
+    EXPECT_EQ(summary.observed_decision_ticks, 1u);
+}
+
+TEST(MechanismSummaryCore, NonBlockBypassCountsBottomSixCoreTicks) {
+    MechanismSummaryAccumulator accumulator(1);
+    accumulator.observe(summaryDecision(
+        0, 3, 1.0,
+        {
+            summaryDecisionJob(
+                "high@0", 0, true, true, true, false, 2.0,
+                DecisionExclusionReason::DirectEnergyShortage),
+            summaryDecisionJob(
+                "low-a@0", 1, false, true, true, true, 0.4,
+                DecisionExclusionReason::None),
+            summaryDecisionJob(
+                "low-b@0", 2, false, true, true, true, 0.4,
+                DecisionExclusionReason::None),
+        }));
+
+    const MechanismSummary &summary = accumulator.finalize();
+    EXPECT_EQ(summary.bypass_opportunity_ticks, 1u);
+    EXPECT_EQ(summary.actual_bypass_ticks, 1u);
+    EXPECT_EQ(summary.low_priority_bypass_core_ticks, 2u);
+    EXPECT_EQ(summary.hp_energy_blocked_ticks, 1u);
+}
+
+TEST(MechanismSummaryCore, AllEnergyReasonsBlockHighPriorityDemand) {
+    const std::vector<DecisionExclusionReason> energy_reasons{
+        DecisionExclusionReason::DirectEnergyShortage,
+        DecisionExclusionReason::BlockHeadOfLine,
+        DecisionExclusionReason::SyncAtomicUnaffordable,
+        DecisionExclusionReason::StEnergyChargeWait,
+    };
+    MechanismSummaryAccumulator accumulator(energy_reasons.size());
+    for (std::size_t tick = 0; tick < energy_reasons.size(); ++tick) {
+        accumulator.observe(summaryDecision(
+            static_cast<std::int64_t>(tick), 1, 0.0,
+            {summaryDecisionJob(
+                "high@" + std::to_string(tick),
+                0, true, true, true, false, 1.0,
+                energy_reasons[tick])}));
+    }
+
+    const MechanismSummary &summary = accumulator.finalize();
+    EXPECT_EQ(summary.hp_dispatch_demand_ticks, 4u);
+    EXPECT_EQ(summary.hp_energy_blocked_ticks, 4u);
+    EXPECT_EQ(summary.hp_energy_blocked_job_ticks, 4u);
+}
+
+TEST(MechanismSummaryCore, MultipleHighPriorityJobsUseOneWallTick) {
+    MechanismSummaryAccumulator accumulator(1);
+    accumulator.observe(summaryDecision(
+        0, 2, 0.0,
+        {
+            summaryDecisionJob(
+                "high-a@0", 0, true, true, true, false, 1.0,
+                DecisionExclusionReason::SyncAtomicUnaffordable),
+            summaryDecisionJob(
+                "high-b@0", 1, true, true, true, false, 1.0,
+                DecisionExclusionReason::SyncAtomicUnaffordable),
+        }));
+
+    const MechanismSummary &summary = accumulator.finalize();
+    EXPECT_EQ(summary.hp_dispatch_demand_ticks, 1u);
+    EXPECT_EQ(summary.hp_energy_blocked_ticks, 1u);
+    EXPECT_EQ(summary.hp_energy_blocked_job_ticks, 2u);
+}
+
+TEST(MechanismSummaryCore, CpuAndTimingDeferralAreNotEnergyBlocks) {
+    MechanismSummaryAccumulator accumulator(1);
+    accumulator.observe(summaryDecision(
+        0, 1, 1.0,
+        {
+            summaryDecisionJob(
+                "timing@0", 0, true, false, false, false, 0.0,
+                DecisionExclusionReason::TimingDefer),
+            summaryDecisionJob(
+                "selected@0", 1, false, true, true, true, 0.1,
+                DecisionExclusionReason::None),
+            summaryDecisionJob(
+                "cpu@0", 2, true, true, false, false, 0.1,
+                DecisionExclusionReason::CpuCapacity),
+        }));
+
+    const MechanismSummary &summary = accumulator.finalize();
+    EXPECT_EQ(summary.hp_dispatch_demand_ticks, 0u);
+    EXPECT_EQ(summary.hp_energy_blocked_ticks, 0u);
+    EXPECT_EQ(summary.hp_energy_blocked_job_ticks, 0u);
+}
+
+TEST(MechanismSummaryCore, RejectsDuplicateOutOfOrderAndHorizonTick) {
+    const DecisionRecord tick_zero = summaryDecision(
+        0, 1, 0.0,
+        {summaryDecisionJob(
+            "job@0", 0, true, true, true, true, 0.0,
+            DecisionExclusionReason::None)});
+
+    MechanismSummaryAccumulator duplicate(2);
+    duplicate.observe(tick_zero);
+    EXPECT_THROW(duplicate.observe(tick_zero), std::logic_error);
+    EXPECT_THROW((void)duplicate.finalize(), std::logic_error);
+
+    MechanismSummaryAccumulator out_of_order(2);
+    EXPECT_THROW(
+        out_of_order.observe(summaryDecision(
+            1, 1, 0.0,
+            {summaryDecisionJob(
+                "job@1", 0, true, true, true, true, 0.0,
+                DecisionExclusionReason::None)})),
+        std::logic_error);
+
+    MechanismSummaryAccumulator horizon(2);
+    EXPECT_THROW(
+        horizon.observe(summaryDecision(
+            2, 1, 0.0,
+            {summaryDecisionJob(
+                "job@2", 0, true, true, true, true, 0.0,
+                DecisionExclusionReason::None)})),
+        std::out_of_range);
+}
+
+TEST(MechanismSummaryCore, RejectsUnknownReasonAndIncompleteRecord) {
+    MechanismSummaryAccumulator unknown(1);
+    EXPECT_THROW(
+        unknown.observe(summaryDecision(
+            0, 1, 0.0,
+            {summaryDecisionJob(
+                "job@0", 0, true, true, true, false, 1.0,
+                static_cast<DecisionExclusionReason>(255))})),
+        std::invalid_argument);
+
+    MechanismSummaryAccumulator incomplete(1);
+    DecisionJobRecord job = summaryDecisionJob(
+        "job@0", 0, true, true, true, false, 1.0,
+        DecisionExclusionReason::DirectEnergyShortage);
+    job.task_name.clear();
+    EXPECT_THROW(
+        incomplete.observe(summaryDecision(0, 1, 0.0, {job})),
+        std::invalid_argument);
+}
+
+TEST(MechanismSummaryCore,
+     SummariesAreDisabledByDefaultAndSchemaTwoOutcomeDoesNotFinalize) {
+    const std::string path =
+        "/tmp/partsim_shared_summary_schema2_default.json";
+    {
+        JSONTrace trace(path, MetaSim::Tick(2));
+        MetaSim::SIMUL.initSingleRun();
+
+        EXPECT_FALSE(trace.observabilitySummariesEnabled());
+        EXPECT_FALSE(trace.observabilitySummariesFinalized());
+        EXPECT_EQ(
+            trace.observabilitySummaryState(),
+            ObservabilitySummaryState::Disabled);
+        EXPECT_EQ(trace.mechanismSummary().observed_decision_ticks, 0u);
+        EXPECT_TRUE(trace.perTaskLifecycleSummary().empty());
+        EXPECT_NO_THROW(trace.setSimulationOutcome(
+            MetaSim::Tick(2), true, "completed"));
+        EXPECT_FALSE(trace.observabilitySummariesFinalized());
+        EXPECT_THROW(
+            trace.observeDecision(summaryDecision(
+                0, 1, 0.0,
+                {summaryDecisionJob(
+                    "job@0", 0, true, true, true, true, 0.0,
+                    DecisionExclusionReason::None)})),
+            std::logic_error);
+        EXPECT_THROW(
+            trace.finalizeObservabilitySummaries(MetaSim::Tick(2)),
+            std::logic_error);
+
+        MetaSim::SIMUL.endSingleRun();
+    }
+
+    std::ifstream input(path);
+    const std::string contents(
+        (std::istreambuf_iterator<char>(input)),
+        std::istreambuf_iterator<char>());
+    EXPECT_NE(
+        contents.find("\"event_type\": \"simulation_run_outcome\""),
+        std::string::npos);
+    EXPECT_NE(contents.find("\"trace_schema_version\": 2"),
+              std::string::npos);
+    EXPECT_EQ(contents.find("\"mechanism_summary\""), std::string::npos);
+}
+
+TEST(MechanismSummaryCore, SetOutcomeDoesNotBypassExplicitFinalizeGate) {
+    const std::string path =
+        "/tmp/partsim_shared_summary_explicit_finalize.json";
+    {
+        JSONTrace trace(path, MetaSim::Tick(2));
+        MetaSim::SIMUL.initSingleRun();
+        trace.enableObservabilitySummaries(MetaSim::Tick(2));
+        trace.observeDecision(summaryDecision(
+            0, 1, 0.0,
+            {summaryDecisionJob(
+                "job@0", 0, true, true, true, true, 0.0,
+                DecisionExclusionReason::None)}));
+
+        EXPECT_NO_THROW(trace.setSimulationOutcome(
+            MetaSim::Tick(2), true, "completed"));
+        EXPECT_FALSE(trace.observabilitySummariesFinalized());
+        EXPECT_THROW(
+            trace.finalizeObservabilitySummaries(MetaSim::Tick(2)),
+            std::logic_error);
+        EXPECT_FALSE(trace.observabilitySummariesFinalized());
+
+        MetaSim::SIMUL.endSingleRun();
+    }
+}
+
+TEST(MechanismSummaryCore,
+     LifecycleStateRejectsDuplicateCallsWithoutResettingData) {
+    const std::string path =
+        "/tmp/partsim_shared_summary_lifecycle_state.json";
+    {
+        JSONTrace trace(path, MetaSim::Tick(2));
+        MetaSim::SIMUL.initSingleRun();
+        trace.enableObservabilitySummaries(MetaSim::Tick(2));
+        EXPECT_EQ(
+            trace.observabilitySummaryState(),
+            ObservabilitySummaryState::Enabled);
+
+        trace.observeDecision(summaryDecision(
+            0, 1, 0.0,
+            {summaryDecisionJob(
+                "job@0", 0, true, true, true, true, 0.0,
+                DecisionExclusionReason::None)}));
+        EXPECT_EQ(trace.mechanismSummary().observed_decision_ticks, 1u);
+        EXPECT_THROW(
+            trace.enableObservabilitySummaries(MetaSim::Tick(2)),
+            std::logic_error);
+        EXPECT_EQ(trace.mechanismSummary().observed_decision_ticks, 1u);
+        EXPECT_THROW(
+            trace.finalizeObservabilitySummaries(MetaSim::Tick(1)),
+            std::invalid_argument);
+        EXPECT_EQ(
+            trace.observabilitySummaryState(),
+            ObservabilitySummaryState::Enabled);
+
+        trace.observeDecision(summaryDecision(
+            1, 1, 0.0,
+            {summaryDecisionJob(
+                "job@1", 0, true, true, true, true, 0.0,
+                DecisionExclusionReason::None)}));
+        trace.finalizeObservabilitySummaries(MetaSim::Tick(2));
+        EXPECT_EQ(
+            trace.observabilitySummaryState(),
+            ObservabilitySummaryState::Finalized);
+        EXPECT_EQ(trace.mechanismSummary().observed_decision_ticks, 2u);
+
+        EXPECT_THROW(
+            trace.finalizeObservabilitySummaries(MetaSim::Tick(2)),
+            std::logic_error);
+        EXPECT_THROW(
+            trace.enableObservabilitySummaries(MetaSim::Tick(2)),
+            std::logic_error);
+        EXPECT_THROW(
+            trace.observeDecision(summaryDecision(
+                2, 1, 0.0,
+                {summaryDecisionJob(
+                    "job@2", 0, true, true, true, true, 0.0,
+                    DecisionExclusionReason::None)})),
+            std::logic_error);
+        EXPECT_EQ(trace.mechanismSummary().observed_decision_ticks, 2u);
+
+        MetaSim::SIMUL.endSingleRun();
+    }
+}
+
+TEST(MechanismSummaryCore, SemanticTraceSwitchDoesNotGateSummary) {
+    const std::string path =
+        "/tmp/partsim_shared_summary_semantic_independence.json";
+    {
+        JSONTrace trace(path, MetaSim::Tick(2));
+        MetaSim::SIMUL.initSingleRun();
+        trace.enableObservabilitySummaries(MetaSim::Tick(2));
+        trace.setSemanticTraceEnabled(false);
+        trace.observeDecision(summaryDecision(
+            0, 1, 0.0,
+            {summaryDecisionJob(
+                "job@0", 0, true, true, true, true, 0.0,
+                DecisionExclusionReason::None)}));
+        trace.setSemanticTraceEnabled(true);
+        trace.observeDecision(summaryDecision(
+            1, 1, 0.0,
+            {summaryDecisionJob(
+                "job@1", 0, true, true, true, true, 0.0,
+                DecisionExclusionReason::None)}));
+        trace.finalizeObservabilitySummaries(MetaSim::Tick(2));
+        const MechanismSummary &summary = trace.mechanismSummary();
+        EXPECT_EQ(summary.observed_decision_ticks, 2u);
+        EXPECT_TRUE(trace.observabilitySummariesFinalized());
+        MetaSim::SIMUL.endSingleRun();
+    }
+
+    std::ifstream input(path);
+    const std::string contents(
+        (std::istreambuf_iterator<char>(input)),
+        std::istreambuf_iterator<char>());
+    EXPECT_EQ(contents.find("\"mechanism_summary\""), std::string::npos);
+    EXPECT_NE(contents.find("\"trace_schema_version\": 2"),
+              std::string::npos);
+}
+
+TEST(PerTaskLifecycleCore, AggregatesTerminalAndHorizonStates) {
+    PerTaskLifecycleAccumulator lifecycle;
+    lifecycle.reset(10);
+
+    lifecycle.onRelease("completed", 0);
+    lifecycle.onSchedule("completed", 0, 0);
+    lifecycle.onSchedule("completed", 0, 2);
+    lifecycle.onDeadlineMiss("completed", 0, 5);
+    lifecycle.onDeadlineMiss("completed", 0, 6);
+    lifecycle.onCompletion("completed", 0, 10);
+
+    lifecycle.onRelease("killed", 1);
+    lifecycle.onSchedule("killed", 1, 1);
+    lifecycle.onKill("killed", 1, 4);
+
+    lifecycle.onRelease("unfinished", 2);
+    lifecycle.onSchedule("unfinished", 2, 5);
+
+    lifecycle.onRelease("horizon-release", 10);
+    lifecycle.onCompletion("horizon-release", 10, 10);
+    lifecycle.finalize(10);
+
+    const auto summaries = lifecycle.summaries();
+    ASSERT_EQ(summaries.size(), 3u);
+
+    const auto find_summary = [&summaries](const std::string &name)
+        -> const PerTaskLifecycleSummary & {
+        const auto it = std::find_if(
+            summaries.begin(), summaries.end(),
+            [&name](const PerTaskLifecycleSummary &summary) {
+                return summary.task_name == name;
+            });
+        EXPECT_NE(it, summaries.end());
+        return *it;
+    };
+
+    const auto &completed = find_summary("completed");
+    EXPECT_EQ(completed.released_jobs, 1u);
+    EXPECT_EQ(completed.completed_jobs, 1u);
+    EXPECT_EQ(completed.deadline_miss_jobs, 1u);
+    EXPECT_EQ(completed.unfinished_at_horizon_jobs, 0u);
+    EXPECT_EQ(completed.executed_core_ticks, 10u);
+    EXPECT_EQ(completed.completed_response_time_count, 1u);
+    EXPECT_EQ(completed.completed_response_time_sum_ms, 10u);
+    EXPECT_EQ(completed.completed_response_time_max_ms, 10u);
+
+    const auto &killed = find_summary("killed");
+    EXPECT_EQ(killed.completed_jobs, 0u);
+    EXPECT_EQ(killed.completed_response_time_count, 0u);
+    EXPECT_EQ(killed.unfinished_at_horizon_jobs, 0u);
+    EXPECT_EQ(killed.executed_core_ticks, 3u);
+
+    const auto &unfinished = find_summary("unfinished");
+    EXPECT_EQ(unfinished.completed_jobs, 0u);
+    EXPECT_EQ(unfinished.unfinished_at_horizon_jobs, 1u);
+    EXPECT_EQ(unfinished.executed_core_ticks, 5u);
+}
+
+TEST(PerTaskLifecycleCore, MigrationCloseOpenDoesNotDoubleCount) {
+    PerTaskLifecycleAccumulator lifecycle;
+    lifecycle.reset(8);
+    lifecycle.onRelease("migrating", 0);
+    lifecycle.onSchedule("migrating", 0, 0);
+    lifecycle.onDeschedule("migrating", 0, 3);
+    lifecycle.onSchedule("migrating", 0, 3);
+    lifecycle.onSchedule("migrating", 0, 3);
+    lifecycle.onCompletion("migrating", 0, 6);
+    lifecycle.finalize(8);
+
+    const auto summaries = lifecycle.summaries();
+    ASSERT_EQ(summaries.size(), 1u);
+    EXPECT_EQ(summaries[0].executed_core_ticks, 6u);
+    EXPECT_EQ(summaries[0].completed_jobs, 1u);
+}
+
+TEST(PerTaskLifecycleCore,
+     RetainsOnlyActiveIdentitiesAcrossCompletedAndKilledMisses) {
+    PerTaskLifecycleAccumulator lifecycle;
+    lifecycle.reset(100);
+
+    constexpr std::int64_t historical_job_count = 20;
+    for (std::int64_t job_index = 0;
+         job_index < historical_job_count;
+         ++job_index) {
+        const std::int64_t release_time = job_index * 4;
+        lifecycle.onRelease("periodic", release_time);
+        lifecycle.onDeadlineMiss(
+            "periodic", release_time, release_time + 1);
+        lifecycle.onDeadlineMiss(
+            "periodic", release_time, release_time + 2);
+        if (job_index % 2 == 0) {
+            lifecycle.onCompletion(
+                "periodic", release_time, release_time + 3);
+        } else {
+            lifecycle.onKill(
+                "periodic", release_time, release_time + 3);
+        }
+        EXPECT_EQ(lifecycle.retainedJobIdentityCount(), 0u);
+        EXPECT_FALSE(lifecycle.hasActiveJob(
+            "periodic", release_time));
+    }
+
+    lifecycle.onRelease("periodic", 90);
+    lifecycle.onDeadlineMiss("periodic", 90, 91);
+    lifecycle.onDeadlineMiss("periodic", 90, 92);
+    EXPECT_EQ(lifecycle.retainedJobIdentityCount(), 1u);
+    lifecycle.finalize(100);
+    EXPECT_EQ(lifecycle.retainedJobIdentityCount(), 0u);
+
+    const auto summaries = lifecycle.summaries();
+    ASSERT_EQ(summaries.size(), 1u);
+    EXPECT_EQ(summaries[0].released_jobs, 21u);
+    EXPECT_EQ(summaries[0].completed_jobs, 10u);
+    EXPECT_EQ(summaries[0].deadline_miss_jobs, 21u);
+    EXPECT_EQ(summaries[0].unfinished_at_horizon_jobs, 1u);
+    EXPECT_EQ(summaries[0].completed_response_time_count, 10u);
+}
+
+TEST(PerTaskLifecycleCore, FinalizedAccumulatorRejectsFurtherWrites) {
+    PerTaskLifecycleAccumulator lifecycle;
+    lifecycle.reset(2);
+    lifecycle.onRelease("finalized", 0);
+    lifecycle.onDeadlineMiss("finalized", 0, 1);
+    lifecycle.finalize(2);
+
+    EXPECT_THROW(
+        lifecycle.onRelease("late", 1),
+        std::logic_error);
+    EXPECT_THROW(
+        lifecycle.onCompletion("finalized", 0, 2),
+        std::logic_error);
 }
 
 } // namespace RTSim
