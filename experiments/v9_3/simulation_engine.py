@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import csv
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 from fractions import Fraction
@@ -11,7 +10,6 @@ import json
 import math
 import os
 from pathlib import Path
-import re
 import shutil
 import subprocess
 import tempfile
@@ -26,6 +24,12 @@ from .censoring import next_horizon
 from .config import canonical_json, domain_hash, fraction_text
 from . import exact_energy
 from .result_writer import atomic_write_json, atomic_write_text
+from .solar_parse_proof import (
+    SolarParseProofError,
+    solar_parser_build_binding,
+    validate_solar_csv_domain,
+    validate_solar_stod_parse_proof,
+)
 from .simulation_result import (
     JobObservation,
     SimulationResult,
@@ -40,7 +44,7 @@ from .task_identity import runtime_task_name_for_source_id
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SUPPORTED_TRACE_SCHEMA_VERSION = 2
 CORE3_ENERGY_PREFLIGHT_SCHEMA = "ASAP_BLOCK_V9_3_CORE3_ENERGY_PREFLIGHT_V1"
-SHARED_SOLAR_INPUT_SCHEMA = "ASAP_BLOCK_V9_3_SHARED_SOLAR_INPUT_V1"
+SHARED_SOLAR_INPUT_SCHEMA = "ASAP_BLOCK_V9_3_SHARED_SOLAR_INPUT_V2"
 SHARED_SOLAR_INPUT_CLASSIFICATION = "DETERMINISTIC_CANONICAL_REPLAY_INPUT"
 SHARED_SOLAR_SAMPLING_RULE = (
     "PRODUCTION_IRRADIANCE_SAMPLE_THEN_BINARY64_TICK_ENERGY_V1"
@@ -57,12 +61,6 @@ SHARED_SOLAR_NEGATIVE_VALUE_POLICY = (
 SHARED_SOLAR_OPERATION_ORDER_VERSION = (
     "ASAP_BLOCK_REAL_SOLAR_BINARY64_TICK_ORDER_V1"
 )
-_STRICT_DECIMAL_BINARY64 = re.compile(
-    r"[+-]?(?:(?:[0-9]+(?:\.[0-9]*)?)|(?:\.[0-9]+))"
-    r"(?:[eE][+-]?[0-9]+)?"
-)
-
-
 class SimulationConfigurationError(RuntimeError):
     """Raised before execution when RTA/simulation inputs cannot be paired."""
 
@@ -187,22 +185,6 @@ def _load_shared_energy_support(
     return dict(energy), source, support_path
 
 
-def _shared_solar_csv_error(
-    *,
-    source_path: str,
-    physical_data_row_index: int,
-    calendar_minute_index: int,
-    category: str,
-) -> SimulationConfigurationError:
-    return SimulationConfigurationError(
-        "shared solar CSV validation failed: "
-        f"source={source_path} "
-        f"physical_data_row_index={physical_data_row_index} "
-        f"calendar_minute_index={calendar_minute_index} "
-        f"category={category}"
-    )
-
-
 def _validate_shared_solar_csv_domain(
     solar_path: Path,
     *,
@@ -211,120 +193,18 @@ def _validate_shared_solar_csv_domain(
     time_of_day_ms: int,
     horizon: int,
 ) -> Dict[str, Any]:
-    """Prove that legacy replay preserves C++ physical-row semantics.
-
-    This validator does not sample irradiance or calculate energy.  It only
-    rejects file prefixes that the legacy Python loader would filter or
-    reinterpret differently from the C++ scheduler's physical-row lookup.
-    """
-
-    source_path = _source_display_path(solar_path, source_root)
-    start_offset_ms = legacy_rta.materialize_runtime_start_offset_ms(
-        day_of_year,
-        time_of_day_ms,
-    )
-    first_minute = (start_offset_ms + 1) // 60000
-    last_minute = (start_offset_ms + horizon) // 60000
-
     try:
-        handle = solar_path.open("r", encoding="utf-8", newline="")
-    except OSError as exc:
-        raise SimulationConfigurationError(
-            f"cannot read shared solar CSV {source_path}: {exc}"
-        ) from exc
-    with handle:
-        header = handle.readline()
-        if not header:
-            raise _shared_solar_csv_error(
-                source_path=source_path,
-                physical_data_row_index=-1,
-                calendar_minute_index=first_minute,
-                category="MISSING_HEADER",
-            )
-        header_text = header.rstrip("\r\n")
-        if not header_text.strip():
-            raise _shared_solar_csv_error(
-                source_path=source_path,
-                physical_data_row_index=-1,
-                calendar_minute_index=first_minute,
-                category="EMPTY_HEADER",
-            )
-        try:
-            header_row = next(csv.reader([header_text]))
-            float(header_row[0])
-        except (IndexError, ValueError):
-            pass
-        else:
-            raise _shared_solar_csv_error(
-                source_path=source_path,
-                physical_data_row_index=-1,
-                calendar_minute_index=first_minute,
-                category="NUMERIC_HEADER_SHIFTS_PYTHON_INDEX",
-            )
-
-        physical_data_row_count = 0
-        for raw_line in handle:
-            data_index = physical_data_row_count
-            physical_data_row_count += 1
-            if data_index > last_minute:
-                continue
-            text = raw_line.rstrip("\r\n")
-            if not text.strip():
-                raise _shared_solar_csv_error(
-                    source_path=source_path,
-                    physical_data_row_index=data_index,
-                    calendar_minute_index=data_index,
-                    category="EMPTY_DATA_ROW",
-                )
-            stripped = text.strip()
-            try:
-                irradiance = float(stripped)
-            except ValueError as exc:
-                raise _shared_solar_csv_error(
-                    source_path=source_path,
-                    physical_data_row_index=data_index,
-                    calendar_minute_index=data_index,
-                    category="INVALID_NUMERIC_ROW",
-                ) from exc
-            if not math.isfinite(irradiance):
-                raise _shared_solar_csv_error(
-                    source_path=source_path,
-                    physical_data_row_index=data_index,
-                    calendar_minute_index=data_index,
-                    category="NONFINITE_IRRADIANCE",
-                )
-            if _STRICT_DECIMAL_BINARY64.fullmatch(stripped) is None:
-                raise _shared_solar_csv_error(
-                    source_path=source_path,
-                    physical_data_row_index=data_index,
-                    calendar_minute_index=data_index,
-                    category="INVALID_NUMERIC_ROW",
-                )
-            if (
-                first_minute <= data_index <= last_minute
-                and irradiance < 0
-            ):
-                raise _shared_solar_csv_error(
-                    source_path=source_path,
-                    physical_data_row_index=data_index,
-                    calendar_minute_index=data_index,
-                    category="NEGATIVE_ACCESSED_IRRADIANCE",
-                )
-
-    if physical_data_row_count <= last_minute:
-        raise _shared_solar_csv_error(
-            source_path=source_path,
-            physical_data_row_index=last_minute,
-            calendar_minute_index=last_minute,
-            category="INSUFFICIENT_PHYSICAL_DATA_ROWS",
+        validation = validate_solar_csv_domain(
+            solar_path,
+            source_root=source_root,
+            day_of_year=day_of_year,
+            time_of_day_ms=time_of_day_ms,
+            horizon=horizon,
         )
+    except SolarParseProofError as exc:
+        raise SimulationConfigurationError(str(exc)) from exc
     return {
-        "physical_data_row_count": physical_data_row_count,
-        "first_accessed_data_row": first_minute,
-        "last_accessed_data_row": last_minute,
-        "first_calendar_minute_index": first_minute,
-        "last_calendar_minute_index": last_minute,
-        "accessed_sample_count": last_minute - first_minute + 1,
+        **validation,
         "invalid_row_policy": SHARED_SOLAR_INVALID_ROW_POLICY,
         "negative_value_policy": SHARED_SOLAR_NEGATIVE_VALUE_POLICY,
         "indexing_policy": SHARED_SOLAR_INDEXING_POLICY,
@@ -336,6 +216,8 @@ def construct_shared_solar_input(
     energy_support: Mapping[str, Any] | Path | str,
     *,
     horizon: int,
+    solar_parse_proof: Path | str | None = None,
+    solar_parse_verifier_binary: Path | str | None = None,
     source_root: Path | str | None = None,
 ) -> SharedSolarInput:
     """Replay the existing production solar constructor without simulation.
@@ -362,6 +244,11 @@ def construct_shared_solar_input(
     if isinstance(horizon, bool) or not isinstance(horizon, int) or horizon <= 0:
         raise SimulationConfigurationError(
             "shared solar horizon must be a positive integer"
+        )
+    if isinstance(energy_support, Mapping):
+        raise SimulationConfigurationError(
+            "formal-safe shared solar input requires a versioned "
+            "energy-support file path"
         )
 
     energy, support_source, support_path = _load_shared_energy_support(
@@ -465,6 +352,30 @@ def construct_shared_solar_input(
             time_of_day_ms=projected.time_of_day_ms,
             horizon=horizon,
         )
+        if (
+            solar_parse_proof is None
+            or solar_parse_verifier_binary is None
+        ):
+            raise SimulationConfigurationError(
+                "formal-safe shared solar input requires a C++ parse proof "
+                "and its exact verifier binary"
+            )
+        try:
+            validated_parse_proof = validate_solar_stod_parse_proof(
+                solar_parse_proof,
+                verifier_binary=solar_parse_verifier_binary,
+                source_root=root,
+                base_system_path=base_path,
+                energy_support=energy_support,
+                solar_csv_path=solar_path,
+                day_of_year=projected.day_of_year,
+                time_of_day_ms=projected.time_of_day_ms,
+                horizon=horizon,
+            )
+        except SolarParseProofError as exc:
+            raise SimulationConfigurationError(
+                f"shared solar C++ parse proof rejected: {exc}"
+            ) from exc
         trace = construct_paired_harvest_trace(projected_path, horizon)
         if (
             len(trace) != horizon
@@ -475,6 +386,21 @@ def construct_shared_solar_input(
         ):
             raise SimulationConfigurationError(
                 "shared solar replay returned an invalid supply trace"
+            )
+        post_replay_inputs = {
+            "system_template": _source_file_material(base_path, root),
+            "energy_support": _source_file_material(
+                Path(energy_support), root,
+            ),
+            "solar_csv": _source_file_material(solar_path, root),
+        }
+        if any(
+            post_replay_inputs[name]
+            != validated_parse_proof["inputs"][name]
+            for name in post_replay_inputs
+        ):
+            raise SimulationConfigurationError(
+                "shared solar source bytes changed during verified replay"
             )
 
     tick = exact_energy.materialize_supply_lower_bound(
@@ -490,6 +416,12 @@ def construct_shared_solar_input(
         "system_template": _source_file_material(base_path, root),
         "energy_support": support_source,
         "solar_csv": _source_file_material(solar_path, root),
+        "solar_stod_parse_proof": _source_file_material(
+            Path(solar_parse_proof), root,
+        ),
+        "solar_stod_parser_binding": solar_parser_build_binding(
+            validated_parse_proof
+        ),
         "use_real_solar_data": True,
         "day_of_year": projected.day_of_year,
         "time_of_day_ms": projected.time_of_day_ms,

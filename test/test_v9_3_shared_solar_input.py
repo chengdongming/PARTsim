@@ -12,6 +12,10 @@ import yaml
 import asap_block_rta as legacy_rta
 from experiments.v9_3.config import canonical_json
 from experiments.v9_3.exact_energy import ExactEnergyError
+from experiments.v9_3.solar_parse_proof import (
+    build_solar_stod_parse_proof,
+    write_solar_stod_parse_proof,
+)
 from experiments.v9_3.simulation_engine import (
     SHARED_SOLAR_INPUT_CLASSIFICATION,
     SharedSolarInput,
@@ -79,7 +83,7 @@ def _write_system(
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def _direct_support(
+def _direct_support_document(
     system_path: Path,
     *,
     solar_scale: str = "1",
@@ -100,17 +104,68 @@ def _direct_support(
     }
 
 
+def _direct_support(
+    system_path: Path,
+    **kwargs,
+) -> Path:
+    path = system_path.with_name(system_path.stem + "-energy-support.yml")
+    path.write_text(
+        yaml.safe_dump(
+            _direct_support_document(system_path, **kwargs),
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+@pytest.fixture
+def verified_shared(tmp_path, rta4_solar_stod_verifier):
+    def construct(
+        system_path,
+        support,
+        *,
+        horizon,
+        source_root,
+    ):
+        system = legacy_rta.load_system_config(str(system_path))
+        solar = Path(legacy_rta._resolve_solar_path(system)).resolve(strict=True)
+        proof = build_solar_stod_parse_proof(
+            source_root=source_root,
+            base_system_path=system_path,
+            energy_support=support,
+            solar_csv_path=solar,
+            day_of_year=system.day_of_year,
+            time_of_day_ms=system.time_of_day_ms,
+            horizon=horizon,
+            verifier_binary=rta4_solar_stod_verifier,
+            build_verifier=False,
+        )
+        proof_path = tmp_path / f"{proof['proof_id']}.json"
+        write_solar_stod_parse_proof(proof_path, proof)
+        return construct_shared_solar_input(
+            system_path,
+            support,
+            horizon=horizon,
+            source_root=source_root,
+            solar_parse_proof=proof_path,
+            solar_parse_verifier_binary=rta4_solar_stod_verifier,
+        )
+
+    return construct
+
+
 def test_repository_solar_input_is_tracked_stable_and_production_identical(
-    tmp_path,
+    tmp_path, verified_shared,
 ):
     support = _support()
-    first = construct_shared_solar_input(
+    first = verified_shared(
         BASE_SYSTEM,
         ENERGY_SUPPORT,
         horizon=30_000,
         source_root=ROOT,
     )
-    second = construct_shared_solar_input(
+    second = verified_shared(
         BASE_SYSTEM,
         ENERGY_SUPPORT,
         horizon=30_000,
@@ -219,7 +274,7 @@ def test_repository_negative_sentinel_fails_closed_before_trace_or_beta(
 
 
 def test_phase_scale_and_caller_selected_csv_change_the_replayed_trace(
-    tmp_path,
+    tmp_path, verified_shared,
 ):
     first_csv = tmp_path / "first.csv"
     second_csv = tmp_path / "second.csv"
@@ -232,21 +287,21 @@ def test_phase_scale_and_caller_selected_csv_change_the_replayed_trace(
     _write_system(phase_one, first_csv, time_of_day_ms=60_000)
     _write_system(alternate, second_csv)
 
-    base = construct_shared_solar_input(
+    base = verified_shared(
         phase_zero, _direct_support(phase_zero), horizon=1,
         source_root=tmp_path,
     )
-    shifted = construct_shared_solar_input(
+    shifted = verified_shared(
         phase_one, _direct_support(phase_one), horizon=1,
         source_root=tmp_path,
     )
-    scaled = construct_shared_solar_input(
+    scaled = verified_shared(
         phase_zero,
         _direct_support(phase_zero, solar_scale="1/2"),
         horizon=1,
         source_root=tmp_path,
     )
-    alternate_csv = construct_shared_solar_input(
+    alternate_csv = verified_shared(
         alternate, _direct_support(alternate), horizon=1,
         source_root=tmp_path,
     )
@@ -264,7 +319,7 @@ def test_phase_scale_and_caller_selected_csv_change_the_replayed_trace(
 
 
 def test_negative_outside_accessed_window_is_allowed_but_accessed_negative_rejects(
-    tmp_path,
+    tmp_path, verified_shared,
 ):
     solar = tmp_path / "solar.csv"
     _write_solar(solar, (-7, 1, -7))
@@ -273,7 +328,7 @@ def test_negative_outside_accessed_window_is_allowed_but_accessed_negative_rejec
     _write_system(current, solar, time_of_day_ms=60_000)
     _write_system(accessed_negative, solar)
 
-    allowed = construct_shared_solar_input(
+    allowed = verified_shared(
         current,
         _direct_support(current),
         horizon=1,
@@ -375,17 +430,19 @@ def test_insufficient_physical_rows_reports_last_required_row(tmp_path):
         )
 
 
-def test_horizon_alone_changes_access_range_and_provenance(tmp_path):
+def test_horizon_alone_changes_access_range_and_provenance(
+    tmp_path, verified_shared,
+):
     solar = tmp_path / "solar.csv"
     _write_solar(solar, (1, 2))
     system = tmp_path / "system.yml"
     _write_system(system, solar)
     support = _direct_support(system, horizon=60_000)
 
-    short = construct_shared_solar_input(
+    short = verified_shared(
         system, support, horizon=1, source_root=tmp_path,
     )
-    long = construct_shared_solar_input(
+    long = verified_shared(
         system, support, horizon=60_000, source_root=tmp_path,
     )
 
@@ -428,24 +485,29 @@ def test_shared_solar_input_rejects_missing_disabled_or_mismatched_sources(
             source_root=tmp_path,
         )
 
-    mismatch = deepcopy(_direct_support(valid))
+    mismatch = deepcopy(_direct_support_document(valid))
     mismatch["service_curve"]["system_template"] = str(missing)
+    mismatch_path = tmp_path / "mismatch-support.yml"
+    mismatch_path.write_text(
+        yaml.safe_dump(mismatch, sort_keys=False),
+        encoding="utf-8",
+    )
     with pytest.raises(
         SimulationConfigurationError, match="does not match"
     ):
         construct_shared_solar_input(
-            valid, mismatch, horizon=1, source_root=tmp_path
+            valid, mismatch_path, horizon=1, source_root=tmp_path
         )
 
 
 def test_shared_solar_provenance_describes_inputs_not_a_universal_claim(
-    tmp_path,
+    tmp_path, verified_shared,
 ):
     solar = tmp_path / "solar.csv"
     _write_solar(solar, (1, 2))
     system = tmp_path / "system.yml"
     _write_system(system, solar)
-    shared = construct_shared_solar_input(
+    shared = verified_shared(
         system, _direct_support(system), horizon=1,
         source_root=tmp_path,
     )
@@ -478,7 +540,9 @@ def test_shared_solar_provenance_describes_inputs_not_a_universal_claim(
     assert "UNIVERSAL_REAL_SOLAR_GUARANTEE" not in canonical_json(provenance)
 
 
-def test_same_length_source_byte_changes_change_provenance(tmp_path):
+def test_same_length_source_byte_changes_change_provenance(
+    tmp_path, verified_shared,
+):
     solar_a = tmp_path / "a.csv"
     solar_b = tmp_path / "b.csv"
     _write_solar(solar_a, (1,))
@@ -495,32 +559,32 @@ def test_same_length_source_byte_changes_change_provenance(tmp_path):
     support_b = tmp_path / "support-b.yml"
     support_a.write_text(
         yaml.safe_dump(
-            _direct_support(system_a, support_id="support-a"),
+            _direct_support_document(system_a, support_id="support-a"),
             sort_keys=False,
         ),
         encoding="utf-8",
     )
     support_b.write_text(
         yaml.safe_dump(
-            _direct_support(system_a, support_id="support-b"),
+            _direct_support_document(system_a, support_id="support-b"),
             sort_keys=False,
         ),
         encoding="utf-8",
     )
     assert support_a.stat().st_size == support_b.stat().st_size
 
-    baseline = construct_shared_solar_input(
+    baseline = verified_shared(
         system_a, support_a, horizon=1, source_root=tmp_path,
     )
-    changed_system = construct_shared_solar_input(
+    changed_system = verified_shared(
         system_b, _direct_support(system_b), horizon=1, source_root=tmp_path,
     )
-    changed_support = construct_shared_solar_input(
+    changed_support = verified_shared(
         system_a, support_b, horizon=1, source_root=tmp_path,
     )
     csv_system = tmp_path / "system-c.yml"
     _write_system(csv_system, solar_b)
-    changed_csv = construct_shared_solar_input(
+    changed_csv = verified_shared(
         csv_system, _direct_support(csv_system), horizon=1,
         source_root=tmp_path,
     )
@@ -536,26 +600,23 @@ def test_same_length_source_byte_changes_change_provenance(tmp_path):
     )
 
 
-def test_direct_mapping_absolute_template_is_not_in_canonical_identity(
+def test_direct_mapping_is_not_a_formal_safe_energy_support(
     tmp_path,
 ):
-    observed = []
-    for directory_name in ("left", "right"):
-        directory = tmp_path / directory_name
-        directory.mkdir()
-        solar = directory / "solar.csv"
-        system = directory / "system.yml"
-        _write_solar(solar, (1,))
-        _write_system(system, solar)
-        shared = construct_shared_solar_input(
+    solar = tmp_path / "solar.csv"
+    system = tmp_path / "system.yml"
+    _write_solar(solar, (1,))
+    _write_system(system, solar)
+    with pytest.raises(
+        SimulationConfigurationError,
+        match="versioned energy-support file path",
+    ):
+        construct_shared_solar_input(
             system,
-            _direct_support(system),
+            _direct_support_document(system),
             horizon=1,
-            source_root=directory,
+            source_root=tmp_path,
         )
-        observed.append(shared.provenance["energy_support"])
-
-    assert observed[0] == observed[1]
 
 
 def test_beta_is_the_exact_arbitrary_window_minimum_with_optional_starts():
