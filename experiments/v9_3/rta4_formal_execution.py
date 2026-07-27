@@ -49,6 +49,9 @@ from .rta4_formal_schema import FORMAL_TABLES, RTA4_FORMAL_SCHEMA_MANIFEST
 from .rta4_formal_store import (
     FORMAL_TASKSET_STORE_MANIFEST, formal_taskset_store_identity,
 )
+from .rta4_shared_energy import (
+    TaskEnergyMaterial, VerifiedSolarServiceMaterialV2,
+)
 from .rta4_formal_validation import (
     RTA4_CHECKPOINT_DOMAIN, RTA4_CHECKPOINT_FILENAME,
     RTA4_CHECKPOINT_VERSION,
@@ -116,6 +119,7 @@ class ProductionTasksetProvider:
         self, prepared_config: Mapping[str, Any], *,
         source_closures: Mapping[str, ValidatedFormalClosure] | None = None,
         generator_factory: Callable[..., Any] | None = None,
+        source_task_workloads: Mapping[str, Sequence[str]] | None = None,
     ) -> None:
         self.prepared = validate_prepared_config(prepared_config)
         self.config = prepared_scientific_config(self.prepared)
@@ -125,6 +129,11 @@ class ProductionTasksetProvider:
         self._tasksets: Dict[str, TasksetIdentityCertificate] = {}
         self._skeletons: Dict[str, tuple[GenerationRequest, tuple[SkeletonTask, ...]]] = {}
         self._source_slot_index: Dict[str, Dict[str, str]] = {}
+        self._skeleton_workloads: Dict[str, tuple[str, ...]] = {}
+        self._task_workloads: Dict[str, tuple[str, ...]] = {
+            str(key): tuple(value)
+            for key, value in (source_task_workloads or {}).items()
+        }
         for source_core, closure in self.sources.items():
             index: Dict[str, str] = {}
             for table in ("formal_rta_requests.csv", "formal_simulation_runs.csv"):
@@ -257,6 +266,7 @@ class ProductionTasksetProvider:
             else 1
         )
         skeleton = []
+        workloads = []
         for priority_rank, (source_index, task) in enumerate(ordered):
             wcet = int(task["execution_time"]) * time_scale
             period = int(task["iat"]) * time_scale
@@ -268,8 +278,15 @@ class ProductionTasksetProvider:
                 f"tau-{source_index:02d}", priority_rank,
                 wcet, period, power,
             ))
+            workload = task.get("workload")
+            if not isinstance(workload, str) or not workload:
+                raise RTA4ExecutionError(
+                    "generator returned no canonical task workload"
+                )
+            workloads.append(workload)
         result = (request, tuple(skeleton))
         self._skeletons[slot] = result
+        self._skeleton_workloads[slot] = tuple(workloads)
         return result
 
     def __call__(self, record: FormalPlanRecord) -> TasksetIdentityCertificate:
@@ -295,8 +312,25 @@ class ProductionTasksetProvider:
             power_scale=Fraction(str(record.material.get("power_scale", "1"))),
         )
         certificate.validate()
+        self._task_workloads[certificate.taskset_id] = (
+            self._skeleton_workloads[str(record.taskset_skeleton_slot_id)]
+        )
         self._tasksets[slot] = certificate
         return certificate
+
+    def workloads_for(
+        self, record: FormalPlanRecord,
+        certificate: TasksetIdentityCertificate | None = None,
+    ) -> tuple[str, ...]:
+        """Return generator-frozen workloads; never infer them from power/W."""
+
+        bound = self(record) if certificate is None else certificate
+        workloads = self._task_workloads.get(bound.taskset_id)
+        if workloads is None or len(workloads) != len(bound.tasks):
+            raise RTA4ExecutionError(
+                "taskset has no complete frozen workload vector"
+            )
+        return workloads
 
 
 def _rss_bytes() -> int:
@@ -420,6 +454,185 @@ def _adapter_result(
         "mechanism_rows": mechanism_telemetry_rows(result),
     }
     return mapped, result
+
+
+def _adapter_result_v2(
+    record: FormalPlanRecord,
+    certificate: TasksetIdentityCertificate,
+    config: Mapping[str, Any],
+    timeout_seconds: int,
+    task_energy: TaskEnergyMaterial,
+    service: VerifiedSolarServiceMaterialV2,
+) -> tuple[Mapping[str, Any], Any]:
+    """V2 adapter: consume only frozen J/tick and verified beta materials."""
+
+    if type(task_energy) is not TaskEnergyMaterial:
+        raise RTA4ExecutionError("V2 requires a frozen task-energy material")
+    if type(service) is not VerifiedSolarServiceMaterialV2:
+        raise RTA4ExecutionError("V2 requires a verified service material")
+    if (
+        task_energy.taskset_id != certificate.taskset_id
+        or task_energy.production_build_manifest_identity
+        != service.production_build_manifest_identity
+    ):
+        raise RTA4ExecutionError("V2 shared-energy material binding mismatch")
+    tasks = tuple(
+        rta_core.V93Task(
+            task.task_id, task.wcet, task.relative_deadline, task.period,
+            task_energy.energy_for_task(index, task.task_id),
+        )
+        for index, task in enumerate(certificate.tasks)
+    )
+    required = max(task.deadline for task in tasks) - 1
+    if required > service.horizon.analysis_service_horizon_ticks:
+        raise RTA4ExecutionError("verified beta does not cover the RTA query horizon")
+    beta = service.beta
+    service_prefix = tuple(beta(length) for length in range(required + 1))
+    e0 = Fraction(str(record.material["exact_e0"]))
+    adapter_input_id = exact_energy.exact_input_identity(
+        task_powers=((task.name, task.power) for task in tasks),
+        e0=e0,
+        service_prefix=service_prefix,
+    )
+    numeric_sha = str(config["identity"]["numeric_contract_sha256"])
+    theory_sha = str(config["identity"]["theory_document_sha256"])
+    analysis_id = domain_hash(
+        "ASAP_BLOCK:V9.3:RTA4_FORMAL_ANALYSIS:v2",
+        {
+            "profile": config["experiment_contract"]["profile"],
+            "taskset_id": certificate.taskset_id,
+            "task_energy_material_identity": (
+                task_energy.task_energy_material_identity
+            ),
+            "service_material_identity": service.service_material_identity,
+            "beta_material_identity": service.beta_material_identity,
+            "method": record.material["method"],
+            "exact_e0": _fraction_text(e0),
+            "numeric_contract_sha256": numeric_sha,
+            "theory_document_sha256": theory_sha,
+            "timeout_contract": config["execution"]["timeout_contract"],
+            "exact_input_identity": adapter_input_id,
+            "production_build_manifest_identity": (
+                service.production_build_manifest_identity
+            ),
+        },
+    )
+    context = rta_adapter.DependencyContext(
+        taskset_identity=certificate.taskset_id,
+        task_definitions_identity=task_energy.task_energy_material_identity,
+        priority_order_identity=certificate.taskset_skeleton_id,
+        e0_canonical_identity=_fraction_text(e0),
+        service_curve_identity=service.service_material_identity,
+        power_vector_identity=task_energy.task_energy_material_identity,
+        numerical_mode="EXACT_RATIONAL",
+        numerical_scale=None,
+        theory_document_sha256=theory_sha,
+        fixed_carry_in_interface_sha256=(
+            rta_adapter.FIXED_CARRY_IN_INTERFACE_SHA256
+        ),
+        formal_contract_identity=config["experiment_contract"]["profile"],
+        numeric_contract_sha256=numeric_sha,
+        source_numeric_model=exact_energy.SOURCE_NUMERIC_MODEL,
+        demand_rounding_mode=exact_energy.DEMAND_ROUNDING_MODE,
+        supply_rounding_mode=exact_energy.SUPPLY_ROUNDING_MODE,
+        e0_rounding_mode=exact_energy.E0_ROUNDING_MODE,
+        exact_input_identity=adapter_input_id,
+        float_decision_path=False,
+    )
+    result = dispatch_formal_rta(
+        analysis_id=analysis_id,
+        method=record.material["method"],
+        analysis_input=rta_adapter.TasksetAnalysisInput(
+            tasks=tasks,
+            processors=certificate.processors,
+            e0=e0,
+            beta=beta,
+            dependency_context=context,
+            timeout_seconds=timeout_seconds,
+        ),
+    )
+    task_rows = []
+    for row in result.task_results:
+        solver = row.solver_status.value
+        if solver == "INTERNAL_CONFORMANCE_FAILURE":
+            solver = "INTERNAL_ERROR"
+        task_rows.append({
+            "task_solver_status": solver,
+            "task_certification_status": row.certification_status.value,
+            "candidate_response_time": (
+                "NA" if row.candidate_response_time is None
+                else row.candidate_response_time
+            ),
+            "checked_w_count": row.checked_w_count,
+            "checked_q_count": row.checked_q_count,
+            "checked_h_count": row.checked_h_count,
+            "failure_reason": row.failure_reason or "NA",
+            "witness": list(row.witness_sequence),
+        })
+    solver_status = result.solver_status.value
+    if solver_status == "INTERNAL_CONFORMANCE_FAILURE":
+        solver_status = "INTERNAL_ERROR"
+    return {
+        "solver_status": solver_status,
+        "taskset_certification_status": result.analysis_certification_status.value,
+        "taskset_proven": result.taskset_proven,
+        "failure_reason": result.failure_reason or "NA",
+        "fallback_used": False,
+        "task_results": task_rows,
+        "mechanism_rows": mechanism_telemetry_rows(result),
+        "production_build_manifest_identity": (
+            service.production_build_manifest_identity
+        ),
+        "task_energy_material_identity": task_energy.task_energy_material_identity,
+        "service_material_identity": service.service_material_identity,
+        "beta_material_identity": service.beta_material_identity,
+        "analysis_id": analysis_id,
+    }, result
+
+
+class ProductionRTAExecutorV2:
+    """Read-only worker adapter over parent-materialized shared inputs."""
+
+    def __init__(
+        self,
+        prepared_config: Mapping[str, Any],
+        *,
+        task_energy_materials: Mapping[str, TaskEnergyMaterial],
+        service_materials: Mapping[str, VerifiedSolarServiceMaterialV2],
+        record_bindings: Mapping[str, Mapping[str, str]],
+    ) -> None:
+        self.prepared = validate_prepared_config(prepared_config)
+        self.config = prepared_scientific_config(self.prepared)
+        self.task_energy_materials = dict(task_energy_materials)
+        self.service_materials = dict(service_materials)
+        self.record_bindings = {
+            str(key): dict(value) for key, value in record_bindings.items()
+        }
+
+    def __call__(
+        self, record: FormalPlanRecord,
+        certificate: TasksetIdentityCertificate,
+    ) -> Mapping[str, Any]:
+        binding = self.record_bindings.get(record.record_id)
+        if not isinstance(binding, Mapping) or set(binding) != {
+            "task_energy_material_identity", "service_material_identity",
+        }:
+            raise RTA4ExecutionError("V2 record has no frozen shared-energy binding")
+        task_energy = self.task_energy_materials.get(
+            str(binding["task_energy_material_identity"])
+        )
+        service = self.service_materials.get(
+            str(binding["service_material_identity"])
+        )
+        if task_energy is None or service is None:
+            raise RTA4ExecutionError("V2 worker received an incomplete material registry")
+        timeout = self.prepared["timeout_contract"]["methods"][
+            record.material["method"]
+        ]["initial_timeout_seconds"]
+        mapped, _raw = _adapter_result_v2(
+            record, certificate, self.config, timeout, task_energy, service,
+        )
+        return mapped
 
 
 class ProductionRTAExecutor:
@@ -1275,8 +1488,9 @@ class AuthorizedRTA4Runner:
 
 __all__ = [
     "AuthorizedRTA4Runner", "ExecutionSummary", "ProductionRTAExecutor",
+    "ProductionRTAExecutorV2",
     "ProductionSimulationExecutor", "ProductionTasksetProvider",
     "RTA4_CHECKPOINT_FILENAME",
     "RTA4_CHECKPOINT_VERSION", "RTA4ExecutionError",
-    "RTA4ExecutionInterrupted",
+    "RTA4ExecutionInterrupted", "_adapter_result_v2",
 ]
