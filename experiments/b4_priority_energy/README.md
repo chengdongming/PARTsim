@@ -190,3 +190,51 @@ second subprocess or publication state
 machine exists. The smoke command remains the sole semantic argv plan; source
 descriptor bytes use the existing `B4PE_SOURCE_SNAPSHOT` file-descriptor
 transport, and no semantic-hash argument is appended by the gateway.
+
+## I5C deterministic analysis extraction
+
+`extract_analysis.py` converts an already completed and strictly audited
+result tree into deterministic case-level and task-level data for I5D. It is
+read-only with respect to execution artifacts and does not calculate
+statistics, averages, rankings, confidence intervals, or plots. The extractor
+never starts Pilot, Formal, Negative, or smoke execution.
+
+```text
+python3 experiments/b4_priority_energy/extract_analysis.py \
+  --output-root /absolute/executed-output-root \
+  --expected-records /absolute/manifest-or-records.jsonl \
+  --audit-report /absolute/strict-audit-report.json \
+  --analysis-root /absolute/outside-repository-analysis-root \
+  --strict
+```
+
+The analysis root must be absent or empty and must be outside this repository.
+Successful extraction publishes `cases.jsonl`, `tasks.jsonl`, their equivalent
+CSV views, `analysis_audit.json`, and finally `analysis_manifest.json`. JSONL
+is authoritative. The field order, pairing dimensions, algorithm order,
+numeric representation, pass definitions, and self-audit rules are frozen in
+`analysis_contract_v1.json`.
+
+Each schema3 case produces one case row and ten task rows. Task priority is
+recomputed independently from the taskset snapshot using `(period, task
+number)` and must match the reported ranks 0 through 9. `task_pass` requires
+no deadline miss, termination, or unfinished job and requires completed jobs
+to equal released jobs. `whole_pass`, `hp_pass`, and `lp_pass` apply that rule
+to all tasks, ranks 0 through 3, and ranks 4 through 9 respectively.
+
+The pairing key is the SHA-256 of the compact, ordered
+`pairing_dimensions` object. It excludes all algorithm and scheduler identity
+but retains the taskset, source, utilization, energy, horizon, protocol, and
+binary/generator identities needed to explain the pairing. Every schema3
+pairing group must contain the frozen nine algorithms exactly once. Schema2
+is admissible only as explicit `integration_smoke` compatibility evidence
+with `not_for_paper=true`; it is excluded from formal pairing and cannot
+produce schema3 summary rows.
+
+The input audit must be strict, have `overall_pass=true`, and contain zero
+infrastructure and audit failures. Scheduling outcomes remain valid algorithm
+outcomes and are retained in the extracted rows. A failed extraction writes
+no successful manifest. Successful outputs contain no timestamps, absolute
+paths, random identifiers, NaN, or infinity; identical inputs and extractor
+identity produce byte-identical files. All generated analysis is explicitly
+marked `no_paper_data_generated=true`.
