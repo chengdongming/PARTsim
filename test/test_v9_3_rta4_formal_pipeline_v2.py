@@ -1,6 +1,10 @@
 from fractions import Fraction
 import hashlib
+import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
@@ -24,6 +28,7 @@ from experiments.v9_3.rta4_numeric_contract_v2 import (
 )
 from experiments.v9_3.rta4_production_build_manifest import (
     DEFAULT_RELEVANT_SOURCES, PRODUCTION_BUILD_MANIFEST_SCHEMA,
+    generate_production_build_manifest, write_production_build_manifest,
 )
 from experiments.v9_3.rta4_shared_energy import (
     FrozenMapping, ServiceHorizonContract, ServiceMaterialRegistry,
@@ -373,3 +378,170 @@ def test_support_horizon_shortfall_fails_before_service_construction(tmp_path):
         registry.prepare((spec,))
     registry.close()
     assert calls == []
+
+
+def _run_official_cli(prepared_path, authorization_path, operation="--execute"):
+    completed = subprocess.run(
+        [
+            sys.executable, str(ROOT / "scripts/run_v9_3_rta4_formal.py"),
+            "--prepared-config", str(prepared_path),
+            "--authorization", str(authorization_path), operation,
+        ],
+        cwd=str(ROOT), check=False, capture_output=True, text=True,
+        timeout=360,
+        env=dict(os.environ),
+    )
+    assert completed.returncode == 0, completed.stderr
+    return json.loads(completed.stdout)
+
+
+def _write_test_run_artifacts(
+    root, *, core, ordinals, manifest_path, worker_count,
+    simulation_timeout_seconds=180,
+):
+    config = default_rta4_formal_config_v2(core)
+    records = {
+        record.ordinal: record for record in iter_formal_plan_v2(config)
+        if record.ordinal in set(ordinals)
+    }
+    methods = {
+        str(record.material.get("method", "CW_THETA_CW"))
+        for record in records.values()
+    }
+    timeouts = {
+        method: {
+            "initial_timeout_seconds": 0,
+            "retry_timeout_seconds": 3,
+            "maximum_attempts": 2,
+        }
+        for method in methods
+    }
+    prepared = build_test_prepared_config_v2(
+        config, output_root=root / "output-v2",
+        taskset_store=root / "store-v2",
+        production_manifest_path=manifest_path, source_root=ROOT,
+        selected_ordinals=ordinals, timeout_contract=timeouts,
+        worker_count=worker_count, max_in_flight=max(worker_count, len(ordinals)),
+        simulation_timeout_seconds=simulation_timeout_seconds,
+    )
+    authorization = build_test_authorization_v2(prepared)
+    prepared_path = root / "prepared-v2.json"
+    authorization_path = root / "authorization-test-only-v2.json"
+    from experiments.v9_3.result_writer import atomic_write_json
+    atomic_write_json(prepared_path, prepared)
+    atomic_write_json(authorization_path, authorization)
+    return prepared_path, authorization_path
+
+
+def _terminal_rows(root):
+    paths = sorted((root / "output-v2" / (
+        "formal_terminal_results_v2_shared_energy"
+    )).glob("*.json"))
+    return paths, [json.loads(path.read_text(encoding="utf-8")) for path in paths]
+
+
+def test_official_v2_bounded_e2e_without_core_mock_or_fake(tmp_path):
+    """Real manifest/provider/solar/solver/writer/resume/CORE-3 micro E2E."""
+
+    simulator_candidates = (
+        Path(os.environ.get("RTA4_TEST_SIMULATOR", "")),
+        Path("/home/devcontainers/builds/partsim-b4-release/rtsim/rtsim"),
+    )
+    simulator = next((path for path in simulator_candidates if path.is_file()), None)
+    if simulator is None:
+        pytest.skip("no dynamically complete bounded RTSim build is available")
+    verifier = tmp_path / "solar-stod-verifier"
+    subprocess.run([
+        "c++", "-std=c++17", "-O2", "-Wall", "-Wextra", "-pedantic",
+        str(ROOT / "tools/rta4_solar_stod_verifier.cpp"),
+        "-o", str(verifier),
+    ], check=True, cwd=str(ROOT), timeout=60)
+    manifest = generate_production_build_manifest(
+        source_root=ROOT, simulator_binary=simulator,
+        verifier_binary=verifier, compiler="c++",
+        build_commands={
+            "simulator": ["bounded-existing-rtsim"],
+            "verifier": ["bounded-test-verifier"],
+        },
+        require_clean=True,
+    )
+    manifest_path = tmp_path / "production-manifest-v2.json"
+    write_production_build_manifest(manifest_path, manifest)
+
+    core1 = tmp_path / "core1-worker1"
+    prepared, authorization = _write_test_run_artifacts(
+        core1, core="CORE-1", ordinals=(0, 1, 2, 3),
+        manifest_path=manifest_path, worker_count=1,
+    )
+    first = _run_official_cli(prepared, authorization)
+    assert first["complete"] is True and first["processed_records"] == 4
+    paths, rows = _terminal_rows(core1)
+    assert {row["method"] for row in rows} == {
+        "CW_THETA_CW", "LOC_THETA_LOC", "PH_THETA_PH", "SEQ_THETA_SEQ",
+    }
+    assert len({row["taskset_identity"] for row in rows}) == 1
+    assert len({row["task_energy_material_identity"] for row in rows}) == 1
+    assert len({row["service_material_identity"] for row in rows}) == 1
+    assert all([
+        attempt["timeout_seconds"] for attempt in row["attempts"]
+    ] == [0, 3] for row in rows)
+    before = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in paths}
+    resumed = _run_official_cli(prepared, authorization, "--resume")
+    assert resumed["processed_records"] == 0 and resumed["complete"] is True
+    after = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in paths}
+    assert after == before
+
+    reference = next(row for row in rows if row["method"] == "CW_THETA_CW")
+    for workers in (2, 4):
+        root = tmp_path / f"core1-worker{workers}"
+        worker_prepared, worker_authorization = _write_test_run_artifacts(
+            root, core="CORE-1", ordinals=(0,),
+            manifest_path=manifest_path, worker_count=workers,
+        )
+        summary = _run_official_cli(worker_prepared, worker_authorization)
+        assert summary["processed_records"] == 1
+        _worker_paths, worker_rows = _terminal_rows(root)
+        row = worker_rows[0]
+        for key in (
+            "taskset_source_sha256", "taskset_identity",
+            "task_energy_material_identity", "service_material_identity",
+            "beta_material_identity", "method", "exact_e0", "status",
+            "response_result",
+        ):
+            assert row[key] == reference[key]
+        assert [
+            (attempt["attempt_index"], attempt["timeout_seconds"],
+             attempt["status"], attempt["analysis_identity"])
+            for attempt in row["attempts"]
+        ] == [
+            (attempt["attempt_index"], attempt["timeout_seconds"],
+             attempt["status"], attempt["analysis_identity"])
+            for attempt in reference["attempts"]
+        ]
+
+    core3 = tmp_path / "core3-worker1"
+    core3_prepared, core3_authorization = _write_test_run_artifacts(
+        core3, core="CORE-3", ordinals=(0,),
+        manifest_path=manifest_path, worker_count=1,
+        simulation_timeout_seconds=180,
+    )
+    core3_summary = _run_official_cli(core3_prepared, core3_authorization)
+    assert core3_summary["processed_records"] == 1
+    _core3_paths, core3_rows = _terminal_rows(core3)
+    simulation = core3_rows[0]
+    response = simulation["response_result"]
+    assert simulation["status"] == "COMPLETED"
+    assert response["simulation_status"] == "COMPLETED"
+    assert response["task_energy_unit"] == "J/tick"
+    assert response["core3_shared_energy_projection_identity"]
+    assert response["release_projection_identity"]
+    assert response["simulation_result_identity"]
+    assert response["job_results"]
+    assert simulation["production_build_manifest_identity"] == manifest["manifest_id"]
+    assert simulation["profile"] == default_rta4_formal_config_v2(
+        "CORE-3"
+    )["experiment_contract"]["profile"]
+    assert all(
+        "actual_power" not in canonical_json(row)
+        for row in (*rows, simulation)
+    )
