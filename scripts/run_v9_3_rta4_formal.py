@@ -23,6 +23,10 @@ from experiments.v9_3.rta4_formal_pipeline import (
 from experiments.v9_3.rta4_formal_execution import (
     AuthorizedRTA4Runner, ProductionSimulationExecutor,
 )
+from experiments.v9_3.rta4_formal_lifecycle_v2 import (
+    RTA4_PREPARED_CONFIG_SCHEMA_V2,
+)
+from experiments.v9_3.rta4_formal_runner_v2 import AuthorizedRTA4RunnerV2
 from experiments.v9_3.rta4_formal_environment import load_strict_json
 
 
@@ -78,6 +82,38 @@ def main() -> int:
         try:
             prepared = _json(args.prepared_config)
             authorization = _json(args.authorization)
+            if prepared.get("prepared_schema") == RTA4_PREPARED_CONFIG_SCHEMA_V2:
+                if args.source or args.base_system is not None or args.energy_config is not None:
+                    raise ValueError(
+                        "V2 workers refuse caller source/compiler/binary/config overrides"
+                    )
+                if args.synthetic_ordinal:
+                    raise ValueError(
+                        "V2 bounded ordinals are frozen in the prepared artifact"
+                    )
+                summary = AuthorizedRTA4RunnerV2(
+                    prepared, authorization,
+                ).run(
+                    resume=args.resume, validate_only=args.validate_only,
+                    max_records=args.max_records,
+                )
+                print(json.dumps({
+                    "authorization_id": summary.authorization_id,
+                    "core": summary.core,
+                    "execution_class": summary.execution_class,
+                    "production_build_manifest_identity": (
+                        summary.production_build_manifest_identity
+                    ),
+                    "processed_records": summary.processed_records,
+                    "pending_records": summary.pending_records,
+                    "complete": summary.complete,
+                    "checkpoint_path": str(summary.checkpoint_path),
+                }, ensure_ascii=False, sort_keys=True, indent=2))
+                return 0
+            if prepared.get("profile") == (
+                "ASAP_BLOCK_V9_3_RTA4_FORMAL_V2_SHARED_ENERGY"
+            ):
+                raise ValueError("unknown or obsolete V2 prepared profile")
             sources = {}
             for value in args.source:
                 core, separator, path = value.partition("=")

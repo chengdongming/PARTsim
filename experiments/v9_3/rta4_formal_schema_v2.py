@@ -19,6 +19,24 @@ SHARED_BINDINGS = (
     "service_material_identity",
     "beta_material_identity",
 )
+V2_RESULT_ROW_REQUIRED_FIELDS = (
+    "row_schema", "profile", "schema_sha256", "numeric_contract_sha256",
+    "theory_document_sha256", "config_identity", "plan_identity",
+    "plan_record_identity", "execution_identity",
+    "production_build_manifest_identity", "source_commit", "source_tree",
+    "taskset_source_sha256", "taskset_identity",
+    "task_energy_material_identity", "service_material_identity",
+    "beta_material_identity", "method", "exact_e0", "status",
+    "response_result", "timeout_seconds", "attempts",
+    "retry_resume_identity", "result_identity",
+)
+V2_ATTEMPT_REQUIRED_FIELDS = (
+    "attempt_index", "timeout_seconds", "status",
+    "runtime_wall_seconds", "runtime_cpu_seconds", "peak_rss_bytes",
+    "error_classification", "analysis_identity", "taskset_identity",
+    "task_energy_material_identity", "service_material_identity",
+    "beta_material_identity", "production_build_manifest_identity",
+)
 
 
 def _v2_columns(name: str, columns: Tuple[str, ...]) -> Tuple[str, ...]:
@@ -70,6 +88,14 @@ def formal_schema_material_v2() -> Dict[str, Any]:
             "horizon": "ticks",
         },
         "required_shared_bindings": list(SHARED_BINDINGS),
+        "result_row_required_fields": list(V2_RESULT_ROW_REQUIRED_FIELDS),
+        "attempt_required_fields": list(V2_ATTEMPT_REQUIRED_FIELDS),
+        "result_lifecycle": {
+            "atomic_terminal_json": True,
+            "duplicate_consistency": True,
+            "resume_revalidates_frozen_identities": True,
+            "attempt_order": "STRICT_ZERO_BASED",
+        },
         "legacy_v1_rows_accepted": False,
         "legacy_actual_power_column_accepted": False,
         "linear_beta_material_accepted": False,
@@ -95,6 +121,7 @@ def validate_formal_schema_manifest_v2(value: Mapping[str, Any]) -> None:
 __all__ = [
     "FORMAL_TABLES_V2", "RTA4_FORMAL_SCHEMA_DOMAIN_V2",
     "RTA4_FORMAL_SCHEMA_MANIFEST_V2", "SHARED_BINDINGS",
+    "V2_ATTEMPT_REQUIRED_FIELDS", "V2_RESULT_ROW_REQUIRED_FIELDS",
     "formal_schema_hash_v2", "formal_schema_manifest_v2",
     "formal_schema_material_v2", "validate_formal_schema_manifest_v2",
 ]

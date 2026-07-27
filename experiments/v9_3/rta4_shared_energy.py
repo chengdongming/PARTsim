@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from collections.abc import Iterator, Mapping as ABCMapping
 from dataclasses import dataclass
 from fractions import Fraction
 import hashlib
@@ -25,6 +26,7 @@ from .rta4_production_build_manifest import (
     PRODUCTION_BUILD_PROFILE,
     load_and_validate_production_build_manifest,
 )
+from .rta4_taskset_v2 import TasksetIdentityCertificateV2
 from .simulation_engine import SharedSolarInput, construct_shared_solar_input
 
 
@@ -44,6 +46,42 @@ HORIZON_CONTRACT_VERSION = "ASAP_BLOCK_V9_3_RTA4_SERVICE_HORIZON_V2"
 
 class SharedEnergyMaterialError(ValueError):
     """Raised when V2 shared task/service inputs cannot be frozen exactly."""
+
+
+class FrozenMapping(ABCMapping):
+    """Small picklable recursively immutable mapping used across workers."""
+
+    __slots__ = ("_items", "_index")
+
+    def __init__(self, value: Mapping[str, Any]) -> None:
+        items = tuple(
+            (str(key), _freeze_value(item))
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+        )
+        self._items = items
+        self._index = dict(items)
+
+    def __getitem__(self, key: str) -> Any:
+        return self._index[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._index)
+
+    def __len__(self) -> int:
+        return len(self._index)
+
+    def __reduce__(self) -> tuple[Any, tuple[Dict[str, Any]]]:
+        return (FrozenMapping, (dict(self._items),))
+
+
+def _freeze_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return FrozenMapping(value)
+    if isinstance(value, (tuple, list)):
+        return tuple(_freeze_value(item) for item in value)
+    if isinstance(value, set):
+        return frozenset(_freeze_value(item) for item in value)
+    return value
 
 
 def _sha256(payload: bytes) -> str:
@@ -160,7 +198,7 @@ class TaskEnergyMaterial:
 
 
 def construct_task_energy_material(
-    certificate: TasksetIdentityCertificate,
+    certificate: TasksetIdentityCertificate | TasksetIdentityCertificateV2,
     workloads: Sequence[str],
     *,
     system_config_path: Path | str,
@@ -171,8 +209,10 @@ def construct_task_energy_material(
 ) -> TaskEnergyMaterial:
     """Derive source identities from bytes and operands; callers supply no identity."""
 
-    if type(certificate) is not TasksetIdentityCertificate:
-        raise SharedEnergyMaterialError("task energy requires a taskset certificate")
+    if type(certificate) not in {
+        TasksetIdentityCertificate, TasksetIdentityCertificateV2,
+    }:
+        raise SharedEnergyMaterialError("task energy requires a versioned taskset certificate")
     certificate.validate()
     if (
         not isinstance(workloads, (tuple, list))
@@ -202,7 +242,12 @@ def construct_task_energy_material(
         raise SharedEnergyMaterialError("cannot load canonical task energy system") from exc
     taskset_bytes = certificate.canonical_bytes()
     taskset_sha = _sha256(taskset_bytes)
-    coefficient = _binary64_scale(certificate.power_variant.scale)
+    if type(certificate) is TasksetIdentityCertificateV2:
+        coefficient = _binary64_scale(certificate.energy_coefficient)
+        generator_contract = certificate.generator_contract_version
+    else:
+        coefficient = _binary64_scale(certificate.power_variant.scale)
+        generator_contract = certificate.generation_request.generator_version
     entries = []
     for index, (task, workload) in enumerate(zip(certificate.tasks, workloads)):
         base_power = system.base_power
@@ -242,7 +287,7 @@ def construct_task_energy_material(
             "energy_j_per_tick_binary64": materialized.binary64_hex,
             "system_config": system_source,
             "workload_config": workload_source,
-            "generator_contract_version": certificate.generation_request.generator_version,
+            "generator_contract_version": generator_contract,
             "production_build_manifest_identity": production_build_manifest_identity,
         }
         source_identity = domain_hash(TASK_ENERGY_ENTRY_DOMAIN, identity_material)
@@ -261,7 +306,7 @@ def construct_task_energy_material(
         "taskset_canonical_sha256": taskset_sha,
         "system_config_sha256": system_source["sha256"],
         "workload_config_sha256": workload_source["sha256"],
-        "generator_contract_version": certificate.generation_request.generator_version,
+        "generator_contract_version": generator_contract,
         "numeric_contract_version": exact_energy.NUMERIC_CONTRACT_VERSION,
         "numeric_contract_sha256": exact_energy.NUMERIC_CONTRACT_SHA256,
         "energy_demand_unit": "J/tick",
@@ -272,7 +317,7 @@ def construct_task_energy_material(
         profile_id, production_build_manifest_identity, certificate.taskset_id,
         taskset_store_identity, taskset_sha, str(system_source["sha256"]),
         str(workload_source["sha256"]),
-        certificate.generation_request.generator_version,
+        generator_contract,
         tuple(entries), identity,
     )
 
@@ -317,12 +362,16 @@ class ServiceHorizonContract:
 
 
 def derive_service_horizon_contract(
-    certificate: TasksetIdentityCertificate,
+    certificate: TasksetIdentityCertificate | TasksetIdentityCertificateV2,
     *,
     include_core3_simulation: bool = False,
     warmup_guard_ticks: int = 0,
     pilot_observation_horizon_ticks: int = 0,
 ) -> ServiceHorizonContract:
+    if type(certificate) not in {
+        TasksetIdentityCertificate, TasksetIdentityCertificateV2,
+    }:
+        raise SharedEnergyMaterialError("horizon requires a versioned taskset certificate")
     certificate.validate()
     maximum_deadline = max(task.relative_deadline for task in certificate.tasks)
     analysis = maximum_deadline - 1
@@ -438,6 +487,7 @@ class ServiceMaterialRegistry:
         production_build_manifest: Mapping[str, Any],
         *,
         constructor: Callable[..., SharedSolarInput] = construct_shared_solar_input,
+        trusted_manifest: bool = False,
     ) -> None:
         if (
             production_build_manifest.get("manifest_schema")
@@ -457,6 +507,7 @@ class ServiceMaterialRegistry:
         self._compiler_sha = str(compiler_sha)
         self._verifier_sha = str(verifier_sha)
         self._constructor = constructor
+        self._trusted_manifest = bool(trusted_manifest)
         self._materials: Dict[str, VerifiedSolarServiceMaterialV2] = {}
         self._spec_to_cache_key: Dict[str, str] = {}
         self._construction_counts: Dict[str, int] = {}
@@ -468,8 +519,11 @@ class ServiceMaterialRegistry:
         constructor: Callable[..., SharedSolarInput] = construct_shared_solar_input,
     ) -> "ServiceMaterialRegistry":
         return cls(
-            load_and_validate_production_build_manifest(path),
+            load_and_validate_production_build_manifest(
+                path, require_default_closure=True,
+            ),
             constructor=constructor,
+            trusted_manifest=True,
         )
 
     def close(self) -> None:
@@ -484,15 +538,15 @@ class ServiceMaterialRegistry:
 
     @property
     def construction_counts(self) -> Mapping[str, int]:
-        return dict(self._construction_counts)
+        return FrozenMapping(self._construction_counts)
 
     @property
-    def cache_statistics(self) -> Dict[str, int]:
-        return {
+    def cache_statistics(self) -> Mapping[str, int]:
+        return FrozenMapping({
             "unique_service_materials": len(self._materials),
             "construction_count": sum(self._construction_counts.values()),
             "cache_hits": max(0, len(self._spec_to_cache_key) - len(self._materials)),
-        }
+        })
 
     def _construct(self, spec: ServiceMaterialSpec) -> VerifiedSolarServiceMaterialV2:
         support = Path(spec.energy_support_path).resolve(strict=True)
@@ -500,8 +554,21 @@ class ServiceMaterialRegistry:
             current = yaml.safe_load(support.read_text(encoding="utf-8"))
             energy = current.get("energy", current)
             configured_scale = Fraction(str(energy["service_curve"].get("solar_scale", "1")))
+            declared_horizon = energy["service_curve"]["horizon"]
+            if (
+                isinstance(declared_horizon, bool)
+                or type(declared_horizon) is not int
+                or declared_horizon <= 0
+            ):
+                raise ValueError("invalid declared support horizon")
         except Exception as exc:
-            raise SharedEnergyMaterialError("cannot inspect configured solar scale") from exc
+            raise SharedEnergyMaterialError(
+                "cannot inspect configured solar scale/horizon"
+            ) from exc
+        if spec.horizon.service_material_horizon_ticks > declared_horizon:
+            raise SharedEnergyMaterialError(
+                "requested service material exceeds declared support horizon"
+            )
         material_support = support
         if configured_scale != spec.solar_scale:
             material_support = _support_with_scale(
@@ -588,10 +655,10 @@ class ServiceMaterialRegistry:
                 self._materials[material.cache_key] = material
                 self._construction_counts[material.cache_key] = 1
             self._spec_to_cache_key[spec_id] = material.cache_key
-        return {
+        return FrozenMapping({
             spec_id: self._materials[cache_key]
             for spec_id, cache_key in self._spec_to_cache_key.items()
-        }
+        })
 
     def material_for(self, spec: ServiceMaterialSpec) -> VerifiedSolarServiceMaterialV2:
         spec_id = spec.spec_identity
@@ -601,7 +668,7 @@ class ServiceMaterialRegistry:
 
 
 def project_core3_shared_energy_payload(
-    certificate: TasksetIdentityCertificate,
+    certificate: TasksetIdentityCertificate | TasksetIdentityCertificateV2,
     payload: Sequence[Mapping[str, Any]],
     task_energy: TaskEnergyMaterial,
 ) -> tuple[Mapping[str, Any], ...]:
@@ -683,12 +750,13 @@ class SharedEnergyRunContext:
     service_materials: Mapping[str, VerifiedSolarServiceMaterialV2]
     record_bindings: Mapping[str, Mapping[str, str]]
     cache_statistics: Mapping[str, int]
+    formal_ready: bool = False
 
     def binding_for(self, record_id: str) -> Mapping[str, str]:
         binding = self.record_bindings.get(record_id)
         if binding is None:
             raise SharedEnergyMaterialError("record has no frozen shared-energy binding")
-        return dict(binding)
+        return binding
 
 
 def initialize_shared_energy_run(
@@ -702,7 +770,65 @@ def initialize_shared_energy_run(
     taskset_store_identity: str,
     service_constructor: Callable[..., SharedSolarInput] = construct_shared_solar_input,
 ) -> SharedEnergyRunContext:
-    """Freeze every formal input before a worker pool or record loop exists."""
+    """Diagnostic mapping entry point; it never yields a formal-ready context."""
+
+    return _initialize_shared_energy_run(
+        records,
+        taskset_provider=taskset_provider,
+        production_build_manifest=production_build_manifest,
+        system_config_path=system_config_path,
+        energy_support_path=energy_support_path,
+        source_root=source_root,
+        taskset_store_identity=taskset_store_identity,
+        service_constructor=service_constructor,
+        formal_ready=False,
+    )
+
+
+def initialize_shared_energy_run_from_manifest_path(
+    records: Sequence[Any],
+    *,
+    taskset_provider: Any,
+    production_build_manifest_path: Path | str,
+    system_config_path: Path | str,
+    energy_support_path: Path | str,
+    source_root: Path | str,
+    taskset_store_identity: str,
+    service_constructor: Callable[..., SharedSolarInput] = construct_shared_solar_input,
+) -> SharedEnergyRunContext:
+    """Strict formal entry point: live-check a manifest path before materials."""
+
+    if isinstance(production_build_manifest_path, Mapping):
+        raise SharedEnergyMaterialError("formal run-init accepts only a manifest file path")
+    manifest = load_and_validate_production_build_manifest(
+        production_build_manifest_path, require_default_closure=True,
+    )
+    return _initialize_shared_energy_run(
+        records,
+        taskset_provider=taskset_provider,
+        production_build_manifest=manifest,
+        system_config_path=system_config_path,
+        energy_support_path=energy_support_path,
+        source_root=source_root,
+        taskset_store_identity=taskset_store_identity,
+        service_constructor=service_constructor,
+        formal_ready=True,
+    )
+
+
+def _initialize_shared_energy_run(
+    records: Sequence[Any],
+    *,
+    taskset_provider: Any,
+    production_build_manifest: Mapping[str, Any],
+    system_config_path: Path | str,
+    energy_support_path: Path | str,
+    source_root: Path | str,
+    taskset_store_identity: str,
+    service_constructor: Callable[..., SharedSolarInput],
+    formal_ready: bool,
+) -> SharedEnergyRunContext:
+    """Freeze every shared input before a worker pool or record loop exists."""
 
     if not records:
         raise SharedEnergyMaterialError("shared-energy run has no records")
@@ -720,14 +846,20 @@ def initialize_shared_energy_run(
     except Exception as exc:
         raise SharedEnergyMaterialError("cannot load run service support") from exc
 
-    certificates: Dict[str, TasksetIdentityCertificate] = {}
-    record_certificates: Dict[str, TasksetIdentityCertificate] = {}
+    certificates: Dict[
+        str, TasksetIdentityCertificate | TasksetIdentityCertificateV2
+    ] = {}
+    record_certificates: Dict[
+        str, TasksetIdentityCertificate | TasksetIdentityCertificateV2
+    ] = {}
     task_materials: Dict[str, TaskEnergyMaterial] = {}
     requirements: Dict[Fraction, ServiceHorizonContract] = {}
     record_scales: Dict[str, Fraction] = {}
     for record in records:
         certificate = taskset_provider(record)
-        if type(certificate) is not TasksetIdentityCertificate:
+        if type(certificate) not in {
+            TasksetIdentityCertificate, TasksetIdentityCertificateV2,
+        }:
             raise SharedEnergyMaterialError("provider returned no taskset certificate")
         certificates.setdefault(certificate.taskset_id, certificate)
         record_certificates[record.record_id] = certificate
@@ -779,6 +911,7 @@ def initialize_shared_energy_run(
     }
     with ServiceMaterialRegistry(
         production_build_manifest, constructor=service_constructor,
+        trusted_manifest=formal_ready,
     ) as registry:
         registry.prepare(specs.values())
         services = {
@@ -801,19 +934,25 @@ def initialize_shared_energy_run(
             "service_material_identity": service.service_material_identity,
         }
     return SharedEnergyRunContext(
-        build_id, task_by_identity, service_materials, bindings, statistics,
+        build_id,
+        FrozenMapping(task_by_identity),
+        FrozenMapping(service_materials),
+        FrozenMapping({key: FrozenMapping(value) for key, value in bindings.items()}),
+        FrozenMapping(statistics),
+        formal_ready,
     )
 
 
 __all__ = [
     "BETA_CONTRACT_VERSION", "HORIZON_CONTRACT_VERSION",
     "SERVICE_MATERIAL_SCHEMA", "TASK_ENERGY_MATERIAL_SCHEMA",
-    "ServiceHorizonContract", "ServiceMaterialRegistry",
+    "FrozenMapping", "ServiceHorizonContract", "ServiceMaterialRegistry",
     "ServiceMaterialSpec", "SharedEnergyMaterialError", "SharedEnergyRunContext",
     "TaskEnergyEntry",
     "TaskEnergyMaterial", "VerifiedSolarServiceMaterialV2",
     "construct_task_energy_material", "core3_shared_energy_projection",
     "derive_service_horizon_contract", "initialize_shared_energy_run",
+    "initialize_shared_energy_run_from_manifest_path",
     "project_core3_shared_energy_payload",
     "validate_core3_shared_energy_projection",
 ]

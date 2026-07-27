@@ -64,14 +64,31 @@ PACKAGE_ALLOWLIST = ("PyYAML", "numpy", "pytest")
 DEFAULT_RELEVANT_SOURCES = (
     "asap_block_rta_v9_3.py",
     "asap_block_rta_v9_3_taskset.py",
+    "global_task_generator.py",
     "experiments/v9_3/exact_energy.py",
+    "experiments/v9_3/rta4_formal_config.py",
     "experiments/v9_3/rta4_formal_execution.py",
+    "experiments/v9_3/rta4_formal_lifecycle_v2.py",
+    "experiments/v9_3/rta4_formal_runner_v2.py",
     "experiments/v9_3/rta4_formal_config_v2.py",
+    "experiments/v9_3/rta4_formal_plan_v2.py",
     "experiments/v9_3/rta4_formal_schema_v2.py",
     "experiments/v9_3/rta4_numeric_contract_v2.py",
+    "experiments/v9_3/rta4_production_build_manifest.py",
     "experiments/v9_3/rta4_shared_energy.py",
+    "experiments/v9_3/rta4_taskset_v2.py",
     "experiments/v9_3/simulation_engine.py",
     "experiments/v9_3/solar_parse_proof.py",
+    "scripts/build_v9_3_rta4_production_manifest.py",
+    "scripts/build_v9_3_rta4_v2_contracts.py",
+    "scripts/run_v9_3_rta4_formal.py",
+    "configs/v9_3_rta4_shared_energy_support_v2.yaml",
+    "configs/v9_3_rta4_core1_unauthorized_pre_pilot_v2_shared_energy.yaml",
+    "configs/v9_3_rta4_core2_unauthorized_pre_pilot_v2_shared_energy.yaml",
+    "configs/v9_3_rta4_core3_unauthorized_pre_pilot_v2_shared_energy.yaml",
+    "configs/v9_3_rta4_core4_unauthorized_pre_pilot_v2_shared_energy.yaml",
+    "configs/v9_3_rta4_core5a_unauthorized_pre_pilot_v2_shared_energy.yaml",
+    "configs/v9_3_rta4_core5b_unauthorized_pre_pilot_v2_shared_energy.yaml",
     "librtsim/include/rtsim/scheduler/gpfp_asap_block_scheduler.hpp",
     "librtsim/scheduler/gpfp_asap_block_scheduler.cpp",
     "librtsim/scheduler/energy_bridge.cpp",
@@ -373,6 +390,7 @@ def generate_production_build_manifest(
 def validate_production_build_manifest(
     manifest: Mapping[str, Any], *, require_clean: bool = True,
     environ: Mapping[str, str] | None = None,
+    require_default_closure: bool = False,
 ) -> Dict[str, Any]:
     """Rebuild all live bindings and reject any manifest drift."""
 
@@ -400,6 +418,11 @@ def validate_production_build_manifest(
         }
     except Exception as exc:
         raise ProductionBuildManifestError("production manifest is incomplete") from exc
+    missing_default = sorted(set(DEFAULT_RELEVANT_SOURCES).difference(sources))
+    if require_default_closure and missing_default:
+        raise ProductionBuildManifestError(
+            f"production manifest source closure is incomplete: {missing_default}"
+        )
     expected = generate_production_build_manifest(
         source_root=root,
         simulator_binary=simulator,
@@ -418,6 +441,7 @@ def validate_production_build_manifest(
 def load_and_validate_production_build_manifest(
     path: Path | str, *, require_clean: bool = True,
     environ: Mapping[str, str] | None = None,
+    require_default_closure: bool = False,
 ) -> Dict[str, Any]:
     try:
         document = load_strict_json(path)
@@ -427,6 +451,7 @@ def load_and_validate_production_build_manifest(
         ) from exc
     return validate_production_build_manifest(
         document, require_clean=require_clean, environ=environ,
+        require_default_closure=require_default_closure,
     )
 
 
