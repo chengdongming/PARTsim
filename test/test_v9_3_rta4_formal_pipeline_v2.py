@@ -197,6 +197,7 @@ def test_v2_context_and_retry_evidence_are_deeply_immutable():
     assert result["attempts"][0]["status"] == "TIMEOUT"
     assert result["attempts"][0]["attempt_index"] == 0
     assert result["attempts"][1]["attempt_index"] == 1
+    assert result["failure_reason"] != "numeric/theory contract mismatch"
     assert result["attempts"][0]["taskset_identity"] == certificate.taskset_id
     with pytest.raises(TypeError):
         result["attempts"][0]["status"] = "FORGED"

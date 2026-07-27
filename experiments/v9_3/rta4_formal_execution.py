@@ -545,7 +545,10 @@ def _adapter_result_v2(
             rta_adapter.FIXED_CARRY_IN_INTERFACE_SHA256
         ),
         formal_contract_identity=config["experiment_contract"]["profile"],
-        numeric_contract_sha256=numeric_sha,
+        # The V2 outer contract is bound by ``analysis_id`` and every result
+        # row.  The unchanged theorem kernel interface must retain the exact
+        # G1 numeric contract it independently validates.
+        numeric_contract_sha256=exact_energy.NUMERIC_CONTRACT_SHA256,
         source_numeric_model=exact_energy.SOURCE_NUMERIC_MODEL,
         demand_rounding_mode=exact_energy.DEMAND_ROUNDING_MODE,
         supply_rounding_mode=exact_energy.SUPPLY_ROUNDING_MODE,
