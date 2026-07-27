@@ -1,0 +1,104 @@
+{
+  "candidate_v1_ref": "b4_pe_freeze_candidate_v1.json",
+  "candidate_v1_sha256": "d5d2e6cfe7751f15227cb93ca66b17d11455cf5dccbcd768aebafb8623822732",
+  "command_rules": {
+    "argument_source": "validated_record_command_argv_only",
+    "observability_horizon_occurrences": 1,
+    "observability_summary_occurrences": 1,
+    "result_occurrences": 1,
+    "semantic_hash_occurrences": 1,
+    "simulator_occurrences": 1,
+    "source_transport": "record_field_once_then_i4b1_B4PE_SOURCE_SNAPSHOT",
+    "system_occurrences": 1,
+    "taskset_occurrences": 1,
+    "test_argument_hook": false
+  },
+  "fixed_identity": {
+    "campaign_result_count": 0,
+    "campaign_started": false,
+    "execution_scope": "single-real-case",
+    "not_for_paper": true,
+    "phase": "integration_smoke",
+    "selected_case_count": 1
+  },
+  "gateway_rules": {
+    "campaign_summary": false,
+    "formal_validator_for_smoke": false,
+    "identity_protocol_mutation": false,
+    "production_validator_injection": false,
+    "smoke_validator_for_formal": false,
+    "validated_case_count": 1
+  },
+  "observability_activation": {
+    "horizon_ms": 30000,
+    "horizon_option": "--b4-summary-horizon",
+    "summary_flag": "--b4-observability-summary"
+  },
+  "observability_contract_ref": "observability_summary_contract_v1.json",
+  "observability_contract_sha256": "1817fdbf795f878769a32cf3f1e4ba09dd2ce589137e1d2e487a8df866b7c7f6",
+  "observability_summary_contract_version": 1,
+  "path_rules": {
+    "artifact_paths": "canonical_relative_below_output_root",
+    "campaign_path_fragments_forbidden": [
+      "results/pilot",
+      "results/formal",
+      "results/negative"
+    ],
+    "output_root": "absolute_resolved_outside_repository",
+    "record_file": "single_regular_file_outside_repository",
+    "result_prefix": "integration-smoke/results/",
+    "simulator_path": "absolute"
+  },
+  "protocol_name": "B4-PE-I5B-integration-smoke-v2",
+  "provenance_fields": [
+    "generator_path",
+    "generator_sha256",
+    "generator_argv",
+    "taskset_raw_sha256",
+    "taskset_semantic_hash",
+    "system_config_sha256",
+    "source_artifact_sha256",
+    "simulator_sha256"
+  ],
+  "record_fields": [
+    "schema_version",
+    "record_type",
+    "phase",
+    "execution_scope",
+    "selected_case_count",
+    "campaign_started",
+    "campaign_result_count",
+    "not_for_paper",
+    "case_id",
+    "algorithm",
+    "trace_schema_version",
+    "observability_summary_contract_version",
+    "observability_summary_horizon_ms",
+    "observability_contract_ref",
+    "observability_contract_sha256",
+    "candidate_v1_ref",
+    "candidate_v1_sha256",
+    "result_audit_policy",
+    "command_argv",
+    "simulator_path",
+    "output_root",
+    "system_config_path",
+    "taskset_path",
+    "source_artifact_path",
+    "result_relpath",
+    "timeout_seconds",
+    "retry_policy",
+    "provenance"
+  ],
+  "record_type": "integration_smoke",
+  "result_audit_policy": "strict_schema3_observability_v1",
+  "retry_rules": {
+    "allowed_retry_on": [
+      "timeout"
+    ],
+    "max_attempts": 2,
+    "on_final_failure": "fail_closed"
+  },
+  "schema_version": "b4-pe-integration-smoke-v2",
+  "trace_schema_version": 3
+}

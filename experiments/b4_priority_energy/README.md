@@ -1,11 +1,14 @@
 # B4-PE I4A deterministic manifest layer
 
-This directory contains the frozen I4A-0 identity protocol and the I4A
-planning-only manifest layer. `protocol_resolution_v1.json` remains the sole
+This directory contains the frozen identity protocol and the schema3-aware
+manifest/execution layer. `protocol_resolution_v1.json` remains the sole
 machine source for canonical keys, seeds, IDs, phase algorithms, phase counts,
 taskset reuse, and deterministic source identity. The manifest protocol adds
 only the experiment matrix, public CLI mapping, planned artifact paths,
-timeouts, retry policy, and exact JSONL case shape.
+timeouts, retry policy, and exact JSONL case shape. The current v2 Manifest
+activates schema3 with `--b4-observability-summary
+--b4-summary-horizon 30000`; the byte-frozen v1 protocols remain available
+only for historical compatibility.
 
 The I4A layer does not materialize system configurations, tasksets, source
 traces, or results. It never starts the simulator. Planned scheduler-specific
@@ -169,7 +172,8 @@ gate.
 
 I4B-2A uses a second, fixed validation gateway for exactly one non-campaign
 record. `execute_manifest.py --integration-smoke-record /absolute/record.json
---execute` accepts only `b4-pe-integration-smoke-v1`: the record file and its
+--execute` accepts the historical schema2 v1 record and the schema3 v2
+record: the record file and its
 absolute output root must be outside the repository, its case id is in the
 `smoke-` namespace, and its result is below `integration-smoke/results/`.
 The record fixes `campaign_started=false`, `campaign_result_count=0`, and
@@ -180,7 +184,9 @@ The formal `--manifest` path still calls only the frozen I4A Manifest validator.
 The smoke path calls only `validate_integration_smoke_record()`. After either
 fixed validator succeeds, both paths enter the same I4B-1 execution kernel and
 therefore share its snapshots, staging, retry, recovery, locks, publication,
-state, and execution-summary rules. No second subprocess or publication state
+state, and execution-summary rules. Both are `not_for_paper`; schema3 v2 uses
+the formal summary contract while schema2 v1 is a compatibility check. No
+second subprocess or publication state
 machine exists. The smoke command remains the sole semantic argv plan; source
 descriptor bytes use the existing `B4PE_SOURCE_SNAPSHOT` file-descriptor
 transport, and no semantic-hash argument is appended by the gateway.

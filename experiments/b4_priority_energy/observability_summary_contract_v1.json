@@ -1,0 +1,263 @@
+{
+  "contract_name": "B4-PE-observability-summary-v1",
+  "contract_version": 1,
+  "trace_schema_version": 3,
+  "default_trace_schema_version": 2,
+  "activation": {
+    "mode": "explicit_schema3_only",
+    "summary_flag": "--b4-observability-summary",
+    "horizon_option": "--b4-summary-horizon",
+    "default_summary_enabled": false,
+    "formal_execution_enabled_by_this_contract": false
+  },
+  "horizon_contract": {
+    "summary_horizon_symbol": "H_B4",
+    "generation_horizon_symbol": "H_g",
+    "observation_horizon_symbol": "H_o",
+    "summary_horizon_equals_trace_duration": true,
+    "release_window_requires_summary_horizon_equals_observation_horizon": true,
+    "generation_horizon_is_independent": true,
+    "generation_horizon_must_be_less_than_observation_horizon": true,
+    "summary_horizon_less_than_observation_horizon_forbidden": true,
+    "unit": "ms"
+  },
+  "numeric_contract": {
+    "energy_unit": "J",
+    "authoritative_representation": "json_number",
+    "double_serialization": "max_digits10",
+    "exact_string_copy": false,
+    "non_finite_values_forbidden": true,
+    "energy_values_non_negative": true,
+    "tolerance": {
+      "coefficient": 1e-09,
+      "formula": "1e-9 * max(1, abs(a), abs(b))"
+    }
+  },
+  "top_level_fields": [
+    {
+      "name": "observability_summary_contract_version",
+      "json_type": "integer",
+      "unit": null
+    },
+    {
+      "name": "observability_summary_horizon_ms",
+      "json_type": "integer",
+      "unit": "ms"
+    },
+    {
+      "name": "mechanism_summary",
+      "json_type": "object",
+      "unit": null
+    },
+    {
+      "name": "energy_summary",
+      "json_type": "object",
+      "unit": null
+    },
+    {
+      "name": "per_task_summary",
+      "json_type": "array",
+      "unit": null
+    }
+  ],
+  "mechanism_summary_fields": [
+    {
+      "name": "bypass_opportunity_ticks",
+      "json_type": "integer",
+      "unit": "ticks"
+    },
+    {
+      "name": "actual_bypass_ticks",
+      "json_type": "integer",
+      "unit": "ticks"
+    },
+    {
+      "name": "low_priority_bypass_core_ticks",
+      "json_type": "integer",
+      "unit": "core_ticks"
+    },
+    {
+      "name": "hp_dispatch_demand_ticks",
+      "json_type": "integer",
+      "unit": "ticks"
+    },
+    {
+      "name": "hp_energy_blocked_ticks",
+      "json_type": "integer",
+      "unit": "ticks"
+    },
+    {
+      "name": "hp_energy_blocked_job_ticks",
+      "json_type": "integer",
+      "unit": "job_ticks"
+    },
+    {
+      "name": "observed_decision_ticks",
+      "json_type": "integer",
+      "unit": "ticks"
+    }
+  ],
+  "energy_summary_fields": [
+    {
+      "name": "offered_energy_j",
+      "json_type": "number",
+      "unit": "J"
+    },
+    {
+      "name": "credited_energy_j",
+      "json_type": "number",
+      "unit": "J"
+    },
+    {
+      "name": "clipped_energy_j",
+      "json_type": "number",
+      "unit": "J"
+    },
+    {
+      "name": "consumed_energy_j",
+      "json_type": "number",
+      "unit": "J"
+    },
+    {
+      "name": "battery_min_j",
+      "json_type": "number",
+      "unit": "J"
+    },
+    {
+      "name": "battery_max_j",
+      "json_type": "number",
+      "unit": "J"
+    },
+    {
+      "name": "battery_final_j",
+      "json_type": "number",
+      "unit": "J"
+    },
+    {
+      "name": "battery_empty_ticks",
+      "json_type": "integer",
+      "unit": "ticks"
+    },
+    {
+      "name": "battery_full_ticks",
+      "json_type": "integer",
+      "unit": "ticks"
+    },
+    {
+      "name": "observed_energy_intervals",
+      "json_type": "integer",
+      "unit": "intervals"
+    }
+  ],
+  "per_task_summary_fields": [
+    {
+      "name": "task_name",
+      "json_type": "string",
+      "unit": null
+    },
+    {
+      "name": "priority_rank",
+      "json_type": "integer",
+      "unit": "zero_based_rank"
+    },
+    {
+      "name": "is_top4",
+      "json_type": "boolean",
+      "unit": null,
+      "derived_from": "priority_rank < 4"
+    },
+    {
+      "name": "is_bottom6",
+      "json_type": "boolean",
+      "unit": null,
+      "derived_from": "priority_rank >= 4"
+    },
+    {
+      "name": "released_jobs",
+      "json_type": "integer",
+      "unit": "jobs"
+    },
+    {
+      "name": "completed_jobs",
+      "json_type": "integer",
+      "unit": "jobs"
+    },
+    {
+      "name": "terminated_jobs",
+      "json_type": "integer",
+      "unit": "jobs"
+    },
+    {
+      "name": "deadline_miss_jobs",
+      "json_type": "integer",
+      "unit": "jobs"
+    },
+    {
+      "name": "unfinished_at_horizon_jobs",
+      "json_type": "integer",
+      "unit": "jobs"
+    },
+    {
+      "name": "executed_core_ticks",
+      "json_type": "integer",
+      "unit": "core_ticks"
+    },
+    {
+      "name": "completed_response_time_count",
+      "json_type": "integer",
+      "unit": "jobs"
+    },
+    {
+      "name": "completed_response_time_sum_ms",
+      "json_type": "integer",
+      "unit": "ms"
+    },
+    {
+      "name": "completed_response_time_max_ms",
+      "json_type": "integer",
+      "unit": "ms"
+    }
+  ],
+  "ordering": {
+    "top_level_additions_insert_before": "simulation_completion_reason",
+    "field_order_is_contractual": true,
+    "per_task_order": "priority_rank_ascending",
+    "priority_rank_first": 0,
+    "priority_rank_last": 9
+  },
+  "invariants": {
+    "task_count": 10,
+    "priority_rank_coverage": "0..9",
+    "top4_count": 4,
+    "bottom6_count": 6,
+    "top4_predicate": "priority_rank < 4",
+    "bottom6_predicate": "priority_rank >= 4",
+    "lifecycle_closure": "released_jobs == completed_jobs + terminated_jobs + unfinished_at_horizon_jobs",
+    "deadline_miss_overlap_allowed": true,
+    "response_time_count_equals_completed_jobs": true,
+    "executed_core_ticks_bound": "sum(per_task.executed_core_ticks) <= processor_count * H_B4",
+    "mechanism_decision_coverage": "observed_decision_ticks == H_B4",
+    "energy_interval_coverage": "observed_energy_intervals == H_B4",
+    "energy_reconciliation": "offered_energy_j ~= credited_energy_j + clipped_energy_j"
+  },
+  "compatibility": {
+    "schema2_remains_default": true,
+    "schema2_summary_fields_absent": true,
+    "schema3_unsealed_payload_is_incomplete": true,
+    "schema3_unsealed_publication_policy": "fail_closed",
+    "schema3_destructor_must_not_finalize_or_seal": true
+  },
+  "governance": {
+    "contract_changes_require_new_version": true,
+    "candidate_v1_must_not_embed_this_contract_sha": true,
+    "manifest_execution_smoke_protocol_v1_immutable": true,
+    "formal_runs_authorized": false,
+    "silent_changes_forbidden": true
+  },
+  "canonicalization": {
+    "encoding": "UTF-8",
+    "object_key_order_semantic": false,
+    "array_order_semantic": true,
+    "hash_material": "json.dumps(document, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('UTF-8')"
+  }
+}

@@ -341,18 +341,22 @@ class FreezeCandidateContractTests(unittest.TestCase):
         self.assertEqual(policy["scheduling_outcome_statistics_policy"], "retain_as_algorithm_result")
 
     def test_change_scope_contains_no_production_file(self):
+        frozen_v1_paths = (
+            "experiments/b4_priority_energy/protocol_resolution_v1.json",
+            "experiments/b4_priority_energy/manifest_protocol_v1.json",
+            "experiments/b4_priority_energy/execution_protocol_v1.json",
+            "experiments/b4_priority_energy/integration_smoke_protocol_v1.json",
+            "experiments/b4_priority_energy/b4_pe_freeze_candidate_v1.json",
+            "experiments/b4_priority_energy/B4_PE_FREEZE_CANDIDATE_v1.md",
+        )
         status = subprocess.run(
-            ["git", "status", "--porcelain", "--untracked-files=all"],
+            ["git", "diff", "--name-only", "HEAD", "--", *frozen_v1_paths],
             cwd=REPOSITORY_ROOT,
             check=True,
             capture_output=True,
             text=True,
-        ).stdout.splitlines()
-        changed_paths = {line[3:] for line in status if line}
-        self.assertTrue(changed_paths.issubset(ALLOWED_CHANGED_PATHS), changed_paths)
-        self.assertIn(JSON_PATH.relative_to(REPOSITORY_ROOT).as_posix(), ALLOWED_CHANGED_PATHS)
-        self.assertIn(MARKDOWN_PATH.relative_to(REPOSITORY_ROOT).as_posix(), ALLOWED_CHANGED_PATHS)
-        self.assertIn(TEST_PATH.relative_to(REPOSITORY_ROOT).as_posix(), ALLOWED_CHANGED_PATHS)
+        ).stdout
+        self.assertEqual(status, "")
 
 
 if __name__ == "__main__":

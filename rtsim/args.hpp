@@ -145,6 +145,21 @@ static inline cmdarg::Options parse_arguments(int argc, char *argv[]) {
         .help = "SHA-256 semantic identity of the formal taskset",
         .default_value = "",
     });
+    parser.addArgument({
+        .long_opt = "b4-observability-summary",
+        .required = false,
+        .parameter_required = cmdarg::Argument::ParameterRequired::NO,
+        .help = "Publish the sealed B4 schema3 observability summary",
+        .default_value = "false",
+        .action = cmdarg::actions::store_true,
+    });
+    parser.addArgument({
+        .long_opt = "b4-summary-horizon",
+        .required = false,
+        .parameter_required = cmdarg::Argument::ParameterRequired::REQUIRED,
+        .help = "Positive schema3 observability horizon in milliseconds",
+        .default_value = "",
+    });
 
     return parser.parse(argc, argv);
 }

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 #include <utility>
 
@@ -286,6 +287,58 @@ namespace RTSim {
                 "energy summary bounds are inconsistent");
         }
         return _energy_summary;
+    }
+
+    B4ObservabilityEnergySnapshot
+    SchedulerHarvestRuntime::finalizeObservabilityEnergySnapshot(
+        std::uint64_t expected_horizon_ms,
+        double final_battery_j,
+        double battery_capacity_j) {
+        if (!std::isfinite(final_battery_j) ||
+            !std::isfinite(battery_capacity_j) ||
+            final_battery_j < 0.0 ||
+            battery_capacity_j < 0.0 ||
+            final_battery_j > battery_capacity_j) {
+            throw std::invalid_argument(
+                "final observation battery must be finite and within capacity");
+        }
+        if (_energy_initial_observed &&
+            !energyApproximatelyEqual(
+                battery_capacity_j, _energy_capacity_j)) {
+            throw std::logic_error(
+                "final observation battery capacity does not match the run");
+        }
+
+        if (_energy_summary.observed_energy_intervals <
+                expected_horizon_ms &&
+            _energy_summary.observed_energy_intervals + UINT64_C(1) ==
+                expected_horizon_ms) {
+            if (expected_horizon_ms >
+                static_cast<std::uint64_t>(
+                    std::numeric_limits<std::int64_t>::max())) {
+                throw std::overflow_error(
+                    "summary horizon exceeds scheduler decision time");
+            }
+            (void)applyAtDecisionTime(
+                static_cast<std::int64_t>(expected_horizon_ms),
+                final_battery_j,
+                battery_capacity_j);
+        } else if (_energy_summary.observed_energy_intervals ==
+                       expected_horizon_ms &&
+                   !energyApproximatelyEqual(
+                       final_battery_j,
+                       _energy_summary.battery_final_j)) {
+            throw std::logic_error(
+                "final observation battery does not match the energy ledger");
+        }
+
+        const EnergySummary &summary =
+            finalizeEnergySummary(expected_horizon_ms);
+        return B4ObservabilityEnergySnapshot{
+            summary,
+            _energy_initial_j,
+            _energy_capacity_j,
+            expected_horizon_ms};
     }
 
 } // namespace RTSim

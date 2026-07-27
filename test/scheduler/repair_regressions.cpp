@@ -2,6 +2,7 @@
 #include <cmath>
 #include <fstream>
 #include <memory>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <tuple>
@@ -1518,6 +1519,9 @@ TEST(MechanismSummaryCore,
             ObservabilitySummaryState::Disabled);
         EXPECT_EQ(trace.mechanismSummary().observed_decision_ticks, 0u);
         EXPECT_TRUE(trace.perTaskLifecycleSummary().empty());
+        EXPECT_EQ(trace.traceSchemaVersion(), 2);
+        EXPECT_FALSE(trace.b4ObservabilitySchemaEnabled());
+        EXPECT_FALSE(trace.observabilityPayloadSealed());
         EXPECT_NO_THROW(trace.setSimulationOutcome(
             MetaSim::Tick(2), true, "completed"));
         EXPECT_FALSE(trace.observabilitySummariesFinalized());
@@ -1545,6 +1549,11 @@ TEST(MechanismSummaryCore,
     EXPECT_NE(contents.find("\"trace_schema_version\": 2"),
               std::string::npos);
     EXPECT_EQ(contents.find("\"mechanism_summary\""), std::string::npos);
+    EXPECT_EQ(contents.find("\"energy_summary\""), std::string::npos);
+    EXPECT_EQ(contents.find("\"per_task_summary\""), std::string::npos);
+    EXPECT_EQ(
+        contents.find("\"observability_summary_contract_version\""),
+        std::string::npos);
 }
 
 TEST(MechanismSummaryCore, SetOutcomeDoesNotBypassExplicitFinalizeGate) {
@@ -1714,6 +1723,7 @@ TEST(PerTaskLifecycleCore, AggregatesTerminalAndHorizonStates) {
 
     const auto &killed = find_summary("killed");
     EXPECT_EQ(killed.completed_jobs, 0u);
+    EXPECT_EQ(killed.terminated_jobs, 1u);
     EXPECT_EQ(killed.completed_response_time_count, 0u);
     EXPECT_EQ(killed.unfinished_at_horizon_jobs, 0u);
     EXPECT_EQ(killed.executed_core_ticks, 3u);
@@ -1779,6 +1789,7 @@ TEST(PerTaskLifecycleCore,
     ASSERT_EQ(summaries.size(), 1u);
     EXPECT_EQ(summaries[0].released_jobs, 21u);
     EXPECT_EQ(summaries[0].completed_jobs, 10u);
+    EXPECT_EQ(summaries[0].terminated_jobs, 10u);
     EXPECT_EQ(summaries[0].deadline_miss_jobs, 21u);
     EXPECT_EQ(summaries[0].unfinished_at_horizon_jobs, 1u);
     EXPECT_EQ(summaries[0].completed_response_time_count, 10u);
@@ -1919,6 +1930,518 @@ TEST(ObservabilityReleaseIntegration,
             "\"event_type\": \"release_energy_snapshot\""),
         2);
     EXPECT_NE(contents.find("\"run_count\": 2"), std::string::npos);
+}
+
+static std::vector<ObservabilityTaskMetadata> b4Schema3Metadata(
+    bool special_name = false) {
+    std::vector<ObservabilityTaskMetadata> metadata;
+    for (std::uint32_t rank = 10; rank > 0; --rank) {
+        const std::uint32_t actual_rank = rank - 1;
+        metadata.push_back({
+            special_name && actual_rank == 3
+                ? std::string("special-\"-\\-\n-task")
+                : std::string("task-") + std::to_string(actual_rank),
+            actual_rank,
+        });
+    }
+    return metadata;
+}
+
+static EnergySummary b4Schema3Energy(std::uint64_t horizon) {
+    EnergySummary summary;
+    summary.offered_energy_j = 0.3;
+    summary.credited_energy_j = 0.2;
+    summary.clipped_energy_j = 0.1;
+    summary.consumed_energy_j = 0.05;
+    summary.battery_min_j = 0.1;
+    summary.battery_max_j = 1.0;
+    summary.battery_final_j = 0.5;
+    summary.battery_empty_ticks = 0;
+    summary.battery_full_ticks = horizon > 0 ? 1 : 0;
+    summary.observed_energy_intervals = horizon;
+    return summary;
+}
+
+static void observeEmptySchema3Horizon(
+    JSONTrace &trace,
+    std::uint64_t horizon,
+    std::size_t processor_count = 4) {
+    for (std::uint64_t tick = 0; tick < horizon; ++tick) {
+        trace.observeDecision(summaryDecision(
+            static_cast<std::int64_t>(tick),
+            processor_count,
+            1.0,
+            {}));
+    }
+}
+
+static std::string readFileContents(const std::string &path) {
+    std::ifstream input(path);
+    EXPECT_TRUE(input.good());
+    return std::string(
+        (std::istreambuf_iterator<char>(input)),
+        std::istreambuf_iterator<char>());
+}
+
+TEST(ObservabilitySchema3Core,
+     ValidSealedTraceHasExactBlocksOrderAndStableRankOrder) {
+    const std::string path =
+        "/tmp/partsim_b4_schema3_valid_sealed.json";
+    {
+        JSONTrace trace(path, MetaSim::Tick(2));
+        MetaSim::SIMUL.initSingleRun();
+        trace.configureB4ObservabilitySchema3(
+            MetaSim::Tick(2), b4Schema3Metadata());
+        EXPECT_EQ(trace.traceSchemaVersion(), 3);
+        EXPECT_TRUE(trace.b4ObservabilitySchemaEnabled());
+        EXPECT_FALSE(trace.observabilityPayloadSealed());
+        ASSERT_EQ(trace.perTaskLifecycleSummary().size(), 10u);
+        observeEmptySchema3Horizon(trace, 2);
+        trace.setSimulationOutcome(MetaSim::Tick(2), true, "completed");
+        trace.finalizeObservabilitySummaries(MetaSim::Tick(2));
+        trace.setObservabilityEnergySummary(b4Schema3Energy(2));
+        trace.sealObservabilityPayloadForSerialization();
+        EXPECT_TRUE(trace.observabilityPayloadSealed());
+        MetaSim::SIMUL.endSingleRun();
+    }
+
+    const std::string contents = readFileContents(path);
+    EXPECT_NE(contents.find("\"trace_schema_version\": 3"), std::string::npos);
+    const std::vector<std::string> top_level_markers = {
+        "    \"observability_summary_contract_version\": ",
+        "    \"observability_summary_horizon_ms\": ",
+        "    \"mechanism_summary\": ",
+        "    \"energy_summary\": ",
+        "    \"per_task_summary\": ",
+        "    \"simulation_completion_reason\": ",
+    };
+    std::size_t previous = 0;
+    for (const auto &marker : top_level_markers) {
+        const std::size_t position = contents.find(marker);
+        ASSERT_NE(position, std::string::npos) << marker;
+        EXPECT_GE(position, previous) << marker;
+        previous = position;
+    }
+    EXPECT_EQ(countMarker(contents, "\"priority_rank\": "), 10u);
+    EXPECT_EQ(countMarker(contents, "\"is_top4\": true"), 4u);
+    EXPECT_EQ(countMarker(contents, "\"is_top4\": false"), 6u);
+    EXPECT_EQ(countMarker(contents, "\"is_bottom6\": true"), 6u);
+    EXPECT_EQ(countMarker(contents, "\"is_bottom6\": false"), 4u);
+    previous = 0;
+    for (std::uint32_t rank = 0; rank < 10; ++rank) {
+        const std::string marker =
+            "\"priority_rank\": " + std::to_string(rank);
+        const std::size_t position = contents.find(marker, previous);
+        ASSERT_NE(position, std::string::npos) << marker;
+        EXPECT_GE(position, previous);
+        previous = position;
+    }
+    EXPECT_EQ(countMarker(contents, "\"released_jobs\": 0"), 10u);
+    const std::vector<std::string> mechanism_markers = {
+        "\"bypass_opportunity_ticks\": ",
+        "\"actual_bypass_ticks\": ",
+        "\"low_priority_bypass_core_ticks\": ",
+        "\"hp_dispatch_demand_ticks\": ",
+        "\"hp_energy_blocked_ticks\": ",
+        "\"hp_energy_blocked_job_ticks\": ",
+        "\"observed_decision_ticks\": ",
+    };
+    previous = contents.find("    \"mechanism_summary\": ");
+    for (const auto &marker : mechanism_markers) {
+        const std::size_t position = contents.find(marker, previous);
+        ASSERT_NE(position, std::string::npos) << marker;
+        EXPECT_GE(position, previous) << marker;
+        previous = position;
+    }
+    const std::vector<std::string> energy_markers = {
+        "\"offered_energy_j\": ",
+        "\"credited_energy_j\": ",
+        "\"clipped_energy_j\": ",
+        "\"consumed_energy_j\": ",
+        "\"battery_min_j\": ",
+        "\"battery_max_j\": ",
+        "\"battery_final_j\": ",
+        "\"battery_empty_ticks\": ",
+        "\"battery_full_ticks\": ",
+        "\"observed_energy_intervals\": ",
+    };
+    previous = contents.find("    \"energy_summary\": ");
+    for (const auto &marker : energy_markers) {
+        const std::size_t position = contents.find(marker, previous);
+        ASSERT_NE(position, std::string::npos) << marker;
+        EXPECT_GE(position, previous) << marker;
+        previous = position;
+    }
+    const std::vector<std::string> task_markers = {
+        "\"task_name\": ",
+        "\"priority_rank\": ",
+        "\"is_top4\": ",
+        "\"is_bottom6\": ",
+        "\"released_jobs\": ",
+        "\"completed_jobs\": ",
+        "\"terminated_jobs\": ",
+        "\"deadline_miss_jobs\": ",
+        "\"unfinished_at_horizon_jobs\": ",
+        "\"executed_core_ticks\": ",
+        "\"completed_response_time_count\": ",
+        "\"completed_response_time_sum_ms\": ",
+        "\"completed_response_time_max_ms\": ",
+    };
+    previous = contents.find("    \"per_task_summary\": ");
+    for (const auto &marker : task_markers) {
+        const std::size_t position = contents.find(marker, previous);
+        ASSERT_NE(position, std::string::npos) << marker;
+        EXPECT_GE(position, previous) << marker;
+        previous = position;
+    }
+    EXPECT_EQ(contents.find("_exact\""), std::string::npos);
+}
+
+TEST(ObservabilitySchema3Core, SerializesMaxDigits10AndEscapesTaskNames) {
+    const std::string path =
+        "/tmp/partsim_b4_schema3_binary64_escape.json";
+    const double exact_value = std::nextafter(0.1, 1.0);
+    {
+        JSONTrace trace(path, MetaSim::Tick(1));
+        MetaSim::SIMUL.initSingleRun();
+        trace.configureB4ObservabilitySchema3(
+            MetaSim::Tick(1), b4Schema3Metadata(true));
+        observeEmptySchema3Horizon(trace, 1);
+        trace.finalizeObservabilitySummaries(MetaSim::Tick(1));
+        EnergySummary energy = b4Schema3Energy(1);
+        energy.offered_energy_j = exact_value;
+        energy.credited_energy_j = exact_value;
+        energy.clipped_energy_j = 0.0;
+        trace.setObservabilityEnergySummary(energy);
+        trace.sealObservabilityPayloadForSerialization();
+        MetaSim::SIMUL.endSingleRun();
+    }
+    const std::string contents = readFileContents(path);
+    const std::string token = readJsonScalar(contents, "offered_energy_j");
+    EXPECT_EQ(std::stod(token), exact_value);
+    EXPECT_NE(
+        contents.find("special-\\\"-\\\\-\\n-task"),
+        std::string::npos);
+}
+
+TEST(ObservabilitySchema3Core,
+     RejectsInvalidTaskCountsNamesRanksAndDuplicateConfiguration) {
+    MetaSim::SIMUL.initSingleRun();
+    {
+        JSONTrace fewer("/tmp/partsim_schema3_fewer.json", MetaSim::Tick(1));
+        auto metadata = b4Schema3Metadata();
+        metadata.pop_back();
+        EXPECT_THROW(
+            fewer.configureB4ObservabilitySchema3(MetaSim::Tick(1), metadata),
+            std::invalid_argument);
+    }
+    {
+        JSONTrace more("/tmp/partsim_schema3_more.json", MetaSim::Tick(1));
+        auto metadata = b4Schema3Metadata();
+        metadata.push_back({"extra", 10});
+        EXPECT_THROW(
+            more.configureB4ObservabilitySchema3(MetaSim::Tick(1), metadata),
+            std::invalid_argument);
+    }
+    {
+        JSONTrace duplicate_name(
+            "/tmp/partsim_schema3_duplicate_name.json", MetaSim::Tick(1));
+        auto metadata = b4Schema3Metadata();
+        metadata[0].task_name = metadata[1].task_name;
+        EXPECT_THROW(
+            duplicate_name.configureB4ObservabilitySchema3(
+                MetaSim::Tick(1), metadata),
+            std::invalid_argument);
+    }
+    {
+        JSONTrace duplicate_rank(
+            "/tmp/partsim_schema3_duplicate_rank.json", MetaSim::Tick(1));
+        auto metadata = b4Schema3Metadata();
+        metadata[0].priority_rank = metadata[1].priority_rank;
+        EXPECT_THROW(
+            duplicate_rank.configureB4ObservabilitySchema3(
+                MetaSim::Tick(1), metadata),
+            std::invalid_argument);
+    }
+    {
+        JSONTrace gap("/tmp/partsim_schema3_rank_gap.json", MetaSim::Tick(1));
+        auto metadata = b4Schema3Metadata();
+        metadata[0].priority_rank = 10;
+        EXPECT_THROW(
+            gap.configureB4ObservabilitySchema3(MetaSim::Tick(1), metadata),
+            std::invalid_argument);
+    }
+    {
+        JSONTrace duplicate_config(
+            "/tmp/partsim_schema3_duplicate_config.json", MetaSim::Tick(1));
+        duplicate_config.configureB4ObservabilitySchema3(
+            MetaSim::Tick(1), b4Schema3Metadata());
+        EXPECT_THROW(
+            duplicate_config.configureB4ObservabilitySchema3(
+                MetaSim::Tick(1), b4Schema3Metadata()),
+            std::logic_error);
+    }
+    MetaSim::SIMUL.endSingleRun();
+}
+
+TEST(ObservabilitySchema3Core,
+     FrozenLifecycleUniverseRetainsZeroTasksAndCountsTerminationClosure) {
+    PerTaskLifecycleAccumulator lifecycle;
+    lifecycle.reset(5, b4Schema3Metadata());
+    ASSERT_EQ(lifecycle.summaries().size(), 10u);
+    EXPECT_THROW(lifecycle.onRelease("not-frozen", 0), std::invalid_argument);
+    lifecycle.onRelease("task-0", 0);
+    lifecycle.onSchedule("task-0", 0, 1);
+    lifecycle.onKill("task-0", 0, 4);
+    lifecycle.finalize(5);
+    const auto summaries = lifecycle.summaries();
+    const auto killed = std::find_if(
+        summaries.begin(), summaries.end(),
+        [](const PerTaskLifecycleSummary &summary) {
+            return summary.task_name == "task-0";
+        });
+    ASSERT_NE(killed, summaries.end());
+    EXPECT_EQ(killed->released_jobs, 1u);
+    EXPECT_EQ(killed->completed_jobs, 0u);
+    EXPECT_EQ(killed->terminated_jobs, 1u);
+    EXPECT_EQ(killed->unfinished_at_horizon_jobs, 0u);
+    EXPECT_EQ(killed->executed_core_ticks, 3u);
+    EXPECT_EQ(
+        killed->released_jobs,
+        killed->completed_jobs + killed->terminated_jobs +
+            killed->unfinished_at_horizon_jobs);
+    EXPECT_EQ(
+        std::count_if(
+            summaries.begin(), summaries.end(),
+            [](const PerTaskLifecycleSummary &summary) {
+                return summary.released_jobs == 0;
+            }),
+        9);
+}
+
+TEST(ObservabilitySchema3Core, SealRequiresFinalizedSummariesAndEnergy) {
+    MetaSim::SIMUL.initSingleRun();
+    {
+        JSONTrace unfinalized(
+            "/tmp/partsim_schema3_unfinalized.json", MetaSim::Tick(1));
+        unfinalized.configureB4ObservabilitySchema3(
+            MetaSim::Tick(1), b4Schema3Metadata());
+        unfinalized.setObservabilityEnergySummary(b4Schema3Energy(1));
+        EXPECT_THROW(
+            unfinalized.sealObservabilityPayloadForSerialization(),
+            std::logic_error);
+    }
+    {
+        JSONTrace missing_energy(
+            "/tmp/partsim_schema3_missing_energy.json", MetaSim::Tick(1));
+        missing_energy.configureB4ObservabilitySchema3(
+            MetaSim::Tick(1), b4Schema3Metadata());
+        observeEmptySchema3Horizon(missing_energy, 1);
+        missing_energy.finalizeObservabilitySummaries(MetaSim::Tick(1));
+        EXPECT_THROW(
+            missing_energy.sealObservabilityPayloadForSerialization(),
+            std::logic_error);
+    }
+    MetaSim::SIMUL.endSingleRun();
+}
+
+TEST(ObservabilitySchema3Core,
+     EnergyInjectionIsOneShotAndRejectsInvalidValuesAndConservation) {
+    MetaSim::SIMUL.initSingleRun();
+    {
+        JSONTrace duplicate(
+            "/tmp/partsim_schema3_duplicate_energy.json", MetaSim::Tick(1));
+        duplicate.configureB4ObservabilitySchema3(
+            MetaSim::Tick(1), b4Schema3Metadata());
+        duplicate.setObservabilityEnergySummary(b4Schema3Energy(1));
+        EXPECT_THROW(
+            duplicate.setObservabilityEnergySummary(b4Schema3Energy(1)),
+            std::logic_error);
+    }
+    const auto expect_invalid = [](const std::string &path,
+                                   const EnergySummary &energy) {
+        JSONTrace trace(path, MetaSim::Tick(1));
+        trace.configureB4ObservabilitySchema3(
+            MetaSim::Tick(1), b4Schema3Metadata());
+        EXPECT_THROW(
+            trace.setObservabilityEnergySummary(energy),
+            std::invalid_argument);
+    };
+    EnergySummary energy = b4Schema3Energy(1);
+    energy.offered_energy_j = std::numeric_limits<double>::quiet_NaN();
+    expect_invalid("/tmp/partsim_schema3_nan.json", energy);
+    energy = b4Schema3Energy(1);
+    energy.credited_energy_j = std::numeric_limits<double>::infinity();
+    expect_invalid("/tmp/partsim_schema3_inf.json", energy);
+    energy = b4Schema3Energy(1);
+    energy.consumed_energy_j = -0.1;
+    expect_invalid("/tmp/partsim_schema3_negative.json", energy);
+    energy = b4Schema3Energy(1);
+    energy.offered_energy_j = 0.9;
+    expect_invalid("/tmp/partsim_schema3_conservation.json", energy);
+    energy = b4Schema3Energy(1);
+    energy.battery_min_j = 0.6;
+    expect_invalid("/tmp/partsim_schema3_battery_bounds.json", energy);
+    energy = b4Schema3Energy(1);
+    energy.observed_energy_intervals = 2;
+    expect_invalid("/tmp/partsim_schema3_counter_bounds.json", energy);
+    MetaSim::SIMUL.endSingleRun();
+}
+
+TEST(ObservabilitySchema3Core,
+     SealRejectsIntervalMismatchIncompleteDecisionsAndMechanismBounds) {
+    MetaSim::SIMUL.initSingleRun();
+    {
+        JSONTrace interval_mismatch(
+            "/tmp/partsim_schema3_interval_mismatch.json", MetaSim::Tick(2));
+        interval_mismatch.configureB4ObservabilitySchema3(
+            MetaSim::Tick(2), b4Schema3Metadata());
+        observeEmptySchema3Horizon(interval_mismatch, 2);
+        interval_mismatch.finalizeObservabilitySummaries(MetaSim::Tick(2));
+        interval_mismatch.setObservabilityEnergySummary(b4Schema3Energy(1));
+        EXPECT_ANY_THROW(
+            interval_mismatch.sealObservabilityPayloadForSerialization());
+    }
+    {
+        JSONTrace incomplete(
+            "/tmp/partsim_schema3_incomplete_decisions.json", MetaSim::Tick(2));
+        incomplete.configureB4ObservabilitySchema3(
+            MetaSim::Tick(2), b4Schema3Metadata());
+        incomplete.observeDecision(summaryDecision(0, 4, 1.0, {}));
+        EXPECT_THROW(
+            incomplete.finalizeObservabilitySummaries(MetaSim::Tick(2)),
+            std::logic_error);
+        EXPECT_THROW(
+            incomplete.sealObservabilityPayloadForSerialization(),
+            std::logic_error);
+    }
+    {
+        JSONTrace invalid_mechanism(
+            "/tmp/partsim_schema3_invalid_mechanism.json", MetaSim::Tick(1));
+        invalid_mechanism.configureB4ObservabilitySchema3(
+            MetaSim::Tick(1), b4Schema3Metadata());
+        observeEmptySchema3Horizon(invalid_mechanism, 1);
+        invalid_mechanism.finalizeObservabilitySummaries(MetaSim::Tick(1));
+        invalid_mechanism.setObservabilityEnergySummary(b4Schema3Energy(1));
+        MechanismSummary &tampered = const_cast<MechanismSummary &>(
+            invalid_mechanism.mechanismSummary());
+        tampered.actual_bypass_ticks = 1;
+        EXPECT_THROW(
+            invalid_mechanism.sealObservabilityPayloadForSerialization(),
+            std::logic_error);
+    }
+    MetaSim::SIMUL.endSingleRun();
+}
+
+TEST(ObservabilitySchema3Core,
+     DuplicateSealFailsAndStrictHorizonIsEnforcedAtSeal) {
+    MetaSim::SIMUL.initSingleRun();
+    {
+        JSONTrace duplicate_seal(
+            "/tmp/partsim_schema3_duplicate_seal.json", MetaSim::Tick(1));
+        duplicate_seal.configureB4ObservabilitySchema3(
+            MetaSim::Tick(1), b4Schema3Metadata());
+        observeEmptySchema3Horizon(duplicate_seal, 1);
+        duplicate_seal.finalizeObservabilitySummaries(MetaSim::Tick(1));
+        duplicate_seal.setObservabilityEnergySummary(b4Schema3Energy(1));
+        duplicate_seal.sealObservabilityPayloadForSerialization();
+        EXPECT_THROW(
+            duplicate_seal.sealObservabilityPayloadForSerialization(),
+            std::logic_error);
+    }
+    {
+        JSONTrace short_horizon(
+            "/tmp/partsim_schema3_short_horizon.json", MetaSim::Tick(2));
+        short_horizon.configureB4ObservabilitySchema3(
+            MetaSim::Tick(1), b4Schema3Metadata());
+        observeEmptySchema3Horizon(short_horizon, 1);
+        short_horizon.finalizeObservabilitySummaries(MetaSim::Tick(1));
+        short_horizon.setObservabilityEnergySummary(b4Schema3Energy(1));
+        EXPECT_THROW(
+            short_horizon.sealObservabilityPayloadForSerialization(),
+            std::logic_error);
+    }
+    MetaSim::SIMUL.endSingleRun();
+}
+
+TEST(ObservabilitySchema3Core,
+     ConfiguredButUnsealedTraceStaysSchema3AndDoesNotForgePayload) {
+    const std::string path =
+        "/tmp/partsim_b4_schema3_unsealed_fail_closed.json";
+    {
+        JSONTrace trace(path, MetaSim::Tick(1));
+        MetaSim::SIMUL.initSingleRun();
+        trace.configureB4ObservabilitySchema3(
+            MetaSim::Tick(1), b4Schema3Metadata());
+        observeEmptySchema3Horizon(trace, 1);
+        trace.finalizeObservabilitySummaries(MetaSim::Tick(1));
+        EXPECT_FALSE(trace.observabilityPayloadSealed());
+        MetaSim::SIMUL.endSingleRun();
+    }
+    const std::string contents = readFileContents(path);
+    EXPECT_NE(contents.find("\"trace_schema_version\": 3"), std::string::npos);
+    EXPECT_EQ(
+        contents.find("\"observability_summary_contract_version\""),
+        std::string::npos);
+    EXPECT_EQ(contents.find("\"mechanism_summary\""), std::string::npos);
+    EXPECT_EQ(contents.find("\"energy_summary\""), std::string::npos);
+    EXPECT_EQ(contents.find("\"per_task_summary\""), std::string::npos);
+}
+
+TEST(ObservabilitySchema3Core,
+     DefaultSchemaTwoSerializerMatchesFrozenBytes) {
+    const std::string actual_path =
+        "/tmp/partsim_schema2_default_byte_fixture.json";
+    {
+        JSONTrace trace(actual_path, MetaSim::Tick(2));
+    }
+    const std::string fixture_path =
+        std::string(PARTSIM_SOURCE_DIR) +
+        "/test/fixtures/json_trace_schema2_default_v1.json";
+    EXPECT_EQ(
+        readFileContents(actual_path),
+        readFileContents(fixture_path));
+}
+
+TEST(ObservabilitySchema3Core, NewRunClearsSealedPayloadAndAllCounters) {
+    const std::string path =
+        "/tmp/partsim_b4_schema3_new_run_reset.json";
+    {
+        JSONTrace trace(path, MetaSim::Tick(1));
+        MetaSim::SIMUL.initSingleRun();
+        trace.configureB4ObservabilitySchema3(
+            MetaSim::Tick(1), b4Schema3Metadata());
+        observeEmptySchema3Horizon(trace, 1);
+        trace.finalizeObservabilitySummaries(MetaSim::Tick(1));
+        trace.setObservabilityEnergySummary(b4Schema3Energy(1));
+        trace.sealObservabilityPayloadForSerialization();
+        EXPECT_TRUE(trace.observabilityPayloadSealed());
+        MetaSim::SIMUL.endSingleRun();
+
+        MetaSim::SIMUL.initSingleRun();
+        trace.beginRun(MetaSim::SIMUL.getRunGeneration());
+        EXPECT_FALSE(trace.observabilityPayloadSealed());
+        EXPECT_TRUE(trace.observabilitySummariesEnabled());
+        EXPECT_EQ(trace.mechanismSummary().observed_decision_ticks, 0u);
+        const auto reset_summaries = trace.perTaskLifecycleSummary();
+        ASSERT_EQ(reset_summaries.size(), 10u);
+        EXPECT_TRUE(std::all_of(
+            reset_summaries.begin(), reset_summaries.end(),
+            [](const PerTaskLifecycleSummary &summary) {
+                return summary.released_jobs == 0 &&
+                       summary.completed_jobs == 0 &&
+                       summary.terminated_jobs == 0 &&
+                       summary.unfinished_at_horizon_jobs == 0;
+            }));
+        observeEmptySchema3Horizon(trace, 1);
+        trace.finalizeObservabilitySummaries(MetaSim::Tick(1));
+        trace.setObservabilityEnergySummary(b4Schema3Energy(1));
+        trace.sealObservabilityPayloadForSerialization();
+        MetaSim::SIMUL.endSingleRun();
+    }
+    const std::string contents = readFileContents(path);
+    EXPECT_NE(contents.find("\"run_count\": 2"), std::string::npos);
+    EXPECT_EQ(countMarker(contents, "\"observed_decision_ticks\": 1"), 1u);
 }
 
 } // namespace RTSim

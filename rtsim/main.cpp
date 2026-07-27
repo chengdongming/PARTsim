@@ -32,6 +32,8 @@
 #include <fcntl.h>
 #include <fstream>
 #include <functional>
+#include <iomanip>
+#include <set>
 #include <sstream>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -368,6 +370,13 @@ struct TraceTarget {
     std::string lock_metadata;
 };
 
+struct TracePublicationContract {
+    int expected_schema{RTSim::JSONTrace::TRACE_SCHEMA_VERSION};
+    double initial_energy_j{0.0};
+    double capacity_j{0.0};
+    std::size_t processor_count{0};
+};
+
 static std::string safePathComponent(const std::string &value) {
     std::string result;
     result.reserve(value.size());
@@ -395,6 +404,27 @@ static bool isSha256(const std::string &value) {
             return (character >= '0' && character <= '9') ||
                    (character >= 'a' && character <= 'f');
         });
+}
+
+static std::uint64_t parsePositiveInteger(
+    const std::string &value,
+    const std::string &option_name) {
+    if (value.empty() ||
+        !std::all_of(
+            value.begin(), value.end(),
+            [](unsigned char character) {
+                return character >= '0' && character <= '9';
+            })) {
+        throw std::invalid_argument(
+            option_name + " must be a positive integer");
+    }
+    std::size_t consumed = 0;
+    const unsigned long long parsed = std::stoull(value, &consumed, 10);
+    if (consumed != value.size() || parsed == 0) {
+        throw std::invalid_argument(
+            option_name + " must be a positive integer");
+    }
+    return static_cast<std::uint64_t>(parsed);
 }
 
 static void discardPartialTraces(const std::vector<TraceTarget> &targets) {
@@ -529,7 +559,8 @@ static void validateTraceForPublication(const TraceTarget &target,
                                         const std::string &display_name,
                                         const std::string &implementation,
                                         const std::string &expected_horizon,
-                                        const std::string &taskset_hash) {
+                                        const std::string &taskset_hash,
+                                        const TracePublicationContract &contract) {
     if (!string_endswith(target.final_path.string(), ".json"))
         return;
     // The repository has no C++ JSON dependency.  Use the project's Python
@@ -563,6 +594,28 @@ def finite(value, name):
     if not math.isfinite(number) or number < 0:
         fail(name + ' is not finite/nonnegative')
     return number
+
+def exact_keys(value, expected, name):
+    if not isinstance(value, dict):
+        fail(name + ' is not an object')
+    if set(value) != set(expected):
+        fail(name + ' has missing or unknown fields')
+
+def counter(value, name):
+    if type(value) is not int or value < 0:
+        fail(name + ' is not a nonnegative integer')
+    return value
+
+def scalar(value, name):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        fail(name + ' is not a JSON number')
+    number = float(value)
+    if not math.isfinite(number) or number < 0:
+        fail(name + ' is not finite/nonnegative')
+    return number
+
+def approximately_equal(lhs, rhs):
+    return abs(lhs - rhs) <= 1e-9 * max(1.0, abs(lhs), abs(rhs))
 
 with open(sys.argv[1], encoding='utf-8') as handle:
     data = json.load(handle, object_pairs_hook=pairs)
@@ -636,23 +689,175 @@ if (not math.isclose(expected, caller_expected, rel_tol=0.0, abs_tol=1e-9)
     fail('completion horizon mismatch')
 if not has_arrival:
     fail('trace has no arrivals')
+if int(sys.argv[3]) == 3:
+    if type(data.get('observability_summary_contract_version')) is not int:
+        fail('invalid observability summary contract version type')
+    if data['observability_summary_contract_version'] != 1:
+        fail('invalid observability summary contract version')
+    summary_horizon = data.get('observability_summary_horizon_ms')
+    if type(summary_horizon) is not int or summary_horizon <= 0:
+        fail('invalid observability summary horizon')
+    if not approximately_equal(float(summary_horizon), caller_expected):
+        fail('observability summary horizon mismatch')
+
+    mechanism_fields = (
+        'bypass_opportunity_ticks', 'actual_bypass_ticks',
+        'low_priority_bypass_core_ticks', 'hp_dispatch_demand_ticks',
+        'hp_energy_blocked_ticks', 'hp_energy_blocked_job_ticks',
+        'observed_decision_ticks')
+    mechanism = data.get('mechanism_summary')
+    exact_keys(mechanism, mechanism_fields, 'mechanism_summary')
+    mechanism = {
+        name: counter(mechanism[name], 'mechanism_summary.' + name)
+        for name in mechanism_fields
+    }
+    processors = int(sys.argv[11])
+    if processors <= 0:
+        fail('invalid expected processor count')
+    if (mechanism['observed_decision_ticks'] != summary_horizon
+            or mechanism['bypass_opportunity_ticks'] > summary_horizon
+            or mechanism['actual_bypass_ticks']
+                > mechanism['bypass_opportunity_ticks']
+            or mechanism['low_priority_bypass_core_ticks']
+                > mechanism['actual_bypass_ticks'] * processors
+            or mechanism['hp_dispatch_demand_ticks'] > summary_horizon
+            or mechanism['hp_energy_blocked_ticks']
+                > mechanism['hp_dispatch_demand_ticks']
+            or mechanism['hp_energy_blocked_job_ticks']
+                > mechanism['hp_energy_blocked_ticks'] * min(processors, 4)):
+        fail('mechanism summary bounds are inconsistent')
+
+    energy_scalar_fields = (
+        'offered_energy_j', 'credited_energy_j', 'clipped_energy_j',
+        'consumed_energy_j', 'battery_min_j', 'battery_max_j',
+        'battery_final_j')
+    energy_counter_fields = (
+        'battery_empty_ticks', 'battery_full_ticks',
+        'observed_energy_intervals')
+    energy = data.get('energy_summary')
+    exact_keys(
+        energy, energy_scalar_fields + energy_counter_fields,
+        'energy_summary')
+    numeric_energy = {
+        name: scalar(energy[name], 'energy_summary.' + name)
+        for name in energy_scalar_fields
+    }
+    energy_counts = {
+        name: counter(energy[name], 'energy_summary.' + name)
+        for name in energy_counter_fields
+    }
+    initial_energy = scalar(float(sys.argv[9]), 'expected initial energy')
+    capacity = scalar(float(sys.argv[10]), 'expected battery capacity')
+    if initial_energy > capacity:
+        fail('expected initial energy exceeds capacity')
+    if not approximately_equal(
+            numeric_energy['offered_energy_j'],
+            numeric_energy['credited_energy_j']
+                + numeric_energy['clipped_energy_j']):
+        fail('energy offered reconciliation failed')
+    if not approximately_equal(
+            initial_energy + numeric_energy['credited_energy_j']
+                - numeric_energy['consumed_energy_j'],
+            numeric_energy['battery_final_j']):
+        fail('energy conservation failed')
+    tolerance = 1e-9 * max(
+        1.0, initial_energy, capacity,
+        *(numeric_energy.values()))
+    if (numeric_energy['battery_min_j'] < -tolerance
+            or numeric_energy['battery_min_j']
+                > numeric_energy['battery_final_j'] + tolerance
+            or numeric_energy['battery_final_j']
+                > numeric_energy['battery_max_j'] + tolerance
+            or numeric_energy['battery_max_j'] > capacity + tolerance
+            or energy_counts['observed_energy_intervals'] != summary_horizon
+            or energy_counts['battery_empty_ticks']
+                > energy_counts['observed_energy_intervals']
+            or energy_counts['battery_full_ticks']
+                > energy_counts['observed_energy_intervals']):
+        fail('energy summary bounds are inconsistent')
+
+    task_fields = (
+        'task_name', 'priority_rank', 'is_top4', 'is_bottom6',
+        'released_jobs', 'completed_jobs', 'terminated_jobs',
+        'deadline_miss_jobs', 'unfinished_at_horizon_jobs',
+        'executed_core_ticks', 'completed_response_time_count',
+        'completed_response_time_sum_ms',
+        'completed_response_time_max_ms')
+    per_task = data.get('per_task_summary')
+    if not isinstance(per_task, list) or len(per_task) != 10:
+        fail('per_task_summary must contain exactly ten tasks')
+    names = set()
+    total_executed = 0
+    for expected_rank, task in enumerate(per_task):
+        exact_keys(task, task_fields, 'per_task_summary item')
+        name = task['task_name']
+        if not isinstance(name, str) or not name or name in names:
+            fail('invalid or duplicate task name')
+        names.add(name)
+        if type(task['priority_rank']) is not int:
+            fail('priority rank is not an integer')
+        if task['priority_rank'] != expected_rank:
+            fail('priority ranks are not ordered and contiguous')
+        if type(task['is_top4']) is not bool or type(task['is_bottom6']) is not bool:
+            fail('priority group flags are not booleans')
+        if (task['is_top4'] != (expected_rank < 4)
+                or task['is_bottom6'] != (expected_rank >= 4)):
+            fail('priority group flags disagree with rank')
+        counts = {
+            field: counter(task[field], name + '.' + field)
+            for field in task_fields[4:]
+        }
+        released = counts['released_jobs']
+        completed = counts['completed_jobs']
+        terminated = counts['terminated_jobs']
+        unfinished = counts['unfinished_at_horizon_jobs']
+        response_count = counts['completed_response_time_count']
+        response_sum = counts['completed_response_time_sum_ms']
+        response_max = counts['completed_response_time_max_ms']
+        if (completed + terminated > released
+                or unfinished != released - completed - terminated
+                or counts['deadline_miss_jobs'] > released
+                or response_count != completed
+                or (response_count == 0
+                    and (response_sum != 0 or response_max != 0))
+                or (response_count > 0 and response_max > response_sum)):
+            fail('per-task lifecycle closure is inconsistent')
+        total_executed += counts['executed_core_ticks']
+    if total_executed > processors * summary_horizon:
+        fail('total executed core ticks exceed processor capacity')
 )PY";
 
     const pid_t child = ::fork();
     if (child < 0)
         throw std::runtime_error("cannot start strict trace validator");
     if (child == 0) {
+        const std::string expected_schema =
+            std::to_string(contract.expected_schema);
+        std::ostringstream initial_energy;
+        initial_energy << std::setprecision(
+            std::numeric_limits<double>::max_digits10)
+                       << contract.initial_energy_j;
+        std::ostringstream capacity;
+        capacity << std::setprecision(
+            std::numeric_limits<double>::max_digits10)
+                 << contract.capacity_j;
+        const std::string processors =
+            std::to_string(contract.processor_count);
         ::execl("/usr/bin/python3", "python3", "-c", validator,
                 target.partial_path.c_str(), run_id.c_str(),
-                std::to_string(RTSim::JSONTrace::TRACE_SCHEMA_VERSION).c_str(),
+                expected_schema.c_str(),
                 scheduler.c_str(), display_name.c_str(), implementation.c_str(),
                 expected_horizon.c_str(), taskset_hash.c_str(),
+                initial_energy.str().c_str(), capacity.str().c_str(),
+                processors.c_str(),
                 static_cast<char *>(nullptr));
         ::execl("/usr/local/bin/python3", "python3", "-c", validator,
                 target.partial_path.c_str(), run_id.c_str(),
-                std::to_string(RTSim::JSONTrace::TRACE_SCHEMA_VERSION).c_str(),
+                expected_schema.c_str(),
                 scheduler.c_str(), display_name.c_str(), implementation.c_str(),
                 expected_horizon.c_str(), taskset_hash.c_str(),
+                initial_energy.str().c_str(), capacity.str().c_str(),
+                processors.c_str(),
                 static_cast<char *>(nullptr));
         _exit(127);
     }
@@ -682,7 +887,8 @@ static void publishTraces(const std::vector<TraceTarget> &targets,
                           const std::string &display_name,
                           const std::string &implementation,
                           const std::string &expected_horizon,
-                          const std::string &taskset_hash) {
+                          const std::string &taskset_hash,
+                          const TracePublicationContract &contract) {
     std::vector<bool> idempotent(targets.size(), false);
     std::size_t index = 0;
     for (const auto &target : targets) {
@@ -691,7 +897,7 @@ static void publishTraces(const std::vector<TraceTarget> &targets,
                 "trace partial was not produced: " + target.partial_path.string());
         validateTraceForPublication(
             target, run_id, scheduler, display_name, implementation,
-            expected_horizon, taskset_hash);
+            expected_horizon, taskset_hash, contract);
         fsyncFile(target.partial_path);
         if (std::filesystem::exists(target.final_path)) {
             TraceTarget existing = target;
@@ -699,7 +905,7 @@ static void publishTraces(const std::vector<TraceTarget> &targets,
             try {
                 validateTraceForPublication(
                     existing, run_id, scheduler, display_name, implementation,
-                    expected_horizon, taskset_hash);
+                    expected_horizon, taskset_hash, contract);
             } catch (...) {
                 throw std::runtime_error(
                     "trace_target_exists_for_different_run: " +
@@ -760,8 +966,47 @@ int main(int argc, char *argv[]) {
     }
 
     // 获取duration参数
-    MetaSim::Tick duration = MetaSim::Tick(std::stoi(opts["duration"]));
+    MetaSim::Tick duration;
+    try {
+        duration = MetaSim::Tick(std::stoi(opts["duration"]));
+    } catch (const std::exception &error) {
+        std::cerr << "PRE-FLIGHT ERROR: invalid duration: "
+                  << error.what() << std::endl;
+        return EXIT_FAILURE;
+    }
     const bool semantic_traces = opts["semantic-traces"] == "true";
+    const bool b4_observability_summary =
+        opts["b4-observability-summary"] == "true";
+    const bool b4_horizon_supplied =
+        !opts["b4-summary-horizon"].empty();
+    std::uint64_t b4_summary_horizon = 0;
+    if (b4_observability_summary != b4_horizon_supplied) {
+        std::cerr
+            << "PRE-FLIGHT ERROR: --b4-observability-summary and "
+               "--b4-summary-horizon must be supplied together"
+            << std::endl;
+        return EXIT_FAILURE;
+    }
+    if (b4_observability_summary) {
+        try {
+            b4_summary_horizon = parsePositiveInteger(
+                opts["b4-summary-horizon"],
+                "--b4-summary-horizon");
+        } catch (const std::exception &error) {
+            std::cerr << "PRE-FLIGHT ERROR: " << error.what()
+                      << std::endl;
+            return EXIT_FAILURE;
+        }
+        if (duration <= MetaSim::Tick(0) ||
+            b4_summary_horizon !=
+                static_cast<std::uint64_t>(
+                    static_cast<std::int64_t>(duration))) {
+            std::cerr
+                << "PRE-FLIGHT ERROR: B4 summary horizon must equal duration"
+                << std::endl;
+            return EXIT_FAILURE;
+        }
+    }
 
     TaskSet taskset;
     try {
@@ -819,6 +1064,51 @@ int main(int argc, char *argv[]) {
         std::cerr << "PRE-FLIGHT ERROR: " << error.what() << std::endl;
         return EXIT_FAILURE;
     }
+    std::vector<RTSim::ObservabilityTaskMetadata>
+        b4_observability_metadata;
+    RTSim::EnergyInfoProvider *b4_energy_provider = nullptr;
+    if (b4_observability_summary) {
+        try {
+            std::vector<RTSim::AbsRTTask *> priority_universe;
+            priority_universe.reserve(taskset.size());
+            for (auto &[tasksrv, cpu, params] : taskset) {
+                (void)cpu;
+                (void)params;
+                priority_universe.push_back(&tasksrv.getTask());
+            }
+            b4_observability_metadata =
+                RTSim::makeB4ObservabilityTaskMetadata(
+                    priority_universe);
+            if (b4_observability_metadata.size() !=
+                RTSim::B4_EXPECTED_TASK_COUNT) {
+                throw std::runtime_error(
+                    "schema3 requires exactly ten B4 tasks");
+            }
+
+            std::set<RTSim::EnergyInfoProvider *> providers;
+            for (const auto &kernel : sys->kernels) {
+                RTSim::Scheduler *scheduler =
+                    kernel->getScheduler();
+                auto *provider =
+                    dynamic_cast<RTSim::EnergyInfoProvider *>(
+                        scheduler);
+                if (!provider) {
+                    throw std::runtime_error(
+                        "schema3 kernel scheduler has no energy provider");
+                }
+                providers.insert(provider);
+            }
+            if (providers.size() != 1) {
+                throw std::runtime_error(
+                    "schema3 requires exactly one energy provider");
+            }
+            b4_energy_provider = *providers.begin();
+        } catch (const std::exception &error) {
+            std::cerr << "PRE-FLIGHT ERROR: " << error.what()
+                      << std::endl;
+            return EXIT_FAILURE;
+        }
+    }
     std::vector<TraceTarget> trace_targets;
     std::vector<Tracer> tracers;
     for (const auto &fname : list_split(opts["trace"])) {
@@ -826,11 +1116,20 @@ int main(int argc, char *argv[]) {
         target.final_path = std::filesystem::path(fname);
         trace_targets.push_back(target);
     }
-    const bool json_trace_requested = std::any_of(
-        trace_targets.begin(), trace_targets.end(),
-        [](const TraceTarget &target) {
-            return string_endswith(target.final_path.string(), ".json");
-        });
+    const std::size_t json_trace_count = static_cast<std::size_t>(
+        std::count_if(
+            trace_targets.begin(), trace_targets.end(),
+            [](const TraceTarget &target) {
+                return string_endswith(
+                    target.final_path.string(), ".json");
+            }));
+    const bool json_trace_requested = json_trace_count != 0;
+    if (b4_observability_summary && json_trace_count != 1) {
+        std::cerr
+            << "TRACE INITIALIZATION ERROR: schema3 requires exactly one JSON trace"
+            << std::endl;
+        return EXIT_FAILURE;
+    }
     if (json_trace_requested &&
             !isSha256(opts["taskset-semantic-hash"])) {
         std::cerr << "TRACE INITIALIZATION ERROR: formal JSON trace requires "
@@ -862,6 +1161,7 @@ int main(int argc, char *argv[]) {
     }
     PartialTraceGuard partial_trace_guard(trace_targets);
 
+    RTSim::JSONTrace *b4_json_trace = nullptr;
     // ⭐ 设置JSONTrace的能量提供者
     for (auto &tracer : tracers) {
         if (tracer.jtrace) {
@@ -881,15 +1181,26 @@ int main(int argc, char *argv[]) {
                     identity.implementation_id,
                     identity.rtti_name);
             }
-            // 获取第一个kernel的调度器作为能量提供者
-            if (!sys->kernels.empty()) {
+            if (b4_observability_summary) {
+                tracer.jtrace->configureB4ObservabilitySchema3(
+                    MetaSim::Tick(
+                        static_cast<std::int64_t>(
+                            b4_summary_horizon)),
+                    b4_observability_metadata);
+                tracer.jtrace->setEnergyProvider(
+                    b4_energy_provider);
+                b4_energy_provider->setTraceLogger(
+                    tracer.jtrace.get());
+                b4_energy_provider->setSemanticTraceEnabled(
+                    semantic_traces);
+                b4_json_trace = tracer.jtrace.get();
+            } else if (!sys->kernels.empty()) {
+                // Default schema2 compatibility path.
                 RTSim::Scheduler *sched = sys->kernels[0]->getScheduler();
-                // 尝试转换为EnergyInfoProvider
                 RTSim::EnergyInfoProvider *energy_provider =
                     dynamic_cast<RTSim::EnergyInfoProvider*>(sched);
                 if (energy_provider) {
                     tracer.jtrace->setEnergyProvider(energy_provider);
-                    // ⭐ V58新增：反向连接JSONTrace到调度器，用于Early Abort时注入dline_miss记录
                     energy_provider->setTraceLogger(tracer.jtrace.get());
                     energy_provider->setSemanticTraceEnabled(semantic_traces);
                 }
@@ -945,7 +1256,40 @@ int main(int argc, char *argv[]) {
 
     resmanager->getID();
 
+    TracePublicationContract publication_contract;
+    publication_contract.expected_schema =
+        b4_observability_summary
+            ? RTSim::B4_OBSERVABILITY_TRACE_SCHEMA_VERSION
+            : RTSim::JSONTrace::TRACE_SCHEMA_VERSION;
     try {
+        if (b4_observability_summary) {
+            if (!outcome.reached_requested_horizon ||
+                !b4_json_trace || !b4_energy_provider) {
+                throw std::runtime_error(
+                    "schema3 run did not reach a complete summary horizon");
+            }
+            const MetaSim::Tick summary_horizon(
+                static_cast<std::int64_t>(
+                    b4_summary_horizon));
+            b4_json_trace->finalizeObservabilitySummaries(
+                summary_horizon);
+            const RTSim::B4ObservabilityEnergySnapshot snapshot =
+                b4_energy_provider->getB4ObservabilityEnergySnapshot(
+                    b4_summary_horizon);
+            if (snapshot.horizon_ms != b4_summary_horizon) {
+                throw std::runtime_error(
+                    "energy provider returned a mismatched summary horizon");
+            }
+            b4_json_trace->setObservabilityEnergySummary(
+                snapshot.summary);
+            b4_json_trace->sealObservabilityPayloadForSerialization();
+            publication_contract.initial_energy_j =
+                snapshot.initial_energy_j;
+            publication_contract.capacity_j =
+                snapshot.capacity_j;
+            publication_contract.processor_count =
+                sys->cpus.size();
+        }
         // JSONTrace writes its closing metadata in the destructor.
         tracers.clear();
         if (sys->scheduler_identities.empty())
@@ -955,7 +1299,8 @@ int main(int argc, char *argv[]) {
         publishTraces(
             trace_targets, opts["run-id"], identity.configured_scheduler,
             identity.display_name, identity.implementation_id,
-            opts["duration"], opts["taskset-semantic-hash"]);
+            opts["duration"], opts["taskset-semantic-hash"],
+            publication_contract);
         partial_trace_guard.release();
     } catch (const std::exception &error) {
         discardPartialTraces(trace_targets);

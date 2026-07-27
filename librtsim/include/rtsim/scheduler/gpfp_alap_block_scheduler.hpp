@@ -330,6 +330,11 @@ namespace RTSim {
         // ⭐ EnergyInfoProvider接口实现
         double getTotalEnergyConsumed() const override { return _stats.total_energy_consumed; }
         double getTotalEnergyHarvested() const override { return _stats.total_energy_harvested; }
+        B4ObservabilityEnergySnapshot getB4ObservabilityEnergySnapshot(
+            std::uint64_t expected_horizon_ms) override {
+            return _harvest_runtime.finalizeObservabilityEnergySnapshot(
+                expected_horizon_ms, _current_energy, _max_energy);
+        }
         double getTaskUnitEnergy(AbsRTTask *task) const override;
         double getTaskTotalEnergy(AbsRTTask *task) const override;
         void setSuspendReason(AbsRTTask *task, const std::string &reason);
