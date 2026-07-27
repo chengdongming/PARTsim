@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import csv
+from copy import deepcopy
 from dataclasses import asdict, dataclass
 from fractions import Fraction
 import hashlib
@@ -9,6 +11,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -40,10 +43,23 @@ CORE3_ENERGY_PREFLIGHT_SCHEMA = "ASAP_BLOCK_V9_3_CORE3_ENERGY_PREFLIGHT_V1"
 SHARED_SOLAR_INPUT_SCHEMA = "ASAP_BLOCK_V9_3_SHARED_SOLAR_INPUT_V1"
 SHARED_SOLAR_INPUT_CLASSIFICATION = "DETERMINISTIC_CANONICAL_REPLAY_INPUT"
 SHARED_SOLAR_SAMPLING_RULE = (
-    "PRODUCTION_WHOLE_MINUTE_PHASE_THEN_TOTAL_MINUTE_INDEX_V1"
+    "PRODUCTION_IRRADIANCE_SAMPLE_THEN_BINARY64_TICK_ENERGY_V1"
+)
+SHARED_SOLAR_INDEXING_POLICY = (
+    "CXX_PHYSICAL_DATA_ROW_EQUALS_TOTAL_CALENDAR_MINUTE_V1"
+)
+SHARED_SOLAR_INVALID_ROW_POLICY = (
+    "FAIL_CLOSED_FROM_FIRST_DATA_ROW_THROUGH_LAST_ACCESSED_ROW_V1"
+)
+SHARED_SOLAR_NEGATIVE_VALUE_POLICY = (
+    "ALLOW_BEFORE_WINDOW_FAIL_CLOSED_IF_ACCESSED_V1"
 )
 SHARED_SOLAR_OPERATION_ORDER_VERSION = (
     "ASAP_BLOCK_REAL_SOLAR_BINARY64_TICK_ORDER_V1"
+)
+_STRICT_DECIMAL_BINARY64 = re.compile(
+    r"[+-]?(?:(?:[0-9]+(?:\.[0-9]*)?)|(?:\.[0-9]+))"
+    r"(?:[eE][+-]?[0-9]+)?"
 )
 
 
@@ -75,6 +91,15 @@ class SharedSolarInput:
         )
 
 
+def _source_display_path(path: Path, source_root: Path) -> str:
+    resolved = path.resolve(strict=True)
+    root = source_root.resolve(strict=True)
+    try:
+        return resolved.relative_to(root).as_posix()
+    except ValueError:
+        return resolved.as_posix()
+
+
 def _source_file_material(path: Path, source_root: Path) -> Dict[str, Any]:
     resolved = path.resolve(strict=True)
     if not resolved.is_file():
@@ -82,10 +107,41 @@ def _source_file_material(path: Path, source_root: Path) -> Dict[str, Any]:
             f"shared energy input source is not a file: {resolved}"
         )
     return {
-        "source_relative_path": os.path.relpath(resolved, source_root),
+        "source_relative_path": _source_display_path(resolved, source_root),
         "sha256": _sha256(resolved),
         "size": resolved.stat().st_size,
     }
+
+
+def _direct_support_identity_material(
+    document: Mapping[str, Any],
+    *,
+    source_root: Path,
+) -> Dict[str, Any]:
+    """Remove worktree-specific spelling from direct support identity bytes."""
+
+    material = deepcopy(dict(document))
+    energy = material.get("energy", material)
+    if not isinstance(energy, dict):
+        return material
+    service = energy.get("service_curve")
+    if not isinstance(service, dict):
+        return material
+    template_value = service.get("system_template")
+    if not isinstance(template_value, str) or not template_value:
+        return material
+    declared = Path(template_value)
+    if declared.is_absolute():
+        resolved = declared.resolve()
+        try:
+            service["system_template"] = resolved.relative_to(
+                source_root.resolve(strict=True)
+            ).as_posix()
+        except ValueError:
+            service["system_template"] = resolved.as_posix()
+    else:
+        service["system_template"] = declared.as_posix()
+    return material
 
 
 def _load_shared_energy_support(
@@ -96,7 +152,11 @@ def _load_shared_energy_support(
     support_path: Optional[Path] = None
     if isinstance(value, Mapping):
         document = dict(value)
-        payload = canonical_json(document).encode("utf-8")
+        identity_document = _direct_support_identity_material(
+            document,
+            source_root=source_root,
+        )
+        payload = canonical_json(identity_document).encode("utf-8")
         source = {
             "source_relative_path": "<direct-mapping>",
             "sha256": hashlib.sha256(payload).hexdigest(),
@@ -125,6 +185,150 @@ def _load_shared_energy_support(
             "direct energy support has no energy mapping"
         )
     return dict(energy), source, support_path
+
+
+def _shared_solar_csv_error(
+    *,
+    source_path: str,
+    physical_data_row_index: int,
+    calendar_minute_index: int,
+    category: str,
+) -> SimulationConfigurationError:
+    return SimulationConfigurationError(
+        "shared solar CSV validation failed: "
+        f"source={source_path} "
+        f"physical_data_row_index={physical_data_row_index} "
+        f"calendar_minute_index={calendar_minute_index} "
+        f"category={category}"
+    )
+
+
+def _validate_shared_solar_csv_domain(
+    solar_path: Path,
+    *,
+    source_root: Path,
+    day_of_year: int,
+    time_of_day_ms: int,
+    horizon: int,
+) -> Dict[str, Any]:
+    """Prove that legacy replay preserves C++ physical-row semantics.
+
+    This validator does not sample irradiance or calculate energy.  It only
+    rejects file prefixes that the legacy Python loader would filter or
+    reinterpret differently from the C++ scheduler's physical-row lookup.
+    """
+
+    source_path = _source_display_path(solar_path, source_root)
+    start_offset_ms = legacy_rta.materialize_runtime_start_offset_ms(
+        day_of_year,
+        time_of_day_ms,
+    )
+    first_minute = (start_offset_ms + 1) // 60000
+    last_minute = (start_offset_ms + horizon) // 60000
+
+    try:
+        handle = solar_path.open("r", encoding="utf-8", newline="")
+    except OSError as exc:
+        raise SimulationConfigurationError(
+            f"cannot read shared solar CSV {source_path}: {exc}"
+        ) from exc
+    with handle:
+        header = handle.readline()
+        if not header:
+            raise _shared_solar_csv_error(
+                source_path=source_path,
+                physical_data_row_index=-1,
+                calendar_minute_index=first_minute,
+                category="MISSING_HEADER",
+            )
+        header_text = header.rstrip("\r\n")
+        if not header_text.strip():
+            raise _shared_solar_csv_error(
+                source_path=source_path,
+                physical_data_row_index=-1,
+                calendar_minute_index=first_minute,
+                category="EMPTY_HEADER",
+            )
+        try:
+            header_row = next(csv.reader([header_text]))
+            float(header_row[0])
+        except (IndexError, ValueError):
+            pass
+        else:
+            raise _shared_solar_csv_error(
+                source_path=source_path,
+                physical_data_row_index=-1,
+                calendar_minute_index=first_minute,
+                category="NUMERIC_HEADER_SHIFTS_PYTHON_INDEX",
+            )
+
+        physical_data_row_count = 0
+        for raw_line in handle:
+            data_index = physical_data_row_count
+            physical_data_row_count += 1
+            if data_index > last_minute:
+                continue
+            text = raw_line.rstrip("\r\n")
+            if not text.strip():
+                raise _shared_solar_csv_error(
+                    source_path=source_path,
+                    physical_data_row_index=data_index,
+                    calendar_minute_index=data_index,
+                    category="EMPTY_DATA_ROW",
+                )
+            stripped = text.strip()
+            try:
+                irradiance = float(stripped)
+            except ValueError as exc:
+                raise _shared_solar_csv_error(
+                    source_path=source_path,
+                    physical_data_row_index=data_index,
+                    calendar_minute_index=data_index,
+                    category="INVALID_NUMERIC_ROW",
+                ) from exc
+            if not math.isfinite(irradiance):
+                raise _shared_solar_csv_error(
+                    source_path=source_path,
+                    physical_data_row_index=data_index,
+                    calendar_minute_index=data_index,
+                    category="NONFINITE_IRRADIANCE",
+                )
+            if _STRICT_DECIMAL_BINARY64.fullmatch(stripped) is None:
+                raise _shared_solar_csv_error(
+                    source_path=source_path,
+                    physical_data_row_index=data_index,
+                    calendar_minute_index=data_index,
+                    category="INVALID_NUMERIC_ROW",
+                )
+            if (
+                first_minute <= data_index <= last_minute
+                and irradiance < 0
+            ):
+                raise _shared_solar_csv_error(
+                    source_path=source_path,
+                    physical_data_row_index=data_index,
+                    calendar_minute_index=data_index,
+                    category="NEGATIVE_ACCESSED_IRRADIANCE",
+                )
+
+    if physical_data_row_count <= last_minute:
+        raise _shared_solar_csv_error(
+            source_path=source_path,
+            physical_data_row_index=last_minute,
+            calendar_minute_index=last_minute,
+            category="INSUFFICIENT_PHYSICAL_DATA_ROWS",
+        )
+    return {
+        "physical_data_row_count": physical_data_row_count,
+        "first_accessed_data_row": first_minute,
+        "last_accessed_data_row": last_minute,
+        "first_calendar_minute_index": first_minute,
+        "last_calendar_minute_index": last_minute,
+        "accessed_sample_count": last_minute - first_minute + 1,
+        "invalid_row_policy": SHARED_SOLAR_INVALID_ROW_POLICY,
+        "negative_value_policy": SHARED_SOLAR_NEGATIVE_VALUE_POLICY,
+        "indexing_policy": SHARED_SOLAR_INDEXING_POLICY,
+    }
 
 
 def construct_shared_solar_input(
@@ -246,10 +450,32 @@ def construct_shared_solar_input(
             raise SimulationConfigurationError(
                 "shared production solar input requires real solar data"
             )
-        trace = construct_paired_harvest_trace(projected_path, horizon)
-        solar_path = Path(legacy_rta._resolve_solar_path(projected)).resolve(
-            strict=True
+        try:
+            solar_path = Path(
+                legacy_rta._resolve_solar_path(projected)
+            ).resolve(strict=True)
+        except OSError as exc:
+            raise SimulationConfigurationError(
+                f"solar data file not found: {exc}"
+            ) from exc
+        csv_validation = _validate_shared_solar_csv_domain(
+            solar_path,
+            source_root=root,
+            day_of_year=projected.day_of_year,
+            time_of_day_ms=projected.time_of_day_ms,
+            horizon=horizon,
         )
+        trace = construct_paired_harvest_trace(projected_path, horizon)
+        if (
+            len(trace) != horizon
+            or any(
+                type(value) is not Fraction or value < 0
+                for value in trace
+            )
+        ):
+            raise SimulationConfigurationError(
+                "shared solar replay returned an invalid supply trace"
+            )
 
     tick = exact_energy.materialize_supply_lower_bound(
         legacy_rta.TICK_SECONDS,
@@ -274,7 +500,13 @@ def construct_shared_solar_input(
             )
         ),
         "solar_scale": fraction_text(scale),
-        "pv_area_m2": fraction_text(
+        "raw_reference_pv_area_m2": fraction_text(
+            exact_energy.materialize_supply_lower_bound(
+                base_system.pv_area_m2,
+                "shared solar raw reference pv area",
+            ).exact_value
+        ),
+        "effective_pv_area_m2": fraction_text(
             exact_energy.materialize_supply_lower_bound(
                 projected.pv_area_m2,
                 "shared solar projected pv area",
@@ -289,6 +521,7 @@ def construct_shared_solar_input(
         "tick_duration_seconds": fraction_text(tick.exact_value),
         "tick_duration_binary64": tick.binary64_hex,
         "sampling_rule": SHARED_SOLAR_SAMPLING_RULE,
+        **csv_validation,
         "operation_order_version": SHARED_SOLAR_OPERATION_ORDER_VERSION,
         "horizon": horizon,
         "harvest_trace_sha256": hashlib.sha256(trace_payload).hexdigest(),

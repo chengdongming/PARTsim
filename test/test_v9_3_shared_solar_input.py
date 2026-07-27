@@ -9,6 +9,7 @@ import subprocess
 import pytest
 import yaml
 
+import asap_block_rta as legacy_rta
 from experiments.v9_3.config import canonical_json
 from experiments.v9_3.exact_energy import ExactEnergyError
 from experiments.v9_3.simulation_engine import (
@@ -26,13 +27,14 @@ BASE_SYSTEM = ROOT / "system_config_unified_template.yml"
 ENERGY_SUPPORT = (
     ROOT / "configs/v9_3_rta4_core3_simulation_energy_support_v1.yaml"
 )
+SOLAR_CSV = ROOT / "data/processed/shenyang_solar_minute.csv"
 
 
 def _support() -> dict:
     return yaml.safe_load(ENERGY_SUPPORT.read_text(encoding="utf-8"))
 
 
-def _write_solar(path: Path, values: tuple[int, ...]) -> None:
+def _write_solar(path: Path, values: tuple[object, ...]) -> None:
     path.write_text(
         "irradiance_W_per_m2\n"
         + "\n".join(str(value) for value in values)
@@ -45,11 +47,12 @@ def _write_system(
     path: Path,
     solar_path: Path,
     *,
+    day_of_year: int = 1,
     time_of_day_ms: int = 0,
     use_real_solar_data: bool = True,
 ) -> None:
     replacements = {
-        "day_of_year": "1",
+        "day_of_year": str(day_of_year),
         "time_of_day_ms": str(time_of_day_ms),
         "use_real_solar_data": str(use_real_solar_data).lower(),
         "solar_data_file": json.dumps(str(solar_path)),
@@ -76,14 +79,20 @@ def _write_system(
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def _direct_support(system_path: Path, *, solar_scale: str = "1") -> dict:
+def _direct_support(
+    system_path: Path,
+    *,
+    solar_scale: str = "1",
+    horizon: int = 10,
+    support_id: str = "test-production-solar",
+) -> dict:
     return {
         "simulation_initial_battery": "0",
         "battery_capacity": "10",
         "service_curve": {
-            "id": "test-production-solar",
+            "id": support_id,
             "system_template": str(system_path),
-            "horizon": 10,
+            "horizon": horizon,
             "require_real_solar_data": True,
             "raw_reference_pv_area_m2": "1",
             "solar_scale": solar_scale,
@@ -98,13 +107,13 @@ def test_repository_solar_input_is_tracked_stable_and_production_identical(
     first = construct_shared_solar_input(
         BASE_SYSTEM,
         ENERGY_SUPPORT,
-        horizon=4,
+        horizon=30_000,
         source_root=ROOT,
     )
     second = construct_shared_solar_input(
         BASE_SYSTEM,
         ENERGY_SUPPORT,
-        horizon=4,
+        horizon=30_000,
         source_root=ROOT,
     )
 
@@ -120,6 +129,30 @@ def test_repository_solar_input_is_tracked_stable_and_production_identical(
     assert first.provenance["solar_csv"]["source_relative_path"] == (
         system_document["energy_management"]["solar_data_file"]
     )
+    assert first.provenance["system_template"]["source_relative_path"] == (
+        "system_config_unified_template.yml"
+    )
+    assert first.provenance["energy_support"]["source_relative_path"] == (
+        "configs/v9_3_rta4_core3_simulation_energy_support_v1.yaml"
+    )
+    assert all(
+        "\\" not in first.provenance[source]["source_relative_path"]
+        and "/tmp/partsim_v9_3" not in (
+            first.provenance[source]["source_relative_path"]
+        )
+        for source in ("system_template", "energy_support", "solar_csv")
+    )
+    start_offset = legacy_rta.materialize_runtime_start_offset_ms(
+        system_document["energy_management"]["day_of_year"],
+        system_document["energy_management"]["time_of_day_ms"],
+    )
+    expected_first = (start_offset + 1) // 60_000
+    expected_last = (start_offset + 30_000) // 60_000
+    assert first.provenance["first_accessed_data_row"] == expected_first
+    assert first.provenance["last_accessed_data_row"] == expected_last
+    assert first.provenance["first_calendar_minute_index"] == expected_first
+    assert first.provenance["last_calendar_minute_index"] == expected_last
+    assert first.provenance["accessed_sample_count"] == 1
     tracked = subprocess.run(
         [
             "git",
@@ -146,11 +179,43 @@ def test_repository_solar_input_is_tracked_stable_and_production_identical(
         service_curve=support["service_curve"],
     )
     assert first.harvest_j_per_tick == construct_paired_harvest_trace(
-        system_path, 4
+        system_path, 30_000
     )
     assert first.offered_harvest_j == sum(
         first.harvest_j_per_tick, Fraction(0)
     )
+
+
+def test_repository_negative_sentinel_fails_closed_before_trace_or_beta(
+    tmp_path,
+):
+    physical_rows = SOLAR_CSV.read_text(encoding="utf-8").splitlines()[1:]
+    negative_index = next(
+        index for index, value in enumerate(physical_rows)
+        if float(value) < 0
+    )
+    system = tmp_path / "repository-negative.yml"
+    _write_system(
+        system,
+        SOLAR_CSV,
+        day_of_year=negative_index // 1440 + 1,
+        time_of_day_ms=(negative_index % 1440) * 60_000,
+    )
+
+    with pytest.raises(
+        SimulationConfigurationError,
+        match=(
+            rf"physical_data_row_index={negative_index} "
+            rf"calendar_minute_index={negative_index} "
+            r"category=NEGATIVE_ACCESSED_IRRADIANCE"
+        ),
+    ):
+        construct_shared_solar_input(
+            system,
+            _direct_support(system, horizon=1),
+            horizon=1,
+            source_root=ROOT,
+        )
 
 
 def test_phase_scale_and_caller_selected_csv_change_the_replayed_trace(
@@ -196,6 +261,143 @@ def test_phase_scale_and_caller_selected_csv_change_the_replayed_trace(
         base.provenance["time_of_day_ms"]
     )
     assert scaled.provenance["solar_scale"] == "1/2"
+
+
+def test_negative_outside_accessed_window_is_allowed_but_accessed_negative_rejects(
+    tmp_path,
+):
+    solar = tmp_path / "solar.csv"
+    _write_solar(solar, (-7, 1, -7))
+    current = tmp_path / "current.yml"
+    accessed_negative = tmp_path / "accessed-negative.yml"
+    _write_system(current, solar, time_of_day_ms=60_000)
+    _write_system(accessed_negative, solar)
+
+    allowed = construct_shared_solar_input(
+        current,
+        _direct_support(current),
+        horizon=1,
+        source_root=tmp_path,
+    )
+    assert allowed.harvest_j_per_tick[0] > 0
+    assert allowed.provenance["physical_data_row_count"] == 3
+    assert allowed.provenance["first_accessed_data_row"] == 1
+    assert allowed.provenance["last_accessed_data_row"] == 1
+
+    with pytest.raises(
+        SimulationConfigurationError,
+        match=(
+            r"source=solar.csv physical_data_row_index=0 "
+            r"calendar_minute_index=0 "
+            r"category=NEGATIVE_ACCESSED_IRRADIANCE"
+        ),
+    ):
+        construct_shared_solar_input(
+            accessed_negative,
+            _direct_support(accessed_negative),
+            horizon=1,
+            source_root=tmp_path,
+        )
+
+
+@pytest.mark.parametrize(
+    ("rows", "category"),
+    [
+        (("1", "", "2"), "EMPTY_DATA_ROW"),
+        (("1", "not-a-number", "2"), "INVALID_NUMERIC_ROW"),
+    ],
+)
+def test_filtered_physical_row_before_target_is_rejected(
+    tmp_path,
+    rows,
+    category,
+):
+    solar = tmp_path / "solar.csv"
+    _write_solar(solar, rows)
+    system = tmp_path / "system.yml"
+    _write_system(system, solar, time_of_day_ms=120_000)
+
+    with pytest.raises(
+        SimulationConfigurationError,
+        match=(
+            rf"physical_data_row_index=1 calendar_minute_index=1 "
+            rf"category={category}"
+        ),
+    ):
+        construct_shared_solar_input(
+            system,
+            _direct_support(system),
+            horizon=1,
+            source_root=tmp_path,
+        )
+
+
+@pytest.mark.parametrize("value", ("NaN", "Inf", "-Inf"))
+def test_nonfinite_accessed_irradiance_is_rejected(tmp_path, value):
+    solar = tmp_path / "solar.csv"
+    _write_solar(solar, (value,))
+    system = tmp_path / "system.yml"
+    _write_system(system, solar)
+
+    with pytest.raises(
+        SimulationConfigurationError,
+        match=(
+            r"physical_data_row_index=0 calendar_minute_index=0 "
+            r"category=NONFINITE_IRRADIANCE"
+        ),
+    ):
+        construct_shared_solar_input(
+            system,
+            _direct_support(system),
+            horizon=1,
+            source_root=tmp_path,
+        )
+
+
+def test_insufficient_physical_rows_reports_last_required_row(tmp_path):
+    solar = tmp_path / "solar.csv"
+    _write_solar(solar, (1,))
+    system = tmp_path / "system.yml"
+    _write_system(system, solar, time_of_day_ms=60_000)
+
+    with pytest.raises(
+        SimulationConfigurationError,
+        match=(
+            r"physical_data_row_index=1 calendar_minute_index=1 "
+            r"category=INSUFFICIENT_PHYSICAL_DATA_ROWS"
+        ),
+    ):
+        construct_shared_solar_input(
+            system,
+            _direct_support(system),
+            horizon=1,
+            source_root=tmp_path,
+        )
+
+
+def test_horizon_alone_changes_access_range_and_provenance(tmp_path):
+    solar = tmp_path / "solar.csv"
+    _write_solar(solar, (1, 2))
+    system = tmp_path / "system.yml"
+    _write_system(system, solar)
+    support = _direct_support(system, horizon=60_000)
+
+    short = construct_shared_solar_input(
+        system, support, horizon=1, source_root=tmp_path,
+    )
+    long = construct_shared_solar_input(
+        system, support, horizon=60_000, source_root=tmp_path,
+    )
+
+    assert short.provenance["last_accessed_data_row"] == 0
+    assert short.provenance["accessed_sample_count"] == 1
+    assert long.provenance["last_accessed_data_row"] == 1
+    assert long.provenance["accessed_sample_count"] == 2
+    assert short.provenance["horizon"] == 1
+    assert long.provenance["horizon"] == 60_000
+    assert short.provenance["replay_input_sha256"] != (
+        long.provenance["replay_input_sha256"]
+    )
 
 
 def test_shared_solar_input_rejects_missing_disabled_or_mismatched_sources(
@@ -259,10 +461,101 @@ def test_shared_solar_provenance_describes_inputs_not_a_universal_claim(
         provenance["solar_csv"]
     )
     assert provenance["sampling_rule"]
+    assert provenance["indexing_policy"]
+    assert provenance["invalid_row_policy"]
+    assert provenance["negative_value_policy"]
     assert provenance["operation_order_version"]
     assert provenance["tick_duration_seconds"]
+    assert provenance["physical_data_row_count"] == 2
+    assert provenance["first_accessed_data_row"] == 0
+    assert provenance["last_accessed_data_row"] == 0
+    assert provenance["first_calendar_minute_index"] == 0
+    assert provenance["last_calendar_minute_index"] == 0
+    assert provenance["accessed_sample_count"] == 1
+    assert provenance["raw_reference_pv_area_m2"] == "1"
+    assert provenance["effective_pv_area_m2"] == "1"
     assert provenance["replay_input_sha256"]
     assert "UNIVERSAL_REAL_SOLAR_GUARANTEE" not in canonical_json(provenance)
+
+
+def test_same_length_source_byte_changes_change_provenance(tmp_path):
+    solar_a = tmp_path / "a.csv"
+    solar_b = tmp_path / "b.csv"
+    _write_solar(solar_a, (1,))
+    _write_solar(solar_b, (2,))
+    assert solar_a.stat().st_size == solar_b.stat().st_size
+
+    system_a = tmp_path / "system-a.yml"
+    system_b = tmp_path / "system-b.yml"
+    _write_system(system_a, solar_a, time_of_day_ms=0)
+    _write_system(system_b, solar_a, time_of_day_ms=1)
+    assert system_a.stat().st_size == system_b.stat().st_size
+
+    support_a = tmp_path / "support-a.yml"
+    support_b = tmp_path / "support-b.yml"
+    support_a.write_text(
+        yaml.safe_dump(
+            _direct_support(system_a, support_id="support-a"),
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    support_b.write_text(
+        yaml.safe_dump(
+            _direct_support(system_a, support_id="support-b"),
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    assert support_a.stat().st_size == support_b.stat().st_size
+
+    baseline = construct_shared_solar_input(
+        system_a, support_a, horizon=1, source_root=tmp_path,
+    )
+    changed_system = construct_shared_solar_input(
+        system_b, _direct_support(system_b), horizon=1, source_root=tmp_path,
+    )
+    changed_support = construct_shared_solar_input(
+        system_a, support_b, horizon=1, source_root=tmp_path,
+    )
+    csv_system = tmp_path / "system-c.yml"
+    _write_system(csv_system, solar_b)
+    changed_csv = construct_shared_solar_input(
+        csv_system, _direct_support(csv_system), horizon=1,
+        source_root=tmp_path,
+    )
+
+    assert baseline.provenance["system_template"]["sha256"] != (
+        changed_system.provenance["system_template"]["sha256"]
+    )
+    assert baseline.provenance["energy_support"]["sha256"] != (
+        changed_support.provenance["energy_support"]["sha256"]
+    )
+    assert baseline.provenance["solar_csv"]["sha256"] != (
+        changed_csv.provenance["solar_csv"]["sha256"]
+    )
+
+
+def test_direct_mapping_absolute_template_is_not_in_canonical_identity(
+    tmp_path,
+):
+    observed = []
+    for directory_name in ("left", "right"):
+        directory = tmp_path / directory_name
+        directory.mkdir()
+        solar = directory / "solar.csv"
+        system = directory / "system.yml"
+        _write_solar(solar, (1,))
+        _write_system(system, solar)
+        shared = construct_shared_solar_input(
+            system,
+            _direct_support(system),
+            horizon=1,
+            source_root=directory,
+        )
+        observed.append(shared.provenance["energy_support"])
+
+    assert observed[0] == observed[1]
 
 
 def test_beta_is_the_exact_arbitrary_window_minimum_with_optional_starts():
@@ -295,3 +588,57 @@ def test_beta_is_the_exact_arbitrary_window_minimum_with_optional_starts():
     assert restricted[2] == Fraction.from_float(expected)
     with pytest.raises(ExactEnergyError, match="incomplete window"):
         shared.beta(3, valid_start_range=range(2, 3))
+
+
+@pytest.mark.parametrize(
+    ("raw_trace", "expected"),
+    [
+        ((1, 2, 3, 4, 5), (0, 1, 3, 6, 10, 15)),
+        ((5, 4, 3, 2, 1), (0, 1, 3, 6, 10, 15)),
+        ((5, 1, 4, 1, 3), (0, 1, 4, 6, 9, 14)),
+    ],
+    ids=("ascending", "descending", "alternating"),
+)
+def test_nonconstant_arbitrary_window_beta_regressions(raw_trace, expected):
+    trace = tuple(Fraction.from_float(float(value)) for value in raw_trace)
+    assert SharedSolarInput(trace, {}).beta(len(trace)) == tuple(
+        Fraction(value) for value in expected
+    )
+
+
+@pytest.mark.parametrize(
+    "trace",
+    [
+        (Fraction(-1),),
+        (float("nan"),),
+        (float("inf"),),
+        (float("-inf"),),
+    ],
+)
+def test_beta_rejects_negative_or_nonfinite_trace(trace):
+    with pytest.raises(ExactEnergyError, match="service trace"):
+        SharedSolarInput(trace, {}).beta(1)
+
+
+def test_beta_boundary_contract_and_last_legal_start():
+    empty = SharedSolarInput((), {})
+    assert empty.beta(0) == (Fraction(0),)
+    with pytest.raises(ExactEnergyError, match="outside the trace"):
+        empty.beta(1)
+
+    trace = tuple(Fraction(value) for value in (1, 2, 3))
+    shared = SharedSolarInput(trace, {})
+    assert shared.beta(0) == (Fraction(0),)
+    with pytest.raises(ExactEnergyError, match="outside the trace"):
+        shared.beta(-1)
+    with pytest.raises(ExactEnergyError, match="outside the trace"):
+        shared.beta(4)
+    with pytest.raises(ExactEnergyError, match="must not be empty"):
+        shared.beta(1, valid_start_range=range(0, 0))
+    with pytest.raises(ExactEnergyError, match="unit-step"):
+        shared.beta(1, valid_start_range=range(0, 3, 2))
+    assert shared.beta(
+        1, valid_start_range=range(2, 3)
+    ) == (Fraction(0), Fraction(3))
+    with pytest.raises(ExactEnergyError, match="incomplete window"):
+        shared.beta(2, valid_start_range=range(2, 3))

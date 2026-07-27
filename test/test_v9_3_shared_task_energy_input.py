@@ -27,7 +27,7 @@ def _source_identity(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def test_five_workloads_and_wcets_match_the_materializer_and_simulator_adapter():
+def test_five_workloads_and_wcets_match_fact_source_and_compatibility_wrapper():
     system = legacy_rta.load_system_config(str(SYSTEM_PATH))
     source_identity = _source_identity(SYSTEM_PATH)
 
@@ -51,16 +51,16 @@ def test_five_workloads_and_wcets_match_the_materializer_and_simulator_adapter()
                 energy_coefficient=1.0,
                 label=f"expected-{workload}-{wcet}",
             )
-            simulator_adapter = task_demand_for_wcet(
+            compatibility_wrapper = task_demand_for_wcet(
                 system,
                 workload,
                 wcet,
-                label=f"simulator-{workload}-{wcet}",
+                label=f"compatibility-{workload}-{wcet}",
             )
 
             assert shared.energy_j_per_tick == expected.exact_value
             assert shared.energy_j_per_tick_binary64 == expected.binary64_hex
-            assert shared.energy_j_per_tick == simulator_adapter
+            assert shared.energy_j_per_tick == compatibility_wrapper
             assert shared.unit == "J/tick"
             assert shared.source_identity == source_identity
 
