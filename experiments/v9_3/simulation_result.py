@@ -423,7 +423,15 @@ def parse_simulation_trace(
         values.sort(key=lambda row: row["release"])
 
     observations: list[JobObservation] = []
-    for task_id in sorted(definitions, key=lambda value: int(value)):
+    task_order = sorted(
+        definitions,
+        key=lambda value: (int(definitions[value]["priority_rank"]), value),
+    )
+    if [int(definitions[value]["priority_rank"]) for value in task_order] != list(
+        range(len(task_order))
+    ):
+        raise SimulationTraceError("task priority order is not canonical")
+    for task_id in task_order:
         definition = definitions[task_id]
         for job_index, raw in enumerate(ordered_by_task[task_id]):
             completion = raw["completion"]
@@ -454,7 +462,7 @@ def parse_simulation_trace(
             ))
 
     task_observations = []
-    for task_id in sorted(definitions, key=lambda value: int(value)):
+    for task_id in task_order:
         eligible_jobs = [
             job for job in observations
             if job.task_id == task_id and job.eligible_after_warmup

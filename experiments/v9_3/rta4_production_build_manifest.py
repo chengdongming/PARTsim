@@ -78,6 +78,7 @@ DEFAULT_RELEVANT_SOURCES = (
     "experiments/v9_3/rta4_shared_energy.py",
     "experiments/v9_3/rta4_taskset_v2.py",
     "experiments/v9_3/simulation_engine.py",
+    "experiments/v9_3/simulation_result.py",
     "experiments/v9_3/solar_parse_proof.py",
     "scripts/build_v9_3_rta4_production_manifest.py",
     "scripts/build_v9_3_rta4_v2_contracts.py",
