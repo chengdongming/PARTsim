@@ -160,6 +160,88 @@ namespace RTSim {
         std::int64_t tickValue(MetaSim::Tick value) {
             return static_cast<std::int64_t>(value);
         }
+
+        bool observabilityApproximatelyEqual(double lhs, double rhs) {
+            const double scale = std::max(
+                1.0, std::max(std::abs(lhs), std::abs(rhs)));
+            return std::abs(lhs - rhs) <= 1e-9 * scale;
+        }
+
+        void validateEnergySummaryValues(
+            const EnergySummary &summary,
+            std::uint64_t horizon,
+            bool require_complete_horizon) {
+            const double values[] = {
+                summary.offered_energy_j,
+                summary.credited_energy_j,
+                summary.clipped_energy_j,
+                summary.consumed_energy_j,
+                summary.battery_min_j,
+                summary.battery_max_j,
+                summary.battery_final_j,
+            };
+            for (double value : values) {
+                if (!std::isfinite(value) || value < 0.0) {
+                    throw std::invalid_argument(
+                        "observability energy values must be finite and non-negative");
+                }
+            }
+            if (!observabilityApproximatelyEqual(
+                    summary.offered_energy_j,
+                    summary.credited_energy_j + summary.clipped_energy_j)) {
+                throw std::invalid_argument(
+                    "observability offered energy does not reconcile");
+            }
+            if (summary.battery_min_j > summary.battery_final_j ||
+                summary.battery_final_j > summary.battery_max_j) {
+                throw std::invalid_argument(
+                    "observability battery bounds are inconsistent");
+            }
+            if (summary.battery_empty_ticks >
+                    summary.observed_energy_intervals ||
+                summary.battery_full_ticks >
+                    summary.observed_energy_intervals ||
+                summary.observed_energy_intervals > horizon ||
+                (require_complete_horizon &&
+                 summary.observed_energy_intervals != horizon)) {
+                throw std::invalid_argument(
+                    "observability energy counters conflict with the horizon");
+            }
+        }
+
+        std::vector<ObservabilityTaskMetadata> validatedTaskMetadata(
+            const std::vector<ObservabilityTaskMetadata> &metadata) {
+            if (metadata.size() != B4_EXPECTED_TASK_COUNT) {
+                throw std::invalid_argument(
+                    "schema3 observability metadata must contain exactly ten tasks");
+            }
+            std::set<std::string> names;
+            std::set<std::uint32_t> ranks;
+            for (const auto &task : metadata) {
+                if (task.task_name.empty() ||
+                    !names.insert(task.task_name).second ||
+                    !ranks.insert(task.priority_rank).second) {
+                    throw std::invalid_argument(
+                        "schema3 observability task names and ranks must be unique");
+                }
+            }
+            for (std::uint32_t rank = 0;
+                 rank < B4_EXPECTED_TASK_COUNT;
+                 ++rank) {
+                if (ranks.find(rank) == ranks.end()) {
+                    throw std::invalid_argument(
+                        "schema3 observability ranks must cover zero through nine");
+                }
+            }
+            std::vector<ObservabilityTaskMetadata> sorted = metadata;
+            std::sort(
+                sorted.begin(), sorted.end(),
+                [](const ObservabilityTaskMetadata &lhs,
+                   const ObservabilityTaskMetadata &rhs) {
+                    return lhs.priority_rank < rhs.priority_rank;
+                });
+            return sorted;
+        }
     } // namespace
 
     static std::string exactDoubleString(double value) {
@@ -408,7 +490,9 @@ namespace RTSim {
             (_processor_count > 0 &&
              _summary.hp_energy_blocked_job_ticks >
                  _summary.hp_energy_blocked_ticks *
-                     std::min<std::size_t>(_processor_count, 4))) {
+                     std::min<std::size_t>(
+                         _processor_count,
+                         B4_TOP_PRIORITY_TASK_COUNT))) {
             throw std::logic_error(
                 "mechanism summary counter bounds are inconsistent");
         }
@@ -423,9 +507,30 @@ namespace RTSim {
         }
         _configured = true;
         _finalized = false;
+        _frozen_task_universe = false;
         _horizon_ms = horizon_ms;
         _task_summaries.clear();
         _active_jobs.clear();
+    }
+
+    void PerTaskLifecycleAccumulator::reset(
+        std::int64_t horizon_ms,
+        const std::vector<ObservabilityTaskMetadata> &metadata) {
+        reset(horizon_ms);
+        std::set<std::string> names;
+        std::set<std::uint32_t> ranks;
+        for (const auto &task : metadata) {
+            if (task.task_name.empty() ||
+                !names.insert(task.task_name).second ||
+                !ranks.insert(task.priority_rank).second) {
+                throw std::invalid_argument(
+                    "frozen lifecycle metadata must have unique names and ranks");
+            }
+            PerTaskLifecycleSummary summary;
+            summary.task_name = task.task_name;
+            _task_summaries.emplace(task.task_name, std::move(summary));
+        }
+        _frozen_task_universe = true;
     }
 
     void PerTaskLifecycleAccumulator::validateEvent(
@@ -445,6 +550,11 @@ namespace RTSim {
             event_time_ms > _horizon_ms) {
             throw std::invalid_argument(
                 "invalid bounded lifecycle event");
+        }
+        if (_frozen_task_universe &&
+            _task_summaries.find(task_name) == _task_summaries.end()) {
+            throw std::invalid_argument(
+                "lifecycle task is outside the frozen task universe");
         }
     }
 
@@ -576,6 +686,7 @@ namespace RTSim {
                 "killed lifecycle job is not active");
         }
         closeRunning(job, active_it->second, kill_time_ms);
+        ++_task_summaries.at(task_name).terminated_jobs;
         _active_jobs.erase(active_it);
     }
 
@@ -636,6 +747,10 @@ namespace RTSim {
         _observability_summary_state =
             ObservabilitySummaryState::Disabled;
         _observability_summary_horizon = MetaSim::Tick(-1);
+        _trace_schema_version = TRACE_SCHEMA_VERSION;
+        _b4_observability_schema_enabled = false;
+        _observability_payload_sealed = false;
+        _observability_energy_summary_set = false;
     }
 
     JSONTrace::JSONTrace(const string &name, MetaSim::Tick max) {
@@ -656,12 +771,16 @@ namespace RTSim {
         _observability_summary_state =
             ObservabilitySummaryState::Disabled;
         _observability_summary_horizon = MetaSim::Tick(-1);
+        _trace_schema_version = TRACE_SCHEMA_VERSION;
+        _b4_observability_schema_enabled = false;
+        _observability_payload_sealed = false;
+        _observability_energy_summary_set = false;
     }
 
     // V98修复：显式清空容器，避免析构顺序问题
     JSONTrace::~JSONTrace() {
         fd << "]," << std::endl;
-        fd << "    \"trace_schema_version\": " << TRACE_SCHEMA_VERSION
+        fd << "    \"trace_schema_version\": " << _trace_schema_version
            << "," << std::endl;
         fd << "    \"run_count\": " << _run_generations_seen.size()
            << "," << std::endl;
@@ -707,6 +826,11 @@ namespace RTSim {
                       : "false"
                   )
                << "," << std::endl;
+        }
+        if (_trace_schema_version ==
+                B4_OBSERVABILITY_TRACE_SCHEMA_VERSION &&
+            _observability_payload_sealed) {
+            writeSealedObservabilityPayload();
         }
         fd << "    \"simulation_completion_reason\": \""
            << escapeJson(_simulation_completion_reason) << "\"" << std::endl;
@@ -896,13 +1020,7 @@ namespace RTSim {
         _pending_forced_dline_miss.clear();
         if (_observability_summary_state !=
             ObservabilitySummaryState::Disabled) {
-            _mechanism_summary.reset(
-                static_cast<std::uint64_t>(
-                    tickValue(_observability_summary_horizon)));
-            _lifecycle_summary.reset(
-                tickValue(_observability_summary_horizon));
-            _observability_summary_state =
-                ObservabilitySummaryState::Enabled;
+            resetObservabilityRunState();
         }
         _observed_simulation_end = MetaSim::Tick(-1);
         _simulation_completed = false;
@@ -916,6 +1034,27 @@ namespace RTSim {
     bool JSONTrace::shouldAccumulateLifecycleSummary() const {
         return _observability_summary_state ==
             ObservabilitySummaryState::Enabled;
+    }
+
+    void JSONTrace::resetObservabilityRunState() {
+        _mechanism_summary.reset(
+            static_cast<std::uint64_t>(
+                tickValue(_observability_summary_horizon)));
+        if (_b4_observability_schema_enabled) {
+            _lifecycle_summary.reset(
+                tickValue(_observability_summary_horizon),
+                _observability_task_metadata);
+        } else {
+            _lifecycle_summary.reset(
+                tickValue(_observability_summary_horizon));
+        }
+        _observability_summary_state = ObservabilitySummaryState::Enabled;
+        _observability_payload_sealed = false;
+        _observability_energy_summary_set = false;
+        _observability_energy_summary = EnergySummary{};
+        _sealed_mechanism_summary = MechanismSummary{};
+        _sealed_energy_summary = EnergySummary{};
+        _sealed_lifecycle_summaries.clear();
     }
 
     void JSONTrace::setSimulationOutcome(MetaSim::Tick end_time,
@@ -956,6 +1095,56 @@ namespace RTSim {
             ObservabilitySummaryState::Enabled;
     }
 
+    void JSONTrace::configureB4ObservabilitySchema3(
+        MetaSim::Tick horizon,
+        const std::vector<ObservabilityTaskMetadata> &task_metadata) {
+        if (_b4_observability_schema_enabled ||
+            _observability_summary_state !=
+                ObservabilitySummaryState::Disabled) {
+            throw std::logic_error(
+                "schema3 observability may only be configured once");
+        }
+        if (horizon <= MetaSim::Tick(0) ||
+            max_time < MetaSim::Tick(0) ||
+            horizon > max_time) {
+            throw std::invalid_argument(
+                "schema3 observability horizon must be positive and no greater than the trace horizon");
+        }
+        std::vector<ObservabilityTaskMetadata> sorted =
+            validatedTaskMetadata(task_metadata);
+
+        ensureCurrentRun();
+        _observability_summary_horizon = horizon;
+        _observability_task_metadata = std::move(sorted);
+        _trace_schema_version = B4_OBSERVABILITY_TRACE_SCHEMA_VERSION;
+        _b4_observability_schema_enabled = true;
+        resetObservabilityRunState();
+    }
+
+    void JSONTrace::setObservabilityEnergySummary(
+        const EnergySummary &summary) {
+        ensureCurrentRun();
+        if (!_b4_observability_schema_enabled) {
+            throw std::logic_error(
+                "observability energy summary requires schema3 configuration");
+        }
+        if (_observability_payload_sealed) {
+            throw std::logic_error(
+                "sealed observability payload cannot accept energy");
+        }
+        if (_observability_energy_summary_set) {
+            throw std::logic_error(
+                "observability energy summary may only be set once");
+        }
+        validateEnergySummaryValues(
+            summary,
+            static_cast<std::uint64_t>(
+                tickValue(_observability_summary_horizon)),
+            false);
+        _observability_energy_summary = summary;
+        _observability_energy_summary_set = true;
+    }
+
     void JSONTrace::finalizeObservabilitySummaries(
         MetaSim::Tick horizon) {
         ensureCurrentRun();
@@ -977,6 +1166,264 @@ namespace RTSim {
         _lifecycle_summary.finalize(tickValue(horizon));
         _observability_summary_state =
             ObservabilitySummaryState::Finalized;
+    }
+
+    void JSONTrace::sealObservabilityPayloadForSerialization() {
+        ensureCurrentRun();
+        if (!_b4_observability_schema_enabled ||
+            _trace_schema_version !=
+                B4_OBSERVABILITY_TRACE_SCHEMA_VERSION) {
+            throw std::logic_error(
+                "observability payload sealing requires schema3");
+        }
+        if (_observability_payload_sealed) {
+            throw std::logic_error(
+                "observability payload has already been sealed");
+        }
+        if (_observability_summary_state !=
+                ObservabilitySummaryState::Finalized ||
+            !_mechanism_summary.isFinalized() ||
+            !_lifecycle_summary.isFinalized()) {
+            throw std::logic_error(
+                "observability summaries must be finalized before sealing");
+        }
+        if (!_observability_energy_summary_set) {
+            throw std::logic_error(
+                "observability energy summary is missing");
+        }
+        if (_observability_task_metadata.size() !=
+            B4_EXPECTED_TASK_COUNT) {
+            throw std::logic_error(
+                "observability task metadata is incomplete");
+        }
+
+        const std::uint64_t horizon = static_cast<std::uint64_t>(
+            tickValue(_observability_summary_horizon));
+        if (_observability_summary_horizon != max_time ||
+            (_release_cutoff_enabled &&
+             _observability_summary_horizon != _observation_horizon)) {
+            throw std::logic_error(
+                "schema3 v1 summary horizon must equal the trace duration");
+        }
+
+        const MechanismSummary &mechanism = _mechanism_summary.summary();
+        const std::size_t processor_count =
+            _mechanism_summary.processorCount();
+        if (processor_count == 0 ||
+            mechanism.observed_decision_ticks != horizon ||
+            mechanism.bypass_opportunity_ticks > horizon ||
+            mechanism.actual_bypass_ticks >
+                mechanism.bypass_opportunity_ticks ||
+            mechanism.hp_dispatch_demand_ticks > horizon ||
+            mechanism.hp_energy_blocked_ticks >
+                mechanism.hp_dispatch_demand_ticks) {
+            throw std::logic_error(
+                "observability mechanism counter bounds are inconsistent");
+        }
+        if ((mechanism.actual_bypass_ticks > 0 &&
+             (processor_count >
+                  std::numeric_limits<std::uint64_t>::max() /
+                      mechanism.actual_bypass_ticks ||
+              mechanism.low_priority_bypass_core_ticks >
+                  mechanism.actual_bypass_ticks * processor_count)) ||
+            (mechanism.hp_energy_blocked_ticks > 0 &&
+             (std::min<std::size_t>(
+                  processor_count,
+                  B4_TOP_PRIORITY_TASK_COUNT) >
+                  std::numeric_limits<std::uint64_t>::max() /
+                      mechanism.hp_energy_blocked_ticks ||
+              mechanism.hp_energy_blocked_job_ticks >
+                  mechanism.hp_energy_blocked_ticks *
+                      std::min<std::size_t>(
+                          processor_count,
+                          B4_TOP_PRIORITY_TASK_COUNT)))) {
+            throw std::logic_error(
+                "observability mechanism core-tick bounds are inconsistent");
+        }
+
+        const auto lifecycle = _lifecycle_summary.summaries();
+        if (lifecycle.size() != B4_EXPECTED_TASK_COUNT) {
+            throw std::logic_error(
+                "observability lifecycle task count is inconsistent");
+        }
+        std::map<std::string, PerTaskLifecycleSummary> lifecycle_by_name;
+        for (const auto &summary : lifecycle) {
+            if (summary.task_name.empty() ||
+                !lifecycle_by_name.emplace(
+                    summary.task_name, summary).second) {
+                throw std::logic_error(
+                    "observability lifecycle task identities are inconsistent");
+            }
+        }
+
+        std::vector<PerTaskLifecycleSummary> ordered_lifecycle;
+        ordered_lifecycle.reserve(B4_EXPECTED_TASK_COUNT);
+        std::uint64_t total_executed_core_ticks = 0;
+        std::size_t top4_count = 0;
+        std::size_t bottom6_count = 0;
+        for (std::size_t rank = 0;
+             rank < _observability_task_metadata.size();
+             ++rank) {
+            const auto &metadata = _observability_task_metadata[rank];
+            if (metadata.priority_rank != rank) {
+                throw std::logic_error(
+                    "observability task ranks are not contiguous");
+            }
+            top4_count += metadata.isTop4() ? 1 : 0;
+            bottom6_count += metadata.isBottom6() ? 1 : 0;
+            const auto summary_it =
+                lifecycle_by_name.find(metadata.task_name);
+            if (summary_it == lifecycle_by_name.end()) {
+                throw std::logic_error(
+                    "observability lifecycle metadata join failed");
+            }
+            const auto &summary = summary_it->second;
+            if (summary.completed_jobs > summary.released_jobs ||
+                summary.terminated_jobs > summary.released_jobs ||
+                summary.unfinished_at_horizon_jobs >
+                    summary.released_jobs ||
+                summary.completed_jobs >
+                    summary.released_jobs - summary.terminated_jobs ||
+                summary.completed_jobs + summary.terminated_jobs >
+                    summary.released_jobs ||
+                summary.unfinished_at_horizon_jobs !=
+                    summary.released_jobs - summary.completed_jobs -
+                        summary.terminated_jobs ||
+                summary.deadline_miss_jobs > summary.released_jobs ||
+                summary.completed_response_time_count !=
+                    summary.completed_jobs ||
+                (summary.completed_response_time_count == 0 &&
+                 (summary.completed_response_time_sum_ms != 0 ||
+                  summary.completed_response_time_max_ms != 0)) ||
+                (summary.completed_response_time_count > 0 &&
+                 summary.completed_response_time_max_ms >
+                     summary.completed_response_time_sum_ms)) {
+                throw std::logic_error(
+                    "observability lifecycle closure is inconsistent");
+            }
+            if (summary.executed_core_ticks >
+                std::numeric_limits<std::uint64_t>::max() -
+                    total_executed_core_ticks) {
+                throw std::logic_error(
+                    "observability executed-core total overflowed");
+            }
+            total_executed_core_ticks += summary.executed_core_ticks;
+            ordered_lifecycle.push_back(summary);
+        }
+        if (top4_count != B4_TOP_PRIORITY_TASK_COUNT ||
+            bottom6_count != B4_BOTTOM_PRIORITY_TASK_COUNT ||
+            (horizon > 0 &&
+             processor_count >
+                 std::numeric_limits<std::uint64_t>::max() / horizon) ||
+            total_executed_core_ticks > horizon * processor_count) {
+            throw std::logic_error(
+                "observability task groups or executed-core capacity are inconsistent");
+        }
+
+        validateEnergySummaryValues(
+            _observability_energy_summary, horizon, true);
+
+        _sealed_mechanism_summary = mechanism;
+        _sealed_energy_summary = _observability_energy_summary;
+        _sealed_lifecycle_summaries = std::move(ordered_lifecycle);
+        _observability_payload_sealed = true;
+    }
+
+    void JSONTrace::writeSealedObservabilityPayload() {
+        fd << "    \"observability_summary_contract_version\": "
+           << B4_OBSERVABILITY_SUMMARY_CONTRACT_VERSION << ","
+           << std::endl;
+        fd << "    \"observability_summary_horizon_ms\": "
+           << _observability_summary_horizon << "," << std::endl;
+        fd << "    \"mechanism_summary\": {" << std::endl;
+        fd << "        \"bypass_opportunity_ticks\": "
+           << _sealed_mechanism_summary.bypass_opportunity_ticks << ","
+           << std::endl;
+        fd << "        \"actual_bypass_ticks\": "
+           << _sealed_mechanism_summary.actual_bypass_ticks << ","
+           << std::endl;
+        fd << "        \"low_priority_bypass_core_ticks\": "
+           << _sealed_mechanism_summary.low_priority_bypass_core_ticks << ","
+           << std::endl;
+        fd << "        \"hp_dispatch_demand_ticks\": "
+           << _sealed_mechanism_summary.hp_dispatch_demand_ticks << ","
+           << std::endl;
+        fd << "        \"hp_energy_blocked_ticks\": "
+           << _sealed_mechanism_summary.hp_energy_blocked_ticks << ","
+           << std::endl;
+        fd << "        \"hp_energy_blocked_job_ticks\": "
+           << _sealed_mechanism_summary.hp_energy_blocked_job_ticks << ","
+           << std::endl;
+        fd << "        \"observed_decision_ticks\": "
+           << _sealed_mechanism_summary.observed_decision_ticks
+           << std::endl;
+        fd << "    }," << std::endl;
+        fd << "    \"energy_summary\": {" << std::endl;
+        fd << "        \"offered_energy_j\": "
+           << exactDoubleString(_sealed_energy_summary.offered_energy_j)
+           << "," << std::endl;
+        fd << "        \"credited_energy_j\": "
+           << exactDoubleString(_sealed_energy_summary.credited_energy_j)
+           << "," << std::endl;
+        fd << "        \"clipped_energy_j\": "
+           << exactDoubleString(_sealed_energy_summary.clipped_energy_j)
+           << "," << std::endl;
+        fd << "        \"consumed_energy_j\": "
+           << exactDoubleString(_sealed_energy_summary.consumed_energy_j)
+           << "," << std::endl;
+        fd << "        \"battery_min_j\": "
+           << exactDoubleString(_sealed_energy_summary.battery_min_j)
+           << "," << std::endl;
+        fd << "        \"battery_max_j\": "
+           << exactDoubleString(_sealed_energy_summary.battery_max_j)
+           << "," << std::endl;
+        fd << "        \"battery_final_j\": "
+           << exactDoubleString(_sealed_energy_summary.battery_final_j)
+           << "," << std::endl;
+        fd << "        \"battery_empty_ticks\": "
+           << _sealed_energy_summary.battery_empty_ticks << ","
+           << std::endl;
+        fd << "        \"battery_full_ticks\": "
+           << _sealed_energy_summary.battery_full_ticks << ","
+           << std::endl;
+        fd << "        \"observed_energy_intervals\": "
+           << _sealed_energy_summary.observed_energy_intervals
+           << std::endl;
+        fd << "    }," << std::endl;
+        fd << "    \"per_task_summary\": [" << std::endl;
+        for (std::size_t index = 0;
+             index < _sealed_lifecycle_summaries.size();
+             ++index) {
+            const auto &metadata = _observability_task_metadata[index];
+            const auto &summary = _sealed_lifecycle_summaries[index];
+            fd << "        {\"task_name\": \""
+               << escapeJson(metadata.task_name) << "\", ";
+            fd << "\"priority_rank\": " << metadata.priority_rank << ", ";
+            fd << "\"is_top4\": "
+               << (metadata.isTop4() ? "true" : "false") << ", ";
+            fd << "\"is_bottom6\": "
+               << (metadata.isBottom6() ? "true" : "false") << ", ";
+            fd << "\"released_jobs\": " << summary.released_jobs << ", ";
+            fd << "\"completed_jobs\": " << summary.completed_jobs << ", ";
+            fd << "\"terminated_jobs\": " << summary.terminated_jobs << ", ";
+            fd << "\"deadline_miss_jobs\": "
+               << summary.deadline_miss_jobs << ", ";
+            fd << "\"unfinished_at_horizon_jobs\": "
+               << summary.unfinished_at_horizon_jobs << ", ";
+            fd << "\"executed_core_ticks\": "
+               << summary.executed_core_ticks << ", ";
+            fd << "\"completed_response_time_count\": "
+               << summary.completed_response_time_count << ", ";
+            fd << "\"completed_response_time_sum_ms\": "
+               << summary.completed_response_time_sum_ms << ", ";
+            fd << "\"completed_response_time_max_ms\": "
+               << summary.completed_response_time_max_ms << "}";
+            if (index + 1 != _sealed_lifecycle_summaries.size()) {
+                fd << ",";
+            }
+            fd << std::endl;
+        }
+        fd << "    ]," << std::endl;
     }
 
     void JSONTrace::observeDecision(const DecisionRecord &record) {

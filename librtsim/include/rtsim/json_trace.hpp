@@ -33,6 +33,7 @@
 #include <rtsim/rttask.hpp>
 #include <rtsim/taskevt.hpp>
 #include <rtsim/energy_info_provider.hpp>
+#include <rtsim/observability_summary.hpp>
 
 namespace RTSim {
     enum class DecisionExclusionReason : std::uint8_t {
@@ -87,16 +88,6 @@ namespace RTSim {
         const std::map<AbsRTTask *, DecisionExclusionReason>
             &exclusion_reasons);
 
-    struct MechanismSummary {
-        std::uint64_t bypass_opportunity_ticks = 0;
-        std::uint64_t actual_bypass_ticks = 0;
-        std::uint64_t low_priority_bypass_core_ticks = 0;
-        std::uint64_t hp_dispatch_demand_ticks = 0;
-        std::uint64_t hp_energy_blocked_ticks = 0;
-        std::uint64_t hp_energy_blocked_job_ticks = 0;
-        std::uint64_t observed_decision_ticks = 0;
-    };
-
     enum class ObservabilitySummaryState : std::uint8_t {
         Disabled = 0,
         Enabled,
@@ -115,6 +106,9 @@ namespace RTSim {
         bool isConfigured() const noexcept { return _configured; }
         bool isFinalized() const noexcept { return _finalized; }
         const MechanismSummary &summary() const noexcept { return _summary; }
+        std::size_t processorCount() const noexcept {
+            return _processor_count;
+        }
 
     private:
         bool _configured = false;
@@ -125,21 +119,12 @@ namespace RTSim {
         MechanismSummary _summary;
     };
 
-    struct PerTaskLifecycleSummary {
-        std::string task_name;
-        std::uint64_t released_jobs = 0;
-        std::uint64_t completed_jobs = 0;
-        std::uint64_t deadline_miss_jobs = 0;
-        std::uint64_t unfinished_at_horizon_jobs = 0;
-        std::uint64_t executed_core_ticks = 0;
-        std::uint64_t completed_response_time_count = 0;
-        std::uint64_t completed_response_time_sum_ms = 0;
-        std::uint64_t completed_response_time_max_ms = 0;
-    };
-
     class PerTaskLifecycleAccumulator {
     public:
         void reset(std::int64_t horizon_ms);
+        void reset(
+            std::int64_t horizon_ms,
+            const std::vector<ObservabilityTaskMetadata> &metadata);
 
         void onRelease(const std::string &task_name,
                        std::int64_t release_time_ms);
@@ -187,6 +172,7 @@ namespace RTSim {
 
         bool _configured = false;
         bool _finalized = false;
+        bool _frozen_task_universe = false;
         std::int64_t _horizon_ms = -1;
         std::map<std::string, PerTaskLifecycleSummary> _task_summaries;
         std::map<JobIdentity, ActiveJobState> _active_jobs;
@@ -280,6 +266,15 @@ namespace RTSim {
         MetaSim::Tick _observability_summary_horizon;
         MechanismSummaryAccumulator _mechanism_summary;
         PerTaskLifecycleAccumulator _lifecycle_summary;
+        int _trace_schema_version;
+        bool _b4_observability_schema_enabled;
+        bool _observability_payload_sealed;
+        bool _observability_energy_summary_set;
+        std::vector<ObservabilityTaskMetadata> _observability_task_metadata;
+        EnergySummary _observability_energy_summary;
+        MechanismSummary _sealed_mechanism_summary;
+        EnergySummary _sealed_energy_summary;
+        std::vector<PerTaskLifecycleSummary> _sealed_lifecycle_summaries;
 
         // V98: fd 放在最后，确保先被销毁，避免缓冲区问题影响其他成员
         std::ofstream fd;
@@ -295,6 +290,8 @@ namespace RTSim {
         void beginEvent();
         void ensureCurrentRun();
         bool shouldAccumulateLifecycleSummary() const;
+        void resetObservabilityRunState();
+        void writeSealedObservabilityPayload();
         static std::string escapeJson(const std::string &value);
         void writeSchedulerJob(const SchedulerTraceJob &job);
         void writeSchedulerJobArray(const std::vector<SchedulerTraceJob> &jobs);
@@ -354,7 +351,21 @@ namespace RTSim {
             const std::vector<ReleaseEnergySnapshotJob> &released_jobs);
 
         void enableObservabilitySummaries(MetaSim::Tick horizon);
+        void configureB4ObservabilitySchema3(
+            MetaSim::Tick horizon,
+            const std::vector<ObservabilityTaskMetadata> &task_metadata);
+        void setObservabilityEnergySummary(const EnergySummary &summary);
         void finalizeObservabilitySummaries(MetaSim::Tick horizon);
+        void sealObservabilityPayloadForSerialization();
+        int traceSchemaVersion() const noexcept {
+            return _trace_schema_version;
+        }
+        bool b4ObservabilitySchemaEnabled() const noexcept {
+            return _b4_observability_schema_enabled;
+        }
+        bool observabilityPayloadSealed() const noexcept {
+            return _observability_payload_sealed;
+        }
         bool observabilitySummariesEnabled() const noexcept {
             return _observability_summary_state ==
                 ObservabilitySummaryState::Enabled;
