@@ -4,6 +4,7 @@
 #include "config_manager.hpp"
 #include "energy_bridge.hpp"
 #include "scheduler.hpp"
+#include <rtsim/scheduler/scheduler_harvest_runtime.hpp>
 #include <rtsim/abstask.hpp>
 #include <rtsim/rttask.hpp>
 #include <rtsim/energy_info_provider.hpp>
@@ -155,16 +156,7 @@ namespace RTSim {
         std::set<AbsRTTask *> _paid_pending_tasks;
         std::map<AbsRTTask *, MetaSim::Tick> _pending_payment_ticks;
         std::set<AbsRTTask *> _paid_execution_credit_tasks;
-        MetaSim::Tick _last_tick_time;       // 上次tick时间
-        MetaSim::Tick _last_collection_time; // 上次能量收集时间
-
-        // ========== 太阳能配置 ==========
-        std::string _solar_data_file;
-        double _pv_efficiency;
-        double _pv_area_m2;
-        bool _use_real_solar_data;
-        MetaSim::Tick _start_time_offset;
-        double _base_harvest_rate;  // ⭐ V93修复：从配置读取基础收集率 (J/ms)
+        SchedulerHarvestRuntime _harvest_runtime;
 
         // ========== Tick事件 ==========
         ALAPBlockTickEvent *_tick_event;
@@ -225,7 +217,6 @@ namespace RTSim {
 
         // 核心调度逻辑
         void performTickScheduling();
-        void collectEnergyAtTickBoundary();
 
         // ⭐ ALAP时序门控（阶段一）
         bool checkALAPTimingGate();  // 检查是否需要强制休眠
@@ -242,8 +233,6 @@ namespace RTSim {
         // 能量计算
         double calculateTotalEnergyForTask(AbsRTTask *task); // 计算任务总能耗
         double calculatePowerForWorkload(const std::string &workload, double frequency);
-        double collectSolarEnergy(MetaSim::Tick current_time);
-        double getSolarIrradiance(int64_t time_ms);
 
         // 任务管理
         ALAPBlockTaskModel *getTaskModel(AbsRTTask *task);
@@ -367,8 +356,6 @@ namespace RTSim {
         MRTKernel *getKernel();
 
         // 配置接口
-        void setPVConfig(double efficiency, double area, const std::string &solar_file);
-        void setStartTimeOffset(MetaSim::Tick offset);
 
         // 统计和调试
         void printStats() const;

@@ -3,9 +3,11 @@
 #include <filesystem>
 #include <sstream>
 
+#include <metasim/baseexc.hpp>
 #include <rtsim/consts.hpp>
-#include <rtsim/system_descriptor.hpp>
 #include <rtsim/scheduler/config_manager.hpp>
+#include <rtsim/scheduler/energy_bridge.hpp>
+#include <rtsim/system_descriptor.hpp>
 
 namespace RTSim {
     // Generic converter from string to any type (that supports std::streams)
@@ -99,8 +101,13 @@ namespace RTSim {
     }
 
     SystemDescriptor::SystemDescriptor(std::string fname) {
-        // ⭐ V28.14关键修复：加载配置到ConfigManager，这样Python能量管理器可以读取
-        ConfigManager::getInstance().loadSystemConfig(fname);
+        EnergyBridge::ensureConfigCallbackRegistered();
+        ConfigManager &config = ConfigManager::getInstance();
+        if (!config.loadSystemConfig(fname)) {
+            throw MetaSim::BaseExc(
+                "Strict system configuration load failed: " + fname +
+                ": " + config.getLastConfigError());
+        }
 
         yaml::Object_ptr descriptor_obj = yaml::parse(fname);
 

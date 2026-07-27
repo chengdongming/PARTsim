@@ -112,10 +112,6 @@ public:
         scheduler._initial_energy = current_energy;
         scheduler._current_energy = current_energy;
         scheduler._max_energy = 100.0;
-        scheduler._base_harvest_rate = 0.0;
-        scheduler._use_real_solar_data = false;
-        scheduler._last_tick_time = MetaSim::SIMUL.getTime();
-        scheduler._last_collection_time = MetaSim::SIMUL.getTime();
         scheduler._energy_depleted = false;
     }
 

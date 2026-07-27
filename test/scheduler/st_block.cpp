@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <set>
@@ -131,10 +132,6 @@ public:
         scheduler._initial_energy = current_energy;
         scheduler._current_energy = current_energy;
         scheduler._max_energy = 100.0;
-        scheduler._base_harvest_rate = 0.0;
-        scheduler._use_real_solar_data = false;
-        scheduler._last_tick_time = MetaSim::SIMUL.getTime();
-        scheduler._last_collection_time = MetaSim::SIMUL.getTime();
         scheduler._energy_depleted = false;
         scheduler._alap_blocking = false;
         scheduler._deep_charging = false;
@@ -152,6 +149,33 @@ public:
 
     static void tick(STBlockScheduler &scheduler) {
         scheduler.performTickScheduling();
+    }
+
+    static void setHarvestConfig(STBlockScheduler &scheduler,
+                                 const HarvestSourceConfig &config) {
+        scheduler._harvest_runtime.beginRun(config);
+    }
+
+    static bool hasAppliedHarvestInterval(STBlockScheduler &scheduler) {
+        return scheduler._harvest_runtime.runtime().hasAppliedInterval();
+    }
+
+    static std::uint64_t lastAppliedHarvestIndex(
+        STBlockScheduler &scheduler) {
+        return scheduler._harvest_runtime.runtime().lastAppliedIndex();
+    }
+
+    static Tick minSlack(STBlockScheduler &scheduler) {
+        return scheduler.calculateMinSlack();
+    }
+
+    static void enterChargingFallback(STBlockScheduler &scheduler) {
+        scheduler._deep_charging = true;
+        scheduler._is_charging_sleep = true;
+        scheduler._energy_depleted = true;
+        scheduler._st_charge_blocked_task = nullptr;
+        scheduler._st_charge_required_energy = 1.0;
+        scheduler._st_charge_slack_at_begin = Tick(100);
     }
 
     static Tick slack(STBlockScheduler &scheduler, AbsRTTask *task) {
@@ -184,6 +208,31 @@ public:
         }
     }
 };
+
+class ScopedSTBlockBaseHarvestRate {
+public:
+    explicit ScopedSTBlockBaseHarvestRate(double rate)
+        : _original(ConfigManager::getInstance().getBaseHarvestRate()) {
+        ConfigManager::getInstance().setBaseHarvestRate(rate);
+    }
+
+    ~ScopedSTBlockBaseHarvestRate() {
+        ConfigManager::getInstance().setBaseHarvestRate(_original);
+    }
+
+private:
+    double _original;
+};
+
+static ScaledPiecewiseConfig STBlockDelayedSurgeConfig() {
+    ScaledPiecewiseConfig config;
+    config.scale_w = 100000.0;
+    config.segments = {
+        {0, 5, 0.0},
+        {5, 7, 1.0},
+    };
+    return config;
+}
 
 TEST(STBlockScheduler, EnergyAvailableRunsBeforeSlackZero) {
     auto &simulation = MetaSim::Simulation::getInstance();
@@ -444,6 +493,115 @@ TEST(STBlockScheduler, ChargingSleepReleasesWhenBatteryFull) {
     EXPECT_FALSE(scheduler.isChargingSleepActive());
     EXPECT_EQ(task.getScheduleCount(), 1);
     EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 0.0);
+
+    simulation.endSingleRun();
+}
+
+TEST(STBlockScheduler,
+     PiecewiseZeroThenSurgeIgnoresMisleadingLegacyWake) {
+    ScopedSTBlockBaseHarvestRate misleading_rate(1.0e9);
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTBlockScheduler scheduler;
+    CPU cpu("st-block-piecewise-wake-cpu", nullptr);
+    TestSTBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeSTBlockTask task(1, 20, 20, 1.0);
+
+    STBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &task, 20, 1, 2.0);
+
+    simulation.initSingleRun();
+    STBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STBlockSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    STBlockSchedulerTestPeer::setHarvestConfig(
+        scheduler, HarvestSourceConfig{STBlockDelayedSurgeConfig()});
+    task.releaseAt(Tick(0));
+    STBlockSchedulerTestPeer::enqueue(scheduler, &task);
+
+    STBlockSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+    ASSERT_TRUE(scheduler.isChargingSleepActive());
+    EXPECT_EQ(task.getScheduleCount(), 0);
+    EXPECT_FALSE(
+        STBlockSchedulerTestPeer::hasAppliedHarvestInterval(scheduler));
+
+    for (int time_ms = 1; time_ms <= 5; ++time_ms) {
+        STBlockTestActionEvent zero_power_tick([&]() {
+            STBlockSchedulerTestPeer::tick(scheduler);
+        });
+        zero_power_tick.post(Tick(time_ms));
+        simulation.run_to(Tick(time_ms));
+        EXPECT_TRUE(scheduler.isChargingSleepActive())
+            << "time_ms=" << time_ms;
+        EXPECT_EQ(task.getScheduleCount(), 0)
+            << "time_ms=" << time_ms;
+        EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.0)
+            << "time_ms=" << time_ms;
+        ASSERT_TRUE(
+            STBlockSchedulerTestPeer::hasAppliedHarvestInterval(scheduler));
+        EXPECT_EQ(STBlockSchedulerTestPeer::lastAppliedHarvestIndex(scheduler),
+                  static_cast<std::uint64_t>(time_ms - 1));
+    }
+
+    STBlockTestActionEvent surge_tick([&]() {
+        STBlockSchedulerTestPeer::tick(scheduler);
+    });
+    surge_tick.post(Tick(6));
+    simulation.run_to(Tick(6));
+
+    EXPECT_FALSE(scheduler.isChargingSleepActive());
+    EXPECT_EQ(task.getScheduleCount(), 1);
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 98.0);
+    EXPECT_EQ(STBlockSchedulerTestPeer::lastAppliedHarvestIndex(scheduler),
+              UINT64_C(5));
+
+    simulation.endSingleRun();
+}
+
+TEST(STBlockScheduler,
+     NoActiveChargingFallbackRechecksNextTickWithoutRatePrediction) {
+    ScopedSTBlockBaseHarvestRate misleading_rate(1.0e9);
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTBlockScheduler scheduler;
+
+    simulation.initSingleRun();
+    STBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STBlockSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    STBlockSchedulerTestPeer::setHarvestConfig(
+        scheduler, HarvestSourceConfig{STBlockDelayedSurgeConfig()});
+    STBlockSchedulerTestPeer::enterChargingFallback(scheduler);
+
+    EXPECT_EQ(STBlockSchedulerTestPeer::minSlack(scheduler), Tick(1));
+    STBlockSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+    ASSERT_TRUE(scheduler.isChargingSleepActive());
+    EXPECT_FALSE(
+        STBlockSchedulerTestPeer::hasAppliedHarvestInterval(scheduler));
+
+    for (int time_ms = 1; time_ms <= 5; ++time_ms) {
+        STBlockTestActionEvent zero_power_tick([&]() {
+            STBlockSchedulerTestPeer::tick(scheduler);
+        });
+        zero_power_tick.post(Tick(time_ms));
+        simulation.run_to(Tick(time_ms));
+        EXPECT_TRUE(scheduler.isChargingSleepActive())
+            << "time_ms=" << time_ms;
+        EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.0)
+            << "time_ms=" << time_ms;
+        EXPECT_EQ(STBlockSchedulerTestPeer::lastAppliedHarvestIndex(scheduler),
+                  static_cast<std::uint64_t>(time_ms - 1));
+        EXPECT_EQ(STBlockSchedulerTestPeer::minSlack(scheduler), Tick(1));
+    }
+
+    STBlockTestActionEvent surge_tick([&]() {
+        STBlockSchedulerTestPeer::tick(scheduler);
+    });
+    surge_tick.post(Tick(6));
+    simulation.run_to(Tick(6));
+
+    EXPECT_FALSE(scheduler.isChargingSleepActive());
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 100.0);
+    EXPECT_EQ(STBlockSchedulerTestPeer::lastAppliedHarvestIndex(scheduler),
+              UINT64_C(5));
 
     simulation.endSingleRun();
 }

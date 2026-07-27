@@ -16,6 +16,7 @@
 #include <metasim/factory.hpp>
 #include <metasim/simul.hpp>
 #include <rtsim/scheduler/gpfp_st_nonblock_scheduler.hpp>
+#include <rtsim/scheduler/priority_energy_task_params.hpp>
 #include <rtsim/task.hpp>
 #include <rtsim/rttask.hpp>
 #include <rtsim/exeinstr.hpp>
@@ -310,14 +311,6 @@ namespace RTSim {
           _energy_commit_tick(-1),
           _energy_commit_generation(0),
           _energy_commit_valid(false),
-          _last_tick_time(0),
-          _last_collection_time(0),
-          _solar_data_file(""),
-          _pv_efficiency(0.18),
-          _pv_area_m2(1.0),
-          _use_real_solar_data(false),
-          _start_time_offset(0),
-          _base_harvest_rate(0.054),  // ⭐ V93修复：默认值 54 mW
           _tick_event(nullptr),
           _first_tick_scheduled(false),
           _kernel(nullptr),
@@ -350,111 +343,10 @@ namespace RTSim {
         setenv("ENERGY_CONFIG_FILE", config_file.c_str(), 1);
 
         // 初始化EnergyBridge
-        bool bridge_initialized = EnergyBridge::getInstance().initialize(config_file);
+        bool bridge_initialized = EnergyBridge::getInstance().initialize();
         if (bridge_initialized) {
             SCHEDULER_LOG_INFO("✅ [ST-NonBlock] EnergyBridge 初始化成功");
 
-            _start_time_offset = configMgr.getStartTimeOffset();
-            SCHEDULER_LOG_INFO(std::string("⏰ [ST-NonBlock] 开始时间偏移: ") +
-                              std::to_string(static_cast<int64_t>(_start_time_offset)) + "ms");
-
-            // 读取太阳能配置
-            try {
-                std::ifstream yaml_file(config_file);
-                if (yaml_file.good()) {
-                    std::string line;
-                    bool in_energy_section = false;
-
-                    while (std::getline(yaml_file, line)) {
-                        std::string original_line = line;
-                        line.erase(0, line.find_first_not_of(" \t"));
-                        line.erase(line.find_last_not_of(" \t") + 1);
-
-                        if (line.empty() || line[0] == '#') {
-                            continue;
-                        }
-
-                        if (line.find("energy_management:") != std::string::npos) {
-                            in_energy_section = true;
-                            continue;
-                        }
-
-                        if (in_energy_section && !line.empty() && line[0] != '-' && line[0] != '#') {
-                            size_t leading_spaces = original_line.find_first_not_of(" \t");
-                            if (leading_spaces == 0 && line.find(':') != std::string::npos &&
-                                line.find("energy_management:") == std::string::npos) {
-                                break;
-                            }
-                        }
-
-                        if (in_energy_section) {
-                            if (line.find("use_real_solar_data:") != std::string::npos) {
-                                std::string value = line.substr(line.find(":") + 1);
-                                size_t comment_pos = value.find('#');
-                                if (comment_pos != std::string::npos) {
-                                    value = value.substr(0, comment_pos);
-                                }
-                                value.erase(0, value.find_first_not_of(" \t"));
-                                value.erase(value.find_last_not_of(" \t") + 1);
-                                _use_real_solar_data = (value == "true");
-                            }
-                            else if (line.find("solar_data_file:") != std::string::npos) {
-                                std::string value = line.substr(line.find(":") + 1);
-                                size_t comment_pos = value.find('#');
-                                if (comment_pos != std::string::npos) {
-                                    value = value.substr(0, comment_pos);
-                                }
-                                value.erase(0, value.find_first_not_of(" \t\""));
-                                value.erase(value.find_last_not_of(" \t\"") + 1);
-                                _solar_data_file = value;
-                            }
-                            else if (line.find("pv_efficiency:") != std::string::npos) {
-                                std::string value = line.substr(line.find(":") + 1);
-                                size_t comment_pos = value.find('#');
-                                if (comment_pos != std::string::npos) {
-                                    value = value.substr(0, comment_pos);
-                                }
-                                value.erase(0, value.find_first_not_of(" \t"));
-                                value.erase(value.find_last_not_of(" \t") + 1);
-                                _pv_efficiency = std::stod(value);
-                            }
-                            else if (line.find("pv_area_m2:") != std::string::npos) {
-                                std::string value = line.substr(line.find(":") + 1);
-                                size_t comment_pos = value.find('#');
-                                if (comment_pos != std::string::npos) {
-                                    value = value.substr(0, comment_pos);
-                                }
-                                value.erase(0, value.find_first_not_of(" \t"));
-                                value.erase(value.find_last_not_of(" \t") + 1);
-                                _pv_area_m2 = std::stod(value);
-                            }
-                            // ⭐ V93修复：读取base_harvesting_rate配置
-                            else if (line.find("base_harvesting_rate:") != std::string::npos) {
-                                std::string value = line.substr(line.find(":") + 1);
-                                size_t comment_pos = value.find('#');
-                                if (comment_pos != std::string::npos) {
-                                    value = value.substr(0, comment_pos);
-                                }
-                                value.erase(0, value.find_first_not_of(" \t"));
-                                value.erase(value.find_last_not_of(" \t") + 1);
-                                _base_harvest_rate = std::stod(value);
-                                SCHEDULER_LOG_INFO(std::string("☀️ [ST-NonBlock] V93: base_harvesting_rate = ") +
-                                                  std::to_string(_base_harvest_rate) + " J/ms (" +
-                                                  std::to_string(_base_harvest_rate * 1000) + " mW)");
-                            }
-                        }
-                    }
-
-                    SCHEDULER_LOG_INFO(std::string("☀️ [ST-NonBlock] 太阳能配置: ") +
-                                      "use_real=" + (_use_real_solar_data ? "true" : "false") +
-                                      " file=" + _solar_data_file +
-                                      " eff=" + std::to_string(_pv_efficiency) +
-                                      " area=" + std::to_string(_pv_area_m2) + "m²" +
-                                      " harvest_rate=" + std::to_string(_base_harvest_rate * 1000) + "mW");
-                }
-            } catch (const std::exception &e) {
-                SCHEDULER_LOG_WARNING(std::string("⚠️ [ST-NonBlock] 解析太阳能配置失败: ") + e.what());
-            }
 
             // 读取初始能量
             double bridge_energy = EnergyBridge::getInstance().getCurrentEnergy();
@@ -466,7 +358,6 @@ namespace RTSim {
         } else {
             SCHEDULER_LOG_WARNING("⚠️ [ST-NonBlock] EnergyBridge 初始化失败，使用ConfigManager获取能量");
 
-            _start_time_offset = configMgr.getStartTimeOffset();
             double config_energy = configMgr.getInitialEnergy();
             if (config_energy > 0) {
                 _initial_energy = config_energy;
@@ -587,15 +478,17 @@ namespace RTSim {
         // ========== 第1步：收集太阳能 ==========
         // ⭐ 关键修复：太阳能收集必须在能量耗尽检查之前执行
         // 否则当初始能量为0时，系统会因为能量耗尽而跳过太阳能收集，形成死锁
-        Tick elapsed = current_time - _last_tick_time;
-        if (elapsed > 0) {
-            double harvested = collectSolarEnergy(current_time);
-            if (harvested > 0.000001) {
-                _current_energy += harvested;
-                _stats.total_energy_harvested += harvested;
-                SCHEDULER_LOG_INFO("☀️ 收集太阳能: +" +
-                                   std::to_string(harvested * 1000) + " mJ → " +
-                                   std::to_string(_current_energy * 1000) + " mJ");
+        const HarvestResult harvest_result =
+            _harvest_runtime.applyAtDecisionTime(
+                static_cast<int64_t>(current_time),
+                _current_energy,
+                _max_energy);
+        _current_energy = harvest_result.battery_after_j;
+        if (harvest_result.offered_j > 0.000001) {
+            _stats.total_energy_harvested += harvest_result.offered_j;
+            SCHEDULER_LOG_INFO("☀️ 收集太阳能: +" +
+                               std::to_string(harvest_result.offered_j * 1000) + " mJ → " +
+                               std::to_string(_current_energy * 1000) + " mJ");
 
                 // ⭐ V43修复：只有当能量足够时才清除能量耗尽标志
                 // 使用合理阈值（10 mJ）判断能量是否足够恢复调度
@@ -606,9 +499,7 @@ namespace RTSim {
                                       std::to_string(_current_energy * 1000) + " mJ >= 阈值=" +
                                       std::to_string(RECOVERY_THRESHOLD * 1000) + " mJ)");
                 }
-            }
         }
-        _last_tick_time = current_time;
 
         // ========== V131: 深度休眠锁已启用 ==========
         // ⭐ V131修复：当能量不足时设置深度休眠锁，避免1ms碎片化抖动
@@ -619,11 +510,6 @@ namespace RTSim {
         if (_energy_depleted && _current_energy < 0.000001) {
             SCHEDULER_LOG_INFO(std::string("💀 [ST-NonBlock] 能量已耗尽，跳过任务调度"));
             return;
-        }
-
-        // 确保能量不超过最大容量
-        if (_current_energy > _max_energy) {
-            _current_energy = _max_energy;
         }
 
         if (!_kernel) {
@@ -886,7 +772,7 @@ namespace RTSim {
         int wcet = 20;
         MetaSim::Tick arrival_offset = 0;
         std::string workload = "bzip2";
-        double energy_coeff = 1.0;
+        const double energy_coeff = parsePriorityEnergyTaskFactor(params);
 
         size_t period_pos = params.find("period=");
         if (period_pos != std::string::npos) {
@@ -1486,134 +1372,6 @@ namespace RTSim {
     // 能量收集方法
     // =====================================================
 
-    double STNonBlockScheduler::collectSolarEnergy(Tick current_time) {
-        int64_t current_ms = static_cast<int64_t>(current_time);
-
-        // 计算自上次收集以来的时间
-        Tick elapsed = current_time - _last_collection_time;
-
-        if (elapsed <= 0) {
-            return 0.0;
-        }
-
-        double energy = 0.0;
-
-        if (_use_real_solar_data) {
-            // ⭐ 使用真实NASA太阳能数据
-            double irradiance = getSolarIrradiance(current_ms);  // W/m²
-            double elapsed_seconds = static_cast<double>(elapsed) * 0.001;
-            energy = irradiance * _pv_area_m2 * _pv_efficiency * elapsed_seconds;
-        } else {
-            // ⭐ V95修复：线性函数模型也应该使用面积和效率
-            // 与真实太阳能模式使用相同的公式：energy = irradiance × area × efficiency × time
-            int64_t actual_time_ms = current_ms + static_cast<int64_t>(_start_time_offset);
-            int64_t ms_of_day = actual_time_ms % 86400000;
-            double hour_of_day = static_cast<double>(ms_of_day) / 3600000.0;  // 0.0-24.0
-
-            // 计算时间因子（线性函数）
-            double time_factor = 0.0;
-            if (hour_of_day < 6.0) {
-                // 夜晚 (0:00-6:00)
-                time_factor = 0.0;
-            } else if (hour_of_day < 11.0) {
-                // 日出阶段 (6:00-11:00): 线性增加
-                time_factor = (hour_of_day - 6.0) / 5.0;  // 0.0-1.0
-            } else if (hour_of_day < 13.0) {
-                // 白天峰值 (11:00-13:00): 保持峰值
-                time_factor = 1.0;
-            } else if (hour_of_day < 18.0) {
-                // 日落阶段 (13:00-18:00): 线性降低
-                time_factor = (18.0 - hour_of_day) / 5.0;  // 1.0-0.0
-            } else {
-                // 夜晚 (18:00-24:00)
-                time_factor = 0.0;
-            }
-
-            // 计算峰值辐照度 (W/m²)
-            // base_harvest_rate (W) = irradiance (W/m²) × area (m²) × efficiency
-            // 所以 peak_irradiance = base_harvest_rate / (area × efficiency)
-            const double PEAK_IRRADIANCE = _base_harvest_rate / (_pv_area_m2 * _pv_efficiency);
-            double irradiance = PEAK_IRRADIANCE * time_factor;  // W/m²
-
-            // 使用与真实太阳能模式相同的公式
-            double elapsed_seconds = static_cast<double>(elapsed) * 0.001;
-            energy = irradiance * _pv_area_m2 * _pv_efficiency * elapsed_seconds;
-        }
-
-        // 更新最后收集时间
-        _last_collection_time = current_time;
-
-        return energy;
-    }
-
-    double STNonBlockScheduler::getSolarIrradiance(int64_t time_ms) {
-        if (!_use_real_solar_data) {
-            // ⭐ 分段函数模型：模拟真实太阳能曲线
-            int64_t actual_time_ms = time_ms + static_cast<int64_t>(_start_time_offset);
-
-            // 转换为小时（用于分段判断）
-            int64_t ms_of_day = actual_time_ms % 86400000;
-            double hour_of_day = static_cast<double>(ms_of_day) / 3600000.0;  // 0.0-24.0
-
-            // 分段函数定义（更真实的太阳能曲线）
-            // ⭐ V94修复：使用base_harvest_rate计算等效辐照度，而不是硬编码
-            // base_harvest_rate (J/ms) = irradiance (W/m²) * area (m²) * efficiency * 0.001 (s/ms)
-            // 所以 irradiance = base_harvest_rate / (area * efficiency * 0.001)
-            const double PEAK_IRRADIANCE = _base_harvest_rate / (_pv_area_m2 * _pv_efficiency * 0.001);
-
-            if (hour_of_day < 6.0) {
-                // 夜晚 (0:00-6:00)
-                return 0.0;
-            } else if (hour_of_day < 11.0) {
-                // 日出阶段 (6:00-11:00): 线性增加，5小时
-                double progress = (hour_of_day - 6.0) / 5.0;  // 0.0-1.0
-                return PEAK_IRRADIANCE * progress;
-            } else if (hour_of_day < 13.0) {
-                // 白天峰值 (11:00-13:00): 保持峰值，2小时
-                return PEAK_IRRADIANCE;
-            } else if (hour_of_day < 18.0) {
-                // 日落阶段 (13:00-18:00): 线性降低，5小时
-                double progress = (18.0 - hour_of_day) / 5.0;  // 1.0-0.0
-                return PEAK_IRRADIANCE * progress;
-            } else {
-                // 夜晚 (18:00-24:00)
-                return 0.0;
-            }
-        }
-
-        // 使用真实NASA太阳能数据
-        int64_t actual_time_ms = time_ms + static_cast<int64_t>(_start_time_offset);
-        // ⭐ Bug修复：计算从数据开始的总分钟数，而不是当天的分钟数
-        // 数据文件按分钟索引，包含多天的数据（370天 × 1440分钟/天 = 532800分钟）
-        int64_t total_minutes = actual_time_ms / 60000;  // 从数据开始的总分钟数
-
-        int line_number = total_minutes + 2;  // +2跳过标题行
-
-        std::ifstream file(_solar_data_file);
-        if (!file.is_open()) {
-            SCHEDULER_LOG_WARNING(std::string("⚠️ [ST-NonBlock] 无法打开太阳能数据文件: ") + _solar_data_file);
-            return 0.0;
-        }
-
-        std::string line;
-        int current_line = 1;
-        while (current_line < line_number && std::getline(file, line)) {
-            current_line++;
-        }
-
-        if (std::getline(file, line)) {
-            try {
-                double irradiance = std::stod(line);
-                return irradiance;
-            } catch (const std::exception &e) {
-                SCHEDULER_LOG_WARNING(std::string("⚠️ [ST-NonBlock] 解析辐照度失败: ") + e.what());
-                return 0.0;
-            }
-        }
-
-        return 0.0;
-    }
-
     // =====================================================
     // Tick事件调度
     // =====================================================
@@ -1885,58 +1643,11 @@ namespace RTSim {
         clearPendingWakeIfMatches(task);
         double unit_energy = calculateUnitEnergyForTask(task);
         Tick slack = calculateSlackForTask(task);
-        double available_energy = std::max(0.0, _current_energy);
-        double energy_needed = std::max(0.0, _max_energy - available_energy);
-
-        // 唤醒估算必须和 collectSolarEnergy() 的实际收集语义保持一致：
-        // - 非真实太阳能路径下，_base_harvest_rate 在 tick 收集里按 W(J/s) 使用；
-        // - 因此这里要换算成每毫秒可收集的 J/ms，并应用相同的时段系数，
-        //   否则会把等待时间低估约 1000 倍，导致 1ms 级唤醒抖动。
-        double estimated_harvest_per_ms = 0.0;
-        if (_use_real_solar_data) {
-            double irradiance = getSolarIrradiance(static_cast<int64_t>(current_time));
-            estimated_harvest_per_ms = std::max(0.0, irradiance * _pv_area_m2 * _pv_efficiency * 0.001);
-        } else {
-            int64_t actual_time_ms = static_cast<int64_t>(current_time) + static_cast<int64_t>(_start_time_offset);
-            int64_t ms_of_day = actual_time_ms % 86400000;
-            double hour_of_day = static_cast<double>(ms_of_day) / 3600000.0;
-            double time_factor = 0.0;
-
-            if (hour_of_day < 6.0) {
-                time_factor = 0.0;
-            } else if (hour_of_day < 11.0) {
-                time_factor = (hour_of_day - 6.0) / 5.0;
-            } else if (hour_of_day < 13.0) {
-                time_factor = 1.0;
-            } else if (hour_of_day < 18.0) {
-                time_factor = (18.0 - hour_of_day) / 5.0;
-            } else {
-                time_factor = 0.0;
-            }
-
-            estimated_harvest_per_ms = std::max(0.0, _base_harvest_rate * time_factor * 0.001);
-        }
-
         int64_t slack_ms = static_cast<int64_t>(slack);
-        int64_t charge_time_ms = 1;
-        if (energy_needed > 1e-12) {
-            if (estimated_harvest_per_ms > 1e-12) {
-                charge_time_ms = static_cast<int64_t>(std::ceil(energy_needed / estimated_harvest_per_ms));
-            } else {
-                charge_time_ms = std::numeric_limits<int64_t>::max() / 4;
-            }
-        }
-        if (charge_time_ms < 1) {
-            charge_time_ms = 1;
-        }
-
-        int64_t wake_offset_ms = 1;
-        if (slack_ms > 0) {
-            wake_offset_ms = std::min(charge_time_ms, slack_ms);
-            if (wake_offset_ms < 1) {
-                wake_offset_ms = 1;
-            }
-        }
+        // The normal 1 ms tick path releases a held task as soon as the
+        // runtime-clipped battery is full. This dedicated event only anchors
+        // the other release boundary: slack exhaustion.
+        int64_t wake_offset_ms = std::max<int64_t>(1, slack_ms);
 
         Tick wake_time = current_time + wake_offset_ms;
 
@@ -1966,10 +1677,8 @@ namespace RTSim {
         SCHEDULER_LOG_INFO(std::string("⏰ [ST-NonBlock] 设置/更新唤醒定时器: ") +
                            "任务=" + getTaskName(task) +
                            " Slack=" + std::to_string(static_cast<int64_t>(slack)) + "ms" +
-                           " 充电时间=" + std::to_string(charge_time_ms) + "ms" +
                            " 唤醒偏移=" + std::to_string(wake_offset_ms) + "ms" +
-                           " 唤醒时间=" + std::to_string(static_cast<int64_t>(wake_time)) + "ms" +
-                           " 估计收集率=" + std::to_string(estimated_harvest_per_ms * 1000) + "mJ/ms");
+                           " 唤醒时间=" + std::to_string(static_cast<int64_t>(wake_time)) + "ms");
     }
 
     void STNonBlockScheduler::clearPersistentTaskState(AbsRTTask *task) {
@@ -2094,21 +1803,6 @@ namespace RTSim {
     // 配置方法
     // =====================================================
 
-    void STNonBlockScheduler::setPVConfig(double efficiency, double area, const std::string &solar_file) {
-        _pv_efficiency = efficiency;
-        _pv_area_m2 = area;
-        _solar_data_file = solar_file;
-
-        SCHEDULER_LOG_INFO(std::string("⚙️ [ST-NonBlock] 太阳能配置更新: ") +
-                          "效率=" + std::to_string(efficiency) +
-                          " 面积=" + std::to_string(area) + "m²" +
-                          " 数据文件=" + solar_file);
-    }
-
-    void STNonBlockScheduler::setStartTimeOffset(Tick offset) {
-        _start_time_offset = offset;
-    }
-
     void STNonBlockScheduler::setKernel(AbsKernel *kernel) {
         // ⭐ V96修复：重写基类方法，同时设置基类和派生类的_kernel成员
         Scheduler::setKernel(kernel);
@@ -2132,12 +1826,15 @@ namespace RTSim {
     void STNonBlockScheduler::newRun() {
         SCHEDULER_LOG_INFO("🏁 [ST-NonBlock] newRun - 仿真开始");
 
+        EnergyBridge::getInstance().initialize();
+        const HarvestSourceConfig harvest_config =
+            ConfigManager::getInstance().getHarvestSourceConfig();
+        _harvest_runtime.beginRun(harvest_config);
+
         Scheduler::newRun();
         resetPersistentState();
 
         _current_energy = _initial_energy;
-        _last_tick_time = SIMUL.getTime();
-        _last_collection_time = SIMUL.getTime();
 
         _stats.total_scheduled = 0;
         _stats.total_task_completions = 0;
@@ -2155,14 +1852,6 @@ namespace RTSim {
 
     void STNonBlockScheduler::endRun() {
         SCHEDULER_LOG_INFO("🏁 [ST-NonBlock] endRun - 仿真结束");
-
-        // 仿真结束前，收集最后一次能量
-        Tick current_time = SIMUL.getTime();
-        double harvested = collectSolarEnergy(current_time);
-        if (harvested > 0.0001) {
-            _current_energy += harvested;
-            _stats.total_energy_harvested += harvested;
-        }
 
         // 打印统计信息
         SCHEDULER_LOG_INFO("📊 [ST-NonBlock] ===== ST-NonBlock调度统计 =====");

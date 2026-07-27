@@ -4,6 +4,7 @@
 #include "config_manager.hpp"
 #include "energy_bridge.hpp"
 #include "scheduler.hpp"
+#include <rtsim/scheduler/scheduler_harvest_runtime.hpp>
 #include <rtsim/abstask.hpp>
 #include <rtsim/rttask.hpp>
 #include <rtsim/energy_info_provider.hpp>
@@ -128,16 +129,9 @@ namespace RTSim {
         double _initial_energy;              // 初始能量
         double _max_energy;                  // 最大能量容量
         double _dispatching_tasks_total_energy; // 本次dispatch中已调度任务的总能耗
-        MetaSim::Tick _last_tick_time;       // 上次tick时间
-        MetaSim::Tick _last_collection_time; // 上次能量收集时间
+        SchedulerHarvestRuntime _harvest_runtime;
 
-        // ========== 太阳能配置 ==========
-        std::string _solar_data_file;
-        double _pv_efficiency;
-        double _pv_area_m2;
-        bool _use_real_solar_data;
-        MetaSim::Tick _start_time_offset;
-        double _base_harvest_rate;  // ⭐ V93修复：从配置读取基础收集率 (J/ms)
+        // Existing ST wake-time estimate; it is not an energy source.
 
         // ========== Tick事件 ==========
         STSyncTickEvent *_tick_event;
@@ -245,7 +239,7 @@ namespace RTSim {
         MetaSim::Tick calculateMinSlack();  // ⭐ ST特有：计算所有就绪任务的最小Slack
 
         // ⭐ V89: 同步组充电相关
-        MetaSim::Tick calculateGroupWakeTime(MetaSim::Tick group_slack, double group_energy);  // 计算组唤醒时间
+        MetaSim::Tick calculateGroupWakeTime(MetaSim::Tick group_slack);  // 计算组唤醒时间
         void scheduleGroupWakeEvent(MetaSim::Tick wake_time);  // 设置组唤醒定时器
 
         // ⭐ 过期任务清理
@@ -275,8 +269,6 @@ namespace RTSim {
         double calculateTotalEnergyForTask(AbsRTTask *task); // 计算任务总能耗
         double calculateRemainingEnergyForTask(AbsRTTask *task); // 计算任务剩余能耗
         double calculatePowerForWorkload(const std::string &workload, double frequency);
-        double collectSolarEnergy(MetaSim::Tick current_time);
-        double getSolarIrradiance(int64_t time_ms);
 
         // 任务管理
         STSyncTaskModel *getTaskModel(AbsRTTask *task);
@@ -370,8 +362,6 @@ namespace RTSim {
         MRTKernel *getKernel();
 
         // 配置接口
-        void setPVConfig(double efficiency, double area, const std::string &solar_file);
-        void setStartTimeOffset(MetaSim::Tick offset);
 
         // 统计和调试
         void printStats() const;

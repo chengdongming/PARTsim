@@ -188,7 +188,7 @@ namespace RTSim {
         setenv("ENERGY_CONFIG_FILE", config_file.c_str(), 1);
 
         // 3. 初始化EnergyBridge
-        bool bridge_initialized = EnergyBridge::getInstance().initialize(config_file);
+        bool bridge_initialized = EnergyBridge::getInstance().initialize();
         if (bridge_initialized) {
             SCHEDULER_LOG_INFO("✅ [EPP] EnergyBridge 初始化成功");
 
