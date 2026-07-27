@@ -286,6 +286,11 @@ class ProductionTasksetProvider:
             workloads.append(workload)
         result = (request, tuple(skeleton))
         self._skeletons[slot] = result
+        if not hasattr(self, "_skeleton_workloads"):
+            # Historical pilot wrappers intentionally bypassed this class's
+            # initializer; keep that V1 subclass compatible while V2 records
+            # the workload vector.
+            self._skeleton_workloads = {}
         self._skeleton_workloads[slot] = tuple(workloads)
         return result
 
@@ -312,6 +317,8 @@ class ProductionTasksetProvider:
             power_scale=Fraction(str(record.material.get("power_scale", "1"))),
         )
         certificate.validate()
+        if not hasattr(self, "_task_workloads"):
+            self._task_workloads = {}
         self._task_workloads[certificate.taskset_id] = (
             self._skeleton_workloads[str(record.taskset_skeleton_slot_id)]
         )
@@ -325,7 +332,7 @@ class ProductionTasksetProvider:
         """Return generator-frozen workloads; never infer them from power/W."""
 
         bound = self(record) if certificate is None else certificate
-        workloads = self._task_workloads.get(bound.taskset_id)
+        workloads = getattr(self, "_task_workloads", {}).get(bound.taskset_id)
         if workloads is None or len(workloads) != len(bound.tasks):
             raise RTA4ExecutionError(
                 "taskset has no complete frozen workload vector"

@@ -23,7 +23,6 @@ from typing import Any, Dict, Iterable, Mapping, Sequence
 from . import exact_energy
 from .rta4_formal_config import canonical_json, domain_hash
 from .rta4_formal_environment import load_strict_json
-from .rta4_formal_schema import formal_schema_hash
 from .solar_parse_proof import (
     SOLAR_STOD_BUILD_STANDARD,
     SOLAR_STOD_NORMALIZED_COMPILE_ARGUMENTS,
@@ -67,7 +66,10 @@ DEFAULT_RELEVANT_SOURCES = (
     "asap_block_rta_v9_3_taskset.py",
     "experiments/v9_3/exact_energy.py",
     "experiments/v9_3/rta4_formal_execution.py",
-    "experiments/v9_3/rta4_formal_schema.py",
+    "experiments/v9_3/rta4_formal_config_v2.py",
+    "experiments/v9_3/rta4_formal_schema_v2.py",
+    "experiments/v9_3/rta4_numeric_contract_v2.py",
+    "experiments/v9_3/rta4_shared_energy.py",
     "experiments/v9_3/simulation_engine.py",
     "experiments/v9_3/solar_parse_proof.py",
     "librtsim/include/rtsim/scheduler/gpfp_asap_block_scheduler.hpp",
@@ -228,6 +230,9 @@ def generate_production_build_manifest(
 ) -> Dict[str, Any]:
     """Capture the one environment selected before formal workers start."""
 
+    from .rta4_formal_schema_v2 import formal_schema_hash_v2
+    from .rta4_numeric_contract_v2 import RTA4_NUMERIC_CONTRACT_V2_SHA256
+
     root = Path(source_root).resolve(strict=True)
     if not (root / ".git").exists():
         raise ProductionBuildManifestError("source_root is not a git worktree")
@@ -302,8 +307,8 @@ def generate_production_build_manifest(
             "theory_document": _file_material(
                 root / exact_energy.THEORY_DOCUMENT_PATH, root=root,
             ),
-            "numeric_contract_sha256": exact_energy.NUMERIC_CONTRACT_SHA256,
-            "formal_schema_sha256": formal_schema_hash(),
+            "numeric_contract_sha256": RTA4_NUMERIC_CONTRACT_V2_SHA256,
+            "formal_schema_sha256": formal_schema_hash_v2(),
             "formal_profile_id": PRODUCTION_BUILD_PROFILE,
         },
         "python": {

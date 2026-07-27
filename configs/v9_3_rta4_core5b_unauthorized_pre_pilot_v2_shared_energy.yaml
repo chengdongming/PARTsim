@@ -1,0 +1,10 @@
+template: ASAP_BLOCK_V9_3_RTA4_PRE_PILOT_TEMPLATE_V2_SHARED_ENERGY
+core: CORE-5B
+experiment_contract:
+  profile: ASAP_BLOCK_V9_3_RTA4_FORMAL_V2_SHARED_ENERGY
+  schema_version: ASAP_BLOCK_V9_3_RTA4_FORMAL_SCHEMA_V2_SHARED_ENERGY
+  plan_version: ASAP_BLOCK_V9_3_RTA4_FORMAL_PLAN_V2_SHARED_ENERGY
+  parameter_status: UNAUTHORIZED_PRE_PILOT
+execution:
+  output_root: results/v9_3_rta4_core5b_formal_v2_shared_energy
+  taskset_store: results/v9_3_rta4_formal_tasksets_v2_shared_energy

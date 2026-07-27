@@ -13,6 +13,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from experiments.v9_3.rta4_formal_config import load_rta4_formal_config
+from experiments.v9_3.rta4_formal_config_v2 import (
+    RTA4FormalConfigV2Error, load_rta4_formal_config_v2,
+)
+from experiments.v9_3.rta4_formal_plan_v2 import describe_formal_plan_v2
 from experiments.v9_3.rta4_formal_pipeline import (
     RTA4FormalAuthorizationError, RTA4FormalRunner,
 )
@@ -24,6 +28,13 @@ from experiments.v9_3.rta4_formal_environment import load_strict_json
 
 def _json(path: Path):
     return load_strict_json(path)
+
+
+def _load_describable_config(path: Path):
+    try:
+        return "V2", load_rta4_formal_config_v2(path)
+    except RTA4FormalConfigV2Error:
+        return "V1", load_rta4_formal_config(path)
 
 
 def main() -> int:
@@ -52,9 +63,12 @@ def main() -> int:
     if args.dry_run:
         if args.config is None:
             parser.error("--dry-run requires --config")
-        config = load_rta4_formal_config(args.config)
-        runner = RTA4FormalRunner(config)
-        print(json.dumps(runner.describe(), ensure_ascii=False, sort_keys=True, indent=2))
+        version, config = _load_describable_config(args.config)
+        description = (
+            describe_formal_plan_v2(config)
+            if version == "V2" else RTA4FormalRunner(config).describe()
+        )
+        print(json.dumps(description, ensure_ascii=False, sort_keys=True, indent=2))
         return 0
     if args.execute or args.resume or args.validate_only:
         if args.prepared_config is None or args.authorization is None:
@@ -111,7 +125,13 @@ def main() -> int:
             return 2
     if args.config is None:
         parser.error("select --dry-run or an authorized operation")
-    config = load_rta4_formal_config(args.config)
+    version, config = _load_describable_config(args.config)
+    if version == "V2":
+        print(
+            "RTA4 formal V2 is UNAUTHORIZED_PRE_PILOT; no authorization was generated",
+            file=sys.stderr,
+        )
+        return 2
     runner = RTA4FormalRunner(config)
     try:
         runner.run()
