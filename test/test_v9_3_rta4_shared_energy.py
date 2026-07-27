@@ -258,7 +258,7 @@ def _spec(tmp_path, scale=Fraction(1), analysis=3, material=3):
             yaml.safe_dump({
                 "service_curve": {
                     "system_template": str(SYSTEM),
-                    "horizon": 100,
+                    "horizon": 40_000,
                     "require_real_solar_data": True,
                     "solar_scale": "1",
                 },
