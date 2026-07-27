@@ -34,6 +34,9 @@ from experiments.v9_3.rta4_taskset_v2 import (
     ProductionTasksetProviderV2, TasksetIdentityCertificateV2,
 )
 from experiments.v9_3.simulation_engine import SharedSolarInput
+from experiments.v9_3.simulation_engine import (
+    SimulationTraceError, _task_payload_for_trace_id,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -333,6 +336,10 @@ def test_core3_production_executor_prepares_only_v2_j_per_tick_projection(tmp_pa
     assert all(Fraction(row["P"]) == entry.energy_j_per_tick for row, entry in zip(
         payload, task_energy.entries,
     ))
+    assert _task_payload_for_trace_id(payload, "0") is payload[0]
+    assert _task_payload_for_trace_id(payload, payload[0]["task_id"]) is payload[0]
+    with pytest.raises(SimulationTraceError, match="not projectable"):
+        _task_payload_for_trace_id(payload, "unknown-task")
 
 
 def test_support_horizon_shortfall_fails_before_service_construction(tmp_path):

@@ -1100,6 +1100,25 @@ def load_simulation_terminal(path: Path) -> SimulationExecution:
     )
 
 
+def _task_payload_for_trace_id(
+    task_payload: Sequence[Mapping[str, Any]], task_id: Any,
+) -> Mapping[str, Any]:
+    """Resolve legacy numeric or V2 canonical task identities exactly once."""
+
+    try:
+        return task_payload[int(task_id)]
+    except (TypeError, ValueError, IndexError):
+        matches = [
+            row for row in task_payload
+            if str(row.get("task_id")) == str(task_id)
+        ]
+        if len(matches) != 1:
+            raise SimulationTraceError(
+                f"simulation task identity is not projectable: {task_id}"
+            )
+        return matches[0]
+
+
 def run_paired_simulation(
     *,
     simulation_id_value: str,
@@ -1207,8 +1226,11 @@ def run_paired_simulation(
                         expected_processors=processors,
                     )
                     for task_id, observed in result.observed_task_power_j_per_tick.items():
+                        task_row = _task_payload_for_trace_id(
+                            task_payload, task_id,
+                        )
                         expected = float(exact_energy.parse_persisted_fraction(
-                            task_payload[int(task_id)]["P"],
+                            task_row["P"],
                             f"simulation task {task_id} P",
                         ))
                         if not math.isclose(observed, expected, rel_tol=1e-9, abs_tol=1e-12):
