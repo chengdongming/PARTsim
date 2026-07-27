@@ -61,6 +61,13 @@ namespace RTSim {
         std::uint64_t observed_energy_intervals = 0;
     };
 
+    struct B4ObservabilityEnergySnapshot {
+        EnergySummary summary;
+        double initial_energy_j = 0.0;
+        double capacity_j = 0.0;
+        std::uint64_t horizon_ms = 0;
+    };
+
 } // namespace RTSim
 
 #endif // RTSIM_OBSERVABILITY_SUMMARY_HPP

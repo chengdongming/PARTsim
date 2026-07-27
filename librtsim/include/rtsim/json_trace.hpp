@@ -71,6 +71,10 @@ namespace RTSim {
         std::vector<DecisionJobRecord> jobs;
     };
 
+    std::vector<ObservabilityTaskMetadata>
+    makeB4ObservabilityTaskMetadata(
+        const std::vector<AbsRTTask *> &priority_universe);
+
     // Pure constructor used by scheduler wiring. Pointer-bearing containers
     // are consumed only while constructing the snapshot; DecisionRecord owns
     // every identity and retains no scheduler references.

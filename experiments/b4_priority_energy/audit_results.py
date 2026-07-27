@@ -25,6 +25,7 @@ import execution_common as execution
 import inspect_execution
 import integration_smoke_common as smoke
 import manifest_common as manifest
+import observability_validation as observability
 
 
 SCHEMA_VERSION = 1
@@ -407,7 +408,56 @@ def _system_metadata(case, root, state, scheduler):
     }
 
 
-def _classify_result(case, result, record, source):
+def _taskset_ranks(case, root, state):
+    relative = state.get("taskset_snapshot_relpath")
+    if not isinstance(relative, str):
+        _add_issue(
+            case,
+            "audit_failure",
+            "malformed_metadata",
+            "taskset snapshot path",
+        )
+        return None
+    try:
+        document = yaml.safe_load(
+            _safe_path(root, relative).read_text(encoding="utf-8")
+        )
+        return observability.task_ranks_from_taskset(document)
+    except (
+        execution.ExecutionError,
+        OSError,
+        UnicodeError,
+        yaml.YAMLError,
+        observability.ObservabilityValidationError,
+    ) as exc:
+        _add_issue(
+            case,
+            "audit_failure",
+            "malformed_metadata",
+            f"taskset: {exc}",
+        )
+        return None
+
+
+def _schema3_required(record):
+    if not isinstance(record, dict):
+        return True
+    return not (
+        record.get("phase") == "integration_smoke"
+        and record.get("not_for_paper") is True
+        and record.get("schema_version")
+        == smoke.PROTOCOL_V1["schema_version"]
+    )
+
+
+def _classify_result(
+    case,
+    result,
+    record,
+    source,
+    system,
+    task_ranks,
+):
     case_id = case["case_id"]
     if result.get("run_id") != case_id:
         _add_issue(case, "audit_failure", "run_id_mismatch")
@@ -432,6 +482,67 @@ def _classify_result(case, result, record, source):
             "duration_mismatch",
             f"{observed_duration}/{duration}",
         )
+    required_schema = 3 if _schema3_required(record) else 2
+    observed_schema = result.get("trace_schema_version")
+    if type(observed_schema) is not int or observed_schema != required_schema:
+        _add_issue(
+            case,
+            "audit_failure",
+            "trace_schema_mismatch",
+            f"{observed_schema}/{required_schema}",
+        )
+    if required_schema == 3:
+        expected_summary_horizon = (
+            record.get("summary_horizon_ms")
+            if isinstance(record, dict)
+            else None
+        )
+        if expected_summary_horizon is None and isinstance(record, dict):
+            expected_summary_horizon = record.get(
+                "observability_summary_horizon_ms"
+            )
+        contract_identity_valid = (
+            isinstance(record, dict)
+            and record.get("observability_contract_ref")
+            == observability.CONTRACT_PATH.name
+            and record.get("observability_contract_sha256")
+            == observability.CONTRACT_SHA256
+            and record.get(
+                "observability_summary_contract_version"
+            )
+            == observability.CONTRACT["contract_version"]
+            and record.get("trace_schema_version")
+            == observability.CONTRACT["trace_schema_version"]
+            and expected_summary_horizon == duration
+        )
+        if not contract_identity_valid:
+            _add_issue(
+                case,
+                "audit_failure",
+                "observability_contract_identity_mismatch",
+            )
+        else:
+            try:
+                case["observability_summary"] = (
+                    observability.validate_schema3_summary(
+                        result,
+                        expected_horizon_ms=duration,
+                        initial_energy_j=source.get("E0_j"),
+                        capacity_j=source.get("Emax_j"),
+                        processor_count=system.get("processors"),
+                        expected_task_ranks=task_ranks,
+                    )
+                )
+            except (
+                observability.ObservabilityValidationError,
+                TypeError,
+            ) as exc:
+                _add_issue(
+                    case,
+                    "audit_failure",
+                    "observability_summary_invalid",
+                    exc,
+                )
     expected_semantic = _expected_semantic_hash(record)
     observed_semantic = result.get("taskset_semantic_hash")
     if (
@@ -470,6 +581,9 @@ def _classify_result(case, result, record, source):
         is_battery = "energy" in lowered and any(
             token in lowered
             for token in ("current", "available", "battery", "residual")
+        ) and not any(
+            token in lowered
+            for token in ("_ticks", "_intervals")
         )
         if is_battery and isinstance(emax, (int, float)):
             if "mj" in lowered:
@@ -499,6 +613,22 @@ def _classify_result(case, result, record, source):
                 "scheduling_outcome",
                 "deadline_miss",
                 misses,
+            )
+    if required_schema == 3 and isinstance(
+        result.get("per_task_summary"), list
+    ):
+        unfinished = sum(
+            item.get("unfinished_at_horizon_jobs", 0)
+            for item in result["per_task_summary"]
+            if isinstance(item, dict)
+            and type(item.get("unfinished_at_horizon_jobs")) is int
+        )
+        if unfinished:
+            _add_issue(
+                case,
+                "scheduling_outcome",
+                "unfinished_at_horizon",
+                unfinished,
             )
     incomplete = result.get("incomplete_jobs")
     if isinstance(incomplete, (int, float)) and incomplete > 0:
@@ -691,11 +821,18 @@ def _audit_case(state_path, root, state, record_entry):
                 state,
                 scheduler,
             )
+            task_ranks = (
+                _taskset_ranks(case, root, state)
+                if _schema3_required(record)
+                else None
+            )
             result_metadata = _classify_result(
                 case,
                 result,
                 record,
                 source_metadata,
+                system_metadata,
+                task_ranks,
             )
             case["pairing"] = _case_pairing_metadata(
                 case,

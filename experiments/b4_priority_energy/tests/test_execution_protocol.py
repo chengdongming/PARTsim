@@ -22,8 +22,12 @@ from test_execution_success import ExecutionFixture
 class ExecutionProtocolTests(unittest.TestCase):
     def test_protocol_is_self_consistent(self):
         protocol = execution.load_execution_protocol()
-        self.assertEqual(protocol["schema_version"], 1)
+        self.assertEqual(protocol["schema_version"], 2)
         self.assertEqual(protocol["state_schema_version"], 1)
+        historical = execution.load_execution_protocol(
+            execution.EXECUTION_PROTOCOL_V1_PATH
+        )
+        self.assertEqual(historical["schema_version"], 1)
 
     def test_protocol_sha_references_are_live(self):
         protocol = execution.PROTOCOL
@@ -143,7 +147,8 @@ class ExecutionProtocolTests(unittest.TestCase):
 
     def test_execution_protocol_does_not_modify_manifest_protocol(self):
         self.assertEqual(
-            execution.PROTOCOL["manifest_protocol_ref"], "manifest_protocol_v1.json"
+            execution.PROTOCOL["manifest_protocol_ref"],
+            "manifest_protocol_v2.json",
         )
         self.assertNotIn("execution", manifest.PROTOCOL)
 

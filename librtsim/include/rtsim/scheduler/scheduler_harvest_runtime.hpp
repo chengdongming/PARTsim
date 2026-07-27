@@ -26,6 +26,10 @@ namespace RTSim {
         }
         const EnergySummary &finalizeEnergySummary(
             std::uint64_t expected_horizon_ms) const;
+        B4ObservabilityEnergySnapshot finalizeObservabilityEnergySnapshot(
+            std::uint64_t expected_horizon_ms,
+            double final_battery_j,
+            double battery_capacity_j);
 
     private:
         void resetEnergySummary() noexcept;

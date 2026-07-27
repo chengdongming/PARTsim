@@ -163,7 +163,7 @@ class ExecutionSuccessTests(unittest.TestCase):
         }
         self.assertEqual(set(attempt), required)
         self.assertEqual(attempt["termination_reason"], "succeeded")
-        self.assertEqual(attempt["staging_trace_basename"], "trace.txt")
+        self.assertEqual(attempt["staging_trace_basename"], "trace.json")
         self.assertRegex(
             attempt["staging_directory_relpath"],
             rf"^\.b4pe/attempt-results/{self.fx.record['case_id']}/attempt-0001-[0-9a-f]{{24}}$",

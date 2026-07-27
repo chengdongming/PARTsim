@@ -5,7 +5,15 @@
 #include <rtsim/harvesting/scaled_piecewise_source.hpp>
 #include <rtsim/scheduler/config_manager.hpp>
 #include <rtsim/scheduler/energy_bridge.hpp>
+#include <rtsim/scheduler/gpfp_alap_block_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_alap_nonblock_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_alap_sync_scheduler.hpp>
 #include <rtsim/scheduler/gpfp_asap_block_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_asap_nonblock_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_asap_sync_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_st_block_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_st_nonblock_scheduler.hpp>
+#include <rtsim/scheduler/gpfp_st_sync_scheduler.hpp>
 #include <rtsim/scheduler/priority_energy_runtime.hpp>
 #include <rtsim/scheduler/scheduler_harvest_runtime.hpp>
 
@@ -132,6 +140,15 @@ namespace RTSim {
             config.max_file_size_bytes = UINT64_C(1048576);
             config.max_rows = UINT64_C(1000);
             return config;
+        }
+
+        template <typename SchedulerType>
+        void expectProviderFailsClosedBeforeRun() {
+            SchedulerType scheduler;
+            EnergyInfoProvider &provider = scheduler;
+            EXPECT_THROW(
+                (void)provider.getB4ObservabilityEnergySnapshot(1),
+                std::logic_error);
         }
     } // namespace
 
@@ -612,6 +629,59 @@ namespace RTSim {
         EXPECT_EQ(summary.battery_empty_ticks, 1u);
         EXPECT_EQ(summary.battery_full_ticks, 0u);
         EXPECT_EQ(summary.observed_energy_intervals, 2u);
+    }
+
+    TEST(SchedulerHarvestSummary,
+         SnapshotIsAValidatedValueCopyWithBoundaryInputs) {
+        SchedulerHarvestRuntime runtime;
+        runtime.beginRun(constantConfig(1000.0, 1));
+        (void)runtime.applyAtDecisionTime(0, 0.25, 2.0);
+        (void)runtime.applyAtDecisionTime(1, 0.25, 2.0);
+
+        B4ObservabilityEnergySnapshot snapshot =
+            runtime.finalizeObservabilityEnergySnapshot(1, 1.25, 2.0);
+        EXPECT_DOUBLE_EQ(snapshot.initial_energy_j, 0.25);
+        EXPECT_DOUBLE_EQ(snapshot.capacity_j, 2.0);
+        EXPECT_EQ(snapshot.horizon_ms, 1u);
+        EXPECT_DOUBLE_EQ(snapshot.summary.offered_energy_j, 1.0);
+        snapshot.summary.offered_energy_j = 123.0;
+        EXPECT_DOUBLE_EQ(
+            runtime.finalizeEnergySummary(1).offered_energy_j,
+            1.0);
+        EXPECT_THROW(
+            (void)runtime.finalizeObservabilityEnergySnapshot(
+                3, 1.25, 2.0),
+            std::logic_error);
+    }
+
+    TEST(SchedulerHarvestSummary,
+         SnapshotCompletesAContiguousFinalHorizonInterval) {
+        SchedulerHarvestRuntime runtime;
+        runtime.beginRun(constantConfig(1000.0, 2));
+        (void)runtime.applyAtDecisionTime(0, 0.25, 2.0);
+        (void)runtime.applyAtDecisionTime(1, 0.25, 2.0);
+
+        const B4ObservabilityEnergySnapshot snapshot =
+            runtime.finalizeObservabilityEnergySnapshot(2, 1.0, 2.0);
+        EXPECT_EQ(snapshot.summary.observed_energy_intervals, 2u);
+        EXPECT_DOUBLE_EQ(snapshot.summary.offered_energy_j, 2.0);
+        EXPECT_DOUBLE_EQ(snapshot.summary.credited_energy_j, 2.0);
+        EXPECT_DOUBLE_EQ(snapshot.summary.clipped_energy_j, 0.0);
+        EXPECT_DOUBLE_EQ(snapshot.summary.consumed_energy_j, 0.25);
+        EXPECT_DOUBLE_EQ(snapshot.summary.battery_final_j, 2.0);
+    }
+
+    TEST(SchedulerHarvestSummary,
+         AllNineSchedulerProvidersFailClosedBeforeRuntimeInitialization) {
+        expectProviderFailsClosedBeforeRun<ASAPBlockScheduler>();
+        expectProviderFailsClosedBeforeRun<ASAPNonBlockScheduler>();
+        expectProviderFailsClosedBeforeRun<ASAPSyncScheduler>();
+        expectProviderFailsClosedBeforeRun<ALAPBlockScheduler>();
+        expectProviderFailsClosedBeforeRun<ALAPNonBlockScheduler>();
+        expectProviderFailsClosedBeforeRun<ALAPSyncScheduler>();
+        expectProviderFailsClosedBeforeRun<STBlockScheduler>();
+        expectProviderFailsClosedBeforeRun<STNonBlockScheduler>();
+        expectProviderFailsClosedBeforeRun<STSyncScheduler>();
     }
 
     TEST(SchedulerHarvestSummary,

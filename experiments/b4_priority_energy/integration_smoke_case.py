@@ -29,6 +29,7 @@ import execution_common as execution
 import inspect_execution
 import integration_smoke_common as smoke
 import manifest_common as manifest
+import observability_validation as observability
 
 
 TASK_GENERATOR_PATH = REPO_ROOT / "global_task_generator.py"
@@ -612,19 +613,29 @@ def build_record(
     raw_sha,
     semantic_hash,
     algorithm=DEFAULT_ALGORITHM,
+    trace_schema_version=2,
 ):
     output_root = Path(output_root).resolve()
     simulator_path = Path(simulator_path).resolve(strict=True)
     scheduler_cli_name(algorithm)
+    _require(
+        trace_schema_version in {2, 3},
+        "smoke trace schema must be 2 or 3",
+    )
     case_id = (
         "smoke-b4-pe-i4b2b-"
         + semantic_hash[:16]
         + "-"
         + algorithm.lower()
+        + ("-schema3" if trace_schema_version == 3 else "")
     )
     result_relpath = f"{RESULT_PREFIX}/{case_id}.json"
     record = {
-        "schema_version": "b4-pe-integration-smoke-v1",
+        "schema_version": (
+            smoke.PROTOCOL["schema_version"]
+            if trace_schema_version == 3
+            else smoke.PROTOCOL_V1["schema_version"]
+        ),
         "record_type": "integration_smoke",
         "phase": "integration_smoke",
         "execution_scope": "single-real-case",
@@ -663,11 +674,38 @@ def build_record(
             "simulator_sha256": file_sha256(simulator_path),
         },
     }
+    if trace_schema_version == 3:
+        protocol = smoke.PROTOCOL
+        record.update(
+            {
+                "trace_schema_version": 3,
+                "observability_summary_contract_version":
+                    protocol[
+                        "observability_summary_contract_version"
+                    ],
+                "observability_summary_horizon_ms":
+                    protocol["observability_activation"]["horizon_ms"],
+                "observability_contract_ref":
+                    protocol["observability_contract_ref"],
+                "observability_contract_sha256":
+                    protocol["observability_contract_sha256"],
+                "candidate_v1_ref": protocol["candidate_v1_ref"],
+                "candidate_v1_sha256":
+                    protocol["candidate_v1_sha256"],
+                "result_audit_policy":
+                    protocol["result_audit_policy"],
+            }
+        )
+    execution_horizon = (
+        FROZEN_HORIZON_MS
+        if trace_schema_version == 3
+        else SMOKE_HORIZON_MS
+    )
     record["command_argv"] = [
         record["simulator_path"],
         SYSTEM_RELPATH,
         TASKSET_RELPATH,
-        str(SMOKE_HORIZON_MS),
+        str(execution_horizon),
         "-t",
         result_relpath,
         "--run-id",
@@ -675,6 +713,15 @@ def build_record(
         "--taskset-semantic-hash",
         semantic_hash,
     ]
+    if trace_schema_version == 3:
+        activation = smoke.PROTOCOL["observability_activation"]
+        record["command_argv"].extend(
+            [
+                activation["summary_flag"],
+                activation["horizon_option"],
+                str(activation["horizon_ms"]),
+            ]
+        )
     return record
 
 
@@ -743,24 +790,34 @@ def preflight(record_path):
         "semantic hash mismatch",
     )
     argv = record["command_argv"]
-    _require(
-        argv[-2:] == ["--taskset-semantic-hash", materialized_first],
-        "semantic hash is not in the smoke command",
+    trace_schema_version = record.get("trace_schema_version", 2)
+    execution_horizon = (
+        FROZEN_HORIZON_MS
+        if trace_schema_version == 3
+        else SMOKE_HORIZON_MS
     )
+    expected_argv = [
+        record["simulator_path"],
+        SYSTEM_RELPATH,
+        TASKSET_RELPATH,
+        str(execution_horizon),
+        "-t",
+        record["result_relpath"],
+        "--run-id",
+        record["case_id"],
+        "--taskset-semantic-hash",
+        materialized_first,
+    ]
+    if trace_schema_version == 3:
+        expected_argv.extend(
+            [
+                "--b4-observability-summary",
+                "--b4-summary-horizon",
+                str(FROZEN_HORIZON_MS),
+            ]
+        )
     _require(
-        argv
-        == [
-            record["simulator_path"],
-            SYSTEM_RELPATH,
-            TASKSET_RELPATH,
-            str(SMOKE_HORIZON_MS),
-            "-t",
-            record["result_relpath"],
-            "--run-id",
-            record["case_id"],
-            "--taskset-semantic-hash",
-            materialized_first,
-        ],
+        argv == expected_argv,
         "smoke command does not have the exact rtsim argv shape",
     )
     return {
@@ -786,6 +843,7 @@ def prepare_case(
     algorithm=DEFAULT_ALGORITHM,
     seed=GENERATOR_SEED,
     normalized_utilization=TARGET_NORMALIZED_UTILIZATION,
+    trace_schema_version=2,
 ):
     output_root = Path(output_root).resolve()
     normalized = _normalised_utilization(normalized_utilization)
@@ -838,6 +896,7 @@ def prepare_case(
         raw_sha,
         semantic_hash,
         algorithm=algorithm,
+        trace_schema_version=trace_schema_version,
     )
     record_path = write_record(record_path, record)
     gate = preflight(record_path)
@@ -850,6 +909,7 @@ def prepare_case(
         "seed": seed,
         "normalized_utilization": float(normalized),
         "algorithm": algorithm,
+        "trace_schema_version": trace_schema_version,
         "scheduler": scheduler_cli_name(algorithm),
         "taskset_raw_sha256": raw_sha,
         "taskset_sha256": file_sha256(taskset_path),
@@ -898,6 +958,9 @@ def validate_result_document(
     semantic_hash,
     emax_j,
     expected_scheduler="gpfp_asap_block",
+    trace_schema_version=2,
+    e0_j=None,
+    taskset_document=None,
 ):
     _require(isinstance(document, dict), "result is not a JSON object")
     _require(document.get("run_id") == case_id, "result run-id mismatch")
@@ -910,8 +973,21 @@ def validate_result_document(
         "result scheduler does not match the smoke record",
     )
     _require(
-        float(document.get("expected_simulation_horizon_ms")) == SMOKE_HORIZON_MS
-        and float(document.get("observed_simulation_end_ms")) == SMOKE_HORIZON_MS,
+        type(document.get("trace_schema_version")) is int
+        and document["trace_schema_version"]
+        == trace_schema_version,
+        "result trace schema mismatch",
+    )
+    expected_horizon = (
+        FROZEN_HORIZON_MS
+        if trace_schema_version == 3
+        else SMOKE_HORIZON_MS
+    )
+    _require(
+        float(document.get("expected_simulation_horizon_ms"))
+        == expected_horizon
+        and float(document.get("observed_simulation_end_ms"))
+        == expected_horizon,
         "result horizon mismatch",
     )
     _require(document.get("simulation_completed") is True, "result is incomplete")
@@ -956,6 +1032,24 @@ def validate_result_document(
                 "offered/actual/clipped harvest relation mismatch",
             )
     list(_walk_numeric_energy(document))
+    summary_validation = None
+    if trace_schema_version == 3:
+        _require(
+            e0_j is not None and taskset_document is not None,
+            "schema3 validation inputs are incomplete",
+        )
+        summary_validation = observability.validate_schema3_summary(
+            document,
+            expected_horizon_ms=expected_horizon,
+            initial_energy_j=e0_j,
+            capacity_j=emax_j,
+            processor_count=PROCESSORS,
+            expected_task_ranks=(
+                observability.task_ranks_from_taskset(
+                    taskset_document
+                )
+            ),
+        )
     encoded = compact_json(document)
     _require(
         re.search(r"(?i)(invalid trace extension|trace_target_exists_with_different_content|"
@@ -968,10 +1062,12 @@ def validate_result_document(
         "run_id": case_id,
         "scheduler": expected_scheduler,
         "task_count": len(task_names),
-        "horizon_ms": SMOKE_HORIZON_MS,
+        "trace_schema_version": trace_schema_version,
+        "horizon_ms": expected_horizon,
         "battery_bounds_valid": True,
         "energy_fields_nonnegative": True,
         "harvest_relation_valid_when_present": True,
+        "observability_summary": summary_validation,
     }
 
 
@@ -1057,12 +1153,19 @@ def validate_execution(record_path):
         _artifact_path(root, SOURCE_RELPATH).read_text(encoding="utf-8")
     )
     result = json.loads(result_path.read_text(encoding="utf-8"))
+    taskset_document = _load_yaml_mapping(
+        _artifact_path(root, TASKSET_RELPATH),
+        "materialized taskset",
+    )
     result_validation = validate_result_document(
         result,
         record["case_id"],
         record["provenance"]["taskset_semantic_hash"],
         descriptor["Emax_j"],
         scheduler_cli_name(record["algorithm"]),
+        record.get("trace_schema_version", 2),
+        descriptor["E0_j"],
+        taskset_document,
     )
 
     raw_path = _artifact_path(root, RAW_TASKSET_RELPATH)
@@ -1209,6 +1312,12 @@ def build_parser():
     )
     prepare.add_argument("--seed", type=int, default=GENERATOR_SEED)
     prepare.add_argument(
+        "--trace-schema-version",
+        type=int,
+        choices=(2, 3),
+        default=2,
+    )
+    prepare.add_argument(
         "--normalized-utilization",
         default=str(float(TARGET_NORMALIZED_UTILIZATION)),
     )
@@ -1228,6 +1337,7 @@ def main(argv=None):
                 algorithm=args.algorithm,
                 seed=args.seed,
                 normalized_utilization=args.normalized_utilization,
+                trace_schema_version=args.trace_schema_version,
             )
         else:
             report = validate_execution(args.record)

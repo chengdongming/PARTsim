@@ -202,6 +202,7 @@ class AuditFixture:
                 }
             )
         result = {
+            "trace_schema_version": 2,
             "run_id": case_id,
             "configured_scheduler": scheduler,
             "taskset_semantic_hash": semantic_hash,

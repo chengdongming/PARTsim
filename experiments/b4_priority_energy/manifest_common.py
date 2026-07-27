@@ -12,8 +12,13 @@ from pathlib import Path, PurePosixPath
 
 B4_DIR = Path(__file__).resolve().parent
 REPO_ROOT = B4_DIR.parents[1]
-MANIFEST_PROTOCOL_PATH = B4_DIR / "manifest_protocol_v1.json"
+MANIFEST_PROTOCOL_V1_PATH = B4_DIR / "manifest_protocol_v1.json"
+MANIFEST_PROTOCOL_PATH = B4_DIR / "manifest_protocol_v2.json"
 IDENTITY_PROTOCOL_PATH = B4_DIR / "protocol_resolution_v1.json"
+OBSERVABILITY_CONTRACT_PATH = (
+    B4_DIR / "observability_summary_contract_v1.json"
+)
+CANDIDATE_V1_PATH = B4_DIR / "b4_pe_freeze_candidate_v1.json"
 IDENTITY_REFERENCE_PATH = B4_DIR / "tests" / "test_protocol_resolution.py"
 FROZEN_DOCUMENT_PATH = (
     REPO_ROOT / "docs" / "experiments" /
@@ -98,7 +103,7 @@ def _validate_string_list(values, name):
 
 def load_manifest_protocol(path=MANIFEST_PROTOCOL_PATH):
     protocol = json.loads(Path(path).read_text(encoding="utf-8"))
-    required = {
+    common = {
         "algorithm_cli_mapping",
         "base_commit",
         "execution_plan",
@@ -111,6 +116,18 @@ def load_manifest_protocol(path=MANIFEST_PROTOCOL_PATH):
         "schema_version",
         "system_template_sha256",
     }
+    v2_fields = {
+        "candidate_v1_ref",
+        "candidate_v1_sha256",
+        "observability_activation",
+        "observability_contract_ref",
+        "observability_contract_sha256",
+        "observability_summary_contract_version",
+        "result_audit_policy",
+        "trace_schema_version",
+    }
+    schema_version = protocol.get("schema_version")
+    required = common | (v2_fields if schema_version == 2 else set())
     _require(required == set(protocol), "manifest protocol fields mismatch")
     _require(type(protocol["schema_version"]) is int, "invalid protocol schema")
     _require(protocol["schema_version"] > 0, "invalid protocol schema")
@@ -130,6 +147,36 @@ def load_manifest_protocol(path=MANIFEST_PROTOCOL_PATH):
         protocol["system_template_sha256"] == file_sha256(SYSTEM_TEMPLATE_PATH),
         "system template SHA mismatch",
     )
+    if schema_version == 2:
+        _require(
+            protocol["candidate_v1_ref"] == CANDIDATE_V1_PATH.name
+            and protocol["candidate_v1_sha256"]
+            == file_sha256(CANDIDATE_V1_PATH),
+            "candidate v1 identity mismatch",
+        )
+        _require(
+            protocol["observability_contract_ref"]
+            == OBSERVABILITY_CONTRACT_PATH.name
+            and protocol["observability_contract_sha256"]
+            == file_sha256(OBSERVABILITY_CONTRACT_PATH),
+            "observability contract identity mismatch",
+        )
+        _require(
+            protocol["trace_schema_version"] == 3
+            and protocol["observability_summary_contract_version"] == 1
+            and protocol["result_audit_policy"]
+            == "strict_schema3_observability_v1",
+            "schema3 result audit identity mismatch",
+        )
+        _require(
+            protocol["observability_activation"]
+            == {
+                "summary_flag": "--b4-observability-summary",
+                "horizon_option": "--b4-summary-horizon",
+                "horizon_ms": protocol["execution_plan"]["horizon_ms"],
+            },
+            "schema3 activation mismatch",
+        )
     _validate_string_list(protocol["manifest_case_fields"], "manifest fields")
 
     identity = IDENTITY.RESOLUTION
@@ -222,13 +269,18 @@ def load_manifest_protocol(path=MANIFEST_PROTOCOL_PATH):
     return protocol
 
 
+PROTOCOL_V1 = load_manifest_protocol(MANIFEST_PROTOCOL_V1_PATH)
 PROTOCOL = load_manifest_protocol()
+PROTOCOLS_BY_SCHEMA = {
+    PROTOCOL_V1["schema_version"]: PROTOCOL_V1,
+    PROTOCOL["schema_version"]: PROTOCOL,
+}
 
 
-def selected_phases(phase):
+def selected_phases(phase, protocol=PROTOCOL):
     if phase == "all":
         return ("pilot", "formal_main", "negative_control")
-    _require(phase in PROTOCOL["phase_matrix"], f"unknown phase: {phase}")
+    _require(phase in protocol["phase_matrix"], f"unknown phase: {phase}")
     return (phase,)
 
 
@@ -270,8 +322,15 @@ def _identity_parts(phase, utilization, replicate_index, lambda_E, rho_E, algori
     }
 
 
-def build_case(phase, utilization, replicate_index, lambda_E, rho_E, algorithm):
-    protocol = PROTOCOL
+def build_case(
+    phase,
+    utilization,
+    replicate_index,
+    lambda_E,
+    rho_E,
+    algorithm,
+    protocol=PROTOCOL,
+):
     plan = protocol["execution_plan"]
     identity_contract = IDENTITY.RESOLUTION
     parts = _identity_parts(
@@ -302,6 +361,15 @@ def build_case(phase, utilization, replicate_index, lambda_E, rho_E, algorithm):
         "--run-id",
         parts["case_id"],
     ]
+    if protocol["schema_version"] == 2:
+        activation = protocol["observability_activation"]
+        command.extend(
+            [
+                activation["summary_flag"],
+                activation["horizon_option"],
+                str(activation["horizon_ms"]),
+            ]
+        )
     case = {
         "schema_version": protocol["schema_version"],
         "protocol_name": protocol["protocol_name"],
@@ -337,14 +405,33 @@ def build_case(phase, utilization, replicate_index, lambda_E, rho_E, algorithm):
         "retry_policy": plan["retry_policy"],
         "command_argv": command,
     }
+    if protocol["schema_version"] == 2:
+        case.update(
+            {
+                "candidate_v1_ref": protocol["candidate_v1_ref"],
+                "candidate_v1_sha256": protocol["candidate_v1_sha256"],
+                "observability_contract_ref":
+                    protocol["observability_contract_ref"],
+                "observability_contract_sha256":
+                    protocol["observability_contract_sha256"],
+                "trace_schema_version":
+                    protocol["trace_schema_version"],
+                "observability_summary_contract_version":
+                    protocol["observability_summary_contract_version"],
+                "summary_horizon_ms":
+                    protocol["observability_activation"]["horizon_ms"],
+                "result_audit_policy":
+                    protocol["result_audit_policy"],
+            }
+        )
     _require(set(case) == set(protocol["manifest_case_fields"]), "case shape mismatch")
     return case
 
 
-def iter_cases(phase="all"):
+def iter_cases(phase="all", protocol=PROTOCOL):
     identity_contract = IDENTITY.RESOLUTION
-    for current_phase in selected_phases(phase):
-        matrix = PROTOCOL["phase_matrix"][current_phase]
+    for current_phase in selected_phases(phase, protocol):
+        matrix = protocol["phase_matrix"][current_phase]
         algorithms = identity_contract["phase_algorithms"][current_phase]
         for utilization in matrix["utilization"]:
             for lambda_E in matrix["lambda_E"]:
@@ -358,12 +445,14 @@ def iter_cases(phase="all"):
                                 lambda_E,
                                 rho_E,
                                 algorithm,
+                                protocol,
                             )
 
 
-def render_manifest(phase="all"):
+def render_manifest(phase="all", protocol=PROTOCOL):
     return b"".join(
-        compact_json(case).encode("utf-8") + b"\n" for case in iter_cases(phase)
+        compact_json(case).encode("utf-8") + b"\n"
+        for case in iter_cases(phase, protocol)
     )
 
 
@@ -409,8 +498,24 @@ def _record_identity_keys(record):
     )
 
 
+def _protocol_for_record(record, line_number):
+    schema_version = record.get("schema_version")
+    _require(
+        type(schema_version) is int
+        and schema_version in PROTOCOLS_BY_SCHEMA,
+        f"line {line_number} unknown manifest schema",
+    )
+    protocol = PROTOCOLS_BY_SCHEMA[schema_version]
+    _require(
+        record.get("protocol_name") == protocol["protocol_name"],
+        f"line {line_number} protocol name mismatch",
+    )
+    return protocol
+
+
 def _validate_record_structure(record, line_number):
-    fields = set(PROTOCOL["manifest_case_fields"])
+    protocol = _protocol_for_record(record, line_number)
+    fields = set(protocol["manifest_case_fields"])
     _require(set(record) == fields, f"line {line_number} fields mismatch")
     string_fields = fields - {
         "schema_version",
@@ -423,6 +528,9 @@ def _validate_record_structure(record, line_number):
         "timeout_seconds",
         "retry_policy",
         "command_argv",
+        "trace_schema_version",
+        "observability_summary_contract_version",
+        "summary_horizon_ms",
     }
     _require(
         all(isinstance(record[name], str) and record[name] for name in string_fields),
@@ -438,6 +546,16 @@ def _validate_record_structure(record, line_number):
         "timeout_seconds",
     ):
         _require(type(record[name]) is int, f"line {line_number} {name} type")
+    for name in (
+        "trace_schema_version",
+        "observability_summary_contract_version",
+        "summary_horizon_ms",
+    ):
+        if name in record:
+            _require(
+                type(record[name]) is int,
+                f"line {line_number} {name} type",
+            )
     _require(record["source_seed"] is None, f"line {line_number} source seed")
     _require(isinstance(record["retry_policy"], dict), f"line {line_number} retry")
     _require(
@@ -457,6 +575,7 @@ def _validate_record_structure(record, line_number):
         "result_relpath",
     ):
         validate_relative_path(record[name], name)
+    return protocol
 
 
 def validate_records(records):
@@ -468,12 +587,19 @@ def validate_records(records):
     phase_units = defaultdict(lambda: defaultdict(set))
     taskset_by_semantic = {}
     source_by_semantic = {}
+    manifest_protocol = None
 
     for line_number, record in enumerate(records, 1):
-        _validate_record_structure(record, line_number)
+        protocol = _validate_record_structure(record, line_number)
+        if manifest_protocol is None:
+            manifest_protocol = protocol
+        _require(
+            protocol is manifest_protocol,
+            "manifest mixes protocol versions",
+        )
         phase = record["phase"]
-        _require(phase in PROTOCOL["phase_matrix"], f"line {line_number} unknown phase")
-        matrix = PROTOCOL["phase_matrix"][phase]
+        _require(phase in protocol["phase_matrix"], f"line {line_number} unknown phase")
+        matrix = protocol["phase_matrix"][phase]
         _require(record["algorithm"] in IDENTITY.RESOLUTION["phase_algorithms"][phase], "unknown algorithm")
         _require(record["utilization"] in matrix["utilization"], "utilization outside matrix")
         _require(record["lambda_E"] in matrix["lambda_E"], "lambda_E outside matrix")
@@ -512,8 +638,9 @@ def validate_records(records):
             record["lambda_E"],
             record["rho_E"],
             record["algorithm"],
+            protocol,
         )
-        for field in PROTOCOL["manifest_case_fields"]:
+        for field in protocol["manifest_case_fields"]:
             _require(record[field] == expected[field], f"line {line_number} {field} mismatch")
 
         unit = (
@@ -612,7 +739,7 @@ def audit_records(records):
     negative_sources = {
         record.get("source_id") for record in records if record.get("phase") == "negative_control"
     }
-    protocol = PROTOCOL
+    protocol = _protocol_for_record(records[0], 1)
     sha_status = {
         "frozen_document": all(
             record.get("frozen_document_sha256") == protocol["frozen_document_sha256"]

@@ -1,0 +1,83 @@
+{
+  "candidate_code_commit": null,
+  "candidate_name": "B4-PE-freeze-candidate-v2",
+  "final_code_commit": null,
+  "final_git_tag": null,
+  "formal_runtime_binary_path": null,
+  "formal_runtime_binary_sha256": null,
+  "freeze_status": "candidate",
+  "governance": {
+    "formal_runs_authorized": false,
+    "not_final_until_rta_integration": true,
+    "silent_changes_forbidden": true
+  },
+  "manifest_v2_identities": {
+    "all": {
+      "case_count": 25800,
+      "sha256": "79235b4413d3c76cee7dd8d33e5691357d02288ab2da9474949c44ff445af54f"
+    },
+    "formal_main": {
+      "case_count": 18000,
+      "sha256": "1ab2bf4a6287a504c311bec306b46b48137589b7cfd9da445a74a4a31d8dc54a"
+    },
+    "negative_control": {
+      "case_count": 5400,
+      "sha256": "0411c93e90aec35adcd65999d71bb0374604a10a66b5edb4757f0fbbb65aac22"
+    },
+    "pilot": {
+      "case_count": 2400,
+      "sha256": "01388df872d57de583b60596ef7aaac4b6bb712c54413e7c644a9b9e50ea5d96"
+    }
+  },
+  "observability": {
+    "activation_argv": [
+      "--b4-observability-summary",
+      "--b4-summary-horizon",
+      "30000"
+    ],
+    "contract": {
+      "path": "experiments/b4_priority_energy/observability_summary_contract_v1.json",
+      "sha256": "1817fdbf795f878769a32cf3f1e4ba09dd2ce589137e1d2e487a8df866b7c7f6",
+      "summary_contract_version": 1,
+      "trace_schema_version": 3
+    },
+    "result_audit_policy": "strict_schema3_observability_v1",
+    "summary_horizon_ms": 30000
+  },
+  "protocols": {
+    "execution_v2": {
+      "path": "experiments/b4_priority_energy/execution_protocol_v2.json",
+      "sha256": "632b737b1c7cff9dd70eb7c091561be5ac7e5902333b4006c0b40faa5c9f3cfb"
+    },
+    "identity_v1": {
+      "path": "experiments/b4_priority_energy/protocol_resolution_v1.json",
+      "sha256": "941d754e27e1cf599127550561a14a92f46e3605df26dca3c9a97e0325eecd93"
+    },
+    "integration_smoke_v2": {
+      "path": "experiments/b4_priority_energy/integration_smoke_protocol_v2.json",
+      "sha256": "c1777b704048d9ae566c9ccc3d1e148393d030ec7dd2e002255dd7c9a8344efd"
+    },
+    "manifest_v2": {
+      "path": "experiments/b4_priority_energy/manifest_protocol_v2.json",
+      "sha256": "4d1ead28d2b957ef0b8764f7148f2aab7643893f4134f8e56234bc913058ce90"
+    }
+  },
+  "schema_version": 2,
+  "scientific_identity": {
+    "algorithm_order_unchanged": true,
+    "case_counts_unchanged": true,
+    "experiment_document": {
+      "path": "docs/experiments/ASAP_BLOCK_B4_priority_energy_v5_2_frozen.md",
+      "sha256": "5e168664d9ce2062bf2418d2280195124c08b1311d1de1e280d20822965c0581"
+    },
+    "parameters_unchanged": true,
+    "protocol_resolution_authority": "experiments/b4_priority_energy/protocol_resolution_v1.json",
+    "seed_and_identity_rules_unchanged": true,
+    "source_identity_unchanged": true,
+    "task_generation_unchanged": true
+  },
+  "supersedes": {
+    "path": "experiments/b4_priority_energy/b4_pe_freeze_candidate_v1.json",
+    "sha256": "d5d2e6cfe7751f15227cb93ca66b17d11455cf5dccbcd768aebafb8623822732"
+  }
+}

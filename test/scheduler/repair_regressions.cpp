@@ -2388,6 +2388,21 @@ TEST(ObservabilitySchema3Core,
     EXPECT_EQ(contents.find("\"per_task_summary\""), std::string::npos);
 }
 
+TEST(ObservabilitySchema3Core,
+     DefaultSchemaTwoSerializerMatchesFrozenBytes) {
+    const std::string actual_path =
+        "/tmp/partsim_schema2_default_byte_fixture.json";
+    {
+        JSONTrace trace(actual_path, MetaSim::Tick(2));
+    }
+    const std::string fixture_path =
+        std::string(PARTSIM_SOURCE_DIR) +
+        "/test/fixtures/json_trace_schema2_default_v1.json";
+    EXPECT_EQ(
+        readFileContents(actual_path),
+        readFileContents(fixture_path));
+}
+
 TEST(ObservabilitySchema3Core, NewRunClearsSealedPayloadAndAllCounters) {
     const std::string path =
         "/tmp/partsim_b4_schema3_new_run_reset.json";

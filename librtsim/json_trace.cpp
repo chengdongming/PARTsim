@@ -10,6 +10,67 @@ namespace RTSim {
 
     using namespace MetaSim;
 
+    namespace {
+        std::vector<AbsRTTask *> validatedB4PriorityUniverse(
+            const std::vector<AbsRTTask *> &priority_universe) {
+            std::vector<AbsRTTask *> ranked_tasks = priority_universe;
+            std::set<AbsRTTask *> unique_universe;
+            for (AbsRTTask *task : ranked_tasks) {
+                if (!task || !unique_universe.insert(task).second) {
+                    throw std::invalid_argument(
+                        "decision priority universe must contain unique non-null tasks");
+                }
+            }
+            std::stable_sort(
+                ranked_tasks.begin(), ranked_tasks.end(),
+                [](AbsRTTask *lhs, AbsRTTask *rhs) {
+                    if (lhs->getPeriod() != rhs->getPeriod()) {
+                        return lhs->getPeriod() < rhs->getPeriod();
+                    }
+                    return lhs->getTaskNumber() < rhs->getTaskNumber();
+                });
+            for (std::size_t i = 0; i < ranked_tasks.size(); ++i) {
+                if (i > static_cast<std::size_t>(
+                            std::numeric_limits<std::uint32_t>::max())) {
+                    throw std::overflow_error(
+                        "decision priority rank exceeds uint32 range");
+                }
+                if (i > 0 &&
+                    ranked_tasks[i - 1]->getPeriod() ==
+                        ranked_tasks[i]->getPeriod() &&
+                    ranked_tasks[i - 1]->getTaskNumber() ==
+                        ranked_tasks[i]->getTaskNumber()) {
+                    throw std::invalid_argument(
+                        "decision priority universe has a duplicate RM key");
+                }
+            }
+            return ranked_tasks;
+        }
+
+        std::string b4TaskName(AbsRTTask *task) {
+            Task *concrete_task = dynamic_cast<Task *>(task);
+            return concrete_task
+                ? concrete_task->getName()
+                : std::string("task_") +
+                    std::to_string(task->getTaskNumber());
+        }
+    } // namespace
+
+    std::vector<ObservabilityTaskMetadata>
+    makeB4ObservabilityTaskMetadata(
+        const std::vector<AbsRTTask *> &priority_universe) {
+        const std::vector<AbsRTTask *> ranked_tasks =
+            validatedB4PriorityUniverse(priority_universe);
+        std::vector<ObservabilityTaskMetadata> metadata;
+        metadata.reserve(ranked_tasks.size());
+        for (std::size_t i = 0; i < ranked_tasks.size(); ++i) {
+            metadata.push_back(ObservabilityTaskMetadata{
+                b4TaskName(ranked_tasks[i]),
+                static_cast<std::uint32_t>(i)});
+        }
+        return metadata;
+    }
+
     DecisionRecord makeOwnedDecisionRecord(
         std::int64_t tick,
         std::size_t processor_count,
@@ -23,38 +84,11 @@ namespace RTSim {
         const std::map<AbsRTTask *, double> &incremental_energy_costs_j,
         const std::map<AbsRTTask *, DecisionExclusionReason>
             &exclusion_reasons) {
-        std::vector<AbsRTTask *> ranked_tasks = priority_universe;
-        std::set<AbsRTTask *> unique_universe;
-        for (AbsRTTask *task : ranked_tasks) {
-            if (!task || !unique_universe.insert(task).second) {
-                throw std::invalid_argument(
-                    "decision priority universe must contain unique non-null tasks");
-            }
-        }
-        std::stable_sort(
-            ranked_tasks.begin(), ranked_tasks.end(),
-            [](AbsRTTask *lhs, AbsRTTask *rhs) {
-                if (lhs->getPeriod() != rhs->getPeriod()) {
-                    return lhs->getPeriod() < rhs->getPeriod();
-                }
-                return lhs->getTaskNumber() < rhs->getTaskNumber();
-            });
+        const std::vector<AbsRTTask *> ranked_tasks =
+            validatedB4PriorityUniverse(priority_universe);
 
         std::map<AbsRTTask *, std::uint32_t> ranks;
         for (std::size_t i = 0; i < ranked_tasks.size(); ++i) {
-            if (i > static_cast<std::size_t>(
-                        std::numeric_limits<std::uint32_t>::max())) {
-                throw std::overflow_error(
-                    "decision priority rank exceeds uint32 range");
-            }
-            if (i > 0 &&
-                ranked_tasks[i - 1]->getPeriod() ==
-                    ranked_tasks[i]->getPeriod() &&
-                ranked_tasks[i - 1]->getTaskNumber() ==
-                    ranked_tasks[i]->getTaskNumber()) {
-                throw std::invalid_argument(
-                    "decision priority universe has a duplicate RM key");
-            }
             ranks.emplace(ranked_tasks[i], static_cast<std::uint32_t>(i));
         }
 
@@ -99,10 +133,7 @@ namespace RTSim {
             }
 
             Task *concrete_task = dynamic_cast<Task *>(task);
-            const std::string task_name = concrete_task
-                ? concrete_task->getName()
-                : std::string("task_") +
-                    std::to_string(task->getTaskNumber());
+            const std::string task_name = b4TaskName(task);
             const std::int64_t release_time = concrete_task
                 ? static_cast<std::int64_t>(concrete_task->getLastArrival())
                 : static_cast<std::int64_t>(task->getArrival());
@@ -1113,7 +1144,6 @@ namespace RTSim {
         std::vector<ObservabilityTaskMetadata> sorted =
             validatedTaskMetadata(task_metadata);
 
-        ensureCurrentRun();
         _observability_summary_horizon = horizon;
         _observability_task_metadata = std::move(sorted);
         _trace_schema_version = B4_OBSERVABILITY_TRACE_SCHEMA_VERSION;

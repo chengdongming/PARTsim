@@ -353,6 +353,7 @@ class RealSmokeCaseTests(unittest.TestCase):
             }
         )
         document = {
+            "trace_schema_version": 2,
             "events": events,
             "run_id": "smoke-result",
             "taskset_semantic_hash": semantic_hash,

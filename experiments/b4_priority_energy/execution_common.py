@@ -19,7 +19,8 @@ import manifest_common as manifest
 
 
 B4_DIR = Path(__file__).resolve().parent
-EXECUTION_PROTOCOL_PATH = B4_DIR / "execution_protocol_v1.json"
+EXECUTION_PROTOCOL_V1_PATH = B4_DIR / "execution_protocol_v1.json"
+EXECUTION_PROTOCOL_PATH = B4_DIR / "execution_protocol_v2.json"
 PROC_FD_ROOT = "/proc/self/fd"
 SNAPSHOT_ROLES = ("simulator", "system", "taskset", "source")
 TRACE_SUFFIXES = (".txt", ".json")
@@ -99,6 +100,75 @@ def record_sha256(record):
 
 def load_execution_protocol(path=EXECUTION_PROTOCOL_PATH):
     protocol = json.loads(Path(path).read_text(encoding="utf-8"))
+    if protocol.get("schema_version") == 2:
+        required = {
+            "candidate_v1_ref",
+            "candidate_v1_sha256",
+            "identity_protocol_ref",
+            "identity_protocol_sha256",
+            "inherits_execution_protocol_ref",
+            "inherits_execution_protocol_sha256",
+            "manifest_protocol_ref",
+            "manifest_protocol_sha256",
+            "observability_activation",
+            "observability_contract_ref",
+            "observability_contract_sha256",
+            "observability_summary_contract_version",
+            "protocol_name",
+            "result_audit_policy",
+            "schema_version",
+            "trace_schema_version",
+        }
+        _require(set(protocol) == required, "execution v2 protocol fields mismatch")
+        _require(
+            protocol["inherits_execution_protocol_ref"]
+            == EXECUTION_PROTOCOL_V1_PATH.name
+            and protocol["inherits_execution_protocol_sha256"]
+            == file_sha256(EXECUTION_PROTOCOL_V1_PATH),
+            "execution v1 inheritance identity mismatch",
+        )
+        _require(
+            protocol["manifest_protocol_ref"]
+            == manifest.MANIFEST_PROTOCOL_PATH.name
+            and protocol["manifest_protocol_sha256"]
+            == file_sha256(manifest.MANIFEST_PROTOCOL_PATH),
+            "manifest v2 protocol identity mismatch",
+        )
+        _require(
+            protocol["candidate_v1_ref"]
+            == manifest.CANDIDATE_V1_PATH.name
+            and protocol["candidate_v1_sha256"]
+            == file_sha256(manifest.CANDIDATE_V1_PATH),
+            "candidate v1 identity mismatch",
+        )
+        _require(
+            protocol["observability_contract_ref"]
+            == manifest.OBSERVABILITY_CONTRACT_PATH.name
+            and protocol["observability_contract_sha256"]
+            == file_sha256(manifest.OBSERVABILITY_CONTRACT_PATH),
+            "observability contract identity mismatch",
+        )
+        _require(
+            protocol["identity_protocol_ref"]
+            == manifest.IDENTITY_PROTOCOL_PATH.name
+            and protocol["identity_protocol_sha256"]
+            == file_sha256(manifest.IDENTITY_PROTOCOL_PATH),
+            "identity protocol mismatch",
+        )
+        _require(
+            protocol["trace_schema_version"] == 3
+            and protocol["observability_summary_contract_version"] == 1
+            and protocol["result_audit_policy"]
+            == "strict_schema3_observability_v1"
+            and protocol["observability_activation"]
+            == manifest.PROTOCOL["observability_activation"],
+            "execution v2 observability binding mismatch",
+        )
+        inherited = load_execution_protocol(
+            EXECUTION_PROTOCOL_V1_PATH
+        )
+        inherited.update(protocol)
+        return inherited
     required = {
         "atomic_write_rules",
         "dirfd_safety_rules",
@@ -129,12 +199,13 @@ def load_execution_protocol(path=EXECUTION_PROTOCOL_PATH):
     _require(protocol["schema_version"] == 1, "execution protocol schema mismatch")
     _require(protocol["state_schema_version"] == 1, "state schema mismatch")
     _require(
-        protocol["manifest_protocol_ref"] == manifest.MANIFEST_PROTOCOL_PATH.name,
+        protocol["manifest_protocol_ref"]
+        == manifest.MANIFEST_PROTOCOL_V1_PATH.name,
         "manifest protocol reference mismatch",
     )
     _require(
         protocol["manifest_protocol_sha256"]
-        == file_sha256(manifest.MANIFEST_PROTOCOL_PATH),
+        == file_sha256(manifest.MANIFEST_PROTOCOL_V1_PATH),
         "manifest protocol SHA mismatch",
     )
     _require(

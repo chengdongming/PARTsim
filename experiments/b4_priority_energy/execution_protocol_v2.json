@@ -1,0 +1,22 @@
+{
+  "candidate_v1_ref": "b4_pe_freeze_candidate_v1.json",
+  "candidate_v1_sha256": "d5d2e6cfe7751f15227cb93ca66b17d11455cf5dccbcd768aebafb8623822732",
+  "identity_protocol_ref": "protocol_resolution_v1.json",
+  "identity_protocol_sha256": "941d754e27e1cf599127550561a14a92f46e3605df26dca3c9a97e0325eecd93",
+  "inherits_execution_protocol_ref": "execution_protocol_v1.json",
+  "inherits_execution_protocol_sha256": "74fd9ed742ad41dbedb66a5e7de2bbc796e746ae2efb207d2d456deed10cdd34",
+  "manifest_protocol_ref": "manifest_protocol_v2.json",
+  "manifest_protocol_sha256": "4d1ead28d2b957ef0b8764f7148f2aab7643893f4134f8e56234bc913058ce90",
+  "observability_activation": {
+    "horizon_ms": 30000,
+    "horizon_option": "--b4-summary-horizon",
+    "summary_flag": "--b4-observability-summary"
+  },
+  "observability_contract_ref": "observability_summary_contract_v1.json",
+  "observability_contract_sha256": "1817fdbf795f878769a32cf3f1e4ba09dd2ce589137e1d2e487a8df866b7c7f6",
+  "observability_summary_contract_version": 1,
+  "protocol_name": "B4-PE-I5B-execution-v2",
+  "result_audit_policy": "strict_schema3_observability_v1",
+  "schema_version": 2,
+  "trace_schema_version": 3
+}
