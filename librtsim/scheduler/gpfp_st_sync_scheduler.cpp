@@ -439,6 +439,16 @@ namespace RTSim {
                 _kernel = getKernel();
             }
             if (!_kernel) {
+                if (_trace_logger &&
+                    _trace_logger->observabilitySummariesEnabled() &&
+                    _trace_logger->observabilitySummaryAcceptsDecisionTick(
+                        current_time)) {
+                    const std::size_t processors = std::max<std::size_t>(
+                        1, ConfigManager::getInstance().getNumCores());
+                    _trace_logger->observeDecision(makeOwnedDecisionRecord(
+                        static_cast<std::int64_t>(current_time), processors,
+                        _current_energy, 1e-9, {}, {}, {}, {}, {}, {}, {}));
+                }
                 SCHEDULER_LOG_WARNING("⚠️ [ST-Sync] _kernel为nullptr，跳过批量调度");
                 return;
             }
@@ -720,6 +730,57 @@ namespace RTSim {
             _current_batch_size = static_cast<int>(_current_batch_tasks.size());
             _batch_scheduled_this_tick = !selected_tasks.empty();
             _dispatching_tasks_total_energy = required_batch_energy;
+
+            if (_trace_logger &&
+                _trace_logger->observabilitySummariesEnabled() &&
+                _trace_logger->observabilitySummaryAcceptsDecisionTick(
+                    current_time)) {
+                std::vector<AbsRTTask *> priority_universe;
+                for (const auto &[task, model] : _task_models) {
+                    if (task && model) priority_universe.push_back(task);
+                }
+                const std::set<AbsRTTask *> candidates(
+                    active_tasks.begin(), active_tasks.end());
+                const std::set<AbsRTTask *> infinite_demand(
+                    desired_tasks.begin(), desired_tasks.end());
+                const std::set<AbsRTTask *> actual(
+                    selected_tasks.begin(), selected_tasks.end());
+                const bool charge_wait =
+                    !blocked_batch.empty() &&
+                    (group_slack > Tick(0) || desired_contains_waiting);
+                const bool sync_energy_blocked = !blocked_batch.empty();
+                std::map<AbsRTTask *, double> costs;
+                std::map<AbsRTTask *, DecisionExclusionReason> reasons;
+                for (AbsRTTask *task : active_tasks) {
+                    costs[task] = calculateUnitEnergyForTask(task);
+                    if (actual.count(task) > 0) {
+                        reasons[task] = DecisionExclusionReason::None;
+                    } else if (sync_energy_blocked &&
+                               infinite_demand.count(task) > 0) {
+                        reasons[task] = charge_wait
+                            ? DecisionExclusionReason::StEnergyChargeWait
+                            : DecisionExclusionReason::SyncAtomicUnaffordable;
+                    } else {
+                        reasons[task] = DecisionExclusionReason::CpuCapacity;
+                    }
+                }
+                const std::size_t observed_processors = total_cpus > 0
+                    ? static_cast<std::size_t>(total_cpus)
+                    : std::max<std::size_t>(
+                        1, ConfigManager::getInstance().getNumCores());
+                _trace_logger->observeDecision(makeOwnedDecisionRecord(
+                    static_cast<std::int64_t>(current_time),
+                    observed_processors,
+                    _current_energy,
+                    epsilon,
+                    priority_universe,
+                    active_tasks,
+                    candidates,
+                    infinite_demand,
+                    actual,
+                    costs,
+                    reasons));
+            }
 
             if (_trace_logger && _semantic_trace_enabled &&
                 !active_tasks.empty()) {

@@ -22,6 +22,7 @@
 #include <rtsim/cpu.hpp>
 #include <rtsim/scheduler/energy_bridge.hpp>
 #include <rtsim/mrtkernel.hpp>
+#include <rtsim/json_trace.hpp>
 #include <rtsim/b3_timing_trace.hpp>
 
 // 统一日志系统
@@ -624,6 +625,16 @@ namespace RTSim {
             _kernel = getKernel();
         }
         if (!_kernel) {
+            if (_trace_logger &&
+                _trace_logger->observabilitySummariesEnabled() &&
+                _trace_logger->observabilitySummaryAcceptsDecisionTick(
+                    current_time)) {
+                const std::size_t processors = std::max<std::size_t>(
+                    1, ConfigManager::getInstance().getNumCores());
+                _trace_logger->observeDecision(makeOwnedDecisionRecord(
+                    static_cast<std::int64_t>(current_time), processors,
+                    _current_energy, 1e-9, {}, {}, {}, {}, {}, {}, {}));
+            }
             SCHEDULER_LOG_WARNING("⚠️ [ALAP-Sync] _kernel为nullptr，跳过批量调度");
             return;
         }
@@ -712,6 +723,60 @@ namespace RTSim {
         _current_batch_tasks = selected_tasks;
         _current_batch_size = static_cast<int>(_current_batch_tasks.size());
         _batch_scheduled_this_tick = !selected_tasks.empty();
+
+        if (_trace_logger &&
+            _trace_logger->observabilitySummariesEnabled() &&
+            _trace_logger->observabilitySummaryAcceptsDecisionTick(
+                current_time)) {
+            std::vector<AbsRTTask *> trace_active = active_tasks;
+            sortByRMPriority(trace_active);
+            std::vector<AbsRTTask *> priority_universe;
+            for (const auto &[task, model] : _task_models) {
+                if (task && model) priority_universe.push_back(task);
+            }
+            const std::set<AbsRTTask *> candidates(
+                urgent_candidates.begin(), urgent_candidates.end());
+            const std::set<AbsRTTask *> infinite_demand(
+                desired_tasks.begin(), desired_tasks.end());
+            const std::set<AbsRTTask *> actual(
+                selected_tasks.begin(), selected_tasks.end());
+            const bool group_energy_blocked =
+                !continuation_affordable ||
+                (!idle_core_batch.empty() &&
+                 !idle_core_batch_affordable);
+            std::map<AbsRTTask *, double> costs;
+            std::map<AbsRTTask *, DecisionExclusionReason> reasons;
+            for (AbsRTTask *task : trace_active) {
+                costs[task] = getConfiguredUnitEnergyForTask(task);
+                if (candidates.count(task) == 0) {
+                    reasons[task] = DecisionExclusionReason::TimingDefer;
+                } else if (actual.count(task) > 0) {
+                    reasons[task] = DecisionExclusionReason::None;
+                } else if (group_energy_blocked &&
+                           infinite_demand.count(task) > 0) {
+                    reasons[task] =
+                        DecisionExclusionReason::SyncAtomicUnaffordable;
+                } else {
+                    reasons[task] = DecisionExclusionReason::CpuCapacity;
+                }
+            }
+            const std::size_t observed_processors = total_cpus > 0
+                ? static_cast<std::size_t>(total_cpus)
+                : std::max<std::size_t>(
+                    1, ConfigManager::getInstance().getNumCores());
+            _trace_logger->observeDecision(makeOwnedDecisionRecord(
+                static_cast<std::int64_t>(current_time),
+                observed_processors,
+                _current_energy,
+                epsilon,
+                priority_universe,
+                trace_active,
+                candidates,
+                infinite_demand,
+                actual,
+                costs,
+                reasons));
+        }
 
         if (_trace_logger && _semantic_trace_enabled &&
             !active_tasks.empty()) {

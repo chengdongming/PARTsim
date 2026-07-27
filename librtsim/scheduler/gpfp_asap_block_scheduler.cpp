@@ -292,6 +292,58 @@ namespace RTSim {
                                   reserved_energy,
                                   stopped_by_energy);
 
+        if (_trace_logger &&
+            _trace_logger->observabilitySummariesEnabled() &&
+            _trace_logger->observabilitySummaryAcceptsDecisionTick(
+                current_time)) {
+            std::vector<AbsRTTask *> priority_universe;
+            for (const auto &[task, model] : _task_models) {
+                if (task && model) priority_universe.push_back(task);
+            }
+            const std::set<AbsRTTask *> candidates(
+                active_jobs.begin(), active_jobs.end());
+            std::set<AbsRTTask *> infinite_demand;
+            for (std::size_t i = 0;
+                 i < active_jobs.size() && i < processor_count; ++i) {
+                infinite_demand.insert(active_jobs[i]);
+            }
+            const std::set<AbsRTTask *> actual(
+                selected.begin(), selected.end());
+            std::map<AbsRTTask *, double> costs;
+            std::map<AbsRTTask *, DecisionExclusionReason> reasons;
+            for (std::size_t i = 0; i < active_jobs.size(); ++i) {
+                AbsRTTask *task = active_jobs[i];
+                costs[task] = getTaskUnitEnergy(task);
+                if (actual.count(task) > 0) {
+                    reasons[task] = DecisionExclusionReason::None;
+                } else if (stopped_by_energy && i == selected.size()) {
+                    reasons[task] =
+                        DecisionExclusionReason::DirectEnergyShortage;
+                } else if (stopped_by_energy && i > selected.size()) {
+                    reasons[task] =
+                        DecisionExclusionReason::BlockHeadOfLine;
+                } else {
+                    reasons[task] = DecisionExclusionReason::CpuCapacity;
+                }
+            }
+            const std::size_t observed_processors = processor_count > 0
+                ? processor_count
+                : std::max<std::size_t>(
+                    1, ConfigManager::getInstance().getNumCores());
+            _trace_logger->observeDecision(makeOwnedDecisionRecord(
+                static_cast<std::int64_t>(current_time),
+                observed_processors,
+                available_energy,
+                1e-9,
+                priority_universe,
+                active_jobs,
+                candidates,
+                infinite_demand,
+                actual,
+                costs,
+                reasons));
+        }
+
         if (_trace_logger && _semantic_trace_enabled && !active_jobs.empty()) {
             std::string decision_reason = "selected_prefix";
             if (stopped_by_energy && selected.empty()) {

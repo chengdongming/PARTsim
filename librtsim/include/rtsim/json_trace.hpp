@@ -70,6 +70,23 @@ namespace RTSim {
         std::vector<DecisionJobRecord> jobs;
     };
 
+    // Pure constructor used by scheduler wiring. Pointer-bearing containers
+    // are consumed only while constructing the snapshot; DecisionRecord owns
+    // every identity and retains no scheduler references.
+    DecisionRecord makeOwnedDecisionRecord(
+        std::int64_t tick,
+        std::size_t processor_count,
+        double available_energy_j,
+        double energy_epsilon_j,
+        const std::vector<AbsRTTask *> &priority_universe,
+        const std::vector<AbsRTTask *> &observed_jobs,
+        const std::set<AbsRTTask *> &candidates,
+        const std::set<AbsRTTask *> &infinite_energy_dispatch_demand,
+        const std::set<AbsRTTask *> &actual_dispatch,
+        const std::map<AbsRTTask *, double> &incremental_energy_costs_j,
+        const std::map<AbsRTTask *, DecisionExclusionReason>
+            &exclusion_reasons);
+
     struct MechanismSummary {
         std::uint64_t bypass_opportunity_ticks = 0;
         std::uint64_t actual_bypass_ticks = 0;
@@ -341,6 +358,12 @@ namespace RTSim {
         bool observabilitySummariesEnabled() const noexcept {
             return _observability_summary_state ==
                 ObservabilitySummaryState::Enabled;
+        }
+        bool observabilitySummaryAcceptsDecisionTick(
+            MetaSim::Tick tick) const noexcept {
+            return observabilitySummariesEnabled() &&
+                   tick >= MetaSim::Tick(0) &&
+                   tick < _observability_summary_horizon;
         }
         bool observabilitySummariesFinalized() const noexcept {
             return _observability_summary_state ==
