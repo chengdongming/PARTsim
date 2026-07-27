@@ -1,0 +1,441 @@
+{
+  "candidate_code_commit": "d0339f40d4dac9277d69878c5d4f57003cbd48c4",
+  "commands": [
+    {
+      "argv": [
+        "python3",
+        "<repo-root>/experiments/b4_priority_energy/generate_manifest.py",
+        "--phase",
+        "all",
+        "--output",
+        "<manifest-path>"
+      ],
+      "id": "manifest_generate",
+      "tool": "generate_manifest.py"
+    },
+    {
+      "argv": [
+        "python3",
+        "<repo-root>/experiments/b4_priority_energy/validate_manifest.py",
+        "--manifest",
+        "<manifest-path>"
+      ],
+      "id": "manifest_validate",
+      "tool": "validate_manifest.py"
+    },
+    {
+      "argv": [
+        "python3",
+        "<repo-root>/experiments/b4_priority_energy/audit_manifest.py",
+        "--manifest",
+        "<manifest-path>",
+        "--json"
+      ],
+      "id": "manifest_audit",
+      "tool": "audit_manifest.py"
+    },
+    {
+      "argv": [
+        "python3",
+        "<repo-root>/experiments/b4_priority_energy/run_manifest.py",
+        "--manifest",
+        "<manifest-path>",
+        "--dry-run",
+        "--output-root",
+        "<output-root>"
+      ],
+      "id": "dry_run",
+      "tool": "run_manifest.py"
+    },
+    {
+      "argv": [
+        "python3",
+        "<repo-root>/experiments/b4_priority_energy/inspect_execution.py",
+        "--output-root",
+        "<output-root>",
+        "--manifest",
+        "<manifest-path>",
+        "--simulator-binary",
+        "<rtsim-binary>",
+        "--json"
+      ],
+      "id": "inspect",
+      "tool": "inspect_execution.py"
+    },
+    {
+      "argv": [
+        "python3",
+        "<repo-root>/experiments/b4_priority_energy/execute_manifest.py",
+        "--manifest",
+        "<manifest-path>",
+        "--output-root",
+        "<output-root>",
+        "--simulator-binary",
+        "<rtsim-binary>",
+        "--execute"
+      ],
+      "id": "formal_execute",
+      "tool": "execute_manifest.py"
+    },
+    {
+      "argv": [
+        "python3",
+        "<repo-root>/experiments/b4_priority_energy/execute_manifest.py",
+        "--manifest",
+        "<manifest-path>",
+        "--output-root",
+        "<output-root>",
+        "--simulator-binary",
+        "<rtsim-binary>",
+        "--execute",
+        "--resume"
+      ],
+      "id": "resume",
+      "tool": "execute_manifest.py"
+    },
+    {
+      "argv": [
+        "python3",
+        "<repo-root>/experiments/b4_priority_energy/audit_results.py",
+        "--output-root",
+        "<output-root>",
+        "--report",
+        "<report-path>",
+        "--expected-records",
+        "<manifest-path>",
+        "--strict"
+      ],
+      "id": "result_audit",
+      "tool": "audit_results.py"
+    },
+    {
+      "argv": [
+        "sha256sum",
+        "<repo-root>/docs/experiments/ASAP_BLOCK_B4_priority_energy_v5_2_frozen.md",
+        "<repo-root>/v9_3_b4_priority_energy_system_template.yml",
+        "<repo-root>/experiments/b4_priority_energy/protocol_resolution_v1.json",
+        "<repo-root>/experiments/b4_priority_energy/execution_protocol_v1.json",
+        "<repo-root>/global_task_generator.py",
+        "<manifest-path>",
+        "<rtsim-binary>"
+      ],
+      "id": "sha_verify",
+      "tool": "sha256sum"
+    }
+  ],
+  "directory_contract": {
+    "audit_report_outside_audited_output": true,
+    "formal_output_outside_repository": true,
+    "integration_smoke_excluded_from_paper": true,
+    "layout": [
+      "<experiment-root>/manifests/",
+      "<experiment-root>/inputs/tasksets/",
+      "<experiment-root>/inputs/systems/",
+      "<experiment-root>/inputs/sources/",
+      "<experiment-root>/outputs/pilot/",
+      "<experiment-root>/outputs/formal/",
+      "<experiment-root>/outputs/negative/",
+      "<experiment-root>/reports/",
+      "<experiment-root>/logs/",
+      "<experiment-root>/environment/",
+      "<experiment-root>/checksums/"
+    ],
+    "phase_outputs_separate": true,
+    "repository_source_tree_may_hold_formal_results": false,
+    "root_placeholder": "<experiment-root>"
+  },
+  "energy_coupling": {
+    "bottom_priority_task_count": 6,
+    "main_rho_E": 2,
+    "negative_rho_E": 1,
+    "top_priority_task_count": 4
+  },
+  "energy_derivation": {
+    "authoritative_references": [
+      {
+        "path": "docs/experiments/ASAP_BLOCK_B4_priority_energy_v5_2_frozen.md",
+        "purpose": "Sections 5-8 define q0, released-job demand, priority-energy normalization, battery, and offered harvest."
+      },
+      {
+        "path": "experiments/b4_priority_energy/protocol_resolution_v1.json",
+        "purpose": "source_contract freezes the E0, Emax, alpha, horizon, rho reference, and source identity rules."
+      },
+      {
+        "path": "experiments/b4_priority_energy/integration_smoke_case.py",
+        "purpose": "_template_power_contract, _release_count, and materialize_taskset are the current executable reference for the synchronous smoke bridge."
+      }
+    ],
+    "input_fields": {
+      "C_i": "task.runtime",
+      "H": "manifest.horizon_ms",
+      "O_i": "integer parsed from task.params.arrival_offset",
+      "T_i": "task.iat",
+      "lambda_E": "manifest.lambda_E",
+      "p0_w": "system.energy_management.scheduler_energy_model.base_power multiplied by system.energy_management.scheduler_energy_model.workload_coefficients.hash and system.energy_management.scheduler_energy_model.frequency_power_ratios[system.cpu_islands[0].base_freq]",
+      "rho_reference": "2",
+      "task_id": "integer suffix in the frozen task.name form task_<task_id>"
+    },
+    "invalid_alpha_policy": "If alpha_w is negative, reject and regenerate the taskset; do not clamp it.",
+    "rho_reference": 2,
+    "rm_priority_order": {
+      "T_i_field": "task.iat",
+      "primary_order": "T_i ascending",
+      "sort_key": "(T_i, task_id)",
+      "task_id_source": "integer suffix in the frozen task.name form task_<task_id>",
+      "tie_break": "task_id ascending when T_i is equal"
+    },
+    "rules": {
+      "E0_j": "E_burst_ref_j",
+      "E_burst_ref_j": "sum_{i in RM top 4} C_i*q0_j_per_ms*a_ref",
+      "E_dem_nom_j": "E_dem_nom_j(H)=W_H_j+W_L_j",
+      "Emax_j": "2*E_burst_ref_j",
+      "N_i": "N_i(H)=0 if O_i>=H else floor((H-1-O_i)/T_i)+1",
+      "W_H_j": "sum_{i in RM top 4} N_i(H)*C_i*q0_j_per_ms",
+      "W_L_j": "sum_{i in RM bottom 6} N_i(H)*C_i*q0_j_per_ms",
+      "a_ref": "2*b_ref",
+      "alpha_w": "(lambda_E*E_dem_nom_j(H)-E0_j)/22",
+      "b_ref": "(W_H_j+W_L_j)/(2*W_H_j+W_L_j)",
+      "p0_w": "base_power_w*workload_coefficients.hash*frequency_power_ratios[base_freq]",
+      "q0_j_per_ms": "p0_w/1000"
+    },
+    "uniquely_recoverable": true
+  },
+  "failure_policy": {
+    "audit_failure_statistics_policy": "exclude_from_statistics",
+    "infrastructure_failure_statistics_policy": "exclude_from_statistics",
+    "pilot_audit_gate": "Formal may start only after Pilot result inspect and result audit complete with infrastructure_failure_count=0, audit_failure_count=0, and overall_pass=true; otherwise stop and do not start Formal.",
+    "scheduling_outcome_statistics_policy": "retain_as_algorithm_result",
+    "sha_mismatch_gate": "Do not start a formal experiment when the Manifest, binary, protocol, template, or frozen-document SHA mismatches."
+  },
+  "final_code_commit": null,
+  "final_git_tag": null,
+  "formal_run_gate": [
+    {
+      "order": 1,
+      "step": "After I6 RTA integration, checkout the final commit or tag."
+    },
+    {
+      "order": 2,
+      "step": "Require a clean worktree."
+    },
+    {
+      "order": 3,
+      "step": "In the AutoDL formal-run environment, rebuild rtsim from the final checkout."
+    },
+    {
+      "order": 4,
+      "step": "Record the AutoDL compiler, dependency, and formal-run environment identities."
+    },
+    {
+      "order": 5,
+      "step": "Verify frozen document, template, protocol, and Manifest SHA values."
+    },
+    {
+      "order": 6,
+      "step": "Record the formal runtime binary path and SHA."
+    },
+    {
+      "order": 7,
+      "step": "Run Python and C++ tests."
+    },
+    {
+      "order": 8,
+      "step": "Run 9-18 real smoke cases."
+    },
+    {
+      "order": 9,
+      "step": "Audit the smoke cases."
+    },
+    {
+      "order": 10,
+      "step": "Run the 2400-case Pilot."
+    },
+    {
+      "order": 11,
+      "step": "Complete Pilot result inspect and result audit; require infrastructure_failure_count=0, audit_failure_count=0, and overall_pass=true."
+    },
+    {
+      "order": 12,
+      "step": "If the Pilot audit gate does not pass, stop and do not start Formal; otherwise freeze the Pilot report."
+    },
+    {
+      "order": 13,
+      "step": "Only after the Pilot audit gate passes, run the 18000-case Formal phase."
+    },
+    {
+      "order": 14,
+      "step": "After Formal completes, run the 5400-case Negative phase in the frozen Formal-then-Negative order."
+    },
+    {
+      "order": 15,
+      "step": "Audit all results."
+    },
+    {
+      "order": 16,
+      "step": "Produce statistics, figures, and paper tables."
+    }
+  ],
+  "freeze_status": "candidate",
+  "frozen_inputs": {
+    "execution_protocol": {
+      "path": "experiments/b4_priority_energy/execution_protocol_v1.json",
+      "sha256": "74fd9ed742ad41dbedb66a5e7de2bbc796e746ae2efb207d2d456deed10cdd34"
+    },
+    "experiment_document": {
+      "path": "docs/experiments/ASAP_BLOCK_B4_priority_energy_v5_2_frozen.md",
+      "sha256": "5e168664d9ce2062bf2418d2280195124c08b1311d1de1e280d20822965c0581"
+    },
+    "identity_protocol": {
+      "path": "experiments/b4_priority_energy/protocol_resolution_v1.json",
+      "sha256": "941d754e27e1cf599127550561a14a92f46e3605df26dca3c9a97e0325eecd93"
+    },
+    "system_template": {
+      "path": "v9_3_b4_priority_energy_system_template.yml",
+      "sha256": "a64181bf9fda8155c5b0b8b0451a160d6c44c2c8fae188a974640a4d2b243510"
+    },
+    "task_generator": {
+      "path": "global_task_generator.py",
+      "sha256": "25147e8073e55885a035160cbec4fe1d094dfd423a476731790e4cb8bb53bb8e"
+    }
+  },
+  "governance": {
+    "change_policy": "Any change to parameters, Manifests, task generation, source, or result schema requires a new freeze version and rerunning affected experiments.",
+    "finalization_requirement": "After I6, fill final_code_commit, final_git_tag, formal_runtime_binary_path, and formal_runtime_binary_sha256.",
+    "silent_changes_forbidden": true
+  },
+  "identity_migrations": [
+    {
+      "authorization_scope": "B4-PE R2/master integration",
+      "authorized": true,
+      "current_sha256": "5e168664d9ce2062bf2418d2280195124c08b1311d1de1e280d20822965c0581",
+      "document_path": "docs/experiments/ASAP_BLOCK_B4_priority_energy_v5_2_frozen.md",
+      "exact_reason": "removed two trailing spaces from line 2",
+      "freeze_status": "candidate",
+      "master_integration_commit": "46ac0ece34eacbd5178e292c16de961359a5c440",
+      "migration_scope": "R2/master integration only",
+      "previous_identity_commit": "8b09e37483eb2df6ce22621761f06433f2519663",
+      "previous_sha256": "0fee308839f2097664a63a21f8806128c868b1016fab2712e67892356961be52",
+      "scientific_contract_change": false,
+      "semantic_change": false,
+      "silent_changes_forbidden": true,
+      "source_pr": 58
+    }
+  ],
+  "manifests": {
+    "all": {
+      "case_count": 25800,
+      "sha256": "b3adfb138d72611c5a4013a523c1c38ab7d40edbda533239ba02b617be407497"
+    },
+    "formal_main": {
+      "algorithm_order": [
+        "gpfp_asap_block",
+        "gpfp_asap_nonblock",
+        "gpfp_asap_sync",
+        "gpfp_alap_block",
+        "gpfp_alap_nonblock",
+        "gpfp_alap_sync",
+        "gpfp_st_block",
+        "gpfp_st_nonblock",
+        "gpfp_st_sync"
+      ],
+      "case_count": 18000,
+      "sha256": "5b27761ab556455dd94cfbb5c63725b16bfa126b4c38871b0b8b8d8ae801c777"
+    },
+    "negative_control": {
+      "algorithm_order": [
+        "gpfp_asap_block",
+        "gpfp_asap_nonblock",
+        "gpfp_asap_sync",
+        "gpfp_alap_block",
+        "gpfp_alap_nonblock",
+        "gpfp_alap_sync",
+        "gpfp_st_block",
+        "gpfp_st_nonblock",
+        "gpfp_st_sync"
+      ],
+      "case_count": 5400,
+      "sha256": "690827b07c1320da843e77f06e9dbff638c24a4af43e20d7405f6f32ff5039fb"
+    },
+    "pilot": {
+      "algorithm_order": [
+        "gpfp_asap_block",
+        "gpfp_asap_nonblock",
+        "gpfp_asap_sync",
+        "gpfp_alap_block",
+        "gpfp_st_block"
+      ],
+      "case_count": 2400,
+      "sha256": "cadfdcfea8876c17e47087e98406613104d3456f2685bf50dd19c109fd41f30b"
+    },
+    "reuse": {
+      "formal_negative_shared_sources": 600,
+      "formal_negative_shared_tasksets": 300,
+      "unique_sources": 2240,
+      "unique_tasksets": 560
+    }
+  },
+  "not_final_until_rta_integration": true,
+  "platform_and_tasks": {
+    "constrained_deadline": true,
+    "formal_horizon_ms": 30000,
+    "formal_normalized_utilization": [
+      0.2,
+      0.3,
+      0.4,
+      0.5,
+      0.6
+    ],
+    "migratory": true,
+    "periods_ms": [
+      40,
+      200
+    ],
+    "preemptive": true,
+    "priority": "RM",
+    "processors": 4,
+    "scheduling": "global fixed-priority",
+    "shared_energy_storage": true,
+    "smoke_horizon_ms": 1000,
+    "task_count": 10,
+    "tick_ms": 1
+  },
+  "runtime_binary": {
+    "formal_runtime_binary_path": null,
+    "formal_runtime_binary_sha256": null,
+    "verified_binary_sha256": "735a810188c92f9b60560be42224b47c2564672b539a3567682aef0d24a92243",
+    "verified_local_binary_path": "/home/devcontainers/builds/partsim-b4-release/rtsim/rtsim"
+  },
+  "schema_version": 1,
+  "smoke_evidence": {
+    "case_count": 18,
+    "deadline_miss_interpretation": "Deadline misses in this smoke cannot support a performance conclusion.",
+    "evidence_scope": "interoperability_and_pairing_fairness_only",
+    "paper_data": false
+  },
+  "source_contract": {
+    "discrete_increment_count": 30000,
+    "harvest_arrival_rule": "Harvest from interval [k,k+1) ms arrives before the scheduling decision at k+1 ms.",
+    "integral_equivalent_ms": 22000,
+    "manifest_identity_profile": "three-stage-offered-harvest-v1",
+    "runtime_profile": "b4_pe_three_stage_v1",
+    "source_type": "scaled_piecewise",
+    "stages": [
+      {
+        "end_ms": 5000,
+        "multiplier": 1.0,
+        "start_ms": 0
+      },
+      {
+        "end_ms": 15000,
+        "multiplier": 0.2,
+        "start_ms": 5000
+      },
+      {
+        "end_ms": 30000,
+        "multiplier": 1.0,
+        "start_ms": 15000
+      }
+    ],
+    "time_zero_rule": "The first scheduling decision uses E0 only; no interval harvest is prepaid."
+  }
+}
