@@ -11,8 +11,10 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import hashlib
+import os
 from pathlib import Path
 import re
+import tempfile
 from typing import Any, Dict, Mapping
 
 from .rta4_core0a_pilot_v2 import (
@@ -21,10 +23,10 @@ from .rta4_core0a_pilot_v2 import (
     EXPECTED_EXECUTION_COUNT,
     RTA4Core0APilotV2Error,
     ValidatedCore0ADeployment,
+    canonical_json_bytes,
     core0a_execution_identity,
     load_strict_canonical_json,
     validate_autodl_deployment_manifest_v2,
-    write_canonical_json,
 )
 from .rta4_formal_config import RTA4_CORES, domain_hash
 
@@ -124,6 +126,45 @@ class RTA4Core0AAuthorizationV2Error(RTA4Core0APilotV2Error):
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _write_atomic_canonical_json(
+    path: Path | str, value: Mapping[str, Any],
+) -> None:
+    """Durably replace a canonical JSON artifact without partial targets."""
+
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    descriptor = -1
+    temporary_path: Path | None = None
+    try:
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{target.name}.",
+            suffix=".tmp",
+            dir=target.parent,
+        )
+        temporary_path = Path(temporary_name)
+        with os.fdopen(descriptor, "wb") as stream:
+            descriptor = -1
+            stream.write(canonical_json_bytes(value))
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary_path, target)
+        temporary_path = None
+        directory_flags = os.O_RDONLY
+        if hasattr(os, "O_DIRECTORY"):
+            directory_flags |= os.O_DIRECTORY
+        directory_descriptor = os.open(target.parent, directory_flags)
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
+    except Exception:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+        raise
 
 
 def _builder_source_binding(source_root: Path | str) -> Dict[str, Any]:
@@ -436,7 +477,7 @@ def build_core0a_authorization_candidate_v2(
     output = _authorization_output_path(
         authorization_output_path, validated,
     )
-    write_canonical_json(output, candidate)
+    _write_atomic_canonical_json(output, candidate)
     return candidate
 
 
