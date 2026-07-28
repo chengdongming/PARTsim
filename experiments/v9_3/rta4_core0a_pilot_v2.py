@@ -1838,7 +1838,6 @@ def validate_autodl_deployment_manifest_v2(
     deployment_manifest_path: Path | str,
     source_root: Path | str,
     deployment_workspace_root: Path | str,
-    require_clean: bool = True,
 ) -> ValidatedCore0ADeployment:
     source = _resolved_existing_directory(source_root, "source root")
     if source != PROJECT_ROOT.resolve(strict=True):
@@ -1849,7 +1848,7 @@ def validate_autodl_deployment_manifest_v2(
     candidate = load_candidate_config_v2(candidate_config_path)
     portable = validate_portable_candidate_bundle_v2(
         load_strict_canonical_json(portable_bundle_path),
-        require_clean=require_clean,
+        require_clean=True,
     )
     if (
         portable["selection"]["artifact_sha256"]
@@ -1870,7 +1869,7 @@ def validate_autodl_deployment_manifest_v2(
     try:
         production = load_and_validate_production_build_manifest(
             production_manifest_path,
-            require_clean=require_clean,
+            require_clean=True,
             require_default_closure=True,
         )
     except Exception as exc:

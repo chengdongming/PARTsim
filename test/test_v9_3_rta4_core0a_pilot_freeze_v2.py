@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import ast
 from copy import deepcopy
 import hashlib
+import inspect
 import json
 import os
 from pathlib import Path
@@ -11,6 +13,7 @@ import pytest
 
 from experiments.v9_3.rta4_formal_config import RTA4_CORES, domain_hash
 from experiments.v9_3 import rta4_core0a_pilot_v2 as core0a
+from experiments.v9_3 import rta4_production_build_manifest as production_build
 
 
 EXPECTED_COVERAGE = {
@@ -82,6 +85,36 @@ def live_portable(selection):
     return core0a.build_portable_candidate_bundle_v2(
         selection=selection,
         require_clean=True,
+    )
+
+
+@pytest.fixture(scope="module")
+def production_verifier(tmp_path_factory):
+    output = tmp_path_factory.mktemp("core0a-clean-gate-build") / "solar-verifier"
+    subprocess.run(
+        [
+            "c++", "-std=c++17", "-O2", "-Wall", "-Wextra", "-pedantic",
+            str(core0a.PROJECT_ROOT / "tools/rta4_solar_stod_verifier.cpp"),
+            "-o", str(output),
+        ],
+        check=True,
+    )
+    return output
+
+
+def _full_production_manifest(production_verifier, *, require_clean):
+    return production_build.generate_production_build_manifest(
+        source_root=core0a.PROJECT_ROOT,
+        simulator_binary=core0a.PROJECT_ROOT / "rtsim/rtsim",
+        verifier_binary=production_verifier,
+        compiler="c++",
+        build_commands={
+            "simulator": ["cmake", "--build", "build", "--target", "rtsim-exe"],
+            "verifier": [
+                "c++", "-std=c++17", "tools/rta4_solar_stod_verifier.cpp",
+            ],
+        },
+        require_clean=require_clean,
     )
 
 
@@ -176,10 +209,18 @@ def _validate_fixture(
     core0a.write_canonical_json(bundle_path, live_portable)
     core0a.write_canonical_json(production_path, production)
     core0a.write_canonical_json(deployment_path, deployment)
+
+    def load_clean_production(
+        _path, *, require_clean, require_default_closure,
+    ):
+        assert require_clean is True
+        assert require_default_closure is True
+        return production
+
     monkeypatch.setattr(
         core0a,
         "load_and_validate_production_build_manifest",
-        lambda *args, **kwargs: production,
+        load_clean_production,
     )
     validated = core0a.validate_autodl_deployment_manifest_v2(
         portable_bundle_path=bundle_path,
@@ -193,13 +234,209 @@ def _validate_fixture(
         deployment_manifest_path=deployment_path,
         source_root=core0a.PROJECT_ROOT,
         deployment_workspace_root=workspace,
-        require_clean=True,
     )
     assert validated.deployment_manifest == deployment
     assert validated.execution_identity == core0a.core0a_execution_identity(
         validated,
     )
     return validated, deployment_path, production, observed, workspace
+
+
+def _write_full_deployment_fixture(
+    tmp_path, monkeypatch, portable, production,
+):
+    workspace = tmp_path / "autodl-workspace"
+    workspace.mkdir()
+    observed = _observation()
+    monkeypatch.setattr(
+        core0a, "_observe_autodl_resources", lambda _root: observed,
+    )
+    deployment = core0a.build_autodl_deployment_manifest_v2(
+        bundle=portable,
+        production_manifest=production,
+        source_root=core0a.PROJECT_ROOT,
+        deployment_workspace_root=workspace,
+    )
+    bundle_path = tmp_path / "portable.json"
+    production_path = tmp_path / "production.json"
+    deployment_path = tmp_path / "deployment.json"
+    core0a.write_canonical_json(bundle_path, portable)
+    production_build.write_production_build_manifest(
+        production_path, production,
+    )
+    core0a.write_canonical_json(deployment_path, deployment)
+    return {
+        "portable_bundle_path": bundle_path,
+        "selection_artifact_path": (
+            core0a.PROJECT_ROOT / core0a.SELECTION_ARTIFACT_PATH
+        ),
+        "candidate_config_path": (
+            core0a.PROJECT_ROOT / core0a.CANDIDATE_CONFIG_PATH
+        ),
+        "production_manifest_path": production_path,
+        "deployment_manifest_path": deployment_path,
+        "source_root": core0a.PROJECT_ROOT,
+        "deployment_workspace_root": workspace,
+    }
+
+
+def _observe_dirty_portable_source(monkeypatch):
+    real_git = core0a._git
+
+    def dirty_git(*arguments):
+        if arguments == ("status", "--porcelain=v1", "--untracked-files=all"):
+            return " M experiments/v9_3/rta4_core0a_pilot_v2.py"
+        return real_git(*arguments)
+
+    monkeypatch.setattr(core0a, "_git", dirty_git)
+
+
+def _observe_dirty_production_source(monkeypatch):
+    real_git = production_build._git
+
+    def dirty_git(root, *arguments):
+        if arguments == ("status", "--porcelain=v1", "--untracked-files=all"):
+            return " M experiments/v9_3/rta4_core0a_pilot_v2.py"
+        return real_git(root, *arguments)
+
+    monkeypatch.setattr(production_build, "_git", dirty_git)
+
+
+def test_formal_validator_public_signature_has_no_clean_override():
+    signature = inspect.signature(core0a.validate_autodl_deployment_manifest_v2)
+    assert tuple(signature.parameters) == (
+        "portable_bundle_path",
+        "selection_artifact_path",
+        "candidate_config_path",
+        "production_manifest_path",
+        "deployment_manifest_path",
+        "source_root",
+        "deployment_workspace_root",
+    )
+    assert not {
+        "require_clean", "allow_dirty", "skip_clean_check",
+    }.intersection(signature.parameters)
+    source = inspect.getsource(core0a.validate_autodl_deployment_manifest_v2)
+    assert source.count("require_clean=True") == 2
+    assert "require_clean=False" not in source
+
+
+def test_formal_validator_rejects_explicit_clean_override_keyword():
+    arguments = {
+        "portable_bundle_path": "/not-used/portable.json",
+        "selection_artifact_path": "/not-used/selection.json",
+        "candidate_config_path": "/not-used/candidate.yaml",
+        "production_manifest_path": "/not-used/production.json",
+        "deployment_manifest_path": "/not-used/deployment.json",
+        "source_root": "/not-used/source",
+        "deployment_workspace_root": "/not-used/workspace",
+    }
+    with pytest.raises(TypeError, match="unexpected keyword argument 'require_clean'"):
+        core0a.validate_autodl_deployment_manifest_v2(
+            **arguments, require_clean=False,
+        )
+
+
+def test_dirty_portable_source_is_rejected_by_formal_validator(
+    tmp_path, monkeypatch, selection, production_verifier,
+):
+    _observe_dirty_portable_source(monkeypatch)
+    portable = core0a.build_portable_candidate_bundle_v2(
+        selection=selection,
+        require_clean=False,
+    )
+    assert portable["source"]["observed_clean"] is False
+    production = _full_production_manifest(
+        production_verifier, require_clean=True,
+    )
+    arguments = _write_full_deployment_fixture(
+        tmp_path, monkeypatch, portable, production,
+    )
+    with pytest.raises(
+        core0a.RTA4Core0APilotV2Error, match="clean worktree",
+    ):
+        core0a.validate_autodl_deployment_manifest_v2(**arguments)
+
+
+def test_dirty_production_source_is_rejected_by_formal_validator(
+    tmp_path, monkeypatch, live_portable, production_verifier,
+):
+    _observe_dirty_production_source(monkeypatch)
+    production = _full_production_manifest(
+        production_verifier, require_clean=False,
+    )
+    assert production["repository"]["tracked_and_untracked_clean"] is False
+    arguments = _write_full_deployment_fixture(
+        tmp_path, monkeypatch, live_portable, production,
+    )
+    with pytest.raises(
+        core0a.RTA4Core0APilotV2Error,
+        match="live production build manifest validation failed",
+    ):
+        core0a.validate_autodl_deployment_manifest_v2(**arguments)
+
+
+def test_simultaneous_dirty_portable_and_production_are_rejected(
+    tmp_path, monkeypatch, selection, production_verifier,
+):
+    _observe_dirty_portable_source(monkeypatch)
+    _observe_dirty_production_source(monkeypatch)
+    portable = core0a.build_portable_candidate_bundle_v2(
+        selection=selection,
+        require_clean=False,
+    )
+    production = _full_production_manifest(
+        production_verifier, require_clean=False,
+    )
+    assert portable["source"]["observed_clean"] is False
+    assert production["repository"]["tracked_and_untracked_clean"] is False
+    arguments = _write_full_deployment_fixture(
+        tmp_path, monkeypatch, portable, production,
+    )
+    with pytest.raises(
+        core0a.RTA4Core0APilotV2Error, match="clean worktree",
+    ):
+        core0a.validate_autodl_deployment_manifest_v2(**arguments)
+
+
+def test_clean_portable_and_full_production_return_validated_deployment(
+    tmp_path, monkeypatch, live_portable, production_verifier,
+):
+    production = _full_production_manifest(
+        production_verifier, require_clean=True,
+    )
+    assert live_portable["source"]["observed_clean"] is True
+    assert production["repository"]["tracked_and_untracked_clean"] is True
+    arguments = _write_full_deployment_fixture(
+        tmp_path, monkeypatch, live_portable, production,
+    )
+    validated = core0a.validate_autodl_deployment_manifest_v2(**arguments)
+    assert type(validated) is core0a.ValidatedCore0ADeployment
+
+
+def test_authorization_chain_has_one_non_overridable_validated_producer():
+    tree = ast.parse(Path(core0a.__file__).read_text(encoding="utf-8"))
+    constructors = []
+    for function in (
+        node for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ):
+        if any(
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "ValidatedCore0ADeployment"
+            for node in ast.walk(function)
+        ):
+            constructors.append(function.name)
+    assert constructors == ["validate_autodl_deployment_manifest_v2"]
+    for function in (
+        core0a.validate_autodl_deployment_manifest_v2,
+        core0a.core0a_execution_identity,
+        core0a.require_authorized_core0a_engineering_pilot,
+    ):
+        assert not {
+            "require_clean", "allow_dirty", "skip_clean_check",
+        }.intersection(inspect.signature(function).parameters)
 
 
 def test_selection_is_exact_canonical_and_stable(selection):
@@ -795,7 +1032,6 @@ def test_unvalidated_or_noncanonical_frozen_inputs_are_rejected(
             deployment_manifest_path=deployment_path,
             source_root=core0a.PROJECT_ROOT,
             deployment_workspace_root=workspace,
-            require_clean=True,
         )
 
 
