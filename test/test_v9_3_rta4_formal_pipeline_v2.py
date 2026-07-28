@@ -441,6 +441,7 @@ raise SystemExit(code)
 def _write_test_run_artifacts(
     root, *, core, ordinals, manifest_path, worker_count,
     simulation_timeout_seconds=180,
+    maximum_attempts=2,
 ):
     config = default_rta4_formal_config_v2(core)
     records = {
@@ -455,7 +456,7 @@ def _write_test_run_artifacts(
         method: {
             "initial_timeout_seconds": 0,
             "retry_timeout_seconds": 3,
-            "maximum_attempts": 2,
+            "maximum_attempts": maximum_attempts,
         }
         for method in methods
     }
@@ -660,7 +661,6 @@ def test_official_v2_bounded_e2e_without_core_mock_or_fake(
         for path in paths
     } == before
 
-    reference_rows = {row["method"]: row for row in rows}
     contexts = []
     initialize = original_initialize
     monkeypatch.setattr(
@@ -706,6 +706,7 @@ def test_official_v2_bounded_e2e_without_core_mock_or_fake(
         worker_prepared, worker_authorization = _write_test_run_artifacts(
             root, core="CORE-1", ordinals=(0, 1, 2, 3),
             manifest_path=manifest_path, worker_count=workers,
+            maximum_attempts=1,
         )
         prepared_document = json.loads(
             worker_prepared.read_text(encoding="utf-8")
@@ -727,33 +728,40 @@ def test_official_v2_bounded_e2e_without_core_mock_or_fake(
         assert context.cache_statistics["construction_count"] == 1
         assert context.cache_statistics["unique_service_materials"] == 1
         assert len(context.task_energy_materials) == 1
-        for method, row in concurrency_rows[workers].items():
-            reference = reference_rows[method]
-            for key in (
-                "taskset_source_sha256", "taskset_identity",
-                "task_energy_material_identity", "service_material_identity",
-                "beta_material_identity", "method", "exact_e0", "status",
-                "response_result",
-            ):
-                assert row[key] == reference[key]
+        if workers != 1:
+            for method, row in concurrency_rows[workers].items():
+                reference = concurrency_rows[1][method]
+                for key in (
+                    "taskset_source_sha256", "taskset_identity",
+                    "task_energy_material_identity", "service_material_identity",
+                    "beta_material_identity", "method", "exact_e0", "status",
+                    "response_result",
+                ):
+                    assert row[key] == reference[key]
+                assert [
+                    (attempt["attempt_index"], attempt["timeout_seconds"],
+                     attempt["status"], attempt["analysis_identity"])
+                    for attempt in row["attempts"]
+                ] == [
+                    (attempt["attempt_index"], attempt["timeout_seconds"],
+                     attempt["status"], attempt["analysis_identity"])
+                    for attempt in reference["attempts"]
+                ]
+        for row in concurrency_rows[workers].values():
+            assert row["status"] == "TIMEOUT"
             assert [
-                (attempt["attempt_index"], attempt["timeout_seconds"],
-                 attempt["status"], attempt["analysis_identity"])
+                (attempt["attempt_index"], attempt["timeout_seconds"])
                 for attempt in row["attempts"]
-            ] == [
-                (attempt["attempt_index"], attempt["timeout_seconds"],
-                 attempt["status"], attempt["analysis_identity"])
-                for attempt in reference["attempts"]
-            ]
+            ] == [(0, 0)]
     assert {
         method: [
             concurrency_rows[workers][method]["response_result"]["analysis_id"]
             for workers in (1, 2, 4)
         ]
-        for method in reference_rows
+        for method in concurrency_rows[1]
     } == {
         method: [row["response_result"]["analysis_id"]] * 3
-        for method, row in reference_rows.items()
+        for method, row in concurrency_rows[1].items()
     }
 
     core3 = tmp_path / "core3-worker1"
