@@ -122,6 +122,7 @@ def load_execution_protocol(path=EXECUTION_PROTOCOL_PATH):
             == file_sha256(EXECUTION_PROTOCOL_V3_PATH),
             "execution v3 inheritance identity mismatch",
         )
+        manifest.load_manifest_protocol(manifest.MANIFEST_PROTOCOL_V4_PATH)
         _require(
             protocol["manifest_protocol_ref"]
             == manifest.MANIFEST_PROTOCOL_V4_PATH.name
@@ -130,10 +131,14 @@ def load_execution_protocol(path=EXECUTION_PROTOCOL_PATH):
             "execution v4 manifest identity mismatch",
         )
         candidate_v4 = B4_DIR / "b4_pe_freeze_candidate_v4.json"
+        manifest.load_candidate_v4(candidate_v4)
         _require(
             protocol["candidate_v4_ref"] == candidate_v4.name
             and protocol["candidate_v4_sha256"] == file_sha256(candidate_v4),
             "execution v4 candidate identity mismatch",
+        )
+        materialization.load_materialization_protocol(
+            materialization.MATERIALIZATION_PROTOCOL_PATH
         )
         _require(
             protocol["materialization_protocol_ref"]

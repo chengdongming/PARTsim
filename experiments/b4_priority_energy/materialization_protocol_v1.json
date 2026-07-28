@@ -9,7 +9,7 @@
     "system_config": "case-specific path; content differs by scheduler only when energy environment is paired"
   },
   "base_pool_admission_protocol_ref": "base_pool_admission_protocol_v1.json",
-  "base_pool_admission_protocol_sha256": "c8dc2073ecf8e49eba12bf7da56ee71eca6c15784143474baec54ea3cc36be34",
+  "base_pool_admission_protocol_sha256": "409cf567ee762f9e950bd2cf3788ae8a5707a4f065715db7e2337374ca054ddd",
   "governance": {
     "formal_runs_authorized": false,
     "negative_control_runs_authorized": false,
@@ -19,7 +19,7 @@
   "identity_protocol_ref": "protocol_resolution_v1.json",
   "identity_protocol_sha256": "941d754e27e1cf599127550561a14a92f46e3605df26dca3c9a97e0325eecd93",
   "manifest_protocol_ref": "manifest_protocol_v4.json",
-  "manifest_protocol_sha256": "cec9ff0139f0b4c2d457b46f56f2518398a4631522e77f66333cb5668349a6e7",
+  "manifest_protocol_sha256": "ecbc50b991e3d220d8e344f3001b80bd3ddfcdfacf3af61cf0ed06c1a482b26d",
   "protocol_name": "B4-PE-materialization-v1-draft",
   "schema_version": 1,
   "semantic_hash": {

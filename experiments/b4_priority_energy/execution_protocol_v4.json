@@ -1,6 +1,6 @@
 {
   "candidate_v4_ref": "b4_pe_freeze_candidate_v4.json",
-  "candidate_v4_sha256": "99575eedc64724514ae2195ee023a095d9e2e6c12e9e4471dc12377d02a6924d",
+  "candidate_v4_sha256": "fa3824274cae24b0191758bce0e038e48843e8cdf2a893437d007f0c222f19ec",
   "governance": {
     "formal_runs_authorized": false,
     "negative_control_runs_authorized": false,
@@ -10,9 +10,9 @@
   "inherits_execution_protocol_ref": "execution_protocol_v3.json",
   "inherits_execution_protocol_sha256": "b76a44ac48c1721e4a0b2042a53d787c22b78a0ec017ea171d92534fd1d107ec",
   "manifest_protocol_ref": "manifest_protocol_v4.json",
-  "manifest_protocol_sha256": "cec9ff0139f0b4c2d457b46f56f2518398a4631522e77f66333cb5668349a6e7",
+  "manifest_protocol_sha256": "ecbc50b991e3d220d8e344f3001b80bd3ddfcdfacf3af61cf0ed06c1a482b26d",
   "materialization_protocol_ref": "materialization_protocol_v1.json",
-  "materialization_protocol_sha256": "6b6c4b98b86d35b1a948a8f53d1bed57fcb00a5543ca2053df558a311108960d",
+  "materialization_protocol_sha256": "3bfbfc1f6cdaf0defdf6c48279f748dea2fcb3fc61a4ba727370336c01c6d407",
   "protocol_name": "B4-PE-I5B-execution-v4-draft",
   "schema_version": 4,
   "status": "draft",
