@@ -289,9 +289,15 @@ def _expected_duration(record, result):
         return None
 
 
-def _expected_semantic_hash(record):
+def _expected_semantic_hash(record, state=None):
     if record is None:
         return None
+    if (
+        isinstance(state, dict)
+        and record.get("schema_version") == 4
+        and isinstance(state.get("taskset_semantic_hash"), str)
+    ):
+        return state["taskset_semantic_hash"]
     provenance = record.get("provenance")
     if isinstance(provenance, dict):
         value = provenance.get("taskset_semantic_hash")
@@ -460,6 +466,7 @@ def _classify_result(
     source,
     system,
     taskset_metadata,
+    state,
 ):
     case_id = case["case_id"]
     if result.get("run_id") != case_id:
@@ -559,7 +566,7 @@ def _classify_result(
                     "observability_summary_invalid",
                     exc,
                 )
-    expected_semantic = _expected_semantic_hash(record)
+    expected_semantic = _expected_semantic_hash(record, state)
     observed_semantic = result.get("taskset_semantic_hash")
     if (
         not isinstance(observed_semantic, str)
@@ -862,6 +869,7 @@ def _audit_case(state_path, root, state, record_entry):
                 source_metadata,
                 system_metadata,
                 task_ranks,
+                state,
             )
             case["pairing"] = _case_pairing_metadata(
                 case,

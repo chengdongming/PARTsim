@@ -15,12 +15,14 @@ REPO_ROOT = B4_DIR.parents[1]
 MANIFEST_PROTOCOL_V1_PATH = B4_DIR / "manifest_protocol_v1.json"
 MANIFEST_PROTOCOL_PATH = B4_DIR / "manifest_protocol_v2.json"
 MANIFEST_PROTOCOL_V3_PATH = B4_DIR / "manifest_protocol_v3.json"
+MANIFEST_PROTOCOL_V4_PATH = B4_DIR / "manifest_protocol_v4.json"
 IDENTITY_PROTOCOL_PATH = B4_DIR / "protocol_resolution_v1.json"
 OBSERVABILITY_CONTRACT_PATH = (
     B4_DIR / "observability_summary_contract_v1.json"
 )
 CANDIDATE_V1_PATH = B4_DIR / "b4_pe_freeze_candidate_v1.json"
 CANDIDATE_V2_PATH = B4_DIR / "b4_pe_freeze_candidate_v2.json"
+CANDIDATE_V3_PATH = B4_DIR / "b4_pe_freeze_candidate_v3.json"
 OBSERVABILITY_CONTRACT_V2_PATH = B4_DIR / "observability_summary_contract_v2.json"
 ANALYSIS_CONTRACT_V2_PATH = B4_DIR / "analysis_contract_v2.json"
 IDENTITY_REFERENCE_PATH = B4_DIR / "tests" / "test_protocol_resolution.py"
@@ -29,6 +31,7 @@ FROZEN_DOCUMENT_PATH = (
     "ASAP_BLOCK_B4_priority_energy_v5_2_frozen.md"
 )
 SYSTEM_TEMPLATE_PATH = REPO_ROOT / "v9_3_b4_priority_energy_system_template.yml"
+SEMANTIC_HASH_PLACEHOLDER = "__B4PE_MATERIALIZED_TASKSET_SEMANTIC_HASH__"
 
 
 class ManifestError(ValueError):
@@ -139,10 +142,21 @@ def load_manifest_protocol(path=MANIFEST_PROTOCOL_PATH):
         "trace_schema_version", "minimum_adjudicable_jobs_per_task",
         "mechanism_fields", "jmr_denominator_contract",
     }
+    v4_fields = {
+        "candidate_v3_ref", "candidate_v3_sha256",
+        "analysis_contract_ref", "analysis_contract_sha256",
+        "observability_activation", "observability_contract_ref",
+        "observability_contract_sha256",
+        "observability_summary_contract_version", "result_audit_policy",
+        "trace_schema_version", "minimum_adjudicable_jobs_per_task",
+        "mechanism_fields", "jmr_denominator_contract",
+        "governance", "supersedes",
+    }
     schema_version = protocol.get("schema_version")
     required = common | (
         v2_fields if schema_version == 2
-        else v3_fields if schema_version == 3 else set()
+        else v3_fields if schema_version == 3
+        else v4_fields if schema_version == 4 else set()
     )
     _require(required == set(protocol), "manifest protocol fields mismatch")
     _require(type(protocol["schema_version"]) is int, "invalid protocol schema")
@@ -231,6 +245,63 @@ def load_manifest_protocol(path=MANIFEST_PROTOCOL_PATH):
             and protocol["jmr_denominator_contract"]["zero_denominator"] == "NA",
             "schema3 v2 activation or denominator binding mismatch",
         )
+    if schema_version == 4:
+        _require(
+            protocol["candidate_v3_ref"] == CANDIDATE_V3_PATH.name
+            and protocol["candidate_v3_sha256"] == file_sha256(CANDIDATE_V3_PATH),
+            "candidate v3 identity mismatch",
+        )
+        _require(
+            protocol["observability_contract_ref"]
+            == OBSERVABILITY_CONTRACT_V2_PATH.name
+            and protocol["observability_contract_sha256"]
+            == file_sha256(OBSERVABILITY_CONTRACT_V2_PATH),
+            "observability contract v2 identity mismatch",
+        )
+        _require(
+            protocol["analysis_contract_ref"] == ANALYSIS_CONTRACT_V2_PATH.name
+            and protocol["analysis_contract_sha256"]
+            == file_sha256(ANALYSIS_CONTRACT_V2_PATH),
+            "analysis contract v2 identity mismatch",
+        )
+        _require(
+            protocol["supersedes"]
+            == {
+                "path":
+                    "experiments/b4_priority_energy/manifest_protocol_v3.json",
+                "sha256": file_sha256(MANIFEST_PROTOCOL_V3_PATH),
+            },
+            "manifest v4 supersedes identity mismatch",
+        )
+        _require(
+            protocol["governance"]
+            == {
+                "formal_runs_authorized": False,
+                "negative_control_runs_authorized": False,
+                "paper_result_authorized": False,
+                "pilot_runs_authorized": False,
+            },
+            "manifest v4 draft governance mismatch",
+        )
+        activation = protocol["observability_activation"]
+        _require(
+            protocol["trace_schema_version"] == 3
+            and protocol["observability_summary_contract_version"] == 2
+            and protocol["result_audit_policy"]
+            == "strict_schema3_observability_v2"
+            and protocol["minimum_adjudicable_jobs_per_task"] == 100
+            and activation == {
+                "summary_flag": "--b4-observability-summary",
+                "horizon_option": "--b4-summary-horizon",
+                "horizon_ms": protocol["execution_plan"]["horizon_ms"],
+                "contract_version_option":
+                    "--b4-observability-contract-version",
+                "contract_version": 2,
+            }
+            and len(protocol["mechanism_fields"]) == 13
+            and protocol["jmr_denominator_contract"]["zero_denominator"] == "NA",
+            "manifest v4 activation or denominator binding mismatch",
+        )
     _validate_string_list(protocol["manifest_case_fields"], "manifest fields")
 
     identity = IDENTITY.RESOLUTION
@@ -289,14 +360,22 @@ def load_manifest_protocol(path=MANIFEST_PROTOCOL_PATH):
         _require(type(plan[name]) is int and plan[name] > 0, f"{name} invalid")
     validate_relative_path(plan["simulator_argv0"], "simulator_argv0")
     validate_relative_path(plan["system_template_relpath"], "system template path")
+    path_roles = {"taskset", "source", "system_config", "result"}
+    if schema_version == 4:
+        path_roles.update({
+            "base_pool_admission_inventory",
+            "base_taskset",
+            "materialization_inventory",
+        })
     for name, template in plan["path_templates"].items():
-        _require(name in {"taskset", "source", "system_config", "result"}, "path role")
+        _require(name in path_roles, "path role")
         probe = template.format(
             algorithm_cli="gpfp_asap_block",
             phase="pilot",
             case_id="case-probe",
             taskset_id="ts-probe",
             source_id="src-probe",
+            rho_E="2",
         )
         validate_relative_path(probe, f"{name} template")
     retry = plan["retry_policy"]
@@ -327,10 +406,12 @@ PROTOCOL_V1 = load_manifest_protocol(MANIFEST_PROTOCOL_V1_PATH)
 PROTOCOL = load_manifest_protocol()
 PROTOCOL_V2 = PROTOCOL
 PROTOCOL_V3 = load_manifest_protocol(MANIFEST_PROTOCOL_V3_PATH)
+PROTOCOL_V4 = load_manifest_protocol(MANIFEST_PROTOCOL_V4_PATH)
 PROTOCOLS_BY_SCHEMA = {
     PROTOCOL_V1["schema_version"]: PROTOCOL_V1,
     PROTOCOL_V2["schema_version"]: PROTOCOL_V2,
     PROTOCOL_V3["schema_version"]: PROTOCOL_V3,
+    PROTOCOL_V4["schema_version"]: PROTOCOL_V4,
 }
 
 
@@ -401,6 +482,7 @@ def build_case(
         "case_id": parts["case_id"],
         "taskset_id": parts["taskset_id"],
         "source_id": parts["source_id"],
+        "rho_E": rho_E,
     }
     paths = {
         name: template.format(**template_values)
@@ -418,7 +500,7 @@ def build_case(
         "--run-id",
         parts["case_id"],
     ]
-    if protocol["schema_version"] in (2, 3):
+    if protocol["schema_version"] in (2, 3, 4):
         activation = protocol["observability_activation"]
         command.extend(
             [
@@ -427,11 +509,18 @@ def build_case(
                 str(activation["horizon_ms"]),
             ]
         )
-        if protocol["schema_version"] == 3:
+        if protocol["schema_version"] in (3, 4):
             command.extend(
                 [
                     activation["contract_version_option"],
                     str(activation["contract_version"]),
+                ]
+            )
+        if protocol["schema_version"] == 4:
+            command.extend(
+                [
+                    "--taskset-semantic-hash",
+                    SEMANTIC_HASH_PLACEHOLDER,
                 ]
             )
     case = {
@@ -469,8 +558,11 @@ def build_case(
         "retry_policy": plan["retry_policy"],
         "command_argv": command,
     }
-    if protocol["schema_version"] in (2, 3):
-        candidate_version = 1 if protocol["schema_version"] == 2 else 2
+    if protocol["schema_version"] in (2, 3, 4):
+        candidate_version = (
+            1 if protocol["schema_version"] == 2
+            else 2 if protocol["schema_version"] == 3 else 3
+        )
         case.update(
             {
                 f"candidate_v{candidate_version}_ref":
@@ -491,7 +583,7 @@ def build_case(
                     protocol["result_audit_policy"],
             }
         )
-        if protocol["schema_version"] == 3:
+        if protocol["schema_version"] in (3, 4):
             case.update(
                 {
                     "analysis_contract_ref": protocol["analysis_contract_ref"],
@@ -503,6 +595,16 @@ def build_case(
                         protocol["jmr_denominator_contract"],
                 }
             )
+    if protocol["schema_version"] == 4:
+        case.update(
+            {
+                "base_pool_admission_inventory_relpath":
+                    paths["base_pool_admission_inventory"],
+                "base_taskset_artifact_relpath": paths["base_taskset"],
+                "materialization_inventory_relpath":
+                    paths["materialization_inventory"],
+            }
+        )
     _require(set(case) == set(protocol["manifest_case_fields"]), "case shape mismatch")
     return case
 
@@ -652,12 +754,16 @@ def _validate_record_structure(record, line_number):
         f"line {line_number} shell execution is forbidden",
     )
     for name in (
+        "base_pool_admission_inventory_relpath",
+        "base_taskset_artifact_relpath",
         "taskset_artifact_relpath",
         "source_artifact_relpath",
         "system_config_artifact_relpath",
+        "materialization_inventory_relpath",
         "result_relpath",
     ):
-        validate_relative_path(record[name], name)
+        if name in record:
+            validate_relative_path(record[name], name)
     return protocol
 
 

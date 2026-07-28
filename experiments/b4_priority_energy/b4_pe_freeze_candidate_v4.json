@@ -1,0 +1,30 @@
+{
+  "candidate_code_commit": null,
+  "candidate_name": "B4-PE-freeze-candidate-v4-draft",
+  "final_code_commit": null,
+  "final_git_tag": null,
+  "freeze_status": "draft",
+  "governance": {
+    "formal_runs_authorized": false,
+    "negative_control_runs_authorized": false,
+    "not_final_until_independent_review": true,
+    "paper_result_authorized": false,
+    "pilot_runs_authorized": false,
+    "silent_changes_forbidden": true
+  },
+  "reason": "P1 repair for rho-specific task_energy_factor materialization and execution-input identity closure",
+  "schema_version": 4,
+  "scientific_identity": {
+    "algorithm_order_unchanged": true,
+    "case_counts_unchanged": true,
+    "identity_protocol_unchanged": true,
+    "parameter_matrix_unchanged": true,
+    "rho_specific_execution_taskset_path_added": true,
+    "source_identity_unchanged": true,
+    "taskset_identity_unchanged": true
+  },
+  "supersedes": {
+    "path": "experiments/b4_priority_energy/b4_pe_freeze_candidate_v3.json",
+    "sha256": "c30c74c971cb82f01d243f733e5276b04ff4e862d317fe501a235c55070712cf"
+  }
+}

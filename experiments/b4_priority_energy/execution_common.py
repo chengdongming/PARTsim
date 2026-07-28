@@ -16,12 +16,14 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
 import manifest_common as manifest
+import materialization_common as materialization
 
 
 B4_DIR = Path(__file__).resolve().parent
 EXECUTION_PROTOCOL_V1_PATH = B4_DIR / "execution_protocol_v1.json"
 EXECUTION_PROTOCOL_PATH = B4_DIR / "execution_protocol_v2.json"
 EXECUTION_PROTOCOL_V3_PATH = B4_DIR / "execution_protocol_v3.json"
+EXECUTION_PROTOCOL_V4_PATH = B4_DIR / "execution_protocol_v4.json"
 PROC_FD_ROOT = "/proc/self/fd"
 SNAPSHOT_ROLES = ("simulator", "system", "taskset", "source")
 TRACE_SUFFIXES = (".txt", ".json")
@@ -101,6 +103,70 @@ def record_sha256(record):
 
 def load_execution_protocol(path=EXECUTION_PROTOCOL_PATH):
     protocol = json.loads(Path(path).read_text(encoding="utf-8"))
+    if protocol.get("schema_version") == 4:
+        required = {
+            "candidate_v4_ref", "candidate_v4_sha256", "governance",
+            "inherits_execution_protocol_ref",
+            "inherits_execution_protocol_sha256",
+            "manifest_protocol_ref", "manifest_protocol_sha256",
+            "materialization_protocol_ref",
+            "materialization_protocol_sha256",
+            "protocol_name", "schema_version", "status", "supersedes",
+            "taskset_semantic_hash_source",
+        }
+        _require(set(protocol) == required, "execution v4 protocol fields mismatch")
+        _require(
+            protocol["inherits_execution_protocol_ref"]
+            == EXECUTION_PROTOCOL_V3_PATH.name
+            and protocol["inherits_execution_protocol_sha256"]
+            == file_sha256(EXECUTION_PROTOCOL_V3_PATH),
+            "execution v3 inheritance identity mismatch",
+        )
+        _require(
+            protocol["manifest_protocol_ref"]
+            == manifest.MANIFEST_PROTOCOL_V4_PATH.name
+            and protocol["manifest_protocol_sha256"]
+            == file_sha256(manifest.MANIFEST_PROTOCOL_V4_PATH),
+            "execution v4 manifest identity mismatch",
+        )
+        candidate_v4 = B4_DIR / "b4_pe_freeze_candidate_v4.json"
+        _require(
+            protocol["candidate_v4_ref"] == candidate_v4.name
+            and protocol["candidate_v4_sha256"] == file_sha256(candidate_v4),
+            "execution v4 candidate identity mismatch",
+        )
+        _require(
+            protocol["materialization_protocol_ref"]
+            == materialization.MATERIALIZATION_PROTOCOL_PATH.name
+            and protocol["materialization_protocol_sha256"]
+            == file_sha256(materialization.MATERIALIZATION_PROTOCOL_PATH),
+            "execution v4 materialization identity mismatch",
+        )
+        governance = {
+            "formal_runs_authorized": False,
+            "negative_control_runs_authorized": False,
+            "paper_result_authorized": False,
+            "pilot_runs_authorized": False,
+        }
+        _require(
+            protocol["status"] == "draft"
+            and protocol["governance"] == governance
+            and protocol["supersedes"]
+            == {
+                "path":
+                    "experiments/b4_priority_energy/execution_protocol_v3.json",
+                "sha256": file_sha256(EXECUTION_PROTOCOL_V3_PATH),
+            }
+            and protocol["taskset_semantic_hash_source"]
+            == (
+                "recomputed_from_verified_rho_specific_execution_snapshot_"
+                "and_matched_to_materialization_inventory"
+            ),
+            "execution v4 draft contract mismatch",
+        )
+        inherited = load_execution_protocol(EXECUTION_PROTOCOL_V3_PATH)
+        inherited.update(protocol)
+        return inherited
     if protocol.get("schema_version") == 3:
         required = {
             "candidate_v2_ref", "candidate_v2_sha256",
@@ -363,8 +429,10 @@ def load_execution_protocol(path=EXECUTION_PROTOCOL_PATH):
 PROTOCOL = load_execution_protocol()
 PROTOCOL_V2 = PROTOCOL
 PROTOCOL_V3 = load_execution_protocol(EXECUTION_PROTOCOL_V3_PATH)
+PROTOCOL_V4 = load_execution_protocol(EXECUTION_PROTOCOL_V4_PATH)
 EXECUTION_PROTOCOL_SHA256 = file_sha256(EXECUTION_PROTOCOL_PATH)
 EXECUTION_PROTOCOL_V3_SHA256 = file_sha256(EXECUTION_PROTOCOL_V3_PATH)
+EXECUTION_PROTOCOL_V4_SHA256 = file_sha256(EXECUTION_PROTOCOL_V4_PATH)
 
 
 def utc_now():
@@ -1268,7 +1336,11 @@ def _snapshot_simulator(context):
 
 
 def open_snapshot_for_execution(context, role, provenance):
-    _require(role in SNAPSHOT_ROLES, f"unknown snapshot role: {role}", SafetyError)
+    _require(
+        role in SNAPSHOT_ROLES or role == "inventory",
+        f"unknown snapshot role: {role}",
+        SafetyError,
+    )
     relative = provenance[f"{role}_snapshot_relpath"]
     expected_sha = provenance[f"{role}_snapshot_sha256"]
     parts = _relative_parts(relative)
@@ -1340,6 +1412,86 @@ def _close_execution_snapshots(opened):
             os.close(item["fd"])
 
 
+def _bytes_from_open_fd(descriptor):
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    chunks = []
+    while True:
+        chunk = os.read(descriptor, 1024 * 1024)
+        if not chunk:
+            break
+        chunks.append(chunk)
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    return b"".join(chunks)
+
+
+def _validate_v4_inventory_bytes(
+    inventory_bytes, record, context, taskset_sha, semantic_hash
+):
+    try:
+        inventory = json.loads(inventory_bytes.decode("utf-8"))
+        _require(
+            inventory_bytes == materialization.canonical_json_bytes(inventory),
+            "materialization inventory bytes are not canonical",
+            InputIntegrityError,
+        )
+        _require(
+            inventory.get("manifest_file_sha256") == context["manifest_sha256"],
+            "materialization inventory manifest identity mismatch",
+            InputIntegrityError,
+        )
+        materialization.validate_inventory_for_record(
+            inventory,
+            record,
+            taskset_sha,
+            semantic_hash,
+        )
+    except (
+        UnicodeError,
+        json.JSONDecodeError,
+        ValueError,
+        materialization.MaterializationError,
+    ) as exc:
+        raise InputIntegrityError(
+            f"materialization inventory validation failed: {exc}"
+        ) from exc
+    return inventory
+
+
+def _open_and_validate_v4_inventory_snapshot(
+    record, context, provenance, taskset_snapshot
+):
+    inventory_snapshot = open_snapshot_for_execution(
+        context, "inventory", provenance
+    )
+    try:
+        inventory_bytes = _bytes_from_open_fd(inventory_snapshot["fd"])
+        _require(
+            bytes_sha256(inventory_bytes)
+            == provenance["materialization_inventory_sha256"],
+            "materialization inventory snapshot SHA mismatch",
+            InputIntegrityError,
+        )
+        semantic_hash = materialization.acceptance.taskset_semantic_hash(
+            Path(taskset_snapshot["proc_fd_path"])
+        )
+        _require(
+            semantic_hash == provenance["taskset_semantic_hash"],
+            "execution taskset snapshot semantic hash mismatch",
+            InputIntegrityError,
+        )
+        _validate_v4_inventory_bytes(
+            inventory_bytes,
+            record,
+            context,
+            taskset_snapshot["sha256"],
+            semantic_hash,
+        )
+        return inventory_snapshot
+    except BaseException:
+        os.close(inventory_snapshot["fd"])
+        raise
+
+
 def build_provenance(record, context):
     snapshots = {
         "simulator": _snapshot_simulator(context),
@@ -1369,6 +1521,51 @@ def build_provenance(record, context):
         "resolved_system_config_path": snapshots["system"]["original_path"],
         "resolved_result_path": str(context["output_root"].joinpath(*_relative_parts(record["result_relpath"]))),
     }
+    if record.get("schema_version") == 4:
+        inventory_relative = record["materialization_inventory_relpath"]
+        inventory_snapshot = _snapshot_artifact(
+            context, "inventory", inventory_relative
+        )
+        try:
+            semantic_hash = materialization.acceptance.taskset_semantic_hash(
+                Path(snapshots["taskset"]["executed_snapshot_path"])
+            )
+            inventory_descriptor = _open_absolute_nofollow(
+                Path(inventory_snapshot["executed_snapshot_path"])
+            )
+            try:
+                inventory_bytes = _bytes_from_open_fd(inventory_descriptor)
+            finally:
+                os.close(inventory_descriptor)
+            _validate_v4_inventory_bytes(
+                inventory_bytes,
+                record,
+                context,
+                snapshots["taskset"]["snapshot_sha256"],
+                semantic_hash,
+            )
+        except (
+            OSError,
+            UnicodeError,
+            json.JSONDecodeError,
+            ValueError,
+            materialization.MaterializationError,
+        ) as exc:
+            raise InputIntegrityError(
+                f"materialization inventory validation failed: {exc}"
+            ) from exc
+        provenance.update(
+            {
+                "base_taskset_artifact_relpath":
+                    record["base_taskset_artifact_relpath"],
+                "materialization_inventory_relpath": inventory_relative,
+                "materialization_inventory_sha256":
+                    bytes_sha256(inventory_bytes),
+                "taskset_semantic_hash": semantic_hash,
+            }
+        )
+        for field, value in inventory_snapshot.items():
+            provenance[f"inventory_{field}"] = value
     for role, snapshot in snapshots.items():
         for field, value in snapshot.items():
             provenance[f"{role}_{field}"] = value
@@ -1426,9 +1623,30 @@ FINGERPRINT_FIELDS = (
     "source_executed_snapshot_sha256",
 )
 
+V4_FINGERPRINT_FIELDS = (
+    "base_taskset_artifact_relpath",
+    "materialization_inventory_relpath",
+    "materialization_inventory_sha256",
+    "taskset_semantic_hash",
+    "inventory_original_path",
+    "inventory_observed_original_sha256",
+    "inventory_snapshot_relpath",
+    "inventory_snapshot_sha256",
+    "inventory_executed_snapshot_path",
+    "inventory_execution_transport",
+    "inventory_executed_snapshot_sha256",
+)
+
+
+def _fingerprint_fields(provenance):
+    return FINGERPRINT_FIELDS + (
+        V4_FINGERPRINT_FIELDS
+        if "taskset_semantic_hash" in provenance else ()
+    )
+
 
 def new_state(provenance):
-    state = {name: provenance[name] for name in FINGERPRINT_FIELDS}
+    state = {name: provenance[name] for name in _fingerprint_fields(provenance)}
     for role in SNAPSHOT_ROLES:
         state[f"{role}_executed_proc_fd_path"] = None
     state.update(
@@ -1528,7 +1746,7 @@ def _validate_state_shape(state):
 
 def _validate_state(state, provenance):
     _validate_state_shape(state)
-    for field in FINGERPRINT_FIELDS:
+    for field in _fingerprint_fields(provenance):
         _require(field in state, f"state missing {field}", ResumeError)
         _require(
             state[field] == provenance[field],
@@ -1693,6 +1911,18 @@ def build_execution_argv(
         ),
     }
     replaced = [replacements.get(item, item) for item in argv]
+    if record.get("schema_version") == 4:
+        placeholder = materialization.SEMANTIC_HASH_PLACEHOLDER
+        _require(
+            replaced.count(placeholder) == 1,
+            "semantic hash placeholder must occur exactly once",
+            SafetyError,
+        )
+        replaced = [
+            context["active_provenance"]["taskset_semantic_hash"]
+            if item == placeholder else item
+            for item in replaced
+        ]
     replaced[0] = execution_snapshots["simulator"]["proc_fd_path"]
     return replaced
 
@@ -2177,6 +2407,16 @@ def run_attempt(record, context, state, attempt_index):
             _require_trace_target_absent(
                 attempt_directory_fd, trace_basename
             )
+            if record.get("schema_version") == 4:
+                inventory_snapshot = (
+                    _open_and_validate_v4_inventory_snapshot(
+                        record,
+                        context,
+                        context["active_provenance"],
+                        execution_snapshots["taskset"],
+                    )
+                )
+                resources.callback(os.close, inventory_snapshot["fd"])
         except (ExecutionError, OSError) as exc:
             popen_error = exc
         snapshot_fds = tuple(
@@ -2665,6 +2905,11 @@ def execute_validated_cases(
         SafetyError,
     )
     schema_version = next(iter(schema_versions))
+    _require(
+        schema_version != 4,
+        "manifest v4 is a draft and campaign execution is not authorized",
+        SafetyError,
+    )
     execution_protocol_sha256 = (
         EXECUTION_PROTOCOL_V3_SHA256
         if schema_version in {3, "b4-pe-integration-smoke-v3"}

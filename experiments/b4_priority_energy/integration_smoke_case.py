@@ -9,7 +9,6 @@ import json
 import math
 import os
 import re
-import shutil
 import stat
 import subprocess
 import sys
@@ -29,6 +28,7 @@ import execution_common as execution
 import inspect_execution
 import integration_smoke_common as smoke
 import manifest_common as manifest
+import materialization_common as materialization
 import observability_validation as observability
 
 
@@ -372,84 +372,51 @@ def materialize_taskset(
     destination,
     normalized_utilization=TARGET_NORMALIZED_UTILIZATION,
 ):
-    """Copy the public generator taskset byte-for-byte into the smoke artifact."""
+    """Derive the rho=2 execution taskset consumed by the smoke simulator."""
     raw_path = _require_regular_nonempty(raw_path, "raw taskset")
     raw, actual = validate_generated_taskset(
         raw_path,
         normalized_utilization=normalized_utilization,
     )
-    tasks = raw["taskset"]
-    ranked = sorted(
-        enumerate(tasks),
-        key=lambda item: (item[1]["iat"], item[0], item[1]["name"]),
-    )
     template = _load_yaml_mapping(SYSTEM_TEMPLATE_PATH, "system template")
-    q0_j_per_ms = _template_power_contract(template) / 1000
-    high_base = sum(
-        (
-            _release_count(task["iat"]) * task["runtime"] * q0_j_per_ms
-            for _index, task in ranked[:PROCESSORS]
-        ),
-        Fraction(0, 1),
-    )
-    low_base = sum(
-        (
-            _release_count(task["iat"]) * task["runtime"] * q0_j_per_ms
-            for _index, task in ranked[PROCESSORS:]
-        ),
-        Fraction(0, 1),
-    )
-    _require(high_base > 0 and low_base > 0, "taskset energy groups must be non-empty")
-    low_factor = (high_base + low_base) / (RHO_E * high_base + low_base)
-    high_factor = RHO_E * low_factor
-    for task in tasks:
-        params = str(task.get("params", ""))
-        _require(
-            "task_energy_factor" not in _params_mapping(params),
-            "generator unexpectedly emitted task_energy_factor",
+    try:
+        derived, factors = materialization.derive_execution_taskset(
+            raw, str(RHO_E)
         )
-
-    burst = sum(
-        (
-            task["runtime"] * q0_j_per_ms * high_factor
-            for _index, task in ranked[:PROCESSORS]
-        ),
-        Fraction(0, 1),
-    )
-    e0 = burst
-    emax = 2 * burst
-    demand = high_base + low_base
-    alpha = (LAMBDA_E * demand - e0) / SOURCE_INTEGRAL_SECONDS
-    _require(alpha >= 0, "frozen alpha is negative for generated taskset")
+        source_energy = materialization.source_energy_contract(
+            raw, str(LAMBDA_E)
+        )
+    except materialization.MaterializationError as exc:
+        raise RealSmokeCaseError(str(exc)) from exc
 
     destination = Path(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(raw_path, destination)
+    destination.write_bytes(materialization.canonical_yaml_bytes(derived))
     destination = _require_regular_nonempty(
         destination, "materialized taskset"
     )
     raw_sha = file_sha256(raw_path)
     materialized_sha = file_sha256(destination)
     _require(
-        raw_sha == materialized_sha,
-        "raw/materialized taskset SHA mismatch",
+        raw_sha != materialized_sha,
+        "rho materialization did not change taskset bytes",
     )
     raw_semantic_hash = formal_semantic_hash(raw_path)
     materialized_semantic_hash = formal_semantic_hash(destination)
     _require(
-        raw_semantic_hash == materialized_semantic_hash,
-        "raw/materialized taskset semantic hash mismatch",
+        raw_semantic_hash != materialized_semantic_hash,
+        "rho materialization did not change taskset semantics",
     )
     return {
         "actual_total_utilization": actual,
         "power_w": _template_power_contract(template),
-        "q0_j_per_ms": q0_j_per_ms,
-        "high_factor": high_factor,
-        "low_factor": low_factor,
-        "E0_j": e0,
-        "Emax_j": emax,
-        "nominal_demand_j": demand,
-        "alpha_w": alpha,
+        "q0_j_per_ms": factors["q0_j_per_ms"],
+        "high_factor": factors["high_factor"],
+        "low_factor": factors["low_factor"],
+        "E0_j": source_energy["E0_j"],
+        "Emax_j": source_energy["Emax_j"],
+        "nominal_demand_j": source_energy["nominal_demand_j"],
+        "alpha_w": source_energy["alpha_w"],
         "raw_taskset_sha256": raw_sha,
         "materialized_taskset_sha256": materialized_sha,
         "raw_taskset_semantic_hash": raw_semantic_hash,
@@ -793,8 +760,8 @@ def preflight(record_path):
         "raw taskset SHA mismatch",
     )
     _require(
-        raw_sha == materialized_sha,
-        "raw/materialized taskset SHA mismatch",
+        raw_sha != materialized_sha,
+        "rho-specific taskset unexpectedly equals raw base bytes",
     )
     _require(
         Path(provenance["generator_path"]).resolve()
@@ -820,11 +787,10 @@ def preflight(record_path):
     materialized_first = formal_semantic_hash(taskset_path)
     materialized_second = formal_semantic_hash(taskset_path)
     _require(
-        raw_first
-        == raw_second
-        == materialized_first
-        == materialized_second
-        == provenance["taskset_semantic_hash"],
+        raw_first == raw_second
+        and materialized_first == materialized_second
+        and raw_first != materialized_first
+        and materialized_first == provenance["taskset_semantic_hash"],
         "semantic hash mismatch",
     )
     argv = record["command_argv"]
@@ -913,18 +879,17 @@ def prepare_case(
         normalized_utilization=normalized,
     )
     _require(
-        raw_sha
-        == energy["raw_taskset_sha256"]
-        == energy["materialized_taskset_sha256"],
-        "materialization changed public generator taskset bytes",
+        raw_sha == energy["raw_taskset_sha256"]
+        and raw_sha != energy["materialized_taskset_sha256"],
+        "rho-specific materialization did not change generator taskset bytes",
     )
     semantic_hash = energy["materialized_taskset_semantic_hash"]
     _require(
-        semantic_hash
-        == energy["raw_taskset_semantic_hash"]
+        semantic_hash == formal_semantic_hash(taskset_path)
+        and energy["raw_taskset_semantic_hash"]
         == formal_semantic_hash(raw_path)
-        == formal_semantic_hash(taskset_path),
-        "raw/materialized formal semantic hash mismatch",
+        and semantic_hash != energy["raw_taskset_semantic_hash"],
+        "rho-specific formal semantic hash mismatch",
     )
     render_system_and_source(
         system_path,
@@ -1231,12 +1196,12 @@ def validate_execution(record_path):
     _require_regular_nonempty(raw_path, "raw taskset")
     _require_regular_nonempty(taskset_path, "materialized taskset")
     _require(
-        file_sha256(raw_path) == file_sha256(taskset_path),
-        "raw/materialized taskset SHA mismatch",
+        file_sha256(raw_path) != file_sha256(taskset_path),
+        "rho-specific taskset unexpectedly equals raw base bytes",
     )
     _require(
-        formal_semantic_hash(raw_path)
-        == formal_semantic_hash(taskset_path)
+        formal_semantic_hash(raw_path) != formal_semantic_hash(taskset_path)
+        and formal_semantic_hash(taskset_path)
         == record["provenance"]["taskset_semantic_hash"],
         "taskset semantic provenance mismatch",
     )
