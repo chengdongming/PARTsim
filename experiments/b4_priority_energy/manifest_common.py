@@ -84,36 +84,39 @@ V4_RUNTIME_ARTIFACTS = {
 }
 V4_RUNTIME_EVIDENCE = {
     "normalized_dynamic_dependency_manifest": {
-        "logical_path": "normalized_dynamic_dependency_manifest_v2.json",
+        "container_evidence": "stage2b_supplemental_seal",
+        "filename": "dynamic_dependencies.normalized.json",
         "role": "normalized_dynamic_dependency_manifest",
-        "schema_version": 2,
+        "serialization": "canonical_json",
         "sha256":
             "876abaa6b8812578c93ff12ac4a977f9da65240bb81f623e0233b57fcb8e9e3b",
         "supersedes": {
-            "logical_path": "dynamic_dependency_manifest_v1.json",
+            "filename": "dynamic_dependency_manifest.jsonl",
             "sha256":
                 "b259ea7727798fa1fc38319a73d16e0699b2d15408a09244a8b72a0ed039ee5f",
         },
         "verification_status": "independently_verified",
     },
     "python310_tree_manifest": {
-        "logical_path": "python310_tree_manifest_v1.json",
+        "container_evidence": "stage2b_supplemental_seal",
+        "filename": "python310_tree.normalized.jsonl",
         "role": "python310_tree_manifest",
-        "schema_version": 1,
+        "serialization": "canonical_jsonl",
         "sha256":
             "1e37cdfa1c0fd7a9ed4f7c0f650a363509530f06e5d609216c0392afc1993e99",
         "verification_status": "independently_verified",
     },
     "python38_tree_manifest": {
-        "logical_path": "python38_tree_manifest_v1.json",
+        "container_evidence": "stage2b_supplemental_seal",
+        "filename": "python38_tree.normalized.jsonl",
         "role": "python38_tree_manifest",
-        "schema_version": 1,
+        "serialization": "canonical_jsonl",
         "sha256":
             "6d903c9a25e20cfee4023ddc9bb163d5a1bfd6e14370cd6ade48d88e3ae1bfbe",
         "verification_status": "independently_verified",
     },
     "stage2a_runtime_execution_closure": {
-        "logical_path": "runtime_execution_closure_v1.json",
+        "filename": "runtime_execution_closure_v1.json",
         "role": "noncampaign_runtime_execution_closure",
         "schema_version": 1,
         "sha256":
@@ -121,22 +124,23 @@ V4_RUNTIME_EVIDENCE = {
         "verification_status": "independently_verified",
     },
     "stage2b_supplemental_seal": {
-        "logical_path": "runtime_supplemental_seal_v2.json",
+        "filename": "pilot_deployment_runtime_supplemental_seal_v2.json",
         "role": "deterministic_runtime_supplemental_seal",
         "schema_version": 2,
         "sha256":
             "c3be2ef579f9650723237213dd778ac2ef57c804ad9ae5100787f6ea9eba9f60",
         "supersedes": {
-            "logical_path": "runtime_supplemental_seal_v1.json",
+            "filename": "pilot_deployment_runtime_seal_v1.json",
             "sha256":
                 "1f9dd5b512b2318b0e4395c7253d7c5c3102caa45eb212cf75c80baf48e3ea24",
         },
         "verification_status": "independently_verified",
     },
     "v1_aslr_defect_evidence": {
-        "logical_path": "aslr_defect_evidence_v1.json",
+        "container_evidence": "stage2b_supplemental_seal",
+        "filename": "prior_v1_aslr_defect.json",
         "role": "v1_nondeterministic_aslr_defect_evidence",
-        "schema_version": 1,
+        "serialization": "canonical_json",
         "sha256":
             "054aef3c6fe36eed8291a88952c38c07fd03acfa5c084e400377aca499290ace",
         "verification_status": "independently_verified",
@@ -358,15 +362,53 @@ def load_candidate_v4(path=CANDIDATE_V4_PATH):
             entry["logical_path"],
             f"candidate runtime artifact {name}",
         )
-    for name, entry in closure["evidence"].items():
-        validate_relative_path(
-            entry["logical_path"],
-            f"candidate runtime evidence {name}",
+    evidence = closure["evidence"]
+    _require(
+        {
+            name: entry["schema_version"]
+            for name, entry in evidence.items()
+            if "schema_version" in entry
+        }
+        == {
+            "stage2a_runtime_execution_closure": 1,
+            "stage2b_supplemental_seal": 2,
+        },
+        "candidate v4 external evidence schema claims mismatch",
+    )
+    _require(
+        {
+            name: entry["serialization"]
+            for name, entry in evidence.items()
+            if "serialization" in entry
+        }
+        == {
+            "normalized_dynamic_dependency_manifest": "canonical_json",
+            "python310_tree_manifest": "canonical_jsonl",
+            "python38_tree_manifest": "canonical_jsonl",
+            "v1_aslr_defect_evidence": "canonical_json",
+        },
+        "candidate v4 external evidence serialization mismatch",
+    )
+    for name, entry in evidence.items():
+        filename = validate_relative_path(
+            entry["filename"],
+            f"candidate runtime evidence filename {name}",
+        )
+        _require(
+            PurePosixPath(filename).name == filename,
+            f"candidate runtime evidence filename {name} is not one component",
         )
         if "supersedes" in entry:
-            validate_relative_path(
-                entry["supersedes"]["logical_path"],
-                f"candidate superseded runtime evidence {name}",
+            superseded = validate_relative_path(
+                entry["supersedes"]["filename"],
+                f"candidate superseded runtime evidence filename {name}",
+            )
+            _require(
+                PurePosixPath(superseded).name == superseded,
+                (
+                    "candidate superseded runtime evidence filename "
+                    f"{name} is not one component"
+                ),
             )
     return candidate
 

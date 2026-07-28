@@ -142,6 +142,91 @@ class V4RuntimeClosureBindingTests(unittest.TestCase):
             for entry in evidence.values()
         ))
 
+    def test_external_evidence_filenames_match_generated_members(self):
+        evidence = self.closure["evidence"]
+        self.assertEqual(
+            {
+                name: entry["filename"]
+                for name, entry in evidence.items()
+            },
+            {
+                "normalized_dynamic_dependency_manifest":
+                    "dynamic_dependencies.normalized.json",
+                "python310_tree_manifest":
+                    "python310_tree.normalized.jsonl",
+                "python38_tree_manifest":
+                    "python38_tree.normalized.jsonl",
+                "stage2a_runtime_execution_closure":
+                    "runtime_execution_closure_v1.json",
+                "stage2b_supplemental_seal":
+                    "pilot_deployment_runtime_supplemental_seal_v2.json",
+                "v1_aslr_defect_evidence":
+                    "prior_v1_aslr_defect.json",
+            },
+        )
+        self.assertTrue(all("logical_path" not in entry for entry in evidence.values()))
+
+    def test_only_container_documents_claim_schema_versions(self):
+        evidence = self.closure["evidence"]
+        self.assertEqual(
+            {
+                name: entry["schema_version"]
+                for name, entry in evidence.items()
+                if "schema_version" in entry
+            },
+            {
+                "stage2a_runtime_execution_closure": 1,
+                "stage2b_supplemental_seal": 2,
+            },
+        )
+        self.assertEqual(
+            {
+                name: entry["serialization"]
+                for name, entry in evidence.items()
+                if "serialization" in entry
+            },
+            {
+                "normalized_dynamic_dependency_manifest": "canonical_json",
+                "python310_tree_manifest": "canonical_jsonl",
+                "python38_tree_manifest": "canonical_jsonl",
+                "v1_aslr_defect_evidence": "canonical_json",
+            },
+        )
+        self.assertTrue(all(
+            evidence[name]["container_evidence"]
+            == "stage2b_supplemental_seal"
+            for name in (
+                "normalized_dynamic_dependency_manifest",
+                "python310_tree_manifest",
+                "python38_tree_manifest",
+                "v1_aslr_defect_evidence",
+            )
+        ))
+
+    def test_invented_evidence_filenames_are_absent(self):
+        invented = (
+            "runtime_" + "supplemental_seal_v2.json",
+            "normalized_" + "dynamic_dependency_manifest_v2.json",
+            "python38_" + "tree_manifest_v1.json",
+            "python310_" + "tree_manifest_v1.json",
+            "aslr_" + "defect_evidence_v1.json",
+            "runtime_" + "supplemental_seal_v1.json",
+            "dynamic_" + "dependency_manifest_v1.json",
+        )
+        evidence = self.closure["evidence"]
+        bound_filenames = {
+            entry["filename"]
+            for entry in evidence.values()
+        }
+        bound_filenames.update(
+            entry["supersedes"]["filename"]
+            for entry in evidence.values()
+            if "supersedes" in entry
+        )
+        for filename in invented:
+            with self.subTest(filename=filename):
+                self.assertNotIn(filename, bound_filenames)
+
     def test_v2_dependency_representation_supersedes_v1_without_authorizing(self):
         representation = self.closure[
             "deterministic_dependency_representation"
@@ -158,8 +243,18 @@ class V4RuntimeClosureBindingTests(unittest.TestCase):
         )
         evidence = self.closure["evidence"]
         self.assertEqual(
+            evidence["stage2b_supplemental_seal"]["supersedes"]["filename"],
+            "pilot_deployment_runtime_seal_v1.json",
+        )
+        self.assertEqual(
             evidence["stage2b_supplemental_seal"]["supersedes"]["sha256"],
             "1f9dd5b512b2318b0e4395c7253d7c5c3102caa45eb212cf75c80baf48e3ea24",
+        )
+        self.assertEqual(
+            evidence["normalized_dynamic_dependency_manifest"][
+                "supersedes"
+            ]["filename"],
+            "dynamic_dependency_manifest.jsonl",
         )
         self.assertEqual(
             evidence["normalized_dynamic_dependency_manifest"][

@@ -15,7 +15,7 @@
   "identity_protocol_ref": "protocol_resolution_v1.json",
   "identity_protocol_sha256": "941d754e27e1cf599127550561a14a92f46e3605df26dca3c9a97e0325eecd93",
   "manifest_protocol_ref": "manifest_protocol_v4.json",
-  "manifest_protocol_sha256": "ecbc50b991e3d220d8e344f3001b80bd3ddfcdfacf3af61cf0ed06c1a482b26d",
+  "manifest_protocol_sha256": "cf4a890ab87c500f06cc446c8b31b88d83a55829fed774c0dd2c169540cd0018",
   "observability_contract_ref": "observability_summary_contract_v2.json",
   "observability_contract_sha256": "4e982f5a58a26507c9ab1b1b8d0b732e651d4657f10cf16744d3278d11186efe",
   "protocol_name": "B4-PE-base-pool-admission-v1-draft",
