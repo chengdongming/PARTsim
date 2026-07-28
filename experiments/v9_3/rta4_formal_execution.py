@@ -563,6 +563,12 @@ def _mechanism_telemetry_rows_v2(result: Any) -> tuple[Dict[str, Any], ...]:
     return tuple(rows)
 
 
+# Retain the established adapter test/injection surface without importing the
+# V1 pipeline.  Both execution versions resolve these names at call time.
+dispatch_formal_rta = _dispatch_formal_rta_v2
+mechanism_telemetry_rows = _mechanism_telemetry_rows_v2
+
+
 def _adapter_result_v2(
     record: Any,
     certificate: TasksetIdentityCertificateV2,
@@ -649,7 +655,7 @@ def _adapter_result_v2(
         exact_input_identity=adapter_input_id,
         float_decision_path=False,
     )
-    result = _dispatch_formal_rta_v2(
+    result = dispatch_formal_rta(
         analysis_id=analysis_id,
         method=record.material["method"],
         analysis_input=rta_adapter.TasksetAnalysisInput(
@@ -689,7 +695,7 @@ def _adapter_result_v2(
         "failure_reason": result.failure_reason or "NA",
         "fallback_used": False,
         "task_results": task_rows,
-        "mechanism_rows": _mechanism_telemetry_rows_v2(result),
+        "mechanism_rows": mechanism_telemetry_rows(result),
         "production_build_manifest_identity": (
             service.production_build_manifest_identity
         ),
