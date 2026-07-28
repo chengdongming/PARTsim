@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import hashlib
+from itertools import zip_longest
 from pathlib import Path
 import subprocess
+import sys
 
 import pytest
 
 from experiments.v9_3 import exact_energy
 from experiments.v9_3.rta4_formal_config import (
+    RTA4_CORE2_METHODS,
+    RTA4_RECURSIVE_METHODS,
     RTA4FormalConfigError,
     load_rta4_formal_config,
 )
@@ -17,6 +21,15 @@ from experiments.v9_3.rta4_formal_config_v2 import (
     load_rta4_formal_config_v2,
 )
 from experiments.v9_3.rta4_formal_plan import iter_formal_plan
+from experiments.v9_3.rta4_formal_plan import describe_all_formal_plans
+from experiments.v9_3.rta4_formal_freeze import (
+    RTA4_FROZEN_ALL_PLAN_DIGEST,
+    RTA4_FROZEN_CORE_PLANS,
+)
+from experiments.v9_3.rta4_formal_plan_grid import (
+    EXPECTED_STREAM_COUNTS,
+    iter_formal_plan_grid,
+)
 from experiments.v9_3.rta4_formal_plan_v2 import (
     describe_all_formal_plans_v2,
     iter_formal_plan_v2,
@@ -128,6 +141,118 @@ def test_v2_plan_counts_grid_and_pairing_are_unchanged_but_identities_change():
             "deadline_variant", "normalized_utilization", "replicate_index",
         ):
             assert v2_record.material.get(field) == v1_record.material.get(field)
+
+
+def test_version_neutral_grid_counts_and_all_v1_frozen_identities_are_exact():
+    def neutral_ranker(point):
+        key = ":".join((
+            str(point.material["normalized_utilization"]),
+            str(point.material["method"]),
+            str(point.material["replicate_index"]),
+        ))
+        return key, key, key
+
+    for core, expected in EXPECTED_STREAM_COUNTS.items():
+        points = iter_formal_plan_grid(
+            core,
+            recursive_methods=RTA4_RECURSIVE_METHODS,
+            core2_methods=RTA4_CORE2_METHODS,
+            core5b_ranker=neutral_ranker,
+        )
+        assert sum(1 for _ in points) == expected
+
+    v1_configs = {
+        core: load_rta4_formal_config(_path(core, "v1"), expected_core=core)
+        for core in CORES
+    }
+    summary = describe_all_formal_plans(v1_configs)
+    assert summary["all_plan_digest"] == RTA4_FROZEN_ALL_PLAN_DIGEST
+    for core in CORES:
+        frozen = RTA4_FROZEN_CORE_PLANS[core]
+        observed = summary["plans"][core]
+        assert observed["ordered_stream_count"] == frozen["count"]
+        assert observed["ordered_stream_digest"] == frozen["ordered_digest"]
+        assert observed["plan_sha256"] == frozen["plan_sha256"]
+
+
+def test_every_v1_v2_plan_cell_keeps_math_axes_but_uses_disjoint_identity():
+    fields = (
+        "scenario", "method", "exact_e0", "service_scale", "power_scale",
+        "deadline_variant", "axis", "axis_value", "timeout_contract",
+        "normalized_utilization", "processor_count", "task_count",
+        "replicate_index", "release_mode", "applicability_track",
+        "battery_model", "battery_capacity", "physical_initial_energy",
+        "release_horizon", "observation_horizon", "scheduler",
+        "worker_count", "execution_role",
+    )
+    for core in CORES:
+        v1_config = load_rta4_formal_config(
+            _path(core, "v1"), expected_core=core,
+        )
+        v2_config = load_rta4_formal_config_v2(
+            _path(core, "v2_shared_energy"), expected_core=core,
+        )
+        count = 0
+        for v1, v2 in zip_longest(
+            iter_formal_plan(v1_config), iter_formal_plan_v2(v2_config),
+        ):
+            assert v1 is not None and v2 is not None
+            assert (v2.kind, v2.core, v2.ordinal) == (
+                v1.kind, v1.core, v1.ordinal,
+            )
+            assert v2.taskset_slot_id == v1.taskset_slot_id
+            assert v2.taskset_skeleton_slot_id == v1.taskset_skeleton_slot_id
+            for field in fields:
+                assert v2.material.get(field) == v1.material.get(field)
+            if v1.mathematical_request_id is not None:
+                assert v2.mathematical_request_id != v1.mathematical_request_id
+            assert v2.execution_id != v1.execution_id
+            count += 1
+        assert count == EXPECTED_STREAM_COUNTS[core]
+
+
+def test_v2_plan_survives_v1_iterator_failure_and_v1_module_import_block(monkeypatch):
+    from experiments.v9_3 import rta4_formal_plan as v1_plan
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("V2 plan attempted a V1 plan fallback")
+
+    monkeypatch.setattr(v1_plan, "iter_formal_plan", forbidden)
+    observed = describe_all_formal_plans_v2(_configs_v2())
+    assert {
+        core: observed["plans"][core]["ordered_stream_count"]
+        for core in CORES
+    } == EXPECTED_STREAM_COUNTS
+
+    program = r'''
+import importlib.abc
+import sys
+
+TARGET = "experiments.v9_3.rta4_formal_plan"
+
+class BlockV1Plan(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path, target=None):
+        if fullname == TARGET:
+            raise ImportError("blocked V1 formal plan")
+        return None
+
+sys.meta_path.insert(0, BlockV1Plan())
+from experiments.v9_3.rta4_formal_config_v2 import default_rta4_formal_config_v2
+from experiments.v9_3.rta4_formal_plan_grid import EXPECTED_STREAM_COUNTS
+from experiments.v9_3.rta4_formal_plan_v2 import iter_formal_plan_v2
+from experiments.v9_3.rta4_formal_runner_v2 import AuthorizedRTA4RunnerV2
+
+for core, expected in EXPECTED_STREAM_COUNTS.items():
+    assert sum(1 for _ in iter_formal_plan_v2(
+        default_rta4_formal_config_v2(core)
+    )) == expected
+assert TARGET not in sys.modules
+'''
+    completed = subprocess.run(
+        [sys.executable, "-c", program], cwd=ROOT, check=False,
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    assert completed.returncode == 0, completed.stderr
 
 
 def test_v2_contract_builder_check_passes_without_authorization():

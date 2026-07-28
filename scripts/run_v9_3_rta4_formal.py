@@ -17,9 +17,6 @@ from experiments.v9_3.rta4_formal_config_v2 import (
     RTA4FormalConfigV2Error, load_rta4_formal_config_v2,
 )
 from experiments.v9_3.rta4_formal_plan_v2 import describe_formal_plan_v2
-from experiments.v9_3.rta4_formal_pipeline import (
-    RTA4FormalAuthorizationError, RTA4FormalRunner,
-)
 from experiments.v9_3.rta4_formal_execution import (
     AuthorizedRTA4Runner, ProductionSimulationExecutor,
 )
@@ -70,7 +67,7 @@ def main() -> int:
         version, config = _load_describable_config(args.config)
         description = (
             describe_formal_plan_v2(config)
-            if version == "V2" else RTA4FormalRunner(config).describe()
+            if version == "V2" else _describe_v1(config)
         )
         print(json.dumps(description, ensure_ascii=False, sort_keys=True, indent=2))
         return 0
@@ -168,6 +165,10 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
+    from experiments.v9_3.rta4_formal_pipeline import (
+        RTA4FormalAuthorizationError, RTA4FormalRunner,
+    )
+
     runner = RTA4FormalRunner(config)
     try:
         runner.run()
@@ -175,6 +176,12 @@ def main() -> int:
         print(str(exc), file=sys.stderr)
         return 2
     return 0
+
+
+def _describe_v1(config):
+    from experiments.v9_3.rta4_formal_pipeline import RTA4FormalRunner
+
+    return RTA4FormalRunner(config).describe()
 
 
 if __name__ == "__main__":

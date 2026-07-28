@@ -16,6 +16,7 @@ from typing import Any, Callable, Dict, Iterable, Mapping, Sequence
 import yaml
 
 import asap_block_rta_v9_3 as rta_core
+import asap_block_rta_v9_3_methods as method_registry
 import asap_block_rta_v9_3_taskset as rta_adapter
 
 from . import exact_energy
@@ -25,27 +26,9 @@ from .constrained_taskset_identity import (
     build_taskset_identity_certificate,
 )
 from .result_writer import atomic_write_json
-from .rta4_formal_authorization import (
-    RTA4_TEST_AUTHORIZATION_SCHEMA, validate_authorization_document,
-    verify_live_authorization,
-)
 from .rta4_formal_config import canonical_json, domain_hash
-from .rta4_formal_freeze import (
-    prepared_scientific_config, validate_prepared_config,
-)
 from .rta4_formal_environment import (
     load_strict_json, validate_bound_source_file, validate_command_invocation,
-)
-from .rta4_formal_manifest import (
-    FORMAL_AUTHORIZED, RTA4_CONFIG_CHECKPOINT, RTA4_PLAN_MANIFEST,
-    SYNTHETIC_AUTHORIZED,
-)
-from .rta4_formal_pipeline import (
-    RTA4FormalRunner, dispatch_formal_rta,
-    formal_analysis_identity, mechanism_telemetry_rows,
-)
-from .rta4_formal_plan import (
-    FormalPlanRecord, formal_service_identity, iter_formal_plan,
 )
 from .rta4_formal_store import RTA4FormalTasksetStore
 from .rta4_formal_schema import FORMAL_TABLES, RTA4_FORMAL_SCHEMA_MANIFEST
@@ -59,19 +42,48 @@ from .rta4_shared_energy import (
     validate_core3_shared_energy_projection,
 )
 from .rta4_taskset_v2 import TasksetIdentityCertificateV2
-from .rta4_formal_validation import (
-    RTA4_CHECKPOINT_DOMAIN, RTA4_CHECKPOINT_FILENAME,
-    RTA4_CHECKPOINT_VERSION,
-    ValidatedFormalClosure, refresh_validated_closure,
-    validate_formal_checkpoint, validate_formal_run_closure,
-)
-from .rta4_formal_writer import (
-    FORMAL_AUTHORIZATION_EVIDENCE, FORMAL_RUN_METADATA,
-    FORMAL_TERMINAL_DIRECTORY, RTA4FormalResultWriter,
-)
 
 
 RTA4_GENERATION_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_PRODUCTION_GENERATION:v1"
+RTA4_CHECKPOINT_VERSION = "ASAP_BLOCK_V9_3_RTA4_FORMAL_CHECKPOINT_V2"
+RTA4_CHECKPOINT_FILENAME = "formal_checkpoint.json"
+RTA4_CHECKPOINT_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_FORMAL_CHECKPOINT:v2"
+_V1_RUNTIME_LOADED = False
+
+
+def _load_v1_runtime() -> None:
+    """Load the legacy execution stack only for an actual V1 operation."""
+
+    global _V1_RUNTIME_LOADED
+    if _V1_RUNTIME_LOADED:
+        return
+    from .rta4_formal_authorization import (
+        RTA4_TEST_AUTHORIZATION_SCHEMA, validate_authorization_document,
+        verify_live_authorization,
+    )
+    from .rta4_formal_freeze import (
+        prepared_scientific_config, validate_prepared_config,
+    )
+    from .rta4_formal_manifest import (
+        FORMAL_AUTHORIZED, RTA4_CONFIG_CHECKPOINT, RTA4_PLAN_MANIFEST,
+        SYNTHETIC_AUTHORIZED,
+    )
+    from .rta4_formal_pipeline import (
+        RTA4FormalRunner, formal_analysis_identity,
+    )
+    from .rta4_formal_plan import (
+        FormalPlanRecord, formal_service_identity, iter_formal_plan,
+    )
+    from .rta4_formal_validation import (
+        ValidatedFormalClosure, refresh_validated_closure,
+        validate_formal_checkpoint, validate_formal_run_closure,
+    )
+    from .rta4_formal_writer import (
+        FORMAL_AUTHORIZATION_EVIDENCE, FORMAL_RUN_METADATA,
+        FORMAL_TERMINAL_DIRECTORY, RTA4FormalResultWriter,
+    )
+    globals().update(locals())
+    _V1_RUNTIME_LOADED = True
 
 
 class RTA4ExecutionError(RuntimeError):
@@ -103,6 +115,7 @@ def _plain_material(value: Any) -> Any:
 def _certificate_from_closure(
     closure: ValidatedFormalClosure, taskset_id: str,
 ) -> TasksetIdentityCertificate:
+    _load_v1_runtime()
     rows = {
         row["taskset_id"]: row for row in closure.table("formal_tasksets.csv")
     }
@@ -128,6 +141,7 @@ class ProductionTasksetProvider:
         generator_factory: Callable[..., Any] | None = None,
         source_task_workloads: Mapping[str, Sequence[str]] | None = None,
     ) -> None:
+        _load_v1_runtime()
         self.prepared = validate_prepared_config(prepared_config)
         self.config = prepared_scientific_config(self.prepared)
         self.core = self.prepared["core"]
@@ -381,6 +395,7 @@ def _adapter_result(
     record: FormalPlanRecord, certificate: TasksetIdentityCertificate,
     config: Mapping[str, Any], timeout_seconds: int,
 ) -> tuple[Mapping[str, Any], Any]:
+    _load_v1_runtime()
     tasks = tuple(
         rta_core.V93Task(
             task.task_id, task.wcet, task.relative_deadline,
@@ -470,6 +485,84 @@ def _adapter_result(
     return mapped, result
 
 
+def _dispatch_formal_rta_v2(
+    *, analysis_id: str, method: str,
+    analysis_input: rta_adapter.TasksetAnalysisInput,
+) -> Any:
+    """Dispatch V2 through the same public eight-method adapter, V1-free."""
+
+    return rta_adapter.analyze_method_taskset_v9_3(
+        analysis_id=analysis_id,
+        method_spec=method_registry.method_spec_v9_3(method),
+        analysis_input=analysis_input,
+    )
+
+
+def _mechanism_telemetry_rows_v2(result: Any) -> tuple[Dict[str, Any], ...]:
+    """Project adapter-validated telemetry without loading the V1 pipeline."""
+
+    rows = []
+    method = result.method_id.value
+    for task_result in result.task_results:
+        adapter_fields = {
+            "impossible_prefix_count": "impossible_prefix_count",
+            "flow_call_count": "flow_solver_calls",
+            "flow_node_count": "flow_node_count",
+            "flow_edge_count": "flow_edge_count",
+            "z_branch_count": "z_branch_count",
+            "flow_infeasible_count": "flow_infeasible_count",
+            "safety_predicate_calls": "phase_safe_calls",
+        }
+
+        def value(name: str) -> Any:
+            observed = getattr(
+                task_result, adapter_fields.get(name, name), None,
+            )
+            return "NA" if observed is None else observed
+
+        sequence = task_result.witness_sequence
+        sequence_kind = (
+            "NA" if not sequence else
+            "CONSTANT" if len(set(sequence)) == 1 else "NONCONSTANT"
+        )
+        available = any(value(name) != "NA" for name in adapter_fields)
+        rows.append({
+            "analysis_id": result.analysis_id,
+            "method": method,
+            "task_id": task_result.task_id,
+            "priority_rank": task_result.priority_rank,
+            "telemetry_status": (
+                "AVAILABLE" if available else "NOT_APPLICABLE_OR_UNAVAILABLE"
+            ),
+            "impossible_prefix_count": value("impossible_prefix_count"),
+            "empty_phase_set_count": value("empty_phase_set_count"),
+            "strict_ph_lt_loc_checkpoints": value(
+                "strict_ph_lt_loc_checkpoints"
+            ),
+            "flow_call_count": value("flow_call_count"),
+            "flow_node_count": value("flow_node_count"),
+            "flow_edge_count": value("flow_edge_count"),
+            "z_branch_count": value("z_branch_count"),
+            "flow_optimal_count": "NA",
+            "flow_infeasible_count": value("flow_infeasible_count"),
+            "flow_timeout_count": value("flow_timeout_count"),
+            "flow_internal_count": value("flow_internal_count"),
+            "ph_no_common_h_but_seq_exists": value(
+                "ph_no_common_h_but_seq_exists"
+            ),
+            "sequence_kind": sequence_kind,
+            "sequence_length": len(sequence) if sequence else "NA",
+            "distinct_h_count": len(set(sequence)) if sequence else "NA",
+            "last_h": sequence[-1] if sequence else "NA",
+            "strict_seq_lt_ph": value("strict_seq_lt_ph"),
+            "safety_predicate_calls": value("safety_predicate_calls"),
+            "cache_hits": value("cache_hits"),
+            "cache_misses": value("cache_misses"),
+            "cache_hit_rate": value("cache_hit_rate"),
+        })
+    return tuple(rows)
+
+
 def _adapter_result_v2(
     record: Any,
     certificate: TasksetIdentityCertificateV2,
@@ -556,7 +649,7 @@ def _adapter_result_v2(
         exact_input_identity=adapter_input_id,
         float_decision_path=False,
     )
-    result = dispatch_formal_rta(
+    result = _dispatch_formal_rta_v2(
         analysis_id=analysis_id,
         method=record.material["method"],
         analysis_input=rta_adapter.TasksetAnalysisInput(
@@ -596,7 +689,7 @@ def _adapter_result_v2(
         "failure_reason": result.failure_reason or "NA",
         "fallback_used": False,
         "task_results": task_rows,
-        "mechanism_rows": mechanism_telemetry_rows(result),
+        "mechanism_rows": _mechanism_telemetry_rows_v2(result),
         "production_build_manifest_identity": (
             service.production_build_manifest_identity
         ),
@@ -820,6 +913,7 @@ class ProductionRTAExecutor:
     """Invoke only the public unified adapter and retain every retry attempt."""
 
     def __init__(self, prepared_config: Mapping[str, Any]) -> None:
+        _load_v1_runtime()
         self.prepared = validate_prepared_config(prepared_config)
         self.config = prepared_scientific_config(self.prepared)
 
@@ -1208,6 +1302,7 @@ class ProductionSimulationExecutor:
         energy_config: Mapping[str, Any],
         source_manifest: Mapping[str, Any],
     ) -> None:
+        _load_v1_runtime()
         self.prepared = validate_prepared_config(prepared_config)
         if self.prepared["core"] != "CORE-3":
             raise RTA4ExecutionError(
@@ -1391,6 +1486,7 @@ class ExecutionSummary:
 
 
 def _resume_required_inventory(root: Path) -> None:
+    _load_v1_runtime()
     """Reject an incomplete namespace without creating or repairing anything."""
 
     if not root.is_dir():
@@ -1420,6 +1516,7 @@ def _resume_required_inventory(root: Path) -> None:
 def _preflight_taskset_store(
     root: Path, closure: ValidatedFormalClosure,
 ) -> None:
+    _load_v1_runtime()
     """Validate the existing store and every completed run-local certificate."""
 
     marker = root / FORMAL_TASKSET_STORE_MANIFEST
@@ -1462,6 +1559,7 @@ class AuthorizedRTA4Runner:
         live_argv: Sequence[str] | None = None,
         live_cwd: Path | str | None = None,
     ) -> None:
+        _load_v1_runtime()
         self.prepared = validate_prepared_config(prepared_config)
         self.authorization = validate_authorization_document(
             authorization, allow_test=True,

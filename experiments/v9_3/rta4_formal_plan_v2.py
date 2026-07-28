@@ -6,8 +6,15 @@ from dataclasses import dataclass
 import hashlib
 from typing import Any, Dict, Iterable, Iterator, Mapping
 
+import asap_block_rta_v9_3_methods as method_registry
+
 from . import exact_energy
-from .rta4_formal_config import canonical_json, default_rta4_formal_config
+from .rta4_formal_config import (
+    RTA4_CORE2_METHODS,
+    RTA4_RECURSIVE_METHODS,
+    canonical_json,
+    domain_hash,
+)
 from .rta4_formal_config_v2 import (
     RTA4_FORMAL_PLAN_VERSION_V2,
     RTA4_FORMAL_PROFILE_V2,
@@ -15,7 +22,12 @@ from .rta4_formal_config_v2 import (
     rta4_formal_config_hash_v2,
     validate_rta4_formal_config_v2,
 )
-from .rta4_formal_plan import iter_formal_plan
+from .rta4_formal_plan_grid import (
+    EXPECTED_STREAM_COUNTS,
+    FormalPlanGridPoint,
+    TasksetGridSpec,
+    iter_formal_plan_grid,
+)
 from .rta4_formal_schema_v2 import formal_schema_hash_v2
 from .rta4_numeric_contract_v2 import RTA4_NUMERIC_CONTRACT_V2_SHA256
 from .rta4_production_build_manifest import PRODUCTION_BUILD_MANIFEST_SCHEMA
@@ -25,7 +37,6 @@ from .rta4_shared_energy import (
     SERVICE_MATERIAL_SCHEMA,
     TASK_ENERGY_MATERIAL_SCHEMA,
 )
-from .rta4_formal_config import domain_hash
 
 
 RTA4_PLAN_RECORD_DOMAIN_V2 = "ASAP_BLOCK:V9.3:RTA4_FORMAL_PLAN_RECORD:v2"
@@ -33,6 +44,13 @@ RTA4_MATH_REQUEST_DOMAIN_V2 = "ASAP_BLOCK:V9.3:RTA4_MATH_REQUEST:v2"
 RTA4_EXECUTION_DOMAIN_V2 = "ASAP_BLOCK:V9.3:RTA4_EXECUTION:v2"
 RTA4_PLAN_DOMAIN_V2 = "ASAP_BLOCK:V9.3:RTA4_FORMAL_PLAN:v2"
 RTA4_STREAM_DIGEST_DOMAIN_V2 = b"ASAP_BLOCK:V9.3:RTA4_ORDERED_STREAM:v2\0"
+RTA4_TASKSET_SLOT_PAIRING_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_TASKSET_SLOT:v1"
+RTA4_SKELETON_SLOT_PAIRING_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_SKELETON_SLOT:v1"
+RTA4_CORE5B_PAIRING_SELECTION_DOMAIN = (
+    "ASAP_BLOCK:V9.3:RTA4_CORE5B_SELECTION:v1"
+)
+RTA4_CORE5B_PAIRING_MATH_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_MATH_REQUEST:v1"
+RTA4_CORE5B_PAIRING_PROFILE = "ASAP_BLOCK_V9_3_RTA4_FORMAL_V1"
 
 
 @dataclass(frozen=True)
@@ -70,9 +88,9 @@ class StreamDigestV2:
     sha256: str
 
 
-def _transform(base: Any) -> FormalPlanRecordV2:
-    material = {
-        **dict(base.material),
+def _versioned_material(material: Mapping[str, Any]) -> Dict[str, Any]:
+    return {
+        **dict(material),
         "profile": RTA4_FORMAL_PROFILE_V2,
         "numeric_contract_sha256": RTA4_NUMERIC_CONTRACT_V2_SHA256,
         "formal_schema_sha256": formal_schema_hash_v2(),
@@ -83,39 +101,138 @@ def _transform(base: Any) -> FormalPlanRecordV2:
         "beta_contract_version": BETA_CONTRACT_VERSION,
         "service_scale_semantics": "REBUILD_CANONICAL_SOLAR_SUPPORT_INPUT",
     }
-    mathematical = (
-        None
-        if base.mathematical_request_id is None
-        else domain_hash(RTA4_MATH_REQUEST_DOMAIN_V2, {
-            "v1_mathematical_cell_identity": base.mathematical_request_id,
-            "v2_shared_energy_contracts": {
-                "profile": RTA4_FORMAL_PROFILE_V2,
-                "numeric_contract_sha256": RTA4_NUMERIC_CONTRACT_V2_SHA256,
-                "schema_sha256": formal_schema_hash_v2(),
-                "taskset_store_identity": formal_taskset_store_identity_v2(),
-            },
-        })
+
+
+def _method_material(method: str) -> Dict[str, Any]:
+    spec = method_registry.method_spec_v9_3(method)
+    return {
+        "method": spec.method_id.value,
+        "kernel": spec.kernel.value,
+        "carry_policy": spec.carry_policy.value,
+        "dominance_rank": spec.dominance_rank,
+    }
+
+
+def _grid_slots(slot: TasksetGridSpec) -> tuple[str, str]:
+    skeleton = domain_hash(
+        RTA4_SKELETON_SLOT_PAIRING_DOMAIN, slot.skeleton_material(),
     )
-    execution = (
-        None
-        if base.execution_id is None
-        else domain_hash(RTA4_EXECUTION_DOMAIN_V2, {
-            "mathematical_request_id": mathematical,
-            "v1_execution_cell_identity": base.execution_id,
-            "worker_count": material.get("worker_count", 1),
-        })
+    taskset = domain_hash(RTA4_TASKSET_SLOT_PAIRING_DOMAIN, {
+        "taskset_skeleton_slot_id": skeleton,
+        "deadline_variant": slot.deadline_variant,
+        "power_scale": slot.power_scale,
+        "integer_time_scale": slot.integer_time_scale,
+    })
+    return skeleton, taskset
+
+
+def _rta_material(
+    point: FormalPlanGridPoint, *, profile: str,
+) -> tuple[Dict[str, Any], str, str]:
+    skeleton, taskset = _grid_slots(point.slot)
+    grid = point.material
+    material = {
+        "profile": profile,
+        "core": point.core,
+        "scenario": grid["scenario"],
+        "taskset_skeleton_slot_id": skeleton,
+        "taskset_slot_id": taskset,
+        **_method_material(str(grid["method"])),
+        "exact_e0": grid["exact_e0"],
+        "service_scale": grid["service_scale"],
+        "power_scale": grid["power_scale"],
+        "deadline_variant": grid["deadline_variant"],
+        "axis": grid["axis"],
+        "axis_value": grid["axis_value"],
+        "timeout_contract": grid["timeout_contract"],
+        "source_analysis_id": None,
+        "normalized_utilization": grid["normalized_utilization"],
+        "processor_count": grid["processor_count"],
+        "task_count": grid["task_count"],
+        "replicate_index": grid["replicate_index"],
+    }
+    return material, skeleton, taskset
+
+
+def _rta_record_from_grid(point: FormalPlanGridPoint) -> FormalPlanRecordV2:
+    base, skeleton, taskset = _rta_material(
+        point, profile=RTA4_FORMAL_PROFILE_V2,
     )
+    material = _versioned_material(base)
+    mathematical = domain_hash(RTA4_MATH_REQUEST_DOMAIN_V2, material)
+    execution = domain_hash(RTA4_EXECUTION_DOMAIN_V2, {
+        "mathematical_request_id": mathematical,
+        "worker_count": 1,
+        "execution_role": "PRIMARY",
+        "profile": RTA4_FORMAL_PROFILE_V2,
+    })
     return FormalPlanRecordV2(
-        base.kind, base.core, base.ordinal, mathematical, execution,
-        base.taskset_slot_id, base.taskset_skeleton_slot_id, material,
+        "rta_request", point.core, point.ordinal, mathematical, execution,
+        taskset, skeleton, material,
     )
+
+
+def _core5b_ranker(point: FormalPlanGridPoint) -> tuple[str, str, str]:
+    """Preserve the frozen paired subset while issuing only V2 identities."""
+
+    pairing_material, _, _ = _rta_material(
+        point, profile=RTA4_CORE5B_PAIRING_PROFILE,
+    )
+    pairing_source_id = domain_hash(
+        RTA4_CORE5B_PAIRING_MATH_DOMAIN, pairing_material,
+    )
+    selection_hash = domain_hash(RTA4_CORE5B_PAIRING_SELECTION_DOMAIN, {
+        "source_analysis_id": pairing_source_id,
+        "utilization_stratum": point.material["normalized_utilization"],
+        "method": point.material["method"],
+    })
+    v2_source_id = str(_rta_record_from_grid(point).mathematical_request_id)
+    return selection_hash, pairing_source_id, v2_source_id
+
+
+def _record_from_grid(point: FormalPlanGridPoint) -> FormalPlanRecordV2:
+    if point.kind == "rta_request":
+        return _rta_record_from_grid(point)
+    skeleton, taskset = _grid_slots(point.slot)
+    if point.kind == "simulation":
+        material = _versioned_material({
+            "profile": RTA4_FORMAL_PROFILE_V2,
+            "taskset_skeleton_slot_id": skeleton,
+            "taskset_slot_id": taskset,
+            **point.material,
+        })
+        execution = domain_hash(RTA4_EXECUTION_DOMAIN_V2, {
+            "kind": point.kind,
+            "material": material,
+        })
+        return FormalPlanRecordV2(
+            point.kind, point.core, point.ordinal, None, execution,
+            taskset, skeleton, material,
+        )
+    if point.kind == "worker_execution":
+        mathematical = point.source_mathematical_request_id
+        material = _versioned_material({
+            "mathematical_request_id": mathematical,
+            **point.material,
+        })
+        execution = domain_hash(RTA4_EXECUTION_DOMAIN_V2, material)
+        return FormalPlanRecordV2(
+            point.kind, point.core, point.ordinal, mathematical, execution,
+            taskset, skeleton, material,
+        )
+    raise ValueError(f"unknown RTA4 V2 grid record kind: {point.kind!r}")
 
 
 def iter_formal_plan_v2(config: Mapping[str, Any]) -> Iterator[FormalPlanRecordV2]:
     normalized = validate_rta4_formal_config_v2(config)
-    base = default_rta4_formal_config(normalized["core"])
-    for record in iter_formal_plan(base):
-        yield _transform(record)
+    points = iter_formal_plan_grid(
+        normalized["core"],
+        recursive_methods=RTA4_RECURSIVE_METHODS,
+        core2_methods=RTA4_CORE2_METHODS,
+        core5b_ranker=_core5b_ranker,
+    )
+    for point in points:
+        yield _record_from_grid(point)
 
 
 def ordered_stream_digest_v2(records: Iterable[FormalPlanRecordV2]) -> StreamDigestV2:
@@ -131,14 +248,7 @@ def ordered_stream_digest_v2(records: Iterable[FormalPlanRecordV2]) -> StreamDig
 def describe_formal_plan_v2(config: Mapping[str, Any]) -> Dict[str, Any]:
     normalized = validate_rta4_formal_config_v2(config)
     stream = ordered_stream_digest_v2(iter_formal_plan_v2(normalized))
-    expected = {
-        "CORE-1": 19_200,
-        "CORE-2": 28_800,
-        "CORE-3": 6_400,
-        "CORE-4": 72_000,
-        "CORE-5A": 4_400,
-        "CORE-5B": 12_000,
-    }[normalized["core"]]
+    expected = EXPECTED_STREAM_COUNTS[normalized["core"]]
     if stream.count != expected:
         raise ValueError("RTA4 V2 plan count drift")
     identity_material = {
