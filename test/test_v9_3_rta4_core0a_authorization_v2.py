@@ -73,6 +73,9 @@ def validated_deployment(tmp_path):
     }
     deployment = {
         "deployment_manifest_identity": "9" * 64,
+        "execution_environment_classification": (
+            core0a.CORE0A_TEST_ONLY_EXECUTION_ENVIRONMENT_CLASSIFICATION
+        ),
         "portable_freeze_identity": portable["portable_freeze_identity"],
         "source_commit": portable["source"]["git_commit"],
         "source_tree": portable["source"]["git_tree"],
@@ -712,6 +715,137 @@ def test_interrupted_atomic_candidate_write_leaves_no_partial_target(
             expires_at=EXPIRES_AT,
         )
     assert not output.exists()
+    assert not list(tmp_path.glob(f".{output.name}.*.tmp"))
+
+
+@pytest.mark.parametrize("existing_target", [False, True])
+def test_candidate_atomic_write_flush_failure_preserves_target_and_cleans_temp(
+    monkeypatch, tmp_path, path_arguments, formal_validator, existing_target,
+):
+    output = tmp_path / "flush-failure.json"
+    original = b"existing-candidate-bytes"
+    if existing_target:
+        output.write_bytes(original)
+    real_fdopen = authorization.os.fdopen
+
+    class FlushFailureStream:
+        def __init__(self, stream):
+            self.stream = stream
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            self.stream.close()
+
+        def write(self, payload):
+            return self.stream.write(payload)
+
+        def flush(self):
+            raise OSError("bounded flush failure")
+
+        def fileno(self):
+            return self.stream.fileno()
+
+    def failing_fdopen(descriptor, mode):
+        return FlushFailureStream(real_fdopen(descriptor, mode))
+
+    monkeypatch.setattr(authorization.os, "fdopen", failing_fdopen)
+    with pytest.raises(OSError, match="bounded flush failure"):
+        authorization.build_core0a_authorization_candidate_v2(
+            **path_arguments,
+            authorization_output_path=output,
+            run_nonce="atomic-flush-failure",
+            issued_at=ISSUED_AT,
+            expires_at=EXPIRES_AT,
+        )
+    assert output.exists() is existing_target
+    if existing_target:
+        assert output.read_bytes() == original
+    assert not list(tmp_path.glob(f".{output.name}.*.tmp"))
+
+
+@pytest.mark.parametrize("existing_target", [False, True])
+def test_candidate_atomic_write_file_fsync_failure_preserves_target(
+    monkeypatch, tmp_path, path_arguments, formal_validator, existing_target,
+):
+    output = tmp_path / "file-fsync-failure.json"
+    original = b"existing-candidate-bytes"
+    if existing_target:
+        output.write_bytes(original)
+
+    def fail_file_fsync(_descriptor):
+        raise OSError("bounded file fsync failure")
+
+    monkeypatch.setattr(authorization.os, "fsync", fail_file_fsync)
+    with pytest.raises(OSError, match="bounded file fsync failure"):
+        authorization.build_core0a_authorization_candidate_v2(
+            **path_arguments,
+            authorization_output_path=output,
+            run_nonce="atomic-file-fsync-failure",
+            issued_at=ISSUED_AT,
+            expires_at=EXPIRES_AT,
+        )
+    assert output.exists() is existing_target
+    if existing_target:
+        assert output.read_bytes() == original
+    assert not list(tmp_path.glob(f".{output.name}.*.tmp"))
+
+
+def test_candidate_atomic_write_replace_failure_preserves_existing_target(
+    monkeypatch, tmp_path, path_arguments, formal_validator,
+):
+    output = tmp_path / "replace-existing-failure.json"
+    original = b"existing-candidate-bytes"
+    output.write_bytes(original)
+
+    def fail_replace(_source, _target):
+        raise OSError("bounded replace failure")
+
+    monkeypatch.setattr(authorization.os, "replace", fail_replace)
+    with pytest.raises(OSError, match="bounded replace failure"):
+        authorization.build_core0a_authorization_candidate_v2(
+            **path_arguments,
+            authorization_output_path=output,
+            run_nonce="atomic-replace-existing",
+            issued_at=ISSUED_AT,
+            expires_at=EXPIRES_AT,
+        )
+    assert output.read_bytes() == original
+    assert not list(tmp_path.glob(f".{output.name}.*.tmp"))
+
+
+def test_candidate_atomic_write_parent_fsync_failure_has_canonical_target(
+    monkeypatch, tmp_path, path_arguments, formal_validator,
+):
+    expected = authorization.build_core0a_authorization_candidate_v2(
+        **path_arguments,
+        authorization_output_path=tmp_path / "expected.json",
+        run_nonce="atomic-parent-fsync",
+        issued_at=ISSUED_AT,
+        expires_at=EXPIRES_AT,
+    )
+    output = tmp_path / "parent-fsync-failure.json"
+    real_fsync = authorization.os.fsync
+    calls = 0
+
+    def fail_parent_fsync(descriptor):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("bounded parent fsync failure")
+        return real_fsync(descriptor)
+
+    monkeypatch.setattr(authorization.os, "fsync", fail_parent_fsync)
+    with pytest.raises(OSError, match="bounded parent fsync failure"):
+        authorization.build_core0a_authorization_candidate_v2(
+            **path_arguments,
+            authorization_output_path=output,
+            run_nonce="atomic-parent-fsync",
+            issued_at=ISSUED_AT,
+            expires_at=EXPIRES_AT,
+        )
+    assert output.read_bytes() == core0a.canonical_json_bytes(expected)
     assert not list(tmp_path.glob(f".{output.name}.*.tmp"))
 
 

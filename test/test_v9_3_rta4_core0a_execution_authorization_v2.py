@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from dataclasses import replace
 import hashlib
@@ -77,6 +78,9 @@ def validated_deployment(tmp_path):
     }
     deployment = {
         "deployment_manifest_identity": "9" * 64,
+        "execution_environment_classification": (
+            core0a.CORE0A_TEST_ONLY_EXECUTION_ENVIRONMENT_CLASSIFICATION
+        ),
         "portable_freeze_identity": portable["portable_freeze_identity"],
         "source_commit": portable["source"]["git_commit"],
         "source_tree": portable["source"]["git_tree"],
@@ -181,6 +185,27 @@ def formal_validators(monkeypatch, validated_deployment):
         execution_auth, "validate_autodl_deployment_manifest_v2", validate,
     )
     return calls
+
+
+def _classified_deployment(validated_deployment, classification):
+    deployment = deepcopy(validated_deployment.deployment_manifest)
+    deployment["execution_environment_classification"] = classification
+    material = deepcopy(deployment)
+    material.pop("deployment_manifest_identity")
+    deployment["deployment_manifest_identity"] = domain_hash(
+        core0a.CORE0A_DEPLOYMENT_MANIFEST_DOMAIN, material,
+    )
+    changed = replace(
+        validated_deployment,
+        deployment_manifest=deployment,
+        execution_identity="",
+    )
+    return replace(
+        changed,
+        execution_identity=core0a._combined_execution_identity(
+            changed.portable_bundle, deployment,
+        ),
+    )
 
 
 def _build_candidate(
@@ -316,7 +341,7 @@ def test_public_authorization_boundaries_are_path_only():
         "selection_artifact_path", "candidate_config_path",
         "production_manifest_path", "deployment_manifest_path",
         "source_root", "deployment_workspace_root",
-        "consumption_receipt_path", "current_utc",
+        "current_utc",
     )
 
 
@@ -400,9 +425,156 @@ def test_pass_report_builds_exact_test_only_review_receipt(
     assert receipt["review_decision"] == "P0_0_P1_0_PASS"
     assert receipt["formal_authorization"] is False
     assert receipt["production_authorization"] is False
-    assert receipt["receipt_classification"] == (
+    assert receipt["execution_environment_classification"] == (
         execution_auth.CORE0A_TEST_ONLY_AUTHORIZATION_CLASSIFICATION
     )
+
+
+def test_reviewer_metadata_changes_identity_but_never_classification(
+    tmp_path, candidate_path, pass_report, path_arguments,
+):
+    receipts = []
+    for name, reviewer, reviewed_at in (
+        ("original", "TEST_ONLY_REVIEWER", REVIEWED_AT),
+        ("renamed", "RENAMED_REVIEWER", REVIEWED_AT),
+        ("retimed", "TEST_ONLY_REVIEWER", "2099-01-01T01:30:00Z"),
+    ):
+        output = tmp_path / f"{name}.json"
+        receipts.append(
+            execution_auth.build_core0a_candidate_review_receipt_v2(
+                candidate_path=candidate_path,
+                review_report_path=pass_report,
+                reviewer_label=reviewer,
+                reviewed_at=reviewed_at,
+                review_receipt_output_path=output,
+                **path_arguments,
+            )
+        )
+    assert {
+        receipt["execution_environment_classification"]
+        for receipt in receipts
+    } == {execution_auth.CORE0A_TEST_ONLY_AUTHORIZATION_CLASSIFICATION}
+    assert len({
+        receipt["review_receipt_identity"] for receipt in receipts
+    }) == 3
+
+
+def test_old_authorization_rejects_new_valid_metadata_receipt(
+    tmp_path, executable_authorization_path, candidate_path,
+    pass_report, path_arguments,
+):
+    changed_receipt_path = tmp_path / "changed-review-receipt.json"
+    execution_auth.build_core0a_candidate_review_receipt_v2(
+        candidate_path=candidate_path,
+        review_report_path=pass_report,
+        reviewer_label="RENAMED_REVIEWER",
+        reviewed_at=REVIEWED_AT,
+        review_receipt_output_path=changed_receipt_path,
+        **path_arguments,
+    )
+    with pytest.raises(
+        execution_auth.RTA4Core0AExecutionAuthorizationV2Error,
+        match="exact reconstruction",
+    ):
+        execution_auth.validate_core0a_executable_engineering_authorization_v2(
+            executable_authorization_path=executable_authorization_path,
+            candidate_path=candidate_path,
+            review_receipt_path=changed_receipt_path,
+            **path_arguments,
+        )
+
+
+@pytest.mark.parametrize("change_reviewer", [False, True])
+def test_rehashed_receipt_cannot_upgrade_deployment_classification(
+    change_reviewer, candidate_path, review_receipt_path, path_arguments,
+):
+    receipt = core0a.load_strict_canonical_json(review_receipt_path)
+    receipt["execution_environment_classification"] = (
+        execution_auth.CORE0A_CONTROLLED_AUTHORIZATION_CLASSIFICATION
+    )
+    if change_reviewer:
+        receipt["reviewer_label"] = "AUTODL_OPERATOR"
+    core0a.write_canonical_json(
+        review_receipt_path, _rehash_receipt(receipt),
+    )
+    with pytest.raises(
+        execution_auth.RTA4Core0AExecutionAuthorizationV2Error,
+        match="reconstruction|classification",
+    ):
+        execution_auth.validate_core0a_candidate_review_receipt_v2(
+            review_receipt_path=review_receipt_path,
+            candidate_path=candidate_path,
+            **path_arguments,
+        )
+
+
+def test_controlled_deployment_classification_is_bound_before_review(
+    monkeypatch, tmp_path, validated_deployment, path_arguments, pass_report,
+):
+    controlled = _classified_deployment(
+        validated_deployment,
+        execution_auth.CORE0A_CONTROLLED_AUTHORIZATION_CLASSIFICATION,
+    )
+
+    def validate(**_arguments):
+        return controlled
+
+    monkeypatch.setattr(
+        candidate_auth, "validate_autodl_deployment_manifest_v2", validate,
+    )
+    monkeypatch.setattr(
+        execution_auth, "validate_autodl_deployment_manifest_v2", validate,
+    )
+    candidate_path = tmp_path / "controlled-candidate.json"
+    candidate = _build_candidate(candidate_path, path_arguments)
+    receipt_path = tmp_path / "controlled-receipt.json"
+    receipt = execution_auth.build_core0a_candidate_review_receipt_v2(
+        candidate_path=candidate_path,
+        review_report_path=pass_report,
+        reviewer_label="TEST_ONLY_REVIEWER",
+        reviewed_at=REVIEWED_AT,
+        review_receipt_output_path=receipt_path,
+        **path_arguments,
+    )
+    authorization_path = tmp_path / "controlled-authorization.json"
+    authorization = (
+        execution_auth.build_core0a_executable_engineering_authorization_v2(
+            candidate_path=candidate_path,
+            review_receipt_path=receipt_path,
+            authorization_output_path=authorization_path,
+            verification_time=VERIFIED_AT,
+            **path_arguments,
+        )
+    )
+    assert candidate["execution_environment_classification"] == (
+        execution_auth.CORE0A_CONTROLLED_AUTHORIZATION_CLASSIFICATION
+    )
+    assert receipt["execution_environment_classification"] == (
+        candidate["execution_environment_classification"]
+    )
+    assert authorization["execution_environment_classification"] == (
+        candidate["execution_environment_classification"]
+    )
+    context = execution_auth.acquire_core0a_run_claim_v2(
+        executable_authorization_path=authorization_path,
+        candidate_path=candidate_path,
+        review_receipt_path=receipt_path,
+        started_at=CURRENT_UTC,
+        **path_arguments,
+    )
+    assert context.claim_acquired is True
+    assert context.runner_invocation_allowed is True
+    with pytest.raises(
+        execution_auth.RTA4Core0AExecutionAuthorizationV2Error,
+        match="second NEW_RUN",
+    ):
+        execution_auth.acquire_core0a_run_claim_v2(
+            executable_authorization_path=authorization_path,
+            candidate_path=candidate_path,
+            review_receipt_path=receipt_path,
+            started_at="2099-01-01T04:00:00Z",
+            **path_arguments,
+        )
 
 
 @pytest.mark.parametrize("terminal", [
@@ -587,7 +759,7 @@ def test_valid_reviewed_candidate_builds_test_only_authorization(
     assert authorization["status"] == (
         core0a.AUTHORIZED_CORE0A_ENGINEERING_PILOT
     )
-    assert authorization["authorization_classification"] == (
+    assert authorization["execution_environment_classification"] == (
         execution_auth.CORE0A_TEST_ONLY_AUTHORIZATION_CLASSIFICATION
     )
     assert authorization["test_only_non_executable_fixture"] is True
@@ -600,10 +772,10 @@ def test_valid_reviewed_candidate_builds_test_only_authorization(
     assert authorization["scope"]["forbidden_cores"] == list(RTA4_CORES)
     assert authorization["scope"]["max_runs"] == 1
     assert authorization["authorization_state"] == {
-        "engineering_pilot_authorization": True,
-        "executable_authorization": True,
+        "engineering_pilot_authorization": False,
+        "executable_authorization": False,
         "authorization_review_passed": True,
-        "pilot_execution_allowed": True,
+        "pilot_execution_allowed": False,
         "formal_authorization": False,
         "production_authorization": False,
     }
@@ -628,6 +800,8 @@ def test_verification_time_before_review_is_rejected(
 
 
 AUTHORIZATION_MUTATIONS = (
+    (("execution_environment_classification",),
+     execution_auth.CORE0A_CONTROLLED_AUTHORIZATION_CLASSIFICATION),
     (("candidate_binding", "candidate_identity"), "f" * 64),
     (("review_binding", "review_receipt_identity"), "f" * 64),
     (("review_binding", "reviewed_at"), "2099-01-01T01:30:00Z"),
@@ -654,10 +828,10 @@ AUTHORIZATION_MUTATIONS = (
     (("scope", "forbidden_cores"), list(RTA4_CORES[:-1])),
     (("scope", "result_usage"), "PAPER"),
     (("scope", "paper_result_eligible"), True),
-    (("authorization_state", "engineering_pilot_authorization"), False),
-    (("authorization_state", "executable_authorization"), False),
+    (("authorization_state", "engineering_pilot_authorization"), True),
+    (("authorization_state", "executable_authorization"), True),
     (("authorization_state", "authorization_review_passed"), False),
-    (("authorization_state", "pilot_execution_allowed"), False),
+    (("authorization_state", "pilot_execution_allowed"), True),
     (("authorization_state", "formal_authorization"), True),
     (("authorization_state", "production_authorization"), True),
 )
@@ -707,18 +881,22 @@ def test_candidate_cannot_substitute_for_executable_authorization(
 
 
 def test_unconsumed_preflight_returns_immutable_test_only_context(
-    tmp_path, executable_authorization_path,
+    executable_authorization_path,
     candidate_path, review_receipt_path, path_arguments,
 ):
     context = execution_auth.preflight_core0a_engineering_pilot_execution_v2(
         executable_authorization_path=executable_authorization_path,
         candidate_path=candidate_path,
         review_receipt_path=review_receipt_path,
-        consumption_receipt_path=tmp_path / "absent-consumption.json",
         current_utc=CURRENT_UTC,
         **path_arguments,
     )
-    assert context.execution_mode == "NEW_RUN_ONLY"
+    assert context.execution_mode == "READ_ONLY_PREFLIGHT"
+    assert context.validation_passed is True
+    assert context.run_state == execution_auth.CORE0A_UNCLAIMED
+    assert context.claim_acquired is False
+    assert context.new_run_eligible is True
+    assert context.resume_only is False
     assert context.new_run_allowed is True
     assert context.resume_allowed is False
     assert context.max_runs == 1
@@ -728,68 +906,146 @@ def test_unconsumed_preflight_returns_immutable_test_only_context(
     )
     assert context.test_only_non_executable_fixture is True
     assert context.runner_invocation_allowed is False
+    assert ".core0a_authorization" in context.run_state_locator
     with pytest.raises((AttributeError, TypeError)):
         context.max_runs = 2
 
 
-def test_run_started_blocks_second_run_but_allows_same_run_resume(
-    tmp_path, executable_authorization_path,
+@pytest.mark.parametrize(
+    "entry_point",
+    [
+        execution_auth.preflight_core0a_engineering_pilot_execution_v2,
+        execution_auth.preflight_core0a_engineering_pilot_resume_v2,
+        execution_auth.acquire_core0a_run_claim_v2,
+        execution_auth.validate_core0a_nonce_consumption_receipt_v2,
+    ],
+)
+def test_run_state_apis_reject_caller_selected_consumption_path(
+    entry_point,
+):
+    assert "consumption_receipt_path" not in inspect.signature(
+        entry_point
+    ).parameters
+
+
+def test_same_authorization_always_derives_same_locator(
+    executable_authorization_path,
     candidate_path, review_receipt_path, path_arguments,
 ):
-    consumption = tmp_path / "consumption.json"
-    started = execution_auth.write_test_only_core0a_run_started_receipt_v2(
-        executable_authorization_path=executable_authorization_path,
-        candidate_path=candidate_path,
-        review_receipt_path=review_receipt_path,
-        consumption_receipt_path=consumption,
-        started_at=CURRENT_UTC,
+    common = {
+        "executable_authorization_path": executable_authorization_path,
+        "candidate_path": candidate_path,
+        "review_receipt_path": review_receipt_path,
+        "current_utc": CURRENT_UTC,
         **path_arguments,
+    }
+    first = execution_auth.preflight_core0a_engineering_pilot_execution_v2(
+        **common,
     )
-    assert started["status"] == execution_auth.CORE0A_RUN_STARTED
-    assert consumption.read_bytes() == core0a.canonical_json_bytes(started)
-    assert not list(tmp_path.glob(f".{consumption.name}.*.tmp"))
-    assert execution_auth.validate_core0a_nonce_consumption_receipt_v2(
-        consumption_receipt_path=consumption,
-        executable_authorization_path=executable_authorization_path,
-        candidate_path=candidate_path,
-        review_receipt_path=review_receipt_path,
-        **path_arguments,
-    ) == started
+    second = execution_auth.preflight_core0a_engineering_pilot_execution_v2(
+        **common,
+    )
+    assert first.run_state_locator == second.run_state_locator
+    assert (
+        first.run_state_locator_identity
+        == second.run_state_locator_identity
+    )
+
+
+def test_run_state_symlink_escape_is_rejected(
+    tmp_path, validated_deployment, executable_authorization_path,
+    candidate_path, review_receipt_path, path_arguments,
+):
+    output = Path(
+        validated_deployment.deployment_manifest["actual_output_root"]
+    )
+    output.mkdir(parents=True)
+    external = tmp_path / "external-state"
+    external.mkdir()
+    (output / ".core0a_authorization").symlink_to(
+        external, target_is_directory=True,
+    )
     with pytest.raises(
         execution_auth.RTA4Core0AExecutionAuthorizationV2Error,
-        match="second run",
+        match="symlink|path alias",
     ):
         execution_auth.preflight_core0a_engineering_pilot_execution_v2(
             executable_authorization_path=executable_authorization_path,
             candidate_path=candidate_path,
             review_receipt_path=review_receipt_path,
-            consumption_receipt_path=consumption,
-            current_utc="2099-01-01T04:00:00Z",
+            current_utc=CURRENT_UTC,
             **path_arguments,
         )
+
+
+def test_run_started_blocks_second_run_but_allows_same_run_resume(
+    executable_authorization_path,
+    candidate_path, review_receipt_path, path_arguments,
+):
+    context = execution_auth.acquire_core0a_run_claim_v2(
+        executable_authorization_path=executable_authorization_path,
+        candidate_path=candidate_path,
+        review_receipt_path=review_receipt_path,
+        started_at=CURRENT_UTC,
+        **path_arguments,
+    )
+    assert context.run_state == execution_auth.CORE0A_RUN_STARTED
+    assert context.claim_acquired is True
+    assert context.runner_invocation_allowed is False
+    started = execution_auth.validate_core0a_nonce_consumption_receipt_v2(
+        executable_authorization_path=executable_authorization_path,
+        candidate_path=candidate_path,
+        review_receipt_path=review_receipt_path,
+        **path_arguments,
+    )
+    assert started["status"] == execution_auth.CORE0A_RUN_STARTED
+    state_directory = Path(context.run_state_locator)
+    assert (state_directory / "claim").is_file()
+    assert (state_directory / "receipt.json").read_bytes() == (
+        core0a.canonical_json_bytes(started)
+    )
+    with pytest.raises(
+        execution_auth.RTA4Core0AExecutionAuthorizationV2Error,
+        match="second NEW_RUN",
+    ):
+        execution_auth.acquire_core0a_run_claim_v2(
+            executable_authorization_path=executable_authorization_path,
+            candidate_path=candidate_path,
+            review_receipt_path=review_receipt_path,
+            started_at="2099-01-01T04:00:00Z",
+            **path_arguments,
+        )
+    preflight = execution_auth.preflight_core0a_engineering_pilot_execution_v2(
+        executable_authorization_path=executable_authorization_path,
+        candidate_path=candidate_path,
+        review_receipt_path=review_receipt_path,
+        current_utc="2099-01-01T04:00:00Z",
+        **path_arguments,
+    )
+    assert preflight.run_state == execution_auth.CORE0A_RUN_STARTED
+    assert preflight.new_run_eligible is False
+    assert preflight.runner_invocation_allowed is False
     context = execution_auth.preflight_core0a_engineering_pilot_resume_v2(
         executable_authorization_path=executable_authorization_path,
         candidate_path=candidate_path,
         review_receipt_path=review_receipt_path,
-        consumption_receipt_path=consumption,
         current_utc="2099-01-01T04:00:00Z",
         **path_arguments,
     )
-    assert context.execution_mode == "RESUME_EXISTING_RUN_ONLY"
+    assert context.execution_mode == "RESUME_ONLY"
     assert context.new_run_allowed is False
     assert context.resume_allowed is True
+    assert context.runner_invocation_allowed is False
 
 
 def test_consumption_receipt_cannot_be_reused_by_other_authorization(
     tmp_path, executable_authorization_path, candidate_path,
     review_receipt_path, pass_report, path_arguments,
 ):
-    consumption = tmp_path / "consumption.json"
-    execution_auth.write_test_only_core0a_run_started_receipt_v2(
+    first = execution_auth.acquire_core0a_run_claim_v2(
         executable_authorization_path=executable_authorization_path,
         candidate_path=candidate_path,
         review_receipt_path=review_receipt_path,
-        consumption_receipt_path=consumption,
         started_at=CURRENT_UTC,
         **path_arguments,
     )
@@ -816,43 +1072,204 @@ def test_consumption_receipt_cannot_be_reused_by_other_authorization(
     )
     with pytest.raises(
         execution_auth.RTA4Core0AExecutionAuthorizationV2Error,
-        match="differs from authorization",
+        match="only the same",
     ):
         execution_auth.preflight_core0a_engineering_pilot_resume_v2(
             executable_authorization_path=other_authorization,
             candidate_path=other_candidate,
             review_receipt_path=other_receipt,
-            consumption_receipt_path=consumption,
             current_utc="2099-01-01T04:00:00Z",
             **path_arguments,
         )
+    second_preflight = (
+        execution_auth.preflight_core0a_engineering_pilot_execution_v2(
+            executable_authorization_path=other_authorization,
+            candidate_path=other_candidate,
+            review_receipt_path=other_receipt,
+            current_utc="2099-01-01T04:00:00Z",
+            **path_arguments,
+        )
+    )
+    assert first.run_state_locator != second_preflight.run_state_locator
 
 
-def test_interrupted_test_only_consumption_write_leaves_no_partial_file(
-    monkeypatch, tmp_path, executable_authorization_path,
+def test_interrupted_begin_keeps_claim_and_requires_recovery(
+    monkeypatch, executable_authorization_path,
     candidate_path, review_receipt_path, path_arguments,
 ):
-    output = tmp_path / "interrupted-consumption.json"
+    original_replace = candidate_auth.os.replace
 
     def fail_replace(_source, _target):
         raise OSError("bounded consumption replace failure")
 
     monkeypatch.setattr(candidate_auth.os, "replace", fail_replace)
     with pytest.raises(OSError, match="bounded consumption replace failure"):
-        execution_auth.write_test_only_core0a_run_started_receipt_v2(
+        execution_auth.acquire_core0a_run_claim_v2(
             executable_authorization_path=executable_authorization_path,
             candidate_path=candidate_path,
             review_receipt_path=review_receipt_path,
-            consumption_receipt_path=output,
             started_at=CURRENT_UTC,
             **path_arguments,
         )
-    assert not output.exists()
-    assert not list(tmp_path.glob(f".{output.name}.*.tmp"))
+    monkeypatch.setattr(candidate_auth.os, "replace", original_replace)
+    preflight = execution_auth.preflight_core0a_engineering_pilot_execution_v2(
+        executable_authorization_path=executable_authorization_path,
+        candidate_path=candidate_path,
+        review_receipt_path=review_receipt_path,
+        current_utc="2099-01-01T04:00:00Z",
+        **path_arguments,
+    )
+    assert preflight.run_state == execution_auth.CORE0A_CLAIMED_INCOMPLETE
+    assert preflight.new_run_eligible is False
+    assert (Path(preflight.run_state_locator) / "claim").is_file()
+    with pytest.raises(
+        execution_auth.RTA4Core0AExecutionAuthorizationV2Error,
+        match="second NEW_RUN",
+    ):
+        execution_auth.acquire_core0a_run_claim_v2(
+            executable_authorization_path=executable_authorization_path,
+            candidate_path=candidate_path,
+            review_receipt_path=review_receipt_path,
+            started_at="2099-01-01T04:00:00Z",
+            **path_arguments,
+        )
+
+
+def test_terminal_write_failure_keeps_claim_and_started_receipt(
+    monkeypatch, executable_authorization_path,
+    candidate_path, review_receipt_path, path_arguments,
+):
+    original_replace = candidate_auth.os.replace
+    context = execution_auth.acquire_core0a_run_claim_v2(
+        executable_authorization_path=executable_authorization_path,
+        candidate_path=candidate_path,
+        review_receipt_path=review_receipt_path,
+        started_at=CURRENT_UTC,
+        **path_arguments,
+    )
+    claim_path = Path(context.run_state_locator) / "claim"
+    claim_bytes = claim_path.read_bytes()
+
+    def fail_replace(_source, _target):
+        raise OSError("bounded terminal replace failure")
+
+    monkeypatch.setattr(candidate_auth.os, "replace", fail_replace)
+    with pytest.raises(OSError, match="bounded terminal replace failure"):
+        execution_auth.complete_core0a_run_v2(
+            executable_authorization_path=executable_authorization_path,
+            candidate_path=candidate_path,
+            review_receipt_path=review_receipt_path,
+            completed_at="2099-01-01T05:00:00Z",
+            **path_arguments,
+        )
+    assert claim_path.read_bytes() == claim_bytes
+    monkeypatch.setattr(candidate_auth.os, "replace", original_replace)
+    receipt = execution_auth.validate_core0a_nonce_consumption_receipt_v2(
+        executable_authorization_path=executable_authorization_path,
+        candidate_path=candidate_path,
+        review_receipt_path=review_receipt_path,
+        **path_arguments,
+    )
+    assert receipt["status"] == execution_auth.CORE0A_RUN_STARTED
+    with pytest.raises(
+        execution_auth.RTA4Core0AExecutionAuthorizationV2Error,
+        match="already claimed",
+    ):
+        execution_auth.complete_core0a_run_v2(
+            executable_authorization_path=executable_authorization_path,
+            candidate_path=candidate_path,
+            review_receipt_path=review_receipt_path,
+            completed_at="2099-01-01T05:30:00Z",
+            **path_arguments,
+        )
+
+
+def test_concurrent_begin_has_exactly_one_winner(
+    executable_authorization_path,
+    candidate_path, review_receipt_path, path_arguments,
+):
+    arguments = {
+        "executable_authorization_path": executable_authorization_path,
+        "candidate_path": candidate_path,
+        "review_receipt_path": review_receipt_path,
+        "started_at": CURRENT_UTC,
+        **path_arguments,
+    }
+
+    def attempt():
+        try:
+            return execution_auth.acquire_core0a_run_claim_v2(**arguments)
+        except execution_auth.RTA4Core0AExecutionAuthorizationV2Error:
+            return None
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(lambda _index: attempt(), range(2)))
+    winners = [outcome for outcome in outcomes if outcome is not None]
+    assert len(winners) == 1
+    assert winners[0].claim_acquired is True
+
+
+@pytest.mark.parametrize(
+    ("transition", "terminal_status"),
+    [
+        (execution_auth.complete_core0a_run_v2,
+         execution_auth.CORE0A_RUN_COMPLETED),
+        (execution_auth.fail_core0a_run_v2,
+         execution_auth.CORE0A_RUN_FAILED),
+    ],
+)
+def test_terminal_states_are_irreversible(
+    transition, terminal_status, executable_authorization_path,
+    candidate_path, review_receipt_path, path_arguments,
+):
+    started = execution_auth.acquire_core0a_run_claim_v2(
+        executable_authorization_path=executable_authorization_path,
+        candidate_path=candidate_path,
+        review_receipt_path=review_receipt_path,
+        started_at=CURRENT_UTC,
+        **path_arguments,
+    )
+    claim_bytes = (
+        Path(started.run_state_locator) / "claim"
+    ).read_bytes()
+    receipt = transition(
+        executable_authorization_path=executable_authorization_path,
+        candidate_path=candidate_path,
+        review_receipt_path=review_receipt_path,
+        completed_at="2099-01-01T05:00:00Z",
+        **path_arguments,
+    )
+    assert receipt["status"] == terminal_status
+    assert receipt["result_root_identity"] != (
+        "INCOMPLETE_PENDING_TERMINAL"
+    )
+    assert (
+        Path(started.run_state_locator) / "claim"
+    ).read_bytes() == claim_bytes
+    preflight = execution_auth.preflight_core0a_engineering_pilot_execution_v2(
+        executable_authorization_path=executable_authorization_path,
+        candidate_path=candidate_path,
+        review_receipt_path=review_receipt_path,
+        current_utc="2099-01-01T06:00:00Z",
+        **path_arguments,
+    )
+    assert preflight.run_state == terminal_status
+    assert preflight.new_run_eligible is False
+    with pytest.raises(
+        execution_auth.RTA4Core0AExecutionAuthorizationV2Error,
+        match="may resume",
+    ):
+        execution_auth.preflight_core0a_engineering_pilot_resume_v2(
+            executable_authorization_path=executable_authorization_path,
+            candidate_path=candidate_path,
+            review_receipt_path=review_receipt_path,
+            current_utc="2099-01-01T06:00:00Z",
+            **path_arguments,
+        )
 
 
 def test_expired_authorization_preflight_is_rejected(
-    tmp_path, executable_authorization_path,
+    executable_authorization_path,
     candidate_path, review_receipt_path, path_arguments,
 ):
     with pytest.raises(
@@ -863,7 +1280,6 @@ def test_expired_authorization_preflight_is_rejected(
             executable_authorization_path=executable_authorization_path,
             candidate_path=candidate_path,
             review_receipt_path=review_receipt_path,
-            consumption_receipt_path=tmp_path / "absent.json",
             current_utc=EXPIRES_AT,
             **path_arguments,
         )

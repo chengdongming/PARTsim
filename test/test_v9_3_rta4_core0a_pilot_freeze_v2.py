@@ -177,6 +177,9 @@ def _set_deployment_field(document, dotted, value):
 
 def _build_deployment(
     monkeypatch, portable, workspace, *, observation=None,
+    execution_environment_classification=(
+        core0a.CORE0A_TEST_ONLY_EXECUTION_ENVIRONMENT_CLASSIFICATION
+    ),
 ):
     production = _production_manifest(portable)
     observed = observation or _observation()
@@ -188,6 +191,9 @@ def _build_deployment(
         production_manifest=production,
         source_root=core0a.PROJECT_ROOT,
         deployment_workspace_root=workspace,
+        execution_environment_classification=(
+            execution_environment_classification
+        ),
     )
     return production, observed, deployment
 
@@ -674,6 +680,56 @@ def test_worker_count_is_deployment_not_selection_or_science(
     assert core0a._combined_execution_identity(portable, two) != (
         core0a._combined_execution_identity(portable, four)
     )
+
+
+def test_deployment_execution_classification_defaults_test_only_and_is_bound(
+    tmp_path, monkeypatch, portable,
+):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    production, _, test_only = _build_deployment(
+        monkeypatch, portable, workspace,
+    )
+    _, _, controlled = _build_deployment(
+        monkeypatch,
+        portable,
+        workspace,
+        execution_environment_classification=(
+            core0a.CORE0A_AUTODL_CONTROLLED_EXECUTION_ENVIRONMENT_CLASSIFICATION
+        ),
+    )
+    assert test_only["execution_environment_classification"] == (
+        core0a.CORE0A_TEST_ONLY_EXECUTION_ENVIRONMENT_CLASSIFICATION
+    )
+    assert controlled["execution_environment_classification"] == (
+        core0a.CORE0A_AUTODL_CONTROLLED_EXECUTION_ENVIRONMENT_CLASSIFICATION
+    )
+    assert (
+        test_only["deployment_manifest_identity"]
+        != controlled["deployment_manifest_identity"]
+    )
+    assert (
+        core0a._combined_execution_identity(portable, test_only)
+        != core0a._combined_execution_identity(portable, controlled)
+    )
+    assert production["formal_authorization"] is False
+
+
+def test_deployment_classification_mutation_and_outer_rehash_is_rejected(
+    tmp_path, monkeypatch, live_portable,
+):
+    def mutate(deployment):
+        deployment["execution_environment_classification"] = (
+            core0a.CORE0A_AUTODL_CONTROLLED_EXECUTION_ENVIRONMENT_CLASSIFICATION
+        )
+
+    with pytest.raises(
+        core0a.RTA4Core0APilotV2Error,
+        match="reconstructed frozen scope",
+    ):
+        _validate_fixture(
+            tmp_path, monkeypatch, live_portable, mutate=mutate,
+        )
 
 
 def test_runtime_rss_and_worker_change_only_terminal_evidence(selection):
