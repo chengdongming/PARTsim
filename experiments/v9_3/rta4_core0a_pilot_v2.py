@@ -7,10 +7,13 @@ authorize either an engineering pilot or a formal/production run.
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import dataclass
 from functools import lru_cache
 import hashlib
 import json
+import os
 from pathlib import Path
+import shutil
 import subprocess
 from typing import Any, Dict, Iterable, Mapping, Sequence
 
@@ -23,6 +26,7 @@ from .constrained_taskset_identity import (
 )
 from .rta4_formal_config import (
     RTA4_CORES,
+    RTA4_FORMAL_PROFILE,
     canonical_json,
     domain_hash,
     load_rta4_formal_config,
@@ -30,10 +34,13 @@ from .rta4_formal_config import (
 from .rta4_formal_config_v2 import (
     RTA4_FORMAL_PLAN_VERSION_V2,
     RTA4_FORMAL_PROFILE_V2,
+    formal_taskset_store_identity_v2,
     load_rta4_formal_config_v2,
     rta4_formal_config_hash_v2,
 )
 from .rta4_formal_pilot import build_pilot_manifest
+from .rta4_formal_execution import RTA4_GENERATION_DOMAIN
+from .rta4_formal_plan import FormalPlanRecord, iter_formal_plan
 from .rta4_formal_plan_v2 import (
     FormalPlanRecordV2,
     describe_all_formal_plans_v2,
@@ -58,7 +65,9 @@ from .rta4_pilot_execution import (
 from .rta4_production_build_manifest import (
     DEFAULT_RELEVANT_SOURCES,
     ENVIRONMENT_ALLOWLIST,
+    PRODUCTION_BUILD_MANIFEST_DOMAIN,
     PRODUCTION_BUILD_MANIFEST_SCHEMA,
+    load_and_validate_production_build_manifest,
 )
 from .rta4_shared_energy import (
     BETA_CONTRACT_VERSION,
@@ -96,21 +105,24 @@ CORE0A_PORTABLE_SERVICE_SPEC_DOMAIN = (
     "ASAP_BLOCK:V9.3:RTA4:CORE0A:PORTABLE_SERVICE_SPEC:v2"
 )
 CORE0A_PORTABLE_BUNDLE_SCHEMA = (
-    "ASAP_BLOCK_V9_3_RTA4_CORE0A_PORTABLE_CANDIDATE_BUNDLE_V2"
+    "ASAP_BLOCK_V9_3_RTA4_CORE0A_PORTABLE_CANDIDATE_BUNDLE_V3"
 )
 CORE0A_PORTABLE_BUNDLE_DOMAIN = (
-    "ASAP_BLOCK:V9.3:RTA4:CORE0A:PORTABLE_CANDIDATE_BUNDLE:v2"
+    "ASAP_BLOCK:V9.3:RTA4:CORE0A:PORTABLE_CANDIDATE_BUNDLE:v3"
 )
-CORE0A_HANDOFF_SCHEMA = "ASAP_BLOCK_V9_3_RTA4_CORE0A_AUTODL_HANDOFF_V2"
-CORE0A_HANDOFF_DOMAIN = "ASAP_BLOCK:V9.3:RTA4:CORE0A:AUTODL_HANDOFF:v2"
+CORE0A_PORTABLE_CONTRACT_VERSION = (
+    "ASAP_BLOCK_V9_3_RTA4_CORE0A_ENGINEERING_PILOT_PORTABLE_V3"
+)
+CORE0A_HANDOFF_SCHEMA = "ASAP_BLOCK_V9_3_RTA4_CORE0A_AUTODL_HANDOFF_V3"
+CORE0A_HANDOFF_DOMAIN = "ASAP_BLOCK:V9.3:RTA4:CORE0A:AUTODL_HANDOFF:v3"
 CORE0A_DEPLOYMENT_MANIFEST_SCHEMA = (
-    "ASAP_BLOCK_V9_3_RTA4_CORE0A_AUTODL_DEPLOYMENT_MANIFEST_V1"
+    "ASAP_BLOCK_V9_3_RTA4_CORE0A_AUTODL_DEPLOYMENT_MANIFEST_V2"
 )
 CORE0A_DEPLOYMENT_MANIFEST_DOMAIN = (
-    "ASAP_BLOCK:V9.3:RTA4:CORE0A:AUTODL_DEPLOYMENT_MANIFEST:v1"
+    "ASAP_BLOCK:V9.3:RTA4:CORE0A:AUTODL_DEPLOYMENT_MANIFEST:v2"
 )
 CORE0A_EXECUTION_IDENTITY_DOMAIN = (
-    "ASAP_BLOCK:V9.3:RTA4:CORE0A:EXECUTION_IDENTITY:v1"
+    "ASAP_BLOCK:V9.3:RTA4:CORE0A:EXECUTION_IDENTITY:v2"
 )
 CORE0A_SCIENTIFIC_ANALYSIS_DOMAIN = (
     "ASAP_BLOCK:V9.3:RTA4:CORE0A:SCIENTIFIC_ANALYSIS:v1"
@@ -119,10 +131,46 @@ CORE0A_TERMINAL_EVIDENCE_DOMAIN = (
     "ASAP_BLOCK:V9.3:RTA4:CORE0A:TERMINAL_EVIDENCE:v1"
 )
 CORE0A_AUTHORIZATION_SCHEMA = (
-    "ASAP_BLOCK_V9_3_RTA4_CORE0A_ENGINEERING_PILOT_AUTHORIZATION_V1"
+    "ASAP_BLOCK_V9_3_RTA4_CORE0A_ENGINEERING_PILOT_AUTHORIZATION_V2"
 )
 CORE0A_AUTHORIZATION_DOMAIN = (
-    "ASAP_BLOCK:V9.3:RTA4:CORE0A:ENGINEERING_PILOT_AUTHORIZATION:v1"
+    "ASAP_BLOCK:V9.3:RTA4:CORE0A:ENGINEERING_PILOT_AUTHORIZATION:v2"
+)
+CORE0A_SEED_MIGRATION_MODE = (
+    "ORDINALS_AND_VERSION_NEUTRAL_AXES_PRESERVED_V2_NATIVE_SEEDS_REISSUED"
+)
+CORE0A_V2_NATIVE_SEED_CONTRACT = (
+    "ASAP_BLOCK_V9_3_RTA4_CORE0A_V2_NATIVE_GENERATION_SEED_V1"
+)
+CORE0A_DEPLOYMENT_SCOPE_VERSION = (
+    "ASAP_BLOCK_V9_3_RTA4_CORE0A_DERIVED_DEPLOYMENT_SCOPE_V1"
+)
+CORE0A_RESOURCE_POLICY_VERSION = (
+    "ASAP_BLOCK_V9_3_RTA4_CORE0A_AUTODL_RESOURCES_V1"
+)
+CORE0A_DISK_ESTIMATE_VERSION = (
+    "ASAP_BLOCK_V9_3_RTA4_CORE0A_DISK_ESTIMATE_V1"
+)
+CORE0A_DISK_SAFETY_MARGIN_VERSION = (
+    "ASAP_BLOCK_V9_3_RTA4_CORE0A_DISK_SAFETY_MARGIN_V1"
+)
+CORE0A_DEPLOYMENT_WORKSPACE_DOMAIN = (
+    "ASAP_BLOCK:V9.3:RTA4:CORE0A:DEPLOYMENT_WORKSPACE:v1"
+)
+CORE0A_RESOURCE_OBSERVATION_DOMAIN = (
+    "ASAP_BLOCK:V9.3:RTA4:CORE0A:RESOURCE_OBSERVATION:v1"
+)
+CORE0A_DISK_ESTIMATE_DOMAIN = (
+    "ASAP_BLOCK:V9.3:RTA4:CORE0A:DISK_ESTIMATE:v1"
+)
+CORE0A_V2_TASKSET_SOURCE_DOMAIN = (
+    "ASAP_BLOCK:V9.3:RTA4:CORE0A:V2_TASKSET_SOURCE_BINDING:v1"
+)
+CORE0A_CANDIDATE_CONFIG_DOMAIN = (
+    "ASAP_BLOCK:V9.3:RTA4:CORE0A:CANDIDATE_CONFIG:v3"
+)
+CORE0A_TIMEOUT_RESOURCE_DOMAIN = (
+    "ASAP_BLOCK:V9.3:RTA4:CORE0A:TIMEOUT_RESOURCE:v2"
 )
 
 UNAUTHORIZED_ENGINEERING_PILOT_CANDIDATE = (
@@ -174,6 +222,16 @@ CORE0A_OUTPUT_NAMESPACE = "results/v9_3_rta4_core0a_engineering_pilot_v2"
 CORE0A_TASKSET_STORE_NAMESPACE = (
     "results/v9_3_rta4_core0a_tasksets_v2_shared_energy"
 )
+CORE0A_TERMINAL_DIRECTORY = RTA4_RESULT_DIRECTORY_V2
+CORE0A_MEMORY_SOFT_LIMIT_FRACTION = "7/10"
+CORE0A_CHECKPOINT_FREQUENCY = 8
+CORE0A_DISK_MINIMUM_SAFETY_MARGIN_BYTES = 1 << 30
+CORE0A_DISK_BYTES_PER_EXECUTION = 16 << 20
+CORE0A_DISK_BYTES_PER_UNIQUE_TASKSET = 8 << 20
+CORE0A_DISK_FIXED_OVERHEAD_BYTES = 1 << 30
+CORE0A_DISK_OBSERVATION_TOLERANCE_BYTES = 64 << 20
+CORE0A_MAX_RUNS = 1
+CORE0A_AUTHORIZATION_SCOPE = "EXACT_384_RECORD_CORE0A_ONLY"
 EXPECTED_PRODUCTION_SOURCE_CLOSURE_COUNT = 53
 PORTABLE_FREEZE_SOURCE_PATHS = (
     "experiments/v9_3/rta4_core0a_pilot_v2.py",
@@ -215,6 +273,23 @@ CORE0A_DEPLOYMENT_POLICY = {
     "taskset_store_namespace": CORE0A_TASKSET_STORE_NAMESPACE,
     "disk_preflight": "REQUIRE_ESTIMATE_AND_FREE_SPACE_MARGIN",
 }
+
+CORE0A_VERSION_NEUTRAL_MIGRATION_FIELDS = (
+    "core", "ordinal", "kind", "taskset_slot", "taskset_skeleton_slot",
+    "formal_master_seed", "utilization", "method", "exact_e0",
+    "service_sensitivity", "time_scale", "track", "replica",
+    "core5b_mathematical_group_membership",
+)
+
+FORBIDDEN_FORMAL_OUTPUT_NAMESPACES = tuple(
+    f"results/v9_3_rta4_{core.lower().replace('-', '')}_formal_{suffix}"
+    for core in RTA4_CORES
+    for suffix in ("v1", "v2_shared_energy")
+)
+FORBIDDEN_FORMAL_STORE_NAMESPACES = (
+    "results/v9_3_rta4_formal_tasksets_v1",
+    "results/v9_3_rta4_formal_tasksets_v2_shared_energy",
+)
 
 
 class RTA4Core0APilotV2Error(ValueError):
@@ -279,6 +354,7 @@ def _load_configs(*, version: int) -> Dict[str, Dict[str, Any]]:
     }
 
 
+@lru_cache(maxsize=1)
 def _historical_ordered_rows() -> tuple[Dict[str, Any], ...]:
     source = PROJECT_ROOT / "experiments/v9_3/rta4_formal_pilot.py"
     if _sha256(source) != HISTORICAL_SELECTION_SOURCE_SHA256:
@@ -336,6 +412,34 @@ def _selected_v2_records(
     return tuple(selected)
 
 
+def _selected_v1_records(
+    configs: Mapping[str, Mapping[str, Any]],
+) -> tuple[FormalPlanRecord, ...]:
+    historical = _historical_ordered_rows()
+    ordinals = {
+        core: tuple(
+            int(row["ordinal"]) for row in historical if row["core"] == core
+        )
+        for core in RTA4_CORES
+    }
+    selected = []
+    for core in RTA4_CORES:
+        wanted = set(ordinals[core])
+        rows = tuple(
+            record for record in iter_formal_plan(configs[core])
+            if record.ordinal in wanted
+        )
+        if (
+            len(rows) != HISTORICAL_CORE_RECORD_COUNTS[core]
+            or tuple(record.ordinal for record in rows) != ordinals[core]
+        ):
+            raise RTA4Core0APilotV2Error(
+                f"historical selection is incompatible with {core} V1 plan"
+            )
+        selected.extend(rows)
+    return tuple(selected)
+
+
 def _taskset_seed(record: FormalPlanRecordV2, config: Mapping[str, Any]) -> int:
     generation_id = domain_hash(RTA4_GENERATION_DOMAIN_V2, {
         "profile": RTA4_FORMAL_PROFILE_V2,
@@ -349,7 +453,22 @@ def _taskset_seed(record: FormalPlanRecordV2, config: Mapping[str, Any]) -> int:
     )
 
 
-def _method(record: FormalPlanRecordV2) -> str:
+def _v1_taskset_seed(
+    record: FormalPlanRecord, config: Mapping[str, Any],
+) -> int:
+    generation_id = domain_hash(RTA4_GENERATION_DOMAIN, {
+        "profile": RTA4_FORMAL_PROFILE,
+        "taskset_skeleton_slot_id": record.taskset_skeleton_slot_id,
+    })
+    return derive_seed(
+        int(config["generation"]["formal_master_seed"]),
+        generation_id,
+        int(record.material.get("replicate_index", 0)),
+        seed_mode=GENERATION_DIMENSIONS_SEED_MODE,
+    )
+
+
+def _method(record: FormalPlanRecord | FormalPlanRecordV2) -> str:
     return str(
         record.material.get(
             "method",
@@ -358,19 +477,19 @@ def _method(record: FormalPlanRecordV2) -> str:
     )
 
 
-def _e0(record: FormalPlanRecordV2) -> str:
+def _e0(record: FormalPlanRecord | FormalPlanRecordV2) -> str:
     return str(record.material.get(
         "exact_e0", record.material.get("physical_initial_energy", "NA"),
     ))
 
 
-def _time_scale(record: FormalPlanRecordV2) -> str:
+def _time_scale(record: FormalPlanRecord | FormalPlanRecordV2) -> str:
     if record.material.get("axis") == "integer_time_scale":
         return str(record.material["axis_value"])
     return "1"
 
 
-def _track(record: FormalPlanRecordV2) -> str:
+def _track(record: FormalPlanRecord | FormalPlanRecordV2) -> str:
     if record.kind == "simulation":
         return (
             f"{record.material['applicability_track']}:"
@@ -379,7 +498,9 @@ def _track(record: FormalPlanRecordV2) -> str:
     return str(record.material.get("scenario", "NA"))
 
 
-def _execution_replica(record: FormalPlanRecordV2) -> str:
+def _execution_replica(
+    record: FormalPlanRecord | FormalPlanRecordV2,
+) -> str:
     if record.kind == "worker_execution":
         return str(record.material["worker_count"])
     return "PRIMARY"
@@ -626,6 +747,208 @@ def load_core0a_selection_v2(
     return validate_core0a_selection_v2(load_strict_canonical_json(path))
 
 
+def _version_neutral_migration_rows(
+    records: Sequence[FormalPlanRecord | FormalPlanRecordV2],
+    configs: Mapping[str, Mapping[str, Any]],
+) -> list[Dict[str, Any]]:
+    core5b_group = -1
+    result = []
+    for record in records:
+        membership: Dict[str, Any] | None = None
+        if record.core == "CORE-5B":
+            if _execution_replica(record) == "1":
+                core5b_group += 1
+            membership = {
+                "selected_group_index": core5b_group,
+                "taskset_slot": record.taskset_slot_id,
+                "replica": _execution_replica(record),
+            }
+        result.append({
+            "core": record.core,
+            "ordinal": record.ordinal,
+            "kind": record.kind,
+            "taskset_slot": record.taskset_slot_id,
+            "taskset_skeleton_slot": record.taskset_skeleton_slot_id,
+            "formal_master_seed": int(
+                configs[record.core]["generation"]["formal_master_seed"]
+            ),
+            "utilization": str(
+                record.material.get("normalized_utilization", "NA")
+            ),
+            "method": _method(record),
+            "exact_e0": _e0(record),
+            "service_sensitivity": str(
+                record.material.get("service_scale", "1")
+            ),
+            "time_scale": _time_scale(record),
+            "track": _track(record),
+            "replica": _execution_replica(record),
+            "core5b_mathematical_group_membership": membership,
+        })
+    return result
+
+
+def _v2_taskset_source_binding(
+    record: FormalPlanRecordV2,
+    config: Mapping[str, Any],
+) -> Dict[str, Any]:
+    generation_request_id = domain_hash(RTA4_GENERATION_DOMAIN_V2, {
+        "profile": RTA4_FORMAL_PROFILE_V2,
+        "taskset_skeleton_slot_id": record.taskset_skeleton_slot_id,
+    })
+    material = {
+        "profile": RTA4_FORMAL_PROFILE_V2,
+        "generator_contract": RTA4_TASKSET_GENERATOR_CONTRACT_V2,
+        "taskset_store_identity": formal_taskset_store_identity_v2(),
+        "taskset_slot": record.taskset_slot_id,
+        "taskset_skeleton_slot": record.taskset_skeleton_slot_id,
+        "generation_request_id": generation_request_id,
+        "formal_master_seed": int(
+            config["generation"]["formal_master_seed"]
+        ),
+        "replicate_index": int(record.material.get("replicate_index", 0)),
+        "derived_generation_seed": _taskset_seed(record, config),
+    }
+    return {
+        **material,
+        "taskset_source_binding_identity": domain_hash(
+            CORE0A_V2_TASKSET_SOURCE_DOMAIN, material,
+        ),
+    }
+
+
+@lru_cache(maxsize=1)
+def build_seed_migration_contract_v2() -> Dict[str, Any]:
+    selection = build_core0a_selection_v2()
+    v1_configs = _load_configs(version=1)
+    v2_configs = _load_configs(version=2)
+    v1_records = _selected_v1_records(v1_configs)
+    v2_records = _selected_v2_records(v2_configs)
+    v1_axes = _version_neutral_migration_rows(v1_records, v1_configs)
+    v2_axes = _version_neutral_migration_rows(v2_records, v2_configs)
+    if v1_axes != v2_axes or len(v2_axes) != EXPECTED_EXECUTION_COUNT:
+        raise RTA4Core0APilotV2Error(
+            "V1/V2 version-neutral CORE-0A migration axes drift"
+        )
+    selected_rows = selection["ordered_records"]
+    v1_seeds = [
+        _v1_taskset_seed(record, v1_configs[record.core])
+        for record in v1_records
+    ]
+    v2_seeds = [
+        _taskset_seed(record, v2_configs[record.core])
+        for record in v2_records
+    ]
+    if v2_seeds != [int(row["seed"]) for row in selected_rows]:
+        raise RTA4Core0APilotV2Error(
+            "CORE-0A selection does not carry canonical V2 native seeds"
+        )
+    source_bindings = [
+        _v2_taskset_source_binding(record, v2_configs[record.core])
+        for record in v2_records
+    ]
+    groups: Dict[str, list[Dict[str, Any]]] = {}
+    for binding in source_bindings:
+        groups.setdefault(str(binding["taskset_slot"]), []).append(binding)
+    for slot, rows in groups.items():
+        if len({
+            row["taskset_source_binding_identity"] for row in rows
+        }) != 1:
+            raise RTA4Core0APilotV2Error(
+                f"V2 paired taskset source drift for slot {slot}"
+            )
+    core5b_rows = [
+        row for row in v2_axes if row["core"] == "CORE-5B"
+    ]
+    if (
+        len(core5b_rows) != 64
+        or {
+            row["core5b_mathematical_group_membership"]["replica"]
+            for row in core5b_rows
+        } != {"1", "2", "4", "8"}
+        or len({
+            row["core5b_mathematical_group_membership"][
+                "selected_group_index"
+            ]
+            for row in core5b_rows
+        }) != 16
+    ):
+        raise RTA4Core0APilotV2Error(
+            "V1/V2 CORE-5B mathematical group membership drift"
+        )
+    material = {
+        "migration_mode": CORE0A_SEED_MIGRATION_MODE,
+        "historical_v1_selection": {
+            "selection_source_sha256": HISTORICAL_SELECTION_SOURCE_SHA256,
+            "ordered_selection_identity": (
+                HISTORICAL_ORDERED_SELECTION_IDENTITY
+            ),
+            "selected_ordinals_by_core": {
+                core: [
+                    int(row["ordinal"])
+                    for row in _historical_ordered_rows()
+                    if row["core"] == core
+                ]
+                for core in RTA4_CORES
+            },
+        },
+        "version_neutral_axis_comparison": {
+            "fields": list(CORE0A_VERSION_NEUTRAL_MIGRATION_FIELDS),
+            "record_count": len(v2_axes),
+            "matching_record_count": len(v2_axes),
+            "ordered_rows_identity": domain_hash(
+                "ASAP_BLOCK:V9.3:RTA4:CORE0A:VERSION_NEUTRAL_AXES:v1",
+                {"ordered_rows": v2_axes},
+            ),
+            "all_match": True,
+        },
+        "derived_generation_seed_migration": {
+            "field_is_profile_and_domain_scoped": True,
+            "v1_generation_domain": RTA4_GENERATION_DOMAIN,
+            "v2_generation_domain": RTA4_GENERATION_DOMAIN_V2,
+            "equality_required": False,
+            "different_seed_count": sum(
+                left != right for left, right in zip(v1_seeds, v2_seeds)
+            ),
+            "v1_ordered_seed_identity": domain_hash(
+                "ASAP_BLOCK:V9.3:RTA4:CORE0A:V1_SELECTED_SEEDS:v1",
+                {"ordered_seeds": v1_seeds},
+            ),
+            "v2_ordered_seed_identity": domain_hash(
+                "ASAP_BLOCK:V9.3:RTA4:CORE0A:V2_SELECTED_SEEDS:v1",
+                {"ordered_seeds": v2_seeds},
+            ),
+            "v2_native_seed_generation_contract": (
+                CORE0A_V2_NATIVE_SEED_CONTRACT
+            ),
+            "v2_native_seed_record_count": len(v2_seeds),
+            "v2_native_seeds_recomputed_from_current_plans": True,
+        },
+        "v2_taskset_pairing_validation": {
+            "taskset_store_identity": formal_taskset_store_identity_v2(),
+            "unique_taskset_slot_count": len(groups),
+            "reused_execution_count": len(source_bindings) - len(groups),
+            "paired_slot_count": sum(len(rows) > 1 for rows in groups.values()),
+            "same_slot_uses_same_source": True,
+            "ordered_source_binding_identity": domain_hash(
+                "ASAP_BLOCK:V9.3:RTA4:CORE0A:V2_SOURCE_BINDINGS:v1",
+                {"ordered_bindings": source_bindings},
+            ),
+        },
+        "core5b_group_validation": {
+            "complete_group_count": 16,
+            "replicas_per_group": ["1", "2", "4", "8"],
+            "all_groups_complete": True,
+        },
+        "interpretation": {
+            "selection_reuses_historical_positions_not_v1_taskset_instances": True,
+            "engineering_validation_only": True,
+            "cross_version_scientific_comparison_forbidden": True,
+        },
+    }
+    return material
+
+
 class _UniqueKeySafeLoader(yaml.SafeLoader):
     """Safe YAML loader which rejects duplicate mapping keys."""
 
@@ -654,9 +977,9 @@ _UniqueKeySafeLoader.add_constructor(
 def expected_candidate_config_v2() -> Dict[str, Any]:
     return {
         "candidate_schema": (
-            "ASAP_BLOCK_V9_3_RTA4_CORE0A_ENGINEERING_PILOT_CANDIDATE_V2"
+            "ASAP_BLOCK_V9_3_RTA4_CORE0A_ENGINEERING_PILOT_CANDIDATE_V3"
         ),
-        "contract_version": CORE0A_CONTRACT_VERSION,
+        "contract_version": CORE0A_PORTABLE_CONTRACT_VERSION,
         "status": UNAUTHORIZED_ENGINEERING_PILOT_CANDIDATE,
         "purpose": "ENGINEERING_VALIDATION_ONLY_NOT_SCIENTIFIC_RESULTS",
         "selection_artifact": SELECTION_ARTIFACT_PATH,
@@ -665,6 +988,19 @@ def expected_candidate_config_v2() -> Dict[str, Any]:
         "taskset_store_namespace": CORE0A_TASKSET_STORE_NAMESPACE,
         "retry_contract": CORE0A_RETRY_CONTRACT,
         "deployment_policy": CORE0A_DEPLOYMENT_POLICY,
+        "seed_migration_contract": {
+            "migration_mode": CORE0A_SEED_MIGRATION_MODE,
+            "preserved_fields": list(
+                CORE0A_VERSION_NEUTRAL_MIGRATION_FIELDS
+            ),
+            "derived_generation_seed_is_profile_and_domain_scoped": True,
+            "v1_v2_seed_equality_required": False,
+            "v2_native_seed_generation_contract": (
+                CORE0A_V2_NATIVE_SEED_CONTRACT
+            ),
+            "historical_positions_not_v1_taskset_instances": True,
+            "engineering_only_no_cross_version_scientific_comparison": True,
+        },
         "formal_authorization": False,
         "production_authorization": False,
         "engineering_pilot_authorization": False,
@@ -802,7 +1138,7 @@ def build_portable_candidate_bundle_v2(
         )
     material: Dict[str, Any] = {
         "bundle_schema": CORE0A_PORTABLE_BUNDLE_SCHEMA,
-        "contract_version": CORE0A_CONTRACT_VERSION,
+        "contract_version": CORE0A_PORTABLE_CONTRACT_VERSION,
         "status": CORE0A_ENGINEERING_PILOT_FROZEN_PENDING_REAUDIT,
         "purpose": "ENGINEERING_VALIDATION_ONLY_NOT_SCIENTIFIC_RESULTS",
         "source": source,
@@ -835,7 +1171,11 @@ def build_portable_candidate_bundle_v2(
             "path": CANDIDATE_CONFIG_PATH,
             "sha256": _sha256(PROJECT_ROOT / CANDIDATE_CONFIG_PATH),
             "material": config,
+            "semantic_identity": domain_hash(
+                CORE0A_CANDIDATE_CONFIG_DOMAIN, config,
+            ),
         },
+        "seed_migration_contract": build_seed_migration_contract_v2(),
         "required_source_files": {
             "production_default_closure_count": len(DEFAULT_RELEVANT_SOURCES),
             "production_default_closure": list(DEFAULT_RELEVANT_SOURCES),
@@ -843,9 +1183,15 @@ def build_portable_candidate_bundle_v2(
         },
         "taskset_contract": {
             "generator_contract": RTA4_TASKSET_GENERATOR_CONTRACT_V2,
+            "native_seed_generation_contract": (
+                CORE0A_V2_NATIVE_SEED_CONTRACT
+            ),
+            "derived_seed_is_profile_and_domain_scoped": True,
+            "v1_seed_reuse_forbidden": True,
             "taskset_store_domain": (
                 "ASAP_BLOCK:V9.3:RTA4:TASKSET_STORE:v2"
             ),
+            "taskset_store_identity": formal_taskset_store_identity_v2(),
             "store_manifest": RTA4_TASKSET_STORE_MANIFEST_V2,
             "expected_namespace": CORE0A_TASKSET_STORE_NAMESPACE,
         },
@@ -909,11 +1255,23 @@ def build_portable_candidate_bundle_v2(
             "environment_allowlist": list(ENVIRONMENT_ALLOWLIST),
             "required_fields": [
                 "python_identity", "toolchain_identity", "simulator_identity",
-                "verifier_identity", "environment_identity", "worker_count",
-                "max_in_flight", "memory_soft_limit_bytes",
-                "timeout_resource_identity", "output_root", "taskset_store",
-                "source_root", "production_build_manifest_identity",
+                "verifier_identity", "environment_identity",
+                "logical_cpu_count", "physical_memory_bytes",
+                "free_disk_bytes", "estimated_required_disk_bytes",
+                "worker_count", "max_in_flight",
+                "memory_soft_limit_fraction", "memory_soft_limit_bytes",
+                "timeout_resource_identity", "actual_output_root",
+                "taskset_store_root", "terminal_directory",
+                "deployment_workspace_root", "source_root",
+                "production_build_manifest_identity",
             ],
+            "path_scope_version": CORE0A_DEPLOYMENT_SCOPE_VERSION,
+            "resource_policy_version": CORE0A_RESOURCE_POLICY_VERSION,
+            "disk_estimate_version": CORE0A_DISK_ESTIMATE_VERSION,
+            "disk_safety_margin_version": (
+                CORE0A_DISK_SAFETY_MARGIN_VERSION
+            ),
+            "formal_validator_accepts_file_paths_only": True,
             "generated_on_autodl_only": True,
         },
         "authorization_gate": {
@@ -922,7 +1280,7 @@ def build_portable_candidate_bundle_v2(
             "production_authorization": False,
             "required_next_status": AUTHORIZED_CORE0A_ENGINEERING_PILOT,
             "independent_read_only_review_required": True,
-            "scope_if_later_authorized": "EXACT_384_RECORD_CORE0A_ONLY",
+            "scope_if_later_authorized": CORE0A_AUTHORIZATION_SCOPE,
         },
         "expected_output_namespace": CORE0A_OUTPUT_NAMESPACE,
         "forbidden_actions": [
@@ -1036,63 +1394,391 @@ def validate_autodl_handoff_v2(
     return dict(value)
 
 
-_DEPLOYMENT_FIELDS = frozenset({
-    "production_build_manifest_identity", "python_identity",
-    "toolchain_identity", "simulator_identity", "verifier_identity",
-    "environment_identity", "worker_count", "max_in_flight",
-    "memory_soft_limit_bytes", "timeout_resource_identity", "output_root",
-    "taskset_store", "source_root",
-})
+@dataclass(frozen=True)
+class AutoDLResourceObservation:
+    logical_cpu_count: int
+    physical_memory_bytes: int
+    free_disk_bytes: int
 
 
-def build_autodl_deployment_manifest_v2(
-    bundle: Mapping[str, Any], deployment: Mapping[str, Any],
-) -> Dict[str, Any]:
-    if set(deployment) != _DEPLOYMENT_FIELDS:
-        raise RTA4Core0APilotV2Error("AutoDL deployment field set mismatch")
-    if bundle.get("status") != CORE0A_ENGINEERING_PILOT_FROZEN_PENDING_REAUDIT:
-        raise RTA4Core0APilotV2Error("deployment requires a frozen portable bundle")
-    workers = deployment["worker_count"]
-    in_flight = deployment["max_in_flight"]
-    memory = deployment["memory_soft_limit_bytes"]
-    if (
-        type(workers) is not int or workers < 1
-        or type(in_flight) is not int or in_flight < workers
-        or type(memory) is not int or memory < 1
+@dataclass(frozen=True)
+class ValidatedCore0ADeployment:
+    portable_bundle: Mapping[str, Any]
+    selection: Mapping[str, Any]
+    candidate_config: Mapping[str, Any]
+    production_manifest: Mapping[str, Any]
+    deployment_manifest: Mapping[str, Any]
+    source_root: str
+    deployment_workspace_root: str
+    execution_identity: str
+
+
+def _resolved_existing_directory(path: Path | str, label: str) -> Path:
+    candidate = Path(path)
+    if not candidate.is_absolute():
+        raise RTA4Core0APilotV2Error(f"{label} must be absolute")
+    try:
+        resolved = candidate.resolve(strict=True)
+    except OSError as exc:
+        raise RTA4Core0APilotV2Error(f"cannot resolve {label}") from exc
+    if not resolved.is_dir():
+        raise RTA4Core0APilotV2Error(f"{label} must be a directory")
+    return resolved
+
+
+def _is_within(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+    except ValueError:
+        return False
+    return True
+
+
+def _overlaps(left: Path, right: Path) -> bool:
+    return left == right or _is_within(left, right) or _is_within(right, left)
+
+
+def _derived_deployment_paths(
+    deployment_workspace_root: Path | str,
+) -> Dict[str, str]:
+    workspace = _resolved_existing_directory(
+        deployment_workspace_root, "deployment workspace root",
+    )
+    output = (workspace / CORE0A_OUTPUT_NAMESPACE).resolve(strict=False)
+    taskset_store = (
+        workspace / CORE0A_TASKSET_STORE_NAMESPACE
+    ).resolve(strict=False)
+    terminal = (output / CORE0A_TERMINAL_DIRECTORY).resolve(strict=False)
+    for label, path in (
+        ("CORE-0A output root", output),
+        ("CORE-0A taskset store root", taskset_store),
+        ("CORE-0A terminal directory", terminal),
     ):
-        raise RTA4Core0APilotV2Error("AutoDL deployment resource bounds are invalid")
-    for field in ("output_root", "taskset_store", "source_root"):
-        if not isinstance(deployment[field], str) or not Path(
-            deployment[field]
-        ).is_absolute():
+        if not _is_within(path, workspace):
             raise RTA4Core0APilotV2Error(
-                f"AutoDL deployment {field} must be absolute"
+                f"{label} escapes deployment workspace after symlink resolution"
             )
-    for field in _DEPLOYMENT_FIELDS.difference({
-        "worker_count", "max_in_flight", "memory_soft_limit_bytes",
-        "output_root", "taskset_store", "source_root",
-    }):
-        value = deployment[field]
-        if not isinstance(value, str) or len(value) != 64:
-            raise RTA4Core0APilotV2Error(
-                f"AutoDL deployment {field} must be a SHA-256 identity"
-            )
+    forbidden_outputs = tuple(
+        (workspace / relative).resolve(strict=False)
+        for relative in FORBIDDEN_FORMAL_OUTPUT_NAMESPACES
+    )
+    if any(output == root or _is_within(output, root) for root in forbidden_outputs):
+        raise RTA4Core0APilotV2Error(
+            "CORE-0A output root overlaps a formal result root"
+        )
+    forbidden_stores = tuple(
+        (workspace / relative).resolve(strict=False)
+        for relative in FORBIDDEN_FORMAL_STORE_NAMESPACES
+    )
+    if any(
+        taskset_store == root or _is_within(taskset_store, root)
+        for root in forbidden_stores
+    ):
+        raise RTA4Core0APilotV2Error(
+            "CORE-0A taskset store overlaps a formal store root"
+        )
+    if _overlaps(output, taskset_store):
+        raise RTA4Core0APilotV2Error(
+            "CORE-0A output and taskset store roots overlap"
+        )
+    if terminal == output or not _is_within(terminal, output):
+        raise RTA4Core0APilotV2Error(
+            "CORE-0A terminal directory must be inside its output root"
+        )
+    workspace_identity = domain_hash(
+        CORE0A_DEPLOYMENT_WORKSPACE_DOMAIN,
+        {
+            "canonical_deployment_workspace_root": str(workspace),
+            "output_namespace": CORE0A_OUTPUT_NAMESPACE,
+            "taskset_store_namespace": CORE0A_TASKSET_STORE_NAMESPACE,
+        },
+    )
+    return {
+        "deployment_workspace_root": str(workspace),
+        "deployment_workspace_identity": workspace_identity,
+        "expected_output_namespace": CORE0A_OUTPUT_NAMESPACE,
+        "actual_output_root": str(output),
+        "taskset_store_namespace": CORE0A_TASKSET_STORE_NAMESPACE,
+        "taskset_store_root": str(taskset_store),
+        "terminal_directory_name": CORE0A_TERMINAL_DIRECTORY,
+        "terminal_directory": str(terminal),
+    }
+
+
+def _observe_autodl_resources(
+    deployment_workspace_root: Path | str,
+) -> AutoDLResourceObservation:
+    workspace = _resolved_existing_directory(
+        deployment_workspace_root, "deployment workspace root",
+    )
+    logical_cpu_count = os.cpu_count()
+    try:
+        physical_memory_bytes = (
+            int(os.sysconf("SC_PHYS_PAGES"))
+            * int(os.sysconf("SC_PAGE_SIZE"))
+        )
+    except (OSError, ValueError, TypeError) as exc:
+        raise RTA4Core0APilotV2Error(
+            "cannot observe physical memory"
+        ) from exc
+    free_disk_bytes = int(shutil.disk_usage(workspace).free)
+    if (
+        type(logical_cpu_count) is not int or logical_cpu_count < 1
+        or physical_memory_bytes < 1 or free_disk_bytes < 0
+    ):
+        raise RTA4Core0APilotV2Error(
+            "AutoDL resource observation is invalid"
+        )
+    return AutoDLResourceObservation(
+        logical_cpu_count=logical_cpu_count,
+        physical_memory_bytes=physical_memory_bytes,
+        free_disk_bytes=free_disk_bytes,
+    )
+
+
+def _disk_estimate(selection: Mapping[str, Any]) -> Dict[str, Any]:
+    execution_count = len(selection["ordered_records"])
+    unique_tasksets = int(
+        selection["coverage_matrix"]["unique_taskset_slot_count"]
+    )
+    estimated = (
+        execution_count * CORE0A_DISK_BYTES_PER_EXECUTION
+        + unique_tasksets * CORE0A_DISK_BYTES_PER_UNIQUE_TASKSET
+        + CORE0A_DISK_FIXED_OVERHEAD_BYTES
+    )
+    safety_margin = max(
+        CORE0A_DISK_MINIMUM_SAFETY_MARGIN_BYTES,
+        (estimated + 9) // 10,
+    )
+    material = {
+        "estimate_version": CORE0A_DISK_ESTIMATE_VERSION,
+        "estimate_source": "FROZEN_384_SCOPE_COMPONENT_BUDGET",
+        "execution_count": execution_count,
+        "unique_taskset_slot_count": unique_tasksets,
+        "bytes_per_execution": CORE0A_DISK_BYTES_PER_EXECUTION,
+        "bytes_per_unique_taskset": CORE0A_DISK_BYTES_PER_UNIQUE_TASKSET,
+        "fixed_overhead_bytes": CORE0A_DISK_FIXED_OVERHEAD_BYTES,
+        "estimated_required_disk_bytes": estimated,
+        "safety_margin_version": CORE0A_DISK_SAFETY_MARGIN_VERSION,
+        "safety_margin_algorithm": "max(1_GiB,ceil(estimate/10))",
+        "explicit_safety_margin_bytes": safety_margin,
+        "required_free_disk_bytes": estimated + safety_margin,
+    }
+    return {
+        **material,
+        "disk_estimate_identity": domain_hash(
+            CORE0A_DISK_ESTIMATE_DOMAIN, material,
+        ),
+    }
+
+
+def _resource_policy(
+    observation: AutoDLResourceObservation,
+    disk_estimate: Mapping[str, Any],
+) -> Dict[str, Any]:
+    logical_cpu_count = observation.logical_cpu_count
+    workers = min(4, logical_cpu_count)
+    in_flight = min(max(workers, 2 * workers), logical_cpu_count)
+    memory_limit = observation.physical_memory_bytes * 7 // 10
+    required_disk = int(disk_estimate["required_free_disk_bytes"])
+    if observation.free_disk_bytes < required_disk:
+        raise RTA4Core0APilotV2Error(
+            "AutoDL free disk is below estimate plus safety margin"
+        )
+    observed_material = {
+        "logical_cpu_count": logical_cpu_count,
+        "physical_memory_bytes": observation.physical_memory_bytes,
+        "free_disk_bytes": observation.free_disk_bytes,
+    }
+    timeout_material = {
+        "resource_policy_version": CORE0A_RESOURCE_POLICY_VERSION,
+        "worker_count": workers,
+        "max_in_flight": in_flight,
+        "memory_soft_limit_fraction": CORE0A_MEMORY_SOFT_LIMIT_FRACTION,
+        "memory_soft_limit_bytes": memory_limit,
+        "checkpoint_frequency_records": CORE0A_CHECKPOINT_FREQUENCY,
+        "retry_contract": CORE0A_RETRY_CONTRACT,
+    }
+    return {
+        "resource_policy_version": CORE0A_RESOURCE_POLICY_VERSION,
+        **observed_material,
+        "resource_observation_identity": domain_hash(
+            CORE0A_RESOURCE_OBSERVATION_DOMAIN, observed_material,
+        ),
+        "worker_count": workers,
+        "max_in_flight": in_flight,
+        "memory_soft_limit_fraction": CORE0A_MEMORY_SOFT_LIMIT_FRACTION,
+        "memory_soft_limit_bytes": memory_limit,
+        "checkpoint_frequency_records": CORE0A_CHECKPOINT_FREQUENCY,
+        "resume_policy": PILOT_RESUME_POLICY,
+        "retry_contract": CORE0A_RETRY_CONTRACT,
+        "timeout_resource_identity": domain_hash(
+            CORE0A_TIMEOUT_RESOURCE_DOMAIN, timeout_material,
+        ),
+        "disk_preflight_passed": True,
+    }
+
+
+def _production_component_identities(
+    production_manifest: Mapping[str, Any],
+) -> Dict[str, str]:
+    if not isinstance(production_manifest, Mapping):
+        raise RTA4Core0APilotV2Error(
+            "production build manifest must be a mapping"
+        )
+    document = dict(production_manifest)
+    observed = document.pop("manifest_id", None)
+    if (
+        production_manifest.get("manifest_schema")
+        != PRODUCTION_BUILD_MANIFEST_SCHEMA
+        or production_manifest.get("formal_authorization") is not False
+        or observed
+        != domain_hash(PRODUCTION_BUILD_MANIFEST_DOMAIN, document)
+    ):
+        raise RTA4Core0APilotV2Error(
+            "production build manifest identity mismatch"
+        )
+    try:
+        components = {
+            "production_build_manifest_identity": str(observed),
+            "python_identity": domain_hash(
+                "ASAP_BLOCK:V9.3:RTA4:PYTHON_DEPLOYMENT:v2",
+                production_manifest["python"],
+            ),
+            "toolchain_identity": domain_hash(
+                "ASAP_BLOCK:V9.3:RTA4:TOOLCHAIN_DEPLOYMENT:v2",
+                production_manifest["cpp_toolchain"],
+            ),
+            "simulator_identity": domain_hash(
+                "ASAP_BLOCK:V9.3:RTA4:SIMULATOR_DEPLOYMENT:v2",
+                production_manifest["simulator"],
+            ),
+            "verifier_identity": domain_hash(
+                "ASAP_BLOCK:V9.3:RTA4:VERIFIER_DEPLOYMENT:v2",
+                production_manifest["solar_verifier"],
+            ),
+            "environment_identity": domain_hash(
+                "ASAP_BLOCK:V9.3:RTA4:ENVIRONMENT_DEPLOYMENT:v2",
+                production_manifest["environment"],
+            ),
+        }
+    except (KeyError, TypeError) as exc:
+        raise RTA4Core0APilotV2Error(
+            "production build manifest is incomplete"
+        ) from exc
+    return components
+
+
+def _validate_bundle_for_deployment(
+    bundle: Mapping[str, Any],
+) -> Dict[str, Any]:
+    portable = dict(bundle)
+    if (
+        portable.get("bundle_schema") != CORE0A_PORTABLE_BUNDLE_SCHEMA
+        or portable.get("status")
+        != CORE0A_ENGINEERING_PILOT_FROZEN_PENDING_REAUDIT
+        or portable.get("formal_authorization") is not False
+        or portable.get("production_authorization") is not False
+        or portable.get("selection", {}).get("execution_count")
+        != EXPECTED_EXECUTION_COUNT
+    ):
+        raise RTA4Core0APilotV2Error(
+            "deployment requires an exact unauthorized portable freeze"
+        )
+    unsigned = dict(portable)
+    observed = unsigned.pop("portable_freeze_identity", None)
+    if observed != domain_hash(CORE0A_PORTABLE_BUNDLE_DOMAIN, unsigned):
+        raise RTA4Core0APilotV2Error("portable bundle identity mismatch")
+    return portable
+
+
+def _build_autodl_deployment_manifest_v2(
+    *,
+    bundle: Mapping[str, Any],
+    production_manifest: Mapping[str, Any],
+    source_root: Path | str,
+    deployment_workspace_root: Path | str,
+    observation: AutoDLResourceObservation,
+) -> Dict[str, Any]:
+    portable = _validate_bundle_for_deployment(bundle)
+    source = _resolved_existing_directory(source_root, "source root")
+    paths = _derived_deployment_paths(deployment_workspace_root)
+    try:
+        production_source = _resolved_existing_directory(
+            production_manifest["repository"]["source_root"],
+            "production manifest source root",
+        )
+        production_commit = str(
+            production_manifest["repository"]["git_commit"]
+        )
+        production_tree = str(production_manifest["repository"]["git_tree"])
+    except (KeyError, TypeError) as exc:
+        raise RTA4Core0APilotV2Error(
+            "production repository binding is incomplete"
+        ) from exc
+    if source != production_source:
+        raise RTA4Core0APilotV2Error(
+            "source root differs from production manifest"
+        )
+    if (
+        production_commit != portable["source"]["git_commit"]
+        or production_tree != portable["source"]["git_tree"]
+    ):
+        raise RTA4Core0APilotV2Error(
+            "production source commit/tree differs from portable freeze"
+        )
+    selection = build_core0a_selection_v2()
+    if (
+        portable["selection"]["core0a_selection_identity"]
+        != selection["core0a_selection_identity"]
+        or portable["selection"]["execution_count"]
+        != len(selection["ordered_records"])
+    ):
+        raise RTA4Core0APilotV2Error(
+            "portable selection scope differs from current V2 plans"
+        )
+    disk = _disk_estimate(selection)
+    resources = _resource_policy(
+        observation,
+        disk,
+    )
+    production = _production_component_identities(production_manifest)
     material = {
         "deployment_manifest_schema": CORE0A_DEPLOYMENT_MANIFEST_SCHEMA,
+        "deployment_scope_version": CORE0A_DEPLOYMENT_SCOPE_VERSION,
         "status": "UNAUTHORIZED_AUTODL_DEPLOYMENT_CANDIDATE",
-        "portable_freeze_identity": bundle["portable_freeze_identity"],
-        "source_commit": bundle["source"]["git_commit"],
-        "source_tree": bundle["source"]["git_tree"],
-        "selection_identity": bundle["selection"]["core0a_selection_identity"],
-        "selection_count": EXPECTED_EXECUTION_COUNT,
-        **dict(deployment),
-        "checkpoint_interval_records": CORE0A_DEPLOYMENT_POLICY[
-            "checkpoint_interval_records"
-        ],
-        "retry_contract": CORE0A_RETRY_CONTRACT,
-        "expected_output_namespace": CORE0A_OUTPUT_NAMESPACE,
+        "portable_freeze_identity": portable["portable_freeze_identity"],
+        "source_commit": portable["source"]["git_commit"],
+        "source_tree": portable["source"]["git_tree"],
+        "source_root": str(source),
+        "selection_identity": selection["core0a_selection_identity"],
+        "selection_count": len(selection["ordered_records"]),
+        "authorization_scope": CORE0A_AUTHORIZATION_SCOPE,
+        "max_runs": CORE0A_MAX_RUNS,
+        "scientific_inputs": {
+            "profile": RTA4_FORMAL_PROFILE_V2,
+            "plan_version": RTA4_FORMAL_PLAN_VERSION_V2,
+            "formal_schema_sha256": formal_schema_hash_v2(),
+            "numeric_contract_sha256": RTA4_NUMERIC_CONTRACT_V2_SHA256,
+            "theory_document_sha256": exact_energy.THEORY_DOCUMENT_SHA256,
+            "all_plan_digest": selection["v2_plans"]["all_plan_digest"],
+            "plans": selection["v2_plans"]["plans"],
+            "config_identities": {
+                core: selection["v2_configs"][core]["semantic_identity"]
+                for core in RTA4_CORES
+            },
+            "candidate_config_identity": portable["candidate_config"][
+                "semantic_identity"
+            ],
+        },
+        **production,
+        **paths,
+        "taskset_store_identity": formal_taskset_store_identity_v2(),
+        **resources,
+        **disk,
         "formal_authorization": False,
         "production_authorization": False,
+        "engineering_pilot_authorization": False,
     }
     return {
         **material,
@@ -1102,47 +1788,173 @@ def build_autodl_deployment_manifest_v2(
     }
 
 
-def validate_autodl_deployment_manifest_v2(
-    value: Mapping[str, Any], bundle: Mapping[str, Any],
+def build_autodl_deployment_manifest_v2(
+    *,
+    bundle: Mapping[str, Any],
+    production_manifest: Mapping[str, Any],
+    source_root: Path | str,
+    deployment_workspace_root: Path | str,
 ) -> Dict[str, Any]:
-    if not isinstance(value, Mapping):
-        raise RTA4Core0APilotV2Error("AutoDL deployment must be a mapping")
-    document = dict(value)
-    unsigned = dict(document)
-    observed = unsigned.pop("deployment_manifest_identity", None)
-    if (
-        document.get("deployment_manifest_schema")
-        != CORE0A_DEPLOYMENT_MANIFEST_SCHEMA
-        or document.get("portable_freeze_identity")
-        != bundle.get("portable_freeze_identity")
-        or document.get("source_commit") != bundle.get("source", {}).get(
-            "git_commit"
-        )
-        or document.get("source_tree") != bundle.get("source", {}).get(
-            "git_tree"
-        )
-        or observed != domain_hash(CORE0A_DEPLOYMENT_MANIFEST_DOMAIN, unsigned)
-    ):
-        raise RTA4Core0APilotV2Error(
-            "AutoDL deployment identity/source mismatch"
-        )
-    return document
-
-
-def core0a_execution_identity(
-    bundle: Mapping[str, Any], deployment_manifest: Mapping[str, Any],
-) -> str:
-    deployment = validate_autodl_deployment_manifest_v2(
-        deployment_manifest, bundle,
+    return _build_autodl_deployment_manifest_v2(
+        bundle=bundle,
+        production_manifest=production_manifest,
+        source_root=source_root,
+        deployment_workspace_root=deployment_workspace_root,
+        observation=_observe_autodl_resources(deployment_workspace_root),
     )
+
+
+def _combined_execution_identity(
+    bundle: Mapping[str, Any],
+    deployment_manifest: Mapping[str, Any],
+) -> str:
     return domain_hash(CORE0A_EXECUTION_IDENTITY_DOMAIN, {
         "portable_freeze_identity": bundle["portable_freeze_identity"],
-        "deployment_manifest_identity": deployment[
+        "deployment_manifest_identity": deployment_manifest[
             "deployment_manifest_identity"
         ],
         "selection_identity": bundle["selection"]["core0a_selection_identity"],
         "selection_count": EXPECTED_EXECUTION_COUNT,
+        "expected_output_namespace": CORE0A_OUTPUT_NAMESPACE,
+        "actual_output_root": deployment_manifest["actual_output_root"],
+        "taskset_store_root": deployment_manifest["taskset_store_root"],
+        "deployment_workspace_identity": deployment_manifest[
+            "deployment_workspace_identity"
+        ],
+        "resource_observation_identity": deployment_manifest[
+            "resource_observation_identity"
+        ],
+        "max_runs": CORE0A_MAX_RUNS,
     })
+
+
+def validate_autodl_deployment_manifest_v2(
+    *,
+    portable_bundle_path: Path | str,
+    selection_artifact_path: Path | str,
+    candidate_config_path: Path | str,
+    production_manifest_path: Path | str,
+    deployment_manifest_path: Path | str,
+    source_root: Path | str,
+    deployment_workspace_root: Path | str,
+    require_clean: bool = True,
+) -> ValidatedCore0ADeployment:
+    source = _resolved_existing_directory(source_root, "source root")
+    if source != PROJECT_ROOT.resolve(strict=True):
+        raise RTA4Core0APilotV2Error(
+            "formal deployment validator must execute from the frozen source root"
+        )
+    selection = load_core0a_selection_v2(selection_artifact_path)
+    candidate = load_candidate_config_v2(candidate_config_path)
+    portable = validate_portable_candidate_bundle_v2(
+        load_strict_canonical_json(portable_bundle_path),
+        require_clean=require_clean,
+    )
+    if (
+        portable["selection"]["artifact_sha256"]
+        != _sha256(Path(selection_artifact_path))
+        or portable["selection"]["core0a_selection_identity"]
+        != selection["core0a_selection_identity"]
+        or portable["selection"]["execution_count"]
+        != len(selection["ordered_records"])
+        or portable["candidate_config"]["sha256"]
+        != _sha256(Path(candidate_config_path))
+        or portable["candidate_config"]["material"] != candidate
+        or portable["candidate_config"]["semantic_identity"]
+        != domain_hash(CORE0A_CANDIDATE_CONFIG_DOMAIN, candidate)
+    ):
+        raise RTA4Core0APilotV2Error(
+            "portable bundle does not bind the supplied frozen artifacts"
+        )
+    try:
+        production = load_and_validate_production_build_manifest(
+            production_manifest_path,
+            require_clean=require_clean,
+            require_default_closure=True,
+        )
+    except Exception as exc:
+        raise RTA4Core0APilotV2Error(
+            "live production build manifest validation failed"
+        ) from exc
+    document = load_strict_canonical_json(deployment_manifest_path)
+    observed = AutoDLResourceObservation(
+        logical_cpu_count=document.get("logical_cpu_count"),
+        physical_memory_bytes=document.get("physical_memory_bytes"),
+        free_disk_bytes=document.get("free_disk_bytes"),
+    )
+    if any(
+        type(value) is not int or value < minimum
+        for value, minimum in (
+            (observed.logical_cpu_count, 1),
+            (observed.physical_memory_bytes, 1),
+            (observed.free_disk_bytes, 0),
+        )
+    ):
+        raise RTA4Core0APilotV2Error(
+            "deployment resource observation fields are invalid"
+        )
+    live = _observe_autodl_resources(deployment_workspace_root)
+    if (
+        observed.logical_cpu_count != live.logical_cpu_count
+        or observed.physical_memory_bytes != live.physical_memory_bytes
+        or abs(observed.free_disk_bytes - live.free_disk_bytes)
+        > CORE0A_DISK_OBSERVATION_TOLERANCE_BYTES
+    ):
+        raise RTA4Core0APilotV2Error(
+            "deployment resource observations differ from live AutoDL"
+        )
+    required_disk = _disk_estimate(selection)["required_free_disk_bytes"]
+    if (
+        observed.free_disk_bytes < required_disk
+        or live.free_disk_bytes < required_disk
+    ):
+        raise RTA4Core0APilotV2Error(
+            "live or recorded disk space is below the required margin"
+        )
+    expected = _build_autodl_deployment_manifest_v2(
+        bundle=portable,
+        production_manifest=production,
+        source_root=source,
+        deployment_workspace_root=deployment_workspace_root,
+        observation=observed,
+    )
+    if document != expected:
+        raise RTA4Core0APilotV2Error(
+            "AutoDL deployment differs from reconstructed frozen scope"
+        )
+    execution_identity = _combined_execution_identity(portable, document)
+    return ValidatedCore0ADeployment(
+        portable_bundle=portable,
+        selection=selection,
+        candidate_config=candidate,
+        production_manifest=production,
+        deployment_manifest=document,
+        source_root=str(source),
+        deployment_workspace_root=str(
+            _resolved_existing_directory(
+                deployment_workspace_root, "deployment workspace root",
+            )
+        ),
+        execution_identity=execution_identity,
+    )
+
+
+def core0a_execution_identity(
+    validated_deployment: ValidatedCore0ADeployment,
+) -> str:
+    if type(validated_deployment) is not ValidatedCore0ADeployment:
+        raise RTA4Core0APilotV2Error(
+            "execution identity requires a validated deployment object"
+        )
+    expected = _combined_execution_identity(
+        validated_deployment.portable_bundle,
+        validated_deployment.deployment_manifest,
+    )
+    if expected != validated_deployment.execution_identity:
+        raise RTA4Core0APilotV2Error(
+            "validated deployment execution identity drift"
+        )
+    return expected
 
 
 def scientific_analysis_identity(
@@ -1193,19 +2005,27 @@ def terminal_evidence_identity(
 
 
 def require_authorized_core0a_engineering_pilot(
-    bundle: Mapping[str, Any], authorization: Mapping[str, Any] | None,
-    deployment_manifest: Mapping[str, Any] | None,
+    validated_deployment: ValidatedCore0ADeployment | None,
+    authorization: Mapping[str, Any] | None,
 ) -> None:
-    if authorization is None or deployment_manifest is None:
+    if (
+        authorization is None
+        or type(validated_deployment) is not ValidatedCore0ADeployment
+    ):
         raise RTA4Core0APilotV2Error(
-            "CORE-0A execution requires independent authorization and deployment"
+            "CORE-0A execution requires independent authorization and a "
+            "file-validated deployment"
         )
+    bundle = validated_deployment.portable_bundle
+    deployment_manifest = validated_deployment.deployment_manifest
     exact = {
         "authorization_schema", "status", "independent_read_only_review",
         "review_identity", "portable_freeze_identity", "selection_identity",
         "source_commit", "source_tree", "deployment_manifest_identity",
-        "execution_identity", "output_namespace", "authorized_execution_count",
-        "max_runs", "scope", "formal_authorization",
+        "execution_identity", "output_namespace", "actual_output_root",
+        "taskset_store_root", "deployment_workspace_identity",
+        "authorized_execution_count", "max_runs", "scope",
+        "run_nonce", "expires_at_utc", "formal_authorization",
         "production_authorization", "authorization_id",
     }
     if set(authorization) != exact:
@@ -1226,6 +2046,12 @@ def require_authorized_core0a_engineering_pilot(
         or authorization.get("source_tree")
         != bundle.get("source", {}).get("git_tree")
         or authorization.get("output_namespace") != CORE0A_OUTPUT_NAMESPACE
+        or authorization.get("actual_output_root")
+        != deployment_manifest.get("actual_output_root")
+        or authorization.get("taskset_store_root")
+        != deployment_manifest.get("taskset_store_root")
+        or authorization.get("deployment_workspace_identity")
+        != deployment_manifest.get("deployment_workspace_identity")
     ):
         raise RTA4Core0APilotV2Error("CORE-0A authorization source/scope drift")
     if authorization.get("deployment_manifest_identity") != deployment_manifest.get(
@@ -1233,14 +2059,18 @@ def require_authorized_core0a_engineering_pilot(
     ):
         raise RTA4Core0APilotV2Error("CORE-0A authorization deployment drift")
     if authorization.get("execution_identity") != core0a_execution_identity(
-        bundle, deployment_manifest,
+        validated_deployment,
     ):
         raise RTA4Core0APilotV2Error("CORE-0A authorization execution drift")
     if (
         authorization.get("authorized_execution_count")
         != EXPECTED_EXECUTION_COUNT
-        or authorization.get("max_runs") != 1
-        or authorization.get("scope") != "EXACT_384_RECORD_CORE0A_ONLY"
+        or authorization.get("max_runs") != CORE0A_MAX_RUNS
+        or authorization.get("scope") != CORE0A_AUTHORIZATION_SCOPE
+        or not isinstance(authorization.get("run_nonce"), str)
+        or not authorization["run_nonce"]
+        or not isinstance(authorization.get("expires_at_utc"), str)
+        or not authorization["expires_at_utc"]
         or authorization.get("formal_authorization") is not False
         or authorization.get("production_authorization") is not False
     ):
@@ -1271,12 +2101,16 @@ def selected_ordinals_by_core(
 
 
 __all__ = [
+    "AutoDLResourceObservation",
     "AUTHORIZED_CORE0A_ENGINEERING_PILOT", "CORE0A_CONTRACT_VERSION",
     "CANDIDATE_CONFIG_PATH", "CORE0A_AUTHORIZATION_SCHEMA",
     "CORE0A_DEPLOYMENT_MANIFEST_SCHEMA", "CORE0A_DEPLOYMENT_POLICY",
+    "CORE0A_DEPLOYMENT_SCOPE_VERSION",
     "CORE0A_ENGINEERING_PILOT_FROZEN_PENDING_REAUDIT",
     "CORE0A_HANDOFF_SCHEMA", "CORE0A_OUTPUT_NAMESPACE",
+    "CORE0A_PORTABLE_CONTRACT_VERSION",
     "CORE0A_PORTABLE_BUNDLE_SCHEMA", "CORE0A_RETRY_CONTRACT",
+    "CORE0A_RESOURCE_POLICY_VERSION", "CORE0A_SEED_MIGRATION_MODE",
     "CORE0A_SELECTION_ALGORITHM", "CORE0A_SELECTION_SCHEMA",
     "CORE0A_TASKSET_STORE_NAMESPACE",
     "EXPECTED_EXECUTION_COUNT", "FORMAL_INPUT_SOURCE_COMMIT",
@@ -1285,9 +2119,11 @@ __all__ = [
     "HISTORICAL_SELECTION_SOURCE_SHA256", "PROJECT_ROOT",
     "RTA4Core0APilotV2Error", "SELECTION_ARTIFACT_PATH",
     "UNAUTHORIZED_ENGINEERING_PILOT_CANDIDATE",
+    "ValidatedCore0ADeployment",
     "V1_CONFIG_PATHS", "V2_CONFIG_PATHS", "build_core0a_selection_v2",
     "build_autodl_deployment_manifest_v2", "build_autodl_handoff_v2",
-    "build_portable_candidate_bundle_v2", "core0a_execution_identity",
+    "build_portable_candidate_bundle_v2", "build_seed_migration_contract_v2",
+    "core0a_execution_identity",
     "canonical_json_bytes", "coverage_matrix", "load_core0a_selection_v2",
     "load_candidate_config_v2", "load_strict_canonical_json",
     "repository_identity", "require_authorized_core0a_engineering_pilot",

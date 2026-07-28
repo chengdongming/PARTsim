@@ -1,5 +1,5 @@
-candidate_schema: ASAP_BLOCK_V9_3_RTA4_CORE0A_ENGINEERING_PILOT_CANDIDATE_V2
-contract_version: ASAP_BLOCK_V9_3_RTA4_CORE0A_ENGINEERING_PILOT_V2
+candidate_schema: ASAP_BLOCK_V9_3_RTA4_CORE0A_ENGINEERING_PILOT_CANDIDATE_V3
+contract_version: ASAP_BLOCK_V9_3_RTA4_CORE0A_ENGINEERING_PILOT_PORTABLE_V3
 status: UNAUTHORIZED_ENGINEERING_PILOT_CANDIDATE
 purpose: ENGINEERING_VALIDATION_ONLY_NOT_SCIENTIFIC_RESULTS
 selection_artifact: configs/v9_3_rta4_core0a_selection_v2.json
@@ -41,6 +41,28 @@ deployment_policy:
   output_namespace: results/v9_3_rta4_core0a_engineering_pilot_v2
   taskset_store_namespace: results/v9_3_rta4_core0a_tasksets_v2_shared_energy
   disk_preflight: REQUIRE_ESTIMATE_AND_FREE_SPACE_MARGIN
+seed_migration_contract:
+  migration_mode: ORDINALS_AND_VERSION_NEUTRAL_AXES_PRESERVED_V2_NATIVE_SEEDS_REISSUED
+  preserved_fields:
+    - core
+    - ordinal
+    - kind
+    - taskset_slot
+    - taskset_skeleton_slot
+    - formal_master_seed
+    - utilization
+    - method
+    - exact_e0
+    - service_sensitivity
+    - time_scale
+    - track
+    - replica
+    - core5b_mathematical_group_membership
+  derived_generation_seed_is_profile_and_domain_scoped: true
+  v1_v2_seed_equality_required: false
+  v2_native_seed_generation_contract: ASAP_BLOCK_V9_3_RTA4_CORE0A_V2_NATIVE_GENERATION_SEED_V1
+  historical_positions_not_v1_taskset_instances: true
+  engineering_only_no_cross_version_scientific_comparison: true
 formal_authorization: false
 production_authorization: false
 engineering_pilot_authorization: false
