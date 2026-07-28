@@ -1,0 +1,46 @@
+candidate_schema: ASAP_BLOCK_V9_3_RTA4_CORE0A_ENGINEERING_PILOT_CANDIDATE_V2
+contract_version: ASAP_BLOCK_V9_3_RTA4_CORE0A_ENGINEERING_PILOT_V2
+status: UNAUTHORIZED_ENGINEERING_PILOT_CANDIDATE
+purpose: ENGINEERING_VALIDATION_ONLY_NOT_SCIENTIFIC_RESULTS
+selection_artifact: configs/v9_3_rta4_core0a_selection_v2.json
+expected_execution_count: 384
+output_namespace: results/v9_3_rta4_core0a_engineering_pilot_v2
+taskset_store_namespace: results/v9_3_rta4_core0a_tasksets_v2_shared_energy
+retry_contract:
+  rta_methods:
+    initial_timeout_seconds: 300
+    retry_timeout_seconds: 300
+    maximum_attempts: 2
+    retry_condition: TIMEOUT_ONLY
+  core3_simulation:
+    initial_timeout_seconds: 300
+    retry_timeout_seconds: null
+    maximum_attempts: 1
+    retry_condition: NO_RETRY_IN_CURRENT_V2_RUNNER
+  attempt_indexing: STRICT_ZERO_BASED
+  attempt_fields:
+    - attempt_index
+    - timeout_seconds
+    - status
+    - runtime_wall_seconds
+    - runtime_cpu_seconds
+    - peak_rss_bytes
+    - error_classification
+    - analysis_identity
+    - taskset_identity
+    - task_energy_material_identity
+    - service_material_identity
+    - beta_material_identity
+    - production_build_manifest_identity
+deployment_policy:
+  worker_count: min(4, logical_cpu_count)
+  max_in_flight: min(max(worker_count, 2 * worker_count), logical_cpu_count)
+  memory_soft_limit_bytes: floor(physical_memory_bytes * 0.70)
+  checkpoint_interval_records: 8
+  resume_policy: TRANSACTIONAL_EVIDENCE_STATE_MACHINE_V3
+  output_namespace: results/v9_3_rta4_core0a_engineering_pilot_v2
+  taskset_store_namespace: results/v9_3_rta4_core0a_tasksets_v2_shared_energy
+  disk_preflight: REQUIRE_ESTIMATE_AND_FREE_SPACE_MARGIN
+formal_authorization: false
+production_authorization: false
+engineering_pilot_authorization: false
