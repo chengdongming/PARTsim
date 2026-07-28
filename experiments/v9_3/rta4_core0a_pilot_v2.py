@@ -7,6 +7,7 @@ authorize either an engineering pilot or a formal/production run.
 from __future__ import annotations
 
 from collections import Counter
+from copy import deepcopy
 from dataclasses import dataclass
 from functools import lru_cache
 import hashlib
@@ -986,8 +987,8 @@ def expected_candidate_config_v2() -> Dict[str, Any]:
         "expected_execution_count": EXPECTED_EXECUTION_COUNT,
         "output_namespace": CORE0A_OUTPUT_NAMESPACE,
         "taskset_store_namespace": CORE0A_TASKSET_STORE_NAMESPACE,
-        "retry_contract": CORE0A_RETRY_CONTRACT,
-        "deployment_policy": CORE0A_DEPLOYMENT_POLICY,
+        "retry_contract": deepcopy(CORE0A_RETRY_CONTRACT),
+        "deployment_policy": deepcopy(CORE0A_DEPLOYMENT_POLICY),
         "seed_migration_contract": {
             "migration_mode": CORE0A_SEED_MIGRATION_MODE,
             "preserved_fields": list(
@@ -1214,8 +1215,8 @@ def build_portable_candidate_bundle_v2(
             "legacy_pilot_execution_config_version": (
                 RTA4_PILOT_EXECUTION_CONFIG_VERSION
             ),
-            "retry": CORE0A_RETRY_CONTRACT,
-            "deployment_policy": CORE0A_DEPLOYMENT_POLICY,
+            "retry": deepcopy(CORE0A_RETRY_CONTRACT),
+            "deployment_policy": deepcopy(CORE0A_DEPLOYMENT_POLICY),
             "checkpoint_schema": RTA4_CHECKPOINT_V2,
             "resume_identity_domain": RTA4_RETRY_RESUME_DOMAIN_V2,
             "run_manifest": RTA4_RUN_MANIFEST_V2,
@@ -1597,7 +1598,7 @@ def _resource_policy(
         "memory_soft_limit_fraction": CORE0A_MEMORY_SOFT_LIMIT_FRACTION,
         "memory_soft_limit_bytes": memory_limit,
         "checkpoint_frequency_records": CORE0A_CHECKPOINT_FREQUENCY,
-        "retry_contract": CORE0A_RETRY_CONTRACT,
+        "retry_contract": deepcopy(CORE0A_RETRY_CONTRACT),
     }
     return {
         "resource_policy_version": CORE0A_RESOURCE_POLICY_VERSION,
@@ -1611,7 +1612,7 @@ def _resource_policy(
         "memory_soft_limit_bytes": memory_limit,
         "checkpoint_frequency_records": CORE0A_CHECKPOINT_FREQUENCY,
         "resume_policy": PILOT_RESUME_POLICY,
-        "retry_contract": CORE0A_RETRY_CONTRACT,
+        "retry_contract": deepcopy(CORE0A_RETRY_CONTRACT),
         "timeout_resource_identity": domain_hash(
             CORE0A_TIMEOUT_RESOURCE_DOMAIN, timeout_material,
         ),

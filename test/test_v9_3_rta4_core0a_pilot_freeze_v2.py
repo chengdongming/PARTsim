@@ -614,6 +614,12 @@ def test_rehashed_scope_and_resource_drift_is_rejected_by_rebuild(
         _validate_fixture(
             tmp_path, monkeypatch, live_portable, mutate=mutate,
         )
+    assert core0a.CORE0A_RETRY_CONTRACT[
+        "rta_methods"
+    ]["initial_timeout_seconds"] == 300
+    assert core0a.CORE0A_RETRY_CONTRACT[
+        "core3_simulation"
+    ]["maximum_attempts"] == 1
 
 
 @pytest.mark.parametrize(
