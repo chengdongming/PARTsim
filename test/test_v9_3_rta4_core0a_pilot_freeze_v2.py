@@ -77,6 +77,14 @@ def portable(selection):
     )
 
 
+@pytest.fixture(scope="module")
+def live_portable(selection):
+    return core0a.build_portable_candidate_bundle_v2(
+        selection=selection,
+        require_clean=True,
+    )
+
+
 def _rehash_selection(document):
     unsigned = deepcopy(document)
     unsigned.pop("core0a_selection_identity", None)
@@ -86,23 +94,112 @@ def _rehash_selection(document):
     return unsigned
 
 
-def _deployment(portable, *, workers=2, suffix="1"):
-    values = {
-        "production_build_manifest_identity": "1" * 64,
-        "python_identity": "2" * 64,
-        "toolchain_identity": "3" * 64,
-        "simulator_identity": "4" * 64,
-        "verifier_identity": "5" * 64,
-        "environment_identity": "6" * 64,
-        "worker_count": workers,
-        "max_in_flight": max(4, workers),
-        "memory_soft_limit_bytes": 1024,
-        "timeout_resource_identity": suffix * 64,
-        "output_root": "/autodl/core0a/output",
-        "taskset_store": "/autodl/core0a/taskset-store",
-        "source_root": "/autodl/PARTSim",
+def _production_manifest(portable):
+    material = {
+        "manifest_schema": core0a.PRODUCTION_BUILD_MANIFEST_SCHEMA,
+        "formal_authorization": False,
+        "repository": {
+            "source_root": str(core0a.PROJECT_ROOT.resolve()),
+            "git_commit": portable["source"]["git_commit"],
+            "git_tree": portable["source"]["git_tree"],
+        },
+        "python": {"identity_fixture": "python"},
+        "cpp_toolchain": {"identity_fixture": "toolchain"},
+        "simulator": {"identity_fixture": "simulator"},
+        "solar_verifier": {"identity_fixture": "verifier"},
+        "environment": {"identity_fixture": "environment"},
     }
-    return core0a.build_autodl_deployment_manifest_v2(portable, values)
+    return {
+        **material,
+        "manifest_id": domain_hash(
+            core0a.PRODUCTION_BUILD_MANIFEST_DOMAIN, material,
+        ),
+    }
+
+
+def _observation(*, cpu=8, memory=64 << 30, free=64 << 30):
+    return core0a.AutoDLResourceObservation(
+        logical_cpu_count=cpu,
+        physical_memory_bytes=memory,
+        free_disk_bytes=free,
+    )
+
+
+def _rehash_deployment(document):
+    unsigned = deepcopy(document)
+    unsigned.pop("deployment_manifest_identity", None)
+    unsigned["deployment_manifest_identity"] = domain_hash(
+        core0a.CORE0A_DEPLOYMENT_MANIFEST_DOMAIN, unsigned,
+    )
+    return unsigned
+
+
+def _set_deployment_field(document, dotted, value):
+    target = document
+    fields = dotted.split(".")
+    for field in fields[:-1]:
+        target = target[field]
+    target[fields[-1]] = value
+
+
+def _build_deployment(
+    monkeypatch, portable, workspace, *, observation=None,
+):
+    production = _production_manifest(portable)
+    observed = observation or _observation()
+    monkeypatch.setattr(
+        core0a, "_observe_autodl_resources", lambda _root: observed,
+    )
+    deployment = core0a.build_autodl_deployment_manifest_v2(
+        bundle=portable,
+        production_manifest=production,
+        source_root=core0a.PROJECT_ROOT,
+        deployment_workspace_root=workspace,
+    )
+    return production, observed, deployment
+
+
+def _validate_fixture(
+    tmp_path, monkeypatch, live_portable, *, mutate=None,
+):
+    workspace = tmp_path / "autodl-workspace"
+    workspace.mkdir()
+    production, observed, deployment = _build_deployment(
+        monkeypatch, live_portable, workspace,
+    )
+    if mutate is not None:
+        mutate(deployment)
+        deployment = _rehash_deployment(deployment)
+    bundle_path = tmp_path / "portable.json"
+    production_path = tmp_path / "production.json"
+    deployment_path = tmp_path / "deployment.json"
+    core0a.write_canonical_json(bundle_path, live_portable)
+    core0a.write_canonical_json(production_path, production)
+    core0a.write_canonical_json(deployment_path, deployment)
+    monkeypatch.setattr(
+        core0a,
+        "load_and_validate_production_build_manifest",
+        lambda *args, **kwargs: production,
+    )
+    validated = core0a.validate_autodl_deployment_manifest_v2(
+        portable_bundle_path=bundle_path,
+        selection_artifact_path=(
+            core0a.PROJECT_ROOT / core0a.SELECTION_ARTIFACT_PATH
+        ),
+        candidate_config_path=(
+            core0a.PROJECT_ROOT / core0a.CANDIDATE_CONFIG_PATH
+        ),
+        production_manifest_path=production_path,
+        deployment_manifest_path=deployment_path,
+        source_root=core0a.PROJECT_ROOT,
+        deployment_workspace_root=workspace,
+        require_clean=True,
+    )
+    assert validated.deployment_manifest == deployment
+    assert validated.execution_identity == core0a.core0a_execution_identity(
+        validated,
+    )
+    return validated, deployment_path, production, observed, workspace
 
 
 def test_selection_is_exact_canonical_and_stable(selection):
@@ -129,6 +226,62 @@ def test_historical_math_selection_is_ported_by_stable_ordinals(selection):
     ordinals = core0a.selected_ordinals_by_core(selection)
     assert all(len(ordinals[core]) == 64 for core in RTA4_CORES)
     assert all(tuple(sorted(values)) == values for values in ordinals.values())
+
+
+def test_v1_v2_migration_preserves_axes_and_reissues_all_native_seeds(selection):
+    migration = core0a.build_seed_migration_contract_v2()
+    axes = migration["version_neutral_axis_comparison"]
+    seeds = migration["derived_generation_seed_migration"]
+    pairing = migration["v2_taskset_pairing_validation"]
+    assert migration["migration_mode"] == core0a.CORE0A_SEED_MIGRATION_MODE
+    assert axes["record_count"] == axes["matching_record_count"] == 384
+    assert axes["all_match"] is True
+    assert seeds["field_is_profile_and_domain_scoped"] is True
+    assert seeds["equality_required"] is False
+    assert seeds["different_seed_count"] == 384
+    assert seeds["v2_native_seed_record_count"] == 384
+    assert pairing["unique_taskset_slot_count"] == 321
+    assert pairing["reused_execution_count"] == 63
+    assert pairing["same_slot_uses_same_source"] is True
+    assert migration["core5b_group_validation"] == {
+        "complete_group_count": 16,
+        "replicas_per_group": ["1", "2", "4", "8"],
+        "all_groups_complete": True,
+    }
+    assert migration["historical_v1_selection"][
+        "selection_source_sha256"
+    ] == core0a.HISTORICAL_SELECTION_SOURCE_SHA256
+    assert [row["ordinal"] for row in selection["ordered_records"]] == [
+        ordinal
+        for core in RTA4_CORES
+        for ordinal in migration["historical_v1_selection"][
+            "selected_ordinals_by_core"
+        ][core]
+    ]
+
+
+def test_all_selected_v2_seeds_recompute_and_v1_seed_substitution_is_rejected(
+    selection,
+):
+    v2_configs = core0a._load_configs(version=2)
+    v2_records = core0a._selected_v2_records(v2_configs)
+    expected = [
+        core0a._taskset_seed(record, v2_configs[record.core])
+        for record in v2_records
+    ]
+    assert expected == [row["seed"] for row in selection["ordered_records"]]
+    v1_configs = core0a._load_configs(version=1)
+    v1_records = core0a._selected_v1_records(v1_configs)
+    v1_seeds = [
+        core0a._v1_taskset_seed(record, v1_configs[record.core])
+        for record in v1_records
+    ]
+    assert all(left != right for left, right in zip(v1_seeds, expected))
+    damaged = deepcopy(selection)
+    damaged["ordered_records"][0]["seed"] = v1_seeds[0]
+    damaged = _rehash_selection(damaged)
+    with pytest.raises(core0a.RTA4Core0APilotV2Error):
+        core0a.validate_core0a_selection_v2(damaged)
 
 
 def test_selected_records_are_unique_v2_plan_members(selection):
@@ -215,6 +368,15 @@ def test_six_v2_configs_remain_byte_frozen(selection):
         assert selection["v2_configs"][core]["file_sha256"] == expected
 
 
+def test_six_v2_config_status_drift_cannot_be_rehashed_into_scope(selection):
+    for core in RTA4_CORES:
+        damaged = deepcopy(selection)
+        damaged["v2_configs"][core]["parameter_status"] = "AUTHORIZED"
+        damaged = _rehash_selection(damaged)
+        with pytest.raises(core0a.RTA4Core0APilotV2Error):
+            core0a.validate_core0a_selection_v2(damaged)
+
+
 def test_portable_bundle_is_path_independent_and_stable(tmp_path, selection, portable):
     other = core0a.build_portable_candidate_bundle_v2(
         selection=selection, source_commit="a" * 40, source_tree="b" * 40,
@@ -251,14 +413,29 @@ def test_source_config_and_selection_material_change_bundle_identity(selection, 
     assert selection_changed != portable["portable_freeze_identity"]
 
 
-def test_worker_count_is_deployment_not_selection_or_science(portable):
-    two = _deployment(portable, workers=2)
-    four = _deployment(portable, workers=4)
+def test_worker_count_is_deployment_not_selection_or_science(
+    tmp_path, monkeypatch, portable,
+):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    production, _, two = _build_deployment(
+        monkeypatch, portable, workspace, observation=_observation(cpu=2),
+    )
+    monkeypatch.setattr(
+        core0a, "_observe_autodl_resources",
+        lambda _root: _observation(cpu=4),
+    )
+    four = core0a.build_autodl_deployment_manifest_v2(
+        bundle=portable,
+        production_manifest=production,
+        source_root=core0a.PROJECT_ROOT,
+        deployment_workspace_root=workspace,
+    )
     assert two["selection_identity"] == four["selection_identity"]
     assert two["portable_freeze_identity"] == four["portable_freeze_identity"]
     assert two["deployment_manifest_identity"] != four["deployment_manifest_identity"]
-    assert core0a.core0a_execution_identity(portable, two) != (
-        core0a.core0a_execution_identity(portable, four)
+    assert core0a._combined_execution_identity(portable, two) != (
+        core0a._combined_execution_identity(portable, four)
     )
 
 
@@ -295,37 +472,57 @@ def test_runtime_rss_and_worker_change_only_terminal_evidence(selection):
     assert terminal_a != terminal_b
 
 
-def test_candidate_and_pending_bundle_cannot_execute(portable):
+def test_candidate_and_pending_bundle_cannot_execute(
+    tmp_path, monkeypatch, live_portable,
+):
     with pytest.raises(core0a.RTA4Core0APilotV2Error):
-        core0a.require_authorized_core0a_engineering_pilot(portable, None, None)
-    deployment = _deployment(portable)
+        core0a.require_authorized_core0a_engineering_pilot(None, None)
+    validated, _, _, _, _ = _validate_fixture(
+        tmp_path, monkeypatch, live_portable,
+    )
     with pytest.raises(core0a.RTA4Core0APilotV2Error):
         core0a.require_authorized_core0a_engineering_pilot(
-            portable, {"status": core0a.UNAUTHORIZED_ENGINEERING_PILOT_CANDIDATE},
-            deployment,
+            validated,
+            {"status": core0a.UNAUTHORIZED_ENGINEERING_PILOT_CANDIDATE},
         )
-    assert portable["authorization_gate"]["current_engineering_authorization"] is False
-    assert portable["formal_authorization"] is False
-    assert portable["production_authorization"] is False
+    assert live_portable[
+        "authorization_gate"
+    ]["current_engineering_authorization"] is False
+    assert live_portable["formal_authorization"] is False
+    assert live_portable["production_authorization"] is False
 
 
-def test_only_exact_independently_reviewed_authorization_can_pass(portable):
-    deployment = _deployment(portable)
+def test_only_exact_independently_reviewed_authorization_can_pass(
+    tmp_path, monkeypatch, live_portable,
+):
+    validated, _, _, _, _ = _validate_fixture(
+        tmp_path, monkeypatch, live_portable,
+    )
+    deployment = validated.deployment_manifest
     material = {
         "authorization_schema": core0a.CORE0A_AUTHORIZATION_SCHEMA,
         "status": core0a.AUTHORIZED_CORE0A_ENGINEERING_PILOT,
         "independent_read_only_review": True,
         "review_identity": "9" * 64,
-        "portable_freeze_identity": portable["portable_freeze_identity"],
-        "selection_identity": portable["selection"]["core0a_selection_identity"],
-        "source_commit": portable["source"]["git_commit"],
-        "source_tree": portable["source"]["git_tree"],
+        "portable_freeze_identity": live_portable["portable_freeze_identity"],
+        "selection_identity": live_portable[
+            "selection"
+        ]["core0a_selection_identity"],
+        "source_commit": live_portable["source"]["git_commit"],
+        "source_tree": live_portable["source"]["git_tree"],
         "deployment_manifest_identity": deployment["deployment_manifest_identity"],
-        "execution_identity": core0a.core0a_execution_identity(portable, deployment),
+        "execution_identity": core0a.core0a_execution_identity(validated),
         "output_namespace": core0a.CORE0A_OUTPUT_NAMESPACE,
+        "actual_output_root": deployment["actual_output_root"],
+        "taskset_store_root": deployment["taskset_store_root"],
+        "deployment_workspace_identity": deployment[
+            "deployment_workspace_identity"
+        ],
         "authorized_execution_count": 384,
         "max_runs": 1,
         "scope": "EXACT_384_RECORD_CORE0A_ONLY",
+        "run_nonce": "INDEPENDENT_REVIEW_MUST_SUPPLY",
+        "expires_at_utc": "2099-01-01T00:00:00Z",
         "formal_authorization": False,
         "production_authorization": False,
     }
@@ -334,7 +531,7 @@ def test_only_exact_independently_reviewed_authorization_can_pass(portable):
         "authorization_id": domain_hash(core0a.CORE0A_AUTHORIZATION_DOMAIN, material),
     }
     assert core0a.require_authorized_core0a_engineering_pilot(
-        portable, authorization, deployment,
+        validated, authorization,
     ) is None
     for field, foreign in (
         ("independent_read_only_review", False),
@@ -350,29 +547,250 @@ def test_only_exact_independently_reviewed_authorization_can_pass(portable):
         )
         with pytest.raises(core0a.RTA4Core0APilotV2Error):
             core0a.require_authorized_core0a_engineering_pilot(
-                portable, damaged, deployment,
+                validated, damaged,
             )
 
 
-def test_deployment_schema_and_source_drift_are_rejected(portable):
-    deployment = _deployment(portable)
-    assert core0a.validate_autodl_deployment_manifest_v2(
-        deployment, portable,
-    ) == deployment
-    for field, value in (
-        ("deployment_manifest_schema", "UNKNOWN"),
-        ("source_commit", "f" * 40),
-        ("source_tree", "e" * 40),
+def test_file_path_rebuild_validator_accepts_exact_manifest(
+    tmp_path, monkeypatch, live_portable,
+):
+    validated, _, _, _, workspace = _validate_fixture(
+        tmp_path, monkeypatch, live_portable,
+    )
+    deployment = validated.deployment_manifest
+    assert deployment["selection_count"] == 384
+    assert deployment["max_runs"] == 1
+    assert deployment["formal_authorization"] is False
+    assert deployment["production_authorization"] is False
+    assert deployment["actual_output_root"] == str(
+        workspace / core0a.CORE0A_OUTPUT_NAMESPACE
+    )
+    assert deployment["taskset_store_root"] == str(
+        workspace / core0a.CORE0A_TASKSET_STORE_NAMESPACE
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("selection_count", 385),
+        ("selection_count", 383),
+        ("selection_identity", "1" * 64),
+        ("portable_freeze_identity", "2" * 64),
+        ("expected_output_namespace", "results/not-core0a"),
+        ("actual_output_root", "/autodl/results/not-core0a"),
+        ("source_commit", "3" * 40),
+        ("source_tree", "4" * 40),
+        ("scientific_inputs.all_plan_digest", "5" * 64),
+        ("scientific_inputs.config_identities.CORE-1", "6" * 64),
+        ("scientific_inputs.candidate_config_identity", "7" * 64),
+        ("max_runs", 2),
+        ("formal_authorization", True),
+        ("production_authorization", True),
+        ("engineering_pilot_authorization", True),
+        ("worker_count", 3),
+        ("max_in_flight", 7),
+        ("memory_soft_limit_fraction", "3/4"),
+        ("memory_soft_limit_bytes", 1),
+        ("checkpoint_frequency_records", 9),
+        ("retry_contract.rta_methods.initial_timeout_seconds", 301),
+        ("retry_contract.rta_methods.retry_timeout_seconds", 301),
+        ("retry_contract.rta_methods.maximum_attempts", 3),
+        ("retry_contract.rta_methods.retry_condition", "ALWAYS"),
+        ("retry_contract.core3_simulation.initial_timeout_seconds", 301),
+        ("retry_contract.core3_simulation.maximum_attempts", 2),
+    ),
+)
+def test_rehashed_scope_and_resource_drift_is_rejected_by_rebuild(
+    tmp_path, monkeypatch, live_portable, field, value,
+):
+    def mutate(document):
+        _set_deployment_field(document, field, value)
+
+    with pytest.raises(
+        core0a.RTA4Core0APilotV2Error,
+        match="reconstructed frozen scope",
     ):
-        damaged = deepcopy(deployment)
-        damaged[field] = value
-        unsigned = deepcopy(damaged)
-        unsigned.pop("deployment_manifest_identity")
-        damaged["deployment_manifest_identity"] = domain_hash(
-            core0a.CORE0A_DEPLOYMENT_MANIFEST_DOMAIN, unsigned,
+        _validate_fixture(
+            tmp_path, monkeypatch, live_portable, mutate=mutate,
         )
-        with pytest.raises(core0a.RTA4Core0APilotV2Error):
-            core0a.validate_autodl_deployment_manifest_v2(damaged, portable)
+
+
+@pytest.mark.parametrize(
+    "namespace",
+    tuple(core0a.FORBIDDEN_FORMAL_OUTPUT_NAMESPACES),
+)
+def test_all_v1_v2_core1_to_core5_formal_output_roots_are_rejected(
+    tmp_path, monkeypatch, live_portable, namespace,
+):
+    def mutate(document):
+        document["actual_output_root"] = f"/autodl/{namespace}"
+
+    with pytest.raises(core0a.RTA4Core0APilotV2Error):
+        _validate_fixture(
+            tmp_path, monkeypatch, live_portable, mutate=mutate,
+        )
+
+
+@pytest.mark.parametrize(
+    "namespace",
+    tuple(core0a.FORBIDDEN_FORMAL_STORE_NAMESPACES),
+)
+def test_v1_v2_formal_taskset_store_roots_are_rejected(
+    tmp_path, monkeypatch, live_portable, namespace,
+):
+    def mutate(document):
+        document["taskset_store_root"] = f"/autodl/{namespace}"
+
+    with pytest.raises(core0a.RTA4Core0APilotV2Error):
+        _validate_fixture(
+            tmp_path, monkeypatch, live_portable, mutate=mutate,
+        )
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    (
+        "/autodl/results/another_core0a_namespace",
+        "/autodl/workspace/../escape",
+        "/autodl/results/v9_3_rta4_core0a_engineering_pilot_v2/../escape",
+    ),
+)
+def test_non_core0a_and_dotdot_output_roots_are_rejected(
+    tmp_path, monkeypatch, live_portable, replacement,
+):
+    def mutate(document):
+        document["actual_output_root"] = replacement
+
+    with pytest.raises(core0a.RTA4Core0APilotV2Error):
+        _validate_fixture(
+            tmp_path, monkeypatch, live_portable, mutate=mutate,
+        )
+
+
+def test_derived_paths_accept_exact_isolated_namespace_without_creating_it(
+    tmp_path,
+):
+    paths = core0a._derived_deployment_paths(tmp_path)
+    output = tmp_path / core0a.CORE0A_OUTPUT_NAMESPACE
+    store = tmp_path / core0a.CORE0A_TASKSET_STORE_NAMESPACE
+    assert paths["actual_output_root"] == str(output)
+    assert paths["taskset_store_root"] == str(store)
+    assert paths["terminal_directory"] == str(
+        output / core0a.CORE0A_TERMINAL_DIRECTORY
+    )
+    assert not output.exists()
+    assert not store.exists()
+
+
+def test_output_symlink_escape_is_rejected(tmp_path):
+    workspace = tmp_path / "workspace"
+    results = workspace / "results"
+    outside = tmp_path / "outside"
+    results.mkdir(parents=True)
+    outside.mkdir()
+    (results / Path(core0a.CORE0A_OUTPUT_NAMESPACE).name).symlink_to(
+        outside, target_is_directory=True,
+    )
+    with pytest.raises(core0a.RTA4Core0APilotV2Error, match="escapes"):
+        core0a._derived_deployment_paths(workspace)
+
+
+def test_output_and_store_symlink_conflict_is_rejected(tmp_path):
+    workspace = tmp_path / "workspace"
+    results = workspace / "results"
+    shared = workspace / "shared"
+    results.mkdir(parents=True)
+    shared.mkdir()
+    (results / Path(core0a.CORE0A_OUTPUT_NAMESPACE).name).symlink_to(
+        shared, target_is_directory=True,
+    )
+    (results / Path(core0a.CORE0A_TASKSET_STORE_NAMESPACE).name).symlink_to(
+        shared, target_is_directory=True,
+    )
+    with pytest.raises(core0a.RTA4Core0APilotV2Error, match="overlap"):
+        core0a._derived_deployment_paths(workspace)
+
+
+def test_terminal_symlink_escape_is_rejected(tmp_path):
+    workspace = tmp_path / "workspace"
+    output = workspace / core0a.CORE0A_OUTPUT_NAMESPACE
+    outside = tmp_path / "outside"
+    output.mkdir(parents=True)
+    outside.mkdir()
+    (output / core0a.CORE0A_TERMINAL_DIRECTORY).symlink_to(
+        outside, target_is_directory=True,
+    )
+    with pytest.raises(core0a.RTA4Core0APilotV2Error, match="escapes"):
+        core0a._derived_deployment_paths(workspace)
+
+
+@pytest.mark.parametrize(
+    ("cpu", "workers", "in_flight"),
+    ((1, 1, 1), (3, 3, 3), (8, 4, 8)),
+)
+def test_resource_policy_derives_workers_and_max_in_flight(
+    selection, cpu, workers, in_flight,
+):
+    disk = core0a._disk_estimate(selection)
+    policy = core0a._resource_policy(
+        _observation(cpu=cpu), disk,
+    )
+    assert policy["worker_count"] == workers
+    assert policy["max_in_flight"] == in_flight
+    assert policy["memory_soft_limit_fraction"] == "7/10"
+    assert policy["memory_soft_limit_bytes"] == (64 << 30) * 7 // 10
+    assert policy["checkpoint_frequency_records"] == 8
+
+
+def test_disk_margin_is_fail_closed_and_exact_boundary_passes(selection):
+    disk = core0a._disk_estimate(selection)
+    required = disk["required_free_disk_bytes"]
+    with pytest.raises(core0a.RTA4Core0APilotV2Error, match="free disk"):
+        core0a._resource_policy(
+            _observation(free=required - 1), disk,
+        )
+    policy = core0a._resource_policy(
+        _observation(free=required), disk,
+    )
+    assert policy["disk_preflight_passed"] is True
+    assert disk["explicit_safety_margin_bytes"] >= 1 << 30
+
+
+def test_unvalidated_or_noncanonical_frozen_inputs_are_rejected(
+    tmp_path, monkeypatch, live_portable,
+):
+    validated, _, production, observed, workspace = _validate_fixture(
+        tmp_path, monkeypatch, live_portable,
+    )
+    bundle_path = tmp_path / "portable.json"
+    bundle_path.write_text(
+        json.dumps(live_portable, indent=2), encoding="utf-8",
+    )
+    production_path = tmp_path / "production.json"
+    deployment_path = tmp_path / "deployment.json"
+    core0a.write_canonical_json(production_path, production)
+    core0a.write_canonical_json(
+        deployment_path, validated.deployment_manifest,
+    )
+    monkeypatch.setattr(
+        core0a, "_observe_autodl_resources", lambda _root: observed,
+    )
+    with pytest.raises(core0a.RTA4Core0APilotV2Error, match="not canonical"):
+        core0a.validate_autodl_deployment_manifest_v2(
+            portable_bundle_path=bundle_path,
+            selection_artifact_path=(
+                core0a.PROJECT_ROOT / core0a.SELECTION_ARTIFACT_PATH
+            ),
+            candidate_config_path=(
+                core0a.PROJECT_ROOT / core0a.CANDIDATE_CONFIG_PATH
+            ),
+            production_manifest_path=production_path,
+            deployment_manifest_path=deployment_path,
+            source_root=core0a.PROJECT_ROOT,
+            deployment_workspace_root=workspace,
+            require_clean=True,
+        )
 
 
 def test_candidate_config_retry_resume_and_output_contracts():
@@ -388,6 +806,11 @@ def test_candidate_config_retry_resume_and_output_contracts():
     assert config["deployment_policy"]["checkpoint_interval_records"] == 8
     assert config["output_namespace"] == core0a.CORE0A_OUTPUT_NAMESPACE
     assert "formal_v2" not in config["output_namespace"]
+    migration = config["seed_migration_contract"]
+    assert migration["migration_mode"] == core0a.CORE0A_SEED_MIGRATION_MODE
+    assert migration["derived_generation_seed_is_profile_and_domain_scoped"] is True
+    assert migration["v1_v2_seed_equality_required"] is False
+    assert migration["historical_positions_not_v1_taskset_instances"] is True
 
 
 def test_bundle_and_handoff_are_complete_and_non_sensitive(portable):
@@ -397,6 +820,13 @@ def test_bundle_and_handoff_are_complete_and_non_sensitive(portable):
     assert len(portable["required_source_files"]["production_default_closure"]) == 53
     assert len(handoff["steps"]) == 15
     assert handoff["authorization_required_before_any_record"] is True
+    assert portable["contract_version"] == core0a.CORE0A_PORTABLE_CONTRACT_VERSION
+    assert portable["seed_migration_contract"] == (
+        core0a.build_seed_migration_contract_v2()
+    )
+    assert portable["autodl_deployment_contract"][
+        "formal_validator_accepts_file_paths_only"
+    ] is True
     encoded = json.dumps({"bundle": portable, "handoff": handoff}, sort_keys=True)
     assert "/tmp/" not in encoded
     assert "simulator_binary" not in encoded
