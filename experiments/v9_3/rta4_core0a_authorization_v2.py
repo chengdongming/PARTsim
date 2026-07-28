@@ -411,6 +411,9 @@ def _candidate_material(
         "artifact_kind": (
             "NON_EXECUTABLE_ENGINEERING_AUTHORIZATION_CANDIDATE"
         ),
+        "execution_environment_classification": deployment[
+            "execution_environment_classification"
+        ],
         "source": source,
         "selection": selection_binding,
         "identities": identity_binding,

@@ -13,14 +13,16 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from experiments.v9_3.rta4_core0a_execution_authorization_v2 import (
+    acquire_core0a_run_claim_v2,
     build_core0a_candidate_review_receipt_v2,
     build_core0a_executable_engineering_authorization_v2,
+    complete_core0a_run_v2,
+    fail_core0a_run_v2,
     preflight_core0a_engineering_pilot_execution_v2,
     preflight_core0a_engineering_pilot_resume_v2,
     validate_core0a_candidate_review_receipt_v2,
     validate_core0a_executable_engineering_authorization_v2,
     validate_core0a_nonce_consumption_receipt_v2,
-    write_test_only_core0a_run_started_receipt_v2,
 )
 
 
@@ -32,7 +34,7 @@ def main() -> int:
             "receipt", "receipt-check",
             "authorization", "authorization-check",
             "preflight", "resume-preflight",
-            "test-start", "consumption-check",
+            "acquire", "complete", "fail", "consumption-check",
         ),
     )
     parser.add_argument("--candidate", type=Path, required=True)
@@ -42,9 +44,9 @@ def main() -> int:
     parser.add_argument("--reviewed-at")
     parser.add_argument("--executable-authorization", type=Path)
     parser.add_argument("--verification-time")
-    parser.add_argument("--consumption-receipt", type=Path)
     parser.add_argument("--current-utc")
     parser.add_argument("--started-at")
+    parser.add_argument("--completed-at")
     parser.add_argument("--portable-bundle", type=Path, required=True)
     parser.add_argument("--selection-artifact", type=Path, required=True)
     parser.add_argument("--candidate-config", type=Path, required=True)
@@ -78,6 +80,9 @@ def main() -> int:
                     "review_receipt_identity"
                 ],
                 "status": receipt["status"],
+                "execution_environment_classification": receipt[
+                    "execution_environment_classification"
+                ],
             }
         elif args.mode == "receipt-check":
             receipt = validate_core0a_candidate_review_receipt_v2(
@@ -91,6 +96,9 @@ def main() -> int:
                     "review_receipt_identity"
                 ],
                 "status": receipt["status"],
+                "execution_environment_classification": receipt[
+                    "execution_environment_classification"
+                ],
             }
         elif args.mode == "authorization":
             authorization = build_core0a_executable_engineering_authorization_v2(
@@ -102,8 +110,8 @@ def main() -> int:
             )
             result = {
                 "mode": args.mode,
-                "authorization_classification": authorization[
-                    "authorization_classification"
+                "execution_environment_classification": authorization[
+                    "execution_environment_classification"
                 ],
                 "executable_authorization_identity": authorization[
                     "executable_authorization_identity"
@@ -119,8 +127,8 @@ def main() -> int:
             )
             result = {
                 "mode": args.mode,
-                "authorization_classification": validated.authorization[
-                    "authorization_classification"
+                "execution_environment_classification": validated.authorization[
+                    "execution_environment_classification"
                 ],
                 "executable_authorization_identity": validated.authorization[
                     "executable_authorization_identity"
@@ -137,24 +145,59 @@ def main() -> int:
                 executable_authorization_path=args.executable_authorization,
                 candidate_path=args.candidate,
                 review_receipt_path=args.review_receipt,
-                consumption_receipt_path=args.consumption_receipt,
                 current_utc=args.current_utc,
                 **common,
             )
             result = {
                 "mode": args.mode,
                 "authorization_identity": context.authorization_identity,
+                "validation_passed": context.validation_passed,
+                "run_state": context.run_state,
+                "claim_acquired": context.claim_acquired,
+                "new_run_eligible": context.new_run_eligible,
+                "resume_only": context.resume_only,
+                "runner_invocation_allowed": (
+                    context.runner_invocation_allowed
+                ),
+                "execution_environment_classification": (
+                    context.execution_environment_classification
+                ),
                 "execution_mode": context.execution_mode,
-                "new_run_allowed": context.new_run_allowed,
-                "resume_allowed": context.resume_allowed,
             }
-        elif args.mode == "test-start":
-            receipt = write_test_only_core0a_run_started_receipt_v2(
+        elif args.mode == "acquire":
+            context = acquire_core0a_run_claim_v2(
                 executable_authorization_path=args.executable_authorization,
                 candidate_path=args.candidate,
                 review_receipt_path=args.review_receipt,
-                consumption_receipt_path=args.consumption_receipt,
                 started_at=args.started_at,
+                **common,
+            )
+            result = {
+                "mode": args.mode,
+                "authorization_identity": context.authorization_identity,
+                "validation_passed": context.validation_passed,
+                "run_state": context.run_state,
+                "claim_acquired": context.claim_acquired,
+                "new_run_eligible": context.new_run_eligible,
+                "resume_only": context.resume_only,
+                "runner_invocation_allowed": (
+                    context.runner_invocation_allowed
+                ),
+                "execution_environment_classification": (
+                    context.execution_environment_classification
+                ),
+            }
+        elif args.mode in {"complete", "fail"}:
+            transition = (
+                complete_core0a_run_v2
+                if args.mode == "complete"
+                else fail_core0a_run_v2
+            )
+            receipt = transition(
+                executable_authorization_path=args.executable_authorization,
+                candidate_path=args.candidate,
+                review_receipt_path=args.review_receipt,
+                completed_at=args.completed_at,
                 **common,
             )
             result = {
@@ -163,13 +206,15 @@ def main() -> int:
                     "consumption_receipt_identity"
                 ],
                 "status": receipt["status"],
+                "execution_environment_classification": receipt[
+                    "execution_environment_classification"
+                ],
             }
         else:
             receipt = validate_core0a_nonce_consumption_receipt_v2(
                 executable_authorization_path=args.executable_authorization,
                 candidate_path=args.candidate,
                 review_receipt_path=args.review_receipt,
-                consumption_receipt_path=args.consumption_receipt,
                 **common,
             )
             result = {
@@ -178,6 +223,9 @@ def main() -> int:
                     "consumption_receipt_identity"
                 ],
                 "status": receipt["status"],
+                "execution_environment_classification": receipt[
+                    "execution_environment_classification"
+                ],
             }
         print(json.dumps(result, ensure_ascii=False, sort_keys=True, indent=2))
     except Exception as exc:

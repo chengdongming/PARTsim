@@ -14,6 +14,8 @@ if str(ROOT) not in sys.path:
 
 from experiments.v9_3.rta4_core0a_pilot_v2 import (
     CANDIDATE_CONFIG_PATH,
+    CORE0A_AUTODL_CONTROLLED_EXECUTION_ENVIRONMENT_CLASSIFICATION,
+    CORE0A_TEST_ONLY_EXECUTION_ENVIRONMENT_CLASSIFICATION,
     PROJECT_ROOT,
     SELECTION_ARTIFACT_PATH,
     build_autodl_deployment_manifest_v2,
@@ -61,6 +63,18 @@ def main() -> int:
     parser.add_argument("--production-manifest", type=Path)
     parser.add_argument("--source-root", type=Path)
     parser.add_argument("--deployment-workspace-root", type=Path)
+    parser.add_argument(
+        "--execution-environment-classification",
+        choices=(
+            CORE0A_TEST_ONLY_EXECUTION_ENVIRONMENT_CLASSIFICATION,
+            CORE0A_AUTODL_CONTROLLED_EXECUTION_ENVIRONMENT_CLASSIFICATION,
+        ),
+        default=CORE0A_TEST_ONLY_EXECUTION_ENVIRONMENT_CLASSIFICATION,
+        help=(
+            "freeze the explicit deployment execution class; controlled "
+            "classification is selected only during AutoDL deployment"
+        ),
+    )
     parser.add_argument(
         "--artifact",
         choices=("selection", "bundle", "handoff", "deployment", "all"),
@@ -139,6 +153,13 @@ def main() -> int:
                     ),
                 )
                 deployment = dict(validated.deployment_manifest)
+                if deployment[
+                    "execution_environment_classification"
+                ] != args.execution_environment_classification:
+                    raise ValueError(
+                        "deployment execution classification differs from "
+                        "the explicit deployment check"
+                    )
                 execution_identity = validated.execution_identity
             else:
                 production = load_and_validate_production_build_manifest(
@@ -152,6 +173,9 @@ def main() -> int:
                     deployment_workspace_root=(
                         args.deployment_workspace_root
                     ),
+                    execution_environment_classification=(
+                        args.execution_environment_classification
+                    ),
                 )
                 write_canonical_json(args.deployment_output, deployment)
                 execution_identity = None
@@ -164,6 +188,9 @@ def main() -> int:
                 "taskset_store_root": deployment["taskset_store_root"],
                 "worker_count": deployment["worker_count"],
                 "max_in_flight": deployment["max_in_flight"],
+                "execution_environment_classification": deployment[
+                    "execution_environment_classification"
+                ],
             })
             if execution_identity is not None:
                 details["execution_identity"] = execution_identity

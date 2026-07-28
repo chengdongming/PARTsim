@@ -12,6 +12,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
+import os
 from pathlib import Path
 import re
 from typing import Any, Dict, Mapping
@@ -24,11 +25,14 @@ from .rta4_core0a_authorization_v2 import (
 )
 from .rta4_core0a_pilot_v2 import (
     AUTHORIZED_CORE0A_ENGINEERING_PILOT,
+    CORE0A_AUTODL_CONTROLLED_EXECUTION_ENVIRONMENT_CLASSIFICATION,
     CORE0A_AUTHORIZATION_SCOPE,
     CORE0A_MAX_RUNS,
+    CORE0A_TEST_ONLY_EXECUTION_ENVIRONMENT_CLASSIFICATION,
     EXPECTED_EXECUTION_COUNT,
     RTA4Core0APilotV2Error,
     ValidatedCore0ADeployment,
+    canonical_json_bytes,
     load_strict_canonical_json,
     validate_autodl_deployment_manifest_v2,
 )
@@ -69,24 +73,37 @@ CORE0A_EXECUTABLE_AUTHORIZATION_DOMAIN = (
     "EXECUTABLE_ENGINEERING_AUTHORIZATION:v1"
 )
 CORE0A_CONTROLLED_AUTHORIZATION_CLASSIFICATION = (
-    "CONTROLLED_RESEARCH_EXECUTION_ENVIRONMENT"
+    CORE0A_AUTODL_CONTROLLED_EXECUTION_ENVIRONMENT_CLASSIFICATION
 )
 CORE0A_TEST_ONLY_AUTHORIZATION_CLASSIFICATION = (
-    "TEST_ONLY_NON_EXECUTABLE_FIXTURE"
+    CORE0A_TEST_ONLY_EXECUTION_ENVIRONMENT_CLASSIFICATION
 )
 
 CORE0A_NONCE_CONSUMPTION_RECEIPT_SCHEMA = (
-    "ASAP_BLOCK_V9_3_RTA4_CORE0A_NONCE_CONSUMPTION_RECEIPT_V1"
+    "ASAP_BLOCK_V9_3_RTA4_CORE0A_NONCE_CONSUMPTION_RECEIPT_V2"
 )
 CORE0A_NONCE_CONSUMPTION_CONTRACT_VERSION = (
-    "ASAP_BLOCK_V9_3_RTA4_CORE0A_NONCE_CONSUMPTION_STATE_MACHINE_V1"
+    "ASAP_BLOCK_V9_3_RTA4_CORE0A_NONCE_CONSUMPTION_STATE_MACHINE_V2"
 )
 CORE0A_NONCE_CONSUMPTION_DOMAIN = (
-    "ASAP_BLOCK:V9.3:RTA4:CORE0A:NONCE_CONSUMPTION_RECEIPT:v1"
+    "ASAP_BLOCK:V9.3:RTA4:CORE0A:NONCE_CONSUMPTION_RECEIPT:v2"
 )
 CORE0A_RESULT_ROOT_DOMAIN = (
     "ASAP_BLOCK:V9.3:RTA4:CORE0A:AUTHORIZED_RESULT_ROOT:v1"
 )
+CORE0A_RUN_CLAIM_SCHEMA = "ASAP_BLOCK_V9_3_RTA4_CORE0A_RUN_CLAIM_V2"
+CORE0A_RUN_CLAIM_DOMAIN = "ASAP_BLOCK:V9.3:RTA4:CORE0A:RUN_CLAIM:v2"
+CORE0A_RUN_STATE_LOCATOR_DOMAIN = (
+    "ASAP_BLOCK:V9.3:RTA4:CORE0A:RUN_STATE_LOCATOR:v1"
+)
+CORE0A_RUN_STATE_RELATIVE_LOCATOR_V1 = (
+    ".core0a_authorization/{executable_authorization_identity}/run-state"
+)
+CORE0A_RUN_STATE_RECEIPT_NAME = "receipt.json"
+CORE0A_RUN_STATE_CLAIM_NAME = "claim"
+CORE0A_RUN_STATE_TERMINAL_CLAIM_NAME = "terminal-claim"
+CORE0A_UNCLAIMED = "UNCLAIMED"
+CORE0A_CLAIMED_INCOMPLETE = "CLAIMED_INCOMPLETE"
 CORE0A_RUN_STARTED = "RUN_STARTED"
 CORE0A_RUN_COMPLETED = "RUN_COMPLETED"
 CORE0A_RUN_FAILED = "RUN_FAILED"
@@ -94,7 +111,6 @@ CORE0A_RUN_FAILED = "RUN_FAILED"
 _REVIEWER_PATTERN = re.compile(
     r"[A-Za-z0-9][A-Za-z0-9._:@ -]{0,127}\Z", re.ASCII,
 )
-_TEST_ONLY_REVIEWER_PREFIX = "TEST_ONLY_"
 _TERMINAL_REVIEW_STATUSES = {
     CORE0A_CANDIDATE_REAUDIT_PASS,
     CORE0A_CANDIDATE_REAUDIT_REPAIR_REQUIRED,
@@ -132,8 +148,16 @@ class Core0AExecutionContext:
     authorized_cores: tuple[str, ...]
     forbidden_cores: tuple[str, ...]
     result_usage: str
+    execution_environment_classification: str
     authorization_classification: str
     test_only_non_executable_fixture: bool
+    validation_passed: bool
+    run_state: str
+    run_state_locator: str
+    run_state_locator_identity: str
+    claim_acquired: bool
+    new_run_eligible: bool
+    resume_only: bool
     runner_invocation_allowed: bool
     execution_mode: str
     new_run_allowed: bool
@@ -272,6 +296,36 @@ def _validated_deployment(
     )
 
 
+def _require_classification_chain(
+    candidate: Mapping[str, Any],
+    receipt: Mapping[str, Any] | None,
+    validated: ValidatedCore0ADeployment,
+) -> str:
+    candidate_classification = candidate.get(
+        "execution_environment_classification"
+    )
+    deployment_classification = validated.deployment_manifest.get(
+        "execution_environment_classification"
+    )
+    if (
+        candidate_classification
+        not in {
+            CORE0A_TEST_ONLY_AUTHORIZATION_CLASSIFICATION,
+            CORE0A_CONTROLLED_AUTHORIZATION_CLASSIFICATION,
+        }
+        or candidate_classification != deployment_classification
+        or (
+            receipt is not None
+            and receipt.get("execution_environment_classification")
+            != candidate_classification
+        )
+    ):
+        raise RTA4Core0AExecutionAuthorizationV2Error(
+            "deployment/candidate/review execution classification mismatch"
+        )
+    return str(candidate_classification)
+
+
 def _review_receipt_material(
     *,
     candidate: Mapping[str, Any],
@@ -291,18 +345,23 @@ def _review_receipt_material(
         candidate, reviewed_at, "reviewed_at",
     )
     terminal = _review_report_terminal_status(report)
-    classification = (
-        CORE0A_TEST_ONLY_AUTHORIZATION_CLASSIFICATION
-        if reviewer.startswith(_TEST_ONLY_REVIEWER_PREFIX)
-        else CORE0A_CONTROLLED_AUTHORIZATION_CLASSIFICATION
+    classification = candidate.get(
+        "execution_environment_classification"
     )
+    if classification not in {
+        CORE0A_TEST_ONLY_AUTHORIZATION_CLASSIFICATION,
+        CORE0A_CONTROLLED_AUTHORIZATION_CLASSIFICATION,
+    }:
+        raise RTA4Core0AExecutionAuthorizationV2Error(
+            "candidate execution environment classification is invalid"
+        )
     return {
         "review_receipt_schema": CORE0A_REVIEW_RECEIPT_SCHEMA,
         "review_receipt_contract_version": (
             CORE0A_REVIEW_RECEIPT_CONTRACT_VERSION
         ),
         "status": CORE0A_REVIEW_RECEIPT_STATUS,
-        "receipt_classification": classification,
+        "execution_environment_classification": classification,
         "candidate_identity": candidate["authorization_candidate_identity"],
         "candidate_artifact_sha256": _sha256(candidate_source),
         "request_identity": candidate["request"][
@@ -382,13 +441,6 @@ def build_core0a_candidate_review_receipt_v2(
         source_root=source_root,
         deployment_workspace_root=deployment_workspace_root,
     )
-    receipt = _build_review_receipt(
-        candidate=candidate,
-        candidate_path=candidate_path,
-        review_report_path=review_report_path,
-        reviewer_label=reviewer_label,
-        reviewed_at=reviewed_at,
-    )
     validated = _validated_deployment(
         portable_bundle_path=portable_bundle_path,
         selection_artifact_path=selection_artifact_path,
@@ -397,6 +449,14 @@ def build_core0a_candidate_review_receipt_v2(
         deployment_manifest_path=deployment_manifest_path,
         source_root=source_root,
         deployment_workspace_root=deployment_workspace_root,
+    )
+    _require_classification_chain(candidate, None, validated)
+    receipt = _build_review_receipt(
+        candidate=candidate,
+        candidate_path=candidate_path,
+        review_report_path=review_report_path,
+        reviewer_label=reviewer_label,
+        reviewed_at=reviewed_at,
     )
     output = _authorization_output_path(
         review_receipt_output_path, validated,
@@ -427,6 +487,15 @@ def validate_core0a_candidate_review_receipt_v2(
         source_root=source_root,
         deployment_workspace_root=deployment_workspace_root,
     )
+    validated = _validated_deployment(
+        portable_bundle_path=portable_bundle_path,
+        selection_artifact_path=selection_artifact_path,
+        candidate_config_path=candidate_config_path,
+        production_manifest_path=production_manifest_path,
+        deployment_manifest_path=deployment_manifest_path,
+        source_root=source_root,
+        deployment_workspace_root=deployment_workspace_root,
+    )
     document = load_strict_canonical_json(review_receipt_path)
     try:
         expected = _build_review_receipt(
@@ -444,6 +513,7 @@ def validate_core0a_candidate_review_receipt_v2(
         raise RTA4Core0AExecutionAuthorizationV2Error(
             "review receipt differs from candidate/report reconstruction"
         )
+    _require_classification_chain(candidate, document, validated)
     return document
 
 
@@ -451,6 +521,7 @@ def _authorization_material(
     *,
     candidate: Mapping[str, Any],
     receipt: Mapping[str, Any],
+    review_receipt_artifact_sha256: str,
 ) -> Dict[str, Any]:
     if receipt["candidate_identity"] != candidate[
         "authorization_candidate_identity"
@@ -458,15 +529,24 @@ def _authorization_material(
         raise RTA4Core0AExecutionAuthorizationV2Error(
             "review receipt does not bind the exact candidate"
         )
+    classification = candidate["execution_environment_classification"]
+    if receipt.get(
+        "execution_environment_classification"
+    ) != classification:
+        raise RTA4Core0AExecutionAuthorizationV2Error(
+            "review receipt cannot change deployment execution classification"
+        )
+    controlled = (
+        classification == CORE0A_CONTROLLED_AUTHORIZATION_CLASSIFICATION
+    )
     authorization_state = {
-        "engineering_pilot_authorization": True,
-        "executable_authorization": True,
+        "engineering_pilot_authorization": controlled,
+        "executable_authorization": controlled,
         "authorization_review_passed": True,
-        "pilot_execution_allowed": True,
+        "pilot_execution_allowed": controlled,
         "formal_authorization": False,
         "production_authorization": False,
     }
-    classification = receipt["receipt_classification"]
     if classification not in {
         CORE0A_TEST_ONLY_AUTHORIZATION_CLASSIFICATION,
         CORE0A_CONTROLLED_AUTHORIZATION_CLASSIFICATION,
@@ -480,7 +560,7 @@ def _authorization_material(
             CORE0A_EXECUTABLE_AUTHORIZATION_CONTRACT_VERSION
         ),
         "status": AUTHORIZED_CORE0A_ENGINEERING_PILOT,
-        "authorization_classification": classification,
+        "execution_environment_classification": classification,
         "test_only_non_executable_fixture": (
             classification == CORE0A_TEST_ONLY_AUTHORIZATION_CLASSIFICATION
         ),
@@ -498,6 +578,9 @@ def _authorization_material(
         },
         "review_binding": {
             "review_receipt_identity": receipt["review_receipt_identity"],
+            "review_receipt_artifact_sha256": (
+                review_receipt_artifact_sha256
+            ),
             "review_report_sha256": receipt["review_report_sha256"],
             "reviewer_label": receipt["reviewer_label"],
             "reviewed_at": receipt["reviewed_at"],
@@ -512,6 +595,13 @@ def _authorization_material(
         "disk_contract": deepcopy(candidate["disk_contract"]),
         "scope": deepcopy(candidate["scope"]),
         "request": deepcopy(candidate["request"]),
+        "run_state_binding": {
+            "relative_locator_template": (
+                CORE0A_RUN_STATE_RELATIVE_LOCATOR_V1
+            ),
+            "claim_schema": CORE0A_RUN_CLAIM_SCHEMA,
+            "receipt_schema": CORE0A_NONCE_CONSUMPTION_RECEIPT_SCHEMA,
+        },
         "authorization_state": authorization_state,
     }
 
@@ -520,10 +610,12 @@ def _build_executable_authorization(
     *,
     candidate: Mapping[str, Any],
     receipt: Mapping[str, Any],
+    review_receipt_artifact_sha256: str,
 ) -> Dict[str, Any]:
     material = _authorization_material(
         candidate=candidate,
         receipt=receipt,
+        review_receipt_artifact_sha256=review_receipt_artifact_sha256,
     )
     return {
         **material,
@@ -576,6 +668,7 @@ def build_core0a_executable_engineering_authorization_v2(
     authorization = _build_executable_authorization(
         candidate=candidate,
         receipt=receipt,
+        review_receipt_artifact_sha256=_sha256(review_receipt_path),
     )
     output = _authorization_output_path(
         authorization_output_path, validated,
@@ -619,6 +712,7 @@ def validate_core0a_executable_engineering_authorization_v2(
     expected = _build_executable_authorization(
         candidate=candidate,
         receipt=receipt,
+        review_receipt_artifact_sha256=_sha256(review_receipt_path),
     )
     if document != expected:
         raise RTA4Core0AExecutionAuthorizationV2Error(
@@ -648,100 +742,6 @@ def _result_root_identity(
     })
 
 
-def _consumption_receipt_material(
-    *,
-    authorization: Mapping[str, Any],
-    status: str,
-    started_at: str,
-    completed_at: str | None,
-) -> Dict[str, Any]:
-    started_text, started = _canonical_timestamp(started_at, "started_at")
-    if status == CORE0A_RUN_STARTED:
-        if completed_at is not None:
-            raise RTA4Core0AExecutionAuthorizationV2Error(
-                "RUN_STARTED cannot have completed_at"
-            )
-        completed_text = None
-    elif status in {CORE0A_RUN_COMPLETED, CORE0A_RUN_FAILED}:
-        if completed_at is None:
-            raise RTA4Core0AExecutionAuthorizationV2Error(
-                "terminal consumption receipt requires completed_at"
-            )
-        completed_text, completed = _canonical_timestamp(
-            completed_at, "completed_at",
-        )
-        if completed < started:
-            raise RTA4Core0AExecutionAuthorizationV2Error(
-                "completed_at precedes started_at"
-            )
-    else:
-        raise RTA4Core0AExecutionAuthorizationV2Error(
-            "nonce consumption status is invalid"
-        )
-    return {
-        "consumption_receipt_schema": (
-            CORE0A_NONCE_CONSUMPTION_RECEIPT_SCHEMA
-        ),
-        "consumption_contract_version": (
-            CORE0A_NONCE_CONSUMPTION_CONTRACT_VERSION
-        ),
-        "status": status,
-        "run_nonce": authorization["request"]["run_nonce"],
-        "authorization_identity": authorization[
-            "executable_authorization_identity"
-        ],
-        "execution_identity": authorization["identities"][
-            "combined_execution_identity"
-        ],
-        "started_at": started_text,
-        "completed_at": completed_text,
-        "result_root_identity": _result_root_identity(authorization),
-    }
-
-
-def _build_consumption_receipt(
-    *,
-    authorization: Mapping[str, Any],
-    status: str,
-    started_at: str,
-    completed_at: str | None,
-) -> Dict[str, Any]:
-    material = _consumption_receipt_material(
-        authorization=authorization,
-        status=status,
-        started_at=started_at,
-        completed_at=completed_at,
-    )
-    return {
-        **material,
-        "consumption_receipt_identity": domain_hash(
-            CORE0A_NONCE_CONSUMPTION_DOMAIN, material,
-        ),
-    }
-
-
-def _validate_consumption_receipt(
-    document: Mapping[str, Any],
-    authorization: Mapping[str, Any],
-) -> Dict[str, Any]:
-    try:
-        expected = _build_consumption_receipt(
-            authorization=authorization,
-            status=document["status"],
-            started_at=document["started_at"],
-            completed_at=document["completed_at"],
-        )
-    except (KeyError, TypeError) as exc:
-        raise RTA4Core0AExecutionAuthorizationV2Error(
-            "nonce consumption receipt fields are absent"
-        ) from exc
-    if dict(document) != expected:
-        raise RTA4Core0AExecutionAuthorizationV2Error(
-            "nonce consumption receipt differs from authorization binding"
-        )
-    return dict(document)
-
-
 def _validated_authorization_from_paths(
     *,
     executable_authorization_path: Path | str,
@@ -769,41 +769,6 @@ def _validated_authorization_from_paths(
     )
 
 
-def validate_core0a_nonce_consumption_receipt_v2(
-    *,
-    consumption_receipt_path: Path | str,
-    executable_authorization_path: Path | str,
-    candidate_path: Path | str,
-    review_receipt_path: Path | str,
-    portable_bundle_path: Path | str,
-    selection_artifact_path: Path | str,
-    candidate_config_path: Path | str,
-    production_manifest_path: Path | str,
-    deployment_manifest_path: Path | str,
-    source_root: Path | str,
-    deployment_workspace_root: Path | str,
-) -> Dict[str, Any]:
-    validated = _validated_authorization_from_paths(
-        executable_authorization_path=executable_authorization_path,
-        candidate_path=candidate_path,
-        review_receipt_path=review_receipt_path,
-        portable_bundle_path=portable_bundle_path,
-        selection_artifact_path=selection_artifact_path,
-        candidate_config_path=candidate_config_path,
-        production_manifest_path=production_manifest_path,
-        deployment_manifest_path=deployment_manifest_path,
-        source_root=source_root,
-        deployment_workspace_root=deployment_workspace_root,
-    )
-    receipt = _resolved_existing_file(
-        consumption_receipt_path, "nonce consumption receipt",
-    )
-    return _validate_consumption_receipt(
-        load_strict_canonical_json(receipt),
-        validated.authorization,
-    )
-
-
 def _preflight_time(
     authorization: Mapping[str, Any], current_utc: str,
 ) -> str:
@@ -820,12 +785,407 @@ def _preflight_time(
     return current_text
 
 
+@dataclass(frozen=True)
+class _Core0ARunStatePaths:
+    workspace_root: Path
+    output_root: Path
+    control_root: Path
+    authorization_directory: Path
+    run_state_directory: Path
+    claim_path: Path
+    receipt_path: Path
+    terminal_claim_path: Path
+    locator_identity: str
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
+def _run_state_paths(
+    validated: ValidatedCore0AExecutableAuthorization,
+) -> _Core0ARunStatePaths:
+    authorization = validated.authorization
+    deployment = validated.validated_deployment.deployment_manifest
+    authorization_identity = authorization[
+        "executable_authorization_identity"
+    ]
+    workspace_root = Path(
+        authorization["paths"]["deployment_workspace_root"]
+    )
+    output_root = Path(authorization["paths"]["actual_output_root"])
+    if (
+        not workspace_root.is_absolute()
+        or ".." in workspace_root.parts
+        or not output_root.is_absolute()
+        or ".." in output_root.parts
+        or str(output_root) != deployment.get("actual_output_root")
+        or str(workspace_root)
+        != deployment.get("deployment_workspace_root")
+        or not _is_within(output_root, workspace_root)
+    ):
+        raise RTA4Core0AExecutionAuthorizationV2Error(
+            "validated authorization output root is not canonical"
+        )
+    control_root = output_root / ".core0a_authorization"
+    authorization_directory = control_root / authorization_identity
+    run_state_directory = authorization_directory / "run-state"
+    if (
+        authorization["run_state_binding"].get(
+            "relative_locator_template"
+        )
+        != CORE0A_RUN_STATE_RELATIVE_LOCATOR_V1
+    ):
+        raise RTA4Core0AExecutionAuthorizationV2Error(
+            "authorization run-state locator contract mismatch"
+        )
+    for path in (
+        control_root,
+        authorization_directory,
+        run_state_directory,
+    ):
+        if ".." in path.parts or not _is_within(path, output_root):
+            raise RTA4Core0AExecutionAuthorizationV2Error(
+                "run-state locator escapes the CORE-0A output root"
+            )
+        if path.resolve(strict=False) != path:
+            raise RTA4Core0AExecutionAuthorizationV2Error(
+                "run-state locator contains a symlink or path alias"
+            )
+    locator_material = {
+        "relative_locator_template": CORE0A_RUN_STATE_RELATIVE_LOCATOR_V1,
+        "authorization_identity": authorization_identity,
+        "deployment_identity": authorization["identities"][
+            "deployment_manifest_identity"
+        ],
+        "execution_identity": authorization["identities"][
+            "combined_execution_identity"
+        ],
+        "canonical_output_root": str(output_root),
+        "run_nonce": authorization["request"]["run_nonce"],
+    }
+    return _Core0ARunStatePaths(
+        workspace_root=workspace_root,
+        output_root=output_root,
+        control_root=control_root,
+        authorization_directory=authorization_directory,
+        run_state_directory=run_state_directory,
+        claim_path=run_state_directory / CORE0A_RUN_STATE_CLAIM_NAME,
+        receipt_path=(
+            run_state_directory / CORE0A_RUN_STATE_RECEIPT_NAME
+        ),
+        terminal_claim_path=(
+            run_state_directory / CORE0A_RUN_STATE_TERMINAL_CLAIM_NAME
+        ),
+        locator_identity=domain_hash(
+            CORE0A_RUN_STATE_LOCATOR_DOMAIN, locator_material,
+        ),
+    )
+
+
+def _fsync_directory(path: Path) -> None:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_DIRECTORY"):
+        flags |= os.O_DIRECTORY
+    descriptor = os.open(path, flags)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _ensure_safe_directory(path: Path, output_root: Path) -> None:
+    try:
+        path.mkdir(mode=0o700, exist_ok=True)
+    except OSError as exc:
+        raise RTA4Core0AExecutionAuthorizationV2Error(
+            "cannot create deterministic run-state parent"
+        ) from exc
+    if (
+        path.is_symlink()
+        or not path.is_dir()
+        or path.resolve(strict=True) != path
+        or (path != output_root and not _is_within(path, output_root))
+    ):
+        raise RTA4Core0AExecutionAuthorizationV2Error(
+            "run-state parent is not a safe canonical directory"
+        )
+    _fsync_directory(path.parent)
+
+
+def _prepare_run_state_parent(paths: _Core0ARunStatePaths) -> None:
+    workspace = paths.workspace_root
+    if not workspace.is_dir() or workspace.is_symlink():
+        raise RTA4Core0AExecutionAuthorizationV2Error(
+            "deployment workspace is not a safe directory"
+        )
+    current = workspace
+    for component in paths.output_root.relative_to(workspace).parts:
+        current = current / component
+        _ensure_safe_directory(current, workspace)
+    _ensure_safe_directory(paths.control_root, workspace)
+    _ensure_safe_directory(
+        paths.authorization_directory, workspace,
+    )
+
+
+def _run_binding_material(
+    authorization: Mapping[str, Any],
+    paths: _Core0ARunStatePaths,
+) -> Dict[str, Any]:
+    return {
+        "authorization_identity": authorization[
+            "executable_authorization_identity"
+        ],
+        "candidate_identity": authorization["candidate_binding"][
+            "candidate_identity"
+        ],
+        "review_receipt_identity": authorization["review_binding"][
+            "review_receipt_identity"
+        ],
+        "source_commit": authorization["source"]["git_commit"],
+        "source_tree": authorization["source"]["git_tree"],
+        "deployment_identity": authorization["identities"][
+            "deployment_manifest_identity"
+        ],
+        "execution_identity": authorization["identities"][
+            "combined_execution_identity"
+        ],
+        "canonical_output_root": authorization["paths"][
+            "actual_output_root"
+        ],
+        "run_nonce": authorization["request"]["run_nonce"],
+        "run_state_relative_locator": (
+            CORE0A_RUN_STATE_RELATIVE_LOCATOR_V1
+        ),
+        "run_state_locator_identity": paths.locator_identity,
+        "execution_environment_classification": authorization[
+            "execution_environment_classification"
+        ],
+    }
+
+
+def _build_run_claim(
+    authorization: Mapping[str, Any],
+    paths: _Core0ARunStatePaths,
+    *,
+    claimed_at: str,
+) -> Dict[str, Any]:
+    claimed_text, _ = _canonical_timestamp(claimed_at, "claimed_at")
+    material = {
+        "run_claim_schema": CORE0A_RUN_CLAIM_SCHEMA,
+        **_run_binding_material(authorization, paths),
+        "claimed_at": claimed_text,
+    }
+    return {
+        **material,
+        "run_claim_identity": domain_hash(
+            CORE0A_RUN_CLAIM_DOMAIN, material,
+        ),
+    }
+
+
+def _validate_run_claim(
+    document: Mapping[str, Any],
+    authorization: Mapping[str, Any],
+    paths: _Core0ARunStatePaths,
+) -> Dict[str, Any]:
+    try:
+        expected = _build_run_claim(
+            authorization,
+            paths,
+            claimed_at=document["claimed_at"],
+        )
+    except (KeyError, TypeError) as exc:
+        raise RTA4Core0AExecutionAuthorizationV2Error(
+            "run claim fields are absent"
+        ) from exc
+    if dict(document) != expected:
+        raise RTA4Core0AExecutionAuthorizationV2Error(
+            "run claim differs from exact authorization binding"
+        )
+    return dict(document)
+
+
+def _write_exclusive_canonical_json(
+    path: Path,
+    document: Mapping[str, Any],
+) -> None:
+    descriptor = -1
+    try:
+        descriptor = os.open(
+            path,
+            os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+            0o600,
+        )
+        payload = canonical_json_bytes(document)
+        offset = 0
+        while offset < len(payload):
+            written = os.write(descriptor, payload[offset:])
+            if written <= 0:
+                raise OSError("short exclusive claim write")
+            offset += written
+        os.fsync(descriptor)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    _fsync_directory(path.parent)
+    _fsync_directory(path.parent.parent)
+
+
+def _consumption_receipt_material(
+    *,
+    authorization: Mapping[str, Any],
+    paths: _Core0ARunStatePaths,
+    status: str,
+    started_at: str,
+    completed_at: str | None,
+) -> Dict[str, Any]:
+    started_text, started = _canonical_timestamp(started_at, "started_at")
+    if status == CORE0A_RUN_STARTED:
+        if completed_at is not None:
+            raise RTA4Core0AExecutionAuthorizationV2Error(
+                "RUN_STARTED cannot have completed_at"
+            )
+        completed_text = None
+        result_identity = "INCOMPLETE_PENDING_TERMINAL"
+    elif status in {CORE0A_RUN_COMPLETED, CORE0A_RUN_FAILED}:
+        if completed_at is None:
+            raise RTA4Core0AExecutionAuthorizationV2Error(
+                "terminal consumption receipt requires completed_at"
+            )
+        completed_text, completed = _canonical_timestamp(
+            completed_at, "completed_at",
+        )
+        if completed < started:
+            raise RTA4Core0AExecutionAuthorizationV2Error(
+                "completed_at precedes started_at"
+            )
+        result_identity = _result_root_identity(authorization)
+    else:
+        raise RTA4Core0AExecutionAuthorizationV2Error(
+            "nonce consumption status is invalid"
+        )
+    return {
+        "consumption_receipt_schema": (
+            CORE0A_NONCE_CONSUMPTION_RECEIPT_SCHEMA
+        ),
+        "consumption_contract_version": (
+            CORE0A_NONCE_CONSUMPTION_CONTRACT_VERSION
+        ),
+        **_run_binding_material(authorization, paths),
+        "status": status,
+        "started_at": started_text,
+        "completed_at": completed_text,
+        "result_root_identity": result_identity,
+    }
+
+
+def _build_consumption_receipt(
+    *,
+    authorization: Mapping[str, Any],
+    paths: _Core0ARunStatePaths,
+    status: str,
+    started_at: str,
+    completed_at: str | None,
+) -> Dict[str, Any]:
+    material = _consumption_receipt_material(
+        authorization=authorization,
+        paths=paths,
+        status=status,
+        started_at=started_at,
+        completed_at=completed_at,
+    )
+    return {
+        **material,
+        "consumption_receipt_identity": domain_hash(
+            CORE0A_NONCE_CONSUMPTION_DOMAIN, material,
+        ),
+    }
+
+
+def _validate_consumption_receipt(
+    document: Mapping[str, Any],
+    authorization: Mapping[str, Any],
+    paths: _Core0ARunStatePaths,
+) -> Dict[str, Any]:
+    try:
+        expected = _build_consumption_receipt(
+            authorization=authorization,
+            paths=paths,
+            status=document["status"],
+            started_at=document["started_at"],
+            completed_at=document["completed_at"],
+        )
+    except (KeyError, TypeError) as exc:
+        raise RTA4Core0AExecutionAuthorizationV2Error(
+            "nonce consumption receipt fields are absent"
+        ) from exc
+    if dict(document) != expected:
+        raise RTA4Core0AExecutionAuthorizationV2Error(
+            "nonce consumption receipt differs from authorization binding"
+        )
+    return dict(document)
+
+
+def _read_run_state(
+    validated: ValidatedCore0AExecutableAuthorization,
+) -> tuple[str, _Core0ARunStatePaths, Dict[str, Any] | None]:
+    paths = _run_state_paths(validated)
+    run_state = paths.run_state_directory
+    if not run_state.exists():
+        return CORE0A_UNCLAIMED, paths, None
+    if (
+        run_state.is_symlink()
+        or not run_state.is_dir()
+        or run_state.resolve(strict=True) != run_state
+    ):
+        raise RTA4Core0AExecutionAuthorizationV2Error(
+            "run-state claim locator is not a canonical directory"
+        )
+    if not paths.claim_path.exists():
+        if paths.receipt_path.exists():
+            raise RTA4Core0AExecutionAuthorizationV2Error(
+                "run-state receipt exists without its prior claim"
+            )
+        return CORE0A_CLAIMED_INCOMPLETE, paths, None
+    if paths.claim_path.is_symlink() or not paths.claim_path.is_file():
+        raise RTA4Core0AExecutionAuthorizationV2Error(
+            "run claim is not a regular file"
+        )
+    _validate_run_claim(
+        load_strict_canonical_json(paths.claim_path),
+        validated.authorization,
+        paths,
+    )
+    if not paths.receipt_path.exists():
+        return CORE0A_CLAIMED_INCOMPLETE, paths, None
+    if paths.receipt_path.is_symlink() or not paths.receipt_path.is_file():
+        raise RTA4Core0AExecutionAuthorizationV2Error(
+            "run-state receipt is not a regular file"
+        )
+    receipt = _validate_consumption_receipt(
+        load_strict_canonical_json(paths.receipt_path),
+        validated.authorization,
+        paths,
+    )
+    return str(receipt["status"]), paths, receipt
+
+
 def _execution_context(
     validated: ValidatedCore0AExecutableAuthorization,
     *,
+    run_state: str,
+    paths: _Core0ARunStatePaths,
     execution_mode: str,
-    new_run_allowed: bool,
+    claim_acquired: bool,
+    new_run_eligible: bool,
     resume_allowed: bool,
+    runner_invocation_allowed: bool,
 ) -> Core0AExecutionContext:
     authorization = validated.authorization
     scope = authorization["scope"]
@@ -868,17 +1228,25 @@ def _execution_context(
         authorized_cores=tuple(scope["authorized_cores"]),
         forbidden_cores=tuple(scope["forbidden_cores"]),
         result_usage=scope["result_usage"],
+        execution_environment_classification=authorization[
+            "execution_environment_classification"
+        ],
         authorization_classification=authorization[
-            "authorization_classification"
+            "execution_environment_classification"
         ],
         test_only_non_executable_fixture=authorization[
             "test_only_non_executable_fixture"
         ],
-        runner_invocation_allowed=not authorization[
-            "test_only_non_executable_fixture"
-        ],
+        validation_passed=True,
+        run_state=run_state,
+        run_state_locator=str(paths.run_state_directory),
+        run_state_locator_identity=paths.locator_identity,
+        claim_acquired=claim_acquired,
+        new_run_eligible=new_run_eligible,
+        resume_only=resume_allowed,
+        runner_invocation_allowed=runner_invocation_allowed,
         execution_mode=execution_mode,
-        new_run_allowed=new_run_allowed,
+        new_run_allowed=new_run_eligible,
         resume_allowed=resume_allowed,
     )
 
@@ -895,7 +1263,6 @@ def preflight_core0a_engineering_pilot_execution_v2(
     deployment_manifest_path: Path | str,
     source_root: Path | str,
     deployment_workspace_root: Path | str,
-    consumption_receipt_path: Path | str,
     current_utc: str,
 ) -> Core0AExecutionContext:
     common = {
@@ -912,18 +1279,19 @@ def preflight_core0a_engineering_pilot_execution_v2(
     }
     validated = _validated_authorization_from_paths(**common)
     _preflight_time(validated.authorization, current_utc)
-    consumption = Path(consumption_receipt_path)
-    if consumption.exists():
-        document = load_strict_canonical_json(consumption)
-        _validate_consumption_receipt(document, validated.authorization)
-        raise RTA4Core0AExecutionAuthorizationV2Error(
-            "run nonce is already consumed; a second run is forbidden"
-        )
+    run_state, paths, _ = _read_run_state(validated)
     return _execution_context(
         validated,
-        execution_mode="NEW_RUN_ONLY",
-        new_run_allowed=True,
-        resume_allowed=False,
+        run_state=run_state,
+        paths=paths,
+        execution_mode="READ_ONLY_PREFLIGHT",
+        claim_acquired=False,
+        new_run_eligible=run_state == CORE0A_UNCLAIMED,
+        resume_allowed=run_state in {
+            CORE0A_CLAIMED_INCOMPLETE,
+            CORE0A_RUN_STARTED,
+        },
+        runner_invocation_allowed=False,
     )
 
 
@@ -939,7 +1307,6 @@ def preflight_core0a_engineering_pilot_resume_v2(
     deployment_manifest_path: Path | str,
     source_root: Path | str,
     deployment_workspace_root: Path | str,
-    consumption_receipt_path: Path | str,
     current_utc: str,
 ) -> Core0AExecutionContext:
     common = {
@@ -956,26 +1323,27 @@ def preflight_core0a_engineering_pilot_resume_v2(
     }
     validated = _validated_authorization_from_paths(**common)
     _preflight_time(validated.authorization, current_utc)
-    consumption = _resolved_existing_file(
-        consumption_receipt_path, "nonce consumption receipt",
-    )
-    document = _validate_consumption_receipt(
-        load_strict_canonical_json(consumption),
-        validated.authorization,
-    )
-    if document["status"] != CORE0A_RUN_STARTED:
+    run_state, paths, _ = _read_run_state(validated)
+    if run_state not in {
+        CORE0A_CLAIMED_INCOMPLETE,
+        CORE0A_RUN_STARTED,
+    }:
         raise RTA4Core0AExecutionAuthorizationV2Error(
-            "only the same RUN_STARTED authorization may resume"
+            "only the same claimed incomplete or RUN_STARTED run may resume"
         )
     return _execution_context(
         validated,
-        execution_mode="RESUME_EXISTING_RUN_ONLY",
-        new_run_allowed=False,
+        run_state=run_state,
+        paths=paths,
+        execution_mode="RESUME_ONLY",
+        claim_acquired=False,
+        new_run_eligible=False,
         resume_allowed=True,
+        runner_invocation_allowed=False,
     )
 
 
-def write_test_only_core0a_run_started_receipt_v2(
+def acquire_core0a_run_claim_v2(
     *,
     executable_authorization_path: Path | str,
     candidate_path: Path | str,
@@ -987,9 +1355,8 @@ def write_test_only_core0a_run_started_receipt_v2(
     deployment_manifest_path: Path | str,
     source_root: Path | str,
     deployment_workspace_root: Path | str,
-    consumption_receipt_path: Path | str,
     started_at: str,
-) -> Dict[str, Any]:
+) -> Core0AExecutionContext:
     validated = _validated_authorization_from_paths(
         executable_authorization_path=executable_authorization_path,
         candidate_path=candidate_path,
@@ -1003,50 +1370,237 @@ def write_test_only_core0a_run_started_receipt_v2(
         deployment_workspace_root=deployment_workspace_root,
     )
     authorization = validated.authorization
-    if authorization["authorization_classification"] != (
-        CORE0A_TEST_ONLY_AUTHORIZATION_CLASSIFICATION
-    ):
-        raise RTA4Core0AExecutionAuthorizationV2Error(
-            "this helper only writes TEST_ONLY nonce receipts"
-        )
     _preflight_time(authorization, started_at)
-    target = Path(consumption_receipt_path)
-    if target.exists():
+    state, paths, _ = _read_run_state(validated)
+    if state != CORE0A_UNCLAIMED:
         raise RTA4Core0AExecutionAuthorizationV2Error(
-            "nonce consumption receipt already exists"
+            "run state is already claimed; a second NEW_RUN is forbidden"
         )
-    output = _authorization_output_path(
-        target, validated.validated_deployment,
+    _prepare_run_state_parent(paths)
+    try:
+        os.mkdir(paths.run_state_directory, mode=0o700)
+    except FileExistsError as exc:
+        raise RTA4Core0AExecutionAuthorizationV2Error(
+            "run claim already exists; a second NEW_RUN is forbidden"
+        ) from exc
+    _fsync_directory(paths.authorization_directory)
+    claim = _build_run_claim(
+        authorization,
+        paths,
+        claimed_at=started_at,
     )
+    _write_exclusive_canonical_json(paths.claim_path, claim)
     receipt = _build_consumption_receipt(
         authorization=authorization,
+        paths=paths,
         status=CORE0A_RUN_STARTED,
         started_at=started_at,
         completed_at=None,
     )
-    _write_atomic_canonical_json(output, receipt)
+    _write_atomic_canonical_json(paths.receipt_path, receipt)
+    controlled = (
+        authorization["execution_environment_classification"]
+        == CORE0A_CONTROLLED_AUTHORIZATION_CLASSIFICATION
+        and authorization["authorization_state"] == {
+            "engineering_pilot_authorization": True,
+            "executable_authorization": True,
+            "authorization_review_passed": True,
+            "pilot_execution_allowed": True,
+            "formal_authorization": False,
+            "production_authorization": False,
+        }
+        and authorization["test_only_non_executable_fixture"] is False
+    )
+    return _execution_context(
+        validated,
+        run_state=CORE0A_RUN_STARTED,
+        paths=paths,
+        execution_mode="CLAIMED_NEW_RUN",
+        claim_acquired=True,
+        new_run_eligible=False,
+        resume_allowed=False,
+        runner_invocation_allowed=controlled,
+    )
+
+
+def validate_core0a_nonce_consumption_receipt_v2(
+    *,
+    executable_authorization_path: Path | str,
+    candidate_path: Path | str,
+    review_receipt_path: Path | str,
+    portable_bundle_path: Path | str,
+    selection_artifact_path: Path | str,
+    candidate_config_path: Path | str,
+    production_manifest_path: Path | str,
+    deployment_manifest_path: Path | str,
+    source_root: Path | str,
+    deployment_workspace_root: Path | str,
+) -> Dict[str, Any]:
+    validated = _validated_authorization_from_paths(
+        executable_authorization_path=executable_authorization_path,
+        candidate_path=candidate_path,
+        review_receipt_path=review_receipt_path,
+        portable_bundle_path=portable_bundle_path,
+        selection_artifact_path=selection_artifact_path,
+        candidate_config_path=candidate_config_path,
+        production_manifest_path=production_manifest_path,
+        deployment_manifest_path=deployment_manifest_path,
+        source_root=source_root,
+        deployment_workspace_root=deployment_workspace_root,
+    )
+    state, _, receipt = _read_run_state(validated)
+    if receipt is None:
+        raise RTA4Core0AExecutionAuthorizationV2Error(
+            f"run-state receipt is unavailable in state {state}"
+        )
     return receipt
+
+
+def _write_terminal_run_state(
+    *,
+    status: str,
+    completed_at: str,
+    executable_authorization_path: Path | str,
+    candidate_path: Path | str,
+    review_receipt_path: Path | str,
+    portable_bundle_path: Path | str,
+    selection_artifact_path: Path | str,
+    candidate_config_path: Path | str,
+    production_manifest_path: Path | str,
+    deployment_manifest_path: Path | str,
+    source_root: Path | str,
+    deployment_workspace_root: Path | str,
+) -> Dict[str, Any]:
+    validated = _validated_authorization_from_paths(
+        executable_authorization_path=executable_authorization_path,
+        candidate_path=candidate_path,
+        review_receipt_path=review_receipt_path,
+        portable_bundle_path=portable_bundle_path,
+        selection_artifact_path=selection_artifact_path,
+        candidate_config_path=candidate_config_path,
+        production_manifest_path=production_manifest_path,
+        deployment_manifest_path=deployment_manifest_path,
+        source_root=source_root,
+        deployment_workspace_root=deployment_workspace_root,
+    )
+    state, paths, receipt = _read_run_state(validated)
+    if state != CORE0A_RUN_STARTED or receipt is None:
+        raise RTA4Core0AExecutionAuthorizationV2Error(
+            "terminal transition requires the exact RUN_STARTED state"
+        )
+    transition = {
+        "authorization_identity": validated.authorization[
+            "executable_authorization_identity"
+        ],
+        "from_status": CORE0A_RUN_STARTED,
+        "to_status": status,
+        "completed_at": completed_at,
+    }
+    try:
+        _write_exclusive_canonical_json(
+            paths.terminal_claim_path,
+            transition,
+        )
+    except FileExistsError as exc:
+        raise RTA4Core0AExecutionAuthorizationV2Error(
+            "terminal transition was already claimed"
+        ) from exc
+    terminal = _build_consumption_receipt(
+        authorization=validated.authorization,
+        paths=paths,
+        status=status,
+        started_at=receipt["started_at"],
+        completed_at=completed_at,
+    )
+    _write_atomic_canonical_json(paths.receipt_path, terminal)
+    return terminal
+
+
+def complete_core0a_run_v2(
+    *,
+    executable_authorization_path: Path | str,
+    candidate_path: Path | str,
+    review_receipt_path: Path | str,
+    portable_bundle_path: Path | str,
+    selection_artifact_path: Path | str,
+    candidate_config_path: Path | str,
+    production_manifest_path: Path | str,
+    deployment_manifest_path: Path | str,
+    source_root: Path | str,
+    deployment_workspace_root: Path | str,
+    completed_at: str,
+) -> Dict[str, Any]:
+    return _write_terminal_run_state(
+        status=CORE0A_RUN_COMPLETED,
+        completed_at=completed_at,
+        executable_authorization_path=executable_authorization_path,
+        candidate_path=candidate_path,
+        review_receipt_path=review_receipt_path,
+        portable_bundle_path=portable_bundle_path,
+        selection_artifact_path=selection_artifact_path,
+        candidate_config_path=candidate_config_path,
+        production_manifest_path=production_manifest_path,
+        deployment_manifest_path=deployment_manifest_path,
+        source_root=source_root,
+        deployment_workspace_root=deployment_workspace_root,
+    )
+
+
+def fail_core0a_run_v2(
+    *,
+    executable_authorization_path: Path | str,
+    candidate_path: Path | str,
+    review_receipt_path: Path | str,
+    portable_bundle_path: Path | str,
+    selection_artifact_path: Path | str,
+    candidate_config_path: Path | str,
+    production_manifest_path: Path | str,
+    deployment_manifest_path: Path | str,
+    source_root: Path | str,
+    deployment_workspace_root: Path | str,
+    completed_at: str,
+) -> Dict[str, Any]:
+    return _write_terminal_run_state(
+        status=CORE0A_RUN_FAILED,
+        completed_at=completed_at,
+        executable_authorization_path=executable_authorization_path,
+        candidate_path=candidate_path,
+        review_receipt_path=review_receipt_path,
+        portable_bundle_path=portable_bundle_path,
+        selection_artifact_path=selection_artifact_path,
+        candidate_config_path=candidate_config_path,
+        production_manifest_path=production_manifest_path,
+        deployment_manifest_path=deployment_manifest_path,
+        source_root=source_root,
+        deployment_workspace_root=deployment_workspace_root,
+    )
 
 
 __all__ = [
     "CORE0A_CANDIDATE_REAUDIT_PASS",
+    "CORE0A_CLAIMED_INCOMPLETE",
+    "CORE0A_CONTROLLED_AUTHORIZATION_CLASSIFICATION",
     "CORE0A_EXECUTABLE_AUTHORIZATION_SCHEMA",
     "CORE0A_NONCE_CONSUMPTION_RECEIPT_SCHEMA",
     "CORE0A_REVIEW_RECEIPT_SCHEMA",
     "CORE0A_REVIEW_RECEIPT_STATUS",
     "CORE0A_RUN_COMPLETED",
     "CORE0A_RUN_FAILED",
+    "CORE0A_RUN_STATE_RELATIVE_LOCATOR_V1",
     "CORE0A_RUN_STARTED",
     "CORE0A_TEST_ONLY_AUTHORIZATION_CLASSIFICATION",
+    "CORE0A_UNCLAIMED",
     "Core0AExecutionContext",
     "RTA4Core0AExecutionAuthorizationV2Error",
     "ValidatedCore0AExecutableAuthorization",
+    "acquire_core0a_run_claim_v2",
     "build_core0a_candidate_review_receipt_v2",
     "build_core0a_executable_engineering_authorization_v2",
+    "complete_core0a_run_v2",
+    "fail_core0a_run_v2",
     "preflight_core0a_engineering_pilot_execution_v2",
     "preflight_core0a_engineering_pilot_resume_v2",
     "validate_core0a_candidate_review_receipt_v2",
     "validate_core0a_executable_engineering_authorization_v2",
     "validate_core0a_nonce_consumption_receipt_v2",
-    "write_test_only_core0a_run_started_receipt_v2",
 ]

@@ -125,6 +125,19 @@ CORE0A_DEPLOYMENT_MANIFEST_DOMAIN = (
 CORE0A_EXECUTION_IDENTITY_DOMAIN = (
     "ASAP_BLOCK:V9.3:RTA4:CORE0A:EXECUTION_IDENTITY:v2"
 )
+CORE0A_TEST_ONLY_EXECUTION_ENVIRONMENT_CLASSIFICATION = (
+    "TEST_ONLY_NON_EXECUTABLE_FIXTURE"
+)
+CORE0A_AUTODL_CONTROLLED_EXECUTION_ENVIRONMENT_CLASSIFICATION = (
+    "AUTODL_CONTROLLED_CORE0A_ENGINEERING_PILOT"
+)
+CORE0A_EXECUTION_ENVIRONMENT_CLASSIFICATIONS = frozenset({
+    CORE0A_TEST_ONLY_EXECUTION_ENVIRONMENT_CLASSIFICATION,
+    CORE0A_AUTODL_CONTROLLED_EXECUTION_ENVIRONMENT_CLASSIFICATION,
+})
+CORE0A_EXECUTION_ENVIRONMENT_CLASSIFICATION_DOMAIN = (
+    "ASAP_BLOCK:V9.3:RTA4:CORE0A:EXECUTION_ENVIRONMENT_CLASSIFICATION:v1"
+)
 CORE0A_SCIENTIFIC_ANALYSIS_DOMAIN = (
     "ASAP_BLOCK:V9.3:RTA4:CORE0A:SCIENTIFIC_ANALYSIS:v1"
 )
@@ -1699,6 +1712,31 @@ def _validate_bundle_for_deployment(
     return portable
 
 
+def _execution_environment_classification(value: str) -> str:
+    if (
+        type(value) is not str
+        or value not in CORE0A_EXECUTION_ENVIRONMENT_CLASSIFICATIONS
+    ):
+        raise RTA4Core0APilotV2Error(
+            "execution environment classification is invalid"
+        )
+    return value
+
+
+def _execution_environment_classification_identity(value: str) -> str:
+    classification = _execution_environment_classification(value)
+    return domain_hash(
+        CORE0A_EXECUTION_ENVIRONMENT_CLASSIFICATION_DOMAIN,
+        {
+            "classification_contract_version": (
+                "ASAP_BLOCK_V9_3_RTA4_CORE0A_"
+                "EXECUTION_ENVIRONMENT_CLASSIFICATION_V1"
+            ),
+            "execution_environment_classification": classification,
+        },
+    )
+
+
 def _build_autodl_deployment_manifest_v2(
     *,
     bundle: Mapping[str, Any],
@@ -1706,8 +1744,12 @@ def _build_autodl_deployment_manifest_v2(
     source_root: Path | str,
     deployment_workspace_root: Path | str,
     observation: AutoDLResourceObservation,
+    execution_environment_classification: str,
 ) -> Dict[str, Any]:
     portable = _validate_bundle_for_deployment(bundle)
+    classification = _execution_environment_classification(
+        execution_environment_classification
+    )
     source = _resolved_existing_directory(source_root, "source root")
     paths = _derived_deployment_paths(deployment_workspace_root)
     try:
@@ -1754,6 +1796,10 @@ def _build_autodl_deployment_manifest_v2(
         "deployment_manifest_schema": CORE0A_DEPLOYMENT_MANIFEST_SCHEMA,
         "deployment_scope_version": CORE0A_DEPLOYMENT_SCOPE_VERSION,
         "status": "UNAUTHORIZED_AUTODL_DEPLOYMENT_CANDIDATE",
+        "execution_environment_classification": classification,
+        "execution_environment_classification_identity": (
+            _execution_environment_classification_identity(classification)
+        ),
         "portable_freeze_identity": portable["portable_freeze_identity"],
         "source_commit": portable["source"]["git_commit"],
         "source_tree": portable["source"]["git_tree"],
@@ -1801,6 +1847,9 @@ def build_autodl_deployment_manifest_v2(
     production_manifest: Mapping[str, Any],
     source_root: Path | str,
     deployment_workspace_root: Path | str,
+    execution_environment_classification: str = (
+        CORE0A_TEST_ONLY_EXECUTION_ENVIRONMENT_CLASSIFICATION
+    ),
 ) -> Dict[str, Any]:
     return _build_autodl_deployment_manifest_v2(
         bundle=bundle,
@@ -1808,6 +1857,9 @@ def build_autodl_deployment_manifest_v2(
         source_root=source_root,
         deployment_workspace_root=deployment_workspace_root,
         observation=_observe_autodl_resources(deployment_workspace_root),
+        execution_environment_classification=(
+            execution_environment_classification
+        ),
     )
 
 
@@ -1819,6 +1871,9 @@ def _combined_execution_identity(
         "portable_freeze_identity": bundle["portable_freeze_identity"],
         "deployment_manifest_identity": deployment_manifest[
             "deployment_manifest_identity"
+        ],
+        "execution_environment_classification": deployment_manifest[
+            "execution_environment_classification"
         ],
         "selection_identity": bundle["selection"]["core0a_selection_identity"],
         "selection_count": EXPECTED_EXECUTION_COUNT,
@@ -1923,6 +1978,11 @@ def validate_autodl_deployment_manifest_v2(
         source_root=source,
         deployment_workspace_root=deployment_workspace_root,
         observation=observed,
+        execution_environment_classification=(
+            _execution_environment_classification(
+                document.get("execution_environment_classification")
+            )
+        ),
     )
     if document != expected:
         raise RTA4Core0APilotV2Error(
@@ -2110,6 +2170,7 @@ __all__ = [
     "AutoDLResourceObservation",
     "AUTHORIZED_CORE0A_ENGINEERING_PILOT", "CORE0A_CONTRACT_VERSION",
     "CANDIDATE_CONFIG_PATH", "CORE0A_AUTHORIZATION_SCHEMA",
+    "CORE0A_AUTODL_CONTROLLED_EXECUTION_ENVIRONMENT_CLASSIFICATION",
     "CORE0A_DEPLOYMENT_MANIFEST_SCHEMA", "CORE0A_DEPLOYMENT_POLICY",
     "CORE0A_DEPLOYMENT_SCOPE_VERSION",
     "CORE0A_ENGINEERING_PILOT_FROZEN_PENDING_REAUDIT",
@@ -2119,6 +2180,7 @@ __all__ = [
     "CORE0A_RESOURCE_POLICY_VERSION", "CORE0A_SEED_MIGRATION_MODE",
     "CORE0A_SELECTION_ALGORITHM", "CORE0A_SELECTION_SCHEMA",
     "CORE0A_TASKSET_STORE_NAMESPACE",
+    "CORE0A_TEST_ONLY_EXECUTION_ENVIRONMENT_CLASSIFICATION",
     "EXPECTED_EXECUTION_COUNT", "FORMAL_INPUT_SOURCE_COMMIT",
     "FORMAL_INPUT_SOURCE_TREE", "HISTORICAL_CORE_RECORD_COUNTS",
     "HISTORICAL_ORDERED_SELECTION_IDENTITY", "HISTORICAL_SELECTION_SEED",
