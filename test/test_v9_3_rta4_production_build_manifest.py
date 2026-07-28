@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import copy
 import json
 import os
@@ -10,6 +11,7 @@ import subprocess
 import pytest
 
 from experiments.v9_3.rta4_production_build_manifest import (
+    DEFAULT_RELEVANT_SOURCES,
     ENVIRONMENT_ALLOWLIST,
     PRODUCTION_BUILD_CLASSIFICATION,
     ProductionBuildManifestError,
@@ -46,7 +48,10 @@ def verifier(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return output
 
 
-def _build(verifier: Path, *, simulator: Path | None = None):
+def _build(
+    verifier: Path, *, simulator: Path | None = None,
+    sources=SOURCES,
+):
     environment = {
         "PATH": os.environ["PATH"],
         "LANG": "C.UTF-8",
@@ -63,7 +68,7 @@ def _build(verifier: Path, *, simulator: Path | None = None):
             "simulator": ["cmake", "--build", "/tmp/rta4-build", "--target", "rtsim-exe"],
             "verifier": ["c++", "-std=c++17", "tools/rta4_solar_stod_verifier.cpp"],
         },
-        relevant_source_paths=SOURCES,
+        relevant_source_paths=sources,
         environ=environment,
         require_clean=False,
     )
@@ -139,3 +144,128 @@ def test_manifest_loader_rejects_duplicate_json_keys(verifier, tmp_path):
     )
     with pytest.raises(ProductionBuildManifestError, match="strict"):
         load_and_validate_production_build_manifest(path, require_clean=False)
+
+
+V1_ONLY_EXECUTION_SCOPES = {
+    "_load_v1_runtime", "_certificate_from_closure", "_adapter_result",
+    "_resume_required_inventory", "_preflight_taskset_store",
+    "ProductionTasksetProvider", "ProductionRTAExecutor",
+    "ProductionSimulationExecutor", "AuthorizedRTA4Runner",
+}
+
+
+def _module_path(module: str) -> Path | None:
+    source = ROOT / (module.replace(".", "/") + ".py")
+    if source.is_file():
+        return source
+    package = ROOT / module.replace(".", "/") / "__init__.py"
+    return package if package.is_file() else None
+
+
+def _module_name(path: Path) -> str:
+    relative = path.relative_to(ROOT).with_suffix("")
+    parts = list(relative.parts)
+    if parts[-1] == "__init__":
+        parts.pop()
+    return ".".join(parts)
+
+
+def _static_imports(path: Path) -> set[str]:
+    module = _module_name(path)
+    found = set()
+
+    class Imports(ast.NodeVisitor):
+        def visit_ClassDef(self, node):
+            if (
+                path.name == "rta4_formal_execution.py"
+                and node.name in V1_ONLY_EXECUTION_SCOPES
+            ):
+                return
+            self.generic_visit(node)
+
+        def visit_FunctionDef(self, node):
+            if (
+                path.name == "rta4_formal_execution.py"
+                and node.name in V1_ONLY_EXECUTION_SCOPES
+            ):
+                return
+            self.generic_visit(node)
+
+        visit_AsyncFunctionDef = visit_FunctionDef
+
+        def visit_Import(self, node):
+            found.update(alias.name for alias in node.names)
+
+        def visit_ImportFrom(self, node):
+            if node.level:
+                package = module.split(".")[:-1]
+                keep = len(package) - (node.level - 1)
+                prefix = package[:keep]
+                base = ".".join(prefix + ([node.module] if node.module else []))
+            else:
+                base = node.module or ""
+            if base:
+                found.add(base)
+            for alias in node.names:
+                candidate = ".".join(part for part in (base, alias.name) if part)
+                if candidate and _module_path(candidate) is not None:
+                    found.add(candidate)
+
+    Imports().visit(ast.parse(path.read_text(encoding="utf-8")))
+    return found
+
+
+def _official_v2_static_closure() -> set[str]:
+    pending = ["experiments.v9_3.rta4_formal_runner_v2"]
+    visited = set()
+    sources = set()
+    while pending:
+        module = pending.pop()
+        if module in visited:
+            continue
+        visited.add(module)
+        path = _module_path(module)
+        if path is None:
+            continue
+        sources.add(path.relative_to(ROOT).as_posix())
+        pending.extend(_static_imports(path).difference(visited))
+    return sources
+
+
+def test_default_manifest_covers_recursive_static_v2_import_closure():
+    closure = _official_v2_static_closure()
+    missing = closure.difference(DEFAULT_RELEVANT_SOURCES)
+    assert not missing
+    assert "experiments/v9_3/rta4_formal_plan_grid.py" in closure
+    assert "experiments/v9_3/rta4_formal_plan_v2.py" in closure
+    assert "experiments/v9_3/rta4_formal_plan.py" not in closure
+
+
+def test_required_default_file_removal_and_live_source_drift_fail_closed(
+    verifier, monkeypatch,
+):
+    critical = "experiments/v9_3/result_writer.py"
+    incomplete_sources = tuple(
+        source for source in DEFAULT_RELEVANT_SOURCES if source != critical
+    )
+    incomplete = _build(verifier, sources=incomplete_sources)
+    with pytest.raises(ProductionBuildManifestError, match="incomplete"):
+        validate_production_build_manifest(
+            incomplete, require_clean=False, require_default_closure=True,
+            environ=incomplete["environment"]["values"],
+        )
+
+    complete = _build(verifier, sources=DEFAULT_RELEVANT_SOURCES)
+    original_read = Path.read_bytes
+    target = (ROOT / critical).resolve()
+
+    def drifted_read(path):
+        payload = original_read(path)
+        return payload + b"\n# bounded test drift" if path.resolve() == target else payload
+
+    monkeypatch.setattr(Path, "read_bytes", drifted_read)
+    with pytest.raises(ProductionBuildManifestError, match="drift"):
+        validate_production_build_manifest(
+            complete, require_clean=False, require_default_closure=True,
+            environ=complete["environment"]["values"],
+        )
