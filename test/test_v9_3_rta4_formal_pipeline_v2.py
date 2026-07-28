@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import threading
 
 import pytest
 
@@ -22,6 +23,8 @@ from experiments.v9_3.rta4_formal_lifecycle_v2 import (
     retry_resume_identity_v2,
 )
 from experiments.v9_3.rta4_formal_plan_v2 import iter_formal_plan_v2
+from experiments.v9_3.rta4_formal_runner_v2 import AuthorizedRTA4RunnerV2
+from experiments.v9_3 import rta4_formal_runner_v2 as runner_v2_module
 from experiments.v9_3.rta4_formal_schema_v2 import formal_schema_hash_v2
 from experiments.v9_3.rta4_numeric_contract_v2 import (
     RTA4_NUMERIC_CONTRACT_V2_SHA256,
@@ -380,10 +383,50 @@ def test_support_horizon_shortfall_fails_before_service_construction(tmp_path):
     assert calls == []
 
 
-def _run_official_cli(prepared_path, authorization_path, operation="--execute"):
+def _run_official_cli(
+    prepared_path, authorization_path, operation="--execute", *,
+    module_evidence_path=None,
+):
+    command = [sys.executable, str(ROOT / "scripts/run_v9_3_rta4_formal.py")]
+    if module_evidence_path is not None:
+        program = r'''
+import json
+from pathlib import Path
+import runpy
+import sys
+
+root = Path(sys.argv[1]).resolve()
+evidence = Path(sys.argv[2])
+script = Path(sys.argv[3]).resolve()
+arguments = sys.argv[4:]
+prefix = str(root) + "/"
+before = set(sys.modules)
+code = 0
+try:
+    sys.argv = [str(script), *arguments]
+    runpy.run_path(str(script), run_name="__main__")
+except SystemExit as exc:
+    code = int(exc.code or 0)
+finally:
+    sources = {str(script)[len(prefix):]}
+    for name, module in tuple(sys.modules.items()):
+        if name in before or not getattr(module, "__file__", None):
+            continue
+        path = str(Path(module.__file__).resolve())
+        if path.startswith(prefix):
+            relative = path[len(prefix):]
+            if not relative.startswith("test/"):
+                sources.add(relative)
+    evidence.write_text(json.dumps(sorted(sources)) + "\n", encoding="utf-8")
+raise SystemExit(code)
+'''
+        command = [
+            sys.executable, "-c", program, str(ROOT),
+            str(module_evidence_path),
+            str(ROOT / "scripts/run_v9_3_rta4_formal.py"),
+        ]
     completed = subprocess.run(
-        [
-            sys.executable, str(ROOT / "scripts/run_v9_3_rta4_formal.py"),
+        command + [
             "--prepared-config", str(prepared_path),
             "--authorization", str(authorization_path), operation,
         ],
@@ -440,7 +483,9 @@ def _terminal_rows(root):
     return paths, [json.loads(path.read_text(encoding="utf-8")) for path in paths]
 
 
-def test_official_v2_bounded_e2e_without_core_mock_or_fake(tmp_path):
+def test_official_v2_bounded_e2e_without_core_mock_or_fake(
+    tmp_path, monkeypatch,
+):
     """Real manifest/provider/solar/solver/writer/resume/CORE-3 micro E2E."""
 
     simulator_candidates = (
@@ -473,8 +518,17 @@ def test_official_v2_bounded_e2e_without_core_mock_or_fake(tmp_path):
         core1, core="CORE-1", ordinals=(0, 1, 2, 3),
         manifest_path=manifest_path, worker_count=1,
     )
-    first = _run_official_cli(prepared, authorization)
+    module_evidence = tmp_path / "official-v2-modules.json"
+    first = _run_official_cli(
+        prepared, authorization, module_evidence_path=module_evidence,
+    )
     assert first["complete"] is True and first["processed_records"] == 4
+    dynamic_sources = set(json.loads(module_evidence.read_text(encoding="utf-8")))
+    missing_dynamic = dynamic_sources.difference(DEFAULT_RELEVANT_SOURCES)
+    assert not missing_dynamic
+    assert "experiments/v9_3/rta4_formal_plan_grid.py" in dynamic_sources
+    assert "experiments/v9_3/rta4_formal_plan_v2.py" in dynamic_sources
+    assert "experiments/v9_3/rta4_formal_plan.py" not in dynamic_sources
     paths, rows = _terminal_rows(core1)
     assert {row["method"] for row in rows} == {
         "CW_THETA_CW", "LOC_THETA_LOC", "PH_THETA_PH", "SEQ_THETA_SEQ",
@@ -491,33 +545,188 @@ def test_official_v2_bounded_e2e_without_core_mock_or_fake(tmp_path):
     after = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in paths}
     assert after == before
 
-    reference = next(row for row in rows if row["method"] == "CW_THETA_CW")
-    for workers in (2, 4):
-        root = tmp_path / f"core1-worker{workers}"
+    prepared_document = json.loads(prepared.read_text(encoding="utf-8"))
+    authorization_document = json.loads(
+        authorization.read_text(encoding="utf-8")
+    )
+    original_initialize = (
+        runner_v2_module.initialize_shared_energy_run_from_manifest_path
+    )
+    cached_context = []
+
+    def initialize_once(*args, **kwargs):
+        if not cached_context:
+            cached_context.append(original_initialize(*args, **kwargs))
+        return cached_context[0]
+
+    monkeypatch.setattr(
+        runner_v2_module,
+        "initialize_shared_energy_run_from_manifest_path",
+        initialize_once,
+    )
+    resume_runner = AuthorizedRTA4RunnerV2(
+        prepared_document, authorization_document,
+    )
+    assert resume_runner.run(resume=True).processed_records == 0
+
+    def rejected_without_overwrite(path, tampered):
+        original = path.read_bytes()
+        path.write_bytes(tampered)
+        tampered_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+        with pytest.raises(Exception):
+            resume_runner.run(resume=True)
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == tampered_hash
+        path.write_bytes(original)
+
+    terminal_path = paths[0]
+    terminal = json.loads(terminal_path.read_text(encoding="utf-8"))
+    identity_cases = (
+        ("manifest identity", "production_build_manifest_identity", "0" * 64),
+        ("taskset identity", "taskset_identity", "1" * 64),
+        ("task-energy identity", "task_energy_material_identity", "2" * 64),
+        ("service identity", "service_material_identity", "3" * 64),
+        ("beta identity", "beta_material_identity", "4" * 64),
+        ("schema SHA", "schema_sha256", "5" * 64),
+        ("numeric SHA", "numeric_contract_sha256", "6" * 64),
+        ("plan identity", "plan_identity", "7" * 64),
+        ("record identity", "plan_record_identity", "8" * 64),
+        ("retry identity", "retry_resume_identity", "9" * 64),
+    )
+    attempt_bound = {
+        "production_build_manifest_identity", "taskset_identity",
+        "task_energy_material_identity", "service_material_identity",
+        "beta_material_identity",
+    }
+    for _label, field, replacement in identity_cases:
+        changed = json.loads(json.dumps(terminal))
+        changed[field] = replacement
+        if field in attempt_bound:
+            for attempt in changed["attempts"]:
+                attempt[field] = replacement
+        unsigned = dict(changed)
+        unsigned.pop("result_identity")
+        changed["result_identity"] = domain_hash(
+            "ASAP_BLOCK:V9.3:RTA4_RESULT:v2", unsigned,
+        )
+        rejected_without_overwrite(
+            terminal_path, (canonical_json(changed) + "\n").encode("utf-8"),
+        )
+
+    content_drift = json.loads(json.dumps(terminal))
+    content_drift["response_result"]["bounded_terminal_content_drift"] = True
+    rejected_without_overwrite(
+        terminal_path,
+        (canonical_json(content_drift) + "\n").encode("utf-8"),
+    )
+
+    store_root = core1 / "store-v2"
+    store_drift_paths = (
+        store_root / "formal_taskset_store_manifest_v2_shared_energy.json",
+        next((store_root / "certificates_v2").glob("*.json")),
+        next((store_root / "task_energy_materials_v2").glob("*.json")),
+    )
+    for store_path in store_drift_paths:
+        rejected_without_overwrite(
+            store_path, store_path.read_bytes() + b" ",
+        )
+    assert resume_runner.run(resume=True).processed_records == 0
+    assert {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in paths
+    } == before
+
+    reference_rows = {row["method"]: row for row in rows}
+    contexts = []
+    initialize = original_initialize
+
+    def capture_context(*args, **kwargs):
+        context = initialize(*args, **kwargs)
+        contexts.append(context)
+        return context
+
+    monkeypatch.setattr(
+        runner_v2_module,
+        "initialize_shared_energy_run_from_manifest_path",
+        capture_context,
+    )
+
+    class ConcurrencyProbe:
+        def __init__(self, workers):
+            self.barrier = threading.Barrier(workers)
+            self.lock = threading.Lock()
+            self.active = set()
+            self.thread_ids = set()
+            self.maximum_active = 0
+
+        def __call__(self, event, record_id, worker_id):
+            del record_id
+            if event == "start":
+                with self.lock:
+                    self.active.add(worker_id)
+                    self.thread_ids.add(worker_id)
+                    self.maximum_active = max(
+                        self.maximum_active, len(self.active),
+                    )
+                self.barrier.wait(timeout=30)
+            else:
+                with self.lock:
+                    self.active.remove(worker_id)
+
+    concurrency_rows = {}
+    for workers in (1, 2, 4):
+        root = tmp_path / f"core1-concurrency-worker{workers}"
         worker_prepared, worker_authorization = _write_test_run_artifacts(
-            root, core="CORE-1", ordinals=(0,),
+            root, core="CORE-1", ordinals=(0, 1, 2, 3),
             manifest_path=manifest_path, worker_count=workers,
         )
-        summary = _run_official_cli(worker_prepared, worker_authorization)
-        assert summary["processed_records"] == 1
+        prepared_document = json.loads(
+            worker_prepared.read_text(encoding="utf-8")
+        )
+        authorization_document = json.loads(
+            worker_authorization.read_text(encoding="utf-8")
+        )
+        probe = ConcurrencyProbe(workers)
+        summary = AuthorizedRTA4RunnerV2(
+            prepared_document, authorization_document,
+            worker_observer=probe,
+        ).run()
+        assert summary.processed_records == 4 and summary.complete is True
+        assert len(probe.thread_ids) == workers
+        assert probe.maximum_active == workers
         _worker_paths, worker_rows = _terminal_rows(root)
-        row = worker_rows[0]
-        for key in (
-            "taskset_source_sha256", "taskset_identity",
-            "task_energy_material_identity", "service_material_identity",
-            "beta_material_identity", "method", "exact_e0", "status",
-            "response_result",
-        ):
-            assert row[key] == reference[key]
-        assert [
-            (attempt["attempt_index"], attempt["timeout_seconds"],
-             attempt["status"], attempt["analysis_identity"])
-            for attempt in row["attempts"]
-        ] == [
-            (attempt["attempt_index"], attempt["timeout_seconds"],
-             attempt["status"], attempt["analysis_identity"])
-            for attempt in reference["attempts"]
+        concurrency_rows[workers] = {row["method"]: row for row in worker_rows}
+        context = contexts[-1]
+        assert context.cache_statistics["construction_count"] == 1
+        assert context.cache_statistics["unique_service_materials"] == 1
+        assert len(context.task_energy_materials) == 1
+        for method, row in concurrency_rows[workers].items():
+            reference = reference_rows[method]
+            for key in (
+                "taskset_source_sha256", "taskset_identity",
+                "task_energy_material_identity", "service_material_identity",
+                "beta_material_identity", "method", "exact_e0", "status",
+                "response_result",
+            ):
+                assert row[key] == reference[key]
+            assert [
+                (attempt["attempt_index"], attempt["timeout_seconds"],
+                 attempt["status"], attempt["analysis_identity"])
+                for attempt in row["attempts"]
+            ] == [
+                (attempt["attempt_index"], attempt["timeout_seconds"],
+                 attempt["status"], attempt["analysis_identity"])
+                for attempt in reference["attempts"]
+            ]
+    assert {
+        method: [
+            concurrency_rows[workers][method]["response_result"]["analysis_id"]
+            for workers in (1, 2, 4)
         ]
+        for method in reference_rows
+    } == {
+        method: [row["response_result"]["analysis_id"]] * 3
+        for method, row in reference_rows.items()
+    }
 
     core3 = tmp_path / "core3-worker1"
     core3_prepared, core3_authorization = _write_test_run_artifacts(

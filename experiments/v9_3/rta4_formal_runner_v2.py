@@ -6,8 +6,9 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from decimal import Decimal
 import time
+import threading
 from pathlib import Path
-from typing import Any, Dict, Mapping, Sequence
+from typing import Any, Callable, Dict, Mapping, Sequence
 
 from . import exact_energy
 from .rta4_formal_config import domain_hash
@@ -93,6 +94,21 @@ def _timed_simulation(
         })
 
 
+def _observed_rta(
+    executor: ProductionRTAExecutorV2, record: Any,
+    certificate: TasksetIdentityCertificateV2,
+    observer: Callable[[str, str, int], None] | None,
+) -> Mapping[str, Any]:
+    if observer is None:
+        return executor(record, certificate)
+    worker = threading.get_ident()
+    observer("start", record.record_id, worker)
+    try:
+        return executor(record, certificate)
+    finally:
+        observer("finish", record.record_id, worker)
+
+
 class AuthorizedRTA4RunnerV2:
     """V2-only plan/provider/material/executor/store/writer/resume pipeline.
 
@@ -103,12 +119,16 @@ class AuthorizedRTA4RunnerV2:
     def __init__(
         self, prepared_config: Mapping[str, Any],
         authorization: Mapping[str, Any],
+        *, worker_observer: Callable[[str, str, int], None] | None = None,
     ) -> None:
+        if worker_observer is not None and not callable(worker_observer):
+            raise RTA4ExecutionError("V2 worker observer must be callable")
         self.prepared = validate_prepared_config_v2(prepared_config)
         self.authorization = validate_test_authorization_v2(
             authorization, prepared_config=self.prepared,
         )
         self.config = self.prepared["scientific_config"]
+        self.worker_observer = worker_observer
 
     def _records(self) -> tuple[Any, ...]:
         selected = set(self.prepared["selected_ordinals"])
@@ -399,7 +419,10 @@ class AuthorizedRTA4RunnerV2:
                         ))
                     else:
                         assert rta is not None
-                        futures.append(pool.submit(rta, record, certificate))
+                        futures.append(pool.submit(
+                            _observed_rta, rta, record, certificate,
+                            self.worker_observer,
+                        ))
                 results = [future.result() for future in futures]
             for record, result in zip(batch, results):
                 certificate = certificates[record.record_id]
