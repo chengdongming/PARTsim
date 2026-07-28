@@ -85,8 +85,8 @@ def load_protocol(path=PROTOCOL_PATH):
     _require(
         protocol["schema_version"] == 1
         and protocol["protocol_name"]
-        == "B4-PE-base-pool-admission-v1-draft"
-        and protocol["status"] == "draft",
+        == "B4-PE-base-pool-admission-v1"
+        and protocol["status"] == "pilot_authorized",
         "admission protocol identity mismatch",
     )
     _require(
@@ -134,9 +134,9 @@ def load_protocol(path=PROTOCOL_PATH):
             "formal_runs_authorized": False,
             "negative_control_runs_authorized": False,
             "paper_result_authorized": False,
-            "pilot_runs_authorized": False,
+            "pilot_runs_authorized": True,
         },
-        "admission draft governance mismatch",
+        "admission pilot governance mismatch",
     )
     return protocol
 
@@ -375,7 +375,7 @@ def admit_records(records, output_root, manifest_sha256, simulator_path):
         )
     inventory = {
         "schema_version": 1,
-        "protocol_name": "B4-PE-base-pool-admission-v1-draft",
+        "protocol_name": protocol["protocol_name"],
         "admission_protocol_sha256": file_sha256(PROTOCOL_PATH),
         "manifest_file_sha256": manifest_sha256,
         "manifest_protocol_sha256":

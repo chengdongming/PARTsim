@@ -15,7 +15,7 @@ traces, or results. It never starts the simulator. Planned scheduler-specific
 system configurations are represented by relative paths and are a later-stage
 materialization responsibility.
 
-The P1 repair adds an explicit, unauthorized v4 draft for that later stage.
+The P1 repair adds an explicit v4 candidate for that later stage.
 It preserves the v1 identity protocol: `taskset_id` and `source_id` remain
 independent of `rho_E`, while the execution taskset path is
 `artifacts/tasksets/<taskset_id>/rho-<rho_E>.yml`. The base taskset is stored
@@ -44,15 +44,45 @@ python3 experiments/b4_priority_energy/materialize_manifest.py \
   --output-root /absolute/outside-repository-root
 ```
 
-Base admission, materialization, manifest, execution, and candidate v4 remain
-drafts with Pilot, Formal, Negative Control, and paper-result authorization
-all set to false. CPU-only admission results are gate evidence, not paper
-results. The v1-v3 protocol and candidate bytes remain historical identities.
-The v4 candidate now binds the reviewed candidate commit and tree to the
-independently verified Stage 2A execution closure and deterministic Stage 2B
-runtime evidence using deployment logical paths, external evidence filenames,
-and SHA-256 identities. This candidate binding does not authorize a campaign,
-establish a final commit or tag, or designate a Formal runtime.
+Candidate v4 and its v4 manifest, base-admission, materialization, and
+execution protocols authorize only the exact 2,400-case Pilot manifest named
+`pilot_v4.jsonl`. `pilot_authorization_v4.json` is the independent
+authorization record. It binds the candidate, protocols, complete canonical
+manifest byte identity, and independently verified runtime closure. The
+authorization DAG is intentionally one-way:
+
+```text
+candidate_v4 -> manifest_protocol_v4 -> pilot_v4.jsonl
+manifest_protocol_v4 -> base_pool_admission -> materialization
+candidate/protocols/pilot_v4/runtime -> pilot_authorization_v4
+pilot_authorization_v4 -> execution_protocol_v4
+```
+
+No manifest identity is written back into candidate v4, so the graph has no
+hash cycle. Formal, Negative Control, and paper-result use remain rejected.
+Pilot results are gate evidence only. The v1-v3 protocol and candidate bytes
+remain historical identities. Candidate v4 still binds the reviewed
+scientific commit and tree to the independently verified Stage 2A execution
+closure and deterministic Stage 2B evidence; this local authorization does
+not claim to have reverified those external bytes. It does not establish a
+final commit or tag or designate a Formal runtime.
+
+Generate the authorized Pilot identity outside the repository and perform
+static authorization preflight without starting a simulator:
+
+```text
+python3 experiments/b4_priority_energy/generate_manifest_v4.py \
+  --phase pilot --output /tmp/pilot_v4.jsonl
+python3 experiments/b4_priority_energy/execute_manifest_v4.py \
+  --manifest /tmp/pilot_v4.jsonl --preflight-only
+```
+
+Real Pilot execution additionally requires `--runtime-closure-root` and
+`--runtime-evidence-root`. Before any case subprocess starts, the executor
+checks the simulator, launcher, project libraries, embedded Python library,
+Stage 2A evidence, Stage 2B seal, normalized dependency manifest, and both
+Python tree manifests against the authorization record. A partial, reordered,
+appended, truncated, or otherwise byte-different manifest fails closed.
 
 Generate a deterministic manifest (the default destination is under `/tmp`):
 

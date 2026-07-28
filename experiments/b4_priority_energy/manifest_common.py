@@ -41,7 +41,7 @@ V4_GOVERNANCE = {
     "negative_control_runs_authorized": False,
     "not_final_until_independent_review": True,
     "paper_result_authorized": False,
-    "pilot_runs_authorized": False,
+    "pilot_runs_authorized": True,
     "silent_changes_forbidden": True,
 }
 V4_RUNTIME_ARTIFACTS = {
@@ -264,6 +264,7 @@ def load_candidate_v4(path=CANDIDATE_V4_PATH):
         "formal_runtime_binary_sha256",
         "freeze_status",
         "governance",
+        "governance_history",
         "reason",
         "runtime_binding_status",
         "runtime_closure",
@@ -274,11 +275,11 @@ def load_candidate_v4(path=CANDIDATE_V4_PATH):
     _require(set(candidate) == required, "candidate v4 fields mismatch")
     _require(
         candidate["schema_version"] == 4
-        and candidate["candidate_name"] == "B4-PE-freeze-candidate-v4-draft"
-        and candidate["freeze_status"] == "draft"
+        and candidate["candidate_name"] == "B4-PE-freeze-candidate-v4"
+        and candidate["freeze_status"] == "candidate"
         and candidate["runtime_binding_status"]
-        == "candidate_bound_unauthorized",
-        "candidate v4 draft identity mismatch",
+        == "candidate_bound_pilot_authorized",
+        "candidate v4 pilot identity mismatch",
     )
     _require(
         candidate["candidate_code_commit"] == V4_CANDIDATE_CODE_COMMIT
@@ -295,6 +296,27 @@ def load_candidate_v4(path=CANDIDATE_V4_PATH):
     _require(
         candidate["governance"] == V4_GOVERNANCE,
         "candidate v4 governance mismatch",
+    )
+    _require(
+        candidate["governance_history"]
+        == [
+            {
+                "algorithm_changes": False,
+                "formal_authorized": False,
+                "negative_control_authorized": False,
+                "parameter_changes": False,
+                "paper_result_authorized": False,
+                "pre_authorization_candidate_sha256":
+                    "e697e9c218a19abe621d82547e2e4e948857874e6fb8d223c49f3f92c600fabe",
+                "rta_changes": False,
+                "runtime_identity_changes": False,
+                "scheduler_changes": False,
+                "science_code_commit": V4_CANDIDATE_CODE_COMMIT,
+                "task_generation_changes": False,
+                "transition_type": "pilot_authorization",
+            }
+        ],
+        "candidate v4 governance history mismatch",
     )
     _require(
         candidate["reason"]
@@ -455,7 +477,7 @@ def load_manifest_protocol(path=MANIFEST_PROTOCOL_PATH):
         "observability_summary_contract_version", "result_audit_policy",
         "trace_schema_version", "minimum_adjudicable_jobs_per_task",
         "mechanism_fields", "jmr_denominator_contract",
-        "governance", "supersedes",
+        "governance", "status", "supersedes",
     }
     schema_version = protocol.get("schema_version")
     required = common | (
@@ -580,14 +602,16 @@ def load_manifest_protocol(path=MANIFEST_PROTOCOL_PATH):
             "manifest v4 supersedes identity mismatch",
         )
         _require(
-            protocol["governance"]
+            protocol["protocol_name"] == "B4-PE-I5B-manifest-v4"
+            and protocol["status"] == "pilot_authorized"
+            and protocol["governance"]
             == {
                 "formal_runs_authorized": False,
                 "negative_control_runs_authorized": False,
                 "paper_result_authorized": False,
-                "pilot_runs_authorized": False,
+                "pilot_runs_authorized": True,
             },
-            "manifest v4 draft governance mismatch",
+            "manifest v4 pilot governance mismatch",
         )
         activation = protocol["observability_activation"]
         _require(
@@ -910,6 +934,8 @@ def build_case(
                 "base_taskset_artifact_relpath": paths["base_taskset"],
                 "materialization_inventory_relpath":
                     paths["materialization_inventory"],
+                "manifest_protocol_sha256":
+                    file_sha256(MANIFEST_PROTOCOL_V4_PATH),
             }
         )
     _require(set(case) == set(protocol["manifest_case_fields"]), "case shape mismatch")

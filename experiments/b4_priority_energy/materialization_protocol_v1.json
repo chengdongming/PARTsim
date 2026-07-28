@@ -9,25 +9,25 @@
     "system_config": "case-specific path; content differs by scheduler only when energy environment is paired"
   },
   "base_pool_admission_protocol_ref": "base_pool_admission_protocol_v1.json",
-  "base_pool_admission_protocol_sha256": "1b1af1a5c916b533fc26530fd3a87e2fcd4d51d11c61462651ca92ec22ccd74a",
+  "base_pool_admission_protocol_sha256": "e90ae70a5c02504241eec538bb470798c39711be226f6c542365409bb5d1eb64",
   "governance": {
     "formal_runs_authorized": false,
     "negative_control_runs_authorized": false,
     "paper_result_authorized": false,
-    "pilot_runs_authorized": false
+    "pilot_runs_authorized": true
   },
   "identity_protocol_ref": "protocol_resolution_v1.json",
   "identity_protocol_sha256": "941d754e27e1cf599127550561a14a92f46e3605df26dca3c9a97e0325eecd93",
   "manifest_protocol_ref": "manifest_protocol_v4.json",
-  "manifest_protocol_sha256": "cf4a890ab87c500f06cc446c8b31b88d83a55829fed774c0dd2c169540cd0018",
-  "protocol_name": "B4-PE-materialization-v1-draft",
+  "manifest_protocol_sha256": "78681cdad16b74ec424e9322862f0485b71f3357e51c8a00be7520c652704c97",
+  "protocol_name": "B4-PE-materialization-v1",
   "schema_version": 1,
   "semantic_hash": {
     "base_identity": "taskset_id",
     "execution_bytes": "SHA-256 of rho-specific taskset artifact",
     "simulator_semantic_hash": "acceptance_ratio_test.taskset_semantic_hash over rho-specific taskset artifact"
   },
-  "status": "draft",
+  "status": "pilot_authorized",
   "system_template_ref": "../../v9_3_b4_priority_energy_system_template.yml",
   "system_template_sha256": "a64181bf9fda8155c5b0b8b0451a160d6c44c2c8fae188a974640a4d2b243510",
   "task_generator_ref": "../../global_task_generator.py",

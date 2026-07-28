@@ -14,7 +14,7 @@
   "analysis_contract_sha256": "25d0cfff0fba81979d15b5b70df842fc2e84f969574fa4cd73fc7ad2527c9318",
   "base_commit": "b91206fa5b23dc5b56fab98b96ee1aa109e5c8b8",
   "candidate_v4_ref": "b4_pe_freeze_candidate_v4.json",
-  "candidate_v4_sha256": "e697e9c218a19abe621d82547e2e4e948857874e6fb8d223c49f3f92c600fabe",
+  "candidate_v4_sha256": "7b79811029853b77cd6cf28e256585c5df99008aedaa40396825a4f70614d8b7",
   "execution_plan": {
     "M": 4,
     "horizon_ms": 30000,
@@ -46,7 +46,7 @@
     "formal_runs_authorized": false,
     "negative_control_runs_authorized": false,
     "paper_result_authorized": false,
-    "pilot_runs_authorized": false
+    "pilot_runs_authorized": true
   },
   "identity_protocol_ref": "protocol_resolution_v1.json",
   "identity_protocol_sha256": "941d754e27e1cf599127550561a14a92f46e3605df26dca3c9a97e0325eecd93",
@@ -85,6 +85,7 @@
     "identity_protocol_sha256",
     "candidate_v4_ref",
     "candidate_v4_sha256",
+    "manifest_protocol_sha256",
     "analysis_contract_ref",
     "analysis_contract_sha256",
     "observability_contract_ref",
@@ -188,9 +189,10 @@
       ]
     }
   },
-  "protocol_name": "B4-PE-I5B-manifest-v4-draft",
+  "protocol_name": "B4-PE-I5B-manifest-v4",
   "result_audit_policy": "strict_schema3_observability_v2",
   "schema_version": 4,
+  "status": "pilot_authorized",
   "supersedes": {
     "path": "experiments/b4_priority_energy/manifest_protocol_v3.json",
     "sha256": "c51e774e74ad3ce9bb4d39bacfccb5a7c64e71750c6a0f12432c4ab70070603f"
