@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import re
 from collections import Counter, defaultdict
 from pathlib import Path, PurePosixPath
 
@@ -23,6 +24,7 @@ OBSERVABILITY_CONTRACT_PATH = (
 CANDIDATE_V1_PATH = B4_DIR / "b4_pe_freeze_candidate_v1.json"
 CANDIDATE_V2_PATH = B4_DIR / "b4_pe_freeze_candidate_v2.json"
 CANDIDATE_V3_PATH = B4_DIR / "b4_pe_freeze_candidate_v3.json"
+CANDIDATE_V4_PATH = B4_DIR / "b4_pe_freeze_candidate_v4.json"
 OBSERVABILITY_CONTRACT_V2_PATH = B4_DIR / "observability_summary_contract_v2.json"
 ANALYSIS_CONTRACT_V2_PATH = B4_DIR / "analysis_contract_v2.json"
 IDENTITY_REFERENCE_PATH = B4_DIR / "tests" / "test_protocol_resolution.py"
@@ -32,6 +34,118 @@ FROZEN_DOCUMENT_PATH = (
 )
 SYSTEM_TEMPLATE_PATH = REPO_ROOT / "v9_3_b4_priority_energy_system_template.yml"
 SEMANTIC_HASH_PLACEHOLDER = "__B4PE_MATERIALIZED_TASKSET_SEMANTIC_HASH__"
+V4_CANDIDATE_CODE_COMMIT = "681409e35012d2bc883045e4d10a048b36a6483f"
+V4_CANDIDATE_CODE_TREE = "266ecfdca0c1bc194e2ce77a295254893b9737ca"
+V4_GOVERNANCE = {
+    "formal_runs_authorized": False,
+    "negative_control_runs_authorized": False,
+    "not_final_until_independent_review": True,
+    "paper_result_authorized": False,
+    "pilot_runs_authorized": False,
+    "silent_changes_forbidden": True,
+}
+V4_RUNTIME_ARTIFACTS = {
+    "dual_python_launcher": {
+        "logical_path": "run_with_b4pe_dual_pythonhome_v2.sh",
+        "role": "dual_python_launcher",
+        "sha256":
+            "e000fd8bb4e12505b86abb7b33573d2d8a0ce4d3948fb1d801235bc0be5c6f25",
+    },
+    "libcmdarg": {
+        "logical_path": "pilot-runtime/lib/libcmdarg.so.0",
+        "role": "command_line_parser_shared_library",
+        "sha256":
+            "02aa859ea7eee6a5b3c3c6c32826656349ee629f19d5a86c245acfb44186c5fd",
+    },
+    "libmetasim": {
+        "logical_path": "pilot-runtime/lib/libmetasim.so.3",
+        "role": "simulation_kernel_shared_library",
+        "sha256":
+            "20734b7ffff7db8352593aa1c89f20716dbcec8462e638591e9855d20525e324",
+    },
+    "libpython3_8": {
+        "logical_path": "host-runtime-lib/libpython3.8.so.1.0",
+        "role": "embedded_python38_shared_library",
+        "sha256":
+            "d6b4470a33290dd9203b9a497b4fa9744e55ff63f59b788d75128973571a66a6",
+    },
+    "librtsim": {
+        "logical_path": "pilot-runtime/lib/librtsim.so.3",
+        "role": "real_time_simulation_shared_library",
+        "sha256":
+            "f566e702435da6070059ff5ec1b47b7b8063e5081db1eb2351de57bc3f6245de",
+    },
+    "simulator": {
+        "logical_path": "pilot-runtime/bin/rtsim",
+        "role": "simulator",
+        "sha256":
+            "96004d1aec42cac73bea72d4fe0d5c2a5e814453bfeeb16d09026c4ff8746f7d",
+    },
+}
+V4_RUNTIME_EVIDENCE = {
+    "normalized_dynamic_dependency_manifest": {
+        "container_evidence": "stage2b_supplemental_seal",
+        "filename": "dynamic_dependencies.normalized.json",
+        "role": "normalized_dynamic_dependency_manifest",
+        "serialization": "canonical_json",
+        "sha256":
+            "876abaa6b8812578c93ff12ac4a977f9da65240bb81f623e0233b57fcb8e9e3b",
+        "supersedes": {
+            "filename": "dynamic_dependency_manifest.jsonl",
+            "sha256":
+                "b259ea7727798fa1fc38319a73d16e0699b2d15408a09244a8b72a0ed039ee5f",
+        },
+        "verification_status": "independently_verified",
+    },
+    "python310_tree_manifest": {
+        "container_evidence": "stage2b_supplemental_seal",
+        "filename": "python310_tree.normalized.jsonl",
+        "role": "python310_tree_manifest",
+        "serialization": "canonical_jsonl",
+        "sha256":
+            "1e37cdfa1c0fd7a9ed4f7c0f650a363509530f06e5d609216c0392afc1993e99",
+        "verification_status": "independently_verified",
+    },
+    "python38_tree_manifest": {
+        "container_evidence": "stage2b_supplemental_seal",
+        "filename": "python38_tree.normalized.jsonl",
+        "role": "python38_tree_manifest",
+        "serialization": "canonical_jsonl",
+        "sha256":
+            "6d903c9a25e20cfee4023ddc9bb163d5a1bfd6e14370cd6ade48d88e3ae1bfbe",
+        "verification_status": "independently_verified",
+    },
+    "stage2a_runtime_execution_closure": {
+        "filename": "runtime_execution_closure_v1.json",
+        "role": "noncampaign_runtime_execution_closure",
+        "schema_version": 1,
+        "sha256":
+            "795533ed3ea3dadb950eef1dc1057be0a9efcdc7668706fe92752853322fdc91",
+        "verification_status": "independently_verified",
+    },
+    "stage2b_supplemental_seal": {
+        "filename": "pilot_deployment_runtime_supplemental_seal_v2.json",
+        "role": "deterministic_runtime_supplemental_seal",
+        "schema_version": 2,
+        "sha256":
+            "c3be2ef579f9650723237213dd778ac2ef57c804ad9ae5100787f6ea9eba9f60",
+        "supersedes": {
+            "filename": "pilot_deployment_runtime_seal_v1.json",
+            "sha256":
+                "1f9dd5b512b2318b0e4395c7253d7c5c3102caa45eb212cf75c80baf48e3ea24",
+        },
+        "verification_status": "independently_verified",
+    },
+    "v1_aslr_defect_evidence": {
+        "container_evidence": "stage2b_supplemental_seal",
+        "filename": "prior_v1_aslr_defect.json",
+        "role": "v1_nondeterministic_aslr_defect_evidence",
+        "serialization": "canonical_json",
+        "sha256":
+            "054aef3c6fe36eed8291a88952c38c07fd03acfa5c084e400377aca499290ace",
+        "verification_status": "independently_verified",
+    },
+}
 
 
 class ManifestError(ValueError):
@@ -108,6 +222,197 @@ def _validate_string_list(values, name):
     _require(len(values) == len(set(values)), f"{name} contains duplicates")
 
 
+def _canonical_pretty_json_bytes(value):
+    return (
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            indent=2,
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode("utf-8")
+
+
+def load_candidate_v4(path=CANDIDATE_V4_PATH):
+    try:
+        raw = Path(path).read_bytes()
+        candidate = json.loads(raw.decode("utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ManifestError("candidate v4 is not readable JSON") from exc
+    _require(
+        raw == _canonical_pretty_json_bytes(candidate),
+        "candidate v4 JSON is not canonical",
+    )
+    forbidden_autodl_root = b"/root/" + b"autodl-tmp/"
+    _require(
+        forbidden_autodl_root not in raw,
+        "candidate v4 contains an absolute AutoDL path",
+    )
+    _require(
+        re.search(rb"\(0x[0-9A-Fa-f]+\)", raw) is None,
+        "candidate v4 contains a raw ASLR address",
+    )
+    required = {
+        "candidate_code_commit",
+        "candidate_code_tree",
+        "candidate_name",
+        "final_code_commit",
+        "final_git_tag",
+        "formal_runtime_binary_path",
+        "formal_runtime_binary_sha256",
+        "freeze_status",
+        "governance",
+        "reason",
+        "runtime_binding_status",
+        "runtime_closure",
+        "schema_version",
+        "scientific_identity",
+        "supersedes",
+    }
+    _require(set(candidate) == required, "candidate v4 fields mismatch")
+    _require(
+        candidate["schema_version"] == 4
+        and candidate["candidate_name"] == "B4-PE-freeze-candidate-v4-draft"
+        and candidate["freeze_status"] == "draft"
+        and candidate["runtime_binding_status"]
+        == "candidate_bound_unauthorized",
+        "candidate v4 draft identity mismatch",
+    )
+    _require(
+        candidate["candidate_code_commit"] == V4_CANDIDATE_CODE_COMMIT
+        and candidate["candidate_code_tree"] == V4_CANDIDATE_CODE_TREE,
+        "candidate v4 code identity mismatch",
+    )
+    _require(
+        candidate["final_code_commit"] is None
+        and candidate["final_git_tag"] is None
+        and candidate["formal_runtime_binary_path"] is None
+        and candidate["formal_runtime_binary_sha256"] is None,
+        "candidate v4 final identity must remain unset",
+    )
+    _require(
+        candidate["governance"] == V4_GOVERNANCE,
+        "candidate v4 governance mismatch",
+    )
+    _require(
+        candidate["reason"]
+        == (
+            "P1 repair for rho-specific task_energy_factor materialization "
+            "and execution-input identity closure"
+        ),
+        "candidate v4 reason mismatch",
+    )
+    _require(
+        candidate["scientific_identity"]
+        == {
+            "algorithm_order_unchanged": True,
+            "case_counts_unchanged": True,
+            "identity_protocol_unchanged": True,
+            "parameter_matrix_unchanged": True,
+            "rho_specific_execution_taskset_path_added": True,
+            "source_identity_unchanged": True,
+            "taskset_identity_unchanged": True,
+        },
+        "candidate v4 scientific identity mismatch",
+    )
+    _require(
+        candidate["supersedes"]
+        == {
+            "path":
+                "experiments/b4_priority_energy/b4_pe_freeze_candidate_v3.json",
+            "sha256": file_sha256(CANDIDATE_V3_PATH),
+        },
+        "candidate v4 supersedes identity mismatch",
+    )
+    closure = candidate["runtime_closure"]
+    _require(
+        set(closure)
+        == {
+            "artifacts",
+            "deterministic_dependency_representation",
+            "evidence",
+            "schema_version",
+        }
+        and closure["schema_version"] == 2,
+        "candidate v4 runtime closure identity mismatch",
+    )
+    _require(
+        closure["artifacts"] == V4_RUNTIME_ARTIFACTS,
+        "candidate v4 runtime artifact identity mismatch",
+    )
+    _require(
+        closure["evidence"] == V4_RUNTIME_EVIDENCE,
+        "candidate v4 runtime evidence identity mismatch",
+    )
+    _require(
+        closure["deterministic_dependency_representation"]
+        == {
+            "independent_normalizations_byte_identical": True,
+            "pilot_authorization_effect": "none",
+            "raw_aslr_addresses_stored": False,
+            "raw_ldd_lines_stored": False,
+            "supersedes_v1_nondeterministic_representation": True,
+        },
+        "candidate v4 deterministic dependency contract mismatch",
+    )
+    for name, entry in closure["artifacts"].items():
+        validate_relative_path(
+            entry["logical_path"],
+            f"candidate runtime artifact {name}",
+        )
+    evidence = closure["evidence"]
+    _require(
+        {
+            name: entry["schema_version"]
+            for name, entry in evidence.items()
+            if "schema_version" in entry
+        }
+        == {
+            "stage2a_runtime_execution_closure": 1,
+            "stage2b_supplemental_seal": 2,
+        },
+        "candidate v4 external evidence schema claims mismatch",
+    )
+    _require(
+        {
+            name: entry["serialization"]
+            for name, entry in evidence.items()
+            if "serialization" in entry
+        }
+        == {
+            "normalized_dynamic_dependency_manifest": "canonical_json",
+            "python310_tree_manifest": "canonical_jsonl",
+            "python38_tree_manifest": "canonical_jsonl",
+            "v1_aslr_defect_evidence": "canonical_json",
+        },
+        "candidate v4 external evidence serialization mismatch",
+    )
+    for name, entry in evidence.items():
+        filename = validate_relative_path(
+            entry["filename"],
+            f"candidate runtime evidence filename {name}",
+        )
+        _require(
+            PurePosixPath(filename).name == filename,
+            f"candidate runtime evidence filename {name} is not one component",
+        )
+        if "supersedes" in entry:
+            superseded = validate_relative_path(
+                entry["supersedes"]["filename"],
+                f"candidate superseded runtime evidence filename {name}",
+            )
+            _require(
+                PurePosixPath(superseded).name == superseded,
+                (
+                    "candidate superseded runtime evidence filename "
+                    f"{name} is not one component"
+                ),
+            )
+    return candidate
+
+
 def load_manifest_protocol(path=MANIFEST_PROTOCOL_PATH):
     protocol = json.loads(Path(path).read_text(encoding="utf-8"))
     common = {
@@ -143,7 +448,7 @@ def load_manifest_protocol(path=MANIFEST_PROTOCOL_PATH):
         "mechanism_fields", "jmr_denominator_contract",
     }
     v4_fields = {
-        "candidate_v3_ref", "candidate_v3_sha256",
+        "candidate_v4_ref", "candidate_v4_sha256",
         "analysis_contract_ref", "analysis_contract_sha256",
         "observability_activation", "observability_contract_ref",
         "observability_contract_sha256",
@@ -247,9 +552,10 @@ def load_manifest_protocol(path=MANIFEST_PROTOCOL_PATH):
         )
     if schema_version == 4:
         _require(
-            protocol["candidate_v3_ref"] == CANDIDATE_V3_PATH.name
-            and protocol["candidate_v3_sha256"] == file_sha256(CANDIDATE_V3_PATH),
-            "candidate v3 identity mismatch",
+            protocol["candidate_v4_ref"] == CANDIDATE_V4_PATH.name
+            and protocol["candidate_v4_sha256"] == file_sha256(CANDIDATE_V4_PATH)
+            and load_candidate_v4() == CANDIDATE_V4,
+            "candidate v4 identity mismatch",
         )
         _require(
             protocol["observability_contract_ref"]
@@ -402,6 +708,7 @@ def load_manifest_protocol(path=MANIFEST_PROTOCOL_PATH):
     return protocol
 
 
+CANDIDATE_V4 = load_candidate_v4()
 PROTOCOL_V1 = load_manifest_protocol(MANIFEST_PROTOCOL_V1_PATH)
 PROTOCOL = load_manifest_protocol()
 PROTOCOL_V2 = PROTOCOL
@@ -561,7 +868,7 @@ def build_case(
     if protocol["schema_version"] in (2, 3, 4):
         candidate_version = (
             1 if protocol["schema_version"] == 2
-            else 2 if protocol["schema_version"] == 3 else 3
+            else 2 if protocol["schema_version"] == 3 else 4
         )
         case.update(
             {

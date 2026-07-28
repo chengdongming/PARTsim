@@ -48,6 +48,11 @@ Base admission, materialization, manifest, execution, and candidate v4 remain
 drafts with Pilot, Formal, Negative Control, and paper-result authorization
 all set to false. CPU-only admission results are gate evidence, not paper
 results. The v1-v3 protocol and candidate bytes remain historical identities.
+The v4 candidate now binds the reviewed candidate commit and tree to the
+independently verified Stage 2A execution closure and deterministic Stage 2B
+runtime evidence using deployment logical paths, external evidence filenames,
+and SHA-256 identities. This candidate binding does not authorize a campaign,
+establish a final commit or tag, or designate a Formal runtime.
 
 Generate a deterministic manifest (the default destination is under `/tmp`):
 

@@ -2,8 +2,8 @@
   "admission_contract": {
     "deadline_miss_requirement": "zero_for_all_adjudicable_jobs",
     "horizon_ms": 30000,
-    "processor_count": 4,
     "priority_order": "(period_ms,task_id)",
+    "processor_count": 4,
     "resource_model": "priority_energy_disabled"
   },
   "governance": {
@@ -15,7 +15,7 @@
   "identity_protocol_ref": "protocol_resolution_v1.json",
   "identity_protocol_sha256": "941d754e27e1cf599127550561a14a92f46e3605df26dca3c9a97e0325eecd93",
   "manifest_protocol_ref": "manifest_protocol_v4.json",
-  "manifest_protocol_sha256": "cec9ff0139f0b4c2d457b46f56f2518398a4631522e77f66333cb5668349a6e7",
+  "manifest_protocol_sha256": "cf4a890ab87c500f06cc446c8b31b88d83a55829fed774c0dd2c169540cd0018",
   "observability_contract_ref": "observability_summary_contract_v2.json",
   "observability_contract_sha256": "4e982f5a58a26507c9ab1b1b8d0b732e651d4657f10cf16744d3278d11186efe",
   "protocol_name": "B4-PE-base-pool-admission-v1-draft",

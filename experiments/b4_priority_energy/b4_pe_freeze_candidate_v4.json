@@ -1,8 +1,11 @@
 {
-  "candidate_code_commit": null,
+  "candidate_code_commit": "681409e35012d2bc883045e4d10a048b36a6483f",
+  "candidate_code_tree": "266ecfdca0c1bc194e2ce77a295254893b9737ca",
   "candidate_name": "B4-PE-freeze-candidate-v4-draft",
   "final_code_commit": null,
   "final_git_tag": null,
+  "formal_runtime_binary_path": null,
+  "formal_runtime_binary_sha256": null,
   "freeze_status": "draft",
   "governance": {
     "formal_runs_authorized": false,
@@ -13,6 +16,105 @@
     "silent_changes_forbidden": true
   },
   "reason": "P1 repair for rho-specific task_energy_factor materialization and execution-input identity closure",
+  "runtime_binding_status": "candidate_bound_unauthorized",
+  "runtime_closure": {
+    "artifacts": {
+      "dual_python_launcher": {
+        "logical_path": "run_with_b4pe_dual_pythonhome_v2.sh",
+        "role": "dual_python_launcher",
+        "sha256": "e000fd8bb4e12505b86abb7b33573d2d8a0ce4d3948fb1d801235bc0be5c6f25"
+      },
+      "libcmdarg": {
+        "logical_path": "pilot-runtime/lib/libcmdarg.so.0",
+        "role": "command_line_parser_shared_library",
+        "sha256": "02aa859ea7eee6a5b3c3c6c32826656349ee629f19d5a86c245acfb44186c5fd"
+      },
+      "libmetasim": {
+        "logical_path": "pilot-runtime/lib/libmetasim.so.3",
+        "role": "simulation_kernel_shared_library",
+        "sha256": "20734b7ffff7db8352593aa1c89f20716dbcec8462e638591e9855d20525e324"
+      },
+      "libpython3_8": {
+        "logical_path": "host-runtime-lib/libpython3.8.so.1.0",
+        "role": "embedded_python38_shared_library",
+        "sha256": "d6b4470a33290dd9203b9a497b4fa9744e55ff63f59b788d75128973571a66a6"
+      },
+      "librtsim": {
+        "logical_path": "pilot-runtime/lib/librtsim.so.3",
+        "role": "real_time_simulation_shared_library",
+        "sha256": "f566e702435da6070059ff5ec1b47b7b8063e5081db1eb2351de57bc3f6245de"
+      },
+      "simulator": {
+        "logical_path": "pilot-runtime/bin/rtsim",
+        "role": "simulator",
+        "sha256": "96004d1aec42cac73bea72d4fe0d5c2a5e814453bfeeb16d09026c4ff8746f7d"
+      }
+    },
+    "deterministic_dependency_representation": {
+      "independent_normalizations_byte_identical": true,
+      "pilot_authorization_effect": "none",
+      "raw_aslr_addresses_stored": false,
+      "raw_ldd_lines_stored": false,
+      "supersedes_v1_nondeterministic_representation": true
+    },
+    "evidence": {
+      "normalized_dynamic_dependency_manifest": {
+        "container_evidence": "stage2b_supplemental_seal",
+        "filename": "dynamic_dependencies.normalized.json",
+        "role": "normalized_dynamic_dependency_manifest",
+        "serialization": "canonical_json",
+        "sha256": "876abaa6b8812578c93ff12ac4a977f9da65240bb81f623e0233b57fcb8e9e3b",
+        "supersedes": {
+          "filename": "dynamic_dependency_manifest.jsonl",
+          "sha256": "b259ea7727798fa1fc38319a73d16e0699b2d15408a09244a8b72a0ed039ee5f"
+        },
+        "verification_status": "independently_verified"
+      },
+      "python310_tree_manifest": {
+        "container_evidence": "stage2b_supplemental_seal",
+        "filename": "python310_tree.normalized.jsonl",
+        "role": "python310_tree_manifest",
+        "serialization": "canonical_jsonl",
+        "sha256": "1e37cdfa1c0fd7a9ed4f7c0f650a363509530f06e5d609216c0392afc1993e99",
+        "verification_status": "independently_verified"
+      },
+      "python38_tree_manifest": {
+        "container_evidence": "stage2b_supplemental_seal",
+        "filename": "python38_tree.normalized.jsonl",
+        "role": "python38_tree_manifest",
+        "serialization": "canonical_jsonl",
+        "sha256": "6d903c9a25e20cfee4023ddc9bb163d5a1bfd6e14370cd6ade48d88e3ae1bfbe",
+        "verification_status": "independently_verified"
+      },
+      "stage2a_runtime_execution_closure": {
+        "filename": "runtime_execution_closure_v1.json",
+        "role": "noncampaign_runtime_execution_closure",
+        "schema_version": 1,
+        "sha256": "795533ed3ea3dadb950eef1dc1057be0a9efcdc7668706fe92752853322fdc91",
+        "verification_status": "independently_verified"
+      },
+      "stage2b_supplemental_seal": {
+        "filename": "pilot_deployment_runtime_supplemental_seal_v2.json",
+        "role": "deterministic_runtime_supplemental_seal",
+        "schema_version": 2,
+        "sha256": "c3be2ef579f9650723237213dd778ac2ef57c804ad9ae5100787f6ea9eba9f60",
+        "supersedes": {
+          "filename": "pilot_deployment_runtime_seal_v1.json",
+          "sha256": "1f9dd5b512b2318b0e4395c7253d7c5c3102caa45eb212cf75c80baf48e3ea24"
+        },
+        "verification_status": "independently_verified"
+      },
+      "v1_aslr_defect_evidence": {
+        "container_evidence": "stage2b_supplemental_seal",
+        "filename": "prior_v1_aslr_defect.json",
+        "role": "v1_nondeterministic_aslr_defect_evidence",
+        "serialization": "canonical_json",
+        "sha256": "054aef3c6fe36eed8291a88952c38c07fd03acfa5c084e400377aca499290ace",
+        "verification_status": "independently_verified"
+      }
+    },
+    "schema_version": 2
+  },
   "schema_version": 4,
   "scientific_identity": {
     "algorithm_order_unchanged": true,
