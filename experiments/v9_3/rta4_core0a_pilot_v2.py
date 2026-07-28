@@ -237,8 +237,10 @@ EXPECTED_PRODUCTION_SOURCE_CLOSURE_COUNT = 53
 PORTABLE_FREEZE_SOURCE_PATHS = (
     "experiments/v9_3/rta4_core0a_pilot_v2.py",
     "experiments/v9_3/rta4_core0a_authorization_v2.py",
+    "experiments/v9_3/rta4_core0a_execution_authorization_v2.py",
     "scripts/build_v9_3_rta4_core0a_pilot_bundle.py",
     "scripts/build_v9_3_rta4_core0a_authorization.py",
+    "scripts/build_v9_3_rta4_core0a_execution_authorization.py",
     CANDIDATE_CONFIG_PATH,
     SELECTION_ARTIFACT_PATH,
 )
@@ -246,6 +248,7 @@ ALLOWED_PILOT_FREEZE_DIFF_PATHS = frozenset({
     *PORTABLE_FREEZE_SOURCE_PATHS,
     "test/test_v9_3_rta4_core0a_pilot_freeze_v2.py",
     "test/test_v9_3_rta4_core0a_authorization_v2.py",
+    "test/test_v9_3_rta4_core0a_execution_authorization_v2.py",
 })
 
 CORE0A_RETRY_CONTRACT = {
