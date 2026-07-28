@@ -441,6 +441,9 @@ MUTATIONS = (
     (("authorization_state", "authorization_review_passed"), True),
     (("authorization_state", "pilot_execution_allowed"), True),
     (("status",), "AUTHORIZED_CORE0A_ENGINEERING_PILOT"),
+    (("artifact_kind",), "EXECUTABLE_ENGINEERING_AUTHORIZATION"),
+    (("scope", "authorization_scope"), "EXPANDED_SCOPE"),
+    (("authorization_state", "engineering_pilot_authorization"), True),
 )
 
 
@@ -674,6 +677,42 @@ def test_builder_rejects_candidate_output_inside_source_or_workspace(
                 expires_at=EXPIRES_AT,
             )
         assert not output.exists()
+
+
+def test_candidate_write_is_atomic_canonical_and_leaves_no_temp_file(
+    tmp_path, path_arguments, formal_validator,
+):
+    output = tmp_path / "atomic-candidate.json"
+    candidate = authorization.build_core0a_authorization_candidate_v2(
+        **path_arguments,
+        authorization_output_path=output,
+        run_nonce="atomic-write",
+        issued_at=ISSUED_AT,
+        expires_at=EXPIRES_AT,
+    )
+    assert output.read_bytes() == core0a.canonical_json_bytes(candidate)
+    assert not list(tmp_path.glob(f".{output.name}.*.tmp"))
+
+
+def test_interrupted_atomic_candidate_write_leaves_no_partial_target(
+    monkeypatch, tmp_path, path_arguments, formal_validator,
+):
+    output = tmp_path / "interrupted-candidate.json"
+
+    def fail_replace(_source, _target):
+        raise OSError("bounded replace failure")
+
+    monkeypatch.setattr(authorization.os, "replace", fail_replace)
+    with pytest.raises(OSError, match="bounded replace failure"):
+        authorization.build_core0a_authorization_candidate_v2(
+            **path_arguments,
+            authorization_output_path=output,
+            run_nonce="atomic-interruption",
+            issued_at=ISSUED_AT,
+            expires_at=EXPIRES_AT,
+        )
+    assert not output.exists()
+    assert not list(tmp_path.glob(f".{output.name}.*.tmp"))
 
 
 def test_module_and_cli_expose_no_execution_or_upgrade_entry_point():
