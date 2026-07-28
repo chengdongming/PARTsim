@@ -192,15 +192,25 @@ class RealSmokeCaseTests(unittest.TestCase):
                 self.energy,
             )
         safe_dump.assert_not_called()
-        self.assertEqual(self.raw.read_bytes(), self.taskset.read_bytes())
-        self.assertEqual(
+        self.assertNotEqual(self.raw.read_bytes(), self.taskset.read_bytes())
+        self.assertNotEqual(
             real_case.file_sha256(self.raw),
             real_case.file_sha256(self.taskset),
         )
-        self.assertEqual(
+        self.assertNotEqual(
             real_case.formal_semantic_hash(self.raw),
             real_case.formal_semantic_hash(self.taskset),
         )
+        materialized_tasks = yaml.safe_load(
+            self.taskset.read_text(encoding="utf-8")
+        )["taskset"]
+        factors = [
+            real_case._params_mapping(task["params"])["task_energy_factor"]
+            for task in materialized_tasks
+        ]
+        self.assertEqual(len(factors), 10)
+        self.assertTrue(all(float(value) > 0 for value in factors))
+        self.assertAlmostEqual(max(map(float, factors)) / min(map(float, factors)), 2.0)
         self.assertEqual(
             system["cpu_islands"][0]["kernel"]["scheduler"],
             "gpfp_asap_block",
@@ -405,8 +415,8 @@ class RealSmokeCaseTests(unittest.TestCase):
         record_path, _record = self.make_record()
         report = real_case.preflight(record_path)
         self.assertTrue(report["record_validated"])
-        self.assertTrue(report["raw_materialized_sha_match"])
-        self.assertEqual(
+        self.assertFalse(report["raw_materialized_sha_match"])
+        self.assertNotEqual(
             report["raw_taskset_semantic_hash"],
             report["materialized_taskset_semantic_hash"],
         )

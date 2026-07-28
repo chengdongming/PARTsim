@@ -13,6 +13,7 @@ import manifest_common as manifest
 from execution_common import (
     EXECUTION_PROTOCOL_SHA256,
     EXECUTION_PROTOCOL_V3_SHA256,
+    EXECUTION_PROTOCOL_V4_SHA256,
     ExecutionError,
     InputIntegrityError,
     PUBLICATION_STATUSES,
@@ -127,6 +128,7 @@ def inspect_output(output_root, manifest_path=None, simulator_binary=None):
             drift = state.get("execution_protocol_sha256") not in {
                 EXECUTION_PROTOCOL_SHA256,
                 EXECUTION_PROTOCOL_V3_SHA256,
+                EXECUTION_PROTOCOL_V4_SHA256,
             }
             if manifest_sha is not None:
                 drift |= state.get("manifest_file_sha256") != manifest_sha
@@ -168,6 +170,30 @@ def inspect_output(output_root, manifest_path=None, simulator_binary=None):
                     try:
                         actual = _regular_file_sha(
                             safe_output_path(root, relative), f"{role} snapshot"
+                        )
+                    except (ExecutionError, OSError, TypeError):
+                        snapshot_missing += 1
+                    else:
+                        snapshot_sha_mismatches += actual != expected
+
+            if "taskset_semantic_hash" in state:
+                relative = state.get("inventory_snapshot_relpath")
+                expected = state.get("inventory_snapshot_sha256")
+                observed = state.get(
+                    "inventory_observed_original_sha256"
+                )
+                snapshot_provenance_drift += bool(
+                    not isinstance(relative, str)
+                    or not isinstance(expected, str)
+                    or expected != observed
+                    or expected
+                    != state.get("materialization_inventory_sha256")
+                )
+                if isinstance(relative, str):
+                    try:
+                        actual = _regular_file_sha(
+                            safe_output_path(root, relative),
+                            "inventory snapshot",
                         )
                     except (ExecutionError, OSError, TypeError):
                         snapshot_missing += 1

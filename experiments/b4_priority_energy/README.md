@@ -15,6 +15,40 @@ traces, or results. It never starts the simulator. Planned scheduler-specific
 system configurations are represented by relative paths and are a later-stage
 materialization responsibility.
 
+The P1 repair adds an explicit, unauthorized v4 draft for that later stage.
+It preserves the v1 identity protocol: `taskset_id` and `source_id` remain
+independent of `rho_E`, while the execution taskset path is
+`artifacts/tasksets/<taskset_id>/rho-<rho_E>.yml`. The base taskset is stored
+once at `artifacts/tasksets/<taskset_id>/base.yml`.
+
+Base generation and acceptance are a separate, non-campaign CPU-only step:
+four-core global GFP-RM, unchanged C/T/D/O, priority energy disabled,
+30,000 ms horizon, and zero deadline misses over every adjudicable job. It
+writes a canonical base-pool admission inventory. The materializer never
+generates, skips, replaces, or resamples a base taskset; it accepts only a base
+whose admission entry, system configuration, SHA-256, semantic hash, seed,
+pool, utilization, and replicate identity all validate. It then writes one
+canonical `task_energy_factor` into every task's `params`, records the actual
+execution bytes and semantic hash in a canonical inventory, and never starts
+the simulator:
+
+```text
+python3 experiments/b4_priority_energy/generate_manifest_v4.py \
+  --phase pilot --output /tmp/b4_pe_v4_pilot.jsonl
+python3 experiments/b4_priority_energy/admit_base_tasksets.py \
+  --manifest /tmp/b4_pe_v4_pilot.jsonl \
+  --output-root /absolute/outside-repository-root \
+  --simulator /absolute/path/to/rtsim
+python3 experiments/b4_priority_energy/materialize_manifest.py \
+  --manifest /tmp/b4_pe_v4_pilot.jsonl \
+  --output-root /absolute/outside-repository-root
+```
+
+Base admission, materialization, manifest, execution, and candidate v4 remain
+drafts with Pilot, Formal, Negative Control, and paper-result authorization
+all set to false. CPU-only admission results are gate evidence, not paper
+results. The v1-v3 protocol and candidate bytes remain historical identities.
+
 Generate a deterministic manifest (the default destination is under `/tmp`):
 
 ```text
