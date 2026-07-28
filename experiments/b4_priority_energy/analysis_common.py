@@ -24,10 +24,8 @@ sys.dont_write_bytecode = True
 B4_DIR = Path(__file__).resolve().parent
 REPO_ROOT = B4_DIR.parents[1]
 CONTRACT_PATH = B4_DIR / "analysis_contract_v1.json"
-OBSERVABILITY_CONTRACT_PATH = (
-    B4_DIR / "observability_summary_contract_v1.json"
-)
-CANDIDATE_V2_PATH = B4_DIR / "b4_pe_freeze_candidate_v2.json"
+OBSERVABILITY_CONTRACT_PATH = B4_DIR / "observability_summary_contract_v1.json"
+CANDIDATE_PATH = B4_DIR / "b4_pe_freeze_candidate_v2.json"
 EXTRACTOR_PATH = B4_DIR / "extract_analysis.py"
 
 import integration_smoke_common as smoke
@@ -126,8 +124,9 @@ def _validate_contract():
         "analysis contract top-level fields mismatch",
     )
     _require(
-        CONTRACT["contract_version"] == 1
-        and CONTRACT["analysis_schema_version"] == 1,
+        CONTRACT["contract_version"] in (1, 2)
+        and CONTRACT["analysis_schema_version"]
+        == CONTRACT["contract_version"],
         "analysis contract version mismatch",
     )
     for label, fields in (
@@ -164,6 +163,45 @@ def _validate_contract():
 
 
 _validate_contract()
+
+
+def configure_analysis_contract(version):
+    """Select an explicit extraction contract; never infer across versions."""
+    global CONTRACT_PATH, OBSERVABILITY_CONTRACT_PATH, CANDIDATE_PATH
+    global CONTRACT, ANALYSIS_SCHEMA_VERSION, CASE_IDENTITY_FIELDS
+    global CASE_FIELDS, TASK_FIELDS, MECHANISM_FIELDS, ENERGY_FIELDS
+    global TASK_METRIC_FIELDS, PAIRING_FIELDS, PHASE_ORDER, ALGORITHMS
+    global ALGORITHM_INDEX, FORMAL_PHASES, OUTPUT_NAMES
+    _require(version in (1, 2), "analysis contract version must be 1 or 2")
+    CONTRACT_PATH = B4_DIR / f"analysis_contract_v{version}.json"
+    OBSERVABILITY_CONTRACT_PATH = (
+        B4_DIR / f"observability_summary_contract_v{version}.json"
+    )
+    CANDIDATE_PATH = B4_DIR / (
+        "b4_pe_freeze_candidate_v2.json"
+        if version == 1 else "b4_pe_freeze_candidate_v3.json"
+    )
+    CONTRACT = _load_json(CONTRACT_PATH)
+    ANALYSIS_SCHEMA_VERSION = CONTRACT["analysis_schema_version"]
+    CASE_IDENTITY_FIELDS = tuple(CONTRACT["case_identity_field_order"])
+    CASE_FIELDS = tuple(CONTRACT["case_field_order"])
+    TASK_FIELDS = tuple(CONTRACT["task_field_order"])
+    MECHANISM_FIELDS = tuple(CONTRACT["mechanism_field_order"])
+    ENERGY_FIELDS = tuple(CONTRACT["energy_field_order"])
+    TASK_METRIC_FIELDS = tuple(CONTRACT["task_metric_field_order"])
+    PAIRING_FIELDS = tuple(CONTRACT["pairing_contract"]["pairing_dimension_order"])
+    PHASE_ORDER = tuple(CONTRACT["ordering_contract"]["phase_canonical_order"])
+    ALGORITHMS = tuple(CONTRACT["ordering_contract"]["algorithm_canonical_order"])
+    ALGORITHM_INDEX = {name: index for index, name in enumerate(ALGORITHMS)}
+    FORMAL_PHASES = frozenset(
+        CONTRACT["accepted_trace_schemas"]["formal_phases"]["phases"]
+    )
+    OUTPUT_NAMES = tuple(
+        CONTRACT["authoritative_outputs"]
+        + CONTRACT["convenience_outputs"]
+        + CONTRACT["metadata_outputs"]
+    )
+    _validate_contract()
 
 
 def file_sha256(path):
@@ -308,10 +346,11 @@ def _validate_embedded_smoke_record(record):
             smoke._validate_relative_path(record[field], field)
     except smoke.IntegrationSmokeError as exc:
         raise AnalysisError(str(exc)) from exc
-    if protocol is smoke.PROTOCOL:
+    if protocol is not smoke.PROTOCOL_V1:
+        candidate_version = 1 if protocol is smoke.PROTOCOL_V2 else 2
         for field in (
-            "candidate_v1_ref",
-            "candidate_v1_sha256",
+            f"candidate_v{candidate_version}_ref",
+            f"candidate_v{candidate_version}_sha256",
             "observability_contract_ref",
             "observability_contract_sha256",
             "observability_summary_contract_version",
@@ -322,6 +361,16 @@ def _validate_embedded_smoke_record(record):
                 record[field] == protocol[field],
                 f"schema3 smoke binding mismatch: {field}",
             )
+        if protocol is smoke.PROTOCOL_V3:
+            for field in (
+                "analysis_contract_ref", "analysis_contract_sha256",
+                "minimum_adjudicable_jobs_per_task", "mechanism_fields",
+                "jmr_denominator_contract",
+            ):
+                _require(
+                    record[field] == protocol[field],
+                    f"schema3 v2 smoke binding mismatch: {field}",
+                )
     normalized = dict(record)
     normalized.update(
         {
@@ -369,7 +418,15 @@ def load_expected_records(path):
                 )
             except manifest.ManifestError as exc:
                 raise AnalysisError(str(exc)) from exc
-            _require(protocol is manifest.PROTOCOL, "formal record must use v2")
+            expected_protocol = (
+                manifest.PROTOCOL_V2
+                if CONTRACT["contract_version"] == 1
+                else manifest.PROTOCOL_V3
+            )
+            _require(
+                protocol is expected_protocol,
+                "formal record/analysis contract version mismatch",
+            )
             normalized = record
             kind = "formal"
         records.append({"record": normalized, "kind": kind})
@@ -487,6 +544,11 @@ def task_pass(task):
         _require(
             type(value) is int and value >= 0,
             f"task metric is invalid: {name}",
+        )
+    if CONTRACT["contract_version"] == 2:
+        return (
+            task["adjudicable_jobs"] >= 100
+            and task["deadline_miss_jobs"] == 0
         )
     return (
         task["deadline_miss_jobs"] == 0
@@ -607,6 +669,7 @@ def _scheduling_outcomes(audit_case, all_aggregate):
 
 def _protocol_identity(record, kind):
     if kind == "formal":
+        candidate_field = f"candidate_v{CONTRACT['contract_version']}_sha256"
         return {
             "manifest_schema_version": record["schema_version"],
             "protocol_name": record["protocol_name"],
@@ -614,13 +677,14 @@ def _protocol_identity(record, kind):
             "frozen_document_sha256": record["frozen_document_sha256"],
             "identity_protocol_sha256": record["identity_protocol_sha256"],
             "system_template_sha256": record["system_template_sha256"],
-            "candidate_v1_sha256": record["candidate_v1_sha256"],
+            candidate_field: record[candidate_field],
             "observability_contract_sha256": record[
                 "observability_contract_sha256"
             ],
         }
     protocol = smoke.PROTOCOLS_BY_SCHEMA[record["schema_version"]]
     provenance = record["provenance"]
+    candidate_field = f"candidate_v{CONTRACT['contract_version']}_sha256"
     return {
         "manifest_schema_version": record["schema_version"],
         "protocol_name": protocol["protocol_name"],
@@ -628,7 +692,7 @@ def _protocol_identity(record, kind):
         "frozen_document_sha256": None,
         "identity_protocol_sha256": None,
         "system_template_sha256": None,
-        "candidate_v1_sha256": record.get("candidate_v1_sha256"),
+        candidate_field: record.get(candidate_field),
         "observability_contract_sha256": record.get(
             "observability_contract_sha256"
         ),
@@ -766,6 +830,8 @@ def _extract_one(entry, audit_case, state_path, state):
             capacity_j=source_values["Emax_j"],
             processor_count=processor_count,
             expected_task_ranks=ranks,
+            taskset_document=taskset,
+            expected_contract_version=CONTRACT["contract_version"],
         )
     except observability.ObservabilityValidationError as exc:
         raise AnalysisError(str(exc)) from exc
@@ -931,7 +997,10 @@ def _extract_one(entry, audit_case, state_path, state):
         "system_template_sha256": protocol_identity[
             "system_template_sha256"
         ],
-        "candidate_v1_sha256": protocol_identity["candidate_v1_sha256"],
+        f"candidate_v{CONTRACT['contract_version']}_sha256":
+            protocol_identity[
+                f"candidate_v{CONTRACT['contract_version']}_sha256"
+            ],
         "observability_contract_sha256": protocol_identity[
             "observability_contract_sha256"
         ],
@@ -1193,7 +1262,14 @@ def _source_version_identity():
     }
 
 
-def build_outputs(output_root, expected_records_path, audit_report_path, strict):
+def build_outputs(
+    output_root,
+    expected_records_path,
+    audit_report_path,
+    strict,
+    analysis_contract_version=1,
+):
+    configure_analysis_contract(analysis_contract_version)
     _require(strict is True, "--strict is required")
     output_root = validate_output_root(output_root)
     expected_path = _absolute_regular_file(expected_records_path, "expected-records")
@@ -1305,8 +1381,10 @@ def build_outputs(output_root, expected_records_path, audit_report_path, strict)
         "observability_contract_sha256": file_sha256(
             OBSERVABILITY_CONTRACT_PATH
         ),
-        "candidate_v2_path": CANDIDATE_V2_PATH.relative_to(REPO_ROOT).as_posix(),
-        "candidate_v2_sha256": file_sha256(CANDIDATE_V2_PATH),
+        f"candidate_v{analysis_contract_version + 1}_path":
+            CANDIDATE_PATH.relative_to(REPO_ROOT).as_posix(),
+        f"candidate_v{analysis_contract_version + 1}_sha256":
+            file_sha256(CANDIDATE_PATH),
         "source_code_commit": source_identity["source_code_commit"],
         "source_base_commit": source_identity["source_base_commit"],
         "extractor_version_sha256": source_identity[

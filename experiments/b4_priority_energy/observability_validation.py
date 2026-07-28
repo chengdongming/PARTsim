@@ -10,9 +10,23 @@ from pathlib import Path
 
 
 B4_DIR = Path(__file__).resolve().parent
-CONTRACT_PATH = B4_DIR / "observability_summary_contract_v1.json"
-CONTRACT_SHA256 = hashlib.sha256(CONTRACT_PATH.read_bytes()).hexdigest()
-CONTRACT = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
+CONTRACT_PATHS = {
+    version: B4_DIR / f"observability_summary_contract_v{version}.json"
+    for version in (1, 2)
+}
+CONTRACTS = {
+    version: json.loads(path.read_text(encoding="utf-8"))
+    for version, path in CONTRACT_PATHS.items()
+}
+CONTRACT_SHA256S = {
+    version: hashlib.sha256(path.read_bytes()).hexdigest()
+    for version, path in CONTRACT_PATHS.items()
+}
+# Historical aliases remain v1 so existing v2 protocol identities and callers
+# are byte/behavior compatible.
+CONTRACT_PATH = CONTRACT_PATHS[1]
+CONTRACT_SHA256 = CONTRACT_SHA256S[1]
+CONTRACT = CONTRACTS[1]
 
 
 class ObservabilityValidationError(ValueError):
@@ -49,10 +63,61 @@ def _approximately_equal(lhs, rhs):
     )
 
 
-def _field_names(contract_field):
+def _field_names(contract, contract_field):
     return tuple(
-        item["name"] for item in CONTRACT[contract_field]
+        item["name"] for item in contract[contract_field]
     )
+
+
+def contract_identity(version):
+    _require(version in CONTRACTS, "unsupported observability contract version")
+    return {
+        "contract": CONTRACTS[version],
+        "path": CONTRACT_PATHS[version],
+        "sha256": CONTRACT_SHA256S[version],
+    }
+
+
+def adjudicable_jobs_from_taskset(taskset_document, horizon_ms):
+    """Independently derive jobs whose absolute deadline is at or before H_B4."""
+    _require(type(horizon_ms) is int and horizon_ms > 0, "invalid adjudication horizon")
+    tasks = taskset_document.get("taskset") if isinstance(taskset_document, dict) else None
+    _require(isinstance(tasks, list), "taskset must contain a task list")
+    release_horizon = taskset_document.get("release_horizon", horizon_ms)
+    _require(
+        type(release_horizon) is int and release_horizon > 0,
+        "taskset release horizon is invalid",
+    )
+    expected = {}
+    for task in tasks:
+        _require(isinstance(task, dict), "taskset item is not an object")
+        name = task.get("name")
+        period = task.get("iat")
+        deadline = task.get("deadline", period)
+        offset = task.get("ph", 0)
+        params = task.get("params", "")
+        if isinstance(params, str):
+            for item in params.strip().strip('"').split(","):
+                if "=" not in item:
+                    continue
+                key, value = (part.strip().strip('"') for part in item.split("=", 1))
+                if key == "arrival_offset":
+                    try:
+                        offset = int(value)
+                    except ValueError as exc:
+                        raise ObservabilityValidationError(
+                            f"taskset arrival offset is invalid: {name}"
+                        ) from exc
+        _require(
+            isinstance(name, str) and name and type(period) is int and period > 0
+            and type(deadline) is int and deadline > 0
+            and type(offset) is int and offset >= 0,
+            f"taskset timing parameters are invalid: {name}",
+        )
+        last_release = min(release_horizon - 1, horizon_ms - deadline)
+        count = 0 if last_release < offset else ((last_release - offset) // period) + 1
+        expected[name] = count
+    return expected
 
 
 def task_ranks_from_taskset(taskset_document):
@@ -101,12 +166,28 @@ def validate_schema3_summary(
     capacity_j,
     processor_count,
     expected_task_ranks=None,
+    taskset_document=None,
+    expected_contract_version=None,
 ):
     _require(isinstance(document, dict), "result is not an object")
+    observed_contract_version = document.get(
+        "observability_summary_contract_version"
+    )
+    _require(
+        type(observed_contract_version) is int
+        and observed_contract_version in CONTRACTS,
+        "observability contract version mismatch",
+    )
+    if expected_contract_version is not None:
+        _require(
+            observed_contract_version == expected_contract_version,
+            "observability contract version mismatch",
+        )
+    contract = CONTRACTS[observed_contract_version]
     _require(
         type(document.get("trace_schema_version")) is int
         and document["trace_schema_version"]
-        == CONTRACT["trace_schema_version"],
+        == contract["trace_schema_version"],
         "trace schema is not schema3",
     )
     _require(
@@ -114,7 +195,7 @@ def validate_schema3_summary(
             "observability_summary_contract_version"
         )) is int
         and document["observability_summary_contract_version"]
-        == CONTRACT["contract_version"],
+        == contract["contract_version"],
         "observability contract version mismatch",
     )
     horizon = document.get("observability_summary_horizon_ms")
@@ -130,6 +211,7 @@ def validate_schema3_summary(
     )
 
     mechanism_fields = _field_names(
+        contract,
         "mechanism_summary_fields"
     )
     mechanism = document.get("mechanism_summary")
@@ -159,8 +241,21 @@ def validate_schema3_summary(
         * min(processor_count, 4),
         "mechanism_summary bounds mismatch",
     )
+    if observed_contract_version == 2:
+        _require(
+            mechanism["sync_batch_evaluation_ticks"] <= horizon
+            and mechanism["sync_batch_reject_ticks"]
+            <= mechanism["sync_batch_evaluation_ticks"]
+            and mechanism["alap_deferral_opportunity_ticks"] <= horizon
+            and mechanism["positive_slack_deferral_ticks"]
+            <= mechanism["alap_deferral_opportunity_ticks"]
+            and mechanism["st_charging_opportunity_ticks"] <= horizon
+            and mechanism["st_slack_charging_wait_ticks"]
+            <= mechanism["st_charging_opportunity_ticks"],
+            "version 2 mechanism_summary bounds mismatch",
+        )
 
-    energy_fields = _field_names("energy_summary_fields")
+    energy_fields = _field_names(contract, "energy_summary_fields")
     energy = document.get("energy_summary")
     _require(
         isinstance(energy, dict)
@@ -225,11 +320,11 @@ def validate_schema3_summary(
         "energy_summary bounds mismatch",
     )
 
-    task_fields = _field_names("per_task_summary_fields")
+    task_fields = _field_names(contract, "per_task_summary_fields")
     per_task = document.get("per_task_summary")
     _require(
         isinstance(per_task, list)
-        and len(per_task) == CONTRACT["invariants"]["task_count"],
+        and len(per_task) == contract["invariants"]["task_count"],
         "per_task_summary task count mismatch",
     )
     if expected_task_ranks is not None:
@@ -245,6 +340,12 @@ def validate_schema3_summary(
         )
     seen_names = set()
     total_executed = 0
+    expected_adjudicable = None
+    if observed_contract_version == 2:
+        _require(taskset_document is not None, "version 2 requires taskset adjudication input")
+        expected_adjudicable = adjudicable_jobs_from_taskset(
+            taskset_document, horizon
+        )
     for expected_rank, task in enumerate(per_task):
         _require(
             isinstance(task, dict)
@@ -282,6 +383,7 @@ def validate_schema3_summary(
             for field in task_fields[4:]
         }
         released = counts["released_jobs"]
+        adjudicable = counts.get("adjudicable_jobs", released)
         completed = counts["completed_jobs"]
         terminated = counts["terminated_jobs"]
         unfinished = counts["unfinished_at_horizon_jobs"]
@@ -298,8 +400,9 @@ def validate_schema3_summary(
             completed + terminated <= released
             and unfinished
             == released - completed - terminated
-            and counts["deadline_miss_jobs"] <= released
-            and response_count == completed
+            and counts["deadline_miss_jobs"] <= adjudicable <= released
+            and response_count <= completed
+            and (observed_contract_version != 1 or response_count == completed)
             and (
                 response_count != 0
                 or (response_sum == 0 and response_max == 0)
@@ -310,6 +413,18 @@ def validate_schema3_summary(
             ),
             f"lifecycle closure mismatch: {name}",
         )
+        if observed_contract_version == 2:
+            _require(
+                name in expected_adjudicable
+                and adjudicable == expected_adjudicable[name],
+                f"adjudicable job count mismatch: {name}",
+            )
+            _require(
+                adjudicable >= contract["invariants"][
+                    "minimum_adjudicable_jobs_per_task"
+                ],
+                f"insufficient adjudicable jobs: {name}",
+            )
         total_executed += counts["executed_core_ticks"]
     _require(
         total_executed <= processor_count * horizon,
@@ -317,7 +432,7 @@ def validate_schema3_summary(
     )
     return {
         "trace_schema_version": 3,
-        "observability_summary_contract_version": 1,
+        "observability_summary_contract_version": observed_contract_version,
         "horizon_ms": horizon,
         "task_count": len(per_task),
         "top4_count": sum(item["is_top4"] for item in per_task),

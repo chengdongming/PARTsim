@@ -372,6 +372,8 @@ struct TraceTarget {
 
 struct TracePublicationContract {
     int expected_schema{RTSim::JSONTrace::TRACE_SCHEMA_VERSION};
+    int expected_observability_contract_version{
+        RTSim::B4_OBSERVABILITY_SUMMARY_CONTRACT_VERSION};
     double initial_energy_j{0.0};
     double capacity_j{0.0};
     std::size_t processor_count{0};
@@ -692,7 +694,8 @@ if not has_arrival:
 if int(sys.argv[3]) == 3:
     if type(data.get('observability_summary_contract_version')) is not int:
         fail('invalid observability summary contract version type')
-    if data['observability_summary_contract_version'] != 1:
+    contract_version = int(sys.argv[12])
+    if data['observability_summary_contract_version'] != contract_version:
         fail('invalid observability summary contract version')
     summary_horizon = data.get('observability_summary_horizon_ms')
     if type(summary_horizon) is not int or summary_horizon <= 0:
@@ -705,6 +708,13 @@ if int(sys.argv[3]) == 3:
         'low_priority_bypass_core_ticks', 'hp_dispatch_demand_ticks',
         'hp_energy_blocked_ticks', 'hp_energy_blocked_job_ticks',
         'observed_decision_ticks')
+    if contract_version == 2:
+        mechanism_fields += (
+            'sync_batch_evaluation_ticks', 'sync_batch_reject_ticks',
+            'alap_deferral_opportunity_ticks',
+            'positive_slack_deferral_ticks',
+            'st_charging_opportunity_ticks',
+            'st_slack_charging_wait_ticks')
     mechanism = data.get('mechanism_summary')
     exact_keys(mechanism, mechanism_fields, 'mechanism_summary')
     mechanism = {
@@ -726,6 +736,17 @@ if int(sys.argv[3]) == 3:
             or mechanism['hp_energy_blocked_job_ticks']
                 > mechanism['hp_energy_blocked_ticks'] * min(processors, 4)):
         fail('mechanism summary bounds are inconsistent')
+    if contract_version == 2 and (
+            mechanism['sync_batch_evaluation_ticks'] > summary_horizon
+            or mechanism['sync_batch_reject_ticks']
+                > mechanism['sync_batch_evaluation_ticks']
+            or mechanism['alap_deferral_opportunity_ticks'] > summary_horizon
+            or mechanism['positive_slack_deferral_ticks']
+                > mechanism['alap_deferral_opportunity_ticks']
+            or mechanism['st_charging_opportunity_ticks'] > summary_horizon
+            or mechanism['st_slack_charging_wait_ticks']
+                > mechanism['st_charging_opportunity_ticks']):
+        fail('version 2 mechanism bounds are inconsistent')
 
     energy_scalar_fields = (
         'offered_energy_j', 'credited_energy_j', 'clipped_energy_j',
@@ -783,6 +804,8 @@ if int(sys.argv[3]) == 3:
         'executed_core_ticks', 'completed_response_time_count',
         'completed_response_time_sum_ms',
         'completed_response_time_max_ms')
+    if contract_version == 2:
+        task_fields = task_fields[:5] + ('adjudicable_jobs',) + task_fields[5:]
     per_task = data.get('per_task_summary')
     if not isinstance(per_task, list) or len(per_task) != 10:
         fail('per_task_summary must contain exactly ten tasks')
@@ -808,6 +831,7 @@ if int(sys.argv[3]) == 3:
             for field in task_fields[4:]
         }
         released = counts['released_jobs']
+        adjudicable = counts.get('adjudicable_jobs', released)
         completed = counts['completed_jobs']
         terminated = counts['terminated_jobs']
         unfinished = counts['unfinished_at_horizon_jobs']
@@ -816,8 +840,11 @@ if int(sys.argv[3]) == 3:
         response_max = counts['completed_response_time_max_ms']
         if (completed + terminated > released
                 or unfinished != released - completed - terminated
-                or counts['deadline_miss_jobs'] > released
-                or response_count != completed
+                or counts['deadline_miss_jobs'] > adjudicable
+                or adjudicable > released
+                or (contract_version == 2 and adjudicable < 100)
+                or response_count > completed
+                or (contract_version == 1 and response_count != completed)
                 or (response_count == 0
                     and (response_sum != 0 or response_max != 0))
                 or (response_count > 0 and response_max > response_sum)):
@@ -843,13 +870,16 @@ if int(sys.argv[3]) == 3:
                  << contract.capacity_j;
         const std::string processors =
             std::to_string(contract.processor_count);
+        const std::string observability_contract_version =
+            std::to_string(
+                contract.expected_observability_contract_version);
         ::execl("/usr/bin/python3", "python3", "-c", validator,
                 target.partial_path.c_str(), run_id.c_str(),
                 expected_schema.c_str(),
                 scheduler.c_str(), display_name.c_str(), implementation.c_str(),
                 expected_horizon.c_str(), taskset_hash.c_str(),
                 initial_energy.str().c_str(), capacity.str().c_str(),
-                processors.c_str(),
+                processors.c_str(), observability_contract_version.c_str(),
                 static_cast<char *>(nullptr));
         ::execl("/usr/local/bin/python3", "python3", "-c", validator,
                 target.partial_path.c_str(), run_id.c_str(),
@@ -857,7 +887,7 @@ if int(sys.argv[3]) == 3:
                 scheduler.c_str(), display_name.c_str(), implementation.c_str(),
                 expected_horizon.c_str(), taskset_hash.c_str(),
                 initial_energy.str().c_str(), capacity.str().c_str(),
-                processors.c_str(),
+                processors.c_str(), observability_contract_version.c_str(),
                 static_cast<char *>(nullptr));
         _exit(127);
     }
@@ -979,6 +1009,8 @@ int main(int argc, char *argv[]) {
         opts["b4-observability-summary"] == "true";
     const bool b4_horizon_supplied =
         !opts["b4-summary-horizon"].empty();
+    const bool b4_contract_version_supplied =
+        !opts["b4-observability-contract-version"].empty();
     std::uint64_t b4_summary_horizon = 0;
     if (b4_observability_summary != b4_horizon_supplied) {
         std::cerr
@@ -987,6 +1019,15 @@ int main(int argc, char *argv[]) {
             << std::endl;
         return EXIT_FAILURE;
     }
+    if (b4_contract_version_supplied && !b4_observability_summary) {
+        std::cerr
+            << "PRE-FLIGHT ERROR: --b4-observability-contract-version "
+               "requires --b4-observability-summary"
+            << std::endl;
+        return EXIT_FAILURE;
+    }
+    int b4_observability_contract_version =
+        RTSim::B4_OBSERVABILITY_SUMMARY_CONTRACT_VERSION;
     if (b4_observability_summary) {
         try {
             b4_summary_horizon = parsePositiveInteger(
@@ -996,6 +1037,23 @@ int main(int argc, char *argv[]) {
             std::cerr << "PRE-FLIGHT ERROR: " << error.what()
                       << std::endl;
             return EXIT_FAILURE;
+        }
+        if (b4_contract_version_supplied) {
+            const std::string &value =
+                opts["b4-observability-contract-version"];
+            if (value == "1") {
+                b4_observability_contract_version =
+                    RTSim::B4_OBSERVABILITY_SUMMARY_CONTRACT_VERSION;
+            } else if (value == "2") {
+                b4_observability_contract_version =
+                    RTSim::B4_OBSERVABILITY_SUMMARY_CONTRACT_VERSION_V2;
+            } else {
+                std::cerr
+                    << "PRE-FLIGHT ERROR: "
+                       "--b4-observability-contract-version must be 1 or 2"
+                    << std::endl;
+                return EXIT_FAILURE;
+            }
         }
         if (duration <= MetaSim::Tick(0) ||
             b4_summary_horizon !=
@@ -1186,7 +1244,8 @@ int main(int argc, char *argv[]) {
                     MetaSim::Tick(
                         static_cast<std::int64_t>(
                             b4_summary_horizon)),
-                    b4_observability_metadata);
+                    b4_observability_metadata,
+                    b4_observability_contract_version);
                 tracer.jtrace->setEnergyProvider(
                     b4_energy_provider);
                 b4_energy_provider->setTraceLogger(
@@ -1261,6 +1320,8 @@ int main(int argc, char *argv[]) {
         b4_observability_summary
             ? RTSim::B4_OBSERVABILITY_TRACE_SCHEMA_VERSION
             : RTSim::JSONTrace::TRACE_SCHEMA_VERSION;
+    publication_contract.expected_observability_contract_version =
+        b4_observability_contract_version;
     try {
         if (b4_observability_summary) {
             if (!outcome.reached_requested_horizon ||

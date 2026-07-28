@@ -422,7 +422,10 @@ def _taskset_ranks(case, root, state):
         document = yaml.safe_load(
             _safe_path(root, relative).read_text(encoding="utf-8")
         )
-        return observability.task_ranks_from_taskset(document)
+        return {
+            "ranks": observability.task_ranks_from_taskset(document),
+            "document": document,
+        }
     except (
         execution.ExecutionError,
         OSError,
@@ -456,7 +459,7 @@ def _classify_result(
     record,
     source,
     system,
-    task_ranks,
+    taskset_metadata,
 ):
     case_id = case["case_id"]
     if result.get("run_id") != case_id:
@@ -492,6 +495,16 @@ def _classify_result(
             f"{observed_schema}/{required_schema}",
         )
     if required_schema == 3:
+        expected_contract_version = (
+            record.get("observability_summary_contract_version")
+            if isinstance(record, dict) else None
+        )
+        try:
+            expected_contract = observability.contract_identity(
+                expected_contract_version
+            )
+        except observability.ObservabilityValidationError:
+            expected_contract = None
         expected_summary_horizon = (
             record.get("summary_horizon_ms")
             if isinstance(record, dict)
@@ -502,17 +515,18 @@ def _classify_result(
                 "observability_summary_horizon_ms"
             )
         contract_identity_valid = (
-            isinstance(record, dict)
+            expected_contract is not None
+            and isinstance(record, dict)
             and record.get("observability_contract_ref")
-            == observability.CONTRACT_PATH.name
+            == expected_contract["path"].name
             and record.get("observability_contract_sha256")
-            == observability.CONTRACT_SHA256
+            == expected_contract["sha256"]
             and record.get(
                 "observability_summary_contract_version"
             )
-            == observability.CONTRACT["contract_version"]
+            == expected_contract["contract"]["contract_version"]
             and record.get("trace_schema_version")
-            == observability.CONTRACT["trace_schema_version"]
+            == expected_contract["contract"]["trace_schema_version"]
             and expected_summary_horizon == duration
         )
         if not contract_identity_valid:
@@ -530,7 +544,9 @@ def _classify_result(
                         initial_energy_j=source.get("E0_j"),
                         capacity_j=source.get("Emax_j"),
                         processor_count=system.get("processors"),
-                        expected_task_ranks=task_ranks,
+                        expected_task_ranks=taskset_metadata["ranks"],
+                        taskset_document=taskset_metadata["document"],
+                        expected_contract_version=expected_contract_version,
                     )
                 )
             except (
@@ -749,6 +765,19 @@ def _audit_case(state_path, root, state, record_entry):
             "algorithm_mismatch",
             f"{algorithm}/{record.get('algorithm')}",
         )
+    if record is not None:
+        expected_execution_protocol = (
+            execution.EXECUTION_PROTOCOL_V3_SHA256
+            if record.get("schema_version")
+            in {3, "b4-pe-integration-smoke-v3"}
+            else execution.EXECUTION_PROTOCOL_SHA256
+        )
+        if state.get("execution_protocol_sha256") != expected_execution_protocol:
+            _add_issue(
+                case,
+                "audit_failure",
+                "execution_protocol_identity_mismatch",
+            )
     if case["status"] != "succeeded":
         _add_issue(
             case,

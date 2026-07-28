@@ -64,9 +64,21 @@ namespace RTSim {
         std::vector<ObservabilityTaskMetadata> metadata;
         metadata.reserve(ranked_tasks.size());
         for (std::size_t i = 0; i < ranked_tasks.size(); ++i) {
+            Task *concrete_task = dynamic_cast<Task *>(ranked_tasks[i]);
+            if (!concrete_task) {
+                throw std::invalid_argument(
+                    "observability task has no configured deadline surface");
+            }
+            const std::int64_t relative_deadline = static_cast<std::int64_t>(
+                concrete_task->getConfiguredRelDline());
+            if (relative_deadline <= 0) {
+                throw std::invalid_argument(
+                    "observability task relative deadline must be positive");
+            }
             metadata.push_back(ObservabilityTaskMetadata{
                 b4TaskName(ranked_tasks[i]),
-                static_cast<std::uint32_t>(i)});
+                static_cast<std::uint32_t>(i),
+                static_cast<std::uint64_t>(relative_deadline)});
         }
         return metadata;
     }
@@ -83,7 +95,13 @@ namespace RTSim {
         const std::set<AbsRTTask *> &actual_dispatch,
         const std::map<AbsRTTask *, double> &incremental_energy_costs_j,
         const std::map<AbsRTTask *, DecisionExclusionReason>
-            &exclusion_reasons) {
+            &exclusion_reasons,
+        bool sync_batch_evaluation,
+        bool sync_batch_reject,
+        bool alap_deferral_opportunity,
+        bool positive_slack_deferral,
+        bool st_charging_opportunity,
+        bool st_slack_charging_wait) {
         const std::vector<AbsRTTask *> ranked_tasks =
             validatedB4PriorityUniverse(priority_universe);
 
@@ -122,6 +140,12 @@ namespace RTSim {
         record.processor_count = processor_count;
         record.available_energy_j = available_energy_j;
         record.energy_epsilon_j = energy_epsilon_j;
+        record.sync_batch_evaluation = sync_batch_evaluation;
+        record.sync_batch_reject = sync_batch_reject;
+        record.alap_deferral_opportunity = alap_deferral_opportunity;
+        record.positive_slack_deferral = positive_slack_deferral;
+        record.st_charging_opportunity = st_charging_opportunity;
+        record.st_slack_charging_wait = st_slack_charging_wait;
         record.jobs.reserve(observed_jobs.size());
         for (AbsRTTask *task : observed_jobs) {
             const auto cost_it = incremental_energy_costs_j.find(task);
@@ -333,6 +357,15 @@ namespace RTSim {
             throw std::invalid_argument(
                 "decision energy values must be finite and non-negative");
         }
+        if ((record.sync_batch_reject &&
+             !record.sync_batch_evaluation) ||
+            (record.positive_slack_deferral &&
+             !record.alap_deferral_opportunity) ||
+            (record.st_slack_charging_wait &&
+             !record.st_charging_opportunity)) {
+            throw std::invalid_argument(
+                "decision mechanism actual facts require their opportunity facts");
+        }
 
         std::set<std::string> job_ids;
         std::set<std::uint32_t> priority_ranks;
@@ -495,6 +528,24 @@ namespace RTSim {
             _summary.hp_energy_blocked_job_ticks +=
                 hp_energy_blocked_jobs;
         }
+        if (record.sync_batch_evaluation) {
+            ++_summary.sync_batch_evaluation_ticks;
+        }
+        if (record.sync_batch_reject) {
+            ++_summary.sync_batch_reject_ticks;
+        }
+        if (record.alap_deferral_opportunity) {
+            ++_summary.alap_deferral_opportunity_ticks;
+        }
+        if (record.positive_slack_deferral) {
+            ++_summary.positive_slack_deferral_ticks;
+        }
+        if (record.st_charging_opportunity) {
+            ++_summary.st_charging_opportunity_ticks;
+        }
+        if (record.st_slack_charging_wait) {
+            ++_summary.st_slack_charging_wait_ticks;
+        }
         ++_summary.observed_decision_ticks;
         ++_next_tick;
     }
@@ -515,6 +566,15 @@ namespace RTSim {
             _summary.hp_dispatch_demand_ticks > _horizon_ticks ||
             _summary.hp_energy_blocked_ticks >
                 _summary.hp_dispatch_demand_ticks ||
+            _summary.sync_batch_evaluation_ticks > _horizon_ticks ||
+            _summary.sync_batch_reject_ticks >
+                _summary.sync_batch_evaluation_ticks ||
+            _summary.alap_deferral_opportunity_ticks > _horizon_ticks ||
+            _summary.positive_slack_deferral_ticks >
+                _summary.alap_deferral_opportunity_ticks ||
+            _summary.st_charging_opportunity_ticks > _horizon_ticks ||
+            _summary.st_slack_charging_wait_ticks >
+                _summary.st_charging_opportunity_ticks ||
             (_processor_count > 0 &&
              _summary.low_priority_bypass_core_ticks >
                  _summary.actual_bypass_ticks * _processor_count) ||
@@ -541,6 +601,7 @@ namespace RTSim {
         _frozen_task_universe = false;
         _horizon_ms = horizon_ms;
         _task_summaries.clear();
+        _relative_deadlines_ms.clear();
         _active_jobs.clear();
     }
 
@@ -560,6 +621,10 @@ namespace RTSim {
             PerTaskLifecycleSummary summary;
             summary.task_name = task.task_name;
             _task_summaries.emplace(task.task_name, std::move(summary));
+            if (task.relative_deadline_ms > 0) {
+                _relative_deadlines_ms.emplace(
+                    task.task_name, task.relative_deadline_ms);
+            }
         }
         _frozen_task_universe = true;
     }
@@ -622,6 +687,12 @@ namespace RTSim {
         auto &summary = _task_summaries[task_name];
         summary.task_name = task_name;
         ++summary.released_jobs;
+        const auto deadline_it = _relative_deadlines_ms.find(task_name);
+        if (deadline_it != _relative_deadlines_ms.end() &&
+            deadline_it->second <= static_cast<std::uint64_t>(
+                _horizon_ms - release_time_ms)) {
+            ++summary.adjudicable_jobs;
+        }
     }
 
     void PerTaskLifecycleAccumulator::onSchedule(
@@ -701,7 +772,13 @@ namespace RTSim {
         }
         if (active_it->second.deadline_miss_recorded) return;
         active_it->second.deadline_miss_recorded = true;
-        ++_task_summaries.at(task_name).deadline_miss_jobs;
+        auto &summary = _task_summaries.at(task_name);
+        const auto deadline_it = _relative_deadlines_ms.find(task_name);
+        if (deadline_it == _relative_deadlines_ms.end() ||
+            deadline_it->second <= static_cast<std::uint64_t>(
+                _horizon_ms - release_time_ms)) {
+            ++summary.deadline_miss_jobs;
+        }
     }
 
     void PerTaskLifecycleAccumulator::onKill(
@@ -779,6 +856,8 @@ namespace RTSim {
             ObservabilitySummaryState::Disabled;
         _observability_summary_horizon = MetaSim::Tick(-1);
         _trace_schema_version = TRACE_SCHEMA_VERSION;
+        _observability_summary_contract_version =
+            B4_OBSERVABILITY_SUMMARY_CONTRACT_VERSION;
         _b4_observability_schema_enabled = false;
         _observability_payload_sealed = false;
         _observability_energy_summary_set = false;
@@ -803,6 +882,8 @@ namespace RTSim {
             ObservabilitySummaryState::Disabled;
         _observability_summary_horizon = MetaSim::Tick(-1);
         _trace_schema_version = TRACE_SCHEMA_VERSION;
+        _observability_summary_contract_version =
+            B4_OBSERVABILITY_SUMMARY_CONTRACT_VERSION;
         _b4_observability_schema_enabled = false;
         _observability_payload_sealed = false;
         _observability_energy_summary_set = false;
@@ -1128,7 +1209,8 @@ namespace RTSim {
 
     void JSONTrace::configureB4ObservabilitySchema3(
         MetaSim::Tick horizon,
-        const std::vector<ObservabilityTaskMetadata> &task_metadata) {
+        const std::vector<ObservabilityTaskMetadata> &task_metadata,
+        int contract_version) {
         if (_b4_observability_schema_enabled ||
             _observability_summary_state !=
                 ObservabilitySummaryState::Disabled) {
@@ -1143,10 +1225,27 @@ namespace RTSim {
         }
         std::vector<ObservabilityTaskMetadata> sorted =
             validatedTaskMetadata(task_metadata);
+        if (contract_version !=
+                B4_OBSERVABILITY_SUMMARY_CONTRACT_VERSION &&
+            contract_version !=
+                B4_OBSERVABILITY_SUMMARY_CONTRACT_VERSION_V2) {
+            throw std::invalid_argument(
+                "unsupported observability summary contract version");
+        }
+        if (contract_version ==
+            B4_OBSERVABILITY_SUMMARY_CONTRACT_VERSION_V2) {
+            for (const auto &task : sorted) {
+                if (task.relative_deadline_ms == 0) {
+                    throw std::invalid_argument(
+                        "contract v2 requires positive relative deadlines");
+                }
+            }
+        }
 
         _observability_summary_horizon = horizon;
         _observability_task_metadata = std::move(sorted);
         _trace_schema_version = B4_OBSERVABILITY_TRACE_SCHEMA_VERSION;
+        _observability_summary_contract_version = contract_version;
         _b4_observability_schema_enabled = true;
         resetObservabilityRunState();
     }
@@ -1233,7 +1332,7 @@ namespace RTSim {
             (_release_cutoff_enabled &&
              _observability_summary_horizon != _observation_horizon)) {
             throw std::logic_error(
-                "schema3 v1 summary horizon must equal the trace duration");
+                "schema3 summary horizon must equal the trace duration");
         }
 
         const MechanismSummary &mechanism = _mechanism_summary.summary();
@@ -1246,7 +1345,16 @@ namespace RTSim {
                 mechanism.bypass_opportunity_ticks ||
             mechanism.hp_dispatch_demand_ticks > horizon ||
             mechanism.hp_energy_blocked_ticks >
-                mechanism.hp_dispatch_demand_ticks) {
+                mechanism.hp_dispatch_demand_ticks ||
+            mechanism.sync_batch_evaluation_ticks > horizon ||
+            mechanism.sync_batch_reject_ticks >
+                mechanism.sync_batch_evaluation_ticks ||
+            mechanism.alap_deferral_opportunity_ticks > horizon ||
+            mechanism.positive_slack_deferral_ticks >
+                mechanism.alap_deferral_opportunity_ticks ||
+            mechanism.st_charging_opportunity_ticks > horizon ||
+            mechanism.st_slack_charging_wait_ticks >
+                mechanism.st_charging_opportunity_ticks) {
             throw std::logic_error(
                 "observability mechanism counter bounds are inconsistent");
         }
@@ -1319,9 +1427,17 @@ namespace RTSim {
                 summary.unfinished_at_horizon_jobs !=
                     summary.released_jobs - summary.completed_jobs -
                         summary.terminated_jobs ||
-                summary.deadline_miss_jobs > summary.released_jobs ||
-                summary.completed_response_time_count !=
-                    summary.completed_jobs ||
+                (_observability_summary_contract_version ==
+                         B4_OBSERVABILITY_SUMMARY_CONTRACT_VERSION_V2
+                     ? (summary.adjudicable_jobs > summary.released_jobs ||
+                        summary.deadline_miss_jobs >
+                            summary.adjudicable_jobs ||
+                        summary.completed_response_time_count >
+                            summary.completed_jobs)
+                     : (summary.deadline_miss_jobs >
+                            summary.released_jobs ||
+                        summary.completed_response_time_count !=
+                            summary.completed_jobs)) ||
                 (summary.completed_response_time_count == 0 &&
                  (summary.completed_response_time_sum_ms != 0 ||
                   summary.completed_response_time_max_ms != 0)) ||
@@ -1361,7 +1477,7 @@ namespace RTSim {
 
     void JSONTrace::writeSealedObservabilityPayload() {
         fd << "    \"observability_summary_contract_version\": "
-           << B4_OBSERVABILITY_SUMMARY_CONTRACT_VERSION << ","
+           << _observability_summary_contract_version << ","
            << std::endl;
         fd << "    \"observability_summary_horizon_ms\": "
            << _observability_summary_horizon << "," << std::endl;
@@ -1385,8 +1501,31 @@ namespace RTSim {
            << _sealed_mechanism_summary.hp_energy_blocked_job_ticks << ","
            << std::endl;
         fd << "        \"observed_decision_ticks\": "
-           << _sealed_mechanism_summary.observed_decision_ticks
-           << std::endl;
+           << _sealed_mechanism_summary.observed_decision_ticks;
+        if (_observability_summary_contract_version ==
+            B4_OBSERVABILITY_SUMMARY_CONTRACT_VERSION_V2) {
+            fd << "," << std::endl;
+            fd << "        \"sync_batch_evaluation_ticks\": "
+               << _sealed_mechanism_summary.sync_batch_evaluation_ticks
+               << "," << std::endl;
+            fd << "        \"sync_batch_reject_ticks\": "
+               << _sealed_mechanism_summary.sync_batch_reject_ticks
+               << "," << std::endl;
+            fd << "        \"alap_deferral_opportunity_ticks\": "
+               << _sealed_mechanism_summary.alap_deferral_opportunity_ticks
+               << "," << std::endl;
+            fd << "        \"positive_slack_deferral_ticks\": "
+               << _sealed_mechanism_summary.positive_slack_deferral_ticks
+               << "," << std::endl;
+            fd << "        \"st_charging_opportunity_ticks\": "
+               << _sealed_mechanism_summary.st_charging_opportunity_ticks
+               << "," << std::endl;
+            fd << "        \"st_slack_charging_wait_ticks\": "
+               << _sealed_mechanism_summary.st_slack_charging_wait_ticks
+               << std::endl;
+        } else {
+            fd << std::endl;
+        }
         fd << "    }," << std::endl;
         fd << "    \"energy_summary\": {" << std::endl;
         fd << "        \"offered_energy_j\": "
@@ -1434,6 +1573,11 @@ namespace RTSim {
             fd << "\"is_bottom6\": "
                << (metadata.isBottom6() ? "true" : "false") << ", ";
             fd << "\"released_jobs\": " << summary.released_jobs << ", ";
+            if (_observability_summary_contract_version ==
+                B4_OBSERVABILITY_SUMMARY_CONTRACT_VERSION_V2) {
+                fd << "\"adjudicable_jobs\": "
+                   << summary.adjudicable_jobs << ", ";
+            }
             fd << "\"completed_jobs\": " << summary.completed_jobs << ", ";
             fd << "\"terminated_jobs\": " << summary.terminated_jobs << ", ";
             fd << "\"deadline_miss_jobs\": "

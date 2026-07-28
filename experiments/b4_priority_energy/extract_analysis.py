@@ -24,6 +24,12 @@ def parse_args(argv=None):
     parser.add_argument("--audit-report", required=True)
     parser.add_argument("--analysis-root", required=True)
     parser.add_argument("--strict", action="store_true")
+    parser.add_argument(
+        "--analysis-contract-version",
+        type=int,
+        choices=(1, 2),
+        default=1,
+    )
     return parser.parse_args(argv)
 
 
@@ -36,6 +42,7 @@ def main(argv=None):
             args.expected_records,
             args.audit_report,
             args.strict,
+            args.analysis_contract_version,
         )
         analysis.publish_outputs(args.analysis_root, outputs)
     except (analysis.AnalysisError, OSError, ValueError) as exc:

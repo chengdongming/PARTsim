@@ -21,6 +21,7 @@ import manifest_common as manifest
 B4_DIR = Path(__file__).resolve().parent
 EXECUTION_PROTOCOL_V1_PATH = B4_DIR / "execution_protocol_v1.json"
 EXECUTION_PROTOCOL_PATH = B4_DIR / "execution_protocol_v2.json"
+EXECUTION_PROTOCOL_V3_PATH = B4_DIR / "execution_protocol_v3.json"
 PROC_FD_ROOT = "/proc/self/fd"
 SNAPSHOT_ROLES = ("simulator", "system", "taskset", "source")
 TRACE_SUFFIXES = (".txt", ".json")
@@ -100,6 +101,65 @@ def record_sha256(record):
 
 def load_execution_protocol(path=EXECUTION_PROTOCOL_PATH):
     protocol = json.loads(Path(path).read_text(encoding="utf-8"))
+    if protocol.get("schema_version") == 3:
+        required = {
+            "candidate_v2_ref", "candidate_v2_sha256",
+            "analysis_contract_ref", "analysis_contract_sha256",
+            "identity_protocol_ref", "identity_protocol_sha256",
+            "inherits_execution_protocol_ref",
+            "inherits_execution_protocol_sha256",
+            "manifest_protocol_ref", "manifest_protocol_sha256",
+            "observability_activation", "observability_contract_ref",
+            "observability_contract_sha256",
+            "observability_summary_contract_version", "protocol_name",
+            "result_audit_policy", "schema_version", "trace_schema_version",
+            "minimum_adjudicable_jobs_per_task", "mechanism_fields",
+            "jmr_denominator_contract",
+        }
+        _require(set(protocol) == required, "execution v3 protocol fields mismatch")
+        _require(
+            protocol["inherits_execution_protocol_ref"]
+            == EXECUTION_PROTOCOL_PATH.name
+            and protocol["inherits_execution_protocol_sha256"]
+            == file_sha256(EXECUTION_PROTOCOL_PATH),
+            "execution v2 inheritance identity mismatch",
+        )
+        _require(
+            protocol["manifest_protocol_ref"]
+            == manifest.MANIFEST_PROTOCOL_V3_PATH.name
+            and protocol["manifest_protocol_sha256"]
+            == file_sha256(manifest.MANIFEST_PROTOCOL_V3_PATH)
+            and protocol["candidate_v2_ref"] == manifest.CANDIDATE_V2_PATH.name
+            and protocol["candidate_v2_sha256"]
+            == file_sha256(manifest.CANDIDATE_V2_PATH),
+            "execution v3 manifest/candidate identity mismatch",
+        )
+        _require(
+            protocol["observability_contract_ref"]
+            == manifest.OBSERVABILITY_CONTRACT_V2_PATH.name
+            and protocol["observability_contract_sha256"]
+            == file_sha256(manifest.OBSERVABILITY_CONTRACT_V2_PATH)
+            and protocol["analysis_contract_ref"]
+            == manifest.ANALYSIS_CONTRACT_V2_PATH.name
+            and protocol["analysis_contract_sha256"]
+            == file_sha256(manifest.ANALYSIS_CONTRACT_V2_PATH),
+            "execution v3 contract identity mismatch",
+        )
+        _require(
+            protocol["trace_schema_version"] == 3
+            and protocol["observability_summary_contract_version"] == 2
+            and protocol["result_audit_policy"]
+            == "strict_schema3_observability_v2"
+            and protocol["observability_activation"]
+            == manifest.PROTOCOL_V3["observability_activation"]
+            and protocol["minimum_adjudicable_jobs_per_task"] == 100
+            and len(protocol["mechanism_fields"]) == 13
+            and protocol["jmr_denominator_contract"]["zero_denominator"] == "NA",
+            "execution v3 observability binding mismatch",
+        )
+        inherited = load_execution_protocol(EXECUTION_PROTOCOL_PATH)
+        inherited.update(protocol)
+        return inherited
     if protocol.get("schema_version") == 2:
         required = {
             "candidate_v1_ref",
@@ -301,7 +361,10 @@ def load_execution_protocol(path=EXECUTION_PROTOCOL_PATH):
 
 
 PROTOCOL = load_execution_protocol()
+PROTOCOL_V2 = PROTOCOL
+PROTOCOL_V3 = load_execution_protocol(EXECUTION_PROTOCOL_V3_PATH)
 EXECUTION_PROTOCOL_SHA256 = file_sha256(EXECUTION_PROTOCOL_PATH)
+EXECUTION_PROTOCOL_V3_SHA256 = file_sha256(EXECUTION_PROTOCOL_V3_PATH)
 
 
 def utc_now():
@@ -1012,7 +1075,12 @@ def case_lock(root_or_context, case_id):
             os.close(context["root_fd"])
 
 
-def build_context(manifest_path, output_root, simulator_binary):
+def build_context(
+    manifest_path,
+    output_root,
+    simulator_binary,
+    execution_protocol_sha256=EXECUTION_PROTOCOL_SHA256,
+):
     manifest_path = Path(manifest_path).resolve(strict=True)
     root = validate_output_root(output_root, create=True)
     root_fd = _open_root_descriptor(root)
@@ -1025,7 +1093,7 @@ def build_context(manifest_path, output_root, simulator_binary):
             "root_fd": root_fd,
             "simulator_binary_path": str(simulator_path),
             "simulator_binary_initial_sha256": initial_sha,
-            "execution_protocol_sha256": EXECUTION_PROTOCOL_SHA256,
+            "execution_protocol_sha256": execution_protocol_sha256,
         }
         ensure_layout(context)
         return context
@@ -2590,7 +2658,24 @@ def execute_validated_cases(
     _require(isinstance(records, list) and records, "validated cases missing", SafetyError)
     if limit is not None:
         _require(type(limit) is int and limit >= 0, "limit must be non-negative", SafetyError)
-    context = build_context(record_source_path, output_root, simulator_binary)
+    schema_versions = {record.get("schema_version") for record in records}
+    _require(
+        len(schema_versions) == 1,
+        "validated cases mix protocol versions",
+        SafetyError,
+    )
+    schema_version = next(iter(schema_versions))
+    execution_protocol_sha256 = (
+        EXECUTION_PROTOCOL_V3_SHA256
+        if schema_version in {3, "b4-pe-integration-smoke-v3"}
+        else EXECUTION_PROTOCOL_SHA256
+    )
+    context = build_context(
+        record_source_path,
+        output_root,
+        simulator_binary,
+        execution_protocol_sha256,
+    )
     try:
         selected = records if limit is None else records[:limit]
         return execute_records(selected, context, resume=resume, retry_failed=retry_failed)

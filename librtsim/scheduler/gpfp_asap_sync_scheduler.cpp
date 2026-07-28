@@ -649,6 +649,9 @@ namespace RTSim {
                 ? static_cast<std::size_t>(total_cpus)
                 : std::max<std::size_t>(
                     1, ConfigManager::getInstance().getNumCores());
+            const bool sync_batch_evaluation = !idle_core_batch.empty();
+            const bool sync_batch_reject =
+                sync_batch_evaluation && !idle_core_batch_affordable;
             _trace_logger->observeDecision(makeOwnedDecisionRecord(
                 static_cast<std::int64_t>(current_time),
                 observed_processors,
@@ -660,7 +663,9 @@ namespace RTSim {
                 infinite_demand,
                 actual,
                 costs,
-                reasons));
+                reasons,
+                sync_batch_evaluation,
+                sync_batch_reject));
         }
 
         if (_trace_logger && _semantic_trace_enabled && !active_tasks.empty()) {

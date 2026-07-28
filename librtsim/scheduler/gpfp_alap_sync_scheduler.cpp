@@ -760,6 +760,17 @@ namespace RTSim {
                     reasons[task] = DecisionExclusionReason::CpuCapacity;
                 }
             }
+            bool alap_deferral_opportunity = false;
+            if (!trace_active.empty() && total_cpus > 0) {
+                AbsRTTask *highest = trace_active.front();
+                alap_deferral_opportunity =
+                    candidates.count(highest) == 0 &&
+                    calculateSlackForTask(highest, current_time) > Tick(0) &&
+                    costs.at(highest) <= _current_energy + epsilon;
+            }
+            const bool sync_batch_evaluation = !idle_core_batch.empty();
+            const bool sync_batch_reject =
+                sync_batch_evaluation && !idle_core_batch_affordable;
             const std::size_t observed_processors = total_cpus > 0
                 ? static_cast<std::size_t>(total_cpus)
                 : std::max<std::size_t>(
@@ -775,7 +786,11 @@ namespace RTSim {
                 infinite_demand,
                 actual,
                 costs,
-                reasons));
+                reasons,
+                sync_batch_evaluation,
+                sync_batch_reject,
+                alap_deferral_opportunity,
+                alap_deferral_opportunity));
         }
 
         if (_trace_logger && _semantic_trace_enabled &&

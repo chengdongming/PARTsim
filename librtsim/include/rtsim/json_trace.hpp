@@ -69,6 +69,12 @@ namespace RTSim {
         double available_energy_j = 0.0;
         double energy_epsilon_j = 1e-9;
         std::vector<DecisionJobRecord> jobs;
+        bool sync_batch_evaluation = false;
+        bool sync_batch_reject = false;
+        bool alap_deferral_opportunity = false;
+        bool positive_slack_deferral = false;
+        bool st_charging_opportunity = false;
+        bool st_slack_charging_wait = false;
     };
 
     std::vector<ObservabilityTaskMetadata>
@@ -90,7 +96,13 @@ namespace RTSim {
         const std::set<AbsRTTask *> &actual_dispatch,
         const std::map<AbsRTTask *, double> &incremental_energy_costs_j,
         const std::map<AbsRTTask *, DecisionExclusionReason>
-            &exclusion_reasons);
+            &exclusion_reasons,
+        bool sync_batch_evaluation = false,
+        bool sync_batch_reject = false,
+        bool alap_deferral_opportunity = false,
+        bool positive_slack_deferral = false,
+        bool st_charging_opportunity = false,
+        bool st_slack_charging_wait = false);
 
     enum class ObservabilitySummaryState : std::uint8_t {
         Disabled = 0,
@@ -179,6 +191,7 @@ namespace RTSim {
         bool _frozen_task_universe = false;
         std::int64_t _horizon_ms = -1;
         std::map<std::string, PerTaskLifecycleSummary> _task_summaries;
+        std::map<std::string, std::uint64_t> _relative_deadlines_ms;
         std::map<JobIdentity, ActiveJobState> _active_jobs;
     };
 
@@ -271,6 +284,7 @@ namespace RTSim {
         MechanismSummaryAccumulator _mechanism_summary;
         PerTaskLifecycleAccumulator _lifecycle_summary;
         int _trace_schema_version;
+        int _observability_summary_contract_version;
         bool _b4_observability_schema_enabled;
         bool _observability_payload_sealed;
         bool _observability_energy_summary_set;
@@ -357,7 +371,9 @@ namespace RTSim {
         void enableObservabilitySummaries(MetaSim::Tick horizon);
         void configureB4ObservabilitySchema3(
             MetaSim::Tick horizon,
-            const std::vector<ObservabilityTaskMetadata> &task_metadata);
+            const std::vector<ObservabilityTaskMetadata> &task_metadata,
+            int contract_version =
+                B4_OBSERVABILITY_SUMMARY_CONTRACT_VERSION);
         void setObservabilityEnergySummary(const EnergySummary &summary);
         void finalizeObservabilitySummaries(MetaSim::Tick horizon);
         void sealObservabilityPayloadForSerialization();
@@ -366,6 +382,9 @@ namespace RTSim {
         }
         bool b4ObservabilitySchemaEnabled() const noexcept {
             return _b4_observability_schema_enabled;
+        }
+        int observabilitySummaryContractVersion() const noexcept {
+            return _observability_summary_contract_version;
         }
         bool observabilityPayloadSealed() const noexcept {
             return _observability_payload_sealed;

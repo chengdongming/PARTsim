@@ -15,12 +15,20 @@ PROTOCOL_V1_PATH = Path(__file__).with_name(
 PROTOCOL_PATH = Path(__file__).with_name(
     "integration_smoke_protocol_v2.json"
 )
+PROTOCOL_V3_PATH = Path(__file__).with_name(
+    "integration_smoke_protocol_v3.json"
+)
 OBSERVABILITY_CONTRACT_PATH = Path(__file__).with_name(
     "observability_summary_contract_v1.json"
 )
 CANDIDATE_V1_PATH = Path(__file__).with_name(
     "b4_pe_freeze_candidate_v1.json"
 )
+CANDIDATE_V2_PATH = Path(__file__).with_name("b4_pe_freeze_candidate_v2.json")
+OBSERVABILITY_CONTRACT_V2_PATH = Path(__file__).with_name(
+    "observability_summary_contract_v2.json"
+)
+ANALYSIS_CONTRACT_V2_PATH = Path(__file__).with_name("analysis_contract_v2.json")
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 CASE_ID_PATTERN = re.compile(r"smoke-[a-z0-9](?:[a-z0-9-]{0,126}[a-z0-9])?")
@@ -96,17 +104,28 @@ def _load_protocol(path=PROTOCOL_PATH):
         "result_audit_policy",
         "trace_schema_version",
     }
+    v3 = {
+        "candidate_v2_ref", "candidate_v2_sha256",
+        "analysis_contract_ref", "analysis_contract_sha256",
+        "observability_activation", "observability_contract_ref",
+        "observability_contract_sha256",
+        "observability_summary_contract_version", "result_audit_policy",
+        "trace_schema_version", "minimum_adjudicable_jobs_per_task",
+        "mechanism_fields", "jmr_denominator_contract",
+    }
     is_v2 = (
         protocol.get("schema_version")
         == "b4-pe-integration-smoke-v2"
     )
-    expected_top_level = common | (v2 if is_v2 else set())
+    is_v3 = protocol.get("schema_version") == "b4-pe-integration-smoke-v3"
+    expected_top_level = common | (v2 if is_v2 else v3 if is_v3 else set())
     _require(set(protocol) == expected_top_level, "smoke protocol fields mismatch")
     _require(
         protocol["schema_version"]
         in {
             "b4-pe-integration-smoke-v1",
             "b4-pe-integration-smoke-v2",
+            "b4-pe-integration-smoke-v3",
         },
         "smoke schema mismatch",
     )
@@ -159,14 +178,47 @@ def _load_protocol(path=PROTOCOL_PATH):
             },
             "schema3 smoke binding mismatch",
         )
+    if is_v3:
+        _require(
+            protocol["candidate_v2_ref"] == CANDIDATE_V2_PATH.name
+            and protocol["candidate_v2_sha256"] == file_sha256(CANDIDATE_V2_PATH)
+            and protocol["observability_contract_ref"]
+            == OBSERVABILITY_CONTRACT_V2_PATH.name
+            and protocol["observability_contract_sha256"]
+            == file_sha256(OBSERVABILITY_CONTRACT_V2_PATH)
+            and protocol["analysis_contract_ref"] == ANALYSIS_CONTRACT_V2_PATH.name
+            and protocol["analysis_contract_sha256"]
+            == file_sha256(ANALYSIS_CONTRACT_V2_PATH),
+            "smoke v3 contract identity mismatch",
+        )
+        _require(
+            protocol["trace_schema_version"] == 3
+            and protocol["observability_summary_contract_version"] == 2
+            and protocol["result_audit_policy"]
+            == "strict_schema3_observability_v2"
+            and protocol["minimum_adjudicable_jobs_per_task"] == 100
+            and len(protocol["mechanism_fields"]) == 13
+            and protocol["jmr_denominator_contract"]["zero_denominator"] == "NA"
+            and protocol["observability_activation"] == {
+                "summary_flag": "--b4-observability-summary",
+                "horizon_option": "--b4-summary-horizon",
+                "horizon_ms": 30000,
+                "contract_version_option": "--b4-observability-contract-version",
+                "contract_version": 2,
+            },
+            "schema3 v2 smoke binding mismatch",
+        )
     return protocol
 
 
 PROTOCOL_V1 = _load_protocol(PROTOCOL_V1_PATH)
 PROTOCOL = _load_protocol()
+PROTOCOL_V2 = PROTOCOL
+PROTOCOL_V3 = _load_protocol(PROTOCOL_V3_PATH)
 PROTOCOLS_BY_SCHEMA = {
     PROTOCOL_V1["schema_version"]: PROTOCOL_V1,
-    PROTOCOL["schema_version"]: PROTOCOL,
+    PROTOCOL_V2["schema_version"]: PROTOCOL_V2,
+    PROTOCOL_V3["schema_version"]: PROTOCOL_V3,
 }
 PROTOCOL_SHA256 = file_sha256(PROTOCOL_PATH)
 
@@ -324,7 +376,7 @@ def _validate_command(record, protocol):
         and argv[hash_index + 1] == record["provenance"]["taskset_semantic_hash"],
         "semantic hash argument mismatch",
     )
-    if protocol["schema_version"] == "b4-pe-integration-smoke-v2":
+    if protocol["schema_version"] != "b4-pe-integration-smoke-v1":
         activation = protocol["observability_activation"]
         _require(
             argv.count(activation["summary_flag"]) == 1,
@@ -341,6 +393,18 @@ def _validate_command(record, protocol):
             == str(activation["horizon_ms"]),
             "schema3 horizon argument mismatch",
         )
+        if protocol["schema_version"] == "b4-pe-integration-smoke-v3":
+            _require(
+                argv.count(activation["contract_version_option"]) == 1,
+                "schema3 contract version option must occur exactly once",
+            )
+            version_index = argv.index(activation["contract_version_option"])
+            _require(
+                version_index + 1 < len(argv)
+                and argv[version_index + 1]
+                == str(activation["contract_version"]),
+                "schema3 contract version argument mismatch",
+            )
     forbidden = protocol["path_rules"]["campaign_path_fragments_forbidden"]
     for item in argv:
         lowered = item.lower()
@@ -372,10 +436,11 @@ def validate_integration_smoke_record(path):
         _require(record[field] == expected, f"fixed smoke field mismatch: {field}")
     _require(record["schema_version"] == protocol["schema_version"], "schema version mismatch")
     _require(record["record_type"] == protocol["record_type"], "record type mismatch")
-    if protocol is PROTOCOL:
+    if protocol is not PROTOCOL_V1:
+        candidate_version = 1 if protocol is PROTOCOL_V2 else 2
         for field in (
-            "candidate_v1_ref",
-            "candidate_v1_sha256",
+            f"candidate_v{candidate_version}_ref",
+            f"candidate_v{candidate_version}_sha256",
             "observability_contract_ref",
             "observability_contract_sha256",
             "observability_summary_contract_version",
@@ -386,6 +451,16 @@ def validate_integration_smoke_record(path):
                 record[field] == protocol[field],
                 f"schema3 smoke binding mismatch: {field}",
             )
+        if protocol is PROTOCOL_V3:
+            for field in (
+                "analysis_contract_ref", "analysis_contract_sha256",
+                "minimum_adjudicable_jobs_per_task", "mechanism_fields",
+                "jmr_denominator_contract",
+            ):
+                _require(
+                    record[field] == protocol[field],
+                    f"schema3 v2 smoke binding mismatch: {field}",
+                )
         _require(
             record["observability_summary_horizon_ms"]
             == protocol["observability_activation"]["horizon_ms"],

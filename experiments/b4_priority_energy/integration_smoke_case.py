@@ -614,6 +614,7 @@ def build_record(
     semantic_hash,
     algorithm=DEFAULT_ALGORITHM,
     trace_schema_version=2,
+    observability_contract_version=1,
 ):
     output_root = Path(output_root).resolve()
     simulator_path = Path(simulator_path).resolve(strict=True)
@@ -622,17 +623,30 @@ def build_record(
         trace_schema_version in {2, 3},
         "smoke trace schema must be 2 or 3",
     )
+    _require(
+        observability_contract_version in {1, 2}
+        and (trace_schema_version == 3 or observability_contract_version == 1),
+        "observability contract version requires schema3",
+    )
+    schema3_protocol = (
+        smoke.PROTOCOL_V3
+        if observability_contract_version == 2 else smoke.PROTOCOL_V2
+    )
     case_id = (
         "smoke-b4-pe-i4b2b-"
         + semantic_hash[:16]
         + "-"
         + algorithm.lower()
-        + ("-schema3" if trace_schema_version == 3 else "")
+        + (
+            "-schema3-v2" if trace_schema_version == 3
+            and observability_contract_version == 2
+            else "-schema3" if trace_schema_version == 3 else ""
+        )
     )
     result_relpath = f"{RESULT_PREFIX}/{case_id}.json"
     record = {
         "schema_version": (
-            smoke.PROTOCOL["schema_version"]
+            schema3_protocol["schema_version"]
             if trace_schema_version == 3
             else smoke.PROTOCOL_V1["schema_version"]
         ),
@@ -675,7 +689,7 @@ def build_record(
         },
     }
     if trace_schema_version == 3:
-        protocol = smoke.PROTOCOL
+        protocol = schema3_protocol
         record.update(
             {
                 "trace_schema_version": 3,
@@ -689,13 +703,30 @@ def build_record(
                     protocol["observability_contract_ref"],
                 "observability_contract_sha256":
                     protocol["observability_contract_sha256"],
-                "candidate_v1_ref": protocol["candidate_v1_ref"],
-                "candidate_v1_sha256":
-                    protocol["candidate_v1_sha256"],
                 "result_audit_policy":
                     protocol["result_audit_policy"],
             }
         )
+        candidate_version = protocol["observability_summary_contract_version"]
+        record.update(
+            {
+                f"candidate_v{candidate_version}_ref":
+                    protocol[f"candidate_v{candidate_version}_ref"],
+                f"candidate_v{candidate_version}_sha256":
+                    protocol[f"candidate_v{candidate_version}_sha256"],
+            }
+        )
+        if observability_contract_version == 2:
+            record.update(
+                {
+                    "analysis_contract_ref": protocol["analysis_contract_ref"],
+                    "analysis_contract_sha256": protocol["analysis_contract_sha256"],
+                    "minimum_adjudicable_jobs_per_task":
+                        protocol["minimum_adjudicable_jobs_per_task"],
+                    "mechanism_fields": protocol["mechanism_fields"],
+                    "jmr_denominator_contract": protocol["jmr_denominator_contract"],
+                }
+            )
     execution_horizon = (
         FROZEN_HORIZON_MS
         if trace_schema_version == 3
@@ -714,7 +745,7 @@ def build_record(
         semantic_hash,
     ]
     if trace_schema_version == 3:
-        activation = smoke.PROTOCOL["observability_activation"]
+        activation = schema3_protocol["observability_activation"]
         record["command_argv"].extend(
             [
                 activation["summary_flag"],
@@ -722,6 +753,13 @@ def build_record(
                 str(activation["horizon_ms"]),
             ]
         )
+        if observability_contract_version == 2:
+            record["command_argv"].extend(
+                [
+                    activation["contract_version_option"],
+                    str(activation["contract_version"]),
+                ]
+            )
     return record
 
 
@@ -816,6 +854,10 @@ def preflight(record_path):
                 str(FROZEN_HORIZON_MS),
             ]
         )
+        if record.get("observability_summary_contract_version") == 2:
+            expected_argv.extend(
+                ["--b4-observability-contract-version", "2"]
+            )
     _require(
         argv == expected_argv,
         "smoke command does not have the exact rtsim argv shape",
@@ -844,6 +886,7 @@ def prepare_case(
     seed=GENERATOR_SEED,
     normalized_utilization=TARGET_NORMALIZED_UTILIZATION,
     trace_schema_version=2,
+    observability_contract_version=1,
 ):
     output_root = Path(output_root).resolve()
     normalized = _normalised_utilization(normalized_utilization)
@@ -897,6 +940,7 @@ def prepare_case(
         semantic_hash,
         algorithm=algorithm,
         trace_schema_version=trace_schema_version,
+        observability_contract_version=observability_contract_version,
     )
     record_path = write_record(record_path, record)
     gate = preflight(record_path)
@@ -961,6 +1005,7 @@ def validate_result_document(
     trace_schema_version=2,
     e0_j=None,
     taskset_document=None,
+    observability_contract_version=1,
 ):
     _require(isinstance(document, dict), "result is not a JSON object")
     _require(document.get("run_id") == case_id, "result run-id mismatch")
@@ -1049,6 +1094,8 @@ def validate_result_document(
                     taskset_document
                 )
             ),
+            taskset_document=taskset_document,
+            expected_contract_version=observability_contract_version,
         )
     encoded = compact_json(document)
     _require(
@@ -1166,6 +1213,7 @@ def validate_execution(record_path):
         record.get("trace_schema_version", 2),
         descriptor["E0_j"],
         taskset_document,
+        record.get("observability_summary_contract_version", 1),
     )
 
     raw_path = _artifact_path(root, RAW_TASKSET_RELPATH)
@@ -1318,6 +1366,12 @@ def build_parser():
         default=2,
     )
     prepare.add_argument(
+        "--observability-contract-version",
+        type=int,
+        choices=(1, 2),
+        default=1,
+    )
+    prepare.add_argument(
         "--normalized-utilization",
         default=str(float(TARGET_NORMALIZED_UTILIZATION)),
     )
@@ -1338,6 +1392,8 @@ def main(argv=None):
                 seed=args.seed,
                 normalized_utilization=args.normalized_utilization,
                 trace_schema_version=args.trace_schema_version,
+                observability_contract_version=
+                    args.observability_contract_version,
             )
         else:
             report = validate_execution(args.record)

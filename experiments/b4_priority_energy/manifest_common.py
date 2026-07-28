@@ -14,11 +14,15 @@ B4_DIR = Path(__file__).resolve().parent
 REPO_ROOT = B4_DIR.parents[1]
 MANIFEST_PROTOCOL_V1_PATH = B4_DIR / "manifest_protocol_v1.json"
 MANIFEST_PROTOCOL_PATH = B4_DIR / "manifest_protocol_v2.json"
+MANIFEST_PROTOCOL_V3_PATH = B4_DIR / "manifest_protocol_v3.json"
 IDENTITY_PROTOCOL_PATH = B4_DIR / "protocol_resolution_v1.json"
 OBSERVABILITY_CONTRACT_PATH = (
     B4_DIR / "observability_summary_contract_v1.json"
 )
 CANDIDATE_V1_PATH = B4_DIR / "b4_pe_freeze_candidate_v1.json"
+CANDIDATE_V2_PATH = B4_DIR / "b4_pe_freeze_candidate_v2.json"
+OBSERVABILITY_CONTRACT_V2_PATH = B4_DIR / "observability_summary_contract_v2.json"
+ANALYSIS_CONTRACT_V2_PATH = B4_DIR / "analysis_contract_v2.json"
 IDENTITY_REFERENCE_PATH = B4_DIR / "tests" / "test_protocol_resolution.py"
 FROZEN_DOCUMENT_PATH = (
     REPO_ROOT / "docs" / "experiments" /
@@ -126,8 +130,20 @@ def load_manifest_protocol(path=MANIFEST_PROTOCOL_PATH):
         "result_audit_policy",
         "trace_schema_version",
     }
+    v3_fields = {
+        "candidate_v2_ref", "candidate_v2_sha256",
+        "analysis_contract_ref", "analysis_contract_sha256",
+        "observability_activation", "observability_contract_ref",
+        "observability_contract_sha256",
+        "observability_summary_contract_version", "result_audit_policy",
+        "trace_schema_version", "minimum_adjudicable_jobs_per_task",
+        "mechanism_fields", "jmr_denominator_contract",
+    }
     schema_version = protocol.get("schema_version")
-    required = common | (v2_fields if schema_version == 2 else set())
+    required = common | (
+        v2_fields if schema_version == 2
+        else v3_fields if schema_version == 3 else set()
+    )
     _require(required == set(protocol), "manifest protocol fields mismatch")
     _require(type(protocol["schema_version"]) is int, "invalid protocol schema")
     _require(protocol["schema_version"] > 0, "invalid protocol schema")
@@ -176,6 +192,44 @@ def load_manifest_protocol(path=MANIFEST_PROTOCOL_PATH):
                 "horizon_ms": protocol["execution_plan"]["horizon_ms"],
             },
             "schema3 activation mismatch",
+        )
+    if schema_version == 3:
+        _require(
+            protocol["candidate_v2_ref"] == CANDIDATE_V2_PATH.name
+            and protocol["candidate_v2_sha256"] == file_sha256(CANDIDATE_V2_PATH),
+            "candidate v2 identity mismatch",
+        )
+        _require(
+            protocol["observability_contract_ref"]
+            == OBSERVABILITY_CONTRACT_V2_PATH.name
+            and protocol["observability_contract_sha256"]
+            == file_sha256(OBSERVABILITY_CONTRACT_V2_PATH),
+            "observability contract v2 identity mismatch",
+        )
+        _require(
+            protocol["analysis_contract_ref"] == ANALYSIS_CONTRACT_V2_PATH.name
+            and protocol["analysis_contract_sha256"]
+            == file_sha256(ANALYSIS_CONTRACT_V2_PATH),
+            "analysis contract v2 identity mismatch",
+        )
+        activation = protocol["observability_activation"]
+        _require(
+            protocol["trace_schema_version"] == 3
+            and protocol["observability_summary_contract_version"] == 2
+            and protocol["result_audit_policy"]
+            == "strict_schema3_observability_v2"
+            and protocol["minimum_adjudicable_jobs_per_task"] == 100
+            and activation == {
+                "summary_flag": "--b4-observability-summary",
+                "horizon_option": "--b4-summary-horizon",
+                "horizon_ms": protocol["execution_plan"]["horizon_ms"],
+                "contract_version_option":
+                    "--b4-observability-contract-version",
+                "contract_version": 2,
+            }
+            and len(protocol["mechanism_fields"]) == 13
+            and protocol["jmr_denominator_contract"]["zero_denominator"] == "NA",
+            "schema3 v2 activation or denominator binding mismatch",
         )
     _validate_string_list(protocol["manifest_case_fields"], "manifest fields")
 
@@ -271,9 +325,12 @@ def load_manifest_protocol(path=MANIFEST_PROTOCOL_PATH):
 
 PROTOCOL_V1 = load_manifest_protocol(MANIFEST_PROTOCOL_V1_PATH)
 PROTOCOL = load_manifest_protocol()
+PROTOCOL_V2 = PROTOCOL
+PROTOCOL_V3 = load_manifest_protocol(MANIFEST_PROTOCOL_V3_PATH)
 PROTOCOLS_BY_SCHEMA = {
     PROTOCOL_V1["schema_version"]: PROTOCOL_V1,
-    PROTOCOL["schema_version"]: PROTOCOL,
+    PROTOCOL_V2["schema_version"]: PROTOCOL_V2,
+    PROTOCOL_V3["schema_version"]: PROTOCOL_V3,
 }
 
 
@@ -361,7 +418,7 @@ def build_case(
         "--run-id",
         parts["case_id"],
     ]
-    if protocol["schema_version"] == 2:
+    if protocol["schema_version"] in (2, 3):
         activation = protocol["observability_activation"]
         command.extend(
             [
@@ -370,6 +427,13 @@ def build_case(
                 str(activation["horizon_ms"]),
             ]
         )
+        if protocol["schema_version"] == 3:
+            command.extend(
+                [
+                    activation["contract_version_option"],
+                    str(activation["contract_version"]),
+                ]
+            )
     case = {
         "schema_version": protocol["schema_version"],
         "protocol_name": protocol["protocol_name"],
@@ -405,11 +469,14 @@ def build_case(
         "retry_policy": plan["retry_policy"],
         "command_argv": command,
     }
-    if protocol["schema_version"] == 2:
+    if protocol["schema_version"] in (2, 3):
+        candidate_version = 1 if protocol["schema_version"] == 2 else 2
         case.update(
             {
-                "candidate_v1_ref": protocol["candidate_v1_ref"],
-                "candidate_v1_sha256": protocol["candidate_v1_sha256"],
+                f"candidate_v{candidate_version}_ref":
+                    protocol[f"candidate_v{candidate_version}_ref"],
+                f"candidate_v{candidate_version}_sha256":
+                    protocol[f"candidate_v{candidate_version}_sha256"],
                 "observability_contract_ref":
                     protocol["observability_contract_ref"],
                 "observability_contract_sha256":
@@ -424,6 +491,18 @@ def build_case(
                     protocol["result_audit_policy"],
             }
         )
+        if protocol["schema_version"] == 3:
+            case.update(
+                {
+                    "analysis_contract_ref": protocol["analysis_contract_ref"],
+                    "analysis_contract_sha256": protocol["analysis_contract_sha256"],
+                    "minimum_adjudicable_jobs_per_task":
+                        protocol["minimum_adjudicable_jobs_per_task"],
+                    "mechanism_fields": protocol["mechanism_fields"],
+                    "jmr_denominator_contract":
+                        protocol["jmr_denominator_contract"],
+                }
+            )
     _require(set(case) == set(protocol["manifest_case_fields"]), "case shape mismatch")
     return case
 
@@ -531,6 +610,9 @@ def _validate_record_structure(record, line_number):
         "trace_schema_version",
         "observability_summary_contract_version",
         "summary_horizon_ms",
+        "minimum_adjudicable_jobs_per_task",
+        "mechanism_fields",
+        "jmr_denominator_contract",
     }
     _require(
         all(isinstance(record[name], str) and record[name] for name in string_fields),
@@ -550,6 +632,7 @@ def _validate_record_structure(record, line_number):
         "trace_schema_version",
         "observability_summary_contract_version",
         "summary_horizon_ms",
+        "minimum_adjudicable_jobs_per_task",
     ):
         if name in record:
             _require(

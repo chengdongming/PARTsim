@@ -160,6 +160,13 @@ static inline cmdarg::Options parse_arguments(int argc, char *argv[]) {
         .help = "Positive schema3 observability horizon in milliseconds",
         .default_value = "",
     });
+    parser.addArgument({
+        .long_opt = "b4-observability-contract-version",
+        .required = false,
+        .parameter_required = cmdarg::Argument::ParameterRequired::REQUIRED,
+        .help = "Schema3 observability contract version (1 or 2)",
+        .default_value = "",
+    });
 
     return parser.parse(argc, argv);
 }
