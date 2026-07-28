@@ -238,3 +238,23 @@ no successful manifest. Successful outputs contain no timestamps, absolute
 paths, random identifiers, NaN, or infinity; identical inputs and extractor
 identity produce byte-identical files. All generated analysis is explicitly
 marked `no_paper_data_generated=true`.
+
+## I5B observability completion
+
+Protocol v3 explicitly selects trace schema 3, observability summary contract
+v2, and analysis contract v2. The runtime activation adds
+`--b4-observability-contract-version 2` to the existing summary flag and
+30,000 ms horizon. Omitting the version option retains historical summary
+contract v1; omitting the summary flag retains default schema2.
+
+Summary contract v2 adds six scheduler-reported opportunity/actual mechanism
+counters and per-task `adjudicable_jobs`. A job is adjudicable exactly when
+its release offset plus its relative deadline is at or before `H_B4`;
+equality is included. The strict audit independently recomputes this count
+from the taskset and requires at least 100 adjudicable jobs per task.
+
+Analysis contract v2 emits all 13 mechanism counts and task/All/Top4/Bottom6
+adjudicable counts. Its pass rule is `adjudicable_jobs >= 100` with zero
+deadline misses. Lifecycle anomalies remain scheduling outcomes. Ratios and
+cross-case statistics remain outside I5C, and every zero denominator is
+contractually `NA`.

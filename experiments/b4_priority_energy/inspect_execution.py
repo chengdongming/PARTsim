@@ -12,6 +12,7 @@ from pathlib import Path
 import manifest_common as manifest
 from execution_common import (
     EXECUTION_PROTOCOL_SHA256,
+    EXECUTION_PROTOCOL_V3_SHA256,
     ExecutionError,
     InputIntegrityError,
     PUBLICATION_STATUSES,
@@ -123,7 +124,10 @@ def inspect_output(output_root, manifest_path=None, simulator_binary=None):
                 for attempt in attempts
             )
 
-            drift = state.get("execution_protocol_sha256") != EXECUTION_PROTOCOL_SHA256
+            drift = state.get("execution_protocol_sha256") not in {
+                EXECUTION_PROTOCOL_SHA256,
+                EXECUTION_PROTOCOL_V3_SHA256,
+            }
             if manifest_sha is not None:
                 drift |= state.get("manifest_file_sha256") != manifest_sha
                 drift |= record_shas.get(state.get("case_id")) != state.get(

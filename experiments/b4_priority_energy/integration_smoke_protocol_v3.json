@@ -1,0 +1,137 @@
+{
+  "command_rules": {
+    "argument_source": "validated_record_command_argv_only",
+    "observability_horizon_occurrences": 1,
+    "observability_summary_occurrences": 1,
+    "result_occurrences": 1,
+    "semantic_hash_occurrences": 1,
+    "simulator_occurrences": 1,
+    "source_transport": "record_field_once_then_i4b1_B4PE_SOURCE_SNAPSHOT",
+    "system_occurrences": 1,
+    "taskset_occurrences": 1,
+    "test_argument_hook": false,
+    "observability_contract_version_occurrences": 1
+  },
+  "fixed_identity": {
+    "campaign_result_count": 0,
+    "campaign_started": false,
+    "execution_scope": "single-real-case",
+    "not_for_paper": true,
+    "phase": "integration_smoke",
+    "selected_case_count": 1
+  },
+  "gateway_rules": {
+    "campaign_summary": false,
+    "formal_validator_for_smoke": false,
+    "identity_protocol_mutation": false,
+    "production_validator_injection": false,
+    "smoke_validator_for_formal": false,
+    "validated_case_count": 1
+  },
+  "observability_activation": {
+    "horizon_ms": 30000,
+    "horizon_option": "--b4-summary-horizon",
+    "summary_flag": "--b4-observability-summary",
+    "contract_version_option": "--b4-observability-contract-version",
+    "contract_version": 2
+  },
+  "observability_contract_ref": "observability_summary_contract_v2.json",
+  "observability_contract_sha256": "4e982f5a58a26507c9ab1b1b8d0b732e651d4657f10cf16744d3278d11186efe",
+  "observability_summary_contract_version": 2,
+  "path_rules": {
+    "artifact_paths": "canonical_relative_below_output_root",
+    "campaign_path_fragments_forbidden": [
+      "results/pilot",
+      "results/formal",
+      "results/negative"
+    ],
+    "output_root": "absolute_resolved_outside_repository",
+    "record_file": "single_regular_file_outside_repository",
+    "result_prefix": "integration-smoke/results/",
+    "simulator_path": "absolute"
+  },
+  "protocol_name": "B4-PE-I5B-integration-smoke-v3",
+  "provenance_fields": [
+    "generator_path",
+    "generator_sha256",
+    "generator_argv",
+    "taskset_raw_sha256",
+    "taskset_semantic_hash",
+    "system_config_sha256",
+    "source_artifact_sha256",
+    "simulator_sha256"
+  ],
+  "record_fields": [
+    "schema_version",
+    "record_type",
+    "phase",
+    "execution_scope",
+    "selected_case_count",
+    "campaign_started",
+    "campaign_result_count",
+    "not_for_paper",
+    "case_id",
+    "algorithm",
+    "minimum_adjudicable_jobs_per_task",
+    "mechanism_fields",
+    "jmr_denominator_contract",
+    "trace_schema_version",
+    "observability_summary_contract_version",
+    "observability_summary_horizon_ms",
+    "analysis_contract_ref",
+    "analysis_contract_sha256",
+    "observability_contract_ref",
+    "observability_contract_sha256",
+    "candidate_v2_ref",
+    "candidate_v2_sha256",
+    "result_audit_policy",
+    "command_argv",
+    "simulator_path",
+    "output_root",
+    "system_config_path",
+    "taskset_path",
+    "source_artifact_path",
+    "result_relpath",
+    "timeout_seconds",
+    "retry_policy",
+    "provenance"
+  ],
+  "record_type": "integration_smoke",
+  "result_audit_policy": "strict_schema3_observability_v2",
+  "retry_rules": {
+    "allowed_retry_on": [
+      "timeout"
+    ],
+    "max_attempts": 2,
+    "on_final_failure": "fail_closed"
+  },
+  "schema_version": "b4-pe-integration-smoke-v3",
+  "trace_schema_version": 3,
+  "candidate_v2_ref": "b4_pe_freeze_candidate_v2.json",
+  "candidate_v2_sha256": "31bb158c5d1312850478331a7beb6c6c2da4d74f9639c23672dd8a976396e8ef",
+  "analysis_contract_ref": "analysis_contract_v2.json",
+  "analysis_contract_sha256": "25d0cfff0fba81979d15b5b70df842fc2e84f969574fa4cd73fc7ad2527c9318",
+  "minimum_adjudicable_jobs_per_task": 100,
+  "mechanism_fields": [
+    "bypass_opportunity_ticks",
+    "actual_bypass_ticks",
+    "low_priority_bypass_core_ticks",
+    "hp_dispatch_demand_ticks",
+    "hp_energy_blocked_ticks",
+    "hp_energy_blocked_job_ticks",
+    "observed_decision_ticks",
+    "sync_batch_evaluation_ticks",
+    "sync_batch_reject_ticks",
+    "alap_deferral_opportunity_ticks",
+    "positive_slack_deferral_ticks",
+    "st_charging_opportunity_ticks",
+    "st_slack_charging_wait_ticks"
+  ],
+  "jmr_denominator_contract": {
+    "task": "adjudicable_jobs",
+    "all": "all_adjudicable_jobs",
+    "top4": "hp_adjudicable_jobs",
+    "bottom6": "lp_adjudicable_jobs",
+    "zero_denominator": "NA"
+  }
+}

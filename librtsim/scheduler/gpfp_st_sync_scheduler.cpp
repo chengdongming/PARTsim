@@ -603,6 +603,8 @@ namespace RTSim {
                 }
                 desired_tasks.push_back(task);
             }
+            AbsRTTask *decision_head = active_tasks.empty()
+                ? nullptr : active_tasks.front();
             bool desired_contains_waiting = false;
             if (charging_wait_active) {
                 for (AbsRTTask *task : desired_tasks) {
@@ -617,13 +619,18 @@ namespace RTSim {
             std::vector<AbsRTTask *> idle_core_batch;
             double continuation_energy = 0.0;
             double idle_core_batch_energy = 0.0;
+            double head_required_energy = 0.0;
             for (AbsRTTask *task : desired_tasks) {
+                const double task_energy = calculateUnitEnergyForTask(task);
+                if (task == decision_head) {
+                    head_required_energy = task_energy;
+                }
                 if (running_tasks.find(task) != running_tasks.end()) {
                     continuation_tasks.push_back(task);
-                    continuation_energy += calculateUnitEnergyForTask(task);
+                    continuation_energy += task_energy;
                 } else {
                     idle_core_batch.push_back(task);
-                    idle_core_batch_energy += calculateUnitEnergyForTask(task);
+                    idle_core_batch_energy += task_energy;
                 }
             }
 
@@ -768,6 +775,25 @@ namespace RTSim {
                     ? static_cast<std::size_t>(total_cpus)
                     : std::max<std::size_t>(
                         1, ConfigManager::getInstance().getNumCores());
+                const bool sync_batch_evaluation = !idle_core_batch.empty();
+                const bool sync_batch_reject =
+                    sync_batch_evaluation && !idle_core_batch_affordable;
+                const bool head_in_dispatch_window =
+                    total_cpus > 0 &&
+                    !desired_tasks.empty() &&
+                    desired_tasks.front() == decision_head;
+                const bool head_positive_slack =
+                    decision_head &&
+                    calculateSlackForTask(decision_head) > Tick(0);
+                const bool head_currently_unaffordable =
+                    head_in_dispatch_window &&
+                    head_required_energy > _current_energy + epsilon;
+                const bool st_charging_opportunity =
+                    head_positive_slack && head_currently_unaffordable;
+                const bool st_slack_charging_wait =
+                    st_charging_opportunity &&
+                    charge_wait &&
+                    actual.count(decision_head) == 0;
                 _trace_logger->observeDecision(makeOwnedDecisionRecord(
                     static_cast<std::int64_t>(current_time),
                     observed_processors,
@@ -779,7 +805,13 @@ namespace RTSim {
                     infinite_demand,
                     actual,
                     costs,
-                    reasons));
+                    reasons,
+                    sync_batch_evaluation,
+                    sync_batch_reject,
+                    false,
+                    false,
+                    st_charging_opportunity,
+                    st_slack_charging_wait));
             }
 
             if (_trace_logger && _semantic_trace_enabled &&

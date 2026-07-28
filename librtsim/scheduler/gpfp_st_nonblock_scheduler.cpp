@@ -597,6 +597,11 @@ namespace RTSim {
         AbsRTTask *waiting_task = nullptr;
         std::vector<AbsRTTask *> timing_wait_tasks;
         std::set<AbsRTTask *> direct_energy_shortage_tasks;
+        AbsRTTask *decision_head = active_tasks.empty()
+            ? nullptr : active_tasks.front();
+        bool head_currently_unaffordable = false;
+        bool head_positive_slack = false;
+        bool head_st_wait = false;
 
         for (AbsRTTask *task : active_tasks) {
             if (_dispatch_selection_order.size() >= processor_count) {
@@ -604,6 +609,13 @@ namespace RTSim {
             }
 
             const double unit_energy = getConfiguredUnitEnergyForTask(task);
+            if (task == decision_head) {
+                head_currently_unaffordable =
+                    reserved_energy + unit_energy >
+                    _current_energy + epsilon;
+                head_positive_slack =
+                    calculateSlackForTask(task) > Tick(0);
+            }
             if (_skipped_tasks.find(task) != _skipped_tasks.end() &&
                 !isSkippedTaskHeld(task)) {
                 Tick slack = calculateSlackForTask(task);
@@ -631,6 +643,9 @@ namespace RTSim {
                 }
             }
             if (isSkippedTaskHeld(task)) {
+                if (task == decision_head) {
+                    head_st_wait = true;
+                }
                 timing_wait_tasks.push_back(task);
                 auto slack_it = _skipped_slack_at_begin.find(task);
                 logSTChargeEvent("st_charge_hold",
@@ -655,6 +670,9 @@ namespace RTSim {
             Tick slack = calculateSlackForTask(task);
             if (slack > 0) {
                 waiting_task = task;
+                if (task == decision_head) {
+                    head_st_wait = true;
+                }
                 timing_wait_tasks.push_back(task);
                 scheduleWakeForSkippedTask(task, current_time);
                 SCHEDULER_LOG_INFO(std::string("⏸️ [ST-NonBlock] 高优任务缺电但仍有Slack，保留等待并继续NonBlock扫描: ") +
@@ -720,6 +738,13 @@ namespace RTSim {
                 ? processor_count
                 : std::max<std::size_t>(
                     1, ConfigManager::getInstance().getNumCores());
+            const bool st_charging_opportunity =
+                processor_count > 0 &&
+                decision_head &&
+                head_positive_slack &&
+                head_currently_unaffordable;
+            const bool st_slack_charging_wait =
+                st_charging_opportunity && head_st_wait;
             _trace_logger->observeDecision(makeOwnedDecisionRecord(
                 static_cast<std::int64_t>(current_time),
                 observed_processors,
@@ -731,7 +756,13 @@ namespace RTSim {
                 infinite_demand,
                 actual,
                 costs,
-                reasons));
+                reasons,
+                false,
+                false,
+                false,
+                false,
+                st_charging_opportunity,
+                st_slack_charging_wait));
         }
 
         if (_trace_logger && _semantic_trace_enabled &&

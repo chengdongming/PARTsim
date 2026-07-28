@@ -1366,6 +1366,30 @@ TEST(MechanismSummaryCore, OpportunityWithoutActualBypass) {
     EXPECT_EQ(summary.observed_decision_ticks, 1u);
 }
 
+TEST(MechanismSummaryCore, VersionTwoFactsCountOnceAndRequireOpportunities) {
+    MechanismSummaryAccumulator accumulator(1);
+    DecisionRecord record = summaryDecision(0, 4, 1.0, {});
+    record.sync_batch_evaluation = true;
+    record.sync_batch_reject = true;
+    record.alap_deferral_opportunity = true;
+    record.positive_slack_deferral = true;
+    record.st_charging_opportunity = true;
+    record.st_slack_charging_wait = true;
+    accumulator.observe(record);
+    const MechanismSummary &summary = accumulator.finalize();
+    EXPECT_EQ(summary.sync_batch_evaluation_ticks, 1u);
+    EXPECT_EQ(summary.sync_batch_reject_ticks, 1u);
+    EXPECT_EQ(summary.alap_deferral_opportunity_ticks, 1u);
+    EXPECT_EQ(summary.positive_slack_deferral_ticks, 1u);
+    EXPECT_EQ(summary.st_charging_opportunity_ticks, 1u);
+    EXPECT_EQ(summary.st_slack_charging_wait_ticks, 1u);
+
+    MechanismSummaryAccumulator invalid(1);
+    DecisionRecord invalid_record = summaryDecision(0, 4, 1.0, {});
+    invalid_record.sync_batch_reject = true;
+    EXPECT_THROW(invalid.observe(invalid_record), std::invalid_argument);
+}
+
 TEST(MechanismSummaryCore, NonBlockBypassCountsBottomSixCoreTicks) {
     MechanismSummaryAccumulator accumulator(1);
     accumulator.observe(summaryDecision(
@@ -1933,7 +1957,8 @@ TEST(ObservabilityReleaseIntegration,
 }
 
 static std::vector<ObservabilityTaskMetadata> b4Schema3Metadata(
-    bool special_name = false) {
+    bool special_name = false,
+    std::uint64_t relative_deadline_ms = 0) {
     std::vector<ObservabilityTaskMetadata> metadata;
     for (std::uint32_t rank = 10; rank > 0; --rank) {
         const std::uint32_t actual_rank = rank - 1;
@@ -1942,6 +1967,7 @@ static std::vector<ObservabilityTaskMetadata> b4Schema3Metadata(
                 ? std::string("special-\"-\\-\n-task")
                 : std::string("task-") + std::to_string(actual_rank),
             actual_rank,
+            relative_deadline_ms,
         });
     }
     return metadata;
@@ -2217,6 +2243,60 @@ TEST(ObservabilitySchema3Core,
                 return summary.released_jobs == 0;
             }),
         9);
+}
+
+TEST(ObservabilitySchema3Core,
+     AdjudicableDeadlineBeforeAndAtHorizonAreIncludedAndLaterIsExcluded) {
+    PerTaskLifecycleAccumulator lifecycle;
+    lifecycle.reset(10, {{"before", 0, 9}, {"boundary", 1, 10}});
+    lifecycle.onRelease("before", 0);
+    lifecycle.onRelease("boundary", 0);
+    lifecycle.onRelease("boundary", 1);
+    lifecycle.onDeadlineMiss("before", 0, 9);
+    lifecycle.onDeadlineMiss("boundary", 0, 10);
+    lifecycle.onDeadlineMiss("boundary", 1, 10);
+    lifecycle.finalize(10);
+    ASSERT_EQ(lifecycle.summaries().size(), 2u);
+    EXPECT_EQ(lifecycle.summaries()[0].released_jobs, 1u);
+    EXPECT_EQ(lifecycle.summaries()[0].adjudicable_jobs, 1u);
+    EXPECT_EQ(lifecycle.summaries()[0].deadline_miss_jobs, 1u);
+    EXPECT_EQ(lifecycle.summaries()[1].released_jobs, 2u);
+    EXPECT_EQ(lifecycle.summaries()[1].adjudicable_jobs, 1u);
+    EXPECT_EQ(lifecycle.summaries()[1].deadline_miss_jobs, 1u);
+}
+
+TEST(ObservabilitySchema3Core,
+     ContractVersionTwoSerializesOnlyItsClosedAdditionalFields) {
+    const std::string path = "/tmp/partsim_b4_schema3_contract_v2.json";
+    {
+        JSONTrace trace(path, MetaSim::Tick(1));
+        MetaSim::SIMUL.initSingleRun();
+        trace.configureB4ObservabilitySchema3(
+            MetaSim::Tick(1), b4Schema3Metadata(false, 1),
+            B4_OBSERVABILITY_SUMMARY_CONTRACT_VERSION_V2);
+        DecisionRecord record = summaryDecision(0, 4, 1.0, {});
+        record.sync_batch_evaluation = true;
+        trace.observeDecision(record);
+        trace.finalizeObservabilitySummaries(MetaSim::Tick(1));
+        trace.setObservabilityEnergySummary(b4Schema3Energy(1));
+        trace.sealObservabilityPayloadForSerialization();
+        MetaSim::SIMUL.endSingleRun();
+    }
+    const std::string contents = readFileContents(path);
+    EXPECT_NE(
+        contents.find("\"observability_summary_contract_version\": 2"),
+        std::string::npos);
+    for (const auto &marker : {
+             "sync_batch_evaluation_ticks",
+             "sync_batch_reject_ticks",
+             "alap_deferral_opportunity_ticks",
+             "positive_slack_deferral_ticks",
+             "st_charging_opportunity_ticks",
+             "st_slack_charging_wait_ticks",
+             "adjudicable_jobs",
+         }) {
+        EXPECT_NE(contents.find(marker), std::string::npos) << marker;
+    }
 }
 
 TEST(ObservabilitySchema3Core, SealRequiresFinalizedSummariesAndEnergy) {

@@ -458,6 +458,13 @@ namespace RTSim {
             return _rdl;
         }
 
+        // PeriodicTask historically overrides getRelDline() with its period.
+        // Observability needs the configured constrained deadline that drives
+        // Task::_dl, without changing that legacy virtual scheduling surface.
+        Tick getConfiguredRelDline() const {
+            return _rdl;
+        }
+
         /**
             Change the interarrival time. Used to change the period or the
             arrival characteristics of the task.

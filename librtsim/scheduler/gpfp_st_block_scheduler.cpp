@@ -513,6 +513,18 @@ namespace RTSim {
                             after_blocked = true;
                         }
                     }
+                    AbsRTTask *decision_head = active_tasks.empty()
+                        ? nullptr : active_tasks.front();
+                    const bool head_positive_slack =
+                        decision_head &&
+                        calculateSlackForTask(decision_head) > Tick(0);
+                    const bool head_currently_unaffordable =
+                        decision_head &&
+                        costs.at(decision_head) > _current_energy + 1e-9;
+                    const bool st_charging_opportunity =
+                        native_processors > 0 &&
+                        head_positive_slack &&
+                        head_currently_unaffordable;
                     _trace_logger->observeDecision(makeOwnedDecisionRecord(
                         static_cast<std::int64_t>(current_time),
                         observed_processors,
@@ -524,7 +536,13 @@ namespace RTSim {
                         infinite_demand,
                         {},
                         costs,
-                        reasons));
+                        reasons,
+                        false,
+                        false,
+                        false,
+                        false,
+                        st_charging_opportunity,
+                        st_charging_opportunity));
                 }
                 return;
             }
@@ -774,6 +792,11 @@ namespace RTSim {
                 ? processor_count
                 : std::max<std::size_t>(
                     1, ConfigManager::getInstance().getNumCores());
+            const bool head_st_charging_opportunity =
+                processor_count > 0 &&
+                charge_wait &&
+                !active_tasks.empty() &&
+                blocking_task == active_tasks.front();
             _trace_logger->observeDecision(makeOwnedDecisionRecord(
                 static_cast<std::int64_t>(current_time),
                 observed_processors,
@@ -785,7 +808,13 @@ namespace RTSim {
                 infinite_demand,
                 actual,
                 costs,
-                reasons));
+                reasons,
+                false,
+                false,
+                false,
+                false,
+                head_st_charging_opportunity,
+                head_st_charging_opportunity));
         }
 
         if (!_dispatch_selection_order.empty()) {

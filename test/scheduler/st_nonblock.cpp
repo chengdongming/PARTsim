@@ -12,6 +12,7 @@
 #include <metasim/simul.hpp>
 
 #include <rtsim/cpu.hpp>
+#include <rtsim/json_trace.hpp>
 #include <rtsim/task.hpp>
 
 #define private public
@@ -303,6 +304,92 @@ TEST(STNonBlockScheduler,
 
     EXPECT_EQ(high.getScheduleCount(), 1);
     EXPECT_EQ(scheduler._skipped_tasks.count(&high), 0u);
+
+    simulation.endSingleRun();
+}
+
+TEST(STNonBlockScheduler,
+     ReportingCountsOnlyCurrentlyUnaffordableHeadDuringChargeHold) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTNonBlockScheduler scheduler;
+    CPU cpu("st-nonblock-reporting-head-cpu", nullptr);
+    TestSTNonBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeSTNonBlockTask task(1, 5, 10, 1.0);
+    JSONTrace trace(
+        "/tmp/partsim_st_nonblock_reporting_head.json", Tick(2));
+
+    STNonBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &task, 5, 1, 2.0);
+    trace.enableObservabilitySummaries(Tick(2));
+    scheduler.setTraceLogger(&trace);
+
+    simulation.initSingleRun();
+    STNonBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STNonBlockSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    task.releaseAt(Tick(0));
+    STNonBlockSchedulerTestPeer::enqueue(scheduler, &task);
+
+    STNonBlockSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+
+    ASSERT_EQ(trace.mechanismSummary().st_charging_opportunity_ticks, 1u);
+    ASSERT_EQ(trace.mechanismSummary().st_slack_charging_wait_ticks, 1u);
+    ASSERT_EQ(task.getScheduleCount(), 0);
+    ASSERT_EQ(scheduler._skipped_tasks.count(&task), 1u);
+    ASSERT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.0);
+    ASSERT_EQ(STNonBlockSchedulerTestPeer::deadlineMisses(scheduler), 0);
+
+    STNonBlockTestActionEvent exactly_affordable([&]() {
+        scheduler._current_energy = 2.0;
+        STNonBlockSchedulerTestPeer::tick(scheduler);
+    });
+    exactly_affordable.post(Tick(1));
+    simulation.run_to(Tick(1));
+
+    EXPECT_EQ(trace.mechanismSummary().st_charging_opportunity_ticks, 1u);
+    EXPECT_EQ(trace.mechanismSummary().st_slack_charging_wait_ticks, 1u);
+    EXPECT_EQ(task.getScheduleCount(), 0);
+    EXPECT_EQ(scheduler._skipped_tasks.count(&task), 1u);
+    EXPECT_TRUE(scheduler._dispatch_selection_order.empty());
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 2.0);
+    EXPECT_DOUBLE_EQ(task.getRemainingWCET(), 1.0);
+    EXPECT_EQ(STNonBlockSchedulerTestPeer::deadlineMisses(scheduler), 0);
+
+    simulation.endSingleRun();
+}
+
+TEST(STNonBlockScheduler,
+     ReportingDoesNotCountUnaffordableHeadWithExhaustedSlack) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTNonBlockScheduler scheduler;
+    CPU cpu("st-nonblock-reporting-zero-slack-cpu", nullptr);
+    TestSTNonBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeSTNonBlockTask task(1, 5, 1, 1.0);
+    JSONTrace trace(
+        "/tmp/partsim_st_nonblock_reporting_zero_slack.json", Tick(1));
+
+    STNonBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &task, 5, 1, 2.0);
+    trace.enableObservabilitySummaries(Tick(1));
+    scheduler.setTraceLogger(&trace);
+
+    simulation.initSingleRun();
+    STNonBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STNonBlockSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    task.releaseAt(Tick(0));
+    STNonBlockSchedulerTestPeer::enqueue(scheduler, &task);
+
+    STNonBlockSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+
+    EXPECT_EQ(trace.mechanismSummary().st_charging_opportunity_ticks, 0u);
+    EXPECT_EQ(trace.mechanismSummary().st_slack_charging_wait_ticks, 0u);
+    EXPECT_EQ(task.getScheduleCount(), 0);
+    EXPECT_EQ(scheduler._skipped_tasks.count(&task), 0u);
+    EXPECT_TRUE(scheduler._dispatch_selection_order.empty());
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.0);
+    EXPECT_DOUBLE_EQ(task.getRemainingWCET(), 1.0);
+    EXPECT_EQ(STNonBlockSchedulerTestPeer::deadlineMisses(scheduler), 0);
 
     simulation.endSingleRun();
 }

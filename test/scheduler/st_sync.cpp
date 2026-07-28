@@ -12,6 +12,7 @@
 #include <metasim/simul.hpp>
 
 #include <rtsim/cpu.hpp>
+#include <rtsim/json_trace.hpp>
 #include <rtsim/task.hpp>
 
 #define private public
@@ -388,6 +389,179 @@ TEST(STSyncScheduler, ChargingBatchHoldsUntilBatteryFullOrSlackExhausted) {
     EXPECT_EQ(second.getScheduleCount(), 1);
     EXPECT_FALSE(scheduler.isChargingSleepActive());
     EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 98.0);
+
+    simulation.endSingleRun();
+}
+
+TEST(STSyncScheduler,
+     ReportingCountsOnlyCurrentlyUnaffordableHeadDuringChargeHold) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTSyncScheduler scheduler;
+    CPU cpu("st-sync-reporting-head-cpu", nullptr);
+    TestSTSyncMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeSTSyncTask task(1, 5, 10, 1.0);
+    JSONTrace trace(
+        "/tmp/partsim_st_sync_reporting_head.json", Tick(2));
+
+    STSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &task, 5, 1, 2.0);
+    trace.enableObservabilitySummaries(Tick(2));
+    scheduler.setTraceLogger(&trace);
+
+    simulation.initSingleRun();
+    STSyncSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STSyncSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    task.releaseAt(Tick(0));
+    STSyncSchedulerTestPeer::enqueue(scheduler, &task);
+
+    STSyncSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+
+    ASSERT_EQ(trace.mechanismSummary().st_charging_opportunity_ticks, 1u);
+    ASSERT_EQ(trace.mechanismSummary().st_slack_charging_wait_ticks, 1u);
+    ASSERT_EQ(task.getScheduleCount(), 0);
+    ASSERT_TRUE(scheduler.isChargingSleepActive());
+    ASSERT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.0);
+    ASSERT_EQ(STSyncSchedulerTestPeer::deadlineMisses(scheduler), 0);
+
+    STSyncTestActionEvent exactly_affordable([&]() {
+        scheduler._current_energy = 2.0;
+        STSyncSchedulerTestPeer::tick(scheduler);
+    });
+    exactly_affordable.post(Tick(1));
+    simulation.run_to(Tick(1));
+
+    EXPECT_EQ(trace.mechanismSummary().st_charging_opportunity_ticks, 1u);
+    EXPECT_EQ(trace.mechanismSummary().st_slack_charging_wait_ticks, 1u);
+    EXPECT_EQ(task.getScheduleCount(), 0);
+    EXPECT_TRUE(scheduler.isChargingSleepActive());
+    EXPECT_TRUE(scheduler.getCurrentBatchTasks().empty());
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 2.0);
+    EXPECT_DOUBLE_EQ(task.getRemainingWCET(), 1.0);
+    EXPECT_EQ(STSyncSchedulerTestPeer::deadlineMisses(scheduler), 0);
+
+    simulation.endSingleRun();
+}
+
+TEST(STSyncScheduler,
+     ReportingSeparatesAffordableHeadFromUnaffordableBatch) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTSyncScheduler scheduler;
+    CPU cpu0("st-sync-reporting-batch-cpu0", nullptr);
+    CPU cpu1("st-sync-reporting-batch-cpu1", nullptr);
+    TestSTSyncMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu0, &cpu1});
+    FakeSTSyncTask head(1, 5, 10, 1.0);
+    FakeSTSyncTask second(2, 10, 10, 1.0);
+    JSONTrace trace(
+        "/tmp/partsim_st_sync_reporting_batch.json", Tick(1));
+
+    STSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &head, 5, 1, 1.0);
+    STSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &second, 10, 1, 1.0);
+    trace.enableObservabilitySummaries(Tick(1));
+    scheduler.setTraceLogger(&trace);
+
+    simulation.initSingleRun();
+    STSyncSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STSyncSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    head.releaseAt(Tick(0));
+    second.releaseAt(Tick(0));
+    STSyncSchedulerTestPeer::enqueue(scheduler, &head);
+    STSyncSchedulerTestPeer::enqueue(scheduler, &second);
+
+    STSyncSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+
+    EXPECT_EQ(trace.mechanismSummary().sync_batch_evaluation_ticks, 1u);
+    EXPECT_EQ(trace.mechanismSummary().sync_batch_reject_ticks, 1u);
+    EXPECT_EQ(trace.mechanismSummary().st_charging_opportunity_ticks, 0u);
+    EXPECT_EQ(trace.mechanismSummary().st_slack_charging_wait_ticks, 0u);
+    EXPECT_EQ(head.getScheduleCount(), 0);
+    EXPECT_EQ(second.getScheduleCount(), 0);
+    EXPECT_TRUE(scheduler.getCurrentBatchTasks().empty());
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.0);
+    EXPECT_EQ(STSyncSchedulerTestPeer::deadlineMisses(scheduler), 0);
+
+    simulation.endSingleRun();
+}
+
+TEST(STSyncScheduler,
+     ReportingCanObserveOpportunityWithoutGroupWait) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTSyncScheduler scheduler;
+    CPU cpu0("st-sync-reporting-no-wait-cpu0", nullptr);
+    CPU cpu1("st-sync-reporting-no-wait-cpu1", nullptr);
+    TestSTSyncMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu0, &cpu1});
+    FakeSTSyncTask head(1, 5, 10, 1.0);
+    FakeSTSyncTask zero_slack(2, 10, 1, 1.0);
+    JSONTrace trace(
+        "/tmp/partsim_st_sync_reporting_no_wait.json", Tick(1));
+
+    STSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &head, 5, 1, 2.0);
+    STSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &zero_slack, 10, 1, 1.0);
+    trace.enableObservabilitySummaries(Tick(1));
+    scheduler.setTraceLogger(&trace);
+
+    simulation.initSingleRun();
+    STSyncSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STSyncSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    head.releaseAt(Tick(0));
+    zero_slack.releaseAt(Tick(0));
+    STSyncSchedulerTestPeer::enqueue(scheduler, &head);
+    STSyncSchedulerTestPeer::enqueue(scheduler, &zero_slack);
+
+    STSyncSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+
+    EXPECT_EQ(trace.mechanismSummary().sync_batch_evaluation_ticks, 1u);
+    EXPECT_EQ(trace.mechanismSummary().sync_batch_reject_ticks, 1u);
+    EXPECT_EQ(trace.mechanismSummary().st_charging_opportunity_ticks, 1u);
+    EXPECT_EQ(trace.mechanismSummary().st_slack_charging_wait_ticks, 0u);
+    EXPECT_EQ(head.getScheduleCount(), 0);
+    EXPECT_EQ(zero_slack.getScheduleCount(), 0);
+    EXPECT_FALSE(scheduler.isChargingSleepActive());
+    EXPECT_TRUE(scheduler.getCurrentBatchTasks().empty());
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.0);
+    EXPECT_EQ(STSyncSchedulerTestPeer::deadlineMisses(scheduler), 0);
+
+    simulation.endSingleRun();
+}
+
+TEST(STSyncScheduler,
+     ReportingDoesNotCountUnaffordableHeadWithExhaustedSlack) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTSyncScheduler scheduler;
+    CPU cpu("st-sync-reporting-zero-slack-cpu", nullptr);
+    TestSTSyncMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeSTSyncTask task(1, 5, 1, 1.0);
+    JSONTrace trace(
+        "/tmp/partsim_st_sync_reporting_zero_slack.json", Tick(1));
+
+    STSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &task, 5, 1, 2.0);
+    trace.enableObservabilitySummaries(Tick(1));
+    scheduler.setTraceLogger(&trace);
+
+    simulation.initSingleRun();
+    STSyncSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STSyncSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    task.releaseAt(Tick(0));
+    STSyncSchedulerTestPeer::enqueue(scheduler, &task);
+
+    STSyncSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+
+    EXPECT_EQ(trace.mechanismSummary().st_charging_opportunity_ticks, 0u);
+    EXPECT_EQ(trace.mechanismSummary().st_slack_charging_wait_ticks, 0u);
+    EXPECT_EQ(task.getScheduleCount(), 0);
+    EXPECT_FALSE(scheduler.isChargingSleepActive());
+    EXPECT_TRUE(scheduler.getCurrentBatchTasks().empty());
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.0);
+    EXPECT_DOUBLE_EQ(task.getRemainingWCET(), 1.0);
+    EXPECT_EQ(STSyncSchedulerTestPeer::deadlineMisses(scheduler), 0);
 
     simulation.endSingleRun();
 }
