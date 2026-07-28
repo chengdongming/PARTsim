@@ -552,7 +552,9 @@ def test_official_v2_bounded_e2e_without_core_mock_or_fake(
     original_initialize = (
         runner_v2_module.initialize_shared_energy_run_from_manifest_path
     )
+    original_provider = runner_v2_module.ProductionTasksetProviderV2
     cached_context = []
+    cached_provider = []
 
     def initialize_once(*args, **kwargs):
         if not cached_context:
@@ -563,6 +565,15 @@ def test_official_v2_bounded_e2e_without_core_mock_or_fake(
         runner_v2_module,
         "initialize_shared_energy_run_from_manifest_path",
         initialize_once,
+    )
+
+    def provider_once(config):
+        if not cached_provider:
+            cached_provider.append(original_provider(config))
+        return cached_provider[0]
+
+    monkeypatch.setattr(
+        runner_v2_module, "ProductionTasksetProviderV2", provider_once,
     )
     resume_runner = AuthorizedRTA4RunnerV2(
         prepared_document, authorization_document,
@@ -620,15 +631,29 @@ def test_official_v2_bounded_e2e_without_core_mock_or_fake(
     )
 
     store_root = core1 / "store-v2"
-    store_drift_paths = (
-        store_root / "formal_taskset_store_manifest_v2_shared_energy.json",
-        next((store_root / "certificates_v2").glob("*.json")),
-        next((store_root / "task_energy_materials_v2").glob("*.json")),
+    store_manifest = (
+        store_root / "formal_taskset_store_manifest_v2_shared_energy.json"
     )
-    for store_path in store_drift_paths:
-        rejected_without_overwrite(
-            store_path, store_path.read_bytes() + b" ",
-        )
+    store_manifest_drift = json.loads(store_manifest.read_text(encoding="utf-8"))
+    store_manifest_drift["production_build_manifest_identity"] = "a" * 64
+    rejected_without_overwrite(
+        store_manifest,
+        (canonical_json(store_manifest_drift) + "\n").encode("utf-8"),
+    )
+    certificate_path = next((store_root / "certificates_v2").glob("*.json"))
+    certificate_drift = json.loads(certificate_path.read_text(encoding="utf-8"))
+    certificate_drift["taskset_id"] = "b" * 64
+    rejected_without_overwrite(
+        certificate_path, canonical_json(certificate_drift).encode("utf-8"),
+    )
+    task_energy_path = next(
+        (store_root / "task_energy_materials_v2").glob("*.json")
+    )
+    task_energy_drift = json.loads(task_energy_path.read_text(encoding="utf-8"))
+    task_energy_drift["taskset_id"] = "c" * 64
+    rejected_without_overwrite(
+        task_energy_path, canonical_json(task_energy_drift).encode("utf-8"),
+    )
     assert resume_runner.run(resume=True).processed_records == 0
     assert {
         path.name: hashlib.sha256(path.read_bytes()).hexdigest()
@@ -638,6 +663,9 @@ def test_official_v2_bounded_e2e_without_core_mock_or_fake(
     reference_rows = {row["method"]: row for row in rows}
     contexts = []
     initialize = original_initialize
+    monkeypatch.setattr(
+        runner_v2_module, "ProductionTasksetProviderV2", original_provider,
+    )
 
     def capture_context(*args, **kwargs):
         context = initialize(*args, **kwargs)
