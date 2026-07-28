@@ -1102,12 +1102,42 @@ def build_autodl_deployment_manifest_v2(
     }
 
 
+def validate_autodl_deployment_manifest_v2(
+    value: Mapping[str, Any], bundle: Mapping[str, Any],
+) -> Dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise RTA4Core0APilotV2Error("AutoDL deployment must be a mapping")
+    document = dict(value)
+    unsigned = dict(document)
+    observed = unsigned.pop("deployment_manifest_identity", None)
+    if (
+        document.get("deployment_manifest_schema")
+        != CORE0A_DEPLOYMENT_MANIFEST_SCHEMA
+        or document.get("portable_freeze_identity")
+        != bundle.get("portable_freeze_identity")
+        or document.get("source_commit") != bundle.get("source", {}).get(
+            "git_commit"
+        )
+        or document.get("source_tree") != bundle.get("source", {}).get(
+            "git_tree"
+        )
+        or observed != domain_hash(CORE0A_DEPLOYMENT_MANIFEST_DOMAIN, unsigned)
+    ):
+        raise RTA4Core0APilotV2Error(
+            "AutoDL deployment identity/source mismatch"
+        )
+    return document
+
+
 def core0a_execution_identity(
     bundle: Mapping[str, Any], deployment_manifest: Mapping[str, Any],
 ) -> str:
+    deployment = validate_autodl_deployment_manifest_v2(
+        deployment_manifest, bundle,
+    )
     return domain_hash(CORE0A_EXECUTION_IDENTITY_DOMAIN, {
         "portable_freeze_identity": bundle["portable_freeze_identity"],
-        "deployment_manifest_identity": deployment_manifest[
+        "deployment_manifest_identity": deployment[
             "deployment_manifest_identity"
         ],
         "selection_identity": bundle["selection"]["core0a_selection_identity"],
@@ -1170,6 +1200,16 @@ def require_authorized_core0a_engineering_pilot(
         raise RTA4Core0APilotV2Error(
             "CORE-0A execution requires independent authorization and deployment"
         )
+    exact = {
+        "authorization_schema", "status", "independent_read_only_review",
+        "review_identity", "portable_freeze_identity", "selection_identity",
+        "source_commit", "source_tree", "deployment_manifest_identity",
+        "execution_identity", "output_namespace", "authorized_execution_count",
+        "max_runs", "scope", "formal_authorization",
+        "production_authorization", "authorization_id",
+    }
+    if set(authorization) != exact:
+        raise RTA4Core0APilotV2Error("CORE-0A authorization field set mismatch")
     if authorization.get("status") != AUTHORIZED_CORE0A_ENGINEERING_PILOT:
         raise RTA4Core0APilotV2Error("CORE-0A candidate is not authorized")
     if authorization.get("independent_read_only_review") is not True:
@@ -1178,6 +1218,16 @@ def require_authorized_core0a_engineering_pilot(
         "portable_freeze_identity"
     ):
         raise RTA4Core0APilotV2Error("CORE-0A authorization freeze drift")
+    if (
+        authorization.get("selection_identity")
+        != bundle.get("selection", {}).get("core0a_selection_identity")
+        or authorization.get("source_commit")
+        != bundle.get("source", {}).get("git_commit")
+        or authorization.get("source_tree")
+        != bundle.get("source", {}).get("git_tree")
+        or authorization.get("output_namespace") != CORE0A_OUTPUT_NAMESPACE
+    ):
+        raise RTA4Core0APilotV2Error("CORE-0A authorization source/scope drift")
     if authorization.get("deployment_manifest_identity") != deployment_manifest.get(
         "deployment_manifest_identity"
     ):
@@ -1189,6 +1239,7 @@ def require_authorized_core0a_engineering_pilot(
     if (
         authorization.get("authorized_execution_count")
         != EXPECTED_EXECUTION_COUNT
+        or authorization.get("max_runs") != 1
         or authorization.get("scope") != "EXACT_384_RECORD_CORE0A_ONLY"
         or authorization.get("formal_authorization") is not False
         or authorization.get("production_authorization") is not False
@@ -1199,6 +1250,8 @@ def require_authorized_core0a_engineering_pilot(
     if (
         authorization.get("authorization_schema")
         != CORE0A_AUTHORIZATION_SCHEMA
+        or not isinstance(authorization.get("review_identity"), str)
+        or len(authorization["review_identity"]) != 64
         or observed != domain_hash(CORE0A_AUTHORIZATION_DOMAIN, unsigned)
     ):
         raise RTA4Core0APilotV2Error("CORE-0A authorization identity mismatch")
@@ -1240,6 +1293,7 @@ __all__ = [
     "repository_identity", "require_authorized_core0a_engineering_pilot",
     "scientific_analysis_identity", "selected_ordinals_by_core",
     "terminal_evidence_identity", "validate_autodl_handoff_v2",
+    "validate_autodl_deployment_manifest_v2",
     "validate_core0a_selection_v2", "validate_portable_candidate_bundle_v2",
     "write_canonical_json",
 ]
