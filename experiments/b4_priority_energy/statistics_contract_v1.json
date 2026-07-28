@@ -1,0 +1,497 @@
+{
+  "contract_name": "B4-PE-I5D-deterministic-statistics-v1",
+  "contract_version": 1,
+  "required_analysis_schema_version": 2,
+  "required_analysis_contract_sha256": "25d0cfff0fba81979d15b5b70df842fc2e84f969574fa4cd73fc7ad2527c9318",
+  "required_observability_contract_sha256": "4e982f5a58a26507c9ab1b1b8d0b732e651d4657f10cf16744d3278d11186efe",
+  "algorithm_order": [
+    "ASAP-BLOCK",
+    "ASAP-NONBLOCK",
+    "ASAP-SYNC",
+    "ALAP-BLOCK",
+    "ALAP-NONBLOCK",
+    "ALAP-SYNC",
+    "ST-BLOCK",
+    "ST-NONBLOCK",
+    "ST-SYNC"
+  ],
+  "pilot_algorithm_order": [
+    "ASAP-BLOCK",
+    "ASAP-NONBLOCK",
+    "ASAP-SYNC",
+    "ALAP-BLOCK",
+    "ST-BLOCK"
+  ],
+  "comparison_order": [
+    "ASAP-NONBLOCK",
+    "ASAP-SYNC",
+    "ALAP-BLOCK",
+    "ST-BLOCK"
+  ],
+  "cluster_dimension_order": [
+    "phase",
+    "rho_E",
+    "utilization",
+    "taskset_id",
+    "taskset_semantic_hash",
+    "taskset_sha256",
+    "taskset_seed",
+    "replicate_index",
+    "taskset_pool"
+  ],
+  "cluster_contract": {
+    "canonical_form": "UTF-8 compact JSON object in cluster_dimension_order with no whitespace",
+    "key_derivation": "lowercase SHA-256",
+    "utilization_fallback": "target_normalized_utilization",
+    "pilot_rho_normalization": [
+      "1",
+      "2"
+    ],
+    "excluded_fields": [
+      "lambda_E",
+      "source_identity",
+      "source_sha256",
+      "source_seed",
+      "source_profile",
+      "algorithm",
+      "configured_scheduler",
+      "case_id",
+      "pairing_key",
+      "result_relpath"
+    ]
+  },
+  "ratio_contract": {
+    "zero_denominator_json": null,
+    "zero_denominator_csv": "",
+    "aggregate_case_ratios_not_pooled_counts": true,
+    "case_metrics": {
+      "overall_jmr": [
+        "all_deadline_miss_jobs",
+        "all_adjudicable_jobs"
+      ],
+      "top4_jmr": [
+        "hp_deadline_miss_jobs",
+        "hp_adjudicable_jobs"
+      ],
+      "bottom6_jmr": [
+        "lp_deadline_miss_jobs",
+        "lp_adjudicable_jobs"
+      ],
+      "completion_ratio": [
+        "all_completed_jobs",
+        "all_released_jobs"
+      ],
+      "unfinished_ratio": [
+        "all_unfinished_at_horizon_jobs",
+        "all_released_jobs"
+      ]
+    },
+    "task_metric": [
+      "deadline_miss_jobs",
+      "adjudicable_jobs"
+    ]
+  },
+  "mechanisms": {
+    "BypassRate": {
+      "numerator": "actual_bypass_ticks",
+      "denominator": "bypass_opportunity_ticks",
+      "paper_algorithm": "ASAP-NONBLOCK"
+    },
+    "SyncRejectRate": {
+      "numerator": "sync_batch_reject_ticks",
+      "denominator": "sync_batch_evaluation_ticks",
+      "paper_algorithm": "ASAP-SYNC"
+    },
+    "ALAPDeferralRate": {
+      "numerator": "positive_slack_deferral_ticks",
+      "denominator": "alap_deferral_opportunity_ticks",
+      "paper_algorithm": "ALAP-BLOCK"
+    },
+    "STChargingWaitRate": {
+      "numerator": "st_slack_charging_wait_ticks",
+      "denominator": "st_charging_opportunity_ticks",
+      "paper_algorithm": "ST-BLOCK"
+    },
+    "HPEnergyBlockedFraction": {
+      "numerator": "hp_energy_blocked_ticks",
+      "denominator": "hp_dispatch_demand_ticks",
+      "paper_algorithm": "ASAP-BLOCK"
+    },
+    "clipping_ratio": {
+      "numerator": "clipped_energy_j",
+      "denominator": "offered_energy_j",
+      "paper_algorithm": "ASAP-BLOCK"
+    }
+  },
+  "inference": {
+    "confidence_level": 0.95,
+    "bootstrap_method": "percentile_stratified_cluster",
+    "bootstrap_replicates": 10000,
+    "randomization_random_draws": 100000,
+    "root_seed": 20260728,
+    "rng": "NumPy PCG64 seeded by the full derived SHA-256 integer",
+    "seed_material": "SHA-256(statistics_contract_sha256 + root_seed + analysis_name + estimand_identity)",
+    "analysis_name": "SHA-256 of compact sorted case primary keys and task primary keys",
+    "percentile_quantile_method": "linear",
+    "exact_sign_flip_max_nonzero": 20,
+    "exact_sign_flip_p_value": "extreme_count / enumerated_permutations",
+    "exact_sign_flip_plus_one_correction": false,
+    "randomization_observed_permutation_forced_in_draws": false,
+    "randomization_observed_permutation_accounting": "plus_one_only",
+    "randomization_plus_one_correction": true,
+    "randomization_p_value": "(random_extreme_count + 1) / (random_draws + 1)",
+    "confirmatory_family": "four_HPPass_comparisons_only",
+    "multiplicity_adjustment": "Holm_step_down"
+  },
+  "mode_contracts": {
+    "validation": {
+      "phase": null,
+      "allow_not_for_paper": true,
+      "require_complete_grid": false,
+      "paper_results_authorized": false,
+      "watermark": "VALIDATION ONLY — NOT FOR PAPER"
+    },
+    "pilot": {
+      "phase": "pilot",
+      "case_count": 2400,
+      "task_count": 24000,
+      "pairing_group_count": 480,
+      "cluster_count": 60,
+      "utilizations": [
+        "0.3",
+        "0.4",
+        "0.5"
+      ],
+      "lambdas": [
+        "0.70",
+        "0.85",
+        "1.00",
+        "1.15"
+      ],
+      "rhos": [
+        "1",
+        "2"
+      ],
+      "clusters_per_utilization": 20,
+      "cases_per_cluster": 40,
+      "paper_results_authorized": false
+    },
+    "formal-main": {
+      "phase": "formal_main",
+      "case_count": 18000,
+      "task_count": 180000,
+      "pairing_group_count": 2000,
+      "cluster_count": 500,
+      "utilizations": [
+        "0.2",
+        "0.3",
+        "0.4",
+        "0.5",
+        "0.6"
+      ],
+      "lambdas": [
+        "0.70",
+        "0.85",
+        "1.00",
+        "1.15"
+      ],
+      "rhos": [
+        "2"
+      ],
+      "clusters_per_utilization": 100,
+      "cases_per_cluster": 36,
+      "paper_results_authorized": true
+    },
+    "negative-control": {
+      "phase": "negative_control",
+      "case_count": 5400,
+      "task_count": 54000,
+      "pairing_group_count": 600,
+      "cluster_count": 300,
+      "utilizations": [
+        "0.3",
+        "0.4",
+        "0.5"
+      ],
+      "lambdas": [
+        "0.85",
+        "1.00"
+      ],
+      "rhos": [
+        "1"
+      ],
+      "clusters_per_utilization": 100,
+      "cases_per_cluster": 18,
+      "paper_results_authorized": false
+    }
+  },
+  "output_order": [
+    "algorithm_summary.jsonl",
+    "algorithm_summary.csv",
+    "confirmatory_effects.jsonl",
+    "confirmatory_effects.csv",
+    "cell_summary.jsonl",
+    "cell_summary.csv",
+    "rank_jmr.jsonl",
+    "rank_jmr.csv",
+    "mechanism_summary.jsonl",
+    "mechanism_summary.csv",
+    "table1_confirmatory_effects.csv",
+    "table1_confirmatory_effects.tex",
+    "table2_algorithm_summary.csv",
+    "table2_algorithm_summary.tex",
+    "negative_control_summary.csv",
+    "pilot_gate.json",
+    "pilot_gate.csv",
+    "figure1_algorithm_pass_rates.pdf",
+    "figure1_algorithm_pass_rates.png",
+    "figure2_block_vs_nonblock_sync.pdf",
+    "figure2_block_vs_nonblock_sync.png",
+    "figure3_asap_vs_alap_st.pdf",
+    "figure3_asap_vs_alap_st.png",
+    "figure4_confirmatory_effects.pdf",
+    "figure4_confirmatory_effects.png",
+    "figure5_tradeoff_mechanisms.pdf",
+    "figure5_tradeoff_mechanisms.png",
+    "statistics_audit.json",
+    "statistics_manifest.json"
+  ],
+  "authoritative_statistics_outputs": [
+    "algorithm_summary.jsonl",
+    "confirmatory_effects.jsonl",
+    "cell_summary.jsonl",
+    "rank_jmr.jsonl",
+    "mechanism_summary.jsonl"
+  ],
+  "row_field_order": {
+    "algorithm_summary": [
+      "algorithm",
+      "hp_pass",
+      "hp_ci_lower",
+      "hp_ci_upper",
+      "whole_pass",
+      "whole_ci_lower",
+      "whole_ci_upper",
+      "overall_jmr",
+      "top4_jmr",
+      "bottom6_jmr",
+      "completion_ratio",
+      "unfinished_ratio",
+      "defined_cluster_count",
+      "total_cluster_count",
+      "bootstrap_replicates",
+      "hp_seed_identity",
+      "whole_seed_identity"
+    ],
+    "confirmatory_effects": [
+      "comparator",
+      "hp_point_estimate",
+      "hp_ci_lower",
+      "hp_ci_upper",
+      "hp_bootstrap_replicates",
+      "hp_seed_identity",
+      "raw_p",
+      "randomization_method",
+      "randomization_seed_identity",
+      "nonzero_cluster_count",
+      "observed_statistic",
+      "random_draws",
+      "observed_permutation_forced_in_draws",
+      "observed_permutation_accounting",
+      "random_extreme_count",
+      "enumerated_permutations",
+      "extreme_count",
+      "plus_one_correction",
+      "p_value_numerator",
+      "p_value_denominator",
+      "holm_adjusted_p",
+      "holm_rank",
+      "reject_at_0_05",
+      "whole_point_estimate",
+      "whole_ci_lower",
+      "whole_ci_upper",
+      "whole_bootstrap_replicates",
+      "whole_seed_identity",
+      "asap_block_only",
+      "comparator_only",
+      "both_pass",
+      "neither_pass",
+      "case_pair_count"
+    ],
+    "cell_summary": [
+      "record_type",
+      "utilization",
+      "lambda_E",
+      "rho_E",
+      "algorithm",
+      "comparator",
+      "hp_pass",
+      "whole_pass",
+      "overall_jmr",
+      "top4_jmr",
+      "bottom6_jmr",
+      "completion_ratio",
+      "unfinished_ratio",
+      "hp_risk_difference",
+      "hp_ci_lower",
+      "hp_ci_upper",
+      "whole_risk_difference",
+      "whole_ci_lower",
+      "whole_ci_upper",
+      "asap_block_only",
+      "comparator_only",
+      "hp_defined_taskset_count",
+      "whole_defined_taskset_count",
+      "overall_jmr_defined_taskset_count",
+      "top4_jmr_defined_taskset_count",
+      "bottom6_jmr_defined_taskset_count",
+      "completion_ratio_defined_taskset_count",
+      "unfinished_ratio_defined_taskset_count",
+      "total_taskset_count"
+    ],
+    "rank_jmr": [
+      "algorithm",
+      "priority_rank",
+      "paper_rank",
+      "is_top4",
+      "point_estimate",
+      "defined_cluster_count",
+      "total_cluster_count"
+    ],
+    "mechanism_summary": [
+      "mechanism",
+      "algorithm",
+      "utilization",
+      "lambda_E",
+      "rho_E",
+      "numerator_field",
+      "denominator_field",
+      "macro_mean",
+      "median",
+      "positive_numerator_taskset_count",
+      "positive_denominator_taskset_count",
+      "defined_taskset_count",
+      "total_taskset_count",
+      "defined_fraction",
+      "total_numerator",
+      "total_denominator",
+      "exposure_pooled_rate"
+    ]
+  },
+  "figure_contract": {
+    "backend": "Agg",
+    "font_family": "DejaVu Sans",
+    "base_font_size_pt": 8,
+    "axes_line_width_pt": 0.8,
+    "data_line_width_pt": 1.2,
+    "png_dpi": 300,
+    "figure_sizes_inches": {
+      "figure1": [
+        8.0,
+        4.5
+      ],
+      "figure2": [
+        8.0,
+        3.7
+      ],
+      "figure3": [
+        8.0,
+        3.7
+      ],
+      "figure4": [
+        8.0,
+        4.6
+      ],
+      "figure5": [
+        11.0,
+        14.0
+      ]
+    },
+    "algorithm_colors": {
+      "ASAP-BLOCK": "#1f4e79",
+      "ASAP-NONBLOCK": "#4f81bd",
+      "ASAP-SYNC": "#8faadc",
+      "ALAP-BLOCK": "#9e480e",
+      "ALAP-NONBLOCK": "#c55a11",
+      "ALAP-SYNC": "#f4b183",
+      "ST-BLOCK": "#548235",
+      "ST-NONBLOCK": "#70ad47",
+      "ST-SYNC": "#a9d18e"
+    },
+    "marker_order": [
+      "o",
+      "s",
+      "^",
+      "D",
+      "v",
+      "P",
+      "X",
+      "<",
+      ">"
+    ],
+    "pdf_metadata": {
+      "Author": "PARTSim",
+      "Creator": "PARTSim B4-PE I5D",
+      "Producer": "Matplotlib",
+      "CreationDate": null,
+      "ModDate": null
+    },
+    "png_metadata": {
+      "Software": "PARTSim B4-PE I5D",
+      "date_fields_forbidden": true
+    },
+    "pdf_creation_and_modification_dates": null,
+    "validation_watermark_required": true,
+    "figure1_x_range": [
+      0.0,
+      1.0
+    ],
+    "figure23_shared_symmetric_scale": true,
+    "figure4_zero_reference": true,
+    "figure5_rank_boundary": 4.5,
+    "figure5_tradeoff_comparators": 4,
+    "figure5_mechanism_facets": 6
+  },
+  "table_contract": {
+    "tex_fragment": "tabular_only",
+    "na": "--",
+    "percent_decimals": 2,
+    "p_value_significant_digits": 6,
+    "ci_format": "[lower, upper]",
+    "timestamps_forbidden": true,
+    "absolute_paths_forbidden": true
+  },
+  "hash_dag": [
+    "numeric_table_figure_outputs",
+    "statistics_audit.json",
+    "statistics_manifest.json"
+  ],
+  "determinism": {
+    "encoding": "UTF-8",
+    "newline": "LF",
+    "jsonl_compact": true,
+    "metadata_json_pretty": true,
+    "csv_float_significant_digits": 17,
+    "timestamps_forbidden": true,
+    "absolute_paths_forbidden": true,
+    "uuid_forbidden": true,
+    "hostname_forbidden": true,
+    "non_finite_forbidden": true,
+    "identical_inputs_and_clean_commit_byte_identical": true
+  },
+  "governance": {
+    "strict_required": true,
+    "event_array_forbidden": true,
+    "jsonl_authoritative": true,
+    "csv_parity_only": true,
+    "statistics_root_outside_repository": true,
+    "statistics_root_absent_or_empty": true,
+    "atomic_publication": true,
+    "failed_run_has_no_success_manifest": true,
+    "validation_not_for_paper": true,
+    "pilot_confirmatory_inference_forbidden": true,
+    "negative_excluded_from_confirmatory_family": true,
+    "formal_requires_clean_tree_and_final_candidate": true,
+    "performance_claims_forbidden": true
+  }
+}

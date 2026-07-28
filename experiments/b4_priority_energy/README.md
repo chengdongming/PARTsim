@@ -239,6 +239,59 @@ paths, random identifiers, NaN, or infinity; identical inputs and extractor
 identity produce byte-identical files. All generated analysis is explicitly
 marked `no_paper_data_generated=true`.
 
+## I5D deterministic statistics, tables, and figures
+
+`run_statistics.py` consumes only the six I5C v2 analysis products. The cases
+and tasks JSONL files are authoritative; their CSV views are read solely to
+verify parity. It never reads event arrays and never starts a simulator.
+Statistics are published to an absent or empty directory outside this
+repository through a staging directory and an atomic directory replacement.
+
+```text
+python3 experiments/b4_priority_energy/run_statistics.py \
+  --analysis-root /absolute/I5C-v2-analysis-root \
+  --statistics-root /absolute/outside-repository-statistics-root \
+  --mode validation \
+  --strict
+```
+
+The modes are `validation`, `pilot`, `formal-main`, and `negative-control`.
+Validation accepts incomplete, `not_for_paper` inputs and watermarks every
+figure `VALIDATION ONLY — NOT FOR PAPER`; its manifest always records
+`paper_results_authorized=false`. Pilot emits only neutral gate, cell, and
+mechanism outputs and performs no confirmatory testing. Negative Control is
+descriptive appendix output and is excluded from the four-comparison HPPass
+Holm family. Formal Main fails closed unless the exact grid and a final,
+explicitly authorized candidate identity are present and the statistics
+worktree is clean.
+
+The statistical unit is the base-taskset cluster. Its compact ordered identity
+contains phase, rho, utilization, and taskset identities but excludes lambda,
+source, algorithm, scheduler, case, and pairing identities. Pilot canonically
+represents its frozen two-rho dimension as `["1","2"]`, keeping the complete
+`4 lambda x 2 rho x 5 algorithm` base-taskset cluster together. Ratios are
+computed at case/task level first; a zero denominator is `null` in JSON, empty
+in CSV, and omitted from plots. Formal estimands average lambda within cluster,
+clusters within utilization, and then utilizations equally.
+
+The frozen inference uses 10,000 percentile bootstrap replicates, stratified
+cluster resampling, root seed `20260728`, and per-estimand SHA-256-derived RNG
+identities. The four direct HPPass comparisons use paired, two-sided sign
+flips (exact through 20 nonzero clusters, otherwise 100,000 deterministic
+random draws). The Monte Carlo p-value is
+`(random_extreme_count + 1) / (random_draws + 1)`; the observed permutation is
+not forced into those draws, and the plus-one is its only explicit accounting.
+The four raw p-values receive only stable Holm step-down correction. WholePass
+is a separate secondary effect without membership in that family.
+
+Successful Formal Main output contains five deterministic PDF/PNG figure
+pairs and two CSV/TeX paper tables. PDF date metadata is disabled, PNG metadata
+is fixed, Matplotlib uses Agg and DejaVu Sans, and every figure embeds the SHA
+of its authoritative source statistics. The output hash DAG is one-way:
+numeric/table/figure outputs, then `statistics_audit.json`, then
+`statistics_manifest.json`. Generated statistics, figures, tables, logs, and
+caches must remain outside the repository.
+
 ## I5B observability completion
 
 Protocol v3 explicitly selects trace schema 3, observability summary contract
