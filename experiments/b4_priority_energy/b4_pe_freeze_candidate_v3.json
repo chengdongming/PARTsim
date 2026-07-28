@@ -1,5 +1,5 @@
 {
-  "candidate_code_commit": null,
+  "candidate_code_commit": "87fae1924591fa2c0cabd292c03df043d5eea9fd",
   "candidate_name": "B4-PE-freeze-candidate-v3",
   "final_code_commit": null,
   "final_git_tag": null,
@@ -8,11 +8,25 @@
   "freeze_status": "candidate",
   "governance": {
     "formal_runs_authorized": false,
-    "i5d_statistics_authorized": false,
+    "i5d_statistics_authorized": true,
+    "negative_control_runs_authorized": false,
     "not_final_until_independent_review": true,
     "not_final_until_rta_integration": true,
+    "pilot_runs_authorized": true,
     "silent_changes_forbidden": true
   },
+  "governance_history": [
+    {
+      "algorithm_changes": false,
+      "parameter_changes": false,
+      "pre_pilot_candidate_v3_sha256": "708e3b90e294e560604e34e7052a3314a4fd7580b86295ebcd7e0182fada21cd",
+      "protocol_changes": false,
+      "science_code_commit": "87fae1924591fa2c0cabd292c03df043d5eea9fd",
+      "statistics_contract_changes": false,
+      "task_generation_changes": false,
+      "transition_type": "pilot_authorization"
+    }
+  ],
   "manifest_v3_identities": {
     "all": {
       "case_count": 25800,
@@ -53,6 +67,151 @@
     "result_audit_policy": "strict_schema3_observability_v2",
     "summary_horizon_ms": 30000,
     "zero_denominator": "NA"
+  },
+  "pilot_python_implementation_identities": {
+    "i5c_extractor": {
+      "entrypoint_path": "experiments/b4_priority_energy/extract_analysis.py",
+      "entrypoint_sha256": "3b9431b5b27a37023232ed495e6557ff6c8af49c07abdabdc20d685c723e0dc1",
+      "implementation_files": [
+        {
+          "path": "experiments/b4_priority_energy/analysis_contract_v2.json",
+          "sha256": "25d0cfff0fba81979d15b5b70df842fc2e84f969574fa4cd73fc7ad2527c9318"
+        },
+        {
+          "path": "experiments/b4_priority_energy/analysis_common.py",
+          "sha256": "dd4aabc3f4d8fe63e5a6841adaf08f29125f45b109dd74a1e5bcf44a9cf12cbc"
+        },
+        {
+          "path": "experiments/b4_priority_energy/extract_analysis.py",
+          "sha256": "3b9431b5b27a37023232ed495e6557ff6c8af49c07abdabdc20d685c723e0dc1"
+        }
+      ],
+      "implementation_sha256": "9b44bb7236ef03c5b6c65ed5a225f8507a300ce3a929acc6242ee6f17f2525e5"
+    },
+    "i5d_statistics": {
+      "entrypoint_path": "experiments/b4_priority_energy/run_statistics.py",
+      "entrypoint_sha256": "b29fa49dc99708048bb24018032474c32c943a87817f353eaa8f3c227a424ba1",
+      "implementation_files": [
+        {
+          "path": "experiments/b4_priority_energy/statistics_contract_v1.json",
+          "sha256": "2646f0e83f164fec7dccbe151b19e95b2efb13d223c673f6962c03d88803ca24"
+        },
+        {
+          "path": "experiments/b4_priority_energy/statistics_common.py",
+          "sha256": "dbdb05cd824232e73b1554e3950b5ab2580a916725deae1a465eee96a59a0665"
+        },
+        {
+          "path": "experiments/b4_priority_energy/statistics_inference.py",
+          "sha256": "ec1f72a9907c8e41d983b28167194e062226efe380c56daecf15cfcaa7b98710"
+        },
+        {
+          "path": "experiments/b4_priority_energy/statistics_plotting.py",
+          "sha256": "124e0f40c7122595e0db44518be337fc29c66bc4d06e9de392c5d4ca28cbb72f"
+        },
+        {
+          "path": "experiments/b4_priority_energy/run_statistics.py",
+          "sha256": "b29fa49dc99708048bb24018032474c32c943a87817f353eaa8f3c227a424ba1"
+        }
+      ],
+      "implementation_sha256": "7ed9e9a852252bb4228598378ce92c02879e2ca4f9161102c81117547d89a10f"
+    },
+    "manifest_executor": {
+      "path": "experiments/b4_priority_energy/execute_manifest.py",
+      "sha256": "2b8b10b45a9e2a44b939313fb423b9cfb4d49b735531432bd11f1ad4d340abf0"
+    },
+    "manifest_generator": {
+      "path": "experiments/b4_priority_energy/generate_manifest.py",
+      "sha256": "a6ab6ffbaa288f7a1ac0e329c1f52e61f08c1db3c6960d59b21acd2f11e0d9b6"
+    },
+    "task_generator": {
+      "path": "global_task_generator.py",
+      "sha256": "25147e8073e55885a035160cbec4fe1d094dfd423a476731790e4cb8bb53bb8e"
+    }
+  },
+  "pilot_release_build_identity": {
+    "build_argv": [
+      "cmake",
+      "--build",
+      "/tmp/b4_pe_pilot_runtime_87fae192/build",
+      "--parallel",
+      "1"
+    ],
+    "build_entrypoint_argv": [
+      "bash",
+      "/home/devcontainers/PARTsim-b4-pe-pilot-authorization/deployment/autodl/build_simulator.sh"
+    ],
+    "build_script_path": "deployment/autodl/build_simulator.sh",
+    "build_script_sha256": "36d4a999e490bd4527655ded0e009e6d57a80c4c4e6cc0c110278afe2b280334",
+    "cmake_configuration": {
+      "build_testing": false,
+      "build_type": "Release",
+      "generator": "Unix Makefiles"
+    },
+    "cmake_version": "3.16.3",
+    "compiler": {
+      "id": "GNU",
+      "path": "/usr/bin/c++",
+      "version": "9.4.0"
+    },
+    "configure_argv": [
+      "cmake",
+      "-S",
+      "/home/devcontainers/PARTsim-b4-pe-pilot-authorization",
+      "-B",
+      "/tmp/b4_pe_pilot_runtime_87fae192/build",
+      "-DCMAKE_BUILD_TYPE=Release",
+      "-DBUILD_TESTING=OFF"
+    ],
+    "key_environment": {
+      "LANG": "C.UTF-8",
+      "LC_ALL": "C.UTF-8",
+      "PARTSIM_BUILD_DIR": "/tmp/b4_pe_pilot_runtime_87fae192/build",
+      "PARTSIM_BUILD_JOBS": "1",
+      "PARTSIM_BUILD_TYPE": "Release",
+      "PARTSIM_ROOT": "/home/devcontainers/PARTsim-b4-pe-pilot-authorization",
+      "PARTSIM_SIMULATOR_BIN": "/tmp/b4_pe_pilot_runtime_87fae192/build/rtsim/rtsim",
+      "PARTSIM_WORKERS": "1",
+      "PYTHONHASHSEED": "0",
+      "TZ": "UTC"
+    },
+    "numpy_version": "1.17.4",
+    "python_version": "3.8.10",
+    "science_code_commit": "87fae1924591fa2c0cabd292c03df043d5eea9fd"
+  },
+  "pilot_runtime_binary_artifact_type": "ELF64 x86-64 PIE (ET_DYN), dynamically linked, not stripped",
+  "pilot_runtime_binary_path": "pilot-runtime/bin/rtsim",
+  "pilot_runtime_binary_sha256": "96004d1aec42cac73bea72d4fe0d5c2a5e814453bfeeb16d09026c4ff8746f7d",
+  "pilot_runtime_binary_size_bytes": 183664,
+  "pilot_runtime_dependencies": [
+    {
+      "logical_path": "pilot-runtime/lib/libcmdarg.so.0",
+      "role": "command_line_parser_shared_library",
+      "sha256": "02aa859ea7eee6a5b3c3c6c32826656349ee629f19d5a86c245acfb44186c5fd",
+      "size_bytes": 136960
+    },
+    {
+      "logical_path": "pilot-runtime/lib/libmetasim.so.3",
+      "role": "simulation_kernel_shared_library",
+      "sha256": "20734b7ffff7db8352593aa1c89f20716dbcec8462e638591e9855d20525e324",
+      "size_bytes": 237408
+    },
+    {
+      "logical_path": "pilot-runtime/lib/librtsim.so.3",
+      "role": "real_time_simulation_shared_library",
+      "sha256": "f566e702435da6070059ff5ec1b47b7b8063e5081db1eb2351de57bc3f6245de",
+      "size_bytes": 5151792
+    }
+  ],
+  "pilot_runtime_dependency_manifest_canonicalization": "UTF-8 compact JSON with sorted object keys, dependencies sorted by logical_path, and one trailing LF",
+  "pilot_runtime_dependency_manifest_sha256": "7e76172d7a64ba02ba9b29cc2c415a573404de7675dd9c89cb6d2a64d6d262e5",
+  "pilot_runtime_loader_environment": {
+    "LD_LIBRARY_PATH": "pilot-runtime/lib"
+  },
+  "pilot_statistics_contract_path": "experiments/b4_priority_energy/statistics_contract_v1.json",
+  "pilot_statistics_contract_sha256": "2646f0e83f164fec7dccbe151b19e95b2efb13d223c673f6962c03d88803ca24",
+  "pilot_system_template_identity": {
+    "path": "v9_3_b4_priority_energy_system_template.yml",
+    "sha256": "a64181bf9fda8155c5b0b8b0451a160d6c44c2c8fae188a974640a4d2b243510"
   },
   "protocols": {
     "execution_v3": {

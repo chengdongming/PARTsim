@@ -41,6 +41,49 @@ FROZEN_V1_SHA256 = {
         "941d754e27e1cf599127550561a14a92f46e3605df26dca3c9a97e0325eecd93",
 }
 
+SCIENCE_CODE_COMMIT = "87fae1924591fa2c0cabd292c03df043d5eea9fd"
+PRE_PILOT_CANDIDATE_V3_SHA256 = (
+    "708e3b90e294e560604e34e7052a3314a4fd7580b86295ebcd7e0182fada21cd"
+)
+FROZEN_GOVERNANCE_INPUT_SHA256 = {
+    "B4_PE_FREEZE_CANDIDATE_v1.md":
+        "bee0916c5b3b73084dc5d90a4353029648d1265339c6f084b0c924e4990d44f7",
+    "B4_PE_FREEZE_CANDIDATE_v2.md":
+        "2225a3888fe0fa85ed63639f1c7ba90bd02ba977e0245fc3397f1d69b9a0e7ff",
+    "b4_pe_freeze_candidate_v1.json":
+        "d5d2e6cfe7751f15227cb93ca66b17d11455cf5dccbcd768aebafb8623822732",
+    "b4_pe_freeze_candidate_v2.json":
+        "31bb158c5d1312850478331a7beb6c6c2da4d74f9639c23672dd8a976396e8ef",
+    "manifest_protocol_v1.json":
+        "e00a1fe5ccc4713a9b6b211dde8d6682919d0f599b16424deaf06661c17e148f",
+    "manifest_protocol_v2.json":
+        "4d1ead28d2b957ef0b8764f7148f2aab7643893f4134f8e56234bc913058ce90",
+    "manifest_protocol_v3.json":
+        "c51e774e74ad3ce9bb4d39bacfccb5a7c64e71750c6a0f12432c4ab70070603f",
+    "execution_protocol_v1.json":
+        "74fd9ed742ad41dbedb66a5e7de2bbc796e746ae2efb207d2d456deed10cdd34",
+    "execution_protocol_v2.json":
+        "632b737b1c7cff9dd70eb7c091561be5ac7e5902333b4006c0b40faa5c9f3cfb",
+    "execution_protocol_v3.json":
+        "b76a44ac48c1721e4a0b2042a53d787c22b78a0ec017ea171d92534fd1d107ec",
+    "integration_smoke_protocol_v1.json":
+        "4b7e47cd0e89e31540cc30317f91e54a64d45efe63fca05629ee16e5d1aded85",
+    "integration_smoke_protocol_v2.json":
+        "c1777b704048d9ae566c9ccc3d1e148393d030ec7dd2e002255dd7c9a8344efd",
+    "integration_smoke_protocol_v3.json":
+        "5517b35afab8c65ac1ab045b047f8032169abf2c3efa7c60a21de5d4d311d9fb",
+    "observability_summary_contract_v1.json":
+        "1817fdbf795f878769a32cf3f1e4ba09dd2ce589137e1d2e487a8df866b7c7f6",
+    "observability_summary_contract_v2.json":
+        "4e982f5a58a26507c9ab1b1b8d0b732e651d4657f10cf16744d3278d11186efe",
+    "analysis_contract_v1.json":
+        "15945810a1f5c9792056c88f2ed5e733b75cbdea6635c41c0cdda4163ba67f1f",
+    "analysis_contract_v2.json":
+        "25d0cfff0fba81979d15b5b70df842fc2e84f969574fa4cd73fc7ad2527c9318",
+    "statistics_contract_v1.json":
+        "2646f0e83f164fec7dccbe151b19e95b2efb13d223c673f6962c03d88803ca24",
+}
+
 
 def taskset():
     return {
@@ -279,11 +322,162 @@ class I5BObservabilityV2Tests(unittest.TestCase):
         candidate = json.loads(
             (B4_DIR / "b4_pe_freeze_candidate_v3.json").read_text()
         )
+        self.assertEqual(candidate["candidate_code_commit"], SCIENCE_CODE_COMMIT)
         self.assertEqual(candidate["freeze_status"], "candidate")
-        self.assertIsNone(candidate["final_code_commit"])
-        self.assertTrue(
-            candidate["governance"]["not_final_until_rta_integration"]
+        for field in (
+            "final_code_commit",
+            "final_git_tag",
+            "formal_runtime_binary_path",
+            "formal_runtime_binary_sha256",
+        ):
+            self.assertIsNone(candidate[field])
+        self.assertEqual(
+            candidate["governance"],
+            {
+                "formal_runs_authorized": False,
+                "i5d_statistics_authorized": True,
+                "negative_control_runs_authorized": False,
+                "not_final_until_independent_review": True,
+                "not_final_until_rta_integration": True,
+                "pilot_runs_authorized": True,
+                "silent_changes_forbidden": True,
+            },
         )
+        history = candidate["governance_history"]
+        self.assertEqual(len(history), 1)
+        self.assertEqual(
+            history[0]["pre_pilot_candidate_v3_sha256"],
+            PRE_PILOT_CANDIDATE_V3_SHA256,
+        )
+        self.assertEqual(history[0]["transition_type"], "pilot_authorization")
+        self.assertEqual(history[0]["science_code_commit"], SCIENCE_CODE_COMMIT)
+        for field in (
+            "algorithm_changes",
+            "parameter_changes",
+            "protocol_changes",
+            "statistics_contract_changes",
+            "task_generation_changes",
+        ):
+            self.assertFalse(history[0][field])
+
+        runtime_sha = candidate["pilot_runtime_binary_sha256"]
+        self.assertRegex(runtime_sha, r"^[0-9a-f]{64}$")
+        self.assertEqual(candidate["pilot_runtime_binary_path"], "pilot-runtime/bin/rtsim")
+        self.assertNotIn("/tmp", candidate["pilot_runtime_binary_path"])
+        self.assertGreater(candidate["pilot_runtime_binary_size_bytes"], 0)
+        self.assertIn("ELF64", candidate["pilot_runtime_binary_artifact_type"])
+
+        dependencies = candidate["pilot_runtime_dependencies"]
+        self.assertEqual(
+            [item["logical_path"] for item in dependencies],
+            sorted(item["logical_path"] for item in dependencies),
+        )
+        for item in dependencies:
+            self.assertEqual(
+                set(item), {"logical_path", "role", "sha256", "size_bytes"}
+            )
+            self.assertRegex(item["sha256"], r"^[0-9a-f]{64}$")
+            self.assertGreater(item["size_bytes"], 0)
+            self.assertNotIn("/tmp", item["logical_path"])
+        dependency_manifest = (
+            json.dumps(
+                dependencies,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n"
+        ).encode("utf-8")
+        self.assertEqual(
+            hashlib.sha256(dependency_manifest).hexdigest(),
+            candidate["pilot_runtime_dependency_manifest_sha256"],
+        )
+
+        build = candidate["pilot_release_build_identity"]
+        self.assertEqual(build["science_code_commit"], SCIENCE_CODE_COMMIT)
+        self.assertEqual(build["build_script_path"], "deployment/autodl/build_simulator.sh")
+        self.assertEqual(
+            build["build_script_sha256"],
+            hashlib.sha256(
+                (B4_DIR.parents[1] / build["build_script_path"]).read_bytes()
+            ).hexdigest(),
+        )
+        self.assertEqual(build["cmake_configuration"]["build_type"], "Release")
+        self.assertIs(build["cmake_configuration"]["build_testing"], False)
+        self.assertIn("-DBUILD_TESTING=OFF", build["configure_argv"])
+        self.assertIn("-DCMAKE_BUILD_TYPE=Release", build["configure_argv"])
+        for field in (
+            "build_argv",
+            "build_entrypoint_argv",
+            "cmake_version",
+            "compiler",
+            "configure_argv",
+            "key_environment",
+            "numpy_version",
+            "python_version",
+        ):
+            self.assertTrue(build[field])
+
+        implementations = candidate["pilot_python_implementation_identities"]
+        self.assertEqual(
+            set(implementations),
+            {
+                "i5c_extractor",
+                "i5d_statistics",
+                "manifest_executor",
+                "manifest_generator",
+                "task_generator",
+            },
+        )
+        for identity in implementations.values():
+            path = identity.get("path", identity.get("entrypoint_path"))
+            sha = identity.get("sha256", identity.get("entrypoint_sha256"))
+            self.assertEqual(
+                hashlib.sha256((B4_DIR.parents[1] / path).read_bytes()).hexdigest(),
+                sha,
+            )
+            for item in identity.get("implementation_files", []):
+                self.assertEqual(
+                    hashlib.sha256(
+                        (B4_DIR.parents[1] / item["path"]).read_bytes()
+                    ).hexdigest(),
+                    item["sha256"],
+                )
+        self.assertEqual(
+            implementations["i5c_extractor"]["implementation_sha256"],
+            "9b44bb7236ef03c5b6c65ed5a225f8507a300ce3a929acc6242ee6f17f2525e5",
+        )
+        self.assertEqual(
+            implementations["i5d_statistics"]["implementation_sha256"],
+            "7ed9e9a852252bb4228598378ce92c02879e2ca4f9161102c81117547d89a10f",
+        )
+        for name in ("i5c_extractor", "i5d_statistics"):
+            digest = hashlib.sha256()
+            for item in implementations[name]["implementation_files"]:
+                relative = item["path"].encode("utf-8")
+                material = (B4_DIR.parents[1] / item["path"]).read_bytes()
+                digest.update(len(relative).to_bytes(8, "big"))
+                digest.update(relative)
+                digest.update(len(material).to_bytes(8, "big"))
+                digest.update(material)
+            self.assertEqual(
+                digest.hexdigest(),
+                implementations[name]["implementation_sha256"],
+            )
+        template = candidate["pilot_system_template_identity"]
+        self.assertEqual(
+            hashlib.sha256(
+                (B4_DIR.parents[1] / template["path"]).read_bytes()
+            ).hexdigest(),
+            template["sha256"],
+        )
+        self.assertEqual(
+            candidate["pilot_statistics_contract_sha256"],
+            hashlib.sha256(
+                (B4_DIR.parents[1] / candidate["pilot_statistics_contract_path"]).read_bytes()
+            ).hexdigest(),
+        )
+
         for phase in ("pilot", "formal_main", "negative_control", "all"):
             rendered = manifest.render_manifest(
                 phase, manifest.PROTOCOL_V3
@@ -292,6 +486,13 @@ class I5BObservabilityV2Tests(unittest.TestCase):
             self.assertEqual(len(rendered.splitlines()), expected["case_count"])
             self.assertEqual(
                 hashlib.sha256(rendered).hexdigest(), expected["sha256"]
+            )
+
+    def test_historical_candidates_protocols_and_contracts_are_byte_identical(self):
+        for name, expected in FROZEN_GOVERNANCE_INPUT_SHA256.items():
+            self.assertEqual(
+                hashlib.sha256((B4_DIR / name).read_bytes()).hexdigest(),
+                expected,
             )
 
 

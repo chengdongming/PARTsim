@@ -17,6 +17,11 @@ import statistics_common as statistics
 import statistics_inference as inference
 
 
+PRE_PILOT_CANDIDATE_V3_SHA256 = (
+    "708e3b90e294e560604e34e7052a3314a4fd7580b86295ebcd7e0182fada21cd"
+)
+
+
 def _sha(material):
     return hashlib.sha256(material).hexdigest()
 
@@ -238,6 +243,42 @@ def write_synthetic_analysis(root):
     }
     (root / "analysis_manifest.json").write_bytes(statistics.pretty_json_bytes(manifest))
     return root
+
+
+def _complete_pilot_dataset():
+    cases = []
+    for utilization_index, utilization in enumerate(("0.3", "0.4", "0.5")):
+        for cluster_index in range(20):
+            cluster_identity = f"pilot:{utilization}:{cluster_index}"
+            taskset_id = _sha(cluster_identity.encode())
+            taskset_sha = _sha(f"{cluster_identity}:bytes".encode())
+            for lam in ("0.70", "0.85", "1.00", "1.15"):
+                for rho in ("1", "2"):
+                    for algorithm in statistics.PILOT_ALGORITHMS:
+                        cases.append(
+                            {
+                                "phase": "pilot",
+                                "utilization": utilization,
+                                "target_normalized_utilization": float(utilization),
+                                "taskset_id": taskset_id,
+                                "taskset_semantic_hash": taskset_id,
+                                "taskset_sha256": taskset_sha,
+                                "taskset_seed": utilization_index * 20 + cluster_index,
+                                "replicate_index": cluster_index,
+                                "taskset_pool": "pilot",
+                                "lambda_E": lam,
+                                "rho_E": rho,
+                                "algorithm": algorithm,
+                                "not_for_paper": False,
+                            }
+                        )
+    return {
+        "candidate": statistics.load_json(statistics.CANDIDATE_PATH),
+        "cases": cases,
+        "tasks": [None] * 24000,
+        "pairing_group_count": 480,
+        "manifest": {},
+    }
 
 
 @pytest.fixture()
@@ -756,38 +797,109 @@ def test_grid_structure_failures_are_closed(mutation):
         )
 
 
+def test_current_candidate_v3_authorizes_complete_pilot_grid_without_final_identity():
+    dataset = _complete_pilot_dataset()
+    clusters, diagnostics = statistics._mode_authorization(
+        "pilot", dataset, dirty=False
+    )
+    assert len(dataset["cases"]) == 2400
+    assert len(dataset["tasks"]) == 24000
+    assert dataset["pairing_group_count"] == 480
+    assert len(clusters) == 60
+    assert diagnostics == {"grid_complete": True, "authorization": "authorized"}
+    for field in (
+        "final_code_commit",
+        "final_git_tag",
+        "formal_runtime_binary_path",
+        "formal_runtime_binary_sha256",
+    ):
+        assert dataset["candidate"][field] is None
+
+
 @pytest.mark.parametrize(
-    ("mode", "message"),
+    ("mutation", "message"),
     [
-        ("pilot", "i5d_statistics_authorized"),
-        ("formal-main", "i5d_statistics_authorized"),
-        ("negative-control", "i5d_statistics_authorized"),
+        ("missing_rho", "case count"),
+        ("missing_algorithm", "case count"),
+        ("not_for_paper", "not_for_paper"),
+        ("dirty", "clean statistics worktree"),
     ],
 )
-def test_current_candidate_v3_does_not_authorize_campaign_statistics(
-    synthetic_root, mode, message
-):
-    dataset = statistics.load_analysis(synthetic_root)
+def test_pilot_grid_and_clean_tree_fail_closed(mutation, message):
+    dataset = _complete_pilot_dataset()
+    dirty = mutation == "dirty"
+    if mutation == "missing_rho":
+        dataset["cases"] = [
+            row for row in dataset["cases"] if row["rho_E"] != "1"
+        ]
+    elif mutation == "missing_algorithm":
+        dataset["cases"] = [
+            row
+            for row in dataset["cases"]
+            if row["algorithm"] != statistics.PILOT_ALGORITHMS[-1]
+        ]
+    elif mutation == "not_for_paper":
+        dataset["cases"][0] = dict(dataset["cases"][0], not_for_paper=True)
     with pytest.raises(statistics.StatisticsError, match=message):
-        statistics._mode_authorization(mode, dataset, dirty=False)
+        statistics._mode_authorization("pilot", dataset, dirty=dirty)
+
+
+def test_pilot_gate_is_incomplete_without_explicit_non_interference_evidence():
+    gate = statistics.build_pilot_gate(_complete_pilot_dataset(), [], [])
+    assert gate["status"] == "incomplete"
+    assert gate["technical_evidence_present"] is False
+    assert gate["checks"]["instrumentation_non_interference_explicit"] is False
+    assert gate["contains_ranking_or_significance"] is False
 
 
 @pytest.mark.parametrize(
-    ("mode", "message"),
+    ("mode", "authorization_field", "message"),
     [
-        ("pilot", "authorize Pilot"),
-        ("formal-main", "formal_runs_authorized"),
-        ("negative-control", "authorize Negative Control"),
+        ("pilot", "pilot_runs_authorized", "authorize Pilot"),
+        ("formal-main", "formal_runs_authorized", "formal_runs_authorized"),
+        (
+            "negative-control",
+            "negative_control_runs_authorized",
+            "authorize Negative Control",
+        ),
     ],
 )
 def test_each_campaign_requires_its_explicit_candidate_authorization(
-    synthetic_root, mode, message
+    mode, authorization_field, message
 ):
-    dataset = statistics.load_analysis(synthetic_root)
+    dataset = _complete_pilot_dataset()
     dataset["candidate"] = copy.deepcopy(dataset["candidate"])
     dataset["candidate"]["governance"]["i5d_statistics_authorized"] = True
+    dataset["candidate"]["governance"][authorization_field] = False
     with pytest.raises(statistics.StatisticsError, match=message):
         statistics._mode_authorization(mode, dataset, dirty=False)
+
+
+@pytest.mark.parametrize("mode", ["pilot", "formal-main", "negative-control"])
+def test_all_campaign_statistics_require_i5d_authorization(mode):
+    dataset = _complete_pilot_dataset()
+    dataset["candidate"] = copy.deepcopy(dataset["candidate"])
+    dataset["candidate"]["governance"]["i5d_statistics_authorized"] = False
+    with pytest.raises(
+        statistics.StatisticsError, match="i5d_statistics_authorized"
+    ):
+        statistics._mode_authorization(mode, dataset, dirty=False)
+
+
+def test_new_i5c_manifest_candidate_binding_is_accepted(synthetic_root):
+    dataset = statistics.load_analysis(synthetic_root)
+    assert dataset["candidate_sha256"] == statistics.file_sha256(
+        statistics.CANDIDATE_PATH
+    )
+
+
+def test_pre_pilot_i5c_manifest_candidate_binding_fails_closed(synthetic_root):
+    manifest_path = synthetic_root / "analysis_manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["candidate_v3_sha256"] = PRE_PILOT_CANDIDATE_V3_SHA256
+    manifest_path.write_bytes(statistics.pretty_json_bytes(manifest))
+    with pytest.raises(statistics.StatisticsError, match="candidate SHA mismatch"):
+        statistics.load_analysis(synthetic_root)
 
 
 def test_formal_mode_rejects_not_for_paper_rows_even_with_authorized_identity(
@@ -946,6 +1058,8 @@ def test_mode_output_closure_excludes_forbidden_inference_and_figures():
     formal = set(statistics._output_modes("formal-main"))
     assert {"pilot_gate.json", "cell_summary.jsonl", "mechanism_summary.jsonl"} <= pilot
     assert "confirmatory_effects.jsonl" not in pilot
+    assert "rank_jmr.jsonl" not in pilot
+    assert not any(name.startswith("table") for name in pilot)
     assert not any(name.startswith("figure") for name in pilot)
     assert "negative_control_summary.csv" in negative
     assert "confirmatory_effects.jsonl" not in negative
@@ -955,15 +1069,18 @@ def test_mode_output_closure_excludes_forbidden_inference_and_figures():
     assert sum(name.endswith(".png") for name in formal) == 5
 
 
-def test_formal_main_fails_closed_with_candidate_v3_and_leaves_no_manifest(synthetic_root, tmp_path):
-    output = tmp_path / "formal-failure"
+@pytest.mark.parametrize("mode", ["formal-main", "negative-control"])
+def test_unauthorized_modes_fail_closed_and_leave_no_success_outputs(
+    synthetic_root, tmp_path, mode
+):
+    output = tmp_path / f"{mode}-failure"
     result = subprocess.run(
         [
             sys.executable,
             str(B4_DIR / "run_statistics.py"),
             "--analysis-root", str(synthetic_root),
             "--statistics-root", str(output),
-            "--mode", "formal-main",
+            "--mode", mode,
             "--strict",
         ],
         cwd=statistics.REPO_ROOT,
@@ -976,3 +1093,4 @@ def test_formal_main_fails_closed_with_candidate_v3_and_leaves_no_manifest(synth
     assert not (output / "statistics_manifest.json").exists()
     assert not list(output.glob("figure*.pdf"))
     assert not list(output.glob("table*.csv"))
+    assert not list(output.glob("*summary.csv"))
