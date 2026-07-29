@@ -126,6 +126,37 @@ def _validate(root: Path) -> lineage.ValidatedCore0ARepositoryLineageV1:
     )
 
 
+def _standalone_source_commit(root: Path) -> str:
+    current = _validate(root)
+    if current.lineage_mode == lineage.CORE0A_STANDALONE_REVIEWED_LINEAGE:
+        candidate = current.current_head_commit
+    elif current.lineage_mode == lineage.MASTER_INTEGRATION_MERGE:
+        candidate = current.second_parent_commit
+    elif current.lineage_mode == lineage.MASTER_PR_WRAPPER_MERGE:
+        integration = current.second_parent_commit
+        if integration is None:
+            raise AssertionError("validated wrapper has no integration parent")
+        integration_parents = tuple(_git(
+            root, "show", "-s", "--format=%P", integration,
+        ).split())
+        if len(integration_parents) != 2:
+            raise AssertionError("validated wrapper integration is not binary")
+        candidate = integration_parents[1]
+    else:
+        raise AssertionError(
+            f"unsupported validated lineage mode: {current.lineage_mode}"
+        )
+
+    if candidate is None:
+        raise AssertionError("validated lineage has no standalone source")
+    _git(root, "cat-file", "-e", f"{candidate}^{{commit}}")
+    _tree(root, candidate)
+    standalone = lineage._standalone_facts(root, candidate)
+    if standalone.lineage_mode != lineage.CORE0A_STANDALONE_REVIEWED_LINEAGE:
+        raise AssertionError("resolved source is not reviewed standalone lineage")
+    return candidate
+
+
 def _make_integration(
     root: Path,
     *,
@@ -211,6 +242,39 @@ def test_public_interface_is_source_root_only_and_result_is_frozen(
     assert result.second_parent_commit is None
     assert result.merge_base_commit is None
     assert result.worktree_clean is True
+
+
+def test_standalone_source_resolution_is_topology_aware(
+    repository: Path,
+) -> None:
+    assert _standalone_source_commit(repository) == ANCHOR
+
+    data = _make_integration(repository)
+    assert tuple(_git(
+        repository, "show", "-s", "--format=%P", data["integration"],
+    ).split()) == (data["master"], data["core"])
+    assert _standalone_source_commit(repository) == data["core"]
+
+    wrapper = _wrapper(repository, data)
+    assert tuple(_git(
+        repository, "show", "-s", "--format=%P", wrapper,
+    ).split()) == (data["master"], data["integration"])
+    assert _standalone_source_commit(repository) == data["core"]
+
+
+def test_standalone_source_resolution_rejects_reversed_parents(
+    repository: Path,
+) -> None:
+    data = _make_integration(repository)
+    reversed_parents = _commit_tree(
+        repository,
+        _tree(repository, data["integration"]),
+        (data["core"], data["master"]),
+        "reversed integration",
+    )
+    _checkout(repository, reversed_parents)
+    with pytest.raises(lineage.Core0ARepositoryLineageV1Error):
+        _standalone_source_commit(repository)
 
 
 def test_standalone_linear_repair_only_success(repository: Path) -> None:
@@ -735,7 +799,7 @@ def test_real_failed_topology_probe_and_repaired_source_integration(
         check=True,
     )
     _configure(root)
-    repaired_head = _git(ROOT, "rev-parse", "HEAD")
+    repaired_head = _standalone_source_commit(ROOT)
     master = "04aeba2d8491288ed9af83fca8e79666d2689b93"
     _checkout(root, master)
     _git(
@@ -797,6 +861,7 @@ def test_real_failed_topology_probe_and_repaired_source_integration(
     }
     _wrapper(root, data)
     assert _validate(root).lineage_mode == lineage.MASTER_PR_WRAPPER_MERGE
+    assert _standalone_source_commit(root) == repaired_head
 
     _checkout(root, integration)
     advanced_master = _commit_tree(
@@ -807,4 +872,4 @@ def test_real_failed_topology_probe_and_repaired_source_integration(
         lineage.Core0ARepositoryLineageV1Error,
         match="base drift",
     ):
-        _validate(root)
+        _standalone_source_commit(root)

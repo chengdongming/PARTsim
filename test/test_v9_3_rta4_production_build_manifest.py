@@ -11,6 +11,9 @@ import subprocess
 import pytest
 
 from experiments.v9_3 import rta4_production_build_manifest as production_build
+from experiments.v9_3.rta4_core0a_repository_lineage_v1 import (
+    validate_core0a_repository_lineage_v1,
+)
 from experiments.v9_3.rta4_formal_config import domain_hash
 from experiments.v9_3.rta4_production_build_manifest import (
     DEFAULT_RELEVANT_SOURCES,
@@ -78,6 +81,7 @@ def _build(
 
 def test_manifest_unifies_simulator_verifier_toolchain_and_threat_model(verifier):
     manifest = _build(verifier)
+    live_lineage = validate_core0a_repository_lineage_v1(source_root=ROOT)
     assert manifest["classification"] == PRODUCTION_BUILD_CLASSIFICATION
     assert manifest["formal_authorization"] is False
     assert manifest["threat_model"]["malicious_local_administrator_out_of_scope"]
@@ -100,12 +104,26 @@ def test_manifest_unifies_simulator_verifier_toolchain_and_threat_model(verifier
         for key in manifest["environment"]["values"]
         for marker in ("TOKEN", "PASSWORD", "SECRET", "CREDENTIAL")
     )
-    assert manifest["repository"]["repository_lineage"][
-        "repository_lineage_identity"
-    ] == manifest["repository"]["repository_lineage_identity"]
-    assert manifest["repository"]["repository_lineage"][
-        "lineage_mode"
-    ] == "CORE0A_STANDALONE_REVIEWED_LINEAGE"
+    repository = manifest["repository"]
+    assert repository["repository_lineage"] == live_lineage.as_dict()
+    assert (
+        repository["repository_lineage_identity"]
+        == live_lineage.repository_lineage_identity
+    )
+    assert (
+        repository["repository_lineage"]["lineage_mode"]
+        == live_lineage.lineage_mode
+    )
+    assert repository["git_commit"] == live_lineage.current_head_commit
+    assert repository["git_tree"] == live_lineage.current_head_tree
+    assert (
+        repository["repository_lineage"]["current_head_commit"]
+        == live_lineage.current_head_commit
+    )
+    assert (
+        repository["repository_lineage"]["current_head_tree"]
+        == live_lineage.current_head_tree
+    )
 
 
 def test_manifest_round_trip_check_and_binary_drift_rejection(verifier, tmp_path):
