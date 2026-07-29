@@ -21,6 +21,10 @@ import sys
 from typing import Any, Dict, Iterable, Mapping, Sequence
 
 from . import exact_energy
+from .rta4_core0a_repository_lineage_v1 import (
+    Core0ARepositoryLineageV1Error,
+    validate_core0a_repository_lineage_v1,
+)
 from .rta4_formal_config import canonical_json, domain_hash
 from .rta4_formal_environment import load_strict_json
 from .solar_parse_proof import (
@@ -92,6 +96,7 @@ DEFAULT_RELEVANT_SOURCES = (
     "experiments/v9_3/rta4_formal_schema_v2.py",
     "experiments/v9_3/rta4_formal_store.py",
     "experiments/v9_3/rta4_numeric_contract_v2.py",
+    "experiments/v9_3/rta4_core0a_repository_lineage_v1.py",
     "experiments/v9_3/rta4_production_build_manifest.py",
     "experiments/v9_3/rta4_shared_energy.py",
     "experiments/v9_3/rta4_taskset_v2.py",
@@ -274,11 +279,19 @@ def generate_production_build_manifest(
     root = Path(source_root).resolve(strict=True)
     if not (root / ".git").exists():
         raise ProductionBuildManifestError("source_root is not a git worktree")
+    try:
+        lineage = validate_core0a_repository_lineage_v1(
+            source_root=root,
+        )
+    except Core0ARepositoryLineageV1Error as exc:
+        raise ProductionBuildManifestError(
+            "production repository lineage validation failed"
+        ) from exc
     status = _git(root, "status", "--porcelain=v1", "--untracked-files=all")
     if require_clean and status:
         raise ProductionBuildManifestError("production source worktree is dirty")
-    commit = _git(root, "rev-parse", "HEAD")
-    tree = _git(root, "rev-parse", "HEAD^{tree}")
+    commit = lineage.current_head_commit
+    tree = lineage.current_head_tree
     sources = []
     seen = set()
     for raw in relevant_source_paths:
@@ -335,10 +348,21 @@ def generate_production_build_manifest(
             "source_root": str(root),
             "source_root_identity": domain_hash(
                 "ASAP_BLOCK:V9.3:RTA4_SOURCE_ROOT:v2",
-                {"git_commit": commit, "git_tree": tree, "sources": sources},
+                {
+                    "git_commit": commit,
+                    "git_tree": tree,
+                    "repository_lineage_identity": (
+                        lineage.repository_lineage_identity
+                    ),
+                    "sources": sources,
+                },
             ),
             "git_commit": commit,
             "git_tree": tree,
+            "repository_lineage": lineage.as_dict(),
+            "repository_lineage_identity": (
+                lineage.repository_lineage_identity
+            ),
             "tracked_and_untracked_clean": not bool(status),
             "status_porcelain": status,
             "relevant_sources": sources,

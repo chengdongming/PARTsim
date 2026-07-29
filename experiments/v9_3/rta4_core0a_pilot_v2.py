@@ -63,6 +63,10 @@ from .rta4_pilot_execution import (
     PILOT_RESUME_POLICY,
     RTA4_PILOT_EXECUTION_CONFIG_VERSION,
 )
+from .rta4_core0a_repository_lineage_v1 import (
+    Core0ARepositoryLineageV1Error,
+    validate_core0a_repository_lineage_v1,
+)
 from .rta4_production_build_manifest import (
     DEFAULT_RELEVANT_SOURCES,
     ENVIRONMENT_ALLOWLIST,
@@ -246,8 +250,9 @@ CORE0A_DISK_FIXED_OVERHEAD_BYTES = 1 << 30
 CORE0A_DISK_OBSERVATION_TOLERANCE_BYTES = 64 << 20
 CORE0A_MAX_RUNS = 1
 CORE0A_AUTHORIZATION_SCOPE = "EXACT_384_RECORD_CORE0A_ONLY"
-EXPECTED_PRODUCTION_SOURCE_CLOSURE_COUNT = 53
+EXPECTED_PRODUCTION_SOURCE_CLOSURE_COUNT = 54
 PORTABLE_FREEZE_SOURCE_PATHS = (
+    "experiments/v9_3/rta4_core0a_repository_lineage_v1.py",
     "experiments/v9_3/rta4_core0a_pilot_v2.py",
     "experiments/v9_3/rta4_core0a_authorization_v2.py",
     "experiments/v9_3/rta4_core0a_execution_authorization_v2.py",
@@ -257,12 +262,6 @@ PORTABLE_FREEZE_SOURCE_PATHS = (
     CANDIDATE_CONFIG_PATH,
     SELECTION_ARTIFACT_PATH,
 )
-ALLOWED_PILOT_FREEZE_DIFF_PATHS = frozenset({
-    *PORTABLE_FREEZE_SOURCE_PATHS,
-    "test/test_v9_3_rta4_core0a_pilot_freeze_v2.py",
-    "test/test_v9_3_rta4_core0a_authorization_v2.py",
-    "test/test_v9_3_rta4_core0a_execution_authorization_v2.py",
-})
 
 CORE0A_RETRY_CONTRACT = {
     "rta_methods": {
@@ -1058,37 +1057,26 @@ def _git(*arguments: str) -> str:
     return completed.stdout.strip()
 
 
-def repository_identity(*, require_clean: bool = True) -> Dict[str, Any]:
-    status = _git("status", "--porcelain=v1", "--untracked-files=all")
-    if require_clean and status:
-        raise RTA4Core0APilotV2Error(
-            "portable CORE-0A bundle requires a clean worktree"
+def repository_identity() -> Dict[str, Any]:
+    try:
+        lineage = validate_core0a_repository_lineage_v1(
+            source_root=PROJECT_ROOT,
         )
-    completed = subprocess.run(
-        ("git", "merge-base", "--is-ancestor", FORMAL_INPUT_SOURCE_COMMIT, "HEAD"),
-        cwd=str(PROJECT_ROOT), check=False,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-    )
-    if completed.returncode:
+    except Core0ARepositoryLineageV1Error as exc:
         raise RTA4Core0APilotV2Error(
-            "accepted G2 source commit is not an ancestor of the freeze"
-        )
-    changed = tuple(filter(None, _git(
-        "diff", "--name-only", f"{FORMAL_INPUT_SOURCE_COMMIT}..HEAD",
-    ).splitlines()))
-    forbidden = sorted(set(changed).difference(ALLOWED_PILOT_FREEZE_DIFF_PATHS))
-    if forbidden:
-        raise RTA4Core0APilotV2Error(
-            f"formal source changed outside CORE-0A scope: {forbidden}"
-        )
+            "portable CORE-0A repository lineage validation failed"
+        ) from exc
     return {
-        "git_commit": _git("rev-parse", "HEAD"),
-        "git_tree": _git("rev-parse", "HEAD^{tree}"),
+        "git_commit": lineage.current_head_commit,
+        "git_tree": lineage.current_head_tree,
         "clean_state_required": True,
-        "observed_clean": not bool(status),
+        "observed_clean": lineage.worktree_clean,
         "formal_input_source_commit": FORMAL_INPUT_SOURCE_COMMIT,
         "formal_input_source_tree": FORMAL_INPUT_SOURCE_TREE,
-        "pilot_only_changed_paths": list(changed),
+        "repository_lineage": lineage.as_dict(),
+        "repository_lineage_identity": (
+            lineage.repository_lineage_identity
+        ),
     }
 
 
@@ -1127,34 +1115,16 @@ def _credential_key(value: Any) -> str | None:
 
 def build_portable_candidate_bundle_v2(
     *, selection: Mapping[str, Any] | None = None,
-    source_commit: str | None = None,
-    source_tree: str | None = None,
-    require_clean: bool = True,
 ) -> Dict[str, Any]:
     selected = (
         load_core0a_selection_v2()
         if selection is None else validate_core0a_selection_v2(selection)
     )
     config = load_candidate_config_v2()
-    if (source_commit is None) != (source_tree is None):
-        raise RTA4Core0APilotV2Error(
-            "portable source commit and tree must be supplied together"
-        )
-    if source_commit is None:
-        source = repository_identity(require_clean=require_clean)
-    else:
-        source = {
-            "git_commit": str(source_commit),
-            "git_tree": str(source_tree),
-            "clean_state_required": True,
-            "observed_clean": True,
-            "formal_input_source_commit": FORMAL_INPUT_SOURCE_COMMIT,
-            "formal_input_source_tree": FORMAL_INPUT_SOURCE_TREE,
-            "pilot_only_changed_paths": [],
-        }
+    source = repository_identity()
     if len(DEFAULT_RELEVANT_SOURCES) != EXPECTED_PRODUCTION_SOURCE_CLOSURE_COUNT:
         raise RTA4Core0APilotV2Error(
-            "V2 production source closure count is not 53"
+            "V2 production source closure count is not 54"
         )
     material: Dict[str, Any] = {
         "bundle_schema": CORE0A_PORTABLE_BUNDLE_SCHEMA,
@@ -1284,6 +1254,7 @@ def build_portable_candidate_bundle_v2(
                 "taskset_store_root", "terminal_directory",
                 "deployment_workspace_root", "source_root",
                 "production_build_manifest_identity",
+                "repository_lineage_identity",
             ],
             "path_scope_version": CORE0A_DEPLOYMENT_SCOPE_VERSION,
             "resource_policy_version": CORE0A_RESOURCE_POLICY_VERSION,
@@ -1331,7 +1302,7 @@ def build_portable_candidate_bundle_v2(
 
 
 def validate_portable_candidate_bundle_v2(
-    value: Mapping[str, Any], *, require_clean: bool = True,
+    value: Mapping[str, Any],
 ) -> Dict[str, Any]:
     if not isinstance(value, Mapping):
         raise RTA4Core0APilotV2Error("portable bundle must be a mapping")
@@ -1340,7 +1311,7 @@ def validate_portable_candidate_bundle_v2(
     observed = unsigned.pop("portable_freeze_identity", None)
     if observed != domain_hash(CORE0A_PORTABLE_BUNDLE_DOMAIN, unsigned):
         raise RTA4Core0APilotV2Error("portable bundle identity mismatch")
-    expected = build_portable_candidate_bundle_v2(require_clean=require_clean)
+    expected = build_portable_candidate_bundle_v2()
     if document != expected:
         raise RTA4Core0APilotV2Error("portable bundle/source drift")
     return document
@@ -1364,6 +1335,9 @@ def build_autodl_handoff_v2(
         "portable_freeze_identity": portable["portable_freeze_identity"],
         "source_commit": portable["source"]["git_commit"],
         "source_tree": portable["source"]["git_tree"],
+        "repository_lineage_identity": portable["source"][
+            "repository_lineage_identity"
+        ],
         "selection_identity": portable["selection"][
             "core0a_selection_identity"
         ],
@@ -1376,7 +1350,7 @@ def build_autodl_handoff_v2(
             "REQUIRE_TRACKED_AND_UNTRACKED_CLEAN",
             "BUILD_SIMULATOR_AND_VERIFIER_ON_AUTODL",
             "GENERATE_AUTODL_PRODUCTION_BUILD_MANIFEST",
-            "LIVE_CHECK_ALL_53_PRODUCTION_SOURCE_FILES",
+            "LIVE_CHECK_ALL_54_PRODUCTION_SOURCE_FILES",
             "LOAD_AND_VALIDATE_PORTABLE_FREEZE_BUNDLE",
             "BUILD_AUTODL_DEPLOYMENT_MANIFEST_AND_EXECUTION_IDENTITY",
             "VERIFY_EXACT_384_RECORD_SELECTION",
@@ -1661,6 +1635,11 @@ def _production_component_identities(
     try:
         components = {
             "production_build_manifest_identity": str(observed),
+            "repository_lineage_identity": str(
+                production_manifest["repository"][
+                    "repository_lineage_identity"
+                ]
+            ),
             "python_identity": domain_hash(
                 "ASAP_BLOCK:V9.3:RTA4:PYTHON_DEPLOYMENT:v2",
                 production_manifest["python"],
@@ -1701,6 +1680,9 @@ def _validate_bundle_for_deployment(
         or portable.get("production_authorization") is not False
         or portable.get("selection", {}).get("execution_count")
         != EXPECTED_EXECUTION_COUNT
+        or not portable.get("source", {}).get(
+            "repository_lineage_identity"
+        )
     ):
         raise RTA4Core0APilotV2Error(
             "deployment requires an exact unauthorized portable freeze"
@@ -1761,6 +1743,11 @@ def _build_autodl_deployment_manifest_v2(
             production_manifest["repository"]["git_commit"]
         )
         production_tree = str(production_manifest["repository"]["git_tree"])
+        production_lineage_identity = str(
+            production_manifest["repository"][
+                "repository_lineage_identity"
+            ]
+        )
     except (KeyError, TypeError) as exc:
         raise RTA4Core0APilotV2Error(
             "production repository binding is incomplete"
@@ -1772,9 +1759,11 @@ def _build_autodl_deployment_manifest_v2(
     if (
         production_commit != portable["source"]["git_commit"]
         or production_tree != portable["source"]["git_tree"]
+        or production_lineage_identity
+        != portable["source"]["repository_lineage_identity"]
     ):
         raise RTA4Core0APilotV2Error(
-            "production source commit/tree differs from portable freeze"
+            "production source lineage differs from portable freeze"
         )
     selection = build_core0a_selection_v2()
     if (
@@ -1867,7 +1856,7 @@ def _combined_execution_identity(
     bundle: Mapping[str, Any],
     deployment_manifest: Mapping[str, Any],
 ) -> str:
-    return domain_hash(CORE0A_EXECUTION_IDENTITY_DOMAIN, {
+    material = {
         "portable_freeze_identity": bundle["portable_freeze_identity"],
         "deployment_manifest_identity": deployment_manifest[
             "deployment_manifest_identity"
@@ -1887,7 +1876,13 @@ def _combined_execution_identity(
             "resource_observation_identity"
         ],
         "max_runs": CORE0A_MAX_RUNS,
-    })
+    }
+    lineage_identity = bundle.get("source", {}).get(
+        "repository_lineage_identity"
+    )
+    if lineage_identity is not None:
+        material["repository_lineage_identity"] = lineage_identity
+    return domain_hash(CORE0A_EXECUTION_IDENTITY_DOMAIN, material)
 
 
 def validate_autodl_deployment_manifest_v2(
@@ -1909,7 +1904,6 @@ def validate_autodl_deployment_manifest_v2(
     candidate = load_candidate_config_v2(candidate_config_path)
     portable = validate_portable_candidate_bundle_v2(
         load_strict_canonical_json(portable_bundle_path),
-        require_clean=True,
     )
     if (
         portable["selection"]["artifact_sha256"]
