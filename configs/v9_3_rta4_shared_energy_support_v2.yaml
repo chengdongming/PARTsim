@@ -1,0 +1,19 @@
+# Formal V2 real-solar support. This is input material, not authorization.
+initial_energy_values: ["0", "1/20", "1"]
+simulation_initial_battery: "1"
+required_safety_margin: "1"
+exact_rational_encoding: canonical_fraction
+service_curve:
+  id: paired-real-solar-service-v2-shared-energy
+  system_template: system_config_unified_template.yml
+  horizon: 30200
+  require_real_solar_data: true
+  raw_reference_pv_area_m2: "1"
+  solar_scale: "1/128"
+  dyadic_scale_selection:
+    rule: largest_feasible_dyadic_v1
+    reference_initial_battery: "1"
+    reference_battery_capacity: "20"
+    required_safety_margin: "1"
+battery_mode: finite
+battery_capacity: "20"

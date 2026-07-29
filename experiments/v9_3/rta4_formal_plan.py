@@ -35,6 +35,19 @@ from .rta4_formal_config import (
     rta4_formal_config_hash,
     validate_rta4_formal_config,
 )
+from .rta4_formal_plan_grid import (
+    FormalPlanGridPoint,
+    TasksetGridSpec,
+    core4_grid_point,
+    iter_core1_grid,
+    iter_core2_grid,
+    iter_core2_source_reference_grid,
+    iter_core3_grid,
+    iter_core4_grid,
+    iter_core5a_grid,
+    iter_core5b_grid,
+    iter_core5b_selected_sources,
+)
 
 
 RTA4_PLAN_RECORD_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_FORMAL_PLAN_RECORD:v1"
@@ -226,107 +239,85 @@ def _rta_record(
     )
 
 
-def _main_slots(utilization: str, replicate: int) -> tuple[str, str]:
-    return _slots("RTA4_CORE1_SHARED_TASKSETS_V1", utilization, replicate)
+def _grid_slots(slot: TasksetGridSpec) -> tuple[str, str]:
+    return _slots(
+        slot.namespace,
+        slot.normalized_utilization,
+        slot.replicate_index,
+        processors=slot.processor_count,
+        task_count=slot.task_count,
+        scenario=slot.scenario,
+        deadline=slot.deadline_variant,
+        power_scale=slot.power_scale,
+        time_scale=slot.integer_time_scale,
+    )
+
+
+def _rta_record_from_grid(
+    point: FormalPlanGridPoint, *, ordinal: int | None = None,
+) -> FormalPlanRecord:
+    material = point.material
+    skeleton, taskset = _grid_slots(point.slot)
+    return _rta_record(
+        core=point.core,
+        ordinal=point.ordinal if ordinal is None else ordinal,
+        skeleton=skeleton,
+        taskset=taskset,
+        method=str(material["method"]),
+        e0=str(material["exact_e0"]),
+        service_scale=str(material["service_scale"]),
+        power_scale=str(material["power_scale"]),
+        deadline_variant=str(material["deadline_variant"]),
+        scenario=str(material["scenario"]),
+        axis=str(material["axis"]),
+        axis_value=str(material["axis_value"]),
+        timeout_contract=str(material["timeout_contract"]),
+        normalized_utilization=str(material["normalized_utilization"]),
+        processor_count=int(material["processor_count"]),
+        task_count=int(material["task_count"]),
+        replicate_index=int(material["replicate_index"]),
+    )
 
 
 def iter_core1_plan() -> Iterator[FormalPlanRecord]:
-    ordinal = 0
-    for utilization in ("1/10", "1/5", "3/10", "2/5", "1/2", "3/5", "7/10", "4/5"):
-        for replicate in range(200):
-            skeleton, taskset = _main_slots(utilization, replicate)
-            for e0 in ("0", "1/20", "1"):
-                for method in RTA4_RECURSIVE_METHODS:
-                    yield _rta_record(
-                        core="CORE-1", ordinal=ordinal, skeleton=skeleton,
-                        taskset=taskset, method=method, e0=e0,
-                        normalized_utilization=utilization,
-                        replicate_index=replicate,
-                    )
-                    ordinal += 1
+    for point in iter_core1_grid(RTA4_RECURSIVE_METHODS):
+        yield _rta_record_from_grid(point)
 
 
 def iter_core2_plan() -> Iterator[FormalPlanRecord]:
-    ordinal = 0
-    for utilization in ("1/10", "1/5", "3/10", "2/5", "1/2", "3/5", "7/10", "4/5"):
-        for replicate in range(200):
-            skeleton, taskset = _main_slots(utilization, replicate)
-            for e0 in ("0", "1/20", "1"):
-                for method in RTA4_CORE2_METHODS:
-                    yield _rta_record(
-                        core="CORE-2", ordinal=ordinal, skeleton=skeleton,
-                        taskset=taskset, method=method, e0=e0,
-                        normalized_utilization=utilization,
-                        replicate_index=replicate,
-                    )
-                    ordinal += 1
+    for point in iter_core2_grid(RTA4_CORE2_METHODS):
+        yield _rta_record_from_grid(point)
 
 
 def iter_core2_source_references() -> Iterator[Dict[str, Any]]:
     """Reference CORE-1 LOC/PH analyses without creating CORE-2 requests."""
 
-    for utilization in ("1/10", "1/5", "3/10", "2/5", "1/2", "3/5", "7/10", "4/5"):
-        for replicate in range(200):
-            skeleton, taskset = _main_slots(utilization, replicate)
-            for e0 in ("0", "1/20", "1"):
-                for method in ("LOC_THETA_LOC", "PH_THETA_PH"):
-                    source = _rta_record(
-                        core="CORE-1", ordinal=0, skeleton=skeleton,
-                        taskset=taskset, method=method, e0=e0,
-                        normalized_utilization=utilization,
-                        replicate_index=replicate,
-                    )
-                    yield {
-                        "source_core": "CORE-1",
-                        "target_core": "CORE-2",
-                        "taskset_slot_id": taskset,
-                        "method": method,
-                        "exact_e0": e0,
-                        "source_analysis_id": source.mathematical_request_id,
-                    }
+    for point in iter_core2_source_reference_grid():
+        source = _rta_record_from_grid(point)
+        yield {
+            "source_core": "CORE-1",
+            "target_core": "CORE-2",
+            "taskset_slot_id": source.taskset_slot_id,
+            "method": point.material["method"],
+            "exact_e0": point.material["exact_e0"],
+            "source_analysis_id": source.mathematical_request_id,
+        }
 
 
 def iter_core3_plan() -> Iterator[FormalPlanRecord]:
-    ordinal = 0
-    tracks: Sequence[tuple[str, str, str | None]] = (
-        (THEOREM_ALIGNED, ASYNC_HASH_PHASE_V1, None),
-        (THEOREM_ALIGNED, SYNC_V1, None),
-        (FINITE_BATTERY_EMPIRICAL, ASYNC_HASH_PHASE_V1, "20"),
-        (FINITE_BATTERY_EMPIRICAL, ASYNC_HASH_PHASE_V1, "100"),
-    )
-    for utilization in ("1/10", "1/5", "3/10", "2/5", "1/2", "3/5", "7/10", "4/5"):
-        for replicate in range(200):
-            skeleton, taskset = _main_slots(utilization, replicate)
-            for track, release_mode, battery_capacity in tracks:
-                material = {
-                    "profile": RTA4_FORMAL_PROFILE,
-                    "source_core": "CORE-1",
-                    "taskset_skeleton_slot_id": skeleton,
-                    "taskset_slot_id": taskset,
-                    "release_mode": release_mode,
-                    "applicability_track": track,
-                    "battery_model": (
-                        "FINITE_CAPACITY_EXACT"
-                        if track == FINITE_BATTERY_EMPIRICAL
-                        else "THEOREM_NO_OVERFLOW_EXACT"
-                    ),
-                    "battery_capacity": battery_capacity or "1000000000",
-                    "physical_initial_energy": "0",
-                    "service_scale": "1",
-                    "release_horizon": RELEASE_HORIZON,
-                    "observation_horizon": "release_horizon_plus_dmax",
-                    "scheduler": "gpfp_asap_block",
-                    "normalized_utilization": utilization,
-                    "processor_count": 4,
-                    "task_count": 10,
-                    "replicate_index": replicate,
-                }
-                simulation_id = domain_hash(RTA4_SIMULATION_PLAN_DOMAIN, material)
-                yield FormalPlanRecord(
-                    "simulation", "CORE-3", ordinal, None, simulation_id,
-                    taskset, skeleton, material,
-                )
-                ordinal += 1
+    for point in iter_core3_grid():
+        skeleton, taskset = _grid_slots(point.slot)
+        material = {
+            "profile": RTA4_FORMAL_PROFILE,
+            "taskset_skeleton_slot_id": skeleton,
+            "taskset_slot_id": taskset,
+            **point.material,
+        }
+        simulation_id = domain_hash(RTA4_SIMULATION_PLAN_DOMAIN, material)
+        yield FormalPlanRecord(
+            "simulation", "CORE-3", point.ordinal, None, simulation_id,
+            taskset, skeleton, material,
+        )
 
 
 def core3_comparisons_for_simulation(
@@ -365,132 +356,51 @@ def iter_core3_comparison_plan() -> Iterator[Dict[str, Any]]:
 
 
 def _core4_conditions() -> tuple[tuple[str, str, str, str, str, str], ...]:
-    baseline = ("baseline", "baseline", "1/20", "1", "1", "3/4")
-    conditions = [baseline]
-    for value in ("0", "1/100", "1/50", "3/100", "1/5", "1"):
-        conditions.append(("e0", value, value, "1", "1", "3/4"))
-    for value in ("1/2", "3/4", "5/4", "3/2"):
-        conditions.append(("service_scale", value, "1/20", value, "1", "3/4"))
-    for value in ("1/2", "3/4", "5/4", "3/2"):
-        conditions.append(("power_scale", value, "1/20", "1", value, "3/4"))
-    for value in ("1/4", "1/2", "1"):
-        conditions.append(("deadline_slack_fraction", value, "1/20", "1", "1", value))
-    if len(conditions) != 18:
-        raise RTA4FormalPlanError("CORE-4 OFAT condition count drift")
-    return tuple(conditions)
+    from .rta4_formal_plan_grid import core4_conditions
+
+    return core4_conditions()
 
 
 def _core4_record(
     utilization: str, replicate: int, condition_index: int, method: str,
     ordinal: int,
 ) -> FormalPlanRecord:
-    axis, value, e0, service, power, deadline = _core4_conditions()[condition_index]
-    deadline_material = (
-        "fixed_slack_fraction_v1:" + deadline
-    )
-    skeleton, taskset = _slots(
-        "RTA4_CORE4_SENSITIVITY_V1", utilization, replicate,
-        deadline=deadline_material, power_scale=power,
-    )
-    return _rta_record(
-        core="CORE-4", ordinal=ordinal, skeleton=skeleton, taskset=taskset,
-        method=method, e0=e0, service_scale=service, power_scale=power,
-        deadline_variant=deadline_material, scenario="CORE4_OFAT",
-        axis=axis, axis_value=value,
-        normalized_utilization=utilization, replicate_index=replicate,
+    return _rta_record_from_grid(
+        core4_grid_point(
+            utilization, replicate, condition_index, method, ordinal,
+        )
     )
 
 
 def iter_core4_plan() -> Iterator[FormalPlanRecord]:
-    ordinal = 0
-    for utilization in ("3/10", "2/5", "1/2", "3/5", "7/10"):
-        for replicate in range(200):
-            for condition_index in range(18):
-                for method in RTA4_RECURSIVE_METHODS:
-                    yield _core4_record(
-                        utilization, replicate, condition_index, method, ordinal,
-                    )
-                    ordinal += 1
+    for point in iter_core4_grid(RTA4_RECURSIVE_METHODS):
+        yield _rta_record_from_grid(point)
 
 
 def iter_core5a_plan() -> Iterator[FormalPlanRecord]:
-    ordinal = 0
-    for task_count in (5, 10, 20, 30):
-        for replicate in range(100):
-            skeleton, taskset = _slots(
-                "RTA4_CORE5A_TASK_COUNT_V1", "1/2", replicate,
-                task_count=task_count, scenario=f"TASK_COUNT:{task_count}",
-                deadline="fixed_slack_fraction_v1:3/4",
-            )
-            for method in RTA4_RECURSIVE_METHODS:
-                yield _rta_record(
-                    core="CORE-5A", ordinal=ordinal, skeleton=skeleton,
-                    taskset=taskset, method=method, e0="1/20",
-                    deadline_variant="fixed_slack_fraction_v1:3/4",
-                    scenario="TASK_COUNT", axis="task_count",
-                    axis_value=str(task_count),
-                    normalized_utilization="1/2", processor_count=4,
-                    task_count=task_count, replicate_index=replicate,
-                )
-                ordinal += 1
-    for processors in (2, 4, 8):
-        for replicate in range(100):
-            skeleton, taskset = _slots(
-                "RTA4_CORE5A_PROCESSORS_V1", "1/2", replicate,
-                processors=processors, scenario=f"PROCESSORS:{processors}",
-                deadline="fixed_slack_fraction_v1:3/4",
-            )
-            for method in RTA4_RECURSIVE_METHODS:
-                yield _rta_record(
-                    core="CORE-5A", ordinal=ordinal, skeleton=skeleton,
-                    taskset=taskset, method=method, e0="1/20",
-                    deadline_variant="fixed_slack_fraction_v1:3/4",
-                    scenario="PROCESSORS", axis="processor_count",
-                    axis_value=str(processors),
-                    normalized_utilization="1/2", processor_count=processors,
-                    task_count=10, replicate_index=replicate,
-                )
-                ordinal += 1
-    for time_scale in (1, 2, 4, 8):
-        for replicate in range(100):
-            skeleton, taskset = _slots(
-                "RTA4_CORE5A_TIME_SCALE_V1", "1/2", replicate,
-                scenario="TIME_SCALE_BASE", time_scale=time_scale,
-                deadline="fixed_slack_fraction_v1:3/4",
-            )
-            for method in RTA4_RECURSIVE_METHODS:
-                yield _rta_record(
-                    core="CORE-5A", ordinal=ordinal, skeleton=skeleton,
-                    taskset=taskset, method=method, e0="1/20",
-                    deadline_variant="fixed_slack_fraction_v1:3/4",
-                    scenario="INTEGER_TIME_SCALE", axis="integer_time_scale",
-                    axis_value=str(time_scale),
-                    normalized_utilization="1/2", processor_count=4,
-                    task_count=10, replicate_index=replicate,
-                )
-                ordinal += 1
+    for point in iter_core5a_grid(RTA4_RECURSIVE_METHODS):
+        yield _rta_record_from_grid(point)
 
 
-def _core5b_selected_requests() -> Iterator[tuple[str, FormalPlanRecord]]:
-    for utilization in ("3/10", "2/5", "1/2", "3/5", "7/10"):
-        for method in RTA4_RECURSIVE_METHODS:
-            candidates = []
-            for replicate in range(200):
-                source = _core4_record(utilization, replicate, 0, method, 0)
-                selection_hash = domain_hash(RTA4_CORE5B_SELECTION_DOMAIN, {
-                    "source_analysis_id": source.mathematical_request_id,
-                    "utilization_stratum": utilization,
-                    "method": method,
-                })
-                candidates.append((selection_hash, source))
-            candidates.sort(key=lambda item: (item[0], item[1].mathematical_request_id))
-            yield from candidates[:150]
+def _core5b_ranker(point: FormalPlanGridPoint) -> tuple[str, str, str]:
+    source = _rta_record_from_grid(point)
+    source_id = str(source.mathematical_request_id)
+    selection_hash = domain_hash(RTA4_CORE5B_SELECTION_DOMAIN, {
+        "source_analysis_id": source_id,
+        "utilization_stratum": point.material["normalized_utilization"],
+        "method": point.material["method"],
+    })
+    return selection_hash, source_id, source_id
 
 
 def iter_core5b_math_references() -> Iterator[FormalPlanRecord]:
-    for ordinal, (selection_hash, source) in enumerate(_core5b_selected_requests()):
+    selected_sources = iter_core5b_selected_sources(
+        RTA4_RECURSIVE_METHODS, _core5b_ranker,
+    )
+    for ordinal, selected in enumerate(selected_sources):
+        source = _rta_record_from_grid(selected.point)
         material = {
-            "selection_hash": selection_hash,
+            "selection_hash": selected.selection_hash,
             "source_core": "CORE-4",
             "source_analysis_id": source.mathematical_request_id,
             "method": source.material["method"],
@@ -509,35 +419,18 @@ def iter_core5b_math_references() -> Iterator[FormalPlanRecord]:
 
 
 def iter_core5b_plan() -> Iterator[FormalPlanRecord]:
-    ordinal = 0
-    for reference in iter_core5b_math_references():
-        for worker_count in (1, 2, 4, 8):
-            execution = {
-                "mathematical_request_id": reference.mathematical_request_id,
-                "worker_count": worker_count,
-                "selection_hash": reference.material["selection_hash"],
-                "execution_role": "WORKER_CONSISTENCY",
-                "method": reference.material["method"],
-                "exact_e0": "1/20",
-                "scenario": "CORE5B_WORKER_CONSISTENCY",
-                "axis": "worker_count",
-                "axis_value": str(worker_count),
-                "service_scale": "1",
-                "power_scale": "1",
-                "deadline_variant": "fixed_slack_fraction_v1:3/4",
-                "normalized_utilization": reference.material["normalized_utilization"],
-                "processor_count": reference.material["processor_count"],
-                "task_count": reference.material["task_count"],
-                "replicate_index": reference.material["replicate_index"],
-            }
-            execution_id = domain_hash(RTA4_EXECUTION_DOMAIN, execution)
-            yield FormalPlanRecord(
-                "worker_execution", "CORE-5B", ordinal,
-                reference.mathematical_request_id, execution_id,
-                reference.taskset_slot_id, reference.taskset_skeleton_slot_id,
-                execution,
-            )
-            ordinal += 1
+    for point in iter_core5b_grid(RTA4_RECURSIVE_METHODS, _core5b_ranker):
+        skeleton, taskset = _grid_slots(point.slot)
+        execution = {
+            "mathematical_request_id": point.source_mathematical_request_id,
+            **point.material,
+        }
+        execution_id = domain_hash(RTA4_EXECUTION_DOMAIN, execution)
+        yield FormalPlanRecord(
+            "worker_execution", "CORE-5B", point.ordinal,
+            point.source_mathematical_request_id, execution_id,
+            taskset, skeleton, execution,
+        )
 
 
 PLAN_ITERATORS = {

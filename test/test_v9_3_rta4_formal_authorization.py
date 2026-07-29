@@ -99,7 +99,10 @@ def _real_domain_pilot_filesystem(root, configs, config_paths):
     base_system = source_repo / "base-system.yml"
     energy_config = source_repo / "energy.yml"
     base_system.write_text("system: synthetic-fixture\n", encoding="utf-8")
-    energy_config.write_text("{}\n", encoding="utf-8")
+    energy_config.write_text(
+        'service_curve:\n  solar_scale: "1"\n',
+        encoding="utf-8",
+    )
     subprocess.run(("git", "init", "-q"), cwd=source_repo, check=True)
     subprocess.run(
         ("git", "add", "base-system.yml", "energy.yml"),

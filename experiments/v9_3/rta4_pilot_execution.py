@@ -258,6 +258,65 @@ def _canonical_json_bytes(value: Any) -> bytes:
     ).encode("utf-8")
 
 
+class _UniqueKeySafeLoader(yaml.SafeLoader):
+    """Safe YAML loader that rejects ambiguous duplicate mapping keys."""
+
+
+def _construct_unique_mapping(
+    loader: yaml.SafeLoader, node: yaml.MappingNode, deep: bool = False,
+) -> Dict[Any, Any]:
+    loader.flatten_mapping(node)
+    observed: Dict[Any, Any] = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        try:
+            duplicate = key in observed
+        except TypeError as exc:
+            raise yaml.constructor.ConstructorError(
+                "while constructing a mapping", node.start_mark,
+                "found an unhashable mapping key", key_node.start_mark,
+            ) from exc
+        if duplicate:
+            raise yaml.constructor.ConstructorError(
+                "while constructing a mapping", node.start_mark,
+                f"found duplicate key {key!r}", key_node.start_mark,
+            )
+        observed[key] = loader.construct_object(value_node, deep=deep)
+    return observed
+
+
+_UniqueKeySafeLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+    _construct_unique_mapping,
+)
+
+
+def _load_simulation_energy_config(path: Path) -> Dict[str, Any]:
+    """Load one direct, unambiguous simulator energy mapping."""
+
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            energy = yaml.load(handle, Loader=_UniqueKeySafeLoader)
+    except Exception as exc:
+        raise RTA4PilotExecutionError(
+            "cannot parse simulator energy configuration"
+        ) from exc
+    if not isinstance(energy, Mapping):
+        raise RTA4PilotExecutionError(
+            "simulator energy configuration must be a mapping"
+        )
+    if "energy" in energy:
+        raise RTA4PilotExecutionError(
+            "simulator energy configuration must be a direct energy mapping"
+        )
+    service = energy.get("service_curve")
+    if not isinstance(service, Mapping):
+        raise RTA4PilotExecutionError(
+            "simulator energy configuration service_curve must be a mapping"
+        )
+    return dict(energy)
+
+
 def build_simulation_support(
     *, base_system_path: Path | str,
     energy_config_path: Path | str,
@@ -270,17 +329,7 @@ def build_simulation_support(
         raise RTA4PilotExecutionError(
             "simulation support paths must identify files"
         )
-    try:
-        with energy_path.open("r", encoding="utf-8") as handle:
-            energy = yaml.safe_load(handle)
-    except Exception as exc:
-        raise RTA4PilotExecutionError(
-            "cannot parse simulator energy configuration"
-        ) from exc
-    if not isinstance(energy, Mapping):
-        raise RTA4PilotExecutionError(
-            "simulator energy configuration must be a mapping"
-        )
+    energy = _load_simulation_energy_config(energy_path)
     return {
         "base_system_path": str(system),
         "base_system_sha256": _sha256(system),
@@ -307,17 +356,24 @@ def _validate_simulation_support(
         raise RTA4PilotExecutionError(
             "simulation support has an unexpected field set"
         )
+    paths = {}
     for prefix in ("base_system", "energy_config"):
         path = Path(_absolute(
             support[f"{prefix}_path"], f"{prefix}_path",
             require_exists=True,
         ))
+        paths[prefix] = path
         if not path.is_file() or _sha256(path) != support[f"{prefix}_sha256"]:
             raise RTA4PilotExecutionError(
                 f"{prefix} byte identity drift"
             )
     if not isinstance(support["energy_config"], Mapping):
         raise RTA4PilotExecutionError("energy_config must be a mapping")
+    reparsed = _load_simulation_energy_config(paths["energy_config"])
+    if reparsed != dict(support["energy_config"]):
+        raise RTA4PilotExecutionError(
+            "energy_config file/material binding drift"
+        )
     return dict(support)
 
 
