@@ -74,6 +74,84 @@ def _calculation_view(document):
     return result
 
 
+class IntegerizedTaskUtilizationValidationTests(unittest.TestCase):
+    @staticmethod
+    def _replace_task(period, runtime, deadline=None):
+        document = fixed_base_taskset()
+        replacement = _task(
+            0,
+            period,
+            runtime,
+            period if deadline is None else deadline,
+            0,
+        )
+        index = next(
+            index
+            for index, task in enumerate(document["taskset"])
+            if task["name"] == "task_0"
+        )
+        document["taskset"][index] = replacement
+        return document
+
+    def test_period_150_runtime_one_matches_integerized_minimum(self):
+        self.assertEqual(
+            materialization._integerized_task_utilization_runtime_bounds(150),
+            (1, 67),
+        )
+        document = self._replace_task(150, 1)
+        self.assertLess(Fraction(1, 150), materialization.MIN_TASK_UTILIZATION)
+        self.assertIs(
+            materialization.validate_base_taskset(document),
+            document,
+        )
+
+    def test_period_200_runtime_one_is_below_integerized_minimum(self):
+        self.assertEqual(
+            materialization._integerized_task_utilization_runtime_bounds(200),
+            (2, 90),
+        )
+        with self.assertRaisesRegex(
+            materialization.MaterializationError,
+            "integerized utilization bounds",
+        ):
+            materialization.validate_base_taskset(
+                self._replace_task(200, 1)
+            )
+
+    def test_runtime_above_integerized_maximum_is_rejected(self):
+        self.assertEqual(
+            materialization._integerized_task_utilization_runtime_bounds(40),
+            (1, 18),
+        )
+        with self.assertRaisesRegex(
+            materialization.MaterializationError,
+            "integerized utilization bounds",
+        ):
+            materialization.validate_base_taskset(
+                self._replace_task(40, 19)
+            )
+
+    def test_total_utilization_tolerance_remains_fail_closed(self):
+        document = fixed_base_taskset()
+        total = sum(
+            (
+                Fraction(task["runtime"], task["iat"])
+                for task in document["taskset"]
+            ),
+            Fraction(0),
+        )
+        target = Fraction("0.3") * materialization.PROCESSORS
+        self.assertGreater(
+            abs(total - target),
+            materialization.TOTAL_UTILIZATION_TOLERANCE,
+        )
+        with self.assertRaisesRegex(
+            materialization.MaterializationError,
+            "total utilization",
+        ):
+            materialization.validate_base_taskset(document, "0.3")
+
+
 class RhoTasksetDerivationTests(unittest.TestCase):
     def setUp(self):
         self.base = fixed_base_taskset()
@@ -243,6 +321,72 @@ class ManifestV4IdentityTests(unittest.TestCase):
             0 <= offset < task["iat"]
             for offset, task in zip(offsets, first_document["taskset"])
         ))
+
+    def test_all_frozen_pilot_base_tasksets_validate_and_repeat_exactly(self):
+        frozen_payload = manifest.render_manifest(
+            "pilot",
+            manifest.PROTOCOL_V4,
+        )
+        authorization = execution.load_pilot_authorization_v4()
+        self.assertEqual(
+            hashlib.sha256(frozen_payload).hexdigest(),
+            authorization["pilot_manifest_sha256"],
+        )
+        records = [
+            json.loads(line)
+            for line in frozen_payload.decode("utf-8").splitlines()
+        ]
+        manifest.validate_records(records)
+        representatives = {}
+        for record in records:
+            representatives.setdefault(record["taskset_id"], record)
+        self.assertEqual(len(representatives), 60)
+        self.assertEqual(
+            len({
+                record["taskset_seed"]
+                for record in representatives.values()
+            }),
+            60,
+        )
+
+        first_pass = {}
+        second_pass = {}
+        for taskset_id, record in sorted(representatives.items()):
+            document, payload = materialization.generate_base_taskset(record)
+            self.assertIs(
+                materialization.validate_base_taskset(
+                    document,
+                    record["utilization"],
+                ),
+                document,
+            )
+            target = (
+                Fraction(record["utilization"])
+                * materialization.PROCESSORS
+            )
+            actual = sum(
+                (
+                    Fraction(task["runtime"], task["iat"])
+                    for task in document["taskset"]
+                ),
+                Fraction(0),
+            )
+            self.assertLessEqual(
+                abs(actual - target),
+                materialization.TOTAL_UTILIZATION_TOLERANCE,
+            )
+            first_pass[taskset_id] = payload
+
+        for taskset_id, record in sorted(representatives.items()):
+            document, payload = materialization.generate_base_taskset(record)
+            materialization.validate_base_taskset(
+                document,
+                record["utilization"],
+            )
+            second_pass[taskset_id] = payload
+
+        self.assertEqual(set(first_pass), set(second_pass))
+        self.assertEqual(first_pass, second_pass)
 
     def test_v4_full_pilot_manifest_validates_without_identity_changes(self):
         records = list(manifest.iter_cases("pilot", manifest.PROTOCOL_V4))

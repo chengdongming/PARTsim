@@ -304,6 +304,25 @@ def _release_count(period, offset):
     return (HORIZON_MS - 1 - offset) // period + 1
 
 
+def _integerized_task_utilization_runtime_bounds(period):
+    _require(
+        type(period) is int and period > 0,
+        "task period must be a positive integer",
+    )
+    minimum_runtime = max(
+        1,
+        math.floor(period * MIN_TASK_UTILIZATION),
+    )
+    maximum_runtime = max(
+        1,
+        min(
+            period,
+            math.floor(period * MAX_TASK_UTILIZATION),
+        ),
+    )
+    return minimum_runtime, maximum_runtime
+
+
 def validate_base_taskset(document, normalized_utilization=None):
     _require(isinstance(document, dict), "base taskset root must be a mapping")
     tasks = document.get("taskset")
@@ -338,9 +357,12 @@ def validate_base_taskset(document, normalized_utilization=None):
             f"task_{task_id} violates frozen C/D/T bounds",
         )
         utilization = Fraction(runtime, period)
+        minimum_runtime, maximum_runtime = (
+            _integerized_task_utilization_runtime_bounds(period)
+        )
         _require(
-            MIN_TASK_UTILIZATION <= utilization <= MAX_TASK_UTILIZATION,
-            f"task_{task_id} utilization is outside frozen bounds",
+            minimum_runtime <= runtime <= maximum_runtime,
+            f"task_{task_id} runtime is outside integerized utilization bounds",
         )
         params = parse_canonical_task_params(
             task.get("params"), require_factor=False
