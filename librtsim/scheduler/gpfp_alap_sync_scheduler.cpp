@@ -1412,15 +1412,24 @@ namespace RTSim {
             return;
         }
 
-        Tick current_time = SIMUL.getTime();
+        const Tick current_time = SIMUL.getTime();
+        const Tick candidate_tick =
+            !_first_tick_scheduled
+                ? current_time
+                : current_time + Tick(1);
+        const auto candidate_ms =
+            static_cast<std::int64_t>(candidate_tick);
 
-        // ⭐ 修复：第一个tick在当前时间触发（0ms），后续tick每1ms触发一次
-        if (!_first_tick_scheduled) {
-            _tick_event->post(current_time);  // 第一个tick立即触发
-            _first_tick_scheduled = true;
-        } else {
-            _tick_event->post(current_time + Tick(1));  // 后续tick每1ms触发一次
+        const ConfigManager &config = ConfigManager::getInstance();
+        if (config.isPriorityEnergyProfileEnabled() &&
+            !priorityEnergyDecisionTickWithinExclusiveHorizon(
+                candidate_ms,
+                config.getPriorityEnergyHorizonMs())) {
+            return;
         }
+
+        _tick_event->post(candidate_tick);
+        _first_tick_scheduled = true;
     }
 
     // =====================================================

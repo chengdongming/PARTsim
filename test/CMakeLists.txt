@@ -16,6 +16,7 @@ add_executable(
   scheduler/st_nonblock.cpp
   scheduler/st_sync.cpp
   scheduler/priority_energy_common.cpp
+  scheduler/priority_energy_exclusive_horizon.cpp
   scheduler/priority_energy_runtime.cpp
   scheduler/harvest_config.cpp
   scheduler/harvest_runtime.cpp
@@ -36,10 +37,13 @@ target_link_libraries(
     PRIVATE rtsim
 )
 
+add_dependencies(test_librtsim rtsim-exe)
+
 target_compile_definitions(
     test_librtsim
     PRIVATE
     PARTSIM_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+    PARTSIM_RTSIM_EXE="$<TARGET_FILE:rtsim-exe>"
 )
 
 include(GoogleTest)

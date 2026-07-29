@@ -22,6 +22,16 @@ namespace RTSim {
         double battery_after_j = 0.0;
     };
 
+    inline bool priorityEnergyDecisionTickWithinExclusiveHorizon(
+        std::int64_t candidate_tick_ms,
+        std::uint64_t horizon_ms) {
+        if (candidate_tick_ms < 0) {
+            throw std::logic_error(
+                "scheduler candidate tick must be non-negative");
+        }
+        return static_cast<std::uint64_t>(candidate_tick_ms) < horizon_ms;
+    }
+
     class PriorityEnergyConfigError : public std::invalid_argument {
     public:
         explicit PriorityEnergyConfigError(const std::string &message) :
