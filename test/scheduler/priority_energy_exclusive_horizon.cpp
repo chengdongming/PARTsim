@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -558,8 +559,10 @@ ProcessResult runSimulator(
     const std::filesystem::path &system_path,
     const std::filesystem::path &taskset_path,
     const std::filesystem::path &trace_path,
+    const std::filesystem::path &stdout_path,
     const std::filesystem::path &stderr_path,
-    const std::string &run_id) {
+    const std::string &run_id,
+    bool quiet_stdout) {
     const pid_t child = ::fork();
     if (child < 0) {
         throw std::system_error(
@@ -568,20 +571,27 @@ ProcessResult runSimulator(
             "cannot fork exclusive-horizon simulator");
     }
     if (child == 0) {
-        const int null_output =
-            ::open("/dev/null", O_WRONLY);
+        const int standard_output =
+            ::open(
+                stdout_path.c_str(),
+                O_WRONLY | O_CREAT | O_TRUNC,
+                0600);
         const int error_output =
             ::open(
                 stderr_path.c_str(),
                 O_WRONLY | O_CREAT | O_TRUNC,
                 0600);
-        if (null_output < 0 || error_output < 0 ||
-            ::dup2(null_output, STDOUT_FILENO) < 0 ||
+        const int environment_status = quiet_stdout
+            ? ::setenv("PARTSIM_QUIET_STDOUT", "1", 1)
+            : ::unsetenv("PARTSIM_QUIET_STDOUT");
+        if (standard_output < 0 || error_output < 0 ||
+            environment_status != 0 ||
+            ::dup2(standard_output, STDOUT_FILENO) < 0 ||
             ::dup2(error_output, STDERR_FILENO) < 0 ||
             ::chdir(PARTSIM_SOURCE_DIR) != 0) {
             _exit(125);
         }
-        ::close(null_output);
+        ::close(standard_output);
         ::close(error_output);
         const std::string semantic_hash(64, '0');
         ::execl(
@@ -642,6 +652,8 @@ void expectPublishedEndToEndTrace() {
         temporary.path() / "tasks.yml";
     const auto trace_path =
         temporary.path() / "trace.json";
+    const auto stdout_path =
+        temporary.path() / "stdout.txt";
     const auto stderr_path =
         temporary.path() / "stderr.txt";
     writeFile(system_path, systemConfigFor(scheduler_id));
@@ -651,8 +663,10 @@ void expectPublishedEndToEndTrace() {
         system_path,
         taskset_path,
         trace_path,
+        stdout_path,
         stderr_path,
-        "exclusive-horizon-" + scheduler_id);
+        "exclusive-horizon-" + scheduler_id,
+        false);
     const std::string errors = readFile(stderr_path);
     EXPECT_FALSE(process.timed_out) << errors;
     EXPECT_EQ(process.termination_signal, 0) << errors;
@@ -699,6 +713,58 @@ TYPED_TEST(
     PriorityEnergyExclusiveHorizonTest,
     EndToEndSimulatorPublishesConservedTraceAtFrozenHorizon) {
     expectPublishedEndToEndTrace<TypeParam>();
+}
+
+TEST(PriorityEnergyQuietStdout,
+     EnvironmentSwitchPreservesStructuredTraceAndDefaultOutput) {
+    TemporaryRegressionDirectory temporary;
+    const auto system_path = temporary.path() / "system.yml";
+    const auto taskset_path = temporary.path() / "tasks.yml";
+    writeFile(system_path, systemConfigFor("gpfp_asap_block"));
+    writeFile(taskset_path, activeTaskset());
+
+    const auto default_trace = temporary.path() / "default-trace.json";
+    const auto default_stdout = temporary.path() / "default-stdout.txt";
+    const auto default_stderr = temporary.path() / "default-stderr.txt";
+    const ProcessResult default_process = runSimulator(
+        system_path,
+        taskset_path,
+        default_trace,
+        default_stdout,
+        default_stderr,
+        "quiet-stdout-equivalence",
+        false);
+    ASSERT_FALSE(default_process.timed_out)
+        << readFile(default_stderr);
+    ASSERT_EQ(default_process.termination_signal, 0)
+        << readFile(default_stderr);
+    ASSERT_EQ(default_process.exit_code, 0)
+        << readFile(default_stderr);
+    EXPECT_FALSE(readFile(default_stdout).empty());
+
+    const auto quiet_trace = temporary.path() / "quiet-trace.json";
+    const auto quiet_stdout = temporary.path() / "quiet-stdout.txt";
+    const auto quiet_stderr = temporary.path() / "quiet-stderr.txt";
+    const ProcessResult quiet_process = runSimulator(
+        system_path,
+        taskset_path,
+        quiet_trace,
+        quiet_stdout,
+        quiet_stderr,
+        "quiet-stdout-equivalence",
+        true);
+    ASSERT_FALSE(quiet_process.timed_out)
+        << readFile(quiet_stderr);
+    ASSERT_EQ(quiet_process.termination_signal, 0)
+        << readFile(quiet_stderr);
+    ASSERT_EQ(quiet_process.exit_code, 0)
+        << readFile(quiet_stderr);
+    EXPECT_TRUE(readFile(quiet_stdout).empty());
+    const std::string quiet_trace_contents = readFile(quiet_trace);
+    EXPECT_EQ(quiet_trace_contents, readFile(default_trace));
+    EXPECT_NE(
+        quiet_trace_contents.find("\"trace_schema_version\": 3"),
+        std::string::npos);
 }
 
 } // namespace

@@ -342,6 +342,22 @@ class ExecutionResumeTests(unittest.TestCase):
                 hashlib.sha256(self.fx.path(relative).read_bytes()).hexdigest(),
                 state[field],
             )
+        publication = state["attempts"][0]["publication"]
+        staging = self.fx.path(publication["staging_result_relpath"])
+        final_result = self.fx.path(publication["final_result_relpath"])
+        self.assertEqual(
+            (staging.stat().st_dev, staging.stat().st_ino),
+            (final_result.stat().st_dev, final_result.stat().st_ino),
+        )
+        for stream in ("stdout", "stderr"):
+            final = self.fx.path(publication[f"final_{stream}_relpath"])
+            attempt_final = self.fx.path(
+                publication[f"attempt_{stream}_relpath"]
+            )
+            self.assertEqual(
+                (final.stat().st_dev, final.stat().st_ino),
+                (attempt_final.stat().st_dev, attempt_final.stat().st_ino),
+            )
 
     def test_logs_published_state_failure_resumes_without_subprocess(self):
         context = self.fx.context()

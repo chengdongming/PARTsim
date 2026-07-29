@@ -38,6 +38,29 @@ class ExecutionRetryTests(unittest.TestCase):
         self.assertEqual(state["attempt_count"], 1)
         self.assertEqual(state["attempts"][0]["termination_reason"], "nonzero_exit")
 
+    def test_nonzero_failure_logs_are_hard_linked(self):
+        self.fx.write_inputs(
+            {
+                "mode": "nonzero",
+                "exit_code": 7,
+                "stdout": "failed stdout",
+                "stderr": "failed stderr",
+            }
+        )
+        record = self.fx.direct_record()
+        self.assertEqual(self.execute(record)["failed"], 1)
+        case_id = record["case_id"]
+        for stream in ("stdout", "stderr"):
+            final = self.fx.path(f".b4pe/logs/{case_id}.{stream}")
+            attempt = self.fx.path(
+                f".b4pe/logs/{case_id}.attempt-1.{stream}"
+            )
+            self.assertEqual(final.read_bytes(), attempt.read_bytes())
+            self.assertEqual(
+                (final.stat().st_dev, final.stat().st_ino),
+                (attempt.stat().st_dev, attempt.stat().st_ino),
+            )
+
     def test_timeout_is_classified(self):
         self.fx.write_inputs({"mode": "sleep", "sleep_seconds": 10})
         record = self.fx.direct_record(initial_timeout=0.05, max_attempts=1)
@@ -152,6 +175,21 @@ class ExecutionRetryTests(unittest.TestCase):
             self.assertTrue(
                 self.fx.path(f".b4pe/logs/{case_id}.attempt-{index}.stdout").is_file()
             )
+        final = self.fx.path(f".b4pe/logs/{case_id}.stdout")
+        first = self.fx.path(
+            f".b4pe/logs/{case_id}.attempt-1.stdout"
+        )
+        second = self.fx.path(
+            f".b4pe/logs/{case_id}.attempt-2.stdout"
+        )
+        self.assertEqual(
+            (final.stat().st_dev, final.stat().st_ino),
+            (second.stat().st_dev, second.stat().st_ino),
+        )
+        self.assertNotEqual(
+            (first.stat().st_dev, first.stat().st_ino),
+            (second.stat().st_dev, second.stat().st_ino),
+        )
 
     def test_attempts_use_contract_timeouts(self):
         self.fx.write_inputs(

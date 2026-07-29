@@ -1166,6 +1166,121 @@ def _copy_file_at(context, source_relative, destination_relative, allow_existing
         os.close(destination_parent)
 
 
+def _link_file_at(context, source_relative, destination_relative):
+    source_parts = _relative_parts(source_relative)
+    destination_parts = _relative_parts(destination_relative)
+    source_parent, source_name = _open_parent_at(context, source_relative)
+    destination_parent, destination_name = _open_parent_at(
+        context, destination_relative, create=True
+    )
+    source_descriptor = None
+    linked = False
+    try:
+        try:
+            source_descriptor = os.open(
+                source_name,
+                os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=source_parent,
+            )
+        except OSError as exc:
+            raise InputIntegrityError(
+                "hard-link source cannot be opened without following links"
+            ) from exc
+        source = os.fstat(source_descriptor)
+        _require(
+            stat.S_ISREG(source.st_mode),
+            "hard-link source is not a regular file",
+            InputIntegrityError,
+        )
+        current = os.stat(
+            source_name,
+            dir_fd=source_parent,
+            follow_symlinks=False,
+        )
+        _require(
+            stat.S_ISREG(current.st_mode)
+            and (current.st_dev, current.st_ino)
+            == (source.st_dev, source.st_ino),
+            "hard-link source changed while opening",
+            InputIntegrityError,
+        )
+        _destination_is_safe(
+            destination_parent, destination_name, allow_existing=False
+        )
+        _verify_parent_binding(
+            context, source_parts[:-1], source_parent
+        )
+        _verify_parent_binding(
+            context, destination_parts[:-1], destination_parent
+        )
+        os.fsync(source_descriptor)
+        try:
+            os.link(
+                source_name,
+                destination_name,
+                src_dir_fd=source_parent,
+                dst_dir_fd=destination_parent,
+                follow_symlinks=False,
+            )
+        except OSError as exc:
+            raise PublicationIntegrityError(
+                "file could not be published as a hard link"
+            ) from exc
+        linked = True
+        source_after = os.fstat(source_descriptor)
+        current_after = os.stat(
+            source_name,
+            dir_fd=source_parent,
+            follow_symlinks=False,
+        )
+        destination_after = os.stat(
+            destination_name,
+            dir_fd=destination_parent,
+            follow_symlinks=False,
+        )
+        expected_identity = (source.st_dev, source.st_ino)
+        _require(
+            stat.S_ISREG(source_after.st_mode)
+            and stat.S_ISREG(current_after.st_mode)
+            and stat.S_ISREG(destination_after.st_mode)
+            and (source_after.st_dev, source_after.st_ino)
+            == expected_identity
+            and (current_after.st_dev, current_after.st_ino)
+            == expected_identity
+            and (destination_after.st_dev, destination_after.st_ino)
+            == expected_identity
+            and source_after.st_size == source.st_size
+            and current_after.st_size == source.st_size
+            and destination_after.st_size == source.st_size
+            and source_after.st_mtime_ns == source.st_mtime_ns
+            and current_after.st_mtime_ns == source.st_mtime_ns
+            and destination_after.st_mtime_ns == source.st_mtime_ns,
+            "hard-link publication identity mismatch",
+            PublicationIntegrityError,
+        )
+        os.fsync(destination_parent)
+        _verify_parent_binding(
+            context, source_parts[:-1], source_parent
+        )
+        _verify_parent_binding(
+            context, destination_parts[:-1], destination_parent
+        )
+        return destination_after
+    except BaseException:
+        if linked:
+            try:
+                os.unlink(destination_name, dir_fd=destination_parent)
+                os.fsync(destination_parent)
+            except OSError:
+                pass
+        raise
+    finally:
+        if source_descriptor is not None:
+            os.close(source_descriptor)
+        os.close(source_parent)
+        os.close(destination_parent)
+
+
 def _before_replace_hook(context, temporary_relative, final_relative, parent_fd):
     """Test hook invoked with the trusted publication parent still open."""
 
@@ -2160,7 +2275,7 @@ def _attempt_timeout(record, attempt_index):
 
 def _publish_log(context, temporary, final, attempt_final):
     _replace_at(context, temporary, final, allow_existing=True)
-    _copy_file_at(context, final, attempt_final, allow_existing=False)
+    _link_file_at(context, final, attempt_final)
 
 
 def _publish_failure_logs(context, attempt, publication):
@@ -2196,7 +2311,7 @@ def _publish_failure_logs(context, attempt, publication):
                 InputIntegrityError,
             )
         else:
-            _copy_file_at(context, final, attempt_final, allow_existing=False)
+            _link_file_at(context, final, attempt_final)
         attempt[f"{stream}_sha256"] = sha
     return attempt["stdout_sha256"], attempt["stderr_sha256"]
 
@@ -2240,7 +2355,28 @@ def _copy_verified_staging_for_publication(
         _require_staging_trace_identity(
             context, attempt, validated_result_identity
         )
-        _copy_file_at(context, staging, temporary, allow_existing=False)
+        linked_staging = _link_file_at(context, staging, temporary)
+        if not (
+            linked_staging.st_dev == validated_result_identity["st_dev"]
+            and linked_staging.st_ino
+            == validated_result_identity["st_ino"]
+            and linked_staging.st_size
+            == validated_result_identity["st_size"]
+            and linked_staging.st_mtime_ns
+            == validated_result_identity["st_mtime_ns"]
+            and linked_staging.st_ctime_ns
+            >= validated_result_identity["st_ctime_ns"]
+        ):
+            raise StagingTraceError(
+                "trace_integrity_error",
+                "hard-linked staging trace identity mismatch",
+            )
+        validated_result_identity["st_ctime_ns"] = (
+            linked_staging.st_ctime_ns
+        )
+        _require_staging_trace_identity(
+            context, attempt, validated_result_identity
+        )
         _publication_integrity_hook(
             "after_result_temp_fsync",
             record,
@@ -2897,11 +3033,18 @@ def _recover_publication(record, context, state, attempt):
         publication["staging_result_relpath"],
         "prepared staging trace",
     )
-    _require(
-        staging_sha == publication["expected_result_sha256"],
-        "prepared staging trace SHA mismatch",
-        InputIntegrityError,
-    )
+    if staging_sha != publication["expected_result_sha256"]:
+        return _record_trace_integrity_failure(
+            context,
+            state,
+            attempt,
+            StagingTraceError(
+                "trace_integrity_error",
+                "prepared staging trace SHA mismatch",
+                observed_final_sha256=staging_sha,
+                preserve_publication=True,
+            ),
+        )
     try:
         _recover_result_publication(context, attempt, publication)
     except StagingTraceError as exc:
@@ -2923,7 +3066,7 @@ def _recover_publication(record, context, state, attempt):
                 InputIntegrityError,
             )
         else:
-            _copy_file_at(context, final, attempt_final)
+            _link_file_at(context, final, attempt_final)
     publication["publication_status"] = "logs_published"
     _write_state(context, state)
     publication["publication_status"] = "committed"
