@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate deterministic B4-PE materialization-draft v4 JSON Lines manifests."""
+"""Generate deterministic B4-PE v4 JSON Lines manifests."""
 
 import argparse
 from pathlib import Path

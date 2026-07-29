@@ -259,12 +259,12 @@ class ManifestV4IdentityTests(unittest.TestCase):
             },
         )
 
-    def test_v4_draft_governance_is_fail_closed(self):
+    def test_v4_pilot_governance_rejects_partial_campaign(self):
         expected = {
             "formal_runs_authorized": False,
             "negative_control_runs_authorized": False,
             "paper_result_authorized": False,
-            "pilot_runs_authorized": False,
+            "pilot_runs_authorized": True,
         }
         self.assertEqual(manifest.PROTOCOL_V4["governance"], expected)
         self.assertEqual(execution.PROTOCOL_V4["governance"], expected)
@@ -284,7 +284,7 @@ class ManifestV4IdentityTests(unittest.TestCase):
             "pilot", "0.3", 1, "0.85", "1", "ASAP-BLOCK",
             manifest.PROTOCOL_V4,
         )
-        with self.assertRaisesRegex(execution.SafetyError, "not authorized"):
+        with self.assertRaisesRegex(execution.SafetyError, "partial"):
             execution.execute_validated_cases(
                 [record],
                 "/does/not/matter",
@@ -347,7 +347,7 @@ class MaterializationIntegrationTests(unittest.TestCase):
             )
         inventory = {
             "schema_version": 1,
-            "protocol_name": "B4-PE-base-pool-admission-v1-draft",
+            "protocol_name": "B4-PE-base-pool-admission-v1",
             "admission_protocol_sha256": materialization.file_sha256(
                 materialization.ADMISSION_PROTOCOL_PATH
             ),

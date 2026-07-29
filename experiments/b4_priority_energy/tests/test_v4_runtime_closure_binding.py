@@ -22,13 +22,14 @@ CHAIN_PATHS = (
     B4_DIR / "manifest_protocol_v4.json",
     B4_DIR / "base_pool_admission_protocol_v1.json",
     B4_DIR / "materialization_protocol_v1.json",
+    B4_DIR / "pilot_authorization_v4.json",
     B4_DIR / "execution_protocol_v4.json",
 )
 EXPECTED_GOVERNANCE = {
     "formal_runs_authorized": False,
     "negative_control_runs_authorized": False,
     "paper_result_authorized": False,
-    "pilot_runs_authorized": False,
+    "pilot_runs_authorized": True,
 }
 HISTORICAL_IDENTITIES = {
     "b4_pe_freeze_candidate_v1.json":
@@ -84,10 +85,10 @@ class V4RuntimeClosureBindingTests(unittest.TestCase):
             self.candidate["candidate_code_tree"],
             "266ecfdca0c1bc194e2ce77a295254893b9737ca",
         )
-        self.assertEqual(self.candidate["freeze_status"], "draft")
+        self.assertEqual(self.candidate["freeze_status"], "candidate")
         self.assertEqual(
             self.candidate["runtime_binding_status"],
-            "candidate_bound_unauthorized",
+            "candidate_bound_pilot_authorized",
         )
         self.assertIsNone(self.candidate["final_code_commit"])
         self.assertIsNone(self.candidate["final_git_tag"])
@@ -227,7 +228,7 @@ class V4RuntimeClosureBindingTests(unittest.TestCase):
             with self.subTest(filename=filename):
                 self.assertNotIn(filename, bound_filenames)
 
-    def test_v2_dependency_representation_supersedes_v1_without_authorizing(self):
+    def test_v2_dependency_representation_supersedes_v1_without_identity_change(self):
         representation = self.closure[
             "deterministic_dependency_representation"
         ]
@@ -274,6 +275,7 @@ class V4RuntimeClosureBindingTests(unittest.TestCase):
         execution_protocol = execution.load_execution_protocol(
             execution.EXECUTION_PROTOCOL_V4_PATH
         )
+        authorization = execution.load_pilot_authorization_v4()
         self.assertEqual(
             manifest_protocol["candidate_v4_sha256"],
             _sha256(CANDIDATE_PATH),
@@ -304,8 +306,20 @@ class V4RuntimeClosureBindingTests(unittest.TestCase):
             execution_protocol["materialization_protocol_sha256"],
             _sha256(materialization.MATERIALIZATION_PROTOCOL_PATH),
         )
+        self.assertEqual(
+            authorization["candidate_sha256"],
+            _sha256(CANDIDATE_PATH),
+        )
+        self.assertEqual(
+            authorization["pilot_manifest_sha256"],
+            "3af6a2b8764cf634d6e014e546a0d01d25a1d0a2caf05420d2c7ddf78dfe67d2",
+        )
+        self.assertEqual(
+            execution_protocol["pilot_authorization_sha256"],
+            _sha256(execution.PILOT_AUTHORIZATION_V4_PATH),
+        )
 
-    def test_all_v4_authorizations_remain_false_and_execution_fails_closed(self):
+    def test_only_v4_pilot_is_authorized_and_partial_execution_fails_closed(self):
         documents = [
             self.candidate,
             manifest.PROTOCOL_V4,
@@ -316,6 +330,7 @@ class V4RuntimeClosureBindingTests(unittest.TestCase):
                     encoding="utf-8"
                 )
             ),
+            execution.load_pilot_authorization_v4(),
         ]
         for document in documents:
             with self.subTest(protocol=document.get("protocol_name")):
@@ -335,7 +350,7 @@ class V4RuntimeClosureBindingTests(unittest.TestCase):
             "ASAP-BLOCK",
             manifest.PROTOCOL_V4,
         )
-        with self.assertRaisesRegex(execution.SafetyError, "not authorized"):
+        with self.assertRaisesRegex(execution.SafetyError, "partial"):
             execution.execute_validated_cases(
                 [record],
                 "/does/not/matter",

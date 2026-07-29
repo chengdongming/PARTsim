@@ -7,6 +7,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import secrets
 import signal
 import stat
@@ -15,6 +16,7 @@ from contextlib import ExitStack, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
+import admission_common as admission
 import manifest_common as manifest
 import materialization_common as materialization
 
@@ -24,6 +26,7 @@ EXECUTION_PROTOCOL_V1_PATH = B4_DIR / "execution_protocol_v1.json"
 EXECUTION_PROTOCOL_PATH = B4_DIR / "execution_protocol_v2.json"
 EXECUTION_PROTOCOL_V3_PATH = B4_DIR / "execution_protocol_v3.json"
 EXECUTION_PROTOCOL_V4_PATH = B4_DIR / "execution_protocol_v4.json"
+PILOT_AUTHORIZATION_V4_PATH = B4_DIR / "pilot_authorization_v4.json"
 PROC_FD_ROOT = "/proc/self/fd"
 SNAPSHOT_ROLES = ("simulator", "system", "taskset", "source")
 TRACE_SUFFIXES = (".txt", ".json")
@@ -101,6 +104,176 @@ def record_sha256(record):
     return bytes_sha256(manifest.compact_json(record).encode("utf-8"))
 
 
+def _canonical_pretty_json_bytes(value):
+    return (
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            indent=2,
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode("utf-8")
+
+
+def load_pilot_authorization_v4(path=PILOT_AUTHORIZATION_V4_PATH):
+    try:
+        raw = Path(path).read_bytes()
+        authorization = json.loads(raw.decode("utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ExecutionError(
+            "pilot v4 authorization is not readable JSON"
+        ) from exc
+    _require(
+        raw == _canonical_pretty_json_bytes(authorization),
+        "pilot v4 authorization JSON is not canonical",
+    )
+    _require(
+        b"/root/" + b"autodl-tmp/" not in raw,
+        "pilot v4 authorization contains an absolute AutoDL path",
+    )
+    _require(
+        not any(
+            field in raw
+            for field in (b'"timestamp"', b'"generated_at"', b'"reverified_locally"')
+        ),
+        "pilot v4 authorization contains forbidden host-time evidence",
+    )
+    required = {
+        "authorization_name", "authorization_status", "authorized_phase",
+        "base_pool_admission_protocol_ref",
+        "base_pool_admission_protocol_sha256", "candidate_code_commit",
+        "candidate_code_tree", "candidate_ref", "candidate_sha256",
+        "governance", "manifest_protocol_ref", "manifest_protocol_sha256",
+        "materialization_protocol_ref", "materialization_protocol_sha256",
+        "pilot_manifest_case_count", "pilot_manifest_filename",
+        "pilot_manifest_serialization", "pilot_manifest_sha256",
+        "prior_state", "runtime_closure", "safety_contract",
+        "schema_version",
+    }
+    _require(
+        isinstance(authorization, dict) and set(authorization) == required,
+        "pilot v4 authorization fields mismatch",
+    )
+    _require(
+        authorization["schema_version"] == 1
+        and authorization["authorization_name"]
+        == "B4-PE-v4-pilot-authorization"
+        and authorization["authorization_status"] == "authorized"
+        and authorization["authorized_phase"] == "pilot",
+        "pilot v4 authorization identity mismatch",
+    )
+    candidate = manifest.load_candidate_v4()
+    _require(
+        authorization["candidate_ref"] == manifest.CANDIDATE_V4_PATH.name
+        and authorization["candidate_sha256"]
+        == file_sha256(manifest.CANDIDATE_V4_PATH)
+        and authorization["candidate_code_commit"]
+        == manifest.V4_CANDIDATE_CODE_COMMIT
+        and authorization["candidate_code_tree"]
+        == manifest.V4_CANDIDATE_CODE_TREE,
+        "pilot v4 authorization candidate identity mismatch",
+    )
+    manifest.load_manifest_protocol(manifest.MANIFEST_PROTOCOL_V4_PATH)
+    _require(
+        authorization["manifest_protocol_ref"]
+        == manifest.MANIFEST_PROTOCOL_V4_PATH.name
+        and authorization["manifest_protocol_sha256"]
+        == file_sha256(manifest.MANIFEST_PROTOCOL_V4_PATH),
+        "pilot v4 authorization manifest protocol identity mismatch",
+    )
+    admission.load_protocol()
+    _require(
+        authorization["base_pool_admission_protocol_ref"]
+        == admission.PROTOCOL_PATH.name
+        and authorization["base_pool_admission_protocol_sha256"]
+        == file_sha256(admission.PROTOCOL_PATH),
+        "pilot v4 authorization admission protocol identity mismatch",
+    )
+    materialization.load_materialization_protocol()
+    _require(
+        authorization["materialization_protocol_ref"]
+        == materialization.MATERIALIZATION_PROTOCOL_PATH.name
+        and authorization["materialization_protocol_sha256"]
+        == file_sha256(materialization.MATERIALIZATION_PROTOCOL_PATH),
+        "pilot v4 authorization materialization protocol identity mismatch",
+    )
+    governance = {
+        "formal_runs_authorized": False,
+        "negative_control_runs_authorized": False,
+        "paper_result_authorized": False,
+        "pilot_runs_authorized": True,
+    }
+    _require(
+        authorization["governance"] == governance,
+        "pilot v4 authorization governance mismatch",
+    )
+    _require(
+        authorization["pilot_manifest_filename"] == "pilot_v4.jsonl"
+        and authorization["pilot_manifest_case_count"] == 2400
+        and authorization["pilot_manifest_serialization"] == "canonical_jsonl"
+        and re.fullmatch(
+            r"[0-9a-f]{64}",
+            authorization["pilot_manifest_sha256"],
+        )
+        is not None,
+        "pilot v4 manifest authorization identity mismatch",
+    )
+    _require(
+        authorization["prior_state"]
+        == {
+            "authorization_status": "unauthorized",
+            "candidate_runtime_binding_status":
+                "candidate_bound_unauthorized",
+            "candidate_sha256":
+                "e697e9c218a19abe621d82547e2e4e948857874e6fb8d223c49f3f92c600fabe",
+        },
+        "pilot v4 prior authorization state mismatch",
+    )
+    candidate_closure = candidate["runtime_closure"]
+    expected_artifacts = {
+        name: {
+            "logical_path": entry["logical_path"],
+            "sha256": entry["sha256"],
+        }
+        for name, entry in candidate_closure["artifacts"].items()
+    }
+    expected_evidence = {
+        name: {
+            "filename": entry["filename"],
+            "sha256": entry["sha256"],
+        }
+        for name, entry in candidate_closure["evidence"].items()
+    }
+    _require(
+        authorization["runtime_closure"]
+        == {
+            "artifacts": expected_artifacts,
+            "binding_status": "independently_verified_and_bound",
+            "evidence": expected_evidence,
+            "schema_version": candidate_closure["schema_version"],
+        },
+        "pilot v4 runtime closure binding mismatch",
+    )
+    _require(
+        authorization["safety_contract"]
+        == {
+            "fail_closed": True,
+            "formal_rejected": True,
+            "full_exact_manifest_required": True,
+            "manifest_identity_must_match": True,
+            "negative_control_rejected": True,
+            "paper_result_rejected": True,
+            "partial_manifest_not_campaign_authorized": True,
+            "pilot_results_are_gate_evidence_only": True,
+            "runtime_identity_must_match": True,
+        },
+        "pilot v4 authorization safety contract mismatch",
+    )
+    return authorization
+
+
 def load_execution_protocol(path=EXECUTION_PROTOCOL_PATH):
     protocol = json.loads(Path(path).read_text(encoding="utf-8"))
     if protocol.get("schema_version") == 4:
@@ -111,6 +284,7 @@ def load_execution_protocol(path=EXECUTION_PROTOCOL_PATH):
             "manifest_protocol_ref", "manifest_protocol_sha256",
             "materialization_protocol_ref",
             "materialization_protocol_sha256",
+            "pilot_authorization_ref", "pilot_authorization_sha256",
             "protocol_name", "schema_version", "status", "supersedes",
             "taskset_semantic_hash_source",
         }
@@ -147,14 +321,23 @@ def load_execution_protocol(path=EXECUTION_PROTOCOL_PATH):
             == file_sha256(materialization.MATERIALIZATION_PROTOCOL_PATH),
             "execution v4 materialization identity mismatch",
         )
+        load_pilot_authorization_v4()
+        _require(
+            protocol["pilot_authorization_ref"]
+            == PILOT_AUTHORIZATION_V4_PATH.name
+            and protocol["pilot_authorization_sha256"]
+            == file_sha256(PILOT_AUTHORIZATION_V4_PATH),
+            "execution v4 pilot authorization identity mismatch",
+        )
         governance = {
             "formal_runs_authorized": False,
             "negative_control_runs_authorized": False,
             "paper_result_authorized": False,
-            "pilot_runs_authorized": False,
+            "pilot_runs_authorized": True,
         }
         _require(
-            protocol["status"] == "draft"
+            protocol["protocol_name"] == "B4-PE-I5B-execution-v4"
+            and protocol["status"] == "pilot_authorized"
             and protocol["governance"] == governance
             and protocol["supersedes"]
             == {
@@ -167,7 +350,7 @@ def load_execution_protocol(path=EXECUTION_PROTOCOL_PATH):
                 "recomputed_from_verified_rho_specific_execution_snapshot_"
                 "and_matched_to_materialization_inventory"
             ),
-            "execution v4 draft contract mismatch",
+            "execution v4 pilot contract mismatch",
         )
         inherited = load_execution_protocol(EXECUTION_PROTOCOL_V3_PATH)
         inherited.update(protocol)
@@ -2868,6 +3051,137 @@ def execute_records(records, context, resume=False, retry_failed=False):
     return summary
 
 
+def preflight_authorized_v4_pilot_manifest(manifest_path):
+    """Validate the complete, byte-frozen Pilot manifest without execution."""
+    path = Path(manifest_path)
+    try:
+        payload = path.read_bytes()
+    except OSError as exc:
+        raise SafetyError("authorized Pilot manifest is not readable") from exc
+    authorization = load_pilot_authorization_v4()
+    protocol = load_execution_protocol(EXECUTION_PROTOCOL_V4_PATH)
+    _require(
+        protocol["pilot_authorization_sha256"]
+        == file_sha256(PILOT_AUTHORIZATION_V4_PATH),
+        "Pilot authorization SHA mismatch",
+        SafetyError,
+    )
+    _require(
+        path.name == authorization["pilot_manifest_filename"],
+        "Pilot manifest filename is not authorized",
+        SafetyError,
+    )
+    _require(
+        bytes_sha256(payload) == authorization["pilot_manifest_sha256"],
+        "Pilot manifest byte SHA is not authorized",
+        SafetyError,
+    )
+    _require(
+        payload.endswith(b"\n")
+        and payload.count(b"\n")
+        == authorization["pilot_manifest_case_count"],
+        "Pilot manifest line count is not authorized",
+        SafetyError,
+    )
+    records = manifest.validate_manifest(path)
+    _require(
+        len(records) == authorization["pilot_manifest_case_count"],
+        "Pilot manifest case count is not authorized",
+        SafetyError,
+    )
+    _require(
+        all(
+            record["schema_version"] == 4
+            and record["phase"] == authorization["authorized_phase"]
+            and record["candidate_v4_sha256"]
+            == authorization["candidate_sha256"]
+            and record["manifest_protocol_sha256"]
+            == authorization["manifest_protocol_sha256"]
+            for record in records
+        ),
+        "Pilot manifest record identity is not authorized",
+        SafetyError,
+    )
+    _require(
+        payload == manifest.render_manifest("pilot", manifest.PROTOCOL_V4),
+        "Pilot manifest is not the complete canonical generation",
+        SafetyError,
+    )
+    return records
+
+
+def validate_authorized_v4_runtime_closure(
+    runtime_root,
+    evidence_root,
+    simulator_binary,
+):
+    """Verify all bound external runtime bytes immediately before execution."""
+    authorization = load_pilot_authorization_v4()
+    runtime = Path(runtime_root)
+    evidence = Path(evidence_root)
+    _require(
+        runtime.is_absolute() and evidence.is_absolute(),
+        "v4 runtime roots must be absolute",
+        SafetyError,
+    )
+    _require(
+        runtime.is_dir()
+        and evidence.is_dir()
+        and not runtime.is_symlink()
+        and not evidence.is_symlink(),
+        "v4 runtime roots must be real directories",
+        SafetyError,
+    )
+    expected_simulator = None
+    for name, identity in authorization["runtime_closure"]["artifacts"].items():
+        logical = manifest.validate_relative_path(
+            identity["logical_path"],
+            f"runtime artifact {name}",
+        )
+        path = runtime.joinpath(*PurePosixPath(logical).parts)
+        _require(
+            path.is_file() and not path.is_symlink(),
+            f"runtime artifact {name} is missing or unsafe",
+            SafetyError,
+        )
+        _require(
+            file_sha256(path) == identity["sha256"],
+            f"runtime artifact {name} SHA mismatch",
+            SafetyError,
+        )
+        if name == "simulator":
+            expected_simulator = path
+    _require(
+        expected_simulator is not None
+        and Path(simulator_binary).resolve(strict=True)
+        == expected_simulator.resolve(strict=True),
+        "simulator path is outside the authorized runtime closure",
+        SafetyError,
+    )
+    for name, identity in authorization["runtime_closure"]["evidence"].items():
+        filename = manifest.validate_relative_path(
+            identity["filename"],
+            f"runtime evidence {name}",
+        )
+        _require(
+            PurePosixPath(filename).name == filename,
+            f"runtime evidence {name} filename is not canonical",
+            SafetyError,
+        )
+        path = evidence / filename
+        _require(
+            path.is_file() and not path.is_symlink(),
+            f"runtime evidence {name} is missing or unsafe",
+            SafetyError,
+        )
+        _require(
+            file_sha256(path) == identity["sha256"],
+            f"runtime evidence {name} SHA mismatch",
+            SafetyError,
+        )
+    return authorization["runtime_closure"]
+
+
 def prepare_and_execute(
     manifest_path,
     output_root,
@@ -2875,6 +3189,8 @@ def prepare_and_execute(
     limit=None,
     resume=False,
     retry_failed=False,
+    runtime_closure_root=None,
+    runtime_evidence_root=None,
 ):
     if limit is not None:
         _require(type(limit) is int and limit >= 0, "limit must be non-negative", SafetyError)
@@ -2887,6 +3203,8 @@ def prepare_and_execute(
         limit=limit,
         resume=resume,
         retry_failed=retry_failed,
+        runtime_closure_root=runtime_closure_root,
+        runtime_evidence_root=runtime_evidence_root,
     )
 
 
@@ -2898,8 +3216,10 @@ def execute_validated_cases(
     limit=None,
     resume=False,
     retry_failed=False,
+    runtime_closure_root=None,
+    runtime_evidence_root=None,
 ):
-    """Run cases already accepted by one of the two fixed validators."""
+    """Run cases already accepted by a fixed full-manifest validator."""
     _require(isinstance(records, list) and records, "validated cases missing", SafetyError)
     if limit is not None:
         _require(type(limit) is int and limit >= 0, "limit must be non-negative", SafetyError)
@@ -2910,16 +3230,37 @@ def execute_validated_cases(
         SafetyError,
     )
     schema_version = next(iter(schema_versions))
-    _require(
-        schema_version != 4,
-        "manifest v4 is a draft and campaign execution is not authorized",
-        SafetyError,
-    )
-    execution_protocol_sha256 = (
-        EXECUTION_PROTOCOL_V3_SHA256
-        if schema_version in {3, "b4-pe-integration-smoke-v3"}
-        else EXECUTION_PROTOCOL_SHA256
-    )
+    if schema_version == 4:
+        execution_protocol_sha256 = EXECUTION_PROTOCOL_V4_SHA256
+    elif schema_version in {3, "b4-pe-integration-smoke-v3"}:
+        execution_protocol_sha256 = EXECUTION_PROTOCOL_V3_SHA256
+    else:
+        execution_protocol_sha256 = EXECUTION_PROTOCOL_SHA256
+    if schema_version == 4:
+        _require(
+            limit is None and len(records) == 2400,
+            "partial Pilot manifest is not campaign authorized",
+            SafetyError,
+        )
+        authorized_records = preflight_authorized_v4_pilot_manifest(
+            record_source_path
+        )
+        _require(
+            records == authorized_records,
+            "validated Pilot records differ from the authorized manifest",
+            SafetyError,
+        )
+        _require(
+            runtime_closure_root is not None
+            and runtime_evidence_root is not None,
+            "v4 Pilot execution requires the complete runtime closure",
+            SafetyError,
+        )
+        validate_authorized_v4_runtime_closure(
+            runtime_closure_root,
+            runtime_evidence_root,
+            simulator_binary,
+        )
     context = build_context(
         record_source_path,
         output_root,
@@ -2927,6 +3268,13 @@ def execute_validated_cases(
         execution_protocol_sha256,
     )
     try:
+        if schema_version == 4:
+            _require(
+                context["manifest_sha256"]
+                == load_pilot_authorization_v4()["pilot_manifest_sha256"],
+                "Pilot manifest changed after authorization preflight",
+                SafetyError,
+            )
         selected = records if limit is None else records[:limit]
         return execute_records(selected, context, resume=resume, retry_failed=retry_failed)
     finally:

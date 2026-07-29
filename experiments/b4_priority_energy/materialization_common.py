@@ -111,8 +111,8 @@ def load_materialization_protocol(path=MATERIALIZATION_PROTOCOL_PATH):
     _require(set(protocol) == required, "materialization protocol fields mismatch")
     _require(
         protocol["schema_version"] == 1
-        and protocol["protocol_name"] == "B4-PE-materialization-v1-draft"
-        and protocol["status"] == "draft",
+        and protocol["protocol_name"] == "B4-PE-materialization-v1"
+        and protocol["status"] == "pilot_authorized",
         "materialization protocol identity mismatch",
     )
     _require(
@@ -146,9 +146,9 @@ def load_materialization_protocol(path=MATERIALIZATION_PROTOCOL_PATH):
             "formal_runs_authorized": False,
             "negative_control_runs_authorized": False,
             "paper_result_authorized": False,
-            "pilot_runs_authorized": False,
+            "pilot_runs_authorized": True,
         },
-        "materialization draft governance mismatch",
+        "materialization pilot governance mismatch",
     )
     return protocol
 
@@ -766,7 +766,7 @@ def _validate_records_for_materialization(records):
             and record.get("schema_version") == 4
             and record.get("protocol_name")
             == manifest.PROTOCOL_V4["protocol_name"],
-            "materialization requires manifest v4 draft records",
+            "materialization requires manifest v4 records",
         )
         expected = manifest.build_case(
             record["phase"],
@@ -840,7 +840,7 @@ def _load_admitted_bases(records, root, manifest_sha256):
     _require(
         document["schema_version"] == 1
         and document["protocol_name"]
-        == "B4-PE-base-pool-admission-v1-draft"
+        == "B4-PE-base-pool-admission-v1"
         and document["admission_protocol_sha256"]
         == file_sha256(ADMISSION_PROTOCOL_PATH)
         and document["manifest_file_sha256"] == manifest_sha256
@@ -1143,7 +1143,7 @@ def materialize_records(records, output_root, manifest_sha256):
     protocol_sha = file_sha256(MATERIALIZATION_PROTOCOL_PATH)
     inventory = {
         "schema_version": 1,
-        "protocol_name": "B4-PE-materialization-v1-draft",
+        "protocol_name": PROTOCOL["protocol_name"],
         "materialization_protocol_sha256": protocol_sha,
         "base_pool_admission_protocol_sha256":
             file_sha256(ADMISSION_PROTOCOL_PATH),
@@ -1179,7 +1179,7 @@ def validate_inventory_for_record(document, record, taskset_sha, semantic_hash):
     _require(isinstance(document, dict), "materialization inventory is not an object")
     _require(
         document.get("schema_version") == 1
-        and document.get("protocol_name") == "B4-PE-materialization-v1-draft"
+        and document.get("protocol_name") == PROTOCOL["protocol_name"]
         and document.get("materialization_protocol_sha256")
         == file_sha256(MATERIALIZATION_PROTOCOL_PATH),
         "materialization inventory protocol mismatch",
