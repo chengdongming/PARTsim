@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor
+from copy import deepcopy
 from dataclasses import dataclass
 from decimal import Decimal
 from fractions import Fraction
@@ -12,7 +13,10 @@ import resource
 import time
 from typing import Any, Callable, Dict, Iterable, Mapping, Sequence
 
+import yaml
+
 import asap_block_rta_v9_3 as rta_core
+import asap_block_rta_v9_3_methods as method_registry
 import asap_block_rta_v9_3_taskset as rta_adapter
 
 from . import exact_energy
@@ -22,46 +26,64 @@ from .constrained_taskset_identity import (
     build_taskset_identity_certificate,
 )
 from .result_writer import atomic_write_json
-from .rta4_formal_authorization import (
-    RTA4_TEST_AUTHORIZATION_SCHEMA, validate_authorization_document,
-    verify_live_authorization,
-)
 from .rta4_formal_config import canonical_json, domain_hash
-from .rta4_formal_freeze import (
-    prepared_scientific_config, validate_prepared_config,
-)
 from .rta4_formal_environment import (
     load_strict_json, validate_bound_source_file, validate_command_invocation,
-)
-from .rta4_formal_manifest import (
-    FORMAL_AUTHORIZED, RTA4_CONFIG_CHECKPOINT, RTA4_PLAN_MANIFEST,
-    SYNTHETIC_AUTHORIZED,
-)
-from .rta4_formal_pipeline import (
-    RTA4FormalRunner, dispatch_formal_rta,
-    formal_analysis_identity, mechanism_telemetry_rows,
-)
-from .rta4_formal_plan import (
-    FormalPlanRecord, formal_service_identity, iter_formal_plan,
 )
 from .rta4_formal_store import RTA4FormalTasksetStore
 from .rta4_formal_schema import FORMAL_TABLES, RTA4_FORMAL_SCHEMA_MANIFEST
 from .rta4_formal_store import (
     FORMAL_TASKSET_STORE_MANIFEST, formal_taskset_store_identity,
 )
-from .rta4_formal_validation import (
-    RTA4_CHECKPOINT_DOMAIN, RTA4_CHECKPOINT_FILENAME,
-    RTA4_CHECKPOINT_VERSION,
-    ValidatedFormalClosure, refresh_validated_closure,
-    validate_formal_checkpoint, validate_formal_run_closure,
+from .rta4_shared_energy import (
+    FrozenMapping, SharedEnergyRunContext, TaskEnergyMaterial,
+    VerifiedSolarServiceMaterialV2, core3_shared_energy_projection,
+    project_core3_shared_energy_payload,
+    validate_core3_shared_energy_projection,
 )
-from .rta4_formal_writer import (
-    FORMAL_AUTHORIZATION_EVIDENCE, FORMAL_RUN_METADATA,
-    FORMAL_TERMINAL_DIRECTORY, RTA4FormalResultWriter,
-)
+from .rta4_taskset_v2 import TasksetIdentityCertificateV2
 
 
 RTA4_GENERATION_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_PRODUCTION_GENERATION:v1"
+RTA4_CHECKPOINT_VERSION = "ASAP_BLOCK_V9_3_RTA4_FORMAL_CHECKPOINT_V2"
+RTA4_CHECKPOINT_FILENAME = "formal_checkpoint.json"
+RTA4_CHECKPOINT_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_FORMAL_CHECKPOINT:v2"
+_V1_RUNTIME_LOADED = False
+
+
+def _load_v1_runtime() -> None:
+    """Load the legacy execution stack only for an actual V1 operation."""
+
+    global _V1_RUNTIME_LOADED
+    if _V1_RUNTIME_LOADED:
+        return
+    from .rta4_formal_authorization import (
+        RTA4_TEST_AUTHORIZATION_SCHEMA, validate_authorization_document,
+        verify_live_authorization,
+    )
+    from .rta4_formal_freeze import (
+        prepared_scientific_config, validate_prepared_config,
+    )
+    from .rta4_formal_manifest import (
+        FORMAL_AUTHORIZED, RTA4_CONFIG_CHECKPOINT, RTA4_PLAN_MANIFEST,
+        SYNTHETIC_AUTHORIZED,
+    )
+    from .rta4_formal_pipeline import (
+        RTA4FormalRunner, formal_analysis_identity,
+    )
+    from .rta4_formal_plan import (
+        FormalPlanRecord, formal_service_identity, iter_formal_plan,
+    )
+    from .rta4_formal_validation import (
+        ValidatedFormalClosure, refresh_validated_closure,
+        validate_formal_checkpoint, validate_formal_run_closure,
+    )
+    from .rta4_formal_writer import (
+        FORMAL_AUTHORIZATION_EVIDENCE, FORMAL_RUN_METADATA,
+        FORMAL_TERMINAL_DIRECTORY, RTA4FormalResultWriter,
+    )
+    globals().update(locals())
+    _V1_RUNTIME_LOADED = True
 
 
 class RTA4ExecutionError(RuntimeError):
@@ -93,6 +115,7 @@ def _plain_material(value: Any) -> Any:
 def _certificate_from_closure(
     closure: ValidatedFormalClosure, taskset_id: str,
 ) -> TasksetIdentityCertificate:
+    _load_v1_runtime()
     rows = {
         row["taskset_id"]: row for row in closure.table("formal_tasksets.csv")
     }
@@ -116,7 +139,9 @@ class ProductionTasksetProvider:
         self, prepared_config: Mapping[str, Any], *,
         source_closures: Mapping[str, ValidatedFormalClosure] | None = None,
         generator_factory: Callable[..., Any] | None = None,
+        source_task_workloads: Mapping[str, Sequence[str]] | None = None,
     ) -> None:
+        _load_v1_runtime()
         self.prepared = validate_prepared_config(prepared_config)
         self.config = prepared_scientific_config(self.prepared)
         self.core = self.prepared["core"]
@@ -125,6 +150,11 @@ class ProductionTasksetProvider:
         self._tasksets: Dict[str, TasksetIdentityCertificate] = {}
         self._skeletons: Dict[str, tuple[GenerationRequest, tuple[SkeletonTask, ...]]] = {}
         self._source_slot_index: Dict[str, Dict[str, str]] = {}
+        self._skeleton_workloads: Dict[str, tuple[str, ...]] = {}
+        self._task_workloads: Dict[str, tuple[str, ...]] = {
+            str(key): tuple(value)
+            for key, value in (source_task_workloads or {}).items()
+        }
         for source_core, closure in self.sources.items():
             index: Dict[str, str] = {}
             for table in ("formal_rta_requests.csv", "formal_simulation_runs.csv"):
@@ -257,6 +287,7 @@ class ProductionTasksetProvider:
             else 1
         )
         skeleton = []
+        workloads = []
         for priority_rank, (source_index, task) in enumerate(ordered):
             wcet = int(task["execution_time"]) * time_scale
             period = int(task["iat"]) * time_scale
@@ -268,8 +299,20 @@ class ProductionTasksetProvider:
                 f"tau-{source_index:02d}", priority_rank,
                 wcet, period, power,
             ))
+            workload = task.get("workload")
+            if not isinstance(workload, str) or not workload:
+                raise RTA4ExecutionError(
+                    "generator returned no canonical task workload"
+                )
+            workloads.append(workload)
         result = (request, tuple(skeleton))
         self._skeletons[slot] = result
+        if not hasattr(self, "_skeleton_workloads"):
+            # Historical pilot wrappers intentionally bypassed this class's
+            # initializer; keep that V1 subclass compatible while V2 records
+            # the workload vector.
+            self._skeleton_workloads = {}
+        self._skeleton_workloads[slot] = tuple(workloads)
         return result
 
     def __call__(self, record: FormalPlanRecord) -> TasksetIdentityCertificate:
@@ -295,8 +338,27 @@ class ProductionTasksetProvider:
             power_scale=Fraction(str(record.material.get("power_scale", "1"))),
         )
         certificate.validate()
+        if not hasattr(self, "_task_workloads"):
+            self._task_workloads = {}
+        self._task_workloads[certificate.taskset_id] = (
+            self._skeleton_workloads[str(record.taskset_skeleton_slot_id)]
+        )
         self._tasksets[slot] = certificate
         return certificate
+
+    def workloads_for(
+        self, record: FormalPlanRecord,
+        certificate: TasksetIdentityCertificate | None = None,
+    ) -> tuple[str, ...]:
+        """Return generator-frozen workloads; never infer them from power/W."""
+
+        bound = self(record) if certificate is None else certificate
+        workloads = getattr(self, "_task_workloads", {}).get(bound.taskset_id)
+        if workloads is None or len(workloads) != len(bound.tasks):
+            raise RTA4ExecutionError(
+                "taskset has no complete frozen workload vector"
+            )
+        return workloads
 
 
 def _rss_bytes() -> int:
@@ -333,6 +395,7 @@ def _adapter_result(
     record: FormalPlanRecord, certificate: TasksetIdentityCertificate,
     config: Mapping[str, Any], timeout_seconds: int,
 ) -> tuple[Mapping[str, Any], Any]:
+    _load_v1_runtime()
     tasks = tuple(
         rta_core.V93Task(
             task.task_id, task.wcet, task.relative_deadline,
@@ -422,10 +485,441 @@ def _adapter_result(
     return mapped, result
 
 
+def _dispatch_formal_rta_v2(
+    *, analysis_id: str, method: str,
+    analysis_input: rta_adapter.TasksetAnalysisInput,
+) -> Any:
+    """Dispatch V2 through the same public eight-method adapter, V1-free."""
+
+    return rta_adapter.analyze_method_taskset_v9_3(
+        analysis_id=analysis_id,
+        method_spec=method_registry.method_spec_v9_3(method),
+        analysis_input=analysis_input,
+    )
+
+
+def _mechanism_telemetry_rows_v2(result: Any) -> tuple[Dict[str, Any], ...]:
+    """Project adapter-validated telemetry without loading the V1 pipeline."""
+
+    rows = []
+    method = result.method_id.value
+    for task_result in result.task_results:
+        adapter_fields = {
+            "impossible_prefix_count": "impossible_prefix_count",
+            "flow_call_count": "flow_solver_calls",
+            "flow_node_count": "flow_node_count",
+            "flow_edge_count": "flow_edge_count",
+            "z_branch_count": "z_branch_count",
+            "flow_infeasible_count": "flow_infeasible_count",
+            "safety_predicate_calls": "phase_safe_calls",
+        }
+
+        def value(name: str) -> Any:
+            observed = getattr(
+                task_result, adapter_fields.get(name, name), None,
+            )
+            return "NA" if observed is None else observed
+
+        sequence = task_result.witness_sequence
+        sequence_kind = (
+            "NA" if not sequence else
+            "CONSTANT" if len(set(sequence)) == 1 else "NONCONSTANT"
+        )
+        available = any(value(name) != "NA" for name in adapter_fields)
+        rows.append({
+            "analysis_id": result.analysis_id,
+            "method": method,
+            "task_id": task_result.task_id,
+            "priority_rank": task_result.priority_rank,
+            "telemetry_status": (
+                "AVAILABLE" if available else "NOT_APPLICABLE_OR_UNAVAILABLE"
+            ),
+            "impossible_prefix_count": value("impossible_prefix_count"),
+            "empty_phase_set_count": value("empty_phase_set_count"),
+            "strict_ph_lt_loc_checkpoints": value(
+                "strict_ph_lt_loc_checkpoints"
+            ),
+            "flow_call_count": value("flow_call_count"),
+            "flow_node_count": value("flow_node_count"),
+            "flow_edge_count": value("flow_edge_count"),
+            "z_branch_count": value("z_branch_count"),
+            "flow_optimal_count": "NA",
+            "flow_infeasible_count": value("flow_infeasible_count"),
+            "flow_timeout_count": value("flow_timeout_count"),
+            "flow_internal_count": value("flow_internal_count"),
+            "ph_no_common_h_but_seq_exists": value(
+                "ph_no_common_h_but_seq_exists"
+            ),
+            "sequence_kind": sequence_kind,
+            "sequence_length": len(sequence) if sequence else "NA",
+            "distinct_h_count": len(set(sequence)) if sequence else "NA",
+            "last_h": sequence[-1] if sequence else "NA",
+            "strict_seq_lt_ph": value("strict_seq_lt_ph"),
+            "safety_predicate_calls": value("safety_predicate_calls"),
+            "cache_hits": value("cache_hits"),
+            "cache_misses": value("cache_misses"),
+            "cache_hit_rate": value("cache_hit_rate"),
+        })
+    return tuple(rows)
+
+
+# Retain the established adapter test/injection surface without importing the
+# V1 pipeline.  Both execution versions resolve these names at call time.
+dispatch_formal_rta = _dispatch_formal_rta_v2
+mechanism_telemetry_rows = _mechanism_telemetry_rows_v2
+
+
+def _adapter_result_v2(
+    record: Any,
+    certificate: TasksetIdentityCertificateV2,
+    config: Mapping[str, Any],
+    timeout_seconds: int,
+    task_energy: TaskEnergyMaterial,
+    service: VerifiedSolarServiceMaterialV2,
+) -> tuple[Mapping[str, Any], Any]:
+    """V2 adapter: consume only frozen J/tick and verified beta materials."""
+
+    if type(task_energy) is not TaskEnergyMaterial:
+        raise RTA4ExecutionError("V2 requires a frozen task-energy material")
+    if type(service) is not VerifiedSolarServiceMaterialV2:
+        raise RTA4ExecutionError("V2 requires a verified service material")
+    if (
+        task_energy.taskset_id != certificate.taskset_id
+        or task_energy.production_build_manifest_identity
+        != service.production_build_manifest_identity
+    ):
+        raise RTA4ExecutionError("V2 shared-energy material binding mismatch")
+    tasks = tuple(
+        rta_core.V93Task(
+            task.task_id, task.wcet, task.relative_deadline, task.period,
+            task_energy.energy_for_task(index, task.task_id),
+        )
+        for index, task in enumerate(certificate.tasks)
+    )
+    required = max(task.deadline for task in tasks) - 1
+    if required > service.horizon.analysis_service_horizon_ticks:
+        raise RTA4ExecutionError("verified beta does not cover the RTA query horizon")
+    beta = service.beta
+    service_prefix = tuple(beta(length) for length in range(required + 1))
+    e0 = Fraction(str(record.material["exact_e0"]))
+    adapter_input_id = exact_energy.exact_input_identity(
+        task_powers=((task.name, task.power) for task in tasks),
+        e0=e0,
+        service_prefix=service_prefix,
+    )
+    numeric_sha = str(config["identity"]["numeric_contract_sha256"])
+    theory_sha = str(config["identity"]["theory_document_sha256"])
+    analysis_id = domain_hash(
+        "ASAP_BLOCK:V9.3:RTA4_FORMAL_ANALYSIS:v2",
+        {
+            "profile": config["experiment_contract"]["profile"],
+            "taskset_id": certificate.taskset_id,
+            "task_energy_material_identity": (
+                task_energy.task_energy_material_identity
+            ),
+            "service_material_identity": service.service_material_identity,
+            "beta_material_identity": service.beta_material_identity,
+            "method": record.material["method"],
+            "exact_e0": _fraction_text(e0),
+            "numeric_contract_sha256": numeric_sha,
+            "theory_document_sha256": theory_sha,
+            "timeout_contract": config["execution"]["timeout_contract"],
+            "exact_input_identity": adapter_input_id,
+            "production_build_manifest_identity": (
+                service.production_build_manifest_identity
+            ),
+        },
+    )
+    context = rta_adapter.DependencyContext(
+        taskset_identity=certificate.taskset_id,
+        task_definitions_identity=task_energy.task_energy_material_identity,
+        priority_order_identity=certificate.taskset_skeleton_id,
+        e0_canonical_identity=_fraction_text(e0),
+        service_curve_identity=service.service_material_identity,
+        power_vector_identity=task_energy.task_energy_material_identity,
+        numerical_mode="EXACT_RATIONAL",
+        numerical_scale=None,
+        theory_document_sha256=theory_sha,
+        fixed_carry_in_interface_sha256=(
+            rta_adapter.FIXED_CARRY_IN_INTERFACE_SHA256
+        ),
+        formal_contract_identity=config["experiment_contract"]["profile"],
+        # The V2 outer contract is bound by ``analysis_id`` and every result
+        # row.  The unchanged theorem kernel interface must retain the exact
+        # G1 numeric contract it independently validates.
+        numeric_contract_sha256=exact_energy.NUMERIC_CONTRACT_SHA256,
+        source_numeric_model=exact_energy.SOURCE_NUMERIC_MODEL,
+        demand_rounding_mode=exact_energy.DEMAND_ROUNDING_MODE,
+        supply_rounding_mode=exact_energy.SUPPLY_ROUNDING_MODE,
+        e0_rounding_mode=exact_energy.E0_ROUNDING_MODE,
+        exact_input_identity=adapter_input_id,
+        float_decision_path=False,
+    )
+    result = dispatch_formal_rta(
+        analysis_id=analysis_id,
+        method=record.material["method"],
+        analysis_input=rta_adapter.TasksetAnalysisInput(
+            tasks=tasks,
+            processors=certificate.processors,
+            e0=e0,
+            beta=beta,
+            dependency_context=context,
+            timeout_seconds=timeout_seconds,
+        ),
+    )
+    task_rows = []
+    for row in result.task_results:
+        solver = row.solver_status.value
+        if solver == "INTERNAL_CONFORMANCE_FAILURE":
+            solver = "INTERNAL_ERROR"
+        task_rows.append({
+            "task_solver_status": solver,
+            "task_certification_status": row.certification_status.value,
+            "candidate_response_time": (
+                "NA" if row.candidate_response_time is None
+                else row.candidate_response_time
+            ),
+            "checked_w_count": row.checked_w_count,
+            "checked_q_count": row.checked_q_count,
+            "checked_h_count": row.checked_h_count,
+            "failure_reason": row.failure_reason or "NA",
+            "witness": list(row.witness_sequence),
+        })
+    solver_status = result.solver_status.value
+    if solver_status == "INTERNAL_CONFORMANCE_FAILURE":
+        solver_status = "INTERNAL_ERROR"
+    return {
+        "solver_status": solver_status,
+        "taskset_certification_status": result.analysis_certification_status.value,
+        "taskset_proven": result.taskset_proven,
+        "failure_reason": result.failure_reason or "NA",
+        "fallback_used": False,
+        "task_results": task_rows,
+        "mechanism_rows": mechanism_telemetry_rows(result),
+        "production_build_manifest_identity": (
+            service.production_build_manifest_identity
+        ),
+        "task_energy_material_identity": task_energy.task_energy_material_identity,
+        "service_material_identity": service.service_material_identity,
+        "beta_material_identity": service.beta_material_identity,
+        "analysis_id": analysis_id,
+    }, result
+
+
+class ProductionRTAExecutorV2:
+    """Retrying V2 adapter over a parent-materialized immutable run context."""
+
+    def __init__(
+        self, config: Mapping[str, Any], *, run_context: SharedEnergyRunContext,
+        timeout_contract: Mapping[str, Mapping[str, int]],
+        memory_limit_bytes: int | None = None,
+    ) -> None:
+        from .rta4_formal_config_v2 import validate_rta4_formal_config_v2
+
+        self.config = validate_rta4_formal_config_v2(config)
+        if type(run_context) is not SharedEnergyRunContext or not run_context.formal_ready:
+            raise RTA4ExecutionError(
+                "formal V2 executor requires a live-validated run context"
+            )
+        if not isinstance(timeout_contract, Mapping) or not timeout_contract:
+            raise RTA4ExecutionError("formal V2 executor requires retry budgets")
+        methods: Dict[str, FrozenMapping] = {}
+        for method, row in timeout_contract.items():
+            if not isinstance(row, Mapping) or set(row) != {
+                "initial_timeout_seconds", "retry_timeout_seconds",
+                "maximum_attempts",
+            }:
+                raise RTA4ExecutionError("formal V2 timeout contract mismatch")
+            initial = row["initial_timeout_seconds"]
+            retry = row["retry_timeout_seconds"]
+            attempts = row["maximum_attempts"]
+            if (
+                type(initial) is not int or initial < 0
+                or type(retry) is not int or retry < max(1, initial)
+                or type(attempts) is not int or attempts not in {1, 2}
+            ):
+                raise RTA4ExecutionError("formal V2 timeout bounds are invalid")
+            methods[str(method)] = FrozenMapping(dict(row))
+        if memory_limit_bytes is not None and (
+            type(memory_limit_bytes) is not int or memory_limit_bytes < 1
+        ):
+            raise RTA4ExecutionError("formal V2 memory limit is invalid")
+        self.timeout_contract = FrozenMapping(methods)
+        self.memory_limit_bytes = memory_limit_bytes
+        self.production_build_manifest_identity = (
+            run_context.production_build_manifest_identity
+        )
+        self.task_energy_materials = run_context.task_energy_materials
+        self.service_materials = run_context.service_materials
+        self.record_bindings = run_context.record_bindings
+
+    def __call__(
+        self, record: Any, certificate: TasksetIdentityCertificateV2,
+    ) -> Mapping[str, Any]:
+        if type(certificate) is not TasksetIdentityCertificateV2:
+            raise RTA4ExecutionError("formal V2 executor rejects a V1 certificate")
+        binding = self.record_bindings.get(record.record_id)
+        if not isinstance(binding, Mapping) or set(binding) != {
+            "task_energy_material_identity", "service_material_identity",
+        }:
+            raise RTA4ExecutionError("V2 record has no frozen shared-energy binding")
+        task_energy = self.task_energy_materials.get(
+            str(binding["task_energy_material_identity"])
+        )
+        service = self.service_materials.get(
+            str(binding["service_material_identity"])
+        )
+        if task_energy is None or service is None:
+            raise RTA4ExecutionError("V2 worker received an incomplete material registry")
+        if (
+            task_energy.production_build_manifest_identity
+            != self.production_build_manifest_identity
+            or service.production_build_manifest_identity
+            != self.production_build_manifest_identity
+        ):
+            raise RTA4ExecutionError("V2 worker build identity drift")
+        method = str(record.material["method"])
+        timeout = self.timeout_contract.get(method)
+        if timeout is None:
+            raise RTA4ExecutionError("V2 method has no frozen timeout contract")
+        budgets = (
+            timeout["initial_timeout_seconds"],
+            timeout["retry_timeout_seconds"],
+        )[:timeout["maximum_attempts"]]
+        attempts = []
+        mapped: Mapping[str, Any] | None = None
+        for attempt_index, budget in enumerate(budgets):
+            before_rss = _rss_bytes()
+            wall_started = time.perf_counter()
+            cpu_started = time.process_time()
+            try:
+                mapped, _raw = _adapter_result_v2(
+                    record, certificate, self.config, budget,
+                    task_energy, service,
+                )
+                status = str(mapped["solver_status"])
+                classification = (
+                    "UNIFIED_RTA_ADAPTER_TIMEOUT"
+                    if status == "TIMEOUT" else "NONE"
+                )
+                analysis_identity = str(mapped["analysis_id"])
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except Exception as exc:
+                status = "INTERNAL_ERROR"
+                classification = f"{type(exc).__name__}: {exc}"[:500]
+                analysis_identity = domain_hash(
+                    "ASAP_BLOCK:V9.3:RTA4_FAILED_ANALYSIS:v2", {
+                        "plan_record_identity": record.record_id,
+                        "taskset_identity": certificate.taskset_id,
+                        "task_energy_material_identity": (
+                            task_energy.task_energy_material_identity
+                        ),
+                        "service_material_identity": (
+                            service.service_material_identity
+                        ),
+                        "method": method,
+                        "timeout_seconds": budget,
+                    },
+                )
+                mapped = self._internal_result_v2(
+                    certificate, exc, task_energy=task_energy,
+                    service=service, analysis_identity=analysis_identity,
+                )
+            wall = time.perf_counter() - wall_started
+            cpu = time.process_time() - cpu_started
+            peak = max(before_rss, _rss_bytes())
+            if self.memory_limit_bytes is not None and peak > self.memory_limit_bytes:
+                exc = RTA4ExecutionError("formal V2 worker memory limit exceeded")
+                status = "INTERNAL_ERROR"
+                classification = "RTA_EXECUTOR_MEMORY_BUDGET"
+                mapped = self._internal_result_v2(
+                    certificate, exc, task_energy=task_energy,
+                    service=service, analysis_identity=analysis_identity,
+                )
+            attempts.append(FrozenMapping({
+                "attempt_index": attempt_index,
+                "timeout_seconds": budget,
+                "status": status,
+                "runtime_wall_seconds": format(wall, ".17g"),
+                "runtime_cpu_seconds": format(cpu, ".17g"),
+                "peak_rss_bytes": peak,
+                "error_classification": classification,
+                "analysis_identity": analysis_identity,
+                "taskset_identity": certificate.taskset_id,
+                "task_energy_material_identity": (
+                    task_energy.task_energy_material_identity
+                ),
+                "service_material_identity": service.service_material_identity,
+                "beta_material_identity": service.beta_material_identity,
+                "production_build_manifest_identity": (
+                    self.production_build_manifest_identity
+                ),
+            }))
+            if status != "TIMEOUT":
+                break
+        assert mapped is not None
+        return FrozenMapping({
+            **dict(mapped),
+            "attempts": tuple(attempts),
+            "timeout_seconds": attempts[-1]["timeout_seconds"],
+            "runtime_wall_seconds": format(sum(
+                (Decimal(row["runtime_wall_seconds"]) for row in attempts),
+                Decimal(),
+            ), "f"),
+            "runtime_cpu_seconds": format(sum(
+                (Decimal(row["runtime_cpu_seconds"]) for row in attempts),
+                Decimal(),
+            ), "f"),
+            "peak_rss_bytes": max(int(row["peak_rss_bytes"]) for row in attempts),
+        })
+
+    @staticmethod
+    def _internal_result_v2(
+        certificate: TasksetIdentityCertificateV2, exc: Exception, *,
+        task_energy: TaskEnergyMaterial,
+        service: VerifiedSolarServiceMaterialV2,
+        analysis_identity: str,
+    ) -> Mapping[str, Any]:
+        reason = f"{type(exc).__name__}: {exc}"[:500]
+        task_rows = tuple({
+            "task_solver_status": (
+                "INTERNAL_ERROR" if index == 0
+                else "NOT_EVALUATED_AFTER_PREFIX_FAILURE"
+            ),
+            "task_certification_status": "NOT_CERTIFIED",
+            "candidate_response_time": "NA",
+            "checked_w_count": 0,
+            "checked_q_count": 0,
+            "checked_h_count": 0,
+            "failure_reason": reason if index == 0 else "prefix failure",
+            "witness": (),
+        } for index, _task in enumerate(certificate.tasks))
+        return FrozenMapping({
+            "solver_status": "INTERNAL_ERROR",
+            "taskset_certification_status": "NOT_CERTIFIED_TASKSET",
+            "taskset_proven": False,
+            "failure_reason": reason,
+            "fallback_used": False,
+            "task_results": task_rows,
+            "mechanism_rows": (),
+            "production_build_manifest_identity": (
+                service.production_build_manifest_identity
+            ),
+            "task_energy_material_identity": (
+                task_energy.task_energy_material_identity
+            ),
+            "service_material_identity": service.service_material_identity,
+            "beta_material_identity": service.beta_material_identity,
+            "analysis_id": analysis_identity,
+        })
+
+
 class ProductionRTAExecutor:
     """Invoke only the public unified adapter and retain every retry attempt."""
 
     def __init__(self, prepared_config: Mapping[str, Any]) -> None:
+        _load_v1_runtime()
         self.prepared = validate_prepared_config(prepared_config)
         self.config = prepared_scientific_config(self.prepared)
 
@@ -546,6 +1040,264 @@ class ProductionRTAExecutor:
         }
 
 
+def build_formal_release_projection_v2(
+    certificate: TasksetIdentityCertificateV2, release_mode: str,
+) -> tuple[Any, Any, tuple[Mapping[str, Any], ...]]:
+    """Project a W-free certificate through the frozen PR-C release contract."""
+
+    if type(certificate) is not TasksetIdentityCertificateV2:
+        raise RTA4ExecutionError("V2 release projection rejects a V1 certificate")
+    from .release_applicability import (
+        RELEASE_HORIZON, RELEASE_MODES, ReleaseObservationWindow,
+        ReleaseOffset, ReleaseProjection, _release_projection_id,
+        _release_vector_hash, derive_release_offset,
+    )
+
+    if release_mode not in RELEASE_MODES:
+        raise RTA4ExecutionError("unknown V2 release mode")
+    offsets = tuple(
+        ReleaseOffset(
+            task.task_id, task.priority_rank, task.period,
+            derive_release_offset(
+                taskset_skeleton_id=certificate.taskset_skeleton_id,
+                task_id=task.task_id, priority_rank=task.priority_rank,
+                period=task.period, release_mode=release_mode,
+            ),
+        )
+        for task in certificate.tasks
+    )
+    vector = _release_vector_hash(
+        certificate.taskset_skeleton_id, release_mode, offsets,
+    )
+    projection = ReleaseProjection(
+        certificate.taskset_skeleton_id, certificate.taskset_id,
+        release_mode, offsets, vector,
+        _release_projection_id(certificate.taskset_id, vector),
+    )
+    maximum = max(task.relative_deadline for task in certificate.tasks)
+    window = ReleaseObservationWindow(
+        RELEASE_HORIZON, maximum, RELEASE_HORIZON + maximum,
+    )
+    payload = tuple({
+        "task_id": task.task_id,
+        "priority_rank": task.priority_rank,
+        "C": task.wcet,
+        "D": task.relative_deadline,
+        "T": task.period,
+        "arrival_offset": offset.arrival_offset,
+        "ph": offset.arrival_offset,
+    } for task, offset in zip(certificate.tasks, offsets))
+    return projection, window, payload
+
+
+class ProductionSimulationExecutorV2:
+    """CORE-3 executor bound to the V2 J/tick projection before simulation."""
+
+    def __init__(
+        self, config: Mapping[str, Any], *, run_context: SharedEnergyRunContext,
+        production_manifest: Mapping[str, Any],
+        system_config_path: Path | str, energy_support_path: Path | str,
+        output_root: Path | str, simulation_timeout_seconds: int,
+    ) -> None:
+        from .rta4_formal_config_v2 import validate_rta4_formal_config_v2
+
+        self.config = validate_rta4_formal_config_v2(config, expected_core="CORE-3")
+        if type(run_context) is not SharedEnergyRunContext or not run_context.formal_ready:
+            raise RTA4ExecutionError(
+                "formal CORE-3 V2 executor requires a live-validated context"
+            )
+        if (
+            not isinstance(production_manifest, Mapping)
+            or production_manifest.get("manifest_id")
+            != run_context.production_build_manifest_identity
+        ):
+            raise RTA4ExecutionError("CORE-3 V2 manifest/context mismatch")
+        try:
+            binary = Path(
+                str(production_manifest["simulator"]["binary"]["path"])
+            ).resolve(strict=True)
+            binary_sha = str(
+                production_manifest["simulator"]["binary"]["sha256"]
+            )
+        except Exception as exc:
+            raise RTA4ExecutionError("CORE-3 V2 simulator binding is absent") from exc
+        if hashlib.sha256(binary.read_bytes()).hexdigest() != binary_sha:
+            raise RTA4ExecutionError("CORE-3 V2 simulator binary drift")
+        if (
+            type(simulation_timeout_seconds) is not int
+            or simulation_timeout_seconds < 1
+        ):
+            raise RTA4ExecutionError("CORE-3 V2 simulation timeout is invalid")
+        self.simulator_binary = str(binary)
+        self.system_config_path = Path(system_config_path).resolve(strict=True)
+        self.energy_support_path = Path(energy_support_path).resolve(strict=True)
+        self.output_root = Path(output_root).resolve()
+        self.simulation_timeout_seconds = simulation_timeout_seconds
+        try:
+            document = yaml.safe_load(
+                self.energy_support_path.read_text(encoding="utf-8")
+            )
+            energy = document.get("energy", document)
+        except Exception as exc:
+            raise RTA4ExecutionError("CORE-3 V2 support cannot be loaded") from exc
+        if not isinstance(energy, Mapping):
+            raise RTA4ExecutionError("CORE-3 V2 support energy mapping is absent")
+        self.energy_config = FrozenMapping(deepcopy(dict(energy)))
+        self.production_build_manifest_identity = (
+            run_context.production_build_manifest_identity
+        )
+        self.task_energy_materials = run_context.task_energy_materials
+        self.service_materials = run_context.service_materials
+        self.record_bindings = run_context.record_bindings
+
+    def prepare(
+        self, record: Any, certificate: TasksetIdentityCertificateV2,
+    ) -> tuple[Any, Any, tuple[Mapping[str, Any], ...], Mapping[str, Any], Any, Any]:
+        if type(certificate) is not TasksetIdentityCertificateV2:
+            raise RTA4ExecutionError("CORE-3 V2 rejects a V1 certificate")
+        binding = self.record_bindings.get(record.record_id)
+        if not isinstance(binding, Mapping):
+            raise RTA4ExecutionError("CORE-3 V2 record binding is absent")
+        task_energy = self.task_energy_materials.get(
+            str(binding.get("task_energy_material_identity"))
+        )
+        service = self.service_materials.get(
+            str(binding.get("service_material_identity"))
+        )
+        if (
+            type(task_energy) is not TaskEnergyMaterial
+            or type(service) is not VerifiedSolarServiceMaterialV2
+        ):
+            raise RTA4ExecutionError("CORE-3 V2 shared material is absent")
+        shared_projection = core3_shared_energy_projection(
+            task_energy=task_energy, service=service,
+        )
+        validate_core3_shared_energy_projection(
+            shared_projection, task_energy=task_energy, service=service,
+        )
+        release, window, base_payload = build_formal_release_projection_v2(
+            certificate, str(record.material["release_mode"]),
+        )
+        payload = project_core3_shared_energy_payload(
+            certificate, base_payload, task_energy,
+        )
+        if any(
+            "actual_power" in row
+            or Fraction(str(row["P"]))
+            != task_energy.entries[index].energy_j_per_tick
+            for index, row in enumerate(payload)
+        ):
+            raise RTA4ExecutionError("CORE-3 V2 payload is not canonical J/tick")
+        if window.observation_horizon > service.horizon.service_material_horizon_ticks:
+            raise RTA4ExecutionError("CORE-3 V2 service horizon is insufficient")
+        return release, window, payload, FrozenMapping(shared_projection), task_energy, service
+
+    def __call__(
+        self, record: Any, certificate: TasksetIdentityCertificateV2,
+    ) -> Mapping[str, Any]:
+        from .config import fraction_text
+        from .simulation_engine import (
+            construct_paired_harvest_trace, run_paired_simulation,
+        )
+        from .simulation_result import SimulationStatus
+
+        release, window, payload, shared, task_energy, service = self.prepare(
+            record, certificate,
+        )
+        energy = deepcopy(dict(self.energy_config))
+        service_curve = deepcopy(dict(energy["service_curve"]))
+        service_curve["solar_scale"] = fraction_text(service.solar_scale)
+        energy["service_curve"] = service_curve
+        energy["simulation_initial_battery"] = record.material[
+            "physical_initial_energy"
+        ]
+        energy["battery_capacity"] = record.material["battery_capacity"]
+        simulation_identity = domain_hash(
+            "ASAP_BLOCK:V9.3:RTA4_SIMULATION:v2", {
+                "execution_identity": record.execution_id,
+                "release_projection_identity": release.release_projection_id,
+                "core3_shared_energy_projection_identity": shared[
+                    "core3_shared_energy_projection_identity"
+                ],
+                "applicability_track": record.material["applicability_track"],
+                "battery_model": record.material["battery_model"],
+                "initial_energy": record.material["physical_initial_energy"],
+                "battery_capacity": record.material["battery_capacity"],
+            },
+        )
+        simulation = {
+            "simulator_bin": self.simulator_binary,
+            "horizon": window.observation_horizon,
+            "maximum_horizon": window.observation_horizon,
+            "horizon_extension_policy": "none",
+            "trace_mode": "semantic",
+            "timeout_seconds": self.simulation_timeout_seconds,
+            "warmup": 0,
+            "minimum_jobs_per_task": 0,
+            "trace_on_failure": True,
+            "retain_trace": True,
+        }
+        execution = run_paired_simulation(
+            simulation_id_value=simulation_identity,
+            base_system_path=self.system_config_path,
+            run_root=self.output_root / "bounded_core3_simulations_v2",
+            task_payload=payload, taskset_hash=certificate.taskset_hash,
+            processors=certificate.processors,
+            exact_e0=Fraction(record.material["physical_initial_energy"]),
+            energy_config=energy, simulation_config=simulation,
+        )
+        if execution.result.status not in {
+            SimulationStatus.PASS_OBSERVED, SimulationStatus.DEADLINE_MISS,
+        }:
+            raise RTA4ExecutionError(
+                "CORE-3 V2 simulator did not yield a complete observation: "
+                f"{execution.result.status.value}:{execution.result.reason}"
+            )
+        observed_trace = construct_paired_harvest_trace(
+            execution.system_config_path, window.observation_horizon,
+        )
+        if observed_trace != service.harvest_j_per_tick[:window.observation_horizon]:
+            raise RTA4ExecutionError("CORE-3 V2 simulation/service trace drift")
+        jobs = tuple({
+            "task_id": str(job.task_id),
+            "release_time": job.release,
+            "completion_time": job.completion,
+            "deadline_missed": job.deadline_miss,
+        } for job in execution.result.jobs)
+        result_base = {
+            "simulation_status": "COMPLETED",
+            "simulation_identity": simulation_identity,
+            "core3_shared_energy_projection_identity": shared[
+                "core3_shared_energy_projection_identity"
+            ],
+            "release_projection_identity": release.release_projection_id,
+            "production_build_manifest_identity": (
+                self.production_build_manifest_identity
+            ),
+            "task_energy_material_identity": (
+                task_energy.task_energy_material_identity
+            ),
+            "service_material_identity": service.service_material_identity,
+            "beta_material_identity": service.beta_material_identity,
+            "task_energy_unit": "J/tick",
+            "deadline_miss_count": sum(
+                bool(job.deadline_miss) for job in execution.result.jobs
+            ),
+            "max_observed_response": max((
+                int(job.response_time) for job in execution.result.jobs
+                if job.response_time is not None
+            ), default=0),
+            "offered_harvest": fraction_text(sum(observed_trace, Fraction())),
+            "job_results": jobs,
+        }
+        return FrozenMapping({
+            **result_base,
+            "simulation_result_identity": domain_hash(
+                "ASAP_BLOCK:V9.3:RTA4_SIMULATION_RESULT:v2", result_base,
+            ),
+        })
+
+
 class ProductionSimulationExecutor:
     """Invoke the public simulator wrapper and expose complete raw job evidence."""
 
@@ -556,6 +1308,7 @@ class ProductionSimulationExecutor:
         energy_config: Mapping[str, Any],
         source_manifest: Mapping[str, Any],
     ) -> None:
+        _load_v1_runtime()
         self.prepared = validate_prepared_config(prepared_config)
         if self.prepared["core"] != "CORE-3":
             raise RTA4ExecutionError(
@@ -739,6 +1492,7 @@ class ExecutionSummary:
 
 
 def _resume_required_inventory(root: Path) -> None:
+    _load_v1_runtime()
     """Reject an incomplete namespace without creating or repairing anything."""
 
     if not root.is_dir():
@@ -768,6 +1522,7 @@ def _resume_required_inventory(root: Path) -> None:
 def _preflight_taskset_store(
     root: Path, closure: ValidatedFormalClosure,
 ) -> None:
+    _load_v1_runtime()
     """Validate the existing store and every completed run-local certificate."""
 
     marker = root / FORMAL_TASKSET_STORE_MANIFEST
@@ -810,6 +1565,7 @@ class AuthorizedRTA4Runner:
         live_argv: Sequence[str] | None = None,
         live_cwd: Path | str | None = None,
     ) -> None:
+        _load_v1_runtime()
         self.prepared = validate_prepared_config(prepared_config)
         self.authorization = validate_authorization_document(
             authorization, allow_test=True,
@@ -1275,8 +2031,10 @@ class AuthorizedRTA4Runner:
 
 __all__ = [
     "AuthorizedRTA4Runner", "ExecutionSummary", "ProductionRTAExecutor",
-    "ProductionSimulationExecutor", "ProductionTasksetProvider",
+    "ProductionRTAExecutorV2",
+    "ProductionSimulationExecutor", "ProductionSimulationExecutorV2",
+    "ProductionTasksetProvider", "build_formal_release_projection_v2",
     "RTA4_CHECKPOINT_FILENAME",
     "RTA4_CHECKPOINT_VERSION", "RTA4ExecutionError",
-    "RTA4ExecutionInterrupted",
+    "RTA4ExecutionInterrupted", "_adapter_result_v2",
 ]

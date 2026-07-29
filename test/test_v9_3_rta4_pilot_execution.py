@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from fractions import Fraction
 import hashlib
 import json
 import os
@@ -10,6 +11,7 @@ import subprocess
 import sys
 
 import pytest
+import yaml
 
 from experiments.v9_3.result_writer import atomic_write_json
 from experiments.v9_3.rta4_formal_config import (
@@ -17,6 +19,10 @@ from experiments.v9_3.rta4_formal_config import (
 )
 from experiments.v9_3.rta4_formal_environment import (
     build_simulator_manifest, build_source_manifest,
+    validate_bound_source_file,
+)
+from experiments.v9_3.rta4_formal_execution import (
+    ProductionSimulationExecutor,
 )
 from experiments.v9_3.rta4_formal_pilot import (
     RTA4_PILOT_EXECUTION_CLASS, RTA4_PILOT_OBSERVATIONS,
@@ -27,6 +33,9 @@ from experiments.v9_3.rta4_formal_pilot import (
 from experiments.v9_3.rta4_formal_plan import (
     iter_core1_plan, iter_core2_plan, iter_core3_plan, iter_core4_plan,
     iter_core5b_plan,
+)
+from experiments.v9_3.rta4_formal_pipeline import (
+    build_formal_release_projection,
 )
 from experiments.v9_3.rta4_formal_validation import (
     RTA4FormalValidationError, validate_formal_run_closure,
@@ -49,6 +58,13 @@ from experiments.v9_3.rta4_pilot_execution import (
     validate_pilot_phase_inventory,
     validate_pilot_execution_config,
 )
+import experiments.v9_3.simulation_engine as simulation_engine
+from experiments.v9_3.simulation_engine import (
+    SimulationExecution, configured_solar_scale, render_system_projection,
+)
+from experiments.v9_3.simulation_result import (
+    SimulationResult, SimulationStatus,
+)
 TEST_ROOT = Path(__file__).resolve().parent
 if str(TEST_ROOT) not in sys.path:
     sys.path.insert(0, str(TEST_ROOT))
@@ -70,6 +86,18 @@ CONFIGS = {
     core: load_rta4_formal_config(path, expected_core=core)
     for core, path in CONFIG_PATHS.items()
 }
+CANONICAL_BASE_SYSTEM = (ROOT / "system_config_unified_template.yml").resolve()
+CANONICAL_ENERGY_SUPPORT = (
+    ROOT / "configs"
+    / "v9_3_rta4_core3_simulation_energy_support_v1.yaml"
+).resolve()
+CANONICAL_SIMULATION_SOURCE_CLOSURE = (
+    "system_config_unified_template.yml",
+    "configs/v9_3_rta4_core3_simulation_energy_support_v1.yaml",
+    "experiments/v9_3/rta4_pilot_execution.py",
+    "experiments/v9_3/rta4_formal_execution.py",
+    "experiments/v9_3/simulation_engine.py",
+)
 
 
 def _source_repo(root: Path) -> tuple[dict, Path, Path]:
@@ -80,7 +108,10 @@ def _source_repo(root: Path) -> tuple[dict, Path, Path]:
     energy_config = repo / "energy.yml"
     source.write_text("pilot-source-v1\n", encoding="utf-8")
     base_system.write_text("system: synthetic-fixture\n", encoding="utf-8")
-    energy_config.write_text("{}\n", encoding="utf-8")
+    energy_config.write_text(
+        'service_curve:\n  solar_scale: "1"\n',
+        encoding="utf-8",
+    )
     subprocess.run(("git", "init", "-q"), cwd=repo, check=True)
     subprocess.run(
         ("git", "add", "entry.txt", "base-system.yml", "energy.yml"),
@@ -98,6 +129,83 @@ def _source_repo(root: Path) -> tuple[dict, Path, Path]:
         build_source_manifest(repo, (source, base_system, energy_config)),
         base_system, energy_config,
     )
+
+
+def _canonical_source_repo(root: Path):
+    repo = root / "canonical-source"
+    repo.mkdir(parents=True)
+    paths = []
+    for relative in CANONICAL_SIMULATION_SOURCE_CLOSURE:
+        source = ROOT / relative
+        target = repo / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+        paths.append(target)
+    subprocess.run(("git", "init", "-q"), cwd=repo, check=True)
+    subprocess.run(("git", "add", "."), cwd=repo, check=True)
+    subprocess.run(
+        (
+            "git", "-c", "user.name=RTA4 Test",
+            "-c", "user.email=rta4@example.invalid",
+            "commit", "-qm", "canonical simulation source closure",
+        ),
+        cwd=repo, check=True,
+    )
+    return repo, tuple(paths), build_source_manifest(repo, paths)
+
+
+def _real_support_context(root: Path):
+    output = root / "pilot"
+    store = root / "store"
+    manifest = build_pilot_manifest(
+        CONFIGS,
+        core_record_counts={
+            core: (4 if core == "CORE-5B" else 1)
+            for core in RTA4_CORES
+        },
+        selection_seed="RTA4-CANONICAL-SIMULATION-SUPPORT-TEST-V1",
+        output_root=output, taskset_store=store,
+        config_paths=CONFIG_PATHS,
+    )
+    output.mkdir(parents=True)
+    manifest_path = output / RTA4_PILOT_OUTPUT_MARKER
+    atomic_write_json(manifest_path, manifest)
+    repo, source_paths, source_manifest = _canonical_source_repo(root)
+    base_system = repo / CANONICAL_SIMULATION_SOURCE_CLOSURE[0]
+    energy_support = repo / CANONICAL_SIMULATION_SOURCE_CLOSURE[1]
+    support = build_simulation_support(
+        base_system_path=base_system,
+        energy_config_path=energy_support,
+    )
+    simulator = root / "bounded-test-simulator"
+    simulator.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    simulator.chmod(0o755)
+
+    def build_execution(
+        *, source=source_manifest, simulation_support=support,
+    ):
+        return build_pilot_execution_config(
+            manifest_path, manifest,
+            source_manifest=source,
+            output_root=output, taskset_store=store,
+            simulator_manifest=build_simulator_manifest(simulator),
+            simulation_support=simulation_support,
+            default_worker_count=1, max_in_flight=1,
+            provisional_rta_attempt_timeout_seconds=2,
+            provisional_simulation_timeout_seconds=2,
+            memory_soft_limit_bytes=1 << 60,
+            checkpoint_interval_records=1, maximum_attempts=1,
+            execution_class=RTA4_PILOT_EXECUTION_CLASS,
+        )
+
+    execution = build_execution()
+    return {
+        "root": root, "repo": repo, "source_paths": source_paths,
+        "source_manifest": source_manifest, "base_system": base_system,
+        "energy_support": energy_support, "support": support,
+        "manifest": manifest, "execution": execution,
+        "build_execution": build_execution,
+    }
 
 
 def _context(
@@ -155,6 +263,283 @@ def _file_bytes(root: Path) -> dict[str, bytes]:
         for path in sorted(root.rglob("*"))
         if path.is_file()
     }
+
+
+def test_canonical_energy_support_is_direct_and_derived_from_core3_r2():
+    b20 = yaml.safe_load(
+        (ROOT / "configs/v9_3_core3_formal_b20_r2.yaml").read_text()
+    )["energy"]
+    b100 = yaml.safe_load(
+        (ROOT / "configs/v9_3_core3_formal_b100_r2.yaml").read_text()
+    )["energy"]
+    canonical = yaml.safe_load(CANONICAL_ENERGY_SUPPORT.read_text())
+    shared = {
+        "initial_energy_values", "simulation_initial_battery",
+        "required_safety_margin", "exact_rational_encoding",
+        "service_curve", "battery_mode",
+    }
+    assert all(b20[field] == b100[field] for field in shared)
+    assert {
+        field for field in set(b20) | set(b100)
+        if b20.get(field) != b100.get(field)
+    } == {"battery_capacity"}
+    assert b20["battery_capacity"] == "20"
+    assert b100["battery_capacity"] == "100"
+    assert canonical == b20
+    assert canonical["service_curve"] == b100["service_curve"]
+    assert canonical["service_curve"]["system_template"] == (
+        CANONICAL_BASE_SYSTEM.name
+    )
+    assert configured_solar_scale(canonical) == Fraction(1, 128)
+    assert canonical["required_safety_margin"] == "1"
+
+
+@pytest.mark.parametrize(
+    "contents,match",
+    [
+        ("not-a-mapping\n", "mapping"),
+        ("battery_capacity: \"20\"\n", "service_curve"),
+        ("service_curve: invalid\n", "service_curve"),
+        (
+            "service_curve:\n  solar_scale: \"1\"\n"
+            "service_curve:\n  solar_scale: \"1/2\"\n",
+            "parse",
+        ),
+    ],
+)
+def test_simulation_energy_loader_rejects_ambiguous_or_incomplete_yaml(
+    tmp_path, contents, match,
+):
+    energy = tmp_path / "energy.yaml"
+    energy.write_text(contents, encoding="utf-8")
+    with pytest.raises(RTA4PilotExecutionError, match=match):
+        build_simulation_support(
+            base_system_path=CANONICAL_BASE_SYSTEM,
+            energy_config_path=energy,
+        )
+
+
+def test_simulation_energy_loader_rejects_full_experiment_envelope():
+    with pytest.raises(RTA4PilotExecutionError, match="direct energy"):
+        build_simulation_support(
+            base_system_path=CANONICAL_BASE_SYSTEM,
+            energy_config_path=(
+                ROOT / "configs/v9_3_core3_formal_b20_r2.yaml"
+            ),
+        )
+
+
+@pytest.mark.parametrize("drift_target", ["base_system", "energy_config"])
+def test_simulation_support_reparses_file_and_rejects_material_or_byte_drift(
+    tmp_path, drift_target,
+):
+    base = tmp_path / "system.yml"
+    energy = tmp_path / "energy.yml"
+    shutil.copyfile(CANONICAL_BASE_SYSTEM, base)
+    shutil.copyfile(CANONICAL_ENERGY_SUPPORT, energy)
+    support = build_simulation_support(
+        base_system_path=base, energy_config_path=energy,
+    )
+    assert pilot_execution._validate_simulation_support(
+        support, execution_class=RTA4_PILOT_EXECUTION_CLASS,
+    ) == support
+
+    altered = deepcopy(support)
+    altered["energy_config"]["required_safety_margin"] = "2"
+    with pytest.raises(RTA4PilotExecutionError, match="material binding"):
+        pilot_execution._validate_simulation_support(
+            altered, execution_class=RTA4_PILOT_EXECUTION_CLASS,
+        )
+
+    target = base if drift_target == "base_system" else energy
+    original = target.read_text()
+    replacement = (
+        original.replace("#", "!", 1)
+        if drift_target == "base_system"
+        else original.replace('"1/128"', '"1/129"')
+    )
+    assert len(replacement.encode()) == len(original.encode())
+    target.write_text(replacement, encoding="utf-8")
+    with pytest.raises(RTA4PilotExecutionError, match="byte identity"):
+        pilot_execution._validate_simulation_support(
+            support, execution_class=RTA4_PILOT_EXECUTION_CLASS,
+        )
+
+
+def test_real_execution_config_binds_complete_canonical_source_closure(
+    tmp_path,
+):
+    context = _real_support_context(tmp_path)
+    source = context["source_manifest"]
+    expected = set(CANONICAL_SIMULATION_SOURCE_CLOSURE)
+    assert {row["path"] for row in source["files"]} == expected
+    assert subprocess.run(
+        ("git", "ls-files", "--error-unmatch", *sorted(expected)),
+        cwd=context["repo"], check=True, capture_output=True, text=True,
+    ).stdout.splitlines() == sorted(expected)
+    for path in context["source_paths"]:
+        assert path.resolve().relative_to(context["repo"].resolve())
+        assert validate_bound_source_file(source, path)["path"] in expected
+    assert context["base_system"].relative_to(context["repo"]).as_posix() == (
+        "system_config_unified_template.yml"
+    )
+    assert validate_pilot_execution_config(
+        context["execution"], context["manifest"],
+        validate_live_source=True,
+    ) == context["execution"]
+
+    rendered = yaml.safe_load(render_system_projection(
+        CANONICAL_BASE_SYSTEM, processors=4,
+        initial_battery=Fraction(0), battery_capacity=Fraction(20),
+        service_curve=context["support"]["energy_config"]["service_curve"],
+    ))
+    assert rendered["cpu_islands"][0]["numcpus"] == 4
+    assert Fraction(str(
+        rendered["energy_management"]["pv_area_m2"]
+    )) == Fraction(1, 128)
+
+
+@pytest.mark.parametrize(
+    "missing",
+    [
+        "system_config_unified_template.yml",
+        "configs/v9_3_rta4_core3_simulation_energy_support_v1.yaml",
+    ],
+)
+def test_real_execution_config_rejects_missing_support_source_entry(
+    tmp_path, missing,
+):
+    context = _real_support_context(tmp_path)
+    incomplete = build_source_manifest(
+        context["repo"],
+        tuple(
+            path for path in context["source_paths"]
+            if path.relative_to(context["repo"]).as_posix() != missing
+        ),
+    )
+    with pytest.raises(RTA4PilotExecutionError, match="source closure"):
+        context["build_execution"](source=incomplete)
+
+
+def test_real_execution_config_rejects_file_manifest_and_dirty_source_drift(
+    tmp_path,
+):
+    context = _real_support_context(tmp_path)
+    energy_path = context["energy_support"]
+    original = energy_path.read_text()
+    replacement = original.replace('"1/128"', '"1/129"')
+    assert len(replacement.encode()) == len(original.encode())
+    energy_path.write_text(replacement, encoding="utf-8")
+
+    synchronized_support = build_simulation_support(
+        base_system_path=context["base_system"],
+        energy_config_path=energy_path,
+    )
+    with pytest.raises(RTA4PilotExecutionError, match="source"):
+        context["build_execution"](simulation_support=synchronized_support)
+    with pytest.raises(RTA4PilotExecutionError, match="source"):
+        validate_pilot_execution_config(
+            context["execution"], context["manifest"],
+            validate_live_source=True,
+        )
+
+
+@pytest.mark.parametrize("location", ["untracked", "outside"])
+def test_real_execution_config_rejects_untracked_or_external_energy_yaml(
+    tmp_path, location,
+):
+    context = _real_support_context(tmp_path)
+    energy = (
+        context["repo"] / "untracked-energy.yml"
+        if location == "untracked" else tmp_path / "external-energy.yml"
+    )
+    shutil.copyfile(CANONICAL_ENERGY_SUPPORT, energy)
+    support = build_simulation_support(
+        base_system_path=context["base_system"],
+        energy_config_path=energy,
+    )
+    with pytest.raises(RTA4PilotExecutionError, match="source"):
+        context["build_execution"](simulation_support=support)
+
+
+def test_record_bound_simulation_energy_overrides_are_exact_and_nonmutating(
+    tmp_path, monkeypatch,
+):
+    support = build_simulation_support(
+        base_system_path=CANONICAL_BASE_SYSTEM,
+        energy_config_path=CANONICAL_ENERGY_SUPPORT,
+    )
+    original = deepcopy(support["energy_config"])
+    observed = []
+    trace = tmp_path / "bounded-trace.json"
+    trace.write_text("{}\n", encoding="utf-8")
+
+    def fake_run_paired_simulation(**kwargs):
+        observed.append(deepcopy(kwargs["energy_config"]))
+        return SimulationExecution(
+            simulation_id=kwargs["simulation_id_value"],
+            result=SimulationResult(
+                status=SimulationStatus.PASS_OBSERVED,
+                reason="bounded production-wrapper fixture",
+                horizon=1, jobs=(), tasks=(),
+                release_e0_valid=True,
+                minimum_release_energy_j=0.0,
+                observed_task_power_j_per_tick={},
+                trace_schema_version=2,
+                configured_scheduler="gpfp_asap_block",
+                simulation_completed=True,
+                completion_reason="reached_horizon",
+            ),
+            runtime_seconds=0.0, attempt_count=1,
+            horizons_attempted=(1,),
+            system_config_path=CANONICAL_BASE_SYSTEM,
+            taskset_path=trace, retained_trace_path=trace,
+        )
+
+    monkeypatch.setattr(
+        simulation_engine, "run_paired_simulation",
+        fake_run_paired_simulation,
+    )
+    monkeypatch.setattr(
+        simulation_engine, "construct_paired_harvest_trace",
+        lambda *_args, **_kwargs: (Fraction(0),),
+    )
+    simulator = tmp_path / "bounded-simulator"
+    simulator.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    simulator.chmod(0o755)
+    records = list(iter_core3_plan())[:4]
+    selected = (records[0], records[2], records[3])
+    assert {
+        record.material["physical_initial_energy"]
+        for record in iter_core3_plan()
+    } == {"0"}
+    for record in selected:
+        certificate = _synthetic_certificate(record)
+        projection, window, payload = build_formal_release_projection(
+            certificate, record.material["release_mode"],
+        )
+        ProductionSimulationExecutor.execute_bound(
+            simulator_binary=simulator,
+            simulation_timeout_seconds=1, output_root=tmp_path,
+            base_system_path=CANONICAL_BASE_SYSTEM,
+            energy_config_path=CANONICAL_ENERGY_SUPPORT,
+            energy_config=support["energy_config"],
+            record=record, certificate=certificate,
+            projection=projection, window=window, payload=payload,
+            simulation_id=str(record.execution_id),
+        )
+    assert [row["battery_capacity"] for row in observed] == [
+        "1000000000", "20", "100",
+    ]
+    assert {row["simulation_initial_battery"] for row in observed} == {"0"}
+    assert all(
+        row["service_curve"] == original["service_curve"]
+        and row["required_safety_margin"] == original[
+            "required_safety_margin"
+        ]
+        for row in observed
+    )
+    assert support["energy_config"] == original
 
 
 def _rehash_checkpoint_document(document: dict) -> dict:

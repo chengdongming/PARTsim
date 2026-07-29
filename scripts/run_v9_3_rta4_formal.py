@@ -13,17 +13,29 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from experiments.v9_3.rta4_formal_config import load_rta4_formal_config
-from experiments.v9_3.rta4_formal_pipeline import (
-    RTA4FormalAuthorizationError, RTA4FormalRunner,
+from experiments.v9_3.rta4_formal_config_v2 import (
+    RTA4FormalConfigV2Error, load_rta4_formal_config_v2,
 )
+from experiments.v9_3.rta4_formal_plan_v2 import describe_formal_plan_v2
 from experiments.v9_3.rta4_formal_execution import (
     AuthorizedRTA4Runner, ProductionSimulationExecutor,
 )
+from experiments.v9_3.rta4_formal_lifecycle_v2 import (
+    RTA4_PREPARED_CONFIG_SCHEMA_V2,
+)
+from experiments.v9_3.rta4_formal_runner_v2 import AuthorizedRTA4RunnerV2
 from experiments.v9_3.rta4_formal_environment import load_strict_json
 
 
 def _json(path: Path):
     return load_strict_json(path)
+
+
+def _load_describable_config(path: Path):
+    try:
+        return "V2", load_rta4_formal_config_v2(path)
+    except RTA4FormalConfigV2Error:
+        return "V1", load_rta4_formal_config(path)
 
 
 def main() -> int:
@@ -52,9 +64,12 @@ def main() -> int:
     if args.dry_run:
         if args.config is None:
             parser.error("--dry-run requires --config")
-        config = load_rta4_formal_config(args.config)
-        runner = RTA4FormalRunner(config)
-        print(json.dumps(runner.describe(), ensure_ascii=False, sort_keys=True, indent=2))
+        version, config = _load_describable_config(args.config)
+        description = (
+            describe_formal_plan_v2(config)
+            if version == "V2" else _describe_v1(config)
+        )
+        print(json.dumps(description, ensure_ascii=False, sort_keys=True, indent=2))
         return 0
     if args.execute or args.resume or args.validate_only:
         if args.prepared_config is None or args.authorization is None:
@@ -64,6 +79,38 @@ def main() -> int:
         try:
             prepared = _json(args.prepared_config)
             authorization = _json(args.authorization)
+            if prepared.get("prepared_schema") == RTA4_PREPARED_CONFIG_SCHEMA_V2:
+                if args.source or args.base_system is not None or args.energy_config is not None:
+                    raise ValueError(
+                        "V2 workers refuse caller source/compiler/binary/config overrides"
+                    )
+                if args.synthetic_ordinal:
+                    raise ValueError(
+                        "V2 bounded ordinals are frozen in the prepared artifact"
+                    )
+                summary = AuthorizedRTA4RunnerV2(
+                    prepared, authorization,
+                ).run(
+                    resume=args.resume, validate_only=args.validate_only,
+                    max_records=args.max_records,
+                )
+                print(json.dumps({
+                    "authorization_id": summary.authorization_id,
+                    "core": summary.core,
+                    "execution_class": summary.execution_class,
+                    "production_build_manifest_identity": (
+                        summary.production_build_manifest_identity
+                    ),
+                    "processed_records": summary.processed_records,
+                    "pending_records": summary.pending_records,
+                    "complete": summary.complete,
+                    "checkpoint_path": str(summary.checkpoint_path),
+                }, ensure_ascii=False, sort_keys=True, indent=2))
+                return 0
+            if prepared.get("profile") == (
+                "ASAP_BLOCK_V9_3_RTA4_FORMAL_V2_SHARED_ENERGY"
+            ):
+                raise ValueError("unknown or obsolete V2 prepared profile")
             sources = {}
             for value in args.source:
                 core, separator, path = value.partition("=")
@@ -111,7 +158,17 @@ def main() -> int:
             return 2
     if args.config is None:
         parser.error("select --dry-run or an authorized operation")
-    config = load_rta4_formal_config(args.config)
+    version, config = _load_describable_config(args.config)
+    if version == "V2":
+        print(
+            "RTA4 formal V2 is UNAUTHORIZED_PRE_PILOT; no authorization was generated",
+            file=sys.stderr,
+        )
+        return 2
+    from experiments.v9_3.rta4_formal_pipeline import (
+        RTA4FormalAuthorizationError, RTA4FormalRunner,
+    )
+
     runner = RTA4FormalRunner(config)
     try:
         runner.run()
@@ -119,6 +176,12 @@ def main() -> int:
         print(str(exc), file=sys.stderr)
         return 2
     return 0
+
+
+def _describe_v1(config):
+    from experiments.v9_3.rta4_formal_pipeline import RTA4FormalRunner
+
+    return RTA4FormalRunner(config).describe()
 
 
 if __name__ == "__main__":
