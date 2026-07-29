@@ -27,6 +27,8 @@
 #include <chrono>
 #include <cerrno>
 #include <cctype>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fcntl.h>
@@ -986,6 +988,18 @@ static void publishTraces(const std::vector<TraceTarget> &targets,
 }
 
 int main(int argc, char *argv[]) {
+    const char *quiet_stdout = std::getenv("PARTSIM_QUIET_STDOUT");
+    if (quiet_stdout != nullptr &&
+        std::strcmp(quiet_stdout, "1") == 0 &&
+        std::freopen("/dev/null", "w", stdout) == nullptr) {
+        const int redirect_error = errno;
+        std::fprintf(
+            stderr,
+            "PRE-FLIGHT ERROR: cannot redirect stdout to /dev/null: %s\n",
+            std::strerror(redirect_error));
+        return EXIT_FAILURE;
+    }
+
     auto opts = parse_arguments(argc, argv);
 
     MetaSim::Simulation &simulation = MetaSim::Simulation::getInstance();

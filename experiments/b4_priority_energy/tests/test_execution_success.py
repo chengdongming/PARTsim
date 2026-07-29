@@ -129,10 +129,70 @@ class ExecutionSuccessTests(unittest.TestCase):
     def test_stdout_and_stderr_are_published(self):
         self.assertEqual(self.fx.run_cli()[0], 0)
         case_id = self.fx.record["case_id"]
-        self.assertEqual(self.fx.path(f".b4pe/logs/{case_id}.stdout").read_text(), "hello\n")
-        self.assertEqual(self.fx.path(f".b4pe/logs/{case_id}.stderr").read_text(), "warning\n")
-        self.assertTrue(self.fx.path(f".b4pe/logs/{case_id}.attempt-1.stdout").is_file())
-        self.assertTrue(self.fx.path(f".b4pe/logs/{case_id}.attempt-1.stderr").is_file())
+        for stream, contents in (
+            ("stdout", "hello\n"),
+            ("stderr", "warning\n"),
+        ):
+            final = self.fx.path(f".b4pe/logs/{case_id}.{stream}")
+            attempt = self.fx.path(
+                f".b4pe/logs/{case_id}.attempt-1.{stream}"
+            )
+            self.assertEqual(final.read_text(), contents)
+            self.assertTrue(attempt.is_file())
+            self.assertEqual(
+                hashlib.sha256(final.read_bytes()).hexdigest(),
+                hashlib.sha256(attempt.read_bytes()).hexdigest(),
+            )
+            self.assertEqual(
+                (final.stat().st_dev, final.stat().st_ino),
+                (attempt.stat().st_dev, attempt.stat().st_ino),
+            )
+
+    def test_result_is_hard_linked_to_validated_staging_trace(self):
+        self.assertEqual(self.fx.run_cli()[0], 0)
+        state = self.fx.state()
+        staging = self.fx.path(
+            state["attempts"][0]["publication"][
+                "staging_result_relpath"
+            ]
+        )
+        final = self.fx.path(self.fx.record["result_relpath"])
+        self.assertEqual(
+            hashlib.sha256(staging.read_bytes()).hexdigest(),
+            hashlib.sha256(final.read_bytes()).hexdigest(),
+        )
+        self.assertEqual(
+            (staging.stat().st_dev, staging.stat().st_ino),
+            (final.stat().st_dev, final.stat().st_ino),
+        )
+
+    def test_hard_link_helper_rejects_symlink_source_and_existing_target(self):
+        source = self.fx.path(".b4pe/tmp/link-source")
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text("source\n", encoding="utf-8")
+        symlink = self.fx.path(".b4pe/tmp/link-symlink")
+        symlink.symlink_to(source)
+        destination = self.fx.path(".b4pe/logs/link-destination")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        context = self.fx.context()
+        try:
+            with self.assertRaises(execution.InputIntegrityError):
+                execution._link_file_at(
+                    context,
+                    ".b4pe/tmp/link-symlink",
+                    ".b4pe/logs/link-destination",
+                )
+            self.assertFalse(destination.exists())
+            destination.write_text("existing\n", encoding="utf-8")
+            with self.assertRaises(execution.InputIntegrityError):
+                execution._link_file_at(
+                    context,
+                    ".b4pe/tmp/link-source",
+                    ".b4pe/logs/link-destination",
+                )
+            self.assertEqual(destination.read_text(), "existing\n")
+        finally:
+            execution.close_context(context)
 
     def test_state_contains_required_provenance(self):
         self.assertEqual(self.fx.run_cli()[0], 0)
