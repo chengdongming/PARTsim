@@ -10,6 +10,8 @@ import subprocess
 
 import pytest
 
+from experiments.v9_3 import rta4_production_build_manifest as production_build
+from experiments.v9_3.rta4_formal_config import domain_hash
 from experiments.v9_3.rta4_production_build_manifest import (
     DEFAULT_RELEVANT_SOURCES,
     ENVIRONMENT_ALLOWLIST,
@@ -98,6 +100,12 @@ def test_manifest_unifies_simulator_verifier_toolchain_and_threat_model(verifier
         for key in manifest["environment"]["values"]
         for marker in ("TOKEN", "PASSWORD", "SECRET", "CREDENTIAL")
     )
+    assert manifest["repository"]["repository_lineage"][
+        "repository_lineage_identity"
+    ] == manifest["repository"]["repository_lineage_identity"]
+    assert manifest["repository"]["repository_lineage"][
+        "lineage_mode"
+    ] == "CORE0A_STANDALONE_REVIEWED_LINEAGE"
 
 
 def test_manifest_round_trip_check_and_binary_drift_rejection(verifier, tmp_path):
@@ -133,6 +141,47 @@ def test_manifest_identity_and_environment_drift_are_fail_closed(verifier):
             require_clean=False,
             environ={**manifest["environment"]["values"], "TZ": "Asia/Shanghai"},
         )
+
+
+def test_production_identity_binds_live_repository_lineage(verifier):
+    manifest = _build(verifier)
+    changed = copy.deepcopy(manifest)
+    changed["repository"]["repository_lineage_identity"] = "f" * 64
+    changed["manifest_id"] = domain_hash(
+        production_build.PRODUCTION_BUILD_MANIFEST_DOMAIN,
+        {
+            key: value
+            for key, value in changed.items()
+            if key != "manifest_id"
+        },
+    )
+    assert changed["manifest_id"] != manifest["manifest_id"]
+    with pytest.raises(ProductionBuildManifestError, match="drift"):
+        validate_production_build_manifest(
+            changed,
+            require_clean=False,
+            environ=manifest["environment"]["values"],
+        )
+
+
+def test_require_clean_false_cannot_bypass_lineage_gate(
+    verifier, monkeypatch,
+):
+    def reject_lineage(*, source_root):
+        raise production_build.Core0ARepositoryLineageV1Error(
+            f"rejected {source_root}"
+        )
+
+    monkeypatch.setattr(
+        production_build,
+        "validate_core0a_repository_lineage_v1",
+        reject_lineage,
+    )
+    with pytest.raises(
+        ProductionBuildManifestError,
+        match="repository lineage validation failed",
+    ):
+        _build(verifier)
 
 
 def test_manifest_loader_rejects_duplicate_json_keys(verifier, tmp_path):
@@ -238,6 +287,10 @@ def test_default_manifest_covers_recursive_static_v2_import_closure():
     assert not missing
     assert "experiments/v9_3/rta4_formal_plan_grid.py" in closure
     assert "experiments/v9_3/rta4_formal_plan_v2.py" in closure
+    assert (
+        "experiments/v9_3/rta4_core0a_repository_lineage_v1.py"
+        in DEFAULT_RELEVANT_SOURCES
+    )
     assert "experiments/v9_3/rta4_formal_plan.py" not in closure
 
 

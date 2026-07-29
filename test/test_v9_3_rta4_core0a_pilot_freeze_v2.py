@@ -72,20 +72,12 @@ def selection():
 
 @pytest.fixture(scope="module")
 def portable(selection):
-    return core0a.build_portable_candidate_bundle_v2(
-        selection=selection,
-        source_commit="a" * 40,
-        source_tree="b" * 40,
-        require_clean=False,
-    )
+    return core0a.build_portable_candidate_bundle_v2(selection=selection)
 
 
 @pytest.fixture(scope="module")
 def live_portable(selection):
-    return core0a.build_portable_candidate_bundle_v2(
-        selection=selection,
-        require_clean=True,
-    )
+    return core0a.build_portable_candidate_bundle_v2(selection=selection)
 
 
 @pytest.fixture(scope="module")
@@ -135,6 +127,9 @@ def _production_manifest(portable):
             "source_root": str(core0a.PROJECT_ROOT.resolve()),
             "git_commit": portable["source"]["git_commit"],
             "git_tree": portable["source"]["git_tree"],
+            "repository_lineage_identity": portable["source"][
+                "repository_lineage_identity"
+            ],
         },
         "python": {"identity_fixture": "python"},
         "cpp_toolchain": {"identity_fixture": "toolchain"},
@@ -286,28 +281,6 @@ def _write_full_deployment_fixture(
     }
 
 
-def _observe_dirty_portable_source(monkeypatch):
-    real_git = core0a._git
-
-    def dirty_git(*arguments):
-        if arguments == ("status", "--porcelain=v1", "--untracked-files=all"):
-            return " M experiments/v9_3/rta4_core0a_pilot_v2.py"
-        return real_git(*arguments)
-
-    monkeypatch.setattr(core0a, "_git", dirty_git)
-
-
-def _observe_dirty_production_source(monkeypatch):
-    real_git = production_build._git
-
-    def dirty_git(root, *arguments):
-        if arguments == ("status", "--porcelain=v1", "--untracked-files=all"):
-            return " M experiments/v9_3/rta4_core0a_pilot_v2.py"
-        return real_git(root, *arguments)
-
-    monkeypatch.setattr(production_build, "_git", dirty_git)
-
-
 def test_formal_validator_public_signature_has_no_clean_override():
     signature = inspect.signature(core0a.validate_autodl_deployment_manifest_v2)
     assert tuple(signature.parameters) == (
@@ -323,7 +296,7 @@ def test_formal_validator_public_signature_has_no_clean_override():
         "require_clean", "allow_dirty", "skip_clean_check",
     }.intersection(signature.parameters)
     source = inspect.getsource(core0a.validate_autodl_deployment_manifest_v2)
-    assert source.count("require_clean=True") == 2
+    assert source.count("require_clean=True") == 1
     assert "require_clean=False" not in source
 
 
@@ -343,66 +316,19 @@ def test_formal_validator_rejects_explicit_clean_override_keyword():
         )
 
 
-def test_dirty_portable_source_is_rejected_by_formal_validator(
-    tmp_path, monkeypatch, selection, production_verifier,
-):
-    _observe_dirty_portable_source(monkeypatch)
-    portable = core0a.build_portable_candidate_bundle_v2(
-        selection=selection,
-        require_clean=False,
-    )
-    assert portable["source"]["observed_clean"] is False
-    production = _full_production_manifest(
-        production_verifier, require_clean=True,
-    )
-    arguments = _write_full_deployment_fixture(
-        tmp_path, monkeypatch, portable, production,
-    )
-    with pytest.raises(
-        core0a.RTA4Core0APilotV2Error, match="clean worktree",
-    ):
-        core0a.validate_autodl_deployment_manifest_v2(**arguments)
-
-
-def test_dirty_production_source_is_rejected_by_formal_validator(
-    tmp_path, monkeypatch, live_portable, production_verifier,
-):
-    _observe_dirty_production_source(monkeypatch)
-    production = _full_production_manifest(
-        production_verifier, require_clean=False,
-    )
-    assert production["repository"]["tracked_and_untracked_clean"] is False
-    arguments = _write_full_deployment_fixture(
-        tmp_path, monkeypatch, live_portable, production,
-    )
-    with pytest.raises(
-        core0a.RTA4Core0APilotV2Error,
-        match="live production build manifest validation failed",
-    ):
-        core0a.validate_autodl_deployment_manifest_v2(**arguments)
-
-
-def test_simultaneous_dirty_portable_and_production_are_rejected(
-    tmp_path, monkeypatch, selection, production_verifier,
-):
-    _observe_dirty_portable_source(monkeypatch)
-    _observe_dirty_production_source(monkeypatch)
-    portable = core0a.build_portable_candidate_bundle_v2(
-        selection=selection,
-        require_clean=False,
-    )
-    production = _full_production_manifest(
-        production_verifier, require_clean=False,
-    )
-    assert portable["source"]["observed_clean"] is False
-    assert production["repository"]["tracked_and_untracked_clean"] is False
-    arguments = _write_full_deployment_fixture(
-        tmp_path, monkeypatch, portable, production,
-    )
-    with pytest.raises(
-        core0a.RTA4Core0APilotV2Error, match="clean worktree",
-    ):
-        core0a.validate_autodl_deployment_manifest_v2(**arguments)
+def test_portable_identity_entrypoints_have_no_clean_or_git_override():
+    assert tuple(
+        inspect.signature(core0a.repository_identity).parameters
+    ) == ()
+    assert tuple(
+        inspect.signature(
+            core0a.build_portable_candidate_bundle_v2
+        ).parameters
+    ) == ("selection",)
+    with pytest.raises(TypeError, match="unexpected keyword"):
+        core0a.build_portable_candidate_bundle_v2(require_clean=False)
+    with pytest.raises(TypeError, match="unexpected keyword"):
+        core0a.repository_identity(require_clean=False)
 
 
 def test_clean_portable_and_full_production_return_validated_deployment(
@@ -621,10 +547,7 @@ def test_six_v2_config_status_drift_cannot_be_rehashed_into_scope(selection):
 
 
 def test_portable_bundle_is_path_independent_and_stable(tmp_path, selection, portable):
-    other = core0a.build_portable_candidate_bundle_v2(
-        selection=selection, source_commit="a" * 40, source_tree="b" * 40,
-        require_clean=False,
-    )
+    other = core0a.build_portable_candidate_bundle_v2(selection=selection)
     assert other == portable
     left = tmp_path / "left" / "bundle.json"
     right = tmp_path / "right" / "bundle.json"
@@ -637,13 +560,13 @@ def test_portable_bundle_is_path_independent_and_stable(tmp_path, selection, por
 
 
 def test_source_config_and_selection_material_change_bundle_identity(selection, portable):
-    source_changed = core0a.build_portable_candidate_bundle_v2(
-        selection=selection, source_commit="c" * 40, source_tree="b" * 40,
-        require_clean=False,
+    material = deepcopy(portable)
+    material.pop("portable_freeze_identity")
+    material["source"]["repository_lineage_identity"] = "f" * 64
+    source_changed = domain_hash(
+        core0a.CORE0A_PORTABLE_BUNDLE_DOMAIN, material,
     )
-    assert source_changed["portable_freeze_identity"] != portable[
-        "portable_freeze_identity"
-    ]
+    assert source_changed != portable["portable_freeze_identity"]
     material = deepcopy(portable)
     material.pop("portable_freeze_identity")
     material["candidate_config"]["sha256"] = "0" * 64
@@ -654,6 +577,29 @@ def test_source_config_and_selection_material_change_bundle_identity(selection, 
     material["selection"]["core0a_selection_identity"] = "0" * 64
     selection_changed = domain_hash(core0a.CORE0A_PORTABLE_BUNDLE_DOMAIN, material)
     assert selection_changed != portable["portable_freeze_identity"]
+
+
+def test_old_portable_and_handoff_are_rejected_by_new_lineage(portable):
+    old_handoff = core0a.build_autodl_handoff_v2(portable)
+    changed = deepcopy(portable)
+    changed.pop("portable_freeze_identity")
+    changed["source"]["repository_lineage_identity"] = "e" * 64
+    changed["portable_freeze_identity"] = domain_hash(
+        core0a.CORE0A_PORTABLE_BUNDLE_DOMAIN, changed,
+    )
+    with pytest.raises(
+        core0a.RTA4Core0APilotV2Error,
+        match="bundle/source drift",
+    ):
+        core0a.validate_portable_candidate_bundle_v2(changed)
+    with pytest.raises(
+        core0a.RTA4Core0APilotV2Error,
+        match="handoff identity/material mismatch",
+    ):
+        core0a.validate_autodl_handoff_v2(old_handoff, changed)
+    assert changed["selection"]["core0a_selection_identity"] == portable[
+        "selection"
+    ]["core0a_selection_identity"]
 
 
 def test_worker_count_is_deployment_not_selection_or_science(
@@ -676,6 +622,9 @@ def test_worker_count_is_deployment_not_selection_or_science(
     )
     assert two["selection_identity"] == four["selection_identity"]
     assert two["portable_freeze_identity"] == four["portable_freeze_identity"]
+    assert two["repository_lineage_identity"] == portable[
+        "source"
+    ]["repository_lineage_identity"]
     assert two["deployment_manifest_identity"] != four["deployment_manifest_identity"]
     assert core0a._combined_execution_identity(portable, two) != (
         core0a._combined_execution_identity(portable, four)
@@ -1114,8 +1063,11 @@ def test_candidate_config_retry_resume_and_output_contracts():
 def test_bundle_and_handoff_are_complete_and_non_sensitive(portable):
     handoff = core0a.build_autodl_handoff_v2(portable)
     assert core0a.validate_autodl_handoff_v2(handoff, portable) == handoff
-    assert portable["required_source_files"]["production_default_closure_count"] == 53
-    assert len(portable["required_source_files"]["production_default_closure"]) == 53
+    assert portable["required_source_files"]["production_default_closure_count"] == 54
+    assert len(portable["required_source_files"]["production_default_closure"]) == 54
+    assert handoff["repository_lineage_identity"] == portable[
+        "source"
+    ]["repository_lineage_identity"]
     assert len(handoff["steps"]) == 15
     assert handoff["authorization_required_before_any_record"] is True
     assert portable["contract_version"] == core0a.CORE0A_PORTABLE_CONTRACT_VERSION
@@ -1175,17 +1127,11 @@ def test_selection_and_candidate_file_drift_are_rejected(tmp_path, selection):
         core0a.load_candidate_config_v2(candidate)
 
 
-def test_formal_input_diff_outside_pilot_scope_is_rejected(monkeypatch):
-    real_git = core0a._git
-
-    def fake_git(*arguments):
-        if arguments[:2] == ("diff", "--name-only"):
-            return "asap_block_rta_v9_3.py"
-        return real_git(*arguments)
-
-    monkeypatch.setattr(core0a, "_git", fake_git)
-    with pytest.raises(core0a.RTA4Core0APilotV2Error, match="outside CORE-0A"):
-        core0a.repository_identity(require_clean=False)
+def test_repository_identity_delegates_to_merge_aware_validator():
+    source = inspect.getsource(core0a.repository_identity)
+    assert "validate_core0a_repository_lineage_v1" in source
+    assert "ALLOWED_PILOT_FREEZE_DIFF_PATHS" not in source
+    assert '"diff"' not in source
 
 
 def test_builder_generate_and_check_are_byte_identical(tmp_path):
