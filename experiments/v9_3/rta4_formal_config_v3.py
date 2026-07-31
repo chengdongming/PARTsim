@@ -70,7 +70,7 @@ _CORE_FIELDS = {
 }
 _RUNTIME_FIELDS = {
     "output_root", "taskset_store", "log_path", "resume", "worker_count",
-    "max_in_flight", "timeout_seconds", "max_records",
+    "max_in_flight", "timeout_seconds", "max_records", "source_taskset_store",
 }
 _SOURCE_FIELDS = {
     "core", "source_scope", "source_campaign_config_sha256",
@@ -228,7 +228,9 @@ def _runtime(value: Any) -> Dict[str, Any]:
     if not isinstance(value, Mapping) or set(value).difference(_RUNTIME_FIELDS):
         raise RTA4FormalConfigV3Error("runtime contains unknown fields")
     result: Dict[str, Any] = {}
-    for key in ("output_root", "taskset_store", "log_path"):
+    for key in (
+        "output_root", "taskset_store", "source_taskset_store", "log_path",
+    ):
         if key in value:
             if type(value[key]) is not str or not value[key].strip():
                 raise RTA4FormalConfigV3Error(f"runtime.{key} must be a non-empty path")
@@ -484,6 +486,11 @@ def formal_taskset_store_identity_v3(scientific_config: Mapping[str, Any]) -> st
     scientific_hash = rta4_formal_config_hash_v3(scientific_config)
     material: Dict[str, Any] = {
         "profile": RTA4_FORMAL_PROFILE_V3,
+        "store_version": "ASAP_BLOCK_V9_3_RTA4_TASKSET_STORE_V3_PARAMETERIZED",
+        "certificate_schema": (
+            "ASAP_BLOCK_V9_3_RTA4_W_FREE_TASKSET_CERTIFICATE_V2"
+        ),
+        "legacy_store_accepted": False,
         "core": scientific_config["core"],
         "scientific_config_sha256": scientific_hash,
     }

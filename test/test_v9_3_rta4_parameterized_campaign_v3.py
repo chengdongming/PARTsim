@@ -34,6 +34,12 @@ from experiments.v9_3.rta4_formal_plan_v3 import (
 from experiments.v9_3.rta4_production_build_manifest import (
     DEFAULT_RELEVANT_SOURCES,
 )
+from experiments.v9_3.rta4_production_build_manifest_v3 import (
+    PRODUCTION_BUILD_MANIFEST_DOMAIN_V3,
+    PRODUCTION_BUILD_MANIFEST_SCHEMA_V3,
+    PRODUCTION_BUILD_PROFILE_V3,
+)
+from experiments.v9_3.rta4_formal_config import domain_hash
 from scripts.create_v9_3_rta4_campaign import campaign_template
 
 
@@ -90,7 +96,14 @@ def _small(core: str) -> dict:
 
 def _manifest(tmp_path: Path) -> Path:
     path = tmp_path / "production-manifest.json"
-    path.write_text(json.dumps({"manifest_id": "a" * 64}), encoding="utf-8")
+    material = {
+        "manifest_schema": PRODUCTION_BUILD_MANIFEST_SCHEMA_V3,
+        "formal_profile": PRODUCTION_BUILD_PROFILE_V3,
+    }
+    path.write_text(json.dumps({
+        **material,
+        "manifest_id": domain_hash(PRODUCTION_BUILD_MANIFEST_DOMAIN_V3, material),
+    }), encoding="utf-8")
     return path
 
 
@@ -343,6 +356,7 @@ def test_downstream_preparation_requires_observed_source_binding(tmp_path):
         campaign, production_manifest_path=_manifest(tmp_path),
         output_root=tmp_path / "results", taskset_store=tmp_path / "store",
         observed_source_binding=campaign.normalized_scientific_config["source"],
+        source_taskset_store=tmp_path / "source-store",
     )
     assert prepared["source_binding"] == campaign.normalized_scientific_config["source"]
 

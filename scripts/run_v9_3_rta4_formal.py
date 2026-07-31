@@ -53,6 +53,7 @@ def main() -> int:
     parser.add_argument("--max-records", type=int)
     parser.add_argument("--output-root", type=Path)
     parser.add_argument("--taskset-store", type=Path)
+    parser.add_argument("--source-taskset-store", type=Path)
     parser.add_argument("--worker-count", type=int)
     parser.add_argument("--max-in-flight", type=int)
     parser.add_argument("--timeout", type=int)
@@ -104,22 +105,70 @@ def main() -> int:
                 ),
                 **description,
             }
-            if args.execute or args.resume:
+            if (
+                (args.execute or args.resume or args.validate_only)
+                and args.prepared_config is None
+            ):
                 raise ValueError(
-                    "V3 parameterization infrastructure does not start formal execution"
+                    "V3 authorized operation requires --prepared-config and --authorization"
                 )
             if args.prepared_config is not None or args.authorization is not None:
-                if not args.validate_only or args.prepared_config is None or args.authorization is None:
+                if args.prepared_config is None or args.authorization is None:
                     raise ValueError(
-                        "V3 prepared artifacts require both inputs and --validate-only"
+                        "V3 authorized operations require both prepared artifacts"
                     )
                 prepared = validate_prepared_config_v3(_json(args.prepared_config))
                 authorization = validate_authorization_v3(
                     _json(args.authorization), prepared_config=prepared,
                 )
+                if (
+                    prepared["campaign_file"]["absolute_path"]
+                    != str(campaign.campaign_path)
+                    or prepared["campaign_file"]["raw_campaign_file_sha256"]
+                    != campaign.raw_campaign_file_sha256
+                    or prepared["normalized_scientific_config_sha256"]
+                    != campaign.normalized_scientific_config_sha256
+                ):
+                    raise ValueError("V3 CLI campaign/prepared identity drift")
                 report["prepared_config_id"] = prepared["prepared_config_id"]
                 report["authorization_id"] = authorization["authorization_id"]
+                if args.execute or args.resume or args.validate_only:
+                    if any(value is not None for value in (
+                        args.output_root, args.taskset_store,
+                        args.source_taskset_store, args.worker_count,
+                        args.max_in_flight, args.timeout, args.log_path,
+                        args.production_manifest, args.source_binding,
+                    )):
+                        raise ValueError(
+                            "V3 authorized operations reject prepared/runtime overrides"
+                        )
+                    from experiments.v9_3.rta4_formal_runner_v3 import (
+                        AuthorizedRTA4RunnerV3,
+                    )
+
+                    summary = AuthorizedRTA4RunnerV3(
+                        prepared, authorization,
+                    ).run(
+                        resume=args.resume,
+                        validate_only=args.validate_only,
+                        max_records=args.max_records,
+                    )
+                    report.update({
+                        "core": summary.core,
+                        "execution_class": summary.execution_class,
+                        "production_build_manifest_identity": (
+                            summary.production_build_manifest_identity
+                        ),
+                        "processed_records": summary.processed_records,
+                        "pending_records": summary.pending_records,
+                        "complete": summary.complete,
+                        "checkpoint_path": str(summary.checkpoint_path),
+                    })
             if args.write_prepared_config is not None or args.write_authorization is not None:
+                if args.execute or args.resume or args.validate_only:
+                    raise ValueError(
+                        "V3 preparation and authorized operation are separate commands"
+                    )
                 if (
                     args.write_prepared_config is None
                     or args.write_authorization is None
@@ -140,6 +189,7 @@ def main() -> int:
                     max_records=args.max_records,
                     log_path=args.log_path,
                     resume=False,
+                    source_taskset_store=args.source_taskset_store,
                     observed_source_binding=(
                         None if args.source_binding is None
                         else _json(args.source_binding)

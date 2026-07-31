@@ -25,6 +25,9 @@ RTA4_EXECUTION_DOMAIN_V3 = "ASAP_BLOCK:V9.3:RTA4_EXECUTION:v3"
 RTA4_PLAN_DOMAIN_V3 = "ASAP_BLOCK:V9.3:RTA4_FORMAL_PLAN:v3"
 RTA4_STREAM_DIGEST_DOMAIN_V3 = b"ASAP_BLOCK:V9.3:RTA4_ORDERED_STREAM:v3\0"
 RTA4_TASKSET_SLOT_DOMAIN_V3 = "ASAP_BLOCK:V9.3:RTA4_TASKSET_SLOT:v3"
+RTA4_TASKSET_SKELETON_SLOT_DOMAIN_V3 = (
+    "ASAP_BLOCK:V9.3:RTA4_TASKSET_SKELETON_SLOT:v3"
+)
 RTA4_CORE5B_SELECTION_DOMAIN_V3 = "ASAP_BLOCK:V9.3:RTA4_CORE5B_SELECTION:v3"
 
 
@@ -39,6 +42,7 @@ class FormalPlanRecordV3:
     ordinal: int
     mathematical_request_id: str
     execution_id: str
+    taskset_skeleton_slot_id: str
     taskset_slot_id: str
     material: Mapping[str, Any]
 
@@ -50,6 +54,7 @@ class FormalPlanRecordV3:
             "ordinal": self.ordinal,
             "mathematical_request_id": self.mathematical_request_id,
             "execution_id": self.execution_id,
+            "taskset_skeleton_slot_id": self.taskset_skeleton_slot_id,
             "taskset_slot_id": self.taskset_slot_id,
             "material": dict(self.material),
         }
@@ -72,8 +77,13 @@ def _slot(material: Mapping[str, Any]) -> str:
 def _record(
     *, core: str, ordinal: int, kind: str, slot_material: Mapping[str, Any],
     math_material: Mapping[str, Any], execution_material: Mapping[str, Any] | None = None,
+    skeleton_material: Mapping[str, Any] | None = None,
 ) -> FormalPlanRecordV3:
     slot = _slot(slot_material)
+    skeleton = domain_hash(
+        RTA4_TASKSET_SKELETON_SLOT_DOMAIN_V3,
+        slot_material if skeleton_material is None else skeleton_material,
+    )
     mathematical = domain_hash(RTA4_MATH_REQUEST_DOMAIN_V3, {
         "profile": RTA4_FORMAL_PROFILE_V3,
         "core": core,
@@ -86,8 +96,11 @@ def _record(
         **({} if execution_material is None else dict(execution_material)),
     })
     return FormalPlanRecordV3(
-        kind, core, ordinal, mathematical, execution, slot,
-        {**dict(math_material), **({} if execution_material is None else dict(execution_material))},
+        kind, core, ordinal, mathematical, execution, skeleton, slot,
+        {
+            **dict(slot_material), **dict(math_material),
+            **({} if execution_material is None else dict(execution_material)),
+        },
     )
 
 
@@ -97,7 +110,7 @@ def _core1(config: Mapping[str, Any]) -> Iterator[FormalPlanRecordV3]:
         for replicate in range(config["tasksets_per_utilization"]):
             slot = {
                 "namespace": "RTA4_CORE1_PARAMETERIZED_V3",
-                "processors": config["processors"], "task_count": config["task_count"],
+                "processor_count": config["processors"], "task_count": config["task_count"],
                 "normalized_utilization": utilization, "replicate_index": replicate,
             }
             for e0 in config["e0"]:
@@ -148,10 +161,21 @@ def _core3(config: Mapping[str, Any]) -> Iterator[FormalPlanRecordV3]:
                 slot_material=slot,
                 math_material={
                     "track": "THEOREM_ALIGNED", "release_mode": release_mode,
+                    "applicability_track": "THEOREM_ALIGNED",
+                    "battery_model": "THEOREM_NO_OVERFLOW_EXACT",
+                    "battery_capacity": "1000000000",
+                    "physical_initial_energy": config["projection_e0"][0],
+                    "service_scale": "1",
                     "scheduler": "gpfp_asap_block",
                     "projection_methods": config["projection_methods"],
                     "projection_e0": config["projection_e0"],
                     "simulation_horizon": config["simulation_horizon"],
+                    "release_horizon": config["simulation_horizon"][
+                        "release_horizon"
+                    ],
+                    "observation_horizon": config["simulation_horizon"][
+                        "observation_horizon"
+                    ],
                     "source": config["source"],
                 },
             )
@@ -162,12 +186,22 @@ def _core3(config: Mapping[str, Any]) -> Iterator[FormalPlanRecordV3]:
                 slot_material=slot,
                 math_material={
                     "track": "FINITE_BATTERY_EMPIRICAL",
+                    "applicability_track": "FINITE_BATTERY_EMPIRICAL",
                     "release_mode": "ASYNC_HASH_PHASE_V1",
                     "battery_capacity": capacity,
+                    "battery_model": "FINITE_CAPACITY_EXACT",
+                    "physical_initial_energy": config["projection_e0"][0],
+                    "service_scale": "1",
                     "scheduler": "gpfp_asap_block",
                     "projection_methods": config["projection_methods"],
                     "projection_e0": config["projection_e0"],
                     "simulation_horizon": config["simulation_horizon"],
+                    "release_horizon": config["simulation_horizon"][
+                        "release_horizon"
+                    ],
+                    "observation_horizon": config["simulation_horizon"][
+                        "observation_horizon"
+                    ],
                     "source": config["source"],
                 },
             )
@@ -207,14 +241,25 @@ def _core4(config: Mapping[str, Any]) -> Iterator[FormalPlanRecordV3]:
                         core="CORE-4", ordinal=ordinal, kind="rta_request",
                         slot_material={
                             "namespace": "RTA4_CORE4_PARAMETERIZED_V3",
-                            "processors": config["processors"],
+                            "processor_count": config["processors"],
                             "task_count": config["task_count"],
                             "normalized_utilization": utilization,
                             "replicate_index": replicate,
                             "deadline_slack_fraction": condition[
                                 "deadline_slack_fraction"
                             ],
+                            "deadline_variant": (
+                                "fixed_slack_fraction_v1:"
+                                + condition["deadline_slack_fraction"]
+                            ),
                             "power_scale": condition["power_scale"],
+                        },
+                        skeleton_material={
+                            "namespace": "RTA4_CORE4_PARAMETERIZED_V3",
+                            "processor_count": config["processors"],
+                            "task_count": config["task_count"],
+                            "normalized_utilization": utilization,
+                            "replicate_index": replicate,
                         },
                         math_material={"method": method, **condition},
                     )
@@ -230,11 +275,16 @@ def _core5a_axis(
         for replicate in range(tasksets):
             slot = {
                 "namespace": f"RTA4_CORE5A_{axis.upper()}_V3",
-                "processors": value if axis == "processor_count" else processors,
+                "processor_count": value if axis == "processor_count" else processors,
                 "task_count": value if axis == "task_count" else task_count,
                 "normalized_utilization": baseline["normalized_utilization"],
                 "replicate_index": replicate,
                 "integer_time_scale": value if axis == "integer_time_scale" else 1,
+                "deadline_variant": (
+                    "fixed_slack_fraction_v1:"
+                    + baseline["deadline_slack_fraction"]
+                ),
+                "power_scale": baseline["power_scale"],
             }
             yield slot, {"axis": axis, "axis_value": str(value), **baseline}
 
@@ -264,9 +314,12 @@ def _core5a(config: Mapping[str, Any]) -> Iterator[FormalPlanRecordV3]:
     for axis_points in axes:
         for slot, material in axis_points:
             for method in config["methods"]:
+                skeleton = dict(slot)
+                skeleton.pop("integer_time_scale", None)
                 yield _record(
                     core="CORE-5A", ordinal=ordinal, kind="rta_request",
-                    slot_material=slot, math_material={"method": method, **material},
+                    slot_material=slot, skeleton_material=skeleton,
+                    math_material={"method": method, **material},
                 )
                 ordinal += 1
 

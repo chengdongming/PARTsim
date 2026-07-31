@@ -56,7 +56,11 @@ def _production_manifest(path: Path | str) -> tuple[str, str, str]:
     absolute = _absolute_path(path, "production manifest", existing_file=True)
     try:
         payload = Path(absolute).read_bytes()
-        document = load_strict_json(absolute)
+        from .rta4_production_build_manifest_v3 import (
+            load_production_build_manifest_v3,
+        )
+
+        document = load_production_build_manifest_v3(absolute, live=False)
         identity = _sha(document.get("manifest_id"), "production manifest identity")
     except Exception as exc:
         raise RTA4FormalLifecycleV3Error("cannot bind production manifest") from exc
@@ -68,6 +72,7 @@ def _operational(
     taskset_store: Path | str | None, worker_count: int | None,
     max_in_flight: int | None, timeout_seconds: int | None,
     max_records: int | None, log_path: Path | str | None, resume: bool | None,
+    source_taskset_store: Path | str | None,
 ) -> Dict[str, Any]:
     runtime = dict(campaign.runtime)
     overrides = {
@@ -75,6 +80,7 @@ def _operational(
         "worker_count": worker_count, "max_in_flight": max_in_flight,
         "timeout_seconds": timeout_seconds, "max_records": max_records,
         "log_path": log_path, "resume": resume,
+        "source_taskset_store": source_taskset_store,
     }
     for key, value in overrides.items():
         if value is not None:
@@ -94,6 +100,20 @@ def _operational(
     }
     if "log_path" in runtime:
         result["log_path"] = _absolute_path(runtime["log_path"], "log_path")
+    downstream = "source" in campaign.normalized_scientific_config
+    if downstream:
+        source_path = runtime.get("source_taskset_store")
+        if source_path is None:
+            raise RTA4FormalLifecycleV3Error(
+                "downstream prepared config requires source_taskset_store"
+            )
+        result["source_taskset_store"] = _absolute_path(
+            source_path, "source_taskset_store",
+        )
+    elif runtime.get("source_taskset_store") is not None:
+        raise RTA4FormalLifecycleV3Error(
+            "independent campaign does not accept source_taskset_store"
+        )
     for key in ("worker_count", "max_in_flight", "timeout_seconds"):
         if type(result[key]) is not int or result[key] <= 0:
             raise RTA4FormalLifecycleV3Error(f"operational.{key} must be positive")
@@ -116,6 +136,7 @@ def build_prepared_config_v3(
     timeout_seconds: int | None = None, log_path: Path | str | None = None,
     max_records: int | None = None, resume: bool | None = None,
     observed_source_binding: Mapping[str, Any] | None = None,
+    source_taskset_store: Path | str | None = None,
 ) -> Dict[str, Any]:
     if type(campaign) is not LoadedCampaignV3:
         raise RTA4FormalLifecycleV3Error("prepared config requires a loaded V3 campaign")
@@ -169,6 +190,7 @@ def build_prepared_config_v3(
             worker_count=worker_count, max_in_flight=max_in_flight,
             timeout_seconds=timeout_seconds, max_records=max_records,
             log_path=log_path, resume=resume,
+            source_taskset_store=source_taskset_store,
         ),
     }
     material["prepared_config_id"] = domain_hash(
@@ -236,9 +258,10 @@ def validate_prepared_config_v3(value: Mapping[str, Any]) -> Dict[str, Any]:
     if not isinstance(operation, Mapping) or set(operation).difference({
         "output_root", "taskset_store", "worker_count", "max_in_flight",
         "timeout_seconds", "max_records", "resume", "log_path",
+        "source_taskset_store",
     }):
         raise RTA4FormalLifecycleV3Error("prepared operational field mismatch")
-    _operational(
+    normalized_operation = _operational(
         loaded, output_root=operation.get("output_root"),
         taskset_store=operation.get("taskset_store"),
         worker_count=operation.get("worker_count"),
@@ -246,7 +269,10 @@ def validate_prepared_config_v3(value: Mapping[str, Any]) -> Dict[str, Any]:
         timeout_seconds=operation.get("timeout_seconds"),
         max_records=operation.get("max_records"), log_path=operation.get("log_path"),
         resume=operation.get("resume"),
+        source_taskset_store=operation.get("source_taskset_store"),
     )
+    if normalized_operation != dict(operation):
+        raise RTA4FormalLifecycleV3Error("prepared operational identity drift")
     unsigned = dict(value)
     observed = unsigned.pop("prepared_config_id")
     if observed != domain_hash(RTA4_PREPARED_CONFIG_DOMAIN_V3, unsigned):
@@ -260,7 +286,12 @@ def build_authorization_v3(prepared_config: Mapping[str, Any]) -> Dict[str, Any]
         "authorization_schema": RTA4_AUTHORIZATION_SCHEMA_V3,
         "profile": RTA4_FORMAL_PROFILE_V3,
         "authorization_scope": "HASH_BOUND_PARAMETERIZED_CAMPAIGN_V3",
+        "execution_class": "FORMAL_AUTHORIZED",
+        "core": prepared["normalized_scientific_config"]["core"],
         "prepared_config_id": prepared["prepared_config_id"],
+        "campaign_file_sha256": prepared["campaign_file"][
+            "raw_campaign_file_sha256"
+        ],
         "normalized_scientific_config_sha256": prepared[
             "normalized_scientific_config_sha256"
         ],
@@ -269,7 +300,12 @@ def build_authorization_v3(prepared_config: Mapping[str, Any]) -> Dict[str, Any]
             "production_build_manifest_identity"
         ],
         "taskset_store_identity": prepared["taskset_store_identity"],
+        "taskset_store": prepared["operational"]["taskset_store"],
         "output_root": prepared["operational"]["output_root"],
+        "allowed_record_range": {
+            "start": 0, "stop": prepared["ordered_stream_count"],
+        },
+        "source_binding": prepared["source_binding"],
     }
     material["authorization_id"] = domain_hash(
         RTA4_AUTHORIZATION_DOMAIN_V3, material,
@@ -283,9 +319,11 @@ def validate_authorization_v3(
     prepared = validate_prepared_config_v3(prepared_config)
     exact = {
         "authorization_schema", "profile", "authorization_scope",
+        "execution_class", "core", "campaign_file_sha256",
         "prepared_config_id", "normalized_scientific_config_sha256",
         "plan_sha256", "production_build_manifest_identity",
-        "taskset_store_identity", "output_root", "authorization_id",
+        "taskset_store_identity", "taskset_store", "output_root",
+        "allowed_record_range", "source_binding", "authorization_id",
     }
     if not isinstance(value, Mapping) or set(value) != exact:
         raise RTA4FormalLifecycleV3Error("authorization field mismatch")
@@ -293,7 +331,12 @@ def validate_authorization_v3(
         "authorization_schema": RTA4_AUTHORIZATION_SCHEMA_V3,
         "profile": RTA4_FORMAL_PROFILE_V3,
         "authorization_scope": "HASH_BOUND_PARAMETERIZED_CAMPAIGN_V3",
+        "execution_class": "FORMAL_AUTHORIZED",
+        "core": prepared["normalized_scientific_config"]["core"],
         "prepared_config_id": prepared["prepared_config_id"],
+        "campaign_file_sha256": prepared["campaign_file"][
+            "raw_campaign_file_sha256"
+        ],
         "normalized_scientific_config_sha256": prepared[
             "normalized_scientific_config_sha256"
         ],
@@ -302,7 +345,12 @@ def validate_authorization_v3(
             "production_build_manifest_identity"
         ],
         "taskset_store_identity": prepared["taskset_store_identity"],
+        "taskset_store": prepared["operational"]["taskset_store"],
         "output_root": prepared["operational"]["output_root"],
+        "allowed_record_range": {
+            "start": 0, "stop": prepared["ordered_stream_count"],
+        },
+        "source_binding": prepared["source_binding"],
     }
     if any(value.get(key) != item for key, item in expected.items()):
         raise RTA4FormalLifecycleV3Error("authorization/prepared binding mismatch")
@@ -352,7 +400,9 @@ def validate_checkpoint_v3(
     authorized = validate_authorization_v3(authorization, prepared_config=prepared)
     if not isinstance(checkpoint, Mapping) or set(checkpoint) != {
         "checkpoint_schema", "prepared_config_id", "authorization_id",
-        "plan_sha256", "completed_execution_ids", "checkpoint_id",
+        "plan_sha256", "run_identity", "production_build_manifest_identity",
+        "ordered_stream_count", "completed_execution_ids", "complete",
+        "checkpoint_id",
     }:
         raise RTA4FormalLifecycleV3Error("legacy or malformed checkpoint")
     if (
@@ -360,9 +410,24 @@ def validate_checkpoint_v3(
         or checkpoint["prepared_config_id"] != prepared["prepared_config_id"]
         or checkpoint["authorization_id"] != authorized["authorization_id"]
         or checkpoint["plan_sha256"] != prepared["plan_sha256"]
+        or checkpoint["production_build_manifest_identity"]
+        != prepared["production_manifest"]["production_build_manifest_identity"]
+        or checkpoint["ordered_stream_count"] != prepared["ordered_stream_count"]
         or type(checkpoint["completed_execution_ids"]) is not list
+        or type(checkpoint["complete"]) is not bool
+        or checkpoint["complete"]
+        != (
+            len(checkpoint["completed_execution_ids"])
+            == prepared["ordered_stream_count"]
+        )
     ):
         raise RTA4FormalLifecycleV3Error("checkpoint campaign identity mismatch")
+    _sha(checkpoint["run_identity"], "checkpoint run identity")
+    completed = checkpoint["completed_execution_ids"]
+    if completed != sorted(set(completed)):
+        raise RTA4FormalLifecycleV3Error("checkpoint completion inventory mismatch")
+    for execution_id in completed:
+        _sha(execution_id, "checkpoint execution identity")
     unsigned = dict(checkpoint)
     observed = unsigned.pop("checkpoint_id")
     if observed != domain_hash(RTA4_CHECKPOINT_DOMAIN_V3, unsigned):

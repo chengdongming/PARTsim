@@ -39,6 +39,20 @@ def formal_schema_material_v3() -> Dict[str, Any]:
             "source_campaign_identity",
         ],
         "dynamic_count_contract": "EXPECTED_EQUALS_ENUMERATED_FAIL_CLOSED",
+        "authorization_contract": {
+            "execution_class": "FORMAL_AUTHORIZED",
+            "full_record_range_bound": True,
+            "output_and_taskset_store_paths_bound": True,
+            "source_campaign_store_bound": True,
+        },
+        "execution_contract": {
+            "atomic_terminal_results": True,
+            "checkpoint_version": "V3_ONLY",
+            "attempt_history_required": True,
+            "finite_retry_contract": True,
+            "resume_regeneration_forbidden": True,
+            "worker_count_and_max_in_flight_bound": True,
+        },
         "legacy_profiles_accepted": False,
     }
 

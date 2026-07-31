@@ -27,7 +27,20 @@ The checked-in E1 example produces 800 task-set skeletons and 9,600 ordered
 mathematical requests. This command never starts a formal experiment.
 
 Prepared and authorization artifacts can be generated only while binding an
-existing production manifest and explicit operational paths:
+existing V3 production manifest and explicit operational paths. Build that
+manifest from a clean linear V3 execution commit with the explicit profile:
+
+```bash
+python3 scripts/build_v9_3_rta4_production_manifest.py \
+  --profile v3-parameterized \
+  --output /absolute/path/v3-production-manifest.json \
+  --simulator-binary /absolute/path/rtsim \
+  --verifier-binary /absolute/path/solar-verifier \
+  --simulator-build-arg bounded-build-command \
+  --verifier-build-arg bounded-build-command
+```
+
+Then create the hash-bound execution artifacts:
 
 ```bash
 python3 scripts/run_v9_3_rta4_formal.py \
@@ -35,9 +48,31 @@ python3 scripts/run_v9_3_rta4_formal.py \
   --production-manifest /absolute/path/production-manifest.json \
   --output-root /absolute/path/results \
   --taskset-store /absolute/path/tasksets \
+  --worker-count 12 --max-in-flight 24 --timeout 120 \
   --write-prepared-config /absolute/path/prepared.json \
   --write-authorization /absolute/path/authorization.json
 ```
+
+Validation performs all live campaign, plan, manifest, authorization, source,
+store, and output ownership checks without constructing a solver:
+
+```bash
+python3 scripts/run_v9_3_rta4_formal.py \
+  --campaign-config /absolute/path/campaign.yaml \
+  --prepared-config /absolute/path/prepared.json \
+  --authorization /absolute/path/authorization.json \
+  --validate-only
+```
+
+Use `--execute` for a new output namespace and `--resume` for an existing V3
+checkpoint. `--max-records N` bounds either command without changing the
+scientific config or plan identity. Terminal JSON and checkpoints are written
+atomically; resume validates every completed result against the frozen
+task-set store and never rewrites it.
+
+Downstream CORE-2/3/5B preparation additionally requires the observed source
+binding and `--source-taskset-store`; the store marker must match the bound
+source campaign, plan, core, and store identity.
 
 The prepared identity contains the campaign's absolute path, raw file hash,
 normalized scientific material/hash, dynamic counts, plan/digest, production
@@ -69,6 +104,9 @@ Binary floats, NaN/infinity, duplicate/empty axes, unknown fields/methods,
 invalid counts, unsupported semantics, and mismatched source identities fail
 closed. CLI options intentionally provide no scientific-parameter overrides.
 
-Campaign YAML is external scientific input and is not added to the V2
-production source closure. Code, binaries, compiler, environment, and fixed
-model inputs remain independently bound by the production manifest.
+Campaign YAML is external scientific input and is not added to either code
+source closure. The V2 closure and profile remain frozen. The independent V3
+closure adds the V3 config, plan, lifecycle, schema, runner, CLI, campaign
+template generator, and manifest implementation; code, binaries, compiler,
+environment, and fixed model inputs remain independently bound by the V3
+production manifest.

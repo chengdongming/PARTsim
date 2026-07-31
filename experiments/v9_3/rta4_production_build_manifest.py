@@ -270,6 +270,7 @@ def generate_production_build_manifest(
     relevant_source_paths: Iterable[Path | str] = DEFAULT_RELEVANT_SOURCES,
     environ: Mapping[str, str] | None = None,
     require_clean: bool = True,
+    _lineage_validator: Any = None,
 ) -> Dict[str, Any]:
     """Capture the one environment selected before formal workers start."""
 
@@ -280,7 +281,8 @@ def generate_production_build_manifest(
     if not (root / ".git").exists():
         raise ProductionBuildManifestError("source_root is not a git worktree")
     try:
-        lineage = validate_core0a_repository_lineage_v1(
+        validator = validate_core0a_repository_lineage_v1 if _lineage_validator is None else _lineage_validator
+        lineage = validator(
             source_root=root,
         )
     except Core0ARepositoryLineageV1Error as exc:
