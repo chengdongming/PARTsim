@@ -1311,6 +1311,38 @@ class TestLocThetaCw:
         assert solver.calls == []
         assert result.certification_status is ts.AnalysisCertificationStatus.NOT_APPLICABLE
 
+    def test_invalid_dependency_with_numeric_interface_failure_is_not_applicable(self):
+        bad_context = replace(
+            context("bad-numeric-interface"),
+            numeric_contract_sha256="0" * 64,
+        )
+        result, solver = run_scripted(
+            ts.AnalysisVariant.LOC_THETA_CW,
+            {name: candidate(1) for name in ("t0", "t1", "t2")},
+            input=analysis_input(ctx=bad_context),
+            source_analysis_id="planned-source-unavailable",
+            dependency_check_status=ts.DependencyVectorCheckStatus.INVALID,
+        )
+
+        assert solver.calls == []
+        assert (
+            result.solver_status
+            is ts.AnalysisSolverStatus.NOT_APPLICABLE_DEPENDENCY
+        )
+        assert (
+            result.certification_status
+            is ts.AnalysisCertificationStatus.NOT_APPLICABLE
+        )
+        assert (
+            result.dependency_check_status
+            is ts.DependencyVectorCheckStatus.INVALID
+        )
+        assert all(
+            record.solver_status is ts.TaskSolverStatus.NOT_APPLICABLE_DEPENDENCY
+            and record.certification_status is ts.TaskCertificationStatus.NOT_APPLICABLE
+            for record in result.task_records
+        )
+
     @pytest.mark.parametrize("bad_outcome", [candidate(3), failure(ts.TaskSolverStatus.NO_CANDIDATE)])
     def test_dominance_failures_are_internal_conformance_failures(self, bad_outcome):
         result, _ = run_scripted(
