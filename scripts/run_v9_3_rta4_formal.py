@@ -25,6 +25,7 @@ from experiments.v9_3.rta4_formal_lifecycle_v2 import (
 )
 from experiments.v9_3.rta4_formal_runner_v2 import AuthorizedRTA4RunnerV2
 from experiments.v9_3.rta4_formal_environment import load_strict_json
+from experiments.v9_3.result_writer import atomic_write_json
 
 
 def _json(path: Path):
@@ -41,6 +42,7 @@ def _load_describable_config(path: Path):
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path)
+    parser.add_argument("--campaign-config", type=Path)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--prepared-config", type=Path)
     parser.add_argument("--authorization", type=Path)
@@ -49,6 +51,16 @@ def main() -> int:
     operation.add_argument("--resume", action="store_true")
     operation.add_argument("--validate-only", action="store_true")
     parser.add_argument("--max-records", type=int)
+    parser.add_argument("--output-root", type=Path)
+    parser.add_argument("--taskset-store", type=Path)
+    parser.add_argument("--worker-count", type=int)
+    parser.add_argument("--max-in-flight", type=int)
+    parser.add_argument("--timeout", type=int)
+    parser.add_argument("--log-path", type=Path)
+    parser.add_argument("--production-manifest", type=Path)
+    parser.add_argument("--source-binding", type=Path)
+    parser.add_argument("--write-prepared-config", type=Path)
+    parser.add_argument("--write-authorization", type=Path)
     parser.add_argument("--source", action="append", default=[])
     parser.add_argument(
         "--thread-workers", action="store_true",
@@ -61,6 +73,88 @@ def main() -> int:
         help="TEST-authorization-only bounded trusted ordinal",
     )
     args = parser.parse_args()
+    if args.campaign_config is not None:
+        if args.config is not None:
+            parser.error("--campaign-config and --config are mutually exclusive")
+        if args.source or args.base_system is not None or args.energy_config is not None:
+            parser.error("V3 campaign mode rejects legacy source/config overrides")
+        if args.synthetic_ordinal or args.thread_workers:
+            parser.error("V3 campaign mode rejects test execution overrides")
+        from experiments.v9_3.rta4_formal_config_v3 import (
+            load_rta4_campaign_v3,
+        )
+        from experiments.v9_3.rta4_formal_lifecycle_v3 import (
+            build_authorization_v3, build_prepared_config_v3,
+            validate_authorization_v3, validate_prepared_config_v3,
+        )
+        from experiments.v9_3.rta4_formal_plan_v3 import (
+            describe_formal_plan_v3,
+        )
+
+        try:
+            campaign = load_rta4_campaign_v3(args.campaign_config)
+            description = describe_formal_plan_v3(
+                campaign.normalized_scientific_config,
+            )
+            report = {
+                "campaign_path": str(campaign.campaign_path),
+                "raw_campaign_file_sha256": campaign.raw_campaign_file_sha256,
+                "normalized_scientific_config_sha256": (
+                    campaign.normalized_scientific_config_sha256
+                ),
+                **description,
+            }
+            if args.execute or args.resume:
+                raise ValueError(
+                    "V3 parameterization infrastructure does not start formal execution"
+                )
+            if args.prepared_config is not None or args.authorization is not None:
+                if not args.validate_only or args.prepared_config is None or args.authorization is None:
+                    raise ValueError(
+                        "V3 prepared artifacts require both inputs and --validate-only"
+                    )
+                prepared = validate_prepared_config_v3(_json(args.prepared_config))
+                authorization = validate_authorization_v3(
+                    _json(args.authorization), prepared_config=prepared,
+                )
+                report["prepared_config_id"] = prepared["prepared_config_id"]
+                report["authorization_id"] = authorization["authorization_id"]
+            if args.write_prepared_config is not None or args.write_authorization is not None:
+                if (
+                    args.write_prepared_config is None
+                    or args.write_authorization is None
+                    or args.production_manifest is None
+                ):
+                    raise ValueError(
+                        "V3 preparation requires --production-manifest, "
+                        "--write-prepared-config and --write-authorization"
+                    )
+                prepared = build_prepared_config_v3(
+                    campaign,
+                    production_manifest_path=args.production_manifest,
+                    output_root=args.output_root,
+                    taskset_store=args.taskset_store,
+                    worker_count=args.worker_count,
+                    max_in_flight=args.max_in_flight,
+                    timeout_seconds=args.timeout,
+                    max_records=args.max_records,
+                    log_path=args.log_path,
+                    resume=False,
+                    observed_source_binding=(
+                        None if args.source_binding is None
+                        else _json(args.source_binding)
+                    ),
+                )
+                authorization = build_authorization_v3(prepared)
+                atomic_write_json(args.write_prepared_config, prepared)
+                atomic_write_json(args.write_authorization, authorization)
+                report["prepared_config_id"] = prepared["prepared_config_id"]
+                report["authorization_id"] = authorization["authorization_id"]
+            print(json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2))
+            return 0
+        except Exception as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
     if args.dry_run:
         if args.config is None:
             parser.error("--dry-run requires --config")
