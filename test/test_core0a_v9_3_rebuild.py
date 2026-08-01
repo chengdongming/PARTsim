@@ -1,7 +1,14 @@
 from fractions import Fraction
 
+import pytest
+
 import asap_block_rta_v9_3 as core
-from core0a_v9_3_build_identity import ROOT, SOURCE_FILES
+from core0a_v9_3_build_identity import (
+    MUTATION_SANDBOX_SOURCE_FILES,
+    ROOT,
+    RTA_EXECUTION_SOURCE_FILES,
+    SOURCE_FILES,
+)
 from core0a_v9_3_evidence import finite_domain_instances
 from core0a_v9_3_evidence_schema import RAW_TABLES, TABLE_SCHEMAS
 from core0a_v9_3_oracles import (
@@ -10,8 +17,15 @@ from core0a_v9_3_oracles import (
     workload_reference,
 )
 from scripts.core0a_v9_3_mutation_harness import (
+    MutationHarnessError,
     SOURCE_MUTATIONS,
+    materialize_mutation_source_closure,
+    mutation_source_closure_material,
     run_source_mutation,
+    validate_materialized_source_closure,
+)
+from experiments.v9_3.rta4_production_build_manifest import (
+    DEFAULT_RELEVANT_SOURCES,
 )
 
 
@@ -66,6 +80,37 @@ def test_finite_state_code_domain_matches_frozen_fourteen_instance_shape():
 
 def test_build_identity_relevant_source_set_exists():
     assert all((ROOT / name).is_file() for name in SOURCE_FILES)
+
+
+def test_execution_source_closure_is_shared_by_production_portable_and_mutation():
+    required = set(RTA_EXECUTION_SOURCE_FILES)
+    assert required <= set(DEFAULT_RELEVANT_SOURCES)
+    assert required <= set(SOURCE_FILES)
+    assert required <= set(MUTATION_SANDBOX_SOURCE_FILES)
+
+
+def test_mutation_source_closure_identity_and_blob_validation_fail_closed(tmp_path):
+    material = mutation_source_closure_material()
+    assert len(material["source_closure_identity"]) == 64
+    assert {row["path"] for row in material["files"]} <= set(SOURCE_FILES)
+
+    identity_tampered = dict(material)
+    identity_tampered["source_closure_identity"] = "0" * 64
+    with pytest.raises(MutationHarnessError, match="identity mismatch"):
+        validate_materialized_source_closure(tmp_path, identity_tampered)
+
+    missing = tmp_path / "missing"
+    materialize_mutation_source_closure(missing, material)
+    (missing / "asap_block_rta_v9_3_methods.py").unlink()
+    with pytest.raises(MutationHarnessError, match="missing or escapes"):
+        validate_materialized_source_closure(missing, material)
+
+    tampered = tmp_path / "tampered"
+    materialize_mutation_source_closure(tampered, material)
+    methods = tampered / "asap_block_rta_v9_3_methods.py"
+    methods.write_bytes(methods.read_bytes() + b"\n# tampered\n")
+    with pytest.raises(MutationHarnessError, match="blob mismatch"):
+        validate_materialized_source_closure(tampered, material)
 
 
 def test_all_ten_source_mutations_hit_and_are_semantically_detected():
