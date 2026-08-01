@@ -22,6 +22,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import asap_block_rta_v9_3 as core
 import asap_block_rta_v9_3_taskset as taskset
+from core0a_v9_3_build_identity import SOURCE_FILES
 from experiments.v9_3 import exact_energy
 from core0a_v9_3_evidence_schema import (
     LINEAGE_REQUIRED_CHECK_TYPES,
@@ -1625,23 +1626,7 @@ def produce_all(
         )
         raise EvidenceProductionError("raw evidence contains a stop-condition failure")
 
-    source_names = (
-        "asap_block_rta_v9_3.py",
-        "asap_block_rta_v9_3_taskset.py",
-        "asap_block_v9_3_runner.py",
-        "asap_block_v1_3_12_schema_binding.py",
-        "asap_block_v9_3_v1_3_12_microcases.py",
-        "core0a_v9_3_build_identity.py",
-        "core0a_v9_3_oracles.py",
-        "core0a_v9_3_scheduler_model.py",
-        "core0a_v9_3_evidence.py",
-        "core0a_v9_3_evidence_schema.py",
-        "core0a_v9_3_independent_aggregator.py",
-        "core0a_v9_3_second_rebuild_verifier.py",
-        "core0a_v9_3_package_validator.py",
-        "scripts/core0a_v9_3_mutation_harness.py",
-        "scripts/core0a_v9_3_mutation_probe.py",
-    )
+    source_names = SOURCE_FILES
     project_root = Path(__file__).resolve().parent
     transcript_names = []
     for row in rows["mutation_runs.csv"]:

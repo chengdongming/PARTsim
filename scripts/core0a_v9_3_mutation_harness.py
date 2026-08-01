@@ -17,8 +17,11 @@ from pathlib import Path
 
 import yaml
 
+from core0a_v9_3_build_identity import MUTATION_SANDBOX_CLOSURE_FILES
+
 
 ROOT = Path(__file__).resolve().parents[1]
+MUTATION_SOURCE_CLOSURE_SCHEMA = "CORE0A_MUTATION_SOURCE_CLOSURE_V1"
 SCHEMA_FIELDS = (
     "mutation_id", "input_hash", "build_identity_hash", "target_file",
     "target_symbol", "argv_json", "cwd_policy", "environment_overrides_json",
@@ -37,10 +40,108 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def input_hash(mutation_id: str, original: str, mutated: str) -> str:
-    value = [mutation_id, original, mutated]
+def input_hash(
+    mutation_id: str,
+    original: str,
+    mutated: str,
+    source_closure_identity: str,
+) -> str:
+    value = [mutation_id, original, mutated, source_closure_identity]
     payload = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(b"CORE0A:MUTATION\0" + payload).hexdigest()
+
+
+def _closure_identity(material):
+    payload = json.dumps(
+        material, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(
+        b"CORE0A:MUTATION_SOURCE_CLOSURE:v1\0" + payload
+    ).hexdigest()
+
+
+def mutation_source_closure_material():
+    rows = []
+    for relative in MUTATION_SANDBOX_CLOSURE_FILES:
+        source = ROOT / relative
+        try:
+            resolved = source.resolve(strict=True)
+            resolved.relative_to(ROOT)
+        except (OSError, ValueError) as exc:
+            raise MutationHarnessError(
+                "mutation source closure path escapes or is missing: {}".format(
+                    relative
+                )
+            ) from exc
+        if not resolved.is_file():
+            raise MutationHarnessError(
+                "mutation source closure member is not a file: {}".format(relative)
+            )
+        rows.append({
+            "path": relative,
+            "size_bytes": resolved.stat().st_size,
+            "sha256": sha256(resolved),
+        })
+    material = {
+        "schema": MUTATION_SOURCE_CLOSURE_SCHEMA,
+        "files": rows,
+    }
+    return {**material, "source_closure_identity": _closure_identity(material)}
+
+
+def validate_materialized_source_closure(root, material, overrides=None):
+    expected_keys = {"schema", "files", "source_closure_identity"}
+    if set(material) != expected_keys:
+        raise MutationHarnessError("mutation source closure material is malformed")
+    preimage = {"schema": material["schema"], "files": material["files"]}
+    if (
+        material["schema"] != MUTATION_SOURCE_CLOSURE_SCHEMA
+        or material["source_closure_identity"] != _closure_identity(preimage)
+    ):
+        raise MutationHarnessError("mutation source closure identity mismatch")
+    override_rows = dict(overrides or {})
+    for row in material["files"]:
+        expected = dict(row)
+        expected.update(override_rows.get(row["path"], {}))
+        candidate = Path(root) / row["path"]
+        try:
+            resolved = candidate.resolve(strict=True)
+            resolved.relative_to(Path(root).resolve(strict=True))
+        except (OSError, ValueError) as exc:
+            raise MutationHarnessError(
+                "materialized mutation source is missing or escapes: {}".format(
+                    row["path"]
+                )
+            ) from exc
+        if (
+            not resolved.is_file()
+            or resolved.stat().st_size != expected["size_bytes"]
+            or sha256(resolved) != expected["sha256"]
+        ):
+            raise MutationHarnessError(
+                "materialized mutation source blob mismatch: {}".format(row["path"])
+            )
+    return material["source_closure_identity"]
+
+
+def materialize_mutation_source_closure(root, material=None):
+    root = Path(root)
+    material = material or mutation_source_closure_material()
+    for row in material["files"]:
+        source = ROOT / row["path"]
+        if (
+            not source.is_file()
+            or source.stat().st_size != row["size_bytes"]
+            or sha256(source) != row["sha256"]
+        ):
+            raise MutationHarnessError(
+                "repository mutation source blob drift: {}".format(row["path"])
+            )
+        target = root / row["path"]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+    validate_materialized_source_closure(root, material)
+    return material
 
 
 @dataclass(frozen=True)
@@ -146,16 +247,26 @@ SOURCE_MUTATIONS = (
 SOURCE_MUTATIONS = SOURCE_MUTATIONS[:10]
 
 
-def subprocess_env(extra_pythonpath: Path | None = None):
+def subprocess_env(
+    extra_pythonpath: Path | None = None,
+    mutation_sandbox_root: Path | None = None,
+):
     env = dict(os.environ)
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     if extra_pythonpath is not None:
         env["PYTHONPATH"] = str(extra_pythonpath)
+    if mutation_sandbox_root is not None:
+        env["CORE0A_MUTATION_SANDBOX_ROOT"] = str(mutation_sandbox_root)
     return env
 
 
 def _provenance_row(mutation_id, build, target_file, target_symbol, original,
-                    mutated, restored, process, expected_marker, argv):
+                    mutated, restored, process, expected_marker, argv,
+                    source_closure_identity=None, mutation_sandbox=False):
+    if source_closure_identity is None:
+        source_closure_identity = mutation_source_closure_material()[
+            "source_closure_identity"
+        ]
     transcript = process.stdout + "\n" + process.stderr
     syntax_failure = any(value in transcript for value in (
         "SyntaxError", "ImportError", "ModuleNotFoundError"))
@@ -166,13 +277,21 @@ def _provenance_row(mutation_id, build, target_file, target_symbol, original,
     )
     return {
         "mutation_id": mutation_id,
-        "input_hash": input_hash(mutation_id, original, mutated),
+        "input_hash": input_hash(
+            mutation_id, original, mutated, source_closure_identity
+        ),
         "build_identity_hash": build,
         "target_file": target_file,
         "target_symbol": target_symbol,
         "argv_json": json.dumps(argv, separators=(",", ":")),
         "cwd_policy": "FRESH_TEMPORARY_COPY",
-        "environment_overrides_json": "{\"PYTHONDONTWRITEBYTECODE\":\"1\"}",
+        "environment_overrides_json": (
+            "{\"CORE0A_MUTATION_SANDBOX_ROOT\":\"<MUTATION_ROOT>\","
+            "\"PYTHONDONTWRITEBYTECODE\":\"1\","
+            "\"PYTHONPATH\":\"<MUTATION_ROOT>\"}"
+            if mutation_sandbox
+            else "{\"PYTHONDONTWRITEBYTECODE\":\"1\"}"
+        ),
         "stdout_member_path": "mutation_{}.stdout.txt".format(mutation_id),
         "stderr_member_path": "mutation_{}.stderr.txt".format(mutation_id),
         "stdout_sha256": hashlib.sha256(process.stdout.encode()).hexdigest(),
@@ -193,7 +312,8 @@ def _provenance_row(mutation_id, build, target_file, target_symbol, original,
 
 
 def result_row(spec: SourceMutation, build: str, original: str, mutated: str,
-               restored: str, process: subprocess.CompletedProcess[str]):
+               restored: str, process: subprocess.CompletedProcess[str],
+               source_closure_identity: str):
     expected_marker = {
         "early_task_certification": "CERTIFIED may only be produced by finalizer",
         "loc_uses_local_prefix": "carry-in trace mismatch",
@@ -201,26 +321,16 @@ def result_row(spec: SourceMutation, build: str, original: str, mutated: str,
     return _provenance_row(
         spec.mutation_id, build, spec.target_file, spec.target_symbol, original,
         mutated, restored, process, expected_marker,
-        [sys.executable, "probe.py", spec.mutation_id])
+        [sys.executable, "scripts/core0a_v9_3_mutation_probe.py", spec.mutation_id],
+        source_closure_identity,
+        True,
+    )
 
 
 def run_source_mutation(spec: SourceMutation, build: str):
     with tempfile.TemporaryDirectory(prefix="core0a-source-mutation-") as name:
         root = Path(name)
-        for filename in (
-            "asap_block_rta_v9_3.py",
-            "asap_block_rta_v9_3_taskset.py",
-            "asap_block_v1_3_12_schema_binding.py",
-        ):
-            shutil.copy2(ROOT / filename, root / filename)
-        shutil.copy2(ROOT / "scripts/core0a_v9_3_mutation_probe.py", root / "probe.py")
-        if spec.target_file == "asap_block_v1_3_12_schema_binding.py":
-            contract = "ASAP_BLOCK_v1_3_12_机器合同静态冻结候选包"
-            shutil.copytree(ROOT / "docs" / contract, root / "docs" / contract)
-            shutil.copy2(
-                ROOT / "artifacts/v9_3_v1_3_12_runner_microcase/per_task_results.csv",
-                root / "per_task_results.csv",
-            )
+        closure = materialize_mutation_source_closure(root)
         target = root / spec.target_file
         pristine = target.read_text(encoding="utf-8")
         if pristine.count(spec.old) != 1:
@@ -230,10 +340,21 @@ def run_source_mutation(spec: SourceMutation, build: str):
         original = sha256(target)
         target.write_text(pristine.replace(spec.old, spec.new, 1), encoding="utf-8")
         mutated = sha256(target)
+        validate_materialized_source_closure(
+            root,
+            closure,
+            overrides={
+                spec.target_file: {
+                    "size_bytes": target.stat().st_size,
+                    "sha256": mutated,
+                }
+            },
+        )
+        probe = root / "scripts/core0a_v9_3_mutation_probe.py"
         process = subprocess.run(
-            [sys.executable, str(root / "probe.py"), spec.mutation_id],
+            [sys.executable, str(probe), spec.mutation_id],
             cwd=root,
-            env=subprocess_env(root),
+            env=subprocess_env(root, root),
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -251,7 +372,11 @@ def run_source_mutation(spec: SourceMutation, build: str):
         )
         target.write_text(pristine, encoding="utf-8")
         restored = sha256(target)
-        row = result_row(spec, build, original, mutated, restored, process)
+        validate_materialized_source_closure(root, closure)
+        row = result_row(
+            spec, build, original, mutated, restored, process,
+            closure["source_closure_identity"],
+        )
         if row["detected"] != "true":
             raise MutationHarnessError(
                 "{} was not semantically detected: {}".format(

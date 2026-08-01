@@ -5,34 +5,76 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
+import sys
 from fractions import Fraction
 from pathlib import Path
 
 import asap_block_rta_v9_3 as core
+import asap_block_rta_v9_3_methods as methods
 import asap_block_rta_v9_3_taskset as taskset
+from experiments.v9_3 import exact_energy
 
 
 def make_task(name, c, d, t, power=1):
     return core.V93Task(name, c, d, t, Fraction(power))
 
 
-def context(label):
+def context(label, tasks, e0, beta):
     import hashlib
 
     def h(suffix):
         return hashlib.sha256((label + suffix).encode()).hexdigest()
 
+    exact_identity = exact_energy.exact_input_identity(
+        task_powers=((item.name, item.power) for item in tasks),
+        e0=e0,
+        service_prefix=beta,
+    )
     return taskset.DependencyContext(
         h("t"), h("d"), h("p"), h("e"), h("s"), h("v"),
         "EXACT_RATIONAL", None,
         taskset.THEORY_DOCUMENT_SHA256,
         taskset.FIXED_CARRY_IN_INTERFACE_SHA256,
         h("f"),
+        exact_energy.NUMERIC_CONTRACT_SHA256,
+        exact_energy.SOURCE_NUMERIC_MODEL,
+        exact_energy.DEMAND_ROUNDING_MODE,
+        exact_energy.SUPPLY_ROUNDING_MODE,
+        exact_energy.E0_ROUNDING_MODE,
+        exact_identity,
+        exact_energy.FLOAT_DECISION_PATH,
     )
 
 
 def inp(tasks, label="probe"):
-    return taskset.TasksetAnalysisInput(tuple(tasks), 1, 100, lambda length: 0, context(label))
+    items = tuple(tasks)
+    e0 = Fraction(100)
+    beta = tuple(Fraction(0) for _ in range(max(item.deadline for item in items)))
+    return taskset.TasksetAnalysisInput(
+        items, 1, e0, beta, context(label, items, e0, beta)
+    )
+
+
+def assert_isolated_import_closure():
+    raw_root = os.environ.get("CORE0A_MUTATION_SANDBOX_ROOT")
+    if not raw_root:
+        raise AssertionError("mutation sandbox identity is missing")
+    root = Path(raw_root).resolve(strict=True)
+    for module in (core, methods, taskset, exact_energy):
+        module_path = Path(module.__file__).resolve(strict=True)
+        try:
+            module_path.relative_to(root)
+        except ValueError as exc:
+            raise AssertionError(
+                "mutation sandbox imported host source: {}".format(module_path)
+            ) from exc
+    for entry in sys.path:
+        candidate = Path(entry or ".").resolve()
+        if candidate != root and (candidate / "asap_block_rta_v9_3.py").is_file():
+            raise AssertionError(
+                "mutation sandbox retains host source fallback: {}".format(candidate)
+            )
 
 
 def candidate(value):
@@ -141,9 +183,12 @@ def probe_task_hash_provenance():
     from asap_block_v1_3_12_schema_binding import V1312SchemaBinding
 
     binding = V1312SchemaBinding()
-    with (Path(__file__).resolve().parent / "per_task_results.csv").open(
-        "r", encoding="utf-8", newline=""
-    ) as handle:
+    sandbox = Path(os.environ["CORE0A_MUTATION_SANDBOX_ROOT"])
+    results = (
+        sandbox
+        / "artifacts/v9_3_v1_3_12_runner_microcase/per_task_results.csv"
+    )
+    with results.open("r", encoding="utf-8", newline="") as handle:
         row = binding.decode_row("per_task_results.csv", next(csv.DictReader(handle)))
     changed = dict(row)
     changed["task_failure_reason_code"] = "NO_CANDIDATE"
@@ -187,6 +232,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("mutation_id", choices=sorted(PROBES))
     args = parser.parse_args()
+    assert_isolated_import_closure()
     PROBES[args.mutation_id]()
     return 0
 

@@ -19,9 +19,40 @@ CONTRACT_ZIP = ROOT / "docs/ASAP_BLOCK_v1_3_12_机器合同静态冻结候选包
 FORMAL_TEMPLATE = ROOT / "docs/ASAP_BLOCK_v1_3_12_机器合同静态冻结候选包/ASAP_BLOCK_formal_contract_template_v1_3_12.yaml"
 THEORY_SHA256 = "524d4f84b04185609735a2be3ff54984149be1478a111044494ec1f8ff65098e"
 CONTRACT_ZIP_SHA256 = "b67882290d4d4688a0e81fd98f95e9d998537facfb9f5945d1ec125143959895"
-SOURCE_FILES = (
+RTA_EXECUTION_SOURCE_FILES = (
+    "asap_block_rta.py",
     "asap_block_rta_v9_3.py",
+    "asap_block_rta_v9_3_methods.py",
     "asap_block_rta_v9_3_taskset.py",
+    "experiments/v9_3/__init__.py",
+    "experiments/v9_3/cell_model.py",
+    "experiments/v9_3/config.py",
+    "experiments/v9_3/exact_energy.py",
+)
+MUTATION_SANDBOX_SOURCE_FILES = RTA_EXECUTION_SOURCE_FILES + (
+    "asap_block_v1_3_12_schema_binding.py",
+    "scripts/core0a_v9_3_mutation_probe.py",
+)
+MUTATION_SANDBOX_SUPPORT_FILES = (
+    "docs/ASAP_BLOCK_v1_3_12_机器合同静态冻结候选包/"
+    "ASAP_BLOCK_validation_common_v1_3_12.py",
+    "docs/ASAP_BLOCK_v1_3_12_机器合同静态冻结候选包/"
+    "ASAP_BLOCK_experiment_schema_v1_3_12.yaml",
+    "docs/ASAP_BLOCK_v1_3_12_机器合同静态冻结候选包/"
+    "ASAP_BLOCK_data_dictionary_v1_3_12.yaml",
+    "docs/ASAP_BLOCK_v1_3_12_机器合同静态冻结候选包/"
+    "ASAP_BLOCK_canonical_serialization_v1_3_12.yaml",
+    "docs/ASAP_BLOCK_v1_3_12_机器合同静态冻结候选包/"
+    "ASAP_BLOCK_machine_interface_manifest_v1_3_12.yaml",
+    "docs/ASAP_BLOCK_v1_3_12_机器合同静态冻结候选包/"
+    "ASAP_BLOCK_formal_contract_template_v1_3_12.yaml",
+    "artifacts/v9_3_v1_3_12_runner_microcase/per_task_results.csv",
+)
+MUTATION_SANDBOX_CLOSURE_FILES = tuple(sorted(set(
+    MUTATION_SANDBOX_SOURCE_FILES + MUTATION_SANDBOX_SUPPORT_FILES
+)))
+SOURCE_FILES = (
+    *RTA_EXECUTION_SOURCE_FILES,
     "asap_block_v9_3_runner.py",
     "asap_block_v1_3_12_schema_binding.py",
     "asap_block_v9_3_v1_3_12_microcases.py",
@@ -36,6 +67,7 @@ SOURCE_FILES = (
     "scripts/core0a_v9_3_mutation_harness.py",
     "scripts/core0a_v9_3_mutation_probe.py",
     "docs/audits/v9_3_core0a_finite_state_domain.json",
+    *MUTATION_SANDBOX_SUPPORT_FILES,
 )
 
 
