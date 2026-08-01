@@ -488,10 +488,11 @@ class ServiceMaterialRegistry:
         *,
         constructor: Callable[..., SharedSolarInput] = construct_shared_solar_input,
         trusted_manifest: bool = False,
+        expected_manifest_schema: str = PRODUCTION_BUILD_MANIFEST_SCHEMA,
     ) -> None:
         if (
             production_build_manifest.get("manifest_schema")
-            != PRODUCTION_BUILD_MANIFEST_SCHEMA
+            != expected_manifest_schema
             or not isinstance(production_build_manifest.get("manifest_id"), str)
             or len(production_build_manifest["manifest_id"]) != 64
         ):
@@ -782,6 +783,8 @@ def initialize_shared_energy_run(
         taskset_store_identity=taskset_store_identity,
         service_constructor=service_constructor,
         formal_ready=False,
+        expected_manifest_schema=PRODUCTION_BUILD_MANIFEST_SCHEMA,
+        shared_profile_id=PRODUCTION_BUILD_PROFILE,
     )
 
 
@@ -813,6 +816,8 @@ def initialize_shared_energy_run_from_manifest_path(
         taskset_store_identity=taskset_store_identity,
         service_constructor=service_constructor,
         formal_ready=True,
+        expected_manifest_schema=PRODUCTION_BUILD_MANIFEST_SCHEMA,
+        shared_profile_id=PRODUCTION_BUILD_PROFILE,
     )
 
 
@@ -827,6 +832,8 @@ def _initialize_shared_energy_run(
     taskset_store_identity: str,
     service_constructor: Callable[..., SharedSolarInput],
     formal_ready: bool,
+    expected_manifest_schema: str,
+    shared_profile_id: str,
 ) -> SharedEnergyRunContext:
     """Freeze every shared input before a worker pool or record loop exists."""
 
@@ -874,6 +881,7 @@ def _initialize_shared_energy_run(
                 workload_config_path=system_config_path,
                 taskset_store_identity=taskset_store_identity,
                 production_build_manifest_identity=build_id,
+                profile_id=shared_profile_id,
             )
             task_materials[certificate.taskset_id] = material
         factor = Fraction(str(record.material.get("service_scale", "1")))
@@ -912,6 +920,7 @@ def _initialize_shared_energy_run(
     with ServiceMaterialRegistry(
         production_build_manifest, constructor=service_constructor,
         trusted_manifest=formal_ready,
+        expected_manifest_schema=expected_manifest_schema,
     ) as registry:
         registry.prepare(specs.values())
         services = {

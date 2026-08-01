@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate or check the controlled RTA4 V2 production build manifest."""
+"""Generate or check a controlled RTA4 V2 or parameterized V3 manifest."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from experiments.v9_3.rta4_production_build_manifest import (  # noqa: E402
     load_and_validate_production_build_manifest,
     write_production_build_manifest,
 )
+from experiments.v9_3.result_writer import atomic_write_json  # noqa: E402
 
 
 def main() -> int:
@@ -30,8 +31,36 @@ def main() -> int:
     parser.add_argument("--verifier-build-arg", action="append", required=True)
     parser.add_argument("--source", action="append", default=[])
     parser.add_argument("--check", action="store_true")
+    parser.add_argument(
+        "--profile", choices=("v2-shared-energy", "v3-parameterized"),
+        default="v2-shared-energy",
+    )
     args = parser.parse_args()
-    if args.check:
+    if args.profile == "v3-parameterized":
+        from experiments.v9_3.rta4_production_build_manifest_v3 import (
+            generate_production_build_manifest_v3,
+            load_production_build_manifest_v3,
+        )
+
+        if args.check:
+            manifest = load_production_build_manifest_v3(args.output, live=True)
+        else:
+            keywords = {}
+            if args.source:
+                keywords["relevant_source_paths"] = tuple(args.source)
+            manifest = generate_production_build_manifest_v3(
+                source_root=args.source_root,
+                simulator_binary=args.simulator_binary,
+                verifier_binary=args.verifier_binary,
+                compiler=args.compiler,
+                build_commands={
+                    "simulator": args.simulator_build_arg,
+                    "verifier": args.verifier_build_arg,
+                },
+                **keywords,
+            )
+            atomic_write_json(args.output, manifest)
+    elif args.check:
         manifest = load_and_validate_production_build_manifest(args.output)
     else:
         keywords = {}

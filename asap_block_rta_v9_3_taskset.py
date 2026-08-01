@@ -1236,6 +1236,29 @@ def _numeric_failure_result(
     dependency_status: DependencyVectorCheckStatus,
     planned_source_analysis_id: Optional[str],
 ) -> TasksetAnalysisResult:
+    if (
+        variant is AnalysisVariant.LOC_THETA_CW
+        and dependency_status is DependencyVectorCheckStatus.INVALID
+    ):
+        return _make_result(
+            analysis_id=analysis_id,
+            variant=variant,
+            records=tuple(
+                _not_applicable(task, rank)
+                for rank, task in enumerate(tasks)
+            ),
+            solver_status=AnalysisSolverStatus.NOT_APPLICABLE_DEPENDENCY,
+            certification_status=AnalysisCertificationStatus.NOT_APPLICABLE,
+            first_failed_priority=None,
+            source=None,
+            source_vector=(),
+            dependency_status=dependency_status,
+            interface_status=FixedCarryInInterfaceStatus.HASH_MISMATCH,
+            dominance_status=DominanceInvariantStatus.NOT_APPLICABLE,
+            diagnostic_mode=False,
+            context=context,
+            planned_source_analysis_id=planned_source_analysis_id,
+        )
     first = _record(
         tasks[0],
         0,

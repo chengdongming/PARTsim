@@ -1,10 +1,18 @@
 import copy
 import hashlib
 import json
+from fractions import Fraction
 
 import pytest
 
-from core0a_v9_3_evidence import produce_event_order, produce_joint_cases, produce_search
+import asap_block_rta_v9_3 as core
+from core0a_v9_3_evidence import (
+    analysis_input,
+    make_task,
+    produce_event_order,
+    produce_joint_cases,
+    produce_search,
+)
 from core0a_v9_3_evidence_schema import LINEAGE_REQUIRED_CHECK_TYPES
 from core0a_v9_3_independent_aggregator import (
     audit_event_order,
@@ -14,6 +22,7 @@ from core0a_v9_3_independent_aggregator import (
     audit_search,
 )
 from core0a_v9_3_package_validator import validate_rebuild2_metadata
+from experiments.v9_3 import exact_energy
 
 
 BUILD = "a" * 64
@@ -35,6 +44,12 @@ def joint_tables():
         "joint_certification_results.csv",
     )
     return dict(zip(names, produce_joint_cases(BUILD)))
+
+
+def assert_joint_violation(tables, case_id, category):
+    count, details = audit_joint(tables)
+    assert count > 0
+    assert any(detail[:2] == [case_id, category] for detail in details)
 
 
 def test_actual_event_mutation_is_detected():
@@ -101,17 +116,50 @@ def test_search_control_flow_mutations_are_rejected(mutation):
     assert audit_search(specs, lookup, traces)["N_search_order_violations"] > 0
 
 
+def test_joint_tables_clean_baseline_has_zero_violations():
+    assert audit_joint(joint_tables()) == (0, [])
+
+
+def test_joint_input_context_uses_formal_exact_energy_identity():
+    items = tuple(
+        make_task("t{}".format(index), 1, 2, 3)
+        for index in range(3)
+    )
+    inp = analysis_input(items, "joint-state")
+    service_prefix = core.validate_service_curve_v9_3(inp.beta, 1)
+    expected_identity = exact_energy.exact_input_identity(
+        task_powers=((item.name, item.power) for item in items),
+        e0=Fraction(1000),
+        service_prefix=service_prefix,
+    )
+    context = inp.dependency_context
+
+    assert service_prefix == (Fraction(0), Fraction(0))
+    assert context.theory_document_sha256 == exact_energy.THEORY_DOCUMENT_SHA256
+    assert context.numeric_contract_sha256 == exact_energy.NUMERIC_CONTRACT_SHA256
+    assert context.source_numeric_model == exact_energy.SOURCE_NUMERIC_MODEL
+    assert context.demand_rounding_mode == exact_energy.DEMAND_ROUNDING_MODE
+    assert context.supply_rounding_mode == exact_energy.SUPPLY_ROUNDING_MODE
+    assert context.e0_rounding_mode == exact_energy.E0_ROUNDING_MODE
+    assert context.exact_input_identity == expected_identity
+    assert context.float_decision_path is exact_energy.FLOAT_DECISION_PATH is False
+
+
 def test_joint_case_missing_task_input_is_rejected():
     tables = joint_tables()
     tables["joint_certification_task_inputs.csv"].pop(0)
-    assert audit_joint(tables)[0] > 0
+    assert_joint_violation(
+        tables, "recursive-full-success", "incomplete replay rows"
+    )
 
 
 def test_joint_reported_pass_true_cannot_hide_actual_state_error():
     tables = joint_tables()
     tables["joint_certification_cases.jsonl"][0]["reported_passed"] = "true"
     tables["joint_certification_actual_tasks.csv"][0]["certification_status"] = "PROVISIONAL_NOT_CERTIFIED"
-    assert audit_joint(tables)[0] > 0
+    assert_joint_violation(
+        tables, "recursive-full-success", "task-state derivation"
+    )
 
 
 @pytest.mark.parametrize("mutation", ["provisional", "source_candidate", "source_vector", "timeout", "suffix", "pre_finalizer", "source_after_hash"])
@@ -136,7 +184,25 @@ def test_joint_raw_state_mutations_are_rejected(mutation):
     else:
         row = next(r for r in tables["joint_certification_results.csv"] if r["source_hash_before"])
         row["source_hash_after"] = "0" * 64
-    assert audit_joint(tables)[0] > 0
+    expected = {
+        "provisional": ("provisional-prefix", "task-state derivation"),
+        "source_candidate": (
+            "loc-candidate-gt-source",
+            "source/frozen vector input",
+        ),
+        "source_vector": (
+            "loc-candidate-gt-source",
+            "source/frozen vector input",
+        ),
+        "timeout": ("timeout", "task-state derivation"),
+        "suffix": ("provisional-prefix", "incomplete replay rows"),
+        "pre_finalizer": (
+            "recursive-full-success",
+            "missing atomic finalizer states",
+        ),
+        "source_after_hash": ("diagnostic-only", "source object mutated"),
+    }[mutation]
+    assert_joint_violation(tables, *expected)
 
 
 def lineage_tables():
