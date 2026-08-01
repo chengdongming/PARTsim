@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import (
+    Future, ProcessPoolExecutor, ThreadPoolExecutor, as_completed,
+)
+from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Mapping, Sequence
 import hashlib
+import multiprocessing
+import pickle
 
 from . import exact_energy
 from .result_writer import atomic_write_json, atomic_write_text
@@ -30,7 +35,8 @@ from .rta4_production_build_manifest_v3 import (
     load_production_build_manifest_v3,
 )
 from .rta4_shared_energy import (
-    TaskEnergyMaterial, _initialize_shared_energy_run,
+    FrozenMapping, SharedEnergyRunContext, TaskEnergyMaterial,
+    _initialize_shared_energy_run,
     construct_shared_solar_input,
 )
 from .rta4_taskset_v2 import (
@@ -595,8 +601,11 @@ class RTA4FormalResultWriterV3:
             )
             if checkpoint["run_identity"] != self.run_manifest["run_identity"]:
                 raise RTA4FormalRunnerV3Error("V3 checkpoint run identity drift")
-            if checkpoint["completed_execution_ids"] != sorted(observed):
-                raise RTA4FormalRunnerV3Error("V3 checkpoint/terminal inventory mismatch")
+            checkpoint_ids = set(checkpoint["completed_execution_ids"])
+            if not checkpoint_ids.issubset(observed):
+                raise RTA4FormalRunnerV3Error(
+                    "V3 checkpoint references a missing terminal"
+                )
         return observed
 
     def write_result(self, row: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -645,6 +654,9 @@ class ExecutionSummaryV3:
     pending_records: int
     complete: bool
     checkpoint_path: Path
+    execution_backend: str = "PROCESS_POOL_SPAWN"
+    worker_process_ids: tuple[int, ...] = ()
+    worker_intervals_ns: tuple[tuple[int, int, int], ...] = ()
 
 
 class AuthorizedRTA4RunnerV3:
@@ -658,6 +670,7 @@ class AuthorizedRTA4RunnerV3:
         _context_factory: Callable[..., Any] | None = None,
         _rta_executor_factory: Callable[..., Any] | None = None,
         _simulation_executor_factory: Callable[..., Any] | None = None,
+        _test_worker_backend: str | None = None,
     ) -> None:
         self.prepared = validate_prepared_config_v3(prepared_config)
         self.authorization = validate_authorization_v3(
@@ -674,6 +687,19 @@ class AuthorizedRTA4RunnerV3:
         self._simulation_factory = (
             _simulation_executor_factory or ProductionSimulationExecutorV2
         )
+        injected_test_components = any(value is not None for value in (
+            _manifest_loader,
+            _provider_factory,
+            _context_factory,
+            _rta_executor_factory,
+            _simulation_executor_factory,
+        ))
+        if _test_worker_backend is not None:
+            if _test_worker_backend != "thread" or not injected_test_components:
+                raise RTA4FormalRunnerV3Error(
+                    "thread workers are test-only and forbidden in production"
+                )
+        self._test_worker_backend = _test_worker_backend
 
     def _timeout_contract(self, records: Sequence[Any]) -> Dict[str, Dict[str, int]]:
         timeout = self.prepared["operational"]["timeout_seconds"]
@@ -822,6 +848,96 @@ class AuthorizedRTA4RunnerV3:
             "result_identity": domain_hash(RTA4_RESULT_DOMAIN_V3, material),
         }
 
+    @staticmethod
+    def _record_context(context: SharedEnergyRunContext, record: Any) -> Any:
+        """Minimize each pickle payload to one immutable record binding."""
+
+        if type(context) is not SharedEnergyRunContext:
+            # Test doubles may deliberately provide another pickle-safe context.
+            return context
+        binding = context.binding_for(record.record_id)
+        task_identity = str(binding["task_energy_material_identity"])
+        service_identity = str(binding["service_material_identity"])
+        return SharedEnergyRunContext(
+            context.production_build_manifest_identity,
+            FrozenMapping({
+                task_identity: context.task_energy_materials[task_identity],
+            }),
+            FrozenMapping({
+                service_identity: context.service_materials[service_identity],
+            }),
+            FrozenMapping({record.record_id: FrozenMapping(dict(binding))}),
+            FrozenMapping({}),
+            True,
+        )
+
+    @staticmethod
+    def _infrastructure_result(
+        *, record: Any, certificate: TasksetIdentityCertificateV2,
+        context: Any, timeout_contract: Mapping[str, Any],
+        classification: str,
+    ) -> Mapping[str, Any]:
+        """Canonical terminal material for pool/transport failures."""
+
+        if record.kind == "simulation":
+            return {
+                "result": {"failure_reason": classification[:500]},
+                "status": "INTERNAL_ERROR",
+                "error_classification": classification[:500],
+                "runtime_wall_seconds": "0",
+                "runtime_cpu_seconds": "0",
+            }
+        binding = context.binding_for(record.record_id)
+        task_energy = context.task_energy_materials[
+            binding["task_energy_material_identity"]
+        ]
+        service = context.service_materials[
+            binding["service_material_identity"]
+        ]
+        analysis_identity = domain_hash(
+            "ASAP_BLOCK:V9.3:RTA4:PROCESS_FAILURE:v3",
+            {
+                "plan_record_identity": record.record_id,
+                "taskset_identity": certificate.taskset_id,
+                "classification": classification[:500],
+            },
+        )
+        mapped = ProductionRTAExecutorV2._internal_result_v2(
+            certificate,
+            RTA4FormalRunnerV3Error(classification[:500]),
+            task_energy=task_energy,
+            service=service,
+            analysis_identity=analysis_identity,
+        )
+        method_timeout = timeout_contract[str(record.material["method"])]
+        attempt = {
+            "attempt_index": 0,
+            "timeout_seconds": method_timeout["initial_timeout_seconds"],
+            "status": "INTERNAL_ERROR",
+            "runtime_wall_seconds": "0",
+            "runtime_cpu_seconds": "0",
+            "peak_rss_bytes": 0,
+            "error_classification": classification[:500],
+            "analysis_identity": analysis_identity,
+            "taskset_identity": certificate.taskset_id,
+            "task_energy_material_identity": (
+                task_energy.task_energy_material_identity
+            ),
+            "service_material_identity": service.service_material_identity,
+            "beta_material_identity": service.beta_material_identity,
+            "production_build_manifest_identity": (
+                context.production_build_manifest_identity
+            ),
+        }
+        return FrozenMapping({
+            **dict(mapped),
+            "attempts": (FrozenMapping(attempt),),
+            "timeout_seconds": attempt["timeout_seconds"],
+            "runtime_wall_seconds": "0",
+            "runtime_cpu_seconds": "0",
+            "peak_rss_bytes": 0,
+        })
+
     def run(
         self, *, resume: bool = False, validate_only: bool = False,
         max_records: int | None = None,
@@ -892,6 +1008,11 @@ class AuthorizedRTA4RunnerV3:
             records=records, require_existing_namespace=resume,
         )
         completed = dict(writer.completed_rows())
+        if resume:
+            # A terminal is the authoritative committed record.  If a crash
+            # occurred between its atomic rename and the following checkpoint
+            # rename, reconcile the parent-owned checkpoint before dispatch.
+            writer.write_checkpoint(completed)
         by_execution = {record.execution_id: record for record in records}
         for execution_id, row in completed.items():
             frozen = store.load_for_record(by_execution[execution_id])
@@ -962,73 +1083,204 @@ class AuthorizedRTA4RunnerV3:
             )
         timeout_contract = self._timeout_contract(execution_records)
         v2_config = default_rta4_formal_config_v2(str(self.scientific["core"]))
-        rta = None
-        simulation = None
-        if any(record.kind != "simulation" for record in execution_records):
-            rta = self._rta_factory(
-                v2_config, run_context=context,
-                timeout_contract=timeout_contract,
-                identity_contract={
-                    "formal_profile": RTA4_FORMAL_PROFILE_V3,
-                    "analysis_domain": "ASAP_BLOCK:V9.3:RTA4:FORMAL_ANALYSIS:v3",
-                    "numeric_contract_sha256": RTA4_NUMERIC_CONTRACT_V2_SHA256,
-                    "theory_document_sha256": exact_energy.THEORY_DOCUMENT_SHA256,
-                    "timeout_contract": timeout_contract,
-                },
-            )
-        if any(record.kind == "simulation" for record in execution_records):
-            simulation = self._simulation_factory(
-                v2_config, run_context=context, production_manifest=manifest,
-                system_config_path=root / "system_config_unified_template.yml",
-                energy_support_path=root
-                / "configs/v9_3_rta4_shared_energy_support_v2.yaml",
-                output_root=output,
-                simulation_timeout_seconds=operation["timeout_seconds"],
-            )
-        from .rta4_formal_runner_v2 import _observed_rta, _timed_simulation
+        identity_contract = {
+            "formal_profile": RTA4_FORMAL_PROFILE_V3,
+            "analysis_domain": "ASAP_BLOCK:V9.3:RTA4:FORMAL_ANALYSIS:v3",
+            "numeric_contract_sha256": RTA4_NUMERIC_CONTRACT_V2_SHA256,
+            "theory_document_sha256": exact_energy.THEORY_DOCUMENT_SHA256,
+            "timeout_contract": timeout_contract,
+        }
+        from .rta4_formal_workers_v3 import (
+            V3WorkerRequest, V3WorkerResponse, execute_worker_request_v3,
+        )
 
         processed = 0
         workers = operation["worker_count"]
         max_in_flight = operation["max_in_flight"]
-        for start in range(0, len(execution_records), max_in_flight):
-            batch = execution_records[start:start + max_in_flight]
-            futures: list[Future[Any]] = []
-            with ThreadPoolExecutor(max_workers=min(workers, len(batch))) as pool:
-                for record in batch:
-                    certificate = certificates[record.record_id]
-                    if record.kind == "simulation":
-                        assert simulation is not None
-                        futures.append(pool.submit(
-                            _timed_simulation, simulation, record, certificate,
-                        ))
-                    else:
-                        assert rta is not None
-                        futures.append(pool.submit(
-                            _observed_rta, rta, record, certificate,
-                            self.worker_observer,
-                        ))
-                results = [future.result() for future in futures]
-            for record, result in zip(batch, results):
-                certificate = certificates[record.record_id]
-                binding = context.binding_for(record.record_id)
-                service = context.service_materials[
-                    binding["service_material_identity"]
-                ]
-                row = self._row(
-                    writer=writer, record=record, certificate=certificate,
-                    binding=binding, service=service, result=result,
+        backend = (
+            "THREAD_POOL_TEST_ONLY"
+            if self._test_worker_backend == "thread"
+            else "PROCESS_POOL_SPAWN"
+        )
+        observed_worker_pids: set[int] = set()
+        observed_worker_intervals: list[tuple[int, int, int]] = []
+
+        def persist(record: Any, result: Mapping[str, Any]) -> None:
+            nonlocal processed
+            certificate = certificates[record.record_id]
+            binding = context.binding_for(record.record_id)
+            service = context.service_materials[
+                binding["service_material_identity"]
+            ]
+            row = self._row(
+                writer=writer,
+                record=record,
+                certificate=certificate,
+                binding=binding,
+                service=service,
+                result=result,
+                timeout_contract=timeout_contract,
+            )
+            writer.write_result(row)
+            completed[record.execution_id] = row
+            writer.write_checkpoint(completed)
+            processed += 1
+
+        def execute_batch(pool: Any, batch: Sequence[Any]) -> None:
+            requests: Dict[str, V3WorkerRequest] = {}
+            for record in batch:
+                requests[record.record_id] = V3WorkerRequest(
+                    record=record,
+                    certificate=certificates[record.record_id],
+                    v2_config=v2_config,
+                    run_context=self._record_context(context, record),
                     timeout_contract=timeout_contract,
+                    identity_contract=identity_contract,
+                    production_manifest=manifest,
+                    system_config_path=str(
+                        root / "system_config_unified_template.yml"
+                    ),
+                    energy_support_path=str(
+                        root
+                        / "configs/v9_3_rta4_shared_energy_support_v2.yaml"
+                    ),
+                    output_root=str(output),
+                    simulation_timeout_seconds=operation["timeout_seconds"],
+                    rta_executor_factory=self._rta_factory,
+                    simulation_executor_factory=self._simulation_factory,
                 )
-                writer.write_result(row)
-                completed[record.execution_id] = row
-                writer.write_checkpoint(completed)
-                processed += 1
+            future_records: Dict[Future[Any], Any] = {}
+            for record in batch:
+                request = requests[record.record_id]
+                if backend == "PROCESS_POOL_SPAWN":
+                    try:
+                        pickle.dumps(
+                            request, protocol=pickle.HIGHEST_PROTOCOL,
+                        )
+                    except Exception as exc:
+                        classification = (
+                            "PROCESS_SERIALIZATION_FAILURE:"
+                            f"{type(exc).__name__}:{exc}"
+                        )
+                        persist(record, self._infrastructure_result(
+                            record=record,
+                            certificate=certificates[record.record_id],
+                            context=context,
+                            timeout_contract=timeout_contract,
+                            classification=classification,
+                        ))
+                        continue
+                try:
+                    future_records[pool.submit(
+                        execute_worker_request_v3, request,
+                    )] = record
+                except Exception as exc:
+                    classification = (
+                        "PROCESS_POOL_SUBMIT_FAILURE:"
+                        f"{type(exc).__name__}:{exc}"
+                    )
+                    persist(record, self._infrastructure_result(
+                        record=record,
+                        certificate=certificates[record.record_id],
+                        context=context,
+                        timeout_contract=timeout_contract,
+                        classification=classification,
+                    ))
+            for future in as_completed(future_records):
+                record = future_records[future]
+                try:
+                    response = future.result()
+                    if (
+                        type(response) is not V3WorkerResponse
+                        or response.plan_record_identity
+                        != record.record_id
+                        or response.execution_identity
+                        != record.execution_id
+                        or type(response.worker_pid) is not int
+                        or response.worker_pid <= 0
+                        or type(response.started_monotonic_ns) is not int
+                        or type(response.finished_monotonic_ns) is not int
+                        or response.started_monotonic_ns < 0
+                        or response.finished_monotonic_ns
+                        < response.started_monotonic_ns
+                    ):
+                        raise RTA4FormalRunnerV3Error(
+                            "V3 worker response identity drift"
+                        )
+                    observed_worker_pids.add(response.worker_pid)
+                    observed_worker_intervals.append((
+                        response.worker_pid,
+                        response.started_monotonic_ns,
+                        response.finished_monotonic_ns,
+                    ))
+                    if self.worker_observer is not None:
+                        self.worker_observer(
+                            "finish", record.record_id,
+                            response.worker_pid,
+                        )
+                    result = response.result
+                except (KeyboardInterrupt, SystemExit):
+                    raise
+                except Exception as exc:
+                    prefix = (
+                        "PROCESS_POOL_BROKEN"
+                        if isinstance(exc, BrokenProcessPool)
+                        else "PROCESS_WORKER_FAILURE"
+                    )
+                    result = self._infrastructure_result(
+                        record=record,
+                        certificate=certificates[record.record_id],
+                        context=context,
+                        timeout_contract=timeout_contract,
+                        classification=(
+                            f"{prefix}:{type(exc).__name__}:{exc}"
+                        ),
+                    )
+                persist(record, result)
+
+        if backend == "THREAD_POOL_TEST_ONLY":
+            pool: Any = ThreadPoolExecutor(
+                max_workers=min(workers, len(execution_records)),
+            )
+        else:
+            pool = ProcessPoolExecutor(
+                max_workers=min(workers, len(execution_records)),
+                mp_context=multiprocessing.get_context("spawn"),
+            )
+        try:
+            with pool:
+                for start in range(0, len(execution_records), max_in_flight):
+                    execute_batch(
+                        pool,
+                        execution_records[start:start + max_in_flight],
+                    )
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception as exc:
+            for record in execution_records:
+                if record.execution_id in completed:
+                    continue
+                try:
+                    persist(record, self._infrastructure_result(
+                        record=record,
+                        certificate=certificates[record.record_id],
+                        context=context,
+                        timeout_contract=timeout_contract,
+                        classification=(
+                            "PROCESS_POOL_INFRASTRUCTURE_FAILURE:"
+                            f"{type(exc).__name__}:{exc}"
+                        ),
+                    ))
+                except Exception:
+                    raise
         checkpoint = writer.write_checkpoint(completed)
         return ExecutionSummaryV3(
             str(self.scientific["core"]), "FORMAL_AUTHORIZED",
             self.authorization["authorization_id"], str(manifest["manifest_id"]),
             processed, len(records) - len(completed), bool(checkpoint["complete"]),
             output / RTA4_CHECKPOINT_V3,
+            backend, tuple(sorted(observed_worker_pids)),
+            tuple(observed_worker_intervals),
         )
 
 

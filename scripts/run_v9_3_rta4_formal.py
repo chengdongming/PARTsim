@@ -163,6 +163,13 @@ def main() -> int:
                         "pending_records": summary.pending_records,
                         "complete": summary.complete,
                         "checkpoint_path": str(summary.checkpoint_path),
+                        "execution_backend": summary.execution_backend,
+                        "worker_process_ids": list(
+                            summary.worker_process_ids
+                        ),
+                        "worker_intervals_ns": [
+                            list(row) for row in summary.worker_intervals_ns
+                        ],
                     })
             if args.write_prepared_config is not None or args.write_authorization is not None:
                 if args.execute or args.resume or args.validate_only:

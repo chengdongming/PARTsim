@@ -728,6 +728,8 @@ class ProductionRTAExecutorV2:
         timeout_contract: Mapping[str, Mapping[str, int]],
         memory_limit_bytes: int | None = None,
         identity_contract: Mapping[str, Any] | None = None,
+        adapter_attempt_runner: Callable[..., tuple[Mapping[str, Any], Any]]
+        | None = None,
     ) -> None:
         from .rta4_formal_config_v2 import validate_rta4_formal_config_v2
 
@@ -762,6 +764,15 @@ class ProductionRTAExecutorV2:
         self.timeout_contract = FrozenMapping(methods)
         self.identity_contract = FrozenMapping(
             {} if identity_contract is None else dict(identity_contract)
+        )
+        if adapter_attempt_runner is not None and not callable(
+            adapter_attempt_runner
+        ):
+            raise RTA4ExecutionError("formal V2 attempt runner must be callable")
+        self.adapter_attempt_runner = (
+            _adapter_result_v2
+            if adapter_attempt_runner is None
+            else adapter_attempt_runner
         )
         self.memory_limit_bytes = memory_limit_bytes
         self.production_build_manifest_identity = (
@@ -811,7 +822,7 @@ class ProductionRTAExecutorV2:
             wall_started = time.perf_counter()
             cpu_started = time.process_time()
             try:
-                mapped, _raw = _adapter_result_v2(
+                mapped, _raw = self.adapter_attempt_runner(
                     record, certificate, self.config, budget,
                     task_energy, service, self.identity_contract,
                 )

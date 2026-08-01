@@ -14,21 +14,26 @@ from .rta4_production_build_manifest import (
 
 
 PRODUCTION_BUILD_MANIFEST_SCHEMA_V3 = (
-    "ASAP_BLOCK_V9_3_RTA4_PRODUCTION_BUILD_ENVIRONMENT_MANIFEST_V3_PARAMETERIZED"
+    "ASAP_BLOCK_V9_3_RTA4_PRODUCTION_BUILD_ENVIRONMENT_MANIFEST_V3_"
+    "PARAMETERIZED_PROCESS_POOL_R1"
 )
 PRODUCTION_BUILD_PROFILE_V3 = (
-    "ASAP_BLOCK_V9_3_RTA4_FORMAL_V3_PARAMETERIZED_SHARED_ENERGY"
+    "ASAP_BLOCK_V9_3_RTA4_FORMAL_V3_PARAMETERIZED_SHARED_ENERGY_"
+    "PROCESS_POOL_R1"
 )
 PRODUCTION_BUILD_MANIFEST_DOMAIN_V3 = (
-    "ASAP_BLOCK:V9.3:RTA4_PRODUCTION_BUILD_ENVIRONMENT_MANIFEST:v3"
+    "ASAP_BLOCK:V9.3:RTA4_PRODUCTION_BUILD_ENVIRONMENT_MANIFEST:"
+    "v3-process-pool-r1"
 )
-V3_LINEAGE_SCHEMA = "ASAP_BLOCK_V9_3_RTA4_V3_EXECUTION_LINEAR_LINEAGE_V1"
-V3_LINEAGE_ANCHOR = "cca09170f7c6ec010a45414814b11055cf32788f"
+V3_LINEAGE_SCHEMA = "ASAP_BLOCK_V9_3_RTA4_V3_EXECUTION_LINEAR_LINEAGE_V2"
+V3_LINEAGE_ANCHOR = "5acde530eb6b68f6e3a5bc2e6c496307690a054d"
 V3_EXECUTION_PATHS = frozenset({
     "experiments/v9_3/rta4_formal_config_v3.py",
     "experiments/v9_3/rta4_formal_execution.py",
     "experiments/v9_3/rta4_formal_plan_v3.py",
+    "experiments/v9_3/rta4_formal_workers_v3.py",
     "experiments/v9_3/rta4_formal_lifecycle_v3.py",
+    "experiments/v9_3/rta4_process_isolation_v3.py",
     "experiments/v9_3/rta4_formal_schema_v3.py",
     "experiments/v9_3/rta4_formal_runner_v3.py",
     "experiments/v9_3/rta4_production_build_manifest.py",
@@ -48,6 +53,8 @@ V3_RELEVANT_SOURCES = tuple(dict.fromkeys((*DEFAULT_RELEVANT_SOURCES,
     "experiments/v9_3/rta4_formal_lifecycle_v3.py",
     "experiments/v9_3/rta4_formal_schema_v3.py",
     "experiments/v9_3/rta4_formal_runner_v3.py",
+    "experiments/v9_3/rta4_formal_workers_v3.py",
+    "experiments/v9_3/rta4_process_isolation_v3.py",
     "experiments/v9_3/rta4_production_build_manifest_v3.py",
     "scripts/create_v9_3_rta4_campaign.py",
 )))
@@ -102,7 +109,7 @@ def validate_v3_execution_lineage(*, source_root: Path) -> V3Lineage:
         "current_head_commit": head, "current_head_tree": tree,
         "linear_non_merge": True, "changed_paths": sorted(changed),
     }
-    identity = domain_hash("ASAP_BLOCK:V9.3:RTA4:V3_EXECUTION_LINEAGE:v1", material)
+    identity = domain_hash("ASAP_BLOCK:V9.3:RTA4:V3_EXECUTION_LINEAGE:v2", material)
     return V3Lineage(head, tree, identity, {**material, "repository_lineage_identity": identity})
 
 

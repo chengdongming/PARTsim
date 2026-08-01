@@ -5,6 +5,50 @@ V1/V2 contracts or any RTA/scheduler implementation. Scientific parameters
 are read only from YAML, normalized to exact rational strings, and bound by a
 scientific-config SHA-256 and a dynamic plan SHA-256.
 
+## Process-pool production revision
+
+The first V3 runner accidentally used `ThreadPoolExecutor` for authorized
+production requests.  RTA computation is CPU-bound Python work, so that path
+did not provide the configured CPU parallelism and allowed thread contention
+to consume request wall budgets.  The process-pool revision makes
+`ProcessPoolExecutor` with the `spawn` context mandatory for authorized runs;
+the thread backend exists only behind injected test components and is rejected
+by the production construction path.
+
+The parent process materializes and freezes every task-set certificate, task
+energy material, service material, and record binding before dispatch.  A
+worker receives only one pickle-validated immutable record payload, constructs
+its executor locally, performs computation, and returns a mapping plus its PID.
+It never receives a result writer, checkpoint object, or task-set store.  The
+parent is therefore the only process that writes terminal JSON, checkpoint
+JSON, or task-set-store evidence.  Results are persisted atomically as futures
+complete; the run manifest retains plan order, so completion order cannot
+change the ordered stream or any mathematical identity.
+
+Each RTA attempt also runs in a short-lived spawned child.  The initial and
+retry budgets remain 120 and 240 seconds for the E1 prepared configuration,
+with at most two attempts.  When the hard wall expires, that child is
+terminated, killed if necessary, and reaped before its pool worker accepts more
+work.  A hard wall remains `UNIFIED_RTA_ADAPTER_TIMEOUT`/`TIMEOUT`; worker
+crashes, broken pools, and serialization failures are explicit
+`INTERNAL_ERROR` infrastructure evidence and are never relabeled as RTA
+timeouts.
+
+Resume treats an atomically written terminal as the authoritative committed
+record.  If interruption occurs after the terminal rename but before the next
+checkpoint rename, a valid checkpoint that is a subset of the valid terminal
+inventory is reconciled by the parent before new dispatch.  Missing or invalid
+terminals, duplicate identities, foreign checkpoints, and identity drift still
+fail closed.
+
+This revision has a new production manifest schema/profile and a linear
+lineage anchor at `5acde530eb6b68f6e3a5bc2e6c496307690a054d`.  Thread-era V3
+manifests are structurally incompatible.  Before any AutoDL formal execution,
+regenerate the production manifest, prepared config, and authorization from
+the clean process-pool commit, and use new empty result and task-set-store
+namespaces.  The 4,340 thread-era diagnostic results must not be copied,
+resumed, aggregated, or mixed with process-pool formal results.
+
 ## Commands
 
 Create a campaign template (the command refuses to overwrite an existing
