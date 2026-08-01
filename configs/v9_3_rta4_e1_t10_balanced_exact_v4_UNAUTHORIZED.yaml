@@ -1,0 +1,37 @@
+# This is intentionally not an executable formal campaign.
+# The task generation seed, sample count, E0 grid, and statistical plan require
+# a separate user-reviewed parameter freeze.
+campaign_id: asap-block-rta4-e1-t10-balanced-exact-v4-unauthorized
+core: CORE-1
+processors: 4
+priority_policy: RM_STRICT_PERIOD_ASCENDING
+task_source:
+  mode: GENERATED_FAMILY
+  family_id: T10_BALANCED_V1
+  parameters:
+    processors: 4
+    priority_policy: RM_STRICT_PERIOD_ASCENDING
+    task_count: 10
+    mechanism_core_task_count: 7
+    background_utilization: "1/12"
+    background_tasks:
+      - {name: tau_8, C: 1, D: 24, T: 27, power: "1/80"}
+      - {name: tau_9, C: 1, D: 28, T: 36, power: "1/80"}
+      - {name: tau_10, C: 1, D: 34, T: 54, power: "1/80"}
+    taskset_count: UNAUTHORIZED_PARAMETER_PLACEHOLDER
+    base_seed: UNAUTHORIZED_PARAMETER_PLACEHOLDER
+    generation_indices: UNAUTHORIZED_PARAMETER_PLACEHOLDER
+    core_generator_contract: UNAUTHORIZED_PARAMETER_PLACEHOLDER
+energy_service:
+  model: EXACT_LINEAR_SERVICE_V1
+  rate: "1/10"
+e0:
+  - UNAUTHORIZED_PARAMETER_PLACEHOLDER
+methods:
+  - CW_THETA_CW
+  - LOC_THETA_LOC
+  - PH_THETA_PH
+  - SEQ_THETA_SEQ
+runtime:
+  output_root: results/UNAUTHORIZED_PARAMETER_PLACEHOLDER
+  taskset_store: results/tasksets/UNAUTHORIZED_PARAMETER_PLACEHOLDER
