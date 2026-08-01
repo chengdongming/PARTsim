@@ -31,6 +31,22 @@ CORE0A_STANDALONE_REVIEWED_LINEAGE = (
 )
 MASTER_INTEGRATION_MERGE = "MASTER_INTEGRATION_MERGE"
 MASTER_PR_WRAPPER_MERGE = "MASTER_PR_WRAPPER_MERGE"
+REVIEWED_DESCENDANT_INTEGRATION_MERGE_V1 = (
+    "REVIEWED_DESCENDANT_INTEGRATION_MERGE_V1"
+)
+CORE0A_DESCENDANT_INTEGRATION_REGISTRY_SCHEMA = (
+    "ASAP_BLOCK_V9_3_RTA4_CORE0A_DESCENDANT_INTEGRATION_REGISTRY_V1"
+)
+CORE0A_DESCENDANT_INTEGRATION_CONTRACT_VERSION = (
+    "ASAP_BLOCK_V9_3_RTA4_CORE0A_DESCENDANT_INTEGRATION_CONTRACT_V1"
+)
+CORE0A_DESCENDANT_INTEGRATION_REGISTRY_PATH = (
+    "experiments/v9_3/"
+    "rta4_core0a_descendant_integration_contracts_v1.json"
+)
+CORE0A_DESCENDANT_INTEGRATION_DOMAIN = (
+    "ASAP_BLOCK:V9.3:RTA4:CORE0A:DESCENDANT_INTEGRATION:v1"
+)
 
 CORE0A_REVIEWED_ANCHOR_COMMIT = (
     "51149fa918ae9a753293116737174ffe1c0f680a"
@@ -111,9 +127,13 @@ class ValidatedCore0ARepositoryLineageV1:
     worktree_clean: bool
     repair_scope_path_digest: str
     repository_lineage_identity: str
+    descendant_integration_contract_type: str | None = None
+    descendant_integration_registry_sha256: str | None = None
+    descendant_integration_contract_sha256s: tuple[str, ...] = ()
+    descendant_effective_lineage_identity: str | None = None
 
     def identity_material(self) -> dict[str, Any]:
-        return {
+        material = {
             "schema": CORE0A_REPOSITORY_LINEAGE_SCHEMA,
             "contract_version": (
                 CORE0A_REPOSITORY_LINEAGE_CONTRACT_VERSION
@@ -146,6 +166,25 @@ class ValidatedCore0ARepositoryLineageV1:
             "worktree_clean": self.worktree_clean,
             "repair_scope_path_digest": self.repair_scope_path_digest,
         }
+        if self.descendant_integration_contract_sha256s:
+            material.update({
+                "descendant_integration_contract_type": (
+                    self.descendant_integration_contract_type
+                ),
+                "descendant_integration_registry_sha256": (
+                    self.descendant_integration_registry_sha256
+                ),
+                "descendant_integration_contract_count": len(
+                    self.descendant_integration_contract_sha256s
+                ),
+                "descendant_integration_contract_sha256s": list(
+                    self.descendant_integration_contract_sha256s
+                ),
+                "descendant_effective_lineage_identity": (
+                    self.descendant_effective_lineage_identity
+                ),
+            })
+        return material
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -160,6 +199,13 @@ class ValidatedCore0ARepositoryLineageV1:
 class _DiffPaths:
     changed_paths: tuple[str, ...]
     rename_or_copy: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class _DescendantIntegrationRegistry:
+    registry_content_sha256: str | None
+    reviewed_integration_anchor: str | None
+    contracts: tuple[Mapping[str, Any], ...]
 
 
 @dataclass(frozen=True)
@@ -180,6 +226,9 @@ class _LineageFacts:
     master_only_blob_states: tuple[BlobStateV1, ...]
     core0a_only_blob_states: tuple[BlobStateV1, ...]
     repair_touched_paths: tuple[str, ...]
+    descendant_integration_registry_sha256: str | None = None
+    descendant_integration_contract_sha256s: tuple[str, ...] = ()
+    descendant_effective_lineage_identity: str | None = None
 
 
 def _canonical_json_bytes(value: Any) -> bytes:
@@ -210,6 +259,222 @@ def _blob_state_digest(
     return _domain_hash(
         f"{CORE0A_REPOSITORY_LINEAGE_DOMAIN}:{label}:BLOB_STATE",
         [row.as_dict() for row in rows],
+    )
+
+
+_DESCENDANT_CONTRACT_KEYS = frozenset({
+    "schema",
+    "contract_version",
+    "merge_type",
+    "sequence",
+    "merge_commit",
+    "first_parent",
+    "first_parent_tree",
+    "second_parent",
+    "second_parent_tree",
+    "merge_base",
+    "merge_base_tree",
+    "merge_result_tree",
+    "first_parent_side",
+    "second_parent_side",
+    "relative_to_first_parent",
+    "relative_to_second_parent",
+    "overlap_count",
+    "overlap_path_set_sha256",
+    "result_touched_blob_state_sha256",
+    "reconstructed_tree",
+    "predecessor_effective_lineage_identity",
+    "predecessor_reviewed_integration_anchor",
+    "contract_content_sha256",
+})
+_DESCENDANT_REGISTRY_KEYS = frozenset({
+    "schema",
+    "contract_version",
+    "reviewed_integration_anchor",
+    "contracts",
+    "registry_content_sha256",
+})
+_DESCENDANT_SIDE_SUMMARY_KEYS = frozenset({
+    "changed_path_count",
+    "changed_path_set_sha256",
+    "status_record_count",
+    "status_record_sha256",
+    "classification_counts",
+})
+_DESCENDANT_CLASSIFICATIONS = (
+    "ADD", "MODIFY", "DELETE", "COPY", "RENAME",
+)
+
+
+def _require_sha256(value: Any, label: str) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise Core0ARepositoryLineageV1Error(
+            f"{label} is not a lowercase SHA-256"
+        )
+    return value
+
+
+def _no_duplicate_json_object(
+    pairs: Sequence[tuple[str, Any]],
+) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise Core0ARepositoryLineageV1Error(
+                f"descendant integration registry has duplicate key: {key}"
+            )
+        result[key] = value
+    return result
+
+
+def _descendant_contract_content_sha256(
+    material: Mapping[str, Any],
+) -> str:
+    return _domain_hash(
+        f"{CORE0A_DESCENDANT_INTEGRATION_DOMAIN}:CONTRACT_CONTENT",
+        dict(material),
+    )
+
+
+def _descendant_effective_lineage_identity(
+    predecessor_identity: str,
+    contract_content_sha256: str,
+) -> str:
+    return _domain_hash(
+        f"{CORE0A_DESCENDANT_INTEGRATION_DOMAIN}:EFFECTIVE_LINEAGE",
+        {
+            "predecessor_effective_lineage_identity": predecessor_identity,
+            "contract_content_sha256": contract_content_sha256,
+        },
+    )
+
+
+def _load_descendant_integration_registry(
+    root: Path,
+) -> _DescendantIntegrationRegistry:
+    path = root / CORE0A_DESCENDANT_INTEGRATION_REGISTRY_PATH
+    if not path.exists():
+        return _DescendantIntegrationRegistry(None, None, ())
+    try:
+        payload = path.read_bytes()
+        value = json.loads(
+            payload.decode("utf-8", "strict"),
+            object_pairs_hook=_no_duplicate_json_object,
+        )
+    except Core0ARepositoryLineageV1Error:
+        raise
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise Core0ARepositoryLineageV1Error(
+            "descendant integration registry is not canonical UTF-8 JSON"
+        ) from exc
+    if not isinstance(value, dict) or set(value) != _DESCENDANT_REGISTRY_KEYS:
+        raise Core0ARepositoryLineageV1Error(
+            "descendant integration registry fields do not match schema"
+        )
+    if payload != _canonical_json_bytes(value) + b"\n":
+        raise Core0ARepositoryLineageV1Error(
+            "descendant integration registry bytes are not canonical"
+        )
+    if value["schema"] != CORE0A_DESCENDANT_INTEGRATION_REGISTRY_SCHEMA:
+        raise Core0ARepositoryLineageV1Error(
+            "descendant integration registry schema mismatch"
+        )
+    if (
+        value["contract_version"]
+        != CORE0A_DESCENDANT_INTEGRATION_CONTRACT_VERSION
+    ):
+        raise Core0ARepositoryLineageV1Error(
+            "descendant integration registry version mismatch"
+        )
+    contracts = value["contracts"]
+    if not isinstance(contracts, list) or not contracts:
+        raise Core0ARepositoryLineageV1Error(
+            "descendant integration registry must contain contracts"
+        )
+    normalized: list[Mapping[str, Any]] = []
+    for expected_sequence, contract in enumerate(contracts, start=1):
+        if not isinstance(contract, dict) or set(contract) != _DESCENDANT_CONTRACT_KEYS:
+            raise Core0ARepositoryLineageV1Error(
+                "descendant integration contract fields do not match schema"
+            )
+        if contract["sequence"] != expected_sequence:
+            raise Core0ARepositoryLineageV1Error(
+                "descendant integration contract sequence is not contiguous"
+            )
+        if contract["merge_type"] != REVIEWED_DESCENDANT_INTEGRATION_MERGE_V1:
+            raise Core0ARepositoryLineageV1Error(
+                "descendant integration merge type mismatch"
+            )
+        if contract["schema"] != CORE0A_DESCENDANT_INTEGRATION_REGISTRY_SCHEMA:
+            raise Core0ARepositoryLineageV1Error(
+                "descendant integration contract schema mismatch"
+            )
+        if (
+            contract["contract_version"]
+            != CORE0A_DESCENDANT_INTEGRATION_CONTRACT_VERSION
+        ):
+            raise Core0ARepositoryLineageV1Error(
+                "descendant integration contract version mismatch"
+            )
+        for name in (
+            "first_parent_side",
+            "second_parent_side",
+            "relative_to_first_parent",
+            "relative_to_second_parent",
+        ):
+            summary = contract[name]
+            if (
+                not isinstance(summary, dict)
+                or set(summary) != _DESCENDANT_SIDE_SUMMARY_KEYS
+            ):
+                raise Core0ARepositoryLineageV1Error(
+                    f"descendant integration {name} summary mismatch"
+                )
+            counts = summary["classification_counts"]
+            if (
+                not isinstance(counts, dict)
+                or set(counts) != set(_DESCENDANT_CLASSIFICATIONS)
+                or any(
+                    not isinstance(count, int) or isinstance(count, bool) or count < 0
+                    for count in counts.values()
+                )
+            ):
+                raise Core0ARepositoryLineageV1Error(
+                    "descendant integration classification counts mismatch"
+                )
+        recorded_sha = _require_sha256(
+            contract["contract_content_sha256"],
+            "descendant integration contract content SHA",
+        )
+        material = dict(contract)
+        material.pop("contract_content_sha256")
+        if _descendant_contract_content_sha256(material) != recorded_sha:
+            raise Core0ARepositoryLineageV1Error(
+                "descendant integration contract content SHA mismatch"
+            )
+        normalized.append(contract)
+    registry_sha = _require_sha256(
+        value["registry_content_sha256"],
+        "descendant integration registry content SHA",
+    )
+    registry_material = dict(value)
+    registry_material.pop("registry_content_sha256")
+    expected_registry_sha = _domain_hash(
+        f"{CORE0A_DESCENDANT_INTEGRATION_DOMAIN}:REGISTRY_CONTENT",
+        registry_material,
+    )
+    if registry_sha != expected_registry_sha:
+        raise Core0ARepositoryLineageV1Error(
+            "descendant integration registry content SHA mismatch"
+        )
+    return _DescendantIntegrationRegistry(
+        registry_sha,
+        str(value["reviewed_integration_anchor"]),
+        tuple(normalized),
     )
 
 
@@ -444,6 +709,260 @@ def _diff_paths(root: Path, base: str, tip: str) -> _DiffPaths:
         changed_paths=_canonical_path_tuple(changed),
         rename_or_copy=tuple(sorted(rename_or_copy)),
     )
+
+
+def _diff_changed_paths_without_renames(
+    root: Path, base: str, tip: str,
+) -> tuple[str, ...]:
+    output = _git_bytes(
+        root,
+        "diff",
+        "--name-only",
+        "-z",
+        "--no-renames",
+        "--no-ext-diff",
+        "--no-textconv",
+        base,
+        tip,
+        "--",
+    )
+    paths = [
+        _canonical_path(raw) for raw in output.split(b"\0") if raw
+    ]
+    return _canonical_path_tuple(paths)
+
+
+def _diff_status_records(
+    root: Path, base: str, tip: str,
+) -> tuple[dict[str, Any], ...]:
+    output = _git_bytes(
+        root,
+        "-c",
+        "diff.renameLimit=10000",
+        "diff",
+        "--name-status",
+        "-z",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--find-renames",
+        "--find-copies-harder",
+        base,
+        tip,
+        "--",
+    )
+    tokens = output.split(b"\0")
+    if tokens and tokens[-1] == b"":
+        tokens.pop()
+    base_tree = _tree_entries(root, base)
+    tip_tree = _tree_entries(root, tip)
+    records: list[dict[str, Any]] = []
+    index = 0
+    classifications = {
+        "A": "ADD",
+        "M": "MODIFY",
+        "D": "DELETE",
+        "C": "COPY",
+        "R": "RENAME",
+    }
+    while index < len(tokens):
+        try:
+            status = tokens[index].decode("ascii", "strict")
+        except UnicodeDecodeError as exc:
+            raise Core0ARepositoryLineageV1Error(
+                "descendant integration diff status is not ASCII"
+            ) from exc
+        index += 1
+        kind = status[:1]
+        if kind not in classifications:
+            raise Core0ARepositoryLineageV1Error(
+                f"unsupported descendant integration diff status: {status}"
+            )
+        if kind in {"C", "R"}:
+            if index + 1 >= len(tokens):
+                raise Core0ARepositoryLineageV1Error(
+                    "truncated descendant rename/copy record"
+                )
+            old_path = _canonical_path(tokens[index])
+            new_path = _canonical_path(tokens[index + 1])
+            index += 2
+            if (
+                old_path not in base_tree
+                or new_path in base_tree
+                or new_path not in tip_tree
+            ):
+                raise Core0ARepositoryLineageV1Error(
+                    "rename/copy classification disagrees with Git trees"
+                )
+            old_survives = old_path in tip_tree
+            if (kind == "C") != old_survives:
+                raise Core0ARepositoryLineageV1Error(
+                    "rename was misclassified as copy or copy as rename"
+                )
+            similarity = status[1:]
+            if not similarity.isdigit():
+                raise Core0ARepositoryLineageV1Error(
+                    "rename/copy similarity is missing"
+                )
+            records.append({
+                "classification": classifications[kind],
+                "new_path": new_path,
+                "old_path": old_path,
+                "similarity": int(similarity),
+            })
+        else:
+            if index >= len(tokens):
+                raise Core0ARepositoryLineageV1Error(
+                    "truncated descendant diff status record"
+                )
+            path = _canonical_path(tokens[index])
+            index += 1
+            records.append({
+                "classification": classifications[kind],
+                "path": path,
+            })
+    return tuple(sorted(
+        records,
+        key=lambda row: _canonical_json_bytes(row),
+    ))
+
+
+def _descendant_side_summary(
+    root: Path, base: str, tip: str,
+) -> tuple[dict[str, Any], tuple[str, ...]]:
+    changed_paths = _diff_changed_paths_without_renames(root, base, tip)
+    records = _diff_status_records(root, base, tip)
+    counts = {
+        name: sum(
+            record["classification"] == name for record in records
+        )
+        for name in _DESCENDANT_CLASSIFICATIONS
+    }
+    summary = {
+        "changed_path_count": len(changed_paths),
+        "changed_path_set_sha256": _domain_hash(
+            f"{CORE0A_DESCENDANT_INTEGRATION_DOMAIN}:CHANGED_PATH_SET",
+            list(changed_paths),
+        ),
+        "status_record_count": len(records),
+        "status_record_sha256": _domain_hash(
+            f"{CORE0A_DESCENDANT_INTEGRATION_DOMAIN}:STATUS_RECORDS",
+            list(records),
+        ),
+        "classification_counts": counts,
+    }
+    return summary, changed_paths
+
+
+def _reconstruct_descendant_integration_contract(
+    root: Path,
+    merge_commit: str,
+    *,
+    sequence: int,
+    predecessor_effective_lineage_identity: str,
+    predecessor_reviewed_integration_anchor: str,
+) -> dict[str, Any]:
+    parents = _parents(root, merge_commit)
+    if len(parents) != 2:
+        raise Core0ARepositoryLineageV1Error(
+            "reviewed descendant integration merge must be binary"
+        )
+    first_parent, second_parent = parents
+    merge_base = _merge_base(root, first_parent, second_parent)
+    first_summary, first_paths = _descendant_side_summary(
+        root, merge_base, first_parent,
+    )
+    second_summary, second_paths = _descendant_side_summary(
+        root, merge_base, second_parent,
+    )
+    relative_first, relative_first_paths = _descendant_side_summary(
+        root, first_parent, merge_commit,
+    )
+    relative_second, relative_second_paths = _descendant_side_summary(
+        root, second_parent, merge_commit,
+    )
+    overlap = _canonical_path_tuple(set(first_paths).intersection(second_paths))
+    if overlap:
+        raise Core0ARepositoryLineageV1Error(
+            "reviewed descendant integration V1 requires disjoint side paths"
+        )
+    if relative_first_paths != second_paths:
+        raise Core0ARepositoryLineageV1Error(
+            "descendant merge relative-to-first path set is not second side"
+        )
+    if relative_second_paths != first_paths:
+        raise Core0ARepositoryLineageV1Error(
+            "descendant merge relative-to-second path set is not first side"
+        )
+
+    first_states = _blob_states(root, first_parent, first_paths)
+    merge_first_states = _blob_states(root, merge_commit, first_paths)
+    _require_same_states(
+        "descendant first-parent side", first_states, merge_first_states,
+    )
+    second_states = _blob_states(root, second_parent, second_paths)
+    merge_second_states = _blob_states(root, merge_commit, second_paths)
+    _require_same_states(
+        "descendant second-parent side", second_states, merge_second_states,
+    )
+
+    expected_tree = dict(_tree_entries(root, merge_base))
+    first_tree = _tree_entries(root, first_parent)
+    for path in first_paths:
+        if path in first_tree:
+            expected_tree[path] = first_tree[path]
+        else:
+            expected_tree.pop(path, None)
+    second_tree = _tree_entries(root, second_parent)
+    for path in second_paths:
+        if path in second_tree:
+            expected_tree[path] = second_tree[path]
+        else:
+            expected_tree.pop(path, None)
+    if _tree_entries(root, merge_commit) != expected_tree:
+        raise Core0ARepositoryLineageV1Error(
+            "descendant merge tree is not exact disjoint reconstruction"
+        )
+
+    touched_paths = _canonical_path_tuple(set(first_paths).union(second_paths))
+    touched_states = _blob_states(root, merge_commit, touched_paths)
+    material: dict[str, Any] = {
+        "schema": CORE0A_DESCENDANT_INTEGRATION_REGISTRY_SCHEMA,
+        "contract_version": CORE0A_DESCENDANT_INTEGRATION_CONTRACT_VERSION,
+        "merge_type": REVIEWED_DESCENDANT_INTEGRATION_MERGE_V1,
+        "sequence": sequence,
+        "merge_commit": merge_commit,
+        "first_parent": first_parent,
+        "first_parent_tree": _commit_tree(root, first_parent),
+        "second_parent": second_parent,
+        "second_parent_tree": _commit_tree(root, second_parent),
+        "merge_base": merge_base,
+        "merge_base_tree": _commit_tree(root, merge_base),
+        "merge_result_tree": _commit_tree(root, merge_commit),
+        "first_parent_side": first_summary,
+        "second_parent_side": second_summary,
+        "relative_to_first_parent": relative_first,
+        "relative_to_second_parent": relative_second,
+        "overlap_count": len(overlap),
+        "overlap_path_set_sha256": _domain_hash(
+            f"{CORE0A_DESCENDANT_INTEGRATION_DOMAIN}:OVERLAP_PATH_SET",
+            list(overlap),
+        ),
+        "result_touched_blob_state_sha256": _domain_hash(
+            f"{CORE0A_DESCENDANT_INTEGRATION_DOMAIN}:RESULT_BLOB_STATES",
+            [row.as_dict() for row in touched_states],
+        ),
+        "reconstructed_tree": _commit_tree(root, merge_commit),
+        "predecessor_effective_lineage_identity": (
+            predecessor_effective_lineage_identity
+        ),
+        "predecessor_reviewed_integration_anchor": (
+            predecessor_reviewed_integration_anchor
+        ),
+    }
+    material["contract_content_sha256"] = (
+        _descendant_contract_content_sha256(material)
+    )
+    return material
 
 
 def _tree_entries(
@@ -771,23 +1290,50 @@ def _linear_descendant_facts(
     root: Path,
     head: str,
     anchor: _LineageFacts,
+    *,
+    registry_content_sha256: str | None = None,
+    contract_content_sha256s: tuple[str, ...] = (),
+    effective_lineage_identity: str | None = None,
 ) -> _LineageFacts:
     """Bind a reviewed integration anchor to its linear current HEAD."""
 
-    if anchor.current_head_commit == head:
+    if (
+        anchor.current_head_commit == head
+        and not contract_content_sha256s
+    ):
         return anchor
     return replace(
         anchor,
         current_head_commit=head,
         current_head_tree=_commit_tree(root, head),
         current_parent_count=len(_parents(root, head)),
+        descendant_integration_registry_sha256=(
+            registry_content_sha256
+        ),
+        descendant_integration_contract_sha256s=(
+            contract_content_sha256s
+        ),
+        descendant_effective_lineage_identity=(
+            effective_lineage_identity
+        ),
     )
 
 
 def _classify(root: Path, head: str) -> _LineageFacts:
     """Classify HEAD without mistaking reviewed merge descendants for standalone."""
 
+    registry = _load_descendant_integration_registry(root)
+    contracts_by_commit: dict[str, Mapping[str, Any]] = {}
+    for contract in registry.contracts:
+        commit = str(contract["merge_commit"])
+        if commit in contracts_by_commit:
+            raise Core0ARepositoryLineageV1Error(
+                "descendant integration registry repeats a merge commit"
+            )
+        contracts_by_commit[commit] = contract
+
     cursor = head
+    encountered_contracts: list[Mapping[str, Any]] = []
     while cursor != CORE0A_REVIEWED_ANCHOR_COMMIT:
         parents = _parents(root, cursor)
         if len(parents) == 1:
@@ -803,14 +1349,84 @@ def _classify(root: Path, head: str) -> _LineageFacts:
             cursor = parents[0]
             continue
         if len(parents) == 2:
+            registered = contracts_by_commit.get(cursor)
+            if registered is not None:
+                encountered_contracts.append(registered)
+                cursor = parents[0]
+                continue
             anchor = _integration_anchor_facts(root, cursor)
-            return _linear_descendant_facts(root, head, anchor)
+            ordered_contracts = tuple(reversed(encountered_contracts))
+            if tuple(registry.contracts) != ordered_contracts:
+                raise Core0ARepositoryLineageV1Error(
+                    "descendant integration registry is not the unique "
+                    "first-parent merge chain"
+                )
+            if not ordered_contracts:
+                return _linear_descendant_facts(root, head, anchor)
+            if (
+                registry.registry_content_sha256 is None
+                or registry.reviewed_integration_anchor
+                != anchor.current_head_commit
+                or str(ordered_contracts[0][
+                    "predecessor_reviewed_integration_anchor"
+                ]) != anchor.current_head_commit
+            ):
+                raise Core0ARepositoryLineageV1Error(
+                    "descendant integration predecessor anchor mismatch"
+                )
+            effective_identity = _validated(
+                anchor
+            ).repository_lineage_identity
+            contract_shas: list[str] = []
+            for sequence, contract in enumerate(ordered_contracts, start=1):
+                if (
+                    contract["predecessor_reviewed_integration_anchor"]
+                    != anchor.current_head_commit
+                ):
+                    raise Core0ARepositoryLineageV1Error(
+                        "descendant integration anchor changed within chain"
+                    )
+                reconstructed = _reconstruct_descendant_integration_contract(
+                    root,
+                    str(contract["merge_commit"]),
+                    sequence=sequence,
+                    predecessor_effective_lineage_identity=(
+                        effective_identity
+                    ),
+                    predecessor_reviewed_integration_anchor=(
+                        anchor.current_head_commit
+                    ),
+                )
+                if dict(contract) != reconstructed:
+                    raise Core0ARepositoryLineageV1Error(
+                        "descendant integration contract differs from Git "
+                        "reconstruction"
+                    )
+                contract_sha = str(contract["contract_content_sha256"])
+                contract_shas.append(contract_sha)
+                effective_identity = _descendant_effective_lineage_identity(
+                    effective_identity, contract_sha,
+                )
+            return _linear_descendant_facts(
+                root,
+                head,
+                anchor,
+                registry_content_sha256=(
+                    registry.registry_content_sha256
+                ),
+                contract_content_sha256s=tuple(contract_shas),
+                effective_lineage_identity=effective_identity,
+            )
         if len(parents) > 2:
             raise Core0ARepositoryLineageV1Error(
                 "unsupported octopus or non-binary lineage topology"
             )
         raise Core0ARepositoryLineageV1Error(
             "repository lineage terminated before reviewed CORE-0A anchor"
+        )
+    if registry.contracts:
+        raise Core0ARepositoryLineageV1Error(
+            "descendant integration registry is unreachable from HEAD"
         )
     return _standalone_facts(root, head)
 
@@ -861,6 +1477,19 @@ def _validated(facts: _LineageFacts) -> ValidatedCore0ARepositoryLineageV1:
         worktree_clean=True,
         repair_scope_path_digest=repair_digest,
         repository_lineage_identity="",
+        descendant_integration_contract_type=(
+            REVIEWED_DESCENDANT_INTEGRATION_MERGE_V1
+            if facts.descendant_integration_contract_sha256s else None
+        ),
+        descendant_integration_registry_sha256=(
+            facts.descendant_integration_registry_sha256
+        ),
+        descendant_integration_contract_sha256s=(
+            facts.descendant_integration_contract_sha256s
+        ),
+        descendant_effective_lineage_identity=(
+            facts.descendant_effective_lineage_identity
+        ),
     )
     identity = _domain_hash(
         CORE0A_REPOSITORY_LINEAGE_DOMAIN,
@@ -892,6 +1521,9 @@ def validate_core0a_repository_lineage_v1(
 __all__ = [
     "BlobStateV1",
     "CORE0A_LINEAGE_REPAIR_SCOPE",
+    "CORE0A_DESCENDANT_INTEGRATION_CONTRACT_VERSION",
+    "CORE0A_DESCENDANT_INTEGRATION_REGISTRY_PATH",
+    "CORE0A_DESCENDANT_INTEGRATION_REGISTRY_SCHEMA",
     "CORE0A_REPOSITORY_LINEAGE_CONTRACT_VERSION",
     "CORE0A_REPOSITORY_LINEAGE_DOMAIN",
     "CORE0A_REPOSITORY_LINEAGE_SCHEMA",
@@ -901,6 +1533,7 @@ __all__ = [
     "Core0ARepositoryLineageV1Error",
     "MASTER_INTEGRATION_MERGE",
     "MASTER_PR_WRAPPER_MERGE",
+    "REVIEWED_DESCENDANT_INTEGRATION_MERGE_V1",
     "ValidatedCore0ARepositoryLineageV1",
     "validate_core0a_repository_lineage_v1",
 ]

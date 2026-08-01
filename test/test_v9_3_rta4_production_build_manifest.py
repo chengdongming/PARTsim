@@ -309,6 +309,11 @@ def test_default_manifest_covers_recursive_static_v2_import_closure():
         "experiments/v9_3/rta4_core0a_repository_lineage_v1.py"
         in DEFAULT_RELEVANT_SOURCES
     )
+    assert (
+        "experiments/v9_3/"
+        "rta4_core0a_descendant_integration_contracts_v1.json"
+        in DEFAULT_RELEVANT_SOURCES
+    )
     assert "experiments/v9_3/rta4_formal_plan.py" not in closure
 
 

@@ -250,9 +250,10 @@ CORE0A_DISK_FIXED_OVERHEAD_BYTES = 1 << 30
 CORE0A_DISK_OBSERVATION_TOLERANCE_BYTES = 64 << 20
 CORE0A_MAX_RUNS = 1
 CORE0A_AUTHORIZATION_SCOPE = "EXACT_384_RECORD_CORE0A_ONLY"
-EXPECTED_PRODUCTION_SOURCE_CLOSURE_COUNT = 54
+EXPECTED_PRODUCTION_SOURCE_CLOSURE_COUNT = 55
 PORTABLE_FREEZE_SOURCE_PATHS = (
     "experiments/v9_3/rta4_core0a_repository_lineage_v1.py",
+    "experiments/v9_3/rta4_core0a_descendant_integration_contracts_v1.json",
     "experiments/v9_3/rta4_core0a_pilot_v2.py",
     "experiments/v9_3/rta4_core0a_authorization_v2.py",
     "experiments/v9_3/rta4_core0a_execution_authorization_v2.py",

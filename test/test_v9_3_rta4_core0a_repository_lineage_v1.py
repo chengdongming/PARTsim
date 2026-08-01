@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import FrozenInstanceError
 import hashlib
 import inspect
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -18,6 +20,9 @@ ANCHOR_PARENT = f"{ANCHOR}^"
 REPAIR_PATH = "test/test_v9_3_rta4_core0a_repository_lineage_v1.py"
 SECOND_REPAIR_PATH = "test/test_v9_3_rta4_core0a_pilot_freeze_v2.py"
 MASTER_PATH = "lineage-master-only.md"
+DESCENDANT_REGISTRY_PATH = (
+    lineage.CORE0A_DESCENDANT_INTEGRATION_REGISTRY_PATH
+)
 
 
 def _git(
@@ -222,6 +227,98 @@ def _wrapper(
     )
     _checkout(root, wrapper)
     return wrapper
+
+
+def _make_descendant_merge(
+    root: Path,
+    base: str,
+    *,
+    left_path: str,
+    right_path: str,
+) -> dict[str, str]:
+    _checkout(root, base)
+    first = _commit(
+        root, {left_path: f"{left_path}\n"}, "descendant first side",
+    )
+    _checkout(root, base)
+    second = _commit(
+        root, {right_path: f"{right_path}\n"}, "descendant second side",
+    )
+    _checkout(root, first)
+    _git(root, "merge", "--quiet", "--no-ff", second, "-m", "descendant merge")
+    return {
+        "base": base,
+        "first": first,
+        "second": second,
+        "merge": _git(root, "rev-parse", "HEAD"),
+    }
+
+
+def _registry_material(
+    root: Path,
+    anchor: str,
+    merges: tuple[str, ...],
+) -> dict[str, object]:
+    anchor_facts = lineage._integration_anchor_facts(root, anchor)
+    effective = lineage._validated(
+        anchor_facts
+    ).repository_lineage_identity
+    contracts = []
+    for sequence, merge in enumerate(merges, start=1):
+        contract = lineage._reconstruct_descendant_integration_contract(
+            root,
+            merge,
+            sequence=sequence,
+            predecessor_effective_lineage_identity=effective,
+            predecessor_reviewed_integration_anchor=anchor,
+        )
+        contracts.append(contract)
+        effective = lineage._descendant_effective_lineage_identity(
+            effective, contract["contract_content_sha256"],
+        )
+    material: dict[str, object] = {
+        "schema": lineage.CORE0A_DESCENDANT_INTEGRATION_REGISTRY_SCHEMA,
+        "contract_version": (
+            lineage.CORE0A_DESCENDANT_INTEGRATION_CONTRACT_VERSION
+        ),
+        "reviewed_integration_anchor": anchor,
+        "contracts": contracts,
+    }
+    material["registry_content_sha256"] = lineage._domain_hash(
+        f"{lineage.CORE0A_DESCENDANT_INTEGRATION_DOMAIN}:REGISTRY_CONTENT",
+        material,
+    )
+    return material
+
+
+def _refresh_registry_hashes(material: dict[str, object]) -> None:
+    contracts = material["contracts"]
+    assert isinstance(contracts, list)
+    for contract in contracts:
+        assert isinstance(contract, dict)
+        contract.pop("contract_content_sha256", None)
+        contract["contract_content_sha256"] = (
+            lineage._descendant_contract_content_sha256(contract)
+        )
+    material.pop("registry_content_sha256", None)
+    material["registry_content_sha256"] = lineage._domain_hash(
+        f"{lineage.CORE0A_DESCENDANT_INTEGRATION_DOMAIN}:REGISTRY_CONTENT",
+        material,
+    )
+
+
+def _commit_registry(
+    root: Path,
+    material: dict[str, object],
+    message: str = "register reviewed descendant integrations",
+) -> str:
+    payload = json.dumps(
+        material,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ) + "\n"
+    return _commit(root, {DESCENDANT_REGISTRY_PATH: payload}, message)
 
 
 def test_public_interface_is_source_root_only_and_result_is_frozen(
@@ -688,6 +785,340 @@ def test_reviewed_wrapper_multiple_linear_descendants_success(
     assert result.first_parent_commit == data["master"]
     assert result.second_parent_commit == data["integration"]
     assert wrapper not in descendants
+
+
+def test_one_exact_registered_descendant_merge_success(
+    repository: Path,
+) -> None:
+    data = _make_integration(repository)
+    descendant = _make_descendant_merge(
+        repository,
+        data["integration"],
+        left_path="registered-one-left.md",
+        right_path="registered-one-right.md",
+    )
+    material = _registry_material(
+        repository, data["integration"], (descendant["merge"],),
+    )
+    head = _commit_registry(repository, material)
+
+    result = _validate(repository)
+
+    assert result.current_head_commit == head
+    assert result.lineage_mode == lineage.MASTER_INTEGRATION_MERGE
+    assert result.descendant_integration_contract_type == (
+        lineage.REVIEWED_DESCENDANT_INTEGRATION_MERGE_V1
+    )
+    assert result.descendant_integration_registry_sha256 == material[
+        "registry_content_sha256"
+    ]
+    assert result.descendant_integration_contract_sha256s == (
+        material["contracts"][0]["contract_content_sha256"],
+    )
+    assert len(result.descendant_effective_lineage_identity or "") == 64
+    assert result.identity_material()[
+        "descendant_integration_contract_count"
+    ] == 1
+
+
+def test_two_ordered_registered_descendant_merges_success(
+    repository: Path,
+) -> None:
+    data = _make_integration(repository)
+    first = _make_descendant_merge(
+        repository,
+        data["integration"],
+        left_path="registered-first-left.md",
+        right_path="registered-first-right.md",
+    )
+    second = _make_descendant_merge(
+        repository,
+        first["merge"],
+        left_path="registered-second-left.md",
+        right_path="registered-second-right.md",
+    )
+    material = _registry_material(
+        repository,
+        data["integration"],
+        (first["merge"], second["merge"]),
+    )
+    head = _commit_registry(repository, material)
+
+    result = _validate(repository)
+
+    assert result.current_head_commit == head
+    assert result.descendant_integration_contract_sha256s == tuple(
+        contract["contract_content_sha256"]
+        for contract in material["contracts"]
+    )
+    assert result.identity_material()[
+        "descendant_integration_contract_count"
+    ] == 2
+
+
+def test_current_two_merge_registry_reconstructs_exact_topology() -> None:
+    result = _validate(ROOT)
+    registry = lineage._load_descendant_integration_registry(ROOT)
+
+    assert tuple(
+        contract["merge_commit"] for contract in registry.contracts
+    ) == (
+        "8ea8f209f274bd329e41cb0b1ab59265983b3631",
+        "95b9045612cfa908aaecea6ae3440d2bd9a0d6ec",
+    )
+    assert tuple(
+        (
+            contract["first_parent"],
+            contract["second_parent"],
+            contract["merge_result_tree"],
+        )
+        for contract in registry.contracts
+    ) == (
+        (
+            "4a04e2afd88424b8ebe85500b0561d7203c64e4e",
+            "d0a37d67f913c44252791316d1140034f04cf285",
+            "e728475571031724606f8729204b6055034307a2",
+        ),
+        (
+            "8ea8f209f274bd329e41cb0b1ab59265983b3631",
+            "af8a092121087e25dc080de82e6f9194a0d1e0a6",
+            "cdbf5122396a7226f1dbde981b80b5016649d7d2",
+        ),
+    )
+    assert tuple(
+        (
+            contract["first_parent_side"]["changed_path_count"],
+            contract["second_parent_side"]["changed_path_count"],
+            contract["overlap_count"],
+        )
+        for contract in registry.contracts
+    ) == ((0, 2, 0), (2, 52, 0))
+    assert registry.contracts[1]["second_parent_side"][
+        "classification_counts"
+    ] == {
+        "ADD": 42,
+        "COPY": 1,
+        "DELETE": 0,
+        "MODIFY": 9,
+        "RENAME": 0,
+    }
+    assert result.descendant_integration_contract_sha256s == tuple(
+        contract["contract_content_sha256"]
+        for contract in registry.contracts
+    )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "merge-commit",
+        "first-parent",
+        "second-parent",
+        "parent-order",
+        "merge-base",
+        "merge-tree",
+        "changed-path",
+        "overlap",
+        "classification",
+        "result-blob-state",
+        "predecessor-identity",
+    ),
+)
+def test_registered_descendant_merge_reconstruction_tampering_rejected(
+    repository: Path,
+    mutation: str,
+) -> None:
+    data = _make_integration(repository)
+    descendant = _make_descendant_merge(
+        repository,
+        data["integration"],
+        left_path="tamper-left.md",
+        right_path="tamper-right.md",
+    )
+    material = _registry_material(
+        repository, data["integration"], (descendant["merge"],),
+    )
+    changed = deepcopy(material)
+    contract = changed["contracts"][0]
+    if mutation == "merge-commit":
+        contract["merge_commit"] = "0" * 40
+    elif mutation == "first-parent":
+        contract["first_parent"] = "1" * 40
+    elif mutation == "second-parent":
+        contract["second_parent"] = "2" * 40
+    elif mutation == "parent-order":
+        contract["first_parent"], contract["second_parent"] = (
+            contract["second_parent"], contract["first_parent"],
+        )
+    elif mutation == "merge-base":
+        contract["merge_base"] = "3" * 40
+    elif mutation == "merge-tree":
+        contract["merge_result_tree"] = "4" * 40
+    elif mutation == "changed-path":
+        contract["first_parent_side"]["changed_path_set_sha256"] = "5" * 64
+    elif mutation == "overlap":
+        contract["overlap_count"] = 1
+    elif mutation == "classification":
+        counts = contract["second_parent_side"]["classification_counts"]
+        counts["COPY"] += 1
+    elif mutation == "result-blob-state":
+        contract["result_touched_blob_state_sha256"] = "6" * 64
+    elif mutation == "predecessor-identity":
+        contract["predecessor_effective_lineage_identity"] = "7" * 64
+    else:
+        raise AssertionError(mutation)
+    _refresh_registry_hashes(changed)
+    _commit_registry(repository, changed, f"tampered registry {mutation}")
+
+    with pytest.raises(lineage.Core0ARepositoryLineageV1Error):
+        _validate(repository)
+
+
+def test_registry_missing_first_merge_and_reversed_order_rejected(
+    repository: Path,
+) -> None:
+    data = _make_integration(repository)
+    first = _make_descendant_merge(
+        repository,
+        data["integration"],
+        left_path="missing-first-left.md",
+        right_path="missing-first-right.md",
+    )
+    second = _make_descendant_merge(
+        repository,
+        first["merge"],
+        left_path="missing-second-left.md",
+        right_path="missing-second-right.md",
+    )
+    original = _registry_material(
+        repository,
+        data["integration"],
+        (first["merge"], second["merge"]),
+    )
+    for mode in ("missing-first", "reversed"):
+        _checkout(repository, second["merge"])
+        changed = deepcopy(original)
+        contracts = changed["contracts"]
+        if mode == "missing-first":
+            changed["contracts"] = [contracts[1]]
+        else:
+            changed["contracts"] = list(reversed(contracts))
+        for sequence, contract in enumerate(changed["contracts"], start=1):
+            contract["sequence"] = sequence
+        _refresh_registry_hashes(changed)
+        _commit_registry(repository, changed, f"invalid registry {mode}")
+        with pytest.raises(lineage.Core0ARepositoryLineageV1Error):
+            _validate(repository)
+
+
+def test_unknown_merge_inserted_between_registered_chain_rejected(
+    repository: Path,
+) -> None:
+    data = _make_integration(repository)
+    registered = _make_descendant_merge(
+        repository,
+        data["integration"],
+        left_path="before-unknown-left.md",
+        right_path="before-unknown-right.md",
+    )
+    material = _registry_material(
+        repository, data["integration"], (registered["merge"],),
+    )
+    unknown = _make_descendant_merge(
+        repository,
+        registered["merge"],
+        left_path="unknown-left.md",
+        right_path="unknown-right.md",
+    )
+    _commit_registry(repository, material, "registry skips unknown merge")
+
+    assert unknown["merge"] != registered["merge"]
+    with pytest.raises(lineage.Core0ARepositoryLineageV1Error):
+        _validate(repository)
+
+
+def test_noncanonical_registry_bytes_rejected(repository: Path) -> None:
+    data = _make_integration(repository)
+    descendant = _make_descendant_merge(
+        repository,
+        data["integration"],
+        left_path="canonical-left.md",
+        right_path="canonical-right.md",
+    )
+    material = _registry_material(
+        repository, data["integration"], (descendant["merge"],),
+    )
+    payload = json.dumps(material, sort_keys=True, indent=2) + "\n"
+    _commit(
+        repository,
+        {DESCENDANT_REGISTRY_PATH: payload},
+        "noncanonical descendant registry bytes",
+    )
+
+    with pytest.raises(
+        lineage.Core0ARepositoryLineageV1Error,
+        match="bytes are not canonical",
+    ):
+        _validate(repository)
+
+
+@pytest.mark.parametrize(
+    "field",
+    ("contract_content_sha256", "registry_content_sha256"),
+)
+def test_descendant_contract_or_registry_identity_tampering_rejected(
+    repository: Path,
+    field: str,
+) -> None:
+    data = _make_integration(repository)
+    descendant = _make_descendant_merge(
+        repository,
+        data["integration"],
+        left_path="identity-left.md",
+        right_path="identity-right.md",
+    )
+    material = _registry_material(
+        repository, data["integration"], (descendant["merge"],),
+    )
+    if field == "contract_content_sha256":
+        material["contracts"][0][field] = "8" * 64
+    else:
+        material[field] = "9" * 64
+    _commit_registry(repository, material, f"tampered {field}")
+
+    with pytest.raises(lineage.Core0ARepositoryLineageV1Error):
+        _validate(repository)
+
+
+def test_registered_descendant_with_incomplete_git_metadata_rejected(
+    repository: Path,
+) -> None:
+    data = _make_integration(repository)
+    descendant = _make_descendant_merge(
+        repository,
+        data["integration"],
+        left_path="metadata-left.md",
+        right_path="metadata-right.md",
+    )
+    material = _registry_material(
+        repository, data["integration"], (descendant["merge"],),
+    )
+    _commit_registry(repository, material)
+    missing = descendant["second"]
+    object_path = Path(_git(
+        repository,
+        "rev-parse",
+        "--git-path",
+        f"objects/{missing[:2]}/{missing[2:]}",
+    ))
+    if not object_path.is_absolute():
+        object_path = repository / object_path
+    assert object_path.is_file()
+    object_path.unlink()
+    assert not object_path.exists()
+
+    with pytest.raises(lineage.Core0ARepositoryLineageV1Error):
+        _validate(repository)
 
 
 def test_post_integration_unknown_merge_rejected(repository: Path) -> None:
