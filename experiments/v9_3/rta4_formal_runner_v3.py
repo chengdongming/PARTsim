@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from concurrent.futures import (
-    Future, ProcessPoolExecutor, ThreadPoolExecutor, as_completed,
-)
-from concurrent.futures.process import BrokenProcessPool
+from collections import deque
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Mapping, Sequence
 import hashlib
-import multiprocessing
 import pickle
+import signal
+import threading
+import time
 
 from . import exact_energy
 from .result_writer import atomic_write_json, atomic_write_text
@@ -30,6 +30,16 @@ from .rta4_formal_lifecycle_v3 import (
 from .rta4_formal_plan_v3 import iter_formal_plan_v3
 from .rta4_formal_schema_v3 import formal_schema_hash_v3
 from .rta4_numeric_contract_v2 import RTA4_NUMERIC_CONTRACT_V2_SHA256
+from .rta4_physical_core_slots_v3 import (
+    PHYSICAL_CORE_EXECUTION_BACKEND_V3,
+    PhysicalCoreSlotPoolV3,
+    PhysicalCoreSlotV3Error,
+    SlotCompletionV3,
+    SlotStartedV3,
+    SlotTimeoutV3,
+    SlotWorkerExitV3,
+    discover_cpu_topology_v3,
+)
 from .rta4_production_build_manifest_v3 import (
     PRODUCTION_BUILD_MANIFEST_SCHEMA_V3, PRODUCTION_BUILD_PROFILE_V3,
     load_production_build_manifest_v3,
@@ -53,7 +63,9 @@ RTA4_RETRY_RESUME_DOMAIN_V3 = "ASAP_BLOCK:V9.3:RTA4:RETRY_RESUME:v3"
 RTA4_RUN_MANIFEST_V3 = "formal_run_manifest_v3.json"
 RTA4_RUN_MANIFEST_DOMAIN_V3 = "ASAP_BLOCK:V9.3:RTA4:RUN_MANIFEST:v3"
 RTA4_CHECKPOINT_V3 = "formal_checkpoint_v3.json"
-RTA4_CHECKPOINT_DOMAIN_V3 = "ASAP_BLOCK:V9.3:RTA4_CHECKPOINT:v3"
+RTA4_CHECKPOINT_DOMAIN_V3 = (
+    "ASAP_BLOCK:V9.3:RTA4_CHECKPOINT:v3-physical-core-slots-r1"
+)
 RTA4_RESULT_DIRECTORY_V3 = "formal_terminal_results_v3"
 
 
@@ -654,9 +666,81 @@ class ExecutionSummaryV3:
     pending_records: int
     complete: bool
     checkpoint_path: Path
-    execution_backend: str = "PROCESS_POOL_SPAWN"
+    execution_backend: str = PHYSICAL_CORE_EXECUTION_BACKEND_V3
+    physical_core_binding_required: bool = True
+    requested_physical_worker_count: int = 0
+    available_physical_core_count: int = 0
+    selected_physical_cores: tuple[Mapping[str, Any], ...] = ()
     worker_process_ids: tuple[int, ...] = ()
     worker_intervals_ns: tuple[tuple[int, int, int], ...] = ()
+    worker_affinity_bindings: tuple[Mapping[str, Any], ...] = ()
+    worker_intervals: tuple[Mapping[str, Any], ...] = ()
+    max_concurrent_active_slots: int = 0
+    mean_concurrent_active_slots: float = 0.0
+    slot_replacement_count: int = 0
+    timeout_kill_count: int = 0
+    checkpoint_write_count: int = 0
+    terminal_write_count: int = 0
+
+
+class _CheckpointThrottleV3:
+    """Bound full checkpoint rewrites while terminals remain immediate."""
+
+    def __init__(
+        self, writer: RTA4FormalResultWriterV3,
+        completed: Mapping[str, Mapping[str, Any]], *,
+        every_records: int, every_seconds: int,
+    ) -> None:
+        self.writer = writer
+        self.completed = completed
+        self.every_records = every_records
+        self.every_seconds = every_seconds
+        self.records_since_write = 0
+        self.last_write = time.monotonic()
+        self.write_count = 0
+        self.last_checkpoint: Mapping[str, Any] | None = None
+
+    def terminal_committed(self) -> None:
+        self.records_since_write += 1
+
+    def write_if_due(self, *, force: bool = False) -> Mapping[str, Any] | None:
+        due = (
+            force
+            or self.records_since_write >= self.every_records
+            or time.monotonic() - self.last_write >= self.every_seconds
+        )
+        if not due:
+            return None
+        self.last_checkpoint = self.writer.write_checkpoint(self.completed)
+        self.write_count += 1
+        self.records_since_write = 0
+        self.last_write = time.monotonic()
+        return self.last_checkpoint
+
+
+def _slot_concurrency(
+    intervals: Sequence[Mapping[str, Any]],
+) -> tuple[int, float]:
+    pairs = [(
+        int(row["attempt_started_monotonic_ns"]),
+        int(row["attempt_finished_monotonic_ns"]),
+    ) for row in intervals]
+    if not pairs:
+        return 0, 0.0
+    events: list[tuple[int, int]] = []
+    for start, finish in pairs:
+        events.extend(((start, 1), (finish, -1)))
+    events.sort(key=lambda row: (row[0], row[1]))
+    first = min(row[0] for row in pairs)
+    last = max(row[1] for row in pairs)
+    active = maximum = area = 0
+    previous = first
+    for instant, delta in events:
+        area += active * max(0, instant - previous)
+        active += delta
+        maximum = max(maximum, active)
+        previous = instant
+    return maximum, (0.0 if last <= first else area / (last - first))
 
 
 class AuthorizedRTA4RunnerV3:
@@ -1008,11 +1092,13 @@ class AuthorizedRTA4RunnerV3:
             records=records, require_existing_namespace=resume,
         )
         completed = dict(writer.completed_rows())
+        resume_checkpoint_writes = 0
         if resume:
             # A terminal is the authoritative committed record.  If a crash
             # occurred between its atomic rename and the following checkpoint
             # rename, reconcile the parent-owned checkpoint before dispatch.
             writer.write_checkpoint(completed)
+            resume_checkpoint_writes = 1
         by_execution = {record.execution_id: record for record in records}
         for execution_id, row in completed.items():
             frozen = store.load_for_record(by_execution[execution_id])
@@ -1091,7 +1177,10 @@ class AuthorizedRTA4RunnerV3:
             "timeout_contract": timeout_contract,
         }
         from .rta4_formal_workers_v3 import (
-            V3WorkerRequest, V3WorkerResponse, execute_worker_request_v3,
+            V3AttemptRequest, V3AttemptResponse, V3WorkerBootstrap,
+            V3WorkerRequest, V3WorkerResponse, combine_attempt_results_v3,
+            execute_worker_attempt_in_slot_v3, execute_worker_request_v3,
+            project_hard_timeout_result_v3,
         )
 
         processed = 0
@@ -1100,10 +1189,16 @@ class AuthorizedRTA4RunnerV3:
         backend = (
             "THREAD_POOL_TEST_ONLY"
             if self._test_worker_backend == "thread"
-            else "PROCESS_POOL_SPAWN"
+            else PHYSICAL_CORE_EXECUTION_BACKEND_V3
         )
         observed_worker_pids: set[int] = set()
         observed_worker_intervals: list[tuple[int, int, int]] = []
+        checkpoint_throttle = _CheckpointThrottleV3(
+            writer, completed,
+            every_records=operation["checkpoint_every_records"],
+            every_seconds=operation["checkpoint_every_seconds"],
+        )
+        checkpoint_throttle.write_count = resume_checkpoint_writes
 
         def persist(record: Any, result: Mapping[str, Any]) -> None:
             nonlocal processed
@@ -1123,17 +1218,112 @@ class AuthorizedRTA4RunnerV3:
             )
             writer.write_result(row)
             completed[record.execution_id] = row
-            writer.write_checkpoint(completed)
             processed += 1
+            checkpoint_throttle.terminal_committed()
+            checkpoint_throttle.write_if_due()
 
-        def execute_batch(pool: Any, batch: Sequence[Any]) -> None:
-            requests: Dict[str, V3WorkerRequest] = {}
-            for record in batch:
-                requests[record.record_id] = V3WorkerRequest(
+        def complete_thread_future(record: Any, future: Future[Any]) -> None:
+            try:
+                response = future.result()
+                if (
+                    type(response) is not V3WorkerResponse
+                    or response.plan_record_identity != record.record_id
+                    or response.execution_identity != record.execution_id
+                    or response.worker_pid <= 0
+                    or response.finished_monotonic_ns
+                    < response.started_monotonic_ns
+                ):
+                    raise RTA4FormalRunnerV3Error(
+                        "V3 test worker response identity drift"
+                    )
+                observed_worker_pids.add(response.worker_pid)
+                observed_worker_intervals.append((
+                    response.worker_pid, response.started_monotonic_ns,
+                    response.finished_monotonic_ns,
+                ))
+                result = response.result
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except Exception as exc:
+                result = self._infrastructure_result(
                     record=record,
                     certificate=certificates[record.record_id],
+                    context=context, timeout_contract=timeout_contract,
+                    classification=(
+                        f"THREAD_TEST_WORKER_FAILURE:{type(exc).__name__}:{exc}"
+                    ),
+                )
+            persist(record, result)
+
+        def thread_request(record: Any) -> V3WorkerRequest:
+            return V3WorkerRequest(
+                record=record, certificate=certificates[record.record_id],
+                v2_config=v2_config,
+                run_context=self._record_context(context, record),
+                timeout_contract=timeout_contract,
+                identity_contract=identity_contract,
+                production_manifest=manifest,
+                system_config_path=str(root / "system_config_unified_template.yml"),
+                energy_support_path=str(
+                    root / "configs/v9_3_rta4_shared_energy_support_v2.yaml"
+                ),
+                output_root=str(output),
+                simulation_timeout_seconds=operation["timeout_seconds"],
+                rta_executor_factory=self._rta_factory,
+                simulation_executor_factory=self._simulation_factory,
+            )
+
+        topology = discover_cpu_topology_v3()
+        selected_cores = topology.select(workers)
+        if (
+            operation.get("execution_backend")
+            != PHYSICAL_CORE_EXECUTION_BACKEND_V3
+            or operation.get("physical_core_binding_required") is not True
+            or operation.get("topology_selection_policy")
+            != topology.selection_policy
+            or operation.get("topology_fingerprint")
+            != topology.topology_fingerprint
+            or operation.get("available_physical_core_count")
+            != topology.physical_core_count
+            or operation.get("selected_physical_cores")
+            != [row.as_dict() for row in selected_cores]
+            or operation.get("selected_logical_cpu_ids")
+            != [row.logical_cpu_id for row in selected_cores]
+        ):
+            raise RTA4FormalRunnerV3Error(
+                "V3 prepared physical CPU topology drift"
+            )
+
+        slot_pool: PhysicalCoreSlotPoolV3 | None = None
+        previous_sigterm_handler: Any = None
+        sigterm_handler_installed = False
+        try:
+            if threading.current_thread() is threading.main_thread():
+                previous_sigterm_handler = signal.getsignal(signal.SIGTERM)
+
+                def request_graceful_termination(
+                    signum: int, _frame: Any,
+                ) -> None:
+                    raise SystemExit(128 + signum)
+
+                signal.signal(signal.SIGTERM, request_graceful_termination)
+                sigterm_handler_installed = True
+            if backend == "THREAD_POOL_TEST_ONLY":
+                remaining = deque(execution_records)
+                futures: Dict[Future[Any], Any] = {}
+                with ThreadPoolExecutor(max_workers=workers) as thread_pool:
+                    while remaining or futures:
+                        while remaining and len(futures) < max_in_flight:
+                            record = remaining.popleft()
+                            futures[thread_pool.submit(
+                                execute_worker_request_v3, thread_request(record),
+                            )] = record
+                        future = next(as_completed(tuple(futures)))
+                        record = futures.pop(future)
+                        complete_thread_future(record, future)
+            else:
+                bootstrap = V3WorkerBootstrap(
                     v2_config=v2_config,
-                    run_context=self._record_context(context, record),
                     timeout_contract=timeout_contract,
                     identity_contract=identity_contract,
                     production_manifest=manifest,
@@ -1141,146 +1331,224 @@ class AuthorizedRTA4RunnerV3:
                         root / "system_config_unified_template.yml"
                     ),
                     energy_support_path=str(
-                        root
-                        / "configs/v9_3_rta4_shared_energy_support_v2.yaml"
+                        root / "configs/v9_3_rta4_shared_energy_support_v2.yaml"
                     ),
                     output_root=str(output),
                     simulation_timeout_seconds=operation["timeout_seconds"],
                     rta_executor_factory=self._rta_factory,
                     simulation_executor_factory=self._simulation_factory,
                 )
-            future_records: Dict[Future[Any], Any] = {}
-            for record in batch:
-                request = requests[record.record_id]
-                if backend == "PROCESS_POOL_SPAWN":
-                    try:
-                        pickle.dumps(
-                            request, protocol=pickle.HIGHEST_PROTOCOL,
+                try:
+                    pickle.dumps(bootstrap, protocol=pickle.HIGHEST_PROTOCOL)
+                except Exception as exc:
+                    raise RTA4FormalRunnerV3Error(
+                        "V3 physical slot bootstrap is not serializable"
+                    ) from exc
+                slot_pool = PhysicalCoreSlotPoolV3(
+                    selected_cores,
+                    worker_callable=execute_worker_attempt_in_slot_v3,
+                    worker_state=bootstrap,
+                    start_method="spawn",
+                )
+                slot_pool.start()
+                pending_attempts = deque((record, 0) for record in execution_records)
+                active_attempts: Dict[str, tuple[Any, V3AttemptRequest]] = {}
+                attempt_results: Dict[str, Dict[int, Mapping[str, Any]]] = {}
+
+                def attempt_budget(record: Any, attempt_index: int) -> int:
+                    if record.kind == "simulation":
+                        return operation["timeout_seconds"]
+                    contract = timeout_contract[str(record.material["method"])]
+                    return (
+                        contract["initial_timeout_seconds"]
+                        if attempt_index == 0
+                        else contract["retry_timeout_seconds"]
+                    )
+
+                def finish_attempt(
+                    record: Any, request: V3AttemptRequest,
+                    result: Mapping[str, Any],
+                ) -> None:
+                    if record.kind == "simulation":
+                        persist(record, result)
+                        return
+                    history = attempt_results.setdefault(record.execution_id, {})
+                    history[request.attempt_index] = result
+                    status = str(result.get("solver_status"))
+                    if status == "TIMEOUT" and request.attempt_index == 0:
+                        pending_attempts.append((record, 1))
+                    else:
+                        persist(record, combine_attempt_results_v3(history))
+
+                while pending_attempts or active_attempts:
+                    for slot_id in slot_pool.idle_slot_ids:
+                        if not pending_attempts:
+                            break
+                        record, attempt_index = pending_attempts.popleft()
+                        budget = attempt_budget(record, attempt_index)
+                        request = V3AttemptRequest(
+                            record, certificates[record.record_id],
+                            self._record_context(context, record),
+                            attempt_index, budget,
                         )
-                    except Exception as exc:
-                        classification = (
-                            "PROCESS_SERIALIZATION_FAILURE:"
-                            f"{type(exc).__name__}:{exc}"
-                        )
+                        task_id = f"{record.execution_id}:{attempt_index}"
+                        slot_pool.submit(slot_id, task_id, request, budget)
+                        active_attempts[task_id] = (record, request)
+                    event = slot_pool.poll()
+                    if event is None:
+                        continue
+                    if isinstance(event, SlotStartedV3):
+                        record, _request = active_attempts[event.task_id]
+                        observed_worker_pids.add(event.worker.worker_pid)
+                        if self.worker_observer is not None:
+                            self.worker_observer(
+                                "start", record.record_id,
+                                event.worker.worker_pid,
+                            )
+                        continue
+                    if isinstance(event, SlotCompletionV3):
+                        record, request = active_attempts.pop(event.task_id)
+                        observed_worker_pids.add(event.worker.worker_pid)
+                        observed_worker_intervals.append((
+                            event.worker.worker_pid,
+                            event.started_monotonic_ns,
+                            event.finished_monotonic_ns,
+                        ))
+                        if self.worker_observer is not None:
+                            self.worker_observer(
+                                "finish", record.record_id,
+                                event.worker.worker_pid,
+                            )
+                        if event.error_classification is not None:
+                            persist(record, self._infrastructure_result(
+                                record=record,
+                                certificate=certificates[record.record_id],
+                                context=context,
+                                timeout_contract=timeout_contract,
+                                classification=(
+                                    "PHYSICAL_SLOT_ATTEMPT_FAILURE:"
+                                    f"{event.error_classification}"
+                                ),
+                            ))
+                            continue
+                        response = event.result
+                        if (
+                            type(response) is not V3AttemptResponse
+                            or response.plan_record_identity != record.record_id
+                            or response.execution_identity != record.execution_id
+                            or response.attempt_index != request.attempt_index
+                            or response.timeout_seconds != request.timeout_seconds
+                        ):
+                            raise RTA4FormalRunnerV3Error(
+                                "V3 physical slot response identity drift"
+                            )
+                        finish_attempt(record, request, response.result)
+                        continue
+                    if isinstance(event, SlotTimeoutV3):
+                        record, request = active_attempts.pop(event.task_id)
+                        slot_pool.worker_intervals.append({
+                            **event.worker.as_dict(),
+                            "task_id": event.task_id,
+                            "attempt_started_monotonic_ns": (
+                                event.started_monotonic_ns
+                            ),
+                            "attempt_finished_monotonic_ns": (
+                                event.timed_out_monotonic_ns
+                            ),
+                            "timed_out": True,
+                        })
+                        observed_worker_intervals.append((
+                            event.worker.worker_pid,
+                            event.started_monotonic_ns,
+                            event.timed_out_monotonic_ns,
+                        ))
+                        slot_pool.replace(event.slot_id, timeout_kill=True)
+                        if record.kind == "simulation":
+                            persist(record, self._infrastructure_result(
+                                record=record,
+                                certificate=certificates[record.record_id],
+                                context=context,
+                                timeout_contract=timeout_contract,
+                                classification="SIMULATION_PHYSICAL_SLOT_TIMEOUT",
+                            ))
+                        else:
+                            projected = project_hard_timeout_result_v3(
+                                bootstrap, request,
+                            )
+                            finish_attempt(record, request, projected)
+                        continue
+                    if isinstance(event, SlotWorkerExitV3):
+                        slot_pool.replace(event.slot_id)
+                        if event.task_id is None:
+                            continue
+                        record, _request = active_attempts.pop(event.task_id)
                         persist(record, self._infrastructure_result(
                             record=record,
                             certificate=certificates[record.record_id],
                             context=context,
                             timeout_contract=timeout_contract,
-                            classification=classification,
+                            classification=(
+                                "PHYSICAL_SLOT_WORKER_EXIT:"
+                                f"{event.exitcode}"
+                            ),
                         ))
-                        continue
-                try:
-                    future_records[pool.submit(
-                        execute_worker_request_v3, request,
-                    )] = record
-                except Exception as exc:
-                    classification = (
-                        "PROCESS_POOL_SUBMIT_FAILURE:"
-                        f"{type(exc).__name__}:{exc}"
-                    )
-                    persist(record, self._infrastructure_result(
-                        record=record,
-                        certificate=certificates[record.record_id],
-                        context=context,
-                        timeout_contract=timeout_contract,
-                        classification=classification,
-                    ))
-            for future in as_completed(future_records):
-                record = future_records[future]
-                try:
-                    response = future.result()
-                    if (
-                        type(response) is not V3WorkerResponse
-                        or response.plan_record_identity
-                        != record.record_id
-                        or response.execution_identity
-                        != record.execution_id
-                        or type(response.worker_pid) is not int
-                        or response.worker_pid <= 0
-                        or type(response.started_monotonic_ns) is not int
-                        or type(response.finished_monotonic_ns) is not int
-                        or response.started_monotonic_ns < 0
-                        or response.finished_monotonic_ns
-                        < response.started_monotonic_ns
-                    ):
-                        raise RTA4FormalRunnerV3Error(
-                            "V3 worker response identity drift"
-                        )
-                    observed_worker_pids.add(response.worker_pid)
-                    observed_worker_intervals.append((
-                        response.worker_pid,
-                        response.started_monotonic_ns,
-                        response.finished_monotonic_ns,
-                    ))
-                    if self.worker_observer is not None:
-                        self.worker_observer(
-                            "finish", record.record_id,
-                            response.worker_pid,
-                        )
-                    result = response.result
-                except (KeyboardInterrupt, SystemExit):
-                    raise
-                except Exception as exc:
-                    prefix = (
-                        "PROCESS_POOL_BROKEN"
-                        if isinstance(exc, BrokenProcessPool)
-                        else "PROCESS_WORKER_FAILURE"
-                    )
-                    result = self._infrastructure_result(
-                        record=record,
-                        certificate=certificates[record.record_id],
-                        context=context,
-                        timeout_contract=timeout_contract,
-                        classification=(
-                            f"{prefix}:{type(exc).__name__}:{exc}"
-                        ),
-                    )
-                persist(record, result)
-
-        if backend == "THREAD_POOL_TEST_ONLY":
-            pool: Any = ThreadPoolExecutor(
-                max_workers=min(workers, len(execution_records)),
-            )
-        else:
-            pool = ProcessPoolExecutor(
-                max_workers=min(workers, len(execution_records)),
-                mp_context=multiprocessing.get_context("spawn"),
-            )
-        try:
-            with pool:
-                for start in range(0, len(execution_records), max_in_flight):
-                    execute_batch(
-                        pool,
-                        execution_records[start:start + max_in_flight],
-                    )
         except (KeyboardInterrupt, SystemExit):
+            checkpoint_throttle.write_if_due(force=True)
             raise
-        except Exception as exc:
-            for record in execution_records:
-                if record.execution_id in completed:
-                    continue
-                try:
-                    persist(record, self._infrastructure_result(
-                        record=record,
-                        certificate=certificates[record.record_id],
-                        context=context,
-                        timeout_contract=timeout_contract,
-                        classification=(
-                            "PROCESS_POOL_INFRASTRUCTURE_FAILURE:"
-                            f"{type(exc).__name__}:{exc}"
-                        ),
-                    ))
-                except Exception:
-                    raise
-        checkpoint = writer.write_checkpoint(completed)
+        finally:
+            try:
+                if slot_pool is not None:
+                    slot_pool.shutdown()
+            finally:
+                if sigterm_handler_installed:
+                    signal.signal(signal.SIGTERM, previous_sigterm_handler)
+        checkpoint = checkpoint_throttle.write_if_due(force=True)
+        assert checkpoint is not None
+        affinity_bindings = (
+            () if slot_pool is None
+            else tuple(slot_pool.worker_affinity_bindings)
+        )
+        detailed_intervals = (
+            () if slot_pool is None else tuple(slot_pool.worker_intervals)
+        )
+        maximum, mean = _slot_concurrency(detailed_intervals)
+        all_worker_pids = (
+            observed_worker_pids
+            if not affinity_bindings
+            else {int(row["worker_pid"]) for row in affinity_bindings}
+        )
         return ExecutionSummaryV3(
-            str(self.scientific["core"]), "FORMAL_AUTHORIZED",
-            self.authorization["authorization_id"], str(manifest["manifest_id"]),
-            processed, len(records) - len(completed), bool(checkpoint["complete"]),
-            output / RTA4_CHECKPOINT_V3,
-            backend, tuple(sorted(observed_worker_pids)),
-            tuple(observed_worker_intervals),
+            core=str(self.scientific["core"]),
+            execution_class="FORMAL_AUTHORIZED",
+            authorization_id=self.authorization["authorization_id"],
+            production_build_manifest_identity=str(manifest["manifest_id"]),
+            processed_records=processed,
+            pending_records=len(records) - len(completed),
+            complete=bool(checkpoint["complete"]),
+            checkpoint_path=output / RTA4_CHECKPOINT_V3,
+            execution_backend=backend,
+            physical_core_binding_required=(
+                backend == PHYSICAL_CORE_EXECUTION_BACKEND_V3
+            ),
+            requested_physical_worker_count=workers,
+            available_physical_core_count=topology.physical_core_count,
+            selected_physical_cores=tuple(
+                row.as_dict() for row in selected_cores
+            ),
+            worker_process_ids=tuple(sorted(all_worker_pids)),
+            worker_intervals_ns=tuple(observed_worker_intervals),
+            worker_affinity_bindings=affinity_bindings,
+            worker_intervals=detailed_intervals,
+            max_concurrent_active_slots=maximum,
+            mean_concurrent_active_slots=mean,
+            slot_replacement_count=(
+                0 if slot_pool is None else slot_pool.slot_replacement_count
+            ),
+            timeout_kill_count=(
+                0 if slot_pool is None else slot_pool.timeout_kill_count
+            ),
+            checkpoint_write_count=checkpoint_throttle.write_count,
+            terminal_write_count=processed,
         )
 
 

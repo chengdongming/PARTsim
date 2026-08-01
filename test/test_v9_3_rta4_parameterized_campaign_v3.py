@@ -201,6 +201,64 @@ def test_runtime_worker_and_timeout_change_only_prepared_identity(tmp_path):
     assert first["prepared_config_id"] != second["prepared_config_id"]
 
 
+def test_prepared_config_binds_physical_topology_and_checkpoint_policy(tmp_path):
+    _, prepared, _ = _prepared(tmp_path)
+    operation = prepared["operational"]
+    assert operation["execution_backend"] == "PHYSICAL_CORE_PROCESS_SLOTS"
+    assert operation["physical_core_binding_required"] is True
+    assert operation["worker_count"] == 2
+    assert operation["selected_logical_cpu_ids"] == [
+        row["selected_logical_cpu_id"]
+        for row in operation["selected_physical_cores"]
+    ]
+    assert len(operation["selected_physical_cores"]) == 2
+    assert len({
+        (row["physical_package_id"], row["physical_core_id"])
+        for row in operation["selected_physical_cores"]
+    }) == 2
+    assert operation["checkpoint_every_records"] == 32
+    assert operation["checkpoint_every_seconds"] == 5
+
+
+def test_prepared_validation_rejects_allowed_topology_fingerprint_drift(
+    tmp_path, monkeypatch,
+):
+    _, prepared, _ = _prepared(tmp_path)
+    import experiments.v9_3.rta4_formal_lifecycle_v3 as lifecycle
+    from experiments.v9_3.rta4_physical_core_slots_v3 import CPUTopologyV3
+
+    original = lifecycle.discover_cpu_topology_v3()
+    drifted = CPUTopologyV3(
+        original.allowed_logical_cpus, original.physical_cores, "0" * 64,
+        original.selection_policy,
+    )
+    monkeypatch.setattr(
+        lifecycle, "discover_cpu_topology_v3", lambda: drifted,
+    )
+    with pytest.raises(RTA4FormalLifecycleV3Error, match="operational identity drift"):
+        lifecycle.validate_prepared_config_v3(prepared)
+
+
+def test_process_pool_prepared_and_authorization_are_rejected(tmp_path):
+    _, prepared, authorization = _prepared(tmp_path)
+    import experiments.v9_3.rta4_formal_lifecycle_v3 as lifecycle
+
+    old_prepared = deepcopy(prepared)
+    old_prepared["prepared_schema"] = (
+        "ASAP_BLOCK_V9_3_RTA4_PREPARED_CONFIG_V3_PARAMETERIZED"
+    )
+    with pytest.raises(RTA4FormalLifecycleV3Error, match="field/schema"):
+        lifecycle.validate_prepared_config_v3(old_prepared)
+    old_authorization = deepcopy(authorization)
+    old_authorization["authorization_schema"] = (
+        "ASAP_BLOCK_V9_3_RTA4_AUTHORIZATION_V3_PARAMETERIZED"
+    )
+    with pytest.raises(RTA4FormalLifecycleV3Error, match="authorization"):
+        validate_authorization_v3(
+            old_authorization, prepared_config=prepared,
+        )
+
+
 @pytest.mark.parametrize("value", [0.5, float("nan"), float("inf")])
 def test_float_nan_and_infinity_scientific_values_are_rejected(value):
     raw = _small("CORE-1")

@@ -15,17 +15,17 @@ from .rta4_production_build_manifest import (
 
 PRODUCTION_BUILD_MANIFEST_SCHEMA_V3 = (
     "ASAP_BLOCK_V9_3_RTA4_PRODUCTION_BUILD_ENVIRONMENT_MANIFEST_V3_"
-    "PARAMETERIZED_PROCESS_POOL_R1"
+    "PARAMETERIZED_PHYSICAL_CORE_SLOTS_R1"
 )
 PRODUCTION_BUILD_PROFILE_V3 = (
     "ASAP_BLOCK_V9_3_RTA4_FORMAL_V3_PARAMETERIZED_SHARED_ENERGY_"
-    "PROCESS_POOL_R1"
+    "PHYSICAL_CORE_SLOTS_R1"
 )
 PRODUCTION_BUILD_MANIFEST_DOMAIN_V3 = (
     "ASAP_BLOCK:V9.3:RTA4_PRODUCTION_BUILD_ENVIRONMENT_MANIFEST:"
-    "v3-process-pool-r1"
+    "v3-physical-core-slots-r1"
 )
-V3_LINEAGE_SCHEMA = "ASAP_BLOCK_V9_3_RTA4_V3_EXECUTION_LINEAR_LINEAGE_V2"
+V3_LINEAGE_SCHEMA = "ASAP_BLOCK_V9_3_RTA4_V3_EXECUTION_LINEAR_LINEAGE_V3"
 V3_LINEAGE_ANCHOR = "5acde530eb6b68f6e3a5bc2e6c496307690a054d"
 V3_EXECUTION_PATHS = frozenset({
     "experiments/v9_3/rta4_formal_config_v3.py",
@@ -33,7 +33,7 @@ V3_EXECUTION_PATHS = frozenset({
     "experiments/v9_3/rta4_formal_plan_v3.py",
     "experiments/v9_3/rta4_formal_workers_v3.py",
     "experiments/v9_3/rta4_formal_lifecycle_v3.py",
-    "experiments/v9_3/rta4_process_isolation_v3.py",
+    "experiments/v9_3/rta4_physical_core_slots_v3.py",
     "experiments/v9_3/rta4_formal_schema_v3.py",
     "experiments/v9_3/rta4_formal_runner_v3.py",
     "experiments/v9_3/rta4_production_build_manifest.py",
@@ -42,8 +42,10 @@ V3_EXECUTION_PATHS = frozenset({
     "scripts/run_v9_3_rta4_formal.py",
     "scripts/create_v9_3_rta4_campaign.py",
     "scripts/build_v9_3_rta4_production_manifest.py",
+    "scripts/benchmark_v9_3_rta4_physical_workers.py",
     "test/test_v9_3_rta4_parameterized_campaign_v3.py",
     "test/test_v9_3_rta4_formal_runner_v3.py",
+    "test/test_v9_3_rta4_physical_core_slots_v3.py",
     "test/test_v9_3_rta4_production_build_manifest_v3.py",
     "docs/experiments/v9_3_rta4_parameterized_campaigns_v3.md",
 })
@@ -54,9 +56,10 @@ V3_RELEVANT_SOURCES = tuple(dict.fromkeys((*DEFAULT_RELEVANT_SOURCES,
     "experiments/v9_3/rta4_formal_schema_v3.py",
     "experiments/v9_3/rta4_formal_runner_v3.py",
     "experiments/v9_3/rta4_formal_workers_v3.py",
-    "experiments/v9_3/rta4_process_isolation_v3.py",
+    "experiments/v9_3/rta4_physical_core_slots_v3.py",
     "experiments/v9_3/rta4_production_build_manifest_v3.py",
     "scripts/create_v9_3_rta4_campaign.py",
+    "scripts/benchmark_v9_3_rta4_physical_workers.py",
 )))
 
 

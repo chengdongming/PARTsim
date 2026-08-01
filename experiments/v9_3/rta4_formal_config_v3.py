@@ -71,6 +71,7 @@ _CORE_FIELDS = {
 _RUNTIME_FIELDS = {
     "output_root", "taskset_store", "log_path", "resume", "worker_count",
     "max_in_flight", "timeout_seconds", "max_records", "source_taskset_store",
+    "checkpoint_every_records", "checkpoint_every_seconds",
 }
 _SOURCE_FIELDS = {
     "core", "source_scope", "source_campaign_config_sha256",

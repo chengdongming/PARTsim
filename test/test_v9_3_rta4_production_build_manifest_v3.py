@@ -36,11 +36,12 @@ def test_v3_closure_contains_every_parameterized_execution_source():
         "experiments/v9_3/rta4_formal_schema_v3.py",
         "experiments/v9_3/rta4_formal_runner_v3.py",
         "experiments/v9_3/rta4_formal_workers_v3.py",
-        "experiments/v9_3/rta4_process_isolation_v3.py",
+        "experiments/v9_3/rta4_physical_core_slots_v3.py",
         "experiments/v9_3/rta4_production_build_manifest_v3.py",
         "scripts/run_v9_3_rta4_formal.py",
         "scripts/create_v9_3_rta4_campaign.py",
         "scripts/build_v9_3_rta4_production_manifest.py",
+        "scripts/benchmark_v9_3_rta4_physical_workers.py",
     }
     assert required <= set(V3_RELEVANT_SOURCES)
     assert set(DEFAULT_RELEVANT_SOURCES) <= set(V3_RELEVANT_SOURCES)
@@ -61,6 +62,29 @@ def test_thread_era_v3_manifest_is_structurally_rejected(tmp_path):
     }
     old_domain = "ASAP_BLOCK:V9.3:RTA4_PRODUCTION_BUILD_ENVIRONMENT_MANIFEST:v3"
     path = tmp_path / "thread-era-v3.json"
+    path.write_text(json.dumps({
+        **material, "manifest_id": domain_hash(old_domain, material),
+    }), encoding="utf-8")
+    with pytest.raises(ProductionBuildManifestV3Error, match="identity/profile"):
+        load_production_build_manifest_v3(path, live=False)
+
+
+def test_process_pool_v3_manifest_is_structurally_rejected(tmp_path):
+    material = {
+        "manifest_schema": (
+            "ASAP_BLOCK_V9_3_RTA4_PRODUCTION_BUILD_ENVIRONMENT_MANIFEST_V3_"
+            "PARAMETERIZED_PROCESS_POOL_R1"
+        ),
+        "formal_profile": (
+            "ASAP_BLOCK_V9_3_RTA4_FORMAL_V3_PARAMETERIZED_SHARED_ENERGY_"
+            "PROCESS_POOL_R1"
+        ),
+    }
+    old_domain = (
+        "ASAP_BLOCK:V9.3:RTA4_PRODUCTION_BUILD_ENVIRONMENT_MANIFEST:"
+        "v3-process-pool-r1"
+    )
+    path = tmp_path / "process-pool-v3.json"
     path.write_text(json.dumps({
         **material, "manifest_id": domain_hash(old_domain, material),
     }), encoding="utf-8")

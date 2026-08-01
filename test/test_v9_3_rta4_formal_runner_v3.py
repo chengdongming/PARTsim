@@ -3,8 +3,10 @@ from __future__ import annotations
 from copy import deepcopy
 from fractions import Fraction
 import json
+import multiprocessing
 import os
 from pathlib import Path
+import signal
 from types import SimpleNamespace
 import sys
 import time
@@ -24,9 +26,8 @@ from experiments.v9_3.rta4_formal_runner_v3 import (
     AuthorizedRTA4RunnerV3, RTA4_CHECKPOINT_V3,
     RTA4_TASKSET_STORE_MANIFEST_V3, RTA4FormalRunnerV3Error,
 )
-from experiments.v9_3.rta4_process_isolation_v3 import (
-    ISOLATED_INTERNAL_ERROR, ISOLATED_RESULT, ISOLATED_SERIALIZATION_ERROR,
-    ISOLATED_TIMEOUT, execute_isolated_call_v3,
+from experiments.v9_3.rta4_physical_core_slots_v3 import (
+    PHYSICAL_CORE_EXECUTION_BACKEND_V3,
 )
 from experiments.v9_3.rta4_production_build_manifest_v3 import (
     PRODUCTION_BUILD_MANIFEST_DOMAIN_V3,
@@ -281,17 +282,32 @@ class _AttemptFakeRTA(_FakeRTA):
         return FrozenMapping(successful)
 
 
-def _isolation_identity(value):
-    return value
+class _BudgetTimeoutFakeRTA(_FakeRTA):
+    def __call__(self, record, certificate):
+        budget = self.timeouts[record.material["method"]][
+            "initial_timeout_seconds"
+        ]
+        if budget == 1:
+            time.sleep(2.0)
+        return super().__call__(record, certificate)
 
 
-def _isolation_sleep(seconds):
-    time.sleep(seconds)
-    return "late"
+class _AlwaysBudgetTimeoutFakeRTA(_FakeRTA):
+    def __call__(self, record, certificate):
+        budget = self.timeouts[record.material["method"]][
+            "initial_timeout_seconds"
+        ]
+        if budget in {1, 2}:
+            time.sleep(3.0)
+        return super().__call__(record, certificate)
 
 
-def _isolation_crash():
-    os._exit(29)
+class _ParentSigtermFakeRTA(_FakeRTA):
+    def __call__(self, record, certificate):
+        del record, certificate
+        os.kill(os.getppid(), signal.SIGTERM)
+        time.sleep(10.0)
+        raise AssertionError("SIGTERM did not terminate the active slot")
 
 
 def _runner(tmp_path: Path, **artifact_kwargs):
@@ -522,11 +538,20 @@ def test_v3_cli_execute_dispatches_to_authorized_runner(
     assert json.loads(capsys.readouterr().out)["processed_records"] == 1
 
 
-def test_production_process_pool_canary_observes_multiple_worker_pids(tmp_path):
+def test_production_physical_slots_observe_exact_pinned_worker_set(tmp_path):
     _, prepared, _, runner = _process_runner(tmp_path, workers=4, skeletons=2)
     summary = runner.run()
-    assert summary.execution_backend == "PROCESS_POOL_SPAWN"
-    assert len(summary.worker_process_ids) >= 2
+    assert summary.execution_backend == PHYSICAL_CORE_EXECUTION_BACKEND_V3
+    assert len(summary.worker_process_ids) == 4
+    assert len(summary.worker_affinity_bindings) == 4
+    assert all(
+        row["affinity_mask"] == [row["logical_cpu_id"]]
+        for row in summary.worker_affinity_bindings
+    )
+    assert len({
+        (row["physical_package_id"], row["physical_core_id"])
+        for row in summary.worker_affinity_bindings
+    }) == 4
     assert os.getpid() not in summary.worker_process_ids
     assert any(
         first_pid != second_pid
@@ -549,18 +574,22 @@ def test_formal_runner_rejects_thread_backend_without_test_doubles(tmp_path):
         )
 
 
-def test_thread_era_manifest_invalidates_prepared_and_authorization_chain(tmp_path):
+def test_process_pool_era_manifest_invalidates_prepared_authorization_chain(tmp_path):
     _, _, prepared, authorization = _artifacts(tmp_path)
     old_material = {
         "manifest_schema": (
             "ASAP_BLOCK_V9_3_RTA4_PRODUCTION_BUILD_ENVIRONMENT_MANIFEST_"
-            "V3_PARAMETERIZED"
+            "V3_PARAMETERIZED_PROCESS_POOL_R1"
         ),
         "formal_profile": (
-            "ASAP_BLOCK_V9_3_RTA4_FORMAL_V3_PARAMETERIZED_SHARED_ENERGY"
+            "ASAP_BLOCK_V9_3_RTA4_FORMAL_V3_PARAMETERIZED_SHARED_ENERGY_"
+            "PROCESS_POOL_R1"
         ),
     }
-    old_domain = "ASAP_BLOCK:V9.3:RTA4_PRODUCTION_BUILD_ENVIRONMENT_MANIFEST:v3"
+    old_domain = (
+        "ASAP_BLOCK:V9.3:RTA4_PRODUCTION_BUILD_ENVIRONMENT_MANIFEST:"
+        "v3-process-pool-r1"
+    )
     Path(prepared["production_manifest"]["absolute_path"]).write_text(
         json.dumps({
             **old_material,
@@ -572,17 +601,22 @@ def test_thread_era_manifest_invalidates_prepared_and_authorization_chain(tmp_pa
         AuthorizedRTA4RunnerV3(prepared, authorization)
 
 
-def test_single_and_multi_process_results_are_mathematically_identical(tmp_path):
+def test_single_two_and_four_process_results_are_mathematically_identical(tmp_path):
     _, one_prepared, _, one = _process_runner(
         tmp_path / "one", workers=1, skeletons=1,
     )
-    _, many_prepared, _, many = _process_runner(
-        tmp_path / "many", workers=4, skeletons=1,
+    _, two_prepared, _, two = _process_runner(
+        tmp_path / "two", workers=2, skeletons=1,
+    )
+    _, four_prepared, _, four = _process_runner(
+        tmp_path / "four", workers=4, skeletons=1,
     )
     one_summary = one.run()
-    many_summary = many.run()
+    two_summary = two.run()
+    four_summary = four.run()
     assert len(one_summary.worker_process_ids) == 1
-    assert len(many_summary.worker_process_ids) >= 2
+    assert len(two_summary.worker_process_ids) == 2
+    assert len(four_summary.worker_process_ids) == 4
 
     def mathematical_rows(prepared):
         terminal_root = Path(prepared["operational"]["output_root"]) / (
@@ -598,7 +632,9 @@ def test_single_and_multi_process_results_are_mathematically_identical(tmp_path)
             row["mathematical_result_identity"],
         ) for row in rows)
 
-    assert mathematical_rows(one_prepared) == mathematical_rows(many_prepared)
+    expected = mathematical_rows(one_prepared)
+    assert mathematical_rows(two_prepared) == expected
+    assert mathematical_rows(four_prepared) == expected
 
 
 def test_resume_reconciles_terminal_written_before_checkpoint(tmp_path):
@@ -677,7 +713,118 @@ def test_e1_timeout_contract_remains_120_240_with_two_attempts(tmp_path):
     ) == [[120], [120, 240]]
 
 
-def test_broken_process_pool_is_internal_error_not_rta_timeout(tmp_path):
+def test_parent_timeout_replaces_same_core_and_retry_succeeds(tmp_path):
+    _, manifest, prepared, authorization = _artifacts(
+        tmp_path, workers=1, timeout=1, skeletons=1,
+    )
+    summary = AuthorizedRTA4RunnerV3(
+        prepared, authorization,
+        _manifest_loader=lambda _path, live: manifest,
+        _context_factory=_FakeContextFactory(),
+        _rta_executor_factory=_BudgetTimeoutFakeRTA,
+    ).run(max_records=1)
+    assert summary.slot_replacement_count == 1
+    assert summary.timeout_kill_count == 1
+    assert len(summary.worker_affinity_bindings) == 2
+    first, replacement = summary.worker_affinity_bindings
+    assert first["slot_id"] == replacement["slot_id"] == 0
+    assert first["logical_cpu_id"] == replacement["logical_cpu_id"]
+    assert first["physical_core_id"] == replacement["physical_core_id"]
+    assert first["worker_pid"] != replacement["worker_pid"]
+    row_path = next((Path(prepared["operational"]["output_root"])
+                     / "formal_terminal_results_v3").glob("*.json"))
+    row = json.loads(row_path.read_text())
+    assert row["status"] == "PROVEN_SCHEDULABLE"
+    assert [attempt["timeout_seconds"] for attempt in row["attempts"]] == [1, 2]
+    assert row["attempts"][0]["status"] == "TIMEOUT"
+    assert row["attempts"][0]["error_classification"] == (
+        "UNIFIED_RTA_ADAPTER_TIMEOUT"
+    )
+
+
+def test_two_parent_timeouts_replace_twice_and_preserve_full_history(tmp_path):
+    before = {child.pid for child in multiprocessing.active_children()}
+    _, manifest, prepared, authorization = _artifacts(
+        tmp_path, workers=1, timeout=1, skeletons=1,
+    )
+    summary = AuthorizedRTA4RunnerV3(
+        prepared, authorization,
+        _manifest_loader=lambda _path, live: manifest,
+        _context_factory=_FakeContextFactory(),
+        _rta_executor_factory=_AlwaysBudgetTimeoutFakeRTA,
+    ).run(max_records=1)
+    assert summary.slot_replacement_count == 2
+    assert summary.timeout_kill_count == 2
+    assert len(summary.worker_affinity_bindings) == 3
+    assert {
+        (row["logical_cpu_id"], row["physical_package_id"],
+         row["physical_core_id"])
+        for row in summary.worker_affinity_bindings
+    } == {(
+        summary.worker_affinity_bindings[0]["logical_cpu_id"],
+        summary.worker_affinity_bindings[0]["physical_package_id"],
+        summary.worker_affinity_bindings[0]["physical_core_id"],
+    )}
+    assert [
+        row["worker_generation"] for row in summary.worker_affinity_bindings
+    ] == [0, 1, 2]
+    assert len({
+        row["worker_pid"] for row in summary.worker_affinity_bindings
+    }) == 3
+    row_path = next((Path(prepared["operational"]["output_root"])
+                     / "formal_terminal_results_v3").glob("*.json"))
+    row = json.loads(row_path.read_text())
+    assert row["status"] == "TIMEOUT"
+    assert [attempt["timeout_seconds"] for attempt in row["attempts"]] == [1, 2]
+    assert [attempt["status"] for attempt in row["attempts"]] == [
+        "TIMEOUT", "TIMEOUT",
+    ]
+    assert all(
+        attempt["error_classification"] == "UNIFIED_RTA_ADAPTER_TIMEOUT"
+        for attempt in row["attempts"]
+    )
+    after = {child.pid for child in multiprocessing.active_children()}
+    assert not (after - before)
+
+
+def test_sigterm_forces_checkpoint_and_reaps_active_physical_slots(tmp_path):
+    before = {child.pid for child in multiprocessing.active_children()}
+    previous = signal.getsignal(signal.SIGTERM)
+    _, manifest, prepared, authorization = _artifacts(
+        tmp_path, workers=2, timeout=30, skeletons=1,
+    )
+    runner = AuthorizedRTA4RunnerV3(
+        prepared, authorization,
+        _manifest_loader=lambda _path, live: manifest,
+        _context_factory=_FakeContextFactory(),
+        _rta_executor_factory=_ParentSigtermFakeRTA,
+    )
+    with pytest.raises(SystemExit) as observed:
+        runner.run(max_records=1)
+    assert observed.value.code == 128 + signal.SIGTERM
+    assert signal.getsignal(signal.SIGTERM) == previous
+    checkpoint = Path(prepared["operational"]["output_root"]) / RTA4_CHECKPOINT_V3
+    assert checkpoint.is_file()
+    assert json.loads(checkpoint.read_text())["completed_execution_ids"] == []
+    after = {child.pid for child in multiprocessing.active_children()}
+    assert not (after - before)
+
+
+def test_one_hundred_terminals_throttle_full_checkpoint_rewrites(tmp_path):
+    _, prepared, _, runner = _runner(
+        tmp_path, workers=4, skeletons=25,
+    )
+    summary = runner.run()
+    terminals = list((Path(prepared["operational"]["output_root"])
+                      / "formal_terminal_results_v3").glob("*.json"))
+    assert len(terminals) == summary.terminal_write_count == 100
+    assert summary.checkpoint_write_count == 4
+    assert summary.checkpoint_write_count < summary.terminal_write_count
+    checkpoint = json.loads(summary.checkpoint_path.read_text())
+    assert len(checkpoint["completed_execution_ids"]) == 100
+
+
+def test_crashed_physical_slot_is_replaced_without_misclassifying_timeout(tmp_path):
     _, prepared, _, runner = _process_runner(
         tmp_path, executor=_CrashingFakeRTA, workers=2, skeletons=1,
     )
@@ -689,12 +836,14 @@ def test_broken_process_pool_is_internal_error_not_rta_timeout(tmp_path):
     assert len(rows) == 2
     assert {row["status"] for row in rows} == {"INTERNAL_ERROR"}
     assert all(
-        "PROCESS_POOL_BROKEN" in row["attempts"][0]["error_classification"]
+        "PHYSICAL_SLOT_WORKER_EXIT" in row["attempts"][0]["error_classification"]
         for row in rows
     )
+    assert summary.slot_replacement_count == 2
+    assert summary.timeout_kill_count == 0
 
 
-def test_process_request_serialization_failure_is_parent_persisted(tmp_path):
+def test_unserializable_slot_bootstrap_fails_closed_before_worker_start(tmp_path):
     _, manifest, prepared, authorization = _artifacts(
         tmp_path, workers=1, skeletons=1,
     )
@@ -705,45 +854,22 @@ def test_process_request_serialization_failure_is_parent_persisted(tmp_path):
         _context_factory=_FakeContextFactory(),
         _rta_executor_factory=unpickleable_factory,
     )
-    summary = runner.run(max_records=1)
-    assert summary.processed_records == 1
-    row_path = next((Path(prepared["operational"]["output_root"])
+    with pytest.raises(RTA4FormalRunnerV3Error, match="not serializable"):
+        runner.run(max_records=1)
+    assert not list((Path(prepared["operational"]["output_root"])
                      / "formal_terminal_results_v3").glob("*.json"))
-    row = json.loads(row_path.read_text())
-    assert row["status"] == "INTERNAL_ERROR"
-    assert "PROCESS_SERIALIZATION_FAILURE" in row["attempts"][0][
-        "error_classification"
-    ]
 
 
-def test_spawn_isolation_success_timeout_crash_and_serialization():
-    successful = execute_isolated_call_v3(
-        _isolation_identity, ("ok",), 2,
-    )
-    assert successful.status == ISOLATED_RESULT
-    assert successful.value == "ok"
-    assert successful.worker_pid not in {None, os.getpid()}
+def test_worker_protocol_contains_no_nested_spawn_attempt_path():
+    import inspect
+    import experiments.v9_3.rta4_formal_workers_v3 as workers
 
-    timed = execute_isolated_call_v3(
-        _isolation_sleep, (2.0,), 0.05,
-    )
-    assert timed.status == ISOLATED_TIMEOUT
-    assert timed.cleanup_status in {
-        "REAPED_AFTER_TERMINATE", "REAPED_AFTER_KILL",
-    }
-
-    crashed = execute_isolated_call_v3(_isolation_crash, (), 2)
-    assert crashed.status == ISOLATED_INTERNAL_ERROR
-    assert crashed.error_classification != "UNIFIED_RTA_ADAPTER_TIMEOUT"
-
-    serialization = execute_isolated_call_v3(
-        _isolation_identity, (lambda: None,), 2,
-    )
-    assert serialization.status == ISOLATED_SERIALIZATION_ERROR
-    assert "SERIALIZATION_FAILURE" in serialization.error_classification
+    source = inspect.getsource(workers)
+    assert "execute_isolated_call_v3" not in source
+    assert "multiprocessing" not in source
 
 
-def test_real_v2_adapter_runs_inside_process_pool_and_hard_attempt_boundary(tmp_path):
+def test_real_v2_adapter_runs_inside_persistent_physical_slots(tmp_path):
     _, manifest, prepared, authorization = _artifacts(
         tmp_path, workers=2, timeout=3, skeletons=1,
     )
@@ -753,8 +879,13 @@ def test_real_v2_adapter_runs_inside_process_pool_and_hard_attempt_boundary(tmp_
         _context_factory=_ExactContextFactory(),
     )
     summary = runner.run(max_records=2)
-    assert summary.execution_backend == "PROCESS_POOL_SPAWN"
-    assert len(summary.worker_process_ids) == 2
+    assert summary.execution_backend == PHYSICAL_CORE_EXECUTION_BACKEND_V3
+    initial_workers = [
+        row for row in summary.worker_affinity_bindings
+        if row["worker_generation"] == 0
+    ]
+    assert len(initial_workers) == 2
+    assert len({row["worker_pid"] for row in initial_workers}) == 2
     rows = [json.loads(path.read_text()) for path in
             (Path(prepared["operational"]["output_root"])
              / "formal_terminal_results_v3").glob("*.json")]

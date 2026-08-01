@@ -43,6 +43,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path)
     parser.add_argument("--campaign-config", type=Path)
+    parser.add_argument(
+        "--describe-cpu-topology", action="store_true",
+        help="print the allowed physical-core topology and exit read-only",
+    )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--prepared-config", type=Path)
     parser.add_argument("--authorization", type=Path)
@@ -74,6 +78,26 @@ def main() -> int:
         help="TEST-authorization-only bounded trusted ordinal",
     )
     args = parser.parse_args()
+    if args.describe_cpu_topology:
+        if any((
+            args.execute, args.resume, args.validate_only,
+            args.write_prepared_config is not None,
+            args.write_authorization is not None,
+        )):
+            parser.error("--describe-cpu-topology is read-only and exclusive")
+        from experiments.v9_3.rta4_physical_core_slots_v3 import (
+            discover_cpu_topology_v3,
+        )
+
+        try:
+            print(json.dumps(
+                discover_cpu_topology_v3().as_dict(),
+                ensure_ascii=False, sort_keys=True, indent=2,
+            ))
+            return 0
+        except Exception as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
     if args.campaign_config is not None:
         if args.config is not None:
             parser.error("--campaign-config and --config are mutually exclusive")
@@ -170,6 +194,42 @@ def main() -> int:
                         "worker_intervals_ns": [
                             list(row) for row in summary.worker_intervals_ns
                         ],
+                        "physical_core_binding_required": (
+                            getattr(summary, "physical_core_binding_required", False)
+                        ),
+                        "requested_physical_worker_count": (
+                            getattr(summary, "requested_physical_worker_count", 0)
+                        ),
+                        "available_physical_core_count": (
+                            getattr(summary, "available_physical_core_count", 0)
+                        ),
+                        "selected_physical_cores": list(
+                            getattr(summary, "selected_physical_cores", ())
+                        ),
+                        "worker_affinity_bindings": list(
+                            getattr(summary, "worker_affinity_bindings", ())
+                        ),
+                        "worker_intervals": list(getattr(
+                            summary, "worker_intervals", (),
+                        )),
+                        "max_concurrent_active_slots": (
+                            getattr(summary, "max_concurrent_active_slots", 0)
+                        ),
+                        "mean_concurrent_active_slots": (
+                            getattr(summary, "mean_concurrent_active_slots", 0.0)
+                        ),
+                        "slot_replacement_count": (
+                            getattr(summary, "slot_replacement_count", 0)
+                        ),
+                        "timeout_kill_count": getattr(
+                            summary, "timeout_kill_count", 0,
+                        ),
+                        "checkpoint_write_count": (
+                            getattr(summary, "checkpoint_write_count", 0)
+                        ),
+                        "terminal_write_count": getattr(
+                            summary, "terminal_write_count", 0,
+                        ),
                     })
             if args.write_prepared_config is not None or args.write_authorization is not None:
                 if args.execute or args.resume or args.validate_only:

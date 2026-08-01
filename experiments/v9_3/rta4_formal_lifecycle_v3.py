@@ -18,16 +18,36 @@ from .rta4_formal_config_v3 import (
 from .rta4_formal_environment import load_strict_json
 from .rta4_formal_plan_v3 import describe_formal_plan_v3
 from .rta4_formal_schema_v3 import formal_schema_hash_v3
+from .rta4_physical_core_slots_v3 import (
+    PHYSICAL_CORE_EXECUTION_BACKEND_V3,
+    discover_cpu_topology_v3,
+)
 
 
-RTA4_PREPARED_CONFIG_SCHEMA_V3 = "ASAP_BLOCK_V9_3_RTA4_PREPARED_CONFIG_V3_PARAMETERIZED"
-RTA4_PREPARED_CONFIG_DOMAIN_V3 = "ASAP_BLOCK:V9.3:RTA4_PREPARED_CONFIG:v3"
-RTA4_AUTHORIZATION_SCHEMA_V3 = "ASAP_BLOCK_V9_3_RTA4_AUTHORIZATION_V3_PARAMETERIZED"
-RTA4_AUTHORIZATION_DOMAIN_V3 = "ASAP_BLOCK:V9.3:RTA4_AUTHORIZATION:v3"
-RTA4_RUN_NAMESPACE_SCHEMA_V3 = "ASAP_BLOCK_V9_3_RTA4_RESULT_NAMESPACE_V3"
-RTA4_RUN_NAMESPACE_DOMAIN_V3 = "ASAP_BLOCK:V9.3:RTA4_RESULT_NAMESPACE:v3"
-RTA4_CHECKPOINT_SCHEMA_V3 = "ASAP_BLOCK_V9_3_RTA4_CHECKPOINT_V3"
-RTA4_CHECKPOINT_DOMAIN_V3 = "ASAP_BLOCK:V9.3:RTA4_CHECKPOINT:v3"
+RTA4_PREPARED_CONFIG_SCHEMA_V3 = (
+    "ASAP_BLOCK_V9_3_RTA4_PREPARED_CONFIG_V3_PHYSICAL_CORE_SLOTS_R1"
+)
+RTA4_PREPARED_CONFIG_DOMAIN_V3 = (
+    "ASAP_BLOCK:V9.3:RTA4_PREPARED_CONFIG:v3-physical-core-slots-r1"
+)
+RTA4_AUTHORIZATION_SCHEMA_V3 = (
+    "ASAP_BLOCK_V9_3_RTA4_AUTHORIZATION_V3_PHYSICAL_CORE_SLOTS_R1"
+)
+RTA4_AUTHORIZATION_DOMAIN_V3 = (
+    "ASAP_BLOCK:V9.3:RTA4_AUTHORIZATION:v3-physical-core-slots-r1"
+)
+RTA4_RUN_NAMESPACE_SCHEMA_V3 = (
+    "ASAP_BLOCK_V9_3_RTA4_RESULT_NAMESPACE_V3_PHYSICAL_CORE_SLOTS_R1"
+)
+RTA4_RUN_NAMESPACE_DOMAIN_V3 = (
+    "ASAP_BLOCK:V9.3:RTA4_RESULT_NAMESPACE:v3-physical-core-slots-r1"
+)
+RTA4_CHECKPOINT_SCHEMA_V3 = (
+    "ASAP_BLOCK_V9_3_RTA4_CHECKPOINT_V3_PHYSICAL_CORE_SLOTS_R1"
+)
+RTA4_CHECKPOINT_DOMAIN_V3 = (
+    "ASAP_BLOCK:V9.3:RTA4_CHECKPOINT:v3-physical-core-slots-r1"
+)
 RTA4_RUN_NAMESPACE_FILENAME_V3 = "formal_run_namespace_v3.json"
 
 
@@ -93,11 +113,30 @@ def _operational(
         "output_root": _absolute_path(runtime["output_root"], "output_root"),
         "taskset_store": _absolute_path(runtime["taskset_store"], "taskset_store"),
         "worker_count": runtime.get("worker_count", 1),
-        "max_in_flight": runtime.get("max_in_flight", runtime.get("worker_count", 1)),
+        "max_in_flight": runtime.get(
+            "max_in_flight", 2 * runtime.get("worker_count", 1),
+        ),
         "timeout_seconds": runtime.get("timeout_seconds", 60),
         "max_records": runtime.get("max_records"),
         "resume": runtime.get("resume", False),
     }
+    topology = discover_cpu_topology_v3()
+    selected = topology.select(result["worker_count"])
+    result.update({
+        "execution_backend": PHYSICAL_CORE_EXECUTION_BACKEND_V3,
+        "physical_core_binding_required": True,
+        "topology_selection_policy": topology.selection_policy,
+        "topology_fingerprint": topology.topology_fingerprint,
+        "available_physical_core_count": topology.physical_core_count,
+        "selected_physical_cores": [row.as_dict() for row in selected],
+        "selected_logical_cpu_ids": [row.logical_cpu_id for row in selected],
+        "checkpoint_every_records": runtime.get(
+            "checkpoint_every_records", max(32, result["worker_count"]),
+        ),
+        "checkpoint_every_seconds": runtime.get(
+            "checkpoint_every_seconds", 5,
+        ),
+    })
     if "log_path" in runtime:
         result["log_path"] = _absolute_path(runtime["log_path"], "log_path")
     downstream = "source" in campaign.normalized_scientific_config
@@ -114,7 +153,10 @@ def _operational(
         raise RTA4FormalLifecycleV3Error(
             "independent campaign does not accept source_taskset_store"
         )
-    for key in ("worker_count", "max_in_flight", "timeout_seconds"):
+    for key in (
+        "worker_count", "max_in_flight", "timeout_seconds",
+        "checkpoint_every_records", "checkpoint_every_seconds",
+    ):
         if type(result[key]) is not int or result[key] <= 0:
             raise RTA4FormalLifecycleV3Error(f"operational.{key} must be positive")
     if result["max_in_flight"] < result["worker_count"]:
@@ -258,7 +300,11 @@ def validate_prepared_config_v3(value: Mapping[str, Any]) -> Dict[str, Any]:
     if not isinstance(operation, Mapping) or set(operation).difference({
         "output_root", "taskset_store", "worker_count", "max_in_flight",
         "timeout_seconds", "max_records", "resume", "log_path",
-        "source_taskset_store",
+        "source_taskset_store", "execution_backend",
+        "physical_core_binding_required", "topology_selection_policy",
+        "topology_fingerprint", "available_physical_core_count",
+        "selected_physical_cores", "selected_logical_cpu_ids",
+        "checkpoint_every_records", "checkpoint_every_seconds",
     }):
         raise RTA4FormalLifecycleV3Error("prepared operational field mismatch")
     normalized_operation = _operational(
