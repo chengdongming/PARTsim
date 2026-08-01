@@ -17,6 +17,25 @@ from asap_block_v9_3_v1_3_12_microcases import build_microcase_package
 ROOT = Path(__file__).resolve().parents[1]
 RESULT_VALIDATOR = "ASAP_BLOCK_result_validator_v1_3_12.py"
 ARTIFACT_VALIDATOR = "ASAP_BLOCK_artifact_validator_v1_3_12.py"
+FROZEN_PACKAGE = ROOT / "artifacts/v9_3_v1_3_12_runner_microcase"
+FROZEN_ARCHIVE = ROOT / "artifacts/v9_3_v1_3_12_runner_microcase.zip"
+FROZEN_PACKAGE_SHA256 = (
+    "fd7fa5fc54110cb6e61fd156002dbe0a2698755215dec4d876c1dea4d71558d4"
+)
+FROZEN_FILE_SHA256 = {
+    "manifest.json": "8c058c9c8ad0de21210eb8b1c575f2e0cc07ee31099533455b03a4eb8bf1c29f",
+    "per_task_results.csv": "4a547d0981271fef13f7ac366fa2fc8850720ba29f130c175afb6382db667435",
+    "per_taskset_results.csv": "4a8a8c484449083c321442434ff80e6337a10304e15f2b653e097889a60cf215",
+    "rta_dependency_records.csv": "2cdcaaf0ebbc36ac7df461a47885e10726b55fac8e77093a6889c3b6028c15bb",
+}
+FROZEN_TASKSET_SEMANTIC_HASHES = {
+    "1e96f625474995538226e2ecd2c49ec118112afe425361e66d997b0675787400",
+    "edaf8973bb04cd9384fbbf33223ce2104eb6c9b28e57cdeae4bd5dab6b07b88a",
+}
+FROZEN_CARRY_IN_VECTOR_HASHES = {
+    "1ae76b5ba6b427ea3c50ac6b77f4dd25ce173346e62795419f7f83c74208dfc8",
+    "20f3bac434a986a5121bb89259a9aa7b52476d0cf2b40271e25a8275c4747c98",
+}
 
 
 def _read_csv(root, name):
@@ -100,6 +119,43 @@ def test_complete_package_closes_frozen_result_and_artifact_validators(package):
             "UPSTREAM_PREFIX_FAILURE": 1,
         },
         "file_count": 51,
+    }
+
+
+def test_canonical_regeneration_matches_frozen_v1312_closure_byte_for_byte(package):
+    root, archive, _ = package
+    generated_names = sorted(path.name for path in root.iterdir())
+    frozen_names = sorted(path.name for path in FROZEN_PACKAGE.iterdir())
+    assert generated_names == frozen_names
+    assert all(
+        (root / name).read_bytes() == (FROZEN_PACKAGE / name).read_bytes()
+        for name in generated_names
+    )
+    assert archive.read_bytes() == FROZEN_ARCHIVE.read_bytes()
+    assert hashlib.sha256(archive.read_bytes()).hexdigest() == FROZEN_PACKAGE_SHA256
+    for name, digest in FROZEN_FILE_SHA256.items():
+        assert hashlib.sha256((root / name).read_bytes()).hexdigest() == digest
+
+    manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["manifest_version"] == "1.3.12"
+    assert manifest["formal_contract_hash"] == (
+        "aa680d6c4c777e6787619536b9e1b958b1cef8987f8e48c99f5532a1c7d61abf"
+    )
+    _, tasksets = _read_csv(root, "tasksets.csv")
+    assert {row["taskset_semantic_hash"] for row in tasksets} == (
+        FROZEN_TASKSET_SEMANTIC_HASHES
+    )
+    _, dependencies = _read_csv(root, "rta_dependency_records.csv")
+    assert {row["carry_in_vector_hash"] for row in dependencies} == (
+        FROZEN_CARRY_IN_VECTOR_HASHES
+    )
+    assert all(
+        row["fixed_carry_in_corollary_status"] == "ACTIVE"
+        for row in dependencies
+    )
+    assert {row["dependency_input_failure_mask"] for row in dependencies} == {
+        "EMPTY",
+        "DEPENDENCY_CERTIFICATION_MISMATCH",
     }
 
 

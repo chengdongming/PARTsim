@@ -21,6 +21,7 @@ import yaml
 import asap_block_rta_v9_3 as core
 import asap_block_rta_v9_3_taskset as taskset
 from asap_block_v1_3_12_schema_binding import DEFAULT_CONTRACT_ROOT, V1312SchemaBinding
+from experiments.v9_3 import exact_energy
 from asap_block_v9_3_runner import (
     VARIANT_ORDER,
     SerializedAnalysis,
@@ -407,6 +408,20 @@ def _case_input(
     power_hash: str,
 ) -> taskset.TasksetAnalysisInput:
     common = binding.common
+    task_items = tuple(core.V93Task(*values) for values in tasks)
+    # The v1.3.12 result package keeps its frozen theory/numeric metadata.  The
+    # live analyzer adapter must independently bind the same integer/zero
+    # microcase inputs to the current fail-closed exact-energy contract.  For
+    # these inputs both representations are exact; no package science or
+    # serialized v1.3.12 identity is migrated here.
+    service_prefix = tuple(
+        Fraction(0) for _ in range(max(item.deadline for item in task_items))
+    )
+    exact_input_identity = exact_energy.exact_input_identity(
+        task_powers=((item.name, item.power) for item in task_items),
+        e0=Fraction(e0),
+        service_prefix=service_prefix,
+    )
     context = taskset.DependencyContext(
         taskset_identity=taskset_hash,
         task_definitions_identity=_hash(
@@ -420,12 +435,21 @@ def _case_input(
         power_vector_identity=power_hash,
         numerical_mode="EXACT_RATIONAL",
         numerical_scale=None,
-        theory_document_sha256=THEORY_SHA256,
-        fixed_carry_in_interface_sha256=THEORY_SHA256,
+        theory_document_sha256=taskset.THEORY_DOCUMENT_SHA256,
+        fixed_carry_in_interface_sha256=(
+            taskset.FIXED_CARRY_IN_INTERFACE_SHA256
+        ),
         formal_contract_identity=formal["contract_metadata"]["formal_contract_hash"],
+        numeric_contract_sha256=exact_energy.NUMERIC_CONTRACT_SHA256,
+        source_numeric_model=exact_energy.SOURCE_NUMERIC_MODEL,
+        demand_rounding_mode=exact_energy.DEMAND_ROUNDING_MODE,
+        supply_rounding_mode=exact_energy.SUPPLY_ROUNDING_MODE,
+        e0_rounding_mode=exact_energy.E0_ROUNDING_MODE,
+        exact_input_identity=exact_input_identity,
+        float_decision_path=exact_energy.FLOAT_DECISION_PATH,
     )
     return taskset.TasksetAnalysisInput(
-        tuple(core.V93Task(*values) for values in tasks),
+        task_items,
         1,
         Fraction(e0),
         lambda _index: Fraction(0),
