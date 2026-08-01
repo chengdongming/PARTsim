@@ -646,6 +646,144 @@ def test_exact_pr_wrapper_success(repository: Path) -> None:
     )
 
 
+def test_reviewed_integration_one_linear_descendant_success(
+    repository: Path,
+) -> None:
+    data = _make_integration(repository)
+    descendant = _commit(
+        repository,
+        {"post-integration-business-1.md": "business-v1\n"},
+        "ordinary post-integration change",
+    )
+
+    result = _validate(repository)
+
+    assert result.lineage_mode == lineage.MASTER_INTEGRATION_MERGE
+    assert result.current_head_commit == descendant
+    assert result.current_head_tree == _tree(repository, descendant)
+    assert result.current_parent_count == 1
+    assert result.first_parent_commit == data["master"]
+    assert result.second_parent_commit == data["core"]
+
+
+def test_reviewed_wrapper_multiple_linear_descendants_success(
+    repository: Path,
+) -> None:
+    data = _make_integration(repository)
+    wrapper = _wrapper(repository, data)
+    descendants = []
+    for index in range(1, 4):
+        descendants.append(_commit(
+            repository,
+            {f"post-wrapper-business-{index}.md": f"business-v{index}\n"},
+            f"ordinary post-wrapper change {index}",
+        ))
+
+    result = _validate(repository)
+
+    assert result.lineage_mode == lineage.MASTER_PR_WRAPPER_MERGE
+    assert result.current_head_commit == descendants[-1]
+    assert result.current_head_tree == _tree(repository, descendants[-1])
+    assert result.current_parent_count == 1
+    assert result.first_parent_commit == data["master"]
+    assert result.second_parent_commit == data["integration"]
+    assert wrapper not in descendants
+
+
+def test_post_integration_unknown_merge_rejected(repository: Path) -> None:
+    data = _make_integration(repository)
+    left = _commit(
+        repository,
+        {"post-integration-left.md": "left\n"},
+        "post-integration left",
+    )
+    _checkout(repository, data["integration"])
+    right = _commit(
+        repository,
+        {"post-integration-right.md": "right\n"},
+        "post-integration right",
+    )
+    _checkout(repository, left)
+    _git(
+        repository,
+        "merge",
+        "--quiet",
+        "--no-ff",
+        right,
+        "-m",
+        "unsupported post-integration merge",
+    )
+
+    with pytest.raises(lineage.Core0ARepositoryLineageV1Error):
+        _validate(repository)
+
+
+def test_post_integration_octopus_merge_rejected(repository: Path) -> None:
+    data = _make_integration(repository)
+    first = _commit_tree(
+        repository,
+        _tree(repository, data["integration"]),
+        (data["integration"],),
+        "first post-integration parent",
+    )
+    second = _commit_tree(
+        repository,
+        _tree(repository, data["integration"]),
+        (data["integration"],),
+        "second post-integration parent",
+    )
+    octopus = _commit_tree(
+        repository,
+        _tree(repository, data["integration"]),
+        (data["integration"], first, second),
+        "unsupported post-integration octopus",
+    )
+    _checkout(repository, octopus)
+
+    with pytest.raises(
+        lineage.Core0ARepositoryLineageV1Error,
+        match="octopus",
+    ):
+        _validate(repository)
+
+
+def test_post_integration_rename_rejected(repository: Path) -> None:
+    _make_integration(repository)
+    _git(repository, "mv", "README.md", "README.post-integration.md")
+    _git(repository, "commit", "--quiet", "-m", "unsupported rename")
+
+    with pytest.raises(
+        lineage.Core0ARepositoryLineageV1Error,
+        match="rename status",
+    ):
+        _validate(repository)
+
+
+def test_post_integration_override_is_bound_to_current_identity(
+    repository: Path,
+) -> None:
+    data = _make_integration(repository)
+    anchor = _validate(repository)
+    descendant = _commit(
+        repository,
+        {REPAIR_PATH: "post-integration-reviewed-path-v2\n"},
+        "ordinary reviewed-path evolution",
+    )
+
+    result = _validate(repository)
+
+    assert result.current_head_commit == descendant
+    assert result.first_parent_commit == data["master"]
+    assert result.second_parent_commit == data["core"]
+    assert result.master_changed_paths == anchor.master_changed_paths
+    assert result.core0a_changed_paths == anchor.core0a_changed_paths
+    assert result.current_head_tree != anchor.current_head_tree
+    assert (
+        result.repository_lineage_identity
+        != anchor.repository_lineage_identity
+    )
+
+
 def test_pr_wrapper_first_parent_drift_rejected(repository: Path) -> None:
     data = _make_integration(repository)
     drifted_master = _commit_tree(

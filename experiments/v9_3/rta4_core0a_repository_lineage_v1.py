@@ -747,10 +747,10 @@ def _wrapper_facts(
     )
 
 
-def _classify(root: Path, head: str) -> _LineageFacts:
+def _integration_anchor_facts(root: Path, head: str) -> _LineageFacts:
+    """Validate one candidate integration or PR-wrapper merge."""
+
     parents = _parents(root, head)
-    if len(parents) <= 1:
-        return _standalone_facts(root, head)
     if len(parents) != 2:
         raise Core0ARepositoryLineageV1Error(
             "unsupported octopus or non-binary lineage topology"
@@ -765,6 +765,54 @@ def _classify(root: Path, head: str) -> _LineageFacts:
         if integration is not None:
             return _wrapper_facts(root, head, integration)
     return _integration_facts(root, head)
+
+
+def _linear_descendant_facts(
+    root: Path,
+    head: str,
+    anchor: _LineageFacts,
+) -> _LineageFacts:
+    """Bind a reviewed integration anchor to its linear current HEAD."""
+
+    if anchor.current_head_commit == head:
+        return anchor
+    return replace(
+        anchor,
+        current_head_commit=head,
+        current_head_tree=_commit_tree(root, head),
+        current_parent_count=len(_parents(root, head)),
+    )
+
+
+def _classify(root: Path, head: str) -> _LineageFacts:
+    """Classify HEAD without mistaking reviewed merge descendants for standalone."""
+
+    cursor = head
+    while cursor != CORE0A_REVIEWED_ANCHOR_COMMIT:
+        parents = _parents(root, cursor)
+        if len(parents) == 1:
+            diff = _diff_paths(root, parents[0], cursor)
+            if any(
+                row.startswith("R") for row in diff.rename_or_copy
+            ):
+                raise Core0ARepositoryLineageV1Error(
+                    "post-integration linear descendant contains "
+                    "rename status"
+                )
+            _tree_entries(root, cursor)
+            cursor = parents[0]
+            continue
+        if len(parents) == 2:
+            anchor = _integration_anchor_facts(root, cursor)
+            return _linear_descendant_facts(root, head, anchor)
+        if len(parents) > 2:
+            raise Core0ARepositoryLineageV1Error(
+                "unsupported octopus or non-binary lineage topology"
+            )
+        raise Core0ARepositoryLineageV1Error(
+            "repository lineage terminated before reviewed CORE-0A anchor"
+        )
+    return _standalone_facts(root, head)
 
 
 def _validated(facts: _LineageFacts) -> ValidatedCore0ARepositoryLineageV1:
