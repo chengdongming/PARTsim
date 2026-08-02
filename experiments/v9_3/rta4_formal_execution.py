@@ -576,6 +576,7 @@ def _adapter_result_v2(
     timeout_seconds: int,
     task_energy: TaskEnergyMaterial,
     service: VerifiedSolarServiceMaterialV2,
+    identity_contract: Mapping[str, Any] | None = None,
 ) -> tuple[Mapping[str, Any], Any]:
     """V2 adapter: consume only frozen J/tick and verified beta materials."""
 
@@ -607,12 +608,25 @@ def _adapter_result_v2(
         e0=e0,
         service_prefix=service_prefix,
     )
-    numeric_sha = str(config["identity"]["numeric_contract_sha256"])
-    theory_sha = str(config["identity"]["theory_document_sha256"])
+    contract = {} if identity_contract is None else dict(identity_contract)
+    numeric_sha = str(contract.get(
+        "numeric_contract_sha256", config["identity"]["numeric_contract_sha256"],
+    ))
+    theory_sha = str(contract.get(
+        "theory_document_sha256", config["identity"]["theory_document_sha256"],
+    ))
+    profile = str(contract.get(
+        "formal_profile", config["experiment_contract"]["profile"],
+    ))
+    timeout_identity = contract.get(
+        "timeout_contract", config["execution"]["timeout_contract"],
+    )
     analysis_id = domain_hash(
-        "ASAP_BLOCK:V9.3:RTA4_FORMAL_ANALYSIS:v2",
+        str(contract.get(
+            "analysis_domain", "ASAP_BLOCK:V9.3:RTA4_FORMAL_ANALYSIS:v2",
+        )),
         {
-            "profile": config["experiment_contract"]["profile"],
+            "profile": profile,
             "taskset_id": certificate.taskset_id,
             "task_energy_material_identity": (
                 task_energy.task_energy_material_identity
@@ -623,7 +637,7 @@ def _adapter_result_v2(
             "exact_e0": _fraction_text(e0),
             "numeric_contract_sha256": numeric_sha,
             "theory_document_sha256": theory_sha,
-            "timeout_contract": config["execution"]["timeout_contract"],
+            "timeout_contract": timeout_identity,
             "exact_input_identity": adapter_input_id,
             "production_build_manifest_identity": (
                 service.production_build_manifest_identity
@@ -643,7 +657,7 @@ def _adapter_result_v2(
         fixed_carry_in_interface_sha256=(
             rta_adapter.FIXED_CARRY_IN_INTERFACE_SHA256
         ),
-        formal_contract_identity=config["experiment_contract"]["profile"],
+        formal_contract_identity=profile,
         # The V2 outer contract is bound by ``analysis_id`` and every result
         # row.  The unchanged theorem kernel interface must retain the exact
         # G1 numeric contract it independently validates.
@@ -713,6 +727,9 @@ class ProductionRTAExecutorV2:
         self, config: Mapping[str, Any], *, run_context: SharedEnergyRunContext,
         timeout_contract: Mapping[str, Mapping[str, int]],
         memory_limit_bytes: int | None = None,
+        identity_contract: Mapping[str, Any] | None = None,
+        adapter_attempt_runner: Callable[..., tuple[Mapping[str, Any], Any]]
+        | None = None,
     ) -> None:
         from .rta4_formal_config_v2 import validate_rta4_formal_config_v2
 
@@ -745,6 +762,18 @@ class ProductionRTAExecutorV2:
         ):
             raise RTA4ExecutionError("formal V2 memory limit is invalid")
         self.timeout_contract = FrozenMapping(methods)
+        self.identity_contract = FrozenMapping(
+            {} if identity_contract is None else dict(identity_contract)
+        )
+        if adapter_attempt_runner is not None and not callable(
+            adapter_attempt_runner
+        ):
+            raise RTA4ExecutionError("formal V2 attempt runner must be callable")
+        self.adapter_attempt_runner = (
+            _adapter_result_v2
+            if adapter_attempt_runner is None
+            else adapter_attempt_runner
+        )
         self.memory_limit_bytes = memory_limit_bytes
         self.production_build_manifest_identity = (
             run_context.production_build_manifest_identity
@@ -793,9 +822,9 @@ class ProductionRTAExecutorV2:
             wall_started = time.perf_counter()
             cpu_started = time.process_time()
             try:
-                mapped, _raw = _adapter_result_v2(
+                mapped, _raw = self.adapter_attempt_runner(
                     record, certificate, self.config, budget,
-                    task_energy, service,
+                    task_energy, service, self.identity_contract,
                 )
                 status = str(mapped["solver_status"])
                 classification = (

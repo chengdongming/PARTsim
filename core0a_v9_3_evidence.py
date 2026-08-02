@@ -18,10 +18,11 @@ from dataclasses import asdict, replace
 from decimal import Decimal
 from fractions import Fraction
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import asap_block_rta_v9_3 as core
 import asap_block_rta_v9_3_taskset as taskset
+from experiments.v9_3 import exact_energy
 from core0a_v9_3_evidence_schema import (
     LINEAGE_REQUIRED_CHECK_TYPES,
     RAW_TABLES,
@@ -87,9 +88,23 @@ def make_task(name: str, c: int, d: int, t: int, power: Any = 1) -> core.V93Task
     return core.V93Task(name, c, d, t, Fraction(power))
 
 
-def context(label: str) -> taskset.DependencyContext:
+def context(
+    label: str,
+    *,
+    tasks: Sequence[core.V93Task],
+    e0: Fraction,
+    service_prefix: Optional[Sequence[Fraction]],
+) -> taskset.DependencyContext:
     def h(suffix: str) -> str:
         return hashlib.sha256((label + suffix).encode("utf-8")).hexdigest()
+
+    exact_identity = ""
+    if service_prefix is not None:
+        exact_identity = exact_energy.exact_input_identity(
+            task_powers=((item.name, item.power) for item in tasks),
+            e0=e0,
+            service_prefix=service_prefix,
+        )
 
     return taskset.DependencyContext(
         taskset_identity=h(":taskset"),
@@ -100,9 +115,16 @@ def context(label: str) -> taskset.DependencyContext:
         power_vector_identity=h(":power"),
         numerical_mode="EXACT_RATIONAL",
         numerical_scale=None,
-        theory_document_sha256=THEORY_SHA256,
-        fixed_carry_in_interface_sha256=THEORY_SHA256,
+        theory_document_sha256=exact_energy.THEORY_DOCUMENT_SHA256,
+        fixed_carry_in_interface_sha256=taskset.FIXED_CARRY_IN_INTERFACE_SHA256,
         formal_contract_identity=h(":formal"),
+        numeric_contract_sha256=exact_energy.NUMERIC_CONTRACT_SHA256,
+        source_numeric_model=exact_energy.SOURCE_NUMERIC_MODEL,
+        demand_rounding_mode=exact_energy.DEMAND_ROUNDING_MODE,
+        supply_rounding_mode=exact_energy.SUPPLY_ROUNDING_MODE,
+        e0_rounding_mode=exact_energy.E0_ROUNDING_MODE,
+        exact_input_identity=exact_identity,
+        float_decision_path=exact_energy.FLOAT_DECISION_PATH,
     )
 
 
@@ -116,8 +138,32 @@ def analysis_input(
     beta: Any = None,
 ) -> taskset.TasksetAnalysisInput:
     curve = beta if beta is not None else (lambda length: Fraction(harvest * length))
+    exact_e0 = core.exact_fraction_v9_3(e0, "E0")
+    try:
+        identity_horizon = (
+            max(item.deadline for item in tasks) - 1
+            if callable(curve)
+            else len(curve) - 1
+        )
+        service_prefix = core.validate_service_curve_v9_3(
+            curve, identity_horizon
+        )
+    except (core.V93InputError, core.V93NumericError):
+        # Deliberately invalid service-curve evidence cannot have a valid
+        # exact-input identity.  Leave it empty so the production interface
+        # fails closed without inventing identity material.
+        service_prefix = None
     return taskset.TasksetAnalysisInput(
-        tuple(tasks), processors, Fraction(e0), curve, context(label)
+        tuple(tasks),
+        processors,
+        exact_e0,
+        curve,
+        context(
+            label,
+            tasks=tasks,
+            e0=exact_e0,
+            service_prefix=service_prefix,
+        ),
     )
 
 
@@ -876,7 +922,19 @@ def produce_joint_cases(build: str) -> List[Dict[str, Any]]:
     record("loc-frozen-success", "loc-source", taskset.AnalysisVariant.LOC_THETA_CW, local, "COMPLETED", "CERTIFIED_TASKSET", True)
     for case_id, invalid_source in (
         ("loc-missing-source", None),
-        ("loc-identity-mismatch", replace(source, dependency_context=context("different"), _finalizer_token=source._finalizer_token)),
+        (
+            "loc-identity-mismatch",
+            replace(
+                source,
+                dependency_context=replace(
+                    inp.dependency_context,
+                    taskset_identity=semantic_hash(
+                        "CORE0A:JOINT:CONTEXT", "different"
+                    ),
+                ),
+                _finalizer_token=source._finalizer_token,
+            ),
+        ),
     ):
         result = taskset.analyze_taskset_v9_3(
             case_id,
