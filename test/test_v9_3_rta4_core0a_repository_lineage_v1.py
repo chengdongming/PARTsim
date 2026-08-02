@@ -127,28 +127,18 @@ def _validate(root: Path) -> lineage.ValidatedCore0ARepositoryLineageV1:
 
 
 def _standalone_source_commit(root: Path) -> str:
-    current = _validate(root)
-    if current.lineage_mode == lineage.CORE0A_STANDALONE_REVIEWED_LINEAGE:
-        candidate = current.current_head_commit
-    elif current.lineage_mode == lineage.MASTER_INTEGRATION_MERGE:
+    current = lineage._classify(root, _validate(root).current_head_commit)
+    visited = set()
+    while current.lineage_mode != lineage.CORE0A_STANDALONE_REVIEWED_LINEAGE:
+        if current.current_head_commit in visited:
+            raise AssertionError("validated lineage source resolution contains a cycle")
+        visited.add(current.current_head_commit)
         candidate = current.second_parent_commit
-    elif current.lineage_mode == lineage.MASTER_PR_WRAPPER_MERGE:
-        integration = current.second_parent_commit
-        if integration is None:
-            raise AssertionError("validated wrapper has no integration parent")
-        integration_parents = tuple(_git(
-            root, "show", "-s", "--format=%P", integration,
-        ).split())
-        if len(integration_parents) != 2:
-            raise AssertionError("validated wrapper integration is not binary")
-        candidate = integration_parents[1]
-    else:
-        raise AssertionError(
-            f"unsupported validated lineage mode: {current.lineage_mode}"
-        )
+        if candidate is None:
+            raise AssertionError("validated lineage has no standalone source")
+        current = lineage._classify(root, candidate)
 
-    if candidate is None:
-        raise AssertionError("validated lineage has no standalone source")
+    candidate = current.current_head_commit
     _git(root, "cat-file", "-e", f"{candidate}^{{commit}}")
     _tree(root, candidate)
     standalone = lineage._standalone_facts(root, candidate)
@@ -219,6 +209,23 @@ def _wrapper(
             second_parent or data["integration"],
         ),
         "PR wrapper",
+    )
+    _checkout(root, wrapper)
+    return wrapper
+
+
+def _same_lineage_wrapper(
+    root: Path,
+    first_parent: str,
+    second_parent: str,
+    *,
+    tree: str | None = None,
+) -> str:
+    wrapper = _commit_tree(
+        root,
+        tree or _tree(root, second_parent),
+        (first_parent, second_parent),
+        "same-lineage content-free PR wrapper",
     )
     _checkout(root, wrapper)
     return wrapper
@@ -646,6 +653,346 @@ def test_exact_pr_wrapper_success(repository: Path) -> None:
     )
 
 
+def test_same_lineage_content_free_pr_wrapper_success(
+    repository: Path,
+) -> None:
+    data = _make_integration(repository)
+    second_parent = _commit(
+        repository,
+        {"linear-feature.md": "reviewed linear feature\n"},
+        "reviewed linear feature",
+    )
+    wrapped = _validate(repository)
+    wrapper = _same_lineage_wrapper(
+        repository, data["integration"], second_parent,
+    )
+
+    result = _validate(repository)
+
+    assert result.lineage_mode == lineage.MASTER_PR_WRAPPER_MERGE
+    assert result.current_head_commit == wrapper
+    assert result.current_head_tree == _tree(repository, second_parent)
+    assert result.first_parent_commit == data["integration"]
+    assert result.second_parent_commit == second_parent
+    assert result.repository_lineage_identity != (
+        wrapped.repository_lineage_identity
+    )
+
+
+@pytest.mark.parametrize("descendant_count", (1, 3))
+def test_same_lineage_wrapper_linear_descendants_success(
+    repository: Path,
+    descendant_count: int,
+) -> None:
+    data = _make_integration(repository)
+    second_parent = _commit(
+        repository,
+        {"linear-feature.md": "reviewed linear feature\n"},
+        "reviewed linear feature",
+    )
+    wrapper = _same_lineage_wrapper(
+        repository, data["integration"], second_parent,
+    )
+    wrapper_identity = _validate(repository).repository_lineage_identity
+    descendants = []
+    for index in range(descendant_count):
+        descendants.append(_commit(
+            repository,
+            {f"after-wrapper-{index}.md": f"descendant-{index}\n"},
+            f"ordinary wrapper descendant {index}",
+        ))
+
+    result = _validate(repository)
+
+    assert result.lineage_mode == lineage.MASTER_PR_WRAPPER_MERGE
+    assert result.current_head_commit == descendants[-1]
+    assert result.current_parent_count == 1
+    assert result.first_parent_commit == data["integration"]
+    assert result.second_parent_commit == second_parent
+    assert result.current_head_tree == _tree(repository, descendants[-1])
+    assert result.repository_lineage_identity != wrapper_identity
+    assert wrapper != descendants[-1]
+
+
+def test_same_lineage_wrapper_tree_drift_rejected(
+    repository: Path,
+) -> None:
+    data = _make_integration(repository)
+    second_parent = _commit(
+        repository,
+        {"linear-feature.md": "reviewed linear feature\n"},
+        "reviewed linear feature",
+    )
+    _same_lineage_wrapper(
+        repository,
+        data["integration"],
+        second_parent,
+        tree=_tree(repository, data["integration"]),
+    )
+
+    with pytest.raises(lineage.Core0ARepositoryLineageV1Error):
+        _validate(repository)
+
+
+def test_same_lineage_wrapper_content_injection_rejected(
+    repository: Path,
+) -> None:
+    data = _make_integration(repository)
+    second_parent = _commit(
+        repository,
+        {"linear-feature.md": "reviewed linear feature\n"},
+        "reviewed linear feature",
+    )
+    polluted = _commit(
+        repository,
+        {"wrapper-injected.md": "content not present in second parent\n"},
+        "polluted wrapper tree",
+    )
+    _same_lineage_wrapper(
+        repository,
+        data["integration"],
+        second_parent,
+        tree=_tree(repository, polluted),
+    )
+
+    with pytest.raises(lineage.Core0ARepositoryLineageV1Error):
+        _validate(repository)
+
+
+def test_same_lineage_wrapper_nonancestor_parents_rejected(
+    repository: Path,
+) -> None:
+    data = _make_integration(repository)
+    first_parent = _commit(
+        repository,
+        {"left-branch.md": "left\n"},
+        "left branch",
+    )
+    _checkout(repository, data["integration"])
+    second_parent = _commit(
+        repository,
+        {"right-branch.md": "right\n"},
+        "right branch",
+    )
+    _same_lineage_wrapper(repository, first_parent, second_parent)
+
+    with pytest.raises(lineage.Core0ARepositoryLineageV1Error):
+        _validate(repository)
+
+
+def test_same_lineage_wrapper_reversed_parent_order_rejected(
+    repository: Path,
+) -> None:
+    data = _make_integration(repository)
+    descendant = _commit(
+        repository,
+        {"linear-feature.md": "reviewed linear feature\n"},
+        "reviewed linear feature",
+    )
+    _same_lineage_wrapper(
+        repository,
+        descendant,
+        data["integration"],
+    )
+
+    with pytest.raises(
+        lineage.Core0ARepositoryLineageV1Error,
+        match="parent order is reversed",
+    ):
+        _validate(repository)
+
+
+@pytest.mark.parametrize("operation", ("rename", "copy"))
+def test_same_lineage_wrapper_rename_or_copy_rejected(
+    repository: Path,
+    operation: str,
+) -> None:
+    data = _make_integration(repository)
+    second_parent = _commit(
+        repository,
+        {"linear-feature.md": "reviewed linear feature\n"},
+        "reviewed linear feature",
+    )
+    if operation == "rename":
+        _git(repository, "mv", "README.md", "README.wrapper.md")
+    else:
+        _write(
+            repository,
+            "README.wrapper-copy.md",
+            (repository / "README.md").read_text(encoding="utf-8"),
+        )
+    _git(repository, "add", "--all")
+    _git(repository, "commit", "--quiet", "-m", f"wrapper {operation}")
+    changed_tree = _tree(repository, "HEAD")
+    _same_lineage_wrapper(
+        repository,
+        data["integration"],
+        second_parent,
+        tree=changed_tree,
+    )
+
+    with pytest.raises(
+        lineage.Core0ARepositoryLineageV1Error,
+        match="rename/copy status",
+    ):
+        _validate(repository)
+
+
+def test_reviewed_integration_one_linear_descendant_success(
+    repository: Path,
+) -> None:
+    data = _make_integration(repository)
+    descendant = _commit(
+        repository,
+        {"post-integration-business-1.md": "business-v1\n"},
+        "ordinary post-integration change",
+    )
+
+    result = _validate(repository)
+
+    assert result.lineage_mode == lineage.MASTER_INTEGRATION_MERGE
+    assert result.current_head_commit == descendant
+    assert result.current_head_tree == _tree(repository, descendant)
+    assert result.current_parent_count == 1
+    assert result.first_parent_commit == data["master"]
+    assert result.second_parent_commit == data["core"]
+
+
+def test_reviewed_wrapper_multiple_linear_descendants_success(
+    repository: Path,
+) -> None:
+    data = _make_integration(repository)
+    wrapper = _wrapper(repository, data)
+    descendants = []
+    for index in range(1, 4):
+        descendants.append(_commit(
+            repository,
+            {f"post-wrapper-business-{index}.md": f"business-v{index}\n"},
+            f"ordinary post-wrapper change {index}",
+        ))
+
+    result = _validate(repository)
+
+    assert result.lineage_mode == lineage.MASTER_PR_WRAPPER_MERGE
+    assert result.current_head_commit == descendants[-1]
+    assert result.current_head_tree == _tree(repository, descendants[-1])
+    assert result.current_parent_count == 1
+    assert result.first_parent_commit == data["master"]
+    assert result.second_parent_commit == data["integration"]
+    assert wrapper not in descendants
+
+
+def test_post_integration_unknown_merge_rejected(repository: Path) -> None:
+    data = _make_integration(repository)
+    left = _commit(
+        repository,
+        {"post-integration-left.md": "left\n"},
+        "post-integration left",
+    )
+    _checkout(repository, data["integration"])
+    right = _commit(
+        repository,
+        {"post-integration-right.md": "right\n"},
+        "post-integration right",
+    )
+    _checkout(repository, left)
+    _git(
+        repository,
+        "merge",
+        "--quiet",
+        "--no-ff",
+        right,
+        "-m",
+        "unsupported post-integration merge",
+    )
+
+    with pytest.raises(lineage.Core0ARepositoryLineageV1Error):
+        _validate(repository)
+
+
+def test_post_integration_octopus_merge_rejected(repository: Path) -> None:
+    data = _make_integration(repository)
+    first = _commit_tree(
+        repository,
+        _tree(repository, data["integration"]),
+        (data["integration"],),
+        "first post-integration parent",
+    )
+    second = _commit_tree(
+        repository,
+        _tree(repository, data["integration"]),
+        (data["integration"],),
+        "second post-integration parent",
+    )
+    octopus = _commit_tree(
+        repository,
+        _tree(repository, data["integration"]),
+        (data["integration"], first, second),
+        "unsupported post-integration octopus",
+    )
+    _checkout(repository, octopus)
+
+    with pytest.raises(
+        lineage.Core0ARepositoryLineageV1Error,
+        match="octopus",
+    ):
+        _validate(repository)
+
+
+def test_post_integration_rename_rejected(repository: Path) -> None:
+    _make_integration(repository)
+    _git(repository, "mv", "README.md", "README.post-integration.md")
+    _git(repository, "commit", "--quiet", "-m", "unsupported rename")
+
+    with pytest.raises(
+        lineage.Core0ARepositoryLineageV1Error,
+        match="rename/copy status",
+    ):
+        _validate(repository)
+
+
+def test_post_integration_copy_rejected(repository: Path) -> None:
+    _make_integration(repository)
+    _write(
+        repository,
+        "README.post-integration-copy.md",
+        (repository / "README.md").read_text(encoding="utf-8"),
+    )
+    _git(repository, "add", "--all")
+    _git(repository, "commit", "--quiet", "-m", "unsupported copy")
+
+    with pytest.raises(
+        lineage.Core0ARepositoryLineageV1Error,
+        match="rename/copy status",
+    ):
+        _validate(repository)
+
+
+def test_post_integration_override_is_bound_to_current_identity(
+    repository: Path,
+) -> None:
+    data = _make_integration(repository)
+    anchor = _validate(repository)
+    descendant = _commit(
+        repository,
+        {REPAIR_PATH: "post-integration-reviewed-path-v2\n"},
+        "ordinary reviewed-path evolution",
+    )
+
+    result = _validate(repository)
+
+    assert result.current_head_commit == descendant
+    assert result.first_parent_commit == data["master"]
+    assert result.second_parent_commit == data["core"]
+    assert result.master_changed_paths == anchor.master_changed_paths
+    assert result.core0a_changed_paths == anchor.core0a_changed_paths
+    assert result.current_head_tree != anchor.current_head_tree
+    assert (
+        result.repository_lineage_identity
+        != anchor.repository_lineage_identity
+    )
+
+
 def test_pr_wrapper_first_parent_drift_rejected(repository: Path) -> None:
     data = _make_integration(repository)
     drifted_master = _commit_tree(
@@ -780,6 +1127,40 @@ def test_lineage_identity_changes_for_every_parent_side_and_tree(
     )
     assert original.final_integration_tree != changed_tree.final_integration_tree
     assert changed_tree.current_head_commit == changed_tree_merge
+
+
+def test_current_repository_same_lineage_wrapper_is_reconstructed(
+) -> None:
+    result = _validate(ROOT)
+    wrapper = _git(
+        ROOT,
+        "rev-list",
+        "--first-parent",
+        "--merges",
+        "--max-count=1",
+        "HEAD",
+    )
+    parents = tuple(_git(
+        ROOT, "show", "-s", "--format=%P", wrapper,
+    ).split())
+
+    assert result.lineage_mode == lineage.MASTER_PR_WRAPPER_MERGE
+    assert len(parents) == 2
+    assert parents == (
+        result.first_parent_commit,
+        result.second_parent_commit,
+    )
+    assert lineage._is_ancestor(ROOT, parents[0], parents[1])
+    assert _tree(ROOT, wrapper) == _tree(ROOT, parents[1])
+    assert lineage._diff_paths(ROOT, parents[1], wrapper).changed_paths == ()
+
+    wrapper_result = lineage._validated(lineage._classify(ROOT, wrapper))
+    second_parent_result = lineage._validated(
+        lineage._classify(ROOT, parents[1])
+    )
+    assert wrapper_result.repository_lineage_identity != (
+        second_parent_result.repository_lineage_identity
+    )
 
 
 def test_real_failed_topology_probe_and_repaired_source_integration(

@@ -747,13 +747,23 @@ def _wrapper_facts(
     )
 
 
-def _classify(root: Path, head: str) -> _LineageFacts:
+def _integration_anchor_facts(root: Path, head: str) -> _LineageFacts:
+    """Validate one candidate integration or PR-wrapper merge."""
+
     parents = _parents(root, head)
-    if len(parents) <= 1:
-        return _standalone_facts(root, head)
     if len(parents) != 2:
         raise Core0ARepositoryLineageV1Error(
             "unsupported octopus or non-binary lineage topology"
+        )
+
+    first_parent, second_parent = parents
+    if _is_ancestor(root, first_parent, second_parent):
+        return _same_lineage_pr_wrapper_facts(
+            root, head, first_parent, second_parent,
+        )
+    if _is_ancestor(root, second_parent, first_parent):
+        raise Core0ARepositoryLineageV1Error(
+            "same-lineage PR wrapper parent order is reversed"
         )
 
     second_parents = _parents(root, parents[1])
@@ -765,6 +775,117 @@ def _classify(root: Path, head: str) -> _LineageFacts:
         if integration is not None:
             return _wrapper_facts(root, head, integration)
     return _integration_facts(root, head)
+
+
+def _same_lineage_pr_wrapper_facts(
+    root: Path,
+    head: str,
+    first_parent: str,
+    second_parent: str,
+) -> _LineageFacts:
+    """Validate a content-free PR wrapper around one supported lineage.
+
+    GitHub can materialize a merge commit even when the selected base is
+    already an ancestor of the selected head.  This shape is safe only when
+    the merge is an exact, ordered wrapper around a recursively valid second
+    parent and introduces no tree or path-level change of its own.
+    """
+
+    parents = _parents(root, head)
+    if parents != (first_parent, second_parent) or len(parents) != 2:
+        raise Core0ARepositoryLineageV1Error(
+            "same-lineage PR wrapper requires exactly two ordered parents"
+        )
+    if not _is_ancestor(root, first_parent, second_parent):
+        raise Core0ARepositoryLineageV1Error(
+            "same-lineage PR wrapper first parent is not an ancestor "
+            "of second parent"
+        )
+
+    relative_second = _diff_paths(root, second_parent, head)
+    if relative_second.rename_or_copy:
+        raise Core0ARepositoryLineageV1Error(
+            "same-lineage PR wrapper contains rename/copy status"
+        )
+    if relative_second.changed_paths:
+        raise Core0ARepositoryLineageV1Error(
+            "same-lineage PR wrapper adds, deletes, or modifies content"
+        )
+    if _commit_tree(root, head) != _commit_tree(root, second_parent):
+        raise Core0ARepositoryLineageV1Error(
+            "same-lineage PR wrapper tree differs from second parent tree"
+        )
+
+    wrapped = _classify(root, second_parent)
+    if wrapped.current_head_commit != second_parent:
+        raise Core0ARepositoryLineageV1Error(
+            "same-lineage PR wrapper second parent was not reconstructed "
+            "as the supported lineage HEAD"
+        )
+    return _LineageFacts(
+        lineage_mode=MASTER_PR_WRAPPER_MERGE,
+        current_head_commit=head,
+        current_head_tree=_commit_tree(root, head),
+        current_parent_count=2,
+        first_parent_commit=first_parent,
+        first_parent_tree=_commit_tree(root, first_parent),
+        second_parent_commit=second_parent,
+        second_parent_tree=_commit_tree(root, second_parent),
+        merge_base_commit=wrapped.merge_base_commit,
+        merge_base_tree=wrapped.merge_base_tree,
+        master_changed_paths=wrapped.master_changed_paths,
+        core0a_changed_paths=wrapped.core0a_changed_paths,
+        overlap_paths=wrapped.overlap_paths,
+        master_only_blob_states=wrapped.master_only_blob_states,
+        core0a_only_blob_states=wrapped.core0a_only_blob_states,
+        repair_touched_paths=wrapped.repair_touched_paths,
+    )
+
+
+def _linear_descendant_facts(
+    root: Path,
+    head: str,
+    anchor: _LineageFacts,
+) -> _LineageFacts:
+    """Bind a reviewed integration anchor to its linear current HEAD."""
+
+    if anchor.current_head_commit == head:
+        return anchor
+    return replace(
+        anchor,
+        current_head_commit=head,
+        current_head_tree=_commit_tree(root, head),
+        current_parent_count=len(_parents(root, head)),
+    )
+
+
+def _classify(root: Path, head: str) -> _LineageFacts:
+    """Classify HEAD without mistaking reviewed merge descendants for standalone."""
+
+    cursor = head
+    while cursor != CORE0A_REVIEWED_ANCHOR_COMMIT:
+        parents = _parents(root, cursor)
+        if len(parents) == 1:
+            diff = _diff_paths(root, parents[0], cursor)
+            if diff.rename_or_copy:
+                raise Core0ARepositoryLineageV1Error(
+                    "post-integration linear descendant contains "
+                    "rename/copy status"
+                )
+            _tree_entries(root, cursor)
+            cursor = parents[0]
+            continue
+        if len(parents) == 2:
+            anchor = _integration_anchor_facts(root, cursor)
+            return _linear_descendant_facts(root, head, anchor)
+        if len(parents) > 2:
+            raise Core0ARepositoryLineageV1Error(
+                "unsupported octopus or non-binary lineage topology"
+            )
+        raise Core0ARepositoryLineageV1Error(
+            "repository lineage terminated before reviewed CORE-0A anchor"
+        )
+    return _standalone_facts(root, head)
 
 
 def _validated(facts: _LineageFacts) -> ValidatedCore0ARepositoryLineageV1:
