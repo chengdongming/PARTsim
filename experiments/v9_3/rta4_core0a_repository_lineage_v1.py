@@ -867,10 +867,12 @@ def _classify(root: Path, head: str) -> _LineageFacts:
         parents = _parents(root, cursor)
         if len(parents) == 1:
             diff = _diff_paths(root, parents[0], cursor)
-            if diff.rename_or_copy:
+            if any(
+                row.startswith("R") for row in diff.rename_or_copy
+            ):
                 raise Core0ARepositoryLineageV1Error(
                     "post-integration linear descendant contains "
-                    "rename/copy status"
+                    "rename status"
                 )
             _tree_entries(root, cursor)
             cursor = parents[0]

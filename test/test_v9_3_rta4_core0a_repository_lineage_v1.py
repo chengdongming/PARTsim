@@ -946,12 +946,14 @@ def test_post_integration_rename_rejected(repository: Path) -> None:
 
     with pytest.raises(
         lineage.Core0ARepositoryLineageV1Error,
-        match="rename/copy status",
+        match="rename status",
     ):
         _validate(repository)
 
 
-def test_post_integration_copy_rejected(repository: Path) -> None:
+def test_post_integration_copy_classified_addition_success(
+    repository: Path,
+) -> None:
     _make_integration(repository)
     _write(
         repository,
@@ -959,13 +961,17 @@ def test_post_integration_copy_rejected(repository: Path) -> None:
         (repository / "README.md").read_text(encoding="utf-8"),
     )
     _git(repository, "add", "--all")
-    _git(repository, "commit", "--quiet", "-m", "unsupported copy")
+    _git(
+        repository,
+        "commit",
+        "--quiet",
+        "-m",
+        "copy-classified linear addition",
+    )
 
-    with pytest.raises(
-        lineage.Core0ARepositoryLineageV1Error,
-        match="rename/copy status",
-    ):
-        _validate(repository)
+    result = _validate(repository)
+    assert result.current_head_commit == _git(repository, "rev-parse", "HEAD")
+    assert result.current_parent_count == 1
 
 
 def test_post_integration_override_is_bound_to_current_identity(
