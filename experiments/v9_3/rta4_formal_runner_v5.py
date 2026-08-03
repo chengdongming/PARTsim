@@ -121,7 +121,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"RTA V5 operation failed: {exc}")
         return 1
     print(json.dumps(summary, ensure_ascii=False, sort_keys=True, indent=2))
-    return 0
+    if args.preflight_only:
+        return 0
+    if summary.get("bounded_smoke") is True:
+        return 0 if summary.get("invocation_clean") is True else 1
+    return 0 if summary.get("clean_complete") is True else 1
 
 
 if __name__ == "__main__":
