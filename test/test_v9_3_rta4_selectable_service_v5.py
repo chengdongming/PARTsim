@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import replace
 from fractions import Fraction
 import json
+import os
 from pathlib import Path
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -11,6 +14,8 @@ import yaml
 
 from experiments.v9_3 import rta4_local_execution_v5 as local_execution_v5
 from experiments.v9_3 import rta4_formal_execution as formal_execution
+from experiments.v9_3 import rta4_formal_runner_v5 as runner_v5
+from experiments.v9_3 import rta4_physical_execution_v5 as physical_execution_v5
 from experiments.common.exact_service_curve import (
     EXACT_LINEAR_SERVICE_CURVE_V1,
     EXACT_RATE_LATENCY_SERVICE_CURVE_V1,
@@ -48,11 +53,156 @@ from experiments.v9_3.rta4_local_execution_v5 import (
     RTA4LocalExecutionV5Error,
     execute_loaded_campaign_v5,
 )
-from experiments.v9_3.rta4_formal_workers_v3 import V3WorkerRequest
+from experiments.v9_3.rta4_formal_workers_v3 import (
+    V3AttemptResponse,
+    V3WorkerRequest,
+)
+from experiments.v9_3.rta4_physical_core_slots_v3 import (
+    CPUTopologyV3,
+    PhysicalCoreSlotPoolV3,
+    PhysicalCoreV3,
+    SlotCompletionV3,
+    SlotStartedV3,
+    WorkerDiagnosticV3,
+    discover_cpu_topology_v3,
+)
+from experiments.v9_3.rta4_physical_execution_v5 import (
+    PreparedPhysicalRecordV5,
+    execute_physical_group_v5,
+)
 from scripts.create_v9_3_rta4_campaign import campaign_template
 
 
 METHODS = ["CW_THETA_CW", "LOC_THETA_LOC", "PH_THETA_PH", "SEQ_THETA_SEQ"]
+
+
+def _physical_probe_attempt_worker(_state, request):
+    """Pickle-safe process/affinity probe; it never calls an RTA solver."""
+
+    time.sleep(0.12)
+    attempt = {
+        "attempt_index": request.attempt_index,
+        "timeout_seconds": request.timeout_seconds,
+        "status": "COMPLETED",
+        "runtime_wall_seconds": "0.12",
+        "runtime_cpu_seconds": "0",
+        "peak_rss_bytes": 0,
+        "error_classification": "NONE",
+    }
+    return V3AttemptResponse(
+        request.record.record_id,
+        request.record.execution_id,
+        request.attempt_index,
+        request.timeout_seconds,
+        {
+            "solver_status": "COMPLETED",
+            "taskset_certification_status": "CERTIFIED_TASKSET",
+            "taskset_proven": True,
+            "attempts": (attempt,),
+            "timeout_seconds": request.timeout_seconds,
+            "runtime_wall_seconds": "0.12",
+            "runtime_cpu_seconds": "0",
+            "peak_rss_bytes": 0,
+            "probe_pid": os.getpid(),
+        },
+    )
+
+
+def _physical_retry_probe_attempt_worker(_state, request):
+    """Force the first process past its hard timeout, then finish the retry."""
+
+    if request.attempt_index == 0:
+        time.sleep(request.timeout_seconds + 0.35)
+    return _physical_probe_attempt_worker(_state, request)
+
+
+def _physical_probe_pool_factory(selected_cores, **_ignored):
+    return PhysicalCoreSlotPoolV3(
+        selected_cores,
+        worker_callable=_physical_probe_attempt_worker,
+        worker_state=None,
+        start_method="spawn",
+    )
+
+
+def _physical_retry_probe_pool_factory(selected_cores, **_ignored):
+    return PhysicalCoreSlotPoolV3(
+        selected_cores,
+        worker_callable=_physical_retry_probe_attempt_worker,
+        worker_state=None,
+        start_method="spawn",
+    )
+
+
+def _physical_core3_probe_attempt_worker(_state, request):
+    if request.record.kind != "simulation":
+        return _physical_probe_attempt_worker(_state, request)
+    time.sleep(0.05)
+    return V3AttemptResponse(
+        request.record.record_id,
+        request.record.execution_id,
+        request.attempt_index,
+        request.timeout_seconds,
+        {
+            "status": "COMPLETED",
+            "error_classification": "NONE",
+            "runtime_wall_seconds": "0.05",
+            "runtime_cpu_seconds": "0",
+            "result": {
+                "simulation_status": "COMPLETED",
+                "observed_status": "SIM_PASS_OBSERVED",
+                "probe_pid": os.getpid(),
+            },
+        },
+    )
+
+
+def _physical_core3_probe_pool_factory(selected_cores, **_ignored):
+    return PhysicalCoreSlotPoolV3(
+        selected_cores,
+        worker_callable=_physical_core3_probe_attempt_worker,
+        worker_state=None,
+        start_method="spawn",
+    )
+
+
+def _physical_malformed_retry_attempt_worker(_state, request):
+    if request.attempt_index == 1:
+        return {"malformed": True}
+    attempt = {
+        "attempt_index": 0,
+        "timeout_seconds": request.timeout_seconds,
+        "status": "TIMEOUT",
+        "runtime_wall_seconds": "0.01",
+        "runtime_cpu_seconds": "0",
+        "peak_rss_bytes": 0,
+        "error_classification": "TEST_TIMEOUT",
+    }
+    return V3AttemptResponse(
+        request.record.record_id,
+        request.record.execution_id,
+        0,
+        request.timeout_seconds,
+        {
+            "solver_status": "TIMEOUT",
+            "taskset_certification_status": "TIMEOUT",
+            "taskset_proven": False,
+            "attempts": (attempt,),
+            "timeout_seconds": request.timeout_seconds,
+            "runtime_wall_seconds": "0.01",
+            "runtime_cpu_seconds": "0",
+            "peak_rss_bytes": 0,
+        },
+    )
+
+
+def _physical_malformed_retry_pool_factory(selected_cores, **_ignored):
+    return PhysicalCoreSlotPoolV3(
+        selected_cores,
+        worker_callable=_physical_malformed_retry_attempt_worker,
+        worker_state=None,
+        start_method="spawn",
+    )
 
 
 def _source(*, processors=2, task_count=2, tasksets=1, time_scale=1):
@@ -204,6 +354,69 @@ def _loaded(
         normalized["task_sources"],
         normalized["service_curve"],
     )
+
+
+def _loaded_from_raw(
+    raw: dict, output_root: Path, *, runtime: dict,
+) -> LoadedCampaignV5:
+    normalized = normalize_rta4_campaign_v5(raw)
+    scientific = normalized["normalized_scientific_config"]
+    return LoadedCampaignV5(
+        output_root / "campaign.yml",
+        "b" * 64,
+        scientific,
+        rta4_formal_config_hash_v5(scientific),
+        runtime,
+        normalized["v3_scientific_config"],
+        normalized["task_sources"],
+        normalized["service_curve"],
+    )
+
+
+def _synthetic_topology(count: int, fingerprint: str = "synthetic-topology"):
+    cores = tuple(
+        PhysicalCoreV3(0, index, index, (index,))
+        for index in range(count)
+    )
+    return CPUTopologyV3(
+        tuple(range(count)), cores, fingerprint,
+        "TEST_ONLY_SYNTHETIC_SELECTION",
+    )
+
+
+def _clean_rta_result(*, attempts=None):
+    return {
+        "solver_status": "COMPLETED",
+        "taskset_certification_status": "CERTIFIED_TASKSET",
+        "taskset_proven": True,
+        "attempts": (
+            [{"attempt_index": 0, "status": "COMPLETED"}]
+            if attempts is None else deepcopy(attempts)
+        ),
+    }
+
+
+def _fake_physical_rta_result(*, logical_cpu: int, worker_pid: int):
+    return {
+        **_clean_rta_result(),
+        "worker_backend": "PHYSICAL_CORE_PROCESS_SLOTS",
+        "physical_core_binding_required": True,
+        "execution_attempt_diagnostics": ({
+            "attempt_index": 0,
+            "worker_pid": worker_pid,
+            "slot_id": 0,
+            "worker_generation": 0,
+            "logical_cpu_id": logical_cpu,
+            "physical_package_id": 0,
+            "physical_core_id": logical_cpu,
+            "affinity_mask": [logical_cpu],
+            "started_monotonic_ns": 100,
+            "finished_monotonic_ns": 200,
+            "timed_out": False,
+            "worker_exit": None,
+            "error_classification": None,
+        },),
+    }
 
 
 @pytest.mark.parametrize("core", [
@@ -510,6 +723,7 @@ def test_all_six_cores_select_their_named_lightweight_dispatch(
         _loaded(core, tmp_path / core.lower()),
         acknowledge_not_for_paper=True,
         max_records=1,
+        dispatchers=CORE_EXECUTION_DISPATCH_V5,
     )
     assert calls and calls[0][0] == core
     assert summary["processed_records"] == 1
@@ -727,6 +941,7 @@ def test_pure_rta_cores_reach_existing_v3_worker_and_rta_executor(
         campaign,
         acknowledge_not_for_paper=True,
         max_records=1,
+        dispatchers=CORE_EXECUTION_DISPATCH_V5,
     )
     assert len(requests) == 1
     assert len(final_solver_calls) == 1
@@ -839,6 +1054,7 @@ def test_core3_reaches_existing_worker_and_only_mocks_external_launch(
         campaign,
         acknowledge_not_for_paper=True,
         max_records=len(planned),
+        dispatchers=CORE_EXECUTION_DISPATCH_V5,
     )
     assert launches and launches[0]["projection"][
         "simulation_projection_identity"
@@ -867,3 +1083,788 @@ def test_core3_reaches_existing_worker_and_only_mocks_external_launch(
     assert row["result"]["status"] == "COMPLETED"
     assert row["result"]["result"]["simulation_tick_ms"] == 2
     assert row["not_for_paper"] is True
+
+
+def test_terminal_complete_is_distinct_from_clean_complete(tmp_path):
+    result = {
+        "solver_status": "INTERNAL_ERROR",
+        "taskset_certification_status": "ERROR",
+        "taskset_proven": False,
+        "attempts": [{"attempt_index": 0, "status": "INTERNAL_ERROR"}],
+    }
+    dispatchers = {
+        core: (lambda _campaign, _record, _operation: deepcopy(result))
+        for core in CORE_EXECUTION_DISPATCH_V5
+    }
+    summary = execute_loaded_campaign_v5(
+        _loaded("CORE-1", tmp_path / "terminal-not-clean"),
+        acknowledge_not_for_paper=True,
+        dispatchers=dispatchers,
+    )
+    assert summary["terminal_count"] == summary["expected_count"] == 4
+    assert summary["terminal_complete"] is True
+    assert summary["complete"] is True
+    assert summary["internal_error_count"] == 4
+    assert summary["clean_complete"] is False
+
+
+def test_one_dispatch_exception_writes_one_internal_terminal(tmp_path):
+    def dispatch(_campaign, record, _operation):
+        if record.ordinal == 1:
+            raise RuntimeError("injected dispatcher failure")
+        return _clean_rta_result()
+
+    root = tmp_path / "one-internal"
+    summary = execute_loaded_campaign_v5(
+        _loaded("CORE-2", root),
+        acknowledge_not_for_paper=True,
+        dispatchers={core: dispatch for core in CORE_EXECUTION_DISPATCH_V5},
+    )
+    assert summary["expected_count"] == 2
+    assert summary["terminal_count"] == 2
+    assert summary["terminal_complete"] is True
+    assert summary["complete"] is True
+    assert summary["internal_error_count"] == 1
+    assert summary["clean_complete"] is False
+    rows = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in (root / "local_terminal_results_v5").glob("*.json")
+    ]
+    assert sum(
+        row["result"]["solver_status"] == "INTERNAL_ERROR" for row in rows
+    ) == 1
+
+
+def test_nonmapping_dispatch_result_is_terminal_but_malformed(tmp_path):
+    dispatchers = {
+        core: (lambda _campaign, _record, _operation: object())
+        for core in CORE_EXECUTION_DISPATCH_V5
+    }
+    summary = execute_loaded_campaign_v5(
+        _loaded("CORE-2", tmp_path / "malformed"),
+        acknowledge_not_for_paper=True,
+        dispatchers=dispatchers,
+    )
+    assert summary["terminal_complete"] is True
+    assert summary["internal_error_count"] == 2
+    assert summary["malformed_result_count"] == 2
+    assert summary["clean_complete"] is False
+
+
+@pytest.mark.parametrize(
+    (
+        "attempts", "solver_status", "attempt_timeout",
+        "terminal_timeout", "clean",
+    ),
+    [
+        (
+            [
+                {"attempt_index": 0, "status": "TIMEOUT"},
+                {"attempt_index": 1, "status": "COMPLETED"},
+            ],
+            "COMPLETED",
+            4,
+            0,
+            True,
+        ),
+        (
+            [
+                {"attempt_index": 0, "status": "TIMEOUT"},
+                {"attempt_index": 1, "status": "TIMEOUT"},
+            ],
+            "TIMEOUT",
+            8,
+            4,
+            False,
+        ),
+    ],
+)
+def test_attempt_timeout_and_terminal_timeout_are_counted_separately(
+    attempts, solver_status, attempt_timeout, terminal_timeout, clean,
+    tmp_path,
+):
+    result = {
+        **_clean_rta_result(attempts=attempts),
+        "solver_status": solver_status,
+        "taskset_proven": solver_status == "COMPLETED",
+    }
+    dispatchers = {
+        core: (lambda _campaign, _record, _operation: deepcopy(result))
+        for core in CORE_EXECUTION_DISPATCH_V5
+    }
+    summary = execute_loaded_campaign_v5(
+        _loaded("CORE-1", tmp_path / f"timeout-{solver_status.lower()}"),
+        acknowledge_not_for_paper=True,
+        dispatchers=dispatchers,
+    )
+    assert summary["attempt_timeout_count"] == attempt_timeout
+    assert summary["terminal_timeout_count"] == terminal_timeout
+    assert summary["clean_complete"] is clean
+
+
+def test_bounded_smoke_reports_invocation_clean_without_claiming_full_complete(
+    tmp_path,
+):
+    dispatchers = {
+        core: (lambda _campaign, _record, _operation: _clean_rta_result())
+        for core in CORE_EXECUTION_DISPATCH_V5
+    }
+    summary = execute_loaded_campaign_v5(
+        _loaded("CORE-1", tmp_path / "bounded-clean"),
+        acknowledge_not_for_paper=True,
+        max_records=1,
+        dispatchers=dispatchers,
+    )
+    assert summary["bounded_smoke"] is True
+    assert summary["invocation_target_count"] == 1
+    assert summary["invocation_terminal_count"] == 1
+    assert summary["invocation_clean"] is True
+    assert summary["terminal_complete"] is False
+    assert summary["clean_complete"] is False
+
+
+def test_resume_keeps_prior_internal_error_out_of_clean_complete(tmp_path):
+    def first_dispatch(_campaign, record, _operation):
+        if record.ordinal == 1:
+            raise RuntimeError("persist this INTERNAL_ERROR")
+        return _clean_rta_result()
+
+    def forbidden_dispatch(*_args, **_kwargs):
+        raise AssertionError("fully terminal resume dispatched new work")
+
+    first_dispatchers = {
+        core: first_dispatch for core in CORE_EXECUTION_DISPATCH_V5
+    }
+    forbidden_dispatchers = {
+        core: forbidden_dispatch for core in CORE_EXECUTION_DISPATCH_V5
+    }
+    campaign = _loaded("CORE-1", tmp_path / "resume-internal")
+    first = execute_loaded_campaign_v5(
+        campaign,
+        acknowledge_not_for_paper=True,
+        dispatchers=first_dispatchers,
+    )
+    assert first["terminal_complete"] is True
+    assert first["internal_error_count"] == 1
+    summary = execute_loaded_campaign_v5(
+        campaign,
+        acknowledge_not_for_paper=True,
+        resume=True,
+        dispatchers=forbidden_dispatchers,
+    )
+    assert summary["processed_records"] == 0
+    assert summary["invocation_target_count"] == 0
+    assert summary["invocation_clean"] is True
+    assert summary["internal_error_count"] == 1
+    assert summary["terminal_complete"] is True
+    assert summary["clean_complete"] is False
+
+
+def test_core3_nonadmissible_observation_is_a_simulation_failure(tmp_path):
+    def dispatch(_campaign, record, _operation):
+        if record.kind != "simulation":
+            return _clean_rta_result()
+        return {
+            "status": "COMPLETED",
+            "result": {
+                "simulation_status": "COMPLETED",
+                "observed_status": "SIM_HORIZON_INSUFFICIENT",
+            },
+        }
+
+    summary = execute_loaded_campaign_v5(
+        (campaign := _loaded(
+            "CORE-3", tmp_path / "core3-classification",
+        )),
+        acknowledge_not_for_paper=True,
+        dispatchers={core: dispatch for core in CORE_EXECUTION_DISPATCH_V5},
+    )
+    simulation_count = sum(
+        row.kind == "simulation" for row in iter_formal_plan_v5(
+            campaign.normalized_scientific_config,
+            campaign.task_sources,
+            campaign.service_curve,
+        )
+    )
+    assert summary["terminal_complete"] is True
+    assert summary["simulation_failure_count"] == simulation_count
+    assert summary["malformed_result_count"] == 0
+    assert summary["clean_complete"] is False
+
+
+@pytest.mark.parametrize(
+    ("bounded", "clean_complete", "invocation_clean", "expected"),
+    [
+        (False, True, True, 0),
+        (False, False, True, 1),
+        (True, False, True, 0),
+        (True, False, False, 1),
+    ],
+)
+def test_cli_exit_code_uses_full_or_bounded_clean_status(
+    bounded, clean_complete, invocation_clean, expected, monkeypatch,
+):
+    monkeypatch.setattr(
+        runner_v5,
+        "execute_local_campaign_v5",
+        lambda *_args, **_kwargs: {
+            "bounded_smoke": bounded,
+            "clean_complete": clean_complete,
+            "invocation_clean": invocation_clean,
+        },
+    )
+    assert runner_v5.main([
+        "--campaign", "unused-test-campaign.yml",
+        "--execute-local",
+        "--acknowledge-not-for-paper",
+    ]) == expected
+
+
+def test_v5_production_source_has_no_thread_pool_fallback():
+    source = Path(local_execution_v5.__file__).read_text(encoding="utf-8")
+    assert "ThreadPoolExecutor" not in source
+    assert "concurrent.futures" not in source
+
+
+def test_v5_physical_group_uses_two_distinct_pinned_processes(tmp_path):
+    topology = discover_cpu_topology_v3()
+    if topology.physical_core_count < 2:
+        pytest.skip("physical process probe requires two allowed cores")
+    campaign = _loaded("CORE-1", tmp_path / "physical-two-processes")
+    plan_records = tuple(iter_formal_plan_v5(
+        campaign.normalized_scientific_config,
+        campaign.task_sources,
+        campaign.service_curve,
+    ))[:2]
+    operation = {
+        "output_root": tmp_path / "physical-two-processes",
+        "timeout_seconds": 2,
+        "simulator_path": None,
+    }
+    bootstrap = local_execution_v5._worker_bootstrap_v5(
+        campaign, plan_records, operation,
+    )
+    prepared = []
+    for plan_record in plan_records:
+        worker, certificate, context, _identity = (
+            local_execution_v5._prepared_record_material(
+                campaign, plan_record,
+            )
+        )
+        prepared.append(PreparedPhysicalRecordV5(
+            plan_record, worker, certificate, context,
+        ))
+    terminals = []
+    evidence = execute_physical_group_v5(
+        worker_count=2,
+        selected_cores=topology.select(2),
+        prepared_records=prepared,
+        bootstrap=bootstrap,
+        max_in_flight=2,
+        terminal_callback=lambda record, result: terminals.append(
+            (record, result)
+        ),
+        pool_factory=_physical_probe_pool_factory,
+    )
+    bindings = evidence["worker_affinity_bindings"]
+    assert evidence["completed_record_count"] == 2
+    assert evidence["max_concurrent_active_slots"] == 2
+    assert len(evidence["worker_process_ids"]) == 2
+    assert len({row["worker_pid"] for row in bindings}) == 2
+    assert all(
+        tuple(row["affinity_mask"]) == (row["logical_cpu_id"],)
+        for row in bindings
+    )
+    assert len({
+        (row["physical_package_id"], row["physical_core_id"])
+        for row in bindings
+    }) == 2
+    assert all(
+        terminal[1]["physical_core_binding_required"] is True
+        for terminal in terminals
+    )
+
+
+def test_core3_records_execute_inside_a_physical_slot_process(tmp_path):
+    topology = discover_cpu_topology_v3()
+    root = tmp_path / "core3-physical-probe"
+    campaign = _loaded("CORE-3", root)
+    summary = execute_loaded_campaign_v5(
+        campaign,
+        acknowledge_not_for_paper=True,
+        _topology_discoverer=lambda: topology,
+        _pool_factory=_physical_core3_probe_pool_factory,
+    )
+    plan_records = tuple(iter_formal_plan_v5(
+        campaign.normalized_scientific_config,
+        campaign.task_sources,
+        campaign.service_curve,
+    ))
+    simulation_record = next(
+        row for row in plan_records if row.kind == "simulation"
+    )
+    terminal = json.loads((
+        root / "local_terminal_results_v5"
+        / f"{simulation_record.execution_id}.json"
+    ).read_text(encoding="utf-8"))
+    worker_pid = terminal["result"]["result"]["probe_pid"]
+    diagnostics = terminal["result"]["execution_attempt_diagnostics"]
+    assert worker_pid != os.getpid()
+    assert diagnostics[0]["worker_pid"] == worker_pid
+    assert diagnostics[0]["affinity_mask"] == [
+        diagnostics[0]["logical_cpu_id"]
+    ]
+    assert terminal["worker_backend"] == "PHYSICAL_CORE_PROCESS_SLOTS"
+    assert summary["simulation_failure_count"] == 0
+    assert summary["internal_error_count"] == 0
+    assert summary["clean_complete"] is True
+
+
+def test_v5_physical_timeout_replaces_slot_and_retry_can_finish(
+    tmp_path, monkeypatch,
+):
+    topology = discover_cpu_topology_v3()
+    campaign = _loaded("CORE-1", tmp_path / "physical-retry")
+    plan_record = next(iter_formal_plan_v5(
+        campaign.normalized_scientific_config,
+        campaign.task_sources,
+        campaign.service_curve,
+    ))
+    operation = {
+        "output_root": tmp_path / "physical-retry",
+        "timeout_seconds": 1,
+        "simulator_path": None,
+    }
+    bootstrap = local_execution_v5._worker_bootstrap_v5(
+        campaign, (plan_record,), operation,
+    )
+    worker, certificate, context, _identity = (
+        local_execution_v5._prepared_record_material(campaign, plan_record)
+    )
+
+    def fake_timeout_projection(_bootstrap, request):
+        return {
+            "solver_status": "TIMEOUT",
+            "taskset_certification_status": "TIMEOUT",
+            "taskset_proven": False,
+            "attempts": ({
+                "attempt_index": request.attempt_index,
+                "timeout_seconds": request.timeout_seconds,
+                "status": "TIMEOUT",
+                "runtime_wall_seconds": str(request.timeout_seconds),
+                "runtime_cpu_seconds": "0",
+                "peak_rss_bytes": 0,
+                "error_classification": "TEST_HARD_TIMEOUT",
+            },),
+            "timeout_seconds": request.timeout_seconds,
+            "runtime_wall_seconds": str(request.timeout_seconds),
+            "runtime_cpu_seconds": "0",
+            "peak_rss_bytes": 0,
+        }
+
+    monkeypatch.setattr(
+        physical_execution_v5,
+        "project_hard_timeout_result_v3",
+        fake_timeout_projection,
+    )
+    terminals = []
+    evidence = physical_execution_v5.execute_physical_group_v5(
+        worker_count=1,
+        selected_cores=topology.select(1),
+        prepared_records=(PreparedPhysicalRecordV5(
+            plan_record, worker, certificate, context,
+        ),),
+        bootstrap=bootstrap,
+        max_in_flight=1,
+        terminal_callback=lambda _record, result: terminals.append(result),
+        pool_factory=_physical_retry_probe_pool_factory,
+    )
+    assert evidence["slot_replacement_count"] == 1
+    assert evidence["timeout_kill_count"] == 1
+    assert terminals[0]["solver_status"] == "COMPLETED"
+    assert [row["status"] for row in terminals[0]["attempts"]] == [
+        "TIMEOUT", "COMPLETED",
+    ]
+    assert [
+        row["timed_out"]
+        for row in terminals[0]["execution_attempt_diagnostics"]
+    ] == [True, False]
+
+
+def test_retry_protocol_failure_preserves_first_timeout_history(tmp_path):
+    topology = discover_cpu_topology_v3()
+    campaign = _loaded("CORE-1", tmp_path / "malformed-retry")
+    plan_record = next(iter_formal_plan_v5(
+        campaign.normalized_scientific_config,
+        campaign.task_sources,
+        campaign.service_curve,
+    ))
+    operation = {
+        "output_root": tmp_path / "malformed-retry",
+        "timeout_seconds": 1,
+        "simulator_path": None,
+    }
+    bootstrap = local_execution_v5._worker_bootstrap_v5(
+        campaign, (plan_record,), operation,
+    )
+    worker, certificate, context, _identity = (
+        local_execution_v5._prepared_record_material(campaign, plan_record)
+    )
+    terminals = []
+    execute_physical_group_v5(
+        worker_count=1,
+        selected_cores=topology.select(1),
+        prepared_records=(PreparedPhysicalRecordV5(
+            plan_record, worker, certificate, context,
+        ),),
+        bootstrap=bootstrap,
+        max_in_flight=1,
+        terminal_callback=lambda _record, result: terminals.append(result),
+        pool_factory=_physical_malformed_retry_pool_factory,
+    )
+    result = terminals[0]
+    assert result["solver_status"] == "INTERNAL_ERROR"
+    assert result["protocol_malformed_result"] is True
+    assert [attempt["status"] for attempt in result["attempts"]] == [
+        "TIMEOUT", "INTERNAL_ERROR",
+    ]
+    assert [
+        row["attempt_index"]
+        for row in result["execution_attempt_diagnostics"]
+    ] == [0, 1]
+
+
+def test_core5b_runs_scientific_worker_groups_sequentially(tmp_path):
+    raw = _small("CORE-5B")
+    raw["workers"] = [1, 2, 4]
+    root = tmp_path / "core5b-groups"
+    campaign = _loaded_from_raw(raw, root, runtime={
+        "output_root": str(root),
+        "worker_count": 4,
+        "max_in_flight": 4,
+        "timeout_seconds": 2,
+    })
+    lifecycle = []
+
+    class FakePhysicalPool:
+        def __init__(self, selected_cores):
+            self.selected_cores = tuple(selected_cores)
+            self.events = []
+            self.busy = set()
+            self.worker_affinity_bindings = []
+            self.worker_intervals = []
+            self.slot_replacement_count = 0
+            self.timeout_kill_count = 0
+
+        def start(self):
+            lifecycle.append(("start", len(self.selected_cores)))
+            self.worker_affinity_bindings.extend(
+                WorkerDiagnosticV3(
+                    3000 + len(self.selected_cores) * 10 + slot_id,
+                    core.logical_cpu_id,
+                    core.physical_package_id,
+                    core.physical_core_id,
+                    (core.logical_cpu_id,),
+                    slot_id,
+                    0,
+                ).as_dict()
+                for slot_id, core in enumerate(self.selected_cores)
+            )
+
+        @property
+        def idle_slot_ids(self):
+            return tuple(
+                slot_id for slot_id in range(len(self.selected_cores))
+                if slot_id not in self.busy
+            )
+
+        def submit(self, slot_id, task_id, request, _timeout_seconds):
+            self.busy.add(slot_id)
+            binding = self.worker_affinity_bindings[slot_id]
+            worker = WorkerDiagnosticV3(
+                binding["worker_pid"],
+                binding["logical_cpu_id"],
+                binding["physical_package_id"],
+                binding["physical_core_id"],
+                tuple(binding["affinity_mask"]),
+                binding["slot_id"],
+                binding["worker_generation"],
+            )
+            started = time.monotonic_ns()
+            finished = started + 100
+            attempt = {
+                "attempt_index": request.attempt_index,
+                "timeout_seconds": request.timeout_seconds,
+                "status": "COMPLETED",
+                "runtime_wall_seconds": "0.0000001",
+                "runtime_cpu_seconds": "0",
+                "peak_rss_bytes": 0,
+                "error_classification": "NONE",
+            }
+            response = V3AttemptResponse(
+                request.record.record_id,
+                request.record.execution_id,
+                request.attempt_index,
+                request.timeout_seconds,
+                {
+                    "solver_status": "COMPLETED",
+                    "taskset_certification_status": "CERTIFIED_TASKSET",
+                    "taskset_proven": True,
+                    "attempts": (attempt,),
+                    "timeout_seconds": request.timeout_seconds,
+                    "runtime_wall_seconds": "0.0000001",
+                    "runtime_cpu_seconds": "0",
+                    "peak_rss_bytes": 0,
+                },
+            )
+            self.events.extend((
+                SlotStartedV3(slot_id, task_id, worker, started),
+                SlotCompletionV3(
+                    slot_id,
+                    task_id,
+                    worker,
+                    started,
+                    finished,
+                    0.0,
+                    response,
+                ),
+            ))
+
+        def poll(self):
+            event = self.events.pop(0)
+            if isinstance(event, SlotCompletionV3):
+                self.busy.remove(event.slot_id)
+                self.worker_intervals.append({
+                    **event.worker.as_dict(),
+                    "task_id": event.task_id,
+                    "attempt_started_monotonic_ns": (
+                        event.started_monotonic_ns
+                    ),
+                    "attempt_finished_monotonic_ns": (
+                        event.finished_monotonic_ns
+                    ),
+                })
+            return event
+
+        def shutdown(self):
+            lifecycle.append(("shutdown", len(self.selected_cores)))
+
+    def fake_pool_factory(selected_cores, **_ignored):
+        return FakePhysicalPool(selected_cores)
+
+    summary = execute_loaded_campaign_v5(
+        campaign,
+        acknowledge_not_for_paper=True,
+        _topology_discoverer=lambda: _synthetic_topology(4),
+        _pool_factory=fake_pool_factory,
+    )
+    assert lifecycle == [
+        ("start", 1), ("shutdown", 1),
+        ("start", 2), ("shutdown", 2),
+        ("start", 4), ("shutdown", 4),
+    ]
+    assert summary["terminal_complete"] is True
+    assert summary["clean_complete"] is True
+    assert [
+        row["worker_count"] for row in summary["physical_execution_groups"]
+    ] == [1, 2, 4]
+    assert all(
+        row["elapsed_wall_seconds"] > 0
+        and len(row["selected_physical_cores"]) == row["worker_count"]
+        and row["worker_process_ids"]
+        and row["worker_affinity_bindings"]
+        for row in summary["physical_execution_groups"]
+    )
+    manifest = json.loads(
+        (root / "local_run_manifest_v5.json").read_text(encoding="utf-8")
+    )
+    assert manifest["physical_core_binding_required"] is True
+    assert manifest["topology_fingerprint"] == "synthetic-topology"
+    assert [
+        row["worker_count"] for row in manifest["physical_execution_groups"]
+    ] == [1, 2, 4]
+
+
+def test_core5b_insufficient_topology_fails_before_writing_terminals(tmp_path):
+    raw = _small("CORE-5B")
+    raw["workers"] = [1, 2, 4]
+    root = tmp_path / "core5b-insufficient"
+    campaign = _loaded_from_raw(raw, root, runtime={
+        "output_root": str(root),
+        "worker_count": 4,
+        "max_in_flight": 4,
+        "timeout_seconds": 2,
+    })
+    with pytest.raises(
+        RTA4LocalExecutionV5Error, match="requested 4 physical",
+    ):
+        execute_loaded_campaign_v5(
+            campaign,
+            acknowledge_not_for_paper=True,
+            _topology_discoverer=lambda: _synthetic_topology(2),
+            _physical_group_executor=lambda **_kwargs: pytest.fail(
+                "execution began despite insufficient physical cores"
+            ),
+        )
+    assert not root.exists()
+
+
+def test_core5b_runtime_worker_cap_must_cover_scientific_maximum(tmp_path):
+    raw = _small("CORE-5B")
+    raw["workers"] = [1, 2, 4]
+    root = tmp_path / "core5b-cap"
+    campaign = _loaded_from_raw(raw, root, runtime={
+        "output_root": str(root),
+        "worker_count": 2,
+        "max_in_flight": 4,
+        "timeout_seconds": 2,
+    })
+    with pytest.raises(
+        RTA4LocalExecutionV5Error, match="below the scientific maximum",
+    ):
+        execute_loaded_campaign_v5(
+            campaign,
+            acknowledge_not_for_paper=True,
+            _topology_discoverer=lambda: pytest.fail(
+                "worker cap must fail before topology use"
+            ),
+        )
+    assert not root.exists()
+
+
+def test_resume_refuses_topology_fingerprint_drift_before_execution(tmp_path):
+    root = tmp_path / "topology-drift"
+    campaign = _loaded("CORE-1", root)
+
+    def clean_group(**kwargs):
+        for row in kwargs["prepared_records"]:
+            kwargs["terminal_callback"](
+                row.plan_record,
+                _fake_physical_rta_result(
+                    logical_cpu=0, worker_pid=1001,
+                ),
+            )
+        return {
+            "worker_count": kwargs["worker_count"],
+            "requested_record_count": len(kwargs["prepared_records"]),
+            "completed_record_count": len(kwargs["prepared_records"]),
+        }
+
+    execute_loaded_campaign_v5(
+        campaign,
+        acknowledge_not_for_paper=True,
+        max_records=1,
+        _topology_discoverer=lambda: _synthetic_topology(1, "topology-A"),
+        _physical_group_executor=clean_group,
+    )
+    with pytest.raises(
+        RTA4LocalExecutionV5Error, match="another V5 run",
+    ):
+        execute_loaded_campaign_v5(
+            campaign,
+            acknowledge_not_for_paper=True,
+            resume=True,
+            max_records=1,
+            _topology_discoverer=lambda: _synthetic_topology(
+                1, "topology-B",
+            ),
+            _physical_group_executor=lambda **_kwargs: pytest.fail(
+                "resume executed despite topology drift"
+            ),
+        )
+
+
+def test_execution_backend_and_physical_count_do_not_change_scientific_ids(
+    tmp_path,
+):
+    base = _loaded("CORE-1", tmp_path / "unused")
+
+    def clean_group(**kwargs):
+        for row in kwargs["prepared_records"]:
+            kwargs["terminal_callback"](
+                row.plan_record,
+                _fake_physical_rta_result(
+                    logical_cpu=0,
+                    worker_pid=2000 + kwargs["worker_count"],
+                ),
+            )
+        return {
+            "worker_count": kwargs["worker_count"],
+            "requested_record_count": len(kwargs["prepared_records"]),
+            "completed_record_count": len(kwargs["prepared_records"]),
+            "selected_physical_cores": [
+                row.as_dict() for row in kwargs["selected_cores"]
+            ],
+        }
+
+    roots = [tmp_path / name for name in ("slots-1", "slots-2", "test-only")]
+    campaign_one = replace(base, runtime={
+        "output_root": str(roots[0]),
+        "worker_count": 1,
+        "max_in_flight": 1,
+        "timeout_seconds": 2,
+    })
+    campaign_two = replace(base, runtime={
+        "output_root": str(roots[1]),
+        "worker_count": 2,
+        "max_in_flight": 2,
+        "timeout_seconds": 2,
+    })
+    execute_loaded_campaign_v5(
+        campaign_one,
+        acknowledge_not_for_paper=True,
+        max_records=1,
+        _topology_discoverer=lambda: _synthetic_topology(2, "same-host"),
+        _physical_group_executor=clean_group,
+    )
+    execute_loaded_campaign_v5(
+        campaign_two,
+        acknowledge_not_for_paper=True,
+        max_records=1,
+        _topology_discoverer=lambda: _synthetic_topology(2, "same-host"),
+        _physical_group_executor=clean_group,
+    )
+    test_dispatchers = {
+        core: (lambda _campaign, _record, _operation: _clean_rta_result())
+        for core in CORE_EXECUTION_DISPATCH_V5
+    }
+    execute_loaded_campaign_v5(
+        base,
+        acknowledge_not_for_paper=True,
+        output_root=roots[2],
+        max_records=1,
+        dispatchers=test_dispatchers,
+    )
+    terminal_rows = [
+        json.loads(next(
+            (root / "local_terminal_results_v5").glob("*.json")
+        ).read_text(encoding="utf-8"))
+        for root in roots
+    ]
+    for field in (
+        "mathematical_request_identity",
+        "taskset_identity",
+        "configured_service_identity",
+        "effective_service_identity",
+    ):
+        assert len({row[field] for row in terminal_rows}) == 1
+    manifests = [
+        json.loads(
+            (root / "local_run_manifest_v5.json").read_text(encoding="utf-8")
+        )
+        for root in roots
+    ]
+    assert [
+        manifest["execution_backend"] for manifest in manifests
+    ] == [
+        "PHYSICAL_CORE_PROCESS_SLOTS",
+        "PHYSICAL_CORE_PROCESS_SLOTS",
+        "TEST_ONLY_EXPLICIT_DISPATCHERS",
+    ]
+    assert [
+        len(manifest["physical_execution_groups"][0][
+            "selected_physical_cores"
+        ]) if manifest["physical_execution_groups"] else 0
+        for manifest in manifests
+    ] == [1, 2, 0]
+    assert len({manifest["run_identity"] for manifest in manifests}) == 3
