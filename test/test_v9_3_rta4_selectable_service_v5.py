@@ -1,0 +1,869 @@
+from __future__ import annotations
+
+from copy import deepcopy
+from fractions import Fraction
+import json
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+import yaml
+
+from experiments.v9_3 import rta4_local_execution_v5 as local_execution_v5
+from experiments.v9_3 import rta4_formal_execution as formal_execution
+from experiments.common.exact_service_curve import (
+    EXACT_LINEAR_SERVICE_CURVE_V1,
+    EXACT_RATE_LATENCY_SERVICE_CURVE_V1,
+)
+from experiments.v9_3.rta4_formal_config_v5 import (
+    CORE5A_FIXED_TICK_SERVICE_V1,
+    LoadedCampaignV5,
+    RTA4FormalConfigV5Error,
+    normalize_rta4_campaign_v5,
+    rta4_formal_config_hash_v5,
+)
+from experiments.v9_3.rta4_energy_service_v5 import (
+    core3_simulation_projection_v5,
+    exact_service_material_v5,
+)
+from experiments.v9_3.rta4_formal_runner_v5 import (
+    main as runner_v5_main,
+    preflight_campaign_v5,
+)
+from experiments.v9_3.rta4_formal_plan_v3 import core4_conditions_v3
+from experiments.v9_3.rta4_formal_plan_v5 import (
+    describe_formal_plan_v5,
+    iter_formal_plan_v5,
+)
+from experiments.v9_3.rta4_task_source_v4 import (
+    GENERAL_RANDOM_CONSTRAINED_V1,
+    GENERATED_FAMILY,
+    PRIORITY_POLICY_RM,
+)
+from experiments.v9_3.rta4_unified_adapter_v5 import (
+    execute_normalized_taskset_v5,
+)
+from experiments.v9_3.rta4_local_execution_v5 import (
+    CORE_EXECUTION_DISPATCH_V5,
+    RTA4LocalExecutionV5Error,
+    execute_loaded_campaign_v5,
+)
+from experiments.v9_3.rta4_formal_workers_v3 import V3WorkerRequest
+from scripts.create_v9_3_rta4_campaign import campaign_template
+
+
+METHODS = ["CW_THETA_CW", "LOC_THETA_LOC", "PH_THETA_PH", "SEQ_THETA_SEQ"]
+
+
+def _source(*, processors=2, task_count=2, tasksets=1, time_scale=1):
+    templates = []
+    for index in range(task_count):
+        period = (index + 1) * 10 * time_scale
+        templates.append({
+            "name": f"tau_{index + 1}",
+            "C": [time_scale],
+            "D": [(index + 1) * 6 * time_scale],
+            "T": [period],
+            "power": ["1/10"],
+        })
+    return {
+        "mode": GENERATED_FAMILY,
+        "family_id": GENERAL_RANDOM_CONSTRAINED_V1,
+        "parameters": {
+            "processors": processors,
+            "priority_policy": PRIORITY_POLICY_RM,
+            "task_count": task_count,
+            "taskset_count": tasksets,
+            "base_seed": 100,
+            "generation_indices": list(range(tasksets)),
+            "task_templates": templates,
+        },
+    }
+
+
+def _small(core: str) -> dict:
+    raw = deepcopy(campaign_template(core))
+    raw["campaign_id"] = f"rta4-{core.lower()}-v5-test"
+    raw["service_curve"] = {
+        "model": EXACT_RATE_LATENCY_SERVICE_CURVE_V1,
+        "rate": "1/10",
+        "latency": "1",
+        "time_unit": "tick",
+    }
+    raw["runtime"] = {}
+    if core == "CORE-1":
+        raw.update({
+            "processors": 2,
+            "task_count": 2,
+            "normalized_utilization": ["1/2"],
+            "tasksets_per_utilization": 1,
+            "e0": ["0"],
+            "methods": METHODS,
+            "task_source": _source(),
+        })
+    elif core == "CORE-2":
+        raw["source"] = deepcopy(raw["source"])
+        raw["source"]["taskset_count"] = 1
+        raw["e0"] = ["0"]
+        raw["methods"] = ["CW_D", "SEQ_D"]
+        raw["task_source"] = _source()
+    elif core == "CORE-3":
+        raw["simulation_tick_ms"] = 1
+        raw["source"] = deepcopy(raw["source"])
+        raw["source"]["taskset_count"] = 1
+        raw["release_modes"] = ["SYNC_V1"]
+        raw["finite_battery_capacities"] = ["20"]
+        raw["projection_methods"] = ["CW_THETA_CW"]
+        raw["projection_e0"] = ["0"]
+        raw["simulation_horizon"] = {
+            "release_horizon": 20,
+            "observation_horizon": "release_horizon_plus_dmax",
+        }
+        raw["task_source"] = _source()
+    elif core == "CORE-4":
+        raw.update({
+            "processors": 2,
+            "task_count": 2,
+            "normalized_utilization": ["1/2"],
+            "skeletons_per_utilization": 1,
+            "baseline": {
+                "e0": "0", "service_scale": "1", "power_scale": "1",
+                "deadline_slack_fraction": "3/4",
+            },
+            "axes": {
+                "e0": ["0", "1"],
+                "service_scale": ["1", "2"],
+                "power_scale": ["1", "2"],
+                "deadline_slack_fraction": ["3/4", "1"],
+            },
+            "methods": ["CW_THETA_CW", "SEQ_THETA_SEQ"],
+            "task_source": _source(),
+        })
+    elif core == "CORE-5A":
+        raw.update({
+            "baseline": {
+                "e0": "0", "normalized_utilization": "1/2",
+                "service_scale": "1", "power_scale": "1",
+                "deadline_slack_fraction": "3/4",
+            },
+            "task_count_axis": {"values": [1], "processors": 2, "tasksets": 1},
+            "processor_axis": {"values": [2], "task_count": 2, "tasksets": 1},
+            "integer_time_scale_axis": {"values": [1, 2], "base_tasksets": 1},
+            "methods": ["CW_THETA_CW"],
+            "integer_time_scale_service_semantics": (
+                CORE5A_FIXED_TICK_SERVICE_V1
+            ),
+            "task_sources": [
+                {"axis": "task_count", "axis_value": 1,
+                 "task_source": _source(task_count=1)},
+                {"axis": "processor_count", "axis_value": 2,
+                 "task_source": _source()},
+                {"axis": "integer_time_scale", "axis_value": 1,
+                 "task_source": _source(time_scale=1)},
+                {"axis": "integer_time_scale", "axis_value": 2,
+                 "task_source": _source(time_scale=2)},
+            ],
+        })
+    elif core == "CORE-5B":
+        raw["source_baseline_exact_e0"] = "0"
+        raw["source"] = deepcopy(raw["source"])
+        raw["source"]["taskset_count"] = 3
+        raw["utilization_strata"] = ["1/2"]
+        raw["candidates_per_method_stratum"] = 3
+        raw["selected_per_method_stratum"] = 2
+        raw["methods"] = ["CW_THETA_CW"]
+        raw["workers"] = [1, 2]
+        raw["task_source"] = _source(tasksets=3)
+    return raw
+
+
+def _normalized(core: str):
+    return normalize_rta4_campaign_v5(_small(core))
+
+
+def _loaded(
+    core: str, output_root: Path, *, simulation_tick_ms: int | None = None,
+) -> LoadedCampaignV5:
+    raw = _small(core)
+    if simulation_tick_ms is not None:
+        raw["simulation_tick_ms"] = simulation_tick_ms
+    normalized = normalize_rta4_campaign_v5(raw)
+    scientific = normalized["normalized_scientific_config"]
+    return LoadedCampaignV5(
+        output_root / "campaign.yml",
+        "a" * 64,
+        scientific,
+        rta4_formal_config_hash_v5(scientific),
+        {
+            "output_root": str(output_root),
+            "worker_count": 1,
+            "max_in_flight": 1,
+            "timeout_seconds": 2,
+        },
+        normalized["v3_scientific_config"],
+        normalized["task_sources"],
+        normalized["service_curve"],
+    )
+
+
+@pytest.mark.parametrize("core", [
+    "CORE-1", "CORE-2", "CORE-3", "CORE-4", "CORE-5A", "CORE-5B",
+])
+def test_all_six_v3_grids_have_a_v5_preflight_path(core):
+    normalized = _normalized(core)
+    scientific = normalized["normalized_scientific_config"]
+    plan = describe_formal_plan_v5(
+        scientific, normalized["task_sources"], normalized["service_curve"],
+    )
+    assert plan["core"] == core
+    assert plan["ordered_stream_count"] > 0
+    records = tuple(iter_formal_plan_v5(
+        scientific, normalized["task_sources"], normalized["service_curve"],
+    ))
+    assert all(
+        record.configured_service_identity
+        == scientific["service_curve_identity"]
+        for record in records
+    )
+    assert all(record.taskset_identity for record in records)
+
+
+def test_core1_four_methods_share_task_and_effective_service():
+    normalized = _normalized("CORE-1")
+    records = list(iter_formal_plan_v5(
+        normalized["normalized_scientific_config"],
+        normalized["task_sources"], normalized["service_curve"],
+    ))
+    assert len(records) == 4
+    assert len({record.taskset_identity for record in records}) == 1
+    assert len({record.effective_service_identity for record in records}) == 1
+    assert len({record.mathematical_request_id for record in records}) == 4
+
+
+def test_service_change_changes_config_plan_and_math_identity():
+    first = _normalized("CORE-1")
+    changed = _small("CORE-1")
+    changed["service_curve"]["rate"] = "1/5"
+    second = normalize_rta4_campaign_v5(changed)
+    first_plan = describe_formal_plan_v5(
+        first["normalized_scientific_config"], first["task_sources"],
+        first["service_curve"],
+    )
+    second_plan = describe_formal_plan_v5(
+        second["normalized_scientific_config"], second["task_sources"],
+        second["service_curve"],
+    )
+    assert first_plan["normalized_scientific_config_sha256"] != second_plan[
+        "normalized_scientific_config_sha256"
+    ]
+    assert first_plan["plan_sha256"] != second_plan["plan_sha256"]
+    first_record = next(iter_formal_plan_v5(
+        first["normalized_scientific_config"], first["task_sources"],
+        first["service_curve"],
+    ))
+    second_record = next(iter_formal_plan_v5(
+        second["normalized_scientific_config"], second["task_sources"],
+        second["service_curve"],
+    ))
+    assert first_record.mathematical_request_id != second_record.mathematical_request_id
+
+
+def test_core3_tracks_bind_the_same_prefix_and_trace_material():
+    normalized = _normalized("CORE-3")
+    records = list(iter_formal_plan_v5(
+        normalized["normalized_scientific_config"],
+        normalized["task_sources"], normalized["service_curve"],
+    ))
+    assert {record.material["v3_grid_material"]["track"] for record in records} == {
+        "THEOREM_ALIGNED", "FINITE_BATTERY_EMPIRICAL",
+    }
+    assert len({
+        record.material["service_material"]["material_identity"]
+        for record in records
+    }) == 1
+    assert len({
+        record.material["service_material"]["trace_sha256"]
+        for record in records
+    }) == 1
+
+
+@pytest.mark.parametrize("value", [None, 0, -1, True, 1.0])
+def test_core3_requires_explicit_positive_plain_simulation_tick_ms(value):
+    raw = _small("CORE-3")
+    if value is None:
+        raw.pop("simulation_tick_ms")
+    else:
+        raw["simulation_tick_ms"] = value
+    with pytest.raises(RTA4FormalConfigV5Error, match="simulation_tick_ms"):
+        normalize_rta4_campaign_v5(raw)
+
+
+@pytest.mark.parametrize("value", [1, 2])
+def test_core3_accepts_positive_simulation_tick_ms(value):
+    raw = _small("CORE-3")
+    raw["simulation_tick_ms"] = value
+    normalized = normalize_rta4_campaign_v5(raw)
+    assert normalized["normalized_scientific_config"][
+        "simulation_tick_ms"
+    ] == value
+
+
+def test_simulation_tick_two_maps_exact_energy_to_two_ms_intervals():
+    material = exact_service_material_v5(
+        _normalized("CORE-3")["service_curve"], 2,
+    )
+    projection = core3_simulation_projection_v5(
+        exact_service_material_identity=material.identity,
+        harvest_trace=(material.harvest_trace[0], Fraction(1)),
+        simulation_tick_ms=2,
+    )
+    assert [
+        (segment["start_ms"], segment["end_ms"])
+        for segment in projection["segments"]
+    ] == [(0, 2), (2, 4)]
+    assert projection["segments"][1]["energy_per_tick_j"] == "1"
+    assert projection["segments"][1]["power_w"] == "500"
+
+
+def test_core3_tick_changes_math_identity_but_not_pure_curve_identity():
+    first = _normalized("CORE-3")
+    raw = _small("CORE-3")
+    raw["simulation_tick_ms"] = 2
+    second = normalize_rta4_campaign_v5(raw)
+    first_record = next(iter_formal_plan_v5(
+        first["normalized_scientific_config"], first["task_sources"],
+        first["service_curve"],
+    ))
+    second_record = next(iter_formal_plan_v5(
+        second["normalized_scientific_config"], second["task_sources"],
+        second["service_curve"],
+    ))
+    assert first["service_curve"].identity == second["service_curve"].identity
+    assert first_record.mathematical_request_id != (
+        second_record.mathematical_request_id
+    )
+    assert first_record.material["service_material"]["material_identity"] == (
+        second_record.material["service_material"]["material_identity"]
+    )
+    assert first_record.material["service_material"]["simulation_projection"][
+        "simulation_projection_identity"
+    ] != second_record.material["service_material"]["simulation_projection"][
+        "simulation_projection_identity"
+    ]
+
+
+def test_non_core3_rejects_simulation_tick_ms():
+    raw = _small("CORE-1")
+    raw["simulation_tick_ms"] = 1
+    with pytest.raises(RTA4FormalConfigV5Error):
+        normalize_rta4_campaign_v5(raw)
+
+
+def test_core3_example_preflight_reports_explicit_simulation_tick_ms():
+    summary = preflight_campaign_v5(
+        "configs/v9_3_rta4_core3_exact_service_v5_example_UNAUTHORIZED.yaml"
+    )
+    assert summary["simulation_tick_ms"] == 1
+    assert summary["execution_started"] is False
+    assert "UNAUTHORIZED" in summary["formal_campaign_authorization_status"]
+
+
+def test_core4_keeps_v3_one_factor_at_a_time_conditions():
+    normalized = _normalized("CORE-4")
+    grid = normalized["v3_scientific_config"]
+    conditions = core4_conditions_v3(grid)
+    assert [row["axis"] for row in conditions] == [
+        "baseline", "e0", "service_scale", "power_scale",
+        "deadline_slack_fraction",
+    ]
+    baseline = conditions[0]
+    for row in conditions[1:]:
+        assert sum(
+            row[key] != baseline[key]
+            for key in (
+                "e0", "service_scale", "power_scale",
+                "deadline_slack_fraction",
+            )
+        ) == 1
+
+
+def test_core5b_worker_axis_changes_execution_only():
+    normalized = _normalized("CORE-5B")
+    records = list(iter_formal_plan_v5(
+        normalized["normalized_scientific_config"],
+        normalized["task_sources"], normalized["service_curve"],
+    ))
+    assert len(records) == 4
+    pairs = [records[index:index + 2] for index in range(0, len(records), 2)]
+    for pair in pairs:
+        assert pair[0].mathematical_request_id == pair[1].mathematical_request_id
+        assert pair[0].execution_id != pair[1].execution_id
+
+
+def test_core5a_rejects_power_or_noninteger_time_scaling_drift():
+    raw = _small("CORE-5A")
+    raw["task_sources"][-1]["task_source"]["parameters"]["task_templates"][0][
+        "power"
+    ] = ["1/5"]
+    with pytest.raises(RTA4FormalConfigV5Error, match="unchanged power"):
+        normalize_rta4_campaign_v5(raw)
+
+
+def test_v5_rejects_missing_unknown_float_and_noncanonical_science():
+    raw = _small("CORE-1")
+    raw.pop("service_curve")
+    with pytest.raises(RTA4FormalConfigV5Error):
+        normalize_rta4_campaign_v5(raw)
+    raw = _small("CORE-1")
+    raw["implicit_service"] = True
+    with pytest.raises(RTA4FormalConfigV5Error):
+        normalize_rta4_campaign_v5(raw)
+    raw = _small("CORE-1")
+    raw["e0"] = [0.5]
+    with pytest.raises(RTA4FormalConfigV5Error, match="float"):
+        normalize_rta4_campaign_v5(raw)
+    raw = _small("CORE-1")
+    raw["e0"] = ["2/4"]
+    with pytest.raises(RTA4FormalConfigV5Error, match="canonical"):
+        normalize_rta4_campaign_v5(raw)
+
+
+def test_runtime_changes_do_not_change_v5_scientific_identity():
+    first = _small("CORE-1")
+    first["runtime"] = {"worker_count": 1, "max_in_flight": 1}
+    second = deepcopy(first)
+    second["runtime"] = {"worker_count": 2, "max_in_flight": 4}
+    first_n = normalize_rta4_campaign_v5(first)
+    second_n = normalize_rta4_campaign_v5(second)
+    assert first_n["normalized_scientific_config"] == second_n[
+        "normalized_scientific_config"
+    ]
+
+
+def test_linear_curve_is_also_accepted_without_v4_identity_reuse():
+    raw = _small("CORE-1")
+    raw["service_curve"] = {
+        "model": EXACT_LINEAR_SERVICE_CURVE_V1,
+        "rate": "1/10",
+        "time_unit": "tick",
+    }
+    normalized = normalize_rta4_campaign_v5(raw)
+    assert normalized["service_curve"].model == EXACT_LINEAR_SERVICE_CURVE_V1
+
+
+def test_v5_adapter_reaches_the_unchanged_math_kernel_on_a_micro_replay():
+    normalized = _normalized("CORE-1")
+    source = normalized["task_sources"][0].source
+    result = execute_normalized_taskset_v5(
+        taskset=source.tasksets[0],
+        processors=source.processors,
+        task_source_identity=source.identity,
+        taskset_store_identity="2" * 64,
+        production_build_manifest_identity="3" * 64,
+        service_curve=normalized["service_curve"],
+        e0="10",
+        method="CW_THETA_CW",
+        timeout_seconds=2,
+    )
+    assert result["result"]["method_id"] == "CW_THETA_CW"
+    assert result["result"]["solver_status"] == "COMPLETED"
+    assert result["result"]["certification_status"] == "CERTIFIED_TASKSET"
+    assert len(result["kernel_result_hash"]) == 64
+    assert len(result["mathematical_result_hash"]) == 64
+
+
+def test_preflight_does_not_call_solver(monkeypatch):
+    def forbidden_solver(*_args, **_kwargs):
+        raise AssertionError("preflight called the RTA solver")
+
+    monkeypatch.setattr(
+        "experiments.v9_3.rta4_formal_execution.dispatch_formal_rta",
+        forbidden_solver,
+    )
+    summary = preflight_campaign_v5(
+        "configs/v9_3_rta4_core1_exact_service_v5_example_UNAUTHORIZED.yaml"
+    )
+    assert summary["execution_started"] is False
+
+
+@pytest.mark.parametrize("core", [
+    "CORE-1", "CORE-2", "CORE-3", "CORE-4", "CORE-5A", "CORE-5B",
+])
+def test_all_six_cores_select_their_named_lightweight_dispatch(
+    core, tmp_path, monkeypatch,
+):
+    calls = []
+
+    def fake_dispatch(_campaign, record, _operation):
+        calls.append((record.core, record.kind, record.execution_id))
+        return {
+            "solver_status": "COMPLETED",
+            "taskset_certification_status": "CERTIFIED_TASKSET",
+            "taskset_proven": True,
+            "attempts": [{"status": "COMPLETED"}],
+        }
+
+    monkeypatch.setattr(
+        local_execution_v5, "_dispatch_existing_worker_v5", fake_dispatch,
+    )
+    summary = execute_loaded_campaign_v5(
+        _loaded(core, tmp_path / core.lower()),
+        acknowledge_not_for_paper=True,
+        max_records=1,
+    )
+    assert calls and calls[0][0] == core
+    assert summary["processed_records"] == 1
+    assert summary["execution_started"] is True
+    assert summary["formal_campaign_started"] is False
+    assert summary["paper_result_authorized"] is False
+    assert summary["not_for_paper"] is True
+    terminal = next(
+        (tmp_path / core.lower() / "local_terminal_results_v5").glob("*.json")
+    )
+    row = json.loads(terminal.read_text(encoding="utf-8"))
+    assert row["core"] == core
+    assert row["not_for_paper"] is True
+
+
+def test_core4_ofat_service_scale_is_materialized_exactly_once(tmp_path):
+    campaign = _loaded("CORE-4", tmp_path / "core4-scale")
+    records = list(iter_formal_plan_v5(
+        campaign.normalized_scientific_config,
+        campaign.task_sources,
+        campaign.service_curve,
+    ))
+    baseline = next(
+        row for row in records
+        if row.material["v3_grid_material"]["axis"] == "baseline"
+    )
+    scaled = next(
+        row for row in records
+        if row.material["v3_grid_material"]["axis"] == "service_scale"
+        and row.material["v3_grid_material"]["axis_value"] == "2"
+    )
+    _, _, baseline_context, _ = local_execution_v5._prepared_record_material(
+        campaign, baseline,
+    )
+    _, _, scaled_context, _ = local_execution_v5._prepared_record_material(
+        campaign, scaled,
+    )
+    baseline_binding = baseline_context.binding_for(baseline.record_id)
+    scaled_binding = scaled_context.binding_for(scaled.record_id)
+    baseline_service = baseline_context.service_materials[
+        baseline_binding["service_material_identity"]
+    ]
+    scaled_service = scaled_context.service_materials[
+        scaled_binding["service_material_identity"]
+    ]
+    scaled_provenance = json.loads(scaled_service.immutable_provenance_json)
+    assert scaled_provenance["service_curve"]["rate"] == "1/5"
+    assert scaled.effective_service_identity != baseline.effective_service_identity
+    assert scaled_binding["task_energy_material_identity"] == baseline_binding[
+        "task_energy_material_identity"
+    ]
+    assert scaled_service.beta(2) == baseline_service.beta(2) * 2
+
+
+def test_local_execution_requires_explicit_not_for_paper_ack(tmp_path):
+    with pytest.raises(
+        RTA4LocalExecutionV5Error, match="acknowledge_not_for_paper"
+    ):
+        execute_loaded_campaign_v5(
+            _loaded("CORE-1", tmp_path / "run"),
+            acknowledge_not_for_paper=False,
+            max_records=1,
+        )
+
+
+def test_local_execution_cli_rejects_missing_not_for_paper_ack(tmp_path):
+    assert runner_v5_main([
+        "--campaign",
+        "configs/v9_3_rta4_core1_exact_service_v5_example_UNAUTHORIZED.yaml",
+        "--execute-local",
+        "--output-root",
+        str(tmp_path / "unused"),
+        "--max-records",
+        "0",
+    ]) == 2
+
+
+@pytest.mark.parametrize("result", [
+    {
+        "solver_status": "TIMEOUT",
+        "taskset_certification_status": "NOT_CERTIFIED_TASKSET",
+        "taskset_proven": False,
+        "attempts": [
+            {"attempt_index": 0, "status": "TIMEOUT"},
+            {"attempt_index": 1, "status": "TIMEOUT"},
+        ],
+    },
+    {
+        "solver_status": "COMPLETED",
+        "taskset_certification_status": "UNPROVEN_TASKSET",
+        "taskset_proven": False,
+        "attempts": [{"attempt_index": 0, "status": "COMPLETED"}],
+    },
+    {
+        "solver_status": "INTERNAL_ERROR",
+        "taskset_certification_status": "NOT_CERTIFIED_TASKSET",
+        "taskset_proven": False,
+        "failure_reason": "injected failure",
+        "attempts": [{"attempt_index": 0, "status": "INTERNAL_ERROR"}],
+    },
+])
+def test_local_execution_preserves_timeout_unproven_and_error_results(
+    result, tmp_path,
+):
+    dispatchers = {
+        name: (lambda _campaign, _record, _operation: deepcopy(result))
+        for name in CORE_EXECUTION_DISPATCH_V5
+    }
+    root = tmp_path / result["solver_status"].lower()
+    execute_loaded_campaign_v5(
+        _loaded("CORE-1", root),
+        acknowledge_not_for_paper=True,
+        max_records=1,
+        dispatchers=dispatchers,
+    )
+    terminal = next((root / "local_terminal_results_v5").glob("*.json"))
+    observed = json.loads(terminal.read_text(encoding="utf-8"))["result"]
+    assert observed == result
+
+
+def test_local_execution_resume_uses_terminal_and_checkpoint(tmp_path):
+    calls = []
+
+    def fake_dispatch(_campaign, record, _operation):
+        calls.append(record.execution_id)
+        return {"solver_status": "COMPLETED", "taskset_proven": True}
+
+    dispatchers = {
+        name: fake_dispatch for name in CORE_EXECUTION_DISPATCH_V5
+    }
+    root = tmp_path / "resume"
+    campaign = _loaded("CORE-1", root)
+    first = execute_loaded_campaign_v5(
+        campaign,
+        acknowledge_not_for_paper=True,
+        max_records=1,
+        dispatchers=dispatchers,
+    )
+    assert first["processed_records"] == 1
+    second = execute_loaded_campaign_v5(
+        campaign,
+        acknowledge_not_for_paper=True,
+        resume=True,
+        max_records=1,
+        dispatchers=dispatchers,
+    )
+    assert second["processed_records"] == 1
+    assert len(calls) == 2
+    checkpoint = json.loads(
+        (root / "local_checkpoint_v5.json").read_text(encoding="utf-8")
+    )
+    assert len(checkpoint["completed_execution_ids"]) == 2
+
+
+@pytest.mark.parametrize("core", [
+    "CORE-1", "CORE-2", "CORE-4", "CORE-5A", "CORE-5B",
+])
+def test_pure_rta_cores_reach_existing_v3_worker_and_rta_executor(
+    core, tmp_path, monkeypatch,
+):
+    requests = []
+    final_solver_calls = []
+    existing_worker = local_execution_v5.execute_worker_request_v3
+
+    def lowest_boundary_solver(*, analysis_id, method, analysis_input):
+        final_solver_calls.append((analysis_id, method, analysis_input))
+        completed = SimpleNamespace(value="COMPLETED")
+        certified = SimpleNamespace(value="CERTIFIED")
+        task_rows = tuple(
+            SimpleNamespace(
+                solver_status=completed,
+                certification_status=certified,
+                candidate_response_time=task.wcet,
+                checked_w_count=1,
+                checked_q_count=1,
+                checked_h_count=1,
+                failure_reason=None,
+                witness_sequence=(),
+                task_id=task.name,
+                priority_rank=index,
+            )
+            for index, task in enumerate(analysis_input.tasks)
+        )
+        return SimpleNamespace(
+            task_results=task_rows,
+            solver_status=completed,
+            analysis_certification_status=SimpleNamespace(
+                value="CERTIFIED_TASKSET"
+            ),
+            taskset_proven=True,
+            failure_reason=None,
+            mechanism_telemetry=(),
+            analysis_id=analysis_id,
+            method_id=SimpleNamespace(value=method),
+        )
+
+    def observe_existing_worker(request):
+        requests.append(request)
+        return existing_worker(request)
+
+    monkeypatch.setattr(
+        local_execution_v5, "execute_worker_request_v3", observe_existing_worker,
+    )
+    monkeypatch.setattr(
+        formal_execution, "dispatch_formal_rta", lowest_boundary_solver,
+    )
+    root = tmp_path / f"real-worker-{core.lower()}"
+    campaign = _loaded(core, root)
+    planned = next(iter_formal_plan_v5(
+        campaign.normalized_scientific_config,
+        campaign.task_sources,
+        campaign.service_curve,
+    ))
+    summary = execute_loaded_campaign_v5(
+        campaign,
+        acknowledge_not_for_paper=True,
+        max_records=1,
+    )
+    assert len(requests) == 1
+    assert len(final_solver_calls) == 1
+    assert type(requests[0]) is V3WorkerRequest
+    assert requests[0].record.core == core
+    assert requests[0].record.record_id == planned.record_id
+    assert requests[0].record.execution_id == planned.execution_id
+    assert len(requests[0].certificate.taskset_id) == 64
+    assert len(requests[0].certificate.taskset_source_sha256) == 64
+    binding = requests[0].run_context.binding_for(requests[0].record.record_id)
+    assert binding["task_energy_material_identity"]
+    assert binding["service_material_identity"]
+    assert planned.material["taskset_content_sha256"]
+    assert planned.material["task_order_sha256"]
+    assert planned.configured_service_identity
+    assert planned.effective_service_identity
+    assert planned.mathematical_request_id
+    assert summary["processed_records"] == 1
+    assert summary["not_for_paper"] is True
+    terminal = next((root / "local_terminal_results_v5").glob("*.json"))
+    row = json.loads(terminal.read_text(encoding="utf-8"))
+    assert row["taskset_identity"] == planned.taskset_identity
+    assert row["configured_service_identity"] == (
+        planned.configured_service_identity
+    )
+    assert row["effective_service_identity"] == planned.effective_service_identity
+    assert row["not_for_paper"] is True
+    result = row["result"]
+    assert result["solver_status"] == "COMPLETED"
+    assert result["taskset_certification_status"] == "CERTIFIED_TASKSET"
+    assert result["attempts"][0]["status"] == "COMPLETED"
+    assert result["attempts"][0]["error_classification"] == "NONE"
+    if core == "CORE-2":
+        grid = planned.material["v3_grid_material"]
+        assert grid["source"] == campaign.v3_scientific_config["source"]
+        assert planned.material["task_source_identity"]
+        assert planned.taskset_identity
+        assert planned.effective_service_identity
+        assert grid["exact_e0"] == "0"
+        assert grid["method"] in {"CW_D", "SEQ_D"}
+        assert campaign.v3_scientific_config["referenced_recursive_methods"] == [
+            "LOC_THETA_LOC", "PH_THETA_PH",
+        ]
+
+
+def test_core3_reaches_existing_worker_and_only_mocks_external_launch(
+    tmp_path, monkeypatch,
+):
+    requests = []
+    launches = []
+    existing_worker = local_execution_v5.execute_worker_request_v3
+
+    def observe_existing_worker(request):
+        requests.append(request)
+        return existing_worker(request)
+
+    def fake_external_launch(command, **kwargs):
+        assert kwargs["check"] is False
+        assert kwargs["timeout"] == 2
+        trace_path = Path(command[command.index("-t") + 1])
+        semantic_hash = command[
+            command.index("--taskset-semantic-hash") + 1
+        ]
+        horizon = int(command[3])
+        system = yaml.safe_load(Path(command[1]).read_text(encoding="utf-8"))
+        projection_path = Path(command[1]).with_name(
+            "service_projection_v5.json"
+        )
+        projection = json.loads(projection_path.read_text(encoding="utf-8"))
+        segments = system["harvesting"]["scaled_piecewise"]["segments"]
+        assert projection["simulation_tick_ms"] == 2
+        assert segments[0]["start_ms"] == 0
+        assert segments[0]["end_ms"] % 2 == 0
+        assert all(segment["end_ms"] % 2 == 0 for segment in segments)
+        assert [segment["multiplier"] for segment in segments] == [
+            float(Fraction(segment["power_w"]))
+            for segment in projection["segments"]
+        ]
+        trace_path.write_text(json.dumps({
+            "events": [],
+            "trace_schema_version": 2,
+            "run_id": command[command.index("--run-id") + 1],
+            "taskset_semantic_hash": semantic_hash,
+            "configured_scheduler": "gpfp_asap_block",
+            "expected_simulation_horizon_ms": horizon,
+            "observed_simulation_end_ms": horizon,
+            "simulation_completed": True,
+            "simulation_completion_reason": "reached_horizon",
+        }) + "\n", encoding="utf-8")
+        launches.append({
+            "command": command,
+            "projection": projection,
+            "segments": segments,
+        })
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(
+        local_execution_v5, "execute_worker_request_v3", observe_existing_worker,
+    )
+    monkeypatch.setattr(local_execution_v5.subprocess, "run", fake_external_launch)
+    root = tmp_path / "core3-worker-chain"
+    campaign = _loaded("CORE-3", root, simulation_tick_ms=2)
+    planned = list(iter_formal_plan_v5(
+        campaign.normalized_scientific_config,
+        campaign.task_sources,
+        campaign.service_curve,
+    ))
+    simulation_record = next(row for row in planned if row.kind == "simulation")
+    summary = execute_loaded_campaign_v5(
+        campaign,
+        acknowledge_not_for_paper=True,
+        max_records=len(planned),
+    )
+    assert launches and launches[0]["projection"][
+        "simulation_projection_identity"
+    ] == simulation_record.material["service_material"]["simulation_projection"][
+        "simulation_projection_identity"
+    ]
+    assert any(type(request) is V3WorkerRequest for request in requests)
+    simulation_request = next(
+        request for request in requests if request.record.kind == "simulation"
+    )
+    binding = simulation_request.run_context.binding_for(
+        simulation_request.record.record_id
+    )
+    assert binding["task_energy_material_identity"]
+    assert binding["service_material_identity"]
+    assert binding["simulation_tick_ms"] == 2
+    assert summary["not_for_paper"] is True
+    terminal = root / "local_terminal_results_v5" / (
+        simulation_record.execution_id + ".json"
+    )
+    row = json.loads(terminal.read_text(encoding="utf-8"))
+    assert row["simulation_tick_ms"] == 2
+    assert row["simulation_projection_identity"] == binding[
+        "simulation_projection_identity"
+    ]
+    assert row["result"]["status"] == "COMPLETED"
+    assert row["result"]["result"]["simulation_tick_ms"] == 2
+    assert row["not_for_paper"] is True

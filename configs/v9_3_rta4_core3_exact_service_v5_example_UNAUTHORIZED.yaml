@@ -1,0 +1,44 @@
+campaign_id: rta4-core3-exact-service-v5-example
+core: CORE-3
+source:
+  core: CORE-1
+  source_scope: CORE1_TASKSET_STORE
+  source_campaign_config_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+  source_plan_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+  source_taskset_store_identity: "0000000000000000000000000000000000000000000000000000000000000000"
+  taskset_count: 1
+release_modes: [SYNC_V1]
+finite_battery_capacities: ["20"]
+projection_methods: [CW_THETA_CW]
+projection_e0: ["0"]
+simulation_horizon:
+  release_horizon: 20
+  observation_horizon: release_horizon_plus_dmax
+simulation_tick_ms: 1
+task_source:
+  mode: GENERATED_FAMILY
+  family_id: GENERAL_RANDOM_CONSTRAINED_V1
+  parameters:
+    processors: 2
+    priority_policy: RM_STRICT_PERIOD_ASCENDING
+    task_count: 2
+    taskset_count: 1
+    base_seed: 100
+    generation_indices: [0]
+    task_templates:
+      - name: tau_1
+        C: [1]
+        D: [6]
+        T: [10]
+        power: ["1/10"]
+      - name: tau_2
+        C: [1]
+        D: [12]
+        T: [20]
+        power: ["1/10"]
+service_curve:
+  model: EXACT_RATE_LATENCY_SERVICE_CURVE_V1
+  rate: "1/10"
+  latency: "1"
+  time_unit: tick
+runtime: {}
