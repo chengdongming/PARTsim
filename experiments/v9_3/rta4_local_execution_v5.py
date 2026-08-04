@@ -517,7 +517,8 @@ class ExactServiceSimulationExecutorV5:
         try:
             completed = subprocess.run(
                 command,
-                capture_output=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
                 text=True,
                 timeout=self.timeout,
                 check=False,
@@ -527,7 +528,7 @@ class ExactServiceSimulationExecutorV5:
                 "CORE-3 simulator timeout"
             ) from exc
         if completed.returncode != 0:
-            detail = (completed.stderr or completed.stdout or "").strip()
+            detail = (completed.stderr or "").strip()
             raise RTA4LocalExecutionV5Error(
                 f"CORE-3 simulator exited {completed.returncode}: "
                 f"{detail[:400]}"

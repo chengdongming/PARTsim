@@ -999,6 +999,10 @@ def test_core3_reaches_existing_worker_and_only_mocks_external_launch(
         return existing_worker(request)
 
     def fake_external_launch(command, **kwargs):
+        assert "capture_output" not in kwargs
+        assert kwargs["stdout"] is local_execution_v5.subprocess.DEVNULL
+        assert kwargs["stderr"] is local_execution_v5.subprocess.PIPE
+        assert kwargs["text"] is True
         assert kwargs["check"] is False
         assert kwargs["timeout"] == 2
         trace_path = Path(command[command.index("-t") + 1])
@@ -1083,6 +1087,82 @@ def test_core3_reaches_existing_worker_and_only_mocks_external_launch(
     assert row["result"]["status"] == "COMPLETED"
     assert row["result"]["result"]["simulation_tick_ms"] == 2
     assert row["not_for_paper"] is True
+
+
+@pytest.mark.parametrize(("stderr", "detail"), [
+    ("  bounded failure  ", "bounded failure"),
+    (None, ""),
+])
+def test_core3_simulator_failure_uses_only_bounded_stderr(
+    tmp_path, monkeypatch, stderr, detail,
+):
+    campaign = _loaded("CORE-3", tmp_path / "campaign")
+    planned = list(iter_formal_plan_v5(
+        campaign.normalized_scientific_config,
+        campaign.task_sources,
+        campaign.service_curve,
+    ))
+    plan_record = next(row for row in planned if row.kind == "simulation")
+    record, certificate, context, _ = local_execution_v5._prepared_record_material(
+        campaign, plan_record,
+    )
+    simulator = tmp_path / "runtime" / "rtsim"
+    output = tmp_path / "output"
+    observed = {}
+
+    def fail_external_launch(command, **kwargs):
+        observed["command"] = command
+        observed["kwargs"] = kwargs
+        return SimpleNamespace(returncode=23, stderr=stderr)
+
+    monkeypatch.setattr(
+        local_execution_v5.subprocess, "run", fail_external_launch,
+    )
+    executor = local_execution_v5.ExactServiceSimulationExecutorV5(
+        {},
+        run_context=context,
+        production_manifest={"simulator_path": str(simulator)},
+        system_config_path=(
+            Path(__file__).resolve().parents[1]
+            / "system_config_unified_template.yml"
+        ),
+        energy_support_path=tmp_path / "unused-energy-support",
+        output_root=output,
+        simulation_timeout_seconds=37,
+    )
+
+    with pytest.raises(RTA4LocalExecutionV5Error) as exc_info:
+        executor(record, certificate)
+    assert str(exc_info.value) == f"CORE-3 simulator exited 23: {detail}"
+    failure = local_execution_v5._test_failure_result_v5(
+        plan_record, str(exc_info.value), malformed=False,
+    )
+    assert failure["failure_reason"] == str(exc_info.value)
+    assert failure["result"]["failure_reason"] == str(exc_info.value)
+
+    run_root = (
+        output / "bounded_core3_simulations_v5" / record.execution_id
+    )
+    _, window, _ = local_execution_v5.build_formal_release_projection_v2(
+        certificate, str(record.material["release_mode"]),
+    )
+    assert observed["command"] == [
+        str(simulator),
+        str(run_root / "system_config_v5.yaml"),
+        str(run_root / "taskset_v5.yaml"),
+        str(window.observation_horizon),
+        "-t", str(run_root / "trace_v5.json"),
+        "--run-id", f"rta4-v5-{record.execution_id[:16]}",
+        "--taskset-semantic-hash", certificate.taskset_hash,
+        "--semantic-traces",
+    ]
+    assert observed["kwargs"] == {
+        "stdout": local_execution_v5.subprocess.DEVNULL,
+        "stderr": local_execution_v5.subprocess.PIPE,
+        "text": True,
+        "timeout": 37,
+        "check": False,
+    }
 
 
 def test_terminal_complete_is_distinct_from_clean_complete(tmp_path):

@@ -875,6 +875,16 @@ if int(sys.argv[3]) == 3:
         const std::string observability_contract_version =
             std::to_string(
                 contract.expected_observability_contract_version);
+        // Prefer the inherited PATH for virtualenv/Conda Python; retain fixed
+        // system paths as controlled fallbacks.
+        ::execlp("python3", "python3", "-c", validator,
+                 target.partial_path.c_str(), run_id.c_str(),
+                 expected_schema.c_str(),
+                 scheduler.c_str(), display_name.c_str(), implementation.c_str(),
+                 expected_horizon.c_str(), taskset_hash.c_str(),
+                 initial_energy.str().c_str(), capacity.str().c_str(),
+                 processors.c_str(), observability_contract_version.c_str(),
+                 static_cast<char *>(nullptr));
         ::execl("/usr/bin/python3", "python3", "-c", validator,
                 target.partial_path.c_str(), run_id.c_str(),
                 expected_schema.c_str(),
