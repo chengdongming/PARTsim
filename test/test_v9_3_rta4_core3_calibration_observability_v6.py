@@ -82,6 +82,28 @@ def _records(raw=None):
     ))
 
 
+def test_strict_trace_validator_prefers_path_python_before_fixed_fallbacks():
+    source = (ROOT / "rtsim/main.cpp").read_text(encoding="utf-8")
+    start = source.index("static void validateTraceForPublication")
+    end = source.index("\nstatic std::string readFileBytes", start)
+    validator = source[start:end]
+    launch = validator[validator.index("if (child == 0)"):]
+    ordered_calls = (
+        '::execlp("python3", "python3", "-c", validator,',
+        '::execl("/usr/bin/python3", "python3", "-c", validator,',
+        '::execl("/usr/local/bin/python3", "python3", "-c", validator,',
+        "_exit(127);",
+    )
+    positions = [launch.index(call) for call in ordered_calls]
+    assert positions == sorted(positions)
+    assert launch.count('"-c", validator,') == 3
+    for forbidden in (
+        "/" + "root/", "/" + "home/", "/" + "Users/",
+        "/opt/" + "conda", "mini" + "conda", "ana" + "conda", ".venv",
+    ):
+        assert forbidden not in launch
+
+
 def test_physical_initial_energy_is_independent_and_effective_material_is_hashed():
     raw = _v6_campaign()
     first = _normalized(raw)
