@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from fractions import Fraction
 import hashlib
 import json
+import math
 from pathlib import Path
 import subprocess
 import time
@@ -26,6 +27,8 @@ from .result_writer import atomic_write_json, atomic_write_text
 from .rta4_formal_config import canonical_json, domain_hash
 from .rta4_formal_config_v2 import default_rta4_formal_config_v2
 from .rta4_formal_config_v5 import (
+    CORE3_RESULT_DOMAIN_V6,
+    CORE3_RESULT_SCHEMA_V6,
     LoadedCampaignV5,
     RTA4_FORMAL_PROFILE_V5,
     formal_taskset_store_identity_v5,
@@ -68,7 +71,11 @@ from .rta4_physical_execution_v5 import (
     execute_physical_group_v5,
 )
 from .rta4_unified_adapter_v5 import prepare_execution_material_v5
-from .simulation_result import SimulationStatus
+from .simulation_result import (
+    CORE3_ENERGY_TOLERANCE_J,
+    CORE3_JOB_OBSERVATIONS_SCHEMA_VERSION_V6,
+    SimulationStatus,
+)
 
 
 RTA4_LOCAL_RUN_MANIFEST_V5 = "local_run_manifest_v5.json"
@@ -76,6 +83,7 @@ RTA4_LOCAL_CHECKPOINT_V5 = "local_checkpoint_v5.json"
 RTA4_LOCAL_TERMINALS_V5 = "local_terminal_results_v5"
 RTA4_LOCAL_RUN_DOMAIN_V5 = "ASAP_BLOCK:V9.3:RTA4:LOCAL_RUN:v5"
 RTA4_LOCAL_RESULT_DOMAIN_V5 = "ASAP_BLOCK:V9.3:RTA4:LOCAL_RESULT:v5"
+RTA4_LOCAL_RESULT_DOMAIN_V6 = "ASAP_BLOCK:V9.3:RTA4:LOCAL_RESULT:v6"
 RTA4_LOCAL_CHECKPOINT_DOMAIN_V5 = "ASAP_BLOCK:V9.3:RTA4:LOCAL_CHECKPOINT:v5"
 RTA4_LOCAL_BUILD_DOMAIN_V5 = "ASAP_BLOCK:V9.3:RTA4:LOCAL_MATERIAL:v5"
 RTA4_TEST_EXECUTION_BACKEND_V5 = "TEST_ONLY_EXPLICIT_DISPATCHERS"
@@ -90,12 +98,85 @@ class RTA4LocalExecutionV5Error(RuntimeError):
     """Raised when a local V5 run cannot remain fail-closed."""
 
 
+@dataclass(frozen=True)
+class _Core3ObservationWindowV6:
+    release_horizon: int
+    maximum_relative_deadline: int
+    observation_horizon: int
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.release_horizon) is not int
+            or type(self.maximum_relative_deadline) is not int
+            or type(self.observation_horizon) is not int
+            or self.release_horizon <= 0
+            or self.maximum_relative_deadline <= 0
+            or self.observation_horizon
+            != self.release_horizon + self.maximum_relative_deadline
+        ):
+            raise RTA4LocalExecutionV5Error(
+                "CORE-3 V6 observation window is inconsistent"
+            )
+
+
 def _plain(value: Any) -> Any:
     if isinstance(value, Mapping):
         return {str(key): _plain(item) for key, item in value.items()}
     if isinstance(value, (tuple, list)):
         return [_plain(item) for item in value]
     return value
+
+
+def _exact_numeric_text_v6(value: Any) -> str:
+    """Encode a validated trace scalar without leaking a binary float.
+
+    Schema-3 is JSON and therefore supplies decimal numeric tokens.  The
+    parser deliberately uses floats for tolerance checks, but V6 terminal
+    material participates in the repository's exact, float-free identity
+    domain.  Converting through the displayed decimal preserves that input
+    precision and yields the canonical rational representation used by the
+    rest of RTA4.
+    """
+
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise RTA4LocalExecutionV5Error(
+            "CORE-3 V6 numeric summary is not a scalar"
+        )
+    if isinstance(value, float) and not math.isfinite(value):
+        raise RTA4LocalExecutionV5Error(
+            "CORE-3 V6 numeric summary is not finite"
+        )
+    return str(Fraction(str(value)))
+
+
+def write_core3_job_observations_v6(
+    path: Path | str,
+    *,
+    execution_identity: str,
+    jobs: Sequence[Any],
+) -> dict[str, Any]:
+    """Atomically persist the bounded terminal's unbounded job payload."""
+
+    destination = Path(path)
+    rows = [job.row() if hasattr(job, "row") else _plain(job) for job in jobs]
+    sidecar = {
+        "job_observations_schema_version": (
+            CORE3_JOB_OBSERVATIONS_SCHEMA_VERSION_V6
+        ),
+        "execution_identity": execution_identity,
+        "job_observation_count": len(rows),
+        "job_observations": rows,
+    }
+    atomic_write_json(destination, sidecar)
+    return {
+        "job_observations_sha256": hashlib.sha256(
+            destination.read_bytes()
+        ).hexdigest(),
+        "job_observation_count": len(rows),
+        "job_observations_schema_version": (
+            CORE3_JOB_OBSERVATIONS_SCHEMA_VERSION_V6
+        ),
+    }
 
 
 @dataclass(frozen=True)
@@ -120,7 +201,10 @@ def _local_material_identity(campaign: LoadedCampaignV5) -> str:
 
 
 def _worker_record(record: FormalPlanRecordV5) -> LocalWorkerRecordV5:
-    grid = dict(record.material["v3_grid_material"])
+    grid = dict(record.material.get(
+        "effective_core3_simulation_material",
+        record.material["v3_grid_material"],
+    ))
     return LocalWorkerRecordV5(
         record.kind,
         record.core,
@@ -193,7 +277,10 @@ def _prepared_record_material(
         production_build_manifest_identity=local_material_identity,
         service_curve=curve,
         core=record.core,
-        grid_material=record.material["v3_grid_material"],
+        grid_material=record.material.get(
+            "effective_core3_simulation_material",
+            record.material["v3_grid_material"],
+        ),
         service_material_horizon=horizon,
         simulation_tick_ms=simulation_tick_ms,
     )
@@ -242,6 +329,7 @@ def _exact_piecewise_system_v5(
     initial_energy: Fraction,
     max_energy: Fraction,
     simulation_projection: Mapping[str, Any],
+    simulator_compatible_lists: bool = False,
 ) -> Path:
     try:
         document = yaml.safe_load(base_system_path.read_text(encoding="utf-8"))
@@ -291,9 +379,32 @@ def _exact_piecewise_system_v5(
     atomic_write_json(
         destination / "service_projection_v5.json", simulation_projection,
     )
-    atomic_write_text(path, yaml.safe_dump(
-        document, sort_keys=False, allow_unicode=True,
-    ))
+    if simulator_compatible_lists:
+        class SimulatorCompatibleDumper(yaml.SafeDumper):
+            def increase_indent(self, flow=False, indentless=False):
+                return super().increase_indent(flow, False)
+
+        def scalar_sequence(dumper, values):
+            flow = all(
+                value is None or isinstance(value, (bool, int, float, str))
+                for value in values
+            )
+            return dumper.represent_sequence(
+                "tag:yaml.org,2002:seq", values, flow_style=flow,
+            )
+
+        SimulatorCompatibleDumper.add_representer(list, scalar_sequence)
+        rendered = yaml.dump(
+            document,
+            Dumper=SimulatorCompatibleDumper,
+            sort_keys=False,
+            allow_unicode=True,
+        )
+    else:
+        rendered = yaml.safe_dump(
+            document, sort_keys=False, allow_unicode=True,
+        )
+    atomic_write_text(path, rendered)
     return path
 
 
@@ -341,12 +452,39 @@ class ExactServiceSimulationExecutorV5:
             raise RTA4LocalExecutionV5Error(
                 "CORE-3 execution projection identity drift"
             )
-        release, window, base_payload = build_formal_release_projection_v2(
+        release, legacy_window, base_payload = build_formal_release_projection_v2(
             certificate, str(record.material["release_mode"]),
         )
+        core3_contract = record.material.get("core3_simulation_contract")
+        core3_v6 = isinstance(core3_contract, Mapping)
+        if core3_v6:
+            release_horizon = int(record.material["release_horizon"])
+            dmax = max(int(row["D"]) for row in base_payload)
+            observation_horizon = release_horizon + dmax
+            if (
+                int(record.material.get("dmax", -1)) != dmax
+                or int(record.material.get("observation_horizon", -1))
+                != observation_horizon
+                or any(
+                    int(row["arrival_offset"]) >= release_horizon
+                    for row in base_payload
+                )
+            ):
+                raise RTA4LocalExecutionV5Error(
+                    "CORE-3 effective H_rel/H_obs material drift"
+                )
+            window = _Core3ObservationWindowV6(
+                release_horizon, dmax, observation_horizon,
+            )
+        else:
+            window = legacy_window
         payload = project_core3_shared_energy_payload(
             certificate, base_payload, task_energy,
         )
+        if core3_v6 and len(payload) != 10:
+            raise RTA4LocalExecutionV5Error(
+                "CORE-3 schema-3 execution requires exactly ten tasks"
+            )
         run_root = self.output / "bounded_core3_simulations_v5" / record.execution_id
         system_path = _exact_piecewise_system_v5(
             self.system,
@@ -356,6 +494,7 @@ class ExactServiceSimulationExecutorV5:
             initial_energy=Fraction(record.material["physical_initial_energy"]),
             max_energy=Fraction(record.material["battery_capacity"]),
             simulation_projection=projection,
+            simulator_compatible_lists=core3_v6,
         )
         taskset_path = run_root / "taskset_v5.yaml"
         atomic_write_text(taskset_path, _render_taskset_yaml(
@@ -369,6 +508,12 @@ class ExactServiceSimulationExecutorV5:
             "--taskset-semantic-hash", certificate.taskset_hash,
             "--semantic-traces",
         ]
+        if core3_v6:
+            command.extend([
+                "--b4-observability-summary",
+                "--b4-summary-horizon", str(window.observation_horizon),
+                "--b4-observability-contract-version", "2",
+            ])
         try:
             completed = subprocess.run(
                 command,
@@ -382,8 +527,10 @@ class ExactServiceSimulationExecutorV5:
                 "CORE-3 simulator timeout"
             ) from exc
         if completed.returncode != 0:
+            detail = (completed.stderr or completed.stdout or "").strip()
             raise RTA4LocalExecutionV5Error(
-                f"CORE-3 simulator exited {completed.returncode}"
+                f"CORE-3 simulator exited {completed.returncode}: "
+                f"{detail[:400]}"
             )
         result = parse_simulation_trace(
             trace_path,
@@ -395,14 +542,116 @@ class ExactServiceSimulationExecutorV5:
             release_e0=Fraction(record.material["physical_initial_energy"]),
             expected_scheduler=str(record.material["scheduler"]),
             expected_processors=certificate.processors,
+            require_core3_observability=core3_v6,
+            release_horizon=(
+                int(record.material["release_horizon"])
+                if core3_v6 else None
+            ),
+            physical_initial_energy=(
+                Fraction(record.material["physical_initial_energy"])
+                if core3_v6 else None
+            ),
+            battery_capacity=(
+                Fraction(record.material["battery_capacity"])
+                if core3_v6 else None
+            ),
+            conditional_e0=(
+                tuple(str(value) for value in record.material["projection_e0"])
+                if core3_v6 else ()
+            ),
+            theorem_alignment_track=(
+                core3_v6 and record.material["track"] == "THEOREM_ALIGNED"
+            ),
+            energy_tolerance_j=CORE3_ENERGY_TOLERANCE_J,
         )
-        if result.status not in {
+        accepted_statuses = {
             SimulationStatus.PASS_OBSERVED,
             SimulationStatus.DEADLINE_MISS,
-        }:
+        }
+        if core3_v6:
+            accepted_statuses.add(SimulationStatus.HORIZON_INSUFFICIENT)
+        if result.status not in accepted_statuses:
             raise RTA4LocalExecutionV5Error(
                 f"CORE-3 simulator result is incomplete: {result.status.value}"
             )
+        if core3_v6:
+            sidecar_path = run_root / "simulation_job_observations_v6.json"
+            sidecar_binding = write_core3_job_observations_v6(
+                sidecar_path,
+                execution_identity=record.execution_id,
+                jobs=result.jobs,
+            )
+            sidecar_relative = sidecar_path.relative_to(self.output).as_posix()
+            trace_sha256 = hashlib.sha256(trace_path.read_bytes()).hexdigest()
+            summary_fields = {
+                key: result.metrics[key]
+                for key in (
+                    "released_job_count", "completed_job_count",
+                    "deadline_miss_job_count", "unfinished_job_count",
+                    "unfinished_without_miss_count", "classified_job_count",
+                    "conditional_coverage", "minimum_release_energy_j",
+                    "maximum_release_energy_j", "mean_release_energy_j",
+                    "offered_energy_j", "credited_energy_j",
+                    "clipped_energy_j", "consumed_energy_j",
+                    "overflow_energy_j", "overflow_ratio_numerator",
+                    "overflow_ratio_denominator", "battery_min_j",
+                    "battery_max_j", "battery_final_j",
+                    "battery_empty_ticks", "battery_full_ticks",
+                    "observed_energy_intervals", "theorem_alignment_valid",
+                    "theorem_alignment_failure_reason",
+                )
+            }
+            for key in (
+                "minimum_release_energy_j", "maximum_release_energy_j",
+                "mean_release_energy_j", "offered_energy_j",
+                "credited_energy_j", "clipped_energy_j",
+                "consumed_energy_j", "overflow_energy_j",
+                "overflow_ratio_numerator", "overflow_ratio_denominator",
+                "battery_min_j", "battery_max_j", "battery_final_j",
+            ):
+                summary_fields[key] = _exact_numeric_text_v6(
+                    summary_fields[key]
+                )
+            material = {
+                "result_schema_version": CORE3_RESULT_SCHEMA_V6,
+                "simulation_status": "COMPLETED",
+                "observed_status": result.status.value,
+                "track": str(record.material["track"]),
+                "release_mode": str(record.material["release_mode"]),
+                "battery_model": str(record.material["battery_model"]),
+                "battery_capacity": str(record.material["battery_capacity"]),
+                "physical_initial_energy": str(
+                    record.material["physical_initial_energy"]
+                ),
+                "release_horizon": int(record.material["release_horizon"]),
+                "dmax": int(record.material["dmax"]),
+                "observation_horizon": int(
+                    record.material["observation_horizon"]
+                ),
+                "release_cutoff_enabled": True,
+                "observation_horizon_reached": True,
+                **summary_fields,
+                "job_observations_relative_path": sidecar_relative,
+                **sidecar_binding,
+                "task_energy_material_identity": (
+                    task_energy.task_energy_material_identity
+                ),
+                "service_material_identity": service.service_material_identity,
+                "beta_material_identity": service.beta_material_identity,
+                "simulation_tick_ms": simulation_tick_ms,
+                "simulation_projection_identity": projection[
+                    "simulation_projection_identity"
+                ],
+                "release_projection_identity": release.release_projection_id,
+                "trace_schema_version": result.trace_schema_version,
+                "trace_sha256": trace_sha256,
+            }
+            return FrozenMapping({
+                **material,
+                "simulation_result_identity": domain_hash(
+                    CORE3_RESULT_DOMAIN_V6, material,
+                ),
+            })
         material = {
             "simulation_status": "COMPLETED",
             "observed_status": result.status.value,
@@ -796,6 +1045,11 @@ class LocalResultWriterV5:
                     "service_material"
                 ]["simulation_projection"]["simulation_projection_identity"],
             } if record.core == "CORE-3" else {}),
+            **({
+                "effective_core3_simulation_material": _plain(
+                    record.material["effective_core3_simulation_material"]
+                ),
+            } if "effective_core3_simulation_material" in record.material else {}),
         } for record in records]
         material = {
             "schema": "ASAP_BLOCK_V9_3_RTA4_LOCAL_RUN_V5",
@@ -831,6 +1085,15 @@ class LocalResultWriterV5:
             "physical_execution_groups": _plain(execution_environment[
                 "physical_execution_groups"
             ]),
+            **({
+                "core3_simulation_contract": _plain(
+                    campaign.normalized_scientific_config[
+                        "core3_simulation_contract"
+                    ]
+                ),
+            } if "core3_simulation_contract" in (
+                campaign.normalized_scientific_config
+            ) else {}),
             "plan_records": rows,
         }
         self.run_manifest = {
@@ -874,16 +1137,28 @@ class LocalResultWriterV5:
             unsigned = dict(row)
             observed = unsigned.pop("result_identity", None)
             execution = row.get("execution_identity")
+            result_domain = (
+                RTA4_LOCAL_RESULT_DOMAIN_V6
+                if row.get("row_schema")
+                == "ASAP_BLOCK_V9_3_RTA4_LOCAL_RESULT_V6"
+                else RTA4_LOCAL_RESULT_DOMAIN_V5
+            )
             if (
                 path.stem != execution
                 or execution not in self._plan
-                or observed != domain_hash(RTA4_LOCAL_RESULT_DOMAIN_V5, unsigned)
+                or observed != domain_hash(result_domain, unsigned)
                 or row.get("run_identity") != self.run_manifest["run_identity"]
                 or row.get("not_for_paper") is not True
             ):
                 raise RTA4LocalExecutionV5Error(
                     "local terminal identity or classification drift"
                 )
+            if (
+                result_domain == RTA4_LOCAL_RESULT_DOMAIN_V6
+                and row.get("result_schema_version")
+                == CORE3_RESULT_SCHEMA_V6
+            ):
+                self._verify_core3_sidecar_v6(row)
             completed[str(execution)] = row
         checkpoint = self.root / RTA4_LOCAL_CHECKPOINT_V5
         if checkpoint.is_file():
@@ -901,6 +1176,42 @@ class LocalResultWriterV5:
             ):
                 raise RTA4LocalExecutionV5Error("local checkpoint drift")
         return completed
+
+    def _verify_core3_sidecar_v6(self, row: Mapping[str, Any]) -> None:
+        relative = row.get("job_observations_relative_path")
+        expected_sha = row.get("job_observations_sha256")
+        if type(relative) is not str or type(expected_sha) is not str:
+            raise RTA4LocalExecutionV5Error(
+                "CORE-3 V6 terminal has no bound job sidecar"
+            )
+        candidate = (self.root / relative).resolve(strict=True)
+        try:
+            candidate.relative_to(self.root.resolve())
+        except ValueError as exc:
+            raise RTA4LocalExecutionV5Error(
+                "CORE-3 V6 sidecar escapes the run root"
+            ) from exc
+        if hashlib.sha256(candidate.read_bytes()).hexdigest() != expected_sha:
+            raise RTA4LocalExecutionV5Error(
+                "CORE-3 V6 sidecar SHA-256 drift"
+            )
+        try:
+            sidecar = json.loads(candidate.read_text(encoding="utf-8"))
+        except Exception as exc:
+            raise RTA4LocalExecutionV5Error(
+                "CORE-3 V6 sidecar is unreadable"
+            ) from exc
+        jobs = sidecar.get("job_observations")
+        if (
+            sidecar.get("job_observations_schema_version")
+            != CORE3_JOB_OBSERVATIONS_SCHEMA_VERSION_V6
+            or not isinstance(jobs, list)
+            or len(jobs) != row.get("job_observation_count")
+            or len(jobs) != sidecar.get("job_observation_count")
+        ):
+            raise RTA4LocalExecutionV5Error(
+                "CORE-3 V6 sidecar schema/count drift"
+            )
 
     def write_result(self, row: Mapping[str, Any]) -> None:
         execution = str(row.get("execution_identity", ""))
@@ -951,8 +1262,15 @@ def _terminal_row(
     worker_backend: str,
     physical_core_binding_required: bool,
 ) -> dict[str, Any]:
+    core3_v6 = "effective_core3_simulation_material" in record.material
+    nested_core3 = result.get("result") if core3_v6 else None
+    if core3_v6 and not isinstance(nested_core3, Mapping):
+        nested_core3 = {}
     payload = {
-        "row_schema": "ASAP_BLOCK_V9_3_RTA4_LOCAL_RESULT_V5",
+        "row_schema": (
+            "ASAP_BLOCK_V9_3_RTA4_LOCAL_RESULT_V6"
+            if core3_v6 else "ASAP_BLOCK_V9_3_RTA4_LOCAL_RESULT_V5"
+        ),
         "profile": RTA4_FORMAL_PROFILE_V5,
         "execution_class": "LOCAL_NOT_FOR_PAPER",
         "run_identity": writer.run_manifest["run_identity"],
@@ -976,13 +1294,18 @@ def _terminal_row(
         "worker_backend": worker_backend,
         "physical_core_binding_required": physical_core_binding_required,
         "result": _plain(result),
+        **(_plain(nested_core3) if core3_v6 else {}),
         "formal_campaign_started": False,
         "paper_result_authorized": False,
         "not_for_paper": True,
     }
     return {
         **payload,
-        "result_identity": domain_hash(RTA4_LOCAL_RESULT_DOMAIN_V5, payload),
+        "result_identity": domain_hash(
+            RTA4_LOCAL_RESULT_DOMAIN_V6
+            if core3_v6 else RTA4_LOCAL_RESULT_DOMAIN_V5,
+            payload,
+        ),
     }
 
 
@@ -1125,6 +1448,8 @@ def _terminal_counts_v5(
         "attempt_timeout_count": 0,
         "simulation_failure_count": 0,
         "malformed_result_count": 0,
+        "horizon_insufficient_count": 0,
+        "theorem_alignment_invalid_count": 0,
     }
     for execution in sorted(selected):
         row = rows.get(execution)
@@ -1179,14 +1504,33 @@ def _terminal_counts_v5(
         if record is not None and record.kind == "simulation":
             status = result.get("status")
             nested = result.get("result")
+            valid_observed_statuses = set(
+                _VALID_SIMULATION_OBSERVED_STATUSES_V5
+            )
+            if "effective_core3_simulation_material" in record.material:
+                valid_observed_statuses.add(
+                    SimulationStatus.HORIZON_INSUFFICIENT.value
+                )
             if (
                 status != "COMPLETED"
                 or not isinstance(nested, Mapping)
                 or nested.get("simulation_status") != "COMPLETED"
                 or nested.get("observed_status")
-                not in _VALID_SIMULATION_OBSERVED_STATUSES_V5
+                not in valid_observed_statuses
             ):
                 counts["simulation_failure_count"] += 1
+            if (
+                isinstance(nested, Mapping)
+                and nested.get("observed_status")
+                == SimulationStatus.HORIZON_INSUFFICIENT.value
+            ):
+                counts["horizon_insufficient_count"] += 1
+            if (
+                isinstance(nested, Mapping)
+                and nested.get("track") == "THEOREM_ALIGNED"
+                and nested.get("theorem_alignment_valid") is not True
+            ):
+                counts["theorem_alignment_invalid_count"] += 1
             if status == "INTERNAL_ERROR" or result.get(
                 "solver_status"
             ) == "INTERNAL_ERROR":
@@ -1440,15 +1784,26 @@ def execute_loaded_campaign_v5(
             "terminal_timeout_count",
             "simulation_failure_count",
             "malformed_result_count",
+            "horizon_insufficient_count",
+            "theorem_alignment_invalid_count",
         )
     )
-    invocation_failure_count = sum(
-        invocation_counts[key] for key in (
+    invocation_failure_keys = [
             "internal_error_count",
             "terminal_timeout_count",
             "simulation_failure_count",
             "malformed_result_count",
-        )
+            "theorem_alignment_invalid_count",
+    ]
+    core3_contract = scientific.get("core3_simulation_contract")
+    calibration = (
+        isinstance(core3_contract, Mapping)
+        and core3_contract.get("campaign_type") == "CALIBRATION"
+    )
+    if not calibration:
+        invocation_failure_keys.append("horizon_insufficient_count")
+    invocation_failure_count = sum(
+        invocation_counts[key] for key in invocation_failure_keys
     )
     invocation_clean = (
         invocation_counts["terminal_count"] == len(invocation_execution_ids)
@@ -1472,6 +1827,12 @@ def execute_loaded_campaign_v5(
             "simulation_failure_count"
         ],
         "malformed_result_count": total_counts["malformed_result_count"],
+        "horizon_insufficient_count": total_counts[
+            "horizon_insufficient_count"
+        ],
+        "theorem_alignment_invalid_count": total_counts[
+            "theorem_alignment_invalid_count"
+        ],
         "clean_complete": terminal_complete and total_failure_count == 0,
         "invocation_target_count": len(invocation_execution_ids),
         "invocation_terminal_count": invocation_counts["terminal_count"],
@@ -1489,6 +1850,12 @@ def execute_loaded_campaign_v5(
         ],
         "invocation_malformed_result_count": invocation_counts[
             "malformed_result_count"
+        ],
+        "invocation_horizon_insufficient_count": invocation_counts[
+            "horizon_insufficient_count"
+        ],
+        "invocation_theorem_alignment_invalid_count": invocation_counts[
+            "theorem_alignment_invalid_count"
         ],
         "invocation_clean": invocation_clean,
         "bounded_smoke": limit is not None,
@@ -1552,4 +1919,5 @@ __all__ = [
     "dispatch_core5b_v5",
     "execute_loaded_campaign_v5",
     "execute_local_campaign_v5",
+    "write_core3_job_observations_v6",
 ]

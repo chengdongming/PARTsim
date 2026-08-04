@@ -107,16 +107,40 @@ def campaign_template(core: str) -> dict:
     raise ValueError(f"unknown core: {core}")
 
 
+def core3_v6_campaign_template() -> dict:
+    """Return the opt-in CORE-3 contract without changing legacy V5 input."""
+
+    value = campaign_template("CORE-3")
+    value.update({
+        "campaign_id": "replace-core3-v6-campaign-id",
+        "physical_initial_energy": "0",
+        "theorem_battery_capacity": "1000000000",
+        "core3_campaign_type": "FORMAL",
+        "projection_e0": ["34", "35", "36", "37", "38", "39", "40"],
+    })
+    return value
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--core", required=True, choices=RTA4_CORES_V3)
+    parser.add_argument(
+        "--core3-v6", action="store_true",
+        help="emit the opt-in CORE-3 schema-3/sidecar contract",
+    )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.output.exists():
         raise SystemExit(f"refusing to overwrite existing campaign: {args.output}")
     args.output.parent.mkdir(parents=True, exist_ok=True)
+    if args.core3_v6 and args.core != "CORE-3":
+        raise SystemExit("--core3-v6 requires --core CORE-3")
+    document = (
+        core3_v6_campaign_template()
+        if args.core3_v6 else campaign_template(args.core)
+    )
     args.output.write_text(
-        yaml.safe_dump(campaign_template(args.core), sort_keys=False),
+        yaml.safe_dump(document, sort_keys=False),
         encoding="utf-8",
     )
     print(args.output.resolve())
