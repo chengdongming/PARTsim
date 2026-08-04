@@ -13,8 +13,10 @@ from fractions import Fraction
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import subprocess
+import tempfile
 import time
 from typing import Any, Callable, Mapping, Sequence
 
@@ -23,6 +25,21 @@ import yaml
 from experiments.common.exact_service_curve import normalize_exact_service_curve
 
 from . import exact_energy
+from .rta4_core3_artifacts_v6 import (
+    RTA4Core3ArtifactV6Error,
+    artifact_binding_from_row_v1,
+    artifact_sha256_size_v1,
+    fsync_directory_v1,
+    load_bound_gzip_json_v1,
+    load_legacy_bound_json_v1,
+    prefixed_artifact_binding_v1,
+    publish_deterministic_gzip_json_v1,
+    strict_json_file_v6,
+)
+from .rta4_core3_contracts_v6 import (
+    RTA4Core3ContractV6Error,
+    require_normalized_core3_artifact_storage_v1,
+)
 from .result_writer import atomic_write_json, atomic_write_text
 from .rta4_formal_config import canonical_json, domain_hash
 from .rta4_formal_config_v2 import default_rta4_formal_config_v2
@@ -158,21 +175,48 @@ def write_core3_job_observations_v6(
     """Atomically persist the bounded terminal's unbounded job payload."""
 
     destination = Path(path)
-    rows = [job.row() if hasattr(job, "row") else _plain(job) for job in jobs]
-    sidecar = {
-        "job_observations_schema_version": (
-            CORE3_JOB_OBSERVATIONS_SCHEMA_VERSION_V6
-        ),
-        "execution_identity": execution_identity,
-        "job_observation_count": len(rows),
-        "job_observations": rows,
-    }
-    atomic_write_json(destination, sidecar)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{destination.name}.", suffix=".tmp",
+        dir=destination.parent,
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write('{"execution_identity":')
+            handle.write(json.dumps(execution_identity, ensure_ascii=False))
+            handle.write(',"job_observation_count":')
+            handle.write(str(len(jobs)))
+            handle.write(',"job_observations":[')
+            for index, job in enumerate(jobs):
+                if index:
+                    handle.write(",")
+                row = job.row() if hasattr(job, "row") else _plain(job)
+                handle.write(json.dumps(
+                    row,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    allow_nan=False,
+                ))
+            handle.write('],"job_observations_schema_version":')
+            handle.write(json.dumps(
+                CORE3_JOB_OBSERVATIONS_SCHEMA_VERSION_V6,
+                ensure_ascii=False,
+            ))
+            handle.write("}\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, destination)
+        fsync_directory_v1(destination.parent)
+    except Exception:
+        if temporary.exists():
+            temporary.unlink()
+        raise
+    digest, _size = artifact_sha256_size_v1(destination)
     return {
-        "job_observations_sha256": hashlib.sha256(
-            destination.read_bytes()
-        ).hexdigest(),
-        "job_observation_count": len(rows),
+        "job_observations_sha256": digest,
+        "job_observation_count": len(jobs),
         "job_observations_schema_version": (
             CORE3_JOB_OBSERVATIONS_SCHEMA_VERSION_V6
         ),
@@ -425,6 +469,7 @@ class ExactServiceSimulationExecutorV5:
         del energy_support_path
         self.context = run_context
         self.simulator = Path(str(production_manifest["simulator_path"]))
+        self.artifact_storage = production_manifest.get("artifact_storage")
         self.system = Path(system_config_path)
         self.output = Path(output_root)
         self.timeout = simulation_timeout_seconds
@@ -457,6 +502,16 @@ class ExactServiceSimulationExecutorV5:
         )
         core3_contract = record.material.get("core3_simulation_contract")
         core3_v6 = isinstance(core3_contract, Mapping)
+        storage_contract = None
+        if core3_v6:
+            try:
+                storage_contract = (
+                    require_normalized_core3_artifact_storage_v1(
+                        self.artifact_storage
+                    )
+                )
+            except RTA4Core3ContractV6Error as exc:
+                raise RTA4LocalExecutionV5Error(str(exc)) from exc
         if core3_v6:
             release_horizon = int(record.material["release_horizon"])
             dmax = max(int(row["D"]) for row in base_payload)
@@ -563,7 +618,13 @@ class ExactServiceSimulationExecutorV5:
             theorem_alignment_track=(
                 core3_v6 and record.material["track"] == "THEOREM_ALIGNED"
             ),
-            energy_tolerance_j=CORE3_ENERGY_TOLERANCE_J,
+            energy_tolerance_j=float(Fraction(
+                core3_contract["energy_tolerance_j"]
+            )) if core3_v6 else CORE3_ENERGY_TOLERANCE_J,
+            energy_conservation_rule=(
+                core3_contract["energy_conservation_rule"]
+                if core3_v6 else None
+            ),
         )
         accepted_statuses = {
             SimulationStatus.PASS_OBSERVED,
@@ -582,8 +643,73 @@ class ExactServiceSimulationExecutorV5:
                 execution_identity=record.execution_id,
                 jobs=result.jobs,
             )
-            sidecar_relative = sidecar_path.relative_to(self.output).as_posix()
-            trace_sha256 = hashlib.sha256(trace_path.read_bytes()).hexdigest()
+            trace_gzip_path = run_root / storage_contract["trace"]["final_name"]
+            sidecar_gzip_path = (
+                run_root
+                / storage_contract["job_observations"]["final_name"]
+            )
+            trace_storage = publish_deterministic_gzip_json_v1(
+                trace_path, trace_gzip_path, storage_contract,
+            )
+            sidecar_storage = publish_deterministic_gzip_json_v1(
+                sidecar_path, sidecar_gzip_path, storage_contract,
+            )
+            trace_relative = trace_gzip_path.relative_to(
+                self.output
+            ).as_posix()
+            sidecar_relative = sidecar_gzip_path.relative_to(
+                self.output
+            ).as_posix()
+            trace_artifact = prefixed_artifact_binding_v1(
+                "trace", trace_relative, trace_storage,
+            )
+            sidecar_artifact = prefixed_artifact_binding_v1(
+                "job_observations", sidecar_relative, sidecar_storage,
+            )
+            try:
+                verified_trace = load_bound_gzip_json_v1(
+                    self.output, artifact_binding_from_row_v1(
+                        trace_artifact, "trace"
+                    ), reject_unbound_raw=False,
+                )
+            except RTA4Core3ArtifactV6Error as exc:
+                raise RTA4LocalExecutionV5Error(str(exc)) from exc
+            if (
+                not isinstance(verified_trace, Mapping)
+                or verified_trace.get("trace_schema_version")
+                != result.trace_schema_version
+                or verified_trace.get("simulation_completed") is not True
+                or verified_trace.get("simulation_completion_reason")
+                != "reached_horizon"
+            ):
+                raise RTA4LocalExecutionV5Error(
+                    "CORE-3 compressed trace semantic verification failed"
+                )
+            del verified_trace
+            try:
+                verified_sidecar = load_bound_gzip_json_v1(
+                    self.output, artifact_binding_from_row_v1(
+                        sidecar_artifact, "job_observations"
+                    ), reject_unbound_raw=False,
+                )
+            except RTA4Core3ArtifactV6Error as exc:
+                raise RTA4LocalExecutionV5Error(str(exc)) from exc
+            if (
+                not isinstance(verified_sidecar, Mapping)
+                or verified_sidecar.get("execution_identity")
+                != record.execution_id
+                or verified_sidecar.get("job_observation_count")
+                != len(result.jobs)
+                or not isinstance(
+                    verified_sidecar.get("job_observations"), list,
+                )
+                or len(verified_sidecar["job_observations"])
+                != len(result.jobs)
+            ):
+                raise RTA4LocalExecutionV5Error(
+                    "CORE-3 compressed sidecar semantic verification failed"
+                )
+            del verified_sidecar
             summary_fields = {
                 key: result.metrics[key]
                 for key in (
@@ -600,6 +726,7 @@ class ExactServiceSimulationExecutorV5:
                     "battery_empty_ticks", "battery_full_ticks",
                     "observed_energy_intervals", "theorem_alignment_valid",
                     "theorem_alignment_failure_reason",
+                    "energy_conservation_rule",
                 )
             }
             for key in (
@@ -633,7 +760,16 @@ class ExactServiceSimulationExecutorV5:
                 "observation_horizon_reached": True,
                 **summary_fields,
                 "job_observations_relative_path": sidecar_relative,
-                **sidecar_binding,
+                "job_observations_sha256": sidecar_storage[
+                    "uncompressed_sha256"
+                ],
+                "job_observation_count": sidecar_binding[
+                    "job_observation_count"
+                ],
+                "job_observations_schema_version": sidecar_binding[
+                    "job_observations_schema_version"
+                ],
+                **sidecar_artifact,
                 "task_energy_material_identity": (
                     task_energy.task_energy_material_identity
                 ),
@@ -645,14 +781,18 @@ class ExactServiceSimulationExecutorV5:
                 ],
                 "release_projection_identity": release.release_projection_id,
                 "trace_schema_version": result.trace_schema_version,
-                "trace_sha256": trace_sha256,
+                "trace_sha256": trace_storage["uncompressed_sha256"],
+                **trace_artifact,
             }
-            return FrozenMapping({
+            final_result = FrozenMapping({
                 **material,
                 "simulation_result_identity": domain_hash(
                     CORE3_RESULT_DOMAIN_V6, material,
                 ),
             })
+            sidecar_path.unlink()
+            trace_path.unlink()
+            return final_result
         material = {
             "simulation_status": "COMPLETED",
             "observed_status": result.status.value,
@@ -721,6 +861,7 @@ def _dispatch_existing_worker_v5(
                 operation.get("simulator_path")
                 or repository / "build/rtsim/rtsim"
             ),
+            "artifact_storage": operation.get("artifact_storage"),
         },
         system_config_path=str(repository / "system_config_unified_template.yml"),
         energy_support_path=str(
@@ -825,6 +966,7 @@ def _worker_bootstrap_v5(
                 operation.get("simulator_path")
                 or repository / "build/rtsim/rtsim"
             ),
+            "artifact_storage": operation.get("artifact_storage"),
         },
         system_config_path=str(repository / "system_config_unified_template.yml"),
         energy_support_path=str(
@@ -957,6 +1099,7 @@ def _physical_operation_v5(
         "worker_count": runtime_cap,
         "max_in_flight": max_in_flight,
         "simulator_path": runtime.get("simulator_path"),
+        "artifact_storage": runtime.get("artifact_storage"),
     }
     groups = tuple({
         "worker_count": worker_count,
@@ -997,6 +1140,7 @@ def _test_operation_v5(
             runtime.get("max_in_flight", 1), "runtime.max_in_flight"
         ),
         "simulator_path": runtime.get("simulator_path"),
+        "artifact_storage": runtime.get("artifact_storage"),
     }
     environment = {
         "execution_backend": RTA4_TEST_EXECUTION_BACKEND_V5,
@@ -1087,6 +1231,11 @@ class LocalResultWriterV5:
                 "physical_execution_groups"
             ]),
             **({
+                "artifact_storage": _plain(
+                    campaign.runtime["artifact_storage"]
+                ),
+            } if "artifact_storage" in campaign.runtime else {}),
+            **({
                 "core3_simulation_contract": _plain(
                     campaign.normalized_scientific_config[
                         "core3_simulation_contract"
@@ -1134,7 +1283,10 @@ class LocalResultWriterV5:
     def completed_rows(self) -> dict[str, Mapping[str, Any]]:
         completed: dict[str, Mapping[str, Any]] = {}
         for path in sorted(self.terminals.glob("*.json")):
-            row = json.loads(path.read_text(encoding="utf-8"))
+            try:
+                row = strict_json_file_v6(path)
+            except RTA4Core3ArtifactV6Error as exc:
+                raise RTA4LocalExecutionV5Error(str(exc)) from exc
             unsigned = dict(row)
             observed = unsigned.pop("result_identity", None)
             execution = row.get("execution_identity")
@@ -1159,7 +1311,7 @@ class LocalResultWriterV5:
                 and row.get("result_schema_version")
                 == CORE3_RESULT_SCHEMA_V6
             ):
-                self._verify_core3_sidecar_v6(row)
+                self._verify_core3_artifacts_v6(row)
             completed[str(execution)] = row
         checkpoint = self.root / RTA4_LOCAL_CHECKPOINT_V5
         if checkpoint.is_file():
@@ -1178,41 +1330,148 @@ class LocalResultWriterV5:
                 raise RTA4LocalExecutionV5Error("local checkpoint drift")
         return completed
 
-    def _verify_core3_sidecar_v6(self, row: Mapping[str, Any]) -> None:
+    def _verify_core3_artifacts_v6(self, row: Mapping[str, Any]) -> None:
+        storage = self.run_manifest.get("artifact_storage")
+        try:
+            trace_binding = artifact_binding_from_row_v1(row, "trace")
+            sidecar_binding = artifact_binding_from_row_v1(
+                row, "job_observations"
+            )
+        except RTA4Core3ArtifactV6Error as exc:
+            raise RTA4LocalExecutionV5Error(str(exc)) from exc
+        if storage is not None:
+            try:
+                contract = require_normalized_core3_artifact_storage_v1(
+                    storage
+                )
+            except RTA4Core3ContractV6Error as exc:
+                raise RTA4LocalExecutionV5Error(str(exc)) from exc
+            if trace_binding is None or sidecar_binding is None:
+                raise RTA4LocalExecutionV5Error(
+                    "CORE-3 compressed run has a legacy artifact binding"
+                )
+            expected_identity = contract["storage_contract_identity"]
+            if (
+                trace_binding["artifact_storage_contract_identity"]
+                != expected_identity
+                or sidecar_binding["artifact_storage_contract_identity"]
+                != expected_identity
+                or trace_binding["storage_compresslevel"]
+                != contract["compresslevel"]
+                or sidecar_binding["storage_compresslevel"]
+                != contract["compresslevel"]
+                or trace_binding["storage_mtime"] != contract["mtime"]
+                or sidecar_binding["storage_mtime"] != contract["mtime"]
+            ):
+                raise RTA4LocalExecutionV5Error(
+                    "CORE-3 artifact storage provenance drift"
+                )
+            try:
+                trace = load_bound_gzip_json_v1(self.root, trace_binding)
+                if (
+                    row.get("trace_sha256")
+                    != trace_binding["uncompressed_sha256"]
+                    or not isinstance(trace, Mapping)
+                    or trace.get("trace_schema_version")
+                    != row.get("trace_schema_version")
+                    or trace.get("simulation_completed") is not True
+                    or trace.get("simulation_completion_reason")
+                    != "reached_horizon"
+                    or trace.get("expected_simulation_horizon_ms")
+                    != row.get("observation_horizon")
+                    or trace.get("observed_simulation_end_ms")
+                    != row.get("observation_horizon")
+                ):
+                    raise RTA4LocalExecutionV5Error(
+                        "CORE-3 compressed trace binding drift"
+                    )
+                del trace
+                sidecar = load_bound_gzip_json_v1(
+                    self.root, sidecar_binding,
+                )
+            except RTA4Core3ArtifactV6Error as exc:
+                raise RTA4LocalExecutionV5Error(str(exc)) from exc
+            if (
+                row.get("job_observations_sha256")
+                != sidecar_binding["uncompressed_sha256"]
+            ):
+                raise RTA4LocalExecutionV5Error(
+                    "CORE-3 compressed sidecar binding drift"
+                )
+            self._verify_core3_sidecar_document_v6(row, sidecar)
+            return
+        if trace_binding is not None or sidecar_binding is not None:
+            raise RTA4LocalExecutionV5Error(
+                "legacy CORE-3 run contains an unbound storage contract"
+            )
+        self._verify_legacy_core3_artifacts_v6(row)
+
+    @staticmethod
+    def _verify_core3_sidecar_document_v6(
+        row: Mapping[str, Any], sidecar: Any,
+    ) -> None:
+        if not isinstance(sidecar, Mapping):
+            raise RTA4LocalExecutionV5Error(
+                "CORE-3 V6 sidecar is not an object"
+            )
+        jobs = sidecar.get("job_observations")
+        if (
+            sidecar.get("job_observations_schema_version")
+            != CORE3_JOB_OBSERVATIONS_SCHEMA_VERSION_V6
+            or sidecar.get("execution_identity")
+            != row.get("execution_identity")
+            or not isinstance(jobs, list)
+            or len(jobs) != row.get("job_observation_count")
+            or len(jobs) != sidecar.get("job_observation_count")
+        ):
+            raise RTA4LocalExecutionV5Error(
+                "CORE-3 V6 sidecar schema/identity/count drift"
+            )
+
+    def _verify_legacy_core3_artifacts_v6(
+        self, row: Mapping[str, Any],
+    ) -> None:
         relative = row.get("job_observations_relative_path")
         expected_sha = row.get("job_observations_sha256")
         if type(relative) is not str or type(expected_sha) is not str:
             raise RTA4LocalExecutionV5Error(
                 "CORE-3 V6 terminal has no bound job sidecar"
             )
-        candidate = (self.root / relative).resolve(strict=True)
         try:
-            candidate.relative_to(self.root.resolve())
-        except ValueError as exc:
-            raise RTA4LocalExecutionV5Error(
-                "CORE-3 V6 sidecar escapes the run root"
-            ) from exc
-        if hashlib.sha256(candidate.read_bytes()).hexdigest() != expected_sha:
-            raise RTA4LocalExecutionV5Error(
-                "CORE-3 V6 sidecar SHA-256 drift"
+            sidecar = load_legacy_bound_json_v1(
+                self.root, relative, expected_sha,
             )
-        try:
-            sidecar = json.loads(candidate.read_text(encoding="utf-8"))
-        except Exception as exc:
-            raise RTA4LocalExecutionV5Error(
-                "CORE-3 V6 sidecar is unreadable"
-            ) from exc
-        jobs = sidecar.get("job_observations")
+            execution = row.get("execution_identity")
+            trace_sha = row.get("trace_sha256")
+            if type(execution) is not str or type(trace_sha) is not str:
+                raise RTA4Core3ArtifactV6Error(
+                    "legacy CORE-3 trace binding is incomplete"
+                )
+            trace = load_legacy_bound_json_v1(
+                self.root,
+                (
+                    "bounded_core3_simulations_v5/"
+                    f"{execution}/trace_v5.json"
+                ),
+                trace_sha,
+            )
+        except RTA4Core3ArtifactV6Error as exc:
+            raise RTA4LocalExecutionV5Error(str(exc)) from exc
         if (
-            sidecar.get("job_observations_schema_version")
-            != CORE3_JOB_OBSERVATIONS_SCHEMA_VERSION_V6
-            or not isinstance(jobs, list)
-            or len(jobs) != row.get("job_observation_count")
-            or len(jobs) != sidecar.get("job_observation_count")
+            not isinstance(trace, Mapping)
+            or trace.get("trace_schema_version")
+            != row.get("trace_schema_version")
+            or trace.get("simulation_completed") is not True
+            or trace.get("simulation_completion_reason") != "reached_horizon"
+            or trace.get("expected_simulation_horizon_ms")
+            != row.get("observation_horizon")
+            or trace.get("observed_simulation_end_ms")
+            != row.get("observation_horizon")
         ):
             raise RTA4LocalExecutionV5Error(
-                "CORE-3 V6 sidecar schema/count drift"
+                "legacy CORE-3 trace semantic binding drift"
             )
+        self._verify_core3_sidecar_document_v6(row, sidecar)
 
     def write_result(self, row: Mapping[str, Any]) -> None:
         execution = str(row.get("execution_identity", ""))

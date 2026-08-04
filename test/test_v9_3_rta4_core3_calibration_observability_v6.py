@@ -2,13 +2,17 @@ from __future__ import annotations
 
 from copy import deepcopy
 from fractions import Fraction
+import gzip
 import hashlib
 import json
 from pathlib import Path
+import subprocess
+from types import SimpleNamespace
 
 import pytest
 import yaml
 
+from experiments.v9_3 import rta4_core3_artifacts_v6 as core3_artifacts
 from experiments.v9_3.rta4_core3_calibration_v6 import (
     CORE3_CALIBRATION_SUMMARY_DOMAIN_V6,
     RTA4Core3CalibrationV6Error,
@@ -17,30 +21,51 @@ from experiments.v9_3.rta4_core3_calibration_v6 import (
     summarize_calibration_v6,
     write_calibration_campaigns_v6,
 )
+from experiments.v9_3.rta4_core3_artifacts_v6 import (
+    RTA4Core3ArtifactV6Error,
+    artifact_binding_from_row_v1,
+    load_bound_gzip_json_v1,
+    load_legacy_bound_json_v1,
+    prefixed_artifact_binding_v1,
+    publish_deterministic_gzip_json_v1,
+)
+from experiments.v9_3.rta4_core3_contracts_v6 import (
+    RTA4Core3ContractV6Error,
+    default_core3_artifact_storage_v1,
+    default_core3_energy_conservation_rule_v1,
+    normalize_core3_artifact_storage_v1,
+    normalize_core3_energy_conservation_rule_v1,
+)
 from experiments.v9_3.rta4_core3_experiment1_audit_v6 import (
     EXPERIMENT1_E0_V6,
     EXPERIMENT1_METHODS_V6,
     RTA4Core3Experiment1AuditV6Error,
+    _CORE3_STORAGE_IDENTITY_FIELDS,
     _core3_result_material,
     audit_core3_against_experiment1_v6,
+    load_core3_result_file_v6,
     load_experiment1_rta_v6,
 )
 from experiments.v9_3.rta4_formal_config import domain_hash
 from experiments.v9_3.rta4_formal_config_v5 import (
     CORE3_RESULT_DOMAIN_V6,
     CORE3_RESULT_SCHEMA_V6,
+    LoadedCampaignV5,
     RTA4FormalConfigV5Error,
     load_rta4_campaign_v5,
     normalize_rta4_campaign_v5,
     rta4_formal_config_hash_v5,
+    source_closure_identity_v5,
 )
 from experiments.v9_3.rta4_formal_plan_v5 import (
     describe_formal_plan_v5,
     iter_formal_plan_v5,
 )
 from experiments.v9_3.rta4_local_execution_v5 import (
+    ExactServiceSimulationExecutorV5,
     LocalResultWriterV5,
     RTA4_LOCAL_RESULT_DOMAIN_V6,
+    RTA4LocalExecutionV5Error,
     _exact_piecewise_system_v5,
     _prepared_record_material,
     _terminal_row,
@@ -201,7 +226,8 @@ def test_legacy_v5_config_does_not_gain_v6_material_or_identity_fields():
     raw = _v6_campaign()
     for field in (
         "physical_initial_energy", "theorem_battery_capacity",
-        "core3_campaign_type",
+        "core3_campaign_type", "energy_conservation_rule",
+        "artifact_storage",
     ):
         raw.pop(field)
     raw["projection_e0"] = ["34"]
@@ -214,6 +240,154 @@ def test_legacy_v5_config_does_not_gain_v6_material_or_identity_fields():
             scientific, normalized["task_sources"], normalized["service_curve"],
         )
     )
+
+
+def test_energy_conservation_rule_changes_scientific_and_plan_identities():
+    raw = _v6_campaign()
+    first = _normalized(raw)
+    first_scientific = first["normalized_scientific_config"]
+    first_plan = describe_formal_plan_v5(
+        first_scientific, first["task_sources"], first["service_curve"],
+    )
+    changed = deepcopy(raw)
+    changed["energy_conservation_rule"]["absolute_tolerance_j"] = (
+        "1/200000000"
+    )
+    second = _normalized(changed)
+    second_scientific = second["normalized_scientific_config"]
+    second_plan = describe_formal_plan_v5(
+        second_scientific, second["task_sources"], second["service_curve"],
+    )
+    assert rta4_formal_config_hash_v5(
+        first_scientific
+    ) != rta4_formal_config_hash_v5(second_scientific)
+    assert source_closure_identity_v5(
+        first_scientific
+    ) != source_closure_identity_v5(second_scientific)
+    assert first_plan["plan_sha256"] != second_plan["plan_sha256"]
+    assert first_scientific["core3_simulation_contract"][
+        "contract_identity"
+    ] != second_scientific["core3_simulation_contract"][
+        "contract_identity"
+    ]
+    assert _records(raw)[0].mathematical_request_id != _records(
+        changed
+    )[0].mathematical_request_id
+    assert _records(raw)[0].execution_id != _records(changed)[0].execution_id
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("absolute_tolerance_j", "1/200000000"),
+    ("relative_tolerance", "1/2000000000000"),
+])
+def test_each_supported_tolerance_change_changes_rule_identity(field, value):
+    original = deepcopy(_v6_campaign()["energy_conservation_rule"])
+    changed = deepcopy(original)
+    changed[field] = value
+    assert normalize_core3_energy_conservation_rule_v1(original)[
+        "rule_identity"
+    ] != normalize_core3_energy_conservation_rule_v1(changed)[
+        "rule_identity"
+    ]
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("model", "UNKNOWN"),
+    ("scale", "UNKNOWN"),
+    ("absolute_tolerance_j", "0.00000001"),
+    ("relative_tolerance", "0"),
+    ("relative_tolerance", "1/100000000000"),
+    ("relative_tolerance", -1),
+])
+def test_energy_conservation_rule_rejects_ambiguous_or_loose_values(
+    field, value,
+):
+    raw = deepcopy(_v6_campaign()["energy_conservation_rule"])
+    raw[field] = value
+    with pytest.raises(RTA4Core3ContractV6Error):
+        normalize_core3_energy_conservation_rule_v1(raw)
+
+
+def test_artifact_storage_changes_runtime_identity_not_mathematical_identity(
+    tmp_path,
+):
+    first_raw = _v6_campaign()
+    second_raw = deepcopy(first_raw)
+    second_raw["artifact_storage"]["compresslevel"] = 5
+    first = _normalized(first_raw)
+    second = _normalized(second_raw)
+    assert first["normalized_scientific_config"] == second[
+        "normalized_scientific_config"
+    ]
+    first_records = tuple(iter_formal_plan_v5(
+        first["normalized_scientific_config"],
+        first["task_sources"], first["service_curve"],
+    ))
+    second_records = tuple(iter_formal_plan_v5(
+        second["normalized_scientific_config"],
+        second["task_sources"], second["service_curve"],
+    ))
+    assert first_records[0].mathematical_request_id == second_records[
+        0
+    ].mathematical_request_id
+    assert first_records[0].execution_id == second_records[0].execution_id
+    assert first["runtime"]["artifact_storage"][
+        "storage_contract_identity"
+    ] != second["runtime"]["artifact_storage"][
+        "storage_contract_identity"
+    ]
+    plan = describe_formal_plan_v5(
+        first["normalized_scientific_config"],
+        first["task_sources"], first["service_curve"],
+    )
+
+    def loaded(normalized, root):
+        scientific = normalized["normalized_scientific_config"]
+        return LoadedCampaignV5(
+            root / "campaign.yaml", "b" * 64, scientific,
+            rta4_formal_config_hash_v5(scientific),
+            {**normalized["runtime"], "output_root": str(root)},
+            normalized["v3_scientific_config"],
+            normalized["task_sources"], normalized["service_curve"],
+        )
+
+    first_writer = LocalResultWriterV5(
+        tmp_path / "first", campaign=loaded(first, tmp_path / "first"),
+        plan=plan, records=first_records,
+        execution_environment=_physical_environment(), resume=False,
+    )
+    second_writer = LocalResultWriterV5(
+        tmp_path / "second", campaign=loaded(second, tmp_path / "second"),
+        plan=plan, records=second_records,
+        execution_environment=_physical_environment(), resume=False,
+    )
+    first_material = dict(first_writer.run_manifest)
+    second_material = dict(second_writer.run_manifest)
+    first_material.pop("run_identity")
+    second_material.pop("run_identity")
+    second_material["output_root"] = first_material["output_root"]
+    assert domain_hash(
+        "ASAP_BLOCK:V9.3:RTA4:LOCAL_RUN:v5", first_material,
+    ) != domain_hash(
+        "ASAP_BLOCK:V9.3:RTA4:LOCAL_RUN:v5", second_material,
+    )
+
+
+@pytest.mark.parametrize("mutation", [
+    lambda row: row.update(unknown=True),
+    lambda row: row.update(compresslevel=True),
+    lambda row: row.update(compresslevel=0),
+    lambda row: row.update(mtime=1),
+    lambda row: row.update(original_filename_in_header=True),
+])
+def test_artifact_storage_contract_rejects_unknown_or_nondeterministic_values(
+    mutation,
+):
+    contract = default_core3_artifact_storage_v1()
+    contract.pop("storage_contract_identity")
+    mutation(contract)
+    with pytest.raises(RTA4Core3ContractV6Error):
+        normalize_core3_artifact_storage_v1(contract)
 
 
 def test_seven_e0_integer_coverage_and_monotonicity():
@@ -298,6 +472,9 @@ def _parse_trace(tmp_path, trace=None, *, theorem=True):
         physical_initial_energy=Fraction(0), battery_capacity=Fraction(100),
         conditional_e0=[str(value) for value in range(34, 41)],
         theorem_alignment_track=theorem,
+        energy_conservation_rule=(
+            default_core3_energy_conservation_rule_v1()
+        ),
     )
 
 
@@ -400,6 +577,95 @@ def test_energy_closure_fail_closed(tmp_path, field, value, match):
         _parse_trace(tmp_path, trace)
 
 
+def _energy_summary_trace(
+    *, offered, credited, clipped, consumed=None, battery_final=0,
+    battery_min=0, battery_max=10,
+):
+    trace = _schema3_trace()
+    trace["energy_summary"].update({
+        "offered_energy_j": offered,
+        "credited_energy_j": credited,
+        "clipped_energy_j": clipped,
+        "consumed_energy_j": credited if consumed is None else consumed,
+        "battery_final_j": battery_final,
+        "battery_min_j": battery_min,
+        "battery_max_j": battery_max,
+    })
+    return trace
+
+
+def test_real_30k_offered_energy_residual_passes_scale_aware_closure(tmp_path):
+    result = _parse_trace(tmp_path, _energy_summary_trace(
+        offered=165184.79999999999,
+        credited=110.63966500007083,
+        clipped=165074.16033501018,
+    ), theorem=False)
+    assert result.metrics["offered_energy_j"] == 165184.79999999999
+
+
+def test_60k_scale_offered_energy_residual_passes(tmp_path):
+    result = _parse_trace(tmp_path, _energy_summary_trace(
+        offered=330369.6,
+        credited=200.0,
+        clipped=330169.60000002,
+    ), theorem=False)
+    assert result.status == SimulationStatus.PASS_OBSERVED
+
+
+def test_scale_aware_offered_energy_still_rejects_one_microjoule(tmp_path):
+    trace = _energy_summary_trace(
+        offered=165184.8,
+        credited=100.0,
+        clipped=165084.800001,
+    )
+    with pytest.raises(SimulationTraceError, match="offered energy"):
+        _parse_trace(tmp_path, trace, theorem=False)
+
+
+def test_battery_conservation_small_residual_passes_but_large_fails(tmp_path):
+    small = _energy_summary_trace(
+        offered=10, credited=9, clipped=1,
+        consumed=4.000000000045, battery_final=5,
+    )
+    assert _parse_trace(tmp_path, small, theorem=False).status == (
+        SimulationStatus.PASS_OBSERVED
+    )
+    large = _energy_summary_trace(
+        offered=10, credited=9, clipped=1,
+        consumed=4.000001, battery_final=5,
+    )
+    with pytest.raises(SimulationTraceError, match="battery energy balance"):
+        _parse_trace(tmp_path, large, theorem=False)
+
+
+def test_single_point_energy_bounds_keep_absolute_tolerance_only(tmp_path):
+    overflow = _energy_summary_trace(
+        offered=165184.8,
+        credited=165184.799999989,
+        clipped=1.1e-8,
+        consumed=165184.799999989,
+    )
+    result = _parse_trace(tmp_path, overflow, theorem=True)
+    assert result.metrics["theorem_alignment_valid"] is False
+
+    high = _schema3_trace()
+    high["energy_summary"]["battery_max_j"] = 100.000000011
+    with pytest.raises(SimulationTraceError, match="battery bounds"):
+        _parse_trace(tmp_path, high, theorem=False)
+
+    low = _schema3_trace()
+    low["energy_summary"]["battery_min_j"] = -1e-12
+    with pytest.raises(SimulationTraceError, match="negative value"):
+        _parse_trace(tmp_path, low, theorem=False)
+
+
+def test_release_e0_boundary_does_not_use_relative_tolerance():
+    coverage = conditional_release_coverage_v6(
+        [33.99999999999999], ["34"],
+    )
+    assert coverage[0]["covered_job_count"] == 0
+
+
 def test_legacy_schema2_path_remains_available(tmp_path):
     path = tmp_path / "legacy.json"
     path.write_text(json.dumps({
@@ -431,6 +697,294 @@ def test_sidecar_is_atomic_sha_bound_and_contains_no_terminal_job_array(tmp_path
     ).hexdigest()
     assert not list(tmp_path.glob("*.tmp*"))
     assert "job_observations" not in binding
+
+
+def _compressed_fixture(tmp_path):
+    storage = default_core3_artifact_storage_v1()
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    source = tmp_path / "trace_v5.json"
+    source.write_text(
+        '{"events":[],"value":"deterministic"}\n', encoding="utf-8",
+    )
+    destination = tmp_path / "trace_v5.json.gz"
+    binding = publish_deterministic_gzip_json_v1(
+        source, destination, storage,
+    )
+    return storage, source, destination, binding
+
+
+def test_deterministic_gzip_round_trip_header_and_dual_hashes(tmp_path):
+    storage, source, first_path, first = _compressed_fixture(tmp_path / "a")
+    second_source = tmp_path / "b" / "source.json"
+    second_source.parent.mkdir(parents=True)
+    second_source.write_bytes(source.read_bytes())
+    second_path = second_source.with_name("trace_v5.json.gz")
+    second = publish_deterministic_gzip_json_v1(
+        second_source, second_path, storage,
+    )
+    assert first_path.read_bytes() == second_path.read_bytes()
+    assert first["storage_sha256"] == second["storage_sha256"]
+    assert first["uncompressed_sha256"] == hashlib.sha256(
+        source.read_bytes()
+    ).hexdigest()
+    assert first["storage_sha256"] == hashlib.sha256(
+        first_path.read_bytes()
+    ).hexdigest()
+    assert first["uncompressed_sha256"] != first["storage_sha256"]
+    header = first_path.read_bytes()[:64]
+    assert header[3] == 0
+    assert int.from_bytes(header[4:8], "little") == 0
+    assert str(source.resolve()).encode() not in header
+    assert source.name.encode() not in header
+    assert core3_artifacts.strict_json_file_v6(source) == (
+        load_bound_gzip_json_v1(
+            tmp_path / "a",
+            {
+                "relative_path": first_path.name,
+                **first,
+            },
+            reject_unbound_raw=False,
+        )
+    )
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("storage_codec", "unknown"),
+    ("storage_sha256", "0" * 64),
+    ("uncompressed_sha256", "f" * 64),
+    ("uncompressed_bytes", 999999),
+    ("relative_path", "../../outside.json.gz"),
+])
+def test_compressed_artifact_binding_tamper_fails_closed(
+    tmp_path, field, value,
+):
+    _storage, source, destination, stored = _compressed_fixture(tmp_path)
+    source.unlink()
+    binding = {"relative_path": destination.name, **stored}
+    binding[field] = value
+    with pytest.raises(RTA4Core3ArtifactV6Error):
+        load_bound_gzip_json_v1(tmp_path, binding)
+
+
+def test_truncated_nongzip_and_conflicting_raw_artifacts_are_rejected(tmp_path):
+    _storage, source, destination, stored = _compressed_fixture(tmp_path)
+    binding = {"relative_path": destination.name, **stored}
+    with pytest.raises(RTA4Core3ArtifactV6Error, match="conflicts"):
+        load_bound_gzip_json_v1(tmp_path, binding)
+    source.unlink()
+    original = destination.read_bytes()
+    destination.write_bytes(original + b"trailing")
+    with pytest.raises(RTA4Core3ArtifactV6Error, match="trailing"):
+        load_bound_gzip_json_v1(tmp_path, binding)
+    destination.write_bytes(original[:-4])
+    with pytest.raises(RTA4Core3ArtifactV6Error):
+        load_bound_gzip_json_v1(tmp_path, binding)
+
+    bad = tmp_path / "not-gzip.json.gz"
+    bad.write_bytes(b"{}")
+    bad_binding = dict(binding)
+    bad_binding.update({
+        "relative_path": bad.name,
+        "storage_sha256": hashlib.sha256(bad.read_bytes()).hexdigest(),
+        "storage_bytes": len(bad.read_bytes()),
+    })
+    with pytest.raises(RTA4Core3ArtifactV6Error):
+        load_bound_gzip_json_v1(tmp_path, bad_binding)
+
+
+def test_compression_or_strict_json_failure_retains_raw_and_no_gzip(
+    tmp_path, monkeypatch,
+):
+    storage = default_core3_artifact_storage_v1()
+    raw = tmp_path / "trace_v5.json"
+    destination = tmp_path / "trace_v5.json.gz"
+    raw.write_text('{"duplicate":1,"duplicate":2}', encoding="utf-8")
+    with pytest.raises(RTA4Core3ArtifactV6Error, match="duplicate"):
+        publish_deterministic_gzip_json_v1(raw, destination, storage)
+    assert raw.is_file()
+    assert not destination.exists()
+    assert not list(tmp_path.glob("*.tmp"))
+    assert not (tmp_path / "local_terminal_results_v5").exists()
+
+    raw.write_text('{"valid":true}', encoding="utf-8")
+
+    def fail_compression(*_args, **_kwargs):
+        raise OSError("injected compression failure")
+
+    monkeypatch.setattr(
+        core3_artifacts, "_copy_to_deterministic_gzip", fail_compression,
+    )
+    with pytest.raises(OSError, match="injected"):
+        publish_deterministic_gzip_json_v1(raw, destination, storage)
+    assert raw.is_file()
+    assert not destination.exists()
+
+
+def test_legacy_raw_loader_rejects_duplicates_and_conflicting_gzip(tmp_path):
+    raw = tmp_path / "legacy.json"
+    raw.write_text('{"duplicate":1,"duplicate":2}', encoding="utf-8")
+    digest = hashlib.sha256(raw.read_bytes()).hexdigest()
+    with pytest.raises(RTA4Core3ArtifactV6Error, match="duplicate"):
+        load_legacy_bound_json_v1(tmp_path, raw.name, digest)
+
+    raw.write_text('{"valid":true}', encoding="utf-8")
+    digest = hashlib.sha256(raw.read_bytes()).hexdigest()
+    (tmp_path / "legacy.json.gz").write_bytes(b"unbound")
+    with pytest.raises(RTA4Core3ArtifactV6Error, match="conflicts"):
+        load_legacy_bound_json_v1(tmp_path, raw.name, digest)
+
+
+@pytest.mark.parametrize("mutation", [
+    lambda value: value.update(execution_identity="wrong"),
+    lambda value: value.update(job_observation_count=2),
+    lambda value: value["job_observations"].append({"task_id": "extra"}),
+])
+def test_sidecar_execution_identity_and_job_count_tamper_fail_closed(mutation):
+    row = {"execution_identity": "e" * 64, "job_observation_count": 1}
+    sidecar = {
+        "job_observations_schema_version": (
+            CORE3_JOB_OBSERVATIONS_SCHEMA_VERSION_V6
+        ),
+        "execution_identity": "e" * 64,
+        "job_observation_count": 1,
+        "job_observations": [{"task_id": "one"}],
+    }
+    mutation(sidecar)
+    with pytest.raises(RTA4LocalExecutionV5Error, match="identity|count"):
+        LocalResultWriterV5._verify_core3_sidecar_document_v6(row, sidecar)
+
+
+def test_v6_executor_compresses_both_artifacts_and_resume_verifies_them(
+    tmp_path, monkeypatch,
+):
+    normalized = _normalized()
+    scientific = normalized["normalized_scientific_config"]
+    root = tmp_path / "run"
+    campaign = LoadedCampaignV5(
+        tmp_path / "campaign.yaml",
+        "a" * 64,
+        scientific,
+        rta4_formal_config_hash_v5(scientific),
+        {
+            **normalized["runtime"],
+            "output_root": str(root),
+            "worker_count": 1,
+            "max_in_flight": 1,
+            "timeout_seconds": 17,
+        },
+        normalized["v3_scientific_config"],
+        normalized["task_sources"],
+        normalized["service_curve"],
+    )
+    records = tuple(iter_formal_plan_v5(
+        scientific, campaign.task_sources, campaign.service_curve,
+    ))
+    plan = describe_formal_plan_v5(
+        scientific, campaign.task_sources, campaign.service_curve,
+    )
+    writer = LocalResultWriterV5(
+        root, campaign=campaign, plan=plan, records=records,
+        execution_environment=_physical_environment(), resume=False,
+    )
+    plan_record = records[0]
+    record, certificate, context, _ = _prepared_record_material(
+        campaign, plan_record,
+    )
+
+    def fake_simulator(command, **kwargs):
+        assert kwargs["stdout"] is subprocess.DEVNULL
+        assert kwargs["stderr"] is subprocess.PIPE
+        taskset = yaml.safe_load(Path(command[2]).read_text(encoding="utf-8"))
+        names = [task["name"] for task in taskset["taskset"]]
+        trace = _schema3_trace()
+        for event in trace["events"]:
+            index = int(event["task_name"].rsplit("_", 1)[1])
+            event["task_name"] = names[index]
+            if event["event_type"] == "end_instance":
+                event["time"] = (
+                    int(event["arrival_time"])
+                    + int(taskset["taskset"][index]["runtime"])
+                )
+        horizon = int(command[3])
+        trace.update({
+            "run_id": command[command.index("--run-id") + 1],
+            "taskset_semantic_hash": certificate.taskset_hash,
+            "configured_scheduler": str(record.material["scheduler"]),
+            "expected_simulation_horizon_ms": horizon,
+            "observed_simulation_end_ms": horizon,
+            "release_horizon_ms": int(record.material["release_horizon"]),
+            "observation_horizon_ms": horizon,
+            "observability_summary_horizon_ms": horizon,
+        })
+        trace["energy_summary"]["observed_energy_intervals"] = horizon
+        Path(command[command.index("-t") + 1]).write_text(
+            json.dumps(trace), encoding="utf-8",
+        )
+        return SimpleNamespace(returncode=0, stderr="")
+
+    monkeypatch.setattr(
+        "experiments.v9_3.rta4_local_execution_v5.subprocess.run",
+        fake_simulator,
+    )
+    executor = ExactServiceSimulationExecutorV5(
+        {}, run_context=context,
+        production_manifest={
+            "simulator_path": str(tmp_path / "fake-rtsim"),
+            "artifact_storage": campaign.runtime["artifact_storage"],
+        },
+        system_config_path=ROOT / "system_config_unified_template.yml",
+        energy_support_path=tmp_path / "unused-energy-support",
+        output_root=root,
+        simulation_timeout_seconds=17,
+    )
+    result = executor(record, certificate)
+    envelope = {
+        "result": result,
+        "status": "COMPLETED",
+        "error_classification": "NONE",
+        "runtime_wall_seconds": "0",
+        "runtime_cpu_seconds": "0",
+    }
+    terminal = _terminal_row(
+        writer, plan_record, envelope,
+        worker_backend="PHYSICAL_CORE_PROCESS_SLOTS",
+        physical_core_binding_required=True,
+    )
+    writer.write_result(terminal)
+    writer.write_checkpoint([plan_record.execution_id])
+
+    artifact_root = (
+        root / "bounded_core3_simulations_v5" / record.execution_id
+    )
+    assert not (artifact_root / "trace_v5.json").exists()
+    assert not (
+        artifact_root / "simulation_job_observations_v6.json"
+    ).exists()
+    assert (artifact_root / "trace_v5.json.gz").is_file()
+    assert (
+        artifact_root / "simulation_job_observations_v6.json.gz"
+    ).is_file()
+    assert not [
+        path for path in artifact_root.iterdir()
+        if path.name.endswith(".tmp") or ".partial" in path.name
+    ]
+    assert terminal["job_observation_count"] == 10
+    assert "job_observations" not in terminal
+    assert len(writer.completed_rows()) == 1
+
+    resumed = LocalResultWriterV5(
+        root, campaign=campaign, plan=plan, records=records,
+        execution_environment=_physical_environment(), resume=True,
+    )
+    assert plan_record.execution_id in resumed.completed_rows()
+    trace_gzip = root / terminal["trace_relative_path"]
+    trace_bytes = trace_gzip.read_bytes()
+    trace_gzip.unlink()
+    with pytest.raises(RTA4LocalExecutionV5Error, match="missing|artifact"):
+        resumed.completed_rows()
+    trace_gzip.write_bytes(trace_bytes[:-1])
+    with pytest.raises(RTA4LocalExecutionV5Error, match="gzip|artifact"):
+        resumed.completed_rows()
 
 
 def _physical_environment():
@@ -507,7 +1061,7 @@ def _write_calibration_fixture(root: Path):
                 effective["release_mode"], str(effective["battery_capacity"]),
             )
             sidecar = (
-                run_root / "artifacts" / record.execution_id
+                run_root / "bounded_core3_simulations_v5" / record.execution_id
                 / "simulation_job_observations_v6.json"
             )
             sidecar.parent.mkdir(parents=True)
@@ -520,6 +1074,41 @@ def _write_calibration_fixture(root: Path):
                 "job_observations": [],
             }
             sidecar.write_text(json.dumps(sidecar_value), encoding="utf-8")
+            trace = sidecar.with_name("trace_v5.json")
+            trace.write_text(json.dumps({
+                "events": [],
+                "trace_schema_version": 3,
+                "simulation_completed": True,
+                "simulation_completion_reason": "reached_horizon",
+                "expected_simulation_horizon_ms": int(
+                    effective["observation_horizon"]
+                ),
+                "observed_simulation_end_ms": int(
+                    effective["observation_horizon"]
+                ),
+            }), encoding="utf-8")
+            storage = campaign.runtime["artifact_storage"]
+            trace_gzip = trace.with_name(storage["trace"]["final_name"])
+            sidecar_gzip = sidecar.with_name(
+                storage["job_observations"]["final_name"]
+            )
+            trace_storage = publish_deterministic_gzip_json_v1(
+                trace, trace_gzip, storage,
+            )
+            sidecar_storage = publish_deterministic_gzip_json_v1(
+                sidecar, sidecar_gzip, storage,
+            )
+            trace_artifact = prefixed_artifact_binding_v1(
+                "trace", trace_gzip.relative_to(run_root).as_posix(),
+                trace_storage,
+            )
+            sidecar_artifact = prefixed_artifact_binding_v1(
+                "job_observations",
+                sidecar_gzip.relative_to(run_root).as_posix(),
+                sidecar_storage,
+            )
+            sidecar.unlink()
+            trace.unlink()
             scientific = {
                 "result_schema_version": CORE3_RESULT_SCHEMA_V6,
                 "simulation_status": "COMPLETED",
@@ -552,12 +1141,15 @@ def _write_calibration_fixture(root: Path):
                 "observed_energy_intervals": effective["observation_horizon"],
                 "theorem_alignment_valid": True,
                 "theorem_alignment_failure_reason": None,
-                "job_observations_relative_path": sidecar.relative_to(
+                "energy_conservation_rule": effective[
+                    "core3_simulation_contract"
+                ]["energy_conservation_rule"],
+                "job_observations_relative_path": sidecar_gzip.relative_to(
                     run_root
                 ).as_posix(),
-                "job_observations_sha256": hashlib.sha256(
-                    sidecar.read_bytes()
-                ).hexdigest(),
+                "job_observations_sha256": sidecar_storage[
+                    "uncompressed_sha256"
+                ],
                 "job_observation_count": 0,
                 "job_observations_schema_version": (
                     CORE3_JOB_OBSERVATIONS_SCHEMA_VERSION_V6
@@ -577,9 +1169,9 @@ def _write_calibration_fixture(root: Path):
                     "TEST:RELEASE", {"execution": record.execution_id}
                 ),
                 "trace_schema_version": 3,
-                "trace_sha256": hashlib.sha256(
-                    record.execution_id.encode("utf-8")
-                ).hexdigest(),
+                "trace_sha256": trace_storage["uncompressed_sha256"],
+                **trace_artifact,
+                **sidecar_artifact,
             }
             scientific["simulation_result_identity"] = domain_hash(
                 CORE3_RESULT_DOMAIN_V6, _core3_result_material(scientific),
@@ -622,6 +1214,38 @@ def _rehash_terminal(path: Path):
     path.write_text(json.dumps(terminal), encoding="utf-8")
 
 
+def _convert_one_terminal_to_legacy_raw(path: Path, run_root: Path):
+    terminal = json.loads(path.read_text(encoding="utf-8"))
+    scientific = terminal["result"]["result"]
+    sidecar_gzip = run_root / scientific["job_observations_relative_path"]
+    sidecar_raw = sidecar_gzip.with_suffix("")
+    with gzip.open(sidecar_gzip, "rb") as source:
+        sidecar_raw.write_bytes(source.read())
+    trace_gzip = run_root / scientific["trace_relative_path"]
+    trace_raw = trace_gzip.with_suffix("")
+    with gzip.open(trace_gzip, "rb") as source:
+        trace_raw.write_bytes(source.read())
+    sidecar_gzip.unlink()
+    trace_gzip.unlink()
+    scientific["job_observations_relative_path"] = sidecar_raw.relative_to(
+        run_root
+    ).as_posix()
+    for field in _CORE3_STORAGE_IDENTITY_FIELDS:
+        scientific.pop(field, None)
+        terminal.pop(field, None)
+    scientific["simulation_result_identity"] = domain_hash(
+        CORE3_RESULT_DOMAIN_V6, _core3_result_material(scientific),
+    )
+    for key, value in scientific.items():
+        terminal[key] = value
+    unsigned = dict(terminal)
+    unsigned.pop("result_identity", None)
+    terminal["result_identity"] = domain_hash(
+        RTA4_LOCAL_RESULT_DOMAIN_V6, unsigned,
+    )
+    path.write_text(json.dumps(terminal), encoding="utf-8")
+
+
 def test_calibration_campaigns_remain_eight_independent_tasksets():
     manifest = materialize_calibration_campaigns_v6(_calibration_raw())
     assert manifest["taskset_count"] == 8
@@ -652,6 +1276,15 @@ def test_calibration_complete_plan_allows_summary_and_strict_freeze(tmp_path):
     assert frozen["calibration_summary_sha256"] == hashlib.sha256(
         summary_path.read_bytes()
     ).hexdigest()
+    terminal_path = next(iter(fixture[2].values()))[30000]
+    _convert_one_terminal_to_legacy_raw(
+        terminal_path, fixture[1][30000],
+    )
+    legacy, jobs = load_core3_result_file_v6(
+        terminal_path, fixture[1][30000],
+    )
+    assert legacy["job_observations_relative_path"].endswith(".json")
+    assert jobs == []
 
 
 def test_calibration_detects_pair_missing_from_both_horizons(tmp_path):
@@ -704,7 +1337,7 @@ def test_calibration_rejects_malformed_json_and_sidecar_tamper(tmp_path):
     pair[30000].write_text("{", encoding="utf-8")
     terminal = json.loads(pair[60000].read_text(encoding="utf-8"))
     sidecar = fixture[1][60000] / terminal["job_observations_relative_path"]
-    sidecar.write_text(sidecar.read_text(encoding="utf-8") + " ", encoding="utf-8")
+    sidecar.write_bytes(sidecar.read_bytes()[:-1])
     summary = _summarize(fixture)
     assert summary["pairing_complete"] is False
     assert len(summary["invalid_execution_ids"]) >= 2

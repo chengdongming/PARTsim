@@ -17,6 +17,12 @@ from typing import Any, Mapping
 
 import yaml
 
+from .rta4_core3_contracts_v6 import (
+    CORE3_SIMULATION_CONTRACT_DOMAIN_V6,
+    RTA4Core3ContractV6Error,
+    normalize_core3_artifact_storage_v1,
+    normalize_core3_energy_conservation_rule_v1,
+)
 from .rta4_energy_service_v5 import (
     ExactServiceCurve,
     RTA4EnergyServiceV5Error,
@@ -65,6 +71,7 @@ _V5_SINGLE_SOURCE_FIELD = {"task_source"}
 _V5_CORE3_FIELDS = {
     "task_source", "simulation_tick_ms", "physical_initial_energy",
     "theorem_battery_capacity", "core3_campaign_type",
+    "energy_conservation_rule", "artifact_storage",
 }
 _V5_CORE5B_FIELDS = {"task_source", "source_baseline_exact_e0"}
 _V5_CORE5A_FIELDS = {
@@ -78,6 +85,7 @@ _RATIONAL_FIELD_NAMES = {
     "power", "background_utilization",
     "source_baseline_exact_e0",
     "physical_initial_energy", "theorem_battery_capacity",
+    "absolute_tolerance_j", "relative_tolerance",
 }
 
 CORE3_SIMULATION_CONTRACT_V6 = (
@@ -351,7 +359,7 @@ def _core3_contract_v6(
     selected = {
         field for field in (
             "physical_initial_energy", "theorem_battery_capacity",
-            "core3_campaign_type",
+            "core3_campaign_type", "energy_conservation_rule",
         )
         if field in raw
     }
@@ -359,7 +367,7 @@ def _core3_contract_v6(
         return None
     required = {
         "physical_initial_energy", "theorem_battery_capacity",
-        "core3_campaign_type",
+        "core3_campaign_type", "energy_conservation_rule",
     }
     if selected != required:
         raise RTA4FormalConfigV5Error(
@@ -395,7 +403,13 @@ def _core3_contract_v6(
         raise RTA4FormalConfigV5Error(
             "physical_initial_energy exceeds a configured battery capacity"
         )
-    return {
+    try:
+        conservation_rule = normalize_core3_energy_conservation_rule_v1(
+            raw["energy_conservation_rule"]
+        )
+    except RTA4Core3ContractV6Error as exc:
+        raise RTA4FormalConfigV5Error(str(exc)) from exc
+    material = {
         "contract_version": CORE3_SIMULATION_CONTRACT_V6,
         "result_schema_version": CORE3_RESULT_SCHEMA_V6,
         "result_identity_domain": CORE3_RESULT_DOMAIN_V6,
@@ -409,6 +423,13 @@ def _core3_contract_v6(
             "post_harvest_pre_consumption"
         ),
         "energy_tolerance_j": CORE3_ENERGY_TOLERANCE_EXACT_J_V6,
+        "energy_conservation_rule": conservation_rule,
+    }
+    return {
+        **material,
+        "contract_identity": domain_hash(
+            CORE3_SIMULATION_CONTRACT_DOMAIN_V6, material,
+        ),
     }
 
 
@@ -495,6 +516,18 @@ def normalize_rta4_campaign_v5(
         _core3_contract_v6(raw, v3, bindings)
         if core == "CORE-3" else None
     )
+    artifact_storage = None
+    if core3_contract is not None:
+        try:
+            artifact_storage = normalize_core3_artifact_storage_v1(
+                raw.get("artifact_storage")
+            )
+        except RTA4Core3ContractV6Error as exc:
+            raise RTA4FormalConfigV5Error(str(exc)) from exc
+    elif core == "CORE-3" and "artifact_storage" in raw:
+        raise RTA4FormalConfigV5Error(
+            "legacy CORE-3 cannot select the V6 artifact storage contract"
+        )
     grid_identity = rta4_formal_config_hash_v3(v3)
     scientific = {
         "profile": RTA4_FORMAL_PROFILE_V5,
@@ -546,6 +579,9 @@ def normalize_rta4_campaign_v5(
             **({
                 "simulator_path": v5_runtime["simulator_path"]
             } if "simulator_path" in v5_runtime else {}),
+            **({
+                "artifact_storage": artifact_storage,
+            } if artifact_storage is not None else {}),
         },
         "v3_scientific_config": deepcopy(v3),
         "task_sources": bindings,
