@@ -1,6 +1,8 @@
-# Independent calibration input only.  It generates two paired campaigns and
-# is deliberately unauthorized for a paper/formal batch until the task-source
-# and Experiment-1 identities are replaced and reviewed.
+# Independent development/smoke calibration input only.  It contains eight
+# independent tasksets, not 64 tasksets.  Per H_rel it expands to 64 records:
+# 8 tasksets * 2 release modes * (1 theorem track + 3 finite capacities).
+# It remains unauthorized for a paper/formal batch until the task-source and
+# Experiment-1 identities are replaced and reviewed.
 schema_version: ASAP_BLOCK_V9_3_RTA4_CORE3_CALIBRATION_CONFIG_V6
 calibration_id: asap-block-rta4-core3-calibration-v6-unauthorized
 experiment1_task_source_identity: "0000000000000000000000000000000000000000000000000000000000000000"

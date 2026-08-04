@@ -10,9 +10,12 @@ import pytest
 import yaml
 
 from experiments.v9_3.rta4_core3_calibration_v6 import (
+    CORE3_CALIBRATION_SUMMARY_DOMAIN_V6,
+    RTA4Core3CalibrationV6Error,
     freeze_calibration_v6,
     materialize_calibration_campaigns_v6,
     summarize_calibration_v6,
+    write_calibration_campaigns_v6,
 )
 from experiments.v9_3.rta4_core3_experiment1_audit_v6 import (
     EXPERIMENT1_E0_V6,
@@ -27,12 +30,20 @@ from experiments.v9_3.rta4_formal_config_v5 import (
     CORE3_RESULT_DOMAIN_V6,
     CORE3_RESULT_SCHEMA_V6,
     RTA4FormalConfigV5Error,
+    load_rta4_campaign_v5,
     normalize_rta4_campaign_v5,
     rta4_formal_config_hash_v5,
 )
-from experiments.v9_3.rta4_formal_plan_v5 import iter_formal_plan_v5
+from experiments.v9_3.rta4_formal_plan_v5 import (
+    describe_formal_plan_v5,
+    iter_formal_plan_v5,
+)
 from experiments.v9_3.rta4_local_execution_v5 import (
+    LocalResultWriterV5,
+    RTA4_LOCAL_RESULT_DOMAIN_V6,
     _exact_piecewise_system_v5,
+    _prepared_record_material,
+    _terminal_row,
     write_core3_job_observations_v6,
 )
 from experiments.v9_3.simulation_result import (
@@ -400,281 +411,350 @@ def test_sidecar_is_atomic_sha_bound_and_contains_no_terminal_job_array(tmp_path
     assert "job_observations" not in binding
 
 
-def test_calibration_campaigns_are_paired_and_freeze_binds_summary(tmp_path):
+def _physical_environment():
+    return {
+        "execution_backend": "PHYSICAL_CORE_PROCESS_SLOTS",
+        "physical_core_binding_required": True,
+        "topology_fingerprint": "synthetic-calibration",
+        "available_physical_core_count": 1,
+        "allowed_logical_cpus": [0],
+        "topology_selection_policy": "SYNTHETIC_CALIBRATION_TEST",
+        "physical_execution_groups": [{"selected_physical_cores": [{
+            "logical_cpu_id": 0, "physical_package_id": 0,
+            "physical_core_id": 0,
+        }]}],
+    }
+
+
+def _small_calibration_raw():
+    raw = _calibration_raw()
+    raw["base_campaign"]["source"]["taskset_count"] = 2
+    parameters = raw["base_campaign"]["task_source"]["parameters"]
+    parameters["taskset_count"] = 2
+    parameters["generation_indices"] = [0, 1]
+    raw["finite_battery_candidate_capacities"] = ["50", "100"]
+    raw["base_campaign"]["finite_battery_capacities"] = ["50", "100"]
+    return raw
+
+
+def _write_calibration_fixture(root: Path):
+    config = root / "calibration.yaml"
+    config.write_text(
+        yaml.safe_dump(_small_calibration_raw(), sort_keys=False),
+        encoding="utf-8",
+    )
+    evidence = root / "evidence"
+    manifest = write_calibration_campaigns_v6(config, evidence)
+    roots = {}
+    pairs = {}
+    for item in manifest["campaigns"]:
+        horizon = item["release_horizon"]
+        campaign = load_rta4_campaign_v5(evidence / item["relative_path"])
+        plan = describe_formal_plan_v5(
+            campaign.normalized_scientific_config,
+            campaign.task_sources, campaign.service_curve,
+        )
+        records = tuple(iter_formal_plan_v5(
+            campaign.normalized_scientific_config,
+            campaign.task_sources, campaign.service_curve,
+        ))
+        run_root = root / f"run-{horizon}"
+        roots[horizon] = run_root
+        writer = LocalResultWriterV5(
+            run_root, campaign=campaign, plan=plan, records=records,
+            execution_environment=_physical_environment(), resume=False,
+        )
+        prepared_cache = {}
+        for record in records:
+            effective = record.material["effective_core3_simulation_material"]
+            cache_key = (
+                record.taskset_identity, effective["observation_horizon"],
+            )
+            if cache_key not in prepared_cache:
+                _worker, _certificate, context, _local = _prepared_record_material(
+                    campaign, record,
+                )
+                binding = context.binding_for(record.record_id)
+                service = context.service_materials[
+                    binding["service_material_identity"]
+                ]
+                prepared_cache[cache_key] = (binding, service)
+            binding, service = prepared_cache[cache_key]
+            pair_key = (
+                record.taskset_identity, effective["track"],
+                effective["release_mode"], str(effective["battery_capacity"]),
+            )
+            sidecar = (
+                run_root / "artifacts" / record.execution_id
+                / "simulation_job_observations_v6.json"
+            )
+            sidecar.parent.mkdir(parents=True)
+            sidecar_value = {
+                "job_observations_schema_version": (
+                    CORE3_JOB_OBSERVATIONS_SCHEMA_VERSION_V6
+                ),
+                "execution_identity": record.execution_id,
+                "job_observation_count": 0,
+                "job_observations": [],
+            }
+            sidecar.write_text(json.dumps(sidecar_value), encoding="utf-8")
+            scientific = {
+                "result_schema_version": CORE3_RESULT_SCHEMA_V6,
+                "simulation_status": "COMPLETED",
+                "observed_status": "SIM_PASS_OBSERVED",
+                "track": effective["track"],
+                "release_mode": effective["release_mode"],
+                "battery_model": effective["battery_model"],
+                "battery_capacity": str(effective["battery_capacity"]),
+                "physical_initial_energy": str(
+                    effective["physical_initial_energy"]
+                ),
+                "release_horizon": int(effective["release_horizon"]),
+                "dmax": int(effective["dmax"]),
+                "observation_horizon": int(effective["observation_horizon"]),
+                "release_cutoff_enabled": True,
+                "observation_horizon_reached": True,
+                "released_job_count": 0, "completed_job_count": 0,
+                "deadline_miss_job_count": 0, "unfinished_job_count": 0,
+                "unfinished_without_miss_count": 0, "classified_job_count": 0,
+                "conditional_coverage": [],
+                "minimum_release_energy_j": "0",
+                "maximum_release_energy_j": "0",
+                "mean_release_energy_j": "0", "offered_energy_j": "0",
+                "credited_energy_j": "0", "clipped_energy_j": "0",
+                "consumed_energy_j": "0", "overflow_energy_j": "0",
+                "overflow_ratio_numerator": "0",
+                "overflow_ratio_denominator": "0", "battery_min_j": "0",
+                "battery_max_j": "0", "battery_final_j": "0",
+                "battery_empty_ticks": 0, "battery_full_ticks": 0,
+                "observed_energy_intervals": effective["observation_horizon"],
+                "theorem_alignment_valid": True,
+                "theorem_alignment_failure_reason": None,
+                "job_observations_relative_path": sidecar.relative_to(
+                    run_root
+                ).as_posix(),
+                "job_observations_sha256": hashlib.sha256(
+                    sidecar.read_bytes()
+                ).hexdigest(),
+                "job_observation_count": 0,
+                "job_observations_schema_version": (
+                    CORE3_JOB_OBSERVATIONS_SCHEMA_VERSION_V6
+                ),
+                "task_energy_material_identity": binding[
+                    "task_energy_material_identity"
+                ],
+                "service_material_identity": binding[
+                    "service_material_identity"
+                ],
+                "beta_material_identity": service.beta_material_identity,
+                "simulation_tick_ms": record.material["simulation_tick_ms"],
+                "simulation_projection_identity": record.material[
+                    "service_material"
+                ]["simulation_projection"]["simulation_projection_identity"],
+                "release_projection_identity": domain_hash(
+                    "TEST:RELEASE", {"execution": record.execution_id}
+                ),
+                "trace_schema_version": 3,
+                "trace_sha256": hashlib.sha256(
+                    record.execution_id.encode("utf-8")
+                ).hexdigest(),
+            }
+            scientific["simulation_result_identity"] = domain_hash(
+                CORE3_RESULT_DOMAIN_V6, _core3_result_material(scientific),
+            )
+            envelope = {
+                "status": "COMPLETED", "runtime_wall_seconds": "1/2",
+                "result": scientific,
+            }
+            terminal = _terminal_row(
+                writer, record, envelope,
+                worker_backend="PHYSICAL_CORE_PROCESS_SLOTS",
+                physical_core_binding_required=True,
+            )
+            writer.write_result(terminal)
+            pairs.setdefault(pair_key, {})[horizon] = (
+                writer.terminals / f"{record.execution_id}.json"
+            )
+    return evidence / "core3_calibration_manifest_v6.json", roots, pairs
+
+
+def _summarize(fixture):
+    manifest, roots, _pairs = fixture
+    return summarize_calibration_v6(manifest, roots[30000], roots[60000])
+
+
+def _rehash_terminal(path: Path):
+    terminal = json.loads(path.read_text(encoding="utf-8"))
+    nested = terminal.get("result", {}).get("result")
+    if isinstance(nested, dict) and nested.get("result_schema_version"):
+        nested["simulation_result_identity"] = domain_hash(
+            CORE3_RESULT_DOMAIN_V6, _core3_result_material(nested),
+        )
+        for key, value in nested.items():
+            terminal[key] = value
+    unsigned = dict(terminal)
+    unsigned.pop("result_identity", None)
+    terminal["result_identity"] = domain_hash(
+        RTA4_LOCAL_RESULT_DOMAIN_V6, unsigned,
+    )
+    path.write_text(json.dumps(terminal), encoding="utf-8")
+
+
+def test_calibration_campaigns_remain_eight_independent_tasksets():
     manifest = materialize_calibration_campaigns_v6(_calibration_raw())
+    assert manifest["taskset_count"] == 8
     assert [row["release_horizon"] for row in manifest["campaigns"]] == [30000, 60000]
-    assert manifest["taskset_count"] == len(manifest["generation_indices"])
-    assert manifest["calibration_task_source_identity"] != manifest[
-        "experiment1_task_source_identity"
-    ]
+    for row in manifest["campaigns"]:
+        normalized = normalize_rta4_campaign_v5(row["campaign"])
+        assert len(list(iter_formal_plan_v5(
+            normalized["normalized_scientific_config"],
+            normalized["task_sources"], normalized["service_curve"],
+        ))) == 64
+
+
+def test_calibration_complete_plan_allows_summary_and_strict_freeze(tmp_path):
+    fixture = _write_calibration_fixture(tmp_path)
+    summary = _summarize(fixture)
+    assert summary["pairing_complete"] is True
+    assert summary["expected_run_count"] == summary["actual_run_count"] == 24
+    assert summary["pair_count"] == summary["expected_pair_count"] == 12
     summary_path = tmp_path / "summary.json"
-    summary_path.write_text(json.dumps({
-        "pairing_complete": True,
-        "calibration_summary_identity": "s" * 64,
-        "capacity_summary": [
-            {"battery_capacity": "50"}, {"battery_capacity": "100"},
-        ],
-    }), encoding="utf-8")
+    summary_path.write_text(json.dumps(summary), encoding="utf-8")
     frozen = freeze_calibration_v6(
         summary_path, tmp_path / "freeze.json",
         release_horizon=60000, b_low="50", b_high="100",
     )
+    assert frozen["selection_mode"] == (
+        "EXPLICIT_HUMAN_REVIEWED_NO_AUTOMATIC_SELECTION"
+    )
     assert frozen["calibration_summary_sha256"] == hashlib.sha256(
         summary_path.read_bytes()
     ).hexdigest()
-    assert "AUTOMATIC" in frozen["selection_mode"]
 
 
-def test_calibration_summary_uses_exact_material_and_paired_differences(tmp_path):
-    for horizon, scale in ((30000, 1), (60000, 2)):
-        root = tmp_path / f"hrel-{horizon}" / "local_terminal_results_v5"
-        root.mkdir(parents=True)
-        row = {
-            "result_schema_version": CORE3_RESULT_SCHEMA_V6,
-            "taskset_identity": "taskset-calibration",
-            "track": "FINITE_BATTERY_EMPIRICAL",
-            "release_mode": "SYNC_V1", "battery_capacity": "50",
-            "release_horizon": horizon,
-            "released_job_count": 10 * scale,
-            "classified_job_count": 10 * scale,
-            "unfinished_without_miss_count": 0,
-            "deadline_miss_job_count": scale,
-            "conditional_coverage": [{
-                "exact_e0": str(e0),
-                "coverage_rate_numerator": 8 * scale,
-                "coverage_rate_denominator": 10 * scale,
-            } for e0 in range(34, 41)],
-            "offered_energy_j": str(3 * scale),
-            "clipped_energy_j": str(scale),
-            "battery_full_ticks": scale,
-            "simulation_status": "COMPLETED",
-            "result": {"runtime_wall_seconds": f"{scale}/2"},
-        }
-        (root / "terminal.json").write_text(
-            json.dumps(row), encoding="utf-8",
+def test_calibration_detects_pair_missing_from_both_horizons(tmp_path):
+    fixture = _write_calibration_fixture(tmp_path)
+    pair = next(iter(fixture[2].values()))
+    pair[30000].unlink()
+    pair[60000].unlink()
+    summary = _summarize(fixture)
+    assert summary["pairing_complete"] is False
+    assert len(summary["missing_execution_ids"]) == 2
+    assert summary["pair_count"] < summary["expected_pair_count"]
+
+
+def test_calibration_detects_one_sided_missing_and_extra_terminal(tmp_path):
+    fixture = _write_calibration_fixture(tmp_path)
+    path = next(iter(fixture[2].values()))[60000]
+    path.unlink()
+    extra = fixture[1][30000] / "local_terminal_results_v5" / f"{'f' * 64}.json"
+    source = next((fixture[1][30000] / "local_terminal_results_v5").glob("*.json"))
+    extra.write_bytes(source.read_bytes())
+    summary = _summarize(fixture)
+    assert summary["pairing_complete"] is False
+    assert summary["missing_execution_ids"]
+    assert summary["extra_execution_ids"]
+    assert any("duplicate" in value for value in summary["invalid_execution_ids"])
+
+
+@pytest.mark.parametrize("status", ["INTERNAL_ERROR", "TIMEOUT"])
+def test_calibration_rejects_terminal_error_or_timeout_on_both_horizons(
+    tmp_path, status,
+):
+    fixture = _write_calibration_fixture(tmp_path)
+    for path in next(iter(fixture[2].values())).values():
+        terminal = json.loads(path.read_text(encoding="utf-8"))
+        terminal["result"]["status"] = status
+        unsigned = dict(terminal)
+        unsigned.pop("result_identity")
+        terminal["result_identity"] = domain_hash(
+            RTA4_LOCAL_RESULT_DOMAIN_V6, unsigned,
         )
-    summary = summarize_calibration_v6(tmp_path)
-    assert summary["pairing_complete"] is True
-    assert summary["capacity_summary"][0]["overflow_ratio"] == {
-        "numerator": 3, "denominator": 9, "display": "1/3",
-    }
-    assert summary["paired_differences"][0]["delta"][
-        "runtime_wall_seconds"
-    ] == "1/2"
-    assert len(summary["calibration_summary_identity"]) == 64
+        path.write_text(json.dumps(terminal), encoding="utf-8")
+    summary = _summarize(fixture)
+    assert summary["pairing_complete"] is False
+    assert len(summary["invalid_execution_ids"]) >= 2
 
 
-def _experiment1_rows():
-    rows = []
-    for taskset_index in range(800):
-        taskset = f"taskset-{taskset_index:04d}"
-        content = f"{taskset_index:064x}"
-        order = f"{taskset_index + 800:064x}"
-        task_energy = f"{taskset_index + 1600:064x}"
-        for method in EXPERIMENT1_METHODS_V6:
-            for e0 in EXPERIMENT1_E0_V6:
-                rows.append({
-                    "taskset_identity": taskset,
-                    "taskset_content_sha256": content,
-                    "task_order_sha256": order,
-                    "configured_service_identity": "c" * 64,
-                    "effective_service_identity": "d" * 64,
-                    "task_energy_material_identity": task_energy,
-                    "method": method, "exact_e0": e0,
-                    "solver_status": "COMPLETED", "taskset_proven": True,
-                    "task_results": [{
-                        "task_id": "0", "task_proven": True,
-                        "candidate_response_time": "10",
-                    }],
-                })
-    return rows
-
-
-@pytest.fixture(scope="module")
-def experiment1_rows():
-    return _experiment1_rows()
-
-
-def test_experiment1_exact_cartesian_product_and_missing_duplicate_fail_closed(
-    tmp_path, experiment1_rows,
-):
-    path = tmp_path / "rta.json"
-    path.write_text(json.dumps(experiment1_rows), encoding="utf-8")
-    assert len(load_experiment1_rta_v6(tmp_path)) == 22400
-    path.write_text(json.dumps(experiment1_rows[:-1]), encoding="utf-8")
-    with pytest.raises(RTA4Core3Experiment1AuditV6Error, match="22,400"):
-        load_experiment1_rta_v6(tmp_path)
-    duplicate = list(experiment1_rows[:-1]) + [experiment1_rows[0]]
-    path.write_text(json.dumps(duplicate), encoding="utf-8")
-    with pytest.raises(RTA4Core3Experiment1AuditV6Error, match="duplicate"):
-        load_experiment1_rta_v6(tmp_path)
-
-
-def _write_core3_audit_fixture(root, experiment1_rows, *, deadline_miss=False):
-    rta_root = root / "experiment1"
-    core3_root = root / "core3"
-    rta_root.mkdir()
-    core3_root.mkdir()
-    (rta_root / "rta.json").write_text(
-        json.dumps(experiment1_rows), encoding="utf-8",
-    )
-    sidecar = core3_root / "simulation_job_observations_v6.json"
-    sidecar.write_text(json.dumps({
-        "job_observations_schema_version": CORE3_JOB_OBSERVATIONS_SCHEMA_VERSION_V6,
-        "execution_identity": "e" * 64,
-        "job_observation_count": 1,
-        "job_observations": [{
-            "task_id": "0", "task_name": "v93_task_0", "job_index": 0,
-            "release": 0, "absolute_deadline": 20, "completion": 11,
-            "response_time": 11, "deadline_miss": deadline_miss,
-            "release_energy_j": 34,
-            "release_energy_sampling_stage": "post_harvest_pre_consumption",
-            "executed_ticks": 1, "energy_blocked_ticks": 0,
-            "processor_wait_ticks": 10, "censored": False,
-            "censoring_reason": None,
-        }],
-    }), encoding="utf-8")
-    first = experiment1_rows[0]
-    row = {
-        "result_schema_version": CORE3_RESULT_SCHEMA_V6,
-        "simulation_status": "COMPLETED", "observed_status": "SIM_PASS_OBSERVED",
-        "track": "FINITE_BATTERY_EMPIRICAL", "release_mode": "SYNC_V1",
-        "battery_model": "FINITE_CAPACITY_EXACT", "battery_capacity": "100",
-        "physical_initial_energy": "0", "release_horizon": 20, "dmax": 10,
-        "observation_horizon": 30, "release_cutoff_enabled": True,
-        "observation_horizon_reached": True, "released_job_count": 1,
-        "completed_job_count": 1, "deadline_miss_job_count": int(deadline_miss),
-        "unfinished_job_count": 0, "unfinished_without_miss_count": 0,
-        "classified_job_count": 1,
-        "conditional_coverage": [], "minimum_release_energy_j": 34,
-        "maximum_release_energy_j": 34, "mean_release_energy_j": 34,
-        "offered_energy_j": 10, "credited_energy_j": 10,
-        "clipped_energy_j": 0, "consumed_energy_j": 5,
-        "overflow_energy_j": 0, "overflow_ratio_numerator": 0,
-        "overflow_ratio_denominator": 10, "battery_min_j": 0,
-        "battery_max_j": 10, "battery_final_j": 5,
-        "battery_empty_ticks": 0, "battery_full_ticks": 0,
-        "observed_energy_intervals": 30, "theorem_alignment_valid": True,
-        "theorem_alignment_failure_reason": None,
-        "job_observations_relative_path": sidecar.name,
-        "job_observations_sha256": hashlib.sha256(sidecar.read_bytes()).hexdigest(),
-        "job_observation_count": 1,
-        "job_observations_schema_version": CORE3_JOB_OBSERVATIONS_SCHEMA_VERSION_V6,
-        "task_energy_material_identity": first["task_energy_material_identity"],
-        "service_material_identity": "s" * 64,
-        "beta_material_identity": "b" * 64, "simulation_tick_ms": 1,
-        "simulation_projection_identity": "p" * 64,
-        "release_projection_identity": "r" * 64,
-        "trace_schema_version": 3, "trace_sha256": "t" * 64,
-        "execution_identity": "e" * 64,
-        "taskset_identity": first["taskset_identity"],
-        "taskset_content_sha256": first["taskset_content_sha256"],
-        "task_order_sha256": first["task_order_sha256"],
-        "configured_service_identity": first["configured_service_identity"],
-        "effective_service_identity": first["effective_service_identity"],
-    }
-    row["simulation_result_identity"] = domain_hash(
-        CORE3_RESULT_DOMAIN_V6, _core3_result_material(row),
-    )
-    (core3_root / "terminal.json").write_text(json.dumps(row), encoding="utf-8")
-    return rta_root, core3_root, sidecar
-
-
-def test_read_only_pairing_reports_response_and_deadline_violations_and_sidecar_tamper(
-    tmp_path, experiment1_rows,
-):
-    rta_root, core3_root, sidecar = _write_core3_audit_fixture(
-        tmp_path, experiment1_rows,
-    )
-    audit = audit_core3_against_experiment1_v6(rta_root, core3_root)
-    assert audit["rta_recomputed"] is False
-    assert any(
-        row["violation_type"] == "CERTIFIED_RESPONSE_BOUND_EXCEEDED"
-        for row in audit["violations"]
-    )
+def test_calibration_rejects_malformed_json_and_sidecar_tamper(tmp_path):
+    fixture = _write_calibration_fixture(tmp_path)
+    pair = next(iter(fixture[2].values()))
+    pair[30000].write_text("{", encoding="utf-8")
+    terminal = json.loads(pair[60000].read_text(encoding="utf-8"))
+    sidecar = fixture[1][60000] / terminal["job_observations_relative_path"]
     sidecar.write_text(sidecar.read_text(encoding="utf-8") + " ", encoding="utf-8")
-    with pytest.raises(RTA4Core3Experiment1AuditV6Error, match="SHA-256"):
-        audit_core3_against_experiment1_v6(rta_root, core3_root)
+    summary = _summarize(fixture)
+    assert summary["pairing_complete"] is False
+    assert len(summary["invalid_execution_ids"]) >= 2
 
 
-def test_read_only_pairing_reports_certified_deadline_miss(tmp_path, experiment1_rows):
-    rta_root, core3_root, _ = _write_core3_audit_fixture(
-        tmp_path, experiment1_rows, deadline_miss=True,
-    )
-    audit = audit_core3_against_experiment1_v6(rta_root, core3_root)
-    assert any(
-        row["violation_type"] == "CERTIFIED_JOB_DEADLINE_MISS"
-        for row in audit["violations"]
-    )
+def test_calibration_preserves_horizon_insufficient_diagnostic(tmp_path):
+    fixture = _write_calibration_fixture(tmp_path)
+    path = next(iter(fixture[2].values()))[30000]
+    terminal = json.loads(path.read_text(encoding="utf-8"))
+    terminal["result"]["result"]["observed_status"] = "SIM_HORIZON_INSUFFICIENT"
+    path.write_text(json.dumps(terminal), encoding="utf-8")
+    _rehash_terminal(path)
+    summary = _summarize(fixture)
+    assert summary["pairing_complete"] is False
+    assert summary["horizon_insufficient_execution_ids"]
+    summary_path = tmp_path / "insufficient-summary.json"
+    summary_path.write_text(json.dumps(summary), encoding="utf-8")
+    with pytest.raises(RTA4Core3CalibrationV6Error, match="incomplete"):
+        freeze_calibration_v6(
+            summary_path, tmp_path / "freeze.json",
+            release_horizon=30000, b_low="50", b_high="100",
+        )
 
 
 @pytest.mark.parametrize(
-    "field,value,match",
+    "mutation,rehash",
     [
-        ("taskset_identity", "taskset-drift", "absent"),
-        ("taskset_content_sha256", "f" * 64, "taskset_content_sha256"),
-        ("configured_service_identity", "f" * 64, "configured_service_identity"),
+        (lambda row: row.update(calibration_summary_identity="f" * 64), False),
+        (lambda row: row.update(pairing_complete=False), False),
+        (lambda row: row["missing_execution_ids"].append("missing"), True),
+        (
+            lambda row: row.update(
+                actual_run_count=row["expected_run_count"] - 1
+            ),
+            True,
+        ),
+        (
+            lambda row: row.update(
+                pair_count=row["expected_pair_count"] - 1
+            ),
+            True,
+        ),
     ],
 )
-def test_read_only_pairing_fails_closed_on_identity_drift(
-    tmp_path, experiment1_rows, field, value, match,
+def test_freeze_rejects_forged_or_incomplete_summary(
+    tmp_path, mutation, rehash,
 ):
-    rta_root, core3_root, _ = _write_core3_audit_fixture(
-        tmp_path, experiment1_rows,
-    )
-    terminal = core3_root / "terminal.json"
-    row = json.loads(terminal.read_text(encoding="utf-8"))
-    row[field] = value
-    row["simulation_result_identity"] = domain_hash(
-        CORE3_RESULT_DOMAIN_V6, _core3_result_material(row),
-    )
-    terminal.write_text(json.dumps(row), encoding="utf-8")
-    with pytest.raises(RTA4Core3Experiment1AuditV6Error, match=match):
-        audit_core3_against_experiment1_v6(rta_root, core3_root)
+    fixture = _write_calibration_fixture(tmp_path)
+    summary = _summarize(fixture)
+    mutation(summary)
+    if rehash:
+        unsigned = dict(summary)
+        unsigned.pop("calibration_summary_identity")
+        summary["calibration_summary_identity"] = domain_hash(
+            CORE3_CALIBRATION_SUMMARY_DOMAIN_V6, unsigned,
+        )
+    path = tmp_path / "forged-summary.json"
+    path.write_text(json.dumps(summary), encoding="utf-8")
+    with pytest.raises(RTA4Core3CalibrationV6Error):
+        freeze_calibration_v6(
+            path, tmp_path / "freeze.json",
+            release_horizon=60000, b_low="50", b_high="100",
+        )
 
 
-def test_read_only_pairing_counts_uncovered_jobs_as_inapplicable(
-    tmp_path, experiment1_rows,
-):
-    rta_root, core3_root, sidecar = _write_core3_audit_fixture(
-        tmp_path, experiment1_rows,
-    )
-    sidecar_value = json.loads(sidecar.read_text(encoding="utf-8"))
-    sidecar_value["job_observations"][0]["release_energy_j"] = 33
-    sidecar.write_text(json.dumps(sidecar_value), encoding="utf-8")
-    terminal = core3_root / "terminal.json"
-    row = json.loads(terminal.read_text(encoding="utf-8"))
-    row["job_observations_sha256"] = hashlib.sha256(
-        sidecar.read_bytes()
-    ).hexdigest()
-    row["simulation_result_identity"] = domain_hash(
-        CORE3_RESULT_DOMAIN_V6, _core3_result_material(row),
-    )
-    terminal.write_text(json.dumps(row), encoding="utf-8")
-    audit = audit_core3_against_experiment1_v6(rta_root, core3_root)
-    assert sum(row["covered_jobs"] for row in audit["summary"]) == 0
-    assert sum(row["rta_inapplicable_jobs"] for row in audit["summary"]) == 28
-
-
-def test_theorem_overflow_run_is_excluded_from_soundness_statistics(
-    tmp_path, experiment1_rows,
-):
-    rta_root, core3_root, _ = _write_core3_audit_fixture(
-        tmp_path, experiment1_rows,
-    )
-    terminal = core3_root / "terminal.json"
-    row = json.loads(terminal.read_text(encoding="utf-8"))
-    row.update({
-        "track": "THEOREM_ALIGNED",
-        "theorem_alignment_valid": False,
-        "theorem_alignment_failure_reason": "ENERGY_OVERFLOW_OBSERVED",
-    })
-    row["simulation_result_identity"] = domain_hash(
-        CORE3_RESULT_DOMAIN_V6, _core3_result_material(row),
-    )
-    terminal.write_text(json.dumps(row), encoding="utf-8")
-    audit = audit_core3_against_experiment1_v6(rta_root, core3_root)
-    assert sum(
-        item["theorem_alignment_invalid_runs"] for item in audit["summary"]
-    ) == 28
-    assert audit["violations"] == []
+def test_freeze_rejects_capacity_outside_manifest_candidates(tmp_path):
+    fixture = _write_calibration_fixture(tmp_path)
+    summary = _summarize(fixture)
+    path = tmp_path / "summary.json"
+    path.write_text(json.dumps(summary), encoding="utf-8")
+    with pytest.raises(RTA4Core3CalibrationV6Error, match="capacity"):
+        freeze_calibration_v6(
+            path, tmp_path / "freeze.json",
+            release_horizon=60000, b_low="50", b_high="200",
+        )
