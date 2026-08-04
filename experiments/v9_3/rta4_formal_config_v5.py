@@ -62,7 +62,10 @@ CORE5A_TIME_SERVICE_SEMANTICS_V5 = (
 
 _V5_COMMON_EXTRA_FIELDS = {"service_curve"}
 _V5_SINGLE_SOURCE_FIELD = {"task_source"}
-_V5_CORE3_FIELDS = {"task_source", "simulation_tick_ms"}
+_V5_CORE3_FIELDS = {
+    "task_source", "simulation_tick_ms", "physical_initial_energy",
+    "theorem_battery_capacity", "core3_campaign_type",
+}
 _V5_CORE5B_FIELDS = {"task_source", "source_baseline_exact_e0"}
 _V5_CORE5A_FIELDS = {
     "task_sources", "integer_time_scale_service_semantics",
@@ -74,7 +77,17 @@ _RATIONAL_FIELD_NAMES = {
     "deadline_slack_fraction", "utilization_strata", "rate", "latency",
     "power", "background_utilization",
     "source_baseline_exact_e0",
+    "physical_initial_energy", "theorem_battery_capacity",
 }
+
+CORE3_SIMULATION_CONTRACT_V6 = (
+    "ASAP_BLOCK_V9_3_RTA4_CORE3_SIMULATION_CONTRACT_V6"
+)
+CORE3_RESULT_SCHEMA_V6 = "ASAP_BLOCK_V9_3_RTA4_CORE3_SIMULATION_RESULT_V6"
+CORE3_RESULT_DOMAIN_V6 = "ASAP_BLOCK:V9.3:RTA4:CORE3_SIMULATION_RESULT:v6"
+CORE3_PROJECTION_E0_V6 = ("34", "35", "36", "37", "38", "39", "40")
+CORE3_CAMPAIGN_TYPES_V6 = ("FORMAL", "CALIBRATION")
+CORE3_ENERGY_TOLERANCE_EXACT_J_V6 = "1/100000000"
 
 
 class RTA4FormalConfigV5Error(ValueError):
@@ -308,6 +321,97 @@ def _binding_material(
     return [binding.material() for binding in bindings]
 
 
+def _canonical_energy_v6(
+    value: Any, label: str, *, strictly_positive: bool,
+) -> str:
+    if type(value) is not str:
+        raise RTA4FormalConfigV5Error(
+            f"{label} must be a canonical rational string"
+        )
+    try:
+        exact = Fraction(value)
+    except (ValueError, ZeroDivisionError) as exc:
+        raise RTA4FormalConfigV5Error(f"{label} is not rational") from exc
+    if exact < 0 or (strictly_positive and exact <= 0):
+        qualifier = "positive" if strictly_positive else "nonnegative"
+        raise RTA4FormalConfigV5Error(f"{label} must be {qualifier}")
+    canonical = fraction_text(exact)
+    if value != canonical:
+        raise RTA4FormalConfigV5Error(
+            f"{label} must be a canonical rational string: {canonical}"
+        )
+    return canonical
+
+
+def _core3_contract_v6(
+    raw: Mapping[str, Any],
+    v3: Mapping[str, Any],
+    bindings: tuple[TaskSourceBindingV5, ...],
+) -> dict[str, Any] | None:
+    selected = {
+        field for field in (
+            "physical_initial_energy", "theorem_battery_capacity",
+            "core3_campaign_type",
+        )
+        if field in raw
+    }
+    if not selected:
+        return None
+    required = {
+        "physical_initial_energy", "theorem_battery_capacity",
+        "core3_campaign_type",
+    }
+    if selected != required:
+        raise RTA4FormalConfigV5Error(
+            "CORE-3 V6 fields must be supplied as one explicit contract"
+        )
+    physical = _canonical_energy_v6(
+        raw["physical_initial_energy"],
+        "physical_initial_energy",
+        strictly_positive=False,
+    )
+    theorem_capacity = _canonical_energy_v6(
+        raw["theorem_battery_capacity"],
+        "theorem_battery_capacity",
+        strictly_positive=True,
+    )
+    campaign_type = raw["core3_campaign_type"]
+    if campaign_type not in CORE3_CAMPAIGN_TYPES_V6:
+        raise RTA4FormalConfigV5Error(
+            "CORE-3 V6 campaign type must be FORMAL or CALIBRATION"
+        )
+    if tuple(v3["projection_e0"]) != CORE3_PROJECTION_E0_V6:
+        raise RTA4FormalConfigV5Error(
+            "CORE-3 V6 projection_e0 must be exactly 34 through 40"
+        )
+    if len(bindings) != 1 or bindings[0].source.task_count != 10:
+        raise RTA4FormalConfigV5Error(
+            "CORE-3 V6 schema-3 preflight requires exactly 10 tasks"
+        )
+    capacities = (
+        theorem_capacity, *tuple(v3["finite_battery_capacities"]),
+    )
+    if any(Fraction(physical) > Fraction(capacity) for capacity in capacities):
+        raise RTA4FormalConfigV5Error(
+            "physical_initial_energy exceeds a configured battery capacity"
+        )
+    return {
+        "contract_version": CORE3_SIMULATION_CONTRACT_V6,
+        "result_schema_version": CORE3_RESULT_SCHEMA_V6,
+        "result_identity_domain": CORE3_RESULT_DOMAIN_V6,
+        "physical_initial_energy": physical,
+        "theorem_battery_capacity": theorem_capacity,
+        "projection_e0": list(CORE3_PROJECTION_E0_V6),
+        "campaign_type": campaign_type,
+        "trace_schema_version": 3,
+        "observability_contract_version": 2,
+        "release_energy_sampling_stage": (
+            "post_harvest_pre_consumption"
+        ),
+        "energy_tolerance_j": CORE3_ENERGY_TOLERANCE_EXACT_J_V6,
+    }
+
+
 def normalize_rta4_campaign_v5(
     raw: Any, *, base_directory: Path | str | None = None,
 ) -> dict[str, Any]:
@@ -387,6 +491,10 @@ def normalize_rta4_campaign_v5(
         bindings = (TaskSourceBindingV5("campaign", "all", source),)
     if any(binding.source.priority_policy != PRIORITY_POLICY_RM for binding in bindings):
         raise RTA4FormalConfigV5Error("all exact task sources must use strict RM order")
+    core3_contract = (
+        _core3_contract_v6(raw, v3, bindings)
+        if core == "CORE-3" else None
+    )
     grid_identity = rta4_formal_config_hash_v3(v3)
     scientific = {
         "profile": RTA4_FORMAL_PROFILE_V5,
@@ -402,6 +510,9 @@ def normalize_rta4_campaign_v5(
         **({
             "simulation_tick_ms": simulation_tick_ms,
         } if core == "CORE-3" else {}),
+        **({
+            "core3_simulation_contract": core3_contract,
+        } if core3_contract is not None else {}),
         **({
             "source_baseline_exact_e0": source_baseline_exact_e0,
         } if core == "CORE-5B" else {}),
@@ -420,6 +531,9 @@ def normalize_rta4_campaign_v5(
             "e0_auto_scaling_allowed": False,
             "battery_capacity_auto_scaling_allowed": False,
             "methods_share_task_and_service_material": True,
+            **({
+                "legacy_v5_core3_behavior_preserved": True,
+            } if core3_contract is not None else {}),
         },
         "formal_campaign_authorization_status": (
             RTA4_CAMPAIGN_AUTHORIZATION_STATUS_V5
@@ -477,6 +591,11 @@ def source_closure_identity_v5(
         **({
             "simulation_tick_ms": scientific_config["simulation_tick_ms"],
         } if scientific_config["core"] == "CORE-3" else {}),
+        **({
+            "core3_simulation_contract": scientific_config[
+                "core3_simulation_contract"
+            ],
+        } if "core3_simulation_contract" in scientific_config else {}),
     })
 
 
@@ -506,6 +625,12 @@ def load_rta4_campaign_v5(path: Path | str) -> LoadedCampaignV5:
 
 
 __all__ = [
+    "CORE3_CAMPAIGN_TYPES_V6",
+    "CORE3_ENERGY_TOLERANCE_EXACT_J_V6",
+    "CORE3_PROJECTION_E0_V6",
+    "CORE3_RESULT_DOMAIN_V6",
+    "CORE3_RESULT_SCHEMA_V6",
+    "CORE3_SIMULATION_CONTRACT_V6",
     "CORE5A_FIXED_TICK_SERVICE_V1",
     "CORE5A_SCALED_LATENCY_SERVICE_V1",
     "CORE5A_TIME_SERVICE_SEMANTICS_V5",

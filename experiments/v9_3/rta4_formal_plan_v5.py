@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from fractions import Fraction
 import hashlib
 from typing import Any, Iterable, Iterator, Mapping, Sequence
 
@@ -214,11 +215,15 @@ def _service_material_for_record(
     record: Any, taskset: TasksetV4, curve: ExactServiceCurve,
     simulation_tick_ms: int | None,
     cache: dict[tuple[str, int, int], dict[str, Any]],
+    effective_core3_material: Mapping[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     if record.core != "CORE-3":
         return None
-    maximum = int(record.material["release_horizon"]) + max(
-        task.D for task in taskset.tasks
+    maximum = (
+        int(effective_core3_material["observation_horizon"])
+        if effective_core3_material is not None
+        else int(record.material["release_horizon"])
+        + max(task.D for task in taskset.tasks)
     )
     if type(simulation_tick_ms) is not int or simulation_tick_ms <= 0:
         raise RTA4FormalPlanV5Error(
@@ -245,9 +250,93 @@ def _service_material_for_record(
     return summary
 
 
+def _effective_core3_simulation_material(
+    scientific: Mapping[str, Any], record: Any, taskset: TasksetV4,
+    *, effective_release_mode: str | None = None,
+) -> dict[str, Any] | None:
+    contract = scientific.get("core3_simulation_contract")
+    if record.core != "CORE-3" or not isinstance(contract, Mapping):
+        return None
+    source = dict(record.material)
+    if effective_release_mode is not None:
+        source["release_mode"] = effective_release_mode
+    release_horizon = int(source["release_horizon"])
+    dmax = max(task.D for task in taskset.tasks)
+    observation_horizon = release_horizon + dmax
+    capacity = (
+        str(contract["theorem_battery_capacity"])
+        if source["track"] == "THEOREM_ALIGNED"
+        else str(source["battery_capacity"])
+    )
+    physical = str(contract["physical_initial_energy"])
+    if Fraction(physical) > Fraction(capacity):
+        raise RTA4FormalPlanV5Error(
+            "CORE-3 effective initial energy exceeds battery capacity"
+        )
+    return {
+        **source,
+        "battery_capacity": capacity,
+        "physical_initial_energy": physical,
+        "release_horizon": release_horizon,
+        "dmax": dmax,
+        "observation_horizon": observation_horizon,
+        "simulation_horizon": {
+            "release_horizon": release_horizon,
+            "dmax": dmax,
+            "observation_horizon": observation_horizon,
+            "observation_horizon_semantics": "release_horizon_plus_dmax",
+        },
+        "release_cutoff_enabled": True,
+        "trace_schema_version": int(contract["trace_schema_version"]),
+        "observability_contract_version": int(
+            contract["observability_contract_version"]
+        ),
+        "core3_simulation_contract": dict(contract),
+    }
+
+
 def expected_counts_v5(scientific_config: Mapping[str, Any]) -> dict[str, int]:
     rta4_formal_config_hash_v5(scientific_config)
+    if (
+        scientific_config["core"] == "CORE-3"
+        and isinstance(
+            scientific_config.get("core3_simulation_contract"), Mapping,
+        )
+    ):
+        v3 = scientific_config["v3_plan_grid"]
+        skeletons = int(v3["source"]["taskset_count"])
+        mathematical = skeletons * len(v3["release_modes"]) * (
+            1 + len(v3["finite_battery_capacities"])
+        )
+        return {
+            "taskset_skeleton_count": skeletons,
+            "mathematical_request_count": mathematical,
+            "ordered_stream_count": mathematical,
+        }
     return expected_counts_v3(scientific_config["v3_plan_grid"])
+
+
+def _source_records_v5(
+    scientific_config: Mapping[str, Any],
+) -> Iterator[tuple[Any, str | None]]:
+    """Preserve V3 evidence while expanding the opt-in V6 effective grid."""
+
+    v3 = scientific_config["v3_plan_grid"]
+    core3_v6 = (
+        scientific_config["core"] == "CORE-3"
+        and isinstance(
+            scientific_config.get("core3_simulation_contract"), Mapping,
+        )
+    )
+    for record in iter_formal_plan_v3(v3):
+        if (
+            core3_v6
+            and record.material.get("track") == "FINITE_BATTERY_EMPIRICAL"
+        ):
+            for release_mode in v3["release_modes"]:
+                yield record, str(release_mode)
+        else:
+            yield record, None
 
 
 def iter_formal_plan_v5(
@@ -258,15 +347,22 @@ def iter_formal_plan_v5(
     bindings = _validate_inputs(scientific_config, task_sources, service_curve)
     v3 = scientific_config["v3_plan_grid"]
     service_material_cache: dict[tuple[str, int, int], dict[str, Any]] = {}
-    for record in iter_formal_plan_v3(v3):
+    for ordinal, (record, effective_release_mode) in enumerate(
+        _source_records_v5(scientific_config)
+    ):
         binding, source_index, taskset = _select_taskset(record, v3, bindings)
         effective = _effective_service(service_curve, record, scientific_config)
+        effective_core3_material = _effective_core3_simulation_material(
+            scientific_config, record, taskset,
+            effective_release_mode=effective_release_mode,
+        )
         service_material = _service_material_for_record(
             record,
             taskset,
             effective,
             scientific_config.get("simulation_tick_ms"),
             service_material_cache,
+            effective_core3_material,
         )
         slot_material = {
             "profile": RTA4_FORMAL_PROFILE_V5,
@@ -300,6 +396,11 @@ def iter_formal_plan_v5(
             "taskset_slot_id": slot,
             "v3_mathematical_request_id": record.mathematical_request_id,
             "v3_grid_material": grid_material,
+            **({
+                "effective_core3_simulation_material": (
+                    effective_core3_material
+                ),
+            } if effective_core3_material is not None else {}),
             "configured_service_identity": service_curve.identity,
             "effective_service_identity": effective.identity,
             "effective_service_curve": dict(effective.normalized_config),
@@ -323,7 +424,7 @@ def iter_formal_plan_v5(
         yield FormalPlanRecordV5(
             record.kind,
             record.core,
-            record.ordinal,
+            ordinal,
             mathematical,
             execution,
             slot,
