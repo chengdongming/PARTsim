@@ -22,6 +22,22 @@ simulation_tick_ms: 1
 physical_initial_energy: "0"
 theorem_battery_capacity: "1000000000"
 core3_campaign_type: CALIBRATION
+energy_conservation_rule:
+  model: ABSOLUTE_PLUS_RELATIVE_SCALE_AWARE_V1
+  absolute_tolerance_j: "1/100000000"
+  relative_tolerance: "1/1000000000000"
+  scale: MAX_ONE_ABS_LHS_ABS_RHS
+artifact_storage:
+  model: DETERMINISTIC_GZIP_JSON_V1
+  compresslevel: 6
+  mtime: 0
+  original_filename_in_header: false
+  trace: {enabled: true, final_name: trace_v5.json.gz}
+  job_observations:
+    {enabled: true, final_name: simulation_job_observations_v6.json.gz}
+  raw_retention:
+    on_success: DELETE_AFTER_VERIFIED_COMPRESSION
+    on_failure: RETAIN_FOR_DIAGNOSTICS
 task_source:
   mode: GENERATED_FAMILY
   family_id: GENERAL_RANDOM_CONSTRAINED_V1

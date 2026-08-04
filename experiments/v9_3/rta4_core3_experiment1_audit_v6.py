@@ -14,6 +14,12 @@ from typing import Any, Iterable, Mapping
 
 import yaml
 
+from .rta4_core3_artifacts_v6 import (
+    RTA4Core3ArtifactV6Error,
+    artifact_binding_from_row_v1,
+    load_bound_gzip_json_v1,
+    load_legacy_bound_json_v1,
+)
 from .result_writer import atomic_write_json
 from .rta4_formal_config import domain_hash
 from .rta4_formal_config_v5 import (
@@ -84,6 +90,22 @@ _CORE3_IDENTITY_FIELDS = (
     "simulation_tick_ms", "simulation_projection_identity",
     "release_projection_identity", "trace_schema_version", "trace_sha256",
 )
+_CORE3_STORAGE_IDENTITY_FIELDS = (
+    "energy_conservation_rule",
+    "trace_relative_path", "trace_storage_codec",
+    "trace_storage_compresslevel", "trace_storage_mtime",
+    "trace_uncompressed_sha256", "trace_storage_sha256",
+    "trace_uncompressed_bytes", "trace_storage_bytes",
+    "trace_artifact_storage_contract_identity",
+    "job_observations_storage_codec",
+    "job_observations_storage_compresslevel",
+    "job_observations_storage_mtime",
+    "job_observations_uncompressed_sha256",
+    "job_observations_storage_sha256",
+    "job_observations_uncompressed_bytes",
+    "job_observations_storage_bytes",
+    "job_observations_artifact_storage_contract_identity",
+)
 
 
 def _strict_json(path: Path) -> Any:
@@ -108,15 +130,6 @@ def _strict_json(path: Path) -> Any:
         raise RTA4Core3Experiment1AuditV6Error(
             f"unreadable JSON input: {path}"
         ) from exc
-
-
-def _json_files(root: Path) -> Iterable[tuple[Path, Mapping[str, Any]]]:
-    """Scan CORE-3 result roots only; Experiment-1 never uses this path."""
-
-    for path in sorted(root.rglob("*.json")):
-        value = _strict_json(path)
-        if isinstance(value, Mapping):
-            yield path, value
 
 
 def _confirmation_root(root: Path) -> Path:
@@ -572,28 +585,55 @@ def _core3_result_material(row: Mapping[str, Any]) -> dict[str, Any]:
         raise RTA4Core3Experiment1AuditV6Error(
             f"CORE-3 terminal misses scientific fields: {missing}"
         )
-    return {field: row[field] for field in _CORE3_IDENTITY_FIELDS}
+    storage_present = set(_CORE3_STORAGE_IDENTITY_FIELDS).intersection(row)
+    if storage_present and storage_present != set(_CORE3_STORAGE_IDENTITY_FIELDS):
+        raise RTA4Core3Experiment1AuditV6Error(
+            "CORE-3 terminal has a partial compressed-artifact binding"
+        )
+    fields = _CORE3_IDENTITY_FIELDS + (
+        _CORE3_STORAGE_IDENTITY_FIELDS if storage_present else ()
+    )
+    return {field: row[field] for field in fields}
 
 
 def _load_sidecar(
     terminal_path: Path, row: Mapping[str, Any], core3_root: Path,
 ) -> list[Mapping[str, Any]]:
+    try:
+        compressed = artifact_binding_from_row_v1(
+            row, "job_observations"
+        )
+    except RTA4Core3ArtifactV6Error as exc:
+        raise RTA4Core3Experiment1AuditV6Error(str(exc)) from exc
+    if compressed is not None:
+        run_root = _run_root_for_terminal(terminal_path, core3_root)
+        try:
+            value = load_bound_gzip_json_v1(run_root, compressed)
+        except RTA4Core3ArtifactV6Error as exc:
+            raise RTA4Core3Experiment1AuditV6Error(str(exc)) from exc
+        if row["job_observations_sha256"] != compressed[
+            "uncompressed_sha256"
+        ]:
+            raise RTA4Core3Experiment1AuditV6Error(
+                "sidecar uncompressed SHA-256 alias mismatch"
+            )
+        return _validate_sidecar_value(row, value)
     relative = row["job_observations_relative_path"]
     if type(relative) is not str:
         raise RTA4Core3Experiment1AuditV6Error("invalid sidecar path")
     run_root = _run_root_for_terminal(terminal_path, core3_root)
-    path = (run_root / relative).resolve(strict=True)
     try:
-        path.relative_to(run_root.resolve())
-    except ValueError as exc:
-        raise RTA4Core3Experiment1AuditV6Error(
-            "sidecar escapes its run root"
-        ) from exc
-    if hashlib.sha256(path.read_bytes()).hexdigest() != row[
-        "job_observations_sha256"
-    ]:
-        raise RTA4Core3Experiment1AuditV6Error("sidecar SHA-256 mismatch")
-    value = _strict_json(path)
+        value = load_legacy_bound_json_v1(
+            run_root, relative, row["job_observations_sha256"],
+        )
+    except RTA4Core3ArtifactV6Error as exc:
+        raise RTA4Core3Experiment1AuditV6Error(str(exc)) from exc
+    return _validate_sidecar_value(row, value)
+
+
+def _validate_sidecar_value(
+    row: Mapping[str, Any], value: Any,
+) -> list[Mapping[str, Any]]:
     if not isinstance(value, Mapping):
         raise RTA4Core3Experiment1AuditV6Error("sidecar is not an object")
     jobs = value.get("job_observations")
@@ -660,6 +700,67 @@ def _load_sidecar(
     return jobs
 
 
+def _validate_bound_trace(
+    terminal_path: Path, row: Mapping[str, Any], core3_root: Path,
+) -> None:
+    try:
+        binding = artifact_binding_from_row_v1(row, "trace")
+    except RTA4Core3ArtifactV6Error as exc:
+        raise RTA4Core3Experiment1AuditV6Error(str(exc)) from exc
+    if binding is None:
+        execution = row.get("execution_identity")
+        trace_sha = row.get("trace_sha256")
+        if type(execution) is not str or type(trace_sha) is not str:
+            raise RTA4Core3Experiment1AuditV6Error(
+                "legacy CORE-3 trace binding is incomplete"
+            )
+        run_root = _run_root_for_terminal(terminal_path, core3_root)
+        try:
+            trace = load_legacy_bound_json_v1(
+                run_root,
+                (
+                    "bounded_core3_simulations_v5/"
+                    f"{execution}/trace_v5.json"
+                ),
+                trace_sha,
+            )
+        except RTA4Core3ArtifactV6Error as exc:
+            raise RTA4Core3Experiment1AuditV6Error(str(exc)) from exc
+        if (
+            not isinstance(trace, Mapping)
+            or trace.get("trace_schema_version") != row["trace_schema_version"]
+            or trace.get("simulation_completed") is not True
+            or trace.get("simulation_completion_reason") != "reached_horizon"
+            or trace.get("expected_simulation_horizon_ms")
+            != row["observation_horizon"]
+            or trace.get("observed_simulation_end_ms")
+            != row["observation_horizon"]
+        ):
+            raise RTA4Core3Experiment1AuditV6Error(
+                "legacy trace semantic/hash binding mismatch"
+            )
+        return
+    run_root = _run_root_for_terminal(terminal_path, core3_root)
+    try:
+        trace = load_bound_gzip_json_v1(run_root, binding)
+    except RTA4Core3ArtifactV6Error as exc:
+        raise RTA4Core3Experiment1AuditV6Error(str(exc)) from exc
+    if (
+        row["trace_sha256"] != binding["uncompressed_sha256"]
+        or not isinstance(trace, Mapping)
+        or trace.get("trace_schema_version") != row["trace_schema_version"]
+        or trace.get("simulation_completed") is not True
+        or trace.get("simulation_completion_reason") != "reached_horizon"
+        or trace.get("expected_simulation_horizon_ms")
+        != row["observation_horizon"]
+        or trace.get("observed_simulation_end_ms")
+        != row["observation_horizon"]
+    ):
+        raise RTA4Core3Experiment1AuditV6Error(
+            "compressed trace semantic/hash binding mismatch"
+        )
+
+
 def load_core3_result_file_v6(
     terminal_path: Path | str, run_root: Path | str,
 ) -> tuple[Mapping[str, Any], list[Mapping[str, Any]]]:
@@ -690,15 +791,46 @@ def load_core3_result_file_v6(
         raise RTA4Core3Experiment1AuditV6Error(
             "CORE-3 horizon/job count closure drift"
         )
+    try:
+        trace_binding = artifact_binding_from_row_v1(value, "trace")
+        sidecar_binding = artifact_binding_from_row_v1(
+            value, "job_observations"
+        )
+    except RTA4Core3ArtifactV6Error as exc:
+        raise RTA4Core3Experiment1AuditV6Error(str(exc)) from exc
+    if (trace_binding is None) != (sidecar_binding is None) or (
+        trace_binding is not None
+        and trace_binding["artifact_storage_contract_identity"]
+        != sidecar_binding["artifact_storage_contract_identity"]
+    ):
+        raise RTA4Core3Experiment1AuditV6Error(
+            "CORE-3 trace/sidecar storage contract mismatch"
+        )
+    _validate_bound_trace(path, value, source)
     return value, _load_sidecar(path, value, source)
 
 
-def load_core3_results_v6(root: Path | str) -> list[tuple[Mapping[str, Any], list[Mapping[str, Any]]]]:
+def load_core3_results_v6(
+    root: Path | str,
+) -> Iterable[tuple[Mapping[str, Any], list[Mapping[str, Any]]]]:
+    """Yield one verified terminal/sidecar pair at a time.
+
+    Keeping this loader lazy prevents a complete calibration's job sidecars
+    from being retained together in memory.
+    """
+
     source = Path(root).expanduser().resolve(strict=True)
-    results = []
     execution_ids = set()
-    for path, value in _json_files(source):
-        if value.get("result_schema_version") != CORE3_RESULT_SCHEMA_V6:
+    paths = sorted(source.rglob("local_terminal_results_v5/*.json"))
+    if not paths:
+        raise RTA4Core3Experiment1AuditV6Error("no CORE-3 V6 results found")
+    yielded = False
+    for path in paths:
+        value = _strict_json(path)
+        if (
+            not isinstance(value, Mapping)
+            or value.get("result_schema_version") != CORE3_RESULT_SCHEMA_V6
+        ):
             continue
         execution = value.get("execution_identity")
         if execution in execution_ids:
@@ -706,10 +838,10 @@ def load_core3_results_v6(root: Path | str) -> list[tuple[Mapping[str, Any], lis
                 "duplicate CORE-3 execution terminal"
             )
         execution_ids.add(execution)
-        results.append(load_core3_result_file_v6(path, source))
-    if not results:
+        yielded = True
+        yield load_core3_result_file_v6(path, source)
+    if not yielded:
         raise RTA4Core3Experiment1AuditV6Error("no CORE-3 V6 results found")
-    return results
 
 
 def _task_bounds(row: Mapping[str, Any]) -> dict[str, int]:

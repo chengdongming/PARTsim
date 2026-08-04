@@ -14,6 +14,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from experiments.v9_3.rta4_formal_config_v3 import RTA4_CORES_V3  # noqa: E402
+from experiments.v9_3.rta4_core3_contracts_v6 import (  # noqa: E402
+    default_core3_artifact_storage_v1,
+    default_core3_energy_conservation_rule_v1,
+)
 
 
 METHODS = ["CW_THETA_CW", "LOC_THETA_LOC", "PH_THETA_PH", "SEQ_THETA_SEQ"]
@@ -111,11 +115,17 @@ def core3_v6_campaign_template() -> dict:
     """Return the opt-in CORE-3 contract without changing legacy V5 input."""
 
     value = campaign_template("CORE-3")
+    energy_rule = default_core3_energy_conservation_rule_v1()
+    energy_rule.pop("rule_identity")
+    artifact_storage = default_core3_artifact_storage_v1()
+    artifact_storage.pop("storage_contract_identity")
     value.update({
         "campaign_id": "replace-core3-v6-campaign-id",
         "physical_initial_energy": "0",
         "theorem_battery_capacity": "1000000000",
         "core3_campaign_type": "FORMAL",
+        "energy_conservation_rule": energy_rule,
+        "artifact_storage": artifact_storage,
         "projection_e0": ["34", "35", "36", "37", "38", "39", "40"],
     })
     return value

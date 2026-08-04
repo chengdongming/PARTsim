@@ -16,6 +16,12 @@ import math
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
+from .rta4_core3_contracts_v6 import (
+    RTA4Core3ContractV6Error,
+    core3_energy_conservation_close_v1,
+    require_normalized_core3_energy_conservation_rule_v1,
+)
+
 
 class SimulationStatus(str, Enum):
     PASS_OBSERVED = "SIM_PASS_OBSERVED"
@@ -233,6 +239,7 @@ def parse_simulation_trace(
     conditional_e0: Sequence[str] = (),
     theorem_alignment_track: bool = False,
     energy_tolerance_j: float = CORE3_ENERGY_TOLERANCE_J,
+    energy_conservation_rule: Optional[Mapping[str, Any]] = None,
 ) -> SimulationResult:
     """Parse one complete audited scheduler trace into job/task observations."""
 
@@ -775,6 +782,14 @@ def parse_simulation_trace(
         "classified_job_count": classified_job_count,
     }
     if require_core3_observability:
+        try:
+            conservation_rule = (
+                require_normalized_core3_energy_conservation_rule_v1(
+                    energy_conservation_rule
+                )
+            )
+        except RTA4Core3ContractV6Error as exc:
+            raise SimulationTraceError(str(exc)) from exc
         conditional_coverage = conditional_release_coverage_v6(
             [
                 job.release_energy_j
@@ -817,21 +832,20 @@ def parse_simulation_trace(
         ):
             raise SimulationTraceError("battery boundary tick count exceeds horizon")
 
-        def energy_close(left: float, right: float) -> bool:
-            return abs(left - right) <= energy_tolerance_j
-
-        if not energy_close(
+        if not core3_energy_conservation_close_v1(
             energy_values["offered_energy_j"],
             energy_values["credited_energy_j"]
             + energy_values["clipped_energy_j"],
+            conservation_rule,
         ):
             raise SimulationTraceError("offered energy does not close")
         initial = float(physical_initial_energy)
         capacity = float(battery_capacity)
-        if not energy_close(
-            initial + energy_values["credited_energy_j"]
-            - energy_values["consumed_energy_j"],
-            energy_values["battery_final_j"],
+        if not core3_energy_conservation_close_v1(
+            initial + energy_values["credited_energy_j"],
+            energy_values["consumed_energy_j"]
+            + energy_values["battery_final_j"],
+            conservation_rule,
         ):
             raise SimulationTraceError("battery energy balance does not close")
         if not (
@@ -876,6 +890,7 @@ def parse_simulation_trace(
                 None if theorem_valid else "ENERGY_OVERFLOW_OBSERVED"
             ),
             "energy_tolerance_j": energy_tolerance_j,
+            "energy_conservation_rule": conservation_rule,
         })
     return SimulationResult(
         status, reason, horizon, tuple(observations), tuple(task_observations),
