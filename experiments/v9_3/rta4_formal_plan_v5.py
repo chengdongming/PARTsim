@@ -513,19 +513,28 @@ def validate_source_dependency_v5(
     source_scientific: Mapping[str, Any],
     source_task_sources: Sequence[TaskSourceBindingV5],
     source_service: ExactServiceCurve,
+    dependent_task_sources: Sequence[TaskSourceBindingV5] | None = None,
 ) -> None:
     """Validate CORE-2/3/5B dependency without weakening V3 source hashes."""
 
     dependent_core = dependent_scientific.get("core")
+    dependent_v3 = dependent_scientific.get("v3_plan_grid")
+    source_ref = (
+        dependent_v3.get("source", {})
+        if isinstance(dependent_v3, Mapping) else {}
+    )
     expected_source_core = (
         "CORE-1" if dependent_core in {"CORE-2", "CORE-3"}
-        else "CORE-4" if dependent_core == "CORE-5B" else None
+        else source_ref.get("core") if dependent_core == "CORE-5B" else None
     )
     if expected_source_core is None or source_scientific.get("core") != expected_source_core:
         raise RTA4FormalPlanV5Error("invalid V5 source/dependent core pair")
     dependent_binding = dependent_scientific["task_source_bindings"]
     source_binding = source_scientific["task_source_bindings"]
-    if dependent_binding != source_binding:
+    core1_taskset_subset = (
+        dependent_core == "CORE-5B" and expected_source_core == "CORE-1"
+    )
+    if not core1_taskset_subset and dependent_binding != source_binding:
         raise RTA4FormalPlanV5Error("dependent task source differs from source core")
     if (
         dependent_scientific["service_curve_identity"]
@@ -533,8 +542,6 @@ def validate_source_dependency_v5(
     ):
         raise RTA4FormalPlanV5Error("dependent service differs from source core")
     source_v3 = source_scientific["v3_plan_grid"]
-    dependent_v3 = dependent_scientific["v3_plan_grid"]
-    source_ref = dependent_v3["source"]
     source_plan_v3 = describe_formal_plan_v3(source_v3)
     if (
         source_ref["source_campaign_config_sha256"]
@@ -544,7 +551,64 @@ def validate_source_dependency_v5(
         != formal_taskset_store_identity_v3(source_v3)
     ):
         raise RTA4FormalPlanV5Error("frozen V3 source dependency hashes drifted")
-    _validate_inputs(source_scientific, source_task_sources, source_service)
+    validated_source = _validate_inputs(
+        source_scientific, source_task_sources, source_service,
+    )
+    if not core1_taskset_subset:
+        return
+    if dependent_task_sources is None:
+        raise RTA4FormalPlanV5Error(
+            "CORE-1 CORE-5B dependency requires the exact candidate task source"
+        )
+    validated_dependent = _validate_inputs(
+        dependent_scientific, dependent_task_sources, source_service,
+    )
+    if len(validated_source) != 1 or len(validated_dependent) != 1:
+        raise RTA4FormalPlanV5Error(
+            "CORE-1 CORE-5B dependency requires one campaign task source"
+        )
+    source_tasksets = validated_source[0].source
+    dependent_tasksets = validated_dependent[0].source
+    source_utilizations = list(source_v3["normalized_utilization"])
+    per_utilization = int(source_v3["tasksets_per_utilization"])
+    candidates = int(dependent_v3["candidates_per_method_stratum"])
+    if (
+        source_ref["taskset_count"]
+        != len(source_utilizations) * per_utilization
+        or candidates > per_utilization
+    ):
+        raise RTA4FormalPlanV5Error(
+            "CORE-1 CORE-5B source/candidate taskset shape drifted"
+        )
+    expected_source_indices = []
+    for stratum in dependent_v3["utilization_strata"]:
+        try:
+            source_stratum = source_utilizations.index(stratum)
+        except ValueError as exc:
+            raise RTA4FormalPlanV5Error(
+                "CORE-5B utilization stratum is absent from CORE-1"
+            ) from exc
+        start = source_stratum * per_utilization
+        expected_source_indices.extend(range(start, start + candidates))
+    if dependent_tasksets.taskset_count != len(expected_source_indices):
+        raise RTA4FormalPlanV5Error(
+            "CORE-5B candidate task source count differs from CORE-1 subset"
+        )
+    for dependent_index, source_index in enumerate(expected_source_indices):
+        dependent_taskset = dependent_tasksets.taskset(dependent_index)
+        source_taskset = source_tasksets.taskset(source_index)
+        if (
+            dependent_taskset.content_sha256 != source_taskset.content_sha256
+            or dependent_taskset.task_order != source_taskset.task_order
+            or dependent_taskset.task_order_sha256
+            != source_taskset.task_order_sha256
+            or dependent_taskset.material(include_identity=False)
+            != source_taskset.material(include_identity=False)
+        ):
+            raise RTA4FormalPlanV5Error(
+                "CORE-5B candidate task source is not the exact ordered "
+                "CORE-1 utilization subset"
+            )
 
 
 __all__ = [
