@@ -8,11 +8,13 @@ authorization and never labels its outputs as paper evidence.
 
 from __future__ import annotations
 
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from dataclasses import dataclass
 from fractions import Fraction
 import hashlib
 import json
 import math
+import multiprocessing
 import os
 from pathlib import Path
 import subprocess
@@ -113,6 +115,47 @@ _VALID_SIMULATION_OBSERVED_STATUSES_V5 = frozenset({
 
 class RTA4LocalExecutionV5Error(RuntimeError):
     """Raised when a local V5 run cannot remain fail-closed."""
+
+
+@dataclass(frozen=True)
+class PreparedRecordResultV5:
+    ordinal: int
+    execution_id: str
+    worker_record: "LocalWorkerRecordV5"
+    certificate: Any
+    context: SharedEnergyRunContext
+    material_identity: str
+    worker_pid: int
+
+
+@dataclass(frozen=True)
+class TerminalValidationRequestV5:
+    terminal_path: Path
+    output_root: Path
+    planned_execution_id: str | None
+    run_identity: str
+    artifact_storage: Mapping[str, Any] | None
+
+
+@dataclass(frozen=True)
+class ValidatedTerminalV5:
+    execution_identity: str
+    row: Mapping[str, Any]
+    worker_pid: int
+
+
+_PREPARATION_CAMPAIGN_V5: LoadedCampaignV5 | None = None
+
+
+def _root_exception_type_v5(exc: BaseException) -> str:
+    root = exc
+    seen = set()
+    while root.__cause__ is not None and id(root) not in seen:
+        if type(root.__cause__).__name__ == "_RemoteTraceback":
+            break
+        seen.add(id(root))
+        root = root.__cause__
+    return type(root).__name__
 
 
 @dataclass(frozen=True)
@@ -362,6 +405,185 @@ def _prepared_record_material(
         True,
     )
     return worker_record, prepared.certificate, context, local_material_identity
+
+
+def _initialize_preparation_worker_v5(campaign: LoadedCampaignV5) -> None:
+    """Install one immutable campaign context per spawned preparation worker."""
+
+    global _PREPARATION_CAMPAIGN_V5
+    _PREPARATION_CAMPAIGN_V5 = campaign
+
+
+def _prepare_record_worker_v5(
+    record: FormalPlanRecordV5,
+) -> PreparedRecordResultV5:
+    campaign = _PREPARATION_CAMPAIGN_V5
+    if campaign is None:
+        raise RTA4LocalExecutionV5Error(
+            "V5 preparation worker has no initialized campaign"
+        )
+    worker, certificate, context, material_identity = (
+        _prepared_record_material(campaign, record)
+    )
+    return PreparedRecordResultV5(
+        record.ordinal,
+        record.execution_id,
+        worker,
+        certificate,
+        context,
+        material_identity,
+        os.getpid(),
+    )
+
+
+def _run_spawn_tasks_ordered_v5(
+    items: Sequence[Any],
+    labels: Sequence[str],
+    *,
+    worker_count: int,
+    worker: Callable[[Any], Any],
+    initializer: Callable[..., None] | None = None,
+    initargs: tuple[Any, ...] = (),
+    phase: str,
+) -> tuple[Any, ...]:
+    """Run a bounded number of spawned tasks and restore input order."""
+
+    values = tuple(items)
+    task_labels = tuple(labels)
+    if len(values) != len(task_labels) or len(values) < 2:
+        raise RTA4LocalExecutionV5Error(
+            f"{phase} parallel scheduler received an invalid task batch"
+        )
+    if type(worker_count) is not int or not 1 <= worker_count <= len(values):
+        raise RTA4LocalExecutionV5Error(
+            f"{phase} parallel worker count is invalid"
+        )
+    executor = ProcessPoolExecutor(
+        max_workers=worker_count,
+        mp_context=multiprocessing.get_context("spawn"),
+        initializer=initializer,
+        initargs=initargs,
+    )
+    pending: dict[Any, int] = {}
+    results: list[Any | None] = [None] * len(values)
+    next_index = 0
+
+    try:
+        while next_index < len(values) and len(pending) < worker_count:
+            future = executor.submit(worker, values[next_index])
+            pending[future] = next_index
+            next_index += 1
+        while pending:
+            done, _not_done = wait(
+                tuple(pending), return_when=FIRST_COMPLETED,
+            )
+            ordered_done = sorted(
+                (pending[future], future) for future in done
+            )
+            for index, future in ordered_done:
+                pending.pop(future)
+                try:
+                    results[index] = future.result()
+                except (KeyboardInterrupt, SystemExit):
+                    raise
+                except Exception as exc:
+                    raise RTA4LocalExecutionV5Error(
+                        f"{phase} failed for {task_labels[index]}: "
+                        f"{_root_exception_type_v5(exc)}: {exc}"
+                    ) from exc
+            while next_index < len(values) and len(pending) < worker_count:
+                future = executor.submit(worker, values[next_index])
+                pending[future] = next_index
+                next_index += 1
+    except BaseException:
+        for future in pending:
+            future.cancel()
+        executor.shutdown(wait=True)
+        raise
+    else:
+        executor.shutdown(wait=True)
+    if any(result is None for result in results):
+        raise RTA4LocalExecutionV5Error(
+            f"{phase} parallel scheduler lost a task result"
+        )
+    return tuple(results)
+
+
+def _prepare_records_for_execution_v5(
+    campaign: LoadedCampaignV5,
+    records: Sequence[FormalPlanRecordV5],
+    requested_worker_count: int,
+) -> tuple[tuple[PreparedRecordResultV5, ...], Mapping[str, Any]]:
+    """Prepare only invocation targets, with spawn concurrency when useful."""
+
+    if type(requested_worker_count) is not int or requested_worker_count < 1:
+        raise RTA4LocalExecutionV5Error(
+            "V5 preparation requested worker count must be positive"
+        )
+    targets = tuple(records)
+    used_worker_count = min(requested_worker_count, len(targets))
+    if not targets:
+        return (), FrozenMapping({
+            "requested_worker_count": requested_worker_count,
+            "used_worker_count": 0,
+            "distinct_worker_pids": (),
+            "wall_seconds": 0.0,
+        })
+    started = time.monotonic_ns()
+    if len(targets) == 1:
+        record = targets[0]
+        try:
+            worker, certificate, context, material_identity = (
+                _prepared_record_material(campaign, record)
+            )
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception as exc:
+            raise RTA4LocalExecutionV5Error(
+                "V5 record preparation failed for "
+                f"ordinal={record.ordinal},execution_id={record.execution_id}: "
+                f"{_root_exception_type_v5(exc)}: {exc}"
+            ) from exc
+        results = (PreparedRecordResultV5(
+            record.ordinal,
+            record.execution_id,
+            worker,
+            certificate,
+            context,
+            material_identity,
+            os.getpid(),
+        ),)
+    else:
+        labels = tuple(
+            f"ordinal={record.ordinal},execution_id={record.execution_id}"
+            for record in targets
+        )
+        results = _run_spawn_tasks_ordered_v5(
+            targets,
+            labels,
+            worker_count=used_worker_count,
+            worker=_prepare_record_worker_v5,
+            initializer=_initialize_preparation_worker_v5,
+            initargs=(campaign,),
+            phase="V5 record preparation",
+        )
+    finished = time.monotonic_ns()
+    for record, result in zip(targets, results):
+        if (
+            result.ordinal != record.ordinal
+            or result.execution_id != record.execution_id
+        ):
+            raise RTA4LocalExecutionV5Error(
+                "V5 prepared record order/identity drift"
+            )
+    return results, FrozenMapping({
+        "requested_worker_count": requested_worker_count,
+        "used_worker_count": used_worker_count,
+        "distinct_worker_pids": tuple(sorted({
+            result.worker_pid for result in results
+        })),
+        "wall_seconds": (finished - started) / 1_000_000_000,
+    })
 
 
 def _exact_piecewise_system_v5(
@@ -1154,6 +1376,233 @@ def _test_operation_v5(
     return operation, environment
 
 
+def _verify_core3_sidecar_document_v6(
+    row: Mapping[str, Any], sidecar: Any,
+) -> None:
+    if not isinstance(sidecar, Mapping):
+        raise RTA4LocalExecutionV5Error(
+            "CORE-3 V6 sidecar is not an object"
+        )
+    jobs = sidecar.get("job_observations")
+    if (
+        sidecar.get("job_observations_schema_version")
+        != CORE3_JOB_OBSERVATIONS_SCHEMA_VERSION_V6
+        or sidecar.get("execution_identity") != row.get("execution_identity")
+        or not isinstance(jobs, list)
+        or len(jobs) != row.get("job_observation_count")
+        or len(jobs) != sidecar.get("job_observation_count")
+    ):
+        raise RTA4LocalExecutionV5Error(
+            "CORE-3 V6 sidecar schema/identity/count drift"
+        )
+
+
+def _verify_legacy_core3_artifacts_v6(
+    root: Path, row: Mapping[str, Any],
+) -> None:
+    relative = row.get("job_observations_relative_path")
+    expected_sha = row.get("job_observations_sha256")
+    if type(relative) is not str or type(expected_sha) is not str:
+        raise RTA4LocalExecutionV5Error(
+            "CORE-3 V6 terminal has no bound job sidecar"
+        )
+    try:
+        sidecar = load_legacy_bound_json_v1(root, relative, expected_sha)
+        execution = row.get("execution_identity")
+        trace_sha = row.get("trace_sha256")
+        if type(execution) is not str or type(trace_sha) is not str:
+            raise RTA4Core3ArtifactV6Error(
+                "legacy CORE-3 trace binding is incomplete"
+            )
+        trace = load_legacy_bound_json_v1(
+            root,
+            f"bounded_core3_simulations_v5/{execution}/trace_v5.json",
+            trace_sha,
+        )
+    except RTA4Core3ArtifactV6Error as exc:
+        raise RTA4LocalExecutionV5Error(
+            f"{type(exc).__name__}: {exc}"
+        ) from exc
+    if (
+        not isinstance(trace, Mapping)
+        or trace.get("trace_schema_version") != row.get("trace_schema_version")
+        or trace.get("simulation_completed") is not True
+        or trace.get("simulation_completion_reason") != "reached_horizon"
+        or trace.get("expected_simulation_horizon_ms")
+        != row.get("observation_horizon")
+        or trace.get("observed_simulation_end_ms")
+        != row.get("observation_horizon")
+    ):
+        raise RTA4LocalExecutionV5Error(
+            "legacy CORE-3 trace semantic binding drift"
+        )
+    _verify_core3_sidecar_document_v6(row, sidecar)
+
+
+def _verify_core3_artifacts_v6(
+    root: Path,
+    row: Mapping[str, Any],
+    storage: Mapping[str, Any] | None,
+) -> None:
+    try:
+        trace_binding = artifact_binding_from_row_v1(row, "trace")
+        sidecar_binding = artifact_binding_from_row_v1(
+            row, "job_observations"
+        )
+    except RTA4Core3ArtifactV6Error as exc:
+        raise RTA4LocalExecutionV5Error(
+            f"{type(exc).__name__}: {exc}"
+        ) from exc
+    if storage is not None:
+        try:
+            contract = require_normalized_core3_artifact_storage_v1(storage)
+        except RTA4Core3ContractV6Error as exc:
+            raise RTA4LocalExecutionV5Error(
+                f"{type(exc).__name__}: {exc}"
+            ) from exc
+        if trace_binding is None or sidecar_binding is None:
+            raise RTA4LocalExecutionV5Error(
+                "CORE-3 compressed run has a legacy artifact binding"
+            )
+        expected_identity = contract["storage_contract_identity"]
+        if (
+            trace_binding["artifact_storage_contract_identity"]
+            != expected_identity
+            or sidecar_binding["artifact_storage_contract_identity"]
+            != expected_identity
+            or trace_binding["storage_compresslevel"]
+            != contract["compresslevel"]
+            or sidecar_binding["storage_compresslevel"]
+            != contract["compresslevel"]
+            or trace_binding["storage_mtime"] != contract["mtime"]
+            or sidecar_binding["storage_mtime"] != contract["mtime"]
+        ):
+            raise RTA4LocalExecutionV5Error(
+                "CORE-3 artifact storage provenance drift"
+            )
+        try:
+            trace = load_bound_gzip_json_v1(root, trace_binding)
+            if (
+                row.get("trace_sha256")
+                != trace_binding["uncompressed_sha256"]
+                or not isinstance(trace, Mapping)
+                or trace.get("trace_schema_version")
+                != row.get("trace_schema_version")
+                or trace.get("simulation_completed") is not True
+                or trace.get("simulation_completion_reason")
+                != "reached_horizon"
+                or trace.get("expected_simulation_horizon_ms")
+                != row.get("observation_horizon")
+                or trace.get("observed_simulation_end_ms")
+                != row.get("observation_horizon")
+            ):
+                raise RTA4LocalExecutionV5Error(
+                    "CORE-3 compressed trace binding drift"
+                )
+            del trace
+            sidecar = load_bound_gzip_json_v1(root, sidecar_binding)
+        except RTA4Core3ArtifactV6Error as exc:
+            raise RTA4LocalExecutionV5Error(
+                f"{type(exc).__name__}: {exc}"
+            ) from exc
+        if (
+            row.get("job_observations_sha256")
+            != sidecar_binding["uncompressed_sha256"]
+        ):
+            raise RTA4LocalExecutionV5Error(
+                "CORE-3 compressed sidecar binding drift"
+            )
+        _verify_core3_sidecar_document_v6(row, sidecar)
+        return
+    if trace_binding is not None or sidecar_binding is not None:
+        raise RTA4LocalExecutionV5Error(
+            "legacy CORE-3 run contains an unbound storage contract"
+        )
+    _verify_legacy_core3_artifacts_v6(root, row)
+
+
+def _validate_terminal_file_v5(
+    request: TerminalValidationRequestV5,
+) -> ValidatedTerminalV5:
+    path = request.terminal_path
+    row = strict_json_file_v6(path)
+    if not isinstance(row, Mapping):
+        raise RTA4LocalExecutionV5Error("local terminal is not an object")
+    unsigned = dict(row)
+    observed = unsigned.pop("result_identity", None)
+    execution = row.get("execution_identity")
+    result_domain = (
+        RTA4_LOCAL_RESULT_DOMAIN_V6
+        if row.get("row_schema") == "ASAP_BLOCK_V9_3_RTA4_LOCAL_RESULT_V6"
+        else RTA4_LOCAL_RESULT_DOMAIN_V5
+    )
+    if (
+        path.stem != execution
+        or request.planned_execution_id != execution
+        or observed != domain_hash(result_domain, unsigned)
+        or row.get("run_identity") != request.run_identity
+        or row.get("not_for_paper") is not True
+    ):
+        raise RTA4LocalExecutionV5Error(
+            "local terminal identity or classification drift"
+        )
+    if (
+        result_domain == RTA4_LOCAL_RESULT_DOMAIN_V6
+        and row.get("result_schema_version") == CORE3_RESULT_SCHEMA_V6
+    ):
+        _verify_core3_artifacts_v6(
+            request.output_root, row, request.artifact_storage,
+        )
+    return ValidatedTerminalV5(str(execution), dict(row), os.getpid())
+
+
+def _validate_terminal_files_v5(
+    requests: Sequence[TerminalValidationRequestV5],
+    requested_worker_count: int,
+) -> tuple[tuple[ValidatedTerminalV5, ...], Mapping[str, Any]]:
+    if type(requested_worker_count) is not int or requested_worker_count < 1:
+        raise RTA4LocalExecutionV5Error(
+            "V5 terminal validation requested worker count must be positive"
+        )
+    tasks = tuple(requests)
+    used_worker_count = min(requested_worker_count, len(tasks))
+    if not tasks:
+        return (), FrozenMapping({
+            "requested_worker_count": requested_worker_count,
+            "used_worker_count": 0,
+            "distinct_worker_pids": (),
+            "wall_seconds": 0.0,
+        })
+    started = time.monotonic_ns()
+    if len(tasks) == 1:
+        try:
+            results = (_validate_terminal_file_v5(tasks[0]),)
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception as exc:
+            raise RTA4LocalExecutionV5Error(
+                f"V5 terminal validation failed for {tasks[0].terminal_path}: "
+                f"{_root_exception_type_v5(exc)}: {exc}"
+            ) from exc
+    else:
+        results = _run_spawn_tasks_ordered_v5(
+            tasks,
+            tuple(str(request.terminal_path) for request in tasks),
+            worker_count=used_worker_count,
+            worker=_validate_terminal_file_v5,
+            phase="V5 terminal validation",
+        )
+    finished = time.monotonic_ns()
+    return results, FrozenMapping({
+        "requested_worker_count": requested_worker_count,
+        "used_worker_count": used_worker_count,
+        "distinct_worker_pids": tuple(sorted({
+            result.worker_pid for result in results
+        })),
+        "wall_seconds": (finished - started) / 1_000_000_000,
+    })
+
+
 class LocalResultWriterV5:
     """Atomic terminal/checkpoint namespace for non-paper V5 execution."""
 
@@ -1166,7 +1615,12 @@ class LocalResultWriterV5:
         records: Sequence[FormalPlanRecordV5],
         execution_environment: Mapping[str, Any],
         resume: bool,
+        validation_worker_count: int = 1,
     ) -> None:
+        if type(validation_worker_count) is not int or validation_worker_count < 1:
+            raise RTA4LocalExecutionV5Error(
+                "terminal validation worker count must be positive"
+            )
         self.root = root
         self.terminals = root / RTA4_LOCAL_TERMINALS_V5
         self.marker = root / RTA4_LOCAL_RUN_MANIFEST_V5
@@ -1279,40 +1733,35 @@ class LocalResultWriterV5:
         if not self.marker.is_file():
             atomic_write_json(self.marker, self.run_manifest)
         self._plan = {record.execution_id: record for record in records}
+        self.validation_worker_count = validation_worker_count
+        self.last_terminal_validation_evidence: Mapping[str, Any] = (
+            FrozenMapping({
+                "requested_worker_count": validation_worker_count,
+                "used_worker_count": 0,
+                "distinct_worker_pids": (),
+                "wall_seconds": 0.0,
+            })
+        )
 
     def completed_rows(self) -> dict[str, Mapping[str, Any]]:
-        completed: dict[str, Mapping[str, Any]] = {}
-        for path in sorted(self.terminals.glob("*.json")):
-            try:
-                row = strict_json_file_v6(path)
-            except RTA4Core3ArtifactV6Error as exc:
-                raise RTA4LocalExecutionV5Error(str(exc)) from exc
-            unsigned = dict(row)
-            observed = unsigned.pop("result_identity", None)
-            execution = row.get("execution_identity")
-            result_domain = (
-                RTA4_LOCAL_RESULT_DOMAIN_V6
-                if row.get("row_schema")
-                == "ASAP_BLOCK_V9_3_RTA4_LOCAL_RESULT_V6"
-                else RTA4_LOCAL_RESULT_DOMAIN_V5
+        paths = tuple(sorted(self.terminals.glob("*.json")))
+        requests = tuple(
+            TerminalValidationRequestV5(
+                path,
+                self.root,
+                path.stem if path.stem in self._plan else None,
+                str(self.run_manifest["run_identity"]),
+                self.run_manifest.get("artifact_storage"),
             )
-            if (
-                path.stem != execution
-                or execution not in self._plan
-                or observed != domain_hash(result_domain, unsigned)
-                or row.get("run_identity") != self.run_manifest["run_identity"]
-                or row.get("not_for_paper") is not True
-            ):
-                raise RTA4LocalExecutionV5Error(
-                    "local terminal identity or classification drift"
-                )
-            if (
-                result_domain == RTA4_LOCAL_RESULT_DOMAIN_V6
-                and row.get("result_schema_version")
-                == CORE3_RESULT_SCHEMA_V6
-            ):
-                self._verify_core3_artifacts_v6(row)
-            completed[str(execution)] = row
+            for path in paths
+        )
+        verified, evidence = _validate_terminal_files_v5(
+            requests, self.validation_worker_count,
+        )
+        self.last_terminal_validation_evidence = evidence
+        completed = {
+            result.execution_identity: result.row for result in verified
+        }
         checkpoint = self.root / RTA4_LOCAL_CHECKPOINT_V5
         if checkpoint.is_file():
             value = json.loads(checkpoint.read_text(encoding="utf-8"))
@@ -1331,147 +1780,20 @@ class LocalResultWriterV5:
         return completed
 
     def _verify_core3_artifacts_v6(self, row: Mapping[str, Any]) -> None:
-        storage = self.run_manifest.get("artifact_storage")
-        try:
-            trace_binding = artifact_binding_from_row_v1(row, "trace")
-            sidecar_binding = artifact_binding_from_row_v1(
-                row, "job_observations"
-            )
-        except RTA4Core3ArtifactV6Error as exc:
-            raise RTA4LocalExecutionV5Error(str(exc)) from exc
-        if storage is not None:
-            try:
-                contract = require_normalized_core3_artifact_storage_v1(
-                    storage
-                )
-            except RTA4Core3ContractV6Error as exc:
-                raise RTA4LocalExecutionV5Error(str(exc)) from exc
-            if trace_binding is None or sidecar_binding is None:
-                raise RTA4LocalExecutionV5Error(
-                    "CORE-3 compressed run has a legacy artifact binding"
-                )
-            expected_identity = contract["storage_contract_identity"]
-            if (
-                trace_binding["artifact_storage_contract_identity"]
-                != expected_identity
-                or sidecar_binding["artifact_storage_contract_identity"]
-                != expected_identity
-                or trace_binding["storage_compresslevel"]
-                != contract["compresslevel"]
-                or sidecar_binding["storage_compresslevel"]
-                != contract["compresslevel"]
-                or trace_binding["storage_mtime"] != contract["mtime"]
-                or sidecar_binding["storage_mtime"] != contract["mtime"]
-            ):
-                raise RTA4LocalExecutionV5Error(
-                    "CORE-3 artifact storage provenance drift"
-                )
-            try:
-                trace = load_bound_gzip_json_v1(self.root, trace_binding)
-                if (
-                    row.get("trace_sha256")
-                    != trace_binding["uncompressed_sha256"]
-                    or not isinstance(trace, Mapping)
-                    or trace.get("trace_schema_version")
-                    != row.get("trace_schema_version")
-                    or trace.get("simulation_completed") is not True
-                    or trace.get("simulation_completion_reason")
-                    != "reached_horizon"
-                    or trace.get("expected_simulation_horizon_ms")
-                    != row.get("observation_horizon")
-                    or trace.get("observed_simulation_end_ms")
-                    != row.get("observation_horizon")
-                ):
-                    raise RTA4LocalExecutionV5Error(
-                        "CORE-3 compressed trace binding drift"
-                    )
-                del trace
-                sidecar = load_bound_gzip_json_v1(
-                    self.root, sidecar_binding,
-                )
-            except RTA4Core3ArtifactV6Error as exc:
-                raise RTA4LocalExecutionV5Error(str(exc)) from exc
-            if (
-                row.get("job_observations_sha256")
-                != sidecar_binding["uncompressed_sha256"]
-            ):
-                raise RTA4LocalExecutionV5Error(
-                    "CORE-3 compressed sidecar binding drift"
-                )
-            self._verify_core3_sidecar_document_v6(row, sidecar)
-            return
-        if trace_binding is not None or sidecar_binding is not None:
-            raise RTA4LocalExecutionV5Error(
-                "legacy CORE-3 run contains an unbound storage contract"
-            )
-        self._verify_legacy_core3_artifacts_v6(row)
+        _verify_core3_artifacts_v6(
+            self.root, row, self.run_manifest.get("artifact_storage"),
+        )
 
     @staticmethod
     def _verify_core3_sidecar_document_v6(
         row: Mapping[str, Any], sidecar: Any,
     ) -> None:
-        if not isinstance(sidecar, Mapping):
-            raise RTA4LocalExecutionV5Error(
-                "CORE-3 V6 sidecar is not an object"
-            )
-        jobs = sidecar.get("job_observations")
-        if (
-            sidecar.get("job_observations_schema_version")
-            != CORE3_JOB_OBSERVATIONS_SCHEMA_VERSION_V6
-            or sidecar.get("execution_identity")
-            != row.get("execution_identity")
-            or not isinstance(jobs, list)
-            or len(jobs) != row.get("job_observation_count")
-            or len(jobs) != sidecar.get("job_observation_count")
-        ):
-            raise RTA4LocalExecutionV5Error(
-                "CORE-3 V6 sidecar schema/identity/count drift"
-            )
+        _verify_core3_sidecar_document_v6(row, sidecar)
 
     def _verify_legacy_core3_artifacts_v6(
         self, row: Mapping[str, Any],
     ) -> None:
-        relative = row.get("job_observations_relative_path")
-        expected_sha = row.get("job_observations_sha256")
-        if type(relative) is not str or type(expected_sha) is not str:
-            raise RTA4LocalExecutionV5Error(
-                "CORE-3 V6 terminal has no bound job sidecar"
-            )
-        try:
-            sidecar = load_legacy_bound_json_v1(
-                self.root, relative, expected_sha,
-            )
-            execution = row.get("execution_identity")
-            trace_sha = row.get("trace_sha256")
-            if type(execution) is not str or type(trace_sha) is not str:
-                raise RTA4Core3ArtifactV6Error(
-                    "legacy CORE-3 trace binding is incomplete"
-                )
-            trace = load_legacy_bound_json_v1(
-                self.root,
-                (
-                    "bounded_core3_simulations_v5/"
-                    f"{execution}/trace_v5.json"
-                ),
-                trace_sha,
-            )
-        except RTA4Core3ArtifactV6Error as exc:
-            raise RTA4LocalExecutionV5Error(str(exc)) from exc
-        if (
-            not isinstance(trace, Mapping)
-            or trace.get("trace_schema_version")
-            != row.get("trace_schema_version")
-            or trace.get("simulation_completed") is not True
-            or trace.get("simulation_completion_reason") != "reached_horizon"
-            or trace.get("expected_simulation_horizon_ms")
-            != row.get("observation_horizon")
-            or trace.get("observed_simulation_end_ms")
-            != row.get("observation_horizon")
-        ):
-            raise RTA4LocalExecutionV5Error(
-                "legacy CORE-3 trace semantic binding drift"
-            )
-        self._verify_core3_sidecar_document_v6(row, sidecar)
+        _verify_legacy_core3_artifacts_v6(self.root, row)
 
     def write_result(self, row: Mapping[str, Any]) -> None:
         execution = str(row.get("execution_identity", ""))
@@ -1889,6 +2211,7 @@ def execute_loaded_campaign_v5(
         records=all_records,
         execution_environment=execution_environment,
         resume=use_resume,
+        validation_worker_count=int(operation["worker_count"]),
     )
     completed = writer.completed_rows()
     if use_resume:
@@ -1903,6 +2226,34 @@ def execute_loaded_campaign_v5(
     invocation_execution_ids = tuple(
         record.execution_id for record in target_records
     )
+    requested_worker_count = int(operation["worker_count"])
+    preparation_evidence: Mapping[str, Any] = FrozenMapping({
+        "requested_worker_count": requested_worker_count,
+        "used_worker_count": 0,
+        "distinct_worker_pids": (),
+        "wall_seconds": 0.0,
+    })
+    prepared_by_execution: dict[str, PreparedPhysicalRecordV5] = {}
+    if selected_dispatch is None:
+        prepared_results, preparation_evidence = (
+            _prepare_records_for_execution_v5(
+                campaign, target_records, requested_worker_count,
+            )
+        )
+        expected_material_identity = _local_material_identity(campaign)
+        for record, prepared in zip(target_records, prepared_results):
+            if prepared.material_identity != expected_material_identity:
+                raise RTA4LocalExecutionV5Error(
+                    "V5 prepared material identity drift"
+                )
+            prepared_by_execution[record.execution_id] = (
+                PreparedPhysicalRecordV5(
+                    record,
+                    prepared.worker_record,
+                    prepared.certificate,
+                    prepared.context,
+                )
+            )
     throttle = _CheckpointThrottleV3(
         writer, completed, every_records=1, every_seconds=30,
     )
@@ -1964,24 +2315,6 @@ def execute_loaded_campaign_v5(
             bootstrap = _worker_bootstrap_v5(
                 campaign, all_records, operation,
             )
-            prepared_by_execution: dict[str, PreparedPhysicalRecordV5] = {}
-            expected_material_identity = _local_material_identity(campaign)
-            for record in target_records:
-                worker_record, certificate, context, material_identity = (
-                    _prepared_record_material(campaign, record)
-                )
-                if material_identity != expected_material_identity:
-                    raise RTA4LocalExecutionV5Error(
-                        "V5 prepared material identity drift"
-                    )
-                prepared_by_execution[record.execution_id] = (
-                    PreparedPhysicalRecordV5(
-                        record,
-                        worker_record,
-                        certificate,
-                        context,
-                    )
-                )
             if scientific["core"] == "CORE-5B":
                 group_counts = tuple(scientific["v3_plan_grid"]["workers"])
                 grouped_targets = {
@@ -2030,6 +2363,7 @@ def execute_loaded_campaign_v5(
         checkpoint = throttle.write_if_due(force=True)
     assert checkpoint is not None
     completed = writer.completed_rows()
+    terminal_validation_evidence = writer.last_terminal_validation_evidence
     total_counts = _terminal_counts_v5(writer, completed)
     invocation_counts = _terminal_counts_v5(
         writer,
@@ -2136,6 +2470,28 @@ def execute_loaded_campaign_v5(
             "topology_selection_policy"
         ],
         "physical_execution_groups": physical_execution_groups,
+        "preparation_requested_worker_count": preparation_evidence[
+            "requested_worker_count"
+        ],
+        "preparation_used_worker_count": preparation_evidence[
+            "used_worker_count"
+        ],
+        "preparation_distinct_worker_pids": list(preparation_evidence[
+            "distinct_worker_pids"
+        ]),
+        "preparation_wall_seconds": preparation_evidence["wall_seconds"],
+        "terminal_validation_requested_worker_count": (
+            terminal_validation_evidence["requested_worker_count"]
+        ),
+        "terminal_validation_used_worker_count": (
+            terminal_validation_evidence["used_worker_count"]
+        ),
+        "terminal_validation_distinct_worker_pids": list(
+            terminal_validation_evidence["distinct_worker_pids"]
+        ),
+        "terminal_validation_wall_seconds": terminal_validation_evidence[
+            "wall_seconds"
+        ],
         "checkpoint_path": str(
             operation["output_root"] / RTA4_LOCAL_CHECKPOINT_V5
         ),
