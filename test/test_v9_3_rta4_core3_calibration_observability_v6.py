@@ -5,6 +5,7 @@ from fractions import Fraction
 import gzip
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 from types import SimpleNamespace
@@ -13,6 +14,7 @@ import pytest
 import yaml
 
 from experiments.v9_3 import rta4_core3_artifacts_v6 as core3_artifacts
+from experiments.v9_3 import rta4_local_execution_v5 as local_execution_v5
 from experiments.v9_3.rta4_core3_calibration_v6 import (
     CORE3_CALIBRATION_SUMMARY_DOMAIN_V6,
     RTA4Core3CalibrationV6Error,
@@ -1195,6 +1197,146 @@ def _write_calibration_fixture(root: Path):
 def _summarize(fixture):
     manifest, roots, _pairs = fixture
     return summarize_calibration_v6(manifest, roots[30000], roots[60000])
+
+
+def _parallel_validation_writer(fixture, horizon=30000, workers=4):
+    manifest_path, roots, _pairs = fixture
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    item = next(
+        row for row in manifest["campaigns"]
+        if row["release_horizon"] == horizon
+    )
+    campaign = load_rta4_campaign_v5(
+        manifest_path.parent / item["relative_path"]
+    )
+    plan = describe_formal_plan_v5(
+        campaign.normalized_scientific_config,
+        campaign.task_sources,
+        campaign.service_curve,
+    )
+    records = tuple(iter_formal_plan_v5(
+        campaign.normalized_scientific_config,
+        campaign.task_sources,
+        campaign.service_curve,
+    ))
+    return LocalResultWriterV5(
+        roots[horizon],
+        campaign=campaign,
+        plan=plan,
+        records=records,
+        execution_environment=_physical_environment(),
+        resume=True,
+        validation_worker_count=workers,
+    )
+
+
+def test_parallel_terminal_validation_is_ordered_spawned_and_equivalent(
+    tmp_path,
+):
+    fixture = _write_calibration_fixture(tmp_path)
+    writer = _parallel_validation_writer(fixture)
+    paths = tuple(sorted(writer.terminals.glob("*.json")))
+    serial = tuple(
+        local_execution_v5._validate_terminal_file_v5(
+            local_execution_v5.TerminalValidationRequestV5(
+                path,
+                writer.root,
+                path.stem if path.stem in writer._plan else None,
+                writer.run_manifest["run_identity"],
+                writer.run_manifest.get("artifact_storage"),
+            )
+        )
+        for path in paths
+    )
+    completed = writer.completed_rows()
+    assert list(completed) == [row.execution_identity for row in serial]
+    assert list(completed.values()) == [row.row for row in serial]
+    evidence = writer.last_terminal_validation_evidence
+    assert evidence["requested_worker_count"] == 4
+    assert evidence["used_worker_count"] == 4
+    assert len(evidence["distinct_worker_pids"]) > 1
+    assert os.getpid() not in evidence["distinct_worker_pids"]
+
+
+def test_parallel_terminal_validation_fail_closed_for_all_bound_inputs(
+    tmp_path,
+):
+    fixture = _write_calibration_fixture(tmp_path)
+    writer = _parallel_validation_writer(fixture)
+    terminal_path = sorted(writer.terminals.glob("*.json"))[0]
+    original_terminal = terminal_path.read_bytes()
+    terminal = json.loads(original_terminal)
+    trace_path = writer.root / terminal["trace_relative_path"]
+    sidecar_path = writer.root / terminal[
+        "job_observations_relative_path"
+    ]
+    original_trace = trace_path.read_bytes()
+    original_sidecar = sidecar_path.read_bytes()
+
+    def restore():
+        terminal_path.write_bytes(original_terminal)
+        trace_path.write_bytes(original_trace)
+        sidecar_path.write_bytes(original_sidecar)
+
+    terminal_path.write_text("{broken", encoding="utf-8")
+    with pytest.raises(
+        RTA4LocalExecutionV5Error,
+        match=rf"{terminal_path}.*RTA4Core3ArtifactV6Error",
+    ):
+        writer.completed_rows()
+    restore()
+
+    value = json.loads(original_terminal)
+    value["result_identity"] = "0" * 64
+    terminal_path.write_text(json.dumps(value), encoding="utf-8")
+    with pytest.raises(RTA4LocalExecutionV5Error, match=str(terminal_path)):
+        writer.completed_rows()
+    restore()
+
+    trace_path.write_bytes(original_trace[:-4])
+    with pytest.raises(RTA4LocalExecutionV5Error, match=str(terminal_path)):
+        writer.completed_rows()
+    restore()
+
+    sidecar_path.write_bytes(original_sidecar[:-4])
+    with pytest.raises(RTA4LocalExecutionV5Error, match=str(terminal_path)):
+        writer.completed_rows()
+    restore()
+
+    value = json.loads(original_terminal)
+    value["result"]["result"]["trace_storage_bytes"] += 1
+    terminal_path.write_text(json.dumps(value), encoding="utf-8")
+    _rehash_terminal(terminal_path)
+    with pytest.raises(RTA4LocalExecutionV5Error, match=str(terminal_path)):
+        writer.completed_rows()
+    restore()
+
+    with gzip.open(sidecar_path, "rt", encoding="utf-8") as handle:
+        sidecar_value = json.load(handle)
+    sidecar_value["execution_identity"] = "f" * 64
+    raw_sidecar = sidecar_path.with_suffix("")
+    raw_sidecar.write_text(json.dumps(sidecar_value), encoding="utf-8")
+    sidecar_path.unlink()
+    storage = writer.run_manifest["artifact_storage"]
+    rebound = publish_deterministic_gzip_json_v1(
+        raw_sidecar, sidecar_path, storage,
+    )
+    raw_sidecar.unlink()
+    value = json.loads(original_terminal)
+    nested = value["result"]["result"]
+    nested["job_observations_sha256"] = rebound[
+        "uncompressed_sha256"
+    ]
+    nested.update(prefixed_artifact_binding_v1(
+        "job_observations",
+        sidecar_path.relative_to(writer.root).as_posix(),
+        rebound,
+    ))
+    terminal_path.write_text(json.dumps(value), encoding="utf-8")
+    _rehash_terminal(terminal_path)
+    with pytest.raises(RTA4LocalExecutionV5Error, match=str(terminal_path)):
+        writer.completed_rows()
+    restore()
 
 
 def _rehash_terminal(path: Path):

@@ -1400,10 +1400,197 @@ def test_cli_exit_code_uses_full_or_bounded_clean_status(
     ]) == expected
 
 
-def test_v5_production_source_has_no_thread_pool_fallback():
+def test_v5_production_uses_spawn_processes_without_thread_fallback():
     source = Path(local_execution_v5.__file__).read_text(encoding="utf-8")
     assert "ThreadPoolExecutor" not in source
-    assert "concurrent.futures" not in source
+    assert "ProcessPoolExecutor" in source
+    assert 'multiprocessing.get_context("spawn")' in source
+
+
+def _parallel_preparation_campaign(output_root: Path, workers: int = 4):
+    raw = _small("CORE-1")
+    raw["tasksets_per_utilization"] = 4
+    raw["task_source"] = _source(tasksets=4)
+    return _loaded_from_raw(raw, output_root, runtime={
+        "output_root": str(output_root),
+        "worker_count": workers,
+        "max_in_flight": workers,
+        "timeout_seconds": 2,
+    })
+
+
+def test_parallel_preparation_is_spawned_ordered_and_serially_equivalent(
+    tmp_path,
+):
+    campaign = _parallel_preparation_campaign(tmp_path / "parallel-prepare")
+    scientific = campaign.normalized_scientific_config
+    plan_before = describe_formal_plan_v5(
+        scientific, campaign.task_sources, campaign.service_curve,
+    )
+    records = tuple(iter_formal_plan_v5(
+        scientific, campaign.task_sources, campaign.service_curve,
+    ))
+    assert len(records) == 16
+    serial = tuple(
+        local_execution_v5._prepared_record_material(campaign, record)
+        for record in records
+    )
+    parallel, evidence = (
+        local_execution_v5._prepare_records_for_execution_v5(
+            campaign, records, 4,
+        )
+    )
+    assert [result.ordinal for result in parallel] == [
+        record.ordinal for record in records
+    ]
+    assert [result.execution_id for result in parallel] == [
+        record.execution_id for record in records
+    ]
+    for result, expected in zip(parallel, serial):
+        assert result.worker_record == expected[0]
+        assert result.certificate == expected[1]
+        assert result.context == expected[2]
+        assert result.material_identity == expected[3]
+    assert evidence["requested_worker_count"] == 4
+    assert evidence["used_worker_count"] == 4
+    assert len(evidence["distinct_worker_pids"]) > 1
+    assert os.getpid() not in evidence["distinct_worker_pids"]
+    assert describe_formal_plan_v5(
+        scientific, campaign.task_sources, campaign.service_curve,
+    ) == plan_before
+
+
+def test_preparation_worker_count_one_and_empty_targets_are_explicit(tmp_path):
+    campaign = _parallel_preparation_campaign(
+        tmp_path / "single-prepare", workers=1,
+    )
+    records = tuple(iter_formal_plan_v5(
+        campaign.normalized_scientific_config,
+        campaign.task_sources,
+        campaign.service_curve,
+    ))
+    prepared, evidence = local_execution_v5._prepare_records_for_execution_v5(
+        campaign, records[:2], 1,
+    )
+    assert len(prepared) == 2
+    assert evidence["used_worker_count"] == 1
+    assert len(evidence["distinct_worker_pids"]) == 1
+    assert os.getpid() not in evidence["distinct_worker_pids"]
+    empty, empty_evidence = (
+        local_execution_v5._prepare_records_for_execution_v5(
+            campaign, (), 1,
+        )
+    )
+    assert empty == ()
+    assert empty_evidence == {
+        "requested_worker_count": 1,
+        "used_worker_count": 0,
+        "distinct_worker_pids": (),
+        "wall_seconds": 0.0,
+    }
+    validated, validation_evidence = (
+        local_execution_v5._validate_terminal_files_v5((), 1)
+    )
+    assert validated == ()
+    assert validation_evidence["used_worker_count"] == 0
+    assert validation_evidence["distinct_worker_pids"] == ()
+
+
+def test_parallel_preparation_failure_stops_before_physical_execution(
+    tmp_path, monkeypatch,
+):
+    root = tmp_path / "prepare-failure"
+    campaign = _parallel_preparation_campaign(root, workers=2)
+    original_iter = local_execution_v5.iter_formal_plan_v5
+    records = tuple(original_iter(
+        campaign.normalized_scientific_config,
+        campaign.task_sources,
+        campaign.service_curve,
+    ))
+    broken = list(records)
+    broken[1] = replace(
+        broken[1], effective_service_identity="0" * 64,
+    )
+
+    def corrupted_records(*_args, **_kwargs):
+        return iter(broken)
+
+    physical_calls = []
+
+    def forbidden_physical_execution(**kwargs):
+        physical_calls.append(kwargs)
+        raise AssertionError("physical execution started after prep failure")
+
+    monkeypatch.setattr(
+        local_execution_v5, "iter_formal_plan_v5", corrupted_records,
+    )
+    with pytest.raises(
+        RTA4LocalExecutionV5Error,
+        match=(
+            rf"ordinal={broken[1].ordinal},execution_id="
+            rf"{broken[1].execution_id}.*RTA4LocalExecutionV5Error"
+        ),
+    ):
+        execute_loaded_campaign_v5(
+            campaign,
+            acknowledge_not_for_paper=True,
+            max_records=4,
+            _topology_discoverer=lambda: _synthetic_topology(2),
+            _physical_group_executor=forbidden_physical_execution,
+        )
+    assert physical_calls == []
+    assert not list((root / "local_terminal_results_v5").glob("*.json"))
+    assert not (root / "local_checkpoint_v5.json").exists()
+
+
+def test_parallel_preparation_preserves_resume_and_max_records(
+    tmp_path,
+):
+    root = tmp_path / "parallel-resume"
+    campaign = _parallel_preparation_campaign(root, workers=4)
+    invocations = []
+
+    def fake_physical_execution(**kwargs):
+        prepared = tuple(kwargs["prepared_records"])
+        invocations.append(tuple(
+            item.plan_record.execution_id for item in prepared
+        ))
+        for item in prepared:
+            kwargs["terminal_callback"](
+                item.plan_record, _clean_rta_result(),
+            )
+        return {
+            "worker_count": kwargs["worker_count"],
+            "requested_record_count": len(prepared),
+            "completed_record_count": len(prepared),
+        }
+
+    common = {
+        "acknowledge_not_for_paper": True,
+        "_topology_discoverer": lambda: _synthetic_topology(4),
+        "_physical_group_executor": fake_physical_execution,
+    }
+    first = execute_loaded_campaign_v5(
+        campaign, max_records=3, **common,
+    )
+    second = execute_loaded_campaign_v5(
+        campaign, resume=True, max_records=2, **common,
+    )
+    third = execute_loaded_campaign_v5(
+        campaign, resume=True, max_records=0, **common,
+    )
+    assert [len(group) for group in invocations] == [3, 2]
+    assert set(invocations[0]).isdisjoint(invocations[1])
+    assert first["invocation_target_count"] == 3
+    assert first["preparation_used_worker_count"] == 3
+    assert second["invocation_target_count"] == 2
+    assert second["preparation_used_worker_count"] == 2
+    assert second["terminal_count"] == 5
+    assert third["invocation_target_count"] == 0
+    assert third["preparation_used_worker_count"] == 0
+    assert third["processed_records"] == 0
+    assert third["terminal_count"] == 5
+    assert third["terminal_validation_used_worker_count"] == 4
 
 
 def test_v5_physical_group_uses_two_distinct_pinned_processes(tmp_path):
