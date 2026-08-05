@@ -2479,6 +2479,9 @@ def execute_loaded_campaign_v5(
         "preparation_distinct_worker_pids": list(preparation_evidence[
             "distinct_worker_pids"
         ]),
+        "preparation_actual_distinct_worker_count": len(
+            preparation_evidence["distinct_worker_pids"]
+        ),
         "preparation_wall_seconds": preparation_evidence["wall_seconds"],
         "terminal_validation_requested_worker_count": (
             terminal_validation_evidence["requested_worker_count"]
@@ -2487,6 +2490,9 @@ def execute_loaded_campaign_v5(
             terminal_validation_evidence["used_worker_count"]
         ),
         "terminal_validation_distinct_worker_pids": list(
+            terminal_validation_evidence["distinct_worker_pids"]
+        ),
+        "terminal_validation_actual_distinct_worker_count": len(
             terminal_validation_evidence["distinct_worker_pids"]
         ),
         "terminal_validation_wall_seconds": terminal_validation_evidence[

@@ -1496,6 +1496,55 @@ def test_preparation_worker_count_one_and_empty_targets_are_explicit(tmp_path):
     assert validation_evidence["distinct_worker_pids"] == ()
 
 
+def test_worker_evidence_summary_reports_actual_distinct_pid_counts(tmp_path):
+    def fake_physical_execution(**kwargs):
+        prepared = tuple(kwargs["prepared_records"])
+        for item in prepared:
+            kwargs["terminal_callback"](
+                item.plan_record, _clean_rta_result(),
+            )
+        return {
+            "worker_count": kwargs["worker_count"],
+            "requested_record_count": len(prepared),
+            "completed_record_count": len(prepared),
+        }
+
+    common = {
+        "acknowledge_not_for_paper": True,
+        "_topology_discoverer": lambda: _synthetic_topology(1),
+        "_physical_group_executor": fake_physical_execution,
+    }
+    empty = execute_loaded_campaign_v5(
+        _parallel_preparation_campaign(
+            tmp_path / "empty-summary", workers=1,
+        ),
+        max_records=0,
+        **common,
+    )
+    assert empty["preparation_used_worker_count"] == 0
+    assert empty["preparation_distinct_worker_pids"] == []
+    assert empty["preparation_actual_distinct_worker_count"] == 0
+    assert empty["terminal_validation_used_worker_count"] == 0
+    assert empty["terminal_validation_distinct_worker_pids"] == []
+    assert empty["terminal_validation_actual_distinct_worker_count"] == 0
+
+    singleton = execute_loaded_campaign_v5(
+        _parallel_preparation_campaign(
+            tmp_path / "singleton-summary", workers=1,
+        ),
+        max_records=1,
+        **common,
+    )
+    assert singleton["preparation_used_worker_count"] == 1
+    assert singleton["preparation_actual_distinct_worker_count"] == len(
+        singleton["preparation_distinct_worker_pids"]
+    ) == 1
+    assert singleton["terminal_validation_used_worker_count"] == 1
+    assert singleton["terminal_validation_actual_distinct_worker_count"] == len(
+        singleton["terminal_validation_distinct_worker_pids"]
+    ) == 1
+
+
 def test_parallel_preparation_failure_stops_before_physical_execution(
     tmp_path, monkeypatch,
 ):
@@ -1591,6 +1640,14 @@ def test_parallel_preparation_preserves_resume_and_max_records(
     assert third["processed_records"] == 0
     assert third["terminal_count"] == 5
     assert third["terminal_validation_used_worker_count"] == 4
+    for summary in (first, second, third):
+        assert summary["preparation_actual_distinct_worker_count"] == len(
+            summary["preparation_distinct_worker_pids"]
+        )
+        assert (
+            summary["terminal_validation_actual_distinct_worker_count"]
+            == len(summary["terminal_validation_distinct_worker_pids"])
+        )
 
 
 def test_v5_physical_group_uses_two_distinct_pinned_processes(tmp_path):
