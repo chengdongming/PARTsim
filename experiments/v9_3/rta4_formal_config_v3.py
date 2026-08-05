@@ -43,6 +43,9 @@ RTA4_CORE2_METHODS_V3 = (
 )
 RTA4_RELEASE_MODES_V3 = ("ASYNC_HASH_PHASE_V1", "SYNC_V1")
 RTA4_SELECTION_RULE_V3 = "DOMAIN_HASH_ORDERED_RESULT_INDEPENDENT_V1"
+RTA4_TASKSET_FIRST_SELECTION_RULE_V3 = (
+    "DOMAIN_HASH_ORDERED_TASKSET_FIRST_RESULT_INDEPENDENT_V1"
+)
 
 _COMMON_FIELDS = {"campaign_id", "core", "runtime"}
 _CORE_FIELDS = {
@@ -358,14 +361,48 @@ def _normalize_core5a(raw: Mapping[str, Any]) -> Dict[str, Any]:
         raw["task_count_axis"], {"values", "processors", "tasksets"},
         "task_count_axis",
     )
-    processor_axis = _mapping(
-        raw["processor_axis"], {"values", "task_count", "tasksets"},
-        "processor_axis",
+    processor_axis_fields = {"values", "task_count", "tasksets"}
+    processor_axis_raw = raw["processor_axis"]
+    processor_axis_actual = (
+        set(processor_axis_raw) if isinstance(processor_axis_raw, Mapping) else set()
     )
+    if (
+        not isinstance(processor_axis_raw, Mapping)
+        or (
+            processor_axis_actual != processor_axis_fields
+            and processor_axis_actual
+            != processor_axis_fields | {"fixed_total_utilization"}
+        )
+    ):
+        raise RTA4FormalConfigV3Error("processor_axis field set mismatch")
+    processor_axis = processor_axis_raw
     time_axis = _mapping(
         raw["integer_time_scale_axis"], {"values", "base_tasksets"},
         "integer_time_scale_axis",
     )
+    processor_values = _integer_axis(
+        processor_axis["values"], "processor_axis.values",
+    )
+    normalized_processor_axis: Dict[str, Any] = {
+        "values": processor_values,
+        "task_count": _positive_int(
+            processor_axis["task_count"], "processor_axis.task_count",
+        ),
+        "tasksets": _positive_int(
+            processor_axis["tasksets"], "processor_axis.tasksets",
+        ),
+    }
+    if "fixed_total_utilization" in processor_axis:
+        fixed_total = _exact_text(
+            processor_axis["fixed_total_utilization"],
+            "processor_axis.fixed_total_utilization",
+            minimum=Fraction(0), strict_minimum=True,
+        )
+        if any(Fraction(fixed_total) / value > 1 for value in processor_values):
+            raise RTA4FormalConfigV3Error(
+                "processor_axis fixed_total_utilization exceeds processor capacity"
+            )
+        normalized_processor_axis["fixed_total_utilization"] = fixed_total
     return {
         "baseline": _baseline(raw["baseline"], include_utilization=True),
         "task_count_axis": {
@@ -373,11 +410,7 @@ def _normalize_core5a(raw: Mapping[str, Any]) -> Dict[str, Any]:
             "processors": _positive_int(task_axis["processors"], "task_count_axis.processors"),
             "tasksets": _positive_int(task_axis["tasksets"], "task_count_axis.tasksets"),
         },
-        "processor_axis": {
-            "values": _integer_axis(processor_axis["values"], "processor_axis.values"),
-            "task_count": _positive_int(processor_axis["task_count"], "processor_axis.task_count"),
-            "tasksets": _positive_int(processor_axis["tasksets"], "processor_axis.tasksets"),
-        },
+        "processor_axis": normalized_processor_axis,
         "integer_time_scale_axis": {
             "values": _integer_axis(time_axis["values"], "integer_time_scale_axis.values"),
             "base_tasksets": _positive_int(time_axis["base_tasksets"], "integer_time_scale_axis.base_tasksets"),
@@ -395,8 +428,21 @@ def _normalize_core5b(raw: Mapping[str, Any]) -> Dict[str, Any]:
     )
     if selected > candidates:
         raise RTA4FormalConfigV3Error("selected_per_method_stratum exceeds candidates")
+    source_raw = raw["source"]
+    if not isinstance(source_raw, Mapping):
+        raise RTA4FormalConfigV3Error("source field set mismatch")
+    source_core = source_raw.get("core")
+    if source_core not in {"CORE-1", "CORE-4"}:
+        raise RTA4FormalConfigV3Error(
+            "CORE-5B source must bind CORE-1 CORE1_TASKSET_STORE or "
+            "CORE-4 CORE4_BASELINE"
+        )
+    selection_rule = (
+        RTA4_TASKSET_FIRST_SELECTION_RULE_V3
+        if source_core == "CORE-1" else RTA4_SELECTION_RULE_V3
+    )
     return {
-        "source": _source(raw["source"], "CORE-4"),
+        "source": _source(source_raw, str(source_core)),
         "utilization_strata": _exact_axis(
             raw["utilization_strata"], "utilization_strata",
             minimum=Fraction(0), maximum=Fraction(1), strict_minimum=True,
@@ -405,7 +451,7 @@ def _normalize_core5b(raw: Mapping[str, Any]) -> Dict[str, Any]:
         "selected_per_method_stratum": selected,
         "methods": _methods(raw["methods"], "methods", RTA4_RECURSIVE_METHODS_V3),
         "workers": _integer_axis(raw["workers"], "workers"),
-        "selection_rule": RTA4_SELECTION_RULE_V3,
+        "selection_rule": selection_rule,
     }
 
 
@@ -451,11 +497,20 @@ def normalize_rta4_campaign_v3(raw: Mapping[str, Any]) -> Dict[str, Any]:
     if core == "CORE-4":
         fixed_semantics["sensitivity_design"] = "ONE_FACTOR_AT_A_TIME"
     if core == "CORE-5B":
-        fixed_semantics.update({
-            "source_tasksets": "CORE-4_BASELINE_HASH_BOUND_REUSE",
-            "selection_rule": RTA4_SELECTION_RULE_V3,
-            "selection_depends_on_results": False,
-        })
+        if core_material["source"]["core"] == "CORE-1":
+            fixed_semantics.update({
+                "source_tasksets": "CORE-1_EXPERIMENT-1_HASH_BOUND_REUSE",
+                "independent_taskset_generation": False,
+                "selection_unit": "TASKSET_BEFORE_METHOD_CARTESIAN_PRODUCT",
+                "selection_rule": RTA4_TASKSET_FIRST_SELECTION_RULE_V3,
+                "selection_depends_on_results": False,
+            })
+        else:
+            fixed_semantics.update({
+                "source_tasksets": "CORE-4_BASELINE_HASH_BOUND_REUSE",
+                "selection_rule": RTA4_SELECTION_RULE_V3,
+                "selection_depends_on_results": False,
+            })
     scientific = {
         "profile": RTA4_FORMAL_PROFILE_V3,
         "schema_version": RTA4_FORMAL_SCHEMA_VERSION_V3,
@@ -539,6 +594,7 @@ __all__ = [
     "RTA4_FORMAL_CONFIG_DOMAIN_V3", "RTA4_FORMAL_PLAN_VERSION_V3",
     "RTA4_FORMAL_PROFILE_V3", "RTA4_FORMAL_SCHEMA_VERSION_V3",
     "RTA4_RECURSIVE_METHODS_V3", "RTA4_SELECTION_RULE_V3",
+    "RTA4_TASKSET_FIRST_SELECTION_RULE_V3",
     "RTA4FormalConfigV3Error", "formal_taskset_store_identity_v3",
     "load_rta4_campaign_v3", "normalize_rta4_campaign_v3",
     "rta4_formal_config_hash_v3", "source_binding_v3",

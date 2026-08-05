@@ -86,6 +86,7 @@ _RATIONAL_FIELD_NAMES = {
     "source_baseline_exact_e0",
     "physical_initial_energy", "theorem_battery_capacity",
     "absolute_tolerance_j", "relative_tolerance",
+    "fixed_total_utilization",
 }
 
 CORE3_SIMULATION_CONTRACT_V6 = (
@@ -284,8 +285,84 @@ def _core5a_sources(
             raise RTA4FormalConfigV5Error(
                 f"CORE-5A {binding.axis}={value} task-source shape mismatch"
             )
+    if "fixed_total_utilization" in processor_axis:
+        _validate_fixed_total_processor_sources(bindings, processor_axis)
     _validate_integer_time_sources(bindings)
     return tuple(bindings)
+
+
+def _validate_fixed_total_processor_sources(
+    bindings: list[TaskSourceBindingV5], processor_axis: Mapping[str, Any],
+) -> None:
+    processor_bindings = [
+        binding for binding in bindings if binding.axis == "processor_count"
+    ]
+    if not processor_bindings:
+        raise RTA4FormalConfigV5Error(
+            "fixed-total processor axis has no task sources"
+        )
+    reference_source = processor_bindings[0].source
+    reference_contract = (
+        reference_source.mode,
+        reference_source.priority_policy,
+        reference_source.task_count,
+        reference_source.taskset_count,
+    )
+    reference_config = deepcopy(dict(reference_source.normalized_config))
+    reference_config.pop("processors", None)
+    reference_config.pop("manifest_file_sha256", None)
+    reference_config.pop("manifest_semantic_sha256", None)
+    if isinstance(reference_config.get("parameters"), Mapping):
+        reference_config["parameters"] = deepcopy(
+            dict(reference_config["parameters"])
+        )
+        reference_config["parameters"].pop("processors", None)
+    expected_total = Fraction(processor_axis["fixed_total_utilization"])
+    for binding in processor_bindings:
+        source = binding.source
+        if (
+            source.mode,
+            source.priority_policy,
+            source.task_count,
+            source.taskset_count,
+        ) != reference_contract:
+            raise RTA4FormalConfigV5Error(
+                "fixed-total processor sources differ beyond processors"
+            )
+        source_config = deepcopy(dict(source.normalized_config))
+        source_config.pop("processors", None)
+        source_config.pop("manifest_file_sha256", None)
+        source_config.pop("manifest_semantic_sha256", None)
+        if isinstance(source_config.get("parameters"), Mapping):
+            source_config["parameters"] = deepcopy(
+                dict(source_config["parameters"])
+            )
+            source_config["parameters"].pop("processors", None)
+        if source_config != reference_config:
+            raise RTA4FormalConfigV5Error(
+                "fixed-total processor sources differ beyond processors"
+            )
+        for replicate, taskset in enumerate(source.tasksets):
+            reference_taskset = reference_source.taskset(replicate)
+            if (
+                taskset.task_order != reference_taskset.task_order
+                or taskset.task_order_sha256
+                != reference_taskset.task_order_sha256
+                or taskset.source_seed != reference_taskset.source_seed
+                or taskset.material(include_identity=False)
+                != reference_taskset.material(include_identity=False)
+            ):
+                raise RTA4FormalConfigV5Error(
+                    "fixed-total processor sources do not pair exact tasksets"
+                )
+            observed_total = sum(
+                (Fraction(task.C, task.T) for task in taskset.tasks),
+                Fraction(0),
+            )
+            if observed_total != expected_total:
+                raise RTA4FormalConfigV5Error(
+                    "fixed-total processor taskset utilization mismatch"
+                )
 
 
 def _validate_integer_time_sources(

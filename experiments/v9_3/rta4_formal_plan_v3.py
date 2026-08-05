@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from fractions import Fraction
 import hashlib
 from typing import Any, Dict, Iterable, Iterator, Mapping
 
-from .rta4_formal_config import canonical_json, domain_hash
+from .rta4_formal_config import canonical_json, domain_hash, fraction_text
 from .rta4_formal_config_v3 import (
     RTA4_FORMAL_PLAN_VERSION_V3,
     RTA4_FORMAL_PROFILE_V3,
     RTA4_SELECTION_RULE_V3,
+    RTA4_TASKSET_FIRST_SELECTION_RULE_V3,
     formal_taskset_store_identity_v3,
     rta4_formal_config_hash_v3,
     source_binding_v3,
@@ -269,15 +271,21 @@ def _core4(config: Mapping[str, Any]) -> Iterator[FormalPlanRecordV3]:
 def _core5a_axis(
     config: Mapping[str, Any], *, axis: str, values: Iterable[int], tasksets: int,
     processors: int, task_count: int,
+    fixed_total_utilization: str | None = None,
 ) -> Iterator[tuple[Mapping[str, Any], Mapping[str, Any]]]:
     baseline = config["baseline"]
     for value in values:
+        normalized_utilization = (
+            fraction_text(Fraction(fixed_total_utilization) / value)
+            if fixed_total_utilization is not None
+            else baseline["normalized_utilization"]
+        )
         for replicate in range(tasksets):
             slot = {
                 "namespace": f"RTA4_CORE5A_{axis.upper()}_V3",
                 "processor_count": value if axis == "processor_count" else processors,
                 "task_count": value if axis == "task_count" else task_count,
-                "normalized_utilization": baseline["normalized_utilization"],
+                "normalized_utilization": normalized_utilization,
                 "replicate_index": replicate,
                 "integer_time_scale": value if axis == "integer_time_scale" else 1,
                 "deadline_variant": (
@@ -286,7 +294,13 @@ def _core5a_axis(
                 ),
                 "power_scale": baseline["power_scale"],
             }
-            yield slot, {"axis": axis, "axis_value": str(value), **baseline}
+            material = {"axis": axis, "axis_value": str(value), **baseline}
+            if fixed_total_utilization is not None:
+                material.update({
+                    "normalized_utilization": normalized_utilization,
+                    "total_utilization": fixed_total_utilization,
+                })
+            yield slot, material
 
 
 def _core5a(config: Mapping[str, Any]) -> Iterator[FormalPlanRecordV3]:
@@ -304,6 +318,9 @@ def _core5a(config: Mapping[str, Any]) -> Iterator[FormalPlanRecordV3]:
             config, axis="processor_count", values=processor_axis["values"],
             tasksets=processor_axis["tasksets"], processors=processor_axis["values"][0],
             task_count=processor_axis["task_count"],
+            fixed_total_utilization=processor_axis.get(
+                "fixed_total_utilization"
+            ),
         ),
         _core5a_axis(
             config, axis="integer_time_scale", values=time_axis["values"],
@@ -327,6 +344,54 @@ def _core5a(config: Mapping[str, Any]) -> Iterator[FormalPlanRecordV3]:
 def _core5b(config: Mapping[str, Any]) -> Iterator[FormalPlanRecordV3]:
     ordinal = 0
     source = config["source"]
+    if source["core"] == "CORE-1":
+        for stratum in config["utilization_strata"]:
+            candidates = []
+            for candidate in range(config["candidates_per_method_stratum"]):
+                material = {
+                    "selection_rule": RTA4_TASKSET_FIRST_SELECTION_RULE_V3,
+                    "source_campaign_config_sha256": source[
+                        "source_campaign_config_sha256"
+                    ],
+                    "source_plan_sha256": source["source_plan_sha256"],
+                    "source_taskset_store_identity": source[
+                        "source_taskset_store_identity"
+                    ],
+                    "utilization_stratum": stratum,
+                    "candidate_index": candidate,
+                }
+                candidates.append((
+                    domain_hash(RTA4_CORE5B_SELECTION_DOMAIN_V3, material),
+                    candidate,
+                ))
+            selected = sorted(candidates)[
+                :config["selected_per_method_stratum"]
+            ]
+            for selection_hash, candidate in selected:
+                slot_material = {
+                    "namespace": "RTA4_CORE5B_SELECTED_CORE1_EXPERIMENT1_V3",
+                    "source_taskset_store_identity": source[
+                        "source_taskset_store_identity"
+                    ],
+                    "utilization_stratum": stratum,
+                    "candidate_index": candidate,
+                }
+                for method in config["methods"]:
+                    math = {
+                        "method": method,
+                        "selection_hash": selection_hash,
+                        "selection_rule": RTA4_TASKSET_FIRST_SELECTION_RULE_V3,
+                        "source": source,
+                    }
+                    for worker in config["workers"]:
+                        yield _record(
+                            core="CORE-5B", ordinal=ordinal,
+                            kind="worker_execution",
+                            slot_material=slot_material, math_material=math,
+                            execution_material={"worker_count": worker},
+                        )
+                        ordinal += 1
+        return
     for stratum in config["utilization_strata"]:
         for method in config["methods"]:
             candidates = []
@@ -400,6 +465,18 @@ def expected_counts_v3(config: Mapping[str, Any]) -> Dict[str, int]:
         return {"taskset_skeleton_count": skeletons, "mathematical_request_count": mathematical,
                 "ordered_stream_count": mathematical}
     if core == "CORE-5B":
+        if config["source"]["core"] == "CORE-1":
+            skeletons = (
+                len(config["utilization_strata"])
+                * config["selected_per_method_stratum"]
+            )
+            mathematical = skeletons * len(config["methods"])
+            stream = mathematical * len(config["workers"])
+            return {
+                "taskset_skeleton_count": skeletons,
+                "mathematical_request_count": mathematical,
+                "ordered_stream_count": stream,
+            }
         mathematical = (
             len(config["utilization_strata"]) * len(config["methods"])
             * config["selected_per_method_stratum"]
