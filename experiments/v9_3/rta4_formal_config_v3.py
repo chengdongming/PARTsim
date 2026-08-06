@@ -368,10 +368,13 @@ def _normalize_core5a(raw: Mapping[str, Any]) -> Dict[str, Any]:
     )
     if (
         not isinstance(processor_axis_raw, Mapping)
-        or (
-            processor_axis_actual != processor_axis_fields
-            and processor_axis_actual
-            != processor_axis_fields | {"fixed_total_utilization"}
+        or processor_axis_actual not in (
+            processor_axis_fields,
+            processor_axis_fields | {"fixed_total_utilization"},
+            processor_axis_fields | {
+                "fixed_total_utilization",
+                "fixed_total_utilization_tolerance",
+            },
         )
     ):
         raise RTA4FormalConfigV3Error("processor_axis field set mismatch")
@@ -403,6 +406,20 @@ def _normalize_core5a(raw: Mapping[str, Any]) -> Dict[str, Any]:
                 "processor_axis fixed_total_utilization exceeds processor capacity"
             )
         normalized_processor_axis["fixed_total_utilization"] = fixed_total
+    if "fixed_total_utilization_tolerance" in processor_axis:
+        tolerance = _exact_text(
+            processor_axis["fixed_total_utilization_tolerance"],
+            "processor_axis.fixed_total_utilization_tolerance",
+            minimum=Fraction(0),
+        )
+        if tolerance != processor_axis["fixed_total_utilization_tolerance"]:
+            raise RTA4FormalConfigV3Error(
+                "processor_axis.fixed_total_utilization_tolerance must be a "
+                f"canonical exact rational string: {tolerance}"
+            )
+        normalized_processor_axis[
+            "fixed_total_utilization_tolerance"
+        ] = tolerance
     return {
         "baseline": _baseline(raw["baseline"], include_utilization=True),
         "task_count_axis": {
