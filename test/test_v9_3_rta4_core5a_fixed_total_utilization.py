@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from fractions import Fraction
 
 import pytest
 
@@ -55,6 +56,14 @@ def _fixed_formal_v3_raw() -> dict:
     return raw
 
 
+def _tolerant_formal_v3_raw(tolerance: object = "1/100") -> dict:
+    raw = _fixed_formal_v3_raw()
+    raw["processor_axis"][
+        "fixed_total_utilization_tolerance"
+    ] = tolerance
+    return raw
+
+
 def test_legacy_core5a_config_plan_and_stream_identities_are_unchanged():
     scientific = normalize_rta4_campaign_v3(
         _legacy_formal_v3_raw()
@@ -62,6 +71,7 @@ def test_legacy_core5a_config_plan_and_stream_identities_are_unchanged():
     plan = describe_formal_plan_v3(scientific)
 
     assert "fixed_total_utilization" not in scientific["processor_axis"]
+    assert "fixed_total_utilization_tolerance" not in scientific["processor_axis"]
     assert rta4_formal_config_hash_v3(scientific) == (
         "6cd631ee3d4107fc0fd849474fa985f59b9010071d293023668f90f4feb907d1"
     )
@@ -85,6 +95,7 @@ def test_fixed_total_processor_axis_uses_per_processor_utilization_only_there():
     plan = describe_formal_plan_v3(scientific)
     records = tuple(iter_formal_plan_v3(scientific))
 
+    assert "fixed_total_utilization_tolerance" not in scientific["processor_axis"]
     assert (
         plan["taskset_skeleton_count"],
         plan["mathematical_request_count"],
@@ -122,6 +133,41 @@ def test_fixed_total_processor_axis_uses_per_processor_utilization_only_there():
         and "total_utilization" not in record.material
         for record in task_count_records + time_scale_records
     )
+    assert all(
+        "fixed_total_utilization_tolerance" not in record.material
+        for record in records
+    )
+
+
+def test_tolerance_changes_config_and_plan_identity_not_request_stream():
+    raw = _fixed_formal_v3_raw()
+    raw["task_count_axis"] = {"values": [2], "processors": 2, "tasksets": 1}
+    raw["processor_axis"].update({"values": [2], "task_count": 2, "tasksets": 1})
+    raw["integer_time_scale_axis"] = {"values": [1], "base_tasksets": 1}
+    raw["methods"] = [METHODS[0]]
+    exact = normalize_rta4_campaign_v3(raw)["normalized_scientific_config"]
+    tolerant_raw = deepcopy(raw)
+    tolerant_raw["processor_axis"][
+        "fixed_total_utilization_tolerance"
+    ] = "1/100"
+    tolerant = normalize_rta4_campaign_v3(
+        tolerant_raw
+    )["normalized_scientific_config"]
+    exact_plan = describe_formal_plan_v3(exact)
+    tolerant_plan = describe_formal_plan_v3(tolerant)
+
+    assert rta4_formal_config_hash_v3(exact) != rta4_formal_config_hash_v3(
+        tolerant
+    )
+    assert exact_plan["plan_sha256"] != tolerant_plan["plan_sha256"]
+    assert (
+        exact_plan["ordered_stream_digest"]
+        == tolerant_plan["ordered_stream_digest"]
+    )
+    assert all(
+        "fixed_total_utilization_tolerance" not in record.material
+        for record in iter_formal_plan_v3(tolerant)
+    )
 
 
 def test_fixed_total_processor_axis_requires_positive_exact_capacity():
@@ -138,6 +184,45 @@ def test_fixed_total_processor_axis_requires_positive_exact_capacity():
     raw = _fixed_formal_v3_raw()
     raw["processor_axis"]["fixed_total_utilization"] = "9"
     with pytest.raises(RTA4FormalConfigV3Error, match="capacity"):
+        normalize_rta4_campaign_v3(raw)
+
+
+@pytest.mark.parametrize("tolerance", ["1/100", "0"])
+def test_fixed_total_processor_tolerance_accepts_canonical_nonnegative_values(
+    tolerance,
+):
+    scientific = normalize_rta4_campaign_v3(
+        _tolerant_formal_v3_raw(tolerance)
+    )["normalized_scientific_config"]
+
+    assert scientific["processor_axis"][
+        "fixed_total_utilization_tolerance"
+    ] == tolerance
+
+
+@pytest.mark.parametrize(
+    ("tolerance", "message"),
+    [
+        (0.01, "exact rational string"),
+        ("-1/100", "below its allowed range"),
+        ("2/200", "canonical exact rational string"),
+    ],
+)
+def test_fixed_total_processor_tolerance_rejects_invalid_values(
+    tolerance, message,
+):
+    with pytest.raises(RTA4FormalConfigV3Error, match=message):
+        normalize_rta4_campaign_v3(_tolerant_formal_v3_raw(tolerance))
+
+
+def test_fixed_total_processor_tolerance_requires_fixed_total_utilization():
+    raw = campaign_template("CORE-5A")
+    raw["processor_axis"] = {
+        **raw["processor_axis"],
+        "fixed_total_utilization_tolerance": "1/100",
+    }
+
+    with pytest.raises(RTA4FormalConfigV3Error, match="field set mismatch"):
         normalize_rta4_campaign_v3(raw)
 
 
@@ -166,7 +251,7 @@ def _fixed_total_source(*, processors: int, tasksets: int = 2) -> dict:
     }
 
 
-def _small_fixed_v5_raw() -> dict:
+def _small_fixed_v5_raw(*, tolerance: str | None = None) -> dict:
     raw = campaign_template("CORE-5A")
     raw.update({
         "campaign_id": "core5a-fixed-total-v5-regression",
@@ -209,6 +294,10 @@ def _small_fixed_v5_raw() -> dict:
         "service_curve": deepcopy(SERVICE),
         "runtime": {},
     })
+    if tolerance is not None:
+        raw["processor_axis"][
+            "fixed_total_utilization_tolerance"
+        ] = tolerance
     return raw
 
 
@@ -217,6 +306,16 @@ def _processor_source(raw: dict, processors: int) -> dict:
         row["task_source"] for row in raw["task_sources"]
         if row["axis"] == "processor_count" and row["axis_value"] == processors
     )
+
+
+def _set_processor_second_task(
+    raw: dict, *, C: int, D: int, T: int,
+) -> None:
+    for processors in (2, 4, 8):
+        template = _processor_source(raw, processors)["parameters"][
+            "task_templates"
+        ][1]
+        template.update({"C": [C], "D": [D], "T": [T]})
 
 
 def test_v5_fixed_total_processor_sources_pair_exact_tasks_across_m():
@@ -243,10 +342,64 @@ def test_v5_fixed_total_processor_sources_pair_exact_tasks_across_m():
 
 
 @pytest.mark.parametrize(
+    ("C", "T", "observed_total", "difference"),
+    [
+        (159, 200, Fraction(319, 200), Fraction(1, 200)),
+        (79, 100, Fraction(159, 100), Fraction(1, 100)),
+    ],
+)
+def test_v5_fixed_total_processor_tolerance_accepts_paired_integer_rounding(
+    C, T, observed_total, difference,
+):
+    raw = _small_fixed_v5_raw(tolerance="1/100")
+    _set_processor_second_task(raw, C=C, D=C, T=T)
+
+    normalized = normalize_rta4_campaign_v5(raw)
+    processor_sources = [
+        binding.source for binding in normalized["task_sources"]
+        if binding.axis == "processor_count"
+    ]
+
+    for replicate in range(2):
+        reference = processor_sources[0].taskset(replicate)
+        actual_total = sum(
+            (Fraction(task.C, task.T) for task in reference.tasks),
+            Fraction(0),
+        )
+        assert actual_total == observed_total
+        assert actual_total != Fraction(8, 5)
+        assert abs(actual_total - Fraction(8, 5)) == difference
+        assert all(
+            source.taskset(replicate).material(include_identity=False)
+            == reference.material(include_identity=False)
+            and source.taskset(replicate).source_seed == reference.source_seed
+            for source in processor_sources
+        )
+
+
+@pytest.mark.parametrize(
+    ("tolerance", "C", "message"),
+    [
+        ("1/100", 78, "exceeds allowed tolerance"),
+        ("0", 79, "exceeds allowed tolerance"),
+        (None, 79, "utilization mismatch"),
+    ],
+)
+def test_v5_fixed_total_processor_tolerance_rejects_outside_contract(
+    tolerance, C, message,
+):
+    raw = _small_fixed_v5_raw(tolerance=tolerance)
+    _set_processor_second_task(raw, C=C, D=C, T=100)
+
+    with pytest.raises(RTA4FormalConfigV5Error, match=message):
+        normalize_rta4_campaign_v5(raw)
+
+
+@pytest.mark.parametrize(
     "field", ["name", "C", "D", "T", "power", "source_seed"],
 )
 def test_v5_fixed_total_processor_source_rejects_any_pairing_drift(field):
-    raw = _small_fixed_v5_raw()
+    raw = _small_fixed_v5_raw(tolerance="1/100")
     source = _processor_source(raw, 8)
     if field == "source_seed":
         source["parameters"]["base_seed"] += 1
@@ -263,6 +416,17 @@ def test_v5_fixed_total_processor_source_rejects_any_pairing_drift(field):
     with pytest.raises(
         RTA4FormalConfigV5Error,
         match="pair exact tasksets|differ beyond processors",
+    ):
+        normalize_rta4_campaign_v5(raw)
+
+
+def test_v5_fixed_total_processor_source_rejects_nonprocessor_config_drift():
+    raw = _small_fixed_v5_raw(tolerance="1/100")
+    _processor_source(raw, 8)["parameters"]["generation_indices"] = [1, 0]
+
+    with pytest.raises(
+        RTA4FormalConfigV5Error,
+        match="differ beyond processors",
     ):
         normalize_rta4_campaign_v5(raw)
 

@@ -86,7 +86,7 @@ _RATIONAL_FIELD_NAMES = {
     "source_baseline_exact_e0",
     "physical_initial_energy", "theorem_battery_capacity",
     "absolute_tolerance_j", "relative_tolerance",
-    "fixed_total_utilization",
+    "fixed_total_utilization", "fixed_total_utilization_tolerance",
 }
 
 CORE3_SIMULATION_CONTRACT_V6 = (
@@ -318,6 +318,10 @@ def _validate_fixed_total_processor_sources(
         )
         reference_config["parameters"].pop("processors", None)
     expected_total = Fraction(processor_axis["fixed_total_utilization"])
+    tolerance_text = processor_axis.get("fixed_total_utilization_tolerance")
+    tolerance = (
+        None if tolerance_text is None else Fraction(tolerance_text)
+    )
     for binding in processor_bindings:
         source = binding.source
         if (
@@ -359,9 +363,17 @@ def _validate_fixed_total_processor_sources(
                 (Fraction(task.C, task.T) for task in taskset.tasks),
                 Fraction(0),
             )
-            if observed_total != expected_total:
+            if tolerance is None and observed_total != expected_total:
                 raise RTA4FormalConfigV5Error(
                     "fixed-total processor taskset utilization mismatch"
+                )
+            if (
+                tolerance is not None
+                and abs(observed_total - expected_total) > tolerance
+            ):
+                raise RTA4FormalConfigV5Error(
+                    "fixed-total processor taskset utilization exceeds "
+                    "allowed tolerance"
                 )
 
 
