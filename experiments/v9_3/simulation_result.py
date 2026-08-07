@@ -221,6 +221,59 @@ def conditional_release_coverage_v6(
     return coverage
 
 
+def conditional_release_coverage_v7(
+    release_energies_j: Sequence[float],
+    projection_e0_model_units: Sequence[str],
+    model_energy_unit_joules: str,
+) -> list[dict[str, Any]]:
+    """Evaluate CORE-3 V7 release coverage in the physical-joule domain."""
+
+    if type(model_energy_unit_joules) is not str:
+        raise SimulationTraceError(
+            "model_energy_unit_joules must be a rational string"
+        )
+    try:
+        scale = Fraction(model_energy_unit_joules)
+    except (ValueError, ZeroDivisionError) as exc:
+        raise SimulationTraceError(
+            "model_energy_unit_joules is not rational"
+        ) from exc
+    if scale <= 0 or str(scale) != model_energy_unit_joules:
+        raise SimulationTraceError(
+            "model_energy_unit_joules must be canonical and positive"
+        )
+    physical_axes = []
+    for index, value in enumerate(projection_e0_model_units):
+        if type(value) is not str:
+            raise SimulationTraceError(
+                f"projection E0 {index} is not a rational string"
+            )
+        try:
+            model_e0 = Fraction(value)
+        except (ValueError, ZeroDivisionError) as exc:
+            raise SimulationTraceError(
+                f"projection E0 {index} is not rational"
+            ) from exc
+        if model_e0 < 0 or str(model_e0) != value:
+            raise SimulationTraceError(
+                f"projection E0 {index} is not canonical and nonnegative"
+            )
+        physical_axes.append((value, model_e0 * scale))
+    legacy_shape = conditional_release_coverage_v6(
+        release_energies_j,
+        [str(physical) for _, physical in physical_axes],
+    )
+    return [{
+        "projection_e0_model_units": model,
+        "projection_e0_j": str(physical),
+        **{
+            key: item
+            for key, item in row.items()
+            if key != "exact_e0"
+        },
+    } for (model, physical), row in zip(physical_axes, legacy_shape)]
+
+
 def parse_simulation_trace(
     trace_path: Path,
     task_payload: Sequence[Mapping[str, Any]],
@@ -240,6 +293,13 @@ def parse_simulation_trace(
     theorem_alignment_track: bool = False,
     energy_tolerance_j: float = CORE3_ENERGY_TOLERANCE_J,
     energy_conservation_rule: Optional[Mapping[str, Any]] = None,
+    model_energy_unit_joules: Optional[str] = None,
+    expected_task_energy_j_per_tick: Optional[
+        Mapping[str, Fraction]
+    ] = None,
+    task_energy_factor_provenance: Optional[
+        Mapping[str, Mapping[str, Any]]
+    ] = None,
 ) -> SimulationResult:
     """Parse one complete audited scheduler trace into job/task observations."""
 
@@ -252,6 +312,20 @@ def parse_simulation_trace(
         )
     if type(require_core3_observability) is not bool:
         raise SimulationTraceError("CORE-3 observability selection must be boolean")
+    v7_task_energy_selected = (
+        model_energy_unit_joules is not None
+        or expected_task_energy_j_per_tick is not None
+        or task_energy_factor_provenance is not None
+    )
+    if v7_task_energy_selected and (
+        not require_core3_observability
+        or model_energy_unit_joules is None
+        or expected_task_energy_j_per_tick is None
+        or task_energy_factor_provenance is None
+    ):
+        raise SimulationTraceError(
+            "CORE-3 V7 task energy validation inputs must be supplied together"
+        )
     if data.get("taskset_semantic_hash") != expected_taskset_hash:
         raise SimulationTraceError("RTA/simulation taskset hash mismatch")
     if data.get("configured_scheduler") != expected_scheduler:
@@ -697,6 +771,65 @@ def parse_simulation_trace(
             len(completed) >= minimum_jobs_per_task,
         ))
 
+    task_energy_validation: list[dict[str, Any]] | None = None
+    if expected_task_energy_j_per_tick is not None:
+        if not require_core3_observability:
+            raise SimulationTraceError(
+                "task energy validation is only valid for CORE-3 observability"
+            )
+        if (
+            not isinstance(expected_task_energy_j_per_tick, Mapping)
+            or set(expected_task_energy_j_per_tick) != set(definitions)
+            or not isinstance(task_energy_factor_provenance, Mapping)
+            or set(task_energy_factor_provenance) != set(definitions)
+        ):
+            raise SimulationTraceError(
+                "expected task energy/provenance task IDs do not match payload"
+            )
+        unknown = set(observed_power) - set(definitions)
+        if unknown:
+            raise SimulationTraceError(
+                f"observed task energy contains unknown tasks: {sorted(unknown)}"
+            )
+        executed_by_task = {
+            task_id: sum(
+                job.executed_ticks for job in observations
+                if job.task_id == task_id
+            )
+            for task_id in definitions
+        }
+        task_energy_validation = []
+        for task_id in task_order:
+            expected = expected_task_energy_j_per_tick[task_id]
+            if type(expected) is not Fraction or expected <= 0:
+                raise SimulationTraceError(
+                    f"task {task_id} expected physical energy is invalid"
+                )
+            observed = observed_power.get(task_id)
+            if executed_by_task[task_id] > 0 and observed is None:
+                raise SimulationTraceError(
+                    f"task {task_id} executed without a unit-energy observation; "
+                    f"factor_provenance={task_energy_factor_provenance[task_id]}"
+                )
+            matches = observed is None or math.isclose(
+                observed, float(expected), rel_tol=0.0,
+                abs_tol=energy_tolerance_j,
+            )
+            if not matches:
+                raise SimulationTraceError(
+                    f"task {task_id} physical energy mismatch: "
+                    f"expected={expected}, observed={observed}, "
+                    f"factor_provenance={task_energy_factor_provenance[task_id]}"
+                )
+            task_energy_validation.append({
+                "task_id": task_id,
+                "expected_physical_energy_j_per_tick": str(expected),
+                "observed_physical_energy_j_per_tick": observed,
+                "executed_ticks": executed_by_task[task_id],
+                "validated": observed is not None,
+                "within_tolerance": matches,
+            })
+
     has_miss = any(job.deadline_miss for job in observations)
     unfinished_without_miss = sum(
         job.completion is None and not job.deadline_miss
@@ -790,13 +923,21 @@ def parse_simulation_trace(
             )
         except RTA4Core3ContractV6Error as exc:
             raise SimulationTraceError(str(exc)) from exc
-        conditional_coverage = conditional_release_coverage_v6(
-            [
-                job.release_energy_j
-                for job in observations
-                if job.release_energy_j is not None
-            ],
-            conditional_e0,
+        release_energy_values = [
+            job.release_energy_j
+            for job in observations
+            if job.release_energy_j is not None
+        ]
+        conditional_coverage = (
+            conditional_release_coverage_v7(
+                release_energy_values,
+                conditional_e0,
+                model_energy_unit_joules,
+            )
+            if model_energy_unit_joules is not None
+            else conditional_release_coverage_v6(
+                release_energy_values, conditional_e0,
+            )
         )
 
         energy = data.get("energy_summary")
@@ -891,6 +1032,9 @@ def parse_simulation_trace(
             ),
             "energy_tolerance_j": energy_tolerance_j,
             "energy_conservation_rule": conservation_rule,
+            **({
+                "task_energy_validation": task_energy_validation,
+            } if task_energy_validation is not None else {}),
         })
     return SimulationResult(
         status, reason, horizon, tuple(observations), tuple(task_observations),

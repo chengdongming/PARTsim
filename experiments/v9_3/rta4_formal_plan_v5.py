@@ -22,6 +22,7 @@ from .rta4_formal_config_v3 import (
     rta4_formal_config_hash_v3,
 )
 from .rta4_formal_config_v5 import (
+    CORE3_SIMULATION_CONTRACT_V7,
     CORE5A_SCALED_LATENCY_SERVICE_V1,
     RTA4_FORMAL_PLAN_VERSION_V5,
     RTA4_FORMAL_PROFILE_V5,
@@ -30,7 +31,10 @@ from .rta4_formal_config_v5 import (
     rta4_formal_config_hash_v5,
     source_closure_identity_v5,
 )
-from .rta4_energy_service_v5 import core3_simulation_projection_v5
+from .rta4_energy_service_v5 import (
+    core3_simulation_projection_v5,
+    core3_simulation_projection_v6,
+)
 from .rta4_formal_plan_v3 import (
     describe_formal_plan_v3,
     expected_counts_v3,
@@ -214,7 +218,7 @@ def _effective_service(
 def _service_material_for_record(
     record: Any, taskset: TasksetV4, curve: ExactServiceCurve,
     simulation_tick_ms: int | None,
-    cache: dict[tuple[str, int, int], dict[str, Any]],
+    cache: dict[tuple[str, int, int, str], dict[str, Any]],
     effective_core3_material: Mapping[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     if record.core != "CORE-3":
@@ -229,14 +233,39 @@ def _service_material_for_record(
         raise RTA4FormalPlanV5Error(
             "CORE-3 plan requires a positive simulation_tick_ms"
         )
-    key = (curve.identity, maximum, simulation_tick_ms)
+    contract = (
+        effective_core3_material.get("core3_simulation_contract")
+        if effective_core3_material is not None else None
+    )
+    core3_v7 = (
+        isinstance(contract, Mapping)
+        and contract.get("contract_version")
+        == CORE3_SIMULATION_CONTRACT_V7
+    )
+    model_energy_unit_joules = (
+        str(effective_core3_material["model_energy_unit_joules"])
+        if core3_v7 else ""
+    )
+    key = (
+        curve.identity, maximum, simulation_tick_ms,
+        model_energy_unit_joules,
+    )
     if key in cache:
         return cache[key]
     material = materialize_exact_service_curve(curve, maximum)
-    projection = core3_simulation_projection_v5(
-        exact_service_material_identity=material.identity,
-        harvest_trace=material.harvest_trace,
-        simulation_tick_ms=simulation_tick_ms,
+    projection = (
+        core3_simulation_projection_v6(
+            exact_service_material_identity=material.identity,
+            harvest_trace=material.harvest_trace,
+            simulation_tick_ms=simulation_tick_ms,
+            model_energy_unit_joules=model_energy_unit_joules,
+        )
+        if core3_v7
+        else core3_simulation_projection_v5(
+            exact_service_material_identity=material.identity,
+            harvest_trace=material.harvest_trace,
+            simulation_tick_ms=simulation_tick_ms,
+        )
     )
     summary = {
         "maximum_length": maximum,
@@ -264,19 +293,28 @@ def _effective_core3_simulation_material(
     dmax = max(task.D for task in taskset.tasks)
     observation_horizon = release_horizon + dmax
     capacity = (
-        str(contract["theorem_battery_capacity"])
+        str(contract[
+            "theorem_battery_capacity_model_units"
+            if contract.get("contract_version")
+            == CORE3_SIMULATION_CONTRACT_V7
+            else "theorem_battery_capacity"
+        ])
         if source["track"] == "THEOREM_ALIGNED"
         else str(source["battery_capacity"])
     )
-    physical = str(contract["physical_initial_energy"])
+    core3_v7 = (
+        contract.get("contract_version") == CORE3_SIMULATION_CONTRACT_V7
+    )
+    physical = str(contract[
+        "physical_initial_energy_model_units"
+        if core3_v7 else "physical_initial_energy"
+    ])
     if Fraction(physical) > Fraction(capacity):
         raise RTA4FormalPlanV5Error(
             "CORE-3 effective initial energy exceeds battery capacity"
         )
-    return {
+    common = {
         **source,
-        "battery_capacity": capacity,
-        "physical_initial_energy": physical,
         "release_horizon": release_horizon,
         "dmax": dmax,
         "observation_horizon": observation_horizon,
@@ -292,6 +330,35 @@ def _effective_core3_simulation_material(
             contract["observability_contract_version"]
         ),
         "core3_simulation_contract": dict(contract),
+    }
+    if not core3_v7:
+        return {
+            **common,
+            "battery_capacity": capacity,
+            "physical_initial_energy": physical,
+        }
+    scale = Fraction(str(contract["model_energy_unit_joules"]))
+    for ambiguous in (
+        "battery_capacity", "physical_initial_energy", "projection_e0",
+    ):
+        common.pop(ambiguous, None)
+    projection_e0_model = tuple(
+        str(value) for value in contract["projection_e0_model_units"]
+    )
+    return {
+        **common,
+        "model_energy_unit_joules": fraction_text(scale),
+        "battery_capacity_model_units": capacity,
+        "battery_capacity_j": fraction_text(Fraction(capacity) * scale),
+        "physical_initial_energy_model_units": physical,
+        "physical_initial_energy_j": fraction_text(
+            Fraction(physical) * scale
+        ),
+        "projection_e0_model_units": list(projection_e0_model),
+        "projection_e0_j": [
+            fraction_text(Fraction(value) * scale)
+            for value in projection_e0_model
+        ],
     }
 
 
@@ -346,7 +413,9 @@ def iter_formal_plan_v5(
 ) -> Iterator[FormalPlanRecordV5]:
     bindings = _validate_inputs(scientific_config, task_sources, service_curve)
     v3 = scientific_config["v3_plan_grid"]
-    service_material_cache: dict[tuple[str, int, int], dict[str, Any]] = {}
+    service_material_cache: dict[
+        tuple[str, int, int, str], dict[str, Any]
+    ] = {}
     for ordinal, (record, effective_release_mode) in enumerate(
         _source_records_v5(scientific_config)
     ):

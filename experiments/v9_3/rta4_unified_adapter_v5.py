@@ -18,7 +18,10 @@ from . import exact_energy
 from .constrained_taskset_identity import fixed_slack_deadline
 from .rta4_formal_config import canonical_json, domain_hash
 from .rta4_formal_config_v5 import RTA4_FORMAL_PROFILE_V5
-from .rta4_energy_service_v5 import core3_simulation_projection_v5
+from .rta4_energy_service_v5 import (
+    core3_simulation_projection_v5,
+    core3_simulation_projection_v6,
+)
 from .rta4_formal_execution import _adapter_result_v2
 from .rta4_numeric_contract_v2 import RTA4_NUMERIC_CONTRACT_V2_SHA256
 from .rta4_shared_energy import (
@@ -62,6 +65,7 @@ def prepare_execution_material_v5(
     grid_material: Mapping[str, Any] | None = None,
     service_material_horizon: int | None = None,
     simulation_tick_ms: int | None = None,
+    model_energy_unit_joules: str | None = None,
 ) -> PreparedExecutionMaterialV5:
     """Prepare one V5 record for the established V2/V3 worker executors."""
 
@@ -78,9 +82,30 @@ def prepare_execution_material_v5(
             raise RTA4UnifiedAdapterV5Error(
                 "CORE-3 requires a positive simulation_tick_ms"
             )
+        if model_energy_unit_joules is not None:
+            try:
+                scale = Fraction(model_energy_unit_joules)
+            except (ValueError, ZeroDivisionError) as exc:
+                raise RTA4UnifiedAdapterV5Error(
+                    "model_energy_unit_joules is not rational"
+                ) from exc
+            if (
+                type(model_energy_unit_joules) is not str
+                or scale <= 0
+                or fraction_text(scale) != model_energy_unit_joules
+                or simulation_tick_ms != 1
+            ):
+                raise RTA4UnifiedAdapterV5Error(
+                    "CORE-3 V7 requires a canonical positive energy scale "
+                    "and simulation_tick_ms=1"
+                )
     elif simulation_tick_ms is not None:
         raise RTA4UnifiedAdapterV5Error(
             "simulation_tick_ms is only valid for CORE-3"
+        )
+    elif model_energy_unit_joules is not None:
+        raise RTA4UnifiedAdapterV5Error(
+            "model_energy_unit_joules is only valid for CORE-3"
         )
     effective_taskset = (
         taskset
@@ -106,6 +131,7 @@ def prepare_execution_material_v5(
         production_build_manifest_identity=production_build_manifest_identity,
         service_material_horizon=service_material_horizon,
         simulation_tick_ms=simulation_tick_ms,
+        model_energy_unit_joules=model_energy_unit_joules,
     )
     return PreparedExecutionMaterialV5(
         effective_taskset, certificate, task_energy, service,
@@ -128,6 +154,7 @@ def exact_runtime_service_material_v5(
     production_build_manifest_identity: str,
     service_material_horizon: int | None = None,
     simulation_tick_ms: int | None = None,
+    model_energy_unit_joules: str | None = None,
 ) -> VerifiedSolarServiceMaterialV2:
     """Build exact beta/trace material with no binary64 scientific input."""
 
@@ -172,10 +199,19 @@ def exact_runtime_service_material_v5(
         "trace_sha256": material.trace_sha256,
         "horizon": horizon.material(),
         **({
-            "core3_simulation_projection": core3_simulation_projection_v5(
-                exact_service_material_identity=material.identity,
-                harvest_trace=trace,
-                simulation_tick_ms=simulation_tick_ms,
+            "core3_simulation_projection": (
+                core3_simulation_projection_v6(
+                    exact_service_material_identity=material.identity,
+                    harvest_trace=trace,
+                    simulation_tick_ms=simulation_tick_ms,
+                    model_energy_unit_joules=model_energy_unit_joules,
+                )
+                if model_energy_unit_joules is not None
+                else core3_simulation_projection_v5(
+                    exact_service_material_identity=material.identity,
+                    harvest_trace=trace,
+                    simulation_tick_ms=simulation_tick_ms,
+                )
             ),
         } if simulation_tick_ms is not None else {}),
     }

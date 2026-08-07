@@ -131,12 +131,32 @@ def core3_v6_campaign_template() -> dict:
     return value
 
 
+def core3_v7_campaign_template() -> dict:
+    """Return the explicit CORE-3 model-energy to joule projection."""
+
+    value = core3_v6_campaign_template()
+    value.update({
+        "campaign_id": "replace-core3-v7-campaign-id",
+        "simulation_tick_ms": 1,
+        "core3_simulation_contract_version": (
+            "ASAP_BLOCK_V9_3_RTA4_CORE3_SIMULATION_CONTRACT_V7"
+        ),
+        "model_energy_unit_joules": "1/1000",
+    })
+    return value
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--core", required=True, choices=RTA4_CORES_V3)
-    parser.add_argument(
+    core3_version = parser.add_mutually_exclusive_group()
+    core3_version.add_argument(
         "--core3-v6", action="store_true",
         help="emit the opt-in CORE-3 schema-3/sidecar contract",
+    )
+    core3_version.add_argument(
+        "--core3-v7", action="store_true",
+        help="emit the CORE-3 explicit model-energy/joule projection",
     )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
@@ -145,9 +165,14 @@ def main() -> int:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     if args.core3_v6 and args.core != "CORE-3":
         raise SystemExit("--core3-v6 requires --core CORE-3")
+    if args.core3_v7 and args.core != "CORE-3":
+        raise SystemExit("--core3-v7 requires --core CORE-3")
     document = (
-        core3_v6_campaign_template()
-        if args.core3_v6 else campaign_template(args.core)
+        core3_v7_campaign_template()
+        if args.core3_v7
+        else core3_v6_campaign_template()
+        if args.core3_v6
+        else campaign_template(args.core)
     )
     args.output.write_text(
         yaml.safe_dump(document, sort_keys=False),

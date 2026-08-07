@@ -42,6 +42,16 @@ from .rta4_core3_contracts_v6 import (
     RTA4Core3ContractV6Error,
     require_normalized_core3_artifact_storage_v1,
 )
+from .rta4_core3_contracts_v7 import (
+    CORE3_RESULT_DOMAIN_V7,
+    CORE3_RESULT_SCHEMA_V7,
+    CORE3_SIMULATION_CONTRACT_V7,
+    CORE3_TASK_WORKLOAD_V7,
+    RTA4Core3ContractV7Error,
+    core3_physical_execution_identity_v7,
+    core3_task_physical_projection_v7,
+    require_core3_task_physical_projection_v7,
+)
 from .result_writer import atomic_write_json, atomic_write_text
 from .rta4_formal_config import canonical_json, domain_hash
 from .rta4_formal_config_v2 import default_rta4_formal_config_v2
@@ -54,7 +64,10 @@ from .rta4_formal_config_v5 import (
     load_rta4_campaign_v5,
     source_closure_identity_v5,
 )
-from .rta4_energy_service_v5 import core3_simulation_projection_v5
+from .rta4_energy_service_v5 import (
+    core3_simulation_projection_v5,
+    core3_simulation_projection_v6,
+)
 from .rta4_formal_execution import (
     ProductionRTAExecutorV2,
     build_formal_release_projection_v2,
@@ -103,6 +116,7 @@ RTA4_LOCAL_TERMINALS_V5 = "local_terminal_results_v5"
 RTA4_LOCAL_RUN_DOMAIN_V5 = "ASAP_BLOCK:V9.3:RTA4:LOCAL_RUN:v5"
 RTA4_LOCAL_RESULT_DOMAIN_V5 = "ASAP_BLOCK:V9.3:RTA4:LOCAL_RESULT:v5"
 RTA4_LOCAL_RESULT_DOMAIN_V6 = "ASAP_BLOCK:V9.3:RTA4:LOCAL_RESULT:v6"
+RTA4_LOCAL_RESULT_DOMAIN_V7 = "ASAP_BLOCK:V9.3:RTA4:LOCAL_RESULT:v7"
 RTA4_LOCAL_CHECKPOINT_DOMAIN_V5 = "ASAP_BLOCK:V9.3:RTA4:LOCAL_CHECKPOINT:v5"
 RTA4_LOCAL_BUILD_DOMAIN_V5 = "ASAP_BLOCK:V9.3:RTA4:LOCAL_MATERIAL:v5"
 RTA4_TEST_EXECUTION_BACKEND_V5 = "TEST_ONLY_EXPLICIT_DISPATCHERS"
@@ -356,6 +370,18 @@ def _prepared_record_material(
     simulation_tick_ms = (
         scientific["simulation_tick_ms"] if record.core == "CORE-3" else None
     )
+    core3_contract = (
+        scientific.get("core3_simulation_contract")
+        if record.core == "CORE-3" else None
+    )
+    core3_v7 = (
+        isinstance(core3_contract, Mapping)
+        and core3_contract.get("contract_version")
+        == CORE3_SIMULATION_CONTRACT_V7
+    )
+    model_energy_unit_joules = (
+        scientific["model_energy_unit_joules"] if core3_v7 else None
+    )
     prepared = prepare_execution_material_v5(
         taskset=taskset,
         processors=binding.source.processors,
@@ -370,6 +396,7 @@ def _prepared_record_material(
         ),
         service_material_horizon=horizon,
         simulation_tick_ms=simulation_tick_ms,
+        model_energy_unit_joules=model_energy_unit_joules,
     )
     worker_record = _worker_record(record)
     task_identity = prepared.task_energy.task_energy_material_identity
@@ -395,6 +422,9 @@ def _prepared_record_material(
             "simulation_projection_identity": planned_projection[
                 "simulation_projection_identity"
             ],
+            **({
+                "model_energy_unit_joules": model_energy_unit_joules,
+            } if model_energy_unit_joules is not None else {}),
         })
     context = SharedEnergyRunContext(
         local_material_identity,
@@ -596,6 +626,7 @@ def _exact_piecewise_system_v5(
     max_energy: Fraction,
     simulation_projection: Mapping[str, Any],
     simulator_compatible_lists: bool = False,
+    core3_v7_fixed_workload: str | None = None,
 ) -> Path:
     try:
         document = yaml.safe_load(base_system_path.read_text(encoding="utf-8"))
@@ -618,6 +649,28 @@ def _exact_piecewise_system_v5(
         energy.pop(field, None)
     energy["initial_energy"] = float(initial_energy)
     energy["max_energy"] = float(max_energy)
+    if core3_v7_fixed_workload is not None:
+        scheduler_model = energy.get("scheduler_energy_model")
+        coefficients = (
+            scheduler_model.get("workload_coefficients")
+            if isinstance(scheduler_model, dict) else None
+        )
+        if not isinstance(coefficients, dict):
+            raise RTA4LocalExecutionV5Error(
+                "CORE-3 V7 system has no mutable workload coefficient map"
+            )
+        if core3_v7_fixed_workload in coefficients:
+            try:
+                existing = float(coefficients[core3_v7_fixed_workload])
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise RTA4LocalExecutionV5Error(
+                    "CORE-3 V7 fixed workload coefficient is invalid"
+                ) from exc
+            if not math.isfinite(existing) or existing != 1.0:
+                raise RTA4LocalExecutionV5Error(
+                    "CORE-3 V7 fixed workload coefficient conflicts with 1.0"
+                )
+        coefficients[core3_v7_fixed_workload] = 1.0
     document["cpu_islands"][0]["numcpus"] = processors
     document["cpu_islands"][0]["kernel"]["scheduler"] = scheduler
     segments = simulation_projection.get("segments")
@@ -641,9 +694,16 @@ def _exact_piecewise_system_v5(
         "scaled_piecewise": {"scale_w": 1.0, "segments": runs},
     }
     destination.mkdir(parents=True, exist_ok=True)
-    path = destination / "system_config_v5.yaml"
+    core3_v7 = core3_v7_fixed_workload is not None
+    path = destination / (
+        "system_config_v7.yaml" if core3_v7 else "system_config_v5.yaml"
+    )
     atomic_write_json(
-        destination / "service_projection_v5.json", simulation_projection,
+        destination / (
+            "service_projection_v6.json"
+            if core3_v7 else "service_projection_v5.json"
+        ),
+        simulation_projection,
     )
     if simulator_compatible_lists:
         class SimulatorCompatibleDumper(yaml.SafeDumper):
@@ -708,10 +768,36 @@ class ExactServiceSimulationExecutorV5:
             binding["service_material_identity"]
         ]
         simulation_tick_ms = binding.get("simulation_tick_ms")
-        projection = core3_simulation_projection_v5(
-            exact_service_material_identity=service.beta_material_identity,
-            harvest_trace=service.harvest_j_per_tick,
-            simulation_tick_ms=simulation_tick_ms,
+        core3_contract = record.material.get("core3_simulation_contract")
+        core3_v6 = isinstance(core3_contract, Mapping)
+        core3_v7 = (
+            core3_v6
+            and core3_contract.get("contract_version")
+            == CORE3_SIMULATION_CONTRACT_V7
+        )
+        model_energy_unit_joules = (
+            binding.get("model_energy_unit_joules") if core3_v7 else None
+        )
+        if core3_v7 and (
+            model_energy_unit_joules
+            != core3_contract.get("model_energy_unit_joules")
+        ):
+            raise RTA4LocalExecutionV5Error(
+                "CORE-3 V7 model-energy scale binding drift"
+            )
+        projection = (
+            core3_simulation_projection_v6(
+                exact_service_material_identity=service.beta_material_identity,
+                harvest_trace=service.harvest_j_per_tick,
+                simulation_tick_ms=simulation_tick_ms,
+                model_energy_unit_joules=model_energy_unit_joules,
+            )
+            if core3_v7
+            else core3_simulation_projection_v5(
+                exact_service_material_identity=service.beta_material_identity,
+                harvest_trace=service.harvest_j_per_tick,
+                simulation_tick_ms=simulation_tick_ms,
+            )
         )
         if projection["simulation_projection_identity"] != binding.get(
             "simulation_projection_identity"
@@ -722,8 +808,6 @@ class ExactServiceSimulationExecutorV5:
         release, legacy_window, base_payload = build_formal_release_projection_v2(
             certificate, str(record.material["release_mode"]),
         )
-        core3_contract = record.material.get("core3_simulation_contract")
-        core3_v6 = isinstance(core3_contract, Mapping)
         storage_contract = None
         if core3_v6:
             try:
@@ -762,20 +846,75 @@ class ExactServiceSimulationExecutorV5:
             raise RTA4LocalExecutionV5Error(
                 "CORE-3 schema-3 execution requires exactly ten tasks"
             )
+        physical_task_projection = None
+        task_energy_factors = None
+        if core3_v7:
+            try:
+                physical_task_projection = core3_task_physical_projection_v7(
+                    base_system_path=self.system,
+                    task_energy_material=task_energy,
+                    model_energy_unit_joules=model_energy_unit_joules,
+                    simulation_tick_ms=simulation_tick_ms,
+                )
+                physical_task_projection = (
+                    require_core3_task_physical_projection_v7(
+                        physical_task_projection
+                    )
+                )
+            except RTA4Core3ContractV7Error as exc:
+                raise RTA4LocalExecutionV5Error(str(exc)) from exc
+            task_energy_factors = {
+                row["task_id"]: row[
+                    "emitted_task_energy_factor_decimal"
+                ]
+                for row in physical_task_projection["tasks"]
+            }
         run_root = self.output / "bounded_core3_simulations_v5" / record.execution_id
+        initial_energy_j = Fraction(record.material[
+            "physical_initial_energy_j"
+            if core3_v7 else "physical_initial_energy"
+        ])
+        battery_capacity_j = Fraction(record.material[
+            "battery_capacity_j" if core3_v7 else "battery_capacity"
+        ])
         system_path = _exact_piecewise_system_v5(
             self.system,
             run_root,
             processors=certificate.processors,
             scheduler=str(record.material["scheduler"]),
-            initial_energy=Fraction(record.material["physical_initial_energy"]),
-            max_energy=Fraction(record.material["battery_capacity"]),
+            initial_energy=initial_energy_j,
+            max_energy=battery_capacity_j,
             simulation_projection=projection,
             simulator_compatible_lists=core3_v6,
+            core3_v7_fixed_workload=(
+                CORE3_TASK_WORKLOAD_V7 if core3_v7 else None
+            ),
         )
-        taskset_path = run_root / "taskset_v5.yaml"
+        projected_system_sha256 = hashlib.sha256(
+            system_path.read_bytes()
+        ).hexdigest()
+        physical_execution_identity = None
+        if core3_v7:
+            try:
+                physical_execution_identity = (
+                    core3_physical_execution_identity_v7(
+                        base_execution_identity=record.execution_id,
+                        physical_task_projection_identity=(
+                            physical_task_projection[
+                                "physical_task_projection_identity"
+                            ]
+                        ),
+                        projected_system_sha256=projected_system_sha256,
+                    )
+                )
+            except RTA4Core3ContractV7Error as exc:
+                raise RTA4LocalExecutionV5Error(str(exc)) from exc
+        taskset_path = run_root / (
+            "taskset_v7.yaml" if core3_v7 else "taskset_v5.yaml"
+        )
         atomic_write_text(taskset_path, _render_taskset_yaml(
             payload, release_horizon=int(record.material["release_horizon"]),
+            task_energy_factors=task_energy_factors,
         ))
         trace_path = run_root / "trace_v5.json"
         command = [
@@ -817,7 +956,7 @@ class ExactServiceSimulationExecutorV5:
             horizon=window.observation_horizon,
             warmup=0,
             minimum_jobs_per_task=0,
-            release_e0=Fraction(record.material["physical_initial_energy"]),
+            release_e0=initial_energy_j,
             expected_scheduler=str(record.material["scheduler"]),
             expected_processors=certificate.processors,
             require_core3_observability=core3_v6,
@@ -826,15 +965,18 @@ class ExactServiceSimulationExecutorV5:
                 if core3_v6 else None
             ),
             physical_initial_energy=(
-                Fraction(record.material["physical_initial_energy"])
+                initial_energy_j
                 if core3_v6 else None
             ),
             battery_capacity=(
-                Fraction(record.material["battery_capacity"])
+                battery_capacity_j
                 if core3_v6 else None
             ),
             conditional_e0=(
-                tuple(str(value) for value in record.material["projection_e0"])
+                tuple(str(value) for value in record.material[
+                    "projection_e0_model_units"
+                    if core3_v7 else "projection_e0"
+                ])
                 if core3_v6 else ()
             ),
             theorem_alignment_track=(
@@ -846,6 +988,25 @@ class ExactServiceSimulationExecutorV5:
             energy_conservation_rule=(
                 core3_contract["energy_conservation_rule"]
                 if core3_v6 else None
+            ),
+            model_energy_unit_joules=(
+                model_energy_unit_joules if core3_v7 else None
+            ),
+            expected_task_energy_j_per_tick=(
+                {
+                    row["task_id"]: Fraction(
+                        row["expected_physical_energy_j_per_tick"]
+                    )
+                    for row in physical_task_projection["tasks"]
+                }
+                if core3_v7 else None
+            ),
+            task_energy_factor_provenance=(
+                {
+                    row["task_id"]: row
+                    for row in physical_task_projection["tasks"]
+                }
+                if core3_v7 else None
             ),
         )
         accepted_statuses = {
@@ -940,6 +1101,7 @@ class ExactServiceSimulationExecutorV5:
                     "unfinished_without_miss_count", "classified_job_count",
                     "conditional_coverage", "minimum_release_energy_j",
                     "maximum_release_energy_j", "mean_release_energy_j",
+                    "harvested_energy_j",
                     "offered_energy_j", "credited_energy_j",
                     "clipped_energy_j", "consumed_energy_j",
                     "overflow_energy_j", "overflow_ratio_numerator",
@@ -953,7 +1115,8 @@ class ExactServiceSimulationExecutorV5:
             }
             for key in (
                 "minimum_release_energy_j", "maximum_release_energy_j",
-                "mean_release_energy_j", "offered_energy_j",
+                "mean_release_energy_j", "harvested_energy_j",
+                "offered_energy_j",
                 "credited_energy_j", "clipped_energy_j",
                 "consumed_energy_j", "overflow_energy_j",
                 "overflow_ratio_numerator", "overflow_ratio_denominator",
@@ -962,17 +1125,91 @@ class ExactServiceSimulationExecutorV5:
                 summary_fields[key] = _exact_numeric_text_v6(
                     summary_fields[key]
                 )
+            task_projection_rows = None
+            observed_task_energy = None
+            if core3_v7:
+                observed_task_energy = {
+                    task_id: _exact_numeric_text_v6(value)
+                    for task_id, value in sorted(
+                        result.observed_task_power_j_per_tick.items()
+                    )
+                }
+                validation_by_task = {
+                    row["task_id"]: row
+                    for row in result.metrics["task_energy_validation"]
+                }
+                task_projection_rows = []
+                for source in physical_task_projection["tasks"]:
+                    task_id = source["task_id"]
+                    validation = validation_by_task[task_id]
+                    task_projection_rows.append({
+                        **source,
+                        "observed_task_energy_j_per_tick": (
+                            observed_task_energy.get(task_id)
+                        ),
+                        "observed_executed_ticks": validation[
+                            "executed_ticks"
+                        ],
+                        "observed_energy_validated": validation["validated"],
+                        "observed_energy_within_tolerance": validation[
+                            "within_tolerance"
+                        ],
+                    })
             material = {
-                "result_schema_version": CORE3_RESULT_SCHEMA_V6,
+                "result_schema_version": (
+                    CORE3_RESULT_SCHEMA_V7
+                    if core3_v7 else CORE3_RESULT_SCHEMA_V6
+                ),
                 "simulation_status": "COMPLETED",
                 "observed_status": result.status.value,
                 "track": str(record.material["track"]),
                 "release_mode": str(record.material["release_mode"]),
                 "battery_model": str(record.material["battery_model"]),
-                "battery_capacity": str(record.material["battery_capacity"]),
-                "physical_initial_energy": str(
-                    record.material["physical_initial_energy"]
-                ),
+                **({
+                    "model_energy_unit_joules": model_energy_unit_joules,
+                    "battery_capacity_model_units": str(record.material[
+                        "battery_capacity_model_units"
+                    ]),
+                    "battery_capacity_j": str(record.material[
+                        "battery_capacity_j"
+                    ]),
+                    "physical_initial_energy_model_units": str(
+                        record.material[
+                            "physical_initial_energy_model_units"
+                        ]
+                    ),
+                    "physical_initial_energy_j": str(record.material[
+                        "physical_initial_energy_j"
+                    ]),
+                    "projection_e0_model_units": list(record.material[
+                        "projection_e0_model_units"
+                    ]),
+                    "projection_e0_j": list(record.material[
+                        "projection_e0_j"
+                    ]),
+                    "per_task_energy_projection": task_projection_rows,
+                    "observed_task_energy_j_per_tick": observed_task_energy,
+                    "physical_task_projection": physical_task_projection,
+                    "physical_task_projection_identity": (
+                        physical_task_projection[
+                            "physical_task_projection_identity"
+                        ]
+                    ),
+                    "system_energy_model": physical_task_projection[
+                        "system_energy_model"
+                    ],
+                    "projected_system_sha256": projected_system_sha256,
+                    "physical_execution_identity": (
+                        physical_execution_identity
+                    ),
+                } if core3_v7 else {
+                    "battery_capacity": str(
+                        record.material["battery_capacity"]
+                    ),
+                    "physical_initial_energy": str(
+                        record.material["physical_initial_energy"]
+                    ),
+                }),
                 "release_horizon": int(record.material["release_horizon"]),
                 "dmax": int(record.material["dmax"]),
                 "observation_horizon": int(
@@ -1009,7 +1246,9 @@ class ExactServiceSimulationExecutorV5:
             final_result = FrozenMapping({
                 **material,
                 "simulation_result_identity": domain_hash(
-                    CORE3_RESULT_DOMAIN_V6, material,
+                    CORE3_RESULT_DOMAIN_V7
+                    if core3_v7 else CORE3_RESULT_DOMAIN_V6,
+                    material,
                 ),
             })
             sidecar_path.unlink()
@@ -1521,6 +1760,56 @@ def _verify_core3_artifacts_v6(
     _verify_legacy_core3_artifacts_v6(root, row)
 
 
+def _verify_core3_execution_provenance_v7(
+    root: Path, row: Mapping[str, Any],
+) -> None:
+    try:
+        projection = require_core3_task_physical_projection_v7(
+            row.get("physical_task_projection")
+        )
+    except RTA4Core3ContractV7Error as exc:
+        raise RTA4LocalExecutionV5Error(str(exc)) from exc
+    projection_identity = projection["physical_task_projection_identity"]
+    if row.get("physical_task_projection_identity") != projection_identity:
+        raise RTA4LocalExecutionV5Error(
+            "CORE-3 V7 physical task projection binding drift"
+        )
+    execution = row.get("execution_identity")
+    projected_sha = row.get("projected_system_sha256")
+    if type(execution) is not str or type(projected_sha) is not str:
+        raise RTA4LocalExecutionV5Error(
+            "CORE-3 V7 physical execution binding is incomplete"
+        )
+    system_path = (
+        root / "bounded_core3_simulations_v5" / execution
+        / "system_config_v7.yaml"
+    )
+    try:
+        observed_system_sha = hashlib.sha256(
+            system_path.read_bytes()
+        ).hexdigest()
+    except OSError as exc:
+        raise RTA4LocalExecutionV5Error(
+            "CORE-3 V7 projected system is unavailable"
+        ) from exc
+    if observed_system_sha != projected_sha:
+        raise RTA4LocalExecutionV5Error(
+            "CORE-3 V7 projected system hash drift"
+        )
+    try:
+        expected_execution = core3_physical_execution_identity_v7(
+            base_execution_identity=execution,
+            physical_task_projection_identity=projection_identity,
+            projected_system_sha256=projected_sha,
+        )
+    except RTA4Core3ContractV7Error as exc:
+        raise RTA4LocalExecutionV5Error(str(exc)) from exc
+    if row.get("physical_execution_identity") != expected_execution:
+        raise RTA4LocalExecutionV5Error(
+            "CORE-3 V7 physical execution identity drift"
+        )
+
+
 def _validate_terminal_file_v5(
     request: TerminalValidationRequestV5,
 ) -> ValidatedTerminalV5:
@@ -1532,7 +1821,9 @@ def _validate_terminal_file_v5(
     observed = unsigned.pop("result_identity", None)
     execution = row.get("execution_identity")
     result_domain = (
-        RTA4_LOCAL_RESULT_DOMAIN_V6
+        RTA4_LOCAL_RESULT_DOMAIN_V7
+        if row.get("row_schema") == "ASAP_BLOCK_V9_3_RTA4_LOCAL_RESULT_V7"
+        else RTA4_LOCAL_RESULT_DOMAIN_V6
         if row.get("row_schema") == "ASAP_BLOCK_V9_3_RTA4_LOCAL_RESULT_V6"
         else RTA4_LOCAL_RESULT_DOMAIN_V5
     )
@@ -1547,11 +1838,27 @@ def _validate_terminal_file_v5(
             "local terminal identity or classification drift"
         )
     if (
-        result_domain == RTA4_LOCAL_RESULT_DOMAIN_V6
-        and row.get("result_schema_version") == CORE3_RESULT_SCHEMA_V6
+        (
+            result_domain == RTA4_LOCAL_RESULT_DOMAIN_V6
+            and row.get("result_schema_version") == CORE3_RESULT_SCHEMA_V6
+        )
+        or (
+            result_domain == RTA4_LOCAL_RESULT_DOMAIN_V7
+            and row.get("result_schema_version") == CORE3_RESULT_SCHEMA_V7
+        )
     ):
         _verify_core3_artifacts_v6(
             request.output_root, row, request.artifact_storage,
+        )
+        if result_domain == RTA4_LOCAL_RESULT_DOMAIN_V7:
+            _verify_core3_execution_provenance_v7(
+                request.output_root, row,
+            )
+    elif result_domain in {
+        RTA4_LOCAL_RESULT_DOMAIN_V6, RTA4_LOCAL_RESULT_DOMAIN_V7,
+    }:
+        raise RTA4LocalExecutionV5Error(
+            "CORE-3 terminal/result schema version mismatch"
         )
     return ValidatedTerminalV5(str(execution), dict(row), os.getpid())
 
@@ -1845,12 +2152,24 @@ def _terminal_row(
     physical_core_binding_required: bool,
 ) -> dict[str, Any]:
     core3_v6 = "effective_core3_simulation_material" in record.material
+    core3_contract = (
+        record.material.get("effective_core3_simulation_material", {})
+        .get("core3_simulation_contract", {})
+        if core3_v6 else {}
+    )
+    core3_v7 = (
+        isinstance(core3_contract, Mapping)
+        and core3_contract.get("contract_version")
+        == CORE3_SIMULATION_CONTRACT_V7
+    )
     nested_core3 = result.get("result") if core3_v6 else None
     if core3_v6 and not isinstance(nested_core3, Mapping):
         nested_core3 = {}
     payload = {
         "row_schema": (
-            "ASAP_BLOCK_V9_3_RTA4_LOCAL_RESULT_V6"
+            "ASAP_BLOCK_V9_3_RTA4_LOCAL_RESULT_V7"
+            if core3_v7
+            else "ASAP_BLOCK_V9_3_RTA4_LOCAL_RESULT_V6"
             if core3_v6 else "ASAP_BLOCK_V9_3_RTA4_LOCAL_RESULT_V5"
         ),
         "profile": RTA4_FORMAL_PROFILE_V5,
@@ -1884,7 +2203,9 @@ def _terminal_row(
     return {
         **payload,
         "result_identity": domain_hash(
-            RTA4_LOCAL_RESULT_DOMAIN_V6
+            RTA4_LOCAL_RESULT_DOMAIN_V7
+            if core3_v7
+            else RTA4_LOCAL_RESULT_DOMAIN_V6
             if core3_v6 else RTA4_LOCAL_RESULT_DOMAIN_V5,
             payload,
         ),

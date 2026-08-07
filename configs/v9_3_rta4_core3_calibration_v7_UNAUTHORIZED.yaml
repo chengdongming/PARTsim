@@ -1,0 +1,73 @@
+# Independent V7 development calibration input only.  It remains unauthorized
+# and must not be run or frozen without a separate review.
+schema_version: ASAP_BLOCK_V9_3_RTA4_CORE3_CALIBRATION_CONFIG_V7
+calibration_id: asap-block-rta4-core3-calibration-v7-unauthorized
+experiment1_task_source_identity: "0000000000000000000000000000000000000000000000000000000000000000"
+release_horizons: [30000, 60000]
+finite_battery_candidate_capacities: ["50", "100", "200"]
+base_campaign:
+  campaign_id: replaced-by-calibration-generator
+  core: CORE-3
+  source:
+    core: CORE-1
+    source_scope: CORE1_TASKSET_STORE
+    source_campaign_config_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    source_plan_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    source_taskset_store_identity: "0000000000000000000000000000000000000000000000000000000000000000"
+    taskset_count: 8
+  release_modes: [ASYNC_HASH_PHASE_V1, SYNC_V1]
+  finite_battery_capacities: ["50", "100", "200"]
+  projection_methods: [CW_THETA_CW, LOC_THETA_LOC, PH_THETA_PH, SEQ_THETA_SEQ]
+  projection_e0: ["34", "35", "36", "37", "38", "39", "40"]
+  simulation_horizon:
+    release_horizon: 30000
+    observation_horizon: release_horizon_plus_dmax
+  simulation_tick_ms: 1
+  core3_simulation_contract_version: ASAP_BLOCK_V9_3_RTA4_CORE3_SIMULATION_CONTRACT_V7
+  model_energy_unit_joules: "1/1000"
+  physical_initial_energy: "0"
+  theorem_battery_capacity: "1000000000"
+  core3_campaign_type: CALIBRATION
+  energy_conservation_rule:
+    model: ABSOLUTE_PLUS_RELATIVE_SCALE_AWARE_V1
+    absolute_tolerance_j: "1/100000000"
+    relative_tolerance: "1/1000000000000"
+    scale: MAX_ONE_ABS_LHS_ABS_RHS
+  artifact_storage:
+    model: DETERMINISTIC_GZIP_JSON_V1
+    compresslevel: 6
+    mtime: 0
+    original_filename_in_header: false
+    trace: {enabled: true, final_name: trace_v5.json.gz}
+    job_observations:
+      {enabled: true, final_name: simulation_job_observations_v6.json.gz}
+    raw_retention:
+      on_success: DELETE_AFTER_VERIFIED_COMPRESSION
+      on_failure: RETAIN_FOR_DIAGNOSTICS
+  task_source:
+    mode: GENERATED_FAMILY
+    family_id: GENERAL_RANDOM_CONSTRAINED_V1
+    parameters:
+      processors: 4
+      priority_policy: RM_STRICT_PERIOD_ASCENDING
+      task_count: 10
+      taskset_count: 8
+      base_seed: 963003
+      generation_indices: [0, 1, 2, 3, 4, 5, 6, 7]
+      task_templates:
+        - {name: tau_1, C: [1, 2], D: [6, 7], T: [10], power: ["3/5", "4/5"]}
+        - {name: tau_2, C: [1, 2], D: [8, 9], T: [12], power: ["3/5", "4/5"]}
+        - {name: tau_3, C: [1, 2], D: [10, 11], T: [14], power: ["3/5", "4/5"]}
+        - {name: tau_4, C: [1, 2], D: [12, 13], T: [16], power: ["3/5", "4/5"]}
+        - {name: tau_5, C: [1, 2], D: [14, 15], T: [18], power: ["3/5", "4/5"]}
+        - {name: tau_6, C: [1, 2], D: [16, 17], T: [20], power: ["3/5", "4/5"]}
+        - {name: tau_7, C: [1, 2], D: [18, 19], T: [22], power: ["3/5", "4/5"]}
+        - {name: tau_8, C: [1], D: [20, 21], T: [24], power: ["1/80"]}
+        - {name: tau_9, C: [1], D: [24, 25], T: [28], power: ["1/80"]}
+        - {name: tau_10, C: [1], D: [30, 31], T: [36], power: ["1/80"]}
+  service_curve:
+    model: EXACT_RATE_LATENCY_SERVICE_CURVE_V1
+    rate: "11/2"
+    latency: "2/5"
+    time_unit: tick
+  runtime: {}

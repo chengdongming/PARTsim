@@ -23,6 +23,14 @@ from .rta4_core3_contracts_v6 import (
     normalize_core3_artifact_storage_v1,
     normalize_core3_energy_conservation_rule_v1,
 )
+from .rta4_core3_contracts_v7 import (
+    CORE3_RESULT_DOMAIN_V7,
+    CORE3_RESULT_SCHEMA_V7,
+    CORE3_SIMULATION_CONTRACT_DOMAIN_V7,
+    CORE3_SIMULATION_CONTRACT_V7,
+    RTA4Core3ContractV7Error,
+    normalize_model_energy_unit_joules_v7,
+)
 from .rta4_energy_service_v5 import (
     ExactServiceCurve,
     RTA4EnergyServiceV5Error,
@@ -72,6 +80,7 @@ _V5_CORE3_FIELDS = {
     "task_source", "simulation_tick_ms", "physical_initial_energy",
     "theorem_battery_capacity", "core3_campaign_type",
     "energy_conservation_rule", "artifact_storage",
+    "core3_simulation_contract_version", "model_energy_unit_joules",
 }
 _V5_CORE5B_FIELDS = {"task_source", "source_baseline_exact_e0"}
 _V5_CORE5A_FIELDS = {
@@ -87,6 +96,7 @@ _RATIONAL_FIELD_NAMES = {
     "physical_initial_energy", "theorem_battery_capacity",
     "absolute_tolerance_j", "relative_tolerance",
     "fixed_total_utilization", "fixed_total_utilization_tolerance",
+    "model_energy_unit_joules",
 }
 
 CORE3_SIMULATION_CONTRACT_V6 = (
@@ -522,6 +532,85 @@ def _core3_contract_v6(
     }
 
 
+def _core3_contract_v7(
+    raw: Mapping[str, Any],
+    v3: Mapping[str, Any],
+    bindings: tuple[TaskSourceBindingV5, ...],
+) -> dict[str, Any]:
+    legacy = _core3_contract_v6(raw, v3, bindings)
+    if legacy is None:
+        raise RTA4FormalConfigV5Error(
+            "CORE-3 V7 requires the complete CORE-3 simulation contract"
+        )
+    try:
+        scale = normalize_model_energy_unit_joules_v7(
+            raw.get("model_energy_unit_joules")
+        )
+    except RTA4Core3ContractV7Error as exc:
+        raise RTA4FormalConfigV5Error(str(exc)) from exc
+    if raw.get("simulation_tick_ms") != 1:
+        raise RTA4FormalConfigV5Error(
+            "CORE-3 V7 simulation_tick_ms must equal 1"
+        )
+    common = {
+        key: deepcopy(value)
+        for key, value in legacy.items()
+        if key not in {
+            "contract_version", "result_schema_version",
+            "result_identity_domain", "contract_identity",
+            "physical_initial_energy", "theorem_battery_capacity",
+            "projection_e0",
+        }
+    }
+    physical_e0 = [
+        fraction_text(Fraction(value) * Fraction(scale))
+        for value in CORE3_PROJECTION_E0_V6
+    ]
+    material = {
+        "contract_version": CORE3_SIMULATION_CONTRACT_V7,
+        "result_schema_version": CORE3_RESULT_SCHEMA_V7,
+        "result_identity_domain": CORE3_RESULT_DOMAIN_V7,
+        "model_energy_unit_joules": scale,
+        "simulation_tick_ms": 1,
+        **common,
+        "physical_initial_energy_model_units": legacy[
+            "physical_initial_energy"
+        ],
+        "theorem_battery_capacity_model_units": legacy[
+            "theorem_battery_capacity"
+        ],
+        "projection_e0_model_units": list(CORE3_PROJECTION_E0_V6),
+        "projection_e0_j": physical_e0,
+        "model_to_physical_conversion": {
+            "energy_j": "model_energy_units*model_energy_unit_joules",
+            "task_energy_j_per_tick": (
+                "task_power_model_units_per_tick*"
+                "model_energy_unit_joules"
+            ),
+            "harvest_power_w": (
+                "model_energy_per_tick*model_energy_unit_joules*1000/"
+                "simulation_tick_ms"
+            ),
+            "capacity_j": (
+                "battery_capacity_model_units*model_energy_unit_joules"
+            ),
+            "initial_energy_j": (
+                "physical_initial_energy_model_units*"
+                "model_energy_unit_joules"
+            ),
+            "projection_e0_j": (
+                "projection_e0_model_units*model_energy_unit_joules"
+            ),
+        },
+    }
+    return {
+        **material,
+        "contract_identity": domain_hash(
+            CORE3_SIMULATION_CONTRACT_DOMAIN_V7, material,
+        ),
+    }
+
+
 def normalize_rta4_campaign_v5(
     raw: Any, *, base_directory: Path | str | None = None,
 ) -> dict[str, Any]:
@@ -601,10 +690,22 @@ def normalize_rta4_campaign_v5(
         bindings = (TaskSourceBindingV5("campaign", "all", source),)
     if any(binding.source.priority_policy != PRIORITY_POLICY_RM for binding in bindings):
         raise RTA4FormalConfigV5Error("all exact task sources must use strict RM order")
-    core3_contract = (
-        _core3_contract_v6(raw, v3, bindings)
-        if core == "CORE-3" else None
-    )
+    core3_contract = None
+    if core == "CORE-3":
+        selected_contract = raw.get("core3_simulation_contract_version")
+        if selected_contract is None:
+            if "model_energy_unit_joules" in raw:
+                raise RTA4FormalConfigV5Error(
+                    "CORE-3 V7 model energy scale requires an explicit "
+                    "core3_simulation_contract_version"
+                )
+            core3_contract = _core3_contract_v6(raw, v3, bindings)
+        elif selected_contract == CORE3_SIMULATION_CONTRACT_V7:
+            core3_contract = _core3_contract_v7(raw, v3, bindings)
+        else:
+            raise RTA4FormalConfigV5Error(
+                "unsupported explicit CORE-3 simulation contract version"
+            )
     artifact_storage = None
     if core3_contract is not None:
         try:
@@ -633,6 +734,16 @@ def normalize_rta4_campaign_v5(
             "simulation_tick_ms": simulation_tick_ms,
         } if core == "CORE-3" else {}),
         **({
+            "core3_simulation_contract_version": (
+                CORE3_SIMULATION_CONTRACT_V7
+            ),
+            "model_energy_unit_joules": raw["model_energy_unit_joules"],
+        } if (
+            core3_contract is not None
+            and core3_contract["contract_version"]
+            == CORE3_SIMULATION_CONTRACT_V7
+        ) else {}),
+        **({
             "core3_simulation_contract": core3_contract,
         } if core3_contract is not None else {}),
         **({
@@ -653,9 +764,21 @@ def normalize_rta4_campaign_v5(
             "e0_auto_scaling_allowed": False,
             "battery_capacity_auto_scaling_allowed": False,
             "methods_share_task_and_service_material": True,
-            **({
-                "legacy_v5_core3_behavior_preserved": True,
-            } if core3_contract is not None else {}),
+            **(
+                {
+                    "core3_explicit_model_energy_to_joule_projection": True,
+                    "core3_task_energy_bound_to_simulator": True,
+                    "core3_simulation_tick_ms_fixed_to_one": True,
+                }
+                if (
+                    core3_contract is not None
+                    and core3_contract["contract_version"]
+                    == CORE3_SIMULATION_CONTRACT_V7
+                )
+                else ({
+                    "legacy_v5_core3_behavior_preserved": True,
+                } if core3_contract is not None else {})
+            ),
         },
         "formal_campaign_authorization_status": (
             RTA4_CAMPAIGN_AUTHORIZATION_STATUS_V5
@@ -755,7 +878,10 @@ __all__ = [
     "CORE3_PROJECTION_E0_V6",
     "CORE3_RESULT_DOMAIN_V6",
     "CORE3_RESULT_SCHEMA_V6",
+    "CORE3_RESULT_DOMAIN_V7",
+    "CORE3_RESULT_SCHEMA_V7",
     "CORE3_SIMULATION_CONTRACT_V6",
+    "CORE3_SIMULATION_CONTRACT_V7",
     "CORE5A_FIXED_TICK_SERVICE_V1",
     "CORE5A_SCALED_LATENCY_SERVICE_V1",
     "CORE5A_TIME_SERVICE_SEMANTICS_V5",
