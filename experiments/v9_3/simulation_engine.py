@@ -415,6 +415,7 @@ def _taskset_document(
     task_payload: Sequence[Mapping[str, Any]],
     *,
     release_horizon: Optional[int] = None,
+    task_energy_factors: Optional[Mapping[str, str]] = None,
 ) -> Dict[str, Any]:
     if release_horizon is not None and (
         isinstance(release_horizon, bool)
@@ -424,6 +425,51 @@ def _taskset_document(
         raise SimulationConfigurationError(
             "release_horizon must be a positive integer"
         )
+    factors: dict[str, str] | None = None
+    if task_energy_factors is not None:
+        if not isinstance(task_energy_factors, Mapping):
+            raise SimulationConfigurationError(
+                "task_energy_factors must be a mapping"
+            )
+        factor_ids = [str(key) for key in task_energy_factors]
+        if len(set(factor_ids)) != len(factor_ids):
+            raise SimulationConfigurationError(
+                "task_energy_factors has duplicate normalized task IDs"
+            )
+        factors = {
+            str(key): value for key, value in task_energy_factors.items()
+        }
+        payload_ids = [str(row.get("task_id")) for row in task_payload]
+        if len(set(payload_ids)) != len(payload_ids):
+            raise SimulationConfigurationError(
+                "frozen task payload has duplicate task IDs"
+            )
+        if set(factors) != set(payload_ids) or len(factors) != len(payload_ids):
+            raise SimulationConfigurationError(
+                "task_energy_factors task IDs do not exactly match payload"
+            )
+        from .rta4_core3_contracts_v7 import canonical_binary64_decimal_v7
+        for task_id, text in factors.items():
+            if type(text) is not str:
+                raise SimulationConfigurationError(
+                    f"task {task_id} energy factor must be decimal text"
+                )
+            try:
+                exact = Fraction(text)
+                runtime = float(text)
+            except (ValueError, ZeroDivisionError, OverflowError) as exc:
+                raise SimulationConfigurationError(
+                    f"task {task_id} energy factor is invalid"
+                ) from exc
+            if (
+                exact <= 0
+                or not math.isfinite(runtime)
+                or runtime <= 0
+                or canonical_binary64_decimal_v7(exact) != text
+            ):
+                raise SimulationConfigurationError(
+                    f"task {task_id} energy factor is not canonical and positive"
+                )
     tasks = []
     expected_ranks = list(range(len(task_payload)))
     ranks = [int(row["priority_rank"]) for row in task_payload]
@@ -454,6 +500,14 @@ def _taskset_document(
             raise SimulationConfigurationError(
                 "simulation arrival_offset must precede release_horizon"
             )
+        params = (
+            f"period={t_value},wcet={c_value},arrival_offset={offset},"
+            + (
+                f"task_energy_factor={factors[task_id]},"
+                if factors is not None else ""
+            )
+            + f"workload={workload}"
+        )
         tasks.append({
             "name": runtime_task_name_for_source_id(task_id),
             "iat": t_value,
@@ -462,10 +516,7 @@ def _taskset_document(
             "startcpu": 0,
             "ph": offset,
             "code": [f"fixed({c_value}, {workload})"],
-            "params": (
-                f"period={t_value},wcet={c_value},"
-                f"arrival_offset={offset},workload={workload}"
-            ),
+            "params": params,
         })
     document: Dict[str, Any] = {"taskset": tasks, "resources": []}
     if release_horizon is not None:
@@ -477,11 +528,14 @@ def _render_taskset_yaml(
     task_payload: Sequence[Mapping[str, Any]],
     *,
     release_horizon: Optional[int] = None,
+    task_energy_factors: Optional[Mapping[str, str]] = None,
 ) -> str:
     """Render the conservative YAML subset consumed by RTSim's C++ parser."""
 
     document = _taskset_document(
-        task_payload, release_horizon=release_horizon
+        task_payload,
+        release_horizon=release_horizon,
+        task_energy_factors=task_energy_factors,
     )
     lines = []
     if release_horizon is not None:
