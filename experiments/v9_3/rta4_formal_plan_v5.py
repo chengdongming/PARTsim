@@ -23,6 +23,7 @@ from .rta4_formal_config_v3 import (
 )
 from .rta4_formal_config_v5 import (
     CORE3_SIMULATION_CONTRACT_V7,
+    CORE5A_SCALED_E0_V1,
     CORE5A_SCALED_LATENCY_SERVICE_V1,
     RTA4_FORMAL_PLAN_VERSION_V5,
     RTA4_FORMAL_PROFILE_V5,
@@ -451,7 +452,16 @@ def iter_formal_plan_v5(
         worker_count = grid_material.pop("worker_count", None)
         if record.kind != "simulation" and "exact_e0" not in grid_material:
             if "e0" in grid_material:
-                grid_material["exact_e0"] = str(grid_material["e0"])
+                base_e0 = Fraction(grid_material["e0"])
+                if (
+                    record.core == "CORE-5A"
+                    and grid_material.get("axis") == "integer_time_scale"
+                    and scientific_config.get(
+                        "integer_time_scale_e0_semantics"
+                    ) == CORE5A_SCALED_E0_V1
+                ):
+                    base_e0 *= int(grid_material["axis_value"])
+                grid_material["exact_e0"] = fraction_text(base_e0)
             elif record.core == "CORE-5B":
                 grid_material["exact_e0"] = scientific_config[
                     "source_baseline_exact_e0"
@@ -480,6 +490,11 @@ def iter_formal_plan_v5(
             "integer_time_scale_service_semantics": scientific_config[
                 "integer_time_scale_service_semantics"
             ],
+            **({
+                "integer_time_scale_e0_semantics": scientific_config[
+                    "integer_time_scale_e0_semantics"
+                ],
+            } if "integer_time_scale_e0_semantics" in scientific_config else {}),
         }
         mathematical = domain_hash(RTA4_MATH_REQUEST_DOMAIN_V5, math_material)
         execution_material = {

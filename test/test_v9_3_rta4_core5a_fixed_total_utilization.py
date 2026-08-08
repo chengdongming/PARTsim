@@ -14,12 +14,21 @@ from experiments.v9_3.rta4_formal_config_v3 import (
     rta4_formal_config_hash_v3,
 )
 from experiments.v9_3.rta4_formal_config_v5 import (
+    CORE5A_FIXED_E0_V1,
+    CORE5A_FIXED_TICK_SERVICE_V1,
+    CORE5A_SCALED_E0_V1,
+    CORE5A_SCALED_LATENCY_SERVICE_V1,
     RTA4FormalConfigV5Error,
     normalize_rta4_campaign_v5,
+    rta4_formal_config_hash_v5,
 )
 from experiments.v9_3.rta4_formal_plan_v3 import (
     describe_formal_plan_v3,
     iter_formal_plan_v3,
+)
+from experiments.v9_3.rta4_formal_plan_v5 import (
+    describe_formal_plan_v5,
+    iter_formal_plan_v5,
 )
 from experiments.v9_3.rta4_task_source_v4 import (
     GENERAL_RANDOM_CONSTRAINED_V1,
@@ -439,3 +448,292 @@ def test_v5_fixed_total_processor_source_rejects_wrong_total_utilization():
         source["parameters"]["task_templates"][0]["D"] = [4]
     with pytest.raises(RTA4FormalConfigV5Error, match="utilization mismatch"):
         normalize_rta4_campaign_v5(raw)
+
+
+def _a3_task_source(
+    *, processors: int, task_count: int, tasksets: int, time_scale: int = 1,
+) -> dict:
+    return {
+        "mode": GENERATED_FAMILY,
+        "family_id": GENERAL_RANDOM_CONSTRAINED_V1,
+        "parameters": {
+            "processors": processors,
+            "priority_policy": PRIORITY_POLICY_RM,
+            "task_count": task_count,
+            "taskset_count": tasksets,
+            "base_seed": 500,
+            "generation_indices": list(range(tasksets)),
+            "task_templates": [
+                {
+                    "name": f"tau_{index + 1}",
+                    "C": [time_scale],
+                    "D": [(index + 1) * 8 * time_scale],
+                    "T": [(index + 1) * 10 * time_scale],
+                    "power": ["10"],
+                }
+                for index in range(task_count)
+            ],
+        },
+    }
+
+
+def _a3_v5_raw(*, scaled: bool, full_grid: bool = False) -> dict:
+    raw = campaign_template("CORE-5A")
+    if not full_grid:
+        raw["task_count_axis"] = {
+            "values": [2], "processors": 2, "tasksets": 1,
+        }
+        raw["processor_axis"] = {
+            "values": [2], "task_count": 2, "tasksets": 1,
+        }
+        raw["integer_time_scale_axis"] = {
+            "values": [1, 2, 4, 8], "base_tasksets": 1,
+        }
+        raw["methods"] = [METHODS[0]]
+    raw.update({
+        "campaign_id": "core5a-a3-scaled-time-semantics-regression",
+        "baseline": {
+            "e0": "37",
+            "normalized_utilization": "1/2",
+            "service_scale": "1",
+            "power_scale": "1",
+            "deadline_slack_fraction": "3/4",
+        },
+        "service_curve": {
+            "model": EXACT_RATE_LATENCY_SERVICE_CURVE_V1,
+            "rate": "11/2",
+            "latency": "2/5",
+            "time_unit": "tick",
+        },
+        "integer_time_scale_service_semantics": (
+            CORE5A_SCALED_LATENCY_SERVICE_V1
+            if scaled else CORE5A_FIXED_TICK_SERVICE_V1
+        ),
+        "runtime": {},
+    })
+    if scaled:
+        raw["integer_time_scale_e0_semantics"] = CORE5A_SCALED_E0_V1
+
+    task_axis = raw["task_count_axis"]
+    processor_axis = raw["processor_axis"]
+    time_axis = raw["integer_time_scale_axis"]
+    raw["task_sources"] = [
+        *(
+            {
+                "axis": "task_count",
+                "axis_value": task_count,
+                "task_source": _a3_task_source(
+                    processors=task_axis["processors"],
+                    task_count=task_count,
+                    tasksets=task_axis["tasksets"],
+                ),
+            }
+            for task_count in task_axis["values"]
+        ),
+        *(
+            {
+                "axis": "processor_count",
+                "axis_value": processors,
+                "task_source": _a3_task_source(
+                    processors=processors,
+                    task_count=processor_axis["task_count"],
+                    tasksets=processor_axis["tasksets"],
+                ),
+            }
+            for processors in processor_axis["values"]
+        ),
+        *(
+            {
+                "axis": "integer_time_scale",
+                "axis_value": scale,
+                "task_source": _a3_task_source(
+                    processors=task_axis["processors"],
+                    task_count=processor_axis["task_count"],
+                    tasksets=time_axis["base_tasksets"],
+                    time_scale=scale,
+                ),
+            }
+            for scale in time_axis["values"]
+        ),
+    ]
+    return raw
+
+
+def _normalize_a3(*, scaled: bool, full_grid: bool = False):
+    normalized = normalize_rta4_campaign_v5(
+        _a3_v5_raw(scaled=scaled, full_grid=full_grid)
+    )
+    scientific = normalized["normalized_scientific_config"]
+    records = tuple(iter_formal_plan_v5(
+        scientific, normalized["task_sources"], normalized["service_curve"],
+    ))
+    return normalized, records
+
+
+def test_v5_legacy_fixed_e0_normalized_and_plan_identities_are_unchanged():
+    normalized = normalize_rta4_campaign_v5(_small_fixed_v5_raw())
+    scientific = normalized["normalized_scientific_config"]
+    plan = describe_formal_plan_v5(
+        scientific, normalized["task_sources"], normalized["service_curve"],
+    )
+
+    assert "integer_time_scale_e0_semantics" not in scientific
+    assert "integer_time_scale_e0_scaling_explicit" not in scientific[
+        "fixed_semantics"
+    ]
+    assert rta4_formal_config_hash_v5(scientific) == (
+        "6d01978b74b757fcfdc6ff1d6603506788569b360e5d76f39a109bea7fea7c99"
+    )
+    assert plan["plan_sha256"] == (
+        "2503f951e25f67bbacab2bccd80672611153ada0461b54533b8da0b72521e3e2"
+    )
+    assert plan["ordered_stream_digest"] == (
+        "fe6d52e5ac8b9820bc1867d57c92658ee75ee5bf372d59d2e8d4e9db40e51c53"
+    )
+
+
+def test_v5_legacy_missing_e0_semantics_keeps_a3_e0_fixed():
+    normalized, records = _normalize_a3(scaled=False)
+    scientific = normalized["normalized_scientific_config"]
+    a3 = [
+        record for record in records
+        if record.material["v3_grid_material"]["axis"] == "integer_time_scale"
+    ]
+
+    assert "integer_time_scale_e0_semantics" not in scientific
+    assert scientific["fixed_semantics"]["e0_auto_scaling_allowed"] is False
+    assert {
+        record.material["v3_grid_material"]["axis_value"]: record.material[
+            "v3_grid_material"
+        ]["exact_e0"]
+        for record in a3
+    } == {"1": "37", "2": "37", "4": "37", "8": "37"}
+
+
+def test_v5_explicit_scaled_a3_e0_and_service_are_exact_and_isolated():
+    normalized, records = _normalize_a3(scaled=True)
+    scientific = normalized["normalized_scientific_config"]
+    expected = {
+        "1": ("37", "37", "11/2", "2/5"),
+        "2": ("37", "74", "11/2", "4/5"),
+        "4": ("37", "148", "11/2", "8/5"),
+        "8": ("37", "296", "11/2", "16/5"),
+    }
+
+    assert scientific["integer_time_scale_e0_semantics"] == (
+        CORE5A_SCALED_E0_V1
+    )
+    assert scientific["fixed_semantics"][
+        "integer_time_scale_e0_scaling_explicit"
+    ] is True
+    for record in records:
+        grid = record.material["v3_grid_material"]
+        service = record.material["effective_service_curve"]
+        if grid["axis"] == "integer_time_scale":
+            assert (
+                grid["e0"], grid["exact_e0"], service["rate"],
+                service["latency"],
+            ) == expected[grid["axis_value"]]
+            assert record.material["integer_time_scale_e0_semantics"] == (
+                CORE5A_SCALED_E0_V1
+            )
+        else:
+            assert grid["axis"] in {"task_count", "processor_count"}
+            assert grid["e0"] == "37"
+            assert grid["exact_e0"] == "37"
+            assert service["rate"] == "11/2"
+            assert service["latency"] == "2/5"
+
+
+def test_v5_scaled_a3_semantics_change_scientific_and_math_identities():
+    legacy, legacy_records = _normalize_a3(scaled=False)
+    scaled, scaled_records = _normalize_a3(scaled=True)
+    legacy_a3 = {
+        record.material["v3_grid_material"]["axis_value"]: record
+        for record in legacy_records
+        if record.material["v3_grid_material"]["axis"] == "integer_time_scale"
+    }
+    scaled_a3 = {
+        record.material["v3_grid_material"]["axis_value"]: record
+        for record in scaled_records
+        if record.material["v3_grid_material"]["axis"] == "integer_time_scale"
+    }
+
+    assert rta4_formal_config_hash_v5(
+        legacy["normalized_scientific_config"]
+    ) != rta4_formal_config_hash_v5(scaled["normalized_scientific_config"])
+    assert set(legacy_a3) == set(scaled_a3) == {"1", "2", "4", "8"}
+    for scale in legacy_a3:
+        assert (
+            legacy_a3[scale].mathematical_request_id
+            != scaled_a3[scale].mathematical_request_id
+        )
+        assert scaled_a3[scale].material["v3_grid_material"]["exact_e0"] == (
+            str(37 * int(scale))
+        )
+
+
+def test_v5_explicit_fixed_e0_semantics_is_accepted_without_scaling():
+    raw = _a3_v5_raw(scaled=False)
+    raw["integer_time_scale_e0_semantics"] = CORE5A_FIXED_E0_V1
+    normalized = normalize_rta4_campaign_v5(raw)
+    scientific = normalized["normalized_scientific_config"]
+    records = iter_formal_plan_v5(
+        scientific, normalized["task_sources"], normalized["service_curve"],
+    )
+
+    assert scientific["integer_time_scale_e0_semantics"] == CORE5A_FIXED_E0_V1
+    assert all(
+        record.material["v3_grid_material"]["exact_e0"] == "37"
+        for record in records
+    )
+
+
+@pytest.mark.parametrize("value", ["UNKNOWN", True, 1])
+def test_v5_rejects_invalid_explicit_integer_time_e0_semantics(value):
+    raw = _a3_v5_raw(scaled=False)
+    raw["integer_time_scale_e0_semantics"] = value
+    with pytest.raises(RTA4FormalConfigV5Error, match="integer-time E0 semantics"):
+        normalize_rta4_campaign_v5(raw)
+
+
+def test_v5_rejects_integer_time_e0_semantics_for_non_core5a():
+    raw = campaign_template("CORE-1")
+    raw.update({
+        "processors": 2,
+        "task_count": 2,
+        "normalized_utilization": ["1/2"],
+        "tasksets_per_utilization": 1,
+        "e0": ["0"],
+        "methods": [METHODS[0]],
+        "task_source": _a3_task_source(
+            processors=2, task_count=2, tasksets=1,
+        ),
+        "service_curve": {
+            "model": EXACT_RATE_LATENCY_SERVICE_CURVE_V1,
+            "rate": "11/2",
+            "latency": "2/5",
+            "time_unit": "tick",
+        },
+        "integer_time_scale_e0_semantics": CORE5A_FIXED_E0_V1,
+        "runtime": {},
+    })
+    with pytest.raises(RTA4FormalConfigV5Error, match="field set mismatch"):
+        normalize_rta4_campaign_v5(raw)
+
+
+def test_v5_scaled_a3_full_plan_preserves_frozen_request_counts():
+    normalized = normalize_rta4_campaign_v5(
+        _a3_v5_raw(scaled=True, full_grid=True)
+    )
+    plan = describe_formal_plan_v5(
+        normalized["normalized_scientific_config"],
+        normalized["task_sources"],
+        normalized["service_curve"],
+    )
+
+    assert (
+        plan["taskset_skeleton_count"],
+        plan["mathematical_request_count"],
+        plan["ordered_stream_count"],
+    ) == (1100, 4400, 4400)

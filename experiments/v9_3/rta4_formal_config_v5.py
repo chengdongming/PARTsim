@@ -73,6 +73,12 @@ CORE5A_TIME_SERVICE_SEMANTICS_V5 = (
     CORE5A_FIXED_TICK_SERVICE_V1,
     CORE5A_SCALED_LATENCY_SERVICE_V1,
 )
+CORE5A_FIXED_E0_V1 = "FIXED_E0_V1"
+CORE5A_SCALED_E0_V1 = "SCALE_E0_WITH_TIME_V1"
+CORE5A_TIME_E0_SEMANTICS_V5 = (
+    CORE5A_FIXED_E0_V1,
+    CORE5A_SCALED_E0_V1,
+)
 
 _V5_COMMON_EXTRA_FIELDS = {"service_curve"}
 _V5_SINGLE_SOURCE_FIELD = {"task_source"}
@@ -85,6 +91,7 @@ _V5_CORE3_FIELDS = {
 _V5_CORE5B_FIELDS = {"task_source", "source_baseline_exact_e0"}
 _V5_CORE5A_FIELDS = {
     "task_sources", "integer_time_scale_service_semantics",
+    "integer_time_scale_e0_semantics",
 }
 _RATIONAL_LIKE = re.compile(r"[+]?[0-9]+(?:/[0-9]+)?|[+]?[0-9]*\.[0-9]+")
 _RATIONAL_FIELD_NAMES = {
@@ -676,12 +683,23 @@ def normalize_rta4_campaign_v5(
     except (RTA4FormalConfigV3Error, RTA4EnergyServiceV5Error) as exc:
         raise RTA4FormalConfigV5Error(str(exc)) from exc
     v3 = v3_normalized["normalized_scientific_config"]
+    e0_semantics: str | None = None
     if core == "CORE-5A":
         semantics = raw.get("integer_time_scale_service_semantics")
         if semantics not in CORE5A_TIME_SERVICE_SEMANTICS_V5:
             raise RTA4FormalConfigV5Error(
                 "CORE-5A requires explicit integer-time service semantics"
             )
+        if "integer_time_scale_e0_semantics" in raw:
+            e0_semantics = raw["integer_time_scale_e0_semantics"]
+            if (
+                type(e0_semantics) is not str
+                or e0_semantics not in CORE5A_TIME_E0_SEMANTICS_V5
+            ):
+                raise RTA4FormalConfigV5Error(
+                    "CORE-5A integer-time E0 semantics must be one of "
+                    f"{CORE5A_TIME_E0_SEMANTICS_V5!r}"
+                )
         bindings = _core5a_sources(raw.get("task_sources"), v3, base_directory)
     else:
         semantics = "NOT_APPLICABLE"
@@ -750,6 +768,9 @@ def normalize_rta4_campaign_v5(
             "source_baseline_exact_e0": source_baseline_exact_e0,
         } if core == "CORE-5B" else {}),
         "integer_time_scale_service_semantics": semantics,
+        **({
+            "integer_time_scale_e0_semantics": e0_semantics,
+        } if e0_semantics is not None else {}),
         "numeric_contract": {
             **deepcopy(dict(v3["numeric_contract"])),
             "service_curve_contract": "PARTSIM_EXACT_SERVICE_CURVE_V1",
@@ -764,6 +785,9 @@ def normalize_rta4_campaign_v5(
             "e0_auto_scaling_allowed": False,
             "battery_capacity_auto_scaling_allowed": False,
             "methods_share_task_and_service_material": True,
+            **({
+                "integer_time_scale_e0_scaling_explicit": True,
+            } if e0_semantics == CORE5A_SCALED_E0_V1 else {}),
             **(
                 {
                     "core3_explicit_model_energy_to_joule_projection": True,
@@ -882,8 +906,11 @@ __all__ = [
     "CORE3_RESULT_SCHEMA_V7",
     "CORE3_SIMULATION_CONTRACT_V6",
     "CORE3_SIMULATION_CONTRACT_V7",
+    "CORE5A_FIXED_E0_V1",
     "CORE5A_FIXED_TICK_SERVICE_V1",
+    "CORE5A_SCALED_E0_V1",
     "CORE5A_SCALED_LATENCY_SERVICE_V1",
+    "CORE5A_TIME_E0_SEMANTICS_V5",
     "CORE5A_TIME_SERVICE_SEMANTICS_V5",
     "LoadedCampaignV5",
     "RTA4_CAMPAIGN_AUTHORIZATION_STATUS_V5",
