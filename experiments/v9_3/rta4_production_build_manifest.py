@@ -98,6 +98,7 @@ DEFAULT_RELEVANT_SOURCES = (
     "experiments/v9_3/rta4_numeric_contract_v2.py",
     "experiments/v9_3/rta4_core0a_repository_lineage_v1.py",
     "experiments/v9_3/rta4_core3_contracts_v6.py",
+    "experiments/v9_3/rta4_core3_contracts_v7.py",
     "experiments/v9_3/rta4_production_build_manifest.py",
     "experiments/v9_3/rta4_shared_energy.py",
     "experiments/v9_3/rta4_taskset_v2.py",

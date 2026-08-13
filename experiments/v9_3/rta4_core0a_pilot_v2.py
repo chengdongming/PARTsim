@@ -250,7 +250,7 @@ CORE0A_DISK_FIXED_OVERHEAD_BYTES = 1 << 30
 CORE0A_DISK_OBSERVATION_TOLERANCE_BYTES = 64 << 20
 CORE0A_MAX_RUNS = 1
 CORE0A_AUTHORIZATION_SCOPE = "EXACT_384_RECORD_CORE0A_ONLY"
-EXPECTED_PRODUCTION_SOURCE_CLOSURE_COUNT = 55
+EXPECTED_PRODUCTION_SOURCE_CLOSURE_COUNT = 56
 PORTABLE_FREEZE_SOURCE_PATHS = (
     "experiments/v9_3/rta4_core0a_repository_lineage_v1.py",
     "experiments/v9_3/rta4_core0a_pilot_v2.py",
@@ -1124,7 +1124,7 @@ def build_portable_candidate_bundle_v2(
     source = repository_identity()
     if len(DEFAULT_RELEVANT_SOURCES) != EXPECTED_PRODUCTION_SOURCE_CLOSURE_COUNT:
         raise RTA4Core0APilotV2Error(
-            "V2 production source closure count is not 55"
+            "V2 production source closure count is not 56"
         )
     material: Dict[str, Any] = {
         "bundle_schema": CORE0A_PORTABLE_BUNDLE_SCHEMA,
@@ -1350,7 +1350,7 @@ def build_autodl_handoff_v2(
             "REQUIRE_TRACKED_AND_UNTRACKED_CLEAN",
             "BUILD_SIMULATOR_AND_VERIFIER_ON_AUTODL",
             "GENERATE_AUTODL_PRODUCTION_BUILD_MANIFEST",
-            "LIVE_CHECK_ALL_55_PRODUCTION_SOURCE_FILES",
+            "LIVE_CHECK_ALL_56_PRODUCTION_SOURCE_FILES",
             "LOAD_AND_VALIDATE_PORTABLE_FREEZE_BUNDLE",
             "BUILD_AUTODL_DEPLOYMENT_MANIFEST_AND_EXECUTION_IDENTITY",
             "VERIFY_EXACT_384_RECORD_SELECTION",

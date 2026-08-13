@@ -1063,8 +1063,8 @@ def test_candidate_config_retry_resume_and_output_contracts():
 def test_bundle_and_handoff_are_complete_and_non_sensitive(portable):
     handoff = core0a.build_autodl_handoff_v2(portable)
     assert core0a.validate_autodl_handoff_v2(handoff, portable) == handoff
-    assert portable["required_source_files"]["production_default_closure_count"] == 55
-    assert len(portable["required_source_files"]["production_default_closure"]) == 55
+    assert portable["required_source_files"]["production_default_closure_count"] == 56
+    assert len(portable["required_source_files"]["production_default_closure"]) == 56
     assert handoff["repository_lineage_identity"] == portable[
         "source"
     ]["repository_lineage_identity"]
