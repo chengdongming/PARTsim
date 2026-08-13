@@ -8,7 +8,7 @@ operation was performed.
 
 ```text
 BASE_COMMIT=2396bf9af120f7d2ff2ad7874207d3d15ca62740
-BASE_TREE=32cdfbd55a1ccde7f0bd30188cbe221795edc824
+BASE_TREE=dee646d98bdb7080b941a8f40acc271ca7fb7056
 CLEANUP_BRANCH=cleanup/minimal-b4-rta5-20260814
 CLEANUP_WORKTREE=/tmp/PARTsim-minimal-b4-rta5-20260814
 ```
@@ -27,8 +27,10 @@ DELETE_PLAN_STILL_TRACKED_FILES=0
 ```text
 BASE_TRACKED_FILES=2468
 BASE_TRACKED_BYTES=62462884
-DELETED_FILES=1913
-DELETED_BYTES=49375673
+DELETED_FILES=1914
+DELETED_BYTES=49375864
+TRACKED_FILES_AFTER=556
+TRACKED_BYTES_AFTER=13088439
 ARTIFACTS_DELETED=1210
 ARTIFACT_BYTES_DELETED=39573763
 ADDED_FILES_BEFORE_AUDIT=1
@@ -44,8 +46,7 @@ removed according to the generated closure plan.
 The following repository/runtime items were explicitly retained after build
 and test closure checks:
 
-- `.clang-format`, `.gitignore`, `.gitmodules`, `.gitattributes`, and
-  `cmakeopts/LICENSE`;
+- `.clang-format`, `.gitignore`, `.gitattributes`, and `cmakeopts/LICENSE`;
 - current B4-PE V5 execution, materialization, analysis, audit, statistics,
   and manifest protocol files;
 - current RTA V5 sources and their V2/V3 compatibility dependencies;
@@ -56,6 +57,15 @@ and test closure checks:
 - `experiments/b4_priority_energy/manifest_protocol_v4.json`.
 
 The orphan tracked `.claude/worktrees/agent-a3555928` gitlink was removed.
+The current repository vendors the required `cmakeopts` and `rtsim/cmdarg`
+source trees directly, so `.gitmodules` was removed as stale metadata.
+
+```text
+GITLINKS_AFTER=0
+SUBMODULES_AFTER=0
+GITMODULES_REMOVED_AS_STALE_METADATA=true
+```
+
 The final tree contains no gitlinks, and `git submodule status` is empty.
 
 ## Scope protection
