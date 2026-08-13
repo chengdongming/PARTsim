@@ -37,5 +37,5 @@ include(GNUInstallDirs)
 
 # -------------------- Subdirectories -------------------- #
 
-add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/docs)
-add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/packaging)
+# Documentation and packaging helpers are intentionally outside the minimal
+# research build; the simulator and tests do not consume those install trees.

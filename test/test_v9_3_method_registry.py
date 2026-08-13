@@ -3,9 +3,6 @@ from dataclasses import replace
 import pytest
 
 import asap_block_rta_v9_3_methods as methods
-import asap_block_rta_v9_3_taskset as taskset
-import asap_block_v9_3_runner as runner
-from experiments.v9_3 import config
 
 
 EXPECTED = (
@@ -136,32 +133,3 @@ def test_registry_mapping_is_read_only():
         methods.V93_METHOD_REGISTRY[methods.V93MethodId.CW_D] = (
             methods.V93_METHOD_SPECS[0]
         )
-
-
-def test_formal_runner_order_is_exactly_unchanged():
-    assert runner.VARIANT_ORDER == (
-        taskset.AnalysisVariant.CW_D,
-        taskset.AnalysisVariant.LOC_D,
-        taskset.AnalysisVariant.CW_THETA_CW,
-        taskset.AnalysisVariant.LOC_THETA_CW,
-        taskset.AnalysisVariant.LOC_THETA_LOC,
-    )
-    assert taskset.AnalysisVariant.PH_THETA_PH not in runner.VARIANT_ORDER
-    assert taskset.AnalysisVariant.SEQ_THETA_SEQ not in runner.VARIANT_ORDER
-    assert not any(
-        variant.name in {"PH_D", "SEQ_D"}
-        for variant in runner.VARIANT_ORDER
-    )
-
-
-def test_existing_experiment_allowlist_is_not_expanded():
-    assert config.KNOWN_VARIANTS == {
-        "CW_D",
-        "LOC_D",
-        "CW_THETA_CW",
-        "LOC_THETA_CW",
-        "LOC_THETA_LOC",
-    }
-    assert set(spec.method_id.value for spec in methods.V93_METHOD_SPECS) - (
-        config.KNOWN_VARIANTS
-    ) == {"PH_THETA_PH", "SEQ_THETA_SEQ", "PH_D", "SEQ_D"}

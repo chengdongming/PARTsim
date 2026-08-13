@@ -3,6 +3,11 @@ build/
 
 # Experiment and dry-run outputs
 acceptance_ratio_runs/
+/artifacts/
+/output/
+/outputs/
+/results/
+/figures/
 
 # Python caches
 __pycache__/
