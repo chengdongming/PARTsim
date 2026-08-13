@@ -11,6 +11,10 @@ __pycache__/
 # Runtime logs
 logs/*.log
 logs/*.log.*
+/rtsim/logs/*.log
+/utils/logs/*.log
+/rtsim/cmdarg/libcmdarg.so.*
+/rtsim/cmdarg/test/test_exe
 
 CMakeLists.txt.user
 CMakeCache.txt
