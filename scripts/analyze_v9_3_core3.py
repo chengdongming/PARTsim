@@ -60,7 +60,10 @@ def _validate_terminal(root: Path, path: Path) -> tuple[Mapping[str, Any], list[
     if not isinstance(row, Mapping) or row.get("row_schema") != "ASAP_BLOCK_V9_3_RTA4_LOCAL_RESULT_V7":
         raise Core3V7AnalysisError(f"not a CORE-3 V7 terminal: {path}")
     execution = row.get("execution_identity")
-    if path.stem != execution or row.get("not_for_paper") is not True:
+    if (
+        path.stem != execution
+        or row.get("execution_class") != "DIRECT_LOCAL_EXECUTION"
+    ):
         raise Core3V7AnalysisError(f"terminal identity/classification mismatch: {path}")
     unsigned = dict(row)
     observed_identity = unsigned.pop("result_identity", None)

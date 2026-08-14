@@ -18,7 +18,6 @@ from .rta4_formal_config import (
     domain_hash,
 )
 from .rta4_numeric_contract_v2 import RTA4_NUMERIC_CONTRACT_V2_SHA256
-from .rta4_production_build_manifest import PRODUCTION_BUILD_MANIFEST_SCHEMA
 from .rta4_shared_energy import (
     BETA_CONTRACT_VERSION,
     HORIZON_CONTRACT_VERSION,
@@ -31,10 +30,8 @@ RTA4_FORMAL_PROFILE_V2 = "ASAP_BLOCK_V9_3_RTA4_FORMAL_V2_SHARED_ENERGY"
 RTA4_FORMAL_PLAN_VERSION_V2 = "ASAP_BLOCK_V9_3_RTA4_FORMAL_PLAN_V2_SHARED_ENERGY"
 RTA4_FORMAL_SCHEMA_VERSION_V2 = "ASAP_BLOCK_V9_3_RTA4_FORMAL_SCHEMA_V2_SHARED_ENERGY"
 RTA4_FORMAL_STORE_VERSION_V2 = "ASAP_BLOCK_V9_3_RTA4_TASKSET_STORE_V2_SHARED_ENERGY"
-RTA4_FORMAL_TEMPLATE_VERSION_V2 = "ASAP_BLOCK_V9_3_RTA4_PRE_PILOT_TEMPLATE_V2_SHARED_ENERGY"
-RTA4_FORMAL_PARAMETER_STATUS_V2 = "UNAUTHORIZED_PRE_PILOT"
+RTA4_FORMAL_TEMPLATE_VERSION_V2 = "ASAP_BLOCK_V9_3_RTA4_DIRECT_TEMPLATE_V2_SHARED_ENERGY"
 RTA4_FORMAL_CONFIG_DOMAIN_V2 = "ASAP_BLOCK:V9.3:RTA4_FORMAL_CONFIG:v2"
-RTA4_FORMAL_AUTHORIZATION_DOMAIN_V2 = "ASAP_BLOCK:V9.3:RTA4_FORMAL_AUTHORIZATION:v2"
 RTA4_FORMAL_TASKSET_STORE_DOMAIN_V2 = "ASAP_BLOCK:V9.3:RTA4_TASKSET_STORE:v2"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -59,13 +56,12 @@ def default_rta4_formal_config_v2(core: str) -> Dict[str, Any]:
     base = default_rta4_formal_config(core)
     slug = core.lower().replace("-", "")
     base["experiment_id"] = (
-        f"asap-block-v9.3-rta4-{slug}-unauthorized-pre-pilot-v2-shared-energy"
+        f"asap-block-v9.3-rta4-{slug}-direct-v2-shared-energy"
     )
     base["experiment_contract"] = {
         "profile": RTA4_FORMAL_PROFILE_V2,
         "schema_version": RTA4_FORMAL_SCHEMA_VERSION_V2,
         "plan_version": RTA4_FORMAL_PLAN_VERSION_V2,
-        "parameter_status": RTA4_FORMAL_PARAMETER_STATUS_V2,
     }
     from .rta4_formal_schema_v2 import formal_schema_hash_v2
 
@@ -76,12 +72,11 @@ def default_rta4_formal_config_v2(core: str) -> Dict[str, Any]:
         "formal_schema_sha256": formal_schema_hash_v2(),
         "taskset_store_version": RTA4_FORMAL_STORE_VERSION_V2,
         "taskset_store_identity": formal_taskset_store_identity_v2(),
-        "production_build_manifest_schema": PRODUCTION_BUILD_MANIFEST_SCHEMA,
+        "runtime_material_schema": "ASAP_BLOCK_V9_3_RTA4_RUNTIME_MATERIAL_V1",
         "task_energy_material_schema": TASK_ENERGY_MATERIAL_SCHEMA,
         "service_material_schema": SERVICE_MATERIAL_SCHEMA,
         "horizon_contract_version": HORIZON_CONTRACT_VERSION,
         "beta_contract_version": BETA_CONTRACT_VERSION,
-        "authorization_domain": RTA4_FORMAL_AUTHORIZATION_DOMAIN_V2,
     }
     base["shared_energy"] = {
         "task_energy_source": "CANONICAL_SYSTEM_WORKLOAD_J_PER_TICK",
@@ -160,8 +155,7 @@ def rta4_formal_config_hash_v2(config: Mapping[str, Any]) -> str:
 
 
 __all__ = [
-    "RTA4_FORMAL_AUTHORIZATION_DOMAIN_V2", "RTA4_FORMAL_CONFIG_DOMAIN_V2",
-    "RTA4_FORMAL_PARAMETER_STATUS_V2", "RTA4_FORMAL_PLAN_VERSION_V2",
+    "RTA4_FORMAL_CONFIG_DOMAIN_V2", "RTA4_FORMAL_PLAN_VERSION_V2",
     "RTA4_FORMAL_PROFILE_V2", "RTA4_FORMAL_SCHEMA_VERSION_V2",
     "RTA4_FORMAL_STORE_VERSION_V2", "RTA4_FORMAL_TEMPLATE_VERSION_V2",
     "RTA4FormalConfigV2Error", "default_rta4_formal_config_v2",

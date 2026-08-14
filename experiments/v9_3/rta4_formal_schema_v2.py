@@ -14,7 +14,7 @@ from .rta4_formal_schema import FORMAL_TABLES as V1_FORMAL_TABLES
 RTA4_FORMAL_SCHEMA_DOMAIN_V2 = "ASAP_BLOCK:V9.3:RTA4_FORMAL_SCHEMA:v2"
 RTA4_FORMAL_SCHEMA_MANIFEST_V2 = "formal_schema_manifest_v2_shared_energy.json"
 SHARED_BINDINGS = (
-    "production_build_manifest_identity",
+    "runtime_material_identity",
     "task_energy_material_identity",
     "service_material_identity",
     "beta_material_identity",
@@ -23,7 +23,7 @@ V2_RESULT_ROW_REQUIRED_FIELDS = (
     "row_schema", "profile", "schema_sha256", "numeric_contract_sha256",
     "theory_document_sha256", "config_identity", "plan_identity",
     "plan_record_identity", "execution_identity",
-    "production_build_manifest_identity", "source_commit", "source_tree",
+    "runtime_material_identity", "source_commit", "source_tree",
     "taskset_source_sha256", "taskset_identity",
     "task_energy_material_identity", "service_material_identity",
     "beta_material_identity", "method", "exact_e0", "status",
@@ -35,7 +35,7 @@ V2_ATTEMPT_REQUIRED_FIELDS = (
     "runtime_wall_seconds", "runtime_cpu_seconds", "peak_rss_bytes",
     "error_classification", "analysis_identity", "taskset_identity",
     "task_energy_material_identity", "service_material_identity",
-    "beta_material_identity", "production_build_manifest_identity",
+    "beta_material_identity", "runtime_material_identity",
 )
 
 

@@ -1,9 +1,8 @@
-"""Explicit local, non-paper execution for selectable-service RTA V5.
+"""Direct persistent execution for selectable-service RTA V5.
 
 This module is deliberately outside the frozen V3/V4 profiles.  It adapts V5
 plan records to the established V2 executor and V3 worker request protocol,
-and reuses the V3 checkpoint throttle.  It does not create a formal
-authorization and never labels its outputs as paper evidence.
+and reuses the V3 checkpoint throttle.
 """
 
 from __future__ import annotations
@@ -62,7 +61,7 @@ from .rta4_formal_config_v5 import (
     RTA4_FORMAL_PROFILE_V5,
     formal_taskset_store_identity_v5,
     load_rta4_campaign_v5,
-    source_closure_identity_v5,
+    task_source_material_identity_v5,
 )
 from .rta4_energy_service_v5 import (
     core3_simulation_projection_v5,
@@ -78,7 +77,7 @@ from .rta4_formal_plan_v5 import (
     iter_formal_plan_v5,
 )
 from .rta4_formal_rows import ENUMS as RTA4_FORMAL_ENUMS
-from .rta4_formal_runner_v3 import _CheckpointThrottleV3
+from .checkpoint_throttle import CheckpointThrottle
 from .rta4_formal_workers_v3 import (
     V3WorkerBootstrap,
     V3WorkerRequest,
@@ -294,10 +293,10 @@ class LocalWorkerRecordV5:
 def _local_material_identity(campaign: LoadedCampaignV5) -> str:
     return domain_hash(RTA4_LOCAL_BUILD_DOMAIN_V5, {
         "profile": RTA4_FORMAL_PROFILE_V5,
-        "source_closure_identity": source_closure_identity_v5(
+        "task_source_material_identity": task_source_material_identity_v5(
             campaign.normalized_scientific_config
         ),
-        "classification": "LOCAL_NOT_FOR_PAPER",
+        "classification": "DIRECT_LOCAL_EXECUTION",
     })
 
 
@@ -387,7 +386,7 @@ def _prepared_record_material(
         processors=binding.source.processors,
         task_source_identity=binding.source.identity,
         taskset_store_identity=formal_taskset_store_identity_v5(scientific),
-        production_build_manifest_identity=local_material_identity,
+        runtime_material_identity=local_material_identity,
         service_curve=curve,
         core=record.core,
         grid_material=record.material.get(
@@ -432,7 +431,6 @@ def _prepared_record_material(
         FrozenMapping({service_identity: prepared.service}),
         FrozenMapping({worker_record.record_id: FrozenMapping(binding_material)}),
         FrozenMapping({}),
-        True,
     )
     return worker_record, prepared.certificate, context, local_material_identity
 
@@ -1832,7 +1830,7 @@ def _validate_terminal_file_v5(
         or request.planned_execution_id != execution
         or observed != domain_hash(result_domain, unsigned)
         or row.get("run_identity") != request.run_identity
-        or row.get("not_for_paper") is not True
+        or row.get("execution_class") != "DIRECT_LOCAL_EXECUTION"
     ):
         raise RTA4LocalExecutionV5Error(
             "local terminal identity or classification drift"
@@ -1968,10 +1966,7 @@ class LocalResultWriterV5:
             "plan_sha256": plan["plan_sha256"],
             "ordered_stream_digest": plan["ordered_stream_digest"],
             "output_root": str(root.resolve()),
-            "execution_class": "LOCAL_NOT_FOR_PAPER",
-            "formal_campaign_started": False,
-            "paper_result_authorized": False,
-            "not_for_paper": True,
+            "execution_class": "DIRECT_LOCAL_EXECUTION",
             "execution_backend": execution_environment["execution_backend"],
             "physical_core_binding_required": execution_environment[
                 "physical_core_binding_required"
@@ -2129,9 +2124,6 @@ class LocalResultWriterV5:
             "ordered_stream_count": len(self._plan),
             "completed_execution_ids": completed,
             "complete": len(completed) == len(self._plan),
-            "formal_campaign_started": False,
-            "paper_result_authorized": False,
-            "not_for_paper": True,
         }
         value = {
             **material,
@@ -2173,7 +2165,7 @@ def _terminal_row(
             if core3_v6 else "ASAP_BLOCK_V9_3_RTA4_LOCAL_RESULT_V5"
         ),
         "profile": RTA4_FORMAL_PROFILE_V5,
-        "execution_class": "LOCAL_NOT_FOR_PAPER",
+        "execution_class": "DIRECT_LOCAL_EXECUTION",
         "run_identity": writer.run_manifest["run_identity"],
         "plan_sha256": writer.run_manifest["plan_sha256"],
         "core": record.core,
@@ -2196,9 +2188,6 @@ def _terminal_row(
         "physical_core_binding_required": physical_core_binding_required,
         "result": _plain(result),
         **(_plain(nested_core3) if core3_v6 else {}),
-        "formal_campaign_started": False,
-        "paper_result_authorized": False,
-        "not_for_paper": True,
     }
     return {
         **payload,
@@ -2461,7 +2450,6 @@ def _terminal_counts_v5(
 def execute_loaded_campaign_v5(
     campaign: LoadedCampaignV5,
     *,
-    acknowledge_not_for_paper: bool,
     output_root: Path | str | None = None,
     resume: bool | None = None,
     max_records: int | None = None,
@@ -2472,10 +2460,6 @@ def execute_loaded_campaign_v5(
         execute_physical_group_v5
     ),
 ) -> dict[str, Any]:
-    if acknowledge_not_for_paper is not True:
-        raise RTA4LocalExecutionV5Error(
-            "local execution requires acknowledge_not_for_paper=true"
-        )
     runtime = dict(campaign.runtime)
     root_value = output_root if output_root is not None else runtime.get(
         "output_root"
@@ -2575,7 +2559,7 @@ def execute_loaded_campaign_v5(
                     prepared.context,
                 )
             )
-    throttle = _CheckpointThrottleV3(
+    throttle = CheckpointThrottle(
         writer, completed, every_records=1, every_seconds=30,
     )
     processed = 0
@@ -2823,16 +2807,12 @@ def execute_loaded_campaign_v5(
             operation["output_root"] / RTA4_LOCAL_CHECKPOINT_V5
         ),
         "execution_started": True,
-        "formal_campaign_started": False,
-        "paper_result_authorized": False,
-        "not_for_paper": True,
     }
 
 
 def execute_local_campaign_v5(
     path: Path | str,
     *,
-    acknowledge_not_for_paper: bool,
     output_root: Path | str | None = None,
     resume: bool | None = None,
     max_records: int | None = None,
@@ -2841,7 +2821,6 @@ def execute_local_campaign_v5(
     campaign = load_rta4_campaign_v5(path)
     return execute_loaded_campaign_v5(
         campaign,
-        acknowledge_not_for_paper=acknowledge_not_for_paper,
         output_root=output_root,
         resume=resume,
         max_records=max_records,

@@ -110,8 +110,8 @@ def normalize_energy_service_v4(raw: Any) -> EnergyServiceV4:
     elif model == VERIFIED_SHARED_ENERGY_MATERIAL_V1:
         row = _field_set(raw, {
             "model", "material_schema", "service_material_identity",
-            "beta_material_identity", "production_build_manifest_identity",
-            "source_closure_identity",
+            "beta_material_identity", "runtime_material_identity",
+            "task_source_material_identity",
         }, "energy_service")
         if type(row["material_schema"]) is not str or not row["material_schema"]:
             raise RTA4EnergyServiceV4Error("shared material schema is required")
@@ -126,12 +126,13 @@ def normalize_energy_service_v4(raw: Any) -> EnergyServiceV4:
             "beta_material_identity": _sha(
                 row["beta_material_identity"], "beta material identity",
             ),
-            "production_build_manifest_identity": _sha(
-                row["production_build_manifest_identity"],
-                "production build manifest identity",
+            "runtime_material_identity": _sha(
+                row["runtime_material_identity"],
+                "runtime material identity",
             ),
-            "source_closure_identity": _sha(
-                row["source_closure_identity"], "source closure identity",
+            "task_source_material_identity": _sha(
+                row["task_source_material_identity"],
+                "task source material identity",
             ),
             "implicit_solar_fallback_allowed": False,
         }
@@ -174,7 +175,7 @@ def exact_service_material_v4(
 
 def validate_bound_shared_material_v4(
     service: EnergyServiceV4, *, service_material_identity: str,
-    beta_material_identity: str, production_build_manifest_identity: str,
+    beta_material_identity: str, runtime_material_identity: str,
 ) -> None:
     if type(service) is not EnergyServiceV4 or service.model != VERIFIED_SHARED_ENERGY_MATERIAL_V1:
         raise RTA4EnergyServiceV4Error(
@@ -188,9 +189,9 @@ def validate_bound_shared_material_v4(
         "beta_material_identity": _sha(
             beta_material_identity, "observed beta identity",
         ),
-        "production_build_manifest_identity": _sha(
-            production_build_manifest_identity,
-            "observed build manifest identity",
+        "runtime_material_identity": _sha(
+            runtime_material_identity,
+            "observed runtime material identity",
         ),
     }
     if any(expected[key] != value for key, value in observed.items()):

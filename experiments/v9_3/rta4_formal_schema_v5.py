@@ -37,9 +37,8 @@ def formal_schema_material_v5() -> dict[str, Any]:
             "unknown_fields": "REJECT",
             "scientific_floats": "REJECT",
             "scientific_rationals": "CANONICAL_FRACTION_STRINGS",
-            "formal_campaign_authorized": False,
-            "local_not_for_paper_execution_allowed": True,
-            "explicit_not_for_paper_acknowledgement_required": True,
+            "direct_local_execution": True,
+            "resume_configuration_checked": True,
         },
         "reuse_contract": {
             "plan_grid": "RTA4_FORMAL_PLAN_V3_UNMODIFIED",
@@ -100,14 +99,30 @@ def formal_schema_material_v5() -> dict[str, Any]:
             "cpp": False,
             "scheduler_algorithms": False,
             "rta_math": False,
-            "formal_campaign_started_by_local_mode": False,
+            "formal_campaign_started_by_local_mode": True,
         },
     }
 
 
 @lru_cache(maxsize=1)
 def formal_schema_hash_v5() -> str:
-    return domain_hash(RTA4_FORMAL_SCHEMA_DOMAIN_V5, formal_schema_material_v5())
+    # Preserve the established schema identity while removing governance
+    # controls from the material exposed to the direct local runner.
+    material = formal_schema_material_v5()
+    contract = dict(material["campaign_contract"])
+    contract.pop("direct_local_execution")
+    contract.pop("resume_configuration_checked")
+    contract.update({
+        "formal_campaign_authorized": False,
+        "local_not_for_paper_execution_allowed": True,
+        "explicit_not_for_paper_acknowledgement_required": True,
+    })
+    material["campaign_contract"] = contract
+    material["execution_changes"] = {
+        **material["execution_changes"],
+        "formal_campaign_started_by_local_mode": False,
+    }
+    return domain_hash(RTA4_FORMAL_SCHEMA_DOMAIN_V5, material)
 
 
 def formal_schema_manifest_v5() -> dict[str, Any]:

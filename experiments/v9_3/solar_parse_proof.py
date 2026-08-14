@@ -25,7 +25,26 @@ import yaml
 import asap_block_rta as legacy_rta
 
 from .config import canonical_json, domain_hash, fraction_text
-from .rta4_formal_environment import load_strict_json
+
+
+def load_strict_json(path: Path | str) -> Any:
+    """Load a JSON object with duplicate-key rejection for proof files."""
+
+    def reject_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f"duplicate JSON key: {key}")
+            result[key] = value
+        return result
+
+    value = json.loads(
+        Path(path).read_text(encoding="utf-8"),
+        object_pairs_hook=reject_duplicates,
+    )
+    if not isinstance(value, Mapping):
+        raise ValueError("strict JSON document must be an object")
+    return value
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]

@@ -22,6 +22,31 @@ class RTA4WorkerInfrastructureV3Error(RTA4ExecutionError):
     """A process/transport failure, never a mathematical RTA timeout."""
 
 
+def _timed_simulation_v3(executor: Any, record: Any, certificate: Any) -> Mapping[str, Any]:
+    """Measure one simulation attempt without importing the retired runner."""
+    started_wall = time.perf_counter()
+    started_cpu = time.process_time()
+    try:
+        result = executor(record, certificate)
+        return FrozenMapping({
+            "result": result,
+            "status": "COMPLETED",
+            "error_classification": "NONE",
+            "runtime_wall_seconds": format(time.perf_counter() - started_wall, ".17g"),
+            "runtime_cpu_seconds": format(time.process_time() - started_cpu, ".17g"),
+        })
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except Exception as exc:
+        return FrozenMapping({
+            "result": {"failure_reason": f"{type(exc).__name__}: {exc}"[:500]},
+            "status": "INTERNAL_ERROR",
+            "error_classification": f"{type(exc).__name__}: {exc}"[:500],
+            "runtime_wall_seconds": format(time.perf_counter() - started_wall, ".17g"),
+            "runtime_cpu_seconds": format(time.process_time() - started_cpu, ".17g"),
+        })
+
+
 @dataclass(frozen=True)
 class V3WorkerRequest:
     record: Any
@@ -151,9 +176,7 @@ def execute_worker_attempt_in_slot_v3(
             output_root=Path(bootstrap.output_root),
             simulation_timeout_seconds=bootstrap.simulation_timeout_seconds,
         )
-        from .rta4_formal_runner_v2 import _timed_simulation
-
-        result = _timed_simulation(executor, record, certificate)
+        result = _timed_simulation_v3(executor, record, certificate)
     else:
         method = str(record.material["method"])
         executor = bootstrap.rta_executor_factory(
@@ -292,8 +315,8 @@ def project_hard_timeout_result_v3(
         ),
         "service_material_identity": service.service_material_identity,
         "beta_material_identity": service.beta_material_identity,
-        "production_build_manifest_identity": (
-            request.run_context.production_build_manifest_identity
+        "runtime_material_identity": (
+            request.run_context.runtime_material_identity
         ),
     })
     return FrozenMapping({
@@ -324,9 +347,7 @@ def execute_worker_request_v3(request: V3WorkerRequest) -> V3WorkerResponse:
             output_root=Path(request.output_root),
             simulation_timeout_seconds=request.simulation_timeout_seconds,
         )
-        from .rta4_formal_runner_v2 import _timed_simulation
-
-        result = _timed_simulation(executor, record, certificate)
+        result = _timed_simulation_v3(executor, record, certificate)
     else:
         executor = request.rta_executor_factory(
             request.v2_config,

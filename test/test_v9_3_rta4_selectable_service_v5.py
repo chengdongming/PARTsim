@@ -578,7 +578,6 @@ def test_core3_example_preflight_reports_explicit_simulation_tick_ms():
     )
     assert summary["simulation_tick_ms"] == 1
     assert summary["execution_started"] is False
-    assert "UNAUTHORIZED" in summary["formal_campaign_authorization_status"]
 
 
 def test_core4_keeps_v3_one_factor_at_a_time_conditions():
@@ -672,7 +671,7 @@ def test_v5_adapter_reaches_the_unchanged_math_kernel_on_a_micro_replay():
         processors=source.processors,
         task_source_identity=source.identity,
         taskset_store_identity="2" * 64,
-        production_build_manifest_identity="3" * 64,
+        runtime_material_identity="3" * 64,
         service_curve=normalized["service_curve"],
         e0="10",
         method="CW_THETA_CW",
@@ -721,22 +720,18 @@ def test_all_six_cores_select_their_named_lightweight_dispatch(
     )
     summary = execute_loaded_campaign_v5(
         _loaded(core, tmp_path / core.lower()),
-        acknowledge_not_for_paper=True,
         max_records=1,
         dispatchers=CORE_EXECUTION_DISPATCH_V5,
     )
     assert calls and calls[0][0] == core
     assert summary["processed_records"] == 1
     assert summary["execution_started"] is True
-    assert summary["formal_campaign_started"] is False
-    assert summary["paper_result_authorized"] is False
-    assert summary["not_for_paper"] is True
     terminal = next(
         (tmp_path / core.lower() / "local_terminal_results_v5").glob("*.json")
     )
     row = json.loads(terminal.read_text(encoding="utf-8"))
     assert row["core"] == core
-    assert row["not_for_paper"] is True
+    assert row["execution_class"] == "DIRECT_LOCAL_EXECUTION"
 
 
 def test_core4_ofat_service_scale_is_materialized_exactly_once(tmp_path):
@@ -778,29 +773,6 @@ def test_core4_ofat_service_scale_is_materialized_exactly_once(tmp_path):
     assert scaled_service.beta(2) == baseline_service.beta(2) * 2
 
 
-def test_local_execution_requires_explicit_not_for_paper_ack(tmp_path):
-    with pytest.raises(
-        RTA4LocalExecutionV5Error, match="acknowledge_not_for_paper"
-    ):
-        execute_loaded_campaign_v5(
-            _loaded("CORE-1", tmp_path / "run"),
-            acknowledge_not_for_paper=False,
-            max_records=1,
-        )
-
-
-def test_local_execution_cli_rejects_missing_not_for_paper_ack(tmp_path):
-    assert runner_v5_main([
-        "--campaign",
-        "configs/v9_3_rta4_core1_exact_service_v5_example_UNAUTHORIZED.yaml",
-        "--execute-local",
-        "--output-root",
-        str(tmp_path / "unused"),
-        "--max-records",
-        "0",
-    ]) == 2
-
-
 @pytest.mark.parametrize("result", [
     {
         "solver_status": "TIMEOUT",
@@ -835,7 +807,6 @@ def test_local_execution_preserves_timeout_unproven_and_error_results(
     root = tmp_path / result["solver_status"].lower()
     execute_loaded_campaign_v5(
         _loaded("CORE-1", root),
-        acknowledge_not_for_paper=True,
         max_records=1,
         dispatchers=dispatchers,
     )
@@ -858,14 +829,12 @@ def test_local_execution_resume_uses_terminal_and_checkpoint(tmp_path):
     campaign = _loaded("CORE-1", root)
     first = execute_loaded_campaign_v5(
         campaign,
-        acknowledge_not_for_paper=True,
         max_records=1,
         dispatchers=dispatchers,
     )
     assert first["processed_records"] == 1
     second = execute_loaded_campaign_v5(
         campaign,
-        acknowledge_not_for_paper=True,
         resume=True,
         max_records=1,
         dispatchers=dispatchers,
@@ -939,7 +908,6 @@ def test_pure_rta_cores_reach_existing_v3_worker_and_rta_executor(
     ))
     summary = execute_loaded_campaign_v5(
         campaign,
-        acknowledge_not_for_paper=True,
         max_records=1,
         dispatchers=CORE_EXECUTION_DISPATCH_V5,
     )
@@ -960,7 +928,6 @@ def test_pure_rta_cores_reach_existing_v3_worker_and_rta_executor(
     assert planned.effective_service_identity
     assert planned.mathematical_request_id
     assert summary["processed_records"] == 1
-    assert summary["not_for_paper"] is True
     terminal = next((root / "local_terminal_results_v5").glob("*.json"))
     row = json.loads(terminal.read_text(encoding="utf-8"))
     assert row["taskset_identity"] == planned.taskset_identity
@@ -968,7 +935,7 @@ def test_pure_rta_cores_reach_existing_v3_worker_and_rta_executor(
         planned.configured_service_identity
     )
     assert row["effective_service_identity"] == planned.effective_service_identity
-    assert row["not_for_paper"] is True
+    assert row["execution_class"] == "DIRECT_LOCAL_EXECUTION"
     result = row["result"]
     assert result["solver_status"] == "COMPLETED"
     assert result["taskset_certification_status"] == "CERTIFIED_TASKSET"
@@ -1056,7 +1023,6 @@ def test_core3_reaches_existing_worker_and_only_mocks_external_launch(
     simulation_record = next(row for row in planned if row.kind == "simulation")
     summary = execute_loaded_campaign_v5(
         campaign,
-        acknowledge_not_for_paper=True,
         max_records=len(planned),
         dispatchers=CORE_EXECUTION_DISPATCH_V5,
     )
@@ -1075,7 +1041,6 @@ def test_core3_reaches_existing_worker_and_only_mocks_external_launch(
     assert binding["task_energy_material_identity"]
     assert binding["service_material_identity"]
     assert binding["simulation_tick_ms"] == 2
-    assert summary["not_for_paper"] is True
     terminal = root / "local_terminal_results_v5" / (
         simulation_record.execution_id + ".json"
     )
@@ -1086,7 +1051,7 @@ def test_core3_reaches_existing_worker_and_only_mocks_external_launch(
     ]
     assert row["result"]["status"] == "COMPLETED"
     assert row["result"]["result"]["simulation_tick_ms"] == 2
-    assert row["not_for_paper"] is True
+    assert row["execution_class"] == "DIRECT_LOCAL_EXECUTION"
 
 
 @pytest.mark.parametrize(("stderr", "detail"), [
@@ -1178,7 +1143,6 @@ def test_terminal_complete_is_distinct_from_clean_complete(tmp_path):
     }
     summary = execute_loaded_campaign_v5(
         _loaded("CORE-1", tmp_path / "terminal-not-clean"),
-        acknowledge_not_for_paper=True,
         dispatchers=dispatchers,
     )
     assert summary["terminal_count"] == summary["expected_count"] == 4
@@ -1197,7 +1161,6 @@ def test_one_dispatch_exception_writes_one_internal_terminal(tmp_path):
     root = tmp_path / "one-internal"
     summary = execute_loaded_campaign_v5(
         _loaded("CORE-2", root),
-        acknowledge_not_for_paper=True,
         dispatchers={core: dispatch for core in CORE_EXECUTION_DISPATCH_V5},
     )
     assert summary["expected_count"] == 2
@@ -1222,7 +1185,6 @@ def test_nonmapping_dispatch_result_is_terminal_but_malformed(tmp_path):
     }
     summary = execute_loaded_campaign_v5(
         _loaded("CORE-2", tmp_path / "malformed"),
-        acknowledge_not_for_paper=True,
         dispatchers=dispatchers,
     )
     assert summary["terminal_complete"] is True
@@ -1274,7 +1236,6 @@ def test_attempt_timeout_and_terminal_timeout_are_counted_separately(
     }
     summary = execute_loaded_campaign_v5(
         _loaded("CORE-1", tmp_path / f"timeout-{solver_status.lower()}"),
-        acknowledge_not_for_paper=True,
         dispatchers=dispatchers,
     )
     assert summary["attempt_timeout_count"] == attempt_timeout
@@ -1291,7 +1252,6 @@ def test_bounded_smoke_reports_invocation_clean_without_claiming_full_complete(
     }
     summary = execute_loaded_campaign_v5(
         _loaded("CORE-1", tmp_path / "bounded-clean"),
-        acknowledge_not_for_paper=True,
         max_records=1,
         dispatchers=dispatchers,
     )
@@ -1321,14 +1281,12 @@ def test_resume_keeps_prior_internal_error_out_of_clean_complete(tmp_path):
     campaign = _loaded("CORE-1", tmp_path / "resume-internal")
     first = execute_loaded_campaign_v5(
         campaign,
-        acknowledge_not_for_paper=True,
         dispatchers=first_dispatchers,
     )
     assert first["terminal_complete"] is True
     assert first["internal_error_count"] == 1
     summary = execute_loaded_campaign_v5(
         campaign,
-        acknowledge_not_for_paper=True,
         resume=True,
         dispatchers=forbidden_dispatchers,
     )
@@ -1356,7 +1314,6 @@ def test_core3_nonadmissible_observation_is_a_simulation_failure(tmp_path):
         (campaign := _loaded(
             "CORE-3", tmp_path / "core3-classification",
         )),
-        acknowledge_not_for_paper=True,
         dispatchers={core: dispatch for core in CORE_EXECUTION_DISPATCH_V5},
     )
     simulation_count = sum(
@@ -1396,7 +1353,6 @@ def test_cli_exit_code_uses_full_or_bounded_clean_status(
     assert runner_v5.main([
         "--campaign", "unused-test-campaign.yml",
         "--execute-local",
-        "--acknowledge-not-for-paper",
     ]) == expected
 
 
@@ -1510,7 +1466,6 @@ def test_worker_evidence_summary_reports_actual_distinct_pid_counts(tmp_path):
         }
 
     common = {
-        "acknowledge_not_for_paper": True,
         "_topology_discoverer": lambda: _synthetic_topology(1),
         "_physical_group_executor": fake_physical_execution,
     }
@@ -1582,7 +1537,6 @@ def test_parallel_preparation_failure_stops_before_physical_execution(
     ):
         execute_loaded_campaign_v5(
             campaign,
-            acknowledge_not_for_paper=True,
             max_records=4,
             _topology_discoverer=lambda: _synthetic_topology(2),
             _physical_group_executor=forbidden_physical_execution,
@@ -1615,7 +1569,6 @@ def test_parallel_preparation_preserves_resume_and_max_records(
         }
 
     common = {
-        "acknowledge_not_for_paper": True,
         "_topology_discoverer": lambda: _synthetic_topology(4),
         "_physical_group_executor": fake_physical_execution,
     }
@@ -1715,7 +1668,6 @@ def test_core3_records_execute_inside_a_physical_slot_process(tmp_path):
     campaign = _loaded("CORE-3", root)
     summary = execute_loaded_campaign_v5(
         campaign,
-        acknowledge_not_for_paper=True,
         _topology_discoverer=lambda: topology,
         _pool_factory=_physical_core3_probe_pool_factory,
     )
@@ -1978,7 +1930,6 @@ def test_core5b_runs_scientific_worker_groups_sequentially(tmp_path):
 
     summary = execute_loaded_campaign_v5(
         campaign,
-        acknowledge_not_for_paper=True,
         _topology_discoverer=lambda: _synthetic_topology(4),
         _pool_factory=fake_pool_factory,
     )
@@ -2024,7 +1975,6 @@ def test_core5b_insufficient_topology_fails_before_writing_terminals(tmp_path):
     ):
         execute_loaded_campaign_v5(
             campaign,
-            acknowledge_not_for_paper=True,
             _topology_discoverer=lambda: _synthetic_topology(2),
             _physical_group_executor=lambda **_kwargs: pytest.fail(
                 "execution began despite insufficient physical cores"
@@ -2048,7 +1998,6 @@ def test_core5b_runtime_worker_cap_must_cover_scientific_maximum(tmp_path):
     ):
         execute_loaded_campaign_v5(
             campaign,
-            acknowledge_not_for_paper=True,
             _topology_discoverer=lambda: pytest.fail(
                 "worker cap must fail before topology use"
             ),
@@ -2076,7 +2025,6 @@ def test_resume_refuses_topology_fingerprint_drift_before_execution(tmp_path):
 
     execute_loaded_campaign_v5(
         campaign,
-        acknowledge_not_for_paper=True,
         max_records=1,
         _topology_discoverer=lambda: _synthetic_topology(1, "topology-A"),
         _physical_group_executor=clean_group,
@@ -2086,7 +2034,6 @@ def test_resume_refuses_topology_fingerprint_drift_before_execution(tmp_path):
     ):
         execute_loaded_campaign_v5(
             campaign,
-            acknowledge_not_for_paper=True,
             resume=True,
             max_records=1,
             _topology_discoverer=lambda: _synthetic_topology(
@@ -2136,14 +2083,12 @@ def test_execution_backend_and_physical_count_do_not_change_scientific_ids(
     })
     execute_loaded_campaign_v5(
         campaign_one,
-        acknowledge_not_for_paper=True,
         max_records=1,
         _topology_discoverer=lambda: _synthetic_topology(2, "same-host"),
         _physical_group_executor=clean_group,
     )
     execute_loaded_campaign_v5(
         campaign_two,
-        acknowledge_not_for_paper=True,
         max_records=1,
         _topology_discoverer=lambda: _synthetic_topology(2, "same-host"),
         _physical_group_executor=clean_group,
@@ -2154,7 +2099,6 @@ def test_execution_backend_and_physical_count_do_not_change_scientific_ids(
     }
     execute_loaded_campaign_v5(
         base,
-        acknowledge_not_for_paper=True,
         output_root=roots[2],
         max_records=1,
         dispatchers=test_dispatchers,

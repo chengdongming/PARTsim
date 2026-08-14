@@ -123,12 +123,12 @@ def _certificate(
 
 def _task_energy(
     taskset: TasksetV4, certificate: TasksetIdentityCertificateV2, *,
-    taskset_store_identity: str, production_build_manifest_identity: str,
+    taskset_store_identity: str, runtime_material_identity: str,
 ) -> TaskEnergyMaterial:
     store = _sha(taskset_store_identity, "taskset store identity")
     build = _sha(
-        production_build_manifest_identity,
-        "production build manifest identity",
+        runtime_material_identity,
+        "runtime material identity",
     )
     entries = []
     for index, (task, formal_task) in enumerate(
@@ -138,7 +138,7 @@ def _task_energy(
         base = {
             "schema": TASK_ENERGY_MATERIAL_SCHEMA,
             "profile_id": RTA4_FORMAL_PROFILE_V4,
-            "production_build_manifest_identity": build,
+            "runtime_material_identity": build,
             "taskset_id": certificate.taskset_id,
             "task_index": index,
             "task_id": task.name,
@@ -163,7 +163,7 @@ def _task_energy(
     material = {
         "schema": TASK_ENERGY_MATERIAL_SCHEMA,
         "profile_id": RTA4_FORMAL_PROFILE_V4,
-        "production_build_manifest_identity": build,
+        "runtime_material_identity": build,
         "taskset_id": certificate.taskset_id,
         "taskset_store_identity": store,
         "taskset_canonical_sha256": certificate_sha,
@@ -182,12 +182,12 @@ def _task_energy(
 
 def _service(
     taskset: TasksetV4, energy_service: EnergyServiceV4, *,
-    production_build_manifest_identity: str,
+    runtime_material_identity: str,
     verified_shared_service: VerifiedSolarServiceMaterialV2 | None,
 ) -> VerifiedSolarServiceMaterialV2:
     build = _sha(
-        production_build_manifest_identity,
-        "production build manifest identity",
+        runtime_material_identity,
+        "runtime material identity",
     )
     if energy_service.model == VERIFIED_SHARED_ENERGY_MATERIAL_V1:
         if type(verified_shared_service) is not VerifiedSolarServiceMaterialV2:
@@ -202,11 +202,11 @@ def _service(
             beta_material_identity=(
                 verified_shared_service.beta_material_identity
             ),
-            production_build_manifest_identity=(
-                verified_shared_service.production_build_manifest_identity
+            runtime_material_identity=(
+                verified_shared_service.runtime_material_identity
             ),
         )
-        if verified_shared_service.production_build_manifest_identity != build:
+        if verified_shared_service.runtime_material_identity != build:
             raise RTA4UnifiedAdapterV4Error(
                 "shared energy material build identity differs from execution"
             )
@@ -230,7 +230,7 @@ def _service(
     base = {
         "schema": SERVICE_MATERIAL_SCHEMA,
         "profile": RTA4_FORMAL_PROFILE_V4,
-        "production_build_manifest_identity": build,
+        "runtime_material_identity": build,
         "configured_service_identity": energy_service.identity,
         "exact_service_material_identity": exact.material_identity,
         "service_model": EXACT_LINEAR_SERVICE_V1,
@@ -244,7 +244,7 @@ def _service(
         semantic_service_source_identity=energy_service.identity,
         parser_environment_identity="0" * 64,
         live_proof_identity="0" * 64,
-        production_build_manifest_identity=build,
+        runtime_material_identity=build,
         system_sha256="0" * 64,
         support_sha256="0" * 64,
         solar_csv_sha256="0" * 64,
@@ -318,7 +318,7 @@ def _projection(result: Any) -> dict[str, Any]:
 def execute_normalized_taskset_v4(
     *, taskset: TasksetV4, processors: int,
     task_source_identity: str, taskset_store_identity: str,
-    production_build_manifest_identity: str, energy_service: EnergyServiceV4,
+    runtime_material_identity: str, energy_service: EnergyServiceV4,
     e0: str, method: str, timeout_seconds: int,
     verified_shared_service: VerifiedSolarServiceMaterialV2 | None = None,
 ) -> dict[str, Any]:
@@ -337,11 +337,11 @@ def execute_normalized_taskset_v4(
     task_energy = _task_energy(
         taskset, certificate,
         taskset_store_identity=taskset_store_identity,
-        production_build_manifest_identity=production_build_manifest_identity,
+        runtime_material_identity=runtime_material_identity,
     )
     service = _service(
         taskset, energy_service,
-        production_build_manifest_identity=production_build_manifest_identity,
+        runtime_material_identity=runtime_material_identity,
         verified_shared_service=verified_shared_service,
     )
     timeout = {

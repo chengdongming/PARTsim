@@ -35,7 +35,7 @@ from experiments.v9_3.rta4_formal_config_v5 import (
     load_rta4_campaign_v5,
     normalize_rta4_campaign_v5,
     rta4_formal_config_hash_v5,
-    source_closure_identity_v5,
+    task_source_material_identity_v5,
 )
 from experiments.v9_3.rta4_formal_plan_v5 import (
     describe_formal_plan_v5,
@@ -446,9 +446,9 @@ def test_v7_and_v6_identities_are_isolated_and_calibration_base_is_v7():
     assert formal_taskset_store_identity_v5(
         old.normalized_scientific_config
     ) != formal_taskset_store_identity_v5(new.normalized_scientific_config)
-    assert source_closure_identity_v5(
+    assert task_source_material_identity_v5(
         old.normalized_scientific_config
-    ) != source_closure_identity_v5(new.normalized_scientific_config)
+    ) != task_source_material_identity_v5(new.normalized_scientific_config)
     old_plan = describe_formal_plan_v5(
         old.normalized_scientific_config, old.task_sources, old.service_curve,
     )

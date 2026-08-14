@@ -59,7 +59,7 @@ def prepare_execution_material_v5(
     processors: int,
     task_source_identity: str,
     taskset_store_identity: str,
-    production_build_manifest_identity: str,
+    runtime_material_identity: str,
     service_curve: ExactServiceCurve,
     core: str,
     grid_material: Mapping[str, Any] | None = None,
@@ -123,12 +123,12 @@ def prepare_execution_material_v5(
         effective_taskset,
         certificate,
         taskset_store_identity=taskset_store_identity,
-        production_build_manifest_identity=production_build_manifest_identity,
+        runtime_material_identity=runtime_material_identity,
     )
     service = exact_runtime_service_material_v5(
         effective_taskset,
         service_curve,
-        production_build_manifest_identity=production_build_manifest_identity,
+        runtime_material_identity=runtime_material_identity,
         service_material_horizon=service_material_horizon,
         simulation_tick_ms=simulation_tick_ms,
         model_energy_unit_joules=model_energy_unit_joules,
@@ -151,7 +151,7 @@ def exact_runtime_service_material_v5(
     taskset: TasksetV4,
     service_curve: ExactServiceCurve,
     *,
-    production_build_manifest_identity: str,
+    runtime_material_identity: str,
     service_material_horizon: int | None = None,
     simulation_tick_ms: int | None = None,
     model_energy_unit_joules: str | None = None,
@@ -161,7 +161,7 @@ def exact_runtime_service_material_v5(
     if type(taskset) is not TasksetV4 or type(service_curve) is not ExactServiceCurve:
         raise RTA4UnifiedAdapterV5Error("runtime service inputs are not normalized")
     build = _sha(
-        production_build_manifest_identity, "production build manifest identity"
+        runtime_material_identity, "runtime material identity"
     )
     maximum_deadline = max(task.D for task in taskset.tasks)
     analysis_horizon = maximum_deadline - 1
@@ -190,7 +190,7 @@ def exact_runtime_service_material_v5(
     base = {
         "schema": SERVICE_MATERIAL_SCHEMA,
         "profile": RTA4_FORMAL_PROFILE_V5,
-        "production_build_manifest_identity": build,
+        "runtime_material_identity": build,
         "configured_service_identity": service_curve.identity,
         "exact_service_material_identity": material.identity,
         "service_curve": dict(service_curve.normalized_config),
@@ -221,7 +221,7 @@ def exact_runtime_service_material_v5(
         semantic_service_source_identity=service_curve.identity,
         parser_environment_identity="0" * 64,
         live_proof_identity="0" * 64,
-        production_build_manifest_identity=build,
+        runtime_material_identity=build,
         system_sha256="0" * 64,
         support_sha256="0" * 64,
         solar_csv_sha256="0" * 64,
@@ -305,7 +305,7 @@ def execute_normalized_taskset_v5(
     processors: int,
     task_source_identity: str,
     taskset_store_identity: str,
-    production_build_manifest_identity: str,
+    runtime_material_identity: str,
     service_curve: ExactServiceCurve,
     e0: str,
     method: str,
@@ -328,7 +328,7 @@ def execute_normalized_taskset_v5(
         processors=processors,
         task_source_identity=task_source_identity,
         taskset_store_identity=taskset_store_identity,
-        production_build_manifest_identity=production_build_manifest_identity,
+        runtime_material_identity=runtime_material_identity,
         service_curve=service_curve,
         core=core,
         grid_material=grid_material,

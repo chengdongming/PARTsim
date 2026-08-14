@@ -27,14 +27,6 @@ from .constrained_taskset_identity import (
 )
 from .result_writer import atomic_write_json
 from .rta4_formal_config import canonical_json, domain_hash
-from .rta4_formal_environment import (
-    load_strict_json, validate_bound_source_file, validate_command_invocation,
-)
-from .rta4_formal_store import RTA4FormalTasksetStore
-from .rta4_formal_schema import FORMAL_TABLES, RTA4_FORMAL_SCHEMA_MANIFEST
-from .rta4_formal_store import (
-    FORMAL_TASKSET_STORE_MANIFEST, formal_taskset_store_identity,
-)
 from .rta4_shared_energy import (
     FrozenMapping, SharedEnergyRunContext, TaskEnergyMaterial,
     VerifiedSolarServiceMaterialV2, core3_shared_energy_projection,
@@ -48,42 +40,11 @@ RTA4_GENERATION_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_PRODUCTION_GENERATION:v1"
 RTA4_CHECKPOINT_VERSION = "ASAP_BLOCK_V9_3_RTA4_FORMAL_CHECKPOINT_V2"
 RTA4_CHECKPOINT_FILENAME = "formal_checkpoint.json"
 RTA4_CHECKPOINT_DOMAIN = "ASAP_BLOCK:V9.3:RTA4_FORMAL_CHECKPOINT:v2"
-_V1_RUNTIME_LOADED = False
-
-
 def _load_v1_runtime() -> None:
-    """Load the legacy execution stack only for an actual V1 operation."""
-
-    global _V1_RUNTIME_LOADED
-    if _V1_RUNTIME_LOADED:
-        return
-    from .rta4_formal_authorization import (
-        RTA4_TEST_AUTHORIZATION_SCHEMA, validate_authorization_document,
-        verify_live_authorization,
+    """Reject the retired V1 governance pipeline instead of importing it."""
+    raise RTA4ExecutionError(
+        "the retired V1 authorization/freeze pipeline is not supported"
     )
-    from .rta4_formal_freeze import (
-        prepared_scientific_config, validate_prepared_config,
-    )
-    from .rta4_formal_manifest import (
-        FORMAL_AUTHORIZED, RTA4_CONFIG_CHECKPOINT, RTA4_PLAN_MANIFEST,
-        SYNTHETIC_AUTHORIZED,
-    )
-    from .rta4_formal_pipeline import (
-        RTA4FormalRunner, formal_analysis_identity,
-    )
-    from .rta4_formal_plan import (
-        FormalPlanRecord, formal_service_identity, iter_formal_plan,
-    )
-    from .rta4_formal_validation import (
-        ValidatedFormalClosure, refresh_validated_closure,
-        validate_formal_checkpoint, validate_formal_run_closure,
-    )
-    from .rta4_formal_writer import (
-        FORMAL_AUTHORIZATION_EVIDENCE, FORMAL_RUN_METADATA,
-        FORMAL_TERMINAL_DIRECTORY, RTA4FormalResultWriter,
-    )
-    globals().update(locals())
-    _V1_RUNTIME_LOADED = True
 
 
 class RTA4ExecutionError(RuntimeError):
@@ -586,8 +547,8 @@ def _adapter_result_v2(
         raise RTA4ExecutionError("V2 requires a verified service material")
     if (
         task_energy.taskset_id != certificate.taskset_id
-        or task_energy.production_build_manifest_identity
-        != service.production_build_manifest_identity
+        or task_energy.runtime_material_identity
+        != service.runtime_material_identity
     ):
         raise RTA4ExecutionError("V2 shared-energy material binding mismatch")
     tasks = tuple(
@@ -639,8 +600,8 @@ def _adapter_result_v2(
             "theory_document_sha256": theory_sha,
             "timeout_contract": timeout_identity,
             "exact_input_identity": adapter_input_id,
-            "production_build_manifest_identity": (
-                service.production_build_manifest_identity
+            "runtime_material_identity": (
+                service.runtime_material_identity
             ),
         },
     )
@@ -710,8 +671,8 @@ def _adapter_result_v2(
         "fallback_used": False,
         "task_results": task_rows,
         "mechanism_rows": mechanism_telemetry_rows(result),
-        "production_build_manifest_identity": (
-            service.production_build_manifest_identity
+        "runtime_material_identity": (
+            service.runtime_material_identity
         ),
         "task_energy_material_identity": task_energy.task_energy_material_identity,
         "service_material_identity": service.service_material_identity,
@@ -734,9 +695,9 @@ class ProductionRTAExecutorV2:
         from .rta4_formal_config_v2 import validate_rta4_formal_config_v2
 
         self.config = validate_rta4_formal_config_v2(config)
-        if type(run_context) is not SharedEnergyRunContext or not run_context.formal_ready:
+        if type(run_context) is not SharedEnergyRunContext:
             raise RTA4ExecutionError(
-                "formal V2 executor requires a live-validated run context"
+                "V2 executor requires a prepared run context"
             )
         if not isinstance(timeout_contract, Mapping) or not timeout_contract:
             raise RTA4ExecutionError("formal V2 executor requires retry budgets")
@@ -775,8 +736,8 @@ class ProductionRTAExecutorV2:
             else adapter_attempt_runner
         )
         self.memory_limit_bytes = memory_limit_bytes
-        self.production_build_manifest_identity = (
-            run_context.production_build_manifest_identity
+        self.runtime_material_identity = (
+            run_context.runtime_material_identity
         )
         self.task_energy_materials = run_context.task_energy_materials
         self.service_materials = run_context.service_materials
@@ -801,10 +762,10 @@ class ProductionRTAExecutorV2:
         if task_energy is None or service is None:
             raise RTA4ExecutionError("V2 worker received an incomplete material registry")
         if (
-            task_energy.production_build_manifest_identity
-            != self.production_build_manifest_identity
-            or service.production_build_manifest_identity
-            != self.production_build_manifest_identity
+            task_energy.runtime_material_identity
+            != self.runtime_material_identity
+            or service.runtime_material_identity
+            != self.runtime_material_identity
         ):
             raise RTA4ExecutionError("V2 worker build identity drift")
         method = str(record.material["method"])
@@ -881,8 +842,8 @@ class ProductionRTAExecutorV2:
                 ),
                 "service_material_identity": service.service_material_identity,
                 "beta_material_identity": service.beta_material_identity,
-                "production_build_manifest_identity": (
-                    self.production_build_manifest_identity
+                "runtime_material_identity": (
+                    self.runtime_material_identity
                 ),
             }))
             if status != "TIMEOUT":
@@ -932,8 +893,8 @@ class ProductionRTAExecutorV2:
             "fallback_used": False,
             "task_results": task_rows,
             "mechanism_rows": (),
-            "production_build_manifest_identity": (
-                service.production_build_manifest_identity
+            "runtime_material_identity": (
+                service.runtime_material_identity
             ),
             "task_energy_material_identity": (
                 task_energy.task_energy_material_identity
@@ -1131,23 +1092,21 @@ class ProductionSimulationExecutorV2:
         from .rta4_formal_config_v2 import validate_rta4_formal_config_v2
 
         self.config = validate_rta4_formal_config_v2(config, expected_core="CORE-3")
-        if type(run_context) is not SharedEnergyRunContext or not run_context.formal_ready:
+        if type(run_context) is not SharedEnergyRunContext:
             raise RTA4ExecutionError(
-                "formal CORE-3 V2 executor requires a live-validated context"
+                "CORE-3 V2 executor requires a prepared context"
             )
         if (
             not isinstance(production_manifest, Mapping)
-            or production_manifest.get("manifest_id")
-            != run_context.production_build_manifest_identity
+            or production_manifest.get("runtime_material_id")
+            != run_context.runtime_material_identity
         ):
             raise RTA4ExecutionError("CORE-3 V2 manifest/context mismatch")
         try:
-            binary = Path(
-                str(production_manifest["simulator"]["binary"]["path"])
-            ).resolve(strict=True)
-            binary_sha = str(
-                production_manifest["simulator"]["binary"]["sha256"]
+            binary = Path(str(production_manifest["simulator_path"])).resolve(
+                strict=True
             )
+            binary_sha = str(production_manifest["simulator_sha256"])
         except Exception as exc:
             raise RTA4ExecutionError("CORE-3 V2 simulator binding is absent") from exc
         if hashlib.sha256(binary.read_bytes()).hexdigest() != binary_sha:
@@ -1172,8 +1131,8 @@ class ProductionSimulationExecutorV2:
         if not isinstance(energy, Mapping):
             raise RTA4ExecutionError("CORE-3 V2 support energy mapping is absent")
         self.energy_config = FrozenMapping(deepcopy(dict(energy)))
-        self.production_build_manifest_identity = (
-            run_context.production_build_manifest_identity
+        self.runtime_material_identity = (
+            run_context.runtime_material_identity
         )
         self.task_energy_materials = run_context.task_energy_materials
         self.service_materials = run_context.service_materials
@@ -1300,8 +1259,8 @@ class ProductionSimulationExecutorV2:
                 "core3_shared_energy_projection_identity"
             ],
             "release_projection_identity": release.release_projection_id,
-            "production_build_manifest_identity": (
-                self.production_build_manifest_identity
+            "runtime_material_identity": (
+                self.runtime_material_identity
             ),
             "task_energy_material_identity": (
                 task_energy.task_energy_material_identity
@@ -1909,13 +1868,8 @@ class AuthorizedRTA4Runner:
                         if record.kind == "simulation" else rta
                     )
                     if record.kind == "simulation":
-                        from .rta4_formal_pipeline import (
-                            build_formal_release_projection,
-                        )
-                        projection, window, payload = (
-                            build_formal_release_projection(
-                                certificate, record.material["release_mode"],
-                            )
+                        raise RTA4ExecutionError(
+                            "the retired V1 execution path is not supported"
                         )
                         from .release_applicability import (
                             TARGET_SCHEDULER,

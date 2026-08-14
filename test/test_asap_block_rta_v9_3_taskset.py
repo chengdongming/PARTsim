@@ -359,30 +359,6 @@ class TestPHThetaPHDirectedRecursion:
         assert solver.calls == []
         assert result.solver_status is ts.AnalysisSolverStatus.NUMERIC_ERROR
 
-    def test_direct_analyzer_accepts_execution_engine_canonical_identity(self):
-        from experiments.v9_3 import execution_engine
-
-        inp, expected = exact_identity_input()
-        stored = SimpleNamespace(
-            tasks=inp.tasks,
-            semantic_hash="a" * 64,
-            task_payload=[{"task_id": item.name} for item in inp.tasks],
-            priority_hash="b" * 64,
-            power_hash="c" * 64,
-        )
-        cell = SimpleNamespace(exact_e0=inp.e0, numerical_mode="EXACT_RATIONAL")
-        service = SimpleNamespace(values=inp.beta, identity="d" * 64)
-        produced = execution_engine._dependency_context(stored, cell, service)
-        assert produced.exact_input_identity == expected
-        direct_input = replace(inp, dependency_context=produced)
-        result, solver = run_scripted(
-            ts.AnalysisVariant.PH_THETA_PH,
-            {item.name: candidate(item.wcet) for item in inp.tasks},
-            input=direct_input,
-        )
-        assert len(solver.calls) == len(inp.tasks)
-        assert result.taskset_proven
-
     def test_same_period_order_and_task_id_are_bound_but_ctd_are_not_numeric_material(self):
         inp, original = exact_identity_input()
         reversed_identity = identity_for(tuple(reversed(inp.tasks)), inp.e0, inp.beta)
