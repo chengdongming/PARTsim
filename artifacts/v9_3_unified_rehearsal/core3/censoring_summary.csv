@@ -1,3 +1,0 @@
-scope,status,reason,count,denominator
-TASK,OBSERVED,,10,10
-TASKSET,SIM_PASS_OBSERVED,minimum_jobs_observed,1,1
