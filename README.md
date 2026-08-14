@@ -8,8 +8,8 @@ Current scope:
 - the nine scheduler implementations: ASAP-BLOCK, ASAP-NONBLOCK,
   ASAP-SYNC, ALAP-BLOCK, ALAP-NONBLOCK, ALAP-SYNC, ST-BLOCK,
   ST-NONBLOCK, and ST-SYNC;
-- the B4-PE unified task-family experiment with exact energy-source and
-  observability contracts;
+- the direct B4-PE unified task-family experiment with deterministic tasksets,
+  exact energy-source materialization, and simulator observability summaries;
 - the current CW, LOC, PH, and SEQ RTA methods, including fixed-D ablations;
 - five current RTA experiments: comparison, structural ablation,
   RTA--simulation audit, E0/service/power/deadline sensitivity, and
@@ -22,13 +22,19 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
 cmake --build build -j2
 ```
 
-The simulator entrypoint is `build/rtsim/rtsim`. The current B4 preflight
-entrypoint is:
+The simulator entrypoint is `build/rtsim/rtsim`. The current B4 direct
+experiment entrypoints are:
 
 ```bash
-python3 -m experiments.b4_priority_energy.generate_manifest_v5 \
-  --config configs/b4_pe_exact_service_v5_example_UNAUTHORIZED.yaml \
-  --preflight-only
+PARTSIM_RTSIM_BIN=build/rtsim/rtsim \
+LD_LIBRARY_PATH=build/rtsim/cmdarg:build/libmetasim:build/librtsim \
+python3 scripts/run_b4_priority_energy.py --plan
+
+PARTSIM_RTSIM_BIN=build/rtsim/rtsim \
+LD_LIBRARY_PATH=build/rtsim/cmdarg:build/libmetasim:build/librtsim \
+python3 scripts/run_b4_priority_energy.py --smoke --output /tmp/b4-smoke
+
+python3 scripts/analyze_b4_priority_energy.py --input /tmp/b4-smoke
 ```
 
 The current RTA entrypoint is:
