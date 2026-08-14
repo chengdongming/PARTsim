@@ -63,8 +63,8 @@ RTA4_FORMAL_PLAN_VERSION_V5 = (
 )
 RTA4_FORMAL_CONFIG_DOMAIN_V5 = "ASAP_BLOCK:V9.3:RTA4_FORMAL_CONFIG:v5"
 RTA4_FORMAL_TASKSET_STORE_DOMAIN_V5 = "ASAP_BLOCK:V9.3:RTA4:TASKSET_STORE:v5"
-RTA4_SOURCE_CLOSURE_DOMAIN_V5 = "ASAP_BLOCK:V9.3:RTA4:SOURCE_CLOSURE:v5"
-RTA4_CAMPAIGN_AUTHORIZATION_STATUS_V5 = (
+RTA4_TASK_SOURCE_MATERIAL_DOMAIN_V5 = "ASAP_BLOCK:V9.3:RTA4:SOURCE_CLOSURE:v5"
+_LEGACY_DIRECT_EXECUTION_STATUS_V5 = (
     "UNAUTHORIZED_LOCAL_NOT_FOR_PAPER_ONLY_REQUIRES_SEPARATE_FREEZE"
 )
 CORE5A_FIXED_TICK_SERVICE_V1 = "FIXED_TICK_SERVICE_PARAMETERS_V1"
@@ -804,9 +804,6 @@ def normalize_rta4_campaign_v5(
                 } if core3_contract is not None else {})
             ),
         },
-        "formal_campaign_authorization_status": (
-            RTA4_CAMPAIGN_AUTHORIZATION_STATUS_V5
-        ),
     }
     return {
         "normalized_scientific_config": scientific,
@@ -831,7 +828,13 @@ def rta4_formal_config_hash_v5(scientific_config: Mapping[str, Any]) -> str:
         or scientific_config.get("profile") != RTA4_FORMAL_PROFILE_V5
     ):
         raise RTA4FormalConfigV5Error("not a normalized V5 scientific config")
-    return domain_hash(RTA4_FORMAL_CONFIG_DOMAIN_V5, scientific_config)
+    # Keep the established V5 scientific identity stable while the removed
+    # governance field is no longer exposed by normalized configurations.
+    material = dict(scientific_config)
+    material["formal_campaign_authorization_status"] = (
+        _LEGACY_DIRECT_EXECUTION_STATUS_V5
+    )
+    return domain_hash(RTA4_FORMAL_CONFIG_DOMAIN_V5, material)
 
 
 def formal_taskset_store_identity_v5(
@@ -851,11 +854,11 @@ def formal_taskset_store_identity_v5(
     })
 
 
-def source_closure_identity_v5(
+def task_source_material_identity_v5(
     scientific_config: Mapping[str, Any],
 ) -> str:
     rta4_formal_config_hash_v5(scientific_config)
-    return domain_hash(RTA4_SOURCE_CLOSURE_DOMAIN_V5, {
+    return domain_hash(RTA4_TASK_SOURCE_MATERIAL_DOMAIN_V5, {
         "v3_plan_grid_identity": scientific_config["v3_plan_grid_identity"],
         "task_source_bindings": scientific_config["task_source_bindings"],
         "service_curve": scientific_config["service_curve"],
@@ -913,7 +916,6 @@ __all__ = [
     "CORE5A_TIME_E0_SEMANTICS_V5",
     "CORE5A_TIME_SERVICE_SEMANTICS_V5",
     "LoadedCampaignV5",
-    "RTA4_CAMPAIGN_AUTHORIZATION_STATUS_V5",
     "RTA4_FORMAL_CONFIG_DOMAIN_V5",
     "RTA4_FORMAL_PLAN_VERSION_V5",
     "RTA4_FORMAL_PROFILE_V5",
@@ -924,5 +926,5 @@ __all__ = [
     "load_rta4_campaign_v5",
     "normalize_rta4_campaign_v5",
     "rta4_formal_config_hash_v5",
-    "source_closure_identity_v5",
+    "task_source_material_identity_v5",
 ]

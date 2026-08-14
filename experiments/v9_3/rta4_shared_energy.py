@@ -7,6 +7,7 @@ from collections.abc import Iterator, Mapping as ABCMapping
 from dataclasses import dataclass
 from fractions import Fraction
 import hashlib
+import json
 from pathlib import Path
 import shutil
 import tempfile
@@ -21,11 +22,6 @@ from .constrained_taskset_identity import TasksetIdentityCertificate
 from .config import canonical_json, fraction_text
 from .release_applicability import RELEASE_HORIZON
 from .rta4_formal_config import domain_hash
-from .rta4_production_build_manifest import (
-    PRODUCTION_BUILD_MANIFEST_SCHEMA,
-    PRODUCTION_BUILD_PROFILE,
-    load_and_validate_production_build_manifest,
-)
 from .rta4_taskset_v2 import TasksetIdentityCertificateV2
 from .simulation_engine import SharedSolarInput, construct_shared_solar_input
 
@@ -42,6 +38,8 @@ CORE3_SHARED_ENERGY_PROJECTION_DOMAIN = (
 )
 BETA_CONTRACT_VERSION = "ARBITRARY_WINDOW_BINARY64_MINIMUM_V2"
 HORIZON_CONTRACT_VERSION = "ASAP_BLOCK_V9_3_RTA4_SERVICE_HORIZON_V2"
+RUNTIME_MATERIAL_SCHEMA = "ASAP_BLOCK_V9_3_RTA4_RUNTIME_MATERIAL_V1"
+RUNTIME_MATERIAL_PROFILE = "ASAP_BLOCK_V9_3_RTA4_DIRECT_EXECUTION_V1"
 
 
 class SharedEnergyMaterialError(ValueError):
@@ -148,7 +146,7 @@ class TaskEnergyEntry:
 @dataclass(frozen=True)
 class TaskEnergyMaterial:
     profile_id: str
-    production_build_manifest_identity: str
+    runtime_material_identity: str
     taskset_id: str
     taskset_store_identity: str
     taskset_canonical_sha256: str
@@ -171,7 +169,7 @@ class TaskEnergyMaterial:
         value = {
             "schema": self.schema,
             "profile_id": self.profile_id,
-            "production_build_manifest_identity": self.production_build_manifest_identity,
+            "runtime_material_identity": self.runtime_material_identity,
             "taskset_id": self.taskset_id,
             "taskset_store_identity": self.taskset_store_identity,
             "taskset_canonical_sha256": self.taskset_canonical_sha256,
@@ -204,8 +202,8 @@ def construct_task_energy_material(
     system_config_path: Path | str,
     workload_config_path: Path | str | None = None,
     taskset_store_identity: str,
-    production_build_manifest_identity: str,
-    profile_id: str = PRODUCTION_BUILD_PROFILE,
+    runtime_material_identity: str,
+    profile_id: str = RUNTIME_MATERIAL_PROFILE,
 ) -> TaskEnergyMaterial:
     """Derive source identities from bytes and operands; callers supply no identity."""
 
@@ -223,8 +221,8 @@ def construct_task_energy_material(
     if not isinstance(taskset_store_identity, str) or not taskset_store_identity:
         raise SharedEnergyMaterialError("taskset store identity is required")
     if (
-        not isinstance(production_build_manifest_identity, str)
-        or len(production_build_manifest_identity) != 64
+        not isinstance(runtime_material_identity, str)
+        or len(runtime_material_identity) != 64
     ):
         raise SharedEnergyMaterialError("production build manifest identity is invalid")
 
@@ -288,7 +286,7 @@ def construct_task_energy_material(
             "system_config": system_source,
             "workload_config": workload_source,
             "generator_contract_version": generator_contract,
-            "production_build_manifest_identity": production_build_manifest_identity,
+            "runtime_material_identity": runtime_material_identity,
         }
         source_identity = domain_hash(TASK_ENERGY_ENTRY_DOMAIN, identity_material)
         entries.append(TaskEnergyEntry(
@@ -300,7 +298,7 @@ def construct_task_energy_material(
     base = {
         "schema": TASK_ENERGY_MATERIAL_SCHEMA,
         "profile_id": profile_id,
-        "production_build_manifest_identity": production_build_manifest_identity,
+        "runtime_material_identity": runtime_material_identity,
         "taskset_id": certificate.taskset_id,
         "taskset_store_identity": taskset_store_identity,
         "taskset_canonical_sha256": taskset_sha,
@@ -314,7 +312,7 @@ def construct_task_energy_material(
     }
     identity = domain_hash(TASK_ENERGY_MATERIAL_DOMAIN, base)
     return TaskEnergyMaterial(
-        profile_id, production_build_manifest_identity, certificate.taskset_id,
+        profile_id, runtime_material_identity, certificate.taskset_id,
         taskset_store_identity, taskset_sha, str(system_source["sha256"]),
         str(workload_source["sha256"]),
         generator_contract,
@@ -424,7 +422,7 @@ class VerifiedSolarServiceMaterialV2:
     semantic_service_source_identity: str
     parser_environment_identity: str
     live_proof_identity: str
-    production_build_manifest_identity: str
+    runtime_material_identity: str
     system_sha256: str
     support_sha256: str
     solar_csv_sha256: str
@@ -484,26 +482,25 @@ class ServiceMaterialRegistry:
 
     def __init__(
         self,
-        production_build_manifest: Mapping[str, Any],
+        runtime_material: Mapping[str, Any],
         *,
         constructor: Callable[..., SharedSolarInput] = construct_shared_solar_input,
         trusted_manifest: bool = False,
-        expected_manifest_schema: str = PRODUCTION_BUILD_MANIFEST_SCHEMA,
+        expected_manifest_schema: str = RUNTIME_MATERIAL_SCHEMA,
     ) -> None:
         if (
-            production_build_manifest.get("manifest_schema")
-            != expected_manifest_schema
-            or not isinstance(production_build_manifest.get("manifest_id"), str)
-            or len(production_build_manifest["manifest_id"]) != 64
+            runtime_material.get("schema") != expected_manifest_schema
+            or not isinstance(runtime_material.get("runtime_material_id"), str)
+            or len(runtime_material["runtime_material_id"]) != 64
         ):
             raise SharedEnergyMaterialError("registry requires a validated production manifest")
         try:
-            compiler = production_build_manifest["cpp_toolchain"]["compiler"]["path"]
-            compiler_sha = production_build_manifest["cpp_toolchain"]["compiler"]["sha256"]
-            verifier_sha = production_build_manifest["solar_verifier"]["binary"]["sha256"]
+            compiler = runtime_material["compiler_path"]
+            compiler_sha = runtime_material["compiler_sha256"]
+            verifier_sha = runtime_material["verifier_sha256"]
         except Exception as exc:
             raise SharedEnergyMaterialError("production compiler binding is absent") from exc
-        self._build_manifest_id = str(production_build_manifest["manifest_id"])
+        self._runtime_material_id = str(runtime_material["runtime_material_id"])
         self._compiler = str(compiler)
         self._compiler_sha = str(compiler_sha)
         self._verifier_sha = str(verifier_sha)
@@ -515,14 +512,12 @@ class ServiceMaterialRegistry:
         self._workspace = Path(tempfile.mkdtemp(prefix="v9_3_rta4_service_registry_"))
 
     @classmethod
-    def from_manifest_path(
+    def from_runtime_material_path(
         cls, path: Path | str, *,
         constructor: Callable[..., SharedSolarInput] = construct_shared_solar_input,
     ) -> "ServiceMaterialRegistry":
         return cls(
-            load_and_validate_production_build_manifest(
-                path, require_default_closure=True,
-            ),
+            json.loads(Path(path).read_text(encoding="utf-8")),
             constructor=constructor,
             trusted_manifest=True,
         )
@@ -605,7 +600,7 @@ class ServiceMaterialRegistry:
         cache_material = {
             "semantic_service_source_identity": binding["semantic_service_source_identity"],
             "parser_environment_identity": binding["parser_environment_identity"],
-            "production_build_manifest_identity": self._build_manifest_id,
+            "runtime_material_identity": self._runtime_material_id,
             "day_of_year": provenance["day_of_year"],
             "time_of_day_ms": provenance["time_of_day_ms"],
             "horizon": spec.horizon.material(),
@@ -630,7 +625,7 @@ class ServiceMaterialRegistry:
             cache_key,
             str(binding["semantic_service_source_identity"]),
             str(binding["parser_environment_identity"]),
-            str(binding["live_proof_identity"]), self._build_manifest_id,
+            str(binding["live_proof_identity"]), self._runtime_material_id,
             system_sha, support_sha, solar_sha,
             int(provenance["day_of_year"]), int(provenance["time_of_day_ms"]),
             spec.solar_scale, spec.horizon, trace, beta, trace_sha, beta_sha,
@@ -708,8 +703,8 @@ def core3_shared_energy_projection(
     service: VerifiedSolarServiceMaterialV2,
 ) -> Dict[str, Any]:
     if (
-        task_energy.production_build_manifest_identity
-        != service.production_build_manifest_identity
+        task_energy.runtime_material_identity
+        != service.runtime_material_identity
     ):
         raise SharedEnergyMaterialError("CORE-3 production build identity drift")
     material = {
@@ -718,7 +713,7 @@ def core3_shared_energy_projection(
         "semantic_service_source_identity": service.semantic_service_source_identity,
         "service_material_identity": service.service_material_identity,
         "beta_material_identity": service.beta_material_identity,
-        "production_build_manifest_identity": service.production_build_manifest_identity,
+        "runtime_material_identity": service.runtime_material_identity,
         "solar_scale": fraction_text(service.solar_scale),
         "day_of_year": service.day_of_year,
         "time_of_day_ms": service.time_of_day_ms,
@@ -746,12 +741,11 @@ def validate_core3_shared_energy_projection(
 
 @dataclass(frozen=True)
 class SharedEnergyRunContext:
-    production_build_manifest_identity: str
+    runtime_material_identity: str
     task_energy_materials: Mapping[str, TaskEnergyMaterial]
     service_materials: Mapping[str, VerifiedSolarServiceMaterialV2]
     record_bindings: Mapping[str, Mapping[str, str]]
     cache_statistics: Mapping[str, int]
-    formal_ready: bool = False
 
     def binding_for(self, record_id: str) -> Mapping[str, str]:
         binding = self.record_bindings.get(record_id)
@@ -764,7 +758,7 @@ def initialize_shared_energy_run(
     records: Sequence[Any],
     *,
     taskset_provider: Any,
-    production_build_manifest: Mapping[str, Any],
+    runtime_material: Mapping[str, Any],
     system_config_path: Path | str,
     energy_support_path: Path | str,
     source_root: Path | str,
@@ -776,48 +770,42 @@ def initialize_shared_energy_run(
     return _initialize_shared_energy_run(
         records,
         taskset_provider=taskset_provider,
-        production_build_manifest=production_build_manifest,
+        runtime_material=runtime_material,
         system_config_path=system_config_path,
         energy_support_path=energy_support_path,
         source_root=source_root,
         taskset_store_identity=taskset_store_identity,
         service_constructor=service_constructor,
-        formal_ready=False,
-        expected_manifest_schema=PRODUCTION_BUILD_MANIFEST_SCHEMA,
-        shared_profile_id=PRODUCTION_BUILD_PROFILE,
+        shared_profile_id=RUNTIME_MATERIAL_PROFILE,
     )
 
 
-def initialize_shared_energy_run_from_manifest_path(
+def initialize_shared_energy_run_from_runtime_material_path(
     records: Sequence[Any],
     *,
     taskset_provider: Any,
-    production_build_manifest_path: Path | str,
+    runtime_material_path: Path | str,
     system_config_path: Path | str,
     energy_support_path: Path | str,
     source_root: Path | str,
     taskset_store_identity: str,
     service_constructor: Callable[..., SharedSolarInput] = construct_shared_solar_input,
 ) -> SharedEnergyRunContext:
-    """Strict formal entry point: live-check a manifest path before materials."""
+    """Load a simple runtime-material document before materials are built."""
 
-    if isinstance(production_build_manifest_path, Mapping):
-        raise SharedEnergyMaterialError("formal run-init accepts only a manifest file path")
-    manifest = load_and_validate_production_build_manifest(
-        production_build_manifest_path, require_default_closure=True,
-    )
+    if isinstance(runtime_material_path, Mapping):
+        raise SharedEnergyMaterialError("runtime material path must be a file")
+    manifest = json.loads(Path(runtime_material_path).read_text(encoding="utf-8"))
     return _initialize_shared_energy_run(
         records,
         taskset_provider=taskset_provider,
-        production_build_manifest=manifest,
+        runtime_material=manifest,
         system_config_path=system_config_path,
         energy_support_path=energy_support_path,
         source_root=source_root,
         taskset_store_identity=taskset_store_identity,
         service_constructor=service_constructor,
-        formal_ready=True,
-        expected_manifest_schema=PRODUCTION_BUILD_MANIFEST_SCHEMA,
-        shared_profile_id=PRODUCTION_BUILD_PROFILE,
+        shared_profile_id=RUNTIME_MATERIAL_PROFILE,
     )
 
 
@@ -825,23 +813,21 @@ def _initialize_shared_energy_run(
     records: Sequence[Any],
     *,
     taskset_provider: Any,
-    production_build_manifest: Mapping[str, Any],
+    runtime_material: Mapping[str, Any],
     system_config_path: Path | str,
     energy_support_path: Path | str,
     source_root: Path | str,
     taskset_store_identity: str,
     service_constructor: Callable[..., SharedSolarInput],
-    formal_ready: bool,
-    expected_manifest_schema: str,
     shared_profile_id: str,
 ) -> SharedEnergyRunContext:
     """Freeze every shared input before a worker pool or record loop exists."""
 
     if not records:
         raise SharedEnergyMaterialError("shared-energy run has no records")
-    build_id = str(production_build_manifest.get("manifest_id", ""))
+    build_id = str(runtime_material.get("runtime_material_id", ""))
     if len(build_id) != 64:
-        raise SharedEnergyMaterialError("run has no validated production manifest")
+        raise SharedEnergyMaterialError("run has no valid runtime material")
     try:
         support_document = yaml.safe_load(
             Path(energy_support_path).read_text(encoding="utf-8")
@@ -880,7 +866,7 @@ def _initialize_shared_energy_run(
                 system_config_path=system_config_path,
                 workload_config_path=system_config_path,
                 taskset_store_identity=taskset_store_identity,
-                production_build_manifest_identity=build_id,
+                runtime_material_identity=build_id,
                 profile_id=shared_profile_id,
             )
             task_materials[certificate.taskset_id] = material
@@ -918,9 +904,7 @@ def _initialize_shared_energy_run(
         for scale, horizon in requirements.items()
     }
     with ServiceMaterialRegistry(
-        production_build_manifest, constructor=service_constructor,
-        trusted_manifest=formal_ready,
-        expected_manifest_schema=expected_manifest_schema,
+        runtime_material, constructor=service_constructor,
     ) as registry:
         registry.prepare(specs.values())
         services = {
@@ -948,7 +932,6 @@ def _initialize_shared_energy_run(
         FrozenMapping(service_materials),
         FrozenMapping({key: FrozenMapping(value) for key, value in bindings.items()}),
         FrozenMapping(statistics),
-        formal_ready,
     )
 
 
@@ -961,7 +944,7 @@ __all__ = [
     "TaskEnergyMaterial", "VerifiedSolarServiceMaterialV2",
     "construct_task_energy_material", "core3_shared_energy_projection",
     "derive_service_horizon_contract", "initialize_shared_energy_run",
-    "initialize_shared_energy_run_from_manifest_path",
+    "initialize_shared_energy_run_from_runtime_material_path",
     "project_core3_shared_energy_payload",
     "validate_core3_shared_energy_projection",
 ]

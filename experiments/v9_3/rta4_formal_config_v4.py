@@ -44,12 +44,9 @@ RTA4_FORMAL_TASKSET_STORE_DOMAIN_V4 = (
 RTA4_FORMAL_TASKSET_STORE_HEADER_DOMAIN_V4 = (
     "ASAP_BLOCK:V9.3:RTA4:TASKSET_STORE_HEADER:v4"
 )
-RTA4_SOURCE_CLOSURE_DOMAIN_V4 = "ASAP_BLOCK:V9.3:RTA4:SOURCE_CLOSURE:v4"
+RTA4_TASK_SOURCE_MATERIAL_DOMAIN_V4 = "ASAP_BLOCK:V9.3:RTA4:TASK_SOURCE_MATERIAL:v4"
 RTA4_RECURSIVE_METHODS_V4 = (
     "CW_THETA_CW", "LOC_THETA_LOC", "PH_THETA_PH", "SEQ_THETA_SEQ",
-)
-RTA4_FORMAL_CAMPAIGN_AUTHORIZATION_STATUS_V4 = (
-    "UNAUTHORIZED_REQUIRES_SEPARATE_PARAMETER_FREEZE"
 )
 
 _CAMPAIGN_FIELDS = {
@@ -237,9 +234,6 @@ def normalize_rta4_campaign_v4(
             "family_specific_math_dispatch_allowed": False,
             "legacy_binary64_service_formal_eligible": False,
         },
-        "formal_campaign_authorization_status": (
-            RTA4_FORMAL_CAMPAIGN_AUTHORIZATION_STATUS_V4
-        ),
     }
     return {
         "normalized_scientific_config": scientific,
@@ -309,9 +303,9 @@ def formal_taskset_store_header_v4(
     }
 
 
-def source_closure_identity_v4(scientific_config: Mapping[str, Any]) -> str:
+def task_source_material_identity_v4(scientific_config: Mapping[str, Any]) -> str:
     rta4_formal_config_hash_v4(scientific_config)
-    return domain_hash(RTA4_SOURCE_CLOSURE_DOMAIN_V4, {
+    return domain_hash(RTA4_TASK_SOURCE_MATERIAL_DOMAIN_V4, {
         "profile": RTA4_FORMAL_PROFILE_V4,
         "task_source": scientific_config["task_source"],
         "task_source_identity": scientific_config["task_source_identity"],
@@ -348,12 +342,12 @@ def load_rta4_campaign_v4(path: Path | str) -> LoadedCampaignV4:
 
 
 __all__ = [
-    "LoadedCampaignV4", "RTA4_FORMAL_CAMPAIGN_AUTHORIZATION_STATUS_V4",
+    "LoadedCampaignV4",
     "RTA4_FORMAL_CONFIG_DOMAIN_V4", "RTA4_FORMAL_PLAN_VERSION_V4",
     "RTA4_FORMAL_PROFILE_V4", "RTA4_FORMAL_SCHEMA_VERSION_V4",
     "RTA4_RECURSIVE_METHODS_V4", "RTA4FormalConfigV4Error",
     "formal_taskset_store_header_v4", "formal_taskset_store_identity_v4",
     "load_rta4_campaign_v4",
     "normalize_rta4_campaign_v4", "rta4_formal_config_hash_v4",
-    "source_closure_identity_v4",
+    "task_source_material_identity_v4",
 ]

@@ -30,7 +30,7 @@ from .rta4_formal_config_v5 import (
     TaskSourceBindingV5,
     formal_taskset_store_identity_v5,
     rta4_formal_config_hash_v5,
-    source_closure_identity_v5,
+    task_source_material_identity_v5,
 )
 from .rta4_energy_service_v5 import (
     core3_simulation_projection_v5,
@@ -566,7 +566,7 @@ def describe_formal_plan_v5(
         "taskset_store_identity": formal_taskset_store_identity_v5(
             scientific_config
         ),
-        "source_closure_identity": source_closure_identity_v5(
+        "source_closure_identity": task_source_material_identity_v5(
             scientific_config
         ),
         "v3_plan_grid_identity": scientific_config["v3_plan_grid_identity"],
@@ -579,15 +579,13 @@ def describe_formal_plan_v5(
         "normalized_scientific_config_sha256": scientific_hash,
         "ordered_stream_digest": stream.sha256,
         "taskset_store_identity": identity_material["taskset_store_identity"],
+        "task_source_material_identity": identity_material["source_closure_identity"],
         "source_closure_identity": identity_material["source_closure_identity"],
         "service_curve_identity": scientific_config["service_curve_identity"],
         "task_source_identities": [
             binding.source.identity for binding in task_sources
         ],
         "plan_sha256": domain_hash(RTA4_PLAN_DOMAIN_V5, identity_material),
-        "formal_campaign_authorization_status": scientific_config[
-            "formal_campaign_authorization_status"
-        ],
         "identity_material": identity_material,
     }
 

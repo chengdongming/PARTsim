@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Preflight or explicitly execute a local, non-paper RTA V5 campaign."""
+"""Plan, execute, and resume a deterministic RTA V5 campaign."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from typing import Sequence
 from .rta4_formal_config_v5 import (
     RTA4FormalConfigV5Error,
     load_rta4_campaign_v5,
-    source_closure_identity_v5,
+    task_source_material_identity_v5,
 )
 from .rta4_formal_plan_v5 import (
     RTA4FormalPlanV5Error,
@@ -40,7 +40,7 @@ def preflight_campaign_v5(path: Path | str) -> dict[str, object]:
             campaign.normalized_scientific_config_sha256
         ),
         "formal_schema_sha256": formal_schema_hash_v5(),
-        "source_closure_identity": source_closure_identity_v5(
+        "task_source_material_identity": task_source_material_identity_v5(
             campaign.normalized_scientific_config
         ),
         "service_curve_identity": campaign.service_curve.identity,
@@ -61,13 +61,7 @@ def preflight_campaign_v5(path: Path | str) -> dict[str, object]:
             )
         },
         "runtime": dict(campaign.runtime),
-        "formal_campaign_authorization_status": plan[
-            "formal_campaign_authorization_status"
-        ],
         "execution_started": False,
-        "formal_campaign_started": False,
-        "paper_result_authorized": False,
-        "not_for_paper": False,
     }
 
 
@@ -83,9 +77,8 @@ def build_parser() -> argparse.ArgumentParser:
     mode.add_argument(
         "--execute-local",
         action="store_true",
-        help="execute through V3 worker facilities as non-paper evidence",
+        help="execute through the existing worker facilities",
     )
-    parser.add_argument("--acknowledge-not-for-paper", action="store_true")
     parser.add_argument("--output-root")
     parser.add_argument("--resume", action="store_true", default=None)
     parser.add_argument("--max-records", type=int)
@@ -94,19 +87,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    if args.execute_local and not args.acknowledge_not_for_paper:
-        print(
-            "RTA V5 local execution requires "
-            "--acknowledge-not-for-paper"
-        )
-        return 2
     try:
         summary = (
             preflight_campaign_v5(args.campaign)
             if args.preflight_only
             else execute_local_campaign_v5(
                 args.campaign,
-                acknowledge_not_for_paper=args.acknowledge_not_for_paper,
                 output_root=args.output_root,
                 resume=args.resume,
                 max_records=args.max_records,

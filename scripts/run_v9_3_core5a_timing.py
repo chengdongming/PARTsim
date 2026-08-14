@@ -203,12 +203,12 @@ def _prepared(row: Mapping[str, Any], taskset: Any) -> tuple[Any, LocalWorkerRec
         processors=int(row["processors"]),
         task_source_identity=_identity({"protocol": CORE5A_TIMING_PROTOCOL, "source": row["taskset_slot_id"]}),
         taskset_store_identity=_identity({"protocol": CORE5A_TIMING_PROTOCOL, "store": point.store_key}),
-        production_build_manifest_identity=BUILD_ID,
+        runtime_material_identity=BUILD_ID,
         service_curve=service_curve,
         core="CORE-1",
     )
     context = SharedEnergyRunContext(
-        production_build_manifest_identity=BUILD_ID,
+        runtime_material_identity=BUILD_ID,
         task_energy_materials=FrozenMapping({
             prepared.task_energy.task_energy_material_identity: prepared.task_energy,
         }),
@@ -222,7 +222,6 @@ def _prepared(row: Mapping[str, Any], taskset: Any) -> tuple[Any, LocalWorkerRec
             }),
         }),
         cache_statistics=FrozenMapping({}),
-        formal_ready=True,
     )
     return prepared, worker_record, context
 
@@ -240,7 +239,7 @@ def _bootstrap(output_root: Path) -> V3WorkerBootstrap:
         v2_config=v2_config,
         timeout_contract=timeout_contract,
         identity_contract=FrozenMapping({}),
-        production_manifest=FrozenMapping({"manifest_id": BUILD_ID}),
+        production_manifest=FrozenMapping({"runtime_material_id": BUILD_ID}),
         system_config_path=str(PROJECT_ROOT / "system_config_unified_template.yml"),
         energy_support_path=str(ENERGY_SUPPORT),
         output_root=str(output_root),
