@@ -42,6 +42,82 @@ def _write_jsonl(path: Path, rows: list[dict]) -> None:
             handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n")
 
 
+def _canonical_semantic_config(
+    *, seed: int, cells: tuple[tuple[Fraction, Fraction], ...], rho: Fraction,
+    latency: Fraction, processors: int, tasks: int, period_min: int,
+    period_max: int, min_util: Fraction, max_util: Fraction,
+    tolerance: Fraction, samples_per_uc: int, e0_values: list[Fraction],
+    method_names: list[str], system_config: Path, workers: int,
+    timeout_first: float, timeout_retry: float,
+) -> dict:
+    return {
+        "seed": int(seed),
+        "cells": [[fraction_text(uc), fraction_text(ue)] for uc, ue in sorted(set(cells))],
+        "rho": fraction_text(rho),
+        "latency": fraction_text(latency),
+        "processors": int(processors),
+        "tasks": int(tasks),
+        "period_min": int(period_min),
+        "period_max": int(period_max),
+        "min_task_util": fraction_text(min_util),
+        "max_task_util": fraction_text(max_util),
+        "util_tolerance_total": fraction_text(tolerance),
+        "samples_per_uc": int(samples_per_uc),
+        "e0_values": sorted({fraction_text(value) for value in e0_values}, key=Fraction),
+        "methods": sorted(set(method_names)),
+        "system_config": str(system_config.resolve()),
+        "workers": int(workers),
+        "timeout_first": float(timeout_first),
+        "timeout_retry": float(timeout_retry),
+    }
+
+
+def _canonical_existing_config(run_config: dict) -> dict:
+    source = run_config.get("semantic_config", run_config)
+    try:
+        def cell_values(row: object) -> tuple[object, object]:
+            if isinstance(row, dict):
+                return row["target_uc"], row["target_ue"]
+            return row[0], row[1]
+
+        cells = tuple(
+            (parse_fraction(cell_values(row)[0], "existing U_C"), parse_fraction(cell_values(row)[1], "existing U_E"))
+            for row in source["cells"]
+        )
+        e0_values = [parse_fraction(value, "existing E0") for value in source["e0_values"]]
+        return _canonical_semantic_config(
+            seed=int(source["seed"]), cells=cells,
+            rho=parse_fraction(source["rho"], "existing rho"),
+            latency=parse_fraction(source["latency"], "existing latency"),
+            processors=int(source["processors"]), tasks=int(source["tasks"]),
+            period_min=int(source["period_min"]), period_max=int(source["period_max"]),
+            min_util=parse_fraction(source["min_task_util"], "existing min_task_util"),
+            max_util=parse_fraction(source["max_task_util"], "existing max_task_util"),
+            tolerance=parse_fraction(source["util_tolerance_total"], "existing tolerance"),
+            samples_per_uc=int(source["samples_per_uc"]), e0_values=e0_values,
+            method_names=[str(value).upper() for value in source["methods"]],
+            system_config=Path(source["system_config"]), workers=int(source.get("workers", 1)),
+            timeout_first=float(source.get("timeout_first", 600.0)),
+            timeout_retry=float(source.get("timeout_retry", 1200.0)),
+        )
+    except (KeyError, TypeError, ValueError, OSError) as exc:
+        raise ValueError(f"resume configuration mismatch: existing run_config is incomplete: {exc}") from exc
+
+
+def _resume_config_mismatches(existing: dict, requested: dict) -> list[tuple[str, object, object]]:
+    return [
+        (key, existing.get(key), requested.get(key))
+        for key in sorted(set(existing) | set(requested))
+        if existing.get(key) != requested.get(key)
+    ]
+
+
+def _format_resume_mismatch(mismatches: list[tuple[str, object, object]]) -> str:
+    lines = ["resume configuration mismatch:"]
+    lines.extend(f"  {key}: existing={old!r}, requested={new!r}" for key, old, new in mismatches)
+    return "\n".join(lines)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run exact v9.3 RTA-LOAD-CROSS with physical-core process slots.")
     parser.add_argument("--output", required=True)
@@ -100,6 +176,27 @@ def main(argv: list[str] | None = None) -> int:
 
         output = Path(args.output)
         output.mkdir(parents=True, exist_ok=True)
+        semantic_config = _canonical_semantic_config(
+            seed=args.seed, cells=cells, rho=rho, latency=latency,
+            processors=args.processors, tasks=args.tasks,
+            period_min=args.period_min, period_max=args.period_max,
+            min_util=min_util, max_util=max_util, tolerance=tolerance,
+            samples_per_uc=args.samples_per_uc, e0_values=e0_values,
+            method_names=method_names, system_config=Path(args.system_config),
+            workers=args.workers, timeout_first=args.timeout_first,
+            timeout_retry=args.timeout_retry,
+        )
+        previous_config = {}
+        if args.resume:
+            config_file = output / "run_config.json"
+            if not config_file.exists():
+                raise ValueError("resume configuration mismatch: existing run_config.json is missing")
+            previous_config = json.loads(config_file.read_text(encoding="utf-8"))
+            mismatches = _resume_config_mismatches(
+                _canonical_existing_config(previous_config), semantic_config,
+            )
+            if mismatches:
+                raise ValueError(_format_resume_mismatch(mismatches))
         tasksets_path = output / "tasksets.jsonl"
         results_path = output / "results.jsonl"
         config_path = Path(args.system_config)
@@ -132,10 +229,6 @@ def main(argv: list[str] | None = None) -> int:
         requests = make_requests(tasksets, e0_values, method_names, args.processors, rho, latency, args.timeout_first)
         existing = {row.get("request_id") for row in _jsonl(results_path)} if args.resume else set()
         pending = [row for row in requests if row["request_id"] not in existing]
-        previous_config = {}
-        if args.resume and (output / "run_config.json").exists():
-            previous_config = json.loads((output / "run_config.json").read_text(encoding="utf-8"))
-
         run_config = {
             "seed": args.seed, "workers": args.workers, "processors": args.processors,
             "tasks": args.tasks, "period_min": args.period_min, "period_max": args.period_max,
@@ -148,6 +241,7 @@ def main(argv: list[str] | None = None) -> int:
             "cells": [{"target_uc": fraction_text(uc), "target_ue": fraction_text(ue)} for uc, ue in cells],
             "static_counts": static_counts(samples_per_uc=args.samples_per_uc, e0_count=len(e0_values), method_count=len(method_names), cells=len(cells), uc_count=len({cell[0] for cell in cells})),
             "core3_ue08_taskset_count": core3_count,
+            "semantic_config": semantic_config,
             "resume": bool(args.resume), "status": "running",
         }
         for key in ("topology", "worker_affinity_bindings", "worker_intervals", "slot_replacement_count", "timeout_kill_count"):
