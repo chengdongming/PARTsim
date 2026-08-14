@@ -562,6 +562,8 @@ class TasksetStore:
                 command.extend(["--task-workload-candidate", workload])
             if generation["deadline_mode"] == "constrained":
                 command.append("--constrained-deadlines")
+            if generation.get("arrival_offset", True) is False:
+                command.append("--no-arrival-offset")
             started = time.perf_counter()
             completed = subprocess.run(
                 command, cwd=str(PROJECT_ROOT), capture_output=True, text=True,
