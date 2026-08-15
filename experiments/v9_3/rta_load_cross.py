@@ -104,6 +104,19 @@ def taskset_id(target_uc: Fraction, generation_index: int, target_ue: Fraction) 
     return f"uc{id_number(target_uc)}-i{generation_index:04d}-ue{id_number(target_ue)}"
 
 
+def _fraction_id(value: Fraction) -> str:
+    return fraction_text(value).replace("-", "m").replace("/", "_")
+
+
+def fixed_scale_taskset_id(
+    target_uc: Fraction, generation_index: int, energy_scale: Fraction,
+) -> str:
+    return (
+        f"fixed-scale-uc{_fraction_id(target_uc)}-i{generation_index:04d}"
+        f"-k{_fraction_id(energy_scale)}"
+    )
+
+
 def request_id(taskset_identifier: str, e0: Fraction, method: str) -> str:
     return f"{taskset_identifier}-e0-{fraction_text(e0)}-{method}"
 
@@ -225,6 +238,54 @@ def scale_skeleton(
     }
 
 
+def scale_skeleton_fixed_energy_scale(
+    skeleton: Sequence[Mapping[str, Any]], *, target_uc: Fraction,
+    generation_index: int, seed: int, processors: int = 1,
+    rho: Fraction, base_energies: Mapping[str, Fraction],
+    energy_scale: Fraction,
+) -> dict[str, Any]:
+    """Scale task powers by one fixed exact kappa without targeting U_E."""
+    target_uc = parse_fraction(target_uc, "target_uc")
+    rho = parse_fraction(rho, "rho")
+    energy_scale = parse_fraction(energy_scale, "energy_scale")
+    if target_uc <= 0 or target_uc > 1:
+        raise ValueError("target_uc must be in the open/closed range (0, 1]")
+    if processors < 1:
+        raise ValueError("processors must be positive")
+    if rho <= 0:
+        raise ValueError("rho must be positive")
+    tasks_json = tuple(
+        _task_json(
+            row, base_energies[str(row["workload"])],
+            energy_scale * base_energies[str(row["workload"])],
+            int(row["priority"]),
+        )
+        for row in skeleton
+    )
+    actual_uc = sum(
+        Fraction(int(row["C"]), int(row["T"])) for row in skeleton
+    ) / processors
+    actual_ue = sum(
+        Fraction(int(row["C"]), int(row["T"]))
+        * parse_fraction(item["energy_per_tick"], "energy")
+        for row, item in zip(skeleton, tasks_json)
+    ) / rho
+    return {
+        "taskset_id": fixed_scale_taskset_id(
+            target_uc, generation_index, energy_scale,
+        ),
+        "energy_mode": "fixed_scale",
+        "energy_scale": fraction_text(energy_scale),
+        "target_uc": fraction_text(target_uc),
+        "actual_uc": fraction_text(actual_uc),
+        "target_ue": None,
+        "actual_ue": fraction_text(actual_ue),
+        "generation_index": generation_index,
+        "seed": seed,
+        "tasks": list(tasks_json),
+    }
+
+
 def _beta_values(tasks: Sequence[Mapping[str, Any]], rho: Fraction, latency: Fraction) -> tuple[Fraction, ...]:
     horizon = max(int(row["D"]) for row in tasks) - 1
     return tuple(rho * max(Fraction(delta) - latency, Fraction(0)) for delta in range(horizon + 1))
@@ -262,13 +323,17 @@ def _request_payload(taskset: Mapping[str, Any], e0: Fraction, method_name: str,
         str(row["name"]), int(row["C"]), int(row["D"]), int(row["T"]), parse_fraction(row["energy_per_tick"], "energy_per_tick")
     ) for row in taskset["tasks"])
     beta = _beta_values(taskset["tasks"], rho, latency)
-    return {
+    result = {
         "taskset_id": str(taskset["taskset_id"]), "target_uc": taskset["target_uc"],
         "actual_uc": taskset["actual_uc"], "target_ue": taskset["target_ue"],
         "actual_ue": taskset["actual_ue"], "e0": fraction_text(e0),
         "method": method_name, "processors": processors, "tasks": tasks,
         "beta": beta, "timeout": timeout,
     }
+    if "energy_mode" in taskset:
+        result["energy_mode"] = taskset["energy_mode"]
+        result["energy_scale"] = taskset["energy_scale"]
+    return result
 
 
 def _analyze_worker(_state: Any, payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -297,7 +362,7 @@ def _analyze_worker(_state: Any, payload: Mapping[str, Any]) -> dict[str, Any]:
         final_status = "NUMERIC_ERROR"
     else:
         final_status = "INTERNAL_ERROR"
-    return {
+    result = {
         "taskset_id": payload["taskset_id"], "target_uc": payload["target_uc"],
         "actual_uc": payload["actual_uc"], "target_ue": payload["target_ue"],
         "actual_ue": payload["actual_ue"], "e0": payload["e0"],
@@ -321,6 +386,10 @@ def _analyze_worker(_state: Any, payload: Mapping[str, Any]) -> dict[str, Any]:
         ],
         "retryable_timeout": final_status == "UNPROVEN_TIMEOUT",
     }
+    if "energy_mode" in payload:
+        result["energy_mode"] = payload["energy_mode"]
+        result["energy_scale"] = payload["energy_scale"]
+    return result
 
 
 @dataclass
@@ -429,6 +498,9 @@ def make_requests(tasksets: Iterable[Mapping[str, Any]], e0_values: Sequence[Fra
             for method_name in method_names:
                 identifier = request_id(str(taskset["taskset_id"]), e0, method_name)
                 metadata = {key: taskset[key] for key in ("taskset_id", "target_uc", "actual_uc", "target_ue", "actual_ue")}
+                if "energy_mode" in taskset:
+                    metadata["energy_mode"] = taskset["energy_mode"]
+                    metadata["energy_scale"] = taskset["energy_scale"]
                 metadata.update({"e0": fraction_text(e0), "method": method_name})
                 requests.append({
                     "request_id": identifier, "metadata": metadata,
@@ -448,6 +520,7 @@ def export_core3_tasksets(tasksets: Sequence[Mapping[str, Any]], output_path: Pa
 __all__ = [
     "FROZEN_UC", "FROZEN_WORKLOADS", "METHOD_DISPLAY_TO_ID", "execute_requests",
     "export_core3_tasksets", "fraction_text", "frozen_cells", "generate_cpu_skeleton",
-    "make_requests", "parse_cells", "parse_fraction", "request_id", "scale_skeleton",
+    "fixed_scale_taskset_id", "make_requests", "parse_cells", "parse_fraction",
+    "request_id", "scale_skeleton", "scale_skeleton_fixed_energy_scale",
     "stable_seed", "static_counts", "taskset_id",
 ]
