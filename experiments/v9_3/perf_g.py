@@ -660,6 +660,15 @@ def paired_saturation_diagnostics(
     return diagnostics
 
 
+def _paired_aggregate_usable(aggregate: Mapping[str, Any]) -> bool:
+    """Return whether an aggregate is safe for paired selection."""
+    return (
+        aggregate.get("status") in {"AVAILABLE", "PARTIAL"}
+        and aggregate.get("valid_scheduler_count", 0) > 0
+        and aggregate.get("incomplete_scheduler_count", 0) == 0
+    )
+
+
 def select_calibration_paired(
     rows: Sequence[Mapping[str, Any]],
     saturation_condition: Mapping[str, Any],
@@ -703,8 +712,9 @@ def select_calibration_paired(
             if policy.transition_min_retention <= Fraction(str(value)) <= policy.transition_max_retention
         ]
         candidate["retention_by_u"] = retention_by_u
-        candidate["all_required_u_available"] = all(
-            aggregate["status"] == "AVAILABLE"
+        candidate["usable"] = _paired_aggregate_usable(candidate)
+        candidate["all_required_u_usable"] = all(
+            _paired_aggregate_usable(aggregate)
             for aggregate in aggregates_by_u.values()
         )
         candidate["transition_N_T"] = len(transition_values)
@@ -718,9 +728,9 @@ def select_calibration_paired(
         candidates.append(candidate)
     transition_candidates = [
         candidate for candidate in candidates
-        if candidate["all_required_u_available"]
+        if candidate["all_required_u_usable"]
         and not candidate["is_saturation"]
-        and candidate["status"] == "AVAILABLE"
+        and candidate["usable"]
         and candidate["transition_N_T"] >= 2
         and candidate["energy_diagnostics"]
         and candidate["energy_diagnostics"]["energy_blocking_complete"]
@@ -748,7 +758,7 @@ def select_calibration_paired(
         candidate for candidate in same_kappa
         if Fraction(candidate["eta"]) < selected_eta
         and not candidate["is_saturation"]
-        and candidate["status"] == "AVAILABLE"
+        and candidate["usable"]
         and candidate["energy_diagnostics"]
         and candidate["energy_diagnostics"]["energy_blocking_complete"]
         and candidate["retention"] is not None
@@ -758,7 +768,7 @@ def select_calibration_paired(
         candidate for candidate in same_kappa
         if Fraction(candidate["eta"]) > selected_eta
         and not candidate["is_saturation"]
-        and candidate["status"] == "AVAILABLE"
+        and candidate["usable"]
         and candidate["energy_diagnostics"]
         and candidate["energy_diagnostics"]["energy_blocking_complete"]
         and candidate["energy_blocking_positive_count"] == 0
