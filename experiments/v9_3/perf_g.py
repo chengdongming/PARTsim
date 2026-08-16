@@ -346,8 +346,15 @@ def build_raw_trace(service: Any) -> tuple[Fraction, ...]:
 def select_transition(q: Mapping[tuple[str, str, str], float], *, utilizations=CAL_UTILIZATIONS) -> dict[str, Any] | None:
     candidates = []
     for kappa in sorted({key[0] for key in q}):
-        for eta in sorted({key[1] for key in q}, key=Fraction):
-            values = [float(q[(kappa, eta, fraction_text(u))]) for u in utilizations]
+        eta_values_for_kappa = {key[1] for key in q if key[0] == kappa}
+        for eta in sorted(eta_values_for_kappa, key=Fraction):
+            required_keys = [
+                (kappa, eta, fraction_text(utilization))
+                for utilization in utilizations
+            ]
+            if any(key not in q for key in required_keys):
+                continue
+            values = [float(q[key]) for key in required_keys]
             n_t = sum(0.2 <= value <= 0.8 for value in values)
             if n_t >= 2:
                 candidates.append((
@@ -367,8 +374,18 @@ def select_three_conditions(rows: Sequence[Mapping[str, Any]], *, utilizations=C
         return None
     kappa, eta_t = transition["kappa"], Fraction(transition["eta"])
     eta_values = sorted({Fraction(key[1]) for key in q if key[0] == kappa})
-    lower = [eta for eta in eta_values if eta < eta_t and q.get((kappa, fraction_text(eta), "1/2"), 1.0) <= 0.2]
-    higher = [eta for eta in eta_values if eta > eta_t and q.get((kappa, fraction_text(eta), "1/2"), 0.0) >= 0.8]
+    lower = [
+        eta for eta in eta_values
+        if eta < eta_t
+        and (kappa, fraction_text(eta), "1/2") in q
+        and q[(kappa, fraction_text(eta), "1/2")] <= 0.2
+    ]
+    higher = [
+        eta for eta in eta_values
+        if eta > eta_t
+        and (kappa, fraction_text(eta), "1/2") in q
+        and q[(kappa, fraction_text(eta), "1/2")] >= 0.8
+    ]
     if not lower or not higher:
         return None
     eta_low, eta_high = max(lower), min(higher)
@@ -399,11 +416,284 @@ def q_only_projection(row: Mapping[str, Any]) -> dict[str, Any]:
     return {key: row[key] for key in ("kappa", "eta", "U_norm", "taskset_id", "taskset_pass")}
 
 
+def _paired_condition_key(row: Mapping[str, Any]) -> tuple[str, str, str, str]:
+    return (
+        fraction_text(_as_fraction(row.get("kappa"), "kappa")),
+        fraction_text(_as_fraction(row.get("eta"), "eta")),
+        fraction_text(_as_fraction(row.get("U_norm"), "U_norm")),
+        str(row.get("scheduler")),
+    )
+
+
+def _paired_row_metric(row: Mapping[str, Any], name: str) -> Any:
+    value = row.get(name)
+    if value is not None:
+        return value
+    metrics = row.get("metrics")
+    return metrics.get(name) if isinstance(metrics, Mapping) else None
+
+
+def _paired_cells(
+    rows: Sequence[Mapping[str, Any]],
+) -> dict[tuple[str, str, str, str], dict[tuple[str, str, str], list[Mapping[str, Any]]]]:
+    cells: dict[
+        tuple[str, str, str, str],
+        dict[tuple[str, str, str], list[Mapping[str, Any]]],
+    ] = {}
+    for row in rows:
+        condition_key = _paired_condition_key(row)
+        pair_key = (
+            condition_key[2], condition_key[3], str(row.get("taskset_id")),
+        )
+        cells.setdefault(condition_key, {}).setdefault(pair_key, []).append(row)
+    return cells
+
+
+def paired_retention_matrix(
+    rows: Sequence[Mapping[str, Any]],
+    saturation_condition: Mapping[str, Any],
+    *,
+    utilizations: Sequence[Fraction] = CAL_UTILIZATIONS,
+    schedulers: Sequence[str] = CAL_SCHEDULERS,
+) -> dict[str, Any]:
+    """Compute paired retention against an explicit saturated reference.
+
+    The denominator is made only from tasksets that pass at SAT for the same
+    utilization and scheduler.  Technical failures, missing pairs, duplicate
+    identities, and taskset-hash mismatches are reported as incomplete rather
+    than converted to failures.  Tuple-keyed ``cells`` and ``aggregates`` are
+    intentionally kept as an analysis-layer structure, not serialized output.
+    """
+    sat_kappa = fraction_text(_as_fraction(saturation_condition.get("kappa"), "kappa"))
+    sat_eta = fraction_text(_as_fraction(saturation_condition.get("eta"), "eta"))
+    sat_condition = (sat_kappa, sat_eta)
+    cell_rows = _paired_cells(rows)
+    condition_keys = sorted({key[:2] for key in cell_rows}, key=lambda key: (Fraction(key[0]), Fraction(key[1])))
+    if sat_condition not in condition_keys:
+        condition_keys.append(sat_condition)
+    scheduler_values = tuple(schedulers) or tuple(sorted({key[3] for key in cell_rows}))
+    cells: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+
+    for kappa, eta in condition_keys:
+        for utilization in utilizations:
+            utilization_text = fraction_text(utilization)
+            for scheduler in scheduler_values:
+                sat_key = (sat_kappa, sat_eta, utilization_text, str(scheduler))
+                candidate_key = (kappa, eta, utilization_text, str(scheduler))
+                sat_members = cell_rows.get(sat_key, {})
+                candidate_members = cell_rows.get(candidate_key, {})
+                sat_duplicates = sum(len(members) != 1 for members in sat_members.values())
+                candidate_duplicates = sum(len(members) != 1 for members in candidate_members.values())
+                sat_rows = [row for members in sat_members.values() for row in members]
+                candidate_rows = [row for members in candidate_members.values() for row in members]
+                sat_technical = sum(row.get("taskset_pass") is None for row in sat_rows)
+                candidate_technical = sum(row.get("taskset_pass") is None for row in candidate_rows)
+                hash_mismatch = 0
+                for pair_key in set(sat_members) & set(candidate_members):
+                    sat_hash = sat_members[pair_key][0].get("taskset_hash")
+                    candidate_hash = candidate_members[pair_key][0].get("taskset_hash")
+                    if sat_hash is not None and candidate_hash is not None and sat_hash != candidate_hash:
+                        hash_mismatch += 1
+
+                sat_pass_keys = {
+                    pair_key for pair_key, members in sat_members.items()
+                    if len(members) == 1 and members[0].get("taskset_pass") is True
+                }
+                missing_candidate = sum(pair_key not in candidate_members for pair_key in sat_pass_keys)
+                candidate_pass_keys = {
+                    pair_key for pair_key in sat_pass_keys
+                    if len(candidate_members.get(pair_key, ())) == 1
+                    and candidate_members[pair_key][0].get("taskset_pass") is True
+                }
+                denominator = len(sat_pass_keys)
+                retained = len(candidate_pass_keys)
+                incomplete = bool(
+                    sat_duplicates or candidate_duplicates or sat_technical
+                    or candidate_technical or hash_mismatch or missing_candidate
+                )
+                if denominator == 0:
+                    status = "UNAVAILABLE"
+                    retention = None
+                elif incomplete:
+                    status = "INCOMPLETE"
+                    retention = None
+                else:
+                    status = "AVAILABLE"
+                    retention = retained / denominator
+                cells[(kappa, eta, utilization_text, str(scheduler))] = {
+                    "kappa": kappa, "eta": eta, "U_norm": utilization_text,
+                    "scheduler": str(scheduler), "status": status,
+                    "retention": retention, "sat_denominator_count": denominator,
+                    "retained_count": retained, "sat_observed_count": len(sat_rows),
+                    "candidate_observed_count": len(candidate_rows),
+                    "sat_technical_failure_count": sat_technical,
+                    "candidate_technical_failure_count": candidate_technical,
+                    "missing_candidate_pair_count": missing_candidate,
+                    "duplicate_identity_count": sat_duplicates + candidate_duplicates,
+                    "taskset_hash_mismatch_count": hash_mismatch,
+                    "pairing_complete": not incomplete and denominator > 0,
+                }
+
+    aggregates: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for kappa, eta in condition_keys:
+        for utilization in utilizations:
+            utilization_text = fraction_text(utilization)
+            members = [
+                cells[(kappa, eta, utilization_text, str(scheduler))]
+                for scheduler in scheduler_values
+            ]
+            valid = [member for member in members if member["status"] == "AVAILABLE"]
+            retentions = [member["retention"] for member in valid]
+            if not valid:
+                status = "UNAVAILABLE"
+                retention = None
+            elif len(valid) != len(members):
+                status = "PARTIAL"
+                retention = float(median(retentions))
+            else:
+                status = "AVAILABLE"
+                retention = float(median(retentions))
+            aggregates[(kappa, eta, utilization_text)] = {
+                "kappa": kappa, "eta": eta, "U_norm": utilization_text,
+                "status": status, "retention": retention,
+                "valid_scheduler_count": len(valid),
+                "scheduler_count": len(members),
+                "sat_denominator_count": sum(member["sat_denominator_count"] for member in valid),
+                "retained_count": sum(member["retained_count"] for member in valid),
+                "unavailable_scheduler_count": sum(member["status"] == "UNAVAILABLE" for member in members),
+                "incomplete_scheduler_count": sum(member["status"] == "INCOMPLETE" for member in members),
+            }
+    return {
+        "saturation_condition": {"kappa": sat_kappa, "eta": sat_eta},
+        "cells": cells, "aggregates": aggregates,
+    }
+
+
+def paired_saturation_diagnostics(
+    rows: Sequence[Mapping[str, Any]],
+    saturation_condition: Mapping[str, Any],
+    *,
+    reference_utilization: Fraction = Fraction("1/2"),
+    schedulers: Sequence[str] = CAL_SCHEDULERS,
+) -> list[dict[str, Any]]:
+    """Return auditable energy-blocking diagnostics for each condition."""
+    reference = fraction_text(reference_utilization)
+    conditions = sorted(
+        {(fraction_text(_as_fraction(row.get("kappa"), "kappa")),
+          fraction_text(_as_fraction(row.get("eta"), "eta"))) for row in rows},
+        key=lambda key: (Fraction(key[0]), Fraction(key[1])),
+    )
+    diagnostics = []
+    for kappa, eta in conditions:
+        values = []
+        for row in rows:
+            row_key = _paired_condition_key(row)
+            if row_key[:3] == (kappa, eta, reference) and row_key[3] in schedulers:
+                metric = _paired_row_metric(row, "energy_blocked_ticks")
+                if isinstance(metric, (int, float)):
+                    values.append(float(metric))
+        diagnostics.append({
+            "kappa": kappa, "eta": eta, "U_norm": reference,
+            "observed_count": len(values),
+            "energy_blocked_ticks_sum": sum(values),
+            "energy_blocked_ticks_max": max(values) if values else None,
+            "energy_blocked_zero_ratio": (
+                sum(value == 0 for value in values) / len(values) if values else None
+            ),
+            "energy_blocked_zero": bool(values) and all(value == 0 for value in values),
+        })
+    return diagnostics
+
+
+def select_calibration_paired(
+    rows: Sequence[Mapping[str, Any]],
+    saturation_condition: Mapping[str, Any],
+    *,
+    reference_utilization: Fraction = Fraction("1/2"),
+    utilizations: Sequence[Fraction] = CAL_UTILIZATIONS,
+    schedulers: Sequence[str] = CAL_SCHEDULERS,
+    low_max_retention: float | None = None,
+    high_min_retention: float | None = None,
+    transition_min_retention: float | None = None,
+    transition_max_retention: float | None = None,
+    saturation_energy_blocked_max: float | None = None,
+    transition_energy_blocked_min: float | None = None,
+) -> dict[str, Any]:
+    """Return paired diagnostics and optional explicit-threshold selection.
+
+    Thresholds are deliberately optional.  Without a supplied policy this
+    function reports candidates and returns ``THRESHOLD_POLICY_UNSPECIFIED``;
+    it does not silently turn an exploratory policy into a frozen protocol.
+    """
+    matrix = paired_retention_matrix(
+        rows, saturation_condition, utilizations=utilizations, schedulers=schedulers,
+    )
+    diagnostics = paired_saturation_diagnostics(
+        rows, saturation_condition, reference_utilization=reference_utilization,
+        schedulers=schedulers,
+    )
+    reference = fraction_text(reference_utilization)
+    diag_by_condition = {(row["kappa"], row["eta"]): row for row in diagnostics}
+    candidates = []
+    for key, aggregate in sorted(matrix["aggregates"].items(), key=lambda item: (Fraction(item[0][0]), Fraction(item[0][1]))):
+        if key[2] != reference:
+            continue
+        candidate = dict(aggregate)
+        candidate["energy_diagnostics"] = diag_by_condition.get((key[0], key[1]))
+        candidates.append(candidate)
+    thresholds = {
+        "low_max_retention": low_max_retention,
+        "high_min_retention": high_min_retention,
+        "transition_min_retention": transition_min_retention,
+        "transition_max_retention": transition_max_retention,
+        "saturation_energy_blocked_max": saturation_energy_blocked_max,
+        "transition_energy_blocked_min": transition_energy_blocked_min,
+    }
+    if any(value is None for value in thresholds.values()):
+        status = "THRESHOLD_POLICY_UNSPECIFIED"
+        selection = None
+    else:
+        available = [
+            candidate for candidate in candidates
+            if candidate["status"] == "AVAILABLE" and candidate["retention"] is not None
+        ]
+        sat_limit = float(saturation_energy_blocked_max)
+        transition_floor = float(transition_energy_blocked_min)
+        low = [candidate for candidate in available if candidate["retention"] <= float(low_max_retention)]
+        high = [
+            candidate for candidate in available
+            if candidate["retention"] >= float(high_min_retention)
+            and candidate["energy_diagnostics"]
+            and candidate["energy_diagnostics"]["energy_blocked_ticks_max"] is not None
+            and candidate["energy_diagnostics"]["energy_blocked_ticks_max"] <= sat_limit
+        ]
+        transition = [
+            candidate for candidate in available
+            if float(transition_min_retention) <= candidate["retention"] <= float(transition_max_retention)
+            and candidate["energy_diagnostics"]
+            and candidate["energy_diagnostics"]["energy_blocked_ticks_max"] is not None
+            and candidate["energy_diagnostics"]["energy_blocked_ticks_max"] >= transition_floor
+        ]
+        selection = {
+            "LOW": min(low, key=lambda candidate: candidate["retention"]) if low else None,
+            "TRANSITION": min(transition, key=lambda candidate: abs(candidate["retention"] - 0.5)) if transition else None,
+            "HIGH": min(high, key=lambda candidate: candidate["retention"]) if high else None,
+        }
+        status = "SELECTED" if all(selection.values()) else "CAL_BLOCKED"
+    return {
+        "status": status, "selection": selection, "thresholds": thresholds,
+        "saturation_condition": matrix["saturation_condition"],
+        "candidates": candidates, "diagnostics": diagnostics, "matrix": matrix,
+    }
+
+
 __all__ = [
     "CAL_ETAS", "CAL_KAPPAS", "CAL_SCHEDULERS", "CAL_UTILIZATIONS",
     "FORMAL_HORIZON_MS", "FORMAL_SCHEDULERS", "FORMAL_TASKSETS_PER_UTILIZATION",
     "FORMAL_UTILIZATIONS", "PerfGError", "SMOKE_CONDITIONS", "SCHEDULER_CLI",
     "build_raw_trace", "cal_plan", "condition", "energy_material", "formal_plan",
     "materialize_tasksets", "q_matrix", "q_only_projection", "request_id",
-    "select_three_conditions", "select_transition", "taskset_key", "validate_pairing",
+    "paired_retention_matrix", "paired_saturation_diagnostics",
+    "select_calibration_paired", "select_three_conditions", "select_transition",
+    "taskset_key", "validate_pairing",
 ]
