@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+from fractions import Fraction
 import json
 from pathlib import Path
 import sys
@@ -128,6 +129,107 @@ def select_calibration_paired(*args: Any, **kwargs: Any) -> dict[str, Any]:
     return perf_g.select_calibration_paired(*args, **kwargs)
 
 
+def paired_confirmation_status(
+    selection: Mapping[str, Any], rows: Sequence[Mapping[str, Any]], *,
+    saturation_condition: Mapping[str, Any] = perf_g.CAL_SATURATION_CONDITION,
+) -> dict[str, Any]:
+    """Validate fixed CAL conditions against the paired SAT reference."""
+    policy = perf_g.PairedRetentionPolicy()
+    matrix = perf_g.paired_retention_matrix(
+        rows, saturation_condition, schedulers=perf_g.CAL_SCHEDULERS,
+    )
+    diagnostics = perf_g.paired_saturation_diagnostics(
+        rows, saturation_condition,
+        reference_utilization=policy.reference_utilization,
+        schedulers=perf_g.CAL_SCHEDULERS,
+    )
+    diagnostic_by = {(row["kappa"], row["eta"]): row for row in diagnostics}
+    reference = str(policy.reference_utilization)
+
+    def aggregate(name: str) -> Mapping[str, Any] | None:
+        selected = selection.get(name)
+        if not isinstance(selected, Mapping):
+            return None
+        key = (str(selected.get("kappa")), str(selected.get("eta")), reference)
+        return matrix["aggregates"].get(key)
+
+    def usable(value: Mapping[str, Any] | None) -> bool:
+        return value is not None and perf_g._paired_aggregate_usable(value)
+
+    low = aggregate("LOW")
+    transition = aggregate("TRANSITION")
+    high = aggregate("HIGH")
+    transition_values = []
+    transition_aggregates = []
+    for utilization in perf_g.CAL_UTILIZATIONS:
+        key = selection.get("TRANSITION", {})
+        if not isinstance(key, Mapping):
+            value = None
+        else:
+            value = matrix["aggregates"].get(
+                (str(key.get("kappa")), str(key.get("eta")), str(utilization)),
+            )
+        transition_aggregates.append(value)
+        if value is not None and value.get("retention") is not None:
+            retention = Fraction(str(value["retention"]))
+            if (
+                perf_g._paired_aggregate_usable(value)
+                and policy.transition_min_retention <= retention <= policy.transition_max_retention
+            ):
+                transition_values.append(retention)
+
+    def condition_diagnostics(name: str, value: Mapping[str, Any] | None) -> dict[str, Any]:
+        selected = selection.get(name)
+        key = (str(selected.get("kappa")), str(selected.get("eta"))) if isinstance(selected, Mapping) else None
+        return {
+            "condition": selected,
+            "aggregate": value,
+            "usable": usable(value),
+            "energy": diagnostic_by.get(key) if key else None,
+        }
+
+    low_ok = usable(low) and low.get("retention") is not None and Fraction(str(low["retention"])) <= policy.low_max_retention
+    transition_energy = condition_diagnostics("TRANSITION", transition)["energy"]
+    transition_ok = (
+        len(transition_values) >= 2
+        and len(transition_aggregates) == len(perf_g.CAL_UTILIZATIONS)
+        and all(usable(value) for value in transition_aggregates)
+        and transition_energy is not None
+        and transition_energy.get("energy_blocking_complete")
+        and transition_energy.get("energy_blocked_positive_count", 0) > 0
+    )
+    high_energy = condition_diagnostics("HIGH", high)["energy"]
+    high_ok = (
+        usable(high)
+        and high.get("retention") is not None
+        and Fraction(str(high["retention"])) >= policy.high_min_retention
+        and high_energy is not None
+        and high_energy.get("energy_blocking_complete")
+        and high_energy.get("energy_blocked_positive_count") == 0
+    )
+    checks = {
+        "LOW": {**condition_diagnostics("LOW", low), "passed": low_ok},
+        "TRANSITION": {
+            "aggregates": transition_aggregates, "usable": all(usable(value) for value in transition_aggregates),
+            "N_T": len(transition_values), "energy": transition_energy, "passed": transition_ok,
+        },
+        "HIGH": {**condition_diagnostics("HIGH", high), "passed": high_ok},
+    }
+    return {
+        "status": "PASS" if low_ok and transition_ok and high_ok else "FAIL",
+        "passed": low_ok and transition_ok and high_ok,
+        "saturation_condition": matrix["saturation_condition"],
+        "threshold_policy": {
+            "reference_utilization": str(policy.reference_utilization),
+            "low_max_retention": str(policy.low_max_retention),
+            "transition_min_retention": str(policy.transition_min_retention),
+            "transition_max_retention": str(policy.transition_max_retention),
+            "high_min_retention": str(policy.high_min_retention),
+        },
+        "checks": checks, "diagnostics": diagnostics, "matrix": matrix,
+    }
+
+
 def analyze_calibration(root: Path) -> dict[str, Any]:
     requests = _read_jsonl(root / "requests.jsonl")
     results = _read_jsonl(root / "results.jsonl")
@@ -152,20 +254,29 @@ def analyze_results(root: Path, mode: str) -> dict[str, Any]:
     cell_values: dict[tuple[str, str, str], list[bool]] = {}
     secondary: dict[tuple[str, str, str], dict[str, float]] = {}
     for row in results:
-        outcome = row.get("outcome", {})
-        jobs = row.get("jobs", [])
-        task_ids = sorted({str(job.get("task_id")) for job in jobs})
-        recomputed = evaluate_outcome(
-            jobs, task_ids, horizon=int(row.get("horizon_ms", perf_g.FORMAL_HORIZON_MS)),
-            minimum_adjudicable_jobs=1 if mode != "FORMAL" else perf_g.FORMAL_MIN_ADJUDICABLE_JOBS,
-            simulation_completed=row.get("simulation_status") not in {"TECHNICAL_FAILURE", "RUNTIME_TIMEOUT", "INTERNAL_ERROR"},
-            technical_error=row.get("technical_error"),
-        )
-        if outcome and recomputed.get("taskset_pass") != outcome.get("taskset_pass"):
-            raise ValueError(f"outcome mismatch for {row.get('request_id')}")
+        persisted_outcome = row.get("outcome")
+        if "jobs" in row:
+            jobs = row.get("jobs", [])
+            task_ids = sorted({str(job.get("task_id")) for job in jobs})
+            outcome = evaluate_outcome(
+                jobs, task_ids, horizon=int(row.get("horizon_ms", perf_g.FORMAL_HORIZON_MS)),
+                minimum_adjudicable_jobs=1 if mode != "FORMAL" else perf_g.FORMAL_MIN_ADJUDICABLE_JOBS,
+                simulation_completed=row.get("simulation_status") not in {"TECHNICAL_FAILURE", "RUNTIME_TIMEOUT", "INTERNAL_ERROR"},
+                technical_error=row.get("technical_error"),
+            )
+            if isinstance(persisted_outcome, Mapping) and outcome.get("taskset_pass") != persisted_outcome.get("taskset_pass"):
+                raise ValueError(f"outcome mismatch for {row.get('request_id')}")
+            if "taskset_pass" in row and row["taskset_pass"] != outcome.get("taskset_pass"):
+                raise ValueError(f"taskset_pass mismatch for {row.get('request_id')}")
+        else:
+            if not isinstance(persisted_outcome, Mapping) or "taskset_pass" not in persisted_outcome:
+                raise ValueError(f"compact outcome missing for {row.get('request_id')}")
+            if row.get("taskset_pass") != persisted_outcome.get("taskset_pass"):
+                raise ValueError(f"compact taskset_pass mismatch for {row.get('request_id')}")
+            outcome = dict(persisted_outcome)
         key = (str(row.get("U_norm")), str(row.get("energy_condition")), str(row.get("scheduler")))
-        if recomputed.get("taskset_pass") is not None:
-            cell_values.setdefault(key, []).append(bool(recomputed["taskset_pass"]))
+        if outcome.get("taskset_pass") is not None:
+            cell_values.setdefault(key, []).append(bool(outcome["taskset_pass"]))
         metrics = row.get("metrics", {})
         bucket = secondary.setdefault(key, {"energy_blocked_ticks": 0.0, "harvested_energy_j": 0.0, "consumed_energy_j": 0.0})
         for field in bucket:
@@ -209,5 +320,5 @@ if __name__ == "__main__":
 
 __all__ = [
     "analyze_calibration", "analyze_results", "completeness", "confirmation_status",
-    "select_calibration", "select_calibration_paired",
+    "paired_confirmation_status", "select_calibration", "select_calibration_paired",
 ]
