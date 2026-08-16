@@ -8,6 +8,7 @@ from dataclasses import asdict
 from fractions import Fraction
 import json
 from pathlib import Path
+import shutil
 import sys
 from typing import Any, Mapping, Sequence
 
@@ -59,8 +60,11 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 
 def _semantic_config(mode: str, *, simulator: Path, workers: int) -> dict[str, Any]:
+    compact = mode in {"CAL_CONFIRM", "FORMAL"}
     return {
         "mode": mode, "workers": workers, "simulator_binary": str(simulator),
+        "result_persistence": "compact_outcome" if compact else "full_jobs",
+        "cleanup_simulations": compact,
         "formal_horizon_ms": perf_g.FORMAL_HORIZON_MS,
         "formal_timeout_seconds": perf_g.FORMAL_TIMEOUT_SECONDS,
         "formal_retry_timeout_seconds": perf_g.FORMAL_RETRY_TIMEOUT_SECONDS,
@@ -71,6 +75,10 @@ def _semantic_config(mode: str, *, simulator: Path, workers: int) -> dict[str, A
             "workloads": list(perf_g.WORKLOADS), "synchronous_release": True,
         },
     }
+
+
+def _minimum_adjudicable_jobs(mode: str) -> int:
+    return perf_g.FORMAL_MIN_ADJUDICABLE_JOBS if mode == "FORMAL" else 1
 
 
 def _check_resume_config(root: Path, requested: Mapping[str, Any]) -> None:
@@ -84,7 +92,7 @@ def _check_resume_config(root: Path, requested: Mapping[str, Any]) -> None:
 
 def _result_row(
     request: Mapping[str, Any], taskset: Any, energy: Mapping[str, Any],
-    execution: Any, outcome: Mapping[str, Any], attempt_count: int,
+    execution: Any, outcome: Mapping[str, Any], attempt_count: int, *, compact: bool,
 ) -> dict[str, Any]:
     result = execution.result
     metrics = dict(result.metrics)
@@ -95,7 +103,7 @@ def _result_row(
         "battery_min_j": metrics.get("battery_minimum_j"),
         "battery_max_j": metrics.get("battery_maximum_j"),
     })
-    return {
+    row = {
         **dict(request), "taskset_hash": taskset.semantic_hash,
         "taskset_seed": taskset.seed,
         "actual_U_norm": str(taskset.actual_utilization / perf_g.PROCESSORS),
@@ -105,8 +113,11 @@ def _result_row(
         "simulation_reason": result.reason,
         "technical_error": None,
         "outcome": dict(outcome), "taskset_pass": outcome.get("taskset_pass"),
-        "metrics": metrics, "jobs": [asdict(job) for job in result.jobs],
+        "metrics": metrics,
     }
+    if not compact:
+        row["jobs"] = [asdict(job) for job in result.jobs]
+    return row
 
 
 def _execute_requests(
@@ -162,6 +173,8 @@ def _execute_requests(
         raise ValueError("unexpected request in persisted results")
     completed = set(existing_ids)
     energy_by_name = {str(row["name"]): row for row in conditions}
+    compact = mode in {"CAL_CONFIRM", "FORMAL"}
+    minimum_adjudicable_jobs = _minimum_adjudicable_jobs(mode)
     for request in requests:
         if request["request_id"] in completed:
             continue
@@ -218,9 +231,10 @@ def _execute_requests(
                 )
         except Exception as exc:  # persist a technical failure instead of inventing an outcome
             technical_error = f"{type(exc).__name__}: {exc}"
+        simulation_root = root / "simulations" / str(request["request_id"])
         if execution is None:
             outcome = evaluate_outcome([], [str(item["task_id"]) for item in taskset.task_payload],
-                                       horizon=horizon, minimum_adjudicable_jobs=1,
+                                       horizon=horizon, minimum_adjudicable_jobs=minimum_adjudicable_jobs,
                                        simulation_completed=False, technical_error=technical_error)
             row = {**dict(request), "taskset_hash": taskset.semantic_hash,
                    "taskset_seed": taskset.seed,
@@ -228,7 +242,9 @@ def _execute_requests(
                    "energy": {**dict(energy), **material}, "attempt_count": attempt_count,
                    "runtime_seconds": 0.0, "simulation_status": "TECHNICAL_FAILURE",
                    "simulation_reason": technical_error, "technical_error": technical_error,
-                   "outcome": outcome, "taskset_pass": None, "metrics": {}, "jobs": []}
+                   "outcome": outcome, "taskset_pass": None, "metrics": {}}
+            if not compact:
+                row["jobs"] = []
         else:
             technical = execution.result.status in {
                 SimulationStatus.INTERNAL_ERROR, SimulationStatus.RUNTIME_TIMEOUT,
@@ -237,13 +253,18 @@ def _execute_requests(
             outcome = evaluate_outcome(
                 [asdict(job) for job in execution.result.jobs],
                 [str(item["task_id"]) for item in taskset.task_payload],
-                horizon=horizon, minimum_adjudicable_jobs=1,
+                horizon=horizon, minimum_adjudicable_jobs=minimum_adjudicable_jobs,
                 simulation_completed=execution.result.simulation_completed,
                 technical_error=technical_error,
             )
-            row = _result_row(request, taskset, {**dict(energy), **material}, execution, outcome, attempt_count)
+            row = _result_row(
+                request, taskset, {**dict(energy), **material}, execution, outcome,
+                attempt_count, compact=compact,
+            )
             row["technical_error"] = technical_error
         _append_jsonl(result_path, row)
+        if compact:
+            shutil.rmtree(simulation_root, ignore_errors=True)
         completed.add(str(request["request_id"]))
     return {
         "mode": mode, "requests": len(requests), "processed": len(completed),
@@ -309,7 +330,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     elif args.run_cal_confirm:
         selection = _load_selection(args.output)
-        conditions = [perf_g.condition(name, selection[name]["kappa"], selection[name]["eta"]) for name in ("LOW", "TRANSITION", "HIGH")]
+        conditions = perf_g.cal_confirmation_conditions(selection)
         summary = _execute_requests(
             root=args.output, mode="CAL_CONFIRM", namespace="CAL",
             utilizations=perf_g.CAL_UTILIZATIONS, taskset_count=perf_g.CAL_TASKSETS_PER_UTILIZATION,

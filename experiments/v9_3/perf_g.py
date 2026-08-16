@@ -37,9 +37,10 @@ MAX_TASK_UTILIZATION = Fraction("4/5")
 WORKLOADS = ("bzip2", "control", "decrypt", "encrypt", "hash")
 
 FORMAL_UTILIZATIONS = tuple(Fraction(value, 10) for value in range(1, 9))
-FORMAL_TASKSETS_PER_UTILIZATION = 200
+FORMAL_TASKSETS_PER_UTILIZATION = 100
 CAL_UTILIZATIONS = (Fraction("3/10"), Fraction("1/2"), Fraction("7/10"))
 CAL_TASKSETS_PER_UTILIZATION = 30
+CAL_SATURATION_CONDITION = {"name": "SAT", "kappa": "200", "eta": "2"}
 CAL_KAPPAS = (Fraction(10), Fraction(50), Fraction(200))
 CAL_ETAS = tuple(Fraction(value) for value in ("1/2", "3/4", "1", "5/4", "3/2"))
 CAL_EXTENSION_ETAS = (Fraction("1/4"), Fraction(2))
@@ -240,6 +241,30 @@ def cal_plan() -> dict[str, Any]:
     requests = _request_rows(tasksets, conditions, CAL_SCHEDULERS,
                              horizon_ms=CAL_INITIAL_HORIZON_MS, kind="CAL")
     return _plan_summary(tasksets, conditions, CAL_SCHEDULERS, requests, "CAL")
+
+
+def cal_confirmation_conditions(selection: Mapping[str, Any]) -> list[dict[str, Any]]:
+    return [
+        condition(
+            CAL_SATURATION_CONDITION["name"],
+            CAL_SATURATION_CONDITION["kappa"],
+            CAL_SATURATION_CONDITION["eta"],
+        ),
+        *[
+            condition(name, selection[name]["kappa"], selection[name]["eta"])
+            for name in ("LOW", "TRANSITION", "HIGH")
+        ],
+    ]
+
+
+def cal_confirmation_plan(selection: Mapping[str, Any]) -> dict[str, Any]:
+    tasksets = _taskset_rows("CAL", CAL_UTILIZATIONS, CAL_TASKSETS_PER_UTILIZATION)
+    conditions = cal_confirmation_conditions(selection)
+    requests = _request_rows(
+        tasksets, conditions, CAL_SCHEDULERS,
+        horizon_ms=CAL_CONFIRMATION_HORIZON_MS, kind="CAL_CONFIRM",
+    )
+    return _plan_summary(tasksets, conditions, CAL_SCHEDULERS, requests, "CAL_CONFIRM")
 
 
 def formal_plan(selection: Mapping[str, Any] | None = None) -> dict[str, Any]:
@@ -803,10 +828,11 @@ def select_calibration_paired(
 
 
 __all__ = [
-    "CAL_ETAS", "CAL_KAPPAS", "CAL_SCHEDULERS", "CAL_UTILIZATIONS",
+    "CAL_ETAS", "CAL_KAPPAS", "CAL_SATURATION_CONDITION", "CAL_SCHEDULERS", "CAL_UTILIZATIONS",
     "FORMAL_HORIZON_MS", "FORMAL_SCHEDULERS", "FORMAL_TASKSETS_PER_UTILIZATION",
     "FORMAL_UTILIZATIONS", "PairedRetentionPolicy", "PerfGError", "SMOKE_CONDITIONS", "SCHEDULER_CLI",
-    "build_raw_trace", "cal_plan", "condition", "energy_material", "formal_plan",
+    "build_raw_trace", "cal_confirmation_conditions", "cal_confirmation_plan", "cal_plan",
+    "condition", "energy_material", "formal_plan",
     "materialize_tasksets", "q_matrix", "q_only_projection", "request_id",
     "paired_retention_matrix", "paired_saturation_diagnostics",
     "select_calibration_paired", "select_three_conditions", "select_transition",

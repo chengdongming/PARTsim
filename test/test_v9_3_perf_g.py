@@ -3,10 +3,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from fractions import Fraction
 import json
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 from experiments.v9_3 import perf_g
 from experiments.v9_3.performance_outcome import evaluate_outcome
-from scripts.analyze_v9_3_perf_g import completeness, select_calibration, select_calibration_paired
+from scripts.analyze_v9_3_perf_g import (
+    analyze_results, completeness, paired_confirmation_status,
+    select_calibration, select_calibration_paired,
+)
+from scripts import run_v9_3_perf_g as perf_runner
 
 
 def _row(kappa, eta, utilization, scheduler, index, passed):
@@ -44,10 +52,23 @@ def test_plan_counts_and_complete_pairing():
     cal = perf_g.cal_plan()
     formal = perf_g.formal_plan()
     assert (cal["unique_tasksets"], cal["energy_cells"], cal["schedulers"], cal["requests"]) == (90, 15, 5, 6750)
-    assert (formal["unique_tasksets"], formal["energy_cells"], formal["schedulers"], formal["requests"]) == (1600, 3, 9, 43200)
+    assert (formal["unique_tasksets"], formal["energy_cells"], formal["schedulers"], formal["requests"]) == (800, 3, 9, 21600)
     assert cal["pairing"] == {"groups": 1350, "missing": 0, "duplicate": 0, "partial_group": 0}
-    assert formal["pairing"] == {"groups": 4800, "missing": 0, "duplicate": 0, "partial_group": 0}
+    assert formal["pairing"] == {"groups": 2400, "missing": 0, "duplicate": 0, "partial_group": 0}
     assert formal["executable_formal"] is False
+
+
+def test_confirmation_plan_has_sat_and_three_selected_conditions():
+    selection = {
+        "LOW": {"kappa": "10", "eta": "1"},
+        "TRANSITION": {"kappa": "10", "eta": "5/4"},
+        "HIGH": {"kappa": "10", "eta": "2"},
+    }
+    plan = perf_g.cal_confirmation_plan(selection)
+    assert (plan["unique_tasksets"], plan["energy_cells"], plan["schedulers"], plan["requests"]) == (90, 4, 5, 1800)
+    assert [row["name"] for row in plan["energy_conditions"]] == ["SAT", "LOW", "TRANSITION", "HIGH"]
+    assert all(row["horizon_ms"] == 30000 for row in plan["requests_rows"])
+    assert plan["pairing"] == {"groups": 360, "missing": 0, "duplicate": 0, "partial_group": 0}
 
 
 def test_request_identity_excludes_scheduler_from_taskset_seed():
@@ -368,6 +389,91 @@ def _select_default_policy(rows, *, schedulers=("ASAP-BLOCK",)):
     )
 
 
+CONFIRMATION_SCHEDULERS = (
+    "ASAP-BLOCK", "ASAP-NONBLOCK", "ASAP-SYNC", "ALAP-BLOCK", "ST-BLOCK",
+)
+
+
+def _confirmation_rows(*, low_ratios=None, transition_ratios=None, high_ratios=None,
+                       transition_energy=1, high_energy=0, sat_fail_scheduler="ALAP-BLOCK"):
+    ratios = {"3/10": 10, "1/2": 10, "7/10": 10}
+    transition_ratios = transition_ratios or {"3/10": 10, "1/2": 6, "7/10": 3}
+    low_ratios = low_ratios or {utilization: 0 for utilization in ratios}
+    high_ratios = high_ratios or ratios
+    rows = []
+    for scheduler in CONFIRMATION_SCHEDULERS:
+        sat_pass = scheduler != sat_fail_scheduler
+        for utilization in ratios:
+            for index in range(10):
+                rows.append(_paired_row(
+                    "200", "2", utilization, scheduler, f"t{index}",
+                    sat_pass, taskset_hash=f"hash-{index}",
+                ))
+    for kappa, eta, condition_ratios, blocking in (
+        ("10", "1", low_ratios, 1),
+        ("10", "5/4", transition_ratios, transition_energy),
+        ("10", "2", high_ratios, high_energy),
+    ):
+        for utilization, ratio in condition_ratios.items():
+            for scheduler in CONFIRMATION_SCHEDULERS:
+                for index in range(10):
+                    row = _paired_row(
+                        kappa, eta, utilization, scheduler, f"t{index}",
+                        index < ratio, taskset_hash=f"hash-{index}",
+                    )
+                    row["energy_blocked_ticks"] = blocking
+                    rows.append(row)
+    return rows
+
+
+def test_paired_confirmation_passes_with_sat_zero_denominator_scheduler():
+    selection = {
+        "LOW": {"kappa": "10", "eta": "1"},
+        "TRANSITION": {"kappa": "10", "eta": "5/4"},
+        "HIGH": {"kappa": "10", "eta": "2"},
+    }
+    result = paired_confirmation_status(selection, _confirmation_rows())
+    assert result["status"] == "PASS"
+    assert result["checks"]["TRANSITION"]["N_T"] >= 2
+    sat_aggregate = result["matrix"]["aggregates"][("200", "2", "1/2")]
+    assert sat_aggregate["status"] == "PARTIAL"
+    assert sat_aggregate["valid_scheduler_count"] == 4
+    assert sat_aggregate["incomplete_scheduler_count"] == 0
+
+
+@pytest.mark.parametrize("change", ("incomplete", "missing", "low", "transition", "transition_energy", "high", "high_energy"))
+def test_paired_confirmation_fail_closed(change):
+    selection = {
+        "LOW": {"kappa": "10", "eta": "1"},
+        "TRANSITION": {"kappa": "10", "eta": "5/4"},
+        "HIGH": {"kappa": "10", "eta": "2"},
+    }
+    kwargs = {}
+    if change == "low":
+        kwargs["low_ratios"] = {"3/10": 3, "1/2": 3, "7/10": 3}
+    elif change == "transition":
+        kwargs["transition_ratios"] = {"3/10": 0, "1/2": 0, "7/10": 0}
+    elif change == "transition_energy":
+        kwargs["transition_energy"] = 0
+    elif change == "high":
+        kwargs["high_ratios"] = {"3/10": 7, "1/2": 7, "7/10": 7}
+    elif change == "high_energy":
+        kwargs["high_energy"] = 1
+    rows = _confirmation_rows(**kwargs)
+    if change == "incomplete":
+        for row in rows:
+            if row["kappa"] == "10" and row["eta"] == "5/4" and row["U_norm"] == "1/2" and row["taskset_id"] == "t0" and row["scheduler"] == "ASAP-BLOCK":
+                row["taskset_pass"] = None
+                break
+    elif change == "missing":
+        rows = [row for row in rows if not (
+            row["kappa"] == "10" and row["eta"] == "5/4" and row["U_norm"] == "1/2"
+            and row["taskset_id"] == "t0" and row["scheduler"] == "ASAP-BLOCK"
+        )]
+    result = paired_confirmation_status(selection, rows)
+    assert result["status"] == "FAIL"
+
+
 def test_paired_selection_default_policy_is_data_driven():
     result = _select_default_policy(_default_policy_rows())
     assert result["status"] == "PAIRED_SELECTION_OK"
@@ -489,3 +595,150 @@ def test_paired_selection_accepts_explicit_policy_without_freezing_new_values():
     )
     assert result["status"] == "PAIRED_SELECTION_OK"
     assert result["threshold_policy"]["high_min_retention"] == "3/4"
+
+
+def test_formal_adjudication_and_persistence_modes_are_explicit():
+    assert perf_g.FORMAL_TASKSETS_PER_UTILIZATION == 100
+    assert perf_runner._minimum_adjudicable_jobs("FORMAL") == 100
+    assert perf_runner._minimum_adjudicable_jobs("CAL_CONFIRM") == 1
+    assert perf_runner._semantic_config("FORMAL", simulator=Path("sim"), workers=1)["result_persistence"] == "compact_outcome"
+    assert perf_runner._semantic_config("CAL", simulator=Path("sim"), workers=1)["result_persistence"] == "full_jobs"
+
+
+def test_formal_runner_and_analyzer_use_minimum_100(tmp_path):
+    jobs = [
+        {"task_id": "0", "release": 0, "absolute_deadline": 999, "completion": 1}
+        for _ in range(99)
+    ]
+    expected = evaluate_outcome(jobs, ["0"], horizon=1000, minimum_adjudicable_jobs=100)
+    assert expected["taskset_pass"] is False
+    assert perf_runner._minimum_adjudicable_jobs("FORMAL") == 100
+    root = tmp_path / "formal"
+    root.mkdir()
+    request = {
+        "request_id": "formal-0", "taskset_id": "taskset-0", "U_norm": "1/2",
+        "energy_condition": "LOW", "scheduler": "ASAP-BLOCK",
+    }
+    row = {
+        **request, "horizon_ms": 1000, "simulation_status": "SIM_PASS_OBSERVED",
+        "technical_error": None, "jobs": jobs, "outcome": expected,
+        "taskset_pass": expected["taskset_pass"], "metrics": {},
+    }
+    (root / "requests.jsonl").write_text(json.dumps(request) + "\n", encoding="utf-8")
+    (root / "results.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+    analyzed = analyze_results(root, "FORMAL")
+    assert analyzed["cell_summary"][0]["pass_ratio"] == 0.0
+
+
+def _analysis_row(*, compact, technical=False):
+    if technical:
+        outcome = evaluate_outcome(
+            [], ["0"], horizon=10, minimum_adjudicable_jobs=1,
+            simulation_completed=False, technical_error="timeout",
+        )
+        jobs = None
+        status = "TECHNICAL_FAILURE"
+    else:
+        jobs = [{"task_id": "0", "release": 0, "absolute_deadline": 9, "completion": 9}]
+        outcome = evaluate_outcome(jobs, ["0"], horizon=10, minimum_adjudicable_jobs=1)
+        status = "SIM_PASS_OBSERVED"
+    row = {
+        "request_id": "request-0", "taskset_id": "taskset-0", "U_norm": "1/2",
+        "energy_condition": "LOW", "scheduler": "ASAP-BLOCK", "horizon_ms": 10,
+        "simulation_status": status, "technical_error": "timeout" if technical else None,
+        "outcome": outcome, "taskset_pass": outcome["taskset_pass"],
+        "metrics": {"energy_blocked_ticks": 2, "harvested_energy_j": 3,
+                    "consumed_energy_j": 4},
+    }
+    if not compact:
+        row["jobs"] = jobs or []
+    return row
+
+
+def test_compact_and_full_analysis_are_equivalent_and_technical_is_not_false(tmp_path):
+    import scripts.analyze_v9_3_perf_g as analyzer
+
+    full_root = tmp_path / "full"
+    compact_root = tmp_path / "compact"
+    for root, row in ((full_root, _analysis_row(compact=False)),
+                      (compact_root, _analysis_row(compact=True))):
+        root.mkdir()
+        requests = [{key: row[key] for key in ("request_id", "taskset_id", "U_norm", "energy_condition", "scheduler")}]
+        (root / "requests.jsonl").write_text(json.dumps(requests[0]) + "\n", encoding="utf-8")
+        (root / "results.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+    full = analyze_results(full_root, "CAL")
+    compact = analyze_results(compact_root, "CAL")
+    assert full["cell_summary"] == compact["cell_summary"]
+    assert full["secondary_metrics"] == compact["secondary_metrics"]
+    assert "jobs" not in _analysis_row(compact=True)
+
+    technical_root = tmp_path / "technical"
+    technical_root.mkdir()
+    technical = _analysis_row(compact=True, technical=True)
+    (technical_root / "requests.jsonl").write_text(
+        json.dumps({key: technical[key] for key in ("request_id", "taskset_id", "U_norm", "energy_condition", "scheduler")}) + "\n",
+        encoding="utf-8",
+    )
+    (technical_root / "results.jsonl").write_text(json.dumps(technical) + "\n", encoding="utf-8")
+    assert analyze_results(technical_root, "CAL")["cell_summary"] == []
+
+
+def test_compact_runner_cleans_simulations_and_resumes_without_duplicates(tmp_path, monkeypatch):
+    class FakeTaskset:
+        taskset_id = "taskset-0"
+        semantic_hash = "hash-0"
+        seed = 7
+        actual_utilization = Fraction("2")
+        target_utilization = Fraction("2")
+        taskset_index = 0
+        task_payload = ({"task_id": "0"},)
+
+        def generated_row(self):
+            return {"taskset_id": self.taskset_id, "taskset_hash": self.semantic_hash}
+
+    @dataclass
+    class FakeJob:
+        task_id: str = "0"
+        release: int = 0
+        absolute_deadline: int = 9
+        completion: int = 9
+
+    fake_taskset = FakeTaskset()
+    fake_service = SimpleNamespace(system_path=tmp_path / "system.yml")
+    monkeypatch.setattr(perf_runner.perf_g, "materialize_tasksets", lambda *args: ([fake_taskset], fake_service))
+    monkeypatch.setattr(perf_runner.perf_g, "build_raw_trace", lambda service: (Fraction(1),))
+    monkeypatch.setattr(perf_runner.perf_g, "energy_material", lambda *args: {
+        "initial_energy_j": "1", "battery_capacity_j": "2", "solar_scale": "1",
+    })
+
+    def fake_run(**kwargs):
+        run_root = kwargs["run_root"]
+        run_root.mkdir(parents=True, exist_ok=True)
+        result = SimpleNamespace(
+            status=perf_runner.SimulationStatus.PASS_OBSERVED, reason="pass",
+            metrics={"energy_blocked_ticks": 0}, jobs=(FakeJob(),),
+            simulation_completed=True,
+        )
+        return SimpleNamespace(result=result, runtime_seconds=0.01)
+
+    monkeypatch.setattr(perf_runner, "run_paired_simulation", fake_run)
+    condition = perf_g.condition("SAT", "200", "2")
+    first = perf_runner._execute_requests(
+        root=tmp_path / "run", mode="CAL_CONFIRM", namespace="CAL",
+        utilizations=(Fraction("1/2"),), taskset_count=1,
+        conditions=[condition], schedulers=("ASAP-BLOCK",), horizon=30,
+        simulator=tmp_path / "sim", resume=False, workers=1,
+    )
+    result_path = tmp_path / "run" / "results.jsonl"
+    rows = [json.loads(line) for line in result_path.read_text().splitlines()]
+    assert first["processed"] == 1
+    assert len(rows) == 1 and "jobs" not in rows[0]
+    assert not (tmp_path / "run" / "simulations" / rows[0]["request_id"]).exists()
+    second = perf_runner._execute_requests(
+        root=tmp_path / "run", mode="CAL_CONFIRM", namespace="CAL",
+        utilizations=(Fraction("1/2"),), taskset_count=1,
+        conditions=[condition], schedulers=("ASAP-BLOCK",), horizon=30,
+        simulator=tmp_path / "sim", resume=True, workers=1,
+    )
+    assert second["processed"] == 1
+    assert len(result_path.read_text().splitlines()) == 1
