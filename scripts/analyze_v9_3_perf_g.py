@@ -123,6 +123,11 @@ def select_calibration(
             "selection": initial, "required_extension": None}
 
 
+def select_calibration_paired(*args: Any, **kwargs: Any) -> dict[str, Any]:
+    """Expose the explicit paired-retention calibration entry point."""
+    return perf_g.select_calibration_paired(*args, **kwargs)
+
+
 def analyze_calibration(root: Path) -> dict[str, Any]:
     requests = _read_jsonl(root / "requests.jsonl")
     results = _read_jsonl(root / "results.jsonl")
@@ -202,4 +207,7 @@ if __name__ == "__main__":
     raise SystemExit(main())
 
 
-__all__ = ["analyze_calibration", "analyze_results", "completeness", "confirmation_status", "select_calibration"]
+__all__ = [
+    "analyze_calibration", "analyze_results", "completeness", "confirmation_status",
+    "select_calibration", "select_calibration_paired",
+]

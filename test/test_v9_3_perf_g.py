@@ -6,7 +6,7 @@ import json
 
 from experiments.v9_3 import perf_g
 from experiments.v9_3.performance_outcome import evaluate_outcome
-from scripts.analyze_v9_3_perf_g import completeness, select_calibration
+from scripts.analyze_v9_3_perf_g import completeness, select_calibration, select_calibration_paired
 
 
 def _row(kappa, eta, utilization, scheduler, index, passed):
@@ -162,3 +162,276 @@ def test_completeness_reports_missing_duplicate_partial():
     assert report["missing"] == 1
     assert report["duplicate"] == 1
     assert report["partial_group"] == 1
+
+
+def test_sparse_extension_only_at_one_kappa_is_fail_closed():
+    initial = _matrix(include_extremes=False)
+    extension = []
+    for eta in ("1/4", "2"):
+        for utilization in ("3/10", "1/2", "7/10"):
+            for index in range(4):
+                for scheduler in perf_g.CAL_SCHEDULERS:
+                    extension.append(_row("200", eta, utilization, scheduler, index, True))
+
+    selected = select_calibration(initial, extension_rows=extension)
+    assert selected["status"] == "CAL_BLOCKED"
+    q = perf_g.q_matrix(initial + extension)
+    assert ("10", "1/4", "3/10") not in q
+    assert ("50", "2", "3/10") not in q
+    assert ("200", "1/4", "3/10") in q
+
+
+def test_select_transition_skips_incomplete_utilization_pair():
+    q = {
+        ("200", "1/4", "3/10"): 0.5,
+        ("200", "1/4", "1/2"): 0.5,
+    }
+    assert perf_g.select_transition(q) is None
+
+
+def _paired_row(kappa, eta, utilization, scheduler, taskset_id, passed, *, taskset_hash="hash"):
+    return {
+        "kappa": str(kappa), "eta": str(eta), "U_norm": str(utilization),
+        "scheduler": scheduler, "taskset_id": taskset_id,
+        "taskset_hash": taskset_hash, "taskset_pass": passed,
+        "energy_blocked_ticks": 0,
+    }
+
+
+def _paired_rows(sat_values, candidate_values, *, candidate=("50", "1"), scheduler="ASAP-BLOCK"):
+    rows = []
+    for taskset_id, passed in sat_values.items():
+        rows.append(_paired_row("200", "2", "1/2", scheduler, taskset_id, passed))
+    for taskset_id, passed in candidate_values.items():
+        rows.append(_paired_row(*candidate, "1/2", scheduler, taskset_id, passed))
+    return rows
+
+
+def _paired_cell(result, kappa, eta, status="ASAP-BLOCK"):
+    return result["cells"][(str(kappa), str(eta), "1/2", status)]
+
+
+def test_paired_retention_sat_is_one_and_excludes_sat_failures():
+    rows = _paired_rows({"A": True, "B": False}, {"A": True, "B": False})
+    result = perf_g.paired_retention_matrix(
+        rows, {"kappa": "200", "eta": "2"}, utilizations=(Fraction("1/2"),),
+        schedulers=("ASAP-BLOCK",),
+    )
+    assert _paired_cell(result, "200", "2")["retention"] == 1.0
+    assert _paired_cell(result, "50", "1")["sat_denominator_count"] == 1
+    assert _paired_cell(result, "50", "1")["retained_count"] == 1
+
+
+def test_paired_retention_partial_degradation_is_half():
+    rows = _paired_rows(
+        {"A": True, "B": True, "C": True, "D": True},
+        {"A": True, "B": True, "C": False, "D": False},
+    )
+    result = perf_g.paired_retention_matrix(
+        rows, {"kappa": "200", "eta": "2"}, utilizations=(Fraction("1/2"),),
+        schedulers=("ASAP-BLOCK",),
+    )
+    cell = _paired_cell(result, "50", "1")
+    assert cell["status"] == "AVAILABLE"
+    assert cell["retention"] == 0.5
+    assert cell["sat_denominator_count"] == 4
+    assert cell["retained_count"] == 2
+
+
+def test_paired_retention_zero_sat_denominator_is_unavailable():
+    rows = _paired_rows({"A": False, "B": False}, {"A": True, "B": True})
+    result = perf_g.paired_retention_matrix(
+        rows, {"kappa": "200", "eta": "2"}, utilizations=(Fraction("1/2"),),
+        schedulers=("ASAP-BLOCK",),
+    )
+    cell = _paired_cell(result, "50", "1")
+    assert cell["status"] == "UNAVAILABLE"
+    assert cell["retention"] is None
+    assert cell["sat_denominator_count"] == 0
+
+
+def test_paired_retention_technical_failure_is_incomplete():
+    rows = _paired_rows({"A": True}, {"A": None})
+    result = perf_g.paired_retention_matrix(
+        rows, {"kappa": "200", "eta": "2"}, utilizations=(Fraction("1/2"),),
+        schedulers=("ASAP-BLOCK",),
+    )
+    cell = _paired_cell(result, "50", "1")
+    assert cell["status"] == "INCOMPLETE"
+    assert cell["retention"] is None
+
+
+def test_paired_retention_hash_mismatch_is_incomplete():
+    rows = _paired_rows({"A": True}, {"A": True})
+    rows[-1]["taskset_hash"] = "different"
+    result = perf_g.paired_retention_matrix(
+        rows, {"kappa": "200", "eta": "2"}, utilizations=(Fraction("1/2"),),
+        schedulers=("ASAP-BLOCK",),
+    )
+    assert _paired_cell(result, "50", "1")["status"] == "INCOMPLETE"
+
+
+def test_paired_retention_missing_and_duplicate_pairs_are_incomplete():
+    missing = _paired_rows({"A": True, "B": True}, {"A": True})
+    result = perf_g.paired_retention_matrix(
+        missing, {"kappa": "200", "eta": "2"}, utilizations=(Fraction("1/2"),),
+        schedulers=("ASAP-BLOCK",),
+    )
+    cell = _paired_cell(result, "50", "1")
+    assert cell["status"] == "INCOMPLETE"
+    assert cell["missing_candidate_pair_count"] == 1
+
+    duplicate = _paired_rows({"A": True}, {"A": True})
+    duplicate.append(dict(duplicate[-1]))
+    result = perf_g.paired_retention_matrix(
+        duplicate, {"kappa": "200", "eta": "2"}, utilizations=(Fraction("1/2"),),
+        schedulers=("ASAP-BLOCK",),
+    )
+    assert _paired_cell(result, "50", "1")["status"] == "INCOMPLETE"
+
+
+def test_paired_aggregate_excludes_zero_sat_denominator_scheduler():
+    rows = _paired_rows(
+        {"A": True, "B": True}, {"A": True, "B": False},
+        scheduler="ASAP-BLOCK",
+    )
+    rows.extend(_paired_rows(
+        {"A": False, "B": False}, {"A": True, "B": True},
+        scheduler="ST-BLOCK",
+    ))
+    result = perf_g.paired_retention_matrix(
+        rows, {"kappa": "200", "eta": "2"}, utilizations=(Fraction("1/2"),),
+        schedulers=("ASAP-BLOCK", "ST-BLOCK"),
+    )
+    aggregate = result["aggregates"][("50", "1", "1/2")]
+    assert aggregate["status"] == "PARTIAL"
+    assert aggregate["retention"] == 0.5
+    assert aggregate["valid_scheduler_count"] == 1
+    assert aggregate["sat_denominator_count"] == 2
+
+
+def _policy_condition_rows(kappa, eta, ratios, *, energy_blocked_ticks, scheduler="ASAP-BLOCK"):
+    rows = []
+    for utilization, ratio in ratios.items():
+        for index in range(10):
+            row = _paired_row(
+                kappa, eta, utilization, scheduler, f"t{index}",
+                index < ratio, taskset_hash=f"hash-{index}",
+            )
+            row["energy_blocked_ticks"] = energy_blocked_ticks
+            rows.append(row)
+    return rows
+
+
+def _default_policy_rows(*, include_low=True, include_high=True,
+                         transition_energy=1, high_energy=0,
+                         transition_incomplete=False):
+    ratios = {"3/10": 10, "1/2": 6, "7/10": 3}
+    rows = _policy_condition_rows(
+        "200", "2", {utilization: 10 for utilization in ratios},
+        energy_blocked_ticks=0,
+    )
+    if include_low:
+        rows.extend(_policy_condition_rows(
+            "50", "3/4", {utilization: 0 for utilization in ratios},
+            energy_blocked_ticks=1,
+        ))
+    rows.extend(_policy_condition_rows(
+        "50", "1", ratios, energy_blocked_ticks=transition_energy,
+    ))
+    if transition_incomplete:
+        rows[ next(
+            index for index, row in enumerate(rows)
+            if row["kappa"] == "50" and row["eta"] == "1"
+            and row["U_norm"] == "1/2"
+        )]["taskset_pass"] = None
+    if include_high:
+        rows.extend(_policy_condition_rows(
+            "50", "5/4", {utilization: 10 for utilization in ratios},
+            energy_blocked_ticks=high_energy,
+        ))
+    return rows
+
+
+def _select_default_policy(rows):
+    return select_calibration_paired(
+        rows, {"kappa": "200", "eta": "2"},
+        schedulers=("ASAP-BLOCK",),
+    )
+
+
+def test_paired_selection_default_policy_is_data_driven():
+    result = _select_default_policy(_default_policy_rows())
+    assert result["status"] == "PAIRED_SELECTION_OK"
+    assert result["selection"] == {
+        "kappa_star": "50", "eta_low": "3/4", "eta_transition": "1", "eta_high": "5/4",
+        "LOW": {"kappa": "50", "eta": "3/4"},
+        "TRANSITION": {"kappa": "50", "eta": "1"},
+        "HIGH": {"kappa": "50", "eta": "5/4"},
+    }
+    assert result["threshold_policy"]["reference_utilization"] == "1/2"
+    sat_cell = _paired_cell(result["matrix"], "200", "2")
+    assert sat_cell["retention"] == 1.0
+    assert result["selection"]["HIGH"]["eta"] != "2"
+
+
+def test_paired_selection_saturation_and_missing_energy_fail_closed():
+    assert _select_default_policy(_default_policy_rows(transition_energy=0))["status"] == "PAIRED_CAL_BLOCKED"
+    assert _select_default_policy(_default_policy_rows(high_energy=1))["status"] == "NEEDS_PAIRED_EXTENSION_HIGH"
+    assert _select_default_policy(_default_policy_rows(include_low=False))["status"] == "NEEDS_PAIRED_EXTENSION_LOW"
+    assert _select_default_policy(_default_policy_rows(include_high=False))["status"] == "NEEDS_PAIRED_EXTENSION_HIGH"
+    assert _select_default_policy(_default_policy_rows(include_low=False, include_high=False))["status"] == "NEEDS_PAIRED_EXTENSION_BOTH"
+    missing_energy = _default_policy_rows()
+    for row in missing_energy:
+        if row["kappa"] == "50" and row["eta"] == "1" and row["U_norm"] == "1/2":
+            row.pop("energy_blocked_ticks")
+    assert _select_default_policy(missing_energy)["status"] == "PAIRED_CAL_BLOCKED"
+
+
+def test_paired_selection_ignores_incomplete_transition_candidate():
+    result = _select_default_policy(_default_policy_rows(transition_incomplete=True))
+    assert result["status"] == "PAIRED_CAL_BLOCKED"
+    transition = next(candidate for candidate in result["candidates"]
+                      if candidate["kappa"] == "50" and candidate["eta"] == "1")
+    assert transition["status"] == "INCOMPLETE"
+
+    non_reference_incomplete = _default_policy_rows()
+    for row in non_reference_incomplete:
+        if row["kappa"] == "50" and row["eta"] == "1" and row["U_norm"] == "3/10":
+            row["taskset_pass"] = None
+            break
+    assert _select_default_policy(non_reference_incomplete)["status"] == "PAIRED_CAL_BLOCKED"
+
+
+def test_paired_selection_transition_tie_break_is_deterministic():
+    rows = _policy_condition_rows(
+        "200", "2", {u: 10 for u in ("3/10", "1/2", "7/10")},
+        energy_blocked_ticks=0,
+    )
+    rows.extend(_policy_condition_rows(
+        "50", "3/4", {"3/10": 2, "1/2": 5, "7/10": 8},
+        energy_blocked_ticks=1,
+    ))
+    rows.extend(_policy_condition_rows(
+        "50", "5/4", {"3/10": 8, "1/2": 5, "7/10": 2},
+        energy_blocked_ticks=1,
+    ))
+    first = _select_default_policy(rows)
+    second = _select_default_policy(list(reversed(rows)))
+    assert first["selection"]["eta_transition"] == "3/4"
+    assert second["selection"] == first["selection"]
+
+
+def test_paired_selection_accepts_explicit_policy_without_freezing_new_values():
+    result = select_calibration_paired(
+        _default_policy_rows(), {"kappa": "200", "eta": "2"},
+        threshold_policy={
+            "reference_utilization": "1/2",
+            "low_max_retention": "1/4",
+            "transition_min_retention": "1/5",
+            "transition_max_retention": "4/5",
+            "high_min_retention": "3/4",
+        }, schedulers=("ASAP-BLOCK",),
+    )
+    assert result["status"] == "PAIRED_SELECTION_OK"
+    assert result["threshold_policy"]["high_min_retention"] == "3/4"
